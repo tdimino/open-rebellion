@@ -336,6 +336,310 @@ function evidenceFromConsole(line, marker) {
   return JSON.parse(line.slice(offset + marker.length));
 }
 
+/// Parse one feature-only typed surface observation without treating ordinary
+/// console output as evidence. Callers retain the complete console artifact;
+/// this helper only extracts records carrying the explicit schema/status.
+export function surfaceObservationFromConsole(line) {
+  const observation = evidenceFromConsole(line, "[encyclopedia_surface_observation] ");
+  if (observation === null) return null;
+  const exactKeys = (value, expected, label) => {
+    assert.ok(value !== null && typeof value === "object" && !Array.isArray(value), `${label} object`);
+    assert.deepEqual(Object.keys(value).sort(), [...expected].sort(), `${label} exact shape`);
+  };
+  exactKeys(
+    observation,
+    ["schema_version", "status", "record_id", "sequence", "values", "transition"],
+    "surface observation",
+  );
+  assert.equal(observation.schema_version, 5, "surface observation schema");
+  assert.equal(observation.status, "surface_observation", "surface observation status");
+  assert.match(observation.record_id, /^surface-[0-9]{8}$/, "surface observation record id");
+  assert.ok(Number.isSafeInteger(observation.sequence) && observation.sequence > 0, "surface sequence");
+  assert.equal(
+    observation.record_id,
+    `surface-${String(observation.sequence).padStart(8, "0")}`,
+    "surface record id matches sequence",
+  );
+  exactKeys(observation.values, [
+    "target", "viewer_faction", "mode", "focused_control", "selected_category_command",
+    "visible_topic_ids", "visible_topic_ids_sha256", "selected_topic_id", "selected_topic_index",
+    "visible_topic_count", "previous_enabled", "next_enabled",
+    "body_scroll_offset", "world_epoch", "world_evidence_kind", "catalog_generation",
+    "requested_language", "effective_language", "title_sha256", "body_sha256",
+    "asset_id", "asset_digest", "render_profile",
+    "selected_source_kind", "live_enabled_mods", "texture_cache_event",
+  ], "surface values");
+  assert.ok(["native", "browser"].includes(observation.values.target), "surface target");
+  assert.ok(
+    ["alliance", "empire"].includes(observation.values.viewer_faction),
+    "surface viewer faction",
+  );
+  assert.ok(["index", "topic"].includes(observation.values.mode), "surface mode");
+  if (observation.values.focused_control !== null) {
+    exactKeys(
+      observation.values.focused_control,
+      ["kind", "target_id", "focused_id", "owns_focus"],
+      "surface focused control",
+    );
+    assert.ok(
+      ["index_list", "topic_body"].includes(observation.values.focused_control.kind),
+      "surface focused control kind",
+    );
+    assert.ok(
+      Number.isSafeInteger(observation.values.focused_control.target_id)
+        && observation.values.focused_control.target_id > 0,
+      "surface focused target id",
+    );
+    assert.ok(
+      observation.values.focused_control.focused_id === null
+        || (Number.isSafeInteger(observation.values.focused_control.focused_id)
+          && observation.values.focused_control.focused_id > 0),
+      "surface focused id",
+    );
+    assert.equal(
+      observation.values.focused_control.owns_focus,
+      observation.values.focused_control.focused_id
+        === observation.values.focused_control.target_id,
+      "surface focus ownership",
+    );
+  }
+  assert.ok(
+    observation.values.selected_category_command === null
+      || /^0x(?:6f|7[0-5])$/.test(observation.values.selected_category_command),
+    "surface category command",
+  );
+  assert.ok(Array.isArray(observation.values.visible_topic_ids), "surface ordered topic ids");
+  assert.equal(
+    new Set(observation.values.visible_topic_ids).size,
+    observation.values.visible_topic_ids.length,
+    "surface ordered topic ids unique",
+  );
+  for (const topicId of observation.values.visible_topic_ids) {
+    assert.match(topicId, /^original:[0-9]+$/, "surface ordered topic id");
+  }
+  assert.equal(
+    observation.values.visible_topic_ids.length,
+    observation.values.visible_topic_count,
+    "surface ordered topic count",
+  );
+  assert.match(observation.values.visible_topic_ids_sha256, /^[0-9a-f]{64}$/, "surface membership");
+  assert.equal(
+    observation.values.visible_topic_ids_sha256,
+    sha256(Buffer.from(JSON.stringify(observation.values.visible_topic_ids))),
+    "surface ordered topic digest",
+  );
+  assert.ok(
+    observation.values.selected_topic_id === null
+      || /^original:[0-9]+$/.test(observation.values.selected_topic_id),
+    "surface selected topic",
+  );
+  assert.ok(
+    observation.values.selected_topic_index === null
+      || (Number.isSafeInteger(observation.values.selected_topic_index)
+        && observation.values.selected_topic_index >= 0),
+    "surface selected topic index",
+  );
+  assert.ok(
+    Number.isSafeInteger(observation.values.visible_topic_count)
+      && observation.values.visible_topic_count >= 0,
+    "surface visible topic count",
+  );
+  assert.equal(typeof observation.values.previous_enabled, "boolean", "surface previous enabled");
+  assert.equal(typeof observation.values.next_enabled, "boolean", "surface next enabled");
+  assert.ok(
+    Number.isFinite(observation.values.body_scroll_offset)
+      && observation.values.body_scroll_offset >= 0,
+    "surface body scroll offset",
+  );
+  assert.ok(
+    Number.isSafeInteger(observation.values.world_epoch) && observation.values.world_epoch >= 0,
+    "surface world epoch",
+  );
+  assert.ok(
+    ["actual_replacement_world", "catalog_scoped_synthetic_admission"]
+      .includes(observation.values.world_evidence_kind),
+    "surface world evidence kind",
+  );
+  assert.ok(
+    Number.isSafeInteger(observation.values.catalog_generation)
+      && observation.values.catalog_generation >= 0,
+    "surface catalog generation",
+  );
+  assert.match(observation.values.requested_language, /^[0-9]+$/, "surface requested language");
+  assert.ok(
+    observation.values.effective_language === null
+      || /^[0-9]+$/.test(observation.values.effective_language),
+    "surface effective language",
+  );
+  for (const field of ["title_sha256", "body_sha256", "asset_digest"]) {
+    assert.ok(
+      observation.values[field] === null || /^[0-9a-f]{64}$/.test(observation.values[field]),
+      `surface ${field}`,
+    );
+  }
+  assert.ok(
+    observation.values.asset_id === null
+      || /^(?:edata|mod):[A-Za-z0-9._:-]+$/.test(observation.values.asset_id),
+    "surface asset id",
+  );
+  assert.ok(
+    observation.values.render_profile === null
+      || ["original_nearest", "faithful_hd_linear"].includes(observation.values.render_profile),
+    "surface render profile",
+  );
+  assert.ok(
+    ["base", "approved_hd", "mod", "null", "unavailable"]
+      .includes(observation.values.selected_source_kind),
+    "surface selected source kind",
+  );
+  assert.ok(
+    Array.isArray(observation.values.live_enabled_mods)
+      && observation.values.live_enabled_mods.every(
+        (name) => typeof name === "string" && name.length > 0,
+      ),
+    "surface live enabled mods",
+  );
+  assert.ok(
+    ["not_selected", "uploaded", "cache_hit", "released", "no_art", "failed"]
+      .includes(observation.values.texture_cache_event),
+    "surface texture cache event",
+  );
+  exactKeys(
+    observation.transition,
+    ["from_record_id", "controller_steps", "fixture_controls", "input_attempts", "texture_events"],
+    "surface transition",
+  );
+  assert.ok(Array.isArray(observation.transition.controller_steps), "surface controller steps");
+  for (const step of observation.transition.controller_steps) {
+    exactKeys(
+      step,
+      ["input_record_id", "action", "outcome", "before", "after"],
+      "surface controller step",
+    );
+    assert.match(step.input_record_id, /^surface-[0-9]{8}$/, "surface controller input record");
+    assert.equal(typeof step.action, "string", "surface controller action");
+    assert.equal(typeof step.outcome, "string", "surface controller outcome");
+    for (const [phase, state] of [["before", step.before], ["after", step.after]]) {
+      exactKeys(state, [
+        "mode", "selected_category_command", "selected_topic_id", "visible_topic_ids",
+        "visible_topic_ids_sha256",
+        "selected_topic_index", "visible_topic_count", "previous_enabled", "next_enabled",
+        "world_epoch",
+      ], `surface controller ${phase}`);
+      assert.ok(["index", "topic"].includes(state.mode), `surface controller ${phase} mode`);
+      assert.ok(
+        state.selected_category_command === null
+          || /^0x(?:6f|7[0-5])$/.test(state.selected_category_command),
+        `surface controller ${phase} category`,
+      );
+      assert.ok(
+        state.selected_topic_id === null || /^original:[0-9]+$/.test(state.selected_topic_id),
+        `surface controller ${phase} selected topic`,
+      );
+      assert.ok(
+        state.selected_topic_index === null
+          || (Number.isSafeInteger(state.selected_topic_index) && state.selected_topic_index >= 0),
+        `surface controller ${phase} selected index`,
+      );
+      assert.ok(
+        Number.isSafeInteger(state.visible_topic_count) && state.visible_topic_count >= 0,
+        `surface controller ${phase} visible count`,
+      );
+      assert.ok(Array.isArray(state.visible_topic_ids), `surface controller ${phase} ordered topics`);
+      assert.equal(
+        state.visible_topic_ids.length,
+        state.visible_topic_count,
+        `surface controller ${phase} ordered topic count`,
+      );
+      assert.equal(
+        new Set(state.visible_topic_ids).size,
+        state.visible_topic_ids.length,
+        `surface controller ${phase} ordered topic uniqueness`,
+      );
+      for (const topicId of state.visible_topic_ids) {
+        assert.match(topicId, /^original:[0-9]+$/, `surface controller ${phase} ordered topic id`);
+      }
+      assert.match(
+        state.visible_topic_ids_sha256,
+        /^[0-9a-f]{64}$/,
+        `surface controller ${phase} membership`,
+      );
+      assert.equal(
+        state.visible_topic_ids_sha256,
+        sha256(Buffer.from(JSON.stringify(state.visible_topic_ids))),
+        `surface controller ${phase} ordered topic digest`,
+      );
+      assert.equal(typeof state.previous_enabled, "boolean", `surface controller ${phase} previous`);
+      assert.equal(typeof state.next_enabled, "boolean", `surface controller ${phase} next`);
+      assert.ok(Number.isSafeInteger(state.world_epoch), `surface controller ${phase} epoch`);
+      assert.equal(
+        state.selected_topic_id === null,
+        state.selected_topic_index === null,
+        `surface controller ${phase} topic/index presence`,
+      );
+      if (state.selected_topic_index !== null) {
+        assert.ok(
+          state.selected_topic_index < state.visible_topic_count,
+          `surface controller ${phase} selected index bound`,
+        );
+        assert.equal(
+          state.selected_topic_id,
+          state.visible_topic_ids[state.selected_topic_index],
+          `surface controller ${phase} selected topic/index binding`,
+        );
+      }
+    }
+  }
+  assert.ok(Array.isArray(observation.transition.fixture_controls), "surface fixture controls");
+  for (const control of observation.transition.fixture_controls) {
+    assert.equal(typeof control, "string", "surface fixture control");
+  }
+  assert.ok(Array.isArray(observation.transition.input_attempts), "surface input attempts");
+  for (const attempt of observation.transition.input_attempts) {
+    exactKeys(attempt, ["control", "enabled"], "surface input attempt");
+    assert.ok(
+      ["previous_topic", "next_topic"].includes(attempt.control),
+      "surface input attempt control",
+    );
+    assert.equal(typeof attempt.enabled, "boolean", "surface input attempt enabled");
+  }
+  assert.ok(Array.isArray(observation.transition.texture_events), "surface texture events");
+  for (const event of observation.transition.texture_events) {
+    exactKeys(
+      event,
+      ["kind", "asset_id", "digest", "render_profile", "cache_hit", "diagnostic"],
+      "surface texture event",
+    );
+    assert.ok(["selected", "released", "failed"].includes(event.kind), "surface texture event kind");
+    assert.equal(typeof event.asset_id, "string", "surface texture event asset id");
+    assert.ok(event.asset_id.length > 0, "surface texture event nonempty asset id");
+    if (event.kind === "selected") {
+      assert.match(event.digest, /^[0-9a-f]{64}$/, "selected texture digest");
+      assert.ok(
+        ["original_nearest", "faithful_hd_linear"].includes(event.render_profile),
+        "selected texture profile",
+      );
+      assert.equal(typeof event.cache_hit, "boolean", "selected texture cache flag");
+      assert.equal(event.diagnostic, null, "selected texture diagnostic");
+    } else if (event.kind === "released") {
+      assert.match(event.digest, /^[0-9a-f]{64}$/, "released texture digest");
+      assert.ok(
+        ["original_nearest", "faithful_hd_linear"].includes(event.render_profile),
+        "released texture profile",
+      );
+      assert.equal(event.cache_hit, null, "released texture cache flag");
+      assert.equal(event.diagnostic, null, "released texture diagnostic");
+    } else {
+      assert.equal(event.digest, null, "failed texture digest");
+      assert.equal(event.render_profile, null, "failed texture profile");
+      assert.equal(event.cache_hit, null, "failed texture cache flag");
+      assert.equal(typeof event.diagnostic, "string", "failed texture diagnostic");
+      assert.ok(event.diagnostic.includes(event.asset_id), "failed texture diagnostic names asset");
+    }
+  }
+  return observation;
+}
+
 async function waitForSelection(consoleLines, topicId, fromIndex, timeoutMs = 15_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -432,6 +736,15 @@ function differentPixelCount(leftBytes, rightBytes, PNG) {
   return different;
 }
 
+/// Run an optional bounded surface journey after Ready and offline transition.
+/// Existing E21/E48 callers omit the hook and retain byte-identical control
+/// flow. A supplemental journey must restore the accepted initial topic before
+/// the shared canonical probes resume.
+export async function runOptionalReadyJourney(hooks, context) {
+  if (typeof hooks.runReadyJourney !== "function") return null;
+  return hooks.runReadyJourney(context);
+}
+
 export async function runBrowser(options, artifactResult, hooks = {}) {
   const scenario = readJson(options.scenario);
   for (const required of ["index.html", "gl.js", "open-rebellion-test.wasm", "data/runtime.orpk"]) {
@@ -506,6 +819,23 @@ export async function runBrowser(options, artifactResult, hooks = {}) {
       hooks.assertReady?.({ faction, ready });
       await context.setOffline(true);
       const navigationRequestStart = browserRequests.length;
+      const supplementalJourney = await runOptionalReadyJourney(hooks, {
+        browserRequests,
+        consoleLines,
+        context,
+        faction,
+        outputDirectory: path.dirname(options.output),
+        page,
+        ready,
+        scenario,
+      });
+      if (supplementalJourney !== null) {
+        assert.equal(
+          supplementalJourney.reset_to_initial_topic,
+          true,
+          "supplemental journey must restore the accepted initial topic",
+        );
+      }
       let currentIndex = 0;
       let consoleIndex = 0;
       const probes = [];
@@ -649,6 +979,7 @@ export async function runBrowser(options, artifactResult, hooks = {}) {
         browser_diagnostics: diagnosticClassification,
         probes,
       };
+      if (supplementalJourney !== null) caseResult.supplemental_journey = supplementalJourney;
       result.cases.push(caseResult);
       if (ownedServer) {
         assert.equal(serverRequests.length - serverStart, expectedRequests.length, `${faction} server request count`);

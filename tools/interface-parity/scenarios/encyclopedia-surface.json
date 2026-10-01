@@ -1,0 +1,279 @@
+{
+  "schema_version": 2,
+  "family": "encyclopedia-surface-acceptance",
+  "scope": "Finite source-linked E30 native/browser acceptance matrix. Decoding, modeled harnesses, Wine inference and inherited transport probes are retained progress but cannot accept live surface or strict A0 rows.",
+  "canonical": {
+    "source_profile": "encytext-49aea545-lang-1033-v1",
+    "runtime_pack_sha256": "e9ae76b50a43d811c01d8634f9099809ec6c144f9fbcd93f364b6879001fb57b",
+    "runtime_pack_byte_length": 63214933,
+    "catalog_sha256": "bed589f707fa18274c5c06c72e010f6735e98519f04bc6d9260caf5160fd4fb3",
+    "manifest_sha256": "df0ef0b7da7fb966cb80164092278acc81d359ba1976ceabfa7cb8813ed5d0a0",
+    "base_scenario_sha256": "990a67395fa51564c7991780ef4f0d8272d92d06edf3073f1dbf425172567ff3",
+    "encyclopedia_namespace_entries": 188,
+    "topic_count": 347,
+    "binding_count": 347,
+    "category_count": 6,
+    "image_count": 186,
+    "bound_rows_with_effective_art": 347,
+    "ui_manifest_sha256": "65b45561f2a279253f69d75ac5a2d96ecdcf6d5741d1e927f10f1b96288a5faf",
+    "ui_resource_count": 2326,
+    "ui_resource_bytes": 29261962,
+    "ui_inventory_sha256": "da9a24e76d4d89a6f281ab8b481aa67b12734e94185a7936f74b2db280ffdd90"
+  },
+  "retained_progress": {
+    "e48_browser_r9_sha256": "17e9f9a5643c325f2a95320ca6dfb7c3fb882fd27ebed18b13a77abe055730fe",
+    "e48_review_sha256": "e99532dbdc51198b88c44764bc16ea9c56b169e5dc342ac74ff85d3cc9011ec4",
+    "claims": [
+      "both_factions_four_canonical_topic_probes",
+      "exact_selected_art_pixels",
+      "long_body_scroll",
+      "owned_u2019_visible",
+      "zero_navigation_requests"
+    ],
+    "not_claimed": [
+      "complete_category_matrix",
+      "endpoint_controls",
+      "world_change",
+      "language_replacement",
+      "native_profile_precedence",
+      "strict_original_a0"
+    ]
+  },
+  "fixture_codes": {
+    "packed": { "alliance": 299, "empire": 555 },
+    "loose": { "alliance": 300, "empire": 556 }
+  },
+  "runtime_identities": {
+    "status": "accepted",
+    "native_feature_binary": {
+      "sha256": "3f28be2b2b5d11f8d5fb5a79829838945028fccb77721fd508c93a51e7b5ebaa",
+      "byte_length": 206553176
+    },
+    "browser_feature_wasm": {
+      "sha256": "497557cf52af7059c5a69bbf9c9b40f15ef08f62d6cc63148d223024a2868da2",
+      "byte_length": 172368953
+    },
+    "reason": "Pinned r8 feature artifacts were rebuilt from the reviewed schema-v5/F8 source for coordinator/Astra live acceptance; the immutable r6 artifacts remain retained as historical evidence."
+  },
+  "corpus_applicability": {
+    "original_no_art": {
+      "status": "not_applicable",
+      "bound_rows": 347,
+      "rows_with_art": 347,
+      "reason": "The approved owned catalog has effective art for every bound row; no original exceptional state is fabricated."
+    },
+    "explicit_native_mod_null": {
+      "status": "required",
+      "evidence_class": "synthetic_mod_policy_over_canonical_base"
+    },
+    "alternate_art": {
+      "status": "deferred",
+      "reason": "EDATA.192 and other unproven alternates are outside the first supported profile."
+    }
+  },
+  "provenance_classes": {
+    "source_static": "Recovered program flow, commands and resource geometry.",
+    "measured_original_windows": "Independent original Windows runtime capture; required for strict A0.",
+    "wine_inference": "Qualified comparison evidence only; never upgrades strict A0.",
+    "live_port_runtime": "Observed native/browser Rust port surface and telemetry.",
+    "synthetic_supplement": "Robustness or policy exercise; never presented as an original corpus state."
+  },
+  "source_contracts": [
+    {
+      "path": "docs/reference/asset-library/encyclopedia-ui-contract.md",
+      "lines": "42-62,116-120",
+      "covers": ["470x330_client", "470x331_shell_clipped", "faction_shell_and_rail"]
+    },
+    {
+      "path": "docs/reference/asset-library/encyclopedia-ui-contract.md",
+      "lines": "167-178,204-263",
+      "covers": ["commands_0x6f_to_0x75", "index_actions", "topic_navigation", "body_scroll"]
+    },
+    {
+      "path": "docs/reference/asset-library/encyclopedia-ui-contract.md",
+      "lines": "311-331",
+      "covers": ["enc_ui_01_to_21_matrix"]
+    }
+  ],
+  "geometry": {
+    "surface_origin": { "x": 85, "y": 55 },
+    "client": { "width": 470, "height": 330 },
+    "stored_shell": { "width": 470, "height": 331, "last_row": "clip_not_resample" },
+    "index_list": { "x": 36, "y": 137, "width": 350, "height": 160, "row_height": 20, "visible_rows": 8 },
+    "body_viewport": { "x": 17, "y": 231, "width": 395, "height": 80 }
+  },
+  "category_commands": [
+    { "command": "0x6f", "catalog_id": null, "topic_count": 347, "visible_topic_ids_sha256": "42ca41d590ce6cbfabb09e94f0cfd50d3407f7da057744093695fde854f6c84f", "source_range": "full_master" },
+    { "command": "0x70", "catalog_id": "command:0x70", "topic_count": 200, "visible_topic_ids_sha256": "49f3bb0e73462dcc17370a0e612f75a65ffe241bfdeebcb409fee9e68f8dac6a", "source_range": "0x90..0x98" },
+    { "command": "0x71", "catalog_id": "command:0x71", "topic_count": 38, "visible_topic_ids_sha256": "e3a22c24ef48f8af4baceb4f236d7f98e6cea9db11feb837dafd2eb0e802590d", "source_range": "0x14..0x20" },
+    { "command": "0x72", "catalog_id": "command:0x72", "topic_count": 14, "visible_topic_ids_sha256": "3546a7280e3a7b38d96c6e8e18b0d6460aa348152b1032d6c1b6918d4c4fbf82", "source_range": "0x20..0x30" },
+    { "command": "0x73", "catalog_id": "command:0x73", "topic_count": 15, "visible_topic_ids_sha256": "e7fbbbf7a703860bf6cb298a106234e48a9cb4b394152d90f3594ac181b72509", "source_range": "0x40..0x80" },
+    { "command": "0x74", "catalog_id": "command:0x74", "topic_count": 10, "visible_topic_ids_sha256": "efbdc02e79cd4e92a697825bde8ddf44471fe7771b1dad6c6956dc66eae6065d", "source_range": "0x10..0x14" },
+    { "command": "0x75", "catalog_id": "command:0x75", "topic_count": 69, "visible_topic_ids_sha256": "c3e68dc453f3589564f924b6ffc341c12fef078233c14e5fbda60607db16c34f", "source_range": "0x30..0x40" }
+  ],
+  "canonical_probes": [
+    {
+      "topic_id": "original:5696",
+      "binding": { "family": "fighter_classes", "dat_id": 1, "variant": "default" },
+      "title_sha256": "fa58ca018d98d20946d08d780ac961b1ebb2dcbdc995ad9ca691f3e14a385e73",
+      "body_sha256": "d56c0de5782ee20754f08a5490627f3340cd97d9bd5942511a153adbd1bbfe22",
+      "alliance_asset": { "id": "edata:34", "sha256": "14695e60336dbf2cf76f53525d0efa1100ae0b0c97cb33030c1873dcf5da7d5f" },
+      "empire_asset": { "id": "edata:34", "sha256": "14695e60336dbf2cf76f53525d0efa1100ae0b0c97cb33030c1873dcf5da7d5f" }
+    },
+    {
+      "topic_id": "original:7191",
+      "binding": { "family": "mission_definitions", "dat_id": 23, "variant": "viewer_faction" },
+      "title_sha256": "208b2389c3eaf6d8482a491adb7793cfce41d6d9692ecd7e92be9ebc9bda1816",
+      "body_sha256": "b2730598e98145e33b3ea73a4795360cde657fa6beb95cb10b638a13b1af8252",
+      "alliance_asset": { "id": "edata:154", "sha256": "c1f9b9366f9edb4d21329173c6ad39547e25e560cde5a344ffddbac2952bcf26" },
+      "empire_asset": { "id": "edata:155", "sha256": "985a6c5d13a7c0463e906eb8eb3f58f3feb492ddd9404ec01bda818e8c86a150" }
+    },
+    {
+      "topic_id": "original:6024",
+      "binding": { "family": "capital_ship_classes", "dat_id": 136, "variant": "default" },
+      "title_sha256": "fe3b8cb4a6146920705283b6d9f0451507ad06a3f6cc442706831d16f0ab6be7",
+      "body_sha256": "1db1d13e3a5019e22965067a8da643f0ba48d7cb1ac66de5521519f2d15b7585",
+      "alliance_asset": { "id": "edata:65", "sha256": "0a3d278a19e7faf56ea5f57b63d4744d8aadab4ec385523107826c67fc58f5c9" },
+      "empire_asset": { "id": "edata:65", "sha256": "0a3d278a19e7faf56ea5f57b63d4744d8aadab4ec385523107826c67fc58f5c9" }
+    },
+    {
+      "topic_id": "original:7187",
+      "binding": { "family": "mission_definitions", "dat_id": 19, "variant": "viewer_faction" },
+      "title_sha256": "b49531118b6ea0427dfce0fddad98dc0d7831c7e87c5ebe86e9facbb0c9378c5",
+      "body_sha256": "4a0956c0798ec2ddbd00190b4ca9be0eb0bc5a7a709dfed3eccf66694a4f3f70",
+      "alliance_asset": { "id": "edata:140", "sha256": "5ac59e0f42d95e21edd7e170e882250de0186447fc23d5f8701a216215d9de68" },
+      "empire_asset": { "id": "edata:141", "sha256": "c0d3f346164c6f48d2267cd9d2137b42816a329aaa90e0f9677a9754e09369bd" }
+    }
+  ],
+  "required_runtime_fields": [
+    "target",
+    "viewer_faction",
+    "mode",
+    "focused_control",
+    "selected_category_command",
+    "visible_topic_ids",
+    "visible_topic_ids_sha256",
+    "selected_topic_id",
+    "selected_topic_index",
+    "visible_topic_count",
+    "previous_enabled",
+    "next_enabled",
+    "body_scroll_offset",
+    "world_epoch",
+    "world_evidence_kind",
+    "catalog_generation",
+    "requested_language",
+    "effective_language",
+    "title_sha256",
+    "body_sha256",
+    "asset_id",
+    "asset_digest",
+    "render_profile",
+    "selected_source_kind",
+    "live_enabled_mods",
+    "texture_cache_event",
+    "navigation_request_count"
+  ],
+  "matrix": [
+    {
+      "id": "categories",
+      "targets": ["native", "browser"],
+      "factions": ["alliance", "empire"],
+      "required_fields": ["mode", "focused_control", "selected_category_command", "visible_topic_ids", "visible_topic_ids_sha256"],
+      "actions": ["mouse_index_mode", "mouse_each_command_0x6f_through_0x75", "capture_selected_and_list"],
+      "expected": ["index_mode", "exact_command_order", "enabled_projection_sorted_by_effective_title"]
+    },
+    {
+      "id": "selection",
+      "targets": ["native", "browser"],
+      "factions": ["alliance", "empire"],
+      "required_fields": ["mode", "focused_control", "visible_topic_ids", "selected_topic_id", "selected_topic_index", "visible_topic_count"],
+      "actions": ["single_click_first_row", "return_to_open", "return_to_index", "double_click_first_row"],
+      "expected": ["single_selects_without_open", "return_opens_selected", "double_click_opens_selected"]
+    },
+    {
+      "id": "index_keyboard",
+      "targets": ["native", "browser"],
+      "factions": ["alliance", "empire"],
+      "required_fields": ["mode", "focused_control", "selected_category_command", "visible_topic_ids", "selected_topic_id", "selected_topic_index", "visible_topic_count", "visible_topic_ids_sha256"],
+      "actions": ["left_right_categories", "up_down_rows", "page_up_down_8_rows", "home_end"],
+      "expected": ["source_asymmetric_category_fallback", "no_row_wrap", "effective_sorted_projection"]
+    },
+    {
+      "id": "topic_navigation",
+      "targets": ["native", "browser"],
+      "factions": ["alliance", "empire"],
+      "required_fields": ["mode", "visible_topic_ids", "selected_topic_id", "selected_topic_index", "visible_topic_count", "previous_enabled", "next_enabled"],
+      "actions": ["attempt_disabled_first_previous_mouse_then_left", "middle_previous_next", "attempt_disabled_last_next_mouse_then_right"],
+      "expected": ["first_previous_disabled", "last_next_disabled", "no_wrap", "stable_canonical_ids"]
+    },
+    {
+      "id": "scroll_text",
+      "targets": ["native", "browser"],
+      "factions": ["alliance", "empire"],
+      "required_fields": ["selected_topic_id", "body_scroll_offset", "requested_language", "effective_language"],
+      "actions": ["page_down_until_stable", "line_up_down", "page_up_until_zero", "capture_u2019_viewport"],
+      "expected": ["bounded_scroll_endpoints", "long_body_changes_viewport", "literal_owned_u2019_visible"]
+    },
+    {
+      "id": "language_fallback",
+      "targets": ["native", "browser"],
+      "factions": ["alliance", "empire"],
+      "required_fields": ["selected_topic_id", "requested_language", "effective_language", "title_sha256", "body_sha256", "asset_id", "asset_digest"],
+      "actions": ["request_missing_whole_language", "rebuild_same_generation", "restore_default_language"],
+      "expected": ["whole_1033_record_selected", "no_title_body_mix", "canonical_topic_preserved"]
+    },
+    {
+      "id": "world_change",
+      "evidence_class": "synthetic_supplement",
+      "targets": ["native", "browser"],
+      "factions": ["alliance", "empire"],
+      "required_fields": ["world_epoch", "world_evidence_kind", "catalog_generation", "visible_topic_ids", "visible_topic_ids_sha256", "selected_topic_id", "asset_id", "asset_digest"],
+      "actions": ["synthetic_remove_selected_admission", "reject_action_without_current_topic", "synthetic_restore_catalog_admission", "reselect_restored_topic"],
+      "expected": ["synthetic_only", "generation_unchanged", "world_epoch_changes", "membership_recomputed", "selection_and_art_disappear_then_recover", "stale_target_rejected"]
+    },
+    {
+      "id": "native_precedence",
+      "targets": ["native"],
+      "factions": ["alliance", "empire"],
+      "required_fields": ["catalog_generation", "asset_id", "asset_digest", "render_profile", "selected_source_kind", "live_enabled_mods", "texture_cache_event"],
+      "actions": ["base_original", "approved_hd", "enable_mod_replacement_in_process", "enable_explicit_mod_null_in_process", "disable_to_base"],
+      "expected": ["original_nearest", "faithful_hd_linear", "mod_over_hd", "null_no_art", "base_restored", "superseded_texture_released"]
+    }
+  ],
+  "strict_a0": {
+    "required_source": "measured_original_windows",
+    "matrix_rows": 21,
+    "row_ids": [
+      "ENC-UI-01", "ENC-UI-02", "ENC-UI-03", "ENC-UI-04", "ENC-UI-05",
+      "ENC-UI-06", "ENC-UI-07", "ENC-UI-08", "ENC-UI-09", "ENC-UI-10",
+      "ENC-UI-11", "ENC-UI-12", "ENC-UI-13", "ENC-UI-14", "ENC-UI-15",
+      "ENC-UI-16", "ENC-UI-17", "ENC-UI-18", "ENC-UI-19", "ENC-UI-20",
+      "ENC-UI-21"
+    ],
+    "current_status": "blocked",
+    "known_port_findings": ["topic_title_arrow_overlap", "fixture_diagnostics_body_overlap"],
+    "qualified_evidence": ["source_static", "wine_inference"],
+    "accepted_rows": 0
+  },
+  "feature_controls": {
+    "F2": "request_missing_whole_language_1041",
+    "F3": "restore_default_language_1033",
+    "F4": "synthetic_supplement_remove_current_catalog_admission_and_advance_epoch",
+    "F5": "synthetic_supplement_restore_catalog_scoped_admission_and_advance_epoch",
+    "F6": "native_original_parity_profile",
+    "F7": "native_faithful_hd_profile",
+    "F8": "synthetic_supplement_attempt_removed_stable_topic_through_shared_reducer"
+  },
+  "known_missing_seams": [
+    {
+      "id": "actual_replacement_world_admission_publication",
+      "blocks": ["world_change:native:alliance", "world_change:native:empire", "world_change:browser:alliance", "world_change:browser:empire"],
+      "needed": [
+        "feature caller publishes E31 immutable AdmissionSnapshot from an actual replacement GameWorld",
+        "record replacement world identity/fingerprint and epoch without deriving predicates in the fixture"
+      ],
+      "current_fixture": "catalog_scoped_synthetic_admission"
+    }
+  ]
+}

@@ -22,15 +22,14 @@ use rebellion_data::encyclopedia::{
 #[cfg(test)]
 use rebellion_render::EncyclopediaTextureBackend;
 use rebellion_render::{
-    apply_encyclopedia_action, BodyScrollIntent, EncyclopediaAction, EncyclopediaMode,
-    EncyclopediaNavigationState, EncyclopediaTextureCache, EncyclopediaTextureEvent,
-    EncyclopediaView, NavigationOutcome,
+    apply_encyclopedia_action, reconcile_encyclopedia_state, BodyScrollIntent, EncyclopediaAction,
+    EncyclopediaMode, EncyclopediaNavigationState, EncyclopediaTextureCache,
+    EncyclopediaTextureEvent, EncyclopediaView, NavigationOutcome, TopicImageRenderProfile,
 };
 #[cfg(not(target_arch = "wasm32"))]
 use rebellion_render::{
     ActiveTopicView, AssetRenderProfile, CategoryViewItem, EncyclopediaDiagnosticScope,
-    EncyclopediaViewDiagnostic, NavigationState, TopicImageRenderProfile, TopicImageView,
-    TopicViewItem,
+    EncyclopediaViewDiagnostic, NavigationState, TopicImageView, TopicViewItem,
 };
 
 #[cfg(any(test, target_arch = "wasm32"))]
@@ -59,6 +58,8 @@ pub(crate) struct InspectorModel {
     admission: Option<AdmissionSnapshot>,
     language: String,
     navigation: EncyclopediaNavigationState,
+    initial_topic_selected: bool,
+    removed_topic_for_fixture: Option<String>,
 }
 
 impl InspectorModel {
@@ -83,6 +84,8 @@ impl InspectorModel {
             admission,
             language: language.into(),
             navigation: EncyclopediaNavigationState::default(),
+            initial_topic_selected: false,
+            removed_topic_for_fixture: None,
         }
     }
 
@@ -131,6 +134,93 @@ impl InspectorModel {
 
     pub(crate) fn viewer(&self) -> Option<ViewerFaction> {
         self.admission.as_ref().map(|admission| admission.viewer)
+    }
+
+    fn catalog(&self) -> Option<&EncyclopediaCatalog> {
+        match &self.content {
+            InspectorContent::Ready(session) => Some(session.effective_catalog()),
+            InspectorContent::Unavailable(_) => None,
+        }
+    }
+
+    pub(crate) fn catalog_generation(&self) -> Option<u64> {
+        match &self.content {
+            InspectorContent::Ready(session) => Some(session.generation()),
+            InspectorContent::Unavailable(_) => None,
+        }
+    }
+
+    pub(crate) fn requested_language(&self) -> &str {
+        &self.language
+    }
+
+    pub(crate) fn set_requested_language_for_fixture(&mut self, language: impl Into<String>) {
+        self.language = language.into();
+    }
+
+    pub(crate) fn effective_language(&self, view: &EncyclopediaView) -> Option<&str> {
+        let topic_id = view.active_topic.as_ref()?.topic_id.as_str();
+        let catalog = self.catalog()?;
+        let localized = &catalog.topics.get(topic_id)?.localized;
+        if localized.contains_key(&self.language) {
+            Some(&self.language)
+        } else {
+            localized
+                .contains_key(&catalog.default_language)
+                .then_some(catalog.default_language.as_str())
+        }
+    }
+
+    /// Installs a replacement immutable admitted subset without consulting or
+    /// mutating `GameWorld`. The feature harness removes only the currently
+    /// selected, already-admitted binding and advances the supplied epoch.
+    pub(crate) fn replace_admission_for_fixture(
+        &mut self,
+    ) -> Result<Option<String>, EncyclopediaError> {
+        let Some(selected) = self.navigation.selection.topic_id.clone() else {
+            return Ok(None);
+        };
+        let Some(catalog) = self.catalog() else {
+            return Ok(None);
+        };
+        let Some(admission) = self.admission.as_ref() else {
+            return Ok(None);
+        };
+        let position = admission.admitted.iter().position(|admitted| {
+            rebellion_data::encyclopedia::resolve_topic(catalog, &admitted.key)
+                .is_some_and(|topic_id| topic_id.0 == selected)
+        });
+        let Some(position) = position else {
+            return Ok(None);
+        };
+        let Some(admission) = self.admission.as_mut() else {
+            return Ok(None);
+        };
+        admission.admitted.remove(position);
+        admission.world_epoch = admission.world_epoch.saturating_add(1);
+        if let Some(view) = self.build_view()? {
+            let _ = reconcile_encyclopedia_state(&mut self.navigation, &view);
+        }
+        self.removed_topic_for_fixture = Some(selected.clone());
+        Ok(Some(selected))
+    }
+
+    /// Publishes a fresh immutable admitted snapshot for the same viewer. This
+    /// feature-only control models a replacement epoch reusing the catalog's
+    /// numeric IDs; it never derives admission from `GameWorld`.
+    pub(crate) fn restore_admission_for_fixture(&mut self) -> bool {
+        let Some(previous) = self.admission.as_ref() else {
+            return false;
+        };
+        let viewer = previous.viewer;
+        let world_epoch = previous.world_epoch.saturating_add(1);
+        let Some(catalog) = self.catalog() else {
+            return false;
+        };
+        let mut replacement = inspection_admission(catalog, viewer);
+        replacement.world_epoch = world_epoch;
+        self.admission = Some(replacement);
+        true
     }
 
     pub(crate) fn build_view(&mut self) -> Result<Option<EncyclopediaView>, EncyclopediaError> {
@@ -237,8 +327,16 @@ impl InspectorModel {
         &mut self.navigation
     }
 
+    fn navigation(&self) -> &EncyclopediaNavigationState {
+        &self.navigation
+    }
+
     fn ensure_initial_topic(&mut self) -> Result<(), EncyclopediaError> {
+        if self.initial_topic_selected {
+            return Ok(());
+        }
         if self.navigation.selection.topic_id.is_some() {
+            self.initial_topic_selected = true;
             return Ok(());
         }
         let Some(view) = self.build_view()? else {
@@ -249,6 +347,7 @@ impl InspectorModel {
         };
         let _ = self.apply_action(&view, EncyclopediaAction::SelectTopic(first_topic));
         let _ = self.apply_action(&view, EncyclopediaAction::SetMode(EncyclopediaMode::Topic));
+        self.initial_topic_selected = true;
         Ok(())
     }
 }
@@ -272,6 +371,8 @@ pub(crate) struct LiveInspectorModel {
     prepared_generation: Option<u64>,
     prepared_images: crate::encyclopedia_hd::PreparedEncyclopediaImages,
     presentation_error: Option<String>,
+    initial_topic_selected: bool,
+    removed_topic_for_fixture: Option<String>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -298,6 +399,8 @@ impl LiveInspectorModel {
             prepared_generation: None,
             prepared_images: crate::encyclopedia_hd::PreparedEncyclopediaImages::default(),
             presentation_error: None,
+            initial_topic_selected: false,
+            removed_topic_for_fixture: None,
         })
     }
 
@@ -335,6 +438,70 @@ impl LiveInspectorModel {
     #[must_use]
     pub(crate) fn generation(&self) -> u64 {
         self.snapshot.generation()
+    }
+
+    fn viewer(&self) -> ViewerFaction {
+        self.admission.viewer
+    }
+
+    fn binding_for_topic(
+        &self,
+        topic_id: &str,
+    ) -> Option<&rebellion_data::encyclopedia::BindingKey> {
+        let mut matches = self.admission.admitted.iter().filter(|admitted| {
+            rebellion_data::encyclopedia::resolve_topic(self.snapshot.catalog(), &admitted.key)
+                .is_some_and(|resolved| resolved.0 == topic_id)
+        });
+        let binding = &matches.next()?.key;
+        matches.next().is_none().then_some(binding)
+    }
+
+    fn requested_language(&self) -> &str {
+        &self.language
+    }
+
+    fn set_requested_language_for_fixture(&mut self, language: impl Into<String>) {
+        self.language = language.into();
+    }
+
+    fn effective_language(&self, view: &EncyclopediaView) -> Option<&str> {
+        let topic_id = view.active_topic.as_ref()?.topic_id.as_str();
+        let catalog = self.snapshot.catalog();
+        let localized = &catalog.topics.get(topic_id)?.localized;
+        if localized.contains_key(&self.language) {
+            Some(&self.language)
+        } else {
+            localized
+                .contains_key(&catalog.default_language)
+                .then_some(catalog.default_language.as_str())
+        }
+    }
+
+    fn replace_admission_for_fixture(&mut self) -> Result<Option<String>, EncyclopediaError> {
+        let Some(selected) = self.navigation.selection.topic_id.clone() else {
+            return Ok(None);
+        };
+        let position = self.admission.admitted.iter().position(|admitted| {
+            rebellion_data::encyclopedia::resolve_topic(self.snapshot.catalog(), &admitted.key)
+                .is_some_and(|topic_id| topic_id.0 == selected)
+        });
+        let Some(position) = position else {
+            return Ok(None);
+        };
+        self.admission.admitted.remove(position);
+        self.admission.world_epoch = self.admission.world_epoch.saturating_add(1);
+        let view = self.build_view()?;
+        let _ = reconcile_encyclopedia_state(&mut self.navigation, &view);
+        self.removed_topic_for_fixture = Some(selected.clone());
+        Ok(Some(selected))
+    }
+
+    fn restore_admission_for_fixture(&mut self) -> bool {
+        let viewer = self.admission.viewer;
+        let world_epoch = self.admission.world_epoch.saturating_add(1);
+        self.admission = inspection_admission(self.snapshot.catalog(), viewer);
+        self.admission.world_epoch = world_epoch;
+        true
     }
 
     pub(crate) fn build_view(&mut self) -> Result<EncyclopediaView, EncyclopediaError> {
@@ -379,7 +546,11 @@ impl LiveInspectorModel {
     }
 
     fn ensure_initial_topic(&mut self) -> Result<(), EncyclopediaError> {
+        if self.initial_topic_selected {
+            return Ok(());
+        }
         if self.navigation.selection.topic_id.is_some() {
+            self.initial_topic_selected = true;
             return Ok(());
         }
         let view = self.build_view()?;
@@ -396,6 +567,7 @@ impl LiveInspectorModel {
             &view,
             EncyclopediaAction::SetMode(EncyclopediaMode::Topic),
         );
+        self.initial_topic_selected = true;
         Ok(())
     }
 
@@ -417,6 +589,10 @@ impl LiveInspectorModel {
 
     fn navigation_mut(&mut self) -> &mut EncyclopediaNavigationState {
         &mut self.navigation
+    }
+
+    fn navigation(&self) -> &EncyclopediaNavigationState {
+        &self.navigation
     }
 
     fn unavailable_diagnostic(&self) -> Option<&str> {
@@ -774,14 +950,252 @@ struct ViewportEvidence {
     pub(crate) consumed_scroll_intents: Vec<&'static str>,
 }
 
+#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+struct SurfaceFocusedControl {
+    kind: &'static str,
+    target_id: u64,
+    focused_id: Option<u64>,
+    owns_focus: bool,
+}
+
+/// One typed snapshot of the feature surface. Values are deliberately limited
+/// to immutable presenter/controller state plus the exact selected image and
+/// cache event; the record contains no catalog body or world object.
+#[derive(Debug, Clone, serde::Serialize, PartialEq)]
+struct SurfaceObservationValues {
+    target: &'static str,
+    viewer_faction: &'static str,
+    mode: &'static str,
+    focused_control: Option<SurfaceFocusedControl>,
+    selected_category_command: Option<String>,
+    visible_topic_ids: Vec<String>,
+    visible_topic_ids_sha256: String,
+    selected_topic_id: Option<String>,
+    selected_topic_index: Option<usize>,
+    visible_topic_count: usize,
+    previous_enabled: bool,
+    next_enabled: bool,
+    body_scroll_offset: f32,
+    world_epoch: u64,
+    world_evidence_kind: &'static str,
+    catalog_generation: u64,
+    requested_language: String,
+    effective_language: Option<String>,
+    title_sha256: Option<String>,
+    body_sha256: Option<String>,
+    asset_id: Option<String>,
+    asset_digest: Option<String>,
+    render_profile: Option<&'static str>,
+    selected_source_kind: &'static str,
+    live_enabled_mods: Vec<String>,
+    texture_cache_event: &'static str,
+}
+
+#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+struct SurfaceControllerState {
+    mode: &'static str,
+    selected_category_command: Option<String>,
+    selected_topic_id: Option<String>,
+    selected_topic_index: Option<usize>,
+    visible_topic_count: usize,
+    visible_topic_ids: Vec<String>,
+    visible_topic_ids_sha256: String,
+    previous_enabled: bool,
+    next_enabled: bool,
+    world_epoch: u64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+struct SurfaceControllerStep {
+    input_record_id: Option<String>,
+    action: String,
+    outcome: String,
+    before: SurfaceControllerState,
+    after: SurfaceControllerState,
+}
+
+#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+struct SurfaceTextureEvent {
+    kind: &'static str,
+    asset_id: String,
+    digest: Option<String>,
+    render_profile: Option<&'static str>,
+    cache_hit: Option<bool>,
+    diagnostic: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+struct SurfaceInputAttempt {
+    control: &'static str,
+    enabled: bool,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct SurfaceTransition<'a> {
+    from_record_id: Option<&'a str>,
+    controller_steps: &'a [SurfaceControllerStep],
+    fixture_controls: &'a [String],
+    input_attempts: &'a [SurfaceInputAttempt],
+    texture_events: &'a [SurfaceTextureEvent],
+}
+
+#[derive(Debug, serde::Serialize)]
+struct SurfaceObservation<'a> {
+    schema_version: u32,
+    status: &'static str,
+    record_id: String,
+    sequence: u64,
+    values: &'a SurfaceObservationValues,
+    transition: SurfaceTransition<'a>,
+}
+
+#[derive(Default)]
+struct SurfaceObservationRecorder {
+    sequence: u64,
+    last_fingerprint: Option<String>,
+    last_record_id: Option<String>,
+    pending_controller_steps: Vec<SurfaceControllerStep>,
+    pending_fixture_controls: Vec<String>,
+    pending_input_attempts: Vec<SurfaceInputAttempt>,
+    pending_texture_events: Vec<SurfaceTextureEvent>,
+}
+
+impl SurfaceObservationRecorder {
+    fn last_record_id(&self) -> Option<&str> {
+        self.last_record_id.as_deref()
+    }
+
+    fn push_controller_steps(&mut self, steps: impl IntoIterator<Item = SurfaceControllerStep>) {
+        self.pending_controller_steps.extend(steps);
+    }
+
+    fn push_fixture_control(&mut self, control: String) {
+        self.pending_fixture_controls.push(control);
+    }
+
+    fn push_input_attempts(&mut self, attempts: impl IntoIterator<Item = SurfaceInputAttempt>) {
+        self.pending_input_attempts.extend(attempts);
+    }
+
+    fn push_texture_events(&mut self, events: impl IntoIterator<Item = SurfaceTextureEvent>) {
+        self.pending_texture_events.extend(events);
+    }
+
+    fn emit_if_changed(&mut self, values: &SurfaceObservationValues) -> Option<String> {
+        let fingerprint = serde_json::to_vec(values)
+            .expect("surface observations contain only serializable DTO fields");
+        let fingerprint = rebellion_render::inspect_encyclopedia_bytes(&fingerprint, None)
+            .expect("surface observation fits the shared inspection budget")
+            .sha256;
+        if self.last_fingerprint.as_deref() == Some(fingerprint.as_str())
+            && self.pending_controller_steps.is_empty()
+            && self.pending_fixture_controls.is_empty()
+            && self.pending_input_attempts.is_empty()
+            && self.pending_texture_events.is_empty()
+        {
+            return None;
+        }
+
+        self.sequence = self.sequence.saturating_add(1);
+        let record_id = format!("surface-{:08}", self.sequence);
+        let serialized = serde_json::to_string(&SurfaceObservation {
+            schema_version: 5,
+            status: "surface_observation",
+            record_id: record_id.clone(),
+            sequence: self.sequence,
+            values,
+            transition: SurfaceTransition {
+                from_record_id: self.last_record_id.as_deref(),
+                controller_steps: &self.pending_controller_steps,
+                fixture_controls: &self.pending_fixture_controls,
+                input_attempts: &self.pending_input_attempts,
+                texture_events: &self.pending_texture_events,
+            },
+        })
+        .expect("surface observation is serializable");
+        self.last_record_id = Some(record_id);
+        self.last_fingerprint = Some(fingerprint);
+        self.pending_controller_steps.clear();
+        self.pending_fixture_controls.clear();
+        self.pending_input_attempts.clear();
+        self.pending_texture_events.clear();
+        Some(serialized)
+    }
+}
+
 fn content_sha256(value: &str) -> String {
     rebellion_render::inspect_encyclopedia_bytes(value.as_bytes(), None)
         .expect("validated localized content fits the shared byte-inspection budget")
         .sha256
 }
 
+fn visible_topic_ids_sha256(view: &EncyclopediaView) -> String {
+    let visible_ids = view
+        .topics
+        .iter()
+        .map(|topic| topic.topic_id.as_str())
+        .collect::<Vec<_>>();
+    rebellion_render::inspect_encyclopedia_bytes(
+        &serde_json::to_vec(&visible_ids).expect("stable topic IDs are serializable"),
+        None,
+    )
+    .expect("stable topic IDs fit the shared inspection budget")
+    .sha256
+}
+
+fn visible_topic_ids(view: &EncyclopediaView) -> Vec<String> {
+    view.topics
+        .iter()
+        .map(|topic| topic.topic_id.clone())
+        .collect()
+}
+
+fn selected_category_command(
+    navigation: &EncyclopediaNavigationState,
+    view: &EncyclopediaView,
+) -> Option<String> {
+    navigation
+        .selected_category_id()
+        .and_then(|category_id| {
+            view.categories
+                .iter()
+                .find(|category| category.category_id == category_id)
+                .map(|category| category.command.clone())
+        })
+        .or_else(|| Some("0x6f".to_owned()))
+}
+
+fn surface_controller_state(
+    navigation: &EncyclopediaNavigationState,
+    view: &EncyclopediaView,
+) -> SurfaceControllerState {
+    SurfaceControllerState {
+        mode: match navigation.mode() {
+            EncyclopediaMode::Index => "index",
+            EncyclopediaMode::Topic => "topic",
+        },
+        selected_category_command: selected_category_command(navigation, view),
+        selected_topic_id: view.navigation.selected_topic_id.clone(),
+        selected_topic_index: view
+            .navigation
+            .selected_topic_id
+            .as_deref()
+            .and_then(|selected| {
+                view.topics
+                    .iter()
+                    .position(|topic| topic.topic_id == selected)
+            }),
+        visible_topic_count: view.topics.len(),
+        visible_topic_ids: visible_topic_ids(view),
+        visible_topic_ids_sha256: visible_topic_ids_sha256(view),
+        previous_enabled: view.navigation.previous_topic_id.is_some(),
+        next_enabled: view.navigation.next_topic_id.is_some(),
+        world_epoch: view.navigation.world_epoch,
+    }
+}
+
 fn selection_evidence(
-    model: &InspectorModel,
+    model: &SurfaceModel,
     view: &EncyclopediaView,
     cache_status: &str,
 ) -> Option<SelectionEvidence> {
@@ -807,7 +1221,7 @@ fn selection_evidence(
 }
 
 fn viewport_evidence(
-    model: &InspectorModel,
+    model: &SurfaceModel,
     view: &EncyclopediaView,
     scroll_offset: f32,
     consumed_scroll_intents: &[BodyScrollIntent],
@@ -833,6 +1247,205 @@ fn viewport_evidence(
             })
             .collect(),
     })
+}
+
+fn texture_cache_event_name(cache_status: &str) -> &'static str {
+    match cache_status {
+        "not selected" => "not_selected",
+        "uploaded" => "uploaded",
+        "cache hit" => "cache_hit",
+        "released" => "released",
+        "no art" => "no_art",
+        "failed" => "failed",
+        _ => "failed",
+    }
+}
+
+fn surface_texture_event(event: &EncyclopediaTextureEvent) -> SurfaceTextureEvent {
+    fn profile_name(profile: TopicImageRenderProfile) -> &'static str {
+        match profile {
+            TopicImageRenderProfile::OriginalNearest => "original_nearest",
+            TopicImageRenderProfile::FaithfulHdLinear => "faithful_hd_linear",
+        }
+    }
+
+    match event {
+        EncyclopediaTextureEvent::Selected {
+            asset_id,
+            digest,
+            profile,
+            cache_hit,
+        } => SurfaceTextureEvent {
+            kind: "selected",
+            asset_id: asset_id.clone(),
+            digest: Some(digest.clone()),
+            render_profile: Some(profile_name(*profile)),
+            cache_hit: Some(*cache_hit),
+            diagnostic: None,
+        },
+        EncyclopediaTextureEvent::Released {
+            asset_id,
+            digest,
+            profile,
+        } => SurfaceTextureEvent {
+            kind: "released",
+            asset_id: asset_id.clone(),
+            digest: Some(digest.clone()),
+            render_profile: Some(profile_name(*profile)),
+            cache_hit: None,
+            diagnostic: None,
+        },
+        EncyclopediaTextureEvent::Failed {
+            asset_id,
+            diagnostic,
+        } => SurfaceTextureEvent {
+            kind: "failed",
+            asset_id: asset_id.clone(),
+            digest: None,
+            render_profile: None,
+            cache_hit: None,
+            diagnostic: Some(diagnostic.clone()),
+        },
+    }
+}
+
+fn surface_input_attempt(
+    attempt: &rebellion_render::encyclopedia::EncyclopediaSurfaceInputAttempt,
+) -> SurfaceInputAttempt {
+    SurfaceInputAttempt {
+        control: match attempt.control {
+            rebellion_render::encyclopedia::EncyclopediaSurfaceInputControl::PreviousTopic => {
+                "previous_topic"
+            }
+            rebellion_render::encyclopedia::EncyclopediaSurfaceInputControl::NextTopic => {
+                "next_topic"
+            }
+        },
+        enabled: attempt.enabled,
+    }
+}
+
+fn surface_observation_values(
+    model: &SurfaceModel,
+    view: &EncyclopediaView,
+    surface: &rebellion_render::EncyclopediaSurfaceState,
+    focus: Option<rebellion_render::encyclopedia::EncyclopediaSurfaceFocus>,
+    cache_status: &str,
+    selected_source_kind: &'static str,
+    live_enabled_mods: Vec<String>,
+) -> Option<SurfaceObservationValues> {
+    let viewer_faction = match model.viewer()? {
+        ViewerFaction::Alliance => "alliance",
+        ViewerFaction::Empire => "empire",
+    };
+    let navigation = model.navigation();
+    let mode = match navigation.mode() {
+        EncyclopediaMode::Index => "index",
+        EncyclopediaMode::Topic => "topic",
+    };
+    let selected_category_command = selected_category_command(navigation, view);
+    let visible_topic_ids = visible_topic_ids(view);
+    let visible_topic_ids_sha256 = visible_topic_ids_sha256(view);
+    let active = view.active_topic.as_ref();
+    let image = active.and_then(|topic| topic.image.as_ref());
+    let render_profile = image.map(|image| match image.render_profile {
+        TopicImageRenderProfile::OriginalNearest => "original_nearest",
+        TopicImageRenderProfile::FaithfulHdLinear => "faithful_hd_linear",
+    });
+    Some(SurfaceObservationValues {
+        #[cfg(not(target_arch = "wasm32"))]
+        target: "native",
+        #[cfg(target_arch = "wasm32")]
+        target: "browser",
+        viewer_faction,
+        mode,
+        focused_control: focus.map(|focus| SurfaceFocusedControl {
+            kind: match focus.target_kind {
+                rebellion_render::encyclopedia::EncyclopediaSurfaceFocusKind::IndexList => {
+                    "index_list"
+                }
+                rebellion_render::encyclopedia::EncyclopediaSurfaceFocusKind::TopicBody => {
+                    "topic_body"
+                }
+            },
+            target_id: focus.target_id,
+            focused_id: focus.focused_id,
+            owns_focus: focus.owns_focus,
+        }),
+        selected_category_command,
+        visible_topic_ids,
+        visible_topic_ids_sha256,
+        selected_topic_id: view.navigation.selected_topic_id.clone(),
+        selected_topic_index: view
+            .navigation
+            .selected_topic_id
+            .as_deref()
+            .and_then(|selected| {
+                view.topics
+                    .iter()
+                    .position(|topic| topic.topic_id == selected)
+            }),
+        visible_topic_count: view.topics.len(),
+        previous_enabled: view.navigation.previous_topic_id.is_some(),
+        next_enabled: view.navigation.next_topic_id.is_some(),
+        body_scroll_offset: surface.body_scroll_offset(),
+        world_epoch: view.navigation.world_epoch,
+        world_evidence_kind: "catalog_scoped_synthetic_admission",
+        catalog_generation: model.catalog_generation()?,
+        requested_language: model.requested_language().to_owned(),
+        effective_language: model.effective_language(view).map(str::to_owned),
+        title_sha256: active.map(|topic| content_sha256(&topic.title)),
+        body_sha256: active.map(|topic| content_sha256(&topic.body)),
+        asset_id: image.map(|image| image.asset_id.clone()),
+        asset_digest: image.map(|image| image.digest.clone()),
+        render_profile,
+        selected_source_kind,
+        live_enabled_mods,
+        texture_cache_event: texture_cache_event_name(cache_status),
+    })
+}
+
+fn navigation_outcome_name(outcome: NavigationOutcome) -> &'static str {
+    match outcome {
+        NavigationOutcome::Applied => "applied",
+        NavigationOutcome::NoChange => "no_change",
+        NavigationOutcome::Rejected(_) => "rejected",
+        NavigationOutcome::ScrollRequested(_) => "scroll_requested",
+        NavigationOutcome::CloseRequested => "close_requested",
+        NavigationOutcome::ReturnForwarded => "return_forwarded",
+    }
+}
+
+fn reduce_surface_actions(
+    model: &mut SurfaceModel,
+    recorder: &mut SurfaceObservationRecorder,
+    actions: impl IntoIterator<Item = EncyclopediaAction>,
+) -> Result<bool, EncyclopediaError> {
+    let mut close_requested = false;
+    let mut controller_steps = Vec::new();
+    for action in actions {
+        let Some(before_view) = model.build_view()? else {
+            break;
+        };
+        let action_name = format!("{action:?}");
+        let before = surface_controller_state(model.navigation(), &before_view);
+        let outcome = model.apply_action_to_view(&before_view, action);
+        let Some(after_view) = model.build_view()? else {
+            break;
+        };
+        let after = surface_controller_state(model.navigation(), &after_view);
+        controller_steps.push(SurfaceControllerStep {
+            input_record_id: recorder.last_record_id().map(str::to_owned),
+            action: action_name,
+            outcome: navigation_outcome_name(outcome).to_owned(),
+            before,
+            after,
+        });
+        macroquad::logging::info!("[encyclopedia_inspector] navigation_outcome={:?}", outcome);
+        close_requested |= outcome == NavigationOutcome::CloseRequested;
+    }
+    recorder.push_controller_steps(controller_steps);
+    Ok(close_requested)
 }
 
 #[cfg(test)]
@@ -1064,7 +1677,202 @@ enum SurfaceModel {
     Live(LiveInspectorModel),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SurfaceFixtureControl {
+    RequestMissingLanguage,
+    RequestDefaultLanguage,
+    RemoveSelectedAdmission,
+    AttemptRemovedTopic,
+    RestoreAdmissionSnapshot,
+    OriginalProfile,
+    FaithfulHdProfile,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct SurfaceFixtureEffect {
+    label: String,
+    action: Option<EncyclopediaAction>,
+}
+
+impl SurfaceFixtureEffect {
+    fn label(label: impl Into<String>) -> Self {
+        Self {
+            label: label.into(),
+            action: None,
+        }
+    }
+}
+
+fn apply_surface_fixture_control(
+    model: &mut SurfaceModel,
+    control: SurfaceFixtureControl,
+) -> Result<SurfaceFixtureEffect, EncyclopediaError> {
+    match control {
+        SurfaceFixtureControl::RequestMissingLanguage => {
+            model.set_requested_language_for_fixture("1041");
+            Ok(SurfaceFixtureEffect::label("request_language_1041"))
+        }
+        SurfaceFixtureControl::RequestDefaultLanguage => {
+            model.set_requested_language_for_fixture("1033");
+            Ok(SurfaceFixtureEffect::label("request_language_1033"))
+        }
+        SurfaceFixtureControl::RemoveSelectedAdmission => Ok(SurfaceFixtureEffect::label(
+            model.replace_admission_for_fixture()?.map_or_else(
+                || "remove_selected_admission:no_change".to_owned(),
+                |topic| format!("remove_selected_admission:{topic}"),
+            ),
+        )),
+        SurfaceFixtureControl::AttemptRemovedTopic => {
+            let Some(topic_id) = model.take_removed_topic_for_fixture() else {
+                return Ok(SurfaceFixtureEffect::label(
+                    "attempt_removed_topic:no_target",
+                ));
+            };
+            Ok(SurfaceFixtureEffect {
+                label: format!("attempt_removed_topic:{topic_id}"),
+                action: Some(EncyclopediaAction::SelectTopic(topic_id)),
+            })
+        }
+        SurfaceFixtureControl::RestoreAdmissionSnapshot => {
+            Ok(SurfaceFixtureEffect::label(format!(
+                "restore_admission_snapshot:{}",
+                if model.restore_admission_for_fixture() {
+                    "applied"
+                } else {
+                    "no_change"
+                }
+            )))
+        }
+        SurfaceFixtureControl::OriginalProfile => {
+            #[cfg(not(target_arch = "wasm32"))]
+            let applied = model.set_asset_profile_for_fixture(AssetRenderProfile::OriginalParity);
+            #[cfg(target_arch = "wasm32")]
+            let applied = false;
+            Ok(SurfaceFixtureEffect::label(format!(
+                "profile_original:{}",
+                if applied { "applied" } else { "unsupported" }
+            )))
+        }
+        SurfaceFixtureControl::FaithfulHdProfile => {
+            #[cfg(not(target_arch = "wasm32"))]
+            let applied = model.set_asset_profile_for_fixture(AssetRenderProfile::FaithfulHd);
+            #[cfg(target_arch = "wasm32")]
+            let applied = false;
+            Ok(SurfaceFixtureEffect::label(format!(
+                "profile_faithful_hd:{}",
+                if applied { "applied" } else { "unsupported" }
+            )))
+        }
+    }
+}
+
 impl SurfaceModel {
+    fn take_removed_topic_for_fixture(&mut self) -> Option<String> {
+        match self {
+            Self::Static(model) => model.removed_topic_for_fixture.take(),
+            #[cfg(not(target_arch = "wasm32"))]
+            Self::Live(model) => model.removed_topic_for_fixture.take(),
+        }
+    }
+
+    fn viewer(&self) -> Option<ViewerFaction> {
+        match self {
+            Self::Static(model) => model.viewer(),
+            #[cfg(not(target_arch = "wasm32"))]
+            Self::Live(model) => Some(model.viewer()),
+        }
+    }
+
+    fn selected_source_kind(&self, view: &EncyclopediaView) -> &'static str {
+        let Some(active) = view.active_topic.as_ref() else {
+            return "unavailable";
+        };
+        let Some(image) = active.image.as_ref() else {
+            return "null";
+        };
+        if image.render_profile == TopicImageRenderProfile::FaithfulHdLinear {
+            return "approved_hd";
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Self::Live(model) = self {
+            return match model.selected_owner(&image.asset_id) {
+                Some(EncyclopediaImageOwner::Mod { .. }) => "mod",
+                Some(EncyclopediaImageOwner::Base { .. }) | None => "base",
+            };
+        }
+        "base"
+    }
+
+    fn binding_for_topic(
+        &self,
+        topic_id: &str,
+    ) -> Option<&rebellion_data::encyclopedia::BindingKey> {
+        match self {
+            Self::Static(model) => model.binding_for_topic(topic_id),
+            #[cfg(not(target_arch = "wasm32"))]
+            Self::Live(model) => model.binding_for_topic(topic_id),
+        }
+    }
+
+    fn catalog_generation(&self) -> Option<u64> {
+        match self {
+            Self::Static(model) => model.catalog_generation(),
+            #[cfg(not(target_arch = "wasm32"))]
+            Self::Live(model) => Some(model.generation()),
+        }
+    }
+
+    fn requested_language(&self) -> &str {
+        match self {
+            Self::Static(model) => model.requested_language(),
+            #[cfg(not(target_arch = "wasm32"))]
+            Self::Live(model) => model.requested_language(),
+        }
+    }
+
+    fn effective_language<'a>(&'a self, view: &EncyclopediaView) -> Option<&'a str> {
+        match self {
+            Self::Static(model) => model.effective_language(view),
+            #[cfg(not(target_arch = "wasm32"))]
+            Self::Live(model) => model.effective_language(view),
+        }
+    }
+
+    fn set_requested_language_for_fixture(&mut self, language: impl Into<String>) {
+        let language = language.into();
+        match self {
+            Self::Static(model) => model.set_requested_language_for_fixture(language),
+            #[cfg(not(target_arch = "wasm32"))]
+            Self::Live(model) => model.set_requested_language_for_fixture(language),
+        }
+    }
+
+    fn replace_admission_for_fixture(&mut self) -> Result<Option<String>, EncyclopediaError> {
+        match self {
+            Self::Static(model) => model.replace_admission_for_fixture(),
+            #[cfg(not(target_arch = "wasm32"))]
+            Self::Live(model) => model.replace_admission_for_fixture(),
+        }
+    }
+
+    fn restore_admission_for_fixture(&mut self) -> bool {
+        match self {
+            Self::Static(model) => model.restore_admission_for_fixture(),
+            #[cfg(not(target_arch = "wasm32"))]
+            Self::Live(model) => model.restore_admission_for_fixture(),
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn set_asset_profile_for_fixture(&mut self, profile: AssetRenderProfile) -> bool {
+        let Some(model) = self.live_model_mut() else {
+            return false;
+        };
+        let hd_root = model.hd_root.clone();
+        model.configure_images(profile, hd_root);
+        true
+    }
+
     fn ensure_initial_topic(&mut self) -> Result<(), EncyclopediaError> {
         match self {
             Self::Static(model) => model.ensure_initial_topic(),
@@ -1105,6 +1913,14 @@ impl SurfaceModel {
         }
     }
 
+    fn navigation(&self) -> &EncyclopediaNavigationState {
+        match self {
+            Self::Static(model) => model.navigation(),
+            #[cfg(not(target_arch = "wasm32"))]
+            Self::Live(model) => model.navigation(),
+        }
+    }
+
     fn apply_action_batch(
         &mut self,
         actions: impl IntoIterator<Item = EncyclopediaAction>,
@@ -1113,6 +1929,18 @@ impl SurfaceModel {
             Self::Static(model) => model.apply_action_batch(actions),
             #[cfg(not(target_arch = "wasm32"))]
             Self::Live(model) => model.apply_action_batch(actions),
+        }
+    }
+
+    fn apply_action_to_view(
+        &mut self,
+        view: &EncyclopediaView,
+        action: EncyclopediaAction,
+    ) -> NavigationOutcome {
+        match self {
+            Self::Static(model) => model.apply_action(view, action),
+            #[cfg(not(target_arch = "wasm32"))]
+            Self::Live(model) => apply_encyclopedia_action(&mut model.navigation, view, action),
         }
     }
 
@@ -1328,7 +2156,9 @@ async fn run_surface(
     #[cfg(target_arch = "wasm32")] browser_request: FixtureRequest,
     #[cfg(target_arch = "wasm32")] browser_transport: BrowserEncyclopediaTransport,
 ) {
-    use macroquad::prelude::{clear_background, is_quit_requested, next_frame, Color};
+    use macroquad::prelude::{
+        clear_background, is_key_pressed, is_quit_requested, next_frame, Color, KeyCode,
+    };
     use rebellion_render::{
         draw_encyclopedia_surface, EguiEncyclopediaTextureBackend, EncyclopediaSurfaceLabels,
         EncyclopediaSurfaceState,
@@ -1345,6 +2175,7 @@ async fn run_surface(
     let mut cache_status = "not selected".to_owned();
     let mut last_evidence_topic = None;
     let mut close_requested = false;
+    let mut observation_recorder = SurfaceObservationRecorder::default();
     #[cfg(target_arch = "wasm32")]
     let mut stable_frames = 0_u32;
     #[cfg(target_arch = "wasm32")]
@@ -1370,6 +2201,58 @@ async fn run_surface(
             }
         }
         clear_background(Color::from_rgba(9, 13, 22, 255));
+
+        let mut fixture_actions = Vec::new();
+        for (pressed, control) in [
+            (
+                is_key_pressed(KeyCode::F2),
+                SurfaceFixtureControl::RequestMissingLanguage,
+            ),
+            (
+                is_key_pressed(KeyCode::F3),
+                SurfaceFixtureControl::RequestDefaultLanguage,
+            ),
+            (
+                is_key_pressed(KeyCode::F4),
+                SurfaceFixtureControl::RemoveSelectedAdmission,
+            ),
+            (
+                is_key_pressed(KeyCode::F8),
+                SurfaceFixtureControl::AttemptRemovedTopic,
+            ),
+            (
+                is_key_pressed(KeyCode::F5),
+                SurfaceFixtureControl::RestoreAdmissionSnapshot,
+            ),
+            (
+                is_key_pressed(KeyCode::F6),
+                SurfaceFixtureControl::OriginalProfile,
+            ),
+            (
+                is_key_pressed(KeyCode::F7),
+                SurfaceFixtureControl::FaithfulHdProfile,
+            ),
+        ] {
+            if pressed {
+                match apply_surface_fixture_control(&mut model, control) {
+                    Ok(effect) => {
+                        observation_recorder.push_fixture_control(effect.label);
+                        fixture_actions.extend(effect.action);
+                    }
+                    Err(error) => {
+                        observation_recorder
+                            .push_fixture_control(format!("fixture_control_error:{error}"));
+                        model.fail_presentation(error);
+                    }
+                }
+            }
+        }
+        if !fixture_actions.is_empty() {
+            match reduce_surface_actions(&mut model, &mut observation_recorder, fixture_actions) {
+                Ok(requested) => close_requested |= requested,
+                Err(error) => model.fail_presentation(error),
+            }
+        }
 
         if let Err(error) = model.ensure_initial_topic() {
             model.fail_presentation(error);
@@ -1530,21 +2413,39 @@ async fn run_surface(
                     }
                 }
             }
-            match model.apply_action_batch(std::mem::take(&mut frame.actions)) {
-                Ok(outcomes) => {
-                    for outcome in outcomes {
-                        macroquad::logging::info!(
-                            "[encyclopedia_inspector] navigation_outcome={:?}",
-                            outcome
-                        );
-                        if outcome == NavigationOutcome::CloseRequested {
-                            close_requested = true;
-                        }
-                    }
+            let selected_source_kind = model.selected_source_kind(view.as_ref().unwrap());
+            #[cfg(not(target_arch = "wasm32"))]
+            let live_enabled_mods = live
+                .runtime
+                .enabled_mod_list()
+                .into_iter()
+                .map(|(name, version)| format!("{name}@{version}"))
+                .collect();
+            #[cfg(target_arch = "wasm32")]
+            let live_enabled_mods = Vec::new();
+            let observation_values = surface_observation_values(
+                &model,
+                view.as_ref().unwrap(),
+                &surface,
+                frame.keyboard_focus,
+                &cache_status,
+                selected_source_kind,
+                live_enabled_mods,
+            );
+            observation_recorder
+                .push_texture_events(frame.texture_events.iter().map(surface_texture_event));
+            observation_recorder
+                .push_input_attempts(frame.input_attempts.iter().map(surface_input_attempt));
+            if let Some(values) = observation_values {
+                if let Some(observation) = observation_recorder.emit_if_changed(&values) {
+                    macroquad::logging::info!("[encyclopedia_surface_observation] {}", observation);
                 }
-                Err(error) => {
-                    model.fail_presentation(error);
-                }
+            }
+
+            let actions = std::mem::take(&mut frame.actions);
+            match reduce_surface_actions(&mut model, &mut observation_recorder, actions) {
+                Ok(requested) => close_requested |= requested,
+                Err(error) => model.fail_presentation(error),
             }
         }
         #[cfg(not(target_arch = "wasm32"))]
@@ -1700,18 +2601,22 @@ mod tests {
         draw_encyclopedia_surface, inspect_encyclopedia_bytes, BmpCache, BodyScrollIntent,
         CockpitFaction, EguiEncyclopediaTextureBackend, EncyclopediaAction, EncyclopediaMode,
         EncyclopediaSurfaceState, EncyclopediaTextureBackend, EncyclopediaTextureCache,
-        EncyclopediaTextureUpload, NavigationOutcome, NavigationRejection, SelectionForce,
-        SourceKeyIntent,
+        EncyclopediaTextureEvent, EncyclopediaTextureUpload, NavigationOutcome,
+        NavigationRejection, SelectionForce, SourceKeyIntent, TopicImageRenderProfile,
     };
     use serde_json::Value;
 
     use super::{
-        fingerprint_serializable, fitted_art_size, fixture_report, inspection_admission,
-        native_viewer_faction, packed_fixture_report, record_live_refresh, request_value_enabled,
-        requested, selection_evidence, sync_live_enabled_state_from_disk, viewport_evidence,
-        BrowserEncyclopediaTransport, InspectorContent, InspectorModel, InspectorTextureState,
-        LiveInspectorModel, LiveRefreshContext, NativeSimulationFingerprints, SurfaceModel,
-        INSPECTOR_REQUEST,
+        apply_surface_fixture_control, content_sha256, fingerprint_serializable, fitted_art_size,
+        fixture_report, inspection_admission, native_viewer_faction, navigation_outcome_name,
+        packed_fixture_report, record_live_refresh, reduce_surface_actions, request_value_enabled,
+        requested, selection_evidence, surface_controller_state, surface_observation_values,
+        surface_texture_event, sync_live_enabled_state_from_disk, texture_cache_event_name,
+        viewport_evidence, BrowserEncyclopediaTransport, InspectorContent, InspectorModel,
+        InspectorTextureState, LiveInspectorModel, LiveRefreshContext,
+        NativeSimulationFingerprints, SurfaceControllerStep, SurfaceFixtureControl,
+        SurfaceFixtureEffect, SurfaceModel, SurfaceObservation, SurfaceObservationRecorder,
+        SurfaceTextureEvent, SurfaceTransition, INSPECTOR_REQUEST,
     };
     use crate::encyclopedia_lifecycle::EncyclopediaLifecycle;
     use crate::encyclopedia_session::{
@@ -2156,6 +3061,7 @@ mod tests {
         );
         model.select_topic("original:60004".to_owned()).unwrap();
         let view = model.build_view().unwrap().unwrap();
+        let model = SurfaceModel::Static(model);
         let evidence = selection_evidence(&model, &view, "uploaded").unwrap();
 
         assert_eq!(evidence.viewer, "empire");
@@ -2187,6 +3093,7 @@ mod tests {
         );
         model.select_topic("original:60001".to_owned()).unwrap();
         let view = model.build_view().unwrap().unwrap();
+        let model = SurfaceModel::Static(model);
         let evidence = viewport_evidence(
             &model,
             &view,
@@ -2370,6 +3277,540 @@ mod tests {
     }
 
     #[test]
+    fn feature_controls_publish_typed_admission_and_whole_language_without_catalog_reload() {
+        let mut model = InspectorModel::new(InspectorContent::Ready(Box::new(session())), "1033");
+        model.select_topic("original:60001".to_owned()).unwrap();
+        let before = model.build_view().unwrap().unwrap();
+        let generation = model.catalog_generation().unwrap();
+        let selected = before.navigation.selected_topic_id.clone().unwrap();
+        let before_ids = before
+            .topics
+            .iter()
+            .map(|topic| topic.topic_id.clone())
+            .collect::<Vec<_>>();
+
+        model.set_requested_language_for_fixture("1041");
+        let fallback = model.build_view().unwrap().unwrap();
+        assert_eq!(model.requested_language(), "1041");
+        assert_eq!(model.effective_language(&fallback), Some("1033"));
+        assert_eq!(
+            fallback.navigation.selected_topic_id.as_deref(),
+            Some(selected.as_str())
+        );
+        assert_eq!(model.catalog_generation(), Some(generation));
+
+        assert_eq!(
+            model.replace_admission_for_fixture(),
+            Ok(Some(selected.clone()))
+        );
+        let replaced = model.build_view().unwrap().unwrap();
+        assert_eq!(
+            replaced.navigation.world_epoch,
+            before.navigation.world_epoch + 1
+        );
+        assert_eq!(model.catalog_generation(), Some(generation));
+        assert_eq!(replaced.topics.len() + 1, before_ids.len());
+        assert!(!replaced
+            .topics
+            .iter()
+            .any(|topic| topic.topic_id == selected));
+
+        assert!(model.restore_admission_for_fixture());
+        let restored = model.build_view().unwrap().unwrap();
+        assert_eq!(
+            restored.navigation.world_epoch,
+            replaced.navigation.world_epoch + 1
+        );
+        assert_eq!(model.catalog_generation(), Some(generation));
+        assert_eq!(restored.topics.len(), before_ids.len());
+        assert!(restored
+            .topics
+            .iter()
+            .any(|topic| topic.topic_id == selected));
+    }
+
+    #[test]
+    fn structured_surface_observation_binds_actual_controller_and_selected_image_state() {
+        let mut model = InspectorModel::new_for_viewer(
+            InspectorContent::Ready(Box::new(session())),
+            "1041",
+            ViewerFaction::Empire,
+        );
+        model.select_topic("original:60004".to_owned()).unwrap();
+        let view = model.build_view().unwrap().unwrap();
+        let mut model = SurfaceModel::Static(model);
+        let values = surface_observation_values(
+            &model,
+            &view,
+            &EncyclopediaSurfaceState::default(),
+            Some(rebellion_render::encyclopedia::EncyclopediaSurfaceFocus {
+                target_kind:
+                    rebellion_render::encyclopedia::EncyclopediaSurfaceFocusKind::IndexList,
+                target_id: 42,
+                focused_id: Some(42),
+                owns_focus: true,
+            }),
+            "cache hit",
+            "base",
+            Vec::new(),
+        )
+        .unwrap();
+
+        assert_eq!(values.viewer_faction, "empire");
+        assert_eq!(values.mode, "index");
+        assert_eq!(values.focused_control.as_ref().unwrap().kind, "index_list");
+        assert_eq!(values.focused_control.as_ref().unwrap().target_id, 42);
+        assert_eq!(
+            values.focused_control.as_ref().unwrap().focused_id,
+            Some(42)
+        );
+        assert!(values.focused_control.as_ref().unwrap().owns_focus);
+        assert_eq!(
+            values.world_evidence_kind,
+            "catalog_scoped_synthetic_admission"
+        );
+        assert_eq!(values.selected_category_command.as_deref(), Some("0x6f"));
+        assert_eq!(values.selected_topic_id.as_deref(), Some("original:60004"));
+        assert_eq!(values.requested_language, "1041");
+        assert_eq!(values.effective_language.as_deref(), Some("1033"));
+        let expected_title_sha256 = content_sha256(&view.active_topic.as_ref().unwrap().title);
+        let expected_body_sha256 = content_sha256(&view.active_topic.as_ref().unwrap().body);
+        assert_eq!(
+            values.title_sha256.as_deref(),
+            Some(expected_title_sha256.as_str())
+        );
+        assert_eq!(
+            values.body_sha256.as_deref(),
+            Some(expected_body_sha256.as_str())
+        );
+        assert_eq!(values.asset_id.as_deref(), Some("edata:3"));
+        assert_eq!(
+            values.asset_digest.as_deref(),
+            Some("8746c347d4cf14daa2e0cc9d41d1f9abebbbb1aae997f31a172610e9ecdbe2dd")
+        );
+        assert_eq!(values.render_profile, Some("original_nearest"));
+        assert_eq!(values.selected_source_kind, "base");
+        assert_eq!(values.texture_cache_event, "cache_hit");
+
+        let before = surface_controller_state(model.navigation(), &view);
+        let outcome = model
+            .apply_action_to_view(&view, EncyclopediaAction::SourceKey(SourceKeyIntent::Enter));
+        let after_view = model.build_view().unwrap().unwrap();
+        let after = surface_controller_state(model.navigation(), &after_view);
+        let after_values = surface_observation_values(
+            &model,
+            &after_view,
+            &EncyclopediaSurfaceState::default(),
+            None,
+            "cache hit",
+            "base",
+            Vec::new(),
+        )
+        .unwrap();
+        let steps = [SurfaceControllerStep {
+            input_record_id: Some("surface-00000001".to_owned()),
+            action: "SourceKey(Enter)".to_owned(),
+            outcome: navigation_outcome_name(outcome).to_owned(),
+            before,
+            after,
+        }];
+        let controls = ["request_language_1041".to_owned()];
+        let texture_events = [SurfaceTextureEvent {
+            kind: "released",
+            asset_id: "edata:2".to_owned(),
+            digest: Some("b".repeat(64)),
+            render_profile: Some("original_nearest"),
+            cache_hit: None,
+            diagnostic: None,
+        }];
+        let input_attempts = [super::surface_input_attempt(
+            &rebellion_render::encyclopedia::EncyclopediaSurfaceInputAttempt {
+                control:
+                    rebellion_render::encyclopedia::EncyclopediaSurfaceInputControl::PreviousTopic,
+                enabled: false,
+            },
+        )];
+        let observation = SurfaceObservation {
+            schema_version: 5,
+            status: "surface_observation",
+            record_id: "surface-00000002".to_owned(),
+            sequence: 2,
+            values: &after_values,
+            transition: SurfaceTransition {
+                from_record_id: Some("surface-00000001"),
+                controller_steps: &steps,
+                fixture_controls: &controls,
+                input_attempts: &input_attempts,
+                texture_events: &texture_events,
+            },
+        };
+        let serialized = serde_json::to_value(observation).unwrap();
+        assert_eq!(serialized["schema_version"], 5);
+        assert_eq!(
+            serialized["values"]["visible_topic_ids"],
+            serde_json::json!([
+                "original:60001",
+                "original:60002",
+                "original:60003",
+                "original:60004",
+                "original:60005",
+                "original:60006",
+                "original:60007"
+            ])
+        );
+        assert_eq!(
+            serialized["transition"]["controller_steps"][0]["before"]["visible_topic_ids"],
+            serde_json::json!([
+                "original:60001",
+                "original:60002",
+                "original:60003",
+                "original:60004",
+                "original:60005",
+                "original:60006",
+                "original:60007"
+            ])
+        );
+        assert_eq!(
+            serialized["transition"]["from_record_id"],
+            "surface-00000001"
+        );
+        assert_eq!(
+            serialized["transition"]["controller_steps"][0]["action"],
+            "SourceKey(Enter)"
+        );
+        assert_eq!(
+            serialized["transition"]["controller_steps"][0]["input_record_id"],
+            "surface-00000001"
+        );
+        assert_eq!(
+            serialized["transition"]["controller_steps"][0]["before"]["mode"],
+            "index"
+        );
+        assert_eq!(
+            serialized["transition"]["controller_steps"][0]["after"]["mode"],
+            "topic"
+        );
+        assert_eq!(
+            serialized["transition"]["texture_events"][0]["kind"],
+            "released"
+        );
+        assert_eq!(
+            serialized["transition"]["input_attempts"],
+            serde_json::json!([{
+                "control": "previous_topic",
+                "enabled": false,
+            }])
+        );
+    }
+
+    #[test]
+    fn surface_observation_maps_exact_category_cache_and_controller_values() {
+        assert_eq!(texture_cache_event_name("not selected"), "not_selected");
+        assert_eq!(texture_cache_event_name("uploaded"), "uploaded");
+        assert_eq!(texture_cache_event_name("cache hit"), "cache_hit");
+        assert_eq!(texture_cache_event_name("released"), "released");
+        assert_eq!(texture_cache_event_name("no art"), "no_art");
+        assert_eq!(texture_cache_event_name("failed"), "failed");
+        assert_eq!(texture_cache_event_name("unexpected"), "failed");
+        assert_eq!(
+            surface_texture_event(&EncyclopediaTextureEvent::Released {
+                asset_id: "edata:34".to_owned(),
+                digest: "a".repeat(64),
+                profile: TopicImageRenderProfile::OriginalNearest,
+            }),
+            SurfaceTextureEvent {
+                kind: "released",
+                asset_id: "edata:34".to_owned(),
+                digest: Some("a".repeat(64)),
+                render_profile: Some("original_nearest"),
+                cache_hit: None,
+                diagnostic: None,
+            }
+        );
+        assert_eq!(
+            navigation_outcome_name(NavigationOutcome::Applied),
+            "applied"
+        );
+        assert_eq!(
+            navigation_outcome_name(NavigationOutcome::NoChange),
+            "no_change"
+        );
+        assert_eq!(
+            navigation_outcome_name(NavigationOutcome::Rejected(
+                NavigationRejection::UnavailableTopic,
+            )),
+            "rejected"
+        );
+        assert_eq!(
+            navigation_outcome_name(NavigationOutcome::ScrollRequested(
+                BodyScrollIntent::PageDown,
+            )),
+            "scroll_requested"
+        );
+        assert_eq!(
+            navigation_outcome_name(NavigationOutcome::CloseRequested),
+            "close_requested"
+        );
+        assert_eq!(
+            navigation_outcome_name(NavigationOutcome::ReturnForwarded),
+            "return_forwarded"
+        );
+
+        let mut model = InspectorModel::new(InspectorContent::Ready(Box::new(session())), "1033");
+        model
+            .select_category(Some("command:0x70".to_owned()))
+            .unwrap();
+        model.select_topic("original:60001".to_owned()).unwrap();
+        let view = model.build_view().unwrap().unwrap();
+        let model = SurfaceModel::Static(model);
+        let values = surface_observation_values(
+            &model,
+            &view,
+            &EncyclopediaSurfaceState::default(),
+            Some(rebellion_render::encyclopedia::EncyclopediaSurfaceFocus {
+                target_kind:
+                    rebellion_render::encyclopedia::EncyclopediaSurfaceFocusKind::IndexList,
+                target_id: 9,
+                focused_id: Some(77),
+                owns_focus: false,
+            }),
+            "uploaded",
+            "base",
+            vec!["mod@1.0.0".to_owned()],
+        )
+        .unwrap();
+        assert_eq!(values.selected_category_command.as_deref(), Some("0x70"));
+        assert_eq!(values.texture_cache_event, "uploaded");
+        assert_eq!(values.live_enabled_mods, ["mod@1.0.0"]);
+        assert_eq!(values.focused_control.as_ref().unwrap().target_id, 9);
+        assert_eq!(
+            values.focused_control.as_ref().unwrap().focused_id,
+            Some(77)
+        );
+        assert!(!values.focused_control.as_ref().unwrap().owns_focus);
+    }
+
+    #[test]
+    fn feature_control_labels_describe_the_exact_applied_static_transition() {
+        let mut model = InspectorModel::new(InspectorContent::Ready(Box::new(session())), "1033");
+        model.select_topic("original:60001".to_owned()).unwrap();
+        let mut model = SurfaceModel::Static(model);
+
+        assert_eq!(
+            super::apply_surface_fixture_control(
+                &mut model,
+                SurfaceFixtureControl::RequestMissingLanguage,
+            ),
+            Ok(SurfaceFixtureEffect::label("request_language_1041"))
+        );
+        assert_eq!(model.requested_language(), "1041");
+        assert_eq!(
+            super::apply_surface_fixture_control(
+                &mut model,
+                SurfaceFixtureControl::RequestDefaultLanguage,
+            ),
+            Ok(SurfaceFixtureEffect::label("request_language_1033"))
+        );
+        assert_eq!(model.requested_language(), "1033");
+        assert_eq!(
+            super::apply_surface_fixture_control(
+                &mut model,
+                SurfaceFixtureControl::RemoveSelectedAdmission,
+            ),
+            Ok(SurfaceFixtureEffect::label(
+                "remove_selected_admission:original:60001"
+            ))
+        );
+        assert_eq!(
+            super::apply_surface_fixture_control(
+                &mut model,
+                SurfaceFixtureControl::AttemptRemovedTopic,
+            ),
+            Ok(SurfaceFixtureEffect {
+                label: "attempt_removed_topic:original:60001".to_owned(),
+                action: Some(EncyclopediaAction::SelectTopic("original:60001".to_owned())),
+            })
+        );
+        assert_eq!(
+            super::apply_surface_fixture_control(
+                &mut model,
+                SurfaceFixtureControl::RestoreAdmissionSnapshot,
+            ),
+            Ok(SurfaceFixtureEffect::label(
+                "restore_admission_snapshot:applied"
+            ))
+        );
+        assert_eq!(
+            super::apply_surface_fixture_control(
+                &mut model,
+                SurfaceFixtureControl::OriginalProfile,
+            ),
+            Ok(SurfaceFixtureEffect::label("profile_original:unsupported"))
+        );
+        assert_eq!(
+            super::apply_surface_fixture_control(
+                &mut model,
+                SurfaceFixtureControl::FaithfulHdProfile,
+            ),
+            Ok(SurfaceFixtureEffect::label(
+                "profile_faithful_hd:unsupported"
+            ))
+        );
+    }
+
+    #[test]
+    fn removed_selected_admission_still_emits_a_total_surface_observation() {
+        let mut model = InspectorModel::new(InspectorContent::Ready(Box::new(session())), "1033");
+        model.select_topic("original:60001".to_owned()).unwrap();
+        let initial_epoch = model.build_view().unwrap().unwrap().navigation.world_epoch;
+        assert_eq!(
+            model.replace_admission_for_fixture(),
+            Ok(Some("original:60001".to_owned()))
+        );
+        let removed = model.build_view().unwrap().unwrap();
+        let model = SurfaceModel::Static(model);
+
+        let values = surface_observation_values(
+            &model,
+            &removed,
+            &EncyclopediaSurfaceState::default(),
+            None,
+            "no art",
+            "unavailable",
+            Vec::new(),
+        )
+        .expect("the removed state must remain observable");
+        let serialized = serde_json::to_value(values).unwrap();
+
+        assert!(serialized["selected_topic_id"].is_null());
+        assert!(serialized["effective_language"].is_null());
+        assert!(serialized["title_sha256"].is_null());
+        assert!(serialized["body_sha256"].is_null());
+        assert!(serialized["asset_id"].is_null());
+        assert!(serialized["asset_digest"].is_null());
+        assert_eq!(serialized["selected_source_kind"], "unavailable");
+        assert_eq!(serialized["world_epoch"], initial_epoch + 1);
+    }
+
+    #[test]
+    fn surface_recorder_emits_remove_reject_restore_then_explicit_reselect_in_order() {
+        fn emit(
+            model: &mut SurfaceModel,
+            recorder: &mut SurfaceObservationRecorder,
+        ) -> serde_json::Value {
+            let view = model.build_view().unwrap().unwrap();
+            let values = surface_observation_values(
+                model,
+                &view,
+                &EncyclopediaSurfaceState::default(),
+                None,
+                "not selected",
+                model.selected_source_kind(&view),
+                Vec::new(),
+            )
+            .unwrap();
+            serde_json::from_str(&recorder.emit_if_changed(&values).unwrap()).unwrap()
+        }
+
+        let mut model = SurfaceModel::Static(InspectorModel::new(
+            InspectorContent::Ready(Box::new(session())),
+            "1033",
+        ));
+        model.ensure_initial_topic().unwrap();
+        let selected = model
+            .build_view()
+            .unwrap()
+            .unwrap()
+            .navigation
+            .selected_topic_id
+            .clone()
+            .unwrap();
+        let mut recorder = SurfaceObservationRecorder::default();
+        let initial = emit(&mut model, &mut recorder);
+
+        let removed_effect = apply_surface_fixture_control(
+            &mut model,
+            SurfaceFixtureControl::RemoveSelectedAdmission,
+        )
+        .unwrap();
+        assert!(removed_effect.action.is_none());
+        recorder.push_fixture_control(removed_effect.label.clone());
+        model.ensure_initial_topic().unwrap();
+        let removed = emit(&mut model, &mut recorder);
+
+        let stale_effect =
+            apply_surface_fixture_control(&mut model, SurfaceFixtureControl::AttemptRemovedTopic)
+                .unwrap();
+        recorder.push_fixture_control(stale_effect.label.clone());
+        assert!(!reduce_surface_actions(&mut model, &mut recorder, stale_effect.action,).unwrap());
+        let rejected = emit(&mut model, &mut recorder);
+
+        let restored_effect = apply_surface_fixture_control(
+            &mut model,
+            SurfaceFixtureControl::RestoreAdmissionSnapshot,
+        )
+        .unwrap();
+        assert!(restored_effect.action.is_none());
+        recorder.push_fixture_control(restored_effect.label.clone());
+        model.ensure_initial_topic().unwrap();
+        let restored = emit(&mut model, &mut recorder);
+
+        assert!(!reduce_surface_actions(
+            &mut model,
+            &mut recorder,
+            [EncyclopediaAction::SelectTopic(selected.clone())],
+        )
+        .unwrap());
+        let reselected = emit(&mut model, &mut recorder);
+
+        assert_eq!(initial["sequence"], 1);
+        assert_eq!(removed["sequence"], 2);
+        assert_eq!(removed["values"]["mode"], "index");
+        assert!(removed["values"]["selected_topic_id"].is_null());
+        assert_eq!(
+            removed["transition"]["fixture_controls"],
+            serde_json::json!([removed_effect.label])
+        );
+        assert_eq!(rejected["sequence"], 3);
+        assert_eq!(
+            rejected["transition"]["controller_steps"][0]["outcome"],
+            "rejected"
+        );
+        assert_eq!(
+            rejected["transition"]["fixture_controls"],
+            serde_json::json!([stale_effect.label])
+        );
+        assert_eq!(
+            rejected["transition"]["controller_steps"][0]["before"],
+            rejected["transition"]["controller_steps"][0]["after"]
+        );
+        assert_eq!(restored["sequence"], 4);
+        assert!(restored["values"]["selected_topic_id"].is_null());
+        assert_eq!(
+            restored["transition"]["fixture_controls"],
+            serde_json::json!([restored_effect.label])
+        );
+        assert_eq!(reselected["sequence"], 5);
+        assert_eq!(reselected["values"]["selected_topic_id"], selected.as_str());
+        assert_eq!(
+            reselected["transition"]["controller_steps"][0]["outcome"],
+            "applied"
+        );
+        let final_view = model.build_view().unwrap().unwrap();
+        let final_values = surface_observation_values(
+            &model,
+            &final_view,
+            &EncyclopediaSurfaceState::default(),
+            None,
+            "not selected",
+            model.selected_source_kind(&final_view),
+            Vec::new(),
+        )
+        .unwrap();
+        assert!(recorder.emit_if_changed(&final_values).is_none());
+    }
+
+    #[test]
     fn native_request_requires_the_exact_enabled_value() {
         assert!(request_value_enabled(Some(OsStr::new("1"))));
         for value in [
@@ -2424,6 +3865,63 @@ mod tests {
                 .map(|topic| topic.topic_id.as_str())
                 .collect::<Vec<_>>(),
             ["original:60001"]
+        );
+    }
+
+    #[test]
+    fn surface_reducer_records_the_rebuilt_category_projection_and_selection_clear() {
+        fn emit(
+            model: &mut SurfaceModel,
+            recorder: &mut SurfaceObservationRecorder,
+        ) -> serde_json::Value {
+            let view = model.build_view().unwrap().unwrap();
+            let values = surface_observation_values(
+                model,
+                &view,
+                &EncyclopediaSurfaceState::default(),
+                None,
+                "not selected",
+                model.selected_source_kind(&view),
+                Vec::new(),
+            )
+            .unwrap();
+            serde_json::from_str(&recorder.emit_if_changed(&values).unwrap()).unwrap()
+        }
+
+        let mut static_model =
+            InspectorModel::new(InspectorContent::Ready(Box::new(session())), "1033");
+        static_model
+            .select_topic("original:60002".to_owned())
+            .unwrap();
+        let mut model = SurfaceModel::Static(static_model);
+        let mut recorder = SurfaceObservationRecorder::default();
+        let initial = emit(&mut model, &mut recorder);
+
+        assert!(!reduce_surface_actions(
+            &mut model,
+            &mut recorder,
+            [EncyclopediaAction::SelectCategory {
+                category_id: Some("command:0x70".to_owned()),
+                force: SelectionForce::Normal,
+            }],
+        )
+        .unwrap());
+        let category = emit(&mut model, &mut recorder);
+
+        assert_eq!(initial["values"]["selected_topic_id"], "original:60002");
+        assert_eq!(category["values"]["selected_category_command"], "0x70");
+        assert!(category["values"]["selected_topic_id"].is_null());
+        assert_eq!(
+            category["values"]["visible_topic_ids"],
+            serde_json::json!(["original:60001"])
+        );
+        assert_eq!(
+            category["transition"]["controller_steps"][0]["after"]["visible_topic_ids_sha256"],
+            category["values"]["visible_topic_ids_sha256"]
+        );
+        assert_eq!(
+            category["transition"]["controller_steps"][0]["outcome"],
+            "applied"
         );
     }
 
@@ -2816,6 +4314,59 @@ mod tests {
             Some("Amber system"),
             "disabling the mod must rebuild from immutable base without losing selection"
         );
+    }
+
+    #[test]
+    fn live_surface_restores_a_removed_typed_admission_in_a_new_epoch() {
+        let lifecycle =
+            EncyclopediaLifecycle::from_availability(EncyclopediaAvailability::Ready(session()));
+        let model = LiveInspectorModel::from_lifecycle(
+            &lifecycle,
+            "e30-synthetic-v1",
+            "1033",
+            ViewerFaction::Alliance,
+        )
+        .expect("base effective snapshot");
+        let mut model = SurfaceModel::Live(model);
+        model.ensure_initial_topic().unwrap();
+        let before = model.build_view().unwrap().unwrap();
+        let selected = before.navigation.selected_topic_id.clone().unwrap();
+        let before_len = before.topics.len();
+
+        assert_eq!(
+            model.replace_admission_for_fixture(),
+            Ok(Some(selected.clone()))
+        );
+        let removed = model.build_view().unwrap().unwrap();
+        assert_eq!(removed.topics.len() + 1, before_len);
+        assert!(!removed
+            .topics
+            .iter()
+            .any(|topic| topic.topic_id == selected));
+
+        assert_eq!(
+            super::apply_surface_fixture_control(
+                &mut model,
+                SurfaceFixtureControl::RestoreAdmissionSnapshot,
+            ),
+            Ok(SurfaceFixtureEffect::label(
+                "restore_admission_snapshot:applied"
+            ))
+        );
+        let restored = model.build_view().unwrap().unwrap();
+        assert_eq!(restored.topics.len(), before_len);
+        assert_eq!(
+            restored.navigation.world_epoch,
+            removed.navigation.world_epoch + 1
+        );
+        assert!(restored
+            .topics
+            .iter()
+            .any(|topic| topic.topic_id == selected));
+
+        // Keep the lifecycle live for the whole test so the model's accepted
+        // snapshot remains tied to an authoritative owner.
+        assert!(lifecycle.effective_snapshot_for_fixture().is_some());
     }
 
     #[test]

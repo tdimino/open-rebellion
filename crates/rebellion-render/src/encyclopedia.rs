@@ -178,6 +178,41 @@ pub struct EncyclopediaSurfaceFrame {
     pub texture_diagnostic: Option<String>,
     pub active_asset_id: Option<String>,
     pub active_digest: Option<String>,
+    /// Read-only pointer attempts for source controls whose disabled state
+    /// intentionally suppresses controller actions. This lets acceptance
+    /// evidence distinguish an inspected disabled click from a fabricated
+    /// `NoChange` navigation action.
+    pub input_attempts: Vec<EncyclopediaSurfaceInputAttempt>,
+    /// Read-only identity of the renderer-owned keyboard target and egui's
+    /// actually focused widget after this input batch. Acceptance fixtures use
+    /// this to distinguish surface focus from an unrelated global widget.
+    pub keyboard_focus: Option<EncyclopediaSurfaceFocus>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EncyclopediaSurfaceInputControl {
+    PreviousTopic,
+    NextTopic,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EncyclopediaSurfaceInputAttempt {
+    pub control: EncyclopediaSurfaceInputControl,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EncyclopediaSurfaceFocusKind {
+    IndexList,
+    TopicBody,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EncyclopediaSurfaceFocus {
+    pub target_kind: EncyclopediaSurfaceFocusKind,
+    pub target_id: u64,
+    pub focused_id: Option<u64>,
+    pub owns_focus: bool,
 }
 
 impl EncyclopediaSurfaceFrame {
@@ -190,8 +225,16 @@ impl EncyclopediaSurfaceFrame {
             texture_diagnostic: None,
             active_asset_id: None,
             active_digest: None,
+            input_attempts: Vec::new(),
+            keyboard_focus: None,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct BitmapControlResponse {
+    activated: bool,
+    attempted: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -401,6 +444,24 @@ fn draw_bitmap_control(
     enabled: bool,
     selected: bool,
 ) -> bool {
+    draw_bitmap_control_response(ui, ctx, cache, window_rect, scale, spec, enabled, selected)
+        .activated
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "fixed source control inputs stay explicit"
+)]
+fn draw_bitmap_control_response(
+    ui: &mut egui::Ui,
+    ctx: &egui::Context,
+    cache: &mut BmpCache,
+    window_rect: egui::Rect,
+    scale: f32,
+    spec: EncyclopediaControlSpec,
+    enabled: bool,
+    selected: bool,
+) -> BitmapControlResponse {
     let rect = encyclopedia_rect(
         window_rect,
         scale,
@@ -418,23 +479,26 @@ fn draw_bitmap_control(
             egui::Sense::hover()
         },
     );
-    let (pointer, primary_down) = ctx.input(|input| {
+    let (pointer, primary_down, primary_released) = ctx.input(|input| {
         (
             input.pointer.interact_pos(),
             input.pointer.button_down(egui::PointerButton::Primary),
+            input.pointer.button_released(egui::PointerButton::Primary),
         )
     });
-    let captured_press = enabled
-        && primary_down
-        && pointer.is_some_and(|point| encyclopedia_rect_contains(rect, point));
+    let pointer_inside = pointer.is_some_and(|point| encyclopedia_rect_contains(rect, point));
+    let captured_press = enabled && primary_down && pointer_inside;
     let resource = bitmap_control_resource(spec, enabled, selected, captured_press);
     paint_strategy_resource(ui.painter(), ctx, cache, resource, rect);
 
-    enabled
-        && response.clicked()
-        && response
-            .interact_pointer_pos()
-            .is_some_and(|point| encyclopedia_rect_contains(rect, point))
+    BitmapControlResponse {
+        activated: enabled
+            && response.clicked()
+            && response
+                .interact_pointer_pos()
+                .is_some_and(|point| encyclopedia_rect_contains(rect, point)),
+        attempted: primary_released && pointer_inside,
+    }
 }
 
 fn bitmap_control_id(ui: &egui::Ui, spec: EncyclopediaControlSpec) -> egui::Id {
@@ -570,6 +634,7 @@ const fn rail_selection_states(mode: EncyclopediaMode) -> (bool, bool) {
 #[derive(Debug, Clone, Copy)]
 struct SurfaceKeyboardTarget {
     focus_id: egui::Id,
+    kind: EncyclopediaSurfaceFocusKind,
     visible_rows: usize,
 }
 
@@ -656,6 +721,7 @@ pub fn draw_encyclopedia_surface(
     };
 
     let mut mouse_actions = Vec::new();
+    let mut input_attempts = Vec::new();
     let mut keyboard_target = None;
     let mut owned_focus_ids = Vec::new();
     egui::Area::new(egui::Id::new("source-encyclopedia-surface"))
@@ -769,6 +835,7 @@ pub fn draw_encyclopedia_surface(
                     scale,
                     transfer_focus,
                     &mut mouse_actions,
+                    &mut input_attempts,
                     &mut owned_focus_ids,
                 ),
             };
@@ -789,6 +856,15 @@ pub fn draw_encyclopedia_surface(
     );
     surface.reclaim_after_consumed_key = consumed_key;
     actions.append(&mut mouse_actions);
+    let keyboard_focus = keyboard_target.map(|target| {
+        let focused_id = ctx.memory(|memory| memory.focused());
+        EncyclopediaSurfaceFocus {
+            target_kind: target.kind,
+            target_id: target.focus_id.value(),
+            focused_id: focused_id.map(|id| id.value()),
+            owns_focus: focused_id == Some(target.focus_id),
+        }
+    });
 
     EncyclopediaSurfaceFrame {
         actions,
@@ -798,6 +874,8 @@ pub fn draw_encyclopedia_surface(
         texture_diagnostic,
         active_asset_id,
         active_digest,
+        input_attempts,
+        keyboard_focus,
     }
 }
 
@@ -950,6 +1028,7 @@ fn draw_index_surface(
     });
     SurfaceKeyboardTarget {
         focus_id: list_focus.id,
+        kind: EncyclopediaSurfaceFocusKind::IndexList,
         visible_rows: (list_rect.height() / (INDEX_ROW_HEIGHT * scale))
             .floor()
             .max(1.0) as usize,
@@ -972,33 +1051,50 @@ fn draw_topic_surface(
     scale: f32,
     transfer_focus: bool,
     actions: &mut Vec<EncyclopediaAction>,
+    input_attempts: &mut Vec<EncyclopediaSurfaceInputAttempt>,
     owned_focus_ids: &mut Vec<egui::Id>,
 ) -> Option<SurfaceKeyboardTarget> {
     let directions = topic_direction_specs();
     owned_focus_ids.push(bitmap_control_id(ui, directions[0]));
-    if draw_bitmap_control(
+    let previous_enabled = view.navigation.previous_topic_id.is_some();
+    let previous = draw_bitmap_control_response(
         ui,
         ctx,
         chrome,
         window_rect,
         scale,
         directions[0],
-        view.navigation.previous_topic_id.is_some(),
+        previous_enabled,
         false,
-    ) {
+    );
+    if previous.attempted {
+        input_attempts.push(EncyclopediaSurfaceInputAttempt {
+            control: EncyclopediaSurfaceInputControl::PreviousTopic,
+            enabled: previous_enabled,
+        });
+    }
+    if previous.activated {
         actions.push(EncyclopediaAction::PreviousTopic);
     }
     owned_focus_ids.push(bitmap_control_id(ui, directions[1]));
-    if draw_bitmap_control(
+    let next_enabled = view.navigation.next_topic_id.is_some();
+    let next = draw_bitmap_control_response(
         ui,
         ctx,
         chrome,
         window_rect,
         scale,
         directions[1],
-        view.navigation.next_topic_id.is_some(),
+        next_enabled,
         false,
-    ) {
+    );
+    if next.attempted {
+        input_attempts.push(EncyclopediaSurfaceInputAttempt {
+            control: EncyclopediaSurfaceInputControl::NextTopic,
+            enabled: next_enabled,
+        });
+    }
+    if next.activated {
         actions.push(EncyclopediaAction::NextTopic);
     }
 
@@ -1082,6 +1178,7 @@ fn draw_topic_surface(
     surface.body_scroll_offset = scroll_output.state.offset.y;
     Some(SurfaceKeyboardTarget {
         focus_id: body_focus.id,
+        kind: EncyclopediaSurfaceFocusKind::TopicBody,
         visible_rows: 0,
     })
 }
@@ -2332,35 +2429,14 @@ fn encyclopedia_point(parent: egui::Rect, scale: f32, x: f32, y: f32) -> egui::P
     egui::pos2(parent.min.x + x * scale, parent.min.y + y * scale)
 }
 
-fn encyclopedia_rect(
-    parent: egui::Rect,
-    scale: f32,
-    x: f32,
-    y: f32,
-    width: f32,
-    height: f32,
-) -> egui::Rect {
-    egui::Rect::from_min_size(
-        encyclopedia_point(parent, scale, x, y),
-        egui::vec2(width * scale, height * scale),
-    )
-}
-
 fn original_index_list_rect(parent: egui::Rect, scale: f32) -> egui::Rect {
     encyclopedia_rect(parent, scale, 36.0, 137.0, 350.0, 160.0)
 }
 
 fn original_index_row_rect(parent: egui::Rect, scale: f32, visible_row: usize) -> egui::Rect {
     let y = 137.0 + visible_row as f32 * ORIGINAL_INDEX_ROW_HEIGHT;
-    encyclopedia_rect(
-        parent,
-        scale,
-        36.0,
-        y,
-        338.0,
-        ORIGINAL_INDEX_ROW_HEIGHT,
-    )
-    .intersect(original_index_list_rect(parent, scale))
+    encyclopedia_rect(parent, scale, 36.0, y, 338.0, ORIGINAL_INDEX_ROW_HEIGHT)
+        .intersect(original_index_list_rect(parent, scale))
 }
 
 fn paint_original_resource_native(
@@ -3298,6 +3374,34 @@ mod tests {
             CockpitFaction::Alliance,
         );
         assert!(backward.actions.is_empty());
+        assert_eq!(
+            backward.input_attempts,
+            vec![EncyclopediaSurfaceInputAttempt {
+                control: EncyclopediaSurfaceInputControl::PreviousTopic,
+                enabled: false,
+            }]
+        );
+
+        let last_view = surface_view(Some("gamma"), false);
+        let mut navigation = surface_navigation(Some("gamma"), EncyclopediaMode::Topic);
+        let forward = click_surface(
+            &ctx,
+            egui::pos2(380.0 + 10.0, 14.0 + 8.0),
+            &last_view,
+            &mut navigation,
+            &mut surface,
+            &mut chrome,
+            &mut textures,
+            CockpitFaction::Alliance,
+        );
+        assert!(forward.actions.is_empty());
+        assert_eq!(
+            forward.input_attempts,
+            vec![EncyclopediaSurfaceInputAttempt {
+                control: EncyclopediaSurfaceInputControl::NextTopic,
+                enabled: false,
+            }]
+        );
     }
 
     // Source: encyclopedia-ui-contract.md, "Mode, focus, keyboard, and scrolling".
@@ -3711,7 +3815,7 @@ mod tests {
             let mut textures =
                 EncyclopediaTextureCache::new(EguiEncyclopediaTextureBackend::new(&ctx));
 
-            let _ = run_surface_frame(
+            let initial = run_surface_frame(
                 &ctx,
                 egui::RawInput::default(),
                 &view,
@@ -3720,10 +3824,20 @@ mod tests {
                 &mut chrome,
                 &mut textures,
                 faction,
-            );
+            )
+            .1;
             let index_focus = ctx
                 .memory(|memory| memory.focused())
                 .expect("initial index transition should focus the list child");
+            assert_eq!(
+                initial.keyboard_focus,
+                Some(EncyclopediaSurfaceFocus {
+                    target_kind: EncyclopediaSurfaceFocusKind::IndexList,
+                    target_id: index_focus.value(),
+                    focused_id: Some(index_focus.value()),
+                    owns_focus: true,
+                })
+            );
 
             let unrelated = egui::Id::new((
                 "unrelated-widget",
@@ -3746,7 +3860,17 @@ mod tests {
                 ));
                 right_remained = ctx.input(|input| input.key_pressed(egui::Key::ArrowRight));
             });
-            assert!(frame.unwrap().actions.is_empty());
+            let unfocused = frame.unwrap();
+            assert!(unfocused.actions.is_empty());
+            assert_eq!(
+                unfocused.keyboard_focus,
+                Some(EncyclopediaSurfaceFocus {
+                    target_kind: EncyclopediaSurfaceFocusKind::IndexList,
+                    target_id: index_focus.value(),
+                    focused_id: Some(unrelated.value()),
+                    owns_focus: false,
+                })
+            );
             assert!(
                 right_remained,
                 "unfocused surface must not consume ArrowRight"
@@ -3859,6 +3983,11 @@ mod tests {
                 topic.actions,
                 vec![EncyclopediaAction::SourceKey(SourceKeyIntent::Right)]
             );
+            assert_eq!(
+                topic.keyboard_focus.map(|focus| focus.target_kind),
+                Some(EncyclopediaSurfaceFocusKind::TopicBody)
+            );
+            assert!(topic.keyboard_focus.unwrap().owns_focus);
         }
     }
 

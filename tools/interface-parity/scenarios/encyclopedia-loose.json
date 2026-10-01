@@ -3,7 +3,7 @@
   "family": "encyclopedia-loose-acceptance",
   "scope": "Controlled HTTP acceptance for the real loose loader using the accepted E21 canonical bytes; live rendering remains a coordinator browser gate.",
   "canonical": {
-    "baseline_scenario_sha256": "e69521b74286a5eec6ed101e434699ba16b337bd81669318095d8a02d74b1c3f",
+    "baseline_scenario_sha256": "990a67395fa51564c7991780ef4f0d8272d92d06edf3073f1dbf425172567ff3",
     "source_profile": "encytext-49aea545-lang-1033-v1",
     "runtime_pack_sha256": "e9ae76b50a43d811c01d8634f9099809ec6c144f9fbcd93f364b6879001fb57b",
     "runtime_pack_byte_length": 63214933,
@@ -24,8 +24,8 @@
     ]
   },
   "fixture_codes": {
-    "alliance": 299,
-    "empire": 555
+    "alliance": 300,
+    "empire": 556
   },
   "invalid_runtime_pack": {
     "byte_length": 25,
