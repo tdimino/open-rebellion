@@ -26,6 +26,33 @@ use dat_dumper::types::troops::TroopsFile;
 
 use crate::read_dat_file;
 
+/// Original DAT table that supplied an Encyclopedia catalog entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum EncyclopediaSourceTable {
+    /// `SYSTEMSD.DAT`
+    Systems,
+    /// `CAPSHPSD.DAT`
+    CapitalShips,
+    /// `FIGHTSD.DAT`
+    Fighters,
+    /// `DEFFACSD.DAT`
+    DefenseFacilities,
+    /// `MANFACSD.DAT`
+    ManufacturingFacilities,
+    /// `PROFACSD.DAT`
+    ProductionFacilities,
+    /// `MISSNSD.DAT`
+    Missions,
+    /// `TROOPSD.DAT`
+    Troops,
+    /// `MJCHARSD.DAT`
+    MajorCharacters,
+    /// `MNCHARSD.DAT`
+    MinorCharacters,
+    /// `SPECFCSD.DAT`
+    SpecialForces,
+}
+
 /// One original game-object entry available to the Encyclopedia index.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EncyclopediaCatalogEntry {
@@ -35,12 +62,26 @@ pub struct EncyclopediaCatalogEntry {
     pub text_resource_id: u16,
     /// Localized visible name.
     pub name: String,
+    source_table: EncyclopediaSourceTable,
+    raw_dat_id: u32,
 }
 
 impl EncyclopediaCatalogEntry {
     #[must_use]
     pub const fn family(&self) -> u8 {
         (self.object_id >> 24) as u8
+    }
+
+    /// Return the original DAT table that supplied this entry.
+    #[must_use]
+    pub const fn source_table(&self) -> EncyclopediaSourceTable {
+        self.source_table
+    }
+
+    /// Return the source record id exactly as decoded, before compounding.
+    #[must_use]
+    pub const fn raw_dat_id(&self) -> u32 {
+        self.raw_dat_id
     }
 }
 
@@ -125,6 +166,7 @@ pub fn load_encyclopedia_catalog(gdata_path: &Path) -> Result<EncyclopediaCatalo
     for record in systems.systems {
         push_entry(
             &mut entries,
+            EncyclopediaSourceTable::Systems,
             record.id,
             record.family_id,
             record.text_stra_dll_id,
@@ -136,6 +178,7 @@ pub fn load_encyclopedia_catalog(gdata_path: &Path) -> Result<EncyclopediaCatalo
     for record in capital_ships.ships {
         push_entry(
             &mut entries,
+            EncyclopediaSourceTable::CapitalShips,
             record.id,
             record.family_id,
             record.text_stra_dll_id,
@@ -146,6 +189,7 @@ pub fn load_encyclopedia_catalog(gdata_path: &Path) -> Result<EncyclopediaCatalo
     for record in fighters.fighters {
         push_entry(
             &mut entries,
+            EncyclopediaSourceTable::Fighters,
             record.id,
             record.family_id,
             record.text_stra_dll_id,
@@ -157,6 +201,7 @@ pub fn load_encyclopedia_catalog(gdata_path: &Path) -> Result<EncyclopediaCatalo
     for record in defense.facilities {
         push_entry(
             &mut entries,
+            EncyclopediaSourceTable::DefenseFacilities,
             record.id,
             record.family_id,
             record.text_stra_dll_id,
@@ -168,6 +213,7 @@ pub fn load_encyclopedia_catalog(gdata_path: &Path) -> Result<EncyclopediaCatalo
     for record in manufacturing.facilities {
         push_entry(
             &mut entries,
+            EncyclopediaSourceTable::ManufacturingFacilities,
             record.id,
             record.family_id,
             record.text_stra_dll_id,
@@ -178,6 +224,7 @@ pub fn load_encyclopedia_catalog(gdata_path: &Path) -> Result<EncyclopediaCatalo
     for record in production.facilities {
         push_entry(
             &mut entries,
+            EncyclopediaSourceTable::ProductionFacilities,
             record.id,
             record.family_id,
             record.text_stra_dll_id,
@@ -189,6 +236,7 @@ pub fn load_encyclopedia_catalog(gdata_path: &Path) -> Result<EncyclopediaCatalo
     for record in missions.missions {
         push_entry(
             &mut entries,
+            EncyclopediaSourceTable::Missions,
             record.id,
             record.family_id,
             record.text_stra_dll_id,
@@ -200,6 +248,7 @@ pub fn load_encyclopedia_catalog(gdata_path: &Path) -> Result<EncyclopediaCatalo
     for record in troops.troops {
         push_entry(
             &mut entries,
+            EncyclopediaSourceTable::Troops,
             record.id,
             record.family_id,
             record.text_stra_dll_id,
@@ -211,6 +260,7 @@ pub fn load_encyclopedia_catalog(gdata_path: &Path) -> Result<EncyclopediaCatalo
     for record in major.characters {
         push_entry(
             &mut entries,
+            EncyclopediaSourceTable::MajorCharacters,
             record.id,
             record.family_id,
             record.text_stra_dll_id,
@@ -221,6 +271,7 @@ pub fn load_encyclopedia_catalog(gdata_path: &Path) -> Result<EncyclopediaCatalo
     for record in minor.characters {
         push_entry(
             &mut entries,
+            EncyclopediaSourceTable::MinorCharacters,
             record.id,
             record.family_id,
             record.text_stra_dll_id,
@@ -231,6 +282,7 @@ pub fn load_encyclopedia_catalog(gdata_path: &Path) -> Result<EncyclopediaCatalo
     for record in special_forces.units {
         push_entry(
             &mut entries,
+            EncyclopediaSourceTable::SpecialForces,
             record.id,
             record.family_id,
             record.text_stra_dll_id,
@@ -270,6 +322,7 @@ fn category(
 
 fn push_entry(
     entries: &mut Vec<EncyclopediaCatalogEntry>,
+    source_table: EncyclopediaSourceTable,
     record_id: u32,
     family_id: u32,
     text_resource_id: u16,
@@ -286,6 +339,8 @@ fn push_entry(
         object_id,
         text_resource_id,
         name,
+        source_table,
+        raw_dat_id: record_id,
     });
     Ok(())
 }
@@ -333,16 +388,22 @@ mod tests {
                     object_id: 0x1000_0001,
                     text_resource_id: 1,
                     name: "Alliance Army Regiment".into(),
+                    source_table: EncyclopediaSourceTable::Troops,
+                    raw_dat_id: 1,
                 },
                 EncyclopediaCatalogEntry {
                     object_id: 0x1400_0001,
                     text_resource_id: 2,
                     name: "Alliance Dreadnaught".into(),
+                    source_table: EncyclopediaSourceTable::CapitalShips,
+                    raw_dat_id: 1,
                 },
                 EncyclopediaCatalogEntry {
                     object_id: 0x9000_0001,
                     text_resource_id: 3,
                     name: "Allyuen".into(),
+                    source_table: EncyclopediaSourceTable::Systems,
+                    raw_dat_id: 1,
                 },
             ],
         }
@@ -367,21 +428,200 @@ mod tests {
 
     #[test]
     fn push_entry_requires_and_preserves_the_source_name() {
-        let strings = HashMap::from([(0x2001, "A-wing".to_owned())]);
+        let strings = HashMap::from([(0x2001, "A-wing".to_owned()), (0x2003, String::new())]);
         let mut entries = Vec::new();
 
-        push_entry(&mut entries, 7, 0x14, 0x2001, &strings).unwrap();
+        push_entry(
+            &mut entries,
+            EncyclopediaSourceTable::CapitalShips,
+            7,
+            0x14,
+            0x2001,
+            &strings,
+        )
+        .unwrap();
         assert_eq!(
             entries,
             [EncyclopediaCatalogEntry {
                 object_id: 0x1400_0007,
                 text_resource_id: 0x2001,
                 name: "A-wing".to_owned(),
+                source_table: EncyclopediaSourceTable::CapitalShips,
+                raw_dat_id: 7,
             }]
         );
 
-        let error = push_entry(&mut entries, 8, 0x14, 0x2002, &strings).unwrap_err();
+        let error = push_entry(
+            &mut entries,
+            EncyclopediaSourceTable::CapitalShips,
+            8,
+            0x14,
+            0x2002,
+            &strings,
+        )
+        .unwrap_err();
         assert!(error.to_string().contains("0x2002"));
         assert_eq!(entries.len(), 1);
+
+        push_entry(
+            &mut entries,
+            EncyclopediaSourceTable::CapitalShips,
+            9,
+            0x14,
+            0x2003,
+            &strings,
+        )
+        .unwrap();
+        assert!(entries[1].name.is_empty());
+    }
+
+    #[test]
+    fn push_entry_retains_typed_source_provenance_when_raw_dat_ids_collide() {
+        let strings = HashMap::from([
+            (0x2001, "First source name".to_owned()),
+            (0x2002, "Second source name".to_owned()),
+        ]);
+        let mut entries = Vec::new();
+
+        push_entry(
+            &mut entries,
+            EncyclopediaSourceTable::Systems,
+            7,
+            0x40,
+            0x2001,
+            &strings,
+        )
+        .unwrap();
+        push_entry(
+            &mut entries,
+            EncyclopediaSourceTable::Missions,
+            7,
+            0x40,
+            0x2002,
+            &strings,
+        )
+        .unwrap();
+
+        assert_eq!(entries[0].source_table(), EncyclopediaSourceTable::Systems);
+        assert_eq!(entries[1].source_table(), EncyclopediaSourceTable::Missions);
+        assert_eq!(entries[0].raw_dat_id(), 7);
+        assert_eq!(entries[1].raw_dat_id(), 7);
+    }
+
+    #[test]
+    fn push_entry_preserves_precombined_raw_dat_id_beside_compound_identity() {
+        let strings = HashMap::from([(0x2001, "Source name".to_owned())]);
+        let mut entries = Vec::new();
+
+        push_entry(
+            &mut entries,
+            EncyclopediaSourceTable::Systems,
+            0x9200_0109,
+            0x90,
+            0x2001,
+            &strings,
+        )
+        .unwrap();
+
+        assert_eq!(entries[0].object_id, 0x9200_0109);
+        assert_eq!(entries[0].raw_dat_id(), 0x9200_0109);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    #[ignore = "requires E56_OWNED_REBELLION_ROOT pointing to immutable owned inputs"]
+    fn owned_loader_retains_all_source_roles_and_the_p65_projection() {
+        use std::cmp::Ordering;
+        use std::collections::{HashMap, HashSet};
+        use std::fs;
+
+        let owned_root = std::env::var_os("E56_OWNED_REBELLION_ROOT")
+            .map(std::path::PathBuf::from)
+            .expect("E56_OWNED_REBELLION_ROOT must point to the owned installation root");
+        let staged = tempfile::tempdir().unwrap();
+        fs::copy(
+            owned_root.join("TEXTSTRA.DLL"),
+            staged.path().join("TEXTSTRA.DLL"),
+        )
+        .unwrap();
+        for filename in [
+            "SYSTEMSD.DAT",
+            "CAPSHPSD.DAT",
+            "FIGHTSD.DAT",
+            "DEFFACSD.DAT",
+            "MANFACSD.DAT",
+            "PROFACSD.DAT",
+            "MISSNSD.DAT",
+            "TROOPSD.DAT",
+            "MJCHARSD.DAT",
+            "MNCHARSD.DAT",
+            "SPECFCSD.DAT",
+        ] {
+            fs::copy(
+                owned_root.join("GData").join(filename),
+                staged.path().join(filename),
+            )
+            .unwrap();
+        }
+
+        let catalog = load_encyclopedia_catalog(staged.path()).unwrap();
+        let expected_source_counts = [
+            (EncyclopediaSourceTable::Systems, 200),
+            (EncyclopediaSourceTable::CapitalShips, 30),
+            (EncyclopediaSourceTable::Fighters, 8),
+            (EncyclopediaSourceTable::DefenseFacilities, 6),
+            (EncyclopediaSourceTable::ManufacturingFacilities, 6),
+            (EncyclopediaSourceTable::ProductionFacilities, 2),
+            (EncyclopediaSourceTable::Missions, 25),
+            (EncyclopediaSourceTable::Troops, 10),
+            (EncyclopediaSourceTable::MajorCharacters, 6),
+            (EncyclopediaSourceTable::MinorCharacters, 54),
+            (EncyclopediaSourceTable::SpecialForces, 9),
+        ];
+        let actual_source_counts = catalog.entries.iter().fold(
+            HashMap::<EncyclopediaSourceTable, usize>::new(),
+            |mut counts, entry| {
+                *counts.entry(entry.source_table()).or_default() += 1;
+                counts
+            },
+        );
+        for (source_table, expected) in expected_source_counts {
+            assert_eq!(actual_source_counts.get(&source_table), Some(&expected));
+        }
+
+        assert_eq!(catalog.entries.len(), 356);
+        assert_eq!(catalog.entries_for(0x6f).len(), 356);
+        assert_eq!(catalog.entries_for(0x70).len(), 200);
+        assert_eq!(catalog.entries_for(0x71).len(), 38);
+        assert_eq!(catalog.entries_for(0x72).len(), 14);
+        assert_eq!(catalog.entries_for(0x73).len(), 25);
+        assert_eq!(catalog.entries_for(0x74).len(), 10);
+        assert_eq!(catalog.entries_for(0x75).len(), 69);
+        assert_eq!(
+            catalog
+                .entries
+                .iter()
+                .map(|entry| entry.object_id)
+                .collect::<HashSet<_>>()
+                .len(),
+            356
+        );
+        assert!(catalog.entries.windows(2).all(|pair| {
+            pair[0]
+                .name
+                .to_lowercase()
+                .cmp(&pair[1].name.to_lowercase())
+                .then_with(|| pair[0].object_id.cmp(&pair[1].object_id))
+                != Ordering::Greater
+        }));
+
+        let mut roles_by_low_dat_id = HashMap::<u32, HashSet<EncyclopediaSourceTable>>::new();
+        for entry in &catalog.entries {
+            roles_by_low_dat_id
+                .entry(entry.raw_dat_id() & 0x00ff_ffff)
+                .or_default()
+                .insert(entry.source_table());
+        }
+        assert!(roles_by_low_dat_id.values().any(|roles| roles.len() > 1));
     }
 }
