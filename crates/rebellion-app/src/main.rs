@@ -1316,12 +1316,6 @@ async fn main() {
     #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
     let interface_fixture_request = interface_test_fixture::requested();
 
-    #[cfg(all(not(target_arch = "wasm32"), feature = "interface-test-fixtures"))]
-    if encyclopedia_test_fixture::requested() {
-        encyclopedia_test_fixture::run(&gdata_path).await;
-        return;
-    }
-
     let asset_render_profile = configured_asset_render_profile();
     macroquad::logging::info!("[assets] render_profile={}", asset_render_profile.as_str());
 
@@ -1451,11 +1445,17 @@ async fn main() {
 
     // ── Mod Runtime ──────────────────────────────────────────────────────────
     // mods/ lives alongside data/, not inside it: data/base → data → repo root → mods/
-    let mods_dir = gdata_path
+    let default_mods_dir = gdata_path
         .parent()
         .and_then(|p| p.parent())
         .unwrap_or(std::path::Path::new("."))
         .join("mods");
+    #[cfg(all(not(target_arch = "wasm32"), feature = "interface-test-fixtures"))]
+    let mods_dir = std::env::var_os("REBELLION_ENCYCLOPEDIA_MODS_DIR")
+        .map(PathBuf::from)
+        .unwrap_or(default_mods_dir);
+    #[cfg(not(all(not(target_arch = "wasm32"), feature = "interface-test-fixtures")))]
+    let mods_dir = default_mods_dir;
     let mut mod_runtime = rebellion_data::mods::ModRuntime::discover(&mods_dir);
     if !mod_runtime.discovered.is_empty() {
         eprintln!(
@@ -1465,9 +1465,19 @@ async fn main() {
         );
     }
     #[cfg(not(target_arch = "wasm32"))]
+    let native_encyclopedia_availability =
+        encyclopedia_runtime::load_native_encyclopedia(&gdata_path, None);
+    #[cfg(all(not(target_arch = "wasm32"), feature = "interface-test-fixtures"))]
+    let native_encyclopedia_source_profile = match &native_encyclopedia_availability {
+        encyclopedia_session::EncyclopediaAvailability::Ready(session) => {
+            session.base_manifest().source_profile.clone()
+        }
+        encyclopedia_session::EncyclopediaAvailability::Unavailable(_) => String::new(),
+    };
+    #[cfg(not(target_arch = "wasm32"))]
     let mut encyclopedia_lifecycle =
         encyclopedia_lifecycle::EncyclopediaLifecycle::from_availability(
-            encyclopedia_runtime::load_native_encyclopedia(&gdata_path, None),
+            native_encyclopedia_availability,
         );
     #[cfg(not(target_arch = "wasm32"))]
     let mut encyclopedia_watcher = encyclopedia_watcher::EncyclopediaWatcher::new(&mods_dir);
@@ -1762,6 +1772,64 @@ async fn main() {
         audio_vol.backend_available = browser_menu_audio.is_some();
     }
     let mut tactical_music_active = false;
+
+    // The feature-only native acceptance surface enters only after the same
+    // startup world/content transaction and retained watcher used by the real
+    // app have been constructed. Production builds compile out this branch.
+    #[cfg(all(not(target_arch = "wasm32"), feature = "interface-test-fixtures"))]
+    if encyclopedia_test_fixture::requested() {
+        let fingerprint_source = move || {
+            let state = LiveCampaign {
+                world: &mut world,
+                clock: &mut clock,
+                manufacturing: &mut mfg_state,
+                missions: &mut mission_state,
+                events: &mut event_state,
+                ai: &mut ai_state,
+                movement: &mut movement_state,
+                fog_alliance: &mut fog_alliance_state,
+                fog_empire: &mut fog_empire_state,
+                player_faction: &mut player_faction,
+                blockade: &mut blockade_state,
+                uprising: &mut uprising_state,
+                death_star: &mut death_star_state,
+                research: &mut research_state,
+                jedi: &mut jedi_state,
+                victory: &mut victory_state,
+                betrayal: &mut betrayal_state,
+                economy: &mut economy_state,
+                sim_rng: &mut sim_rng,
+                ai2: &mut secondary_ai_state,
+                repair: &mut repair_state,
+                troop_transport: &mut troop_transport_state,
+                deliveries: &mut delivery_state,
+                combat_cooldowns: &mut combat_cooldowns,
+                game_config: &mut game_config,
+                campaign_config: &mut campaign_config,
+            }
+            .snapshot();
+            encyclopedia_test_fixture::NativeSimulationFingerprints {
+                world: encyclopedia_test_fixture::fingerprint_serializable(&state.world),
+                save: rebellion_data::save::compute_state_fingerprint(&state).map_or_else(
+                    |error| format!("error:{error}"),
+                    |fingerprint| fingerprint.to_string(),
+                ),
+                rng: encyclopedia_test_fixture::fingerprint_serializable(&state.sim_rng),
+            }
+        };
+        encyclopedia_test_fixture::run_live(
+            &gdata_path,
+            &native_encyclopedia_source_profile,
+            &mut mod_runtime,
+            &mut encyclopedia_lifecycle,
+            &mut encyclopedia_watcher,
+            asset_render_profile,
+            std::env::var_os("REBELLION_ENCYCLOPEDIA_HD_ROOT").map(PathBuf::from),
+            fingerprint_source,
+        )
+        .await;
+        return;
+    }
 
     let mut cutscene_player = open_cutscene(
         Path::new(INTRO_CUTSCENE),

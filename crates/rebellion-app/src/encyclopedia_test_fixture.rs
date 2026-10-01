@@ -5,26 +5,46 @@
 //! inspection; it is not a gameplay-availability adapter and is never used by
 //! the production route.
 
-use std::ffi::OsStr;
+#[cfg(not(target_arch = "wasm32"))]
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    ffi::OsStr,
+    path::PathBuf,
+    sync::Arc,
+};
 
+#[cfg(not(target_arch = "wasm32"))]
+use rebellion_data::encyclopedia::{resolve_admitted_topics, resolve_localized_label};
 use rebellion_data::encyclopedia::{
     AdmissionFact, AdmissionSnapshot, AdmittedBinding, EncyclopediaCatalog, EncyclopediaError,
     ViewerFaction,
 };
+#[cfg(test)]
+use rebellion_render::EncyclopediaTextureBackend;
 use rebellion_render::{
     apply_encyclopedia_action, BodyScrollIntent, EncyclopediaAction, EncyclopediaMode,
     EncyclopediaNavigationState, EncyclopediaTextureCache, EncyclopediaTextureEvent,
     EncyclopediaView, NavigationOutcome,
 };
-#[cfg(test)]
-use rebellion_render::{EncyclopediaTextureBackend, TopicImageView};
+#[cfg(not(target_arch = "wasm32"))]
+use rebellion_render::{
+    ActiveTopicView, AssetRenderProfile, CategoryViewItem, EncyclopediaDiagnosticScope,
+    EncyclopediaViewDiagnostic, NavigationState, TopicImageRenderProfile, TopicImageView,
+    TopicViewItem,
+};
 
 #[cfg(any(test, target_arch = "wasm32"))]
 use crate::interface_test_fixture::FixtureRequest;
 
 use crate::encyclopedia_presenter::{build_encyclopedia_view, EncyclopediaPresenter};
 use crate::encyclopedia_session::{EncyclopediaAvailability, EncyclopediaSession};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::{
+    encyclopedia_lifecycle::EncyclopediaLifecycle,
+    encyclopedia_mods::{EffectiveEncyclopediaSnapshot, EncyclopediaImageOwner},
+};
 
+#[cfg(not(target_arch = "wasm32"))]
 const INSPECTOR_REQUEST: &str = "REBELLION_ENCYCLOPEDIA_INSPECTOR";
 const INSPECTOR_FACTION: &str = "REBELLION_ENCYCLOPEDIA_VIEWER_FACTION";
 
@@ -231,6 +251,458 @@ impl InspectorModel {
         let _ = self.apply_action(&view, EncyclopediaAction::SetMode(EncyclopediaMode::Topic));
         Ok(())
     }
+}
+
+/// Feature-only projection of the exact E24 publication used by the native
+/// live acceptance surface. The tracked snapshot clone keeps old-live bytes in
+/// E24's global accounting; this model retains only one selected presentation
+/// image copy and clears it whenever the published generation changes.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) struct LiveInspectorModel {
+    snapshot: EffectiveEncyclopediaSnapshot,
+    admission: AdmissionSnapshot,
+    source_profile: String,
+    language: String,
+    navigation: EncyclopediaNavigationState,
+    title_cache: BTreeMap<String, Arc<str>>,
+    active_body: Option<(String, Arc<str>)>,
+    active_image: Option<(String, String, TopicImageView)>,
+    asset_profile: AssetRenderProfile,
+    hd_root: Option<PathBuf>,
+    prepared_generation: Option<u64>,
+    prepared_images: crate::encyclopedia_hd::PreparedEncyclopediaImages,
+    presentation_error: Option<String>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl LiveInspectorModel {
+    pub(crate) fn from_lifecycle(
+        lifecycle: &EncyclopediaLifecycle,
+        source_profile: impl Into<String>,
+        language: impl Into<String>,
+        viewer: ViewerFaction,
+    ) -> Option<Self> {
+        let snapshot = lifecycle.effective_snapshot_for_fixture()?;
+        let admission = inspection_admission(snapshot.catalog(), viewer);
+        Some(Self {
+            snapshot,
+            admission,
+            source_profile: source_profile.into(),
+            language: language.into(),
+            navigation: EncyclopediaNavigationState::default(),
+            title_cache: BTreeMap::new(),
+            active_body: None,
+            active_image: None,
+            asset_profile: AssetRenderProfile::OriginalParity,
+            hd_root: None,
+            prepared_generation: None,
+            prepared_images: crate::encyclopedia_hd::PreparedEncyclopediaImages::default(),
+            presentation_error: None,
+        })
+    }
+
+    pub(crate) fn configure_images(
+        &mut self,
+        profile: AssetRenderProfile,
+        hd_root: Option<PathBuf>,
+    ) {
+        self.asset_profile = profile;
+        self.hd_root = hd_root;
+        self.prepared_generation = None;
+        self.prepared_images = crate::encyclopedia_hd::PreparedEncyclopediaImages::default();
+    }
+
+    /// Rebinds to the exact accepted generation while retaining stable-ID
+    /// navigation. Returns true only when a new effective publication exists.
+    pub(crate) fn rebind_from_lifecycle(&mut self, lifecycle: &EncyclopediaLifecycle) -> bool {
+        let Some(snapshot) = lifecycle.effective_snapshot_for_fixture() else {
+            return false;
+        };
+        if snapshot.generation() == self.snapshot.generation() {
+            return false;
+        }
+        self.admission = inspection_admission(snapshot.catalog(), self.admission.viewer);
+        self.snapshot = snapshot;
+        self.title_cache.clear();
+        self.active_body = None;
+        self.active_image = None;
+        self.prepared_generation = None;
+        self.prepared_images = crate::encyclopedia_hd::PreparedEncyclopediaImages::default();
+        self.presentation_error = None;
+        true
+    }
+
+    #[must_use]
+    pub(crate) fn generation(&self) -> u64 {
+        self.snapshot.generation()
+    }
+
+    pub(crate) fn build_view(&mut self) -> Result<EncyclopediaView, EncyclopediaError> {
+        if let Some(error) = &self.presentation_error {
+            return Err(EncyclopediaError::for_session(
+                "fixture_presentation_error",
+                "$",
+                error.clone(),
+            ));
+        }
+        let mut view = build_effective_snapshot_view(
+            &self.snapshot,
+            &self.admission,
+            &self.language,
+            &self.navigation.selection,
+            &mut self.title_cache,
+            &mut self.active_body,
+            &mut self.active_image,
+        )?;
+        self.apply_prepared_image(&mut view);
+        Ok(view)
+    }
+
+    pub(crate) fn select_topic(
+        &mut self,
+        topic_id: String,
+    ) -> Result<NavigationOutcome, EncyclopediaError> {
+        let view = self.build_view()?;
+        let outcome = apply_encyclopedia_action(
+            &mut self.navigation,
+            &view,
+            EncyclopediaAction::SelectTopic(topic_id),
+        );
+        if outcome == NavigationOutcome::Applied {
+            let _ = apply_encyclopedia_action(
+                &mut self.navigation,
+                &view,
+                EncyclopediaAction::SetMode(EncyclopediaMode::Topic),
+            );
+        }
+        Ok(outcome)
+    }
+
+    fn ensure_initial_topic(&mut self) -> Result<(), EncyclopediaError> {
+        if self.navigation.selection.topic_id.is_some() {
+            return Ok(());
+        }
+        let view = self.build_view()?;
+        let Some(first_topic) = view.topics.first().map(|topic| topic.topic_id.clone()) else {
+            return Ok(());
+        };
+        let _ = apply_encyclopedia_action(
+            &mut self.navigation,
+            &view,
+            EncyclopediaAction::SelectTopic(first_topic),
+        );
+        let _ = apply_encyclopedia_action(
+            &mut self.navigation,
+            &view,
+            EncyclopediaAction::SetMode(EncyclopediaMode::Topic),
+        );
+        Ok(())
+    }
+
+    fn apply_action_batch(
+        &mut self,
+        actions: impl IntoIterator<Item = EncyclopediaAction>,
+    ) -> Result<Vec<NavigationOutcome>, EncyclopediaError> {
+        let mut outcomes = Vec::new();
+        for action in actions {
+            let view = self.build_view()?;
+            outcomes.push(apply_encyclopedia_action(
+                &mut self.navigation,
+                &view,
+                action,
+            ));
+        }
+        Ok(outcomes)
+    }
+
+    fn navigation_mut(&mut self) -> &mut EncyclopediaNavigationState {
+        &mut self.navigation
+    }
+
+    fn unavailable_diagnostic(&self) -> Option<&str> {
+        self.presentation_error.as_deref()
+    }
+
+    fn source_profile(&self) -> Option<&str> {
+        Some(&self.source_profile)
+    }
+
+    fn fail_presentation(&mut self, error: impl ToString) {
+        self.presentation_error = Some(error.to_string());
+    }
+
+    fn selected_owner(&self, image_id: &str) -> Option<&EncyclopediaImageOwner> {
+        self.snapshot.image_owners().get(image_id)
+    }
+
+    fn apply_prepared_image(&mut self, view: &mut EncyclopediaView) {
+        let Some(active) = view.active_topic.as_mut() else {
+            return;
+        };
+        if self.prepared_generation != Some(self.snapshot.generation()) {
+            let prepared = match active.image.as_ref() {
+                None => crate::encyclopedia_hd::prepare_native_encyclopedia_hd(
+                    self.asset_profile,
+                    self.hd_root.as_deref(),
+                    &[crate::encyclopedia_hd::EncyclopediaImageCandidate::Null {
+                        topic_id: &active.topic_id,
+                    }],
+                ),
+                Some(image) => match self.selected_owner(&image.asset_id) {
+                    Some(EncyclopediaImageOwner::Mod { .. }) => {
+                        crate::encyclopedia_hd::prepare_native_encyclopedia_hd(
+                            self.asset_profile,
+                            self.hd_root.as_deref(),
+                            &[crate::encyclopedia_hd::EncyclopediaImageCandidate::Mod {
+                                topic_id: &active.topic_id,
+                                image,
+                            }],
+                        )
+                    }
+                    Some(EncyclopediaImageOwner::Base { path }) => {
+                        let file_name = std::path::Path::new(path)
+                            .file_name()
+                            .and_then(|name| name.to_str())
+                            .unwrap_or(path);
+                        let normalized = file_name.replace('.', "_");
+                        let approval_key = format!("edata/{normalized}");
+                        let output_path = PathBuf::from(format!("EData/{normalized}.png"));
+                        crate::encyclopedia_hd::prepare_native_encyclopedia_hd(
+                            self.asset_profile,
+                            self.hd_root.as_deref(),
+                            &[crate::encyclopedia_hd::EncyclopediaImageCandidate::Base {
+                                topic_id: &active.topic_id,
+                                image,
+                                approval_key: &approval_key,
+                                output_relative_path: &output_path,
+                            }],
+                        )
+                    }
+                    None => crate::encyclopedia_hd::PreparedEncyclopediaImages::original_only(),
+                },
+            };
+            for diagnostic in prepared.diagnostics() {
+                macroquad::logging::warn!(
+                    "[encyclopedia_native_acceptance] hd_diagnostic={:?}",
+                    diagnostic
+                );
+            }
+            self.prepared_images = prepared;
+            self.prepared_generation = Some(self.snapshot.generation());
+        }
+        active.image = self
+            .prepared_images
+            .select(&active.topic_id, active.image.as_ref());
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn build_effective_snapshot_view(
+    snapshot: &EffectiveEncyclopediaSnapshot,
+    admission: &AdmissionSnapshot,
+    language: &str,
+    selection: &rebellion_render::EncyclopediaSelection,
+    title_cache: &mut BTreeMap<String, Arc<str>>,
+    active_body: &mut Option<(String, Arc<str>)>,
+    active_image: &mut Option<(String, String, TopicImageView)>,
+) -> Result<EncyclopediaView, EncyclopediaError> {
+    let catalog = snapshot.catalog();
+    let mut diagnostics = Vec::new();
+    let index_label =
+        match resolve_localized_label(&catalog.index.labels, &catalog.default_language, language) {
+            Ok(label) => Some(Arc::from(label)),
+            Err(error) => {
+                diagnostics.push(EncyclopediaViewDiagnostic {
+                    code: error.code(),
+                    scope: EncyclopediaDiagnosticScope::Index,
+                });
+                None
+            }
+        };
+    let index_enabled = index_label.is_some();
+    let categories = catalog
+        .categories
+        .iter()
+        .map(|category| {
+            let label = match resolve_localized_label(
+                &category.labels,
+                &catalog.default_language,
+                language,
+            ) {
+                Ok(label) => Some(Arc::from(label)),
+                Err(error) => {
+                    diagnostics.push(EncyclopediaViewDiagnostic {
+                        code: error.code(),
+                        scope: EncyclopediaDiagnosticScope::Category {
+                            category_id: category.id.clone(),
+                        },
+                    });
+                    None
+                }
+            };
+            CategoryViewItem {
+                category_id: category.id.clone(),
+                command: category.command.clone(),
+                enabled: label.is_some(),
+                label,
+            }
+        })
+        .collect::<Vec<_>>();
+    let (selected_category_id, registry_topic_ids) = match selection.category_id.as_deref() {
+        None if index_enabled => (None, catalog.index.topic_ids.as_slice()),
+        None => (None, &[][..]),
+        Some(category_id) => match catalog
+            .categories
+            .iter()
+            .enumerate()
+            .find(|(_, category)| category.id == category_id)
+        {
+            Some((index, category)) if categories[index].enabled => {
+                (Some(category.id.clone()), category.topic_ids.as_slice())
+            }
+            Some((_, category)) => (Some(category.id.clone()), &[][..]),
+            None if index_enabled => {
+                diagnostics.push(EncyclopediaViewDiagnostic {
+                    code: "unknown_category_selection",
+                    scope: EncyclopediaDiagnosticScope::Category {
+                        category_id: category_id.to_owned(),
+                    },
+                });
+                (None, catalog.index.topic_ids.as_slice())
+            }
+            None => (None, &[][..]),
+        },
+    };
+    let resolved = resolve_admitted_topics(catalog, registry_topic_ids, Some(admission), language)?;
+    diagnostics.extend(
+        resolved
+            .diagnostics
+            .iter()
+            .map(|diagnostic| EncyclopediaViewDiagnostic {
+                code: diagnostic.error.code(),
+                scope: EncyclopediaDiagnosticScope::Topic {
+                    topic_id: diagnostic.topic_id.0.clone(),
+                },
+            }),
+    );
+    let selected_position = selection.topic_id.as_deref().and_then(|selected| {
+        resolved
+            .rows
+            .iter()
+            .position(|topic| topic.topic_id.0 == selected)
+    });
+    let topics = resolved
+        .rows
+        .iter()
+        .map(|topic| TopicViewItem {
+            topic_id: topic.topic_id.0.clone(),
+            title: title_cache
+                .entry(topic.topic_id.0.clone())
+                .or_insert_with(|| Arc::from(topic.localized.title.as_str()))
+                .clone(),
+        })
+        .collect::<Vec<_>>();
+    let active_topic = selected_position
+        .map(|index| {
+            let topic = &resolved.rows[index];
+            let body = match active_body {
+                Some((topic_id, body)) if topic_id == &topic.topic_id.0 => body.clone(),
+                _ => {
+                    let body: Arc<str> = Arc::from(topic.localized.body.as_str());
+                    *active_body = Some((topic.topic_id.0.clone(), body.clone()));
+                    body
+                }
+            };
+            let image = effective_topic_image(
+                snapshot,
+                topic.image_id.map(|id| id.0.as_str()),
+                active_image,
+            )?;
+            Ok(ActiveTopicView {
+                topic_id: topic.topic_id.0.clone(),
+                title: topics[index].title.clone(),
+                body,
+                image,
+                stats: Vec::new(),
+            })
+        })
+        .transpose()?;
+    let selected_topic_id = selected_position.map(|index| topics[index].topic_id.clone());
+    let previous_topic_id = selected_position
+        .and_then(|index| index.checked_sub(1))
+        .map(|index| topics[index].topic_id.clone());
+    let next_topic_id = selected_position
+        .and_then(|index| index.checked_add(1))
+        .and_then(|index| topics.get(index))
+        .map(|topic| topic.topic_id.clone());
+    Ok(EncyclopediaView {
+        index_label,
+        index_enabled,
+        categories,
+        topics,
+        active_topic,
+        navigation: NavigationState {
+            selected_category_id,
+            selected_topic_id,
+            previous_topic_id,
+            next_topic_id,
+            world_epoch: admission.world_epoch,
+        },
+        diagnostics,
+    })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn effective_topic_image(
+    snapshot: &EffectiveEncyclopediaSnapshot,
+    image_id: Option<&str>,
+    cache: &mut Option<(String, String, TopicImageView)>,
+) -> Result<Option<TopicImageView>, EncyclopediaError> {
+    let Some(image_id) = image_id else {
+        *cache = None;
+        return Ok(None);
+    };
+    let descriptor = snapshot.catalog().images.get(image_id).ok_or_else(|| {
+        EncyclopediaError::for_session(
+            "missing_effective_image",
+            format!("$.images.{image_id}"),
+            "selected image identity is absent from the effective snapshot",
+        )
+    })?;
+    if let Some((cached_id, cached_digest, image)) = cache {
+        if cached_id == image_id && cached_digest == &descriptor.sha256 {
+            return Ok(Some(image.clone()));
+        }
+    }
+    let bytes = snapshot.image(image_id).ok_or_else(|| {
+        EncyclopediaError::for_session(
+            "missing_runtime_file",
+            &descriptor.path,
+            "selected image has no retained effective provider bytes",
+        )
+    })?;
+    if u64::try_from(bytes.len()).ok() != Some(descriptor.byte_length) {
+        return Err(EncyclopediaError::for_session(
+            "image_byte_length_mismatch",
+            &descriptor.path,
+            "effective provider length differs from its validated descriptor",
+        ));
+    }
+    let image = TopicImageView {
+        asset_id: image_id.to_owned(),
+        digest: descriptor.sha256.clone(),
+        format: descriptor.format.clone(),
+        width: descriptor.width,
+        height: descriptor.height,
+        bytes: Arc::from(bytes),
+        render_profile: TopicImageRenderProfile::OriginalNearest,
+    };
+    *cache = Some((
+        image_id.to_owned(),
+        descriptor.sha256.clone(),
+        image.clone(),
+    ));
+    Ok(Some(image))
 }
 
 #[cfg(any(test, target_arch = "wasm32"))]
@@ -526,6 +998,7 @@ impl<Backend: EncyclopediaTextureBackend> InspectorTextureState<Backend> {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn request_value_enabled(value: Option<&OsStr>) -> bool {
     value == Some(OsStr::new("1"))
 }
@@ -553,6 +1026,16 @@ fn native_viewer_faction(
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn fingerprint_serializable(value: &impl serde::Serialize) -> String {
+    let bytes = serde_json::to_vec(value)
+        .expect("feature-only native acceptance state must remain serializable");
+    let hash = bytes.iter().fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| {
+        (hash ^ u64::from(*byte)).wrapping_mul(0x0000_0100_0000_01b3)
+    });
+    format!("fnv1a64:{hash:016x}")
+}
+
 #[cfg(test)]
 fn fitted_art_size(width: u32, height: u32) -> [f32; 2] {
     let longest_side = width.max(height) as f32;
@@ -568,7 +1051,202 @@ pub(crate) fn requested() -> bool {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub(crate) async fn run(gdata: &std::path::Path) {
+#[derive(Debug, Clone)]
+pub(crate) struct NativeSimulationFingerprints {
+    pub(crate) world: String,
+    pub(crate) save: String,
+    pub(crate) rng: String,
+}
+
+enum SurfaceModel {
+    Static(InspectorModel),
+    #[cfg(not(target_arch = "wasm32"))]
+    Live(LiveInspectorModel),
+}
+
+impl SurfaceModel {
+    fn ensure_initial_topic(&mut self) -> Result<(), EncyclopediaError> {
+        match self {
+            Self::Static(model) => model.ensure_initial_topic(),
+            #[cfg(not(target_arch = "wasm32"))]
+            Self::Live(model) => model.ensure_initial_topic(),
+        }
+    }
+
+    fn build_view(&mut self) -> Result<Option<EncyclopediaView>, EncyclopediaError> {
+        match self {
+            Self::Static(model) => model.build_view(),
+            #[cfg(not(target_arch = "wasm32"))]
+            Self::Live(model) => model.build_view().map(Some),
+        }
+    }
+
+    fn source_profile(&self) -> Option<&str> {
+        match self {
+            Self::Static(model) => model.source_profile(),
+            #[cfg(not(target_arch = "wasm32"))]
+            Self::Live(model) => model.source_profile(),
+        }
+    }
+
+    fn unavailable_diagnostic(&self) -> Option<&str> {
+        match self {
+            Self::Static(model) => model.unavailable_diagnostic(),
+            #[cfg(not(target_arch = "wasm32"))]
+            Self::Live(model) => model.unavailable_diagnostic(),
+        }
+    }
+
+    fn navigation_mut(&mut self) -> &mut EncyclopediaNavigationState {
+        match self {
+            Self::Static(model) => model.navigation_mut(),
+            #[cfg(not(target_arch = "wasm32"))]
+            Self::Live(model) => model.navigation_mut(),
+        }
+    }
+
+    fn apply_action_batch(
+        &mut self,
+        actions: impl IntoIterator<Item = EncyclopediaAction>,
+    ) -> Result<Vec<NavigationOutcome>, EncyclopediaError> {
+        match self {
+            Self::Static(model) => model.apply_action_batch(actions),
+            #[cfg(not(target_arch = "wasm32"))]
+            Self::Live(model) => model.apply_action_batch(actions),
+        }
+    }
+
+    fn fail_presentation(&mut self, error: impl ToString) {
+        match self {
+            Self::Static(model) => {
+                *model =
+                    InspectorModel::new(InspectorContent::Unavailable(error.to_string()), "1033");
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            Self::Live(model) => model.fail_presentation(error),
+        }
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn static_model(&self) -> &InspectorModel {
+        let Self::Static(model) = self;
+        model
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn live_model_mut(&mut self) -> Option<&mut LiveInspectorModel> {
+        match self {
+            Self::Static(_) => None,
+            Self::Live(model) => Some(model),
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn live_model(&self) -> Option<&LiveInspectorModel> {
+        match self {
+            Self::Static(_) => None,
+            Self::Live(model) => Some(model),
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+struct LiveRefreshContext<'a> {
+    runtime: &'a mut rebellion_data::mods::ModRuntime,
+    lifecycle: &'a mut EncyclopediaLifecycle,
+    watcher: &'a mut crate::encyclopedia_watcher::EncyclopediaWatcher,
+    fingerprint_source: &'a mut dyn FnMut() -> NativeSimulationFingerprints,
+    fingerprints: NativeSimulationFingerprints,
+    emit_report: bool,
+    last_published_changed: bool,
+    diagnostics: Vec<String>,
+}
+
+/// Synchronizes the feature fixture's file-authored desired set through the
+/// same in-memory toggle API used by the real Mod Manager. Discovery must run
+/// first because a harness step may install a manifest and enable it in one
+/// atomic operation. This adapter deliberately has no world handle: its only
+/// publication boundary is E50's content-only lifecycle entry.
+#[cfg(not(target_arch = "wasm32"))]
+fn sync_live_enabled_state_from_disk(
+    runtime: &mut rebellion_data::mods::ModRuntime,
+    lifecycle: &mut EncyclopediaLifecycle,
+) -> Option<crate::encyclopedia_lifecycle::EncyclopediaContentRefresh> {
+    let desired = rebellion_data::mods::ModConfig::load(&runtime.mods_dir);
+    let current_names = runtime
+        .config
+        .enabled
+        .iter()
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let desired_names = desired.enabled.iter().cloned().collect::<BTreeSet<_>>();
+    if current_names == desired_names {
+        return None;
+    }
+
+    runtime.refresh();
+    let changed_names = current_names
+        .symmetric_difference(&desired_names)
+        .cloned()
+        .collect::<Vec<_>>();
+    for name in changed_names {
+        runtime.toggle_mod(&name);
+    }
+    debug_assert_eq!(
+        runtime
+            .config
+            .enabled
+            .iter()
+            .cloned()
+            .collect::<BTreeSet<_>>(),
+        desired_names,
+        "feature control must apply the exact desired enabled-name set"
+    );
+
+    let ordered = runtime.enabled_sorted();
+    Some(lifecycle.refresh_content_only(&ordered))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn record_live_refresh(
+    model: &mut SurfaceModel,
+    live: &mut LiveRefreshContext<'_>,
+    refresh: crate::encyclopedia_lifecycle::EncyclopediaContentRefresh,
+) {
+    live.last_published_changed = refresh.published_changed;
+    live.diagnostics = refresh
+        .diagnostics
+        .iter()
+        .map(|diagnostic| {
+            format!(
+                "{}:{}:{}:{}",
+                diagnostic.mod_name, diagnostic.code, diagnostic.path, diagnostic.message
+            )
+        })
+        .collect();
+    if let Some(live_model) = model.live_model_mut() {
+        let _ = live_model.rebind_from_lifecycle(live.lifecycle);
+    }
+    live.emit_report = true;
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The feature-only route passes the already-owned runtime components without wrapping or duplicating them."
+)]
+pub(crate) async fn run_live<F>(
+    gdata: &std::path::Path,
+    source_profile: &str,
+    runtime: &mut rebellion_data::mods::ModRuntime,
+    lifecycle: &mut EncyclopediaLifecycle,
+    watcher: &mut crate::encyclopedia_watcher::EncyclopediaWatcher,
+    asset_profile: AssetRenderProfile,
+    hd_root: Option<PathBuf>,
+    mut fingerprint_source: F,
+) where
+    F: FnMut() -> NativeSimulationFingerprints,
+{
     let (viewer, faction) =
         match native_viewer_faction(std::env::var_os(INSPECTOR_FACTION).as_deref()) {
             Ok(selection) => selection,
@@ -577,14 +1255,42 @@ pub(crate) async fn run(gdata: &std::path::Path) {
                 return;
             }
         };
-    let override_root =
-        std::env::var_os("REBELLION_ENCYCLOPEDIA_DIR").map(std::path::PathBuf::from);
-    let availability =
-        crate::encyclopedia_runtime::load_native_encyclopedia(gdata, override_root.as_deref());
-    let model = InspectorModel::from_availability_for_viewer(availability, "1033", viewer);
+    let model = LiveInspectorModel::from_lifecycle(lifecycle, source_profile, "1033", viewer)
+        .map(|mut model| {
+            model.configure_images(asset_profile, hd_root);
+            let _ = model.select_topic("original:5696".to_owned());
+            model
+        })
+        .map_or_else(
+            || {
+                SurfaceModel::Static(InspectorModel::new(
+                    InspectorContent::Unavailable(
+                        "validated native encyclopedia session is unavailable".to_owned(),
+                    ),
+                    "1033",
+                ))
+            },
+            SurfaceModel::Live,
+        );
     let mut chrome = rebellion_render::BmpCache::new();
     chrome.set_base_path(gdata.join("ui"));
-    run_surface(model, chrome, faction).await;
+    let fingerprints = fingerprint_source();
+    run_surface(
+        model,
+        chrome,
+        faction,
+        LiveRefreshContext {
+            runtime,
+            lifecycle,
+            watcher,
+            fingerprint_source: &mut fingerprint_source,
+            fingerprints,
+            emit_report: true,
+            last_published_changed: false,
+            diagnostics: Vec::new(),
+        },
+    )
+    .await;
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -605,7 +1311,7 @@ async fn run_browser(
 ) {
     let model = InspectorModel::from_browser_request(availability, "1033", request);
     run_surface(
-        model,
+        SurfaceModel::Static(model),
         rebellion_render::BmpCache::new(),
         request.faction,
         request,
@@ -615,9 +1321,10 @@ async fn run_browser(
 }
 
 async fn run_surface(
-    mut model: InspectorModel,
+    mut model: SurfaceModel,
     mut chrome: rebellion_render::BmpCache,
     faction: rebellion_render::CockpitFaction,
+    #[cfg(not(target_arch = "wasm32"))] mut live: LiveRefreshContext<'_>,
     #[cfg(target_arch = "wasm32")] browser_request: FixtureRequest,
     #[cfg(target_arch = "wasm32")] browser_transport: BrowserEncyclopediaTransport,
 ) {
@@ -647,18 +1354,32 @@ async fn run_surface(
         if is_quit_requested() {
             break;
         }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            live.fingerprints = (live.fingerprint_source)();
+            if let Some(refresh) = sync_live_enabled_state_from_disk(live.runtime, live.lifecycle) {
+                record_live_refresh(&mut model, &mut live, refresh);
+            }
+            let outcome = live.watcher.poll_and_refresh(live.runtime, live.lifecycle);
+            if let Some(refresh) = outcome.refresh {
+                record_live_refresh(&mut model, &mut live, refresh);
+            }
+            if !outcome.diagnostics.is_empty() {
+                live.diagnostics.extend(outcome.diagnostics);
+                live.emit_report = true;
+            }
+        }
         clear_background(Color::from_rgba(9, 13, 22, 255));
 
         if let Err(error) = model.ensure_initial_topic() {
-            model = InspectorModel::new(InspectorContent::Unavailable(error.to_string()), "1033");
+            model.fail_presentation(error);
         }
         let source_profile = model.source_profile().map(str::to_owned);
         let unavailable = model.unavailable_diagnostic().map(str::to_owned);
         let view = match model.build_view() {
             Ok(view) => view,
             Err(error) => {
-                model =
-                    InspectorModel::new(InspectorContent::Unavailable(error.to_string()), "1033");
+                model.fail_presentation(error);
                 None
             }
         };
@@ -721,6 +1442,22 @@ async fn run_surface(
                         egui_macroquad::egui::Color32::LIGHT_RED,
                         format!("chrome missing: {} ({ids})", missing_chrome.len()),
                     );
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                if let Some(live_model) = model.live_model() {
+                    ui.label(format!("effective generation: {}", live_model.generation()));
+                    ui.label(format!(
+                        "retained bytes: {}",
+                        live.lifecycle.retained_bytes_for_fixture()
+                    ));
+                    ui.label(format!(
+                        "accepted mods: {:?}",
+                        live.lifecycle.accepted_mod_names_for_fixture()
+                    ));
+                    ui.label(format!(
+                        "world/save/rng: {} / {} / {}",
+                        live.fingerprints.world, live.fingerprints.save, live.fingerprints.rng
+                    ));
                 }
                 if let Some(frame) = surface_frame.as_ref() {
                     ui.label(format!(
@@ -806,12 +1543,22 @@ async fn run_surface(
                     }
                 }
                 Err(error) => {
-                    model = InspectorModel::new(
-                        InspectorContent::Unavailable(error.to_string()),
-                        "1033",
-                    );
+                    model.fail_presentation(error);
                 }
             }
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        if live.emit_report {
+            emit_native_acceptance_report(
+                &model,
+                view.as_ref(),
+                surface_frame.as_ref(),
+                &cache_status,
+                &live,
+            );
+            live.emit_report = false;
+            live.last_published_changed = false;
+            live.diagnostics.clear();
         }
         #[cfg(target_arch = "wasm32")]
         if !report_emitted {
@@ -828,7 +1575,7 @@ async fn run_surface(
                 let report = fixture_report(
                     browser_transport,
                     browser_request,
-                    &model,
+                    model.static_model(),
                     view.as_ref(),
                     asset_id,
                     digest,
@@ -844,15 +1591,111 @@ async fn run_surface(
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+fn emit_native_acceptance_report(
+    model: &SurfaceModel,
+    view: Option<&EncyclopediaView>,
+    frame: Option<&rebellion_render::EncyclopediaSurfaceFrame>,
+    cache_status: &str,
+    live: &LiveRefreshContext<'_>,
+) {
+    let live_model = model.live_model();
+    let active = view.and_then(|view| view.active_topic.as_ref());
+    let body_sha256 = active.and_then(|topic| {
+        rebellion_render::inspect_encyclopedia_bytes(topic.body.as_bytes(), None)
+            .ok()
+            .map(|inspected| inspected.sha256)
+    });
+    let asset_id = frame.and_then(|frame| frame.active_asset_id.as_deref());
+    let image_source = active
+        .and_then(|topic| topic.image.as_ref())
+        .filter(|image| image.render_profile == TopicImageRenderProfile::FaithfulHdLinear)
+        .map(|_| "approved_hd")
+        .or_else(|| {
+            asset_id
+                .and_then(|asset_id| live_model.and_then(|model| model.selected_owner(asset_id)))
+                .map(|owner| match owner {
+                    EncyclopediaImageOwner::Base { .. } => "base",
+                    EncyclopediaImageOwner::Mod { .. } => "mod",
+                })
+        })
+        .unwrap_or_else(|| {
+            if active.is_some_and(|topic| topic.image.is_none()) {
+                "null"
+            } else {
+                "unavailable"
+            }
+        });
+    let texture_events = frame.map_or_else(Vec::new, |frame| {
+        frame
+            .texture_events
+            .iter()
+            .map(|event| format!("{event:?}"))
+            .collect()
+    });
+    let accepted_mods = live.lifecycle.accepted_mod_names_for_fixture();
+    let enabled_mods = live.runtime.enabled_mod_list();
+    let dependency_diagnostics = live
+        .runtime
+        .errors
+        .iter()
+        .map(|error| {
+            let code = match error {
+                rebellion_data::mods::ModError::MissingDependency { .. } => "missing_dependency",
+                rebellion_data::mods::ModError::VersionMismatch { .. } => "version_mismatch",
+                rebellion_data::mods::ModError::ParseError { .. } => "mod_parse_error",
+                rebellion_data::mods::ModError::LoadOrder { .. } => "load_order_error",
+            };
+            format!("{}:{code}:{error}", error.mod_name())
+        })
+        .collect::<Vec<_>>();
+    let report = serde_json::json!({
+        "schema_version": 1,
+        "synthetic_test_only": true,
+        "status": if active.is_some() { "ready" } else { "unavailable" },
+        "source_profile": model.source_profile(),
+        "generation": live_model.map(LiveInspectorModel::generation),
+        "topic_id": active.map(|topic| topic.topic_id.as_str()),
+        "title": active.map(|topic| topic.title.as_ref()),
+        "body_sha256": body_sha256,
+        "image_source": image_source,
+        "asset_id": asset_id,
+        "digest": frame.and_then(|frame| frame.active_digest.as_deref()),
+        "cache_status": cache_status,
+        "texture_events": texture_events,
+        "live_texture_entries": usize::from(
+            asset_id.is_some() && frame.is_some_and(|frame| frame.texture_diagnostic.is_none())
+        ),
+        "retained_bytes": live.lifecycle.retained_bytes_for_fixture(),
+        "accepted_mods": accepted_mods,
+        "enabled_mods": enabled_mods,
+        "published_changed": live.last_published_changed,
+        "diagnostics": live.diagnostics,
+        "dependency_diagnostics": dependency_diagnostics,
+        "world_fingerprint": live.fingerprints.world,
+        "save_fingerprint": live.fingerprints.save,
+        "rng_fingerprint": live.fingerprints.rng,
+    });
+    macroquad::logging::info!(
+        "[encyclopedia_native_acceptance] {}",
+        serde_json::to_string(&report).expect("native acceptance report is serializable")
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use std::cell::RefCell;
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, HashMap};
     use std::ffi::OsStr;
+    use std::fs;
+    use std::path::PathBuf;
     use std::rc::Rc;
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::{Arc, Mutex};
+    use std::time::Duration;
 
     use rebellion_data::encyclopedia::{AdmissionFact, ViewerFaction};
+    use rebellion_data::mods::{ModConfig, ModManifest, ModRuntime, ModWatchPoll};
     use rebellion_render::{
         draw_encyclopedia_surface, inspect_encyclopedia_bytes, BmpCache, BodyScrollIntent,
         CockpitFaction, EguiEncyclopediaTextureBackend, EncyclopediaAction, EncyclopediaMode,
@@ -863,15 +1706,19 @@ mod tests {
     use serde_json::Value;
 
     use super::{
-        fitted_art_size, fixture_report, inspection_admission, native_viewer_faction,
-        packed_fixture_report, request_value_enabled, requested, selection_evidence,
-        viewport_evidence, BrowserEncyclopediaTransport, InspectorContent, InspectorModel,
-        InspectorTextureState, INSPECTOR_REQUEST,
+        fingerprint_serializable, fitted_art_size, fixture_report, inspection_admission,
+        native_viewer_faction, packed_fixture_report, record_live_refresh, request_value_enabled,
+        requested, selection_evidence, sync_live_enabled_state_from_disk, viewport_evidence,
+        BrowserEncyclopediaTransport, InspectorContent, InspectorModel, InspectorTextureState,
+        LiveInspectorModel, LiveRefreshContext, NativeSimulationFingerprints, SurfaceModel,
+        INSPECTOR_REQUEST,
     };
+    use crate::encyclopedia_lifecycle::EncyclopediaLifecycle;
     use crate::encyclopedia_session::{
         prepare_encyclopedia_session, EncyclopediaAvailability, EncyclopediaBytes,
         EncyclopediaSession,
     };
+    use crate::encyclopedia_watcher::EncyclopediaWatcher;
     use crate::interface_test_fixture::{FixtureRequest, Scenario};
 
     const VALID_CATALOG: &[u8] =
@@ -887,6 +1734,78 @@ mod tests {
     const VALID_IMAGE_3: &[u8] = include_bytes!(
         "../../../tests/fixtures/encyclopedia/fixtures/bundles/valid/assets/EDATA.003"
     );
+
+    static NEXT_LIVE_TEMP: AtomicU64 = AtomicU64::new(0);
+
+    struct LiveModRoot(PathBuf);
+
+    impl LiveModRoot {
+        fn new() -> Self {
+            let serial = NEXT_LIVE_TEMP.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "open-rebellion-e26-live-{}-{serial}",
+                std::process::id()
+            ));
+            fs::create_dir_all(&path).unwrap();
+            Self(path)
+        }
+
+        fn write_overlay(&self, bytes: &[u8]) {
+            fs::write(self.0.join("encyclopedia.json"), bytes).unwrap();
+        }
+
+        fn write_asset(&self, name: &str, bytes: &[u8]) {
+            let assets = self.0.join("encyclopedia/assets");
+            fs::create_dir_all(&assets).unwrap();
+            fs::write(assets.join(name), bytes).unwrap();
+        }
+
+        fn manifest(&self) -> ModManifest {
+            ModManifest {
+                name: "e26-live".to_owned(),
+                version: "1.0.0".to_owned(),
+                author: "Synthetic E26 test".to_owned(),
+                description: "Feature-only live inspector regression".to_owned(),
+                dependencies: HashMap::new(),
+                path: self.0.clone(),
+                enabled: true,
+            }
+        }
+    }
+
+    impl Drop for LiveModRoot {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn write_live_discovered_mod(
+        mods_root: &std::path::Path,
+        directory: &str,
+        name: &str,
+        dependencies: &[(&str, &str)],
+        overlay: &[u8],
+    ) {
+        let root = mods_root.join(directory);
+        fs::create_dir_all(&root).unwrap();
+        let mut manifest = format!("name = \"{name}\"\nversion = \"1.0.0\"\n");
+        if !dependencies.is_empty() {
+            manifest.push_str("[dependencies]\n");
+            for (dependency, requirement) in dependencies {
+                manifest.push_str(&format!("\"{dependency}\" = \"{requirement}\"\n"));
+            }
+        }
+        fs::write(root.join("mod.toml"), manifest).unwrap();
+        fs::write(root.join("encyclopedia.json"), overlay).unwrap();
+    }
+
+    fn write_live_enabled_config(mods_root: &std::path::Path, names: &[&str]) {
+        ModConfig {
+            enabled: names.iter().map(|name| (*name).to_owned()).collect(),
+        }
+        .save(mods_root)
+        .unwrap();
+    }
 
     struct InspectorRequestEnvRestore(Option<std::ffi::OsString>);
 
@@ -1476,6 +2395,16 @@ mod tests {
     }
 
     #[test]
+    fn native_acceptance_fingerprint_is_deterministic_and_content_sensitive() {
+        let initial = fingerprint_serializable(&vec![1_u32, 2, 3]);
+
+        assert_eq!(initial, fingerprint_serializable(&vec![1_u32, 2, 3]));
+        assert_ne!(initial, fingerprint_serializable(&vec![1_u32, 2, 4]));
+        assert!(initial.starts_with("fnv1a64:"));
+        assert_eq!(initial.len(), "fnv1a64:".len() + 16);
+    }
+
+    #[test]
     fn category_selection_changes_membership_and_clears_the_previous_topic() {
         let mut model = InspectorModel::new(InspectorContent::Ready(Box::new(session())), "1033");
         model.select_topic("original:60002".to_owned()).unwrap();
@@ -1795,5 +2724,346 @@ mod tests {
         assert_eq!(fitted_art_size(2, 2), [160.0, 160.0]);
         assert_eq!(fitted_art_size(1_000, 500), [360.0, 180.0]);
         assert_eq!(fitted_art_size(80, 320), [80.0, 320.0]);
+    }
+
+    #[test]
+    fn live_inspector_rebinds_the_real_effective_snapshot_without_losing_selection() {
+        let root = LiveModRoot::new();
+        let manifest = root.manifest();
+        let mut lifecycle =
+            EncyclopediaLifecycle::from_availability(EncyclopediaAvailability::Ready(session()));
+        let mut model = LiveInspectorModel::from_lifecycle(
+            &lifecycle,
+            "e37-synthetic-v1",
+            "1033",
+            ViewerFaction::Alliance,
+        )
+        .expect("base effective snapshot");
+        model.select_topic("original:60001".to_owned()).unwrap();
+        let initial_generation = model.generation();
+
+        root.write_asset("live.bmp", VALID_IMAGE_2);
+        root.write_overlay(
+            br#"[{"id":"original:60001","localized":{"1033":{"title":"Live title","image":{"path":"encyclopedia/assets/live.bmp"}}}}]"#,
+        );
+        let refresh = lifecycle.refresh_content_only(&[&manifest]);
+        assert!(refresh.published_changed, "refresh: {refresh:?}");
+        assert!(model.rebind_from_lifecycle(&lifecycle));
+
+        let view = model.build_view().unwrap();
+        assert_eq!(model.generation(), initial_generation + 1);
+        assert_eq!(
+            view.navigation.selected_topic_id.as_deref(),
+            Some("original:60001")
+        );
+        assert_eq!(
+            view.active_topic.as_ref().map(|topic| topic.title.as_ref()),
+            Some("Live title")
+        );
+        let first_image = view
+            .active_topic
+            .as_ref()
+            .and_then(|topic| topic.image.as_ref())
+            .expect("accepted mod image");
+        let first_asset_id = first_image.asset_id.clone();
+        let first_digest = first_image.digest.clone();
+
+        root.write_asset("live.bmp", VALID_IMAGE_3);
+        let image_only = lifecycle.refresh_content_only(&[&manifest]);
+        assert!(image_only.published_changed, "refresh: {image_only:?}");
+        assert!(model.rebind_from_lifecycle(&lifecycle));
+        let image_only_view = model.build_view().unwrap();
+        let replacement = image_only_view
+            .active_topic
+            .as_ref()
+            .and_then(|topic| topic.image.as_ref())
+            .expect("accepted replacement image");
+        assert_eq!(replacement.asset_id, first_asset_id);
+        assert_ne!(replacement.digest, first_digest);
+        assert_eq!(
+            image_only_view.navigation.selected_topic_id.as_deref(),
+            Some("original:60001")
+        );
+
+        root.write_overlay(br#"[{"#);
+        let malformed = lifecycle.refresh_content_only(&[&manifest]);
+        assert!(!malformed.published_changed, "refresh: {malformed:?}");
+        assert!(!model.rebind_from_lifecycle(&lifecycle));
+        assert_eq!(
+            model
+                .build_view()
+                .unwrap()
+                .active_topic
+                .as_ref()
+                .map(|topic| topic.title.as_ref()),
+            Some("Live title"),
+            "an eligible malformed edit must retain the last accepted publication"
+        );
+
+        let disabled = lifecycle.refresh_content_only(&[]);
+        assert!(disabled.published_changed, "refresh: {disabled:?}");
+        assert!(model.rebind_from_lifecycle(&lifecycle));
+        let restored = model.build_view().unwrap();
+        assert_eq!(
+            restored.navigation.selected_topic_id.as_deref(),
+            Some("original:60001")
+        );
+        assert_eq!(
+            restored
+                .active_topic
+                .as_ref()
+                .map(|topic| topic.title.as_ref()),
+            Some("Amber system"),
+            "disabling the mod must rebuild from immutable base without losing selection"
+        );
+    }
+
+    #[test]
+    fn dependency_failure_uses_the_real_empty_resolved_order_and_restores_base() {
+        let root = LiveModRoot::new();
+        root.write_overlay(
+            br#"[{"id":"original:60001","localized":{"1033":{"title":"Eligible title"}}}]"#,
+        );
+        let eligible = root.manifest();
+        let mut lifecycle =
+            EncyclopediaLifecycle::from_availability(EncyclopediaAvailability::Ready(session()));
+        let accepted = lifecycle.refresh_content_only(&[&eligible]);
+        assert!(accepted.published_changed, "refresh: {accepted:?}");
+        let mut model = LiveInspectorModel::from_lifecycle(
+            &lifecycle,
+            "e37-synthetic-v1",
+            "1033",
+            ViewerFaction::Alliance,
+        )
+        .expect("accepted effective snapshot");
+        model.select_topic("original:60001".to_owned()).unwrap();
+
+        let mut blocked = eligible.clone();
+        blocked.name = "e26-needs-missing".to_owned();
+        blocked.dependencies =
+            HashMap::from([("e26-not-installed".to_owned(), ">=1.0.0".to_owned())]);
+        let runtime = ModRuntime {
+            discovered: vec![eligible, blocked],
+            config: ModConfig::default(),
+            errors: Vec::new(),
+            mods_dir: root.0.clone(),
+        };
+
+        let ordered = runtime.enabled_sorted();
+        assert!(
+            ordered.is_empty(),
+            "invalid enabled batch must not be partial"
+        );
+        let restored = lifecycle.refresh_content_only(&ordered);
+        assert!(restored.published_changed, "refresh: {restored:?}");
+        assert!(model.rebind_from_lifecycle(&lifecycle));
+        let view = model.build_view().unwrap();
+        assert_eq!(
+            view.navigation.selected_topic_id.as_deref(),
+            Some("original:60001")
+        );
+        assert_eq!(
+            view.active_topic.as_ref().map(|topic| topic.title.as_ref()),
+            Some("Amber system")
+        );
+    }
+
+    #[test]
+    fn live_fixture_syncs_file_enabled_state_through_runtime_toggles_in_one_process() {
+        let mods = LiveModRoot::new();
+        write_live_enabled_config(&mods.0, &[]);
+        let mut runtime = ModRuntime::discover(&mods.0);
+        let mut lifecycle =
+            EncyclopediaLifecycle::from_availability(EncyclopediaAvailability::Ready(session()));
+        let base_generation = lifecycle
+            .effective_snapshot_for_fixture()
+            .unwrap()
+            .generation();
+        let mut surface_model = SurfaceModel::Live(
+            LiveInspectorModel::from_lifecycle(
+                &lifecycle,
+                "e37-synthetic-v1",
+                "1033",
+                ViewerFaction::Alliance,
+            )
+            .expect("base effective snapshot"),
+        );
+
+        write_live_discovered_mod(
+            &mods.0,
+            "alpha",
+            "e26-alpha",
+            &[],
+            br#"[{"id":"original:60001","localized":{"1033":{"title":"Alpha live"}}}]"#,
+        );
+        write_live_discovered_mod(
+            &mods.0,
+            "beta",
+            "e26-beta",
+            &[("e26-alpha", ">=1.0.0")],
+            br#"[{"id":"original:60001","localized":{"1033":{"title":"Beta live"}}}]"#,
+        );
+        write_live_enabled_config(&mods.0, &["e26-alpha", "e26-beta"]);
+
+        let enabled = sync_live_enabled_state_from_disk(&mut runtime, &mut lifecycle)
+            .expect("the changed desired set must produce one content-only refresh");
+        assert!(enabled.published_changed, "refresh: {enabled:?}");
+        {
+            let mut report_watcher = EncyclopediaWatcher::from_test_polls(&mods.0, []);
+            let mut fingerprint_source = || NativeSimulationFingerprints {
+                world: "world-before".to_owned(),
+                save: "save-before".to_owned(),
+                rng: "rng-before".to_owned(),
+            };
+            let mut live = LiveRefreshContext {
+                runtime: &mut runtime,
+                lifecycle: &mut lifecycle,
+                watcher: &mut report_watcher,
+                fingerprint_source: &mut fingerprint_source,
+                fingerprints: NativeSimulationFingerprints {
+                    world: "world-before".to_owned(),
+                    save: "save-before".to_owned(),
+                    rng: "rng-before".to_owned(),
+                },
+                emit_report: false,
+                last_published_changed: false,
+                diagnostics: Vec::new(),
+            };
+            record_live_refresh(&mut surface_model, &mut live, enabled);
+            assert!(live.emit_report);
+            assert!(live.last_published_changed);
+            assert!(live.diagnostics.is_empty());
+        }
+        assert_eq!(
+            surface_model
+                .live_model()
+                .expect("feature model remains live")
+                .generation(),
+            base_generation + 1
+        );
+        surface_model
+            .ensure_initial_topic()
+            .expect("synchronized live selection");
+        let synchronized_view = surface_model
+            .build_view()
+            .expect("synchronized live view")
+            .expect("live content remains available");
+        assert_eq!(
+            synchronized_view
+                .active_topic
+                .as_ref()
+                .map(|topic| topic.title.as_ref()),
+            Some("Beta live")
+        );
+        assert_eq!(
+            runtime.enabled_mod_list(),
+            vec![
+                ("e26-alpha".to_owned(), "1.0.0".to_owned()),
+                ("e26-beta".to_owned(), "1.0.0".to_owned()),
+            ]
+        );
+        let enabled_snapshot = lifecycle.effective_snapshot_for_fixture().unwrap();
+        assert_eq!(enabled_snapshot.generation(), base_generation + 1);
+        assert_eq!(
+            enabled_snapshot.catalog().topics["original:60001"].localized["1033"].title,
+            "Beta live"
+        );
+
+        fs::write(mods.0.join("beta/encyclopedia.json"), br#"[{"#).unwrap();
+        let mut watcher = EncyclopediaWatcher::from_test_polls(
+            &mods.0,
+            [
+                ModWatchPoll {
+                    changed: true,
+                    diagnostics: Vec::new(),
+                },
+                ModWatchPoll::default(),
+                ModWatchPoll {
+                    changed: true,
+                    diagnostics: Vec::new(),
+                },
+                ModWatchPoll::default(),
+            ],
+        );
+        assert!(watcher
+            .poll_and_refresh_at_for_test(&mut runtime, &mut lifecycle, Duration::ZERO)
+            .refresh
+            .is_none());
+        let malformed = watcher
+            .poll_and_refresh_at_for_test(&mut runtime, &mut lifecycle, Duration::from_millis(101))
+            .refresh
+            .expect("the accepted quiet boundary must perform one content-only refresh");
+        assert!(!malformed.published_changed, "refresh: {malformed:?}");
+        assert_eq!(
+            lifecycle
+                .effective_snapshot_for_fixture()
+                .unwrap()
+                .generation(),
+            base_generation + 1,
+            "a malformed edit must retain the eligible last-good publication"
+        );
+
+        fs::write(
+            mods.0.join("beta/encyclopedia.json"),
+            br#"[{"id":"original:60001","localized":{"1033":{"title":"Beta recovered"}}}]"#,
+        )
+        .unwrap();
+        assert!(watcher
+            .poll_and_refresh_at_for_test(&mut runtime, &mut lifecycle, Duration::from_millis(200),)
+            .refresh
+            .is_none());
+        let recovered = watcher
+            .poll_and_refresh_at_for_test(&mut runtime, &mut lifecycle, Duration::from_millis(301))
+            .refresh
+            .expect("a valid edit after the quiet boundary must recover in the same runtime");
+        assert!(recovered.published_changed, "refresh: {recovered:?}");
+        assert_eq!(
+            lifecycle
+                .effective_snapshot_for_fixture()
+                .unwrap()
+                .catalog()
+                .topics["original:60001"]
+                .localized["1033"]
+                .title,
+            "Beta recovered"
+        );
+
+        write_live_discovered_mod(
+            &mods.0,
+            "blocked",
+            "e26-needs-missing",
+            &[("e26-not-installed", ">=1.0.0")],
+            br#"[{"id":"original:60001","localized":{"1033":{"title":"MUST NOT APPEAR"}}}]"#,
+        );
+        write_live_enabled_config(&mods.0, &["e26-alpha", "e26-beta", "e26-needs-missing"]);
+        let blocked = sync_live_enabled_state_from_disk(&mut runtime, &mut lifecycle)
+            .expect("enabling a newly discovered blocked mod must refresh content");
+        assert!(blocked.published_changed, "refresh: {blocked:?}");
+        assert!(runtime.enabled_sorted().is_empty());
+        assert!(runtime
+            .errors
+            .iter()
+            .any(|error| matches!(error, rebellion_data::mods::ModError::MissingDependency { mod_name, dep_name }
+                if mod_name == "e26-needs-missing" && dep_name == "e26-not-installed")));
+        assert_eq!(
+            lifecycle
+                .effective_snapshot_for_fixture()
+                .unwrap()
+                .catalog()
+                .topics["original:60001"]
+                .localized["1033"]
+                .title,
+            "Amber system"
+        );
+
+        write_live_enabled_config(&mods.0, &[]);
+        let disabled = sync_live_enabled_state_from_disk(&mut runtime, &mut lifecycle)
+            .expect("disabling every mod must refresh back to base");
+        assert!(
+            !disabled.published_changed,
+            "base is already published: {disabled:?}"
+        );
+        assert!(runtime.enabled_mod_list().is_empty());
+        assert!(sync_live_enabled_state_from_disk(&mut runtime, &mut lifecycle).is_none());
     }
 }

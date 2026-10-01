@@ -67,8 +67,7 @@ catalog plus referenced base art. `source-report.json`, `raw/`, and
 unreferenced `assets/` files are local research evidence rather than mod inputs.
 Do not edit or distribute generated base prose/art. Author content belongs in a
 mod's separate `encyclopedia.json` and confined `encyclopedia/assets/` paths
-once the runtime overlay integration is enabled; it must never replace the
-generated base directory.
+and must never replace the generated base directory.
 
 ### Finding an entity's `dat_id`
 
@@ -157,6 +156,81 @@ Rules:
 
 See the worked example at `mods/examples/star-destroyer-rebalance/` — it
 raises the Imperial Star Destroyer's hull to 3000 and shields to 2000.
+
+### Encyclopedia text and artwork
+
+Encyclopedia changes use a separate root file named `encyclopedia.json`.
+Selectors are canonical string topic IDs from the staged catalog, not numeric
+world entity IDs. Only localized `title`, `body`, and `image` fields are
+author-editable; categories, bindings, provenance, canonical image IDs, source
+hashes, and base descriptors are protected.
+
+For example, this changes one English title/body and replaces its art with
+author-owned PNG bytes:
+
+```text
+mods/my-encyclopedia-mod/
+├── mod.toml
+├── encyclopedia.json
+└── encyclopedia/
+    └── assets/
+        └── interceptor.png
+```
+
+```json
+[
+  {
+    "id": "original:5696",
+    "localized": {
+      "1033": {
+        "title": "My Interceptor",
+        "body": "Author-written replacement text.",
+        "image": { "path": "encyclopedia/assets/interceptor.png" }
+      }
+    }
+  }
+]
+```
+
+The runtime reads and validates the exact confined BMP/PNG bytes, then computes
+their digest, dimensions, format, and collision-free mod image identity. Do
+not put a hash, dimensions, `image_id`, or base path into the patch. Paths are
+relative to that mod's directory, use `/`, and must remain within
+`encyclopedia/assets/`.
+
+Presence matters:
+
+- Omitting a field inherits the preceding effective value.
+- `"body": ""` deliberately publishes an empty body.
+- `"image": null` deliberately removes art; it does not fall back to base or
+  faithful-HD art.
+- `"title": null`, `"body": null`, or deleting a whole required localized
+  record is rejected when it would leave incomplete content.
+- A viewer-faction image pair must supply both `alliance` and `empire` sides
+  and is accepted only for a source-proven faction-capable topic. Do not infer
+  that capability from a name or existing picture.
+
+When two enabled mods edit the same field, dependency order applies first and
+the later mod wins. Declare a dependency when that precedence is intentional;
+unrelated mods use the runtime's deterministic name order. A malformed edit is
+reported with its mod/topic/path while the last accepted contribution remains
+visible if that mod is still eligible. Fixing the file recovers automatically.
+Disabling or removing a mod rebuilds from immutable base plus the remaining
+enabled snapshots, so a disabled contribution cannot reappear through cached
+cumulative state.
+
+Native builds watch `encyclopedia.json` and its declared art. Atomic editor
+renames, image-only edits, text edits, removal, and recreation are coalesced at
+the content-only refresh boundary; they do not replay simulation/world patches.
+Use **Reload Mods** to explicitly rearm after recreating a missing `mods/`
+directory. Browser v1 deliberately remains unmodified base-only: it neither
+discovers nor watches local mod directories.
+
+Keep base and author content separate. Re-running the staging command updates
+only the generated base inventory; it never writes into `mods/`. Conversely,
+native reload never writes to `data/base/encyclopedia`. If a supported owned
+installation changes, restage and verify the base rather than editing manifest
+hashes by hand.
 
 ## 5. Installing and testing
 

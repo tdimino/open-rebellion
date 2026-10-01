@@ -13,6 +13,8 @@ use rebellion_data::mods::{
     ENCYCLOPEDIA_MOD_FILENAME, ENCYCLOPEDIA_READ_ERROR_MESSAGE_BYTES_LIMIT,
 };
 
+#[cfg(any(test, feature = "interface-test-fixtures"))]
+use crate::encyclopedia_mods::EffectiveEncyclopediaSnapshot;
 use crate::encyclopedia_mods::{
     EncyclopediaModDiagnostic, EncyclopediaModEngine, ResolvedEncyclopediaMod,
 };
@@ -279,6 +281,39 @@ impl EncyclopediaLifecycle {
             })
             .collect();
         (!matching.is_empty()).then(|| matching.join("; "))
+    }
+
+    /// Feature/test-only tracked lease of the exact published E24 generation.
+    ///
+    /// The live acceptance inspector must observe the same transaction that
+    /// native callers publish. Returning a snapshot clone keeps E24's old-live
+    /// accounting active for the complete presentation lifetime; no second
+    /// parser, overlay engine, or filesystem reread is introduced.
+    #[cfg(any(test, feature = "interface-test-fixtures"))]
+    #[must_use]
+    pub(crate) fn effective_snapshot_for_fixture(&self) -> Option<EffectiveEncyclopediaSnapshot> {
+        match &self.state {
+            LifecycleState::Ready(engine) => Some(engine.snapshot().clone()),
+            LifecycleState::Unavailable(_) => None,
+        }
+    }
+
+    #[cfg(any(test, feature = "interface-test-fixtures"))]
+    #[must_use]
+    pub(crate) fn retained_bytes_for_fixture(&self) -> u64 {
+        match &self.state {
+            LifecycleState::Ready(engine) => engine.retained_bytes(),
+            LifecycleState::Unavailable(_) => 0,
+        }
+    }
+
+    #[cfg(any(test, feature = "interface-test-fixtures"))]
+    #[must_use]
+    pub(crate) fn accepted_mod_names_for_fixture(&self) -> Vec<&str> {
+        match &self.state {
+            LifecycleState::Ready(engine) => engine.accepted_mod_names(),
+            LifecycleState::Unavailable(_) => Vec::new(),
+        }
     }
 
     #[cfg(test)]
