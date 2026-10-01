@@ -1086,20 +1086,6 @@ fn draw_topic_surface(
     })
 }
 
-fn encyclopedia_rect(
-    parent: egui::Rect,
-    scale: f32,
-    x: f32,
-    y: f32,
-    width: f32,
-    height: f32,
-) -> egui::Rect {
-    egui::Rect::from_min_size(
-        egui::pos2(parent.min.x + x * scale, parent.min.y + y * scale),
-        egui::vec2(width * scale, height * scale),
-    )
-}
-
 fn encyclopedia_rect_contains(rect: egui::Rect, point: egui::Pos2) -> bool {
     point.x >= rect.min.x && point.x < rect.max.x && point.y >= rect.min.y && point.y < rect.max.y
 }

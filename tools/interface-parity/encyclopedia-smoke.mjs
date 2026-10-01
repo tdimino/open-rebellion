@@ -170,7 +170,7 @@ function validateVisibleTextChecks(scenario, catalog) {
   return checks;
 }
 
-function verifyArtifacts(options) {
+export function verifyArtifacts(options) {
   const scenario = readJson(options.scenario);
   assert.equal(scenario.schema_version, 1);
   assert.equal(scenario.family, "encyclopedia-base-parity");
@@ -318,7 +318,7 @@ async function startServer(site, observed) {
   return server;
 }
 
-function browserExecutable(browserManifest) {
+export function browserExecutable(browserManifest) {
   const candidates = [
     ...(process.env.OPEN_REBELLION_CHROME_FOR_TESTING
       ? [process.env.OPEN_REBELLION_CHROME_FOR_TESTING]
@@ -432,7 +432,7 @@ function differentPixelCount(leftBytes, rightBytes, PNG) {
   return different;
 }
 
-async function runBrowser(options, artifactResult) {
+export async function runBrowser(options, artifactResult, hooks = {}) {
   const scenario = readJson(options.scenario);
   for (const required of ["index.html", "gl.js", "open-rebellion-test.wasm", "data/runtime.orpk"]) {
     assert.ok(fs.existsSync(path.join(options.site, required)), `packed site is missing ${required}`);
@@ -451,8 +451,13 @@ async function runBrowser(options, artifactResult) {
   ]);
   const browserManifest = readJson(path.join(here, "browser.json"));
   const serverRequests = [];
-  const server = await startServer(options.site, serverRequests);
-  const result = { ...artifactResult, scope: "owned base-byte native/packed transport and rendering checkpoint", cases: [] };
+  const ownedServer = hooks.origin ? null : await startServer(options.site, serverRequests);
+  const origin = hooks.origin || `http://127.0.0.1:${ownedServer.address().port}`;
+  const result = {
+    ...artifactResult,
+    scope: hooks.scope || "owned base-byte native/packed transport and rendering checkpoint",
+    cases: [],
+  };
   let browser;
   try {
     browser = await launchBrowser(chromium, {
@@ -483,15 +488,22 @@ async function runBrowser(options, artifactResult) {
         consoleLines.push({ type: message.type(), text: message.text() });
         if (message.type() === "error") errors.push(`console:${message.text()}`);
       });
-      const code = scenario.fixture_codes[faction];
-      const origin = `http://127.0.0.1:${server.address().port}`;
+      const code = hooks.fixtureCodes?.[faction] ?? scenario.fixture_codes[faction];
       const serverStart = serverRequests.length;
-      await page.goto(`${origin}/?fixture-code=${code}`, { waitUntil: "load", timeout: 30_000 });
-      await page.waitForFunction(() => window.__openRebellionInterfaceReady?.status, null, { timeout: 30_000 });
-      const ready = await page.evaluate(() => window.__openRebellionInterfaceReady);
+      const caseToken = hooks.onCaseStart?.({ faction });
+      let ready = null;
+      try {
+        await page.goto(`${origin}/?fixture-code=${code}`, { waitUntil: "load", timeout: 30_000 });
+        await page.waitForFunction(
+          () => window.__openRebellionInterfaceReady?.status,
+          null,
+          { timeout: hooks.reportTimeoutMs ?? 30_000 },
+        );
+        ready = await page.evaluate(() => window.__openRebellionInterfaceReady);
       assert.equal(ready.status, "ready", JSON.stringify(ready));
       assert.equal(ready.faction, faction);
       assert.equal(ready.source_profile, scenario.source_profile);
+      hooks.assertReady?.({ faction, ready });
       await context.setOffline(true);
       const navigationRequestStart = browserRequests.length;
       let currentIndex = 0;
@@ -609,22 +621,58 @@ async function runBrowser(options, artifactResult) {
         });
       }
       assert.equal(browserRequests.length, navigationRequestStart, `${faction} offline navigation requests`);
-      assert.deepEqual([...browserRequests].sort(), [...expectedRequests].sort(), `${faction} startup requests`);
-      assert.deepEqual(errors, [], `${faction} browser diagnostics`);
-      result.cases.push({
+      if (hooks.assertStartupRequests) {
+        await hooks.assertStartupRequests({
+          browserRequests,
+          caseToken,
+          faction,
+          navigationRequestStart,
+        });
+      } else {
+        assert.deepEqual([...browserRequests].sort(), [...expectedRequests].sort(), `${faction} startup requests`);
+      }
+      const diagnosticClassification = hooks.classifyDiagnostics
+        ? await hooks.classifyDiagnostics({
+          caseToken,
+          diagnostics: [...errors],
+          faction,
+          ready,
+        })
+        : { expected: [], fatal: [...errors], raw: [...errors] };
+      assert.deepEqual(diagnosticClassification.fatal, [], `${faction} browser diagnostics`);
+      const caseResult = {
         faction,
         fixture_code: code,
         ready,
         requests: browserRequests,
         navigation_requests: browserRequests.length - navigationRequestStart,
+        browser_diagnostics: diagnosticClassification,
         probes,
-      });
-      await context.close();
-      assert.equal(serverRequests.length - serverStart, expectedRequests.length, `${faction} server request count`);
+      };
+      result.cases.push(caseResult);
+      if (ownedServer) {
+        assert.equal(serverRequests.length - serverStart, expectedRequests.length, `${faction} server request count`);
+      }
+      await hooks.onCaseComplete?.({ caseResult, faction });
+      } catch (error) {
+        await hooks.onCaseFailure?.({
+          browserRequests: [...browserRequests],
+          caseToken,
+          consoleLines: [...consoleLines],
+          errors: [...errors],
+          error,
+          faction,
+          fixtureCode: code,
+          ready,
+        });
+        throw error;
+      } finally {
+        await context.close();
+      }
     }
   } finally {
     if (browser) await browser.close();
-    await new Promise((resolve) => server.close(resolve));
+    if (ownedServer) await new Promise((resolve) => ownedServer.close(resolve));
   }
   return result;
 }
@@ -638,7 +686,9 @@ async function main() {
   console.log(JSON.stringify({ status: result.status, output: options.output }));
 }
 
-main().catch((error) => {
-  console.error(error.stack || error);
-  process.exitCode = 1;
-});
+if (path.resolve(process.argv[1] || "") === fileURLToPath(import.meta.url)) {
+  main().catch((error) => {
+    console.error(error.stack || error);
+    process.exitCode = 1;
+  });
+}

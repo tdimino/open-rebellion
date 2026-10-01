@@ -461,6 +461,7 @@ const OPTIONAL_WASM_DATA: &[&str] = &[
     "RESRCTB.DAT",
     "TDECOYTB.DAT",
     "MISSNSD.DAT",
+    "FLEETSD.DAT",
     "SPECFCSD.DAT",
 ];
 
@@ -535,6 +536,40 @@ fn packed_fixture_startup_failure(detail: impl std::fmt::Display) -> BrowserStar
             "packed_fixture_runtime_pack_unavailable: {detail}"
         )),
     }
+}
+
+#[cfg(any(test, all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
+fn loose_fixture_startup(
+    prepared: Result<Option<encyclopedia_session::EncyclopediaSession>, String>,
+) -> BrowserStartupAssets {
+    BrowserStartupAssets {
+        audio_files: std::collections::HashMap::new(),
+        encyclopedia: match prepared {
+            Ok(Some(session)) => encyclopedia_session::EncyclopediaAvailability::Ready(session),
+            Ok(None) => encyclopedia_session::EncyclopediaAvailability::Unavailable(
+                "namespace_absent: loose manifest and catalog both absent".to_owned(),
+            ),
+            Err(error) => encyclopedia_session::EncyclopediaAvailability::Unavailable(format!(
+                "loose_fixture_unavailable: {error}"
+            )),
+        },
+    }
+}
+
+#[cfg(any(test, all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
+fn fixture_runtime_pack_install_failure(
+    request: Option<interface_test_fixture::FixtureRequest>,
+    error: impl std::fmt::Display,
+) -> Option<BrowserStartupAssets> {
+    let request = request?;
+    if request.is_packed_encyclopedia() {
+        return Some(packed_fixture_startup_failure(format_args!(
+            "invalid data/runtime.orpk: {error}"
+        )));
+    }
+    request
+        .is_loose_encyclopedia()
+        .then(|| loose_fixture_startup(Err(format!("Invalid data/runtime.orpk: {error}"))))
 }
 
 #[cfg(any(target_arch = "wasm32", test))]
@@ -625,10 +660,15 @@ fn install_runtime_pack(bytes: &[u8]) -> Result<BrowserStartupAssets, String> {
 }
 
 #[cfg(any(test, all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
-fn packed_encyclopedia_fixture_request(
+fn encyclopedia_fixture_request(
     request: Option<interface_test_fixture::FixtureRequest>,
 ) -> Option<interface_test_fixture::FixtureRequest> {
-    request.filter(|request| request.is_packed_encyclopedia())
+    request.filter(|request| request.is_packed_encyclopedia() || request.is_loose_encyclopedia())
+}
+
+#[cfg(any(test, all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
+fn fixture_requires_packed_runtime(request: interface_test_fixture::FixtureRequest) -> bool {
+    request.is_packed_encyclopedia()
 }
 
 #[cfg(test)]
@@ -818,11 +858,39 @@ mod runtime_pack_install_tests {
 }
 
 #[cfg(test)]
-mod packed_encyclopedia_fixture_route_tests {
+mod encyclopedia_fixture_route_tests {
     use super::*;
 
     #[test]
-    fn only_the_distinct_packed_request_takes_the_early_fixture_route() {
+    fn legacy_wasm_dat_inventory_covers_every_accepted_profile_binding_source() {
+        use std::collections::BTreeSet;
+
+        let profile: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../tools/stage-ui-assets/encyclopedia_profiles/encytext-49aea545-lang-1033-v1.json"
+        ))
+        .expect("accepted encyclopedia source profile");
+        let configured: BTreeSet<_> = REQUIRED_WASM_DATA
+            .iter()
+            .chain(OPTIONAL_WASM_DATA)
+            .copied()
+            .collect();
+        let selected_sources: BTreeSet<_> = profile["sources"]
+            .as_array()
+            .expect("profile sources")
+            .iter()
+            .filter(|source| source["kind"].as_str() == Some("dat"))
+            .map(|source| source["basename"].as_str().expect("source basename"))
+            .collect();
+        let missing: Vec<_> = selected_sources.difference(&configured).copied().collect();
+
+        assert!(
+            missing.is_empty(),
+            "legacy startup cannot validate the accepted catalog without selected DATs: {missing:?}"
+        );
+    }
+
+    #[test]
+    fn only_packed_and_loose_encyclopedia_requests_take_the_early_fixture_route() {
         use crate::interface_test_fixture::{FixtureRequest, Scenario};
 
         let packed = FixtureRequest {
@@ -835,16 +903,18 @@ mod packed_encyclopedia_fixture_route_tests {
             faction: rebellion_render::CockpitFaction::Alliance,
             code: 0x0127,
         };
+        let loose = FixtureRequest {
+            scenario: Scenario::LooseEncyclopedia,
+            faction: rebellion_render::CockpitFaction::Alliance,
+            code: 0x0131,
+        };
 
-        assert_eq!(
-            packed_encyclopedia_fixture_request(Some(packed)),
-            Some(packed)
-        );
-        assert_eq!(
-            packed_encyclopedia_fixture_request(Some(legacy_art_probe)),
-            None
-        );
-        assert_eq!(packed_encyclopedia_fixture_request(None), None);
+        assert_eq!(encyclopedia_fixture_request(Some(packed)), Some(packed));
+        assert_eq!(encyclopedia_fixture_request(Some(loose)), Some(loose));
+        assert!(fixture_requires_packed_runtime(packed));
+        assert!(!fixture_requires_packed_runtime(loose));
+        assert_eq!(encyclopedia_fixture_request(Some(legacy_art_probe)), None);
+        assert_eq!(encyclopedia_fixture_request(None), None);
     }
 
     #[test]
@@ -858,10 +928,46 @@ mod packed_encyclopedia_fixture_route_tests {
                 if diagnostic == "packed_fixture_runtime_pack_unavailable: invalid runtime pack: truncated header"
         ));
     }
+
+    #[test]
+    fn loose_runtime_pack_failure_reports_the_parser_error_without_falling_back() {
+        use crate::interface_test_fixture::FixtureRequest;
+
+        let request: FixtureRequest =
+            crate::interface_test_fixture::decode_request(0x0131).expect("loose fixture request");
+        let startup = fixture_runtime_pack_install_failure(
+            Some(request),
+            "invalid runtime pack: truncated header",
+        )
+        .expect("the loose fixture handles a present invalid pack");
+
+        assert!(startup.audio_files.is_empty());
+        assert!(matches!(
+            startup.encyclopedia,
+            encyclopedia_session::EncyclopediaAvailability::Unavailable(ref diagnostic)
+                if diagnostic == "loose_fixture_unavailable: Invalid data/runtime.orpk: invalid runtime pack: truncated header"
+        ));
+        assert!(fixture_runtime_pack_install_failure(None, "unrelated trap").is_none());
+    }
+
+    #[test]
+    fn loose_fixture_preparation_error_is_reported_without_publishing_partial_ready_state() {
+        let startup = loose_fixture_startup(Err(
+            "catalog_hash_mismatch at catalog.json: retained bytes differ".to_owned(),
+        ));
+
+        assert!(startup.audio_files.is_empty());
+        assert!(matches!(
+            startup.encyclopedia,
+            encyclopedia_session::EncyclopediaAvailability::Unavailable(ref diagnostic)
+                if diagnostic == "loose_fixture_unavailable: catalog_hash_mismatch at catalog.json: retained bytes differ"
+        ));
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
-async fn load_legacy_wasm_assets() -> Option<encyclopedia_session::EncyclopediaSession> {
+async fn load_legacy_wasm_assets(
+) -> Result<Option<encyclopedia_session::EncyclopediaSession>, String> {
     use std::collections::HashMap;
 
     let total = REQUIRED_WASM_DATA.len() + OPTIONAL_WASM_DATA.len();
@@ -902,12 +1008,12 @@ async fn load_legacy_wasm_assets() -> Option<encyclopedia_session::EncyclopediaS
     // catalog, manifest and declared image set has passed shared preparation.
     let encyclopedia_session = encyclopedia_loose::prepare_browser_loose_encyclopedia(&files)
         .await
-        .unwrap_or_else(|error| panic!("Invalid loose encyclopedia bundle: {error}"));
+        .map_err(|error| format!("Invalid loose encyclopedia bundle: {error}"))?;
     let encyclopedia_assets = encyclopedia_session
         .as_ref()
         .map(encyclopedia_loose::original_image_cache)
         .transpose()
-        .unwrap_or_else(|error| panic!("Invalid loose encyclopedia publication: {error}"));
+        .map_err(|error| format!("Invalid loose encyclopedia publication: {error}"))?;
     if let Some(session) = encyclopedia_session.as_ref() {
         macroquad::logging::info!(
             "loose_encyclopedia ready topics={} images={} generation={}",
@@ -935,7 +1041,7 @@ async fn load_legacy_wasm_assets() -> Option<encyclopedia_session::EncyclopediaS
 
     let Ok(manifest_bytes) = macroquad::file::load_file("data/ui/bmp-manifest.json").await else {
         eprintln!("WARNING: bmp-manifest.json not found — UI textures will be missing");
-        return encyclopedia_session;
+        return Ok(encyclopedia_session);
     };
     let entries: Vec<BmpEntry> = match serde_json::from_slice(&manifest_bytes) {
         Ok(entries) => entries,
@@ -981,24 +1087,29 @@ async fn load_legacy_wasm_assets() -> Option<encyclopedia_session::EncyclopediaS
         bmp_total
     );
     rebellion_render::set_bmp_cache(bmp_cache);
-    encyclopedia_session
+    Ok(encyclopedia_session)
 }
 
 #[cfg(target_arch = "wasm32")]
 async fn load_wasm_assets(
-    #[cfg(feature = "interface-test-fixtures")] packed_fixture_requested: bool,
+    #[cfg(feature = "interface-test-fixtures")] encyclopedia_fixture_request: Option<
+        interface_test_fixture::FixtureRequest,
+    >,
 ) -> BrowserStartupAssets {
     draw_loading_progress("Loading optimized runtime assets…", 0, 0);
     next_frame().await;
 
     #[cfg(feature = "interface-test-fixtures")]
+    let packed_fixture_requested =
+        encyclopedia_fixture_request.is_some_and(fixture_requires_packed_runtime);
+    #[cfg(feature = "interface-test-fixtures")]
     let startup = match macroquad::file::load_file("data/runtime.orpk").await {
         Ok(bytes) => match install_runtime_pack(&bytes) {
             Ok(startup) => startup,
-            Err(error) if packed_fixture_requested => {
-                packed_fixture_startup_failure(format_args!("invalid data/runtime.orpk: {error}"))
+            Err(error) => {
+                fixture_runtime_pack_install_failure(encyclopedia_fixture_request, &error)
+                    .unwrap_or_else(|| panic!("Invalid data/runtime.orpk: {error}"))
             }
-            Err(error) => panic!("Invalid data/runtime.orpk: {error}"),
         },
         Err(error) if packed_fixture_requested => packed_fixture_startup_failure(format_args!(
             "data/runtime.orpk failed to load: {error:?}"
@@ -1007,16 +1118,7 @@ async fn load_wasm_assets(
             eprintln!(
                 "WARNING: data/runtime.orpk unavailable ({error:?}); using legacy per-file loading"
             );
-            let session = load_legacy_wasm_assets().await;
-            BrowserStartupAssets {
-                audio_files: std::collections::HashMap::new(),
-                encyclopedia: match session {
-                    Some(session) => encyclopedia_session::EncyclopediaAvailability::Ready(session),
-                    None => encyclopedia_session::EncyclopediaAvailability::Unavailable(
-                        "namespace_absent: loose manifest and catalog both absent".to_owned(),
-                    ),
-                },
-            }
+            loose_fixture_startup(load_legacy_wasm_assets().await)
         }
     };
 
@@ -1028,7 +1130,9 @@ async fn load_wasm_assets(
             eprintln!(
                 "WARNING: data/runtime.orpk unavailable ({error:?}); using legacy per-file loading"
             );
-            let session = load_legacy_wasm_assets().await;
+            let session = load_legacy_wasm_assets()
+                .await
+                .unwrap_or_else(|error| panic!("{error}"));
             BrowserStartupAssets {
                 audio_files: std::collections::HashMap::new(),
                 encyclopedia: match session {
@@ -1218,15 +1322,18 @@ async fn main() {
     #[cfg(target_arch = "wasm32")]
     let (mut world, mut browser_audio_files, encyclopedia_availability) = {
         #[cfg(feature = "interface-test-fixtures")]
-        let packed_fixture_request =
-            packed_encyclopedia_fixture_request(interface_fixture_request);
+        let encyclopedia_fixture_request = encyclopedia_fixture_request(interface_fixture_request);
         #[cfg(feature = "interface-test-fixtures")]
-        let startup_assets = load_wasm_assets(packed_fixture_request.is_some()).await;
+        let startup_assets = load_wasm_assets(encyclopedia_fixture_request).await;
         #[cfg(not(feature = "interface-test-fixtures"))]
         let startup_assets = load_wasm_assets().await;
         #[cfg(feature = "interface-test-fixtures")]
-        if let Some(request) = packed_fixture_request {
-            encyclopedia_test_fixture::run_packed(startup_assets.encyclopedia, request).await;
+        if let Some(request) = encyclopedia_fixture_request {
+            if request.is_packed_encyclopedia() {
+                encyclopedia_test_fixture::run_packed(startup_assets.encyclopedia, request).await;
+            } else {
+                encyclopedia_test_fixture::run_loose(startup_assets.encyclopedia, request).await;
+            }
             return;
         }
         let world = rebellion_data::load_game_data(&gdata_path)

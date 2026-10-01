@@ -518,7 +518,7 @@ where
 mod tests {
     use std::cell::RefCell;
     use std::future::Future;
-    use std::io::{BufRead, BufReader, Read, Write};
+    use std::io::{self, BufRead, BufReader, Read, Write};
     use std::net::{TcpListener, TcpStream};
     use std::pin::Pin;
     use std::rc::Rc;
@@ -544,6 +544,67 @@ mod tests {
     const VALID_DAT: &[u8] = include_bytes!(
         "../../../tests/fixtures/encyclopedia/fixtures/bundles/valid/sources/SYNTHETIC.DAT"
     );
+    const CONTROLLED_HTTP_REQUEST_HEADER_BYTES_LIMIT: usize = 16 * 1024;
+
+    fn read_controlled_http_request_headers(stream: &TcpStream) -> io::Result<String> {
+        let mut reader = BufReader::new(stream.try_clone()?);
+        let mut request_line = None;
+        let mut total_bytes = 0_usize;
+
+        loop {
+            let remaining = CONTROLLED_HTTP_REQUEST_HEADER_BYTES_LIMIT
+                .checked_sub(total_bytes)
+                .ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "controlled HTTP request headers exceed the byte limit",
+                    )
+                })?;
+            let mut line = Vec::new();
+            let read = reader
+                .by_ref()
+                .take(
+                    u64::try_from(remaining)
+                        .unwrap_or(u64::MAX)
+                        .saturating_add(1),
+                )
+                .read_until(b'\n', &mut line)?;
+            if read == 0 {
+                return Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "controlled HTTP request ended before the header terminator",
+                ));
+            }
+            total_bytes = total_bytes.checked_add(read).ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "controlled HTTP request header byte count overflowed",
+                )
+            })?;
+            if total_bytes > CONTROLLED_HTTP_REQUEST_HEADER_BYTES_LIMIT {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "controlled HTTP request headers exceed the byte limit",
+                ));
+            }
+            if request_line.is_none() {
+                request_line = Some(String::from_utf8(line.clone()).map_err(|error| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("controlled HTTP request line is not UTF-8: {error}"),
+                    )
+                })?);
+            }
+            if line == b"\r\n" || line == b"\n" {
+                return request_line.ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "controlled HTTP request has no request line",
+                    )
+                });
+            }
+        }
+    }
 
     #[test]
     fn browser_probe_codes_are_reserved_and_cover_every_http_outcome() {
@@ -768,16 +829,20 @@ mod tests {
             ("/data/encyclopedia/assets/EDATA.002", VALID_IMAGE_2),
             ("/data/encyclopedia/assets/EDATA.003", VALID_IMAGE_3),
         ]);
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let address = listener.local_addr().unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .unwrap_or_else(|error| panic!("controlled HTTP listener bind failed: {error}"));
+        let address = listener
+            .local_addr()
+            .unwrap_or_else(|error| panic!("controlled HTTP listener address failed: {error}"));
         let server = std::thread::spawn(move || {
             let mut observed = Vec::new();
             for connection in listener.incoming().take(responses.len()) {
-                let mut stream = connection.unwrap();
-                let mut request = String::new();
-                BufReader::new(stream.try_clone().unwrap())
-                    .read_line(&mut request)
-                    .unwrap();
+                let mut stream = connection
+                    .unwrap_or_else(|error| panic!("controlled HTTP accept failed: {error}"));
+                let request =
+                    read_controlled_http_request_headers(&stream).unwrap_or_else(|error| {
+                        panic!("controlled HTTP request header read failed: {error}")
+                    });
                 let request_path = request.split_ascii_whitespace().nth(1).unwrap().to_owned();
                 observed.push(request_path.clone());
                 let bytes = responses[request_path.as_str()];
@@ -786,8 +851,15 @@ mod tests {
                     "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
                     bytes.len()
                 )
-                .unwrap();
-                stream.write_all(bytes).unwrap();
+                .unwrap_or_else(|error| {
+                    panic!("controlled HTTP response header write failed: {error}")
+                });
+                stream.write_all(bytes).unwrap_or_else(|error| {
+                    panic!("controlled HTTP response body write failed: {error}")
+                });
+                stream.flush().unwrap_or_else(|error| {
+                    panic!("controlled HTTP response flush failed: {error}")
+                });
             }
             observed
         });
@@ -1059,6 +1131,35 @@ mod tests {
         let error = selected_dat_hashes_with_limit(&manifest, &oversized_dat, 4).unwrap_err();
         assert_eq!(error.code(), "resource_limit:binding_source_bytes");
         assert_eq!(error.path(), "SYNTHETIC.DAT");
+    }
+
+    #[test]
+    fn every_manifest_binding_source_requires_present_matching_selected_bytes() {
+        const SECOND_DAT: &[u8] = b"second synthetic selected DAT";
+
+        let mut manifest_value: Value = serde_json::from_slice(VALID_MANIFEST).unwrap();
+        manifest_value["binding_sources"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({
+                "basename": "SECOND.DAT",
+                "sha256": inspect_encyclopedia_bytes(SECOND_DAT, None).unwrap().sha256,
+            }));
+        let manifest = parse_manifest(&serde_json::to_vec(&manifest_value).unwrap()).unwrap();
+
+        let missing = selected_dat_hashes(&manifest, &valid_dats()).unwrap_err();
+        assert_eq!(missing.code(), "binding_source_mismatch");
+        assert_eq!(missing.path(), "SECOND.DAT");
+
+        let mut wrong = valid_dats();
+        wrong.insert("SECOND.DAT".to_owned(), b"wrong selected bytes".to_vec());
+        let mismatch = selected_dat_hashes(&manifest, &wrong).unwrap_err();
+        assert_eq!(mismatch.code(), "binding_source_mismatch");
+        assert_eq!(mismatch.path(), "SECOND.DAT");
+
+        let mut complete = valid_dats();
+        complete.insert("SECOND.DAT".to_owned(), SECOND_DAT.to_vec());
+        assert_eq!(selected_dat_hashes(&manifest, &complete).unwrap().len(), 2);
     }
 
     #[test]

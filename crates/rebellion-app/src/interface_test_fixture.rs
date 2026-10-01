@@ -31,7 +31,7 @@ const FIXTURE_ABSENT: u32 = 0;
 /// How far right of the galaxy view's centre the targeting scenario puts its
 /// target system, clear of the system window it opens on the left.
 #[cfg(test)]
-const SCENARIO_COUNT: u8 = 48;
+const SCENARIO_COUNT: u8 = 49;
 
 extern "C" {
     fn open_rebellion_interface_fixture_code() -> u32;
@@ -48,6 +48,10 @@ pub struct FixtureRequest {
 impl FixtureRequest {
     pub fn is_packed_encyclopedia(self) -> bool {
         self.scenario == Scenario::PackedEncyclopedia
+    }
+
+    pub fn is_loose_encyclopedia(self) -> bool {
+        self.scenario == Scenario::LooseEncyclopedia
     }
 }
 
@@ -102,6 +106,7 @@ pub enum Scenario {
     FleetMove = 45,
     FleetMoveBlockade = 46,
     PackedEncyclopedia = 47,
+    LooseEncyclopedia = 48,
 }
 
 impl Scenario {
@@ -155,6 +160,7 @@ impl Scenario {
             45 => Self::FleetMove,
             46 => Self::FleetMoveBlockade,
             47 => Self::PackedEncyclopedia,
+            48 => Self::LooseEncyclopedia,
             _ => return None,
         })
     }
@@ -1491,6 +1497,28 @@ mod tests {
     }
 
     #[test]
+    fn loose_encyclopedia_request_is_distinct_from_packed_and_reserved_probe_namespaces() {
+        for (code, faction) in [
+            (0x0131, CockpitFaction::Alliance),
+            (0x0231, CockpitFaction::Empire),
+        ] {
+            let request = decode_request(code).expect("loose encyclopedia scenario");
+            assert_eq!(request.scenario, Scenario::LooseEncyclopedia);
+            assert_eq!(request.faction, faction);
+            assert!(request.is_loose_encyclopedia());
+            assert!(!request.is_packed_encyclopedia());
+        }
+
+        assert_eq!(decode_request(0xe117_0001), None, "E17 probe namespace");
+        assert_eq!(decode_request(0xe131_0001), None, "E31 route namespace");
+        assert_eq!(
+            decode_request(0x0130).unwrap().scenario,
+            Scenario::PackedEncyclopedia
+        );
+        assert!(!decode_request(0x0130).unwrap().is_loose_encyclopedia());
+    }
+
+    #[test]
     fn encyclopedia_fixture_scenarios_coexist_for_both_factions() {
         for (code, scenario, faction) in [
             (
@@ -1544,11 +1572,17 @@ mod tests {
                 CockpitFaction::Empire,
             ),
             (
-                0x012e,
+                0x0130,
                 Scenario::PackedEncyclopedia,
                 CockpitFaction::Alliance,
             ),
-            (0x022e, Scenario::PackedEncyclopedia, CockpitFaction::Empire),
+            (0x0230, Scenario::PackedEncyclopedia, CockpitFaction::Empire),
+            (
+                0x0131,
+                Scenario::LooseEncyclopedia,
+                CockpitFaction::Alliance,
+            ),
+            (0x0231, Scenario::LooseEncyclopedia, CockpitFaction::Empire),
         ] {
             let request = decode_request(code).expect("encyclopedia fixture scenario");
             assert_eq!(request.scenario, scenario);
@@ -1556,6 +1590,10 @@ mod tests {
             assert_eq!(
                 request.is_packed_encyclopedia(),
                 scenario == Scenario::PackedEncyclopedia
+            );
+            assert_eq!(
+                request.is_loose_encyclopedia(),
+                scenario == Scenario::LooseEncyclopedia
             );
         }
     }

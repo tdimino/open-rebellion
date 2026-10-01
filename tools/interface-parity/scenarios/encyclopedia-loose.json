@@ -1,0 +1,136 @@
+{
+  "schema_version": 1,
+  "family": "encyclopedia-loose-acceptance",
+  "scope": "Controlled HTTP acceptance for the real loose loader using the accepted E21 canonical bytes; live rendering remains a coordinator browser gate.",
+  "canonical": {
+    "baseline_scenario_sha256": "e69521b74286a5eec6ed101e434699ba16b337bd81669318095d8a02d74b1c3f",
+    "source_profile": "encytext-49aea545-lang-1033-v1",
+    "runtime_pack_sha256": "e9ae76b50a43d811c01d8634f9099809ec6c144f9fbcd93f364b6879001fb57b",
+    "runtime_pack_byte_length": 63214933,
+    "catalog_sha256": "bed589f707fa18274c5c06c72e010f6735e98519f04bc6d9260caf5160fd4fb3",
+    "manifest_sha256": "df0ef0b7da7fb966cb80164092278acc81d359ba1976ceabfa7cb8813ed5d0a0",
+    "encyclopedia_namespace_entries": 188,
+    "binding_source_count": 12,
+    "ui_manifest_sha256": "65b45561f2a279253f69d75ac5a2d96ecdcf6d5741d1e927f10f1b96288a5faf",
+    "ui_resource_count": 2326,
+    "ui_resource_bytes": 29261962,
+    "ui_inventory_sha256": "da9a24e76d4d89a6f281ab8b481aa67b12734e94185a7936f74b2db280ffdd90",
+    "owned_no_art_topic_count": 0,
+    "probe_topic_ids": [
+      "original:5696",
+      "original:7191",
+      "original:6024",
+      "original:7187"
+    ]
+  },
+  "fixture_codes": {
+    "alliance": 299,
+    "empire": 555
+  },
+  "invalid_runtime_pack": {
+    "byte_length": 25,
+    "sha256": "6125b497a3516c7091683bad077c37caa012b7a6019f5baa9d303b49b4ecc310",
+    "decoded_version": 26925,
+    "parser_error": "unsupported runtime-pack version 26925",
+    "expected_diagnostic": "loose_fixture_unavailable: Invalid data/runtime.orpk: unsupported runtime-pack version 26925",
+    "report_scenario": 42
+  },
+  "limits": {
+    "max_active_image_downloads": 4,
+    "catalog_bytes": 67108864,
+    "manifest_bytes": 33554432,
+    "aggregate_image_bytes": 134217728
+  },
+  "cases": [
+    {
+      "id": "ready",
+      "expected": "ready",
+      "runtime_pack": "absent",
+      "fault": "none"
+    },
+    {
+      "id": "both_missing",
+      "expected": "unavailable",
+      "runtime_pack": "absent",
+      "fault": "both_metadata_404",
+      "diagnostic_contains": "namespace_absent"
+    },
+    {
+      "id": "partial_catalog_only",
+      "expected": "integrity_error",
+      "runtime_pack": "absent",
+      "fault": "manifest_404",
+      "diagnostic_contains": "missing_runtime_file"
+    },
+    {
+      "id": "partial_manifest_only",
+      "expected": "integrity_error",
+      "runtime_pack": "absent",
+      "fault": "catalog_404",
+      "diagnostic_contains": "missing_runtime_file"
+    },
+    {
+      "id": "catalog_forbidden",
+      "expected": "transport_error",
+      "runtime_pack": "absent",
+      "fault": "catalog_403",
+      "diagnostic_contains": "fetch_failed"
+    },
+    {
+      "id": "manifest_server_error",
+      "expected": "transport_error",
+      "runtime_pack": "absent",
+      "fault": "manifest_500",
+      "diagnostic_contains": "fetch_failed"
+    },
+    {
+      "id": "catalog_network_reset",
+      "expected": "transport_error",
+      "runtime_pack": "absent",
+      "fault": "catalog_reset",
+      "diagnostic_contains": "fetch_failed"
+    },
+    {
+      "id": "catalog_html",
+      "expected": "integrity_error",
+      "runtime_pack": "absent",
+      "fault": "catalog_html_200",
+      "diagnostic_contains": "invalid_json"
+    },
+    {
+      "id": "image_overflow_absent_length",
+      "expected": "resource_limit",
+      "runtime_pack": "absent",
+      "fault": "image_overflow_no_length",
+      "diagnostic_contains": "resource_limit:fetch_bytes"
+    },
+    {
+      "id": "image_overflow_misleading_length",
+      "expected": "resource_limit",
+      "runtime_pack": "absent",
+      "fault": "image_overflow_small_length",
+      "diagnostic_contains": "resource_limit:fetch_bytes"
+    },
+    {
+      "id": "cancelled_image",
+      "expected": "cancelled",
+      "runtime_pack": "absent",
+      "fault": "image_hold"
+    },
+    {
+      "id": "bad_present_pack",
+      "expected": "packed_integrity_error_no_fallback",
+      "runtime_pack": "invalid",
+      "fault": "none"
+    }
+  ],
+  "synthetic_supplements": [
+    "explicit_optional_art_absence"
+  ],
+  "live_gate": {
+    "startup_request_policy": "runtime pack 404 followed by declared legacy/base/UI and encyclopedia requests only",
+    "navigation_network_policy": "zero requests after offline mode is enabled",
+    "required_artwork": "pixel-identical to the four accepted E21 probes for both factions",
+    "browser_audio": "muted"
+  }
+}

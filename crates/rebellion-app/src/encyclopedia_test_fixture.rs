@@ -88,7 +88,7 @@ impl InspectorModel {
     }
 
     #[cfg(any(test, target_arch = "wasm32"))]
-    pub(crate) fn from_packed_request(
+    pub(crate) fn from_browser_request(
         availability: EncyclopediaAvailability,
         language: impl Into<String>,
         request: FixtureRequest,
@@ -98,6 +98,15 @@ impl InspectorModel {
             rebellion_render::CockpitFaction::Empire => ViewerFaction::Empire,
         };
         Self::from_availability_for_viewer(availability, language, viewer)
+    }
+
+    #[cfg(any(test, target_arch = "wasm32"))]
+    pub(crate) fn from_packed_request(
+        availability: EncyclopediaAvailability,
+        language: impl Into<String>,
+        request: FixtureRequest,
+    ) -> Self {
+        Self::from_browser_request(availability, language, request)
     }
 
     pub(crate) fn viewer(&self) -> Option<ViewerFaction> {
@@ -250,6 +259,23 @@ pub(crate) struct PackedFixtureReport {
     stable_frames: u32,
 }
 
+#[cfg(any(test, target_arch = "wasm32"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BrowserEncyclopediaTransport {
+    Packed,
+    Loose,
+}
+
+#[cfg(any(test, target_arch = "wasm32"))]
+impl BrowserEncyclopediaTransport {
+    const fn surface_label(self) -> &'static str {
+        match self {
+            Self::Packed => "packed-encyclopedia-fixture",
+            Self::Loose => "loose-encyclopedia-fixture",
+        }
+    }
+}
+
 #[derive(Debug, serde::Serialize, PartialEq, Eq)]
 struct SelectionEvidence {
     source_profile: Option<String>,
@@ -358,6 +384,33 @@ pub(crate) fn packed_fixture_report(
     cache_status: &str,
     diagnostic: Option<&str>,
 ) -> PackedFixtureReport {
+    fixture_report(
+        BrowserEncyclopediaTransport::Packed,
+        request,
+        model,
+        view,
+        asset_id,
+        digest,
+        cache_status,
+        diagnostic,
+    )
+}
+
+#[cfg(any(test, target_arch = "wasm32"))]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The report records independent presentation evidence without retaining renderer state."
+)]
+pub(crate) fn fixture_report(
+    transport: BrowserEncyclopediaTransport,
+    request: FixtureRequest,
+    model: &InspectorModel,
+    view: Option<&EncyclopediaView>,
+    asset_id: Option<&str>,
+    digest: Option<&str>,
+    cache_status: &str,
+    diagnostic: Option<&str>,
+) -> PackedFixtureReport {
     let active = view.and_then(|view| view.active_topic.as_ref());
     let binding = active.and_then(|topic| model.binding_for_topic(&topic.topic_id));
     let unavailable = diagnostic.or_else(|| model.unavailable_diagnostic());
@@ -374,7 +427,7 @@ pub(crate) fn packed_fixture_report(
             rebellion_render::CockpitFaction::Alliance => "alliance",
             rebellion_render::CockpitFaction::Empire => "empire",
         },
-        surface: "packed-encyclopedia-fixture",
+        surface: transport.surface_label(),
         source_profile: model.source_profile().map(str::to_owned),
         topic_id: active.map(|topic| topic.topic_id.clone()),
         title: active.map(|topic| topic.title.to_string()),
@@ -536,12 +589,27 @@ pub(crate) async fn run(gdata: &std::path::Path) {
 
 #[cfg(target_arch = "wasm32")]
 pub(crate) async fn run_packed(availability: EncyclopediaAvailability, request: FixtureRequest) {
-    let model = InspectorModel::from_packed_request(availability, "1033", request);
+    run_browser(availability, request, BrowserEncyclopediaTransport::Packed).await;
+}
+
+#[cfg(target_arch = "wasm32")]
+pub(crate) async fn run_loose(availability: EncyclopediaAvailability, request: FixtureRequest) {
+    run_browser(availability, request, BrowserEncyclopediaTransport::Loose).await;
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn run_browser(
+    availability: EncyclopediaAvailability,
+    request: FixtureRequest,
+    transport: BrowserEncyclopediaTransport,
+) {
+    let model = InspectorModel::from_browser_request(availability, "1033", request);
     run_surface(
         model,
         rebellion_render::BmpCache::new(),
         request.faction,
         request,
+        transport,
     )
     .await;
 }
@@ -551,6 +619,7 @@ async fn run_surface(
     mut chrome: rebellion_render::BmpCache,
     faction: rebellion_render::CockpitFaction,
     #[cfg(target_arch = "wasm32")] browser_request: FixtureRequest,
+    #[cfg(target_arch = "wasm32")] browser_transport: BrowserEncyclopediaTransport,
 ) {
     use macroquad::prelude::{clear_background, is_quit_requested, next_frame, Color};
     use rebellion_render::{
@@ -756,7 +825,8 @@ async fn run_surface(
                             frame.texture_diagnostic.as_deref(),
                         )
                     });
-                let report = packed_fixture_report(
+                let report = fixture_report(
+                    browser_transport,
                     browser_request,
                     &model,
                     view.as_ref(),
@@ -793,9 +863,10 @@ mod tests {
     use serde_json::Value;
 
     use super::{
-        fitted_art_size, inspection_admission, native_viewer_faction, packed_fixture_report,
-        request_value_enabled, requested, selection_evidence, viewport_evidence, InspectorContent,
-        InspectorModel, InspectorTextureState, INSPECTOR_REQUEST,
+        fitted_art_size, fixture_report, inspection_admission, native_viewer_faction,
+        packed_fixture_report, request_value_enabled, requested, selection_evidence,
+        viewport_evidence, BrowserEncyclopediaTransport, InspectorContent, InspectorModel,
+        InspectorTextureState, INSPECTOR_REQUEST,
     };
     use crate::encyclopedia_session::{
         prepare_encyclopedia_session, EncyclopediaAvailability, EncyclopediaBytes,
@@ -1108,6 +1179,53 @@ mod tests {
             failed_upload.diagnostic.as_deref(),
             Some("asset edata:1 upload failed")
         );
+    }
+
+    #[test]
+    fn loose_requests_preserve_viewer_art_and_use_the_loose_transport_label() {
+        for (code, viewer, expected_asset, expected_digest, expected_faction) in [
+            (
+                0x0131,
+                ViewerFaction::Alliance,
+                "edata:2",
+                "a93a4e651a970119d8da0386846785163291b7cfd67edaac7f6fc37b719fe592",
+                "alliance",
+            ),
+            (
+                0x0231,
+                ViewerFaction::Empire,
+                "edata:3",
+                "8746c347d4cf14daa2e0cc9d41d1f9abebbbb1aae997f31a172610e9ecdbe2dd",
+                "empire",
+            ),
+        ] {
+            let request = crate::interface_test_fixture::decode_request(code).unwrap();
+            let mut model = InspectorModel::from_browser_request(
+                EncyclopediaAvailability::Ready(session()),
+                "1033",
+                request,
+            );
+            assert_eq!(model.viewer(), Some(viewer));
+            model.select_topic("original:60004".to_owned()).unwrap();
+            let view = model.build_view().unwrap().unwrap();
+            let image = view.active_topic.as_ref().unwrap().image.as_ref().unwrap();
+
+            let report = fixture_report(
+                BrowserEncyclopediaTransport::Loose,
+                request,
+                &model,
+                Some(&view),
+                Some(image.asset_id.as_str()),
+                Some(image.digest.as_str()),
+                "cache hit",
+                None,
+            );
+
+            assert_eq!(report.faction(), expected_faction);
+            assert_eq!(report.surface, "loose-encyclopedia-fixture");
+            assert_eq!(report.asset_id.as_deref(), Some(expected_asset));
+            assert_eq!(report.digest.as_deref(), Some(expected_digest));
+        }
     }
 
     #[test]
