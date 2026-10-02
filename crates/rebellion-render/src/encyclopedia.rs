@@ -2429,6 +2429,20 @@ fn encyclopedia_point(parent: egui::Rect, scale: f32, x: f32, y: f32) -> egui::P
     egui::pos2(parent.min.x + x * scale, parent.min.y + y * scale)
 }
 
+fn encyclopedia_rect(
+    parent: egui::Rect,
+    scale: f32,
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+) -> egui::Rect {
+    egui::Rect::from_min_size(
+        encyclopedia_point(parent, scale, x, y),
+        egui::vec2(width * scale, height * scale),
+    )
+}
+
 fn original_index_list_rect(parent: egui::Rect, scale: f32) -> egui::Rect {
     encyclopedia_rect(parent, scale, 36.0, 137.0, 350.0, 160.0)
 }

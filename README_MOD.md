@@ -48,12 +48,12 @@ The asset staging tool can build a readable, strictly validated encyclopedia
 catalog from a supported owned installation:
 
 ```bash
-go run ./tools/stage-ui-assets --encyclopedia-only \
+go run ./tools/stage-ui-assets --encyclopedia-canonical-only \
   --source "/path/to/Star Wars - Rebellion" \
-  --encyclopedia-output data/base/encyclopedia
+  --encyclopedia-canonical-output data/base/encyclopedia
 
-go run ./tools/stage-ui-assets --encyclopedia-only --verify \
-  --encyclopedia-output data/base/encyclopedia
+go run ./tools/stage-ui-assets --encyclopedia-canonical-only --verify \
+  --encyclopedia-canonical-output data/base/encyclopedia
 ```
 
 Inspect `data/base/encyclopedia/catalog.json` for canonical topic IDs,

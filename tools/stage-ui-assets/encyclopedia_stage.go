@@ -129,7 +129,7 @@ func stageEncyclopedia(sourceDir, edataDir, outputDir string, force bool, log io
 			return err
 		},
 		InspectOwned:    inspectEncyclopediaCanonicalDirectory,
-		RecoveryCommand: fmt.Sprintf("stage-ui-assets --encyclopedia-only --encyclopedia-output %q --force", outputDir),
+		RecoveryCommand: fmt.Sprintf("stage-ui-assets --encyclopedia-canonical-only --encyclopedia-canonical-output %q --force", outputDir),
 		Log:             log,
 	})
 	return err
@@ -1442,7 +1442,7 @@ func encyclopediaRecoveryCommand(command, output string) string {
 	if strings.TrimSpace(command) != "" {
 		return command
 	}
-	return fmt.Sprintf("rerun staging with --encyclopedia-output %q", output)
+	return fmt.Sprintf("rerun staging with --encyclopedia-canonical-output %q", output)
 }
 
 func syncEncyclopediaDirectory(path string) error {

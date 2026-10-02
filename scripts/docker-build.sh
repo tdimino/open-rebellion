@@ -61,7 +61,7 @@ asset_args=(
     --output data/base/ui
     --mdata "$MDATA_SRC_DIR"
     --edata "$EDATA_SRC_DIR"
-    --encyclopedia-output data/base/encyclopedia
+    --encyclopedia-canonical-output data/base/encyclopedia
 )
 if [ "$FORCE_REBUILD" = "1" ]; then
     asset_args+=(--force)

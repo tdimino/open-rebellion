@@ -83,6 +83,23 @@ impl EncyclopediaCatalogEntry {
     pub const fn raw_dat_id(&self) -> u32 {
         self.raw_dat_id
     }
+
+    #[cfg(test)]
+    pub(crate) fn new_for_test(
+        object_id: u32,
+        text_resource_id: u16,
+        name: impl Into<String>,
+        source_table: EncyclopediaSourceTable,
+        raw_dat_id: u32,
+    ) -> Self {
+        Self {
+            object_id,
+            text_resource_id,
+            name: name.into(),
+            source_table,
+            raw_dat_id,
+        }
+    }
 }
 
 /// One of the seven original index controls (`0x6f..=0x75`).

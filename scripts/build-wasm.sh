@@ -44,10 +44,10 @@ esac
 if [ -n "$ENCYCLOPEDIA_SOURCE" ]; then
     echo "Staging canonical encyclopedia content from $ENCYCLOPEDIA_SOURCE…"
     ENCYCLOPEDIA_STAGE_ARGS=(
-        --encyclopedia-only
+        --encyclopedia-canonical-only
         --source "$ENCYCLOPEDIA_SOURCE"
         --edata "$EDATA_DIR"
-        --encyclopedia-output "$ENCYCLOPEDIA_STAGE"
+        --encyclopedia-canonical-output "$ENCYCLOPEDIA_STAGE"
     )
     if [ "$FORCE_REBUILD" = "1" ]; then
         ENCYCLOPEDIA_STAGE_ARGS+=(--force)

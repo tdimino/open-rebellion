@@ -352,7 +352,9 @@ fn sha256_hex(value: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::encyclopedia_catalog::{EncyclopediaCatalog, EncyclopediaCategory};
+    use crate::encyclopedia_catalog::{
+        EncyclopediaCatalog, EncyclopediaCategory, EncyclopediaSourceTable,
+    };
 
     fn fixture_index() -> EncyclopediaCatalog {
         let category = |command_id| EncyclopediaCategory {
@@ -374,21 +376,27 @@ mod tests {
                 category(0x75),
             ],
             entries: vec![
-                EncyclopediaCatalogEntry {
-                    object_id: 0x1400_0040,
-                    text_resource_id: 0x2740,
-                    name: "Mon Calamari Cruiser".into(),
-                },
-                EncyclopediaCatalogEntry {
-                    object_id: 0x5100_0010,
-                    text_resource_id: 0x2c50,
-                    name: "Diplomacy".into(),
-                },
-                EncyclopediaCatalogEntry {
-                    object_id: 0x9200_0064,
-                    text_resource_id: 0x2e00,
-                    name: "Abregado-rae".into(),
-                },
+                EncyclopediaCatalogEntry::new_for_test(
+                    0x1400_0040,
+                    0x2740,
+                    "Mon Calamari Cruiser",
+                    EncyclopediaSourceTable::CapitalShips,
+                    0x40,
+                ),
+                EncyclopediaCatalogEntry::new_for_test(
+                    0x5100_0010,
+                    0x2c50,
+                    "Diplomacy",
+                    EncyclopediaSourceTable::Missions,
+                    0x10,
+                ),
+                EncyclopediaCatalogEntry::new_for_test(
+                    0x9200_0064,
+                    0x2e00,
+                    "Abregado-rae",
+                    EncyclopediaSourceTable::Systems,
+                    0x64,
+                ),
             ],
         }
     }

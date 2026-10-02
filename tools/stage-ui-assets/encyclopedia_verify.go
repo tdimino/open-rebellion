@@ -29,7 +29,7 @@ func verifyEncyclopedia(outputDir string, log io.Writer) error {
 	if err := verifyEncyclopediaDirectory(
 		outputDir,
 		inspectEncyclopediaCanonicalDirectory,
-		fmt.Sprintf("stage-ui-assets --encyclopedia-only --encyclopedia-output %q --force", outputDir),
+		fmt.Sprintf("stage-ui-assets --encyclopedia-canonical-only --encyclopedia-canonical-output %q --force", outputDir),
 		log,
 	); err != nil {
 		return err

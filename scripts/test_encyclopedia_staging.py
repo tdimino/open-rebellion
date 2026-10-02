@@ -1019,7 +1019,7 @@ class BuildScriptIntegrationTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
             commands = log.read_text(encoding="utf-8")
-            self.assertIn(f"--encyclopedia-only --source {source}", commands)
+            self.assertIn(f"--encyclopedia-canonical-only --source {source}", commands)
             self.assertIn(f"--edata {edata}", commands)
             self.assertIn("--force", commands)
             pack_line = next(line for line in commands.splitlines() if "--output" in line)
@@ -1073,7 +1073,9 @@ class BuildScriptIntegrationTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
             commands = log.read_text(encoding="utf-8")
             self.assertIn(f"--edata {original / 'EData'}", commands)
-            self.assertIn("--encyclopedia-output data/base/encyclopedia", commands)
+            self.assertIn(
+                "--encyclopedia-canonical-output data/base/encyclopedia", commands
+            )
             self.assertIn("--force", commands)
             self.assertIn(f"force=1 edata={original / 'EData'}", commands)
             self.assertFalse((original / "REBEXE.EXE").exists())

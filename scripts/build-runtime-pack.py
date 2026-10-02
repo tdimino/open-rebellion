@@ -482,9 +482,9 @@ def verify_encyclopedia_stage(root: Path) -> None:
         command = ["go", "run", "./tools/stage-ui-assets"]
     command.extend(
         [
-            "--encyclopedia-only",
+            "--encyclopedia-canonical-only",
             "--verify",
-            "--encyclopedia-output",
+            "--encyclopedia-canonical-output",
             str(root.resolve(strict=True)),
         ]
     )

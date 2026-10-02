@@ -30,10 +30,10 @@ use rebellion_core::world::{
     System, TroopClassDef,
 };
 
-pub mod encyclopedia_catalog;
-pub mod encyclopedia_topics;
-pub mod encyclopedia_reconciliation;
 pub mod encyclopedia;
+pub mod encyclopedia_catalog;
+pub mod encyclopedia_reconciliation;
+pub mod encyclopedia_topics;
 pub mod integrator;
 pub mod mods;
 pub mod replay;
