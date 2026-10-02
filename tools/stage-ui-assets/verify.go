@@ -22,6 +22,7 @@ func verifyTargets(outputDir string, targets []dllTarget, stdout io.Writer) (ver
 		}
 
 		count := 0
+		seenBMPs := make(map[uint32]bool)
 		for _, entry := range entries {
 			if entry.IsDir() || filepath.Ext(entry.Name()) != ".bmp" {
 				continue
@@ -37,7 +38,18 @@ func verifyTargets(outputDir string, targets []dllTarget, stdout io.Writer) (ver
 			if err := validateBMP(bmp); err != nil {
 				return summary, fmt.Errorf("%s/%s: %w", target.Directory, entry.Name(), err)
 			}
+			seenBMPs[resourceID] = true
 			count++
+		}
+		for _, resourceID := range target.RequiredBMPs {
+			if !seenBMPs[resourceID] {
+				return summary, fmt.Errorf(
+					"%s: required encyclopedia chrome BMP resource %d is missing at %s",
+					target.Filename,
+					resourceID,
+					filepath.ToSlash(filepath.Join(target.Directory, "BMP", fmt.Sprintf("%d.bmp", resourceID))),
+				)
+			}
 		}
 		if count != target.Expected {
 			return summary, fmt.Errorf("%s: found %d staged BMPs, expected %d", target.Directory, count, target.Expected)

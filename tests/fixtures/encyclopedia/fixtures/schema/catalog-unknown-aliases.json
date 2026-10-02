@@ -1,0 +1,249 @@
+{
+  "schema_version": 1,
+  "default_language": "1033",
+  "topic_sort": {
+    "algorithm": "stable_display_title_v1",
+    "representable_encoding": "windows-1252-strict",
+    "representable_fold": "ascii-lowercase-only",
+    "unrepresentable": "unicode-15.1.0-scalar-lowercase-utf8-after-representable",
+    "tie_break": "registry-order"
+  },
+  "index": {
+    "command": "0x6f",
+    "labels": {
+      "1033": "Synthetic aggregate"
+    },
+    "topic_ids": [
+      "original:60001",
+      "original:60002",
+      "original:60003",
+      "original:60004",
+      "original:60005",
+      "original:60006",
+      "original:60007"
+    ],
+    "source_ref": "fixture/category/0x6f"
+  },
+  "categories": [
+    {
+      "id": "command:0x70",
+      "command": "0x70",
+      "labels": {
+        "1033": "Synthetic systems",
+        "1036": "Systèmes synthétiques"
+      },
+      "topic_ids": [
+        "original:60001"
+      ],
+      "source_ref": "fixture/category/0x70"
+    },
+    {
+      "id": "command:0x71",
+      "command": "0x71",
+      "labels": {
+        "1033": "Synthetic craft"
+      },
+      "topic_ids": [
+        "original:60002"
+      ],
+      "source_ref": "fixture/category/0x71"
+    },
+    {
+      "id": "command:0x72",
+      "command": "0x72",
+      "labels": {
+        "1033": "Synthetic facilities"
+      },
+      "topic_ids": [
+        "original:60003"
+      ],
+      "source_ref": "fixture/category/0x72"
+    },
+    {
+      "id": "command:0x73",
+      "command": "0x73",
+      "labels": {
+        "1033": "Synthetic missions"
+      },
+      "topic_ids": [
+        "original:60004"
+      ],
+      "source_ref": "fixture/category/0x73"
+    },
+    {
+      "id": "command:0x74",
+      "command": "0x74",
+      "labels": {
+        "1033": "Synthetic troops"
+      },
+      "topic_ids": [
+        "original:60005"
+      ],
+      "source_ref": "fixture/category/0x74"
+    },
+    {
+      "id": "command:0x75",
+      "command": "0x75",
+      "labels": {
+        "1033": "Synthetic personnel"
+      },
+      "topic_ids": [
+        "original:60006"
+      ],
+      "source_ref": "fixture/category/0x75"
+    }
+  ],
+  "topics": {
+    "original:60001": {
+      "localized": {
+        "1033": {
+          "title": "Amber system",
+          "body": "Contributor-written system description.",
+          "image_id": "edata:1"
+        },
+        "1036": {
+          "title": "Système ambre",
+          "body": "Description synthétique rédigée pour ce test.",
+          "image_id": "edata:1"
+        }
+      },
+      "source_ref": "fixture/topic/60001"
+    },
+    "original:60002": {
+      "localized": {
+        "1033": {
+          "title": "Blue vessel",
+          "body": "Synthetic vessel text.",
+          "image_id": "edata:2"
+        }
+      },
+      "source_ref": "fixture/topic/60002"
+    },
+    "original:60003": {
+      "localized": {
+        "1033": {
+          "title": "Copper workshop",
+          "body": "Synthetic facility text.",
+          "image_id": "edata:2"
+        }
+      },
+      "source_ref": "fixture/topic/60003"
+    },
+    "original:60004": {
+      "localized": {
+        "1033": {
+          "title": "Dual beacon",
+          "body": "Synthetic faction-sensitive art text.",
+          "image_selector": {
+            "kind": "viewer_faction",
+            "alliance_image_id": "edata:2",
+            "empire_image_id": "edata:3"
+          }
+        }
+      },
+      "source_ref": "fixture/topic/60004"
+    },
+    "original:60005": {
+      "localized": {
+        "1033": {
+          "title": "Empty canvas",
+          "body": "This synthetic topic intentionally has no image field."
+        }
+      },
+      "source_ref": "fixture/topic/60005"
+    },
+    "original:60006": {
+      "localized": {
+        "1033": {
+          "title": "Null canvas",
+          "body": "This synthetic topic explicitly has no art.",
+          "image_id": null
+        }
+      },
+      "source_ref": "fixture/topic/60006"
+    },
+    "original:60007": {
+      "localized": {
+        "1033": {
+          "title": "Registry-only flotilla",
+          "body": "Synthetic aggregate-only topic."
+        }
+      },
+      "source_ref": "fixture/topic/60007"
+    }
+  },
+  "images": {
+    "edata:1": {
+      "path": "assets/EDATA.001",
+      "format": "bmp",
+      "byte_length": 70,
+      "width": 2,
+      "height": 2,
+      "sha256": "5933033f7472f8b9d24b8106b03f0ce46e788608b6ee03018d16ec37804de579",
+      "source_ref": "fixture/image/1"
+    },
+    "edata:2": {
+      "path": "assets/EDATA.002",
+      "format": "bmp",
+      "byte_length": 70,
+      "width": 2,
+      "height": 2,
+      "sha256": "a93a4e651a970119d8da0386846785163291b7cfd67edaac7f6fc37b719fe592",
+      "source_ref": "fixture/image/2"
+    },
+    "edata:3": {
+      "path": "assets/EDATA.003",
+      "format": "bmp",
+      "byte_length": 70,
+      "width": 2,
+      "height": 2,
+      "sha256": "8746c347d4cf14daa2e0cc9d41d1f9abebbbb1aae997f31a172610e9ecdbe2dd",
+      "source_ref": "fixture/image/3"
+    }
+  },
+  "bindings": [
+    {
+      "family": "system_locations",
+      "dat_id": 7,
+      "variant": "default",
+      "topic_id": "original:60001"
+    },
+    {
+      "family": "capital_ship_classes",
+      "dat_id": 7,
+      "variant": "default",
+      "topic_id": "original:60002"
+    },
+    {
+      "family": "facilities",
+      "dat_id": 13,
+      "variant": "default",
+      "topic_id": "original:60003"
+    },
+    {
+      "family": "missions",
+      "dat_id": 21,
+      "variant": "viewer_faction",
+      "topic_id": "original:60004"
+    },
+    {
+      "family": "troop_classes",
+      "dat_id": 5,
+      "variant": "default",
+      "topic_id": "original:60005"
+    },
+    {
+      "family": "special_forces",
+      "dat_id": 8,
+      "variant": "default",
+      "topic_id": "original:60006"
+    },
+    {
+      "family": "fixture_fleet",
+      "dat_id": 2,
+      "variant": "default",
+      "topic_id": "original:60007"
+    }
+  ],
+  "aliases": {}
+}

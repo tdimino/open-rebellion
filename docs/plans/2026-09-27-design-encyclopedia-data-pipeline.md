@@ -1,8 +1,8 @@
 ---
 title: "Encyclopedia Data Extraction, Modding, and Display"
-description: "Proposed source-derived encyclopedia catalog, asset staging, mod overlays, and native/browser consumption"
+description: "Source-derived encyclopedia catalog, asset staging, mod overlays, and native/browser consumption"
 type: design
-status: draft
+status: wire-contract-approved
 created: 2026-09-27
 updated: 2026-10-02
 tags: [encyclopedia, assets, modding, native, wasm, P35, RE-ENC-01]
@@ -55,6 +55,9 @@ implement the transport, index shell, index catalog, and local source-binding
 checkpoints described above. Sections that still describe browser topic
 transport, composition, navigation, contextual entry, mod overlays, or
 production routing remain future work and confer no acceptance by themselves.
+IndigoCompass coordinator-approved the E09 v1 wire contract on 2026-09-29;
+that approval does not itself establish implementation or production
+acceptance for the remaining work.
 
 The first delivery includes original-data extraction, a validated catalog,
 native and browser asset loading, native mod overrides, and an original-style
@@ -134,7 +137,25 @@ Read-only PE inspection of the owned English installation on 2026-09-27 found:
 These are installation-specific observations, not universal count constraints.
 No original descriptions or pixel data are reproduced in this document.
 
-### Required source work before freezing schema v1
+### Approved first-profile alternate-image scope
+
+The user explicitly deferred unproven alternate-image support on 2026-09-29.
+The first supported profile publishes only standard topic images and the
+source-proven faction and system selectors. `EDATA.192` and any other unproven
+alternate artwork remain inventoried with unresolved provenance but unused: no
+catalog binding, campaign predicate, runtime switch, or alternate-image
+acceptance claim is permitted. Asset existence does not establish original
+encyclopedia display.
+
+This deferral is tracked by `orlocal-2kq`. It is not proof that an alternate was
+implemented, recovered, absent from original behavior, or accepted visually,
+and it is not a blocker for E08, schema freeze, first-profile publication, or
+first-profile UI acceptance. Retain compatible `variant` and image-identity
+fields so later source-proven work can extend the catalog without fabricating a
+current binding. All standard/faction/system selector, identity, availability,
+context, navigation, and capture requirements remain unchanged.
+
+### Source evidence requirements used for v1 wire approval
 
 1. Trace `FUN_0045d400` and its callers, using
    [entity graphics evidence](../reference/asset-library/entity-graphics.md) and
@@ -145,21 +166,39 @@ No original descriptions or pixel data are reproduced in this document.
    against the original executable and the 29 non-ASCII records. Reject unknown
    source profiles rather than using lossy replacement characters.
 3. Recover category IDs, labels, ordering, topic titles, previous/next behavior,
-   all entity families, system mappings, and variants such as alternate Luke art.
-   Do not extrapolate the renderer's current family offsets.
-4. Account for every extracted resource: bound to a topic, a documented alias,
-   or explicitly unresolved with a reason. An unresolved item may remain in the
-   extraction report but cannot silently become a fabricated runtime binding.
+   all entity families, system mappings, and every image selector supported by
+   the first profile. Do not extrapolate the renderer's current family offsets.
+   Unproven alternate art, including the proposed alternate Luke case, follows
+   the approved deferral above rather than blocking schema v1.
+4. Account for every extracted resource: bound, a historical documented alias,
+   source-proven unused, or explicitly unresolved with a reason. The identified
+   profile has 348 decoded ENCYTEXT resources: 347 bound, resource `7176`
+   source-proven unused, zero aliases, and zero unresolved. An unresolved item
+   may remain in research output but cannot silently become a runtime binding.
 5. Recover availability/context rules separately from the static catalog. Being
    present in a DLL does not establish that a topic is visible in every campaign
    state, to both factions, or from every entry point.
 
-For unsupported controls/encoding or uncertain joins, retain raw bytes in the
-local extraction report and stop publication of the affected category. Do not
-substitute externally written lore. A partial category implementation is labeled
-partial and must not claim full P35 acceptance.
+For unsupported in-scope controls/encoding or uncertain joins, retain raw bytes
+in the local extraction report and stop publication of the affected category.
+Do not substitute externally written lore. Deferred alternate images remain
+inventoried and unbound rather than stopping publication of an otherwise proven
+first-profile category. A partial category implementation is labeled partial
+and must not claim full P35 acceptance.
 
-## 4. Proposed schema v1
+## 4. Coordinator-approved schema v1 wire contract
+
+> **E09 v1 wire contract — coordinator-approved 2026-09-29.**
+> Accepted E54 evidence proves one aggregate-only fleet topic, contradicting the
+> earlier mandatory `topic.category_id` shape. The concrete response below and
+> strict schemas form the approved wire contract. Coordinator-verified E09
+> closure enables E37's synthetic fixtures. Runtime production remains gated by
+> E31, E32, and E51; the embedded profile's
+> `ready_for_schema_freeze: false` value is legacy embedded profile readiness
+> pending E10 synchronization to the approved contract, not an E09-to-E37 gate.
+> Subsequent review revisions also separate immutable base-wire provenance from
+> Rust-only effective facts, make row sorting explicit, remove aliases from v1,
+> preserve exact existing mod names, and define one retained-byte ledger.
 
 Use one canonical `catalog.json` with a versioned envelope and keyed objects.
 This is both readable by mod authors and simple to load into typed Rust maps.
@@ -172,18 +211,169 @@ not a mod-editable catalog. Raw-resource reports are tooling artifacts only.
 |---|---|
 | `schema_version` | Integer `1`; reject unsupported versions rather than guessing. |
 | `default_language` | Decimal Windows LANGID string from the source profile, e.g. `"1033"`. |
-| `categories` | Map of stable source-derived category keys to localized labels and ordered `topic_ids`. The explicit arrays determine display order. |
-| `topics` | Map keyed by `original:<ENCYTEXT-resource-id>` for original topics. A source-profile mapping must prove that a record is a topic; explicit aliases handle shared records. |
-| `images` | Map keyed by `edata:<number>` for original artwork, containing relative `path`, `format`, `width`, `height`, and lowercase `sha256`. |
+| `topic_sort` | Exact constants naming the stable displayed-title sort, Windows-1252/Unicode key policy, and registry tie-break. |
+| `index` | Aggregate command `0x6f` with 347-candidate potential membership in source-proven tie order. It is not a category; runtime world/viewer admission and title sorting produce display rows. |
+| `categories` | Array in source-proven tab order. Each filtered view has a stable internal ID, command, localized labels and potential-membership/tie-order `topic_ids`. Tabs are not title-sorted. |
+| `topics` | Map keyed by `original:<ENCYTEXT-resource-id>` for source-proven topics. Runtime aliases are not a v1 wire field. |
+| `images` | Immutable base map keyed by canonical `edata:<number>` IDs for original artwork, containing relative `path`, `format`, byte length, dimensions, lowercase `sha256`, and manifest provenance. Generated mod descriptors are not serialized here. |
 | `bindings` | Array joining `{family, dat_id, variant}` to `topic_id`; family names match world arenas where possible. Default variant is `"default"`. |
 
-A category record contains `labels` (LANGID-to-string), `topic_ids` (ordered,
-unique within that category) and a `source_ref` into the extraction manifest.
-A topic record contains `category_id`, `localized` (LANGID-to-content map), and
-`source_ref`. A localized content record contains `title`, `body`, and optional `image_id`
-(string; missing or null both mean no artwork). This allows localized artwork without duplicating topic IDs.
-Each topic belongs to one category in v1; any original cross-category aliases
-must be represented and source-proven before schema freeze, not silently lost.
+The index and category records contain `labels` (LANGID-to-string), unique
+`topic_ids`, and a `source_ref`. `topic_ids` is potential membership in
+source-proven order and is the stable comparator-equal tie-break, **not frozen
+display order or a promise that every system candidate is live**. The first
+profile uses a 147-definition recovered registry prefix followed by 200 systems
+in ascending packed `(family << 24) | DatId` order. Category array position
+alone is tab display order. A topic
+contains `localized` plus `source_ref`; canonical identity, source binding, and
+view membership remain separate. Unknown `aliases` fields reject in v1.
+Any future runtime alias representation requires a new schema version;
+historical research `documented_alias` evidence remains valid outside the wire.
+
+The first-profile relationship rule is zero-or-one filtered memberships per
+topic, with zero allowed only when the profile proves aggregate-only
+membership. All 347 catalog candidates occur in `index.topic_ids`; 346 occur in exactly one
+of commands `0x70..0x75`; source identity `0x08000004` occurs in none. This does
+not invent a fleet category or promote command `0x6f` into membership.
+
+At every load/reload the consumer applies overlay language maps in resolved mod
+order, validates every retained localized record as complete, selects one whole
+requested/default record, resolves that record's art, then stable-sorts the
+current view by its displayed title. A newly added/deleted translation, title
+rename or language change may reorder rows without changing membership; default
+edits never leak into a surviving requested record. The approved `topic_sort` rule
+strictly encodes Windows-1252
+titles, folds ASCII `A..Z` only, leaves high bytes unchanged, and compares
+unsigned bytes. Unrepresentable Unicode titles sort afterward by
+the Unicode 15.1.0 full lowercase mapping applied independently per scalar,
+encoded as UTF-8 without normalization. Consumers pin that table or prove Rust
+`char::to_lowercase` matches it; whole-string context-sensitive lowercasing is
+forbidden. Equal keys retain `topic_ids` registry order.
+`FUN_00626ad0`/`FUN_005f59f0` prove the narrow-byte case-insensitive stable
+behavior. The source registry tie order is also connected:
+`FUN_00585b70` constructs the keyed container; `FUN_005f4f10` inserts through
+registry vtable `0x0066a220+0x08` → `FUN_00585f50`; `FUN_005843d0` derives the
+packed family-qualified DatId key; and insertion maintains the `+0x10`
+successor followed by `FUN_00584570`. That packed system order differs from
+SYSTEMSD `source_row` order at 180 positions.
+
+E51 then observed two specific fresh runs, raw viewer selectors 1 and 2. Each
+had equal complete snapshots at LCID `0x0409`/code page 1252 and 247 admitted
+rows (147 definitions + 100 systems); their identity/key sequences were equal.
+The independently selected-title oracle matches all 247 cache positions and all
+six filtered projections with zero ASCII-fold ties. The two observed 100-system
+iterator lists are exact projections of the source-proven 200-system packed-key
+potential order. This is not evidence that every scenario or faction always
+admits the same 100.
+
+These results close the current-profile comparator choice. The deterministic
+high-byte/Unicode behavior above remains an explicit port extension, not
+original CRT/Unicode parity. A full 256-byte fold map, original Unicode parity,
+and manufactured equal-title original-runtime fixtures are not prerequisites;
+synthetic language, mod-rename, and tie cases must enforce the declared policy.
+If another source profile exercises incompatible original bytes, revise its
+sort contract rather than silently generalize this one.
+
+Canonical content identity preserves the original unique ENCYTEXT body resource
+key and family-qualified `{family, DatId}` binding. Original DLL/resource IDs
+are never renumbered for convenience. Cache `+0x0c` joins all observed rows by
+canonical resource key; cache `+0x68` is a runtime handle whose low bits differ
+from the accepted definition DatId for 141 of 147 definition rows (while all 100
+observed systems match). Runtime handles and pointers never replace stable
+identity. The player sees localized names/text/art, not IDs.
+
+The wire catalog therefore records 347 catalog candidates, not the 247 admitted
+rows of either observation. Source proves the original selected-view and
+type-`0xf2` ancestry predicate; it does not prove an existing Open Rebellion
+mapping to exploration, faction, population or another world field. The two
+specific fresh runs prove one shared 247-row outcome, not a universal
+scenario-size or faction rule.
+
+E31 (`orlocal-818.31`) owns the source-to-world/viewer admission mapping,
+instantiated system membership, ancestry-predicate adaptation and world-epoch
+re-evaluation. It emits one typed `AdmissionSnapshot` containing the epoch,
+viewer and ordered admitted `BindingKey`/`AdmissionFact` pairs. `BindingKey`
+preserves `{family, dat_id, variant}`. An absent instantiated system is not
+admitted; with missing required source-equivalent selected-view/ancestry facts,
+the original-parity surface remains unavailable with an actionable diagnostic. No
+consumer may substitute every 200 systems or the captured 100.
+
+E44 (`orlocal-818.46`) consumes those typed admitted IDs/facts as a pure
+content/language/sort resolver with no world dependency. Admission therefore
+precedes overlay merge, whole-record language selection, art resolution and
+sorting without making E44 a second world adapter. E32 (`orlocal-818.32`)
+requires E31 adapter evidence before production route enablement; that evidence
+is not a wire-schema freeze prerequisite. Browser v1 remains base-only for mod
+content. A separately labeled candidate inspector may remain a development aid,
+but it is not original parity.
+
+A base-wire localized content record contains required `title` and `body`, plus
+either an optional base `image_id` (missing or null means no artwork) or the closed
+typed `viewer_faction` image selector proven for 16 E54 mission/fleet topics.
+The two shapes are mutually exclusive. Systems and all other standard art use
+their resolved static canonical image ID. Arbitrary predicates and the
+unproven `EDATA.192` alternate remain absent.
+
+`validate_bundle` derives immutable source-backed topic image capability from
+the binding and verifies every base localized selector shape agrees. A
+`viewer_faction` topic therefore authorizes a complete faction pair for a newly
+added language even when that LANGID has no base record. Default/static topics
+reject faction selectors. Effective overlays can replace art but cannot grant
+or remove this topic capability.
+
+Base image IDs are exactly `edata:<canonical-decimal-u32>` (7–16 ASCII bytes).
+The catalog JSON Schema is base-wire-only and contains no effective definitions
+or generic mod-ID union. Runtime types are a documented Rust boundary:
+
+```text
+BaseImageId(String)
+ModImageId(String)
+EffectiveImageId = Base(BaseImageId) | Mod(ModImageId)
+EffectiveImageRef = None | Static(EffectiveImageId)
+                  | ViewerFaction { alliance, empire }
+EffectiveImageFacts = {
+  image_id, format, byte_length, width, height, sha256,
+  origin: BaseManifest { source_ref }
+        | ModSnapshot { mod_name, relative_path },
+  retained_bytes: Arc<[u8]>
+}
+```
+
+The generated mod identity encodes the exact existing `ModManifest.name` UTF-8
+bytes without normalization or case folding:
+
+```text
+mod:v1:<lowercase-hex-exact-UTF8-name>:<relative-path>
+```
+
+Thus `demo` is `mod:v1:64656d6f:encyclopedia/assets/test.png` and `MyMod` is
+`mod:v1:4d794d6f64:encyclopedia/assets/test.png`. This avoids imposing the
+documented-but-unenforced kebab-case convention. Empty, delimiter-bearing,
+case-distinct and normalization-distinct names remain exact; exact duplicates
+retain the existing resolver diagnostic. Facts retain the original name/path
+and validators recompute the ID.
+
+There is no mod-name length validity rule and no every-enabled-mod preflight.
+Only an actual encyclopedia identity allocation computes checked
+`7 + 2*UTF8_len(name) + 1 + path_len`, reserves the generated ID plus retained
+name/path buffers under the one global candidate byte ledger, then allocates.
+Overflow is `identity_length_overflow`; insufficient capacity is
+`resource_limit:retained_bytes`. A name longer than 1,024 bytes succeeds with
+adequate candidate budget and fails before allocation otherwise. Confined paths
+remain at most 256 ASCII bytes. They resolve under the already discovered mod
+root; encoded names never build filesystem roots. Traversal, symlink escape,
+origin mismatch, ID/fact collision, and filesystem aliases reject instead of
+overwriting a descriptor.
+
+The wire contract's complete synthetic mod-image example is owned by `demo`, has ID
+`mod:v1:64656d6f:encyclopedia/assets/test.png`, and uses a reproducibly
+generated 70-byte, 1×1 RGBA PNG with SHA-256
+`5b8ce344a9d7fe4bdf8780725fc2fc36dce3f297688e62f18c8848fce6fecb8b`.
+Locked `pngjs` 7.0.0 generates it; Go's existing standard `image/png` decoder
+independently performs a full decode and confirms the 1×1 pixel. A prior
+25-byte plain-text placeholder had matching declared length/hash but is not PNG
+and is now a retained negative check. Structural schema and digest agreement do
+not replace bounded full image decoding.
 
 `body` is plain Unicode text, not HTML or Markdown. Normalize line endings to
 LF, remove only the proven terminal NUL/padding, and preserve meaningful spacing
@@ -197,13 +387,26 @@ Merged character arenas also require verification of their DAT ID namespace;
 if major/minor IDs overlap, add an explicit source-table discriminator before
 schema freeze. Unknown or ambiguous bindings are errors, not first-match wins.
 A variant key is a named, source-proven case selected by typed application code;
-no expression evaluator or mod-supplied executable predicates are introduced.
-Live statistics remain read from the bound `GameWorld` record.
+v1 admits only `default` and the proven `viewer_faction` case. No expression
+evaluator or mod-supplied executable predicate is introduced. Live statistics
+remain read from the bound `GameWorld` record.
 
-The language resolver selects a whole localized record: requested LANGID, then
-catalog default. It does not combine a title in one language with a body in
-another. Missing both records disables that topic with a diagnostic. Choosing
-another language is a catalog-loading parameter, not a new settings UI here.
+Localized overlay maps apply in resolved mod order before language selection.
+After merge, validate every retained language record as complete; a null
+language entry deletes that whole record. The resolver then selects one whole
+record: requested LANGID, then catalog default, and resolves that record's art.
+It does not combine a title in one language with a body or image selector in
+another. Missing both records disables that topic with a diagnostic. E44 owns
+added-translation reorder, deleted-translation fallback, default non-leakage and
+incomplete-record rejection tests plus complete conformance against the pinned
+Unicode 15.1.0 per-scalar lowercase table. Category labels independently use
+requested LANGID then catalog
+default. Missing both disables that category with a diagnostic and never
+displays its internal key as prose. This is a deliberate robustness divergence
+from the original absent-label empty display; all seven current profile labels
+are present. A present empty label remains empty rather than triggering fallback
+or invented text. Choosing another language is a catalog-loading parameter,
+not a new settings UI here.
 
 ### Synthetic catalog example
 
@@ -215,16 +418,30 @@ carry and pass its computed digest.
 {
   "schema_version": 1,
   "default_language": "1033",
-  "categories": {
-    "ships": {
+  "topic_sort": {
+    "algorithm": "stable_display_title_v1",
+    "representable_encoding": "windows-1252-strict",
+    "representable_fold": "ascii-lowercase-only",
+    "unrepresentable": "unicode-15.1.0-scalar-lowercase-utf8-after-representable",
+    "tie_break": "registry-order"
+  },
+  "index": {
+    "command": "0x6f",
+    "labels": {"1033": "Synthetic aggregate"},
+    "topic_ids": ["original:60001", "original:60002"],
+    "source_ref": "fixture/label/index"
+  },
+  "categories": [
+    {
+      "id": "command:0x70",
+      "command": "0x70",
       "labels": {"1033": "Test ships"},
       "topic_ids": ["original:60001"],
       "source_ref": "fixture/category/ships"
     }
-  },
+  ],
   "topics": {
     "original:60001": {
-      "category_id": "ships",
       "localized": {
         "1033": {
           "title": "Example cruiser",
@@ -233,19 +450,54 @@ carry and pass its computed digest.
         }
       },
       "source_ref": "fixture/topic/60001"
+    },
+    "original:60002": {
+      "localized": {
+        "1033": {
+          "title": "Aggregate-only example",
+          "body": "Synthetic aggregate-only description.",
+          "image_selector": {
+            "kind": "viewer_faction",
+            "alliance_image_id": "edata:43",
+            "empire_image_id": "edata:44"
+          }
+        }
+      },
+      "source_ref": "fixture/topic/60002"
     }
   },
   "images": {
     "edata:42": {
       "path": "assets/EDATA.042",
       "format": "bmp",
+      "byte_length": 81080,
       "width": 400,
       "height": 200,
-      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "source_ref": "fixture/image/42"
+    },
+    "edata:43": {
+      "path": "assets/EDATA.043",
+      "format": "bmp",
+      "byte_length": 81080,
+      "width": 400,
+      "height": 200,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "source_ref": "fixture/image/43"
+    },
+    "edata:44": {
+      "path": "assets/EDATA.044",
+      "format": "bmp",
+      "byte_length": 81080,
+      "width": 400,
+      "height": 200,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "source_ref": "fixture/image/44"
     }
   },
   "bindings": [
-    {"family": "capital_ship_classes", "dat_id": 7, "variant": "default", "topic_id": "original:60001"}
+    {"family": "capital_ship_classes", "dat_id": 7, "variant": "default", "topic_id": "original:60001"},
+    {"family": "fixture_fleet", "dat_id": 2, "variant": "viewer_faction", "topic_id": "original:60002"}
   ]
 }
 ```
@@ -276,10 +528,42 @@ absolute paths, drive prefixes, `..`, backslashes and symlinks escaping that roo
 All image files must decode, match their declared dimensions and pass a pixel
 count/byte-size bound before texture allocation. V1 original images are BMP;
 mod replacements may be BMP or PNG, using already-supported decoders.
-Proposed initial safety limits: 10,000 topics, 1 MiB UTF-8 per localized body,
-32 MiB per image, 16 million pixels per image, and 128 MiB aggregate staged image
-bytes. Verify these generous limits against real extraction and record any
-change; do not rely solely on trusting a manifest's dimensions.
+
+Validation has two non-interchangeable entry points:
+
+```text
+validate_bundle(base, manifest, files) -> ValidatedBaseBundle
+validate_effective_catalog(catalog, image_facts) -> ValidatedEffectiveCatalog
+```
+
+`validate_bundle` proves exact immutable catalog/manifest hashes, the base file
+set and bytes, every base `source_ref`, binding-source identity, and base
+binding/selector agreement. `validate_effective_catalog` runs on a candidate
+seeded from that validated bundle. It proves every effective image reference
+has one matching retained buffer/fact, recomputes length/digest/decode facts,
+checks origin/ID equality and limits, and rejects unused mod facts. It does not
+compare the effective catalog to the base catalog hash, mutate the base
+manifest/file set, fabricate source records, or require mod facts to close
+through base provenance.
+The approved E09 wire contract retains 10,000 topics, 1 MiB UTF-8 per localized body,
+32 MiB per image, 16 million pixels per image, and 128 MiB aggregate
+staged/effective image bytes. It adds 64 MiB/depth 16 for catalog JSON,
+32 MiB/depth 16 for manifest JSON, 16 MiB/depth 8 for one overlay, and a
+single 512 MiB retained-byte ledger across live base/mod buffers, the serialized
+candidate, in-flight reads, and actual generated identity/retained name/path
+UTF-8 buffers. Reserve a checked exact size before reading each chunk or
+allocating an identity; count one shared allocation once and an actual copy
+again. Only actual encyclopedia candidates allocate or can fail admission;
+unrelated enabled mods are not preflighted. Candidate failure releases its
+reservations while the old live state remains; successful publication precedes
+old-state release. The 128 MiB logical asset-set and per-file/parser/decode
+limits are orthogonal, not quotas composing 512 MiB. Decoded/GPU/container
+memory is outside this ledger, so this is not a total-process-memory promise.
+These are implementation budgets, not original-game limits. The
+[E09 decision note](../reference/asset-library/encyclopedia-schema-decisions.md)
+separates measured inputs from conservative output limits. It assigns shared
+file conformance to E37, presentation/fallback/sorting to Rust consumer tests,
+and effective images/mod identity/transactions to adapter/session tests.
 
 ## 5. Extraction and staging layout
 
@@ -440,9 +724,12 @@ Proposed ownership follows the existing data/render/app split:
   contain no encyclopedia prose, GPU handles, or asset bytes.
 
 At entry, resolve the caller's family-qualified entity if present; otherwise
-open the recovered index. Build categories and lists from explicit catalog
-ordering, display the selected localized title/body/image, and obtain live
-stats from the bound world record. Fleet instances first resolve their class.
+open the recovered index. Build category tabs in explicit catalog order. Apply
+overlay language maps, validate complete records, select requested/default whole
+records, resolve art, then stable-sort topic lists under `topic_sort`, using
+membership arrays as equal-key tie order. Display the
+selected localized title/body/image and obtain live stats from the bound world
+record. Fleet instances first resolve their class.
 Apply original context/availability rules at the app boundary, with a pure,
 testable resolver; do not conflate mod-visible text with gameplay knowledge.
 
@@ -491,10 +778,17 @@ Synthetic example:
 `id` selects an existing topic and is removed before applying the patch. V1
 allows only `localized.<LANGID>.title`, `body`, and the author-facing `image`
 field. Omitted values inherit the base. `image` is either `{ "path": "..." }`
-relative to that mod's root, or null to explicitly remove optional art. The
-adapter validates the file, computes its digest/dimensions, creates a
-`mod:<mod-name>:<relative-path>` image descriptor, and translates `image` into
-canonical `image_id` before RFC 7396 merge. Authors do not maintain image hashes.
+relative to that mod's root, null to explicitly remove optional art, or the
+atomic pair `{ "alliance": {"path":"..."}|null,
+"empire": {"path":"..."}|null }`. Both pair keys are required. The pair is
+allowed only when the validated immutable source-backed topic capability is
+`viewer_faction`; this includes a new language with no base record. No effective
+override can grant or remove that capability, while a later layer may use it to
+restore a pair after a static/null override. A static base topic rejects the
+pair. The adapter validates each non-null file, computes
+digest/dimensions, retains exact bytes in the candidate snapshot, creates the
+`mod:v1:<hex-exact-UTF8-name>:<relative-path>` Rust identity, and translates the whole
+image value atomically. Authors do not maintain IDs, hashes, or facts.
 Null title/body/language deletions follow merge-patch semantics but are rejected
 if they leave a required localized record invalid. In particular, removing a
 body is not the same as deliberately setting it to the empty string.
@@ -515,8 +809,14 @@ a deterministic name tie-break for unrelated mods in the shared resolver, with
 regression tests for existing world overlays rather than a second sorting rule.
 
 Validate base content against its immutable manifest before any overlays.
-Effective mod image descriptors are verified against their owning mod files,
-not inserted into or checked against the original base manifest.
+Effective mod image facts are verified against retained owning-mod snapshot
+bytes, not inserted into or checked against the original base manifest. On a
+base `viewer_faction` record, static replacement removes the selector, null
+removes art, and a complete faction pair replaces both sides atomically. These
+leave the binding untouched. Source-profile selector agreement is a base-bundle
+check and is not reapplied to reject permitted effective content. Disabling the
+mod rebuilds from base and restores its selector. A forbidden binding edit,
+partial/failed pair, or missing retained bytes rejects the candidate.
 
 Apply one mod's encyclopedia changes to a copy, validate every patch and image,
 then publish the batch atomically. On failure keep the previous valid content
@@ -544,7 +844,7 @@ pre-modded pack needs a separate package/mod identity contract and is deferred.
 
 | Slice | Depends on | Deliverable and proof |
 |---|---|---|
-| A: source contract and schema | Design review | Establish encoding, all identity joins, category/variant/availability rules; add schemas and synthetic valid/invalid examples. No invented mappings. |
+| A: source contract and schema | Design review | Establish encoding, all identity joins, category/proven-selector/availability rules for the first profile; retain unproven alternates as inventoried, unused deferred evidence; add schemas and synthetic valid/invalid examples. No invented mappings. |
 | B: extraction/staging | A | Go extraction, manifest verification, repeatability, safe replacement and complete resource accounting. Original files remain unmodified. |
 | C: runtime loading and native overlays | A, B | Shared parser and asset provider, separate content ownership, overlay diagnostics and atomic reload; no save-schema change. |
 | D: browser transport | B, C | Pack collector/installer and loose fallback consume identical base bytes; staging included in normal container/web builds. |
@@ -557,6 +857,16 @@ unresolved joins, missing EData numbers, path escapes, corrupt images, duplicate
 keys, version rejection, deterministic extraction and Go/Rust validator agreement.
 Owned-data tests stay opt-in/ignored and assert the *identified source profile*,
 not universal English counts. No proprietary text is added to golden fixtures.
+
+E37's shared corpus owns only serialized file shape, raw parsing, immutable
+relationships, digests, and limits. Whole-record language resolution, missing
+versus empty category labels, internal-key non-display, title sorting (base
+reproduction, language changes, mod renames, ties and non-ASCII), and navigation
+are E44's world-independent Rust consumer tests. E31 tests instantiated
+membership, source-equivalent ancestry adaptation, missing-fact diagnostics,
+typed admitted `BindingKey`s/admission facts, and world-epoch re-evaluation.
+Effective image capability, exact mod-name encoding, collisions, retained
+bytes, and rollback are Rust adapter/session tests.
 
 Overlay tests prove dependency precedence, validation rollback, null/omission
 semantics, image replacement, disable/reload restoration, no stale texture reuse,
@@ -572,17 +882,40 @@ strict parity; successful decoding or a unit test is not visual acceptance.
 Run scoped mutation tests for the eventual parser/resolver/overlay implementation,
 workspace checks, staging tests, package build, and interface-ledger validation.
 
-## 10. Decisions for review and implementation limits
+## 10. Approved wire decisions and implementation limits
 
-This proposal recommends the Go extractor, ignored `data/base/encyclopedia/`
-staging, a separate versioned catalog, ORPK v3 kind-0 namespaced transport,
-existing native mod ordering/merge semantics, and original-style UI consumption.
-No production dependency, save format, or DAT format change is requested.
+The approved wire contract records the planned Go extractor, ignored
+`data/base/encyclopedia/` staging, separate versioned catalog, ORPK v3 kind-0
+namespaced transport, existing native mod ordering/merge semantics, and
+original-style UI consumption. No production dependency, save format, or DAT
+format change is requested.
 
-Source recovery must settle the encoding, category/alias structure, variant
-predicates and visibility rules before freezing schema v1. If those findings
-contradict the proposed model, revise this design and its fixtures before coding
-the runtime. These are evidence questions with named sources and failure gates,
-not permission to guess. Implementation scheduling and any schema expansion
-follow review of this document; this documentation contribution does not claim
-that the proposed system already exists.
+Wire approval used the recovered encoding, category/membership structure, proven
+first-profile image selectors, visibility rules, source-proven stable potential
+order, two complete 247-row observed-order reproductions, and bounded
+deterministic port extension. Runtime aliases are removed from v1; historical
+`documented_alias` research status remains, while the current profile has zero
+topic/body aliases and shared art does not imply one.
+Unproven alternate-image predicates are explicitly deferred to `orlocal-2kq`;
+their assets remain inventoried but unused and do not block the current schema.
+E54 proves that one topic is aggregate-only, and E55 proves all seven label
+selectors. The approved E09 wire contract separates aggregate/category potential
+view arrays from canonical topics, retains typed viewer-faction art, and pins
+strict catalog/manifest/overlay schemas and budgets. Coordinator-verified E09
+closure enables E37 (`orlocal-818.43`) executable file conformance. E10
+(`orlocal-818.10`) subsequently synchronizes the legacy embedded profile/Go
+validator and catalog producer to the approved contract; its
+`ready_for_schema_freeze: false` value is legacy embedded profile readiness
+pending E10 and cannot circularly prevent E09-to-E37. E11
+(`orlocal-818.11`) owns strict Rust wire parsing. E31 (`orlocal-818.31`) owns
+source-to-world/viewer admission mapping and hands typed admitted `BindingKey`s
+and admission facts to E44 (`orlocal-818.46`), which remains a pure
+content/language/sort resolver with no world dependency. E32
+(`orlocal-818.32`) requires adapter evidence for production enablement, but that
+is not a wire-schema freeze prerequisite. Production readiness remains gated by
+E31, E32, and E51. E42 (`orlocal-818.44`) publishes only the validated result.
+Synthetic tie/mod-rename tests enforce the port extension. A0 full-matrix
+visual/runtime acceptance and `orlocal-2kq` remain separate.
+These handoffs are evidence-backed contracts, not claims that downstream
+implementation or tests exist. Wire approval does not claim that the planned
+runtime system exists or is production-ready.

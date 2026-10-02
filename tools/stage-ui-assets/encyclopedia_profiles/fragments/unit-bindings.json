@@ -1,0 +1,156 @@
+{
+  "kind": "encyclopedia-unit-binding-fragment",
+  "schema_version": 1,
+  "profile_id": "encytext-49aea545-lang-1033-v1",
+  "language_id": 1033,
+  "scope": [
+    "capital_ship_classes",
+    "fighter_classes",
+    "troop_classes",
+    "special_force_classes"
+  ],
+  "sources": [
+    {"role":"research_executable","basename":"REBEXE.EXE","raw_length":2822656,"raw_sha256":"b3fe3997cab9a6e96403d638875dcba25484e4d8601751afec748471ac0ed6ab"},
+    {"role":"encyclopedia_text","basename":"ENCYTEXT.DLL","raw_length":145920,"raw_sha256":"49aea545a5e09e5fe9115a22bc785690f103d2f931e08bd4a53a617a42636d8c"},
+    {"role":"encyclopedia_art_lookup","basename":"ENCYBMAP.DLL","raw_length":34816,"raw_sha256":"fb545d19ae24b0277753494dbfaabf2dbdde660beab821287a32016c290e4560"},
+    {"role":"display_strings","basename":"TEXTSTRA.DLL","raw_length":150528,"raw_sha256":"61a10bf3797f49b1121e2fba2cee7d3949a5bc7215e1501e2df71ecbedb53d4c"},
+    {"role":"capital_ship_classes","basename":"CAPSHPSD.DAT","raw_length":6016,"raw_sha256":"36fdaaeef4057d70e10a1593950cee5b197ce38d7d1b6a06201a74c93bf44515"},
+    {"role":"fighter_classes","basename":"FIGHTSD.DAT","raw_length":1360,"raw_sha256":"b62598d9a35fa3fe9fb65622f2720d10e6fabba055ccba41b87bdf07895268a5"},
+    {"role":"troop_classes","basename":"TROOPSD.DAT","raw_length":696,"raw_sha256":"b70a0ca33f0956d8528af9f784c4094c2a1609ad7be437c21ae2b90f6dd4eace"},
+    {"role":"special_force_classes","basename":"SPECFCSD.DAT","raw_length":1060,"raw_sha256":"d61fc07ae332e5cfb15f644b1198e0ec1905903c2a3b6bc4886cae10c4361e46"}
+  ],
+  "selector_rules": {
+    "dat_identity": "source_identity = (record_family << 24) | record_id",
+    "title": "preserve definition +0x30 as title_string_id; try the same module with preferred low word uint16(title_string_id - 0x8000), then use the definition +0x34 fallback only when the preferred result is empty",
+    "title_profile_observation": "all 57 preferred title selectors are empty, so selected_title_string_id equals title_string_id for every scoped row",
+    "body": "ENCYTEXT type 10 resource = (original definition +0x30 & 0x0fff) + 0x1000, independent of which title branch is selected",
+    "art": "for these source families, FUN_0045fa60 uses the canonical topic key unchanged as the LANGID-qualified ENCYBMAP logical ID",
+    "variant": "default"
+  },
+  "evidence": [
+    {"address":"0x00584c10","symbol":"FUN_00584c10","observation":"reads record ID to +0x18, record family to +0x2c, TEXTSTRA selector to +0x30 and field7 to +0x32"},
+    {"address":"0x00402e40","symbol":"FUN_00402e40","observation":"constructs source identity from record +0x18 low 24 bits and record +0x2c high byte"},
+    {"address":"0x00567790","symbol":"FUN_00567790","observation":"splits a source identity into high-byte family and low-24-bit record lookup"},
+    {"address":"0x00567d90","symbol":"FUN_00567d90","observation":"loads each registered DAT and resolves definition +0x30 into the title string stored at +0x34"},
+    {"address":"0x0060aa30","symbol":"FUN_0060aa30","observation":"resolves the selector pair high word through FUN_005fefd0 as a module slot and passes the low word to LoadStringA"},
+    {"address":"0x00414830","symbol":"FUN_00414830","observation":"original startup registers TEXTSTRA.DLL as string module slot 2; scoped DAT field7 values select that slot"},
+    {"address":"0x00415440","symbol":"FUN_00415440","observation":"a second original startup path registers TEXTSTRA.DLL as string module slot 2"},
+    {"address":"0x00422620","symbol":"FUN_00422620","observation":"builds the canonical body key from the original definition +0x30; separately tries the same module with low word uint16(title selector - 0x8000) and copies definition +0x34 only when that preferred title is empty"},
+    {"address":"0x0045d400","symbol":"FUN_0045d400","observation":"class context resolves directly through FUN_0051cab0; entity context resolves through its class definition before using the same canonical key"},
+    {"address":"0x0045fa60","symbol":"FUN_0045fa60","observation":"selects art from cached source family and topic key, then loads ENCYTEXT type 10 with the canonical topic key"},
+    {"address":"0x0058ec90","symbol":"FUN_0058ec90","observation":"selects the registered DAT container whose header interval contains the source family: family_id <= family < field4; family 24 therefore belongs to capital range [20,28)"}
+  ],
+  "record_columns": [
+    "record_id",
+    "record_family",
+    "source_identity",
+    "title_string_id",
+    "body_resource_id",
+    "topic_id",
+    "art_lookup_id",
+    "art_filename",
+    "status",
+    "preferred_title_string_id",
+    "preferred_title_status",
+    "selected_title_string_id"
+  ],
+  "families": [
+    {
+      "family": "capital_ship_classes",
+      "dat_basename": "CAPSHPSD.DAT",
+      "file_family": 20,
+      "records": [
+        [64,20,335544384,10048,5952,"original:5952",5952,"EDATA.042","bound",42816,"empty",10048],
+        [65,20,335544385,10049,5953,"original:5953",5953,"EDATA.043","bound",42817,"empty",10049],
+        [66,20,335544386,10050,5954,"original:5954",5954,"EDATA.044","bound",42818,"empty",10050],
+        [67,20,335544387,10051,5955,"original:5955",5955,"EDATA.045","bound",42819,"empty",10051],
+        [68,20,335544388,10052,5956,"original:5956",5956,"EDATA.046","bound",42820,"empty",10052],
+        [69,20,335544389,10053,5957,"original:5957",5957,"EDATA.047","bound",42821,"empty",10053],
+        [70,20,335544390,10054,5958,"original:5958",5958,"EDATA.048","bound",42822,"empty",10054],
+        [71,20,335544391,10055,5959,"original:5959",5959,"EDATA.049","bound",42823,"empty",10055],
+        [72,20,335544392,10056,5960,"original:5960",5960,"EDATA.050","bound",42824,"empty",10056],
+        [73,20,335544393,10057,5961,"original:5961",5961,"EDATA.051","bound",42825,"empty",10057],
+        [74,20,335544394,10058,5962,"original:5962",5962,"EDATA.052","bound",42826,"empty",10058],
+        [75,20,335544395,10059,5963,"original:5963",5963,"EDATA.053","bound",42827,"empty",10059],
+        [76,20,335544396,10060,5964,"original:5964",5964,"EDATA.054","bound",42828,"empty",10060],
+        [77,20,335544397,10061,5965,"original:5965",5965,"EDATA.055","bound",42829,"empty",10061],
+        [78,20,335544398,10062,5966,"original:5966",5966,"EDATA.056","bound",42830,"empty",10062],
+        [128,20,335544448,10112,6016,"original:6016",6016,"EDATA.057","bound",42880,"empty",10112],
+        [129,20,335544449,10113,6017,"original:6017",6017,"EDATA.058","bound",42881,"empty",10113],
+        [130,20,335544450,10114,6018,"original:6018",6018,"EDATA.059","bound",42882,"empty",10114],
+        [131,20,335544451,10115,6019,"original:6019",6019,"EDATA.060","bound",42883,"empty",10115],
+        [132,20,335544452,10116,6020,"original:6020",6020,"EDATA.061","bound",42884,"empty",10116],
+        [133,20,335544453,10117,6021,"original:6021",6021,"EDATA.062","bound",42885,"empty",10117],
+        [134,20,335544454,10118,6022,"original:6022",6022,"EDATA.063","bound",42886,"empty",10118],
+        [135,20,335544455,10119,6023,"original:6023",6023,"EDATA.064","bound",42887,"empty",10119],
+        [136,24,402653320,10120,6024,"original:6024",6024,"EDATA.065","bound",42888,"empty",10120],
+        [137,20,335544457,10121,6025,"original:6025",6025,"EDATA.066","bound",42889,"empty",10121],
+        [138,20,335544458,10122,6026,"original:6026",6026,"EDATA.067","bound",42890,"empty",10122],
+        [139,20,335544459,10123,6027,"original:6027",6027,"EDATA.068","bound",42891,"empty",10123],
+        [140,20,335544460,10124,6028,"original:6028",6028,"EDATA.069","bound",42892,"empty",10124],
+        [141,20,335544461,10125,6029,"original:6029",6029,"EDATA.070","bound",42893,"empty",10125],
+        [142,20,335544462,10126,6030,"original:6030",6030,"EDATA.071","bound",42894,"empty",10126]
+      ]
+    },
+    {
+      "family": "fighter_classes",
+      "dat_basename": "FIGHTSD.DAT",
+      "file_family": 28,
+      "records": [
+        [1,28,469762049,9792,5696,"original:5696",5696,"EDATA.034","bound",42560,"empty",9792],
+        [2,28,469762050,9793,5697,"original:5697",5697,"EDATA.035","bound",42561,"empty",9793],
+        [3,28,469762051,9794,5698,"original:5698",5698,"EDATA.036","bound",42562,"empty",9794],
+        [4,28,469762052,9795,5699,"original:5699",5699,"EDATA.037","bound",42563,"empty",9795],
+        [5,28,469762053,9856,5760,"original:5760",5760,"EDATA.038","bound",42624,"empty",9856],
+        [6,28,469762054,9857,5761,"original:5761",5761,"EDATA.039","bound",42625,"empty",9857],
+        [7,28,469762055,9858,5762,"original:5762",5762,"EDATA.040","bound",42626,"empty",9858],
+        [8,28,469762056,9859,5763,"original:5763",5763,"EDATA.041","bound",42627,"empty",9859]
+      ]
+    },
+    {
+      "family": "troop_classes",
+      "dat_basename": "TROOPSD.DAT",
+      "file_family": 16,
+      "records": [
+        [1,16,268435457,9280,5184,"original:5184",5184,"EDATA.015","bound",42048,"empty",9280],
+        [2,16,268435458,9281,5185,"original:5185",5185,"EDATA.016","bound",42049,"empty",9281],
+        [3,16,268435459,9282,5186,"original:5186",5186,"EDATA.017","bound",42050,"empty",9282],
+        [4,16,268435460,9283,5187,"original:5187",5187,"EDATA.018","bound",42051,"empty",9283],
+        [5,16,268435461,9284,5188,"original:5188",5188,"EDATA.019","bound",42052,"empty",9284],
+        [6,16,268435462,9344,5248,"original:5248",5248,"EDATA.020","bound",42112,"empty",9344],
+        [7,16,268435463,9345,5249,"original:5249",5249,"EDATA.021","bound",42113,"empty",9345],
+        [8,16,268435464,9346,5250,"original:5250",5250,"EDATA.022","bound",42114,"empty",9346],
+        [9,16,268435465,9347,5251,"original:5251",5251,"EDATA.023","bound",42115,"empty",9347],
+        [10,16,268435466,9348,5252,"original:5252",5252,"EDATA.024","bound",42116,"empty",9348]
+      ]
+    },
+    {
+      "family": "special_force_classes",
+      "dat_basename": "SPECFCSD.DAT",
+      "file_family": 60,
+      "records": [
+        [1,60,1006632961,9536,5440,"original:5440",5440,"EDATA.025","bound",42304,"empty",9536],
+        [2,60,1006632962,9537,5441,"original:5441",5441,"EDATA.026","bound",42305,"empty",9537],
+        [3,60,1006632963,9538,5442,"original:5442",5442,"EDATA.027","bound",42306,"empty",9538],
+        [4,60,1006632964,9539,5443,"original:5443",5443,"EDATA.028","bound",42307,"empty",9539],
+        [5,60,1006632965,9600,5504,"original:5504",5504,"EDATA.029","bound",42368,"empty",9600],
+        [6,60,1006632966,9601,5505,"original:5505",5505,"EDATA.030","bound",42369,"empty",9601],
+        [7,60,1006632967,9602,5506,"original:5506",5506,"EDATA.031","bound",42370,"empty",9602],
+        [8,60,1006632968,9603,5507,"original:5507",5507,"EDATA.032","bound",42371,"empty",9603],
+        [9,60,1006632969,9604,5508,"original:5508",5508,"EDATA.033","bound",42372,"empty",9604]
+      ]
+    }
+  ],
+  "accounting": {
+    "records": 57,
+    "bound": 57,
+    "aliases": 0,
+    "source_proven_absent": 0,
+    "unresolved": 0,
+    "distinct_body_resources": 57,
+    "distinct_art_files": 57,
+    "preferred_titles_nonempty": 0,
+    "fallback_titles_selected": 57,
+    "same_numeric_record_ids_across_families": [1,2,3,4,5,6,7,8]
+  }
+}

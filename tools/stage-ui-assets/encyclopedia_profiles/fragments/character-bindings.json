@@ -1,0 +1,2039 @@
+{
+  "kind": "encyclopedia-binding-fragment",
+  "schema_version": 1,
+  "fragment_id": "characters-49aea545-fb545d19-v1",
+  "profile_id": "encytext-49aea545-lang-1033-v1",
+  "scope": "characters",
+  "status": "complete",
+  "source_files": [
+    {
+      "basename": "MJCHARSD.DAT",
+      "role": "major_character_table",
+      "raw_length": 904,
+      "raw_sha256": "be8bcba5d55dad6ca6909c459d65071f17ceeaf229d1d8c89013c97d5ba09410"
+    },
+    {
+      "basename": "MNCHARSD.DAT",
+      "role": "minor_character_table",
+      "raw_length": 8008,
+      "raw_sha256": "5eea04fa7a11306b7870f584b07d09d2070e206062e0898ebb67c514acfc44eb"
+    },
+    {
+      "basename": "TEXTSTRA.DLL",
+      "role": "title_resources",
+      "raw_length": 150528,
+      "raw_sha256": "61a10bf3797f49b1121e2fba2cee7d3949a5bc7215e1501e2df71ecbedb53d4c"
+    },
+    {
+      "basename": "ENCYTEXT.DLL",
+      "role": "body_resources",
+      "raw_length": 145920,
+      "raw_sha256": "49aea545a5e09e5fe9115a22bc785690f103d2f931e08bd4a53a617a42636d8c"
+    },
+    {
+      "basename": "ENCYBMAP.DLL",
+      "role": "art_lookup_resources",
+      "raw_length": 34816,
+      "raw_sha256": "fb545d19ae24b0277753494dbfaabf2dbdde660beab821287a32016c290e4560"
+    },
+    {
+      "basename": "REBEXE.EXE",
+      "role": "research_provenance",
+      "raw_length": 2822656,
+      "raw_sha256": "b3fe3997cab9a6e96403d638875dcba25484e4d8601751afec748471ac0ed6ab"
+    }
+  ],
+  "tables": [
+    {
+      "basename": "MJCHARSD.DAT",
+      "record_count": 6,
+      "header_family_start": 48,
+      "header_family_end_exclusive": 56,
+      "registration_start": 48,
+      "registration_end_exclusive": 56,
+      "factory_address": "0x005915f0",
+      "record_reader_address": "0x00595780",
+      "common_field_reader_address": "0x00584c10",
+      "title_selector_file_offset": 20,
+      "title_selector_width_bytes": 2,
+      "runtime_title_selector_offset": "+0x30",
+      "title_module_selector_file_offset": 22,
+      "title_module_selector_width_bytes": 2,
+      "runtime_title_module_selector_offset": "+0x32",
+      "title_module_selector": 2
+    },
+    {
+      "basename": "MNCHARSD.DAT",
+      "record_count": 54,
+      "header_family_start": 56,
+      "header_family_end_exclusive": 60,
+      "registration_start": 56,
+      "registration_end_exclusive": 60,
+      "factory_address": "0x005912b0",
+      "record_reader_address": "0x00595780",
+      "common_field_reader_address": "0x00584c10",
+      "title_selector_file_offset": 20,
+      "title_selector_width_bytes": 2,
+      "runtime_title_selector_offset": "+0x30",
+      "title_module_selector_file_offset": 22,
+      "title_module_selector_width_bytes": 2,
+      "runtime_title_module_selector_offset": "+0x32",
+      "title_module_selector": 2
+    }
+  ],
+  "namespace": {
+    "canonical_field": "dat_id",
+    "source_identity_formula": "(source_family << 24) | (dat_id & 0x00ffffff)",
+    "merged_dat_id_count": 60,
+    "merged_dat_id_overlap_count": 0,
+    "source_table_discriminator_required_for_profile": false,
+    "collision_policy": "reject_duplicate_dat_id_across_character_tables"
+  },
+  "selector_rules": {
+    "title": "record.text_stra_dll_id",
+    "row_title_candidate_resource_id": "(record.text_stra_dll_id - 0x8000) & 0xffff",
+    "row_title_fallback": "cached_title_at_definition_plus_0x34_when_candidate_empty",
+    "class_key": "record.text_stra_dll_id & 0x0fff",
+    "body_resource_id": "class_key + 0x1000",
+    "standard_art_lookup_id": "class_key + 0x1000",
+    "alternate_art": "deferred_unbound"
+  },
+  "bindings": [
+    {
+      "source_table": "MJCHARSD.DAT",
+      "source_row": 0,
+      "raw_record_sha256": "c29690d2d1b1b46444944b221f93e5cfc3050ffba074aa93bcc8d09db356d46e",
+      "dat_id": 576,
+      "source_family": 48,
+      "source_identity": "0x30000240",
+      "faction": "alliance",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10304,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6208,
+        "language_id": 1033,
+        "raw_length": 249,
+        "raw_sha256": "804e5fb515fb63ca3142f2186afb978dde3fd901d9253c2b335f5cbc3170570e"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6208,
+        "language_id": 1033,
+        "asset_basename": "EDATA.072",
+        "raw_length": 81078,
+        "raw_sha256": "e193c9db6e49726f82f3e307440eca9bb95036d1ca5fac3d8d8e21aa566c8fdb"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MJCHARSD.DAT",
+      "source_row": 1,
+      "raw_record_sha256": "ad960ae14a8146cf96271783df1f2175c8af759060999ba4e90e5e0ce4f843c0",
+      "dat_id": 577,
+      "source_family": 49,
+      "source_identity": "0x31000241",
+      "faction": "alliance",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10305,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6209,
+        "language_id": 1033,
+        "raw_length": 405,
+        "raw_sha256": "564f62bed78db9bbc587214395ba32fd4298f56502b1e74348b224ef33c86cf4"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6209,
+        "language_id": 1033,
+        "asset_basename": "EDATA.073",
+        "raw_length": 81078,
+        "raw_sha256": "b5a0e3aabf70a475e67f4fa7ff363ce9aa5c83ad341f8dcba078501adf5f8f10"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MJCHARSD.DAT",
+      "source_row": 2,
+      "raw_record_sha256": "42548a3462c7b6223c2977490c0c2e16857cf0826d121fd7311cef837b1e7f95",
+      "dat_id": 578,
+      "source_family": 50,
+      "source_identity": "0x32000242",
+      "faction": "alliance",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10306,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6210,
+        "language_id": 1033,
+        "raw_length": 273,
+        "raw_sha256": "a2e4f23f695e0954e304143db533d2600ebfe44dbd5c4c2a6558d7a56ff89b27"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6210,
+        "language_id": 1033,
+        "asset_basename": "EDATA.074",
+        "raw_length": 81078,
+        "raw_sha256": "ed3a8befed80fde1564a8c37cd6622f31a214fadfa2a03586ac852339ec44cd7"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MJCHARSD.DAT",
+      "source_row": 3,
+      "raw_record_sha256": "3628342603eed1b972b754560388996df8fb0889e607cc426b9546c52882d5c3",
+      "dat_id": 579,
+      "source_family": 51,
+      "source_identity": "0x33000243",
+      "faction": "alliance",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10307,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6211,
+        "language_id": 1033,
+        "raw_length": 335,
+        "raw_sha256": "ee151fde511219313a60aab2d94530087af97edb621642114bd7b57794d47314"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6211,
+        "language_id": 1033,
+        "asset_basename": "EDATA.075",
+        "raw_length": 81080,
+        "raw_sha256": "4da583a34f273df065bba126db121706c7d013bd9720af598e91a7c58c48e04d"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MJCHARSD.DAT",
+      "source_row": 4,
+      "raw_record_sha256": "3218af6d39892a7d1a886e012f4c9c1de5b579ec8b271c8a5d089d3c2a959554",
+      "dat_id": 640,
+      "source_family": 52,
+      "source_identity": "0x34000280",
+      "faction": "empire",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10368,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6272,
+        "language_id": 1033,
+        "raw_length": 453,
+        "raw_sha256": "fc128331a60ebdd149ae92756c3f661515f909f9ed3c515a0bec4d5fb562477d"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6272,
+        "language_id": 1033,
+        "asset_basename": "EDATA.076",
+        "raw_length": 81078,
+        "raw_sha256": "1013b20562254bd03f5678c1e5632c8a4cf1ebd1dbd60d8405a2bcc33af08445"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MJCHARSD.DAT",
+      "source_row": 5,
+      "raw_record_sha256": "16c4144b770baad21fd85cf5cc55822893403cb86168a1ca63bf5fcb34cb4edc",
+      "dat_id": 641,
+      "source_family": 53,
+      "source_identity": "0x35000281",
+      "faction": "empire",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10369,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6273,
+        "language_id": 1033,
+        "raw_length": 709,
+        "raw_sha256": "bf4dfdec9e69f4b41944c5d41192f2c5348be48ef0e786b2e38722ba4b3663bb"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6273,
+        "language_id": 1033,
+        "asset_basename": "EDATA.077",
+        "raw_length": 81078,
+        "raw_sha256": "61b57b41e9cf642038679227a8a902eb205cea5f09a771fc2a4e7f73d1842e56"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 0,
+      "raw_record_sha256": "22ea6f9c8317e5ea619bc3a5bf081633cfa2f59b5cc624be9ac2359e32a2fa64",
+      "dat_id": 832,
+      "source_family": 56,
+      "source_identity": "0x38000340",
+      "faction": "alliance",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10816,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6720,
+        "language_id": 1033,
+        "raw_length": 232,
+        "raw_sha256": "f7d0d4224ef6a85990d2ecc6ba21c6da8b6457fdb30b27dc74191d823a875981"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6720,
+        "language_id": 1033,
+        "asset_basename": "EDATA.078",
+        "raw_length": 81078,
+        "raw_sha256": "f7a99b9213057375c2172b70c4f84d98da54577cabdc4b765cc8d263e5dbba20"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 1,
+      "raw_record_sha256": "6ea9dad05d9ec7c9d50c1f73072b901b02efad8864ba3d0314f2eac4daf84ad4",
+      "dat_id": 833,
+      "source_family": 56,
+      "source_identity": "0x38000341",
+      "faction": "alliance",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10817,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6721,
+        "language_id": 1033,
+        "raw_length": 323,
+        "raw_sha256": "8b873b11b6375950bc72c0fee6d328fff89c8739a53dab2a393e94b95daf29a7"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6721,
+        "language_id": 1033,
+        "asset_basename": "EDATA.079",
+        "raw_length": 81078,
+        "raw_sha256": "abb4b0ce4d668ddb4da7b1b77d35d2b564b4b4fb58c9137dc2a65574852a96e1"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 2,
+      "raw_record_sha256": "58383d360cbf232839ffe260b491fba8f8fb38ebdf7495299585cc60586af871",
+      "dat_id": 834,
+      "source_family": 56,
+      "source_identity": "0x38000342",
+      "faction": "alliance",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10818,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6722,
+        "language_id": 1033,
+        "raw_length": 370,
+        "raw_sha256": "942184b3dd0a64a135f2de09e2afd5554cb1c608c27a6f598cd2d3d43cd1b0bf"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6722,
+        "language_id": 1033,
+        "asset_basename": "EDATA.080",
+        "raw_length": 81078,
+        "raw_sha256": "8417e1b839fbe100914d0d9016056b65252b49e91c1d88bbcc2c8579b444415d"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 3,
+      "raw_record_sha256": "d116d1da8b503437dbdfbadd04bfcc63696ebcf61a4d306f0bb812430bd80782",
+      "dat_id": 835,
+      "source_family": 56,
+      "source_identity": "0x38000343",
+      "faction": "alliance",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10819,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6723,
+        "language_id": 1033,
+        "raw_length": 612,
+        "raw_sha256": "173c3a7b8010b85a3f042b1175260ed5d47e89d4dec470ea44cd8f48c3fd569d"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6723,
+        "language_id": 1033,
+        "asset_basename": "EDATA.081",
+        "raw_length": 81078,
+        "raw_sha256": "b1d0537589a1f0443284da18a5c7143d359fbadef185073fc6aa5efb9300bdcd"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 4,
+      "raw_record_sha256": "b016dbb048be1bf5948f2988f06e97b51ab3e76dc56240c22fd9d10fcab23232",
+      "dat_id": 836,
+      "source_family": 56,
+      "source_identity": "0x38000344",
+      "faction": "alliance",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10820,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6724,
+        "language_id": 1033,
+        "raw_length": 315,
+        "raw_sha256": "6e8bf97fd418b5e1a9895aa991be51f865fb80c3151f776f986734096449f4c2"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6724,
+        "language_id": 1033,
+        "asset_basename": "EDATA.082",
+        "raw_length": 81078,
+        "raw_sha256": "e75cf00967b0b99a71dd6b0e73088d7aa7d24b60cf015eb12a31c79c41236eb2"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 5,
+      "raw_record_sha256": "1c1efaaab00e096ed6a253dbc54f74e5eba1dfbe62b1c8879473bc08651b6ba9",
+      "dat_id": 837,
+      "source_family": 56,
+      "source_identity": "0x38000345",
+      "faction": "alliance",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10821,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6725,
+        "language_id": 1033,
+        "raw_length": 205,
+        "raw_sha256": "feaa2e7467c1e57426ccb2e6a09500f2f72cb97de82d11c8672cb50a9555d85a"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6725,
+        "language_id": 1033,
+        "asset_basename": "EDATA.083",
+        "raw_length": 81078,
+        "raw_sha256": "69d4e60dc8fb76ea7cb981c7fb2fa65dd6f179675758ec4c22a227c1cb69bae0"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 6,
+      "raw_record_sha256": "2afe662ed7b80591e27fba52b7dc10b6bd37faaa308153848130f9c5df033995",
+      "dat_id": 838,
+      "source_family": 56,
+      "source_identity": "0x38000346",
+      "faction": "alliance",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10822,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6726,
+        "language_id": 1033,
+        "raw_length": 106,
+        "raw_sha256": "74a82f71cbccacf7ac1e10409100c033d56846041e5aa091fa3323b367d740a3"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6726,
+        "language_id": 1033,
+        "asset_basename": "EDATA.084",
+        "raw_length": 81078,
+        "raw_sha256": "438a97825f8c28f8587f29841d6dd0df9434acbd3eb66d2f3db75260a21eb624"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 7,
+      "raw_record_sha256": "011cf769cf1b608f23a3dbe0b23fabb4895fbfcbc0ea7669ec71adbd2a0444d5",
+      "dat_id": 839,
+      "source_family": 56,
+      "source_identity": "0x38000347",
+      "faction": "alliance",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10823,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6727,
+        "language_id": 1033,
+        "raw_length": 121,
+        "raw_sha256": "d8ba8042fa308ebd204e07d34dea53d5a528c362cb85d847a677b3711cd3af93"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6727,
+        "language_id": 1033,
+        "asset_basename": "EDATA.085",
+        "raw_length": 81078,
+        "raw_sha256": "e189a34bce3648f327d03b9116ce74b9837dc1e42841783c85987bd440644178"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 8,
+      "raw_record_sha256": "fec5f01553281ed34560637b00a5438b56bacc36c13accd0d6585dbd2b131828",
+      "dat_id": 840,
+      "source_family": 56,
+      "source_identity": "0x38000348",
+      "faction": "alliance",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10824,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6728,
+        "language_id": 1033,
+        "raw_length": 367,
+        "raw_sha256": "c0fc98a162069214bbf285fc594a1ee6fda56ad99a71e71b7596537ab7c4353f"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6728,
+        "language_id": 1033,
+        "asset_basename": "EDATA.086",
+        "raw_length": 81078,
+        "raw_sha256": "11e11af6c4d13c964a2f2204a67d240d46526eebd96b21c129162f2ed3cda3f6"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 9,
+      "raw_record_sha256": "076a8c1f7bab507a46131aac8fe1956d793f07ac994f4acb52dd04b976a4c662",
+      "dat_id": 841,
+      "source_family": 56,
+      "source_identity": "0x38000349",
+      "faction": "alliance",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10825,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6729,
+        "language_id": 1033,
+        "raw_length": 369,
+        "raw_sha256": "11c5c215764aaef0b7cd673bae97ce4fe04b9392a440532799459e95e179833e"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6729,
+        "language_id": 1033,
+        "asset_basename": "EDATA.087",
+        "raw_length": 81078,
+        "raw_sha256": "366f2711dbf0e900cb2326e2326429a3e74e9d52bb6a59b2eab299c5a5f0e01c"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 10,
+      "raw_record_sha256": "91f7d17aedf71bea732c1f5e695fe978d36ebb9a7646902637340e2240997c9b",
+      "dat_id": 842,
+      "source_family": 56,
+      "source_identity": "0x3800034a",
+      "faction": "alliance",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10826,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6730,
+        "language_id": 1033,
+        "raw_length": 179,
+        "raw_sha256": "34219eec2127d673926b58296aecfc1390166f45b54a28935eb3b973e4258dcf"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6730,
+        "language_id": 1033,
+        "asset_basename": "EDATA.088",
+        "raw_length": 81078,
+        "raw_sha256": "4350463a66b0ad35046e088703e2801e93fe63d20acf84bba795b3e779fa46df"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 11,
+      "raw_record_sha256": "1ed24ad72d0a0bdd66bbbaff2a87af3252a83759b17f6b2bf0cc7010d742dab5",
+      "dat_id": 843,
+      "source_family": 56,
+      "source_identity": "0x3800034b",
+      "faction": "alliance",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10827,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6731,
+        "language_id": 1033,
+        "raw_length": 163,
+        "raw_sha256": "8348dc856132c79ab1e8958e23617d2b352f6a0862493e22020ecd157065c25d"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6731,
+        "language_id": 1033,
+        "asset_basename": "EDATA.089",
+        "raw_length": 81078,
+        "raw_sha256": "6d513604dc6c2fea1737d37d84dc0737c3dbb1405bf8a5218d5d2871b4f89023"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 12,
+      "raw_record_sha256": "432c47910381ad855181aa1d5b6ef6e6223e319b8d35e734209b28fa4b1a88b5",
+      "dat_id": 844,
+      "source_family": 56,
+      "source_identity": "0x3800034c",
+      "faction": "alliance",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10828,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6732,
+        "language_id": 1033,
+        "raw_length": 308,
+        "raw_sha256": "0784bb7058e8943d5230695805e2a05c8b8f38e5e52e42a40a1a7315505c65dc"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6732,
+        "language_id": 1033,
+        "asset_basename": "EDATA.090",
+        "raw_length": 81078,
+        "raw_sha256": "750f11289ec78645eb757ecb5549852548c33fd88e061e670ba0a68a48956ac1"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 13,
+      "raw_record_sha256": "04b0ad9f661393021c33722218b116175ee33c5940bbe0e0ca6e49ecaa8150f9",
+      "dat_id": 845,
+      "source_family": 56,
+      "source_identity": "0x3800034d",
+      "faction": "alliance",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10829,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6733,
+        "language_id": 1033,
+        "raw_length": 233,
+        "raw_sha256": "890a087f79994f4e98b5973fe721d7f8d0ccc29deb6c570a9b979353af93ccba"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6733,
+        "language_id": 1033,
+        "asset_basename": "EDATA.091",
+        "raw_length": 81078,
+        "raw_sha256": "304a57c9852e142c05523190243b0ae8173a5f0f502ffed503f3415983f03187"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 14,
+      "raw_record_sha256": "9bcb426e923cee7fc53b2e133005f6f6b824d8494bb00786d530544108d66e02",
+      "dat_id": 846,
+      "source_family": 56,
+      "source_identity": "0x3800034e",
+      "faction": "alliance",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10830,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6734,
+        "language_id": 1033,
+        "raw_length": 119,
+        "raw_sha256": "8bbcc6e70ab64660f52c59d0c9f911c06504cd9ca83e766c4c6309e15582c377"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6734,
+        "language_id": 1033,
+        "asset_basename": "EDATA.092",
+        "raw_length": 81078,
+        "raw_sha256": "b05c1c0654531db1a46627c03846305db45a1283922bfec7687638a423a612fe"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 15,
+      "raw_record_sha256": "86d885d4bd0a39dabcce6286a8bca39b8da625ad692af0e1a7fd6b6791b79664",
+      "dat_id": 847,
+      "source_family": 56,
+      "source_identity": "0x3800034f",
+      "faction": "alliance",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10831,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6735,
+        "language_id": 1033,
+        "raw_length": 55,
+        "raw_sha256": "fe0c50ea71479dc95269b5f8ea4ed2017221f2e94489e818ee3d86d51d5fdbea"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6735,
+        "language_id": 1033,
+        "asset_basename": "EDATA.093",
+        "raw_length": 81078,
+        "raw_sha256": "8257a7a73330af6b01dc526c1b6cd368b6096b13d888015f28f82241eb82d3d0"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 16,
+      "raw_record_sha256": "095427c6c6ff1c4ac1cbc20d3dc76a32596bf9e913067fc6686173f5c6fd0db4",
+      "dat_id": 848,
+      "source_family": 56,
+      "source_identity": "0x38000350",
+      "faction": "alliance",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10832,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6736,
+        "language_id": 1033,
+        "raw_length": 95,
+        "raw_sha256": "7d0f037ae5495b687eeb3e3216d5f5347f93487004b62c827eed7aab2533874d"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6736,
+        "language_id": 1033,
+        "asset_basename": "EDATA.094",
+        "raw_length": 81078,
+        "raw_sha256": "40c01d788633944f2975cf94b37913566c4fa25afc2b20606e9ba4b74c578a01"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 17,
+      "raw_record_sha256": "8e60af0fdf4c0f0ce7fc103dce035315916eced5afa67591030598d6b83af4ae",
+      "dat_id": 849,
+      "source_family": 56,
+      "source_identity": "0x38000351",
+      "faction": "alliance",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10833,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6737,
+        "language_id": 1033,
+        "raw_length": 59,
+        "raw_sha256": "4490057a89b5d98a518a8fd93bbb5777d987dcff1d4bb9f2a4ab12ce89088b36"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6737,
+        "language_id": 1033,
+        "asset_basename": "EDATA.095",
+        "raw_length": 81078,
+        "raw_sha256": "57abf7b01e5c6da7dd89b1e2358da47fe148a54a2a1a9422f0a8c80bac8c6c5d"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 18,
+      "raw_record_sha256": "9963217af9fdc74c39b88de5b249a3e55a42a6abefb5aba6c6c1d118feb0f5c3",
+      "dat_id": 850,
+      "source_family": 56,
+      "source_identity": "0x38000352",
+      "faction": "alliance",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10834,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6738,
+        "language_id": 1033,
+        "raw_length": 303,
+        "raw_sha256": "b13b730ffb7d1e8ec38e697de1dfee2bc6d63825cf6cc310ddde32e9b801951d"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6738,
+        "language_id": 1033,
+        "asset_basename": "EDATA.096",
+        "raw_length": 81078,
+        "raw_sha256": "beac3b180105f2723cced7f30f465a11b701c9a3e8d031e016230d8e029212f7"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 19,
+      "raw_record_sha256": "ee5091e0dd2a8e86153500c30c627240313f22494ab0bfbe5c105030188fe632",
+      "dat_id": 851,
+      "source_family": 56,
+      "source_identity": "0x38000353",
+      "faction": "alliance",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10835,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6739,
+        "language_id": 1033,
+        "raw_length": 75,
+        "raw_sha256": "2b1a02fcefce933678993c8e3815036d97f66c6d867a1584d15e2ce07a1f27fb"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6739,
+        "language_id": 1033,
+        "asset_basename": "EDATA.097",
+        "raw_length": 81078,
+        "raw_sha256": "4499ba4c51dac2593dffba1734298dbdc9a55e2fdae23106cc969af4849df381"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 20,
+      "raw_record_sha256": "329947fbb97eab466aa9698ef06352b2de6545a6ba4e9f052807a057cc592d4d",
+      "dat_id": 852,
+      "source_family": 56,
+      "source_identity": "0x38000354",
+      "faction": "alliance",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10836,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6740,
+        "language_id": 1033,
+        "raw_length": 124,
+        "raw_sha256": "dc726a38fdba7261a7e5f49aeca8dcd2cc76f4ec3a4ee3d3531fe39e700538a9"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6740,
+        "language_id": 1033,
+        "asset_basename": "EDATA.098",
+        "raw_length": 81078,
+        "raw_sha256": "c67df6cb72fb9d6c6102fe9a5231e7e21fa69cc2935bd9d5e6aac6b15dca3848"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 21,
+      "raw_record_sha256": "f18b3ee75817da40d52574d20bce2b500bf15040d92dfbbd567c0dc518ddb3e0",
+      "dat_id": 853,
+      "source_family": 56,
+      "source_identity": "0x38000355",
+      "faction": "alliance",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10837,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6741,
+        "language_id": 1033,
+        "raw_length": 252,
+        "raw_sha256": "d5b633e4271184e994b3ab48f4662cc7c51b98f3b083055fac11a06048937c4a"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6741,
+        "language_id": 1033,
+        "asset_basename": "EDATA.099",
+        "raw_length": 81078,
+        "raw_sha256": "15601efece231acedc88dd3eaaa98c492a6bb2328d670d1354369ad423c6854c"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 22,
+      "raw_record_sha256": "f033200eecaa33781fd4c7d2dca1a935ae893e7a57f4018cf6d4dbb5d5b88a25",
+      "dat_id": 854,
+      "source_family": 56,
+      "source_identity": "0x38000356",
+      "faction": "alliance",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10838,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6742,
+        "language_id": 1033,
+        "raw_length": 212,
+        "raw_sha256": "0050c052128268602b35cf64f37714929412738418ef2cebf46d4d0f05f9e7f8"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6742,
+        "language_id": 1033,
+        "asset_basename": "EDATA.100",
+        "raw_length": 81078,
+        "raw_sha256": "91f196f575e1064ac1143786f0ce74c655b7f5a4ced81dacfc39f80c8fc873b1"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 23,
+      "raw_record_sha256": "a6893e1cf5c7397c791eb1e3dd075d88a4c7e1b5cfad127891bcbc54d52bac6f",
+      "dat_id": 855,
+      "source_family": 56,
+      "source_identity": "0x38000357",
+      "faction": "alliance",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10839,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6743,
+        "language_id": 1033,
+        "raw_length": 147,
+        "raw_sha256": "717d030ed6d233648a146420f270bb87f097adb61633b2f8d7c810e50f3a3335"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6743,
+        "language_id": 1033,
+        "asset_basename": "EDATA.101",
+        "raw_length": 81078,
+        "raw_sha256": "76e04b6cae7f21cf3186b6960f9e577b42a31396baf11b371c7d708629b2806e"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 24,
+      "raw_record_sha256": "34a0312839a166fd1685d1f3b65cea12790af0ed5c9fc9c484c5e8926dec80bd",
+      "dat_id": 856,
+      "source_family": 56,
+      "source_identity": "0x38000358",
+      "faction": "alliance",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10840,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6744,
+        "language_id": 1033,
+        "raw_length": 193,
+        "raw_sha256": "370d88fcbcbcb973f0bb5e7454fde2f9bca8bb1a7bc5da502b7cabbf0157ed02"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6744,
+        "language_id": 1033,
+        "asset_basename": "EDATA.102",
+        "raw_length": 81078,
+        "raw_sha256": "fa7d1ca528a9a2e6492420c25be261a595ae016838120e1d38f76857fbbdd8c4"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 25,
+      "raw_record_sha256": "28489d97588182f99a4be9b18648609c816dbd34f1b328909cb6be71ec84e1f4",
+      "dat_id": 857,
+      "source_family": 56,
+      "source_identity": "0x38000359",
+      "faction": "alliance",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10841,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6745,
+        "language_id": 1033,
+        "raw_length": 181,
+        "raw_sha256": "3c501502c68622655d797ecb1e3d9051a1be7e936782fce10f4a2c55ec98483f"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6745,
+        "language_id": 1033,
+        "asset_basename": "EDATA.103",
+        "raw_length": 81078,
+        "raw_sha256": "563f2586f863709fcc73188d44b551acdd0bd95cd7cc71fa5aa2b060eb7b5553"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 26,
+      "raw_record_sha256": "47d2828c8d6ad705396fe258b8567a21535cd5b927ac7ca51ed0605ff03fd67e",
+      "dat_id": 896,
+      "source_family": 56,
+      "source_identity": "0x38000380",
+      "faction": "empire",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10880,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6784,
+        "language_id": 1033,
+        "raw_length": 109,
+        "raw_sha256": "0af59fbfc0f52987f54e1bc9c41e0b10fe3998618e495c204f704186e7462488"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6784,
+        "language_id": 1033,
+        "asset_basename": "EDATA.104",
+        "raw_length": 81078,
+        "raw_sha256": "d1fec0e9675c630869d3c9b16db578cf976e6abfcaebabfef9b73ca0e2ed1d24"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 27,
+      "raw_record_sha256": "86a2ac3b33b4735346bdbed38a4882f25b6d5dcebd1d7dbe3b0a0ce84100269c",
+      "dat_id": 897,
+      "source_family": 56,
+      "source_identity": "0x38000381",
+      "faction": "empire",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10881,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6785,
+        "language_id": 1033,
+        "raw_length": 219,
+        "raw_sha256": "d2bc74d07d9eff9bc2e61e72553fb6d58f9a4e01ed2a6f150f6b257a406bfe9f"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6785,
+        "language_id": 1033,
+        "asset_basename": "EDATA.105",
+        "raw_length": 81078,
+        "raw_sha256": "9ae538384b864ab25add0f8ec0430be6a5c390f2020099c8d608273a0ebd0a97"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 28,
+      "raw_record_sha256": "08201e1266a95ce801e39d15e647b81adb38f1244983e583e3fd0ee094a85c33",
+      "dat_id": 898,
+      "source_family": 56,
+      "source_identity": "0x38000382",
+      "faction": "empire",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10882,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6786,
+        "language_id": 1033,
+        "raw_length": 73,
+        "raw_sha256": "1cfbb2b4f70c9493b2ddc5c77839db8309836d57d6c9c645fd787e1696d5b206"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6786,
+        "language_id": 1033,
+        "asset_basename": "EDATA.106",
+        "raw_length": 81078,
+        "raw_sha256": "e1788a74563b0fff803bb481127831d438486f9d61888c16e0e62e65f836d63c"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 29,
+      "raw_record_sha256": "5c846eb869e9e927509fe6cd4ae063710164d6d5b2aa9f3ad8055dc27fbab3b5",
+      "dat_id": 899,
+      "source_family": 56,
+      "source_identity": "0x38000383",
+      "faction": "empire",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10883,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6787,
+        "language_id": 1033,
+        "raw_length": 292,
+        "raw_sha256": "d94c2409c5cf4bccdccfb1de44ec43e20a655ac629f68544c0749f8c94166e74"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6787,
+        "language_id": 1033,
+        "asset_basename": "EDATA.107",
+        "raw_length": 81078,
+        "raw_sha256": "7b5f003685f34173b63c16dd4d31a5aa7158f205cb808e7c892d70eb136fa759"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 30,
+      "raw_record_sha256": "346c619228496db0c76f778984d059114a210807c164d7d6b451e30f84731703",
+      "dat_id": 900,
+      "source_family": 56,
+      "source_identity": "0x38000384",
+      "faction": "empire",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10884,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6788,
+        "language_id": 1033,
+        "raw_length": 217,
+        "raw_sha256": "08b09d9e4969e7d581ed5413c98170339b0d919e7302f28d4f03c1c1fe9fbcb5"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6788,
+        "language_id": 1033,
+        "asset_basename": "EDATA.108",
+        "raw_length": 81078,
+        "raw_sha256": "59377570ee3e3f3701752c18a2a1131939c2bf720cc482e5b30fc5b30e065751"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 31,
+      "raw_record_sha256": "1a9bd78c7bea72efadc1f34299dfee030482d385b71c28c36b8c4f3899f7d934",
+      "dat_id": 901,
+      "source_family": 56,
+      "source_identity": "0x38000385",
+      "faction": "empire",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10885,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6789,
+        "language_id": 1033,
+        "raw_length": 82,
+        "raw_sha256": "2a0cdae2445f735c5e6138d8b6fae3e1cc9393eb552afb28e0434ae8b0cbe085"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6789,
+        "language_id": 1033,
+        "asset_basename": "EDATA.109",
+        "raw_length": 81078,
+        "raw_sha256": "09b977a2dc8d4539b21eb2e387e8750754849b7d05f21a21d688402b8515221a"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 32,
+      "raw_record_sha256": "024b958111197bbf0897eec3545fbf172c980f12f503fd012e668bef8040bc6d",
+      "dat_id": 902,
+      "source_family": 56,
+      "source_identity": "0x38000386",
+      "faction": "empire",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10886,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6790,
+        "language_id": 1033,
+        "raw_length": 275,
+        "raw_sha256": "ef54b95bc2c980489e3c36f47dd23b3c2406fada24bf187c69c573cd73232a44"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6790,
+        "language_id": 1033,
+        "asset_basename": "EDATA.110",
+        "raw_length": 81078,
+        "raw_sha256": "44513519ac301841497128529a9d0b49d5a92b37e0b0ffbcfe5866972f05e5eb"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 33,
+      "raw_record_sha256": "5a127e2927447bacf3a133f835b69ff657c0740615456553ed6aad752e6534e5",
+      "dat_id": 903,
+      "source_family": 56,
+      "source_identity": "0x38000387",
+      "faction": "empire",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10887,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6791,
+        "language_id": 1033,
+        "raw_length": 160,
+        "raw_sha256": "9e415ae6c4fb5267e7256e401748e5803e552a76195fce271e38b96bd98716f1"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6791,
+        "language_id": 1033,
+        "asset_basename": "EDATA.111",
+        "raw_length": 81078,
+        "raw_sha256": "4d65fcdab74de8ccb371af81c358aa7a7630993aaaa31b9d6d7d4295de86dc6c"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 34,
+      "raw_record_sha256": "b795e150ba7195a7f1a1a574c790c2f23a813c99835d06808f1a7958581ded17",
+      "dat_id": 904,
+      "source_family": 56,
+      "source_identity": "0x38000388",
+      "faction": "empire",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10888,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6792,
+        "language_id": 1033,
+        "raw_length": 114,
+        "raw_sha256": "81dae46f580dbd9de0242996bee6a118db15858799ac75860be5b6a463c16731"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6792,
+        "language_id": 1033,
+        "asset_basename": "EDATA.112",
+        "raw_length": 81078,
+        "raw_sha256": "b05bb472c515c6fc228465d93fe78eb39dd88cc95bebd428fd1f881fd50c9e7d"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 35,
+      "raw_record_sha256": "19183b8c45994964eb63f6f6ae5de5208361538bda1ea203c53ac0d2f673ec3f",
+      "dat_id": 905,
+      "source_family": 56,
+      "source_identity": "0x38000389",
+      "faction": "empire",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10889,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6793,
+        "language_id": 1033,
+        "raw_length": 185,
+        "raw_sha256": "0a86e5265b5ff34246add4c2c885a476e18fcd6ade260755afe7618f6d5a811c"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6793,
+        "language_id": 1033,
+        "asset_basename": "EDATA.113",
+        "raw_length": 81078,
+        "raw_sha256": "571436d82cedb507a18d4c6db3fe77c89af85af8b91d77a0d2b6225a4b85b1ad"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 36,
+      "raw_record_sha256": "a05acb4ef54a0fb584090cf34451aaa8f0f5dc6efa0a2dcc2effbb3cb3efdfc4",
+      "dat_id": 906,
+      "source_family": 56,
+      "source_identity": "0x3800038a",
+      "faction": "empire",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10890,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6794,
+        "language_id": 1033,
+        "raw_length": 203,
+        "raw_sha256": "dd62d57dd05c54bd4834c829b8a6600a1ec6eff28dfa7d883dee56e617d36562"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6794,
+        "language_id": 1033,
+        "asset_basename": "EDATA.114",
+        "raw_length": 81078,
+        "raw_sha256": "d234e098d458aab40133bbf5779307fab8a32e541ee9aa9c275b54edfe0e08d0"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 37,
+      "raw_record_sha256": "876365020e36e64757096973ecfb69afa13c4b0e26411f7c60c08dbcda1eb185",
+      "dat_id": 907,
+      "source_family": 56,
+      "source_identity": "0x3800038b",
+      "faction": "empire",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10891,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6795,
+        "language_id": 1033,
+        "raw_length": 114,
+        "raw_sha256": "0b97b169bc7fefd7f3c505ad10f73a6e27587ccc4ac8a460133e20ce4d43b7d4"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6795,
+        "language_id": 1033,
+        "asset_basename": "EDATA.115",
+        "raw_length": 81078,
+        "raw_sha256": "38e2648b663c0b31cff433c52c8c790fba394ecb8ee294b6844e5c5482a43cd3"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 38,
+      "raw_record_sha256": "f1fad12342744518ad66549ea643d077152c452e4b812cf7a5b40866499a17c5",
+      "dat_id": 908,
+      "source_family": 56,
+      "source_identity": "0x3800038c",
+      "faction": "empire",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10892,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6796,
+        "language_id": 1033,
+        "raw_length": 106,
+        "raw_sha256": "b1018fe476725d8ed671c9ca584995c4cdeacc41095cedee63f9e6b7543a792c"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6796,
+        "language_id": 1033,
+        "asset_basename": "EDATA.116",
+        "raw_length": 81078,
+        "raw_sha256": "6b58d1ae346569f4beaaf7e143ca33aebbda83c3f3f86e52dd08efd82a5dbf75"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 39,
+      "raw_record_sha256": "68bd49756a45714ee2d54da44e7e23019089dcfe7b3ca294269d031e670d498d",
+      "dat_id": 909,
+      "source_family": 56,
+      "source_identity": "0x3800038d",
+      "faction": "empire",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10893,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6797,
+        "language_id": 1033,
+        "raw_length": 91,
+        "raw_sha256": "e0a131f7e63387d0115caa3ceb850a3c9dad0b35f76c7adb39a65e796b8777fe"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6797,
+        "language_id": 1033,
+        "asset_basename": "EDATA.117",
+        "raw_length": 81078,
+        "raw_sha256": "9fe0e3db6e9055474a8482d5e653855f84561d933a15ebef5ea50517703bd52b"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 40,
+      "raw_record_sha256": "a1c3fb1de3201fcbe79ae03ba7d62251a1b1b88fe8a7e3b8dbc687e0083044d2",
+      "dat_id": 910,
+      "source_family": 56,
+      "source_identity": "0x3800038e",
+      "faction": "empire",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10894,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6798,
+        "language_id": 1033,
+        "raw_length": 87,
+        "raw_sha256": "1c40df6b2f762c6c508d7e431e81fc0c9e81f61d8693bab132b000e8638466d2"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6798,
+        "language_id": 1033,
+        "asset_basename": "EDATA.118",
+        "raw_length": 81078,
+        "raw_sha256": "51883cd2d7303de93316e9b1288a725504c9dd48c91238f5c8ad36e8d30a6908"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 41,
+      "raw_record_sha256": "168dd15c2c4670d72a1bdccdf97af6f8005b3fb70d8a9cc87cac154376d37be8",
+      "dat_id": 911,
+      "source_family": 56,
+      "source_identity": "0x3800038f",
+      "faction": "empire",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10895,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6799,
+        "language_id": 1033,
+        "raw_length": 79,
+        "raw_sha256": "7b5479c0244562044f43300429e6b2f38134601cfbee0d11693fdb1b0c125d8f"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6799,
+        "language_id": 1033,
+        "asset_basename": "EDATA.119",
+        "raw_length": 81078,
+        "raw_sha256": "aefddaac23b134c3f02e239a0172a02e458a0d16ff49f543cec079ae63c8d8c0"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 42,
+      "raw_record_sha256": "e4453a7d839c9e0d9f447ac3e0f0015a5f37398d7bc9232101ef5856dfc6127b",
+      "dat_id": 912,
+      "source_family": 56,
+      "source_identity": "0x38000390",
+      "faction": "empire",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10896,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6800,
+        "language_id": 1033,
+        "raw_length": 130,
+        "raw_sha256": "50d0d5bfdec0bc3a4cd40d8a436d2e60c92ec513db9be507a8ce22718987419a"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6800,
+        "language_id": 1033,
+        "asset_basename": "EDATA.120",
+        "raw_length": 81078,
+        "raw_sha256": "816fc36af5661e13f59780a3cfe631079e88949f8273c2aec7f338dcb651abd0"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 43,
+      "raw_record_sha256": "3fe67d051c9978fa87018f730f9d28e1ff51efc64e6ba645aaf5fdb6a81d0c49",
+      "dat_id": 913,
+      "source_family": 56,
+      "source_identity": "0x38000391",
+      "faction": "empire",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10897,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6801,
+        "language_id": 1033,
+        "raw_length": 180,
+        "raw_sha256": "b6f9b1aab4a4f8210b760f9bd29482338b091b63e1d7afc17f75735dfc5cf9f5"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6801,
+        "language_id": 1033,
+        "asset_basename": "EDATA.121",
+        "raw_length": 81078,
+        "raw_sha256": "8a2d260c3afc32f44868d5332ec314cd5d64404166991c5885329f2cc9a3cb8b"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 44,
+      "raw_record_sha256": "c575db071b7e9d033d7583ca85f30aff512fcce4549f21cd1117db59e7d77025",
+      "dat_id": 914,
+      "source_family": 56,
+      "source_identity": "0x38000392",
+      "faction": "empire",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10898,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6802,
+        "language_id": 1033,
+        "raw_length": 96,
+        "raw_sha256": "ffff3d8776a4f3780fd3a2ee61325ee3c279689f39b695524fb95abb4065d5c8"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6802,
+        "language_id": 1033,
+        "asset_basename": "EDATA.122",
+        "raw_length": 81078,
+        "raw_sha256": "3256f97e5ac85aa68b0bd6795cd245ec9ca7cdc3fd97783810173d45f9d04a46"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 45,
+      "raw_record_sha256": "11de4b837635bb96f3b08938b0b283213194387d6f2e2d03321c03e2e2699c04",
+      "dat_id": 915,
+      "source_family": 56,
+      "source_identity": "0x38000393",
+      "faction": "empire",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10899,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6803,
+        "language_id": 1033,
+        "raw_length": 229,
+        "raw_sha256": "c26a00ac6e52acf5cb4cf5351aba70152aa97247c7a48bda31d24d962e2cc3bc"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6803,
+        "language_id": 1033,
+        "asset_basename": "EDATA.123",
+        "raw_length": 81078,
+        "raw_sha256": "ee942d8ca6ef3d8859437c9351616d70e0b7a4efdcea35d8060b5b32254fb114"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 46,
+      "raw_record_sha256": "a2b579dcc8ed76208463d7b4cea36389ce74c4b4c452943130312e574c7663aa",
+      "dat_id": 916,
+      "source_family": 56,
+      "source_identity": "0x38000394",
+      "faction": "empire",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10900,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6804,
+        "language_id": 1033,
+        "raw_length": 153,
+        "raw_sha256": "162015897257e673d254cd57ab63c37a74fad70a3eab6b73777da21a3d377f54"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6804,
+        "language_id": 1033,
+        "asset_basename": "EDATA.124",
+        "raw_length": 81078,
+        "raw_sha256": "607c993149a672beb5ce76afa55a8c9025de212a7afb66c1184aa49a7d51c0ff"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 47,
+      "raw_record_sha256": "cf3b219cc375de5b45a10e137c661e9a6423781d7cec89eab9bba55ade3c42a1",
+      "dat_id": 917,
+      "source_family": 56,
+      "source_identity": "0x38000395",
+      "faction": "empire",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10901,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6805,
+        "language_id": 1033,
+        "raw_length": 114,
+        "raw_sha256": "e0a83c6ee404fea784aa459b32271ced09f82d96d1ca5e7dbe1d776e78959c23"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6805,
+        "language_id": 1033,
+        "asset_basename": "EDATA.125",
+        "raw_length": 81078,
+        "raw_sha256": "db6527a9bbf0cd5e76f440f1d81d55d44eab7cf3a44b9eb436d8fd2e96311d6d"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 48,
+      "raw_record_sha256": "1c033ff4a18b216cf4b549f6ddb58c7411beec5ab8152f18c6634600176ee4af",
+      "dat_id": 918,
+      "source_family": 56,
+      "source_identity": "0x38000396",
+      "faction": "empire",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10902,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6806,
+        "language_id": 1033,
+        "raw_length": 247,
+        "raw_sha256": "c18e8381b321e440110e436dcd8d7a4040b3340e10f8529bbf178cba64f7639c"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6806,
+        "language_id": 1033,
+        "asset_basename": "EDATA.126",
+        "raw_length": 81078,
+        "raw_sha256": "244777ea0d8b298e9c6ab2c45a1a33f175a49cec2ad64822f6ef6a1f295a486a"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 49,
+      "raw_record_sha256": "f226490a196c0afd6e427ea5f7848d1ae4eabcf4960c21e4519438da8ffbc09e",
+      "dat_id": 919,
+      "source_family": 56,
+      "source_identity": "0x38000397",
+      "faction": "empire",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10903,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6807,
+        "language_id": 1033,
+        "raw_length": 157,
+        "raw_sha256": "0b302a805dc66a0c2fa2c5e58f7f8412eb5d3bedbfb598969ebb1d77f293ef2a"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6807,
+        "language_id": 1033,
+        "asset_basename": "EDATA.127",
+        "raw_length": 81078,
+        "raw_sha256": "71feb63fe75eaf00f8f70eef82ae714969bd085204e2cb4c38c4eb6dc228d390"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 50,
+      "raw_record_sha256": "073f4261c960051ceabf8e2c27b191a09febd7724430b6865450f69e7e141a6f",
+      "dat_id": 920,
+      "source_family": 56,
+      "source_identity": "0x38000398",
+      "faction": "empire",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10904,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6808,
+        "language_id": 1033,
+        "raw_length": 229,
+        "raw_sha256": "ce24076e03063f1e256406cbe67c2cb8bb82635b1b0eb40afe8293bc1a2930e8"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6808,
+        "language_id": 1033,
+        "asset_basename": "EDATA.128",
+        "raw_length": 81080,
+        "raw_sha256": "a7d65140c644d5d5b9e31c498a18ea1952cff0ec846a75024876874346ae99fe"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 51,
+      "raw_record_sha256": "da9ffe500e6030329cda622f065f808cb57f7865118e4b2b53ce34792ccbbeac",
+      "dat_id": 921,
+      "source_family": 56,
+      "source_identity": "0x38000399",
+      "faction": "empire",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10905,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6809,
+        "language_id": 1033,
+        "raw_length": 271,
+        "raw_sha256": "245cc9a1b51810319db8449d2da0536b331f77d9adc38fa48760f49aeeff7893"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6809,
+        "language_id": 1033,
+        "asset_basename": "EDATA.129",
+        "raw_length": 81078,
+        "raw_sha256": "9af2adb9af5ac6e420b10cde27384471b00e1e3ac583c89a6ee9c473e675f33e"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 52,
+      "raw_record_sha256": "15252524dbf2ae5c6ab3abeee0bdfc9c86666fc5e2c508e8d809426a58851b72",
+      "dat_id": 922,
+      "source_family": 56,
+      "source_identity": "0x3800039a",
+      "faction": "empire",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10906,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6810,
+        "language_id": 1033,
+        "raw_length": 222,
+        "raw_sha256": "28ebc1398c5ec013fd3ef5dfae3eb2e84a1d805ce07f4fb8b3edd904d2eb02b1"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6810,
+        "language_id": 1033,
+        "asset_basename": "EDATA.130",
+        "raw_length": 81078,
+        "raw_sha256": "c439cf93628954c5ac6a8eb1be67cbc8a7b7cddd830876e192367e24183ab8f7"
+      },
+      "status": "bound"
+    },
+    {
+      "source_table": "MNCHARSD.DAT",
+      "source_row": 53,
+      "raw_record_sha256": "fbe189e8b038d8634281c59ad0cc17060dd02932c8e2110a56a31a2521c7d8d0",
+      "dat_id": 923,
+      "source_family": 56,
+      "source_identity": "0x3800039b",
+      "faction": "empire",
+      "title": {
+        "source_basename": "TEXTSTRA.DLL",
+        "resource_id": 10907,
+        "language_id": 1033
+      },
+      "body": {
+        "source_basename": "ENCYTEXT.DLL",
+        "resource_id": 6811,
+        "language_id": 1033,
+        "raw_length": 231,
+        "raw_sha256": "bdb9ddaaa9be3c0893d0d3e2428ddd00b519467288205a15cbd0a5f491a8f846"
+      },
+      "art": {
+        "lookup_basename": "ENCYBMAP.DLL",
+        "lookup_id": 6811,
+        "language_id": 1033,
+        "asset_basename": "EDATA.131",
+        "raw_length": 81078,
+        "raw_sha256": "618bf089c50e7b38512a9a4c50b332641dfd3e5408097cf03644f84f56abf4de"
+      },
+      "status": "bound"
+    }
+  ],
+  "resource_aliases": [],
+  "shared_resources": [],
+  "unresolved_rows": [],
+  "deferred_research": [
+    {
+      "subject": "unproven_alternate_character_art",
+      "status": "deferred",
+      "asset_basename": "EDATA.192",
+      "followup": "orlocal-2kq",
+      "publication": "inventory_only_unused"
+    }
+  ],
+  "inventory_accounting": {
+    "major_rows": 6,
+    "minor_rows": 54,
+    "bound_rows": 60,
+    "unresolved_rows": 0,
+    "alias_groups": 0,
+    "shared_resource_groups": 0,
+    "distinct_title_selectors": 60,
+    "distinct_body_selectors": 60,
+    "distinct_art_files": 60
+  },
+  "evidence": {
+    "call_paths": [
+      {
+        "purpose": "register_major_and_minor_source_tables",
+        "path": [
+          "FUN_00569300",
+          "FUN_00584b60",
+          "FUN_005915f0/FUN_005912b0"
+        ],
+        "citations": [
+          "ghidra/notes/FUN_00569300.c:37",
+          "ghidra/notes/FUN_00569300.c:49"
+        ]
+      },
+      {
+        "purpose": "write_dat_fields_including_title_selector",
+        "path": [
+          "FUN_005915f0/FUN_005912b0",
+          "vtable +0x08",
+          "FUN_00591660",
+          "FUN_00595780",
+          "FUN_00593cb0",
+          "FUN_0053b880",
+          "FUN_00584c10"
+        ],
+        "citations": [
+          "REBEXE.EXE:0x00591660",
+          "ghidra/notes/FUN_00595780.c:5",
+          "ghidra/notes/FUN_00584c10.c:10"
+        ]
+      },
+      {
+        "purpose": "resolve_title_selector_to_runtime_title",
+        "path": [
+          "FUN_00567d90",
+          "definition +0x30",
+          "FUN_005f2fc0",
+          "definition +0x34"
+        ],
+        "citations": [
+          "ghidra/notes/FUN_00567d90.c:34",
+          "ghidra/notes/FUN_00567d90.c:38"
+        ]
+      },
+      {
+        "purpose": "bind_title_module_selector_2_to_textstra",
+        "path": [
+          "FUN_00414830",
+          "textstra.dll",
+          "module selector 2",
+          "FUN_005fba30",
+          "FUN_005ff020"
+        ],
+        "citations": [
+          "ghidra/notes/FUN_00414830.c:62",
+          "REBEXE.EXE:0x005fba30",
+          "REBEXE.EXE:0x005ff020"
+        ]
+      },
+      {
+        "purpose": "build_character_topic_key_and_title",
+        "path": [
+          "FUN_00422620",
+          "FUN_0051cab0",
+          "(definition +0x30 & 0x0fff) + 0x1000",
+          "adjusted low word (definition +0x30 - 0x8000)",
+          "FUN_005f3010",
+          "definition +0x34 fallback when adjusted candidate is empty",
+          "FUN_00442130"
+        ],
+        "citations": [
+          "ghidra/notes/FUN_00422620.c:178",
+          "ghidra/notes/FUN_00422620.c:182",
+          "ghidra/notes/FUN_00422620.c:190",
+          "ghidra/notes/FUN_00422620.c:191",
+          "ghidra/notes/FUN_00422620.c:194",
+          "ghidra/notes/FUN_00422620.c:203",
+          "REBEXE.EXE:0x005f3010",
+          "REBEXE.EXE:0x005f37e0",
+          "REBEXE.EXE:0x0060aa30"
+        ]
+      },
+      {
+        "purpose": "load_standard_art_and_body_from_topic_key",
+        "path": [
+          "FUN_0045fa60",
+          "row +0x0c",
+          "FUN_0045f970",
+          "FindResourceA(type=10)",
+          "FUN_0041fc30",
+          "FUN_0041fd00"
+        ],
+        "citations": [
+          "ghidra/notes/FUN_0045fa60.c:101",
+          "ghidra/notes/FUN_0045fa60.c:105",
+          "ghidra/notes/FUN_0045fa60.c:108",
+          "ghidra/notes/FUN_0045fa60.c:131"
+        ]
+      },
+      {
+        "purpose": "route_class_or_entity_open_to_the_same_topic_key",
+        "path": [
+          "FUN_0045d400",
+          "definition +0x30",
+          "low12 +0x1000",
+          "FUN_0045fd90 fallback"
+        ],
+        "citations": [
+          "ghidra/notes/FUN_0045d400_encyclopedia_loader.c"
+        ]
+      }
+    ]
+  }
+}

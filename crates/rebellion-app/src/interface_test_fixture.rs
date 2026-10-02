@@ -31,7 +31,7 @@ const FIXTURE_ABSENT: u32 = 0;
 /// How far right of the galaxy view's centre the targeting scenario puts its
 /// target system, clear of the system window it opens on the left.
 #[cfg(test)]
-const SCENARIO_COUNT: u8 = 47;
+const SCENARIO_COUNT: u8 = 49;
 
 extern "C" {
     fn open_rebellion_interface_fixture_code() -> u32;
@@ -43,6 +43,16 @@ pub struct FixtureRequest {
     pub scenario: Scenario,
     pub faction: CockpitFaction,
     pub code: u32,
+}
+
+impl FixtureRequest {
+    pub fn is_packed_encyclopedia(self) -> bool {
+        self.scenario == Scenario::PackedEncyclopedia
+    }
+
+    pub fn is_loose_encyclopedia(self) -> bool {
+        self.scenario == Scenario::LooseEncyclopedia
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -95,6 +105,8 @@ pub enum Scenario {
     MissionTargeting = 44,
     FleetMove = 45,
     FleetMoveBlockade = 46,
+    PackedEncyclopedia = 47,
+    LooseEncyclopedia = 48,
 }
 
 impl Scenario {
@@ -147,6 +159,8 @@ impl Scenario {
             44 => Self::MissionTargeting,
             45 => Self::FleetMove,
             46 => Self::FleetMoveBlockade,
+            47 => Self::PackedEncyclopedia,
+            48 => Self::LooseEncyclopedia,
             _ => return None,
         })
     }
@@ -189,7 +203,10 @@ impl Scenario {
 }
 
 pub fn requested() -> Option<FixtureRequest> {
-    let code = unsafe { open_rebellion_interface_fixture_code() };
+    decode_request(unsafe { open_rebellion_interface_fixture_code() })
+}
+
+pub(crate) fn decode_request(code: u32) -> Option<FixtureRequest> {
     if code == FIXTURE_ABSENT || code >> 16 != 0 {
         return None;
     }
@@ -204,6 +221,11 @@ pub fn requested() -> Option<FixtureRequest> {
         faction,
         code,
     })
+}
+
+pub fn emit_report(report: &impl Serialize) {
+    let bytes = serde_json::to_vec(report).expect("serialize interface fixture report");
+    unsafe { open_rebellion_interface_fixture_emit(bytes.as_ptr(), bytes.len()) };
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1455,6 +1477,125 @@ mod tests {
                 galaxy.y + galaxy.height / 2.0 - 20.0
             )
         );
+    }
+
+    #[test]
+    fn packed_encyclopedia_request_is_a_distinct_feature_fixture() {
+        let request = decode_request(0x0130).expect("packed encyclopedia scenario");
+
+        assert_eq!(request.scenario, Scenario::PackedEncyclopedia);
+        assert_eq!(request.faction, CockpitFaction::Alliance);
+        assert!(request.is_packed_encyclopedia());
+        assert_eq!(
+            decode_request(0x0230).unwrap().faction,
+            CockpitFaction::Empire
+        );
+        assert!(!decode_request(0x0127).unwrap().is_packed_encyclopedia());
+        assert_eq!(decode_request(0x0000), None);
+        assert_eq!(decode_request(0x0330), None);
+        assert_eq!(decode_request(0x01_0130), None);
+    }
+
+    #[test]
+    fn loose_encyclopedia_request_is_distinct_from_packed_and_reserved_probe_namespaces() {
+        for (code, faction) in [
+            (0x0131, CockpitFaction::Alliance),
+            (0x0231, CockpitFaction::Empire),
+        ] {
+            let request = decode_request(code).expect("loose encyclopedia scenario");
+            assert_eq!(request.scenario, Scenario::LooseEncyclopedia);
+            assert_eq!(request.faction, faction);
+            assert!(request.is_loose_encyclopedia());
+            assert!(!request.is_packed_encyclopedia());
+        }
+
+        assert_eq!(decode_request(0xe117_0001), None, "E17 probe namespace");
+        assert_eq!(decode_request(0xe131_0001), None, "E31 route namespace");
+        assert_eq!(
+            decode_request(0x0130).unwrap().scenario,
+            Scenario::PackedEncyclopedia
+        );
+        assert!(!decode_request(0x0130).unwrap().is_loose_encyclopedia());
+    }
+
+    #[test]
+    fn encyclopedia_fixture_scenarios_coexist_for_both_factions() {
+        for (code, scenario, faction) in [
+            (
+                0x0129,
+                Scenario::EncyclopediaIndexShell,
+                CockpitFaction::Alliance,
+            ),
+            (
+                0x0229,
+                Scenario::EncyclopediaIndexShell,
+                CockpitFaction::Empire,
+            ),
+            (
+                0x012a,
+                Scenario::EncyclopediaIndexCatalog,
+                CockpitFaction::Alliance,
+            ),
+            (
+                0x022a,
+                Scenario::EncyclopediaIndexCatalog,
+                CockpitFaction::Empire,
+            ),
+            (
+                0x012b,
+                Scenario::MissionDialogMission,
+                CockpitFaction::Alliance,
+            ),
+            (
+                0x022b,
+                Scenario::MissionDialogMission,
+                CockpitFaction::Empire,
+            ),
+            (
+                0x012c,
+                Scenario::MissionDialogAgents,
+                CockpitFaction::Alliance,
+            ),
+            (
+                0x022c,
+                Scenario::MissionDialogAgents,
+                CockpitFaction::Empire,
+            ),
+            (
+                0x012d,
+                Scenario::MissionTargeting,
+                CockpitFaction::Alliance,
+            ),
+            (
+                0x022d,
+                Scenario::MissionTargeting,
+                CockpitFaction::Empire,
+            ),
+            (
+                0x0130,
+                Scenario::PackedEncyclopedia,
+                CockpitFaction::Alliance,
+            ),
+            (0x0230, Scenario::PackedEncyclopedia, CockpitFaction::Empire),
+            (
+                0x0131,
+                Scenario::LooseEncyclopedia,
+                CockpitFaction::Alliance,
+            ),
+            (0x0231, Scenario::LooseEncyclopedia, CockpitFaction::Empire),
+        ] {
+            let request = decode_request(code).expect("encyclopedia fixture scenario");
+            assert_eq!(request.scenario, scenario);
+            assert_eq!(request.faction, faction);
+            assert_eq!(
+                request.is_packed_encyclopedia(),
+                scenario == Scenario::PackedEncyclopedia
+            );
+            assert_eq!(
+                request.is_loose_encyclopedia(),
+                scenario == Scenario::LooseEncyclopedia
+            );
+        }
     }
 
     #[test]

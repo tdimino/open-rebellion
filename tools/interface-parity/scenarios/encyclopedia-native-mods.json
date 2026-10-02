@@ -1,0 +1,274 @@
+{
+  "schema_version": 1,
+  "family": "encyclopedia-native-live-mod-acceptance",
+  "scope": "Native feature-only acceptance against the real E20 inspector, E25 watcher, E24 snapshot transaction, E46 texture cache and E52 HD selector. Browser remains immutable base-only.",
+  "source": {
+    "source_profile": "encytext-49aea545-lang-1033-v1",
+    "catalog_sha256": "bed589f707fa18274c5c06c72e010f6735e98519f04bc6d9260caf5160fd4fb3",
+    "manifest_sha256": "df0ef0b7da7fb966cb80164092278acc81d359ba1976ceabfa7cb8813ed5d0a0",
+    "topic": {
+      "topic_id": "original:5696",
+      "language": "1033",
+      "binding": {
+        "family": "fighter_classes",
+        "dat_id": 1,
+        "variant": "default"
+      },
+      "title": "A-wing",
+      "title_sha256": "fa58ca018d98d20946d08d780ac961b1ebb2dcbdc995ad9ca691f3e14a385e73",
+      "body_sha256": "d56c0de5782ee20754f08a5490627f3340cd97d9bd5942511a153adbd1bbfe22",
+      "image": {
+        "asset_id": "edata:34",
+        "relative_path": "assets/EDATA.034",
+        "format": "bmp",
+        "width": 400,
+        "height": 200,
+        "byte_length": 81078,
+        "sha256": "14695e60336dbf2cf76f53525d0efa1100ae0b0c97cb33030c1873dcf5da7d5f"
+      }
+    }
+  },
+  "fixture": {
+    "request_environment": "REBELLION_ENCYCLOPEDIA_INSPECTOR",
+    "request_value": "1",
+    "mods_root_environment": "REBELLION_ENCYCLOPEDIA_MODS_DIR",
+    "telemetry_prefix": "[encyclopedia_native_acceptance] ",
+    "watch_quiet_period_ms": 100,
+    "watch_max_latency_ms": 500,
+    "event_timeout_ms": 15000,
+    "stable_topic_id": "original:5696",
+    "browser_policy": "unmodified-base-only",
+    "synthetic_test_only": true
+  },
+  "synthetic_images": {
+    "alpha": {
+      "width": 64,
+      "height": 32,
+      "rgba": [23, 157, 219, 255],
+      "byte_length": 122,
+      "sha256": "e67b7f7777b2a611a9ee785a2ebdb5f5b36872e0458ae42721eb6a6d133d8e36"
+    },
+    "beta_initial": {
+      "width": 64,
+      "height": 32,
+      "rgba": [239, 108, 0, 255],
+      "byte_length": 121,
+      "sha256": "9652776b1835b3d750d1396344da43b28571e8fa9d54258f5969c67524e22802"
+    },
+    "beta_replacement": {
+      "width": 64,
+      "height": 32,
+      "rgba": [142, 36, 170, 255],
+      "byte_length": 122,
+      "sha256": "6f9a6661eebd2bb4995779280ef431e11240c8eacf7b7ab1f8bd9b05689233d7"
+    },
+    "approved_hd": {
+      "width": 64,
+      "height": 32,
+      "rgba": [46, 204, 113, 255],
+      "byte_length": 122,
+      "sha256": "f27acc565ecb29639f46dfce5dc11d5b3fd50d3879b59bcaf6fab1724c34ac19"
+    }
+  },
+  "mods": {
+    "alpha": {
+      "directory": "e26-alpha",
+      "manifest": {
+        "name": "e26-alpha",
+        "version": "1.0.0",
+        "author": "Open Rebellion synthetic acceptance fixture",
+        "description": "E26 text/body predecessor; synthetic test-only.",
+        "dependencies": {}
+      },
+      "overlay": [
+        {
+          "id": "original:5696",
+          "localized": {
+            "1033": {
+              "body": "E26 Alpha body: stable selection and live text.",
+              "image": {
+                "path": "encyclopedia/assets/alpha.png"
+              }
+            }
+          }
+        }
+      ],
+      "assets": {
+        "encyclopedia/assets/alpha.png": "alpha"
+      }
+    },
+    "beta": {
+      "directory": "e26-beta",
+      "manifest": {
+        "name": "e26-beta",
+        "version": "1.0.0",
+        "author": "Open Rebellion synthetic acceptance fixture",
+        "description": "E26 later title/art owner; synthetic test-only.",
+        "dependencies": {}
+      },
+      "overlay": [
+        {
+          "id": "original:5696",
+          "localized": {
+            "1033": {
+              "title": "E26 Beta Interceptor",
+              "image": {
+                "path": "encyclopedia/assets/beta.png"
+              }
+            }
+          }
+        }
+      ],
+      "assets": {
+        "encyclopedia/assets/beta.png": "beta_initial"
+      }
+    },
+    "explicit_null": {
+      "directory": "e26-null",
+      "manifest": {
+        "name": "e26-null",
+        "version": "1.0.0",
+        "author": "Open Rebellion synthetic acceptance fixture",
+        "description": "E26 explicit no-art override; synthetic test-only.",
+        "dependencies": {}
+      },
+      "overlay": [
+        {
+          "id": "original:5696",
+          "localized": {
+            "1033": {
+              "image": null
+            }
+          }
+        }
+      ],
+      "assets": {}
+    },
+    "missing_dependency": {
+      "directory": "e26-needs-missing",
+      "manifest": {
+        "name": "e26-needs-missing",
+        "version": "1.0.0",
+        "author": "Open Rebellion synthetic acceptance fixture",
+        "description": "E26 dependency-error control; synthetic test-only.",
+        "dependencies": {
+          "e26-not-installed": ">=1.0.0"
+        }
+      },
+      "overlay": [
+        {
+          "id": "original:5696",
+          "localized": {
+            "1033": {
+              "title": "MUST NOT APPEAR"
+            }
+          }
+        }
+      ],
+      "assets": {}
+    }
+  },
+  "faithful_hd": {
+    "profile": "faithful-hd",
+    "approval_key": "edata/EDATA_034",
+    "output_relative_path": "EData/EDATA_034.png",
+    "source_sha256": "14695e60336dbf2cf76f53525d0efa1100ae0b0c97cb33030c1873dcf5da7d5f",
+    "image": "approved_hd"
+  },
+  "journeys": [
+    {
+      "id": "original-live-edits",
+      "render_profile": "original-parity",
+      "steps": [
+        {
+          "id": "base-ready",
+          "operation": {"kind": "reset", "enabled": []},
+          "expect": {"title": "A-wing", "body_sha256": "d56c0de5782ee20754f08a5490627f3340cd97d9bd5942511a153adbd1bbfe22", "image_source": "base", "asset_id": "edata:34", "digest": "14695e60336dbf2cf76f53525d0efa1100ae0b0c97cb33030c1873dcf5da7d5f", "published_changed": false}
+        },
+        {
+          "id": "install-alpha",
+          "operation": {"kind": "install", "mods": ["alpha"], "enabled": ["e26-alpha"]},
+          "expect": {"title": "A-wing", "body_sha256": "6acd184110ca0ba0a95b2f7f9f6a39890c44e83d949d91a0c5c79c4988943bba", "image_source": "mod", "asset_id": "mod:v1:6532362d616c706861:encyclopedia/assets/alpha.png", "digest": "e67b7f7777b2a611a9ee785a2ebdb5f5b36872e0458ae42721eb6a6d133d8e36", "published_changed": true}
+        },
+        {
+          "id": "install-beta",
+          "operation": {"kind": "install", "mods": ["beta"], "enabled": ["e26-alpha", "e26-beta"]},
+          "expect": {"title": "E26 Beta Interceptor", "body_sha256": "6acd184110ca0ba0a95b2f7f9f6a39890c44e83d949d91a0c5c79c4988943bba", "image_source": "mod", "asset_id": "mod:v1:6532362d62657461:encyclopedia/assets/beta.png", "digest": "9652776b1835b3d750d1396344da43b28571e8fa9d54258f5969c67524e22802", "published_changed": true}
+        },
+        {
+          "id": "image-only-atomic-save",
+          "operation": {"kind": "replace_asset_atomically", "mod": "beta", "path": "encyclopedia/assets/beta.png", "image": "beta_replacement"},
+          "expect": {"title": "E26 Beta Interceptor", "body_sha256": "6acd184110ca0ba0a95b2f7f9f6a39890c44e83d949d91a0c5c79c4988943bba", "image_source": "mod", "asset_id": "mod:v1:6532362d62657461:encyclopedia/assets/beta.png", "digest": "6f9a6661eebd2bb4995779280ef431e11240c8eacf7b7ab1f8bd9b05689233d7", "published_changed": true, "requires_old_texture_release": true}
+        },
+        {
+          "id": "malformed-beta-keeps-last-good",
+          "operation": {"kind": "replace_overlay_atomically", "mod": "beta", "raw_utf8": "[{"},
+          "expect": {"title": "E26 Beta Interceptor", "body_sha256": "6acd184110ca0ba0a95b2f7f9f6a39890c44e83d949d91a0c5c79c4988943bba", "image_source": "mod", "asset_id": "mod:v1:6532362d62657461:encyclopedia/assets/beta.png", "digest": "6f9a6661eebd2bb4995779280ef431e11240c8eacf7b7ab1f8bd9b05689233d7", "published_changed": false, "diagnostic_code": "invalid_json"}
+        },
+        {
+          "id": "fix-beta-recovers",
+          "operation": {"kind": "replace_overlay", "mod": "beta", "overlay": [{"id": "original:5696", "localized": {"1033": {"title": "E26 Beta Recovered", "image": {"path": "encyclopedia/assets/beta.png"}}}}]},
+          "expect": {"title": "E26 Beta Recovered", "body_sha256": "6acd184110ca0ba0a95b2f7f9f6a39890c44e83d949d91a0c5c79c4988943bba", "image_source": "mod", "asset_id": "mod:v1:6532362d62657461:encyclopedia/assets/beta.png", "digest": "6f9a6661eebd2bb4995779280ef431e11240c8eacf7b7ab1f8bd9b05689233d7", "published_changed": true}
+        },
+        {
+          "id": "disable-alpha-does-not-resurrect",
+          "operation": {"kind": "set_enabled", "enabled": ["e26-beta"]},
+          "expect": {"title": "E26 Beta Recovered", "body_sha256": "d56c0de5782ee20754f08a5490627f3340cd97d9bd5942511a153adbd1bbfe22", "image_source": "mod", "asset_id": "mod:v1:6532362d62657461:encyclopedia/assets/beta.png", "digest": "6f9a6661eebd2bb4995779280ef431e11240c8eacf7b7ab1f8bd9b05689233d7", "published_changed": true}
+        },
+        {
+          "id": "missing-dependency-restores-base",
+          "operation": {"kind": "install", "mods": ["missing_dependency"], "enabled": ["e26-beta", "e26-needs-missing"]},
+          "expect": {"title": "A-wing", "body_sha256": "d56c0de5782ee20754f08a5490627f3340cd97d9bd5942511a153adbd1bbfe22", "image_source": "base", "asset_id": "edata:34", "digest": "14695e60336dbf2cf76f53525d0efa1100ae0b0c97cb33030c1873dcf5da7d5f", "published_changed": true, "diagnostic_code": "missing_dependency", "requires_removed_mod_release": true}
+        },
+        {
+          "id": "disable-all-restores-base",
+          "operation": {"kind": "set_enabled", "enabled": []},
+          "expect": {"title": "A-wing", "body_sha256": "d56c0de5782ee20754f08a5490627f3340cd97d9bd5942511a153adbd1bbfe22", "image_source": "base", "asset_id": "edata:34", "digest": "14695e60336dbf2cf76f53525d0efa1100ae0b0c97cb33030c1873dcf5da7d5f", "published_changed": false}
+        }
+      ]
+    },
+    {
+      "id": "faithful-hd-mod-null-precedence",
+      "render_profile": "faithful-hd",
+      "steps": [
+        {
+          "id": "approved-hd-ready",
+          "operation": {"kind": "reset", "enabled": []},
+          "expect": {"title": "A-wing", "image_source": "approved_hd", "asset_id": "edata:34", "digest": "f27acc565ecb29639f46dfce5dc11d5b3fd50d3879b59bcaf6fab1724c34ac19", "published_changed": false}
+        },
+        {
+          "id": "mod-overrides-hd",
+          "operation": {"kind": "install", "mods": ["beta"], "enabled": ["e26-beta"]},
+          "expect": {"title": "E26 Beta Interceptor", "image_source": "mod", "asset_id": "mod:v1:6532362d62657461:encyclopedia/assets/beta.png", "digest": "9652776b1835b3d750d1396344da43b28571e8fa9d54258f5969c67524e22802", "published_changed": true}
+        },
+        {
+          "id": "explicit-null-overrides-mod-and-hd",
+          "operation": {"kind": "install", "mods": ["explicit_null"], "enabled": ["e26-beta", "e26-null"]},
+          "expect": {"title": "E26 Beta Interceptor", "image_source": "null", "asset_id": null, "digest": null, "published_changed": true, "requires_old_texture_release": true}
+        },
+        {
+          "id": "remove-null-restores-mod",
+          "operation": {"kind": "set_enabled", "enabled": ["e26-beta"]},
+          "expect": {"title": "E26 Beta Interceptor", "image_source": "mod", "asset_id": "mod:v1:6532362d62657461:encyclopedia/assets/beta.png", "digest": "9652776b1835b3d750d1396344da43b28571e8fa9d54258f5969c67524e22802", "published_changed": true}
+        },
+        {
+          "id": "remove-mod-restores-hd",
+          "operation": {"kind": "set_enabled", "enabled": []},
+          "expect": {"title": "A-wing", "image_source": "approved_hd", "asset_id": "edata:34", "digest": "f27acc565ecb29639f46dfce5dc11d5b3fd50d3879b59bcaf6fab1724c34ac19", "published_changed": true, "requires_removed_mod_release": true}
+        }
+      ]
+    }
+  ],
+  "invariants": {
+    "selection_topic_id_stays": "original:5696",
+    "world_fingerprint_unchanged_for_fixed_enabled_list": true,
+    "save_fingerprint_unchanged_for_fixed_enabled_list": true,
+    "rng_fingerprint_unchanged_for_all_content_refreshes": true,
+    "browser_mods_enabled": false,
+    "maximum_live_texture_entries": 1,
+    "maximum_retained_candidate_generations": 1,
+    "dependency_failure_effective_policy": "empty-resolved-order-restores-base",
+    "base_source_must_remain_byte_identical": true,
+    "mods_must_remain_outside_base_root": true
+  }
+}

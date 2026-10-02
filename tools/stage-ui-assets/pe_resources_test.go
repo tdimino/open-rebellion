@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 	"unicode/utf16"
 )
 
@@ -135,6 +137,59 @@ func TestReadPEMixedRawResourcesPreservesNamedIdentifier(t *testing.T) {
 	}
 	if _, err := readPERawResources(path, tacticalTextureResourceType); err == nil {
 		t.Fatal("strict numeric raw-resource reader accepted a named entry")
+	}
+}
+
+func TestEncyclopediaInventoryRejectsNamedLanguageEntries(t *testing.T) {
+	root := t.TempDir()
+	source := buildTestPE32WithResource(t, rtEncyclopediaText, 7, 1033, []byte("synthetic encyclopedia text"))
+	// Change the selected resource's LANGID into an out-of-bounds named
+	// language identifier. A strict inventory must reject rather than skip it.
+	binary.LittleEndian.PutUint32(source[0x250:0x254], resourceSubdirectory|0x7ffffff0)
+	writeTestFile(t, filepath.Join(root, "ENCYTEXT.DLL"), source)
+
+	_, err := inventoryEncyclopediaSources(encyclopediaInventoryRequest{
+		Roots: []encyclopediaSourceRoot{{Role: "install", Path: root}},
+		Sources: []encyclopediaSourceSpec{{
+			RootRole:       "install",
+			Basename:       "ENCYTEXT.DLL",
+			Kind:           encyclopediaSourceDLL,
+			ResourceTypeID: rtEncyclopediaText,
+		}},
+		StartedAt: time.Date(2026, 9, 28, 18, 0, 0, 0, time.UTC),
+	}, defaultEncyclopediaInventoryLimits())
+	if err == nil {
+		t.Fatal("encyclopedia inventory silently skipped a named language entry")
+	}
+	if !strings.Contains(err.Error(), "unsupported named language entry") {
+		t.Fatalf("encyclopedia inventory error = %q, want unsupported named language entry", err)
+	}
+}
+
+func TestEncyclopediaInventoryPreservesSupportedNumericLanguageEntry(t *testing.T) {
+	root := t.TempDir()
+	payload := []byte("synthetic encyclopedia text")
+	writeTestFile(t, filepath.Join(root, "ENCYTEXT.DLL"), buildTestPE32WithResource(t, rtEncyclopediaText, 7, 1033, payload))
+
+	inventory, err := inventoryEncyclopediaSources(encyclopediaInventoryRequest{
+		Roots: []encyclopediaSourceRoot{{Role: "install", Path: root}},
+		Sources: []encyclopediaSourceSpec{{
+			RootRole:       "install",
+			Basename:       "ENCYTEXT.DLL",
+			Kind:           encyclopediaSourceDLL,
+			ResourceTypeID: rtEncyclopediaText,
+		}},
+		StartedAt: time.Date(2026, 9, 28, 18, 0, 0, 0, time.UTC),
+	}, defaultEncyclopediaInventoryLimits())
+	if err != nil {
+		t.Fatalf("inventoryEncyclopediaSources() error = %v", err)
+	}
+	if len(inventory.Report.Records) != 1 {
+		t.Fatalf("record count = %d, want 1", len(inventory.Report.Records))
+	}
+	record := inventory.Report.Records[0]
+	if record.LanguageID != 1033 || !bytes.Equal(record.RawBytes, payload) {
+		t.Fatalf("numeric language record = %+v, want LANGID 1033 with preserved payload", record)
 	}
 }
 

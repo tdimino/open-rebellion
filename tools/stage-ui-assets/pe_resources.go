@@ -107,18 +107,18 @@ func parseBitmapResources(resourceData []byte, resolveRVA func(uint32, uint32) (
 }
 
 func parseRawResources(resourceData []byte, resolveRVA func(uint32, uint32) ([]byte, error), resourceTypeID uint32) ([]rawResource, error) {
-	return parseRawResourcesMode(resourceData, resolveRVA, resourceTypeID, "", false, rawResourceLimits{})
+	return parseRawResourcesMode(resourceData, resolveRVA, resourceTypeID, "", false, false, rawResourceLimits{})
 }
 
 func parseTypedRawResources(resourceData []byte, resolveRVA func(uint32, uint32) ([]byte, error), resourceTypeID uint32, typeName string) ([]rawResource, error) {
-	return parseRawResourcesMode(resourceData, resolveRVA, resourceTypeID, typeName, false, rawResourceLimits{})
+	return parseRawResourcesMode(resourceData, resolveRVA, resourceTypeID, typeName, false, false, rawResourceLimits{})
 }
 
 func parseMixedRawResources(resourceData []byte, resolveRVA func(uint32, uint32) ([]byte, error), resourceTypeID uint32, limits rawResourceLimits) ([]rawResource, error) {
-	return parseRawResourcesMode(resourceData, resolveRVA, resourceTypeID, "", true, limits)
+	return parseRawResourcesMode(resourceData, resolveRVA, resourceTypeID, "", true, false, limits)
 }
 
-func parseRawResourcesMode(resourceData []byte, resolveRVA func(uint32, uint32) ([]byte, error), resourceTypeID uint32, typeName string, allowNamed bool, limits rawResourceLimits) ([]rawResource, error) {
+func parseRawResourcesMode(resourceData []byte, resolveRVA func(uint32, uint32) ([]byte, error), resourceTypeID uint32, typeName string, allowNamed, rejectNamedLanguages bool, limits rawResourceLimits) ([]rawResource, error) {
 	types, err := readResourceDirectory(resourceData, 0)
 	if err != nil {
 		return nil, fmt.Errorf("read resource types: %w", err)
@@ -177,6 +177,9 @@ func parseRawResourcesMode(resourceData []byte, resolveRVA func(uint32, uint32) 
 			}
 			for _, languageEntry := range languages {
 				if languageEntry.name&resourceSubdirectory != 0 {
+					if rejectNamedLanguages {
+						return nil, fmt.Errorf("resource type %d %s has unsupported named language entry", resourceTypeID, resourceLabel)
+					}
 					continue
 				}
 				if languageEntry.target&resourceSubdirectory != 0 {
@@ -300,6 +303,14 @@ func readPERawResourcesFromBytes(source []byte, resourceTypeID uint32) ([]rawRes
 }
 
 func readPEMixedRawResourcesFromBytes(source []byte, resourceTypeID uint32, limits rawResourceLimits) ([]rawResource, error) {
+	return readPEMixedRawResourcesFromBytesMode(source, resourceTypeID, limits, false)
+}
+
+func readPEStrictMixedRawResourcesFromBytes(source []byte, resourceTypeID uint32, limits rawResourceLimits) ([]rawResource, error) {
+	return readPEMixedRawResourcesFromBytesMode(source, resourceTypeID, limits, true)
+}
+
+func readPEMixedRawResourcesFromBytesMode(source []byte, resourceTypeID uint32, limits rawResourceLimits, rejectNamedLanguages bool) ([]rawResource, error) {
 	file, err := pe.NewFile(bytes.NewReader(source))
 	if err != nil {
 		return nil, fmt.Errorf("open PE snapshot: %w", err)
@@ -318,9 +329,9 @@ func readPEMixedRawResourcesFromBytes(source []byte, resourceTypeID uint32, limi
 	if err != nil {
 		return nil, fmt.Errorf("read resource directory: %w", err)
 	}
-	return parseMixedRawResources(resourceData, func(rva, size uint32) ([]byte, error) {
+	return parseRawResourcesMode(resourceData, func(rva, size uint32) ([]byte, error) {
 		return readPERange(file, rva, size)
-	}, resourceTypeID, limits)
+	}, resourceTypeID, "", true, rejectNamedLanguages, limits)
 }
 
 func readPEWaveResources(path string) ([]rawResource, error) {

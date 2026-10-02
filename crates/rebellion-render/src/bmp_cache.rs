@@ -185,13 +185,26 @@ struct HdApprovalOutput {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ApprovedHdAsset {
+pub struct ApprovedHdAsset {
     source_sha256: String,
     output_sha256: String,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub(crate) fn approved_hd_assets_from_bytes(
+impl ApprovedHdAsset {
+    /// Verify exact staged original bytes against the reviewed source digest.
+    pub fn validate_source_bytes(&self, bytes: &[u8]) -> Result<(), String> {
+        validate_retained_digest(bytes, &self.source_sha256, "HD source")
+    }
+
+    /// Verify exact replacement bytes against the reviewed output digest.
+    pub fn validate_output_bytes(&self, bytes: &[u8]) -> Result<(), String> {
+        validate_retained_digest(bytes, &self.output_sha256, "HD output")
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn approved_hd_assets_from_bytes(
     bytes: &[u8],
 ) -> Result<HashMap<String, ApprovedHdAsset>, String> {
     let manifest: HdApprovalManifest =
@@ -265,6 +278,18 @@ fn is_sha256(value: &str) -> bool {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+fn validate_retained_digest(bytes: &[u8], expected: &str, label: &str) -> Result<(), String> {
+    let actual = format!("{:x}", Sha256::digest(bytes));
+    if actual == expected {
+        Ok(())
+    } else {
+        Err(format!(
+            "{label} digest mismatch: expected {expected}, observed {actual}"
+        ))
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn load_approved_hd_assets(hd_root: &Path) -> HashMap<String, ApprovedHdAsset> {
     let manifest_path = hd_root.join("manifest.json");
     match std::fs::read(&manifest_path) {
@@ -284,22 +309,16 @@ pub(crate) fn load_approved_hd_assets(hd_root: &Path) -> HashMap<String, Approve
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn read_verified_file(path: &Path, expected_sha256: &str) -> Option<Vec<u8>> {
-    let Ok(bytes) = std::fs::read(path) else {
-        return None;
-    };
-    let actual = format!("{:x}", Sha256::digest(&bytes));
-    (actual == expected_sha256).then_some(bytes)
-}
-
-#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn validated_hd_bytes(
     source_path: &Path,
     output_path: &Path,
     approval: &ApprovedHdAsset,
 ) -> Option<Vec<u8>> {
-    read_verified_file(source_path, &approval.source_sha256)?;
-    read_verified_file(output_path, &approval.output_sha256)
+    let source = std::fs::read(source_path).ok()?;
+    approval.validate_source_bytes(&source).ok()?;
+    let output = std::fs::read(output_path).ok()?;
+    approval.validate_output_bytes(&output).ok()?;
+    Some(output)
 }
 
 impl AssetVariant {
@@ -443,6 +462,69 @@ pub mod resources {
         pub const GALAXY_STARFIELD_BRIGHT: u32 = 902;
         /// Dim authored galaxy starfield used by every active GID mode.
         pub const GALAXY_STARFIELD_DIM: u32 = 903;
+
+        // Original encyclopedia chrome recovered in RE-ENC-01. The topic and
+        // index overlays are mode-specific and shared by both factions; the
+        // shells and right rails are faction-specific.
+        pub const ENCYCLOPEDIA_ALLIANCE_SHELL: u32 = 0x285f;
+        pub const ENCYCLOPEDIA_EMPIRE_SHELL: u32 = 0x2860;
+        pub const ENCYCLOPEDIA_TOPIC_OVERLAY: u32 = 0x2861;
+        pub const ENCYCLOPEDIA_INDEX_OVERLAY: u32 = 0x2862;
+        pub const ENCYCLOPEDIA_ALLIANCE_RIGHT_RAIL: u32 = 0x2959;
+        pub const ENCYCLOPEDIA_EMPIRE_RIGHT_RAIL: u32 = 0x295d;
+
+        /// Faction-specific Return controls. No separate disabled bitmap was
+        /// recovered for this control.
+        pub const ENCYCLOPEDIA_ALLIANCE_RETURN_NORMAL: u32 = 0x2882;
+        pub const ENCYCLOPEDIA_ALLIANCE_RETURN_PRESSED: u32 = 0x2883;
+        pub const ENCYCLOPEDIA_EMPIRE_RETURN_NORMAL: u32 = 0x2888;
+        pub const ENCYCLOPEDIA_EMPIRE_RETURN_PRESSED: u32 = 0x2889;
+
+        /// Forward and backward controls include distinct disabled resources.
+        pub const ENCYCLOPEDIA_FORWARD_NORMAL: u32 = 0x288e;
+        pub const ENCYCLOPEDIA_FORWARD_PRESSED: u32 = 0x288f;
+        pub const ENCYCLOPEDIA_FORWARD_DISABLED: u32 = 0x2890;
+        pub const ENCYCLOPEDIA_BACKWARD_NORMAL: u32 = 0x2891;
+        pub const ENCYCLOPEDIA_BACKWARD_PRESSED: u32 = 0x2892;
+        pub const ENCYCLOPEDIA_BACKWARD_DISABLED: u32 = 0x2893;
+
+        /// Topic/index tabs reuse their pressed bitmap for selected and
+        /// disabled display; there are no additional hover assets.
+        pub const ENCYCLOPEDIA_ALLIANCE_TOPIC_NORMAL: u32 = 0x2886;
+        pub const ENCYCLOPEDIA_ALLIANCE_TOPIC_PRESSED_SELECTED: u32 = 0x2887;
+        pub const ENCYCLOPEDIA_EMPIRE_TOPIC_NORMAL: u32 = 0x288c;
+        pub const ENCYCLOPEDIA_EMPIRE_TOPIC_PRESSED_SELECTED: u32 = 0x288d;
+        pub const ENCYCLOPEDIA_ALLIANCE_INDEX_NORMAL: u32 = 0x2884;
+        pub const ENCYCLOPEDIA_ALLIANCE_INDEX_PRESSED_SELECTED: u32 = 0x2885;
+        pub const ENCYCLOPEDIA_EMPIRE_INDEX_NORMAL: u32 = 0x288a;
+        pub const ENCYCLOPEDIA_EMPIRE_INDEX_PRESSED_SELECTED: u32 = 0x288b;
+
+        /// Seven ordered category controls (`0x6f..=0x75`). Slots zero and one
+        /// share resources across factions; the other slots are factional.
+        pub const ENCYCLOPEDIA_CATEGORY_0_NORMAL: u32 = 0x2864;
+        pub const ENCYCLOPEDIA_CATEGORY_0_PRESSED_SELECTED: u32 = 0x2863;
+        pub const ENCYCLOPEDIA_CATEGORY_1_NORMAL: u32 = 0x286e;
+        pub const ENCYCLOPEDIA_CATEGORY_1_PRESSED_SELECTED: u32 = 0x286d;
+        pub const ENCYCLOPEDIA_ALLIANCE_CATEGORY_2_NORMAL: u32 = 0x286c;
+        pub const ENCYCLOPEDIA_ALLIANCE_CATEGORY_2_PRESSED_SELECTED: u32 = 0x286b;
+        pub const ENCYCLOPEDIA_EMPIRE_CATEGORY_2_NORMAL: u32 = 0x2878;
+        pub const ENCYCLOPEDIA_EMPIRE_CATEGORY_2_PRESSED_SELECTED: u32 = 0x2877;
+        pub const ENCYCLOPEDIA_ALLIANCE_CATEGORY_3_NORMAL: u32 = 0x2868;
+        pub const ENCYCLOPEDIA_ALLIANCE_CATEGORY_3_PRESSED_SELECTED: u32 = 0x2867;
+        pub const ENCYCLOPEDIA_EMPIRE_CATEGORY_3_NORMAL: u32 = 0x2874;
+        pub const ENCYCLOPEDIA_EMPIRE_CATEGORY_3_PRESSED_SELECTED: u32 = 0x2873;
+        pub const ENCYCLOPEDIA_ALLIANCE_CATEGORY_4_NORMAL: u32 = 0x2d60;
+        pub const ENCYCLOPEDIA_ALLIANCE_CATEGORY_4_PRESSED_SELECTED: u32 = 0x2d5f;
+        pub const ENCYCLOPEDIA_EMPIRE_CATEGORY_4_NORMAL: u32 = 0x2d62;
+        pub const ENCYCLOPEDIA_EMPIRE_CATEGORY_4_PRESSED_SELECTED: u32 = 0x2d61;
+        pub const ENCYCLOPEDIA_ALLIANCE_CATEGORY_5_NORMAL: u32 = 0x2870;
+        pub const ENCYCLOPEDIA_ALLIANCE_CATEGORY_5_PRESSED_SELECTED: u32 = 0x286f;
+        pub const ENCYCLOPEDIA_EMPIRE_CATEGORY_5_NORMAL: u32 = 0x287a;
+        pub const ENCYCLOPEDIA_EMPIRE_CATEGORY_5_PRESSED_SELECTED: u32 = 0x2879;
+        pub const ENCYCLOPEDIA_ALLIANCE_CATEGORY_6_NORMAL: u32 = 0x286a;
+        pub const ENCYCLOPEDIA_ALLIANCE_CATEGORY_6_PRESSED_SELECTED: u32 = 0x2869;
+        pub const ENCYCLOPEDIA_EMPIRE_CATEGORY_6_NORMAL: u32 = 0x2876;
+        pub const ENCYCLOPEDIA_EMPIRE_CATEGORY_6_PRESSED_SELECTED: u32 = 0x2875;
 
         /// Alliance System Finder, pressed.
         pub const ALLIANCE_SYSTEM_FINDER_PRESSED: u32 = 10001;
@@ -1320,6 +1402,99 @@ pub mod resources {
     }
 }
 
+/// Exact DLL/resource identity of one required original bitmap.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct BmpResourceIdentity {
+    pub source: DllSource,
+    pub resource_id: u32,
+}
+
+impl BmpResourceIdentity {
+    const fn strategy(resource_id: u32) -> Self {
+        Self {
+            source: DllSource::Strategy,
+            resource_id,
+        }
+    }
+
+    /// Runtime-pack/cache key shared by native staging and browser transport.
+    #[must_use]
+    pub fn runtime_key(self) -> String {
+        format!("{}/{}", self.source.dll_dir_name(), self.resource_id)
+    }
+}
+
+/// Every source-proven bitmap required to construct the original encyclopedia
+/// chrome and all recovered control states. This is an availability contract,
+/// not a drawing implementation or visual-acceptance claim.
+pub const ENCYCLOPEDIA_CHROME_RESOURCES: [BmpResourceIdentity; 48] = {
+    use resources::strategy;
+    [
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_ALLIANCE_SHELL),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_EMPIRE_SHELL),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_TOPIC_OVERLAY),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_INDEX_OVERLAY),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_ALLIANCE_RIGHT_RAIL),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_EMPIRE_RIGHT_RAIL),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_ALLIANCE_RETURN_NORMAL),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_ALLIANCE_RETURN_PRESSED),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_EMPIRE_RETURN_NORMAL),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_EMPIRE_RETURN_PRESSED),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_FORWARD_NORMAL),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_FORWARD_PRESSED),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_FORWARD_DISABLED),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_BACKWARD_NORMAL),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_BACKWARD_PRESSED),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_BACKWARD_DISABLED),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_ALLIANCE_TOPIC_NORMAL),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_ALLIANCE_TOPIC_PRESSED_SELECTED),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_EMPIRE_TOPIC_NORMAL),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_EMPIRE_TOPIC_PRESSED_SELECTED),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_ALLIANCE_INDEX_NORMAL),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_ALLIANCE_INDEX_PRESSED_SELECTED),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_EMPIRE_INDEX_NORMAL),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_EMPIRE_INDEX_PRESSED_SELECTED),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_CATEGORY_0_NORMAL),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_CATEGORY_0_PRESSED_SELECTED),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_CATEGORY_1_NORMAL),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_CATEGORY_1_PRESSED_SELECTED),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_ALLIANCE_CATEGORY_2_NORMAL),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_ALLIANCE_CATEGORY_2_PRESSED_SELECTED),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_EMPIRE_CATEGORY_2_NORMAL),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_EMPIRE_CATEGORY_2_PRESSED_SELECTED),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_ALLIANCE_CATEGORY_3_NORMAL),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_ALLIANCE_CATEGORY_3_PRESSED_SELECTED),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_EMPIRE_CATEGORY_3_NORMAL),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_EMPIRE_CATEGORY_3_PRESSED_SELECTED),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_ALLIANCE_CATEGORY_4_NORMAL),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_ALLIANCE_CATEGORY_4_PRESSED_SELECTED),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_EMPIRE_CATEGORY_4_NORMAL),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_EMPIRE_CATEGORY_4_PRESSED_SELECTED),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_ALLIANCE_CATEGORY_5_NORMAL),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_ALLIANCE_CATEGORY_5_PRESSED_SELECTED),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_EMPIRE_CATEGORY_5_NORMAL),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_EMPIRE_CATEGORY_5_PRESSED_SELECTED),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_ALLIANCE_CATEGORY_6_NORMAL),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_ALLIANCE_CATEGORY_6_PRESSED_SELECTED),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_EMPIRE_CATEGORY_6_NORMAL),
+        BmpResourceIdentity::strategy(strategy::ENCYCLOPEDIA_EMPIRE_CATEGORY_6_PRESSED_SELECTED),
+    ]
+};
+
+/// Return exact source identities missing from a native or browser transport.
+/// Callers supply only the availability check, so a different bitmap with the
+/// same aggregate count cannot satisfy readiness.
+#[must_use]
+pub fn missing_encyclopedia_chrome_resources(
+    mut available: impl FnMut(BmpResourceIdentity) -> bool,
+) -> Vec<BmpResourceIdentity> {
+    ENCYCLOPEDIA_CHROME_RESOURCES
+        .iter()
+        .copied()
+        .filter(|resource| !available(*resource))
+        .collect()
+}
+
 // ---------------------------------------------------------------------------
 // BmpCache
 // ---------------------------------------------------------------------------
@@ -1477,6 +1652,19 @@ impl BmpCache {
     #[must_use]
     pub const fn render_profile(&self) -> AssetRenderProfile {
         self.profile
+    }
+
+    /// Report source-proven encyclopedia chrome missing from this cache's
+    /// configured native staging root or installed browser byte cache.
+    ///
+    /// This performs byte availability checks only and never allocates a GPU
+    /// texture. Staging/package validation is responsible for BMP validity.
+    #[must_use]
+    pub fn missing_encyclopedia_chrome_resources(&self) -> Vec<BmpResourceIdentity> {
+        missing_encyclopedia_chrome_resources(|resource| {
+            self.load_original_bytes(resource.source, resource.resource_id)
+                .is_some()
+        })
     }
 
     fn hd_asset_approval(&self, source: DllSource, resource_id: u32) -> Option<&ApprovedHdAsset> {
@@ -1941,6 +2129,86 @@ mod tests {
     use super::*;
 
     #[test]
+    fn encyclopedia_chrome_contract_covers_every_source_proven_bitmap_state() {
+        let want = [
+            0x285f, 0x2860, 0x2861, 0x2862, 0x2959, 0x295d, 0x2882, 0x2883, 0x2888, 0x2889, 0x288e,
+            0x288f, 0x2890, 0x2891, 0x2892, 0x2893, 0x2886, 0x2887, 0x288c, 0x288d, 0x2884, 0x2885,
+            0x288a, 0x288b, 0x2864, 0x2863, 0x286e, 0x286d, 0x286c, 0x286b, 0x2878, 0x2877, 0x2868,
+            0x2867, 0x2874, 0x2873, 0x2d60, 0x2d5f, 0x2d62, 0x2d61, 0x2870, 0x286f, 0x287a, 0x2879,
+            0x286a, 0x2869, 0x2876, 0x2875,
+        ];
+        let actual: Vec<u32> = ENCYCLOPEDIA_CHROME_RESOURCES
+            .iter()
+            .map(|resource| {
+                assert_eq!(resource.source, DllSource::Strategy);
+                assert_eq!(
+                    resource.runtime_key(),
+                    format!("strategy-dll/{}", resource.resource_id)
+                );
+                resource.resource_id
+            })
+            .collect();
+
+        assert_eq!(actual, want);
+        assert_eq!(
+            actual
+                .iter()
+                .copied()
+                .collect::<std::collections::HashSet<_>>()
+                .len(),
+            48
+        );
+        assert!([0x1842, 0x1843, 0x299d]
+            .iter()
+            .all(|non_bitmap| !actual.contains(non_bitmap)));
+    }
+
+    #[test]
+    fn encyclopedia_chrome_readiness_reports_source_id_after_count_preserving_swap() {
+        let mut available: std::collections::HashSet<String> = ENCYCLOPEDIA_CHROME_RESOURCES
+            .iter()
+            .map(|resource| resource.runtime_key())
+            .collect();
+        let removed = ENCYCLOPEDIA_CHROME_RESOURCES[17];
+        assert!(available.remove(&removed.runtime_key()));
+        available.insert("strategy-dll/999999".to_string());
+
+        let missing = missing_encyclopedia_chrome_resources(|resource| {
+            available.contains(&resource.runtime_key())
+        });
+        assert_eq!(missing, vec![removed]);
+        assert_eq!(missing[0].source.dll_dir_name(), "strategy-dll");
+        assert_eq!(missing[0].resource_id, 0x2887);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn native_bmp_cache_readiness_uses_existing_path_and_preserves_unrelated_files() {
+        let root = std::env::temp_dir().join(format!(
+            "open-rebellion-encyclopedia-chrome-{}-{}",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("test")
+        ));
+        let bmp_dir = root.join("strategy-dll/BMP");
+        std::fs::create_dir_all(&bmp_dir).unwrap();
+        for resource in ENCYCLOPEDIA_CHROME_RESOURCES {
+            std::fs::write(bmp_dir.join(format!("{}.bmp", resource.resource_id)), b"BM").unwrap();
+        }
+        let unrelated = bmp_dir.join("424242.bmp");
+        std::fs::write(&unrelated, b"unrelated").unwrap();
+
+        let mut cache = BmpCache::new();
+        cache.set_base_path(&root);
+        assert!(cache.missing_encyclopedia_chrome_resources().is_empty());
+
+        let missing = ENCYCLOPEDIA_CHROME_RESOURCES[0];
+        std::fs::remove_file(bmp_dir.join(format!("{}.bmp", missing.resource_id))).unwrap();
+        assert_eq!(cache.missing_encyclopedia_chrome_resources(), vec![missing]);
+        assert_eq!(std::fs::read(&unrelated).unwrap(), b"unrelated");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn missing_resource_is_negatively_cached() {
         let mut cache = BmpCache::new();
         let ctx = egui::Context::default();
@@ -2027,6 +2295,22 @@ mod tests {
         }"#;
 
         assert!(approved_hd_assets_from_bytes(manifest).is_err());
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn retained_hd_approval_checks_source_and_output_bytes_independently() {
+        let approval = ApprovedHdAsset {
+            source_sha256: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+                .to_owned(),
+            output_sha256: "3608bca1e44ea6c4d268eb6db02260269892c0b42b86bbf1e77a6fa16c3c9282"
+                .to_owned(),
+        };
+
+        assert!(approval.validate_source_bytes(b"abc").is_ok());
+        assert!(approval.validate_output_bytes(b"xyz").is_ok());
+        assert!(approval.validate_source_bytes(b"changed").is_err());
+        assert!(approval.validate_output_bytes(b"changed").is_err());
     }
 
     #[test]

@@ -176,6 +176,158 @@ and a next proof in the [machine-readable ledger](reverse-engineering-ledger.jso
 | RE-EXT-01 | Remove visible replacement dashboards | implementation-needed | Preserve every action inside original paths with zero replacement pixels |
 | RE-A0-01 | Lossless original-executable baselines | runtime-needed | Capture every required surface-state cell at native 640×480 |
 
+### RE-ENC-01 semantic checkpoint
+
+The [source contract](../../reference/asset-library/encyclopedia-source-contract.md#semantic-research-checkpoint)
+records the profile-bounded decision table and the machine-readable ledger holds
+the same testable scenario IDs. Static recovery now proves:
+
+- selector order `0x6f`, `0x70`, `0x71`, `0x72`, `0x73`, `0x74`, `0x75`
+  from `FUN_0045ddc0` and the exact `FUN_0045f100` early-return/forced
+  transitions; `0x6f` binds shell `+0x474`, it does not clear a list;
+- shell `+0x474` is an if-null, once-per-shell master cache built by
+  `FUN_00422620` from registry definitions and a viewer-side system iterator;
+  category changes filter that retained cache rather than reading a fresh
+  campaign snapshot;
+- both master and filtered collections use `FUN_0060a790(..., 2)` and
+  `FUN_005f59f0`, so `FUN_0060a890`/`FUN_00626ad0` impose case-insensitive
+  narrow-byte order with stable source-order ties;
+- class and entity contexts route through definition `+0x30` low12 + `0x1000`,
+  including the connected `FUN_0045fd90` entity fallback, rather than treating
+  raw entity identity as topic identity;
+- the viewer-side system iterator selects a type-`0x90` view and calls its
+  vtable `+0x10` predicate, `FUN_004f6330`; that function walks the view's
+  `+0x1c` container ancestry and causes `FUN_0053f090` to exclude the view
+  exactly when an ancestor's virtual type is `0xf2`;
+- row vtable functions `FUN_004ad730`/`FUN_004ad750` skip disabled neighbors,
+  preserve non-wrapping endpoints, and operate over the sorted bound list; and
+- the bounded viewer-side and system-picture EData key selectors in
+  `FUN_0045fa60`.
+
+E40 reconciles the accepted family fragments without repeating their reverse
+engineering. The strict embedded source profile now contains 331 observed
+family-qualified rows: 57 mobile-unit classes, 60 characters, and 214
+systems/facilities. It preserves every original/preferred/selected title
+selector, language-qualified body and art identity, source hash, exact EData
+basename, category command, and class/source identity. All 331 rows are bound;
+none is silently treated as an alias. Seventeen system art identities are
+explicit shared-resource groups, not topic aliases. Major/minor character
+`DatId` values are unique for this profile, while the source family remains in
+the canonical identity and future overlap must fail or add a reviewed table
+discriminator. Unit rows bind classes, not fleet/entity instances; the current
+raw-ID arena mismatch remains an application-boundary gate.
+
+Resource closure is intentionally partial. Against the exact owned source
+hashes, the profile accounts for all 348 ENCYTEXT records, 191 nonempty
+ENCYBMAP strings, 186 referenced filenames, and 187 EData images as bound,
+unresolved, or publication-deferred. The accepted rows bind 331 text resources,
+157 lookup identities, and 157 files. Command `0x73` has no accepted family
+fragment, leaving 17 text resources, 34 lookup identities, and 29 referenced
+files unresolved; their exact identities and next proof are in the
+[source contract](../../reference/asset-library/encyclopedia-source-contract.md#combined-family-bindings-and-resource-closure)
+and `semantic_research.source_reconciliation`. The five duplicate ENCYBMAP
+filenames explain why 34 lookup identities correspond to 29 files but do not
+prove aliases or topics. `EDATA.192` is the separate 187th file and remains
+publication-deferred under `orlocal-2kq`.
+
+The combined shape resolves one-category membership for the 331 bound rows:
+commands `0x70`, `0x71`, `0x72`, `0x74`, and `0x75` own their recovered rows,
+while `0x6f` is an aggregate selector rather than a second category. It also
+separates source identity from canonical body identity and requires explicit
+`alias_of` metadata for any future shared topic. It does **not** mark the
+profile ready for E09 schema freeze. The missing `[0x40,0x80)` command `0x73`
+source joins and original localized category-label selectors are named E09
+blockers; numbering gaps, filenames, and the numerical 17/34 residual pattern
+are not accepted joins.
+
+The package remains `static-partial` and `runtime_capture_required`. The system
+predicate is structurally recovered, but source type `0xf2` remains deliberately
+unnamed: `FUN_005696b0` installs vtable `0x006639b8`, whose `+4` method
+`FUN_00569880` returns `0xf2`; that proves the exact ancestry test, not a
+friendlier knowledge, destruction, or visibility label. For the inspected
+source profile, Luke key `0x1842` maps to `EDATA.074`, `0x2842` is empty, and
+ENCYBMAP has no `EDATA.192` mapping; recovered REBEXE static evidence includes
+the `EDATA\` directory-literal reference inside `FUN_0045f7b0` and the identified
+table-selector loader callers, but does not establish a connected selector or
+predicate. `EDATA.192` therefore remains inventory-only under the current
+publication policy and no alternate-Luke predicate, runtime binding, or UI
+switch is published. The user-approved scope defers that research to
+`orlocal-2kq`; the asset remains inventoried but unused and does not block E08,
+the first-profile schema, or publication. This is not proof that original
+behavior is impossible or that the alternate was implemented. Static asset
+presence does not imply gameplay visibility, and no expression or mod-supplied
+predicate may substitute for future proof.
+
+The repository ledger validator continues to validate the shared ledger shape,
+surface coverage, and required package fields; it does not inspect the nested
+`semantic_research` contract. E08's retained ignored semantic checker separately
+validates all 14 rule records, all 25 named decision scenarios, their references
+and required fields, the recovered selector transitions, cache/comparator
+contract, canonical context key, exact type-`0xf2` system predicate, and bounded
+alternate evidence state: inventoried, unused, deferred to `orlocal-2kq`, with
+no predicate or runtime binding.
+
+The [original UI contract](../../reference/asset-library/encyclopedia-ui-contract.md)
+adds the E27 source checkpoint without changing those 14 semantic rules or 25
+scenarios. `FUN_00429f30` constructs at most one shell child `0x19` through
+`FUN_0045d400` with a 470 × 330 client. `FUN_0045ddc0` supplies the exact
+faction chrome, category and mode controls, header/index/list/body rectangles,
+navigation controls, and `STRATEGY.DLL` resource-state IDs. It selects the
+faction shell/rail first, then creates both mode composites from that same
+pair: topic background `1` uses shared overlay `0x2861` at `(12,14)`, while
+index background `2` uses shared overlay `0x2862` at `(12,13)` and has static
+text resource `0x1843` created at `(36,48)` with zero initial extent, measured
+by `FUN_00601b80` through `DrawTextA` flag `0x400`, and rendered into it before
+registration.
+
+`FUN_0045f480` selects `2` for index and `1` for topic; `0x1843` is proven as
+baked static text but is not assigned a guessed semantic label. The connected
+`CoolStrobeButton` path proves normal, captured-press, disabled, and selected
+bitmap slots; it exposes no separate hover-resource transition.
+
+The missing checked-in function bodies were bounded directly against the same
+identified `REBEXE.EXE`: `0x0041d6b0` obtains the active shell and forwards
+typed context to `FUN_00429f30`, while `0x0045da70` dispatches close `0xfb`,
+mode container `0x66`, category container `0x6e`, list `0x65`, and navigation
+`0x83`/`0x84`. Context-free shell paths are F7 (`0x76`) and command `0x131`.
+An exhaustive direct-call scan proves five contextual callers into
+`FUN_0041d6b0`: unrenamed handlers `0x00438800` command `0x67`, `0x004443a0`
+command `0x66`, and `0x00467f10` commands `0x67`/`0x97` with selected-child
+type `4`; `FUN_0046c3c0` command `0x67`; and `FUN_00486fb0` event `0x100`.
+Their selected-row, guarded retained-context, selected-child, mission-row, and
+first-row flows are recorded by address. No visible surface name is inferred
+from proximity.
+
+Index focus belongs to the `CoolDragList`; Return emits the same `0x309`
+activation as a double-click and enters topic mode. In index mode Left uses
+`FUN_005f5c60` predecessor traversal and Right uses the threaded successor;
+both skip hidden non-null candidates. An immediately null candidate falls back
+to the tree's leftmost child through `FUN_005f5060`, so Left at the first child
+reselects it and Right at the last child wraps to it. Running off an edge only
+after hidden candidates retains the current category. The immediate fallback
+does not visibility-test the first child. `FUN_0060d7e0` sends the category
+command, whose branch at `0x0045dad0` explicitly focuses the list after
+rebuilding/binding it. Topic focus belongs to the read-only `TextScrollField`;
+Left/Right navigate topics without wrapping, Up/Down/Page keys scroll, and
+Return is forwarded with no encyclopedia-local topic action. Body measurement
+uses `DrawTextA` flags `0x2410`, source word/newline/tab handling, and a
+conditional scrollbar. The apparent ship statistics in A3 guide capture 027
+travel through the ordinary `ENCYTEXT.DLL` body-string path: no live-stat
+control or world-field binding is present in the recovered constructor,
+mode/render, and text-population paths.
+
+The package deliberately remains `static-partial` and
+`runtime_capture_required`. The finite `ENC-UI-01..21` matrix distinguishes the
+static contract from missing A0 proof for both factions, all seven category
+commands, index Left/Right traversal and edge behavior, button states,
+click/Return behavior, typed context routes,
+unavailable context, faction/system selectors, type-`0xf2` admission, first /
+middle / last navigation, a legitimate no-art trigger, body wrap/scroll, and
+close/focus routing. Hidden-category capture remains conditional on recovering
+a connected original visibility configuration. Guide captures 018, 019, and
+027 are A3 leads only. A0 contradictions must reopen source/schema review
+before consumers change.
+
 Space battle is an explicit full mode, not a single panel. `TAC-01` through
 `TAC-07` currently define 106 baseline cells covering battle entry, both
 faction HUDs, capital ships, fighters, assignment, selection, targeting,

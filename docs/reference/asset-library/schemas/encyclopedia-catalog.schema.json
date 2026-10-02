@@ -1,0 +1,267 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://open-rebellion.example/schemas/encyclopedia-catalog-v1.schema.json",
+  "$comment": "E09 V1 WIRE CONTRACT — COORDINATOR APPROVED 2026-09-29. This schema describes only the serialized immutable base catalog. Its arrays hold 347 catalog candidates as potential membership plus stable tie order; 247 were admitted in each of two observed runs, but world/viewer admission is a runtime rule rather than a file-schema constraint. E31 owns the future source-to-world/viewer adapter and hands typed admitted BindingKeys plus admission facts to the world-independent E44 resolver. Production readiness remains gated by E31, E32, and E51; the approved wire contract does not depend on E31, E32, or E51 runtime work. Runtime effective DTOs and generated mod IDs are Rust contracts, not file-schema definitions. Runtime aliases are not part of v1.",
+  "title": "Open Rebellion encyclopedia base catalog v1 (coordinator-approved wire contract)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "default_language",
+    "topic_sort",
+    "index",
+    "categories",
+    "topics",
+    "images",
+    "bindings"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "default_language": { "$ref": "#/$defs/langid" },
+    "topic_sort": { "$ref": "#/$defs/topicSort" },
+    "index": { "$ref": "#/$defs/indexView" },
+    "categories": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/categoryView" }
+    },
+    "topics": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 10000,
+      "propertyNames": { "$ref": "#/$defs/topicId" },
+      "additionalProperties": { "$ref": "#/$defs/topic" }
+    },
+    "images": {
+      "type": "object",
+      "maxProperties": 20000,
+      "propertyNames": { "$ref": "#/$defs/baseImageId" },
+      "additionalProperties": { "$ref": "#/$defs/baseImage" }
+    },
+    "bindings": {
+      "type": "array",
+      "maxItems": 40000,
+      "items": { "$ref": "#/$defs/binding" }
+    }
+  },
+  "$defs": {
+    "langid": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]{0,4})$"
+    },
+    "stableId": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 256,
+      "pattern": "^[a-z][a-z0-9._-]{0,31}:[A-Za-z0-9][A-Za-z0-9._:-]{0,223}$"
+    },
+    "topicId": {
+      "$ref": "#/$defs/stableId",
+      "description": "Canonical content identity, never an original runtime pointer/handle or cache +0x68 low-bit surrogate."
+    },
+    "baseImageId": {
+      "type": "string",
+      "minLength": 7,
+      "maxLength": 16,
+      "pattern": "^edata:(0|[1-9][0-9]{0,9})$"
+    },
+    "sourceRef": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "topicSort": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "representable_encoding",
+        "representable_fold",
+        "unrepresentable",
+        "tie_break"
+      ],
+      "properties": {
+        "algorithm": { "const": "stable_display_title_v1" },
+        "representable_encoding": { "const": "windows-1252-strict" },
+        "representable_fold": { "const": "ascii-lowercase-only" },
+        "unrepresentable": { "const": "unicode-15.1.0-scalar-lowercase-utf8-after-representable" },
+        "tie_break": { "const": "registry-order" }
+      }
+    },
+    "labels": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 256,
+      "propertyNames": { "$ref": "#/$defs/langid" },
+      "additionalProperties": {
+        "type": "string",
+        "maxLength": 65536
+      }
+    },
+    "topicIdList": {
+      "type": "array",
+      "description": "Potential membership in source-proven registry order and stable tie order, not frozen display order or a claim that every system is live. Runtime applies world/viewer admission, overlays, whole-record language selection, art resolution, and the declared stable title sort.",
+      "maxItems": 10000,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/topicId" }
+    },
+    "indexView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command", "labels", "topic_ids", "source_ref"],
+      "properties": {
+        "command": { "const": "0x6f" },
+        "labels": { "$ref": "#/$defs/labels" },
+        "topic_ids": { "$ref": "#/$defs/topicIdList" },
+        "source_ref": { "$ref": "#/$defs/sourceRef" }
+      }
+    },
+    "categoryView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "command", "labels", "topic_ids", "source_ref"],
+      "properties": {
+        "id": { "$ref": "#/$defs/stableId" },
+        "command": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{2,8}$"
+        },
+        "labels": { "$ref": "#/$defs/labels" },
+        "topic_ids": { "$ref": "#/$defs/topicIdList" },
+        "source_ref": { "$ref": "#/$defs/sourceRef" }
+      }
+    },
+    "localizedContent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "body"],
+      "properties": {
+        "title": {
+          "type": "string",
+          "maxLength": 65536
+        },
+        "body": {
+          "type": "string",
+          "maxLength": 1048576
+        },
+        "image_id": {
+          "anyOf": [
+            { "$ref": "#/$defs/baseImageId" },
+            { "type": "null" }
+          ]
+        },
+        "image_selector": { "$ref": "#/$defs/imageSelector" }
+      },
+      "not": {
+        "properties": {
+          "image_id": {},
+          "image_selector": {}
+        },
+        "required": ["image_id", "image_selector"]
+      }
+    },
+    "imageSelector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "alliance_image_id", "empire_image_id"],
+      "properties": {
+        "kind": { "const": "viewer_faction" },
+        "alliance_image_id": {
+          "anyOf": [
+            { "$ref": "#/$defs/baseImageId" },
+            { "type": "null" }
+          ]
+        },
+        "empire_image_id": {
+          "anyOf": [
+            { "$ref": "#/$defs/baseImageId" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "localizedMap": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 256,
+      "propertyNames": { "$ref": "#/$defs/langid" },
+      "additionalProperties": { "$ref": "#/$defs/localizedContent" }
+    },
+    "topic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["localized", "source_ref"],
+      "properties": {
+        "localized": { "$ref": "#/$defs/localizedMap" },
+        "source_ref": { "$ref": "#/$defs/sourceRef" }
+      }
+    },
+    "runtimeAssetPath": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 256,
+      "pattern": "^assets/(?:[A-Za-z0-9][A-Za-z0-9._-]{0,126}/)*[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
+    "baseImage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "format",
+        "byte_length",
+        "width",
+        "height",
+        "sha256",
+        "source_ref"
+      ],
+      "properties": {
+        "path": { "$ref": "#/$defs/runtimeAssetPath" },
+        "format": { "enum": ["bmp", "png"] },
+        "byte_length": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 33554432
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16000000
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16000000
+        },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "source_ref": { "$ref": "#/$defs/sourceRef" }
+      }
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["family", "dat_id", "variant", "topic_id"],
+      "properties": {
+        "family": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "dat_id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "variant": { "enum": ["default", "viewer_faction"] },
+        "topic_id": { "$ref": "#/$defs/topicId" }
+      }
+    }
+  }
+}

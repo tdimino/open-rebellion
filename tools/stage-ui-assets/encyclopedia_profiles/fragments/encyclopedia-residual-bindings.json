@@ -1,0 +1,1579 @@
+{
+  "kind": "encyclopedia-residual-binding-fragment",
+  "schema_version": 1,
+  "fragment_id": "residual-49aea545-fb545d19-v1",
+  "profile_id": "encytext-49aea545-lang-1033-v1",
+  "language_id": 1033,
+  "status": "complete",
+  "scope": [
+    "command_0x73_mission_definitions",
+    "aggregate_only_fleet_definition",
+    "residual_resource_accounting"
+  ],
+  "sources": [
+    {
+      "role": "research_executable",
+      "basename": "REBEXE.EXE",
+      "raw_length": 2822656,
+      "raw_sha256": "b3fe3997cab9a6e96403d638875dcba25484e4d8601751afec748471ac0ed6ab"
+    },
+    {
+      "role": "display_strings",
+      "basename": "TEXTSTRA.DLL",
+      "raw_length": 150528,
+      "raw_sha256": "61a10bf3797f49b1121e2fba2cee7d3949a5bc7215e1501e2df71ecbedb53d4c"
+    },
+    {
+      "role": "encyclopedia_text",
+      "basename": "ENCYTEXT.DLL",
+      "raw_length": 145920,
+      "raw_sha256": "49aea545a5e09e5fe9115a22bc785690f103d2f931e08bd4a53a617a42636d8c"
+    },
+    {
+      "role": "encyclopedia_art_lookup",
+      "basename": "ENCYBMAP.DLL",
+      "raw_length": 34816,
+      "raw_sha256": "fb545d19ae24b0277753494dbfaabf2dbdde660beab821287a32016c290e4560"
+    },
+    {
+      "role": "mission_definitions",
+      "basename": "MISSNSD.DAT",
+      "raw_length": 2816,
+      "raw_sha256": "114d1cfc5abb41e57f3bd76d8993503efefc5daa5cdeb0abdfbc5608fefd25a5"
+    },
+    {
+      "role": "fleet_definitions",
+      "basename": "FLEETSD.DAT",
+      "raw_length": 64,
+      "raw_sha256": "ee5c3c6a46b8f86a518ca88a95035063edb2920d26d8ff69775299f43ac0c25e"
+    }
+  ],
+  "selector_rules": {
+    "source_identity": "(record_family << 24) | (record_id & 0x00ffffff)",
+    "title": "definition +0x30; try uint16(selector - 0x8000), then definition +0x34 when empty",
+    "body": "(definition +0x30 & 0x0fff) + 0x1000",
+    "art": "source side 1 => low12 + 0x1000; source side 2 => low12 + 0x2000",
+    "mission_membership": "family in [0x50,0x80) and definition +0x5c == 0; command 0x73 then filters [0x40,0x80)",
+    "fleet_membership": "family in [0x08,0x10) is admitted to the aggregate master cache but no filtered command includes that interval"
+  },
+  "source_tables": [
+    {
+      "source_role": "mission_definitions",
+      "basename": "MISSNSD.DAT",
+      "resource_selector": 1712,
+      "header_family_start": 64,
+      "header_family_end_exclusive": 128,
+      "record_bytes": 112,
+      "rows": [
+        {
+          "source_row": 0,
+          "dat_id": 1,
+          "source_family": 65,
+          "title_resource_id": 11265,
+          "title_module": 2,
+          "hidden": 1,
+          "is_alliance": 1,
+          "is_empire": 1,
+          "raw_record_sha256": "4d79a123a0edd92364c1386f43cd1ccdf1d79548531178b9c74b4cf5f8db04e5",
+          "source_identity": 1090519041,
+          "status": "source_proven_unused",
+          "reason": "FUN_00422620 does not admit definition families 0x40..0x4f to the encyclopedia master cache."
+        },
+        {
+          "source_row": 1,
+          "dat_id": 2,
+          "source_family": 66,
+          "title_resource_id": 11266,
+          "title_module": 2,
+          "hidden": 1,
+          "is_alliance": 1,
+          "is_empire": 1,
+          "raw_record_sha256": "4863f889d181f783a7ea75056d89a00631b44ac0ffa3dce317257b985dd36b11",
+          "source_identity": 1107296258,
+          "status": "source_proven_unused",
+          "reason": "FUN_00422620 does not admit definition families 0x40..0x4f to the encyclopedia master cache."
+        },
+        {
+          "source_row": 2,
+          "dat_id": 3,
+          "source_family": 67,
+          "title_resource_id": 11267,
+          "title_module": 2,
+          "hidden": 1,
+          "is_alliance": 1,
+          "is_empire": 1,
+          "raw_record_sha256": "03d879e970805ee151bb695081f65ecc4309f3e7573a8910cdef7b8e7bed0755",
+          "source_identity": 1124073475,
+          "status": "source_proven_unused",
+          "reason": "FUN_00422620 does not admit definition families 0x40..0x4f to the encyclopedia master cache."
+        },
+        {
+          "source_row": 3,
+          "dat_id": 4,
+          "source_family": 68,
+          "title_resource_id": 11268,
+          "title_module": 2,
+          "hidden": 1,
+          "is_alliance": 1,
+          "is_empire": 1,
+          "raw_record_sha256": "d45103e9319baf1148b53d1fefa09b3800fbbdf348ad94742debb95dd8b38f8f",
+          "source_identity": 1140850692,
+          "status": "source_proven_unused",
+          "reason": "FUN_00422620 does not admit definition families 0x40..0x4f to the encyclopedia master cache."
+        },
+        {
+          "source_row": 4,
+          "dat_id": 16,
+          "source_family": 81,
+          "title_resource_id": 11280,
+          "title_module": 2,
+          "hidden": 0,
+          "is_alliance": 1,
+          "is_empire": 1,
+          "raw_record_sha256": "96e6ceee8c43ec43351d693bc607c6a096937455010d6392a5edd1e6c156c7af",
+          "source_identity": 1358954512,
+          "status": "bound",
+          "body_resource_id": 7184,
+          "viewer_faction_art": [
+            {
+              "viewer_faction": "alliance",
+              "lookup_id": 7184,
+              "asset_basename": "EDATA.134"
+            },
+            {
+              "viewer_faction": "empire",
+              "lookup_id": 11280,
+              "asset_basename": "EDATA.135"
+            }
+          ]
+        },
+        {
+          "source_row": 5,
+          "dat_id": 17,
+          "source_family": 97,
+          "title_resource_id": 11281,
+          "title_module": 2,
+          "hidden": 0,
+          "is_alliance": 1,
+          "is_empire": 1,
+          "raw_record_sha256": "d3ab679a85093c29961dc9783ddafc15eb06961d97db56d5e6f49ebe0e753f75",
+          "source_identity": 1627389969,
+          "status": "bound",
+          "body_resource_id": 7185,
+          "viewer_faction_art": [
+            {
+              "viewer_faction": "alliance",
+              "lookup_id": 7185,
+              "asset_basename": "EDATA.136"
+            },
+            {
+              "viewer_faction": "empire",
+              "lookup_id": 11281,
+              "asset_basename": "EDATA.137"
+            }
+          ]
+        },
+        {
+          "source_row": 6,
+          "dat_id": 18,
+          "source_family": 105,
+          "title_resource_id": 11282,
+          "title_module": 2,
+          "hidden": 0,
+          "is_alliance": 1,
+          "is_empire": 1,
+          "raw_record_sha256": "c069045b776d48616a101074b60693cec4b7fae34d122bfb7db3aa0946f5dc25",
+          "source_identity": 1761607698,
+          "status": "bound",
+          "body_resource_id": 7186,
+          "viewer_faction_art": [
+            {
+              "viewer_faction": "alliance",
+              "lookup_id": 7186,
+              "asset_basename": "EDATA.138"
+            },
+            {
+              "viewer_faction": "empire",
+              "lookup_id": 11282,
+              "asset_basename": "EDATA.139"
+            }
+          ]
+        },
+        {
+          "source_row": 7,
+          "dat_id": 19,
+          "source_family": 82,
+          "title_resource_id": 11283,
+          "title_module": 2,
+          "hidden": 0,
+          "is_alliance": 1,
+          "is_empire": 1,
+          "raw_record_sha256": "6a6ae29f7f6c1433cddd5f7bdf97d372ac474c56ba8add0542f781e0c6a0c1a6",
+          "source_identity": 1375731731,
+          "status": "bound",
+          "body_resource_id": 7187,
+          "viewer_faction_art": [
+            {
+              "viewer_faction": "alliance",
+              "lookup_id": 7187,
+              "asset_basename": "EDATA.140"
+            },
+            {
+              "viewer_faction": "empire",
+              "lookup_id": 11283,
+              "asset_basename": "EDATA.141"
+            }
+          ]
+        },
+        {
+          "source_row": 8,
+          "dat_id": 21,
+          "source_family": 84,
+          "title_resource_id": 11285,
+          "title_module": 2,
+          "hidden": 0,
+          "is_alliance": 1,
+          "is_empire": 1,
+          "raw_record_sha256": "a1c14698e07754aafaf1de0d54b8e0ec168c9341bfbde9131ef23d7c5cab133e",
+          "source_identity": 1409286165,
+          "status": "bound",
+          "body_resource_id": 7189,
+          "viewer_faction_art": [
+            {
+              "viewer_faction": "alliance",
+              "lookup_id": 7189,
+              "asset_basename": "EDATA.150"
+            },
+            {
+              "viewer_faction": "empire",
+              "lookup_id": 11285,
+              "asset_basename": "EDATA.151"
+            }
+          ]
+        },
+        {
+          "source_row": 9,
+          "dat_id": 22,
+          "source_family": 85,
+          "title_resource_id": 11286,
+          "title_module": 2,
+          "hidden": 0,
+          "is_alliance": 1,
+          "is_empire": 1,
+          "raw_record_sha256": "3202a5ab87d66c5d05d47d35c5407a8dbf7afca1c6d18056a424495ae2c3db06",
+          "source_identity": 1426063382,
+          "status": "bound",
+          "body_resource_id": 7190,
+          "viewer_faction_art": [
+            {
+              "viewer_faction": "alliance",
+              "lookup_id": 7190,
+              "asset_basename": "EDATA.152"
+            },
+            {
+              "viewer_faction": "empire",
+              "lookup_id": 11286,
+              "asset_basename": "EDATA.153"
+            }
+          ]
+        },
+        {
+          "source_row": 10,
+          "dat_id": 23,
+          "source_family": 98,
+          "title_resource_id": 11287,
+          "title_module": 2,
+          "hidden": 0,
+          "is_alliance": 1,
+          "is_empire": 1,
+          "raw_record_sha256": "8dc48f6ec5d99a7898d07ced1e5226970a32ff983c0d23be44ccd9cc569f2e6e",
+          "source_identity": 1644167191,
+          "status": "bound",
+          "body_resource_id": 7191,
+          "viewer_faction_art": [
+            {
+              "viewer_faction": "alliance",
+              "lookup_id": 7191,
+              "asset_basename": "EDATA.154"
+            },
+            {
+              "viewer_faction": "empire",
+              "lookup_id": 11287,
+              "asset_basename": "EDATA.155"
+            }
+          ]
+        },
+        {
+          "source_row": 11,
+          "dat_id": 32,
+          "source_family": 83,
+          "title_resource_id": 11296,
+          "title_module": 2,
+          "hidden": 0,
+          "is_alliance": 1,
+          "is_empire": 1,
+          "raw_record_sha256": "75177348c7b0d035a10dc35d7a43230ad2af141225274a98e903ebdf387790de",
+          "source_identity": 1392508960,
+          "status": "bound",
+          "body_resource_id": 7200,
+          "viewer_faction_art": [
+            {
+              "viewer_faction": "alliance",
+              "lookup_id": 7200,
+              "asset_basename": "EDATA.142"
+            },
+            {
+              "viewer_faction": "empire",
+              "lookup_id": 11296,
+              "asset_basename": "EDATA.143"
+            }
+          ]
+        },
+        {
+          "source_row": 12,
+          "dat_id": 33,
+          "source_family": 83,
+          "title_resource_id": 11297,
+          "title_module": 2,
+          "hidden": 0,
+          "is_alliance": 1,
+          "is_empire": 1,
+          "raw_record_sha256": "77d9c7febb9450340fdc500583971441e064b37282fa4af28dcf7212987e3f30",
+          "source_identity": 1392508961,
+          "status": "bound",
+          "body_resource_id": 7201,
+          "viewer_faction_art": [
+            {
+              "viewer_faction": "alliance",
+              "lookup_id": 7201,
+              "asset_basename": "EDATA.146"
+            },
+            {
+              "viewer_faction": "empire",
+              "lookup_id": 11297,
+              "asset_basename": "EDATA.146"
+            }
+          ]
+        },
+        {
+          "source_row": 13,
+          "dat_id": 34,
+          "source_family": 83,
+          "title_resource_id": 11298,
+          "title_module": 2,
+          "hidden": 0,
+          "is_alliance": 1,
+          "is_empire": 1,
+          "raw_record_sha256": "26b7b68e9117f3904fb2f9054190be2e0b7792fa1e04ae60b8c9aaf33d95d69f",
+          "source_identity": 1392508962,
+          "status": "bound",
+          "body_resource_id": 7202,
+          "viewer_faction_art": [
+            {
+              "viewer_faction": "alliance",
+              "lookup_id": 7202,
+              "asset_basename": "EDATA.148"
+            },
+            {
+              "viewer_faction": "empire",
+              "lookup_id": 11298,
+              "asset_basename": "EDATA.149"
+            }
+          ]
+        },
+        {
+          "source_row": 14,
+          "dat_id": 64,
+          "source_family": 86,
+          "title_resource_id": 11328,
+          "title_module": 2,
+          "hidden": 0,
+          "is_alliance": 1,
+          "is_empire": 1,
+          "raw_record_sha256": "2bd4956532be1128a12de9c16280f79c1876cb9f63d43da4202037045f1f3790",
+          "source_identity": 1442840640,
+          "status": "bound",
+          "body_resource_id": 7232,
+          "viewer_faction_art": [
+            {
+              "viewer_faction": "alliance",
+              "lookup_id": 7232,
+              "asset_basename": "EDATA.156"
+            },
+            {
+              "viewer_faction": "empire",
+              "lookup_id": 11328,
+              "asset_basename": "EDATA.157"
+            }
+          ]
+        },
+        {
+          "source_row": 15,
+          "dat_id": 65,
+          "source_family": 106,
+          "title_resource_id": 11329,
+          "title_module": 2,
+          "hidden": 0,
+          "is_alliance": 1,
+          "is_empire": 0,
+          "raw_record_sha256": "547702f722033d24d4bd64abd96061a78ecb7a870fe540926acb09cc1d7dd28c",
+          "source_identity": 1778384961,
+          "status": "bound",
+          "body_resource_id": 7233,
+          "viewer_faction_art": [
+            {
+              "viewer_faction": "alliance",
+              "lookup_id": 7233,
+              "asset_basename": "EDATA.158"
+            },
+            {
+              "viewer_faction": "empire",
+              "lookup_id": 11329,
+              "asset_basename": "EDATA.158"
+            }
+          ]
+        },
+        {
+          "source_row": 16,
+          "dat_id": 66,
+          "source_family": 88,
+          "title_resource_id": 11330,
+          "title_module": 2,
+          "hidden": 0,
+          "is_alliance": 1,
+          "is_empire": 1,
+          "raw_record_sha256": "10a3d69c6a210266d5b4ec970aa44034860950db9d570b7666c566fe46194355",
+          "source_identity": 1476395074,
+          "status": "bound",
+          "body_resource_id": 7234,
+          "viewer_faction_art": [
+            {
+              "viewer_faction": "alliance",
+              "lookup_id": 7234,
+              "asset_basename": "EDATA.160"
+            },
+            {
+              "viewer_faction": "empire",
+              "lookup_id": 11330,
+              "asset_basename": "EDATA.161"
+            }
+          ]
+        },
+        {
+          "source_row": 17,
+          "dat_id": 67,
+          "source_family": 113,
+          "title_resource_id": 11331,
+          "title_module": 2,
+          "hidden": 1,
+          "is_alliance": 1,
+          "is_empire": 0,
+          "raw_record_sha256": "2b59c898570e05678acea63c130a1cf938dd68a13fa06d0bff9fcba7a7b4a826",
+          "source_identity": 1895825475,
+          "status": "source_proven_unused",
+          "reason": "FUN_00422620 resolves this 0x50..0x7f definition and excludes it because definition +0x5c is nonzero."
+        },
+        {
+          "source_row": 18,
+          "dat_id": 68,
+          "source_family": 100,
+          "title_resource_id": 11332,
+          "title_module": 2,
+          "hidden": 1,
+          "is_alliance": 1,
+          "is_empire": 0,
+          "raw_record_sha256": "86f9ca60834ba9cf359361794bebb926f9c228ff624457af47fc54092910f6c1",
+          "source_identity": 1677721668,
+          "status": "source_proven_unused",
+          "reason": "FUN_00422620 resolves this 0x50..0x7f definition and excludes it because definition +0x5c is nonzero."
+        },
+        {
+          "source_row": 19,
+          "dat_id": 69,
+          "source_family": 114,
+          "title_resource_id": 11333,
+          "title_module": 2,
+          "hidden": 1,
+          "is_alliance": 1,
+          "is_empire": 0,
+          "raw_record_sha256": "a61407d20e77787efbc0058cf5348ccd2cac85ed90d4b8047772557a8ac92394",
+          "source_identity": 1912602693,
+          "status": "source_proven_unused",
+          "reason": "FUN_00422620 resolves this 0x50..0x7f definition and excludes it because definition +0x5c is nonzero."
+        },
+        {
+          "source_row": 20,
+          "dat_id": 70,
+          "source_family": 114,
+          "title_resource_id": 11334,
+          "title_module": 2,
+          "hidden": 1,
+          "is_alliance": 1,
+          "is_empire": 0,
+          "raw_record_sha256": "eab2bfeae6bd66ffbe24a4237f14c4635bb9b3d754b7a7f55762e4ad48ff6732",
+          "source_identity": 1912602694,
+          "status": "source_proven_unused",
+          "reason": "FUN_00422620 resolves this 0x50..0x7f definition and excludes it because definition +0x5c is nonzero."
+        },
+        {
+          "source_row": 21,
+          "dat_id": 128,
+          "source_family": 87,
+          "title_resource_id": 11392,
+          "title_module": 2,
+          "hidden": 0,
+          "is_alliance": 1,
+          "is_empire": 1,
+          "raw_record_sha256": "a8f51f658500a18028141240a96b469df42c7a7426911ebfaa10bcb0b878143b",
+          "source_identity": 1459617920,
+          "status": "bound",
+          "body_resource_id": 7296,
+          "viewer_faction_art": [
+            {
+              "viewer_faction": "alliance",
+              "lookup_id": 7296,
+              "asset_basename": "EDATA.162"
+            },
+            {
+              "viewer_faction": "empire",
+              "lookup_id": 11392,
+              "asset_basename": "EDATA.163"
+            }
+          ]
+        },
+        {
+          "source_row": 22,
+          "dat_id": 129,
+          "source_family": 99,
+          "title_resource_id": 11393,
+          "title_module": 2,
+          "hidden": 0,
+          "is_alliance": 0,
+          "is_empire": 1,
+          "raw_record_sha256": "1f4dd690c5eac71410d26011c756ed5fd3e4bb3032c8acedcb605e7650fbe7d1",
+          "source_identity": 1660944513,
+          "status": "bound",
+          "body_resource_id": 7297,
+          "viewer_faction_art": [
+            {
+              "viewer_faction": "alliance",
+              "lookup_id": 7297,
+              "asset_basename": "EDATA.164"
+            },
+            {
+              "viewer_faction": "empire",
+              "lookup_id": 11393,
+              "asset_basename": "EDATA.164"
+            }
+          ]
+        },
+        {
+          "source_row": 23,
+          "dat_id": 130,
+          "source_family": 115,
+          "title_resource_id": 11394,
+          "title_module": 2,
+          "hidden": 1,
+          "is_alliance": 0,
+          "is_empire": 1,
+          "raw_record_sha256": "b148ed8de01f28d8f617e6c60d6d9b304e8f3d24289f477d619d5c6e8dd1a1bf",
+          "source_identity": 1929379970,
+          "status": "source_proven_unused",
+          "reason": "FUN_00422620 resolves this 0x50..0x7f definition and excludes it because definition +0x5c is nonzero."
+        },
+        {
+          "source_row": 24,
+          "dat_id": 131,
+          "source_family": 101,
+          "title_resource_id": 11395,
+          "title_module": 2,
+          "hidden": 1,
+          "is_alliance": 0,
+          "is_empire": 1,
+          "raw_record_sha256": "ea809877fe47eca514ef9b39e1533d6661d56453ebf53b723bd5c295d6091b42",
+          "source_identity": 1694498947,
+          "status": "source_proven_unused",
+          "reason": "FUN_00422620 resolves this 0x50..0x7f definition and excludes it because definition +0x5c is nonzero."
+        }
+      ]
+    },
+    {
+      "source_role": "fleet_definitions",
+      "basename": "FLEETSD.DAT",
+      "resource_selector": 1714,
+      "header_family_start": 8,
+      "header_family_end_exclusive": 16,
+      "record_bytes": 24,
+      "rows": [
+        {
+          "source_row": 0,
+          "dat_id": 4,
+          "source_family": 8,
+          "title_resource_id": 11523,
+          "title_module": 2,
+          "hidden": 0,
+          "is_alliance": null,
+          "is_empire": null,
+          "raw_record_sha256": "1a7fb087b6179700e52d9f7bb7545f9826a08202610aa76c8bcdcb659146c678",
+          "source_identity": 134217732,
+          "status": "bound",
+          "body_resource_id": 7427,
+          "viewer_faction_art": [
+            {
+              "viewer_faction": "alliance",
+              "lookup_id": 7427,
+              "asset_basename": "EDATA.132"
+            },
+            {
+              "viewer_faction": "empire",
+              "lookup_id": 11523,
+              "asset_basename": "EDATA.133"
+            }
+          ]
+        },
+        {
+          "source_row": 1,
+          "dat_id": 5,
+          "source_family": 0,
+          "title_resource_id": 0,
+          "title_module": 2,
+          "hidden": 0,
+          "is_alliance": null,
+          "is_empire": null,
+          "raw_record_sha256": "908a83aac196c4c9fd1310ff064036c02ab8efcee6a474291fc24b666f13b5d7",
+          "source_identity": 5,
+          "status": "source_proven_unused",
+          "reason": "The placeholder row has source family 0 and title selector 0, so it is outside every FUN_00422620 admitted definition interval and cannot form a topic key."
+        }
+      ]
+    }
+  ],
+  "bindings": [
+    {
+      "family": "mission_definitions",
+      "source_role": "mission_definitions",
+      "source_row": 4,
+      "source_family": 81,
+      "dat_id": 16,
+      "source_identity": 1358954512,
+      "raw_record_sha256": "96e6ceee8c43ec43351d693bc607c6a096937455010d6392a5edd1e6c156c7af",
+      "variant": "viewer_faction",
+      "category_command": 115,
+      "title": {
+        "source_role": "display_strings",
+        "original_resource_id": 11280,
+        "preferred_resource_id": 44048,
+        "preferred_status": "empty",
+        "selected_resource_id": 11280,
+        "language_id": 1033
+      },
+      "body": {
+        "source_role": "encyclopedia_text",
+        "resource_id": 7184,
+        "language_id": 1033,
+        "raw_length": 279,
+        "raw_sha256": "113aace738f19679a32ac87a9b0756575f39f9b2ec465e8a620c0d6f6ed03b45"
+      },
+      "art": {
+        "source_role": "encyclopedia_art_lookup",
+        "selector_kind": "viewer_faction_topic_key",
+        "picture_id": null,
+        "lookup_id": 0,
+        "language_id": 1033,
+        "asset_basename": "",
+        "raw_length": 0,
+        "raw_sha256": "",
+        "viewer_faction_variants": [
+          {
+            "viewer_faction": "alliance",
+            "lookup_id": 7184,
+            "asset_basename": "EDATA.134",
+            "raw_length": 81078,
+            "raw_sha256": "d050dbafd2ec0c30065890f5e3f38c46e0c36584eb6b67567a6838f7d98b7d28"
+          },
+          {
+            "viewer_faction": "empire",
+            "lookup_id": 11280,
+            "asset_basename": "EDATA.135",
+            "raw_length": 81078,
+            "raw_sha256": "0ab65c3f40903dcbb3a15ad164de8027bbc4215d6e837c87e5f4157d2c4d8aef"
+          }
+        ]
+      },
+      "status": "bound",
+      "alias_of": null
+    },
+    {
+      "family": "mission_definitions",
+      "source_role": "mission_definitions",
+      "source_row": 5,
+      "source_family": 97,
+      "dat_id": 17,
+      "source_identity": 1627389969,
+      "raw_record_sha256": "d3ab679a85093c29961dc9783ddafc15eb06961d97db56d5e6f49ebe0e753f75",
+      "variant": "viewer_faction",
+      "category_command": 115,
+      "title": {
+        "source_role": "display_strings",
+        "original_resource_id": 11281,
+        "preferred_resource_id": 44049,
+        "preferred_status": "empty",
+        "selected_resource_id": 11281,
+        "language_id": 1033
+      },
+      "body": {
+        "source_role": "encyclopedia_text",
+        "resource_id": 7185,
+        "language_id": 1033,
+        "raw_length": 425,
+        "raw_sha256": "fb23f30d80ced8634f53589f22536aad64b34229cdae94f634d61b132f982eb3"
+      },
+      "art": {
+        "source_role": "encyclopedia_art_lookup",
+        "selector_kind": "viewer_faction_topic_key",
+        "picture_id": null,
+        "lookup_id": 0,
+        "language_id": 1033,
+        "asset_basename": "",
+        "raw_length": 0,
+        "raw_sha256": "",
+        "viewer_faction_variants": [
+          {
+            "viewer_faction": "alliance",
+            "lookup_id": 7185,
+            "asset_basename": "EDATA.136",
+            "raw_length": 81078,
+            "raw_sha256": "a784cbec74aa1ae9ff535d8b841dcffa180063ebf1e60470910b3ea2173901a1"
+          },
+          {
+            "viewer_faction": "empire",
+            "lookup_id": 11281,
+            "asset_basename": "EDATA.137",
+            "raw_length": 81078,
+            "raw_sha256": "40feadbc4ddcaf7f7f07543878422d2f37c2b59e80375949b33b64ffce997947"
+          }
+        ]
+      },
+      "status": "bound",
+      "alias_of": null
+    },
+    {
+      "family": "mission_definitions",
+      "source_role": "mission_definitions",
+      "source_row": 6,
+      "source_family": 105,
+      "dat_id": 18,
+      "source_identity": 1761607698,
+      "raw_record_sha256": "c069045b776d48616a101074b60693cec4b7fae34d122bfb7db3aa0946f5dc25",
+      "variant": "viewer_faction",
+      "category_command": 115,
+      "title": {
+        "source_role": "display_strings",
+        "original_resource_id": 11282,
+        "preferred_resource_id": 44050,
+        "preferred_status": "empty",
+        "selected_resource_id": 11282,
+        "language_id": 1033
+      },
+      "body": {
+        "source_role": "encyclopedia_text",
+        "resource_id": 7186,
+        "language_id": 1033,
+        "raw_length": 344,
+        "raw_sha256": "f57dcd903373885dde42e7450ef6a2eb5d62315a59554d1f03db604c957452ab"
+      },
+      "art": {
+        "source_role": "encyclopedia_art_lookup",
+        "selector_kind": "viewer_faction_topic_key",
+        "picture_id": null,
+        "lookup_id": 0,
+        "language_id": 1033,
+        "asset_basename": "",
+        "raw_length": 0,
+        "raw_sha256": "",
+        "viewer_faction_variants": [
+          {
+            "viewer_faction": "alliance",
+            "lookup_id": 7186,
+            "asset_basename": "EDATA.138",
+            "raw_length": 81080,
+            "raw_sha256": "eb4c8ad72807f89565f3ae225a593b3ce8e3f28975c90745f91756cd1d450974"
+          },
+          {
+            "viewer_faction": "empire",
+            "lookup_id": 11282,
+            "asset_basename": "EDATA.139",
+            "raw_length": 81080,
+            "raw_sha256": "a243510731d7969e4b6b45979698939a62948579075a23f6ceae2d1ac9c0598c"
+          }
+        ]
+      },
+      "status": "bound",
+      "alias_of": null
+    },
+    {
+      "family": "mission_definitions",
+      "source_role": "mission_definitions",
+      "source_row": 7,
+      "source_family": 82,
+      "dat_id": 19,
+      "source_identity": 1375731731,
+      "raw_record_sha256": "6a6ae29f7f6c1433cddd5f7bdf97d372ac474c56ba8add0542f781e0c6a0c1a6",
+      "variant": "viewer_faction",
+      "category_command": 115,
+      "title": {
+        "source_role": "display_strings",
+        "original_resource_id": 11283,
+        "preferred_resource_id": 44051,
+        "preferred_status": "empty",
+        "selected_resource_id": 11283,
+        "language_id": 1033
+      },
+      "body": {
+        "source_role": "encyclopedia_text",
+        "resource_id": 7187,
+        "language_id": 1033,
+        "raw_length": 299,
+        "raw_sha256": "a472b844ca0eaa2bbfa21fd360b352598364ee74308eb6955b734fbff7804dd9"
+      },
+      "art": {
+        "source_role": "encyclopedia_art_lookup",
+        "selector_kind": "viewer_faction_topic_key",
+        "picture_id": null,
+        "lookup_id": 0,
+        "language_id": 1033,
+        "asset_basename": "",
+        "raw_length": 0,
+        "raw_sha256": "",
+        "viewer_faction_variants": [
+          {
+            "viewer_faction": "alliance",
+            "lookup_id": 7187,
+            "asset_basename": "EDATA.140",
+            "raw_length": 81078,
+            "raw_sha256": "5ac59e0f42d95e21edd7e170e882250de0186447fc23d5f8701a216215d9de68"
+          },
+          {
+            "viewer_faction": "empire",
+            "lookup_id": 11283,
+            "asset_basename": "EDATA.141",
+            "raw_length": 81078,
+            "raw_sha256": "c0d3f346164c6f48d2267cd9d2137b42816a329aaa90e0f9677a9754e09369bd"
+          }
+        ]
+      },
+      "status": "bound",
+      "alias_of": null
+    },
+    {
+      "family": "mission_definitions",
+      "source_role": "mission_definitions",
+      "source_row": 8,
+      "source_family": 84,
+      "dat_id": 21,
+      "source_identity": 1409286165,
+      "raw_record_sha256": "a1c14698e07754aafaf1de0d54b8e0ec168c9341bfbde9131ef23d7c5cab133e",
+      "variant": "viewer_faction",
+      "category_command": 115,
+      "title": {
+        "source_role": "display_strings",
+        "original_resource_id": 11285,
+        "preferred_resource_id": 44053,
+        "preferred_status": "empty",
+        "selected_resource_id": 11285,
+        "language_id": 1033
+      },
+      "body": {
+        "source_role": "encyclopedia_text",
+        "resource_id": 7189,
+        "language_id": 1033,
+        "raw_length": 424,
+        "raw_sha256": "866721d6fef961a2a138c465103c05ca20d1619cb8e4ffb1fb8427970bc85d0e"
+      },
+      "art": {
+        "source_role": "encyclopedia_art_lookup",
+        "selector_kind": "viewer_faction_topic_key",
+        "picture_id": null,
+        "lookup_id": 0,
+        "language_id": 1033,
+        "asset_basename": "",
+        "raw_length": 0,
+        "raw_sha256": "",
+        "viewer_faction_variants": [
+          {
+            "viewer_faction": "alliance",
+            "lookup_id": 7189,
+            "asset_basename": "EDATA.150",
+            "raw_length": 81078,
+            "raw_sha256": "11407221af6a817e083a559eb4ae6f183de7fb8ca1c7a29f70769fafde5d7f53"
+          },
+          {
+            "viewer_faction": "empire",
+            "lookup_id": 11285,
+            "asset_basename": "EDATA.151",
+            "raw_length": 81080,
+            "raw_sha256": "64c4646da5d2bd6df8a3a55bcb465ad1d8b3f324b4fda5c14a59d905fa210971"
+          }
+        ]
+      },
+      "status": "bound",
+      "alias_of": null
+    },
+    {
+      "family": "mission_definitions",
+      "source_role": "mission_definitions",
+      "source_row": 9,
+      "source_family": 85,
+      "dat_id": 22,
+      "source_identity": 1426063382,
+      "raw_record_sha256": "3202a5ab87d66c5d05d47d35c5407a8dbf7afca1c6d18056a424495ae2c3db06",
+      "variant": "viewer_faction",
+      "category_command": 115,
+      "title": {
+        "source_role": "display_strings",
+        "original_resource_id": 11286,
+        "preferred_resource_id": 44054,
+        "preferred_status": "empty",
+        "selected_resource_id": 11286,
+        "language_id": 1033
+      },
+      "body": {
+        "source_role": "encyclopedia_text",
+        "resource_id": 7190,
+        "language_id": 1033,
+        "raw_length": 199,
+        "raw_sha256": "41a8647619c03d4f1758ec608f8047c796e12c1783cf7991353b8575e2905a62"
+      },
+      "art": {
+        "source_role": "encyclopedia_art_lookup",
+        "selector_kind": "viewer_faction_topic_key",
+        "picture_id": null,
+        "lookup_id": 0,
+        "language_id": 1033,
+        "asset_basename": "",
+        "raw_length": 0,
+        "raw_sha256": "",
+        "viewer_faction_variants": [
+          {
+            "viewer_faction": "alliance",
+            "lookup_id": 7190,
+            "asset_basename": "EDATA.152",
+            "raw_length": 81078,
+            "raw_sha256": "e2fdde36d594e2dfd63ba46a22f9c951fb4b139ce862cdd7c82c91890699889e"
+          },
+          {
+            "viewer_faction": "empire",
+            "lookup_id": 11286,
+            "asset_basename": "EDATA.153",
+            "raw_length": 81078,
+            "raw_sha256": "afb70336003ddeb72d07744284c9e6835cb9db72af78b23077200079f7f4d2ef"
+          }
+        ]
+      },
+      "status": "bound",
+      "alias_of": null
+    },
+    {
+      "family": "mission_definitions",
+      "source_role": "mission_definitions",
+      "source_row": 10,
+      "source_family": 98,
+      "dat_id": 23,
+      "source_identity": 1644167191,
+      "raw_record_sha256": "8dc48f6ec5d99a7898d07ced1e5226970a32ff983c0d23be44ccd9cc569f2e6e",
+      "variant": "viewer_faction",
+      "category_command": 115,
+      "title": {
+        "source_role": "display_strings",
+        "original_resource_id": 11287,
+        "preferred_resource_id": 44055,
+        "preferred_status": "empty",
+        "selected_resource_id": 11287,
+        "language_id": 1033
+      },
+      "body": {
+        "source_role": "encyclopedia_text",
+        "resource_id": 7191,
+        "language_id": 1033,
+        "raw_length": 280,
+        "raw_sha256": "024b34dab2435fb1f55116d6139c399078324a3e5fa570b76cdaa0878a23cc5a"
+      },
+      "art": {
+        "source_role": "encyclopedia_art_lookup",
+        "selector_kind": "viewer_faction_topic_key",
+        "picture_id": null,
+        "lookup_id": 0,
+        "language_id": 1033,
+        "asset_basename": "",
+        "raw_length": 0,
+        "raw_sha256": "",
+        "viewer_faction_variants": [
+          {
+            "viewer_faction": "alliance",
+            "lookup_id": 7191,
+            "asset_basename": "EDATA.154",
+            "raw_length": 81078,
+            "raw_sha256": "c1f9b9366f9edb4d21329173c6ad39547e25e560cde5a344ffddbac2952bcf26"
+          },
+          {
+            "viewer_faction": "empire",
+            "lookup_id": 11287,
+            "asset_basename": "EDATA.155",
+            "raw_length": 81078,
+            "raw_sha256": "985a6c5d13a7c0463e906eb8eb3f58f3feb492ddd9404ec01bda818e8c86a150"
+          }
+        ]
+      },
+      "status": "bound",
+      "alias_of": null
+    },
+    {
+      "family": "mission_definitions",
+      "source_role": "mission_definitions",
+      "source_row": 11,
+      "source_family": 83,
+      "dat_id": 32,
+      "source_identity": 1392508960,
+      "raw_record_sha256": "75177348c7b0d035a10dc35d7a43230ad2af141225274a98e903ebdf387790de",
+      "variant": "viewer_faction",
+      "category_command": 115,
+      "title": {
+        "source_role": "display_strings",
+        "original_resource_id": 11296,
+        "preferred_resource_id": 44064,
+        "preferred_status": "empty",
+        "selected_resource_id": 11296,
+        "language_id": 1033
+      },
+      "body": {
+        "source_role": "encyclopedia_text",
+        "resource_id": 7200,
+        "language_id": 1033,
+        "raw_length": 348,
+        "raw_sha256": "4bb743da5786297eb8e4ae6eba030173e9abaadc10c692eac674802bf091160f"
+      },
+      "art": {
+        "source_role": "encyclopedia_art_lookup",
+        "selector_kind": "viewer_faction_topic_key",
+        "picture_id": null,
+        "lookup_id": 0,
+        "language_id": 1033,
+        "asset_basename": "",
+        "raw_length": 0,
+        "raw_sha256": "",
+        "viewer_faction_variants": [
+          {
+            "viewer_faction": "alliance",
+            "lookup_id": 7200,
+            "asset_basename": "EDATA.142",
+            "raw_length": 81078,
+            "raw_sha256": "d404789bcf5fbbe9cca9067381e2a4c181e446c244d1b4531179bf17ef35c9e2"
+          },
+          {
+            "viewer_faction": "empire",
+            "lookup_id": 11296,
+            "asset_basename": "EDATA.143",
+            "raw_length": 81078,
+            "raw_sha256": "377ddad4c54d0095258b69923e932df2afdf650592c07bc823f2112e8dab2cfe"
+          }
+        ]
+      },
+      "status": "bound",
+      "alias_of": null
+    },
+    {
+      "family": "mission_definitions",
+      "source_role": "mission_definitions",
+      "source_row": 12,
+      "source_family": 83,
+      "dat_id": 33,
+      "source_identity": 1392508961,
+      "raw_record_sha256": "77d9c7febb9450340fdc500583971441e064b37282fa4af28dcf7212987e3f30",
+      "variant": "viewer_faction",
+      "category_command": 115,
+      "title": {
+        "source_role": "display_strings",
+        "original_resource_id": 11297,
+        "preferred_resource_id": 44065,
+        "preferred_status": "empty",
+        "selected_resource_id": 11297,
+        "language_id": 1033
+      },
+      "body": {
+        "source_role": "encyclopedia_text",
+        "resource_id": 7201,
+        "language_id": 1033,
+        "raw_length": 370,
+        "raw_sha256": "f81f8b3c79ee9fe091807d899094c7872a99226765a08c28dcf8d5d9afa5b042"
+      },
+      "art": {
+        "source_role": "encyclopedia_art_lookup",
+        "selector_kind": "viewer_faction_topic_key",
+        "picture_id": null,
+        "lookup_id": 0,
+        "language_id": 1033,
+        "asset_basename": "",
+        "raw_length": 0,
+        "raw_sha256": "",
+        "viewer_faction_variants": [
+          {
+            "viewer_faction": "alliance",
+            "lookup_id": 7201,
+            "asset_basename": "EDATA.146",
+            "raw_length": 81078,
+            "raw_sha256": "7c6452dc391c4e9165682c0a96692df790acdc6020839d3824ae65c7527e26be"
+          },
+          {
+            "viewer_faction": "empire",
+            "lookup_id": 11297,
+            "asset_basename": "EDATA.146",
+            "raw_length": 81078,
+            "raw_sha256": "7c6452dc391c4e9165682c0a96692df790acdc6020839d3824ae65c7527e26be"
+          }
+        ]
+      },
+      "status": "bound",
+      "alias_of": null
+    },
+    {
+      "family": "mission_definitions",
+      "source_role": "mission_definitions",
+      "source_row": 13,
+      "source_family": 83,
+      "dat_id": 34,
+      "source_identity": 1392508962,
+      "raw_record_sha256": "26b7b68e9117f3904fb2f9054190be2e0b7792fa1e04ae60b8c9aaf33d95d69f",
+      "variant": "viewer_faction",
+      "category_command": 115,
+      "title": {
+        "source_role": "display_strings",
+        "original_resource_id": 11298,
+        "preferred_resource_id": 44066,
+        "preferred_status": "empty",
+        "selected_resource_id": 11298,
+        "language_id": 1033
+      },
+      "body": {
+        "source_role": "encyclopedia_text",
+        "resource_id": 7202,
+        "language_id": 1033,
+        "raw_length": 375,
+        "raw_sha256": "fc88c6ab4e0596f73873999a2c231862f7c491c490441a3b7ffe8319cc7a67bd"
+      },
+      "art": {
+        "source_role": "encyclopedia_art_lookup",
+        "selector_kind": "viewer_faction_topic_key",
+        "picture_id": null,
+        "lookup_id": 0,
+        "language_id": 1033,
+        "asset_basename": "",
+        "raw_length": 0,
+        "raw_sha256": "",
+        "viewer_faction_variants": [
+          {
+            "viewer_faction": "alliance",
+            "lookup_id": 7202,
+            "asset_basename": "EDATA.148",
+            "raw_length": 81078,
+            "raw_sha256": "6faabed7e3a3d203adde80995792ce510726590171135e195c19265741e231c8"
+          },
+          {
+            "viewer_faction": "empire",
+            "lookup_id": 11298,
+            "asset_basename": "EDATA.149",
+            "raw_length": 81080,
+            "raw_sha256": "9ca728ca681270f712bba4d6999ac74e07384622d52e7d6f3c0dccf850d5bb4f"
+          }
+        ]
+      },
+      "status": "bound",
+      "alias_of": null
+    },
+    {
+      "family": "mission_definitions",
+      "source_role": "mission_definitions",
+      "source_row": 14,
+      "source_family": 86,
+      "dat_id": 64,
+      "source_identity": 1442840640,
+      "raw_record_sha256": "2bd4956532be1128a12de9c16280f79c1876cb9f63d43da4202037045f1f3790",
+      "variant": "viewer_faction",
+      "category_command": 115,
+      "title": {
+        "source_role": "display_strings",
+        "original_resource_id": 11328,
+        "preferred_resource_id": 44096,
+        "preferred_status": "empty",
+        "selected_resource_id": 11328,
+        "language_id": 1033
+      },
+      "body": {
+        "source_role": "encyclopedia_text",
+        "resource_id": 7232,
+        "language_id": 1033,
+        "raw_length": 273,
+        "raw_sha256": "5124cc57f648c3a62edf7019d64a08e80e7fa5bd789b9e4b2d7ad27414403116"
+      },
+      "art": {
+        "source_role": "encyclopedia_art_lookup",
+        "selector_kind": "viewer_faction_topic_key",
+        "picture_id": null,
+        "lookup_id": 0,
+        "language_id": 1033,
+        "asset_basename": "",
+        "raw_length": 0,
+        "raw_sha256": "",
+        "viewer_faction_variants": [
+          {
+            "viewer_faction": "alliance",
+            "lookup_id": 7232,
+            "asset_basename": "EDATA.156",
+            "raw_length": 81078,
+            "raw_sha256": "aa1e58dcbedb67012db455b8b5532132361f3bd04d813d430b93bace4ffd4fff"
+          },
+          {
+            "viewer_faction": "empire",
+            "lookup_id": 11328,
+            "asset_basename": "EDATA.157",
+            "raw_length": 81078,
+            "raw_sha256": "3df53ad79d9b75939e68fc4bfb77abaf96b6c409ad873bce7ca613fc36bdd6e2"
+          }
+        ]
+      },
+      "status": "bound",
+      "alias_of": null
+    },
+    {
+      "family": "mission_definitions",
+      "source_role": "mission_definitions",
+      "source_row": 15,
+      "source_family": 106,
+      "dat_id": 65,
+      "source_identity": 1778384961,
+      "raw_record_sha256": "547702f722033d24d4bd64abd96061a78ecb7a870fe540926acb09cc1d7dd28c",
+      "variant": "viewer_faction",
+      "category_command": 115,
+      "title": {
+        "source_role": "display_strings",
+        "original_resource_id": 11329,
+        "preferred_resource_id": 44097,
+        "preferred_status": "empty",
+        "selected_resource_id": 11329,
+        "language_id": 1033
+      },
+      "body": {
+        "source_role": "encyclopedia_text",
+        "resource_id": 7233,
+        "language_id": 1033,
+        "raw_length": 350,
+        "raw_sha256": "a3b209b4e5dccdbc6291c29f2dcfb19f40c590ddcce88d649d408ad86f381b45"
+      },
+      "art": {
+        "source_role": "encyclopedia_art_lookup",
+        "selector_kind": "viewer_faction_topic_key",
+        "picture_id": null,
+        "lookup_id": 0,
+        "language_id": 1033,
+        "asset_basename": "",
+        "raw_length": 0,
+        "raw_sha256": "",
+        "viewer_faction_variants": [
+          {
+            "viewer_faction": "alliance",
+            "lookup_id": 7233,
+            "asset_basename": "EDATA.158",
+            "raw_length": 81078,
+            "raw_sha256": "5d156409f5306393bdc2382a6d3ff1e69894a94f9313ab96d47ecefe614dddb1"
+          },
+          {
+            "viewer_faction": "empire",
+            "lookup_id": 11329,
+            "asset_basename": "EDATA.158",
+            "raw_length": 81078,
+            "raw_sha256": "5d156409f5306393bdc2382a6d3ff1e69894a94f9313ab96d47ecefe614dddb1"
+          }
+        ]
+      },
+      "status": "bound",
+      "alias_of": null
+    },
+    {
+      "family": "mission_definitions",
+      "source_role": "mission_definitions",
+      "source_row": 16,
+      "source_family": 88,
+      "dat_id": 66,
+      "source_identity": 1476395074,
+      "raw_record_sha256": "10a3d69c6a210266d5b4ec970aa44034860950db9d570b7666c566fe46194355",
+      "variant": "viewer_faction",
+      "category_command": 115,
+      "title": {
+        "source_role": "display_strings",
+        "original_resource_id": 11330,
+        "preferred_resource_id": 44098,
+        "preferred_status": "empty",
+        "selected_resource_id": 11330,
+        "language_id": 1033
+      },
+      "body": {
+        "source_role": "encyclopedia_text",
+        "resource_id": 7234,
+        "language_id": 1033,
+        "raw_length": 504,
+        "raw_sha256": "88485c0f57514da5d53e2f8531992f985de26ffcdc22db79e4ddd7751d48e2c1"
+      },
+      "art": {
+        "source_role": "encyclopedia_art_lookup",
+        "selector_kind": "viewer_faction_topic_key",
+        "picture_id": null,
+        "lookup_id": 0,
+        "language_id": 1033,
+        "asset_basename": "",
+        "raw_length": 0,
+        "raw_sha256": "",
+        "viewer_faction_variants": [
+          {
+            "viewer_faction": "alliance",
+            "lookup_id": 7234,
+            "asset_basename": "EDATA.160",
+            "raw_length": 81078,
+            "raw_sha256": "f5bfcbf47c030558b4eff022acbafc5e6d6d4e731a024ce7b3636d6ae983318b"
+          },
+          {
+            "viewer_faction": "empire",
+            "lookup_id": 11330,
+            "asset_basename": "EDATA.161",
+            "raw_length": 81078,
+            "raw_sha256": "3fab44eab7dc7e3a9df7d05e82cef8f969ef7ed359b0af9a46408317fc203f44"
+          }
+        ]
+      },
+      "status": "bound",
+      "alias_of": null
+    },
+    {
+      "family": "mission_definitions",
+      "source_role": "mission_definitions",
+      "source_row": 21,
+      "source_family": 87,
+      "dat_id": 128,
+      "source_identity": 1459617920,
+      "raw_record_sha256": "a8f51f658500a18028141240a96b469df42c7a7426911ebfaa10bcb0b878143b",
+      "variant": "viewer_faction",
+      "category_command": 115,
+      "title": {
+        "source_role": "display_strings",
+        "original_resource_id": 11392,
+        "preferred_resource_id": 44160,
+        "preferred_status": "empty",
+        "selected_resource_id": 11392,
+        "language_id": 1033
+      },
+      "body": {
+        "source_role": "encyclopedia_text",
+        "resource_id": 7296,
+        "language_id": 1033,
+        "raw_length": 329,
+        "raw_sha256": "3d9891503e25a07ad29a39a9aec89daa351f9f0b85ef0d0b9c30ec326ca4c4b7"
+      },
+      "art": {
+        "source_role": "encyclopedia_art_lookup",
+        "selector_kind": "viewer_faction_topic_key",
+        "picture_id": null,
+        "lookup_id": 0,
+        "language_id": 1033,
+        "asset_basename": "",
+        "raw_length": 0,
+        "raw_sha256": "",
+        "viewer_faction_variants": [
+          {
+            "viewer_faction": "alliance",
+            "lookup_id": 7296,
+            "asset_basename": "EDATA.162",
+            "raw_length": 81078,
+            "raw_sha256": "4db476f5e874226dd44e640f9a9271b3e9e6fded61926485573c9618160e5679"
+          },
+          {
+            "viewer_faction": "empire",
+            "lookup_id": 11392,
+            "asset_basename": "EDATA.163",
+            "raw_length": 81080,
+            "raw_sha256": "1216020fef2de11c2740ab005d7edab487cfe1862c189933b8a13d60be724373"
+          }
+        ]
+      },
+      "status": "bound",
+      "alias_of": null
+    },
+    {
+      "family": "mission_definitions",
+      "source_role": "mission_definitions",
+      "source_row": 22,
+      "source_family": 99,
+      "dat_id": 129,
+      "source_identity": 1660944513,
+      "raw_record_sha256": "1f4dd690c5eac71410d26011c756ed5fd3e4bb3032c8acedcb605e7650fbe7d1",
+      "variant": "viewer_faction",
+      "category_command": 115,
+      "title": {
+        "source_role": "display_strings",
+        "original_resource_id": 11393,
+        "preferred_resource_id": 44161,
+        "preferred_status": "empty",
+        "selected_resource_id": 11393,
+        "language_id": 1033
+      },
+      "body": {
+        "source_role": "encyclopedia_text",
+        "resource_id": 7297,
+        "language_id": 1033,
+        "raw_length": 337,
+        "raw_sha256": "acb53810012ca4c77ce66c3703f363729734b7c6bee74b177ce4be604f53e2c4"
+      },
+      "art": {
+        "source_role": "encyclopedia_art_lookup",
+        "selector_kind": "viewer_faction_topic_key",
+        "picture_id": null,
+        "lookup_id": 0,
+        "language_id": 1033,
+        "asset_basename": "",
+        "raw_length": 0,
+        "raw_sha256": "",
+        "viewer_faction_variants": [
+          {
+            "viewer_faction": "alliance",
+            "lookup_id": 7297,
+            "asset_basename": "EDATA.164",
+            "raw_length": 81080,
+            "raw_sha256": "e72d2a6912307b55d670d4f56f06486023617a1c8c7e204a6e2b41fd5328cf39"
+          },
+          {
+            "viewer_faction": "empire",
+            "lookup_id": 11393,
+            "asset_basename": "EDATA.164",
+            "raw_length": 81080,
+            "raw_sha256": "e72d2a6912307b55d670d4f56f06486023617a1c8c7e204a6e2b41fd5328cf39"
+          }
+        ]
+      },
+      "status": "bound",
+      "alias_of": null
+    },
+    {
+      "family": "fleet_definitions",
+      "source_role": "fleet_definitions",
+      "source_row": 0,
+      "source_family": 8,
+      "dat_id": 4,
+      "source_identity": 134217732,
+      "raw_record_sha256": "1a7fb087b6179700e52d9f7bb7545f9826a08202610aa76c8bcdcb659146c678",
+      "variant": "viewer_faction",
+      "category_command": 111,
+      "title": {
+        "source_role": "display_strings",
+        "original_resource_id": 11523,
+        "preferred_resource_id": 44291,
+        "preferred_status": "empty",
+        "selected_resource_id": 11523,
+        "language_id": 1033
+      },
+      "body": {
+        "source_role": "encyclopedia_text",
+        "resource_id": 7427,
+        "language_id": 1033,
+        "raw_length": 67,
+        "raw_sha256": "b3be869a94f5ad0089a43291dccb5a13f616a8c1377b4d8c8e3988e53cf8cc15"
+      },
+      "art": {
+        "source_role": "encyclopedia_art_lookup",
+        "selector_kind": "viewer_faction_topic_key",
+        "picture_id": null,
+        "lookup_id": 0,
+        "language_id": 1033,
+        "asset_basename": "",
+        "raw_length": 0,
+        "raw_sha256": "",
+        "viewer_faction_variants": [
+          {
+            "viewer_faction": "alliance",
+            "lookup_id": 7427,
+            "asset_basename": "EDATA.132",
+            "raw_length": 81078,
+            "raw_sha256": "f6b90cd9f35502ea4badc9dbd144bdfcb04a6bdbfc9370f710e7bdffe17087c9"
+          },
+          {
+            "viewer_faction": "empire",
+            "lookup_id": 11523,
+            "asset_basename": "EDATA.133",
+            "raw_length": 81078,
+            "raw_sha256": "c64b18585119726bb323b8b1914a94f4edad5c0c852c0aa9da34e5601f06294d"
+          }
+        ]
+      },
+      "status": "bound",
+      "alias_of": null
+    }
+  ],
+  "resource_accounting": {
+    "bound_rows": 16,
+    "source_proven_unused_rows": 11,
+    "bound_text_resources": 16,
+    "source_proven_unused_text_resources": [
+      7176
+    ],
+    "bound_art_lookups": 32,
+    "source_proven_unused_art_lookups": [
+      7188,
+      11284
+    ],
+    "referenced_art_files": 29,
+    "deferred_art_files": [
+      {
+        "basename": "EDATA.192",
+        "task": "orlocal-2kq"
+      }
+    ]
+  },
+  "evidence": [
+    {
+      "address": "0x005674e0",
+      "symbol": "FUN_005674e0",
+      "observation": "passes resource selector 0x6b0 (MISSNSD.DAT) and 0x6b2 (FLEETSD.DAT) through FUN_00567d90"
+    },
+    {
+      "address": "0x00569300",
+      "symbol": "FUN_00569300",
+      "observation": "registers [0x40,0x80) with mission factory FUN_00590b40 and [0x08,0x10) with generic factory FUN_0058fdb0"
+    },
+    {
+      "address": "0x00584c10",
+      "symbol": "FUN_00584c10",
+      "observation": "writes record ID, family, title selector and module selector to the common definition fields"
+    },
+    {
+      "address": "0x00590bb0",
+      "symbol": "mission definition reader (vtable 0x0066aac0 + 0x08)",
+      "observation": "calls FUN_00584c10, then writes the post-common fields through definition +0x94, including file offset 0x34 at runtime definition +0x5c"
+    },
+    {
+      "address": "0x0058fe20",
+      "symbol": "fleet definition reader (vtable 0x0066aa00 + 0x08)",
+      "observation": "calls FUN_00584c10 for the generic FLEETSD.DAT record shape"
+    },
+    {
+      "address": "0x00422620",
+      "symbol": "FUN_00422620",
+      "observation": "admits [0x50,0x80) only when definition +0x5c is zero, admits [0x08,0x10), derives title/body keys and inserts one canonical-key row"
+    },
+    {
+      "address": "0x0045f100",
+      "symbol": "FUN_0045f100",
+      "observation": "command 0x73 filters the retained master cache by [0x40,0x80); no filtered command includes [0x08,0x10)"
+    },
+    {
+      "address": "0x0045fa60",
+      "symbol": "FUN_0045fa60",
+      "observation": "families [0x40,0x80) and [0x08,0x10) select side-qualified art low12+0x1000 or low12+0x2000 while body remains the canonical key"
+    }
+  ]
+}

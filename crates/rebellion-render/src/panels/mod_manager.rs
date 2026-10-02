@@ -30,6 +30,8 @@ pub struct ModManagerState {
     pub open: bool,
     /// Selected mod index for detail view.
     pub selected: Option<usize>,
+    /// Root-level discovery/watch failure, rendered even when no mod rows exist.
+    pub root_diagnostic: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -92,6 +94,11 @@ pub fn draw_mod_manager(
         .show(ctx, |ui| {
             ui.heading("Installed Mods");
             ui.separator();
+
+            if let Some(diagnostic) = &state.root_diagnostic {
+                ui.colored_label(Color32::RED, format!("Watcher: {diagnostic}"));
+                ui.separator();
+            }
 
             if mods.is_empty() {
                 ui.label("No mods found. Place mod folders in the mods/ directory.");

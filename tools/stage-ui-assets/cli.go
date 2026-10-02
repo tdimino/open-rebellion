@@ -18,9 +18,14 @@ func runCLIWithMedia(args []string, stdout, stderr io.Writer, targets []dllTarge
 	outputDir := flags.String("output", "data/base/ui", "runtime UI asset directory")
 	audioOutput := flags.String("audio-output", "data/sounds", "runtime audio directory")
 	mdata := flags.String("mdata", "", "original MDATA directory (default: source/MDATA)")
+	edata := flags.String("edata", "", "original EData directory (default: source/EData)")
 	stringsOutput := flags.String("strings-output", "data/base/textstra.json", "runtime text string JSON file")
 	encyclopediaOutput := flags.String("encyclopedia-output", "data/base/encyclopedia/source.json", "runtime Encyclopedia source JSON file")
 	cutsceneOutput := flags.String("cutscene-output", "assets/references", "parent of ref-videos and cutscene-frames outputs")
+	encyclopediaReportOnly := flags.Bool("encyclopedia-report-only", false, "stage or verify only the encyclopedia research report")
+	encyclopediaReportOutput := flags.String("encyclopedia-report-output", "data/base/encyclopedia-research", "encyclopedia research report output directory")
+	encyclopediaCanonicalOnly := flags.Bool("encyclopedia-canonical-only", false, "stage or verify only the canonical encyclopedia bundle")
+	encyclopediaCanonicalOutput := flags.String("encyclopedia-canonical-output", "data/base/encyclopedia", "canonical encyclopedia bundle output directory")
 	force := flags.Bool("force", false, "replace staged assets whose contents differ")
 	verifyOnly := flags.Bool("verify", false, "verify staged assets without reading source files")
 	tactical3D := flags.Bool("tactical-3d", false, "also stage and verify original type-301/type-303 tactical resources")
@@ -34,22 +39,68 @@ func runCLIWithMedia(args []string, stdout, stderr io.Writer, targets []dllTarge
 	if flags.NArg() != 0 {
 		return fmt.Errorf("unexpected arguments: %v", flags.Args())
 	}
+	encyclopediaReportOutputSet := false
+	edataSet := false
+	flags.Visit(func(selected *flag.Flag) {
+		if selected.Name == "encyclopedia-report-output" {
+			encyclopediaReportOutputSet = true
+		}
+		if selected.Name == "edata" {
+			edataSet = true
+		}
+	})
+	if encyclopediaReportOutputSet && !*encyclopediaReportOnly {
+		return fmt.Errorf("--encyclopedia-report-output requires --encyclopedia-report-only")
+	}
 	selectedExclusiveModes := 0
-	for _, selected := range []bool{*tactical3D, *tactical3DOnly, *tactical3DConvert, *tactical3DAssimpOracle != "", *encyclopediaOnly} {
+	for _, selected := range []bool{*tactical3D, *tactical3DOnly, *tactical3DConvert, *tactical3DAssimpOracle != "", *encyclopediaOnly, *encyclopediaReportOnly, *encyclopediaCanonicalOnly} {
 		if selected {
 			selectedExclusiveModes++
 		}
 	}
 	if selectedExclusiveModes > 1 {
-		return fmt.Errorf("--tactical-3d, --tactical-3d-only, --tactical-3d-convert, --tactical-3d-assimp-oracle, and --encyclopedia-only are mutually exclusive")
+		return fmt.Errorf("--tactical-3d, --tactical-3d-only, --tactical-3d-convert, --tactical-3d-assimp-oracle, --encyclopedia-only, --encyclopedia-report-only, and --encyclopedia-canonical-only are mutually exclusive")
 	}
 	if *encyclopediaOnly {
+		if edataSet {
+			return fmt.Errorf("--edata is not used by --encyclopedia-only; use --encyclopedia-report-only or --encyclopedia-canonical-only")
+		}
 		if !*verifyOnly {
 			if err := stageEncyclopediaSource(*sourceDir, *encyclopediaOutput, *force, stdout); err != nil {
 				return err
 			}
 		}
 		return verifyEncyclopediaSource(*encyclopediaOutput, stdout)
+	}
+	if *encyclopediaReportOnly {
+		if !*verifyOnly {
+			if *edata == "" {
+				*edata = filepath.Join(*sourceDir, "EData")
+			}
+			if err := stageEncyclopediaReportWithRequest(encyclopediaReportStageRequest{
+				SourceDir:   *sourceDir,
+				EDataDir:    *edata,
+				OutputDir:   *encyclopediaReportOutput,
+				ModRoots:    []string{"mods"},
+				Force:       *force,
+				ImageLimits: defaultEncyclopediaImageLimits(),
+				Log:         stdout,
+			}); err != nil {
+				return err
+			}
+		}
+		return verifyEncyclopediaReport(*encyclopediaReportOutput, stdout)
+	}
+	if *encyclopediaCanonicalOnly {
+		if !*verifyOnly {
+			if *edata == "" {
+				*edata = filepath.Join(*sourceDir, "EData")
+			}
+			if err := stageEncyclopedia(*sourceDir, *edata, *encyclopediaCanonicalOutput, *force, stdout); err != nil {
+				return err
+			}
+		}
+		return verifyEncyclopedia(*encyclopediaCanonicalOutput, stdout)
 	}
 	if *tactical3DAssimpOracle != "" {
 		return verifyTactical3DWithAssimp(*outputDir, *tactical3DAssimpOracle, stdout)
@@ -72,6 +123,20 @@ func runCLIWithMedia(args []string, stdout, stderr io.Writer, targets []dllTarge
 	}
 
 	if !*verifyOnly {
+		if *edata == "" {
+			*edata = filepath.Join(*sourceDir, "EData")
+		}
+		present, err := encyclopediaInputsPresent(*sourceDir, *edata)
+		if err != nil {
+			return fmt.Errorf("inspect encyclopedia inputs: %w", err)
+		}
+		if present {
+			if err := stageEncyclopedia(*sourceDir, *edata, *encyclopediaCanonicalOutput, *force, stdout); err != nil {
+				return err
+			}
+		} else {
+			fmt.Fprintf(stdout, "Warning: encyclopedia inputs are entirely absent; canonical extraction skipped for %s\n", *encyclopediaCanonicalOutput)
+		}
 		for _, tool := range []string{"ffmpeg", "ffprobe"} {
 			if _, err := run(tool, "-version"); err != nil {
 				return fmt.Errorf("cutscene extraction requires %s: %w", tool, err)
@@ -87,6 +152,15 @@ func runCLIWithMedia(args []string, stdout, stderr io.Writer, targets []dllTarge
 				return err
 			}
 		}
+	}
+	if present, err := encyclopediaDirectoryExists(*encyclopediaCanonicalOutput); err != nil {
+		return err
+	} else if present {
+		if err := verifyEncyclopedia(*encyclopediaCanonicalOutput, stdout); err != nil {
+			return err
+		}
+	} else {
+		fmt.Fprintf(stdout, "Warning: canonical encyclopedia stage is absent at %s\n", *encyclopediaCanonicalOutput)
 	}
 
 	verified, err := verifyTargets(*outputDir, targets, stdout)

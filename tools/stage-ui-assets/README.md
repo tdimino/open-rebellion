@@ -82,6 +82,206 @@ Verified cutscene 000 (259 frames)
 
 Write and unchanged counts depend on what is already staged.
 
+## Encyclopedia research report
+
+Generate only the encyclopedia source-research product, without checking
+for or invoking `ffmpeg`/`ffprobe` and without staging the normal UI, audio,
+strings, or cutscenes:
+
+```sh
+go run ./tools/stage-ui-assets --encyclopedia-report-only \
+  --source "/path/to/Star Wars - Rebellion"
+```
+
+The default destination is `data/base/encyclopedia-research/`. Override it with
+`--encyclopedia-report-output`. Artwork defaults to `<source>/EData`; use `--edata` to
+select a different declared EData root. This focused mode reads `ENCYTEXT.DLL`
+and `ENCYBMAP.DLL`, inventories the declared EData directory, and publishes a
+validated, deterministic directory transaction containing:
+
+```text
+source-report.json
+raw/encytext/<language>/<numeric-id>.bin
+raw/encytext/<language>/<numeric-id>.txt
+raw/encytext/<language>/named/<reversible-hex-name>.bin
+assets/EDATA.NNN
+```
+
+The JSON discriminator is `kind: "encyclopedia-research"` with
+`schema_version: 1`. Every supplied text resource is inventoried with its
+numeric or named identity, LANGID, PE code page, byte length, SHA-256, and
+interpretation status. Raw `.bin` bytes are preserved exactly. A `.txt` sibling
+is emitted only when the complete source DLL identity matches an embedded,
+reviewed lossless decoder profile; otherwise the record is explicitly
+`unresolved` and no text is guessed. Named identifiers are UTF-8 hex encoded in
+a separate namespace, with long encodings split across bounded path components,
+so names never become unchecked paths or collide with numeric IDs.
+
+The same report carries language-qualified RT_STRING lookup evidence, missing
+references, duplicate references, case ambiguity, supplied/unreferenced image
+identities, and measured BMP facts. Every valid supplied `EDATA.NNN` is copied
+byte-for-byte, including gaps and unreferenced files. A supplied filename never
+creates a topic, selector, or runtime allowlist entry; for example, an
+unreferenced alternate remains inventory-only. Case-ambiguous identities are
+rejected rather than selecting a spelling. Images are limited to 32 MiB each
+and 128 MiB in aggregate, with the aggregate checked before image reads or
+copies. Unsupported, corrupt, colliding, or over-budget images fail the
+transaction and leave the previously published owned set intact.
+
+The report is research evidence, not a runtime catalog. Report mode refuses a
+destination containing runtime `catalog.json` or `manifest.json`, even with
+`--force`. It also refuses source/EData and declared mod-root collisions. This
+checkpoint does not bind strings or images to topics and does not produce a
+runtime-loadable catalog.
+
+Verify an existing report without reading an original installation or writing
+anything:
+
+```sh
+go run ./tools/stage-ui-assets --encyclopedia-report-only --verify \
+  --encyclopedia-report-output ./data/base/encyclopedia-research
+```
+
+Verification rechecks the report schema, exact generated-file ownership, raw
+lengths and hashes, every proven text decode, and all staged image bytes and
+measurements. It does not need or read `--source` or `--edata`. Active or
+interrupted publication returns a recovery command but verification never
+acquires a writer marker or repairs, renames, or deletes transaction files. A
+staging rerun may perform validated recovery. Byte-identical reruns are no-ops,
+including with `--force`; changed owned output requires `--force`; unknown user
+files always block replacement and are never deleted.
+
+The default research destination is covered by `data/base/*` in `.gitignore`.
+Keep custom research destinations outside tracked paths: original prose, raw
+resources, and generated reports must not be committed or distributed.
+
+## Canonical encyclopedia catalog
+
+Generate the runtime catalog and its complete local research evidence without
+checking or invoking `ffmpeg`/`ffprobe`:
+
+```sh
+go run ./tools/stage-ui-assets --encyclopedia-canonical-only \
+  --source "/path/to/Star Wars - Rebellion" \
+  --encyclopedia-canonical-output ./data/base/encyclopedia
+```
+
+The default canonical destination is `data/base/encyclopedia/`. Artwork
+defaults to `<source>/EData`; pass `--edata` when EData is elsewhere. The
+selected profile's DAT files may be flattened beside the DLLs or kept in
+`<source>/GData`. `REBEXE.EXE` is research evidence but is not required for
+catalog extraction. The built tool embeds its reviewed profile and therefore
+works from an unrelated current working directory.
+
+The canonical directory contains two products with separate ownership:
+
+```text
+catalog.json                         # strict runtime wire catalog
+manifest.json                        # catalog + referenced-runtime-file hashes
+assets/EDATA.NNN                     # every valid supplied original, byte exact
+source-report.json                   # local extraction/ownership evidence
+raw/encytext/<language>/<id>.bin
+raw/encytext/<language>/<id>.txt
+```
+
+`manifest.json` lists `catalog.json` and only the artwork referenced by the
+catalog; it never hashes itself. The source report owns raw text and supplied
+but unreferenced artwork. Those local evidence files are not runtime inputs and
+are not copied into a browser runtime mirror. In particular, the deferred
+unproven alternate `EDATA.192` remains local inventory only.
+
+Canonical extraction requires an exact supported DLL/DAT profile. It verifies
+the actual selected DAT hashes before applying reviewed bindings, fully
+validates the candidate catalog and BMP bytes, and then uses the same directory
+transaction as report mode. An identical rerun is a no-op, including with
+`--force`; changed generated bytes require `--force`; unknown files always
+block replacement. A failure restores the prior validated directory.
+
+Verify a runtime-only directory without the original DLLs, DATs, raw records,
+or report:
+
+```sh
+go run ./tools/stage-ui-assets --encyclopedia-canonical-only --verify \
+  --encyclopedia-canonical-output ./data/base/encyclopedia
+```
+
+This checks the catalog, manifest, exact runtime allowlist, referenced BMP
+bytes, digests, formats, dimensions, and resource budgets. It does not claim
+that a current installation's DAT files match the manifest; extraction and the
+later package adapter perform that separate pairing check. If a source report
+is present, verification additionally checks its complete generated ownership
+and raw/decoded evidence. Report-only and canonical roots are never silently
+reinterpreted as one another.
+
+### Normal browser builds
+
+`scripts/build-wasm.sh` can run the focused canonical stage before compiling
+when an owned source root is supplied explicitly:
+
+```sh
+REBELLION_ENCYCLOPEDIA_SOURCE="/path/to/Star Wars - Rebellion" \
+REBELLION_EDATA_DIR="/path/to/Star Wars - Rebellion/EData" \
+FORCE_REBUILD=1 \
+./scripts/build-wasm.sh
+```
+
+`REBELLION_ENCYCLOPEDIA_SOURCE` identifies the reviewed DLL/DAT profile;
+`REBELLION_EDATA_DIR` is only the Go stage's explicit artwork input. The packer
+never recursively injects that EData directory. `REBEXE.EXE` is not required.
+The canonical stage defaults to `data/base/encyclopedia/` and may be overridden
+with `REBELLION_ENCYCLOPEDIA_STAGE`.
+
+The build publishes `web/data/runtime.orpk` and
+`web/data/encyclopedia/` from the same immutable, verified byte generation.
+The loose mirror contains only `catalog.json`, `manifest.json`, and the
+manifest-referenced art. It excludes the source report, raw evidence, and
+unreferenced inventory such as deferred EDATA.192. `package-web.sh` continues
+to ship the ORPK and its artifact hashes; the mirror is the ignored development
+fallback.
+
+Before the later production-route gate, a completely absent canonical stage
+warns and publishes a pack without the namespace. A report-only, partial, or
+corrupt stage always fails. Tests and downstream release tooling can select the
+future strict policy with `REBELLION_REQUIRE_ENCYCLOPEDIA=1`; it is deliberately
+not the default here.
+
+The pack and mirror use one sibling transaction record and an exclusive writer
+lock. Changed publications back up both prior artifacts, publish both
+candidates, then retire the backups only after the completed inventory is
+durable. The lock is opened without following links and its stable regular-file
+identity is checked before use. The journal binds candidates and backups to
+their exact device/inode, byte digest, and complete file/directory-tree
+inventory. Recovery validates every surviving artifact before mutation,
+reconciles operations that completed before an interruption, and can be
+restarted before or after every restore, cleanup, or journal update. Unknown
+mirror, backup, or candidate files, directories, and symlinks are never
+removed, including with `FORCE_REBUILD=1`. An interrupted writer is recovered
+by rerunning the same build command; a live writer reports a busy diagnostic.
+If recovery reports a missing or unrecognized artifact, preserve the sibling
+publication files and inspect them rather than deleting either output manually.
+Pack, mirror, source-input, lock, journal, backup, and candidate paths must be
+canonical and non-colliding; aliases and unsafe path types fail before the
+writer lock or output candidates are created.
+
+The container path performs the same stage before `build-wasm.sh`, even with
+`PREPARE_MODDING=0`:
+
+```sh
+ORIGINAL_GAME_DIR="/original-game" \
+REBELLION_EDATA_DIR="/original-game/EData" \
+PREPARE_MODDING=0 FORCE_REBUILD=1 \
+./scripts/docker-build.sh
+```
+
+It copies the existing flattened DLL/DAT inputs, passes the owned EData root
+through Go's `--edata`, and propagates the force and rollout policy flags. It
+does not depend on optional DAT JSON dumps.
+
+Normal full staging runs the same canonical stage before media prerequisites.
+For the current rollout, entirely absent encyclopedia-specific inputs emit a
+warning and let the remaining assets stage. Any partial, corrupt, mixed, or
+unsupported encyclopedia input fails instead of being skipped.
+
 ## Output layout
 
 Each DLL has its own directory, so equal resource IDs in different DLLs do not
@@ -164,11 +364,16 @@ make the final count check fail even with `--force`.
 | `--output` | `data/base/ui` | Root of the staged UI directories |
 | `--audio-output` | `data/sounds` | Audio output directory |
 | `--mdata` | `source/MDATA` | Original soundtrack and cutscene directory |
+| `--edata` | `source/EData` | Original encyclopedia artwork directory (report, canonical, or full mode) |
 | `--strings-output` | `data/base/textstra.json` | Original string JSON output |
 | `--encyclopedia-output` | `data/base/encyclopedia/source.json` | Ignored ENCYTEXT/ENCYBMAP source catalog |
 | `--cutscene-output` | `assets/references` | Parent for `ref-videos` and `cutscene-frames` |
+| `--encyclopedia-report-only` | `false` | Stage or verify only the encyclopedia source research report |
+| `--encyclopedia-report-output` | `data/base/encyclopedia-research` | Research report destination (requires report-only mode) |
+| `--encyclopedia-canonical-only` | `false` | Stage or verify only the canonical encyclopedia bundle |
+| `--encyclopedia-canonical-output` | `data/base/encyclopedia` | Canonical bundle destination for canonical-only and full modes |
 | `--verify` | `false` | Check existing output without extraction |
-| `--encyclopedia-only` | `false` | Stage or verify only the Encyclopedia source catalog |
+| `--encyclopedia-only` | `false` | Stage or verify only the ENCYTEXT/ENCYBMAP source catalog |
 | `--force` | `false` | Replace files whose contents differ |
 | `--tactical-3d` | `false` | Add tactical type-301/type-303 staging to the full extraction |
 | `--tactical-3d-only` | `false` | Stage or verify only tactical type-301/type-303 resources |

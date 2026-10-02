@@ -1,4 +1,27 @@
 mod audio;
+pub mod encyclopedia_hd;
+pub mod encyclopedia_presenter;
+#[cfg(not(target_arch = "wasm32"))]
+mod encyclopedia_lifecycle;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod encyclopedia_mods;
+pub mod encyclopedia_runtime;
+pub mod encyclopedia_session;
+#[cfg(feature = "interface-test-fixtures")]
+mod encyclopedia_test_fixture;
+#[cfg(any(target_arch = "wasm32", test))]
+#[cfg_attr(
+    any(target_arch = "wasm32", test),
+    expect(
+        dead_code,
+        reason = "E15 defines the bridge before catalog/session integration consumes it."
+    )
+)]
+mod encyclopedia_fetch;
+#[cfg(any(target_arch = "wasm32", test))]
+mod encyclopedia_loose;
+#[cfg(not(target_arch = "wasm32"))]
+mod encyclopedia_watcher;
 #[cfg(any(test, all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
 #[cfg_attr(
     all(test, not(target_arch = "wasm32")),
@@ -22,7 +45,7 @@ mod tactical_flow;
 mod tactical_test_fixture;
 #[cfg(target_arch = "wasm32")]
 mod web_accessibility;
-#[cfg(target_arch = "wasm32")]
+#[cfg(any(target_arch = "wasm32", test))]
 mod web_replay;
 
 use ::rand::Rng;
@@ -181,6 +204,32 @@ fn window_conf() -> Conf {
         window_height: 800,
         window_resizable: true,
         ..Default::default()
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn log_encyclopedia_refresh(
+    context: &str,
+    report: &encyclopedia_lifecycle::EncyclopediaContentRefresh,
+) {
+    for diagnostic in &report.diagnostics {
+        macroquad::logging::error!(
+            "[encyclopedia] context={} mod={} code={} path={} message={}",
+            context,
+            diagnostic.mod_name,
+            diagnostic.code,
+            diagnostic.path,
+            diagnostic.message
+        );
+    }
+    if report.published_changed {
+        macroquad::logging::info!(
+            "[encyclopedia] context={} generation={} changed_images={} removed_images={}",
+            context,
+            report.generation.unwrap_or_default(),
+            report.changed_image_ids.len(),
+            report.removed_image_ids.len()
+        );
     }
 }
 
@@ -445,6 +494,7 @@ const OPTIONAL_WASM_DATA: &[&str] = &[
     "RESRCTB.DAT",
     "TDECOYTB.DAT",
     "MISSNSD.DAT",
+    "FLEETSD.DAT",
     "SPECFCSD.DAT",
 ];
 
@@ -505,52 +555,130 @@ fn draw_loading_progress(label: &str, loaded: usize, total: usize) {
     draw_rectangle(bar_x, bar_y, bar_w * ratio, bar_h, GREEN);
 }
 
-#[cfg(target_arch = "wasm32")]
-fn install_runtime_pack(
-    bytes: &[u8],
-) -> Result<std::collections::HashMap<String, Vec<u8>>, String> {
-    let mut pack = runtime_pack::parse_runtime_pack(bytes).map_err(|error| error.to_string())?;
-    for required in REQUIRED_WASM_DATA {
+#[cfg(any(target_arch = "wasm32", test))]
+struct BrowserStartupAssets {
+    audio_files: std::collections::HashMap<String, Vec<u8>>,
+    encyclopedia: encyclopedia_session::EncyclopediaAvailability,
+}
+
+#[cfg(any(test, all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
+fn packed_fixture_startup_failure(detail: impl std::fmt::Display) -> BrowserStartupAssets {
+    BrowserStartupAssets {
+        audio_files: std::collections::HashMap::new(),
+        encyclopedia: encyclopedia_session::EncyclopediaAvailability::Unavailable(format!(
+            "packed_fixture_runtime_pack_unavailable: {detail}"
+        )),
+    }
+}
+
+#[cfg(any(test, all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
+fn loose_fixture_startup(
+    prepared: Result<Option<encyclopedia_session::EncyclopediaSession>, String>,
+) -> BrowserStartupAssets {
+    BrowserStartupAssets {
+        audio_files: std::collections::HashMap::new(),
+        encyclopedia: match prepared {
+            Ok(Some(session)) => encyclopedia_session::EncyclopediaAvailability::Ready(session),
+            Ok(None) => encyclopedia_session::EncyclopediaAvailability::Unavailable(
+                "namespace_absent: loose manifest and catalog both absent".to_owned(),
+            ),
+            Err(error) => encyclopedia_session::EncyclopediaAvailability::Unavailable(format!(
+                "loose_fixture_unavailable: {error}"
+            )),
+        },
+    }
+}
+
+#[cfg(any(test, all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
+fn fixture_runtime_pack_install_failure(
+    request: Option<interface_test_fixture::FixtureRequest>,
+    error: impl std::fmt::Display,
+) -> Option<BrowserStartupAssets> {
+    let request = request?;
+    if request.is_packed_encyclopedia() {
+        return Some(packed_fixture_startup_failure(format_args!(
+            "invalid data/runtime.orpk: {error}"
+        )));
+    }
+    request
+        .is_loose_encyclopedia()
+        .then(|| loose_fixture_startup(Err(format!("Invalid data/runtime.orpk: {error}"))))
+}
+
+#[cfg(any(target_arch = "wasm32", test))]
+#[derive(Debug)]
+struct PreparedRuntimePack {
+    game_files: std::collections::HashMap<String, Vec<u8>>,
+    string_table: std::collections::HashMap<u16, String>,
+    bitmaps: std::collections::HashMap<String, Vec<u8>>,
+    audio_files: std::collections::HashMap<String, Vec<u8>>,
+    advisor_frames: std::collections::HashMap<String, Vec<u8>>,
+    tactical_meshes: std::collections::HashMap<String, Vec<u8>>,
+    tactical_textures: std::collections::HashMap<String, Vec<u8>>,
+    encyclopedia: encyclopedia_session::EncyclopediaAvailability,
+}
+
+#[cfg(any(target_arch = "wasm32", test))]
+fn prepare_runtime_pack_for_install(
+    mut pack: runtime_pack::RuntimePack,
+    required_data: &[&str],
+) -> Result<PreparedRuntimePack, String> {
+    for required in required_data {
         if !pack.game_files.contains_key(*required) {
             return Err(format!("required entry is missing: {required}"));
         }
     }
 
-    let encyclopedia_assets =
-        runtime_pack::take_namespace(&mut pack.game_files, "encyclopedia/assets/");
-    let encyclopedia_asset_count = encyclopedia_assets.len();
-    let game_file_count = pack.game_files.len();
+    let encyclopedia = encyclopedia_runtime::prepare_packed_encyclopedia(&mut pack.game_files)?;
     let string_table: std::collections::HashMap<u16, String> = pack
         .game_files
         .remove("textstra.json")
         .and_then(|data| serde_json::from_slice(&data).ok())
         .unwrap_or_default();
-    let bitmap_count = pack.bitmaps.len();
-    let audio_file_count = pack.audio_files.len();
-    let advisor_frame_count = pack.advisor_frames.len();
-    let tactical_mesh_count = pack.tactical_meshes.len();
-    let tactical_texture_count = pack.tactical_textures.len();
-    if bitmap_count == 0 {
+    if pack.bitmaps.is_empty() {
         return Err("runtime pack contains no UI bitmaps".to_string());
     }
 
-    let advisor_bitmaps = pack
+    Ok(PreparedRuntimePack {
+        game_files: pack.game_files,
+        string_table,
+        bitmaps: pack.bitmaps,
+        audio_files: pack.audio_files,
+        advisor_frames: pack.advisor_frames,
+        tactical_meshes: pack.tactical_meshes,
+        tactical_textures: pack.tactical_textures,
+        encyclopedia,
+    })
+}
+
+#[cfg(target_arch = "wasm32")]
+fn install_runtime_pack(bytes: &[u8]) -> Result<BrowserStartupAssets, String> {
+    let pack = runtime_pack::parse_runtime_pack(bytes).map_err(|error| error.to_string())?;
+    let prepared = prepare_runtime_pack_for_install(pack, REQUIRED_WASM_DATA)?;
+    let game_file_count = prepared.game_files.len();
+    let bitmap_count = prepared.bitmaps.len();
+    let audio_file_count = prepared.audio_files.len();
+    let advisor_frame_count = prepared.advisor_frames.len();
+    let tactical_mesh_count = prepared.tactical_meshes.len();
+    let tactical_texture_count = prepared.tactical_textures.len();
+    let advisor_bitmaps = prepared
         .bitmaps
         .iter()
         .filter(|(key, _)| key.starts_with("alsprite-dll/") || key.starts_with("emsprite-dll/"))
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect();
 
-    rebellion_data::set_string_table(string_table);
-    rebellion_render::set_encyclopedia_asset_cache(encyclopedia_assets);
-    rebellion_data::set_file_cache(pack.game_files);
-    rebellion_render::set_advisor_asset_cache(pack.advisor_frames, advisor_bitmaps);
-    rebellion_render::set_bmp_cache(pack.bitmaps);
-    rebellion_render::set_tactical_asset_cache(pack.tactical_meshes, pack.tactical_textures);
+    rebellion_data::set_string_table(prepared.string_table);
+    rebellion_data::set_file_cache(prepared.game_files);
+    rebellion_render::set_advisor_asset_cache(prepared.advisor_frames, advisor_bitmaps);
+    rebellion_render::set_bmp_cache(prepared.bitmaps);
+    rebellion_render::set_tactical_asset_cache(
+        prepared.tactical_meshes,
+        prepared.tactical_textures,
+    );
     macroquad::logging::info!(
-        "runtime_asset_pack loaded game_files={} encyclopedia_assets={} ui_bitmaps={} advisor_frames={} audio_files={} tactical_meshes={} tactical_textures={} bytes={}",
+        "runtime_asset_pack loaded game_files={} ui_bitmaps={} advisor_frames={} audio_files={} tactical_meshes={} tactical_textures={} bytes={}",
         game_file_count,
-        encyclopedia_asset_count,
         bitmap_count,
         advisor_frame_count,
         audio_file_count,
@@ -558,11 +686,321 @@ fn install_runtime_pack(
         tactical_texture_count,
         bytes.len()
     );
-    Ok(pack.audio_files)
+    Ok(BrowserStartupAssets {
+        audio_files: prepared.audio_files,
+        encyclopedia: prepared.encyclopedia,
+    })
+}
+
+#[cfg(any(test, all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
+fn encyclopedia_fixture_request(
+    request: Option<interface_test_fixture::FixtureRequest>,
+) -> Option<interface_test_fixture::FixtureRequest> {
+    request.filter(|request| request.is_packed_encyclopedia() || request.is_loose_encyclopedia())
+}
+
+#[cfg(any(test, all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
+fn fixture_requires_packed_runtime(request: interface_test_fixture::FixtureRequest) -> bool {
+    request.is_packed_encyclopedia()
+}
+
+#[cfg(test)]
+mod runtime_pack_install_tests {
+    use super::*;
+    use crate::encyclopedia_session::EncyclopediaAvailability;
+
+    const VALID_CATALOG: &[u8] =
+        include_bytes!("../../../tests/fixtures/encyclopedia/fixtures/bundles/valid/catalog.json");
+    const VALID_MANIFEST: &[u8] =
+        include_bytes!("../../../tests/fixtures/encyclopedia/fixtures/bundles/valid/manifest.json");
+    const VALID_DAT: &[u8] = include_bytes!(
+        "../../../tests/fixtures/encyclopedia/fixtures/bundles/valid/sources/SYNTHETIC.DAT"
+    );
+
+    fn startup_pack(include_namespace: bool) -> runtime_pack::RuntimePack {
+        let mut pack = runtime_pack::RuntimePack::default();
+        pack.game_files
+            .insert("SYNTHETIC.DAT".to_owned(), VALID_DAT.to_vec());
+        pack.game_files
+            .insert("textstra.json".to_owned(), b"{}".to_vec());
+        pack.bitmaps
+            .insert("common-dll/1".to_owned(), b"bitmap".to_vec());
+        pack.audio_files
+            .insert("music/main_theme.wav".to_owned(), b"audio".to_vec());
+        if include_namespace {
+            pack.game_files.insert(
+                "encyclopedia/catalog.json".to_owned(),
+                VALID_CATALOG.to_vec(),
+            );
+            pack.game_files.insert(
+                "encyclopedia/manifest.json".to_owned(),
+                VALID_MANIFEST.to_vec(),
+            );
+            for (name, bytes) in [
+                (
+                    "EDATA.001",
+                    include_bytes!("../../../tests/fixtures/encyclopedia/fixtures/bundles/valid/assets/EDATA.001").as_slice(),
+                ),
+                (
+                    "EDATA.002",
+                    include_bytes!("../../../tests/fixtures/encyclopedia/fixtures/bundles/valid/assets/EDATA.002").as_slice(),
+                ),
+                (
+                    "EDATA.003",
+                    include_bytes!("../../../tests/fixtures/encyclopedia/fixtures/bundles/valid/assets/EDATA.003").as_slice(),
+                ),
+            ] {
+                pack.game_files
+                    .insert(format!("encyclopedia/assets/{name}"), bytes.to_vec());
+            }
+        }
+        pack
+    }
+
+    #[test]
+    fn startup_prepares_the_complete_namespace_before_any_cache_publication() {
+        let published_cache = std::collections::HashMap::from([(
+            "sentinel.DAT".to_owned(),
+            b"previous cache".to_vec(),
+        )]);
+
+        let prepared =
+            prepare_runtime_pack_for_install(startup_pack(true), &["SYNTHETIC.DAT"]).unwrap();
+
+        assert_eq!(
+            published_cache["sentinel.DAT"], b"previous cache",
+            "pure preparation must not touch the installed cache"
+        );
+        assert!(matches!(
+            prepared.encyclopedia,
+            EncyclopediaAvailability::Ready(_)
+        ));
+        assert!(prepared
+            .game_files
+            .keys()
+            .all(|key| !key.starts_with("encyclopedia/")));
+        assert_eq!(prepared.audio_files["music/main_theme.wav"], b"audio");
+        assert!(prepared.string_table.is_empty());
+        assert_eq!(prepared.bitmaps.len(), 1);
+        assert!(prepared.advisor_frames.is_empty());
+        assert!(prepared.tactical_meshes.is_empty());
+        assert!(prepared.tactical_textures.is_empty());
+    }
+
+    #[test]
+    fn startup_rejects_partial_namespace_before_any_cache_publication() {
+        let mut pack = startup_pack(true);
+        pack.game_files.remove("encyclopedia/manifest.json");
+        let published_cache = std::collections::HashMap::from([(
+            "sentinel.DAT".to_owned(),
+            b"previous cache".to_vec(),
+        )]);
+
+        let error = prepare_runtime_pack_for_install(pack, &["SYNTHETIC.DAT"]).unwrap_err();
+
+        assert!(error.contains("invalid_encyclopedia_bundle"), "{error}");
+        assert_eq!(published_cache["sentinel.DAT"], b"previous cache");
+    }
+
+    #[test]
+    fn startup_accepts_an_old_pack_with_explicitly_unavailable_content() {
+        let prepared =
+            prepare_runtime_pack_for_install(startup_pack(false), &["SYNTHETIC.DAT"]).unwrap();
+
+        assert!(matches!(
+            prepared.encyclopedia,
+            EncyclopediaAvailability::Unavailable(ref diagnostic)
+                if diagnostic.contains("namespace_absent")
+        ));
+        assert_eq!(prepared.game_files["SYNTHETIC.DAT"], VALID_DAT);
+    }
+
+    #[cfg(feature = "interface-test-fixtures")]
+    #[test]
+    fn packed_browser_fixture_consumes_the_prepared_session_after_namespace_removal() {
+        let prepared =
+            prepare_runtime_pack_for_install(startup_pack(true), &["SYNTHETIC.DAT"]).unwrap();
+        assert!(prepared
+            .game_files
+            .keys()
+            .all(|key| !key.starts_with("encyclopedia/")));
+
+        let mut model = crate::encyclopedia_test_fixture::InspectorModel::from_availability(
+            prepared.encyclopedia,
+            "1033",
+        );
+        model.select_topic("original:60001".to_owned()).unwrap();
+        let view = model.build_view().unwrap().unwrap();
+        let active = view.active_topic.as_ref().unwrap();
+
+        assert_eq!(active.title.as_ref(), "Amber system");
+        assert_eq!(active.image.as_ref().unwrap().asset_id, "edata:1");
+    }
+
+    #[cfg(feature = "interface-test-fixtures")]
+    #[test]
+    fn packed_request_faction_selects_matching_viewer_art_digest_and_report() {
+        use rebellion_data::encyclopedia::ViewerFaction;
+
+        for (code, viewer, asset_id, digest, faction) in [
+            (
+                0x0130,
+                ViewerFaction::Alliance,
+                "edata:2",
+                "a93a4e651a970119d8da0386846785163291b7cfd67edaac7f6fc37b719fe592",
+                "alliance",
+            ),
+            (
+                0x0230,
+                ViewerFaction::Empire,
+                "edata:3",
+                "8746c347d4cf14daa2e0cc9d41d1f9abebbbb1aae997f31a172610e9ecdbe2dd",
+                "empire",
+            ),
+        ] {
+            let request = crate::interface_test_fixture::decode_request(code).unwrap();
+            let prepared =
+                prepare_runtime_pack_for_install(startup_pack(true), &["SYNTHETIC.DAT"]).unwrap();
+            let mut model = crate::encyclopedia_test_fixture::InspectorModel::from_packed_request(
+                prepared.encyclopedia,
+                "1033",
+                request,
+            );
+
+            assert_eq!(model.viewer(), Some(viewer));
+            model.select_topic("original:60004".to_owned()).unwrap();
+            let view = model.build_view().unwrap().unwrap();
+            let image = view.active_topic.as_ref().unwrap().image.as_ref().unwrap();
+            assert_eq!(image.asset_id, asset_id);
+            assert_eq!(image.digest, digest);
+
+            let report = crate::encyclopedia_test_fixture::packed_fixture_report(
+                request,
+                &model,
+                Some(&view),
+                Some(image.asset_id.as_str()),
+                Some(image.digest.as_str()),
+                "cache hit",
+                None,
+            );
+            assert_eq!(report.faction(), faction);
+            assert_eq!(report.asset_id.as_deref(), Some(asset_id));
+            assert_eq!(report.digest.as_deref(), Some(digest));
+        }
+    }
+}
+
+#[cfg(test)]
+mod encyclopedia_fixture_route_tests {
+    use super::*;
+
+    #[test]
+    fn legacy_wasm_dat_inventory_covers_every_accepted_profile_binding_source() {
+        use std::collections::BTreeSet;
+
+        let profile: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../tools/stage-ui-assets/encyclopedia_profiles/encytext-49aea545-lang-1033-v1.json"
+        ))
+        .expect("accepted encyclopedia source profile");
+        let configured: BTreeSet<_> = REQUIRED_WASM_DATA
+            .iter()
+            .chain(OPTIONAL_WASM_DATA)
+            .copied()
+            .collect();
+        let selected_sources: BTreeSet<_> = profile["sources"]
+            .as_array()
+            .expect("profile sources")
+            .iter()
+            .filter(|source| source["kind"].as_str() == Some("dat"))
+            .map(|source| source["basename"].as_str().expect("source basename"))
+            .collect();
+        let missing: Vec<_> = selected_sources.difference(&configured).copied().collect();
+
+        assert!(
+            missing.is_empty(),
+            "legacy startup cannot validate the accepted catalog without selected DATs: {missing:?}"
+        );
+    }
+
+    #[test]
+    fn only_packed_and_loose_encyclopedia_requests_take_the_early_fixture_route() {
+        use crate::interface_test_fixture::{FixtureRequest, Scenario};
+
+        let packed = FixtureRequest {
+            scenario: Scenario::PackedEncyclopedia,
+            faction: rebellion_render::CockpitFaction::Alliance,
+            code: 0x0130,
+        };
+        let legacy_art_probe = FixtureRequest {
+            scenario: Scenario::EncyclopediaArtwork,
+            faction: rebellion_render::CockpitFaction::Alliance,
+            code: 0x0127,
+        };
+        let loose = FixtureRequest {
+            scenario: Scenario::LooseEncyclopedia,
+            faction: rebellion_render::CockpitFaction::Alliance,
+            code: 0x0131,
+        };
+
+        assert_eq!(encyclopedia_fixture_request(Some(packed)), Some(packed));
+        assert_eq!(encyclopedia_fixture_request(Some(loose)), Some(loose));
+        assert!(fixture_requires_packed_runtime(packed));
+        assert!(!fixture_requires_packed_runtime(loose));
+        assert_eq!(encyclopedia_fixture_request(Some(legacy_art_probe)), None);
+        assert_eq!(encyclopedia_fixture_request(None), None);
+    }
+
+    #[test]
+    fn packed_runtime_pack_failure_stays_unavailable_without_loose_assets() {
+        let startup = packed_fixture_startup_failure("invalid runtime pack: truncated header");
+
+        assert!(startup.audio_files.is_empty());
+        assert!(matches!(
+            startup.encyclopedia,
+            encyclopedia_session::EncyclopediaAvailability::Unavailable(ref diagnostic)
+                if diagnostic == "packed_fixture_runtime_pack_unavailable: invalid runtime pack: truncated header"
+        ));
+    }
+
+    #[test]
+    fn loose_runtime_pack_failure_reports_the_parser_error_without_falling_back() {
+        use crate::interface_test_fixture::FixtureRequest;
+
+        let request: FixtureRequest =
+            crate::interface_test_fixture::decode_request(0x0131).expect("loose fixture request");
+        let startup = fixture_runtime_pack_install_failure(
+            Some(request),
+            "invalid runtime pack: truncated header",
+        )
+        .expect("the loose fixture handles a present invalid pack");
+
+        assert!(startup.audio_files.is_empty());
+        assert!(matches!(
+            startup.encyclopedia,
+            encyclopedia_session::EncyclopediaAvailability::Unavailable(ref diagnostic)
+                if diagnostic == "loose_fixture_unavailable: Invalid data/runtime.orpk: invalid runtime pack: truncated header"
+        ));
+        assert!(fixture_runtime_pack_install_failure(None, "unrelated trap").is_none());
+    }
+
+    #[test]
+    fn loose_fixture_preparation_error_is_reported_without_publishing_partial_ready_state() {
+        let startup = loose_fixture_startup(Err(
+            "catalog_hash_mismatch at catalog.json: retained bytes differ".to_owned(),
+        ));
+
+        assert!(startup.audio_files.is_empty());
+        assert!(matches!(
+            startup.encyclopedia,
+            encyclopedia_session::EncyclopediaAvailability::Unavailable(ref diagnostic)
+                if diagnostic == "loose_fixture_unavailable: catalog_hash_mismatch at catalog.json: retained bytes differ"
+        ));
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
-async fn load_legacy_wasm_assets() {
+async fn load_legacy_wasm_assets(
+) -> Result<Option<encyclopedia_session::EncyclopediaSession>, String> {
     use std::collections::HashMap;
 
     let total = REQUIRED_WASM_DATA.len() + OPTIONAL_WASM_DATA.len();
@@ -597,8 +1035,36 @@ async fn load_legacy_wasm_assets() {
             Ok(data) => serde_json::from_slice(&data).unwrap_or_default(),
             Err(_) => HashMap::new(),
         };
+
+    // The loose encyclopedia must inspect the exact selected DAT buffers before
+    // set_file_cache consumes them. No global cache changes until the complete
+    // catalog, manifest and declared image set has passed shared preparation.
+    let encyclopedia_session = encyclopedia_loose::prepare_browser_loose_encyclopedia(&files)
+        .await
+        .map_err(|error| format!("Invalid loose encyclopedia bundle: {error}"))?;
+    let encyclopedia_assets = encyclopedia_session
+        .as_ref()
+        .map(encyclopedia_loose::original_image_cache)
+        .transpose()
+        .map_err(|error| format!("Invalid loose encyclopedia publication: {error}"))?;
+    if let Some(session) = encyclopedia_session.as_ref() {
+        macroquad::logging::info!(
+            "loose_encyclopedia ready topics={} images={} generation={}",
+            session.base_catalog().topics.len(),
+            session.base_catalog().images.len(),
+            session.generation()
+        );
+    }
+
     rebellion_data::set_string_table(string_table);
     rebellion_data::set_file_cache(files);
+    if let Some(assets) = encyclopedia_assets {
+        rebellion_render::set_encyclopedia_asset_cache(assets);
+    } else {
+        eprintln!(
+            "WARNING: loose encyclopedia catalog and manifest are both absent; content unavailable"
+        );
+    }
 
     #[derive(serde::Deserialize)]
     struct BmpEntry {
@@ -608,7 +1074,7 @@ async fn load_legacy_wasm_assets() {
 
     let Ok(manifest_bytes) = macroquad::file::load_file("data/ui/bmp-manifest.json").await else {
         eprintln!("WARNING: bmp-manifest.json not found — UI textures will be missing");
-        return;
+        return Ok(encyclopedia_session);
     };
     let entries: Vec<BmpEntry> = match serde_json::from_slice(&manifest_bytes) {
         Ok(entries) => entries,
@@ -654,24 +1120,65 @@ async fn load_legacy_wasm_assets() {
         bmp_total
     );
     rebellion_render::set_bmp_cache(bmp_cache);
+    Ok(encyclopedia_session)
 }
 
 #[cfg(target_arch = "wasm32")]
-async fn load_wasm_assets() -> std::collections::HashMap<String, Vec<u8>> {
+async fn load_wasm_assets(
+    #[cfg(feature = "interface-test-fixtures")] encyclopedia_fixture_request: Option<
+        interface_test_fixture::FixtureRequest,
+    >,
+) -> BrowserStartupAssets {
     draw_loading_progress("Loading optimized runtime assets…", 0, 0);
     next_frame().await;
 
-    match macroquad::file::load_file("data/runtime.orpk").await {
+    #[cfg(feature = "interface-test-fixtures")]
+    let packed_fixture_requested =
+        encyclopedia_fixture_request.is_some_and(fixture_requires_packed_runtime);
+    #[cfg(feature = "interface-test-fixtures")]
+    let startup = match macroquad::file::load_file("data/runtime.orpk").await {
+        Ok(bytes) => match install_runtime_pack(&bytes) {
+            Ok(startup) => startup,
+            Err(error) => {
+                fixture_runtime_pack_install_failure(encyclopedia_fixture_request, &error)
+                    .unwrap_or_else(|| panic!("Invalid data/runtime.orpk: {error}"))
+            }
+        },
+        Err(error) if packed_fixture_requested => packed_fixture_startup_failure(format_args!(
+            "data/runtime.orpk failed to load: {error:?}"
+        )),
+        Err(error) => {
+            eprintln!(
+                "WARNING: data/runtime.orpk unavailable ({error:?}); using legacy per-file loading"
+            );
+            loose_fixture_startup(load_legacy_wasm_assets().await)
+        }
+    };
+
+    #[cfg(not(feature = "interface-test-fixtures"))]
+    let startup = match macroquad::file::load_file("data/runtime.orpk").await {
         Ok(bytes) => install_runtime_pack(&bytes)
             .unwrap_or_else(|error| panic!("Invalid data/runtime.orpk: {error}")),
         Err(error) => {
             eprintln!(
                 "WARNING: data/runtime.orpk unavailable ({error:?}); using legacy per-file loading"
             );
-            load_legacy_wasm_assets().await;
-            std::collections::HashMap::new()
+            let session = load_legacy_wasm_assets()
+                .await
+                .unwrap_or_else(|error| panic!("{error}"));
+            BrowserStartupAssets {
+                audio_files: std::collections::HashMap::new(),
+                encyclopedia: match session {
+                    Some(session) => encyclopedia_session::EncyclopediaAvailability::Ready(session),
+                    None => encyclopedia_session::EncyclopediaAvailability::Unavailable(
+                        "namespace_absent: loose manifest and catalog both absent".to_owned(),
+                    ),
+                },
+            }
         }
-    }
+    };
+
+    startup
 }
 
 /// Cache every glyph the Macroquad layers can draw in the current Galaxy view
@@ -806,12 +1313,21 @@ async fn main() {
     #[cfg(target_arch = "wasm32")]
     let gdata_path = PathBuf::from("data/base");
 
+    #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+    let interface_fixture_request = interface_test_fixture::requested();
+
     let asset_render_profile = configured_asset_render_profile();
     macroquad::logging::info!("[assets] render_profile={}", asset_render_profile.as_str());
 
     #[cfg(target_arch = "wasm32")]
     if web_replay::requested() {
         web_replay::run(&gdata_path).await;
+    }
+
+    #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+    if let Some(case) = encyclopedia_loose::browser_probe_requested() {
+        encyclopedia_loose::run_browser_probe(case).await;
+        return;
     }
 
     // ── Load game data ─────────────────────────────────────────────────────
@@ -831,12 +1347,43 @@ async fn main() {
     };
 
     #[cfg(target_arch = "wasm32")]
-    let (mut world, mut browser_audio_files) = {
-        let audio_files = load_wasm_assets().await;
+    let (mut world, mut browser_audio_files, encyclopedia_availability) = {
+        #[cfg(feature = "interface-test-fixtures")]
+        let encyclopedia_fixture_request = encyclopedia_fixture_request(interface_fixture_request);
+        #[cfg(feature = "interface-test-fixtures")]
+        let startup_assets = load_wasm_assets(encyclopedia_fixture_request).await;
+        #[cfg(not(feature = "interface-test-fixtures"))]
+        let startup_assets = load_wasm_assets().await;
+        #[cfg(feature = "interface-test-fixtures")]
+        if let Some(request) = encyclopedia_fixture_request {
+            if request.is_packed_encyclopedia() {
+                encyclopedia_test_fixture::run_packed(startup_assets.encyclopedia, request).await;
+            } else {
+                encyclopedia_test_fixture::run_loose(startup_assets.encyclopedia, request).await;
+            }
+            return;
+        }
         let world = rebellion_data::load_game_data(&gdata_path)
             .unwrap_or_else(|error| panic!("Failed to parse game data: {error}"));
-        (world, audio_files)
+        (
+            world,
+            startup_assets.audio_files,
+            startup_assets.encyclopedia,
+        )
     };
+
+    #[cfg(target_arch = "wasm32")]
+    match &encyclopedia_availability {
+        encyclopedia_session::EncyclopediaAvailability::Ready(session) => {
+            macroquad::logging::info!(
+                "[encyclopedia] installed validated packed session generation={}",
+                session.generation()
+            );
+        }
+        encyclopedia_session::EncyclopediaAvailability::Unavailable(diagnostic) => {
+            macroquad::logging::warn!("[encyclopedia] unavailable: {}", diagnostic);
+        }
+    }
 
     eprintln!(
         "Loaded: {} systems, {} sectors, {} ship classes, {} fighter classes, {} characters",
@@ -898,11 +1445,17 @@ async fn main() {
 
     // ── Mod Runtime ──────────────────────────────────────────────────────────
     // mods/ lives alongside data/, not inside it: data/base → data → repo root → mods/
-    let mods_dir = gdata_path
+    let default_mods_dir = gdata_path
         .parent()
         .and_then(|p| p.parent())
         .unwrap_or(std::path::Path::new("."))
         .join("mods");
+    #[cfg(all(not(target_arch = "wasm32"), feature = "interface-test-fixtures"))]
+    let mods_dir = std::env::var_os("REBELLION_ENCYCLOPEDIA_MODS_DIR")
+        .map(PathBuf::from)
+        .unwrap_or(default_mods_dir);
+    #[cfg(not(all(not(target_arch = "wasm32"), feature = "interface-test-fixtures")))]
+    let mods_dir = default_mods_dir;
     let mut mod_runtime = rebellion_data::mods::ModRuntime::discover(&mods_dir);
     if !mod_runtime.discovered.is_empty() {
         eprintln!(
@@ -910,10 +1463,44 @@ async fn main() {
             mod_runtime.discovered.len(),
             mod_runtime.discovered.iter().filter(|m| m.enabled).count()
         );
-        let mod_errors = mod_runtime.apply_enabled(&mut world);
-        for err in &mod_errors {
-            eprintln!("Mod error: {err:?}");
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    let native_encyclopedia_availability =
+        encyclopedia_runtime::load_native_encyclopedia(&gdata_path, None);
+    #[cfg(all(not(target_arch = "wasm32"), feature = "interface-test-fixtures"))]
+    let native_encyclopedia_source_profile = match &native_encyclopedia_availability {
+        encyclopedia_session::EncyclopediaAvailability::Ready(session) => {
+            session.base_manifest().source_profile.clone()
         }
+        encyclopedia_session::EncyclopediaAvailability::Unavailable(_) => String::new(),
+    };
+    #[cfg(not(target_arch = "wasm32"))]
+    let mut encyclopedia_lifecycle =
+        encyclopedia_lifecycle::EncyclopediaLifecycle::from_availability(
+            native_encyclopedia_availability,
+        );
+    #[cfg(not(target_arch = "wasm32"))]
+    let mut encyclopedia_watcher = encyclopedia_watcher::EncyclopediaWatcher::new(&mods_dir);
+    #[cfg(not(target_arch = "wasm32"))]
+    if let Some(diagnostic) = encyclopedia_watcher.diagnostic() {
+        eprintln!(
+            "[encyclopedia] watcher unavailable for {}: {diagnostic}; use Reload Mods to retry",
+            mods_dir.display()
+        );
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let ordered = mod_runtime.enabled_sorted();
+        let update = encyclopedia_lifecycle::apply_resolved_mod_update(
+            encyclopedia_lifecycle::ModLifecycleTrigger::Startup,
+            &ordered,
+            |ordered| mod_runtime.apply_ordered(&mut world, ordered),
+            |ordered| encyclopedia_lifecycle.refresh_resolved(ordered),
+        );
+        for error in update.world.unwrap_or_default() {
+            eprintln!("Mod error: {error:?}");
+        }
+        log_encyclopedia_refresh("startup", &update.content);
     }
 
     // ── Game mode ─────────────────────────────────────────────────────────
@@ -1186,6 +1773,64 @@ async fn main() {
     }
     let mut tactical_music_active = false;
 
+    // The feature-only native acceptance surface enters only after the same
+    // startup world/content transaction and retained watcher used by the real
+    // app have been constructed. Production builds compile out this branch.
+    #[cfg(all(not(target_arch = "wasm32"), feature = "interface-test-fixtures"))]
+    if encyclopedia_test_fixture::requested() {
+        let fingerprint_source = move || {
+            let state = LiveCampaign {
+                world: &mut world,
+                clock: &mut clock,
+                manufacturing: &mut mfg_state,
+                missions: &mut mission_state,
+                events: &mut event_state,
+                ai: &mut ai_state,
+                movement: &mut movement_state,
+                fog_alliance: &mut fog_alliance_state,
+                fog_empire: &mut fog_empire_state,
+                player_faction: &mut player_faction,
+                blockade: &mut blockade_state,
+                uprising: &mut uprising_state,
+                death_star: &mut death_star_state,
+                research: &mut research_state,
+                jedi: &mut jedi_state,
+                victory: &mut victory_state,
+                betrayal: &mut betrayal_state,
+                economy: &mut economy_state,
+                sim_rng: &mut sim_rng,
+                ai2: &mut secondary_ai_state,
+                repair: &mut repair_state,
+                troop_transport: &mut troop_transport_state,
+                deliveries: &mut delivery_state,
+                combat_cooldowns: &mut combat_cooldowns,
+                game_config: &mut game_config,
+                campaign_config: &mut campaign_config,
+            }
+            .snapshot();
+            encyclopedia_test_fixture::NativeSimulationFingerprints {
+                world: encyclopedia_test_fixture::fingerprint_serializable(&state.world),
+                save: rebellion_data::save::compute_state_fingerprint(&state).map_or_else(
+                    |error| format!("error:{error}"),
+                    |fingerprint| fingerprint.to_string(),
+                ),
+                rng: encyclopedia_test_fixture::fingerprint_serializable(&state.sim_rng),
+            }
+        };
+        encyclopedia_test_fixture::run_live(
+            &gdata_path,
+            &native_encyclopedia_source_profile,
+            &mut mod_runtime,
+            &mut encyclopedia_lifecycle,
+            &mut encyclopedia_watcher,
+            asset_render_profile,
+            std::env::var_os("REBELLION_ENCYCLOPEDIA_HD_ROOT").map(PathBuf::from),
+            fingerprint_source,
+        )
+        .await;
+        return;
+    }
+
     let mut cutscene_player = open_cutscene(
         Path::new(INTRO_CUTSCENE),
         &mut msg_log,
@@ -1199,8 +1844,6 @@ async fn main() {
         };
     }
 
-    #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
-    let interface_fixture_request = interface_test_fixture::requested();
     #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
     if let Some(request) = interface_fixture_request {
         cutscene_player = None;
@@ -1275,6 +1918,22 @@ async fn main() {
     loop {
         let dt = get_frame_time();
         let mut targeting_cursor_drawn = false;
+
+        // Native encyclopedia file events are drained once at this frame
+        // boundary. This adapter has no world or PanelAction access, so an
+        // automatic event can only rebuild content from the current enabled
+        // order and can never replay simulation overlays.
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let outcome = encyclopedia_watcher
+                .poll_and_refresh(&mut mod_runtime, &mut encyclopedia_lifecycle);
+            for diagnostic in outcome.diagnostics {
+                eprintln!("[encyclopedia] watcher diagnostic: {diagnostic}");
+            }
+            if let Some(refresh) = outcome.refresh {
+                log_encyclopedia_refresh("watcher", &refresh);
+            }
+        }
 
         #[cfg(target_arch = "wasm32")]
         if !browser_menu_audio_requested
@@ -3039,14 +3698,36 @@ Some(RailAudience::side(*faction_is_alliance)),
                                 &gdata_path,
                                 &seed_options,
                             ) {
-                                Ok(mut w) => {
-                                    for error in mod_runtime.apply_enabled(&mut w) {
-                                        macroquad::logging::error!(
-                                            "[campaign] mod_reapply_error={:?}",
-                                            error
-                                        );
+                                Ok(w) => {
+                                    #[cfg(not(target_arch = "wasm32"))]
+                                    {
+                                        let mut w = w;
+                                        let ordered = mod_runtime.enabled_sorted();
+                                        let update =
+                                            encyclopedia_lifecycle::apply_resolved_mod_update(
+                                                encyclopedia_lifecycle::ModLifecycleTrigger::NewCampaign,
+                                                &ordered,
+                                                |ordered| {
+                                                    mod_runtime.apply_ordered(&mut w, ordered)
+                                                },
+                                                |ordered| {
+                                                    encyclopedia_lifecycle
+                                                        .refresh_resolved(ordered)
+                                                },
+                                            );
+                                        for error in update.world.unwrap_or_default() {
+                                            macroquad::logging::error!(
+                                                "[campaign] mod_reapply_error={:?}",
+                                                error
+                                            );
+                                        }
+                                        log_encyclopedia_refresh("new_campaign", &update.content);
+                                        world = w;
                                     }
-                                    world = w;
+                                    #[cfg(target_arch = "wasm32")]
+                                    {
+                                        world = w;
+                                    }
                                     campaign_generation += 1;
                                     sim_rng = Xoshiro256PlusPlus::seed_from_u64(
                                         rng_seed.wrapping_add(u64::from(campaign_generation)),
@@ -3550,11 +4231,29 @@ Some(RailAudience::side(*faction_is_alliance)),
                     }
 
                     // Mod Manager (floating window)
+                    #[cfg(not(target_arch = "wasm32"))]
+                    {
+                        mod_manager_state.root_diagnostic =
+                            encyclopedia_watcher.diagnostic().map(str::to_owned);
+                    }
                     let mod_infos: Vec<rebellion_render::ModInfo> = mod_runtime
                         .discovered
                         .iter()
                         .map(|m| {
-                            let err = mod_runtime.errors.iter().find(|e| e.mod_name() == m.name);
+                            let errors: Vec<String> = mod_runtime
+                                .errors
+                                .iter()
+                                .filter(|error| error.mod_name() == m.name)
+                                .map(ToString::to_string)
+                                .collect();
+                            #[cfg(not(target_arch = "wasm32"))]
+                            let mut errors = errors;
+                            #[cfg(not(target_arch = "wasm32"))]
+                            if let Some(error) = encyclopedia_lifecycle.diagnostic_for_mod(&m.name)
+                            {
+                                errors.push(error);
+                            }
+                            let error_message = (!errors.is_empty()).then(|| errors.join("; "));
                             rebellion_render::ModInfo {
                                 name: m.name.clone(),
                                 version: m.version.clone(),
@@ -3562,8 +4261,8 @@ Some(RailAudience::side(*faction_is_alliance)),
                                 description: m.description.clone(),
                                 enabled: m.enabled,
                                 dependencies: m.dependencies.keys().cloned().collect(),
-                                has_error: err.is_some(),
-                                error_message: err.map(ToString::to_string),
+                                has_error: error_message.is_some(),
+                                error_message,
                             }
                         })
                         .collect();
@@ -4547,6 +5246,22 @@ Some(RailAudience::side(*faction_is_alliance)),
                                 campaign_config: &mut campaign_config,
                             };
                             campaign.restore(state);
+                            #[cfg(not(target_arch = "wasm32"))]
+                            {
+                                let ordered = mod_runtime.enabled_sorted();
+                                let update = encyclopedia_lifecycle::apply_resolved_mod_update(
+                                    encyclopedia_lifecycle::ModLifecycleTrigger::SavedWorldLoad,
+                                    &ordered,
+                                    |_| {
+                                        unreachable!(
+                                            "saved-world load must not replay world mod patches"
+                                        )
+                                    },
+                                    |ordered| encyclopedia_lifecycle.refresh_resolved(ordered),
+                                );
+                                debug_assert!(update.world.is_none());
+                                log_encyclopedia_refresh("saved_world_load", &update.content);
+                            }
                             let restored_fingerprint =
                                 rebellion_data::save::compute_state_fingerprint(
                                     &campaign.snapshot(),
@@ -4680,6 +5395,10 @@ Some(RailAudience::side(*faction_is_alliance)),
                         &mut blockade_state,
                         &event_state,
                         &mut mod_runtime,
+                        #[cfg(not(target_arch = "wasm32"))]
+                        &mut encyclopedia_lifecycle,
+                        #[cfg(not(target_arch = "wasm32"))]
+                        &mut encyclopedia_watcher,
                         #[cfg(not(target_arch = "wasm32"))]
                         &mut audio_engine,
                         #[cfg(not(target_arch = "wasm32"))]
@@ -4927,6 +5646,10 @@ fn apply_panel_action(
     blockade_state: &mut BlockadeState,
     event_state: &EventState,
     mod_runtime: &mut rebellion_data::mods::ModRuntime,
+    #[cfg(not(target_arch = "wasm32"))]
+    encyclopedia_lifecycle: &mut encyclopedia_lifecycle::EncyclopediaLifecycle,
+    #[cfg(not(target_arch = "wasm32"))]
+    encyclopedia_watcher: &mut encyclopedia_watcher::EncyclopediaWatcher,
     #[cfg(not(target_arch = "wasm32"))] audio_engine: &mut audio::AudioEngine,
     #[cfg(not(target_arch = "wasm32"))] audio_vol: &AudioVolumeState,
     #[cfg(not(target_arch = "wasm32"))] _sounds_dir: &Path,
@@ -5222,6 +5945,18 @@ fn apply_panel_action(
         }
         PanelAction::ToggleMod { ref name } => {
             mod_runtime.toggle_mod(name);
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                let ordered = mod_runtime.enabled_sorted();
+                let update = encyclopedia_lifecycle::apply_resolved_mod_update(
+                    encyclopedia_lifecycle::ModLifecycleTrigger::Toggle,
+                    &ordered,
+                    |_| unreachable!("a mod toggle must not replay world patches"),
+                    |ordered| encyclopedia_lifecycle.refresh_resolved(ordered),
+                );
+                debug_assert!(update.world.is_none());
+                log_encyclopedia_refresh("toggle", &update.content);
+            }
             msg_log.push(GameMessage::new(
                 clock.tick,
                 format!("Toggled mod: {name}"),
@@ -5230,9 +5965,27 @@ fn apply_panel_action(
         }
         PanelAction::ReloadMods => {
             mod_runtime.refresh();
-            let mod_errors = mod_runtime.apply_enabled(world);
-            for err in &mod_errors {
-                eprintln!("Mod reload error: {err:?}");
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                if !encyclopedia_watcher.rearm() {
+                    if let Some(diagnostic) = encyclopedia_watcher.diagnostic() {
+                        eprintln!(
+                            "[encyclopedia] watcher rearm failed for {}: {diagnostic}",
+                            mod_runtime.mods_dir.display()
+                        );
+                    }
+                }
+                let ordered = mod_runtime.enabled_sorted();
+                let update = encyclopedia_lifecycle::apply_resolved_mod_update(
+                    encyclopedia_lifecycle::ModLifecycleTrigger::ManualReload,
+                    &ordered,
+                    |ordered| mod_runtime.apply_ordered(world, ordered),
+                    |ordered| encyclopedia_lifecycle.refresh_resolved(ordered),
+                );
+                for error in update.world.unwrap_or_default() {
+                    eprintln!("Mod reload error: {error:?}");
+                }
+                log_encyclopedia_refresh("manual_reload", &update.content);
             }
             msg_log.push(GameMessage::new(
                 clock.tick,

@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://open-rebellion.example/schemas/encyclopedia-overlay-v1.schema.json",
+  "$comment": "E09 V1 WIRE CONTRACT — COORDINATOR APPROVED 2026-09-29. This is only the author-facing overlay wire shape. E31 owns the future source-to-world/viewer adapter and hands typed admitted BindingKeys plus admission facts to the world-independent E44 resolver; E44 then merges language maps in resolved mod order, validates complete records, performs whole-record requested/default selection, resolves art, and performs the stable title sort. Production readiness remains gated by E31, E32, and E51; the approved wire contract does not depend on E31, E32, or E51 runtime work. Confined image paths become Rust runtime facts and never mutate the immutable base bundle. Faction-pair permission comes from validated immutable source-backed topic capability, including for a newly added language, never from a preceding effective value.",
+  "title": "Open Rebellion encyclopedia overlay v1 (coordinator-approved wire contract)",
+  "type": "array",
+  "maxItems": 10000,
+  "items": { "$ref": "#/$defs/topicPatch" },
+  "$defs": {
+    "langid": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]{0,4})$"
+    },
+    "topicId": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 256,
+      "pattern": "^[a-z][a-z0-9._-]{0,31}:[A-Za-z0-9][A-Za-z0-9._:-]{0,223}$"
+    },
+    "modImagePath": {
+      "type": "string",
+      "minLength": 25,
+      "maxLength": 256,
+      "pattern": "^encyclopedia/assets/(?:[A-Za-z0-9][A-Za-z0-9._-]{0,126}/)*[A-Za-z0-9][A-Za-z0-9._-]{0,120}\\.(bmp|png)$"
+    },
+    "staticImageReplacement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path"],
+      "properties": {
+        "path": { "$ref": "#/$defs/modImagePath" }
+      }
+    },
+    "factionImageSide": {
+      "anyOf": [
+        { "$ref": "#/$defs/staticImageReplacement" },
+        { "type": "null" }
+      ]
+    },
+    "factionImageReplacement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["alliance", "empire"],
+      "properties": {
+        "alliance": { "$ref": "#/$defs/factionImageSide" },
+        "empire": { "$ref": "#/$defs/factionImageSide" }
+      }
+    },
+    "localizedPatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "title": {
+          "anyOf": [
+            { "type": "string", "maxLength": 65536 },
+            { "type": "null" }
+          ]
+        },
+        "body": {
+          "anyOf": [
+            { "type": "string", "maxLength": 1048576 },
+            { "type": "null" }
+          ]
+        },
+        "image": {
+          "anyOf": [
+            { "$ref": "#/$defs/staticImageReplacement" },
+            { "$ref": "#/$defs/factionImageReplacement" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "localizedPatchOrNull": {
+      "anyOf": [
+        { "$ref": "#/$defs/localizedPatch" },
+        { "type": "null" }
+      ]
+    },
+    "localizedPatches": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 256,
+      "propertyNames": { "$ref": "#/$defs/langid" },
+      "additionalProperties": { "$ref": "#/$defs/localizedPatchOrNull" }
+    },
+    "topicPatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "localized"],
+      "properties": {
+        "id": { "$ref": "#/$defs/topicId" },
+        "localized": { "$ref": "#/$defs/localizedPatches" }
+      }
+    }
+  }
+}

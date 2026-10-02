@@ -22,6 +22,9 @@ const forbidden = [
   "[tactical_3d] lod_selection",
   "battle-ready",
   "Tactical test launcher",
+  "packed-encyclopedia-fixture",
+  "Synthetic encyclopedia index",
+  "REBELLION_ENCYCLOPEDIA_INSPECTOR",
 ];
 
 if (!fs.existsSync(productionWasm)) {
@@ -39,8 +42,13 @@ for (const file of [productionWasm, productionHtml]) {
 const testWasm = path.join(root, ".artifacts/interface-parity/site/open-rebellion-test.wasm");
 if (fs.existsSync(testWasm)) {
   const bytes = fs.readFileSync(testWasm);
-  if (!bytes.includes(Buffer.from("open_rebellion_interface_fixture"))) {
-    throw new Error("test WASM does not expose the fixture bridge");
+  for (const required of [
+    "open_rebellion_interface_fixture",
+    "packed-encyclopedia-fixture",
+  ]) {
+    if (!bytes.includes(Buffer.from(required))) {
+      throw new Error(`test WASM does not contain required fixture token ${required}`);
+    }
   }
 }
 

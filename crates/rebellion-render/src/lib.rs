@@ -5,6 +5,10 @@ pub mod audio;
 pub mod bmp_cache;
 pub mod cockpit;
 pub mod encyclopedia;
+pub mod encyclopedia_assets;
+pub mod encyclopedia_navigation;
+pub mod encyclopedia_textures;
+pub mod encyclopedia_view;
 pub mod event_screen;
 pub mod fleet_movement;
 pub mod fog;
@@ -51,6 +55,8 @@ pub use advisor::{
 pub use audio::{draw_audio_controls, AudioVolumeState, MusicContext, MusicTrack, SfxKind};
 #[cfg(target_arch = "wasm32")]
 pub use bmp_cache::set_bmp_cache;
+#[cfg(not(target_arch = "wasm32"))]
+pub use bmp_cache::{approved_hd_assets_from_bytes, ApprovedHdAsset};
 pub use bmp_cache::{AssetRenderProfile, BmpCache, DllSource};
 pub use cockpit::{
     draw_cockpit_background, draw_cockpit_chrome, draw_cockpit_egui_layer,
@@ -64,12 +70,31 @@ pub use encyclopedia::set_encyclopedia_asset_cache;
 pub use encyclopedia::{
     draw_encyclopedia, draw_encyclopedia_index_catalog, draw_encyclopedia_index_shell,
     EncyclopediaState, EncyclopediaTab, OriginalEncyclopediaCatalog, OriginalEncyclopediaEntry,
-    ENCYCLOPEDIA_INDEX_HEIGHT, ENCYCLOPEDIA_INDEX_WIDTH,
+    draw_encyclopedia_surface,
+    EncyclopediaSurfaceDiagnostic, EncyclopediaSurfaceFrame, EncyclopediaSurfaceLabels,
+    EncyclopediaSurfaceState, ENCYCLOPEDIA_INDEX_HEIGHT, ENCYCLOPEDIA_INDEX_WIDTH,
 };
 #[cfg(feature = "interface-test-fixtures")]
 pub use encyclopedia::{
     draw_encyclopedia_artwork_fixture, draw_encyclopedia_index_catalog_fixture,
     draw_encyclopedia_index_fixture,
+};
+pub use encyclopedia_assets::{inspect_encyclopedia_bytes, InspectedBytes, MAX_ENCYCLOPEDIA_IMAGE_BYTES};
+pub use encyclopedia_navigation::{
+    apply_encyclopedia_action, reconcile_encyclopedia_state, BodyScrollIntent, EncyclopediaAction,
+    EncyclopediaMode, EncyclopediaState as EncyclopediaNavigationState, IndexCategoryDirection,
+    IndexRowNavigation, NavigationOutcome, NavigationRejection, ReconcileOutcome, SelectionForce,
+    SourceKeyIntent,
+};
+pub use encyclopedia_textures::{
+    EguiEncyclopediaTextureBackend, EncyclopediaTextureBackend, EncyclopediaTextureCache,
+    EncyclopediaTextureEvent, EncyclopediaTextureResolution, EncyclopediaTextureSampling,
+    EncyclopediaTextureUpload,
+};
+pub use encyclopedia_view::{
+    ActiveTopicView, CategoryViewItem, EncyclopediaDiagnosticScope, EncyclopediaSelection,
+    EncyclopediaView, EncyclopediaViewDiagnostic, NavigationState, StatRowView,
+    TopicImageRenderProfile, TopicImageView, TopicViewItem,
 };
 pub use event_screen::{
     draw_event_screen, show_event_screen, show_event_screen_raw, update_event_screen,

@@ -224,6 +224,260 @@
             });
         }());
     </script>
+    <script>
+        (function registerEncyclopediaFetchBridge() {
+            "use strict";
+
+            const STATE_UNKNOWN = -1;
+            const STATE_PENDING = 0;
+            const STATE_READY = 1;
+            const STATE_NOT_FOUND = 2;
+            const STATE_HTTP_STATUS = 3;
+            const STATE_TRANSPORT = 4;
+            const STATE_RESOURCE_LIMIT = 5;
+            const STATE_UNSUPPORTED_STREAMING = 6;
+            const MAX_HANDLE = 0xffffffff;
+            const requests = new Map();
+            const pathDecoder = new TextDecoder("utf-8", { fatal: true });
+            let nextHandle = 1;
+
+            function allocateHandle() {
+                if (requests.size >= MAX_HANDLE - 1) {
+                    return 0;
+                }
+                while (requests.has(nextHandle) || nextHandle === 0) {
+                    nextHandle = nextHandle === MAX_HANDLE ? 1 : nextHandle + 1;
+                }
+                const handle = nextHandle;
+                nextHandle = nextHandle === MAX_HANDLE ? 1 : nextHandle + 1;
+                return handle;
+            }
+
+            function isCurrent(record) {
+                return !record.released && requests.get(record.handle) === record;
+            }
+
+            function ignoreRejection(value) {
+                if (value && typeof value.catch === "function") {
+                    value.catch(() => {});
+                }
+            }
+
+            function cancelResources(record, responseBody) {
+                record.chunks = [];
+                const cancelTarget = record.reader || responseBody;
+                if (cancelTarget && typeof cancelTarget.cancel === "function") {
+                    try {
+                        ignoreRejection(cancelTarget.cancel());
+                    } catch (_) {
+                        // Cancellation is best-effort after the durable outcome
+                        // has already been recorded for Rust.
+                    }
+                }
+                try {
+                    record.controller.abort();
+                } catch (_) {
+                    // AbortController.abort() is normally infallible, but the
+                    // bridge must still retain its classified terminal state.
+                }
+            }
+
+            function settleFailure(record, state, detail, responseBody) {
+                if (!isCurrent(record) || record.state !== STATE_PENDING) {
+                    return;
+                }
+                record.state = state;
+                record.detail = detail;
+                cancelResources(record, responseBody);
+            }
+
+            async function consume(record, path, maxBytes) {
+                let response;
+                try {
+                    response = await fetch(path, {
+                        credentials: "same-origin",
+                        signal: record.controller.signal,
+                    });
+                    if (!isCurrent(record)) {
+                        cancelResources(record, response?.body);
+                        return;
+                    }
+
+                    const status = Number(response.status);
+                    if (!Number.isInteger(status) || status < 100 || status > 999) {
+                        settleFailure(record, STATE_TRANSPORT, 0, response.body);
+                        return;
+                    }
+                    if (status === 404) {
+                        settleFailure(record, STATE_NOT_FOUND, status, response.body);
+                        return;
+                    }
+                    if (status < 200 || status >= 300) {
+                        settleFailure(record, STATE_HTTP_STATUS, status, response.body);
+                        return;
+                    }
+                    if (!response.body || typeof response.body.getReader !== "function") {
+                        settleFailure(
+                            record,
+                            STATE_UNSUPPORTED_STREAMING,
+                            0,
+                            response.body,
+                        );
+                        return;
+                    }
+
+                    record.reader = response.body.getReader();
+                    let totalBytes = 0;
+                    while (true) {
+                        const result = await record.reader.read();
+                        if (!isCurrent(record)) {
+                            return;
+                        }
+                        if (!result || typeof result.done !== "boolean") {
+                            throw new TypeError("stream reader returned an invalid result");
+                        }
+                        if (result.done) {
+                            break;
+                        }
+                        if (!(result.value instanceof Uint8Array)) {
+                            throw new TypeError("stream reader returned a non-byte chunk");
+                        }
+                        const chunkLength = result.value.byteLength;
+                        if (chunkLength === 0) {
+                            continue;
+                        }
+                        if (chunkLength > maxBytes - totalBytes) {
+                            settleFailure(record, STATE_RESOURCE_LIMIT, 0);
+                            return;
+                        }
+                        totalBytes += chunkLength;
+                        record.chunks.push(Uint8Array.from(result.value));
+                    }
+                    if (!isCurrent(record)) {
+                        return;
+                    }
+                    if (record.reader && typeof record.reader.releaseLock === "function") {
+                        record.reader.releaseLock();
+                    }
+                    record.reader = null;
+                    record.state = STATE_READY;
+                    record.detail = totalBytes;
+                } catch (_) {
+                    settleFailure(record, STATE_TRANSPORT, 0, response?.body);
+                }
+            }
+
+            function register(imports) {
+                imports.env.open_rebellion_encyclopedia_fetch_start = function (
+                    pathPointer,
+                    pathLength,
+                    maxBytes,
+                ) {
+                    // Wasm i32 arguments arrive in JavaScript as signed values;
+                    // these ABI fields are Rust u32/usize and must retain their
+                    // full bit patterns.
+                    pathPointer >>>= 0;
+                    pathLength >>>= 0;
+                    maxBytes >>>= 0;
+                    const handle = allocateHandle();
+                    if (handle === 0) {
+                        return 0;
+                    }
+                    const record = {
+                        chunks: [],
+                        controller: new AbortController(),
+                        detail: 0,
+                        handle,
+                        reader: null,
+                        released: false,
+                        state: STATE_PENDING,
+                    };
+                    requests.set(handle, record);
+                    try {
+                        if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) {
+                            throw new RangeError("invalid encyclopedia fetch byte limit");
+                        }
+                        const pathBytes = new Uint8Array(
+                            wasm_memory.buffer,
+                            pathPointer,
+                            pathLength,
+                        );
+                        const path = pathDecoder.decode(pathBytes);
+                        void consume(record, path, maxBytes);
+                    } catch (_) {
+                        settleFailure(record, STATE_TRANSPORT, 0);
+                    }
+                    return handle;
+                };
+
+                imports.env.open_rebellion_encyclopedia_fetch_poll = function (handle) {
+                    handle >>>= 0;
+                    return requests.get(handle)?.state ?? STATE_UNKNOWN;
+                };
+
+                imports.env.open_rebellion_encyclopedia_fetch_detail = function (handle) {
+                    handle >>>= 0;
+                    return requests.get(handle)?.detail ?? 0;
+                };
+
+                imports.env.open_rebellion_encyclopedia_fetch_copy = function (
+                    handle,
+                    destinationPointer,
+                    destinationLength,
+                ) {
+                    handle >>>= 0;
+                    destinationPointer >>>= 0;
+                    destinationLength >>>= 0;
+                    const record = requests.get(handle);
+                    if (
+                        !record
+                        || record.state !== STATE_READY
+                        || destinationLength !== record.detail
+                    ) {
+                        return 0;
+                    }
+                    try {
+                        const destination = new Uint8Array(
+                            wasm_memory.buffer,
+                            destinationPointer,
+                            destinationLength,
+                        );
+                        let offset = 0;
+                        for (const chunk of record.chunks) {
+                            destination.set(chunk, offset);
+                            offset += chunk.byteLength;
+                        }
+                        if (offset !== destinationLength) {
+                            return 0;
+                        }
+                        record.chunks = [];
+                        return 1;
+                    } catch (_) {
+                        return 0;
+                    }
+                };
+
+                imports.env.open_rebellion_encyclopedia_fetch_release = function (handle) {
+                    handle >>>= 0;
+                    const record = requests.get(handle);
+                    if (!record) {
+                        return 0;
+                    }
+                    record.released = true;
+                    requests.delete(handle);
+                    cancelResources(record);
+                    record.reader = null;
+                    return 1;
+                };
+            }
+
+            miniquad_add_plugin({
+                register_plugin: register,
+                version: 1,
+                name: "open_rebellion_encyclopedia_fetch",
+            });
+        }());
+    </script>
     <script>load("open-rebellion.wasm");</script>
 </body>
 </html>
