@@ -396,6 +396,25 @@ pub fn load_encyclopedia_topics(
     source: &EncyclopediaSourceCatalog,
     audience: EncyclopediaAudience,
 ) -> Result<EncyclopediaTopicCatalog> {
+    let system_pictures = load_encyclopedia_system_pictures(gdata_path)?;
+    Ok(bind_encyclopedia_topics(
+        index,
+        source,
+        &system_pictures,
+        audience,
+    ))
+}
+
+/// Load the source system-object to picture-id join used by both audiences.
+///
+/// Keeping this outside the session builder lets native and browser readers
+/// converge after their selected `SYSTEMSD.DAT` bytes have entered the normal
+/// data cache.
+///
+/// # Errors
+/// Returns an error if `SYSTEMSD.DAT` is malformed, contains an out-of-range
+/// family identity, or repeats a compound object identity.
+pub fn load_encyclopedia_system_pictures(gdata_path: &Path) -> Result<HashMap<u32, u32>> {
     let systems: SystemsFile = read_dat_file(&gdata_path.join("SYSTEMSD.DAT"))?;
     let mut system_pictures = HashMap::with_capacity(systems.systems.len());
     for system in systems.systems {
@@ -413,12 +432,7 @@ pub fn load_encyclopedia_topics(
             "duplicate Encyclopedia system object {object_id:#010x}"
         );
     }
-    Ok(bind_encyclopedia_topics(
-        index,
-        source,
-        &system_pictures,
-        audience,
-    ))
+    Ok(system_pictures)
 }
 
 /// Pure binding helper used by the native loader, WASM loader, and tests.

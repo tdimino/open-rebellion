@@ -61,7 +61,7 @@
     "galaxy_display": "partial_original_backdrops_gid_menu_22_commands_and_fixed_map_no_op_inputs_passed_no_original_acceptance_provisional_metrics_special_overlays_expanded_legend_and_remaining_input_open",
     "system_navigation": "partial_sector_system_shells_tabs_source_mapped_item_minis_bounded_scroll_coarse_intelligence_gating_and_rail_lifecycle_work_nested_compositions_exact_intelligence_commands_and_complete_matrix_open",
     "wasm_advisors": "partial_original_idle_runs_visible_in_scaled_apertures_actions_voice_and_chrome_open",
-    "wasm_encyclopedia_art": "partial_original_edata_transport_cache_decode_and_exact_native_size_browser_display_pass_authentic_index_topic_windows_and_obj_01_acceptance_open",
+    "wasm_encyclopedia_art": "partial_original_edata_transport_authentic_fixture_index_topic_windows_and_canonical_native_packed_loose_session_parity_pass_packaged_visual_journeys_routing_a0_and_obj_01_acceptance_open",
     "tactical_interface": "fail_strict_acceptance_open_p58_b22_bounded_practical_launcher_complete_with_106_of_106_deterministic_A1_cells_source_tactical_rng_power_allocation_completion_destruction_callbacks_timed_trench_producer_and_shared_campaign_return_0_of_106_A0_accepted",
     "required_baseline_cells": "627_pending_or_open",
     "manual_window_cross_check": "present_partial_missing_disabled_matrix_added_for_manual_discoveries_and_keyed_to_stable_surface_cells",
@@ -147,18 +147,24 @@
       "id": "UIP-F-006",
       "severity": "P1",
       "status": "partial",
-      "title": "EDATA transport, source-exact Encyclopedia index shells, the 356-entry catalog, strict bindings, an immutable session, and a pure source-ordered presenter pass bounded gates; browser topic rendering, production routing, A0, and OBJ-01 remain open",
+      "title": "EDATA transport, source-exact Encyclopedia index/topic fixture surfaces, the 356-entry catalog, strict bindings, immutable session/presenter contracts, and canonical native/packed/loose reader parity pass bounded gates; packaged visual journeys, production routing, A0, and OBJ-01 remain open",
       "evidence": [
         "crates/rebellion-render/src/encyclopedia.rs",
+        "crates/rebellion-render/src/encyclopedia_surface.rs",
+        "crates/rebellion-app/src/encyclopedia_content.rs",
         "scripts/build-runtime-pack.py",
         "tools/interface-parity/encyclopedia-art.mjs",
         "tools/interface-parity/encyclopedia-index-shell.mjs",
+        "tools/interface-parity/encyclopedia-surface.mjs",
+        "tools/interface-parity/encyclopedia-publication.mjs",
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-28-encyclopedia-artwork-transport.md",
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-30-encyclopedia-index-shell.md",
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-30-encyclopedia-index-catalog.md",
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-01-encyclopedia-topic-source-bindings.md",
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-content-session.md",
-        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-presenter.md"
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-presenter.md",
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-topic-surface.md",
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-canonical-publication.md"
       ],
       "affected_surfaces": ["OBJ-01"]
     },
@@ -368,9 +374,11 @@
     "p66a_encyclopedia_topic_sources": "evidence/2026-10-01-encyclopedia-topic-source-bindings.md",
     "w2_encyclopedia_content_session": "evidence/2026-10-06-encyclopedia-content-session.md",
     "w3_encyclopedia_presenter": "evidence/2026-10-06-encyclopedia-presenter.md",
+    "w4_encyclopedia_topic_surface": "evidence/2026-10-06-encyclopedia-topic-surface.md",
+    "w5a_encyclopedia_canonical_publication": "evidence/2026-10-06-encyclopedia-canonical-publication.md",
     "ledger_validator": "../../../scripts/validate-interface-parity-ledgers.mjs",
     "screenshot_ledger": "screenshot-ledger.md",
     "capture_manifest": "reference-captures/SHA256SUMS"
   },
-  "next_action": "Preserve the P58-B22 bounded practical launcher while strict A0 work continues. Continue UIP-B05 from the W3 pure presenter by adapting it to the authentic bitmap topic window, owning decoded textures by session generation, transporting and installing the same logical catalog through canonical native and browser packs, then proving production cockpit/contextual close-and-return journeys, exact text/A0 comparison, and the complete faction and viewport matrix. Continue CMD-08 separately from the corrected P63 Message Index shell."
+  "next_action": "Preserve the P58-B22 bounded practical launcher while strict A0 work continues. Continue UIP-B05 from the W5A canonical native/packed/loose publication by proving packaged production cockpit/contextual topic, navigation, close, and return journeys in E30; activate command 0x131 only through E32 after that gate, then complete exact text/A0 comparison and the faction/viewport matrix. Continue CMD-08 separately from the corrected P63 Message Index shell."
 }

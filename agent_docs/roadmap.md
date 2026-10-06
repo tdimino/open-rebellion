@@ -34,14 +34,20 @@ replacement, rollback, deterministic logical and texture generations, and no
 campaign-state ownership. W3 adds a pure presenter with exact session order,
 both faction bindings, bounded navigation, explicit unavailable-source topics,
 and immutable close/return origins across complete logical journeys. Browser
-reader parity and production routing remain open. W4 connects that presenter
+reader parity and production routing were then separated. W4 connects that presenter
 to the authentic topic/index shell behind fixture compilation, owns one
 generation-keyed selected-topic texture, and passes ten two-faction browser A1
-cases at native and scaled viewports. Canonical packaged-reader journeys, A0
-comparison, and strict `OBJ-01` cells remain open. See the [P66A evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-01-encyclopedia-topic-source-bindings.md),
+cases at native and scaled viewports. W5A atomically publishes the canonical
+catalog, sidecar, and exact referenced artwork through ORPK plus a
+development-only loose generation, then proves native, packed-browser, and
+loose-reader convergence on one 356/356-topic W2 session fingerprint while
+preserving the four-request production startup budget. Packaged visual
+journeys, route activation, A0 comparison, and strict `OBJ-01` cells remain
+open. See the [P66A evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-01-encyclopedia-topic-source-bindings.md),
 [W2 evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-content-session.md),
 [W3 evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-presenter.md),
-and [W4 evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-topic-surface.md).
+[W4 evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-topic-surface.md),
+and [W5A evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-canonical-publication.md).
 
 ## Galaxy Viewer: historical implementation tranche delivered
 *Interactive galaxy data viewer -- native + WASM*
@@ -747,6 +753,15 @@ would tune around known simulation feedback defects.
   close, and navigation with zero runtime errors. W5 canonical-reader and
   production routes, original A0/title placement, and strict `OBJ-01`
   acceptance remain open.
+- [x] Complete the W5A canonical Encyclopedia publication checkpoint: publish
+  the P66A catalog, sidecar, and exact 186-file referenced artwork set through
+  deterministic, read-back-verified, atomically replaced ORPK and a
+  development-only immutable loose generation. Native, packed-browser, and
+  loose readers now install identical bytes into one W2 session with the same
+  logical fingerprint and 356 topics per faction; the production artifact
+  retains its four-request startup budget and excludes fixture routes. E30
+  packaged visual journeys, E32 command `0x131` activation, A0 comparison, and
+  strict `OBJ-01` acceptance remain open.
 - [x] Restore the P50 GID root and submenu frame from STRATEGY 10100 through
   10107. Paint repeated edges in four batched meshes, remove the invented menu
   fade, and check native-size root pixels against the source BMPs in both

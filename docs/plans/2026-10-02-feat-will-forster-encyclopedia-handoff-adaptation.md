@@ -410,3 +410,10 @@ This plan is complete only when:
   Synthetic topic bytes prove the surface only; W5 still owns canonical-reader
   parity, packaged production journeys, and route activation, while original
   A0 comparison retains exact typography/title-placement acceptance.
+- 2026-10-06: split W5 at the dependency boundary instead of creating a cycle.
+  W5A publishes and installs the canonical bytes first so W1 and W2 can close
+  their native/packed/loose parity gates; E30 then owns packaged visual
+  acceptance, and E32 retains final command `0x131` activation. ORPK remains
+  the production authority, while the development-only loose form uses an
+  independently atomic immutable generation pointer and cannot override a
+  present production pack.

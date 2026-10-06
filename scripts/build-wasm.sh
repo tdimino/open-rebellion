@@ -10,6 +10,8 @@ WEB_AUDIO="$ROOT/web/data/sounds"
 MDATA_DIR="${REBELLION_MDATA_DIR:-$ROOT/../star-wars-rebellion/MDATA}"
 ORIGINAL_GAME_DIR="${REBELLION_GAME_DIR:-$(dirname "$MDATA_DIR")}"
 EDATA_DIR="${REBELLION_EDATA_DIR:-$ORIGINAL_GAME_DIR/EData}"
+ENCYCLOPEDIA_SOURCE="$GDATA/encyclopedia/source.json"
+ENCYCLOPEDIA_MIRROR="$ROOT/web/data/encyclopedia"
 
 # Refuse stale UI staging before compilation; the runtime pack builder repeats this gate.
 python3 "$ROOT/scripts/build-runtime-pack.py" --ui "$GDATA/ui" --validate-ui-only
@@ -213,14 +215,27 @@ RUNTIME_PACK_ARGS=(
     --ui "$WEB_UI"
     --audio "$WEB_AUDIO"
     --output "$ROOT/web/data/runtime.orpk"
+    --encyclopedia-mirror "$ENCYCLOPEDIA_MIRROR"
 )
-if [ -d "$EDATA_DIR" ]; then
-    RUNTIME_PACK_ARGS+=(--edata "$EDATA_DIR")
-    echo "Including original encyclopedia artwork from $EDATA_DIR."
+if [ -f "$ENCYCLOPEDIA_SOURCE" ] || [ -f "$ENCYCLOPEDIA_SOURCE.manifest.json" ]; then
+    if [ ! -f "$ENCYCLOPEDIA_SOURCE" ] || [ ! -f "$ENCYCLOPEDIA_SOURCE.manifest.json" ]; then
+        echo "ERROR: Encyclopedia source publication is partial under $GDATA/encyclopedia/."
+        exit 1
+    fi
+    if [ ! -d "$EDATA_DIR" ]; then
+        echo "ERROR: Encyclopedia source is present but EData is unavailable at $EDATA_DIR."
+        exit 1
+    fi
+    RUNTIME_PACK_ARGS+=(
+        --encyclopedia-source "$ENCYCLOPEDIA_SOURCE"
+        --edata "$EDATA_DIR"
+    )
+    echo "Including canonical Encyclopedia source and exact artwork from $EDATA_DIR."
 else
-    echo "WARNING: EData not found at $EDATA_DIR; encyclopedia artwork will remain unavailable."
+    echo "WARNING: Encyclopedia source publication not found at $ENCYCLOPEDIA_SOURCE; Encyclopedia will remain unavailable."
 fi
 python3 "$ROOT/scripts/build-runtime-pack.py" "${RUNTIME_PACK_ARGS[@]}"
+python3 "$ROOT/scripts/build-runtime-pack.py" "${RUNTIME_PACK_ARGS[@]}" --verify-only
 
 WASM_SIZE=$(du -h "$ROOT/web/open-rebellion.wasm" | cut -f1)
 echo "Done. WASM size: $WASM_SIZE"

@@ -85,6 +85,7 @@ the source of truth for scope, acceptance, and current work.
 | P64 | [Encyclopedia index-shell checkpoint](2026-09-30-encyclopedia-index-shell.md) | [`p64-encyclopedia-index-shell/`](p64-encyclopedia-index-shell/) |
 | P65 | [Encyclopedia index-catalog checkpoint](2026-09-30-encyclopedia-index-catalog.md) | [`p65-encyclopedia-index-catalog/`](p65-encyclopedia-index-catalog/) |
 | P66A | [Encyclopedia topic-source checkpoint](2026-10-01-encyclopedia-topic-source-bindings.md) | [`p66a-encyclopedia-topic-bindings/`](p66a-encyclopedia-topic-bindings/) |
+| W2-W5A | [Immutable session](2026-10-06-encyclopedia-content-session.md), [pure presenter](2026-10-06-encyclopedia-presenter.md), [authentic fixture surface](2026-10-06-encyclopedia-topic-surface.md), and [canonical publication](2026-10-06-encyclopedia-canonical-publication.md) | Browser artifacts remain ignored locally and are hash-identified in each report. |
 
 Earlier strategic, GID, shell, control, staging, and render reports are indexed
 in the parent [audit overview](../index.md). Every new artifact directory must

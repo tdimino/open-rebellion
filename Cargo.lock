@@ -1424,6 +1424,7 @@ dependencies = [
  "rebellion-render",
  "serde",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]

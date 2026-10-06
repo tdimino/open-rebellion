@@ -54,7 +54,13 @@ fi
 ZIP="${ROOT}/dist/open-rebellion-web-${VERSION}.zip"
 rm -f "${ZIP}"
 cd dist
-zip -rq "open-rebellion-web-${VERSION}.zip" "open-rebellion-web-${VERSION}/"
+if command -v zip >/dev/null 2>&1; then
+    zip -rq "open-rebellion-web-${VERSION}.zip" "open-rebellion-web-${VERSION}/"
+else
+    python3 -m zipfile -c \
+        "open-rebellion-web-${VERSION}.zip" \
+        "open-rebellion-web-${VERSION}/"
+fi
 cd ..
 
 echo "Created: ${ZIP}"

@@ -17,6 +17,13 @@ use rebellion_render::{
 /// The renderer intentionally has no dependency on `rebellion-data`; this is
 /// the sole W4 seam between its lightweight borrowed DTO and the immutable
 /// session/presenter pair.
+#[cfg_attr(
+    not(any(test, all(target_arch = "wasm32", feature = "interface-test-fixtures"))),
+    allow(
+        dead_code,
+        reason = "W5 installs production sessions while E32 retains the fail-closed route gate."
+    )
+)]
 pub fn adapt_encyclopedia_surface<'a>(
     session: &'a EncyclopediaSession,
     presentation: &EncyclopediaPresentation<'a>,

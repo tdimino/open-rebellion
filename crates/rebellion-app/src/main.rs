@@ -1,5 +1,5 @@
 mod audio;
-#[cfg(any(test, all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
+mod encyclopedia_content;
 mod encyclopedia_surface;
 #[cfg(any(test, all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
 #[cfg_attr(
@@ -515,9 +515,13 @@ fn draw_loading_progress(label: &str, loaded: usize, total: usize) {
 }
 
 #[cfg(target_arch = "wasm32")]
-fn install_runtime_pack(
-    bytes: &[u8],
-) -> Result<std::collections::HashMap<String, Vec<u8>>, String> {
+struct WasmRuntimeAssets {
+    audio_files: std::collections::HashMap<String, Vec<u8>>,
+    encyclopedia: Option<encyclopedia_content::EncyclopediaContentPayload>,
+}
+
+#[cfg(target_arch = "wasm32")]
+fn install_runtime_pack(bytes: &[u8]) -> Result<WasmRuntimeAssets, String> {
     let mut pack = runtime_pack::parse_runtime_pack(bytes).map_err(|error| error.to_string())?;
     for required in REQUIRED_WASM_DATA {
         if !pack.game_files.contains_key(*required) {
@@ -525,9 +529,14 @@ fn install_runtime_pack(
         }
     }
 
-    let encyclopedia_assets =
-        runtime_pack::take_namespace(&mut pack.game_files, "encyclopedia/assets/");
-    let encyclopedia_asset_count = encyclopedia_assets.len();
+    let encyclopedia = encyclopedia_content::EncyclopediaContentPayload::take_from_runtime_pack(
+        &mut pack.game_files,
+    )
+    .map_err(|error| error.to_string())?;
+    let encyclopedia_asset_count = encyclopedia.as_ref().map_or(
+        0,
+        encyclopedia_content::EncyclopediaContentPayload::artwork_count,
+    );
     let game_file_count = pack.game_files.len();
     let string_table: std::collections::HashMap<u16, String> = pack
         .game_files
@@ -551,7 +560,16 @@ fn install_runtime_pack(
         .collect();
 
     rebellion_data::set_string_table(string_table);
-    rebellion_render::set_encyclopedia_asset_cache(encyclopedia_assets);
+    #[cfg(feature = "interface-test-fixtures")]
+    rebellion_render::set_encyclopedia_asset_cache(
+        encyclopedia
+            .as_ref()
+            .map_or_else(std::collections::HashMap::new, |content| {
+                content.legacy_renderer_artwork()
+            }),
+    );
+    #[cfg(not(feature = "interface-test-fixtures"))]
+    rebellion_render::set_encyclopedia_asset_cache(std::collections::HashMap::new());
     rebellion_data::set_file_cache(pack.game_files);
     rebellion_render::set_advisor_asset_cache(pack.advisor_frames, advisor_bitmaps);
     rebellion_render::set_bmp_cache(pack.bitmaps);
@@ -567,11 +585,63 @@ fn install_runtime_pack(
         tactical_texture_count,
         bytes.len()
     );
-    Ok(pack.audio_files)
+    Ok(WasmRuntimeAssets {
+        audio_files: pack.audio_files,
+        encyclopedia,
+    })
 }
 
 #[cfg(target_arch = "wasm32")]
-async fn load_legacy_wasm_assets() {
+async fn load_loose_wasm_encyclopedia(
+) -> Result<Option<encyclopedia_content::EncyclopediaContentPayload>, String> {
+    let pointer_bytes = match macroquad::file::load_file("data/encyclopedia/current.json").await {
+        Ok(bytes) => bytes,
+        Err(_) => return Ok(None),
+    };
+    let Some(generation) = encyclopedia_content::parse_loose_pointer(&pointer_bytes)
+        .map_err(|error| error.to_string())?
+    else {
+        return Ok(None);
+    };
+    let base = format!("data/encyclopedia/generations/{generation}");
+    let catalog_path = format!("{base}/catalog.json");
+    let manifest_path = format!("{base}/manifest.json");
+    let catalog = macroquad::file::load_file(&catalog_path)
+        .await
+        .map_err(|error| format!("{catalog_path} failed to load: {error:?}"))?;
+    let manifest = macroquad::file::load_file(&manifest_path)
+        .await
+        .map_err(|error| format!("{manifest_path} failed to load: {error:?}"))?;
+    let (source, _) = rebellion_data::encyclopedia_topics::parse_encyclopedia_source_with_manifest(
+        &catalog, &manifest,
+    )
+    .map_err(|error| error.to_string())?;
+    let mut entries = std::collections::HashMap::from([
+        ("encyclopedia/catalog.json".to_string(), catalog),
+        ("encyclopedia/manifest.json".to_string(), manifest),
+    ]);
+    let filenames: std::collections::BTreeSet<String> = source.artwork.values().cloned().collect();
+    let mut retained_artwork_bytes = 0;
+    for filename in filenames {
+        let path = format!("{base}/assets/{filename}");
+        let bytes = macroquad::file::load_file(&path)
+            .await
+            .map_err(|error| format!("{path} failed to load: {error:?}"))?;
+        retained_artwork_bytes = encyclopedia_content::checked_artwork_transfer_total(
+            retained_artwork_bytes,
+            bytes.len(),
+        )
+        .map_err(|error| error.to_string())?;
+        entries.insert(format!("encyclopedia/assets/{filename}"), bytes);
+    }
+    encyclopedia_content::EncyclopediaContentPayload::from_loose_entries(entries)
+        .map(Some)
+        .map_err(|error| error.to_string())
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn load_legacy_wasm_assets(
+) -> Result<Option<encyclopedia_content::EncyclopediaContentPayload>, String> {
     use std::collections::HashMap;
 
     let total = REQUIRED_WASM_DATA.len() + OPTIONAL_WASM_DATA.len();
@@ -615,15 +685,20 @@ async fn load_legacy_wasm_assets() {
         id: u32,
     }
 
-    let Ok(manifest_bytes) = macroquad::file::load_file("data/ui/bmp-manifest.json").await else {
-        eprintln!("WARNING: bmp-manifest.json not found — UI textures will be missing");
-        return;
-    };
-    let entries: Vec<BmpEntry> = match serde_json::from_slice(&manifest_bytes) {
-        Ok(entries) => entries,
+    let entries: Vec<BmpEntry> = match macroquad::file::load_file("data/ui/bmp-manifest.json").await
+    {
+        Ok(manifest_bytes) => match serde_json::from_slice(&manifest_bytes) {
+            Ok(entries) => entries,
+            Err(error) => {
+                eprintln!(
+                    "ERROR: bmp-manifest.json is malformed: {error} — UI textures will be missing"
+                );
+                Vec::new()
+            }
+        },
         Err(error) => {
             eprintln!(
-                "ERROR: bmp-manifest.json is malformed: {error} — UI textures will be missing"
+                "WARNING: bmp-manifest.json failed to load ({error:?}) — UI textures will be missing"
             );
             Vec::new()
         }
@@ -663,10 +738,22 @@ async fn load_legacy_wasm_assets() {
         bmp_total
     );
     rebellion_render::set_bmp_cache(bmp_cache);
+    let encyclopedia = load_loose_wasm_encyclopedia().await?;
+    #[cfg(feature = "interface-test-fixtures")]
+    rebellion_render::set_encyclopedia_asset_cache(
+        encyclopedia
+            .as_ref()
+            .map_or_else(std::collections::HashMap::new, |content| {
+                content.legacy_renderer_artwork()
+            }),
+    );
+    #[cfg(not(feature = "interface-test-fixtures"))]
+    rebellion_render::set_encyclopedia_asset_cache(std::collections::HashMap::new());
+    Ok(encyclopedia)
 }
 
 #[cfg(target_arch = "wasm32")]
-async fn load_wasm_assets() -> std::collections::HashMap<String, Vec<u8>> {
+async fn load_wasm_assets() -> WasmRuntimeAssets {
     draw_loading_progress("Loading optimized runtime assets…", 0, 0);
     next_frame().await;
 
@@ -677,8 +764,13 @@ async fn load_wasm_assets() -> std::collections::HashMap<String, Vec<u8>> {
             eprintln!(
                 "WARNING: data/runtime.orpk unavailable ({error:?}); using legacy per-file loading"
             );
-            load_legacy_wasm_assets().await;
-            std::collections::HashMap::new()
+            let encyclopedia = load_legacy_wasm_assets()
+                .await
+                .unwrap_or_else(|error| panic!("Invalid loose Encyclopedia publication: {error}"));
+            WasmRuntimeAssets {
+                audio_files: std::collections::HashMap::new(),
+                encyclopedia,
+            }
         }
     }
 }
@@ -797,6 +889,21 @@ async fn main() {
     let asset_render_profile = configured_asset_render_profile();
     macroquad::logging::info!("[assets] render_profile={}", asset_render_profile.as_str());
 
+    #[cfg(not(target_arch = "wasm32"))]
+    let encyclopedia_content = match encyclopedia_content::read_native_encyclopedia(
+        &gdata_path,
+        &configured_edata_path(&gdata_path),
+    ) {
+        Ok(content) => content,
+        Err(error) => {
+            macroquad::logging::error!(
+                "[encyclopedia] native_content rejected before installation error={}",
+                error
+            );
+            None
+        }
+    };
+
     #[cfg(target_arch = "wasm32")]
     if web_replay::requested() {
         web_replay::run(&gdata_path).await;
@@ -819,11 +926,11 @@ async fn main() {
     };
 
     #[cfg(target_arch = "wasm32")]
-    let (mut world, mut browser_audio_files) = {
-        let audio_files = load_wasm_assets().await;
+    let (mut world, mut browser_audio_files, encyclopedia_content) = {
+        let assets = load_wasm_assets().await;
         let world = rebellion_data::load_game_data(&gdata_path)
             .unwrap_or_else(|error| panic!("Failed to parse game data: {error}"));
-        (world, audio_files)
+        (world, assets.audio_files, assets.encyclopedia)
     };
 
     eprintln!(
@@ -838,32 +945,18 @@ async fn main() {
     // The Galactic Encyclopedia is immutable reference data, not campaign
     // state. Rebuild it from the installed DAT/TEXTSTRA source so opening the
     // index after a save/load never changes the serialized world format.
-    let original_encyclopedia_catalog =
-        match rebellion_data::encyclopedia_catalog::load_encyclopedia_catalog(&gdata_path) {
-            Ok(source) => {
-                let category_counts: [usize; 7] = std::array::from_fn(|index| {
-                    source
-                        .entries_for(source.categories[index].command_id)
-                        .len()
-                });
-                let category_labels = source.categories.map(|category| category.label);
-                let entries = source
-                    .entries
-                    .into_iter()
-                    .map(|entry| OriginalEncyclopediaEntry {
-                        object_id: entry.object_id,
-                        name: entry.name,
-                    })
-                    .collect();
-                let catalog = OriginalEncyclopediaCatalog::new(
-                    source.title,
-                    source.topic_label,
-                    category_labels,
-                    entries,
-                );
-                macroquad::logging::info!(
+    let encyclopedia_catalog = match rebellion_data::encyclopedia_catalog::load_encyclopedia_catalog(
+        &gdata_path,
+    ) {
+        Ok(source) => {
+            let category_counts: [usize; 7] = std::array::from_fn(|index| {
+                source
+                    .entries_for(source.categories[index].command_id)
+                    .len()
+            });
+            macroquad::logging::info!(
                     "[encyclopedia] source_catalog loaded entries={} categories=all:{},systems:{},ships:{},facilities:{},missions:{},troops:{},personnel:{}",
-                    catalog.len(),
+                    source.entries.len(),
                     category_counts[0],
                     category_counts[1],
                     category_counts[2],
@@ -872,15 +965,67 @@ async fn main() {
                     category_counts[5],
                     category_counts[6],
                 );
-                Some(catalog)
+            Some(source)
+        }
+        Err(error) => {
+            macroquad::logging::error!("[encyclopedia] source_catalog unavailable error={error}");
+            None
+        }
+    };
+    let original_encyclopedia_catalog = encyclopedia_catalog.as_ref().map(|source| {
+        let entries = source
+            .entries
+            .iter()
+            .map(|entry| OriginalEncyclopediaEntry {
+                object_id: entry.object_id,
+                name: entry.name.clone(),
+            })
+            .collect();
+        OriginalEncyclopediaCatalog::new(
+            source.title.clone(),
+            source.topic_label.clone(),
+            std::array::from_fn(|index| source.categories[index].label.clone()),
+            entries,
+        )
+    });
+    let mut _encyclopedia_session_store =
+        rebellion_data::encyclopedia_session::EncyclopediaSessionStore::default();
+    if let (Some(content), Some(catalog)) = (encyclopedia_content, encyclopedia_catalog) {
+        match rebellion_data::encyclopedia_topics::load_encyclopedia_system_pictures(&gdata_path)
+            .and_then(|system_pictures| {
+                _encyclopedia_session_store
+                    .replace(content.into_session_input(catalog, system_pictures))
+            }) {
+            Ok(disposition) => {
+                let session = _encyclopedia_session_store
+                    .current()
+                    .expect("successful Encyclopedia install publishes a session");
+                macroquad::logging::info!(
+                    "[encyclopedia] content_session installed disposition={:?} fingerprint={} alliance_topics={} empire_topics={}",
+                    disposition,
+                    session.logical_fingerprint(),
+                    session
+                        .topics(rebellion_data::encyclopedia_topics::EncyclopediaAudience::Alliance)
+                        .entries
+                        .len(),
+                    session
+                        .topics(rebellion_data::encyclopedia_topics::EncyclopediaAudience::Empire)
+                        .entries
+                        .len(),
+                );
             }
             Err(error) => {
                 macroquad::logging::error!(
-                    "[encyclopedia] source_catalog unavailable error={error}"
+                    "[encyclopedia] content_session rejected before publication error={}",
+                    error
                 );
-                None
             }
-        };
+        }
+    } else {
+        macroquad::logging::warn!(
+            "[encyclopedia] content_session unavailable; production route remains disabled"
+        );
+    }
     #[cfg(not(all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
     let _ = original_encyclopedia_catalog.as_ref();
 

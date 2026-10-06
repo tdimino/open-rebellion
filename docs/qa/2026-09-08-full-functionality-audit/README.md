@@ -95,6 +95,7 @@ acceptance plan required before the project can claim 100% functionality.
 | [Encyclopedia content-session proof](../2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-content-session.md) | One platform-neutral immutable session validates both faction bindings and bounded 400-by-200 indexed artwork; atomic replacement, rollback, repeated install, teardown, native tests, canonical WASM compilation, and mutation gates pass. Cross-target reader parity, packaged readers, rendering, routing, A0, and `OBJ-01` remain open. |
 | [Encyclopedia pure-presenter proof](../2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-presenter.md) | One graphics-free API projects exact session order, both faction bindings, explicit source-empty topics, bounded previous/next and immutable cockpit/index/contextual return routes. Rendering, packaged readers, production routing, A0, and `OBJ-01` remain open. |
 | [Encyclopedia authentic topic-surface proof](../2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-topic-surface.md) | The W3 presenter drives the authentic faction shell, index/topic controls, bounded navigation and a selected-only generation-keyed texture through ten fixture-gated two-faction browser A1 cases. Canonical packaged readers, production routes, original A0/title placement, and strict `OBJ-01` acceptance remain open. |
+| [Encyclopedia canonical-publication proof](../2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-canonical-publication.md) | Deterministic, read-back-verified ORPK and development-loose publication feed exact canonical bytes through native, packed-browser, and loose readers into one 356/356-topic session fingerprint. Production retains four startup requests and excludes fixture routes; packaged visual journeys, command activation, A0, and strict `OBJ-01` remain open. |
 | [GitHub Pages proof](evidence/2026-09-08-github-pages.md) | Successful deployment run and public HTTP smoke tests for P40. |
 | [Project archive](../../../archive/INDEX.md) | Superseded progress and playtest artifacts retained for provenance. |
 
@@ -127,8 +128,11 @@ immutable content session and atomic last-known-good publication point. W3
 provides pure topic composition, bounded logical navigation and exact typed
 return origins. W4 drives the authentic index/topic shell and selected-only
 texture lifecycle through a synthetic, fixture-gated two-faction browser A1
-matrix. Canonical browser-reader transport, production journeys and A0
-comparison remain absent, so command `0x131` continues to fail closed.
+matrix. W5A now supplies canonical native, packed-browser, and development-loose
+transport with exact-byte and logical-fingerprint parity, deterministic atomic
+publication, and four-request production startup. Packaged visual journeys and
+route activation remain assigned to E30 and E32 respectively, while A0
+comparison remains absent and command `0x131` continues to fail closed.
 Fleet-miniature acceptance, deterministic four-request browser
 startup, F-001 browser Save/Load/Delete, the F-011A fingerprint primitive,
 F-011B1 save continuation, the F-011B2 replay/data contract, F-011B3 native
