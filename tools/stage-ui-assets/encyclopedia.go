@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -17,6 +18,10 @@ const (
 	encyclopediaEncoding      = "windows-1252"
 	encyclopediaExpectedTexts = 348
 	encyclopediaExpectedMaps  = 191
+	encyclopediaJSONByteLimit = 64 * 1024 * 1024
+	encyclopediaManifestLimit = 32 * 1024 * 1024
+	encyclopediaResourceLimit = 10_000
+	encyclopediaBodyByteLimit = 1_048_576
 )
 
 var encyclopediaArtworkName = regexp.MustCompile(`^EDATA\.([0-9]{3})$`)
@@ -217,7 +222,7 @@ func verifyEncyclopediaSource(output string, log io.Writer) error {
 		return err
 	}
 	var catalog encyclopediaSource
-	if err := json.Unmarshal(catalogBytes, &catalog); err != nil {
+	if err := decodeStrictEncyclopediaJSON(catalogBytes, &catalog); err != nil {
 		return err
 	}
 	if err := validateEncyclopediaSource(catalog); err != nil {
@@ -230,8 +235,11 @@ func verifyEncyclopediaSource(output string, log io.Writer) error {
 	if err != nil {
 		return err
 	}
+	if len(manifestBytes) > encyclopediaManifestLimit {
+		return fmt.Errorf("encyclopedia source manifest JSON byte limit exceeded")
+	}
 	var manifest encyclopediaSourceManifest
-	if err := json.Unmarshal(manifestBytes, &manifest); err != nil {
+	if err := decodeStrictEncyclopediaJSON(manifestBytes, &manifest); err != nil {
 		return err
 	}
 	if manifest.SchemaVersion != encyclopediaSchemaVersion || manifest.CatalogSHA256 != byteSHA256(catalogBytes) {
@@ -247,6 +255,91 @@ func verifyEncyclopediaSource(output string, log io.Writer) error {
 	return nil
 }
 
+func decodeStrictEncyclopediaJSON(data []byte, destination any) error {
+	if len(data) > encyclopediaJSONByteLimit {
+		return fmt.Errorf("encyclopedia JSON byte limit exceeded")
+	}
+	if err := rejectDuplicateJSONKeys(data); err != nil {
+		return err
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(destination); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf("encyclopedia JSON has a trailing value")
+		}
+		return err
+	}
+	return nil
+}
+
+func rejectDuplicateJSONKeys(data []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	if err := scanUniqueJSONValue(decoder); err != nil {
+		return err
+	}
+	if _, err := decoder.Token(); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf("encyclopedia JSON has a trailing value")
+		}
+		return err
+	}
+	return nil
+}
+
+func scanUniqueJSONValue(decoder *json.Decoder) error {
+	token, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	delimiter, ok := token.(json.Delim)
+	if !ok {
+		return nil
+	}
+	switch delimiter {
+	case '{':
+		keys := make(map[string]struct{})
+		numericKeys := make(map[uint16]string)
+		for decoder.More() {
+			keyToken, err := decoder.Token()
+			if err != nil {
+				return err
+			}
+			key, ok := keyToken.(string)
+			if !ok {
+				return fmt.Errorf("encyclopedia JSON object key is not a string")
+			}
+			if _, duplicate := keys[key]; duplicate {
+				return fmt.Errorf("duplicate encyclopedia JSON key %q", key)
+			}
+			keys[key] = struct{}{}
+			if numericKey, err := strconv.ParseUint(key, 10, 16); err == nil {
+				resourceID := uint16(numericKey)
+				if prior, duplicate := numericKeys[resourceID]; duplicate {
+					return fmt.Errorf("duplicate encyclopedia resource identity %d from keys %q and %q", resourceID, prior, key)
+				}
+				numericKeys[resourceID] = key
+			}
+			if err := scanUniqueJSONValue(decoder); err != nil {
+				return err
+			}
+		}
+	case '[':
+		for decoder.More() {
+			if err := scanUniqueJSONValue(decoder); err != nil {
+				return err
+			}
+		}
+	default:
+		return fmt.Errorf("unexpected encyclopedia JSON delimiter %q", delimiter)
+	}
+	_, err = decoder.Token()
+	return err
+}
+
 func validateEncyclopediaSource(catalog encyclopediaSource) error {
 	if catalog.SchemaVersion != encyclopediaSchemaVersion || catalog.LanguageID != encyclopediaLanguageID || catalog.Encoding != encyclopediaEncoding || catalog.SourceCodePage != 0 {
 		return fmt.Errorf("unsupported encyclopedia source profile")
@@ -254,8 +347,11 @@ func validateEncyclopediaSource(catalog encyclopediaSource) error {
 	if len(catalog.Texts) == 0 || len(catalog.Artwork) == 0 {
 		return fmt.Errorf("encyclopedia source catalog is empty")
 	}
+	if len(catalog.Texts) > encyclopediaResourceLimit || len(catalog.Artwork) > encyclopediaResourceLimit {
+		return fmt.Errorf("encyclopedia source catalog exceeds the resource limit")
+	}
 	for id, text := range catalog.Texts {
-		if id == 0 || text.Body == "" || text.BodySHA256 != byteSHA256([]byte(text.Body)) {
+		if id == 0 || text.Body == "" || len(text.Body) > encyclopediaBodyByteLimit || text.BodySHA256 != byteSHA256([]byte(text.Body)) {
 			return fmt.Errorf("invalid encyclopedia text %d", id)
 		}
 	}

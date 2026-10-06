@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "catalog_sha256": "84e6f16f168131543534a4c4602a226f99bb2d9776fea70eaa10381b84d3ea7a",
+  "source_files": {
+    "encytext_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "encybmap_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "counts": {
+    "texts": 3,
+    "artwork_mappings": 4
+  }
+}
