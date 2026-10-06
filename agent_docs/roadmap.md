@@ -41,13 +41,18 @@ cases at native and scaled viewports. W5A atomically publishes the canonical
 catalog, sidecar, and exact referenced artwork through ORPK plus a
 development-only loose generation, then proves native, packed-browser, and
 loose-reader convergence on one 356/356-topic W2 session fingerprint while
-preserving the four-request production startup budget. Packaged visual
+preserving the four-request production startup budget. W6 adds opt-in native
+faithful-HD selection at the immutable-session boundary: only manifest-reviewed,
+source-matched, digest-valid exact-4x PNG output can replace a rendered view,
+and every failure retains the original. Browser and strict acceptance remain
+original-only. Packaged visual
 journeys, route activation, A0 comparison, and strict `OBJ-01` cells remain
 open. See the [P66A evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-01-encyclopedia-topic-source-bindings.md),
 [W2 evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-content-session.md),
 [W3 evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-presenter.md),
 [W4 evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-topic-surface.md),
-and [W5A evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-canonical-publication.md).
+[W5A evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-canonical-publication.md),
+and [W6 evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-hd-selection.md).
 
 ## Galaxy Viewer: historical implementation tranche delivered
 *Interactive galaxy data viewer -- native + WASM*
@@ -762,6 +767,12 @@ would tune around known simulation feedback defects.
   retains its four-request startup budget and excludes fixture routes. E30
   packaged visual journeys, E32 command `0x131` activation, A0 comparison, and
   strict `OBJ-01` acceptance remain open.
+- [x] Complete the W6 original-first Encyclopedia HD checkpoint: prepare one
+  native selection snapshot from the validated W2 session, require the existing
+  faithful-HD manifest review plus exact source/output digests and 4x PNG
+  dimensions, retain original bytes for every absent or invalid candidate, and
+  key textures by sampling policy. Browser builds and strict parity evidence
+  remain original-only; no enhanced asset is committed or generated.
 - [x] Restore the P50 GID root and submenu frame from STRATEGY 10100 through
   10107. Paint repeated edges in four batched meshes, remove the invented menu
   fade, and check native-size root pixels against the source BMPs in both

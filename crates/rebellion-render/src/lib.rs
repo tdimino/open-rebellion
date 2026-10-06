@@ -59,6 +59,8 @@ pub use advisor::{
 pub use audio::{draw_audio_controls, AudioVolumeState, MusicContext, MusicTrack, SfxKind};
 #[cfg(target_arch = "wasm32")]
 pub use bmp_cache::set_bmp_cache;
+#[cfg(not(target_arch = "wasm32"))]
+pub use bmp_cache::{approved_hd_assets_from_bytes, ApprovedHdAsset};
 pub use bmp_cache::{AssetRenderProfile, BmpCache, DllSource};
 pub use cockpit::{
     draw_cockpit_background, draw_cockpit_chrome, draw_cockpit_egui_layer,

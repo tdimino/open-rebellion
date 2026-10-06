@@ -10,7 +10,10 @@ use rebellion_render::{
     EncyclopediaArtworkView, EncyclopediaSurface, EncyclopediaSurfaceAudience,
     EncyclopediaSurfaceAvailability, EncyclopediaSurfaceCategory, EncyclopediaSurfaceMode,
     EncyclopediaSurfaceNavigation, EncyclopediaSurfaceTopic, EncyclopediaSurfaceTopicItem,
+    EncyclopediaTextureSampling,
 };
+
+use crate::encyclopedia_hd::PreparedEncyclopediaHd;
 
 /// Mechanically adapt a validated presentation without copying prose or art.
 ///
@@ -27,6 +30,30 @@ use rebellion_render::{
 pub fn adapt_encyclopedia_surface<'a>(
     session: &'a EncyclopediaSession,
     presentation: &EncyclopediaPresentation<'a>,
+) -> EncyclopediaSurface<'a> {
+    adapt_encyclopedia_surface_inner(session, presentation, None)
+}
+
+/// Adapt through one native profile snapshot prepared outside the frame loop.
+#[cfg_attr(
+    not(test),
+    allow(
+        dead_code,
+        reason = "E32 owns the production route that consumes W6 selection."
+    )
+)]
+pub(crate) fn adapt_encyclopedia_surface_with_hd<'a>(
+    session: &'a EncyclopediaSession,
+    presentation: &EncyclopediaPresentation<'a>,
+    hd: &'a PreparedEncyclopediaHd,
+) -> EncyclopediaSurface<'a> {
+    adapt_encyclopedia_surface_inner(session, presentation, Some(hd))
+}
+
+fn adapt_encyclopedia_surface_inner<'a>(
+    session: &'a EncyclopediaSession,
+    presentation: &EncyclopediaPresentation<'a>,
+    hd: Option<&'a PreparedEncyclopediaHd>,
 ) -> EncyclopediaSurface<'a> {
     let category =
         |category: &rebellion_data::encyclopedia_presenter::EncyclopediaCategoryView<'a>| {
@@ -74,9 +101,8 @@ pub fn adapt_encyclopedia_surface<'a>(
                     artwork_resource_id,
                     artwork_filename,
                     artwork_metadata,
-                } => (
-                    Some(description),
-                    Some(EncyclopediaArtworkView {
+                } => {
+                    let original = EncyclopediaArtworkView {
                         resource_id: artwork_resource_id,
                         filename: artwork_filename,
                         digest: artwork_metadata.sha256(),
@@ -85,8 +111,13 @@ pub fn adapt_encyclopedia_surface<'a>(
                         bytes: session
                             .artwork_bytes(artwork_filename)
                             .expect("validated presentation retains exact artwork bytes"),
-                    }),
-                ),
+                        sampling: EncyclopediaTextureSampling::Nearest,
+                    };
+                    (
+                        Some(description),
+                        Some(hd.map_or(original, |prepared| prepared.select(original))),
+                    )
+                }
                 EncyclopediaTopicContent::SourceUnavailable => (None, None),
             };
             EncyclopediaSurfaceTopic {

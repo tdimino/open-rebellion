@@ -51,6 +51,7 @@ pub struct EncyclopediaArtworkView<'a> {
     pub width: u32,
     pub height: u32,
     pub bytes: &'a [u8],
+    pub sampling: crate::encyclopedia_textures::EncyclopediaTextureSampling,
 }
 
 /// The active topic. Source-unavailable topics carry neither prose nor art.

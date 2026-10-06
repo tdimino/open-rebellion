@@ -948,6 +948,7 @@ impl EncyclopediaTextureBackend for EguiEncyclopediaTextureBackend {
             image,
             match upload.sampling {
                 EncyclopediaTextureSampling::Nearest => TextureOptions::NEAREST,
+                EncyclopediaTextureSampling::Linear => TextureOptions::LINEAR,
             },
         ))
     }
@@ -2374,6 +2375,7 @@ mod tests {
             width: 400,
             height: 200,
             bytes,
+            sampling: EncyclopediaTextureSampling::Nearest,
         }
     }
 
@@ -2409,6 +2411,26 @@ mod tests {
 
         assert!(cache.resolve(8, None).unwrap().texture.is_none());
         assert_eq!(counts.borrow().releases, 3);
+    }
+
+    #[test]
+    fn topic_texture_cache_invalidates_when_only_sampling_profile_changes() {
+        let counts = Rc::new(RefCell::new(TextureCounts::default()));
+        let backend = CountingTextureBackend(counts.clone());
+        let mut cache = EncyclopediaTopicTextureCache::new(backend);
+        let bytes = synthetic_indexed_edata();
+        let nearest = artwork_view("EDATA.014", "same-digest", &bytes);
+        let mut linear = nearest;
+        linear.sampling = EncyclopediaTextureSampling::Linear;
+
+        assert!(!cache.resolve(7, Some(&nearest)).unwrap().cache_hit);
+        assert!(!cache.resolve(7, Some(&linear)).unwrap().cache_hit);
+        assert_eq!(counts.borrow().uploads, 2);
+        assert_eq!(counts.borrow().releases, 1);
+        assert_eq!(
+            counts.borrow().last_sampling,
+            Some(EncyclopediaTextureSampling::Linear)
+        );
     }
 
     #[test]

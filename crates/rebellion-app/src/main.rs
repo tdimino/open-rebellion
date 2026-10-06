@@ -1,5 +1,6 @@
 mod audio;
 mod encyclopedia_content;
+mod encyclopedia_hd;
 mod encyclopedia_surface;
 #[cfg(any(test, all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
 #[cfg_attr(
@@ -1026,6 +1027,40 @@ async fn main() {
             "[encyclopedia] content_session unavailable; production route remains disabled"
         );
     }
+    #[cfg(not(target_arch = "wasm32"))]
+    let _encyclopedia_hd = {
+        let hd_root = gdata_path
+            .parent()
+            .unwrap_or(Path::new("."))
+            .join("hd");
+        let prepared = _encyclopedia_session_store.current().map_or_else(
+            encyclopedia_hd::PreparedEncyclopediaHd::original_only,
+            |session| {
+                encyclopedia_hd::prepare_native_encyclopedia_hd(
+                    asset_render_profile,
+                    Some(&hd_root),
+                    &session,
+                )
+            },
+        );
+        for diagnostic in prepared.diagnostics() {
+            macroquad::logging::warn!(
+                "[encyclopedia] faithful_hd fallback code={} asset={} detail={}",
+                diagnostic.code,
+                diagnostic.asset_id.as_deref().unwrap_or("all"),
+                diagnostic.detail
+            );
+        }
+        macroquad::logging::info!(
+            "[encyclopedia] faithful_hd prepared profile={} selected={} diagnostics={}",
+            asset_render_profile.as_str(),
+            prepared.selected_count(),
+            prepared.diagnostics().len()
+        );
+        prepared
+    };
+    #[cfg(target_arch = "wasm32")]
+    let _encyclopedia_hd = encyclopedia_hd::PreparedEncyclopediaHd::original_only();
     #[cfg(not(all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
     let _ = original_encyclopedia_catalog.as_ref();
 

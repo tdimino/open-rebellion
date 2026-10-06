@@ -164,7 +164,8 @@
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-content-session.md",
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-presenter.md",
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-topic-surface.md",
-        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-canonical-publication.md"
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-canonical-publication.md",
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-hd-selection.md"
       ],
       "affected_surfaces": ["OBJ-01"]
     },
@@ -376,6 +377,7 @@
     "w3_encyclopedia_presenter": "evidence/2026-10-06-encyclopedia-presenter.md",
     "w4_encyclopedia_topic_surface": "evidence/2026-10-06-encyclopedia-topic-surface.md",
     "w5a_encyclopedia_canonical_publication": "evidence/2026-10-06-encyclopedia-canonical-publication.md",
+    "w6_encyclopedia_hd_selection": "evidence/2026-10-06-encyclopedia-hd-selection.md",
     "ledger_validator": "../../../scripts/validate-interface-parity-ledgers.mjs",
     "screenshot_ledger": "screenshot-ledger.md",
     "capture_manifest": "reference-captures/SHA256SUMS"

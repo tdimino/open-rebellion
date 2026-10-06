@@ -6,6 +6,7 @@ use crate::encyclopedia_surface::EncyclopediaArtworkView;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EncyclopediaTextureSampling {
     Nearest,
+    Linear,
 }
 
 /// Decoded pixels passed to a platform texture backend.
@@ -34,6 +35,7 @@ struct EncyclopediaTextureKey {
     resource_id: u16,
     filename: String,
     digest: String,
+    sampling: EncyclopediaTextureSampling,
 }
 
 /// Result of resolving one active topic's optional artwork.
@@ -72,6 +74,7 @@ impl<Backend: EncyclopediaTextureBackend> EncyclopediaTopicTextureCache<Backend>
             resource_id: artwork.resource_id,
             filename: artwork.filename.to_owned(),
             digest: artwork.digest.to_owned(),
+            sampling: artwork.sampling,
         });
         if self
             .retained
@@ -111,7 +114,7 @@ impl<Backend: EncyclopediaTextureBackend> EncyclopediaTopicTextureCache<Backend>
             width: artwork.width,
             height: artwork.height,
             rgba: rgba.as_raw(),
-            sampling: EncyclopediaTextureSampling::Nearest,
+            sampling: artwork.sampling,
         })?;
         self.retained = requested_key.map(|key| (key, texture));
         Ok(EncyclopediaTextureResolution {

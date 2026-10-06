@@ -417,3 +417,9 @@ This plan is complete only when:
   the production authority, while the development-only loose form uses an
   independently atomic immutable generation pointer and cannot override a
   present production pack.
+- 2026-10-06: implement W6 as one native startup snapshot over the validated
+  W2 session and the existing faithful-HD approval manifest. Original parity
+  never reads the enhanced path; faithful-HD admits only source-matched,
+  digest-approved, exact-4x PNG output and otherwise retains the complete
+  original view. Browser builds and strict original-interface acceptance stay
+  original-only, while E32 retains production route activation.

@@ -108,13 +108,17 @@ and passes the complete comparison contract.
   [W3 pure-presenter evidence](evidence/2026-10-06-encyclopedia-presenter.md), and
   [W4 authentic topic-surface evidence](evidence/2026-10-06-encyclopedia-topic-surface.md),
   plus the [W5A canonical-publication evidence](evidence/2026-10-06-encyclopedia-canonical-publication.md)
+  and [W6 original-first HD evidence](evidence/2026-10-06-encyclopedia-hd-selection.md)
   for atomic validated installation, exact session-order projection, both
   faction bindings, explicit source-empty topics, bounded navigation, and
   immutable close/return routes, plus fixture-gated authentic rendering and
   selected-only texture ownership. Native, packed-browser, and
   development-loose readers now converge on exact bytes and one logical
-  fingerprint through deterministic atomic publication. Packaged visual
-  journeys, production routing, A0, and strict `OBJ-01` acceptance remain open.
+  fingerprint through deterministic atomic publication. Native faithful-HD
+  selection is opt-in, manifest-approved, and falls back to that exact original
+  view; browser and strict parity evidence remain original-only. Packaged
+  visual journeys, production routing, A0, and strict `OBJ-01` acceptance remain
+  open.
 - Review the [P50 GID menu-frame evidence](evidence/2026-09-12-gid-menu-frame.md)
   for original frame tiles, source-pixel checks, and the remaining menu gaps.
 - Review the [P51 GID hover and occlusion evidence](evidence/2026-09-12-gid-hover-and-occlusion.md)
