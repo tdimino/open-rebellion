@@ -1375,14 +1375,9 @@ async fn main() {
     }
     #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
     let mut encyclopedia_surface_fixture = interface_fixture_request
-        .and_then(|request| {
-            request
-                .scenario
-                .encyclopedia_fixture_start()
-                .map(|start| (request.faction, start))
-        })
-        .map(|(faction, start)| {
-            let audience = match faction {
+        .filter(|request| request.scenario.is_encyclopedia_surface())
+        .map(|request| {
+            let audience = match request.faction {
                 CockpitFaction::Alliance => {
                     rebellion_data::encyclopedia_topics::EncyclopediaAudience::Alliance
                 }
@@ -1390,8 +1385,25 @@ async fn main() {
                     rebellion_data::encyclopedia_topics::EncyclopediaAudience::Empire
                 }
             };
-            encyclopedia_surface::EncyclopediaSurfaceFixture::new(audience, start)
-                .unwrap_or_else(|error| panic!("W4 Encyclopedia fixture is invalid: {error}"))
+            if let Some(start) = request.scenario.encyclopedia_fixture_start() {
+                encyclopedia_surface::EncyclopediaSurfaceFixture::new(audience, start)
+                    .unwrap_or_else(|error| panic!("W4 Encyclopedia fixture is invalid: {error}"))
+            } else {
+                let session = _encyclopedia_session_store.current().unwrap_or_else(|| {
+                    panic!(
+                        "E30 canonical Encyclopedia fixture requires an installed content session"
+                    )
+                });
+                encyclopedia_surface::EncyclopediaSurfaceFixture::from_session(
+                    session,
+                    audience,
+                    request
+                        .scenario
+                        .canonical_encyclopedia_fixture_start()
+                        .expect("canonical Encyclopedia scenario has a fixture start"),
+                )
+                .unwrap_or_else(|error| panic!("E30 Encyclopedia fixture is invalid: {error}"))
+            }
         });
     #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
     let tactical_fixture_request = tactical_test_fixture::requested();
@@ -3509,12 +3521,9 @@ Some(RailAudience::side(*faction_is_alliance)),
                                 | interface_test_fixture::Scenario::MessageIndexShell
                                 | interface_test_fixture::Scenario::EncyclopediaIndexShell
                                 | interface_test_fixture::Scenario::EncyclopediaIndexCatalog
-                                | interface_test_fixture::Scenario::EncyclopediaSurfaceMiddle
-                                | interface_test_fixture::Scenario::EncyclopediaSurfaceFirst
-                                | interface_test_fixture::Scenario::EncyclopediaSurfaceUnavailable
-                                | interface_test_fixture::Scenario::EncyclopediaSurfaceIndex
                         )
-                    });
+                    }) || interface_fixture_request
+                        .is_some_and(|request| request.scenario.is_encyclopedia_surface());
                 #[cfg(not(all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
                 let original_modal_fixture_open = false;
                 map_state.pointer_blocked = sector_window_state
@@ -3803,7 +3812,13 @@ Some(RailAudience::side(*faction_is_alliance)),
                     }
                     #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
                     if let Some(fixture) = encyclopedia_surface_fixture.as_mut() {
-                        fixture.draw(ctx, &mut bmp_cache);
+                        fixture.draw(
+                            ctx,
+                            &mut bmp_cache,
+                            interface_fixture_request
+                                .expect("Encyclopedia fixture has an interface request")
+                                .code,
+                        );
                     }
 
                     // Mod Manager (floating window)

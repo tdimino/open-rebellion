@@ -33,14 +33,14 @@ use rebellion_render::{
 use rebellion_render::{DefensesPage, DefensesWindowState, MissionsTab, MissionsWindowState};
 use serde::Serialize;
 
-use crate::encyclopedia_surface::FixtureStart;
+use crate::encyclopedia_surface::{CanonicalFixtureStart, FixtureStart};
 use crate::GameMode;
 
 const FIXTURE_ABSENT: u32 = 0;
 /// How far right of the galaxy view's centre the targeting scenario puts its
 /// target system, clear of the system window it opens on the left.
 #[cfg(test)]
-const SCENARIO_COUNT: u8 = 57;
+const SCENARIO_COUNT: u8 = 63;
 
 extern "C" {
     fn open_rebellion_interface_fixture_code() -> u32;
@@ -114,6 +114,12 @@ pub enum Scenario {
     EncyclopediaSurfaceFirst = 54,
     EncyclopediaSurfaceUnavailable = 55,
     EncyclopediaSurfaceIndex = 56,
+    EncyclopediaCanonicalIndex = 57,
+    EncyclopediaCanonicalFirst = 58,
+    EncyclopediaCanonicalLast = 59,
+    EncyclopediaCanonicalLongest = 60,
+    EncyclopediaCanonicalUnavailable = 61,
+    EncyclopediaCanonicalContextual = 62,
 }
 
 impl Scenario {
@@ -176,6 +182,12 @@ impl Scenario {
             54 => Self::EncyclopediaSurfaceFirst,
             55 => Self::EncyclopediaSurfaceUnavailable,
             56 => Self::EncyclopediaSurfaceIndex,
+            57 => Self::EncyclopediaCanonicalIndex,
+            58 => Self::EncyclopediaCanonicalFirst,
+            59 => Self::EncyclopediaCanonicalLast,
+            60 => Self::EncyclopediaCanonicalLongest,
+            61 => Self::EncyclopediaCanonicalUnavailable,
+            62 => Self::EncyclopediaCanonicalContextual,
             _ => return None,
         })
     }
@@ -188,6 +200,27 @@ impl Scenario {
             Self::EncyclopediaSurfaceIndex => Some(FixtureStart::Index),
             _ => None,
         }
+    }
+
+    pub fn canonical_encyclopedia_fixture_start(self) -> Option<CanonicalFixtureStart> {
+        match self {
+            Self::EncyclopediaCanonicalIndex => Some(CanonicalFixtureStart::Index),
+            Self::EncyclopediaCanonicalFirst => Some(CanonicalFixtureStart::FirstTopic),
+            Self::EncyclopediaCanonicalLast => Some(CanonicalFixtureStart::LastTopic),
+            Self::EncyclopediaCanonicalLongest => Some(CanonicalFixtureStart::LongestResolvedTopic),
+            Self::EncyclopediaCanonicalUnavailable => {
+                Some(CanonicalFixtureStart::SourceUnavailableTopic)
+            }
+            Self::EncyclopediaCanonicalContextual => {
+                Some(CanonicalFixtureStart::ContextualFirstTopic)
+            }
+            _ => None,
+        }
+    }
+
+    pub fn is_encyclopedia_surface(self) -> bool {
+        self.encyclopedia_fixture_start().is_some()
+            || self.canonical_encyclopedia_fixture_start().is_some()
     }
 
     fn moves_a_fleet(self) -> bool {
