@@ -128,6 +128,24 @@ pub enum EncyclopediaMissingPart {
     SystemPicture,
 }
 
+/// Source-proven mission objects that have neither topic prose nor artwork.
+///
+/// The owned English P66A audit establishes this exact set for both factions.
+/// Keeping the identities here gives runtime validation and the source audit a
+/// single authority without inventing fallback content.
+pub const ENCYCLOPEDIA_SOURCE_EMPTY_OBJECT_IDS: [u32; 10] = [
+    0x4100_0001,
+    0x4200_0002,
+    0x4300_0003,
+    0x4400_0004,
+    0x6400_0044,
+    0x6500_0083,
+    0x7100_0043,
+    0x7200_0045,
+    0x7200_0046,
+    0x7300_0082,
+];
+
 /// One index object joined to its source topic resources.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EncyclopediaTopicBinding {

@@ -4,7 +4,7 @@ description: "Execution plan for adapting the strongest test, runtime, presentat
 type: feat
 status: active
 created: 2026-10-02
-updated: 2026-10-02
+updated: 2026-10-06
 attribution: "Will Forster, PR #16"
 source_pr: "https://github.com/tdimino/open-rebellion/pull/16"
 source_head: "82ef2ccc7f5b256470adaa3797898b8d79f2d7fc"
@@ -389,3 +389,9 @@ This plan is complete only when:
   boundary once its checkpoint lands.
 - 2026-10-02: schedule conformance, immutable sessions, presenter, authentic
   rendering, and production routing before optional authoring hot reload.
+- 2026-10-06: implement W2 as a caller-owned, platform-neutral data session
+  over P66A types. The inactive store performs full candidate preparation before
+  one-pointer publication, admits only the source-backed 400-by-200 indexed BMP
+  class within per-resource and aggregate byte limits, and exposes only an
+  Encyclopedia texture generation. W5 remains responsible for native and
+  packaged readers, cross-target reader parity, and production install.

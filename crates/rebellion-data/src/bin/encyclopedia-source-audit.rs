@@ -7,7 +7,7 @@ use anyhow::{ensure, Context, Result};
 use rebellion_data::encyclopedia_catalog::load_encyclopedia_catalog;
 use rebellion_data::encyclopedia_topics::{
     load_encyclopedia_topics, parse_encyclopedia_source_with_manifest, EncyclopediaAudience,
-    EncyclopediaMissingPart, EncyclopediaTopicCatalog,
+    EncyclopediaMissingPart, EncyclopediaTopicCatalog, ENCYCLOPEDIA_SOURCE_EMPTY_OBJECT_IDS,
 };
 use serde::Serialize;
 
@@ -147,18 +147,8 @@ fn validate_owned_english_profile(summary: &AuditSummary) -> Result<()> {
             == "fb545d19ae24b0277753494dbfaabf2dbdde660beab821287a32016c290e4560",
         "unexpected owned ENCYBMAP identity"
     );
-    const EXPECTED_MISSING_OBJECTS: [&str; 10] = [
-        "0x41000001",
-        "0x42000002",
-        "0x43000003",
-        "0x44000004",
-        "0x64000044",
-        "0x65000083",
-        "0x71000043",
-        "0x72000045",
-        "0x72000046",
-        "0x73000082",
-    ];
+    let expected_missing_objects =
+        ENCYCLOPEDIA_SOURCE_EMPTY_OBJECT_IDS.map(|object_id| format!("{object_id:#010x}"));
     ensure!(summary.index_entries == 356, "expected 356 index entries");
     ensure!(summary.source_texts == 348, "expected 348 source texts");
     ensure!(
@@ -213,11 +203,11 @@ fn validate_owned_english_profile(summary: &AuditSummary) -> Result<()> {
         let mut missing_ids = result
             .missing_entries
             .iter()
-            .map(|entry| entry.object_id.as_str())
+            .map(|entry| entry.object_id.clone())
             .collect::<Vec<_>>();
         missing_ids.sort_unstable();
         ensure!(
-            missing_ids == EXPECTED_MISSING_OBJECTS,
+            missing_ids == expected_missing_objects,
             "{audience}: unexpected missing object identities"
         );
         ensure!(

@@ -31,6 +31,7 @@ use rebellion_core::world::{
 };
 
 pub mod encyclopedia_catalog;
+pub mod encyclopedia_session;
 pub mod encyclopedia_topics;
 pub mod integrator;
 pub mod mods;
