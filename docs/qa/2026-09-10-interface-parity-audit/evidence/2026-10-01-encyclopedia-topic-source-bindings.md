@@ -20,6 +20,14 @@ or list positions:
   no corresponding neighbor. The exact native neighbor order still requires a
   separate trace and is not inferred from the P65 alphabetical index.
 
+Later checkpoint note (2026-10-06): W3 uses a subsequent trace of
+`FUN_0060a790`, `FUN_0060a890`, `FUN_00626ad0`, `FUN_005f59f0`,
+`FUN_00442130`, `FUN_004ad730`, `FUN_004ad750`, and `FUN_0045da70` to establish
+case-folded list ordering, skip-disabled neighbors, and null endpoint behavior.
+The [W3 evidence](2026-10-06-encyclopedia-presenter.md) records that result and
+the bounded equal-fold tie distinction; it does not retroactively expand this
+P66A extraction checkpoint.
+
 ## Extraction and validation
 
 `stage-ui-assets --encyclopedia-only` is a dependency-free local extractor for

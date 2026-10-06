@@ -104,6 +104,12 @@ and passes the complete comparison contract.
   lookup rules, 346 complete source joins per faction, and ten explicit
   source-empty mission records. Browser transport, topic rendering, routing,
   A0, and `OBJ-01` remain open.
+- Review the [W2 immutable content-session evidence](evidence/2026-10-06-encyclopedia-content-session.md)
+  and [W3 pure-presenter evidence](evidence/2026-10-06-encyclopedia-presenter.md)
+  for atomic validated installation, exact session-order projection, both
+  faction bindings, explicit source-empty topics, bounded navigation, and
+  immutable close/return routes. Rendering, packaged readers, production
+  routing, A0, and `OBJ-01` remain open.
 - Review the [P50 GID menu-frame evidence](evidence/2026-09-12-gid-menu-frame.md)
   for original frame tiles, source-pixel checks, and the remaining menu gaps.
 - Review the [P51 GID hover and occlusion evidence](evidence/2026-09-12-gid-hover-and-occlusion.md)

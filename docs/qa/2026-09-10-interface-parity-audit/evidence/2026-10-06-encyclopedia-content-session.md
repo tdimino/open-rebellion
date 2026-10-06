@@ -132,8 +132,8 @@ immutable-candidate and last-known-good design pattern only. This checkpoint is
 implemented against the current P66A types and fixture rather than copying the
 superseded catalog schema or bundle implementation.
 
-W3 still must add the pure presenter and source-style navigation. W4 must own
-decoded textures and the authentic topic surface. W5 must complete canonical
-publication/readers and the late W1 reader-parity line. W6/W7 still own
-original-first HD selection and native overlays. Live native/browser and A0
-acceptance remain open.
+W3 now adds the [pure presenter and source-style navigation](2026-10-06-encyclopedia-presenter.md)
+over this session. W4 must own decoded textures and the authentic topic
+surface. W5 must complete canonical publication/readers and the late W1/W2
+reader-parity lines. W6/W7 still own original-first HD selection and native
+overlays. Live native/browser and A0 acceptance remain open.

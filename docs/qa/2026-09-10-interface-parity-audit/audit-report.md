@@ -99,7 +99,7 @@ The local source inspection establishes the implementation causes:
 | Partial original sector and system navigation | `crates/rebellion-render/src/sector_window.rs`, `crates/rebellion-render/src/system_window.rs` | Manual pp. 67–68, 97–100, and 122–124; recovered constructors, [navigation evidence](evidence/2026-09-11-strategic-window-navigation.md), and [tab-item evidence](evidence/2026-09-11-detailed-system-tab-items.md) |
 | Partial browser droids | `crates/rebellion-render/src/advisor.rs` | Manual pp. 20–21 and 73–79; official Steam faction captures; [P44 evidence](../2026-09-08-full-functionality-audit/evidence/2026-09-10-authentic-droid-advisors.md) |
 | Bounded original encyclopedia-art transport | `crates/rebellion-render/src/encyclopedia.rs`, `scripts/build-runtime-pack.py`, `tools/interface-parity/encyclopedia-art.mjs` | Manual pp. 71–72, 187 owned original EDATA entries, and [P62 evidence](evidence/2026-09-28-encyclopedia-artwork-transport.md) |
-| Source-recovered Encyclopedia index, catalog, and topic bindings | `crates/rebellion-data/src/encyclopedia_catalog.rs`, `crates/rebellion-data/src/encyclopedia_topics.rs`, `crates/rebellion-render/src/encyclopedia.rs`, `tools/stage-ui-assets`, `crates/rebellion-app/src/main.rs`, `tools/interface-parity/encyclopedia-index-shell.mjs` | `FUN_00429f30`, `FUN_0045d400`, `FUN_0045ddc0`, `FUN_0045f100`, `FUN_0045fa60`, `FUN_0045f660`, 41 owned STRATEGY resources, the owned DAT/TEXTSTRA/ENCYTEXT/ENCYBMAP sources, [P64 shell evidence](evidence/2026-09-30-encyclopedia-index-shell.md), [P65 catalog evidence](evidence/2026-09-30-encyclopedia-index-catalog.md), and [P66A topic-source evidence](evidence/2026-10-01-encyclopedia-topic-source-bindings.md) |
+| Source-recovered Encyclopedia index, catalog, topic bindings, immutable session and pure presenter | `crates/rebellion-data/src/encyclopedia_catalog.rs`, `crates/rebellion-data/src/encyclopedia_topics.rs`, `crates/rebellion-data/src/encyclopedia_session.rs`, `crates/rebellion-data/src/encyclopedia_presenter.rs`, `crates/rebellion-render/src/encyclopedia.rs`, `tools/stage-ui-assets`, `crates/rebellion-app/src/main.rs`, `tools/interface-parity/encyclopedia-index-shell.mjs` | `FUN_00429f30`, `FUN_0045d400`, `FUN_0045ddc0`, `FUN_0045f100`, `FUN_0045fa60`, `FUN_0045f660`, `FUN_00442130`, `FUN_004ad730`, `FUN_004ad750`, 41 owned STRATEGY resources, the owned DAT/TEXTSTRA/ENCYTEXT/ENCYBMAP sources, [P64 shell evidence](evidence/2026-09-30-encyclopedia-index-shell.md), [P65 catalog evidence](evidence/2026-09-30-encyclopedia-index-catalog.md), [P66A topic-source evidence](evidence/2026-10-01-encyclopedia-topic-source-bindings.md), [W2 session evidence](evidence/2026-10-06-encyclopedia-content-session.md), and [W3 presenter evidence](evidence/2026-10-06-encyclopedia-presenter.md) |
 | Source-recovered Message Index shell | `crates/rebellion-render/src/message_index.rs`, `crates/rebellion-app/src/main.rs`, `tools/interface-parity/message-index-shell.mjs` | `FUN_0042a240`, `FUN_00466350`, `FUN_004665f0`, `FUN_00468fb0`, `FUN_004697b0`, 33 owned STRATEGY resources, and [corrected P63 evidence](evidence/2026-09-28-message-index-shell.md) |
 | Manual-facing window and interaction requirements | [Manual window matrix](manual-window-checklists.md) and [known-deviations register](known-deviations.md) | Official manual, existing `ghidra/notes/` traces, and commit-pinned Faction Wars research leads |
 | Incomplete browser asset pack | `scripts/build-runtime-pack.py` | Original ALSPRITE, EMSPRITE, EDATA, ALBRIEF, EMBRIEF, REBDLOG, advisor-control, and voice families |
@@ -134,15 +134,19 @@ while preserving the full P64 regression matrix.
 P66A strictly extracts 348 ENCYTEXT prose records and 191 ENCYBMAP mappings,
 binds 346 complete topics per faction through the recovered ordinary, system,
 and mission lookup rules, and reports ten source-empty missions without
-fallback. Browser catalog transport, topic composition, contextual entry,
-production routing, A0 comparison, and every `OBJ-01` cell remain open. Source cross-checking
+fallback. W2 validates and atomically installs one immutable platform-neutral
+session while preserving the prior session on failure. W3 projects that session
+through one graphics-free API with exact catalog order, bounded no-wrap
+neighbors, explicit unavailable-source topics and immutable cockpit, index or
+typed contextual return origins. Browser catalog transport, authentic topic
+rendering, production routing, A0 comparison, and every `OBJ-01` cell remain
+open. Source cross-checking
 corrects P63: its faction index compositions and ten normal/held controls are
 the Message Index, corroborated by original screenshots and the executable's
 message labels and masks. Its 24 exact browser comparisons and independent
 visual review remain valid for that narrower `CMD-08` checkpoint. The authentic
-Encyclopedia topic composition, interactive navigation, contextual entry,
-browser and production routing, original-runtime comparison, and every
-`OBJ-01` cell remain open.
+Encyclopedia bitmap topic composition, live interaction, browser and production
+routing, original-runtime comparison, and every `OBJ-01` cell remain open.
 P54 separately stages every original type-301 mesh and type-303 texture or
 palette resource with a source-bound content-addressed manifest. P55 decodes
 the full corpus into verified deterministic mesh and texture objects. P56 and

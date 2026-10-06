@@ -395,3 +395,9 @@ This plan is complete only when:
   class within per-resource and aggregate byte limits, and exposes only an
   Encyclopedia texture generation. W5 remains responsible for native and
   packaged readers, cross-target reader parity, and production install.
+- 2026-10-06: implement W3 as a pure projection over the installed W2 session.
+  The presenter preserves the validated P65 sequence, keeps source-empty topics
+  explicit, bounds native-style previous/next without wrap, and carries one
+  immutable origin route through cockpit, index, object and typed contextual
+  journeys. W4 still owns rendering/textures and W5 still owns production
+  routing and reader parity.

@@ -28,13 +28,16 @@ browser gate. P65 adds the complete source-derived 356-entry English catalog,
 seven category filters, stable selection, and scrolling without changing saves
 or exposing the unfinished production route. P66A strictly extracts 348 topic
 texts and 191 image mappings, binds 346 complete topics per faction, and keeps
-ten source-empty mission records explicit. The W2 checkpoint adds one immutable
-content session with strict catalog/binding and original-BMP validation, atomic
+ten source-empty mission records explicit. W2 adds one immutable content
+session with strict catalog/binding and original-BMP validation, atomic
 replacement, rollback, deterministic logical and texture generations, and no
-campaign-state ownership. Browser reader parity, topic transport and
-composition, contextual entry, production routing, A0 comparison, and every
-`OBJ-01` cell remain open. See the [P66A evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-01-encyclopedia-topic-source-bindings.md)
-and [W2 evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-content-session.md).
+campaign-state ownership. W3 adds a pure presenter with exact session order,
+both faction bindings, bounded navigation, explicit unavailable-source topics,
+and immutable close/return origins across complete logical journeys. Browser
+reader parity, topic rendering, production routing, A0 comparison, and every
+`OBJ-01` cell remain open. See the [P66A evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-01-encyclopedia-topic-source-bindings.md),
+[W2 evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-content-session.md),
+and [W3 evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-presenter.md).
 
 ## Galaxy Viewer: historical implementation tranche delivered
 *Interactive galaxy data viewer -- native + WASM*
@@ -724,6 +727,13 @@ would tune around known simulation feedback defects.
   its texture generation on replacement or teardown. The session is inactive
   until W5 supplies and installs canonical packaged or native bytes; no
   production route or `OBJ-01` cell is accepted.
+- [x] Complete the W3 pure Encyclopedia presenter checkpoint: project the
+  immutable session without I/O or texture ownership, retain the validated
+  catalog order and faction-specific bindings, expose all ten source-empty
+  topics without fallback, bound previous/next without wrapping, and preserve
+  exact cockpit, index and typed contextual return origins through follow-up
+  transitions. W4 rendering, W5 packaged production routing, A0 comparison,
+  and every `OBJ-01` cell remain open.
 - [x] Restore the P50 GID root and submenu frame from STRATEGY 10100 through
   10107. Paint repeated edges in four batched meshes, remove the invented menu
   fade, and check native-size root pixels against the source BMPs in both
