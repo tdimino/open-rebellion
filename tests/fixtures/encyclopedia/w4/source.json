@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "language_id": 1033,
+  "encoding": "windows-1252",
+  "source_code_page": 0,
+  "texts": {
+    "5952": {
+      "body": "Synthetic ship body.\nSecond line with SUPERCALIFRAGILISTICEXPIALIDOCIOUSLONGTOKEN.",
+      "body_sha256": "58fa0c457d00f9f9ea875a030af6aa9cd2d1b16ace87aa39f74d8b3234900bb2"
+    },
+    "7248": {
+      "body": "Diplomacy missions influence support through careful negotiation. Assign skilled agents, watch the target system, and expect the mission to continue across several reporting cycles. This synthetic fixture is intentionally long enough to exercise the recovered read-only scrolling body without claiming original authored prose.",
+      "body_sha256": "2edda074db18ef609cba6f4f82c938fe8a5e0beae80e08b27154af1a9cd09ccd"
+    },
+    "7680": {
+      "body": "Synthetic system body.",
+      "body_sha256": "773621448ff74ba9dce5aceb43b7bf70b347037a9705320b10df816b55b3fca3"
+    }
+  },
+  "artwork": {
+    "5952": "EDATA.014",
+    "7248": "EDATA.015",
+    "11100": "EDATA.001",
+    "11344": "EDATA.115"
+  }
+}

@@ -401,3 +401,12 @@ This plan is complete only when:
   immutable origin route through cockpit, index, object and typed contextual
   journeys. W4 still owns rendering/textures and W5 still owns production
   routing and reader parity.
+- 2026-10-06: implement W4 through a render-owned borrowed DTO and a mechanical
+  application adapter, preserving the one-way render dependency boundary. The
+  authentic STRATEGY shell, index/topic controls, scrolling and keyboard paths
+  now have a ten-case two-faction fixture-gated browser A1 matrix. One selected
+  topic texture is keyed by session generation and exact resource metadata and
+  released on every replacement, unavailable/index state, error, or teardown.
+  Synthetic topic bytes prove the surface only; W5 still owns canonical-reader
+  parity, packaged production journeys, and route activation, while original
+  A0 comparison retains exact typography/title-placement acceptance.

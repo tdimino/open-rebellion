@@ -34,10 +34,14 @@ replacement, rollback, deterministic logical and texture generations, and no
 campaign-state ownership. W3 adds a pure presenter with exact session order,
 both faction bindings, bounded navigation, explicit unavailable-source topics,
 and immutable close/return origins across complete logical journeys. Browser
-reader parity, topic rendering, production routing, A0 comparison, and every
-`OBJ-01` cell remain open. See the [P66A evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-01-encyclopedia-topic-source-bindings.md),
+reader parity and production routing remain open. W4 connects that presenter
+to the authentic topic/index shell behind fixture compilation, owns one
+generation-keyed selected-topic texture, and passes ten two-faction browser A1
+cases at native and scaled viewports. Canonical packaged-reader journeys, A0
+comparison, and strict `OBJ-01` cells remain open. See the [P66A evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-01-encyclopedia-topic-source-bindings.md),
 [W2 evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-content-session.md),
-and [W3 evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-presenter.md).
+[W3 evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-presenter.md),
+and [W4 evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-topic-surface.md).
 
 ## Galaxy Viewer: historical implementation tranche delivered
 *Interactive galaxy data viewer -- native + WASM*
@@ -732,8 +736,17 @@ would tune around known simulation feedback defects.
   catalog order and faction-specific bindings, expose all ten source-empty
   topics without fallback, bound previous/next without wrapping, and preserve
   exact cockpit, index and typed contextual return origins through follow-up
-  transitions. W4 rendering, W5 packaged production routing, A0 comparison,
-  and every `OBJ-01` cell remain open.
+  transitions. W5 packaged production routing, A0 comparison, and every strict
+  `OBJ-01` cell remain open.
+- [x] Complete the W4 authentic Encyclopedia topic-surface checkpoint: adapt
+  W3's borrowed presentation into renderer-owned DTOs, reuse the recovered
+  faction shell/index/topic controls, implement bounded keyboard and scrolling
+  behavior, and retain at most one generation-keyed decoded topic texture.
+  Ten two-faction fixture-gated browser A1 cases cover native and scaled
+  viewports, endpoints, pressed/disabled states, source-unavailable clearing,
+  close, and navigation with zero runtime errors. W5 canonical-reader and
+  production routes, original A0/title placement, and strict `OBJ-01`
+  acceptance remain open.
 - [x] Restore the P50 GID root and submenu frame from STRATEGY 10100 through
   10107. Paint repeated edges in four batched meshes, remove the invented menu
   fade, and check native-size root pixels against the source BMPs in both

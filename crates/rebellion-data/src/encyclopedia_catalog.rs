@@ -54,6 +54,25 @@ pub struct EncyclopediaCategory {
 }
 
 impl EncyclopediaCategory {
+    /// Construct one original index category.
+    ///
+    /// This is primarily useful to platform-neutral validated-session inputs;
+    /// production loading still derives the same fields from original data.
+    #[must_use]
+    pub fn new(
+        command_id: u16,
+        label_resource_id: u16,
+        label: String,
+        family_range: Option<std::ops::Range<u8>>,
+    ) -> Self {
+        Self {
+            command_id,
+            label_resource_id,
+            label,
+            family_range,
+        }
+    }
+
     #[must_use]
     pub fn contains(&self, entry: &EncyclopediaCatalogEntry) -> bool {
         self.family_range
@@ -260,12 +279,7 @@ fn category(
     label: String,
     family_range: Option<std::ops::Range<u8>>,
 ) -> EncyclopediaCategory {
-    EncyclopediaCategory {
-        command_id,
-        label_resource_id,
-        label,
-        family_range,
-    }
+    EncyclopediaCategory::new(command_id, label_resource_id, label, family_range)
 }
 
 fn push_entry(

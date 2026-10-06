@@ -6,6 +6,8 @@ pub mod bmp_cache;
 pub mod cockpit;
 pub mod defenses_window;
 pub mod encyclopedia;
+pub mod encyclopedia_surface;
+pub mod encyclopedia_textures;
 pub mod event_screen;
 pub mod fleet_finder;
 pub mod fleet_movement;
@@ -72,13 +74,25 @@ pub use defenses_window::{
 pub use encyclopedia::set_encyclopedia_asset_cache;
 pub use encyclopedia::{
     draw_encyclopedia, draw_encyclopedia_index_catalog, draw_encyclopedia_index_shell,
-    EncyclopediaState, EncyclopediaTab, OriginalEncyclopediaCatalog, OriginalEncyclopediaEntry,
-    ENCYCLOPEDIA_INDEX_HEIGHT, ENCYCLOPEDIA_INDEX_WIDTH,
+    draw_encyclopedia_surface, EncyclopediaState, EncyclopediaSurfaceState, EncyclopediaTab,
+    OriginalEncyclopediaCatalog, OriginalEncyclopediaEntry, ENCYCLOPEDIA_INDEX_HEIGHT,
+    ENCYCLOPEDIA_INDEX_WIDTH,
 };
 #[cfg(feature = "interface-test-fixtures")]
 pub use encyclopedia::{
     draw_encyclopedia_artwork_fixture, draw_encyclopedia_index_catalog_fixture,
     draw_encyclopedia_index_fixture,
+};
+pub use encyclopedia_surface::{
+    encyclopedia_index_list_action, encyclopedia_keyboard_action, EncyclopediaArtworkView,
+    EncyclopediaSurface, EncyclopediaSurfaceAction, EncyclopediaSurfaceAudience,
+    EncyclopediaSurfaceAvailability, EncyclopediaSurfaceCategory, EncyclopediaSurfaceKey,
+    EncyclopediaSurfaceMode, EncyclopediaSurfaceNavigation, EncyclopediaSurfaceTopic,
+    EncyclopediaSurfaceTopicItem,
+};
+pub use encyclopedia_textures::{
+    EncyclopediaTextureBackend, EncyclopediaTextureResolution, EncyclopediaTextureSampling,
+    EncyclopediaTextureUpload, EncyclopediaTopicTextureCache,
 };
 pub use event_screen::{
     draw_event_screen, show_event_screen, show_event_screen_raw, update_event_screen,

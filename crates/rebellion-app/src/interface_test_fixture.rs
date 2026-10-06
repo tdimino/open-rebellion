@@ -33,13 +33,14 @@ use rebellion_render::{
 use rebellion_render::{DefensesPage, DefensesWindowState, MissionsTab, MissionsWindowState};
 use serde::Serialize;
 
+use crate::encyclopedia_surface::FixtureStart;
 use crate::GameMode;
 
 const FIXTURE_ABSENT: u32 = 0;
 /// How far right of the galaxy view's centre the targeting scenario puts its
 /// target system, clear of the system window it opens on the left.
 #[cfg(test)]
-const SCENARIO_COUNT: u8 = 53;
+const SCENARIO_COUNT: u8 = 57;
 
 extern "C" {
     fn open_rebellion_interface_fixture_code() -> u32;
@@ -109,6 +110,10 @@ pub enum Scenario {
     RegimentUnloadRefused = 50,
     FleetJoin = 51,
     FleetFinder = 52,
+    EncyclopediaSurfaceMiddle = 53,
+    EncyclopediaSurfaceFirst = 54,
+    EncyclopediaSurfaceUnavailable = 55,
+    EncyclopediaSurfaceIndex = 56,
 }
 
 impl Scenario {
@@ -167,8 +172,22 @@ impl Scenario {
             50 => Self::RegimentUnloadRefused,
             51 => Self::FleetJoin,
             52 => Self::FleetFinder,
+            53 => Self::EncyclopediaSurfaceMiddle,
+            54 => Self::EncyclopediaSurfaceFirst,
+            55 => Self::EncyclopediaSurfaceUnavailable,
+            56 => Self::EncyclopediaSurfaceIndex,
             _ => return None,
         })
+    }
+
+    pub fn encyclopedia_fixture_start(self) -> Option<FixtureStart> {
+        match self {
+            Self::EncyclopediaSurfaceMiddle => Some(FixtureStart::MiddleTopic),
+            Self::EncyclopediaSurfaceFirst => Some(FixtureStart::FirstTopic),
+            Self::EncyclopediaSurfaceUnavailable => Some(FixtureStart::SourceUnavailableTopic),
+            Self::EncyclopediaSurfaceIndex => Some(FixtureStart::Index),
+            _ => None,
+        }
     }
 
     fn moves_a_fleet(self) -> bool {

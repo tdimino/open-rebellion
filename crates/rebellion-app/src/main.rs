@@ -1,5 +1,7 @@
 mod audio;
 #[cfg(any(test, all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
+mod encyclopedia_surface;
+#[cfg(any(test, all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
 #[cfg_attr(
     all(test, not(target_arch = "wasm32")),
     expect(
@@ -1226,6 +1228,26 @@ async fn main() {
             &mut mission_dialog_state,
         );
     }
+    #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+    let mut encyclopedia_surface_fixture = interface_fixture_request
+        .and_then(|request| {
+            request
+                .scenario
+                .encyclopedia_fixture_start()
+                .map(|start| (request.faction, start))
+        })
+        .map(|(faction, start)| {
+            let audience = match faction {
+                CockpitFaction::Alliance => {
+                    rebellion_data::encyclopedia_topics::EncyclopediaAudience::Alliance
+                }
+                CockpitFaction::Empire => {
+                    rebellion_data::encyclopedia_topics::EncyclopediaAudience::Empire
+                }
+            };
+            encyclopedia_surface::EncyclopediaSurfaceFixture::new(audience, start)
+                .unwrap_or_else(|error| panic!("W4 Encyclopedia fixture is invalid: {error}"))
+        });
     #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
     let tactical_fixture_request = tactical_test_fixture::requested();
     #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
@@ -3342,6 +3364,10 @@ Some(RailAudience::side(*faction_is_alliance)),
                                 | interface_test_fixture::Scenario::MessageIndexShell
                                 | interface_test_fixture::Scenario::EncyclopediaIndexShell
                                 | interface_test_fixture::Scenario::EncyclopediaIndexCatalog
+                                | interface_test_fixture::Scenario::EncyclopediaSurfaceMiddle
+                                | interface_test_fixture::Scenario::EncyclopediaSurfaceFirst
+                                | interface_test_fixture::Scenario::EncyclopediaSurfaceUnavailable
+                                | interface_test_fixture::Scenario::EncyclopediaSurfaceIndex
                         )
                     });
                 #[cfg(not(all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
@@ -3629,6 +3655,10 @@ Some(RailAudience::side(*faction_is_alliance)),
                             &mut enc_state,
                             catalog,
                         );
+                    }
+                    #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+                    if let Some(fixture) = encyclopedia_surface_fixture.as_mut() {
+                        fixture.draw(ctx, &mut bmp_cache);
                     }
 
                     // Mod Manager (floating window)
