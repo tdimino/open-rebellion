@@ -42,6 +42,10 @@
   functional evidence. The user accepted this evidence for the current
   delivery on 2026-10-07, so all thirteen `OBJ-01` cells pass without a
   native-Windows parity claim.
+- [E36 Encyclopedia final reconciliation](2026-10-07-encyclopedia-final-reconciliation.md)
+  maps every approved-plan phase to its bead, implementation commits, and
+  durable evidence; records the clean Docker staging repair and final safety
+  checks; and preserves the optional-W8 and native-Windows limitations.
 
 This directory contains the durable reports and review artifacts for each
 verified interface checkpoint. The parent [audit index](../README.md) remains
@@ -106,7 +110,7 @@ the source of truth for scope, acceptance, and current work.
 | P64 | [Encyclopedia index-shell checkpoint](2026-09-30-encyclopedia-index-shell.md) | [`p64-encyclopedia-index-shell/`](p64-encyclopedia-index-shell/) |
 | P65 | [Encyclopedia index-catalog checkpoint](2026-09-30-encyclopedia-index-catalog.md) | [`p65-encyclopedia-index-catalog/`](p65-encyclopedia-index-catalog/) |
 | P66A | [Encyclopedia topic-source checkpoint](2026-10-01-encyclopedia-topic-source-bindings.md) | [`p66a-encyclopedia-topic-bindings/`](p66a-encyclopedia-topic-bindings/) |
-| W2-W7 / E30 / E32 / E34 / E35 | [Immutable session](2026-10-06-encyclopedia-content-session.md), [pure presenter](2026-10-06-encyclopedia-presenter.md), [authentic fixture surface](2026-10-06-encyclopedia-topic-surface.md), [canonical publication](2026-10-06-encyclopedia-canonical-publication.md), [canonical surface](2026-10-06-encyclopedia-canonical-surface.md), [original-first HD selection](2026-10-06-encyclopedia-hd-selection.md), [native overlays](2026-10-07-encyclopedia-mod-overlays.md), [production activation](2026-10-07-encyclopedia-production-activation.md), [technical acceptance](2026-10-07-encyclopedia-technical-acceptance.md), and [original-executable compatibility](2026-10-07-encyclopedia-a0-compatibility.md) | Browser and Wine artifacts remain ignored locally and are hash-identified in each report. Native mod fixtures are synthetic and test-temporary. The current delivery accepts all thirteen `OBJ-01` cells without claiming native-Windows parity. |
+| W1-W8 / E18 / E30 / E32 / E34-E36 | [Final reconciliation](2026-10-07-encyclopedia-final-reconciliation.md) indexes the [immutable session](2026-10-06-encyclopedia-content-session.md), [pure presenter](2026-10-06-encyclopedia-presenter.md), [authentic fixture surface](2026-10-06-encyclopedia-topic-surface.md), [canonical publication](2026-10-06-encyclopedia-canonical-publication.md), [canonical surface](2026-10-06-encyclopedia-canonical-surface.md), [original-first HD selection](2026-10-06-encyclopedia-hd-selection.md), [native overlays](2026-10-07-encyclopedia-mod-overlays.md), [production activation](2026-10-07-encyclopedia-production-activation.md), [technical acceptance](2026-10-07-encyclopedia-technical-acceptance.md), and [original-executable compatibility](2026-10-07-encyclopedia-a0-compatibility.md). | Browser and Wine artifacts remain ignored locally and are hash-identified in lower reports. Native mod fixtures are synthetic and test-temporary. Optional W8 automatic reload is deferred. The current delivery accepts all thirteen `OBJ-01` cells without claiming native-Windows parity. |
 
 Earlier strategic, GID, shell, control, staging, and render reports are indexed
 in the parent [audit overview](../index.md). Every new artifact directory must

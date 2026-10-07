@@ -2,7 +2,7 @@
 title: "Will Forster Encyclopedia Handoff Adaptation"
 description: "Execution plan for adapting the strongest test, runtime, presentation, publication, HD, and modding ideas from PR #16 into the canonical P66 Encyclopedia pipeline"
 type: feat
-status: active
+status: complete
 created: 2026-10-02
 updated: 2026-10-07
 attribution: "Will Forster, PR #16"
@@ -458,3 +458,9 @@ This plan is complete only when:
   for the current delivery, so all thirteen `OBJ-01` cells and this plan's
   visual gate pass without claiming native-Windows parity. A portable Windows
   capture kit, if pursued later, belongs to separate tooling/repository scope.
+- 2026-10-07: E36 reconciles the plan, bead graph, audit records, release
+  documentation, and proposed branch diff. A test-first repair restores clean
+  Docker source staging and owned `EData` handoff to the strict WASM build.
+  W1-W7 and all required production gates are closed; optional W8 automatic
+  reload remains deferred in favor of the documented native **Reload Mods**
+  action. No push or pull-request action is part of this checkpoint.
