@@ -123,8 +123,10 @@ class EncyclopediaProductionStagingTests(unittest.TestCase):
         script = (ROOT / "scripts" / "build-wasm.sh").read_text(encoding="utf-8")
 
         source_gate = script.index("production browser build requires canonical Encyclopedia")
+        audit_step = script.index("encyclopedia-source-audit")
         compile_step = script.index("cargo build --manifest-path")
         self.assertLess(source_gate, compile_step)
+        self.assertLess(audit_step, compile_step)
         self.assertIn("--require-encyclopedia", script)
         self.assertIn('--encyclopedia-source "$ENCYCLOPEDIA_SOURCE"', script)
         self.assertIn('--edata "$EDATA_DIR"', script)

@@ -469,15 +469,16 @@ The implemented production pipeline keeps original content local and ignored:
    English `ENCYTEXT.DLL` prose and `ENCYBMAP.DLL` image-name map into
    `data/base/encyclopedia/source.json` plus its checksum manifest. The profile
    contains 348 text records and 191 logical image mappings.
-2. The packer joins those records to the canonical DAT/TEXTSTRA index and the
-   owned `EData` directory. Each faction exposes 346 complete topics and ten
-   explicit source-empty mission topics; no replacement prose or art is
-   invented.
-3. Strict production builds publish a validated runtime catalog, manifest, and
-   only the referenced original 400-by-200 indexed BMPs into both ORPK and the
-   owned loose web mirror. Missing or inconsistent required content fails the
-   build; old packs without Encyclopedia content still load with the feature
-   unavailable.
+2. A prebuild Rust audit joins those records to the canonical DAT/TEXTSTRA
+   index and exact owned `EData` inventory. Each faction must expose 346
+   complete topics and ten explicit source-empty mission topics; no replacement
+   prose or art is invented.
+3. Strict production builds admit only the verified 348/191 profile and
+   publish its runtime catalog, manifest, and referenced original 400-by-200
+   indexed BMPs into both ORPK and the owned loose web mirror. The packer uses
+   the runtime's exact declared-byte-length rule. Missing or inconsistent
+   required content fails the build; old packs without Encyclopedia content
+   still load with the feature unavailable.
 4. Native mods may atomically layer presentation-only `encyclopedia.json`
    patches and validated lowercase `.bmp` artwork. Browser builds deliberately
    remain base-only. Encyclopedia data never enters `GameWorld`, saves, replay,

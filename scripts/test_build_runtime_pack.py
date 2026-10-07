@@ -71,6 +71,40 @@ class RuntimePackBuilderTests(unittest.TestCase):
         (edata / "EDATA.014").write_bytes(self._indexed_bmp())
         return source, edata
 
+    def _canonical_count_source(self, root: Path) -> tuple[Path, Path]:
+        source, edata = self._encyclopedia_source(root)
+        catalog = json.loads(source.read_text(encoding="utf-8"))
+        catalog["texts"] = {
+            str(resource_id): {
+                "body": f"Synthetic publication body {resource_id}.",
+                "body_sha256": hashlib.sha256(
+                    f"Synthetic publication body {resource_id}.".encode()
+                ).hexdigest(),
+            }
+            for resource_id in range(1, 349)
+        }
+        catalog["artwork"] = {
+            str(resource_id): "EDATA.014" for resource_id in range(1, 192)
+        }
+        catalog_bytes = json.dumps(
+            catalog, sort_keys=True, separators=(",", ":")
+        ).encode()
+        source.write_bytes(catalog_bytes)
+        manifest = json.loads(
+            Path(f"{source}.manifest.json").read_text(encoding="utf-8")
+        )
+        manifest["catalog_sha256"] = hashlib.sha256(catalog_bytes).hexdigest()
+        manifest["source_files"] = {
+            "encytext_sha256": PACKER.ENCYCLOPEDIA_EXPECTED_ENCYTEXT_SHA256,
+            "encybmap_sha256": PACKER.ENCYCLOPEDIA_EXPECTED_ENCYBMAP_SHA256,
+        }
+        manifest["counts"] = {"texts": 348, "artwork_mappings": 191}
+        Path(f"{source}.manifest.json").write_text(
+            json.dumps(manifest, sort_keys=True, separators=(",", ":")),
+            encoding="utf-8",
+        )
+        return source, edata
+
     def test_canonical_encyclopedia_namespace_is_complete_and_exact(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -79,7 +113,9 @@ class RuntimePackBuilderTests(unittest.TestCase):
             base.mkdir()
             ui.mkdir()
             (base / "SYSTEMSD.DAT").write_bytes(b"systems")
-            source, edata = self._encyclopedia_source(root)
+            trailing_root = root / "trailing"
+            trailing_root.mkdir()
+            source, edata = self._encyclopedia_source(trailing_root)
 
             entries = PACKER.collect_entries(
                 base, ui, edata_dir=edata, encyclopedia_source=source
@@ -113,6 +149,13 @@ class RuntimePackBuilderTests(unittest.TestCase):
                     base, ui, edata_dir=edata, encyclopedia_source=source
                 )
 
+            source, edata = self._encyclopedia_source(root)
+            (edata / "EDATA.014").write_bytes(self._indexed_bmp() + b"trailing")
+            with self.assertRaisesRegex(ValueError, "declared byte length"):
+                PACKER.collect_entries(
+                    base, ui, edata_dir=edata, encyclopedia_source=source
+                )
+
     def test_required_encyclopedia_rejects_absent_and_accepts_complete_namespace(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -126,6 +169,18 @@ class RuntimePackBuilderTests(unittest.TestCase):
                 PACKER.collect_entries(base, ui, require_encyclopedia=True)
 
             source, edata = self._encyclopedia_source(root)
+            with self.assertRaisesRegex(ValueError, "348 texts and 191 artwork mappings"):
+                PACKER.collect_entries(
+                    base,
+                    ui,
+                    edata_dir=edata,
+                    encyclopedia_source=source,
+                    require_encyclopedia=True,
+                )
+
+            canonical_root = root / "canonical"
+            canonical_root.mkdir()
+            source, edata = self._canonical_count_source(canonical_root)
             entries = PACKER.collect_entries(
                 base,
                 ui,

@@ -32,6 +32,14 @@ ENCYCLOPEDIA_SOURCE_BYTES_LIMIT = 64 * 1024 * 1024
 ENCYCLOPEDIA_MANIFEST_BYTES_LIMIT = 32 * 1024 * 1024
 ENCYCLOPEDIA_BODY_BYTES_LIMIT = 1024 * 1024
 ENCYCLOPEDIA_RESOURCE_LIMIT = 10_000
+ENCYCLOPEDIA_EXPECTED_TEXTS = 348
+ENCYCLOPEDIA_EXPECTED_ARTWORK_MAPPINGS = 191
+ENCYCLOPEDIA_EXPECTED_ENCYTEXT_SHA256 = (
+    "49aea545a5e09e5fe9115a22bc785690f103d2f931e08bd4a53a617a42636d8c"
+)
+ENCYCLOPEDIA_EXPECTED_ENCYBMAP_SHA256 = (
+    "fb545d19ae24b0277753494dbfaabf2dbdde660beab821287a32016c290e4560"
+)
 
 
 @dataclass(frozen=True)
@@ -117,7 +125,11 @@ def collect_entries(
         )
     if encyclopedia_source is not None and edata_dir is not None:
         entries.extend(
-            collect_encyclopedia_entries(encyclopedia_source, edata_dir)
+            collect_encyclopedia_entries(
+                encyclopedia_source,
+                edata_dir,
+                require_owned_profile=require_encyclopedia,
+            )
         )
 
     entries.sort(key=lambda entry: (entry.kind, entry.key))
@@ -195,7 +207,12 @@ def _valid_edata_filename(value: object) -> bool:
     )
 
 
-def collect_encyclopedia_entries(source: Path, edata_dir: Path) -> list[Entry]:
+def collect_encyclopedia_entries(
+    source: Path,
+    edata_dir: Path,
+    *,
+    require_owned_profile: bool = False,
+) -> list[Entry]:
     """Collect one complete P66A catalog, sidecar, and referenced artwork set."""
     catalog_bytes = _read_regular_bounded(
         source, ENCYCLOPEDIA_SOURCE_BYTES_LIMIT, "Encyclopedia source catalog"
@@ -269,6 +286,18 @@ def collect_encyclopedia_entries(source: Path, edata_dir: Path) -> list[Entry]:
         )
     ):
         raise ValueError("Encyclopedia source manifest count or integrity mismatch")
+    if require_owned_profile and (
+        len(texts) != ENCYCLOPEDIA_EXPECTED_TEXTS
+        or len(artwork) != ENCYCLOPEDIA_EXPECTED_ARTWORK_MAPPINGS
+        or manifest["source_files"]["encytext_sha256"]
+        != ENCYCLOPEDIA_EXPECTED_ENCYTEXT_SHA256
+        or manifest["source_files"]["encybmap_sha256"]
+        != ENCYCLOPEDIA_EXPECTED_ENCYBMAP_SHA256
+    ):
+        raise ValueError(
+            "required Encyclopedia publication must contain the verified owned "
+            "English profile: 348 texts and 191 artwork mappings"
+        )
     if edata_dir.is_symlink() or not edata_dir.is_dir():
         raise ValueError(f"EData directory does not exist or is unsafe: {edata_dir}")
 
@@ -336,23 +365,29 @@ def validate_edata_bitmap(path: Path) -> None:
         data = path.read_bytes()
         if len(data) < 54 or data[:2] != b"BM":
             raise ValueError("invalid BMP header")
+        declared_len = struct.unpack_from("<I", data, 2)[0]
         offset = struct.unpack_from("<I", data, 10)[0]
         dib_size, width, height, planes, bits, compression = struct.unpack_from(
             "<IiiHHI", data, 14
         )
+        colors_used = struct.unpack_from("<I", data, 46)[0]
         stride = ((400 * bits + 31) // 32) * 4
         palette_end = 14 + dib_size + 256 * 4
         if (
             dib_size < 40
+            or declared_len != len(data)
             or width != 400
             or abs(height) != 200
             or planes != 1
             or bits != 8
             or compression != 0
+            or colors_used not in {0, 256}
             or offset < palette_end
             or len(data) < offset + stride * 200
         ):
-            raise ValueError("expected an uncompressed 400x200x8 bitmap")
+            raise ValueError(
+                "expected an uncompressed 400x200x8 bitmap with exact declared byte length"
+            )
     except (OSError, ValueError, struct.error) as error:
         raise ValueError(f"invalid encyclopedia artwork {path.name}: {error}") from error
 

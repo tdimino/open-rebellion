@@ -27,6 +27,13 @@ fi
 # Refuse stale UI staging before compilation; the runtime pack builder repeats this gate.
 python3 "$ROOT/scripts/build-runtime-pack.py" --ui "$GDATA/ui" --validate-ui-only
 
+# Validate the exact owned English source profile and its complete DAT/TEXTSTRA
+# join before compiling or publishing a route-enabled production artifact.
+echo "Validating canonical Encyclopedia source and topic bindings…"
+PATH="/usr/bin:$PATH" cargo run --manifest-path "$ROOT/Cargo.toml" \
+    -q -p rebellion-data --bin encyclopedia-source-audit -- \
+    "$GDATA" "$ENCYCLOPEDIA_SOURCE" "$EDATA_DIR" >/dev/null
+
 echo "Building rebellion-app for wasm32…"
 PATH="/usr/bin:$PATH" cargo build --manifest-path "$ROOT/Cargo.toml" \
     --target wasm32-unknown-unknown \
