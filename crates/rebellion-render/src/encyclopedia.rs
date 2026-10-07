@@ -677,6 +677,7 @@ const INDEX_CONTENT: u32 = 10_338;
 const TOPIC_CONTENT: u32 = 10_337;
 const INDEX_CONTENT_X: f32 = 12.0;
 const INDEX_CONTENT_Y: f32 = 13.0;
+const ENCYCLOPEDIA_HEADER_CENTER_X: f32 = 211.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct OriginalControlSpec {
@@ -1049,10 +1050,7 @@ pub fn draw_encyclopedia_surface(
         EncyclopediaSurfaceAudience::Alliance => crate::cockpit::CockpitFaction::Alliance,
         EncyclopediaSurfaceAudience::Empire => crate::cockpit::CockpitFaction::Empire,
     };
-    let effective_selection = surface
-        .navigation
-        .selected_object_id
-        .or_else(|| surface.topics.first().map(|topic| topic.object_id));
+    let effective_selection = surface.navigation.selected_object_id;
     reconcile_surface_scroll(state, surface, effective_selection);
     state.reconcile_active_topic(
         surface.texture_generation,
@@ -1064,13 +1062,15 @@ pub fn draw_encyclopedia_surface(
     }
     let mut action = None;
     let mut surface_rect = None;
+    let mut category_tooltip = None;
     let keyboard_focus_id = surface_keyboard_focus_id(surface.mode);
 
     let surface_id = egui::Id::new("authentic-encyclopedia-surface");
-    ctx.move_to_top(egui::LayerId::new(egui::Order::Foreground, surface_id));
+    let surface_order = encyclopedia_surface_order();
+    ctx.move_to_top(egui::LayerId::new(surface_order, surface_id));
     egui::Area::new(surface_id)
         .fixed_pos(origin)
-        .order(egui::Order::Foreground)
+        .order(surface_order)
         .show(ctx, |ui| {
             let size = egui::vec2(
                 ENCYCLOPEDIA_INDEX_WIDTH * scale,
@@ -1185,6 +1185,24 @@ pub fn draw_encyclopedia_surface(
                     &mut action,
                 );
                 for control in encyclopedia_category_controls(faction) {
+                    let control_rect = encyclopedia_rect(
+                        window_rect,
+                        scale,
+                        f32::from(control.x),
+                        f32::from(control.y),
+                        f32::from(control.width),
+                        f32::from(control.height),
+                    );
+                    if let Some(pointer) = ctx
+                        .pointer_latest_pos()
+                        .filter(|pointer| control_rect.contains(*pointer))
+                    {
+                        category_tooltip = surface
+                            .categories
+                            .iter()
+                            .find(|category| category.command_id == control.command_id)
+                            .map(|category| (category.label, pointer));
+                    }
                     if draw_original_control(
                         ui,
                         ctx,
@@ -1224,6 +1242,9 @@ pub fn draw_encyclopedia_surface(
                     };
                 }
             }
+            if let Some((label, pointer)) = category_tooltip {
+                draw_encyclopedia_category_tooltip(ui.painter(), pointer, scale, label);
+            }
         });
 
     if ctx.input(|input| input.pointer.primary_pressed())
@@ -1256,6 +1277,41 @@ fn surface_keyboard_focus_id(mode: EncyclopediaSurfaceMode) -> egui::Id {
             EncyclopediaSurfaceMode::Topic => 1,
         },
     ))
+}
+
+const fn encyclopedia_surface_order() -> egui::Order {
+    egui::Order::Tooltip
+}
+
+fn encyclopedia_category_tooltip_origin(pointer: egui::Pos2, scale: f32) -> egui::Pos2 {
+    pointer + egui::vec2(-2.0 * scale, 16.0 * scale)
+}
+
+fn draw_encyclopedia_category_tooltip(
+    painter: &egui::Painter,
+    pointer: egui::Pos2,
+    scale: f32,
+    label: &str,
+) {
+    let font = egui::FontId::proportional(11.0 * scale);
+    let galley = painter.layout_no_wrap(label.to_owned(), font, Color32::BLACK);
+    let origin = encyclopedia_category_tooltip_origin(pointer, scale);
+    let rect = egui::Rect::from_min_size(
+        origin,
+        egui::vec2(galley.size().x + 8.0 * scale, 20.0 * scale),
+    );
+    painter.rect_filled(rect, 0.0, Color32::from_rgb(255, 255, 225));
+    painter.rect_stroke(
+        rect,
+        0.0,
+        egui::Stroke::new(scale.max(1.0), Color32::BLACK),
+        egui::StrokeKind::Inside,
+    );
+    painter.galley(
+        origin + egui::vec2(4.0 * scale, 3.0 * scale),
+        galley,
+        Color32::BLACK,
+    );
 }
 
 fn reconcile_surface_scroll(
@@ -1291,7 +1347,7 @@ fn draw_surface_index(
     effective_selection: Option<u32>,
     action: &mut Option<EncyclopediaSurfaceAction>,
 ) {
-    let title_font = egui::FontId::proportional(15.0 * scale);
+    let title_font = crate::theme::original_bold_font(15.0 * scale);
     let list_font = egui::FontId::proportional(14.0 * scale);
     let selected_name = effective_selection
         .and_then(|selected| {
@@ -1302,7 +1358,7 @@ fn draw_surface_index(
         })
         .map_or("", |topic| topic.title);
     ui.painter().text(
-        encyclopedia_point(window_rect, scale, 211.0, 14.0),
+        encyclopedia_point(window_rect, scale, ENCYCLOPEDIA_HEADER_CENTER_X, 14.0),
         egui::Align2::CENTER_TOP,
         surface.title,
         title_font,
@@ -1326,7 +1382,7 @@ fn draw_surface_index(
         encyclopedia_point(window_rect, scale, 40.0, 120.0),
         egui::Align2::LEFT_TOP,
         surface.category.label,
-        list_font.clone(),
+        crate::theme::original_bold_font(14.0 * scale),
         Color32::WHITE,
     );
 
@@ -1429,11 +1485,12 @@ fn draw_surface_topic(
             Color32::WHITE,
         );
     }
+    let (title_position, title_alignment) = encyclopedia_topic_title_layout(window_rect, scale);
     ui.painter().text(
-        encyclopedia_point(window_rect, scale, 36.0, 14.0),
-        egui::Align2::LEFT_TOP,
+        title_position,
+        title_alignment,
         topic.title,
-        egui::FontId::proportional(15.0 * scale),
+        crate::theme::original_bold_font(15.0 * scale),
         Color32::WHITE,
     );
     let Some(description) = topic.description else {
@@ -1840,7 +1897,7 @@ fn draw_original_index_content(
     outcome: &mut OriginalIndexOutcome,
 ) {
     let painter = ui.painter();
-    let title_font = egui::FontId::proportional(15.0 * scale);
+    let title_font = crate::theme::original_bold_font(15.0 * scale);
     let list_font = egui::FontId::proportional(14.0 * scale);
     painter.text(
         encyclopedia_point(window_rect, scale, 211.0, 14.0),
@@ -1867,7 +1924,7 @@ fn draw_original_index_content(
         encyclopedia_point(window_rect, scale, 40.0, 120.0),
         egui::Align2::LEFT_TOP,
         content.category_label,
-        list_font.clone(),
+        crate::theme::original_bold_font(14.0 * scale),
         Color32::WHITE,
     );
 
@@ -2023,6 +2080,13 @@ fn original_control_contains(
 
 fn encyclopedia_point(parent: egui::Rect, scale: f32, x: f32, y: f32) -> egui::Pos2 {
     egui::pos2(parent.min.x + x * scale, parent.min.y + y * scale)
+}
+
+fn encyclopedia_topic_title_layout(parent: egui::Rect, scale: f32) -> (egui::Pos2, egui::Align2) {
+    (
+        encyclopedia_point(parent, scale, ENCYCLOPEDIA_HEADER_CENTER_X, 14.0),
+        egui::Align2::CENTER_TOP,
+    )
 }
 
 fn encyclopedia_rect(
@@ -2307,6 +2371,32 @@ mod tests {
 
     use super::*;
 
+    #[test]
+    fn topic_header_uses_the_original_centered_title_span() {
+        let parent = egui::Rect::from_min_size(egui::pos2(58.0, 55.0), egui::vec2(470.0, 330.0));
+        let (position, alignment) = encyclopedia_topic_title_layout(parent, 1.0);
+
+        assert_eq!(position, egui::pos2(269.0, 69.0));
+        assert_eq!(alignment, egui::Align2::CENTER_TOP);
+    }
+
+    #[test]
+    fn production_surface_is_modal_above_retained_callers() {
+        assert_eq!(encyclopedia_surface_order(), egui::Order::Tooltip);
+    }
+
+    #[test]
+    fn category_tooltip_uses_the_original_cursor_offset() {
+        assert_eq!(
+            encyclopedia_category_tooltip_origin(egui::pos2(174.0, 148.0), 1.0),
+            egui::pos2(172.0, 164.0)
+        );
+        assert_eq!(
+            encyclopedia_category_tooltip_origin(egui::pos2(174.0, 148.0), 1.25),
+            egui::pos2(171.5, 168.0)
+        );
+    }
+
     #[derive(Debug, Default, PartialEq, Eq)]
     struct TextureCounts {
         uploads: usize,
@@ -2519,6 +2609,7 @@ mod tests {
             },
         };
         let ctx = egui::Context::default();
+        crate::theme::load_fonts(&ctx);
         let mut state = EncyclopediaSurfaceState::new();
         let mut cache = BmpCache::new();
         let focus_id = surface_keyboard_focus_id(EncyclopediaSurfaceMode::Index);
@@ -2586,6 +2677,38 @@ mod tests {
             Some(EncyclopediaSurfaceAction::SelectCategory(0x70))
         );
         assert!(!focused_key_remained);
+
+        let unselected_surface = EncyclopediaSurface {
+            navigation: EncyclopediaSurfaceNavigation {
+                selected_object_id: None,
+                previous_object_id: None,
+                next_object_id: None,
+            },
+            ..surface
+        };
+        let enter = egui::RawInput {
+            events: vec![egui::Event::Key {
+                key: egui::Key::Enter,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            }],
+            ..Default::default()
+        };
+        let mut unselected_action = None;
+        let _ = ctx.run(enter, |ctx| {
+            ctx.memory_mut(|memory| memory.request_focus(focus_id));
+            unselected_action = draw_encyclopedia_surface(
+                ctx,
+                &mut cache,
+                egui::Pos2::ZERO,
+                1.0,
+                &mut state,
+                &unselected_surface,
+            );
+        });
+        assert_eq!(unselected_action, None);
     }
 
     #[test]

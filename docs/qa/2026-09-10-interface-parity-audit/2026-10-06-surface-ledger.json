@@ -2215,7 +2215,7 @@
       "phase": "object_management",
       "title": "Encyclopedia Index and Topic views",
       "required": true,
-      "status": "fail",
+      "status": "partial",
       "required_states": [
         "index",
         "systems",
@@ -2242,7 +2242,7 @@
         71,
         72
       ],
-      "current_implementation": "P62 transports all 187 owned EDATA images in native and browser builds. P64 adds a production-dormant source-exact 470-by-330 index renderer for both factions, with seven selected category states, three rail held states, native oversized-resource clipping, edge and transparent-pixel rejection, opaque press capture, drag cancellation, and modal click-through blocking. P65 adds the source-derived 356-entry English catalog, seven TEXTSTRA labels and family filters, alphabetical ordering, stable compound-object selection, and scrolling. P66A strictly extracts 348 ENCYTEXT records and 191 ENCYBMAP mappings, reproduces the ordinary, system-picture, and factional mission lookup rules, binds 346 complete topics per faction, and exposes ten source-empty missions without fallback. The browser catalog and index route remain test-only. The production route still uses a replacement four-category window and remains fail-closed from command 0x131. Other localizations, exact font/A0 comparison, topic composition, interactive navigation, contextual entry, visible missing entries, production routing, viewport coverage, and every OBJ-01 cell remain open.",
+      "current_implementation": "P62-P66A and W2-W7 transport and validate the original EDATA-backed 356-topic catalog, immutable native/browser session, pure presenter, authentic index/topic surface, original-first HD selection, and atomic native overlays. E32 activates cockpit and contextual production routes with exact typed returns and old-pack fail-closed behavior; E34 passes assembled technical, package, replay/save, and isolation gates. E35 corrects the faction-specific native origins, centered headings, embedded regular/bold production fonts, empty initial selection, source-style category tooltip, and modal ordering. Its expanded normal-route package passes both factions, all seven categories, topic/endpoints/contextual journeys, four-request startup, and all twelve applicable lossless comparisons against the original executable under Wine; the approved source-unavailable state has no honest original A0. Under workspace policy Wine is not original-Windows parity, so the thirteen canonical cells remain pending.",
       "finding_ids": [
         "UIP-F-005",
         "UIP-F-006",

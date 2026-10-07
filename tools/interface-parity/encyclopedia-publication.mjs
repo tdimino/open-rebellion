@@ -19,6 +19,15 @@ const sourcePath = process.env.REBELLION_ENCYCLOPEDIA_TEST_SOURCE
 const edata = process.env.REBELLION_EDATA_DIR;
 const executable = process.env.OPEN_REBELLION_CHROME_FOR_TESTING || chromium.executablePath();
 const expectedRequests = ["/", "/data/runtime.orpk", "/gl.js", "/open-rebellion.wasm"];
+const categoryControls = [
+  { name: "all", command: 0x6f, x: 36 },
+  { name: "systems", command: 0x70, x: 88 },
+  { name: "ships", command: 0x71, x: 140 },
+  { name: "facilities", command: 0x72, x: 192 },
+  { name: "missions", command: 0x73, x: 244 },
+  { name: "troops", command: 0x74, x: 296 },
+  { name: "personnel", command: 0x75, x: 348 },
+];
 const runId = `${new Date().toISOString().replace(/[:.]/g, "-")}-${process.pid}`;
 const runDir = path.join(root, ".artifacts/interface-parity", `encyclopedia-publication-${runId}`);
 
@@ -230,6 +239,37 @@ async function runFactionJourney(browser, origin, faction, namespace) {
     const index = await screenshot(page, directory, "02-index");
     assert.notEqual(index.sha256, campaign.sha256, "F7 replaces the command center with the index");
 
+    const categories = { all: index };
+    const encyclopediaOrigin = faction.name === "alliance"
+      ? { x: 62, y: 50 }
+      : { x: 125, y: 52 };
+    for (const category of categoryControls.slice(1)) {
+      await page.mouse.click(
+        encyclopediaOrigin.x + category.x + 24,
+        encyclopediaOrigin.y + 78 + 20,
+        { delay: 150 },
+      );
+      await frames(page, 6);
+      categories[category.name] = await screenshot(
+        page,
+        directory,
+        `02-category-${category.command.toString(16)}`,
+      );
+      assert.notEqual(
+        categories[category.name].sha256,
+        index.sha256,
+        `${category.name} category changes the production index`,
+      );
+    }
+    const all = categoryControls[0];
+    await page.mouse.click(
+      encyclopediaOrigin.x + all.x + 24,
+      encyclopediaOrigin.y + 78 + 20,
+      { delay: 150 },
+    );
+    await page.mouse.move(8, 8);
+    await page.keyboard.press("Home");
+    await frames(page, 6);
     await page.keyboard.press("Enter");
     await frames(page, 8);
     const topic = await screenshot(page, directory, "03-topic");
@@ -255,6 +295,23 @@ async function runFactionJourney(browser, origin, faction, namespace) {
     assert.equal(observed.consoleLines.filter(({ text }) => text.includes(
       "command=0x131 destination=encyclopedia status=opened_original",
     )).length, opens + 1, "returned campaign accepts a second production entry");
+    const ships = categoryControls.find(({ command }) => command === 0x71);
+    assert.ok(ships);
+    await page.mouse.click(
+      encyclopediaOrigin.x + ships.x + 24,
+      encyclopediaOrigin.y + 78 + 20,
+      { delay: 150 },
+    );
+    await page.mouse.move(8, 8);
+    await page.keyboard.press("End");
+    await page.keyboard.press("Enter");
+    await frames(page, 8);
+    const lastEndpoint = await screenshot(page, directory, "05-last-ship-endpoint");
+    assert.notEqual(
+      lastEndpoint.sha256,
+      index.sha256,
+      "the last ship endpoint opens through the production index",
+    );
     await page.keyboard.press("Escape");
     await frames(page, 4);
 
@@ -327,6 +384,7 @@ async function runFactionJourney(browser, origin, faction, namespace) {
       screenshots: {
         campaign,
         index,
+        categories,
         topic,
         next,
         returned,
@@ -335,6 +393,7 @@ async function runFactionJourney(browser, origin, faction, namespace) {
         contextualTopic,
         contextualNext,
         contextualReturn,
+        lastEndpoint,
       },
       requests: observed.requests,
       console: observed.consoleLines,

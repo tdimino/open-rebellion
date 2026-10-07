@@ -10,7 +10,7 @@ tags: [roadmap, planning, milestones, parity]
 # Roadmap
 
 <!-- interface-parity-status:start -->
-Required interface families: 43. Complete: 0. Partial: 15. Failing: 28. Blocked: 0. Strictly accepted cells: 0/627.
+Required interface families: 43. Complete: 0. Partial: 16. Failing: 27. Blocked: 0. Strictly accepted cells: 0/627.
 The current CMD-02 GID catalog has 38 scenarios (29 baseline cells and nine additional native filter variants) and 152 faction/viewport executions. Its strict original-evidence and cross-browser gate remains open.
 <!-- interface-parity-status:end -->
 
@@ -51,8 +51,14 @@ requirements with production cockpit and contextual routes, exact returns,
 both-faction packaged journeys, old-pack unavailable compatibility, and native
 foreground contextual evidence. E34 verifies the current-main assembled
 candidate across workspace, package, native/packed/loose, replay, save/load,
-production browser, mutation-identity, and isolation gates. A0 comparison and
-strict `OBJ-01` cells remain E35. See the [P66A evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-01-encyclopedia-topic-source-bindings.md),
+production browser, mutation-identity, and isolation gates, leaving A0
+comparison and strict `OBJ-01` cells to E35. E35 then corrects the faction-specific
+surface origins, headings, production fonts, initial selection, hover tooltip,
+and modal order. Its expanded final-package browser journey passes twelve
+applicable lossless comparisons against the original executable under Wine;
+the plan-defined source-unavailable state has no honest original A0. Workspace
+policy keeps strict Windows parity and the canonical `OBJ-01` cells open. See
+the [P66A evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-01-encyclopedia-topic-source-bindings.md),
 [W2 evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-content-session.md),
 [W3 evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-presenter.md),
 [W4 evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-topic-surface.md),
@@ -60,7 +66,8 @@ strict `OBJ-01` cells remain E35. See the [P66A evidence](../docs/qa/2026-09-10-
 [W6 evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-hd-selection.md),
 [W7 evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-07-encyclopedia-mod-overlays.md),
 [E32 evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-07-encyclopedia-production-activation.md),
-and [E34 technical acceptance](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-07-encyclopedia-technical-acceptance.md).
+[E34 technical acceptance](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-07-encyclopedia-technical-acceptance.md),
+and [E35 compatibility evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-07-encyclopedia-a0-compatibility.md).
 
 The 2026-10-06 strategic-interface batch restores native cockpit accelerators,
 the two-sector-window cap, Message Index interaction, Personnel and Troop
@@ -806,6 +813,16 @@ would tune around known simulation feedback defects.
   and pass native plus both-faction packaged journeys with four-request startup
   and zero production fixture tokens. Strict original A0 and every `OBJ-01`
   acceptance cell remain open.
+- [x] Complete the E34 assembled technical-acceptance checkpoint: verify the
+  final native, packed and loose readers, deterministic package, both-faction
+  production journeys, old-pack behavior, replay/save invariance, scoped
+  lint/format and isolation boundaries.
+- [ ] Complete E35 strict Encyclopedia acceptance. The current implementation
+  passes all twelve applicable lossless original-executable-under-Wine
+  comparisons after correcting faction origins, headings, embedded production
+  fonts, empty selection, hover tooltip and modal ordering. The explicit
+  source-unavailable state is functional-only. Original-Windows evidence is
+  still required before any `OBJ-01` cell is marked strictly accepted.
 - [x] Restore the P50 GID root and submenu frame from STRATEGY 10100 through
   10107. Paint repeated edges in four batched meshes, remove the invented menu
   fade, and check native-size root pixels against the source BMPs in both

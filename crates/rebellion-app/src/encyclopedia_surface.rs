@@ -19,6 +19,22 @@ use rebellion_render::{
 
 use crate::encyclopedia_hd::PreparedEncyclopediaHd;
 
+fn encyclopedia_surface_origin(
+    width: f32,
+    height: f32,
+    scale: f32,
+    audience: EncyclopediaSurfaceAudience,
+) -> egui::Pos2 {
+    let (native_x, native_y) = match audience {
+        EncyclopediaSurfaceAudience::Alliance => (62.0, 50.0),
+        EncyclopediaSurfaceAudience::Empire => (125.0, 52.0),
+    };
+    egui::pos2(
+        (width - 640.0 * scale) / 2.0 + native_x * scale,
+        (height - 480.0 * scale) / 2.0 + native_y * scale,
+    )
+}
+
 /// Mechanically adapt a validated presentation without copying prose or art.
 ///
 /// The renderer intentionally has no dependency on `rebellion-data`; this is
@@ -272,10 +288,8 @@ impl EncyclopediaSurfaceController {
         let scale = (screen_width() / 640.0)
             .min(screen_height() / 480.0)
             .max(f32::EPSILON);
-        let origin = egui::pos2(
-            (screen_width() - 640.0 * scale) / 2.0 + 85.0 * scale,
-            (screen_height() - 480.0 * scale) / 2.0 + 55.0 * scale,
-        );
+        let origin =
+            encyclopedia_surface_origin(screen_width(), screen_height(), scale, surface.audience);
         let action =
             draw_encyclopedia_surface(ctx, cache, origin, scale, &mut self.surface_state, &surface);
         match action {
@@ -317,7 +331,7 @@ mod fixture {
     };
     use serde::Serialize;
 
-    use super::adapt_encyclopedia_surface;
+    use super::{adapt_encyclopedia_surface, encyclopedia_surface_origin};
 
     const SOURCE: &[u8] = include_bytes!("../../../tests/fixtures/encyclopedia/w4/source.json");
     const MANIFEST: &[u8] =
@@ -616,9 +630,11 @@ mod fixture {
             let scale = (screen_width() / 640.0)
                 .min(screen_height() / 480.0)
                 .max(f32::EPSILON);
-            let origin = egui::pos2(
-                (screen_width() - 640.0 * scale) / 2.0 + 85.0 * scale,
-                (screen_height() - 480.0 * scale) / 2.0 + 55.0 * scale,
+            let origin = encyclopedia_surface_origin(
+                screen_width(),
+                screen_height(),
+                scale,
+                surface.audience,
             );
             let action = draw_encyclopedia_surface(
                 ctx,
@@ -1175,6 +1191,7 @@ pub use fixture::{CanonicalFixtureStart, FixtureStart};
 
 #[cfg(test)]
 mod tests {
+    use egui_macroquad::egui;
     use std::collections::{BTreeMap, HashMap};
     use std::sync::Arc;
 
@@ -1193,11 +1210,41 @@ mod tests {
         EncyclopediaSurfaceAudience, EncyclopediaSurfaceAvailability, EncyclopediaSurfaceMode,
     };
 
-    use super::{adapt_encyclopedia_surface, EncyclopediaSurfaceController};
+    use super::{
+        adapt_encyclopedia_surface, encyclopedia_surface_origin, EncyclopediaSurfaceController,
+    };
 
     const SOURCE: &[u8] = include_bytes!("../../../tests/fixtures/encyclopedia/p66a/source.json");
     const MANIFEST: &[u8] =
         include_bytes!("../../../tests/fixtures/encyclopedia/p66a/source.json.manifest.json");
+
+    #[test]
+    fn production_surface_uses_the_original_native_window_origin() {
+        assert_eq!(
+            encyclopedia_surface_origin(640.0, 480.0, 1.0, EncyclopediaSurfaceAudience::Alliance,),
+            egui::pos2(62.0, 50.0)
+        );
+        assert_eq!(
+            encyclopedia_surface_origin(800.0, 600.0, 1.25, EncyclopediaSurfaceAudience::Alliance,),
+            egui::pos2(77.5, 62.5)
+        );
+        assert_eq!(
+            encyclopedia_surface_origin(640.0, 480.0, 1.0, EncyclopediaSurfaceAudience::Empire,),
+            egui::pos2(125.0, 52.0)
+        );
+        assert_eq!(
+            encyclopedia_surface_origin(800.0, 600.0, 1.25, EncyclopediaSurfaceAudience::Empire,),
+            egui::pos2(156.25, 65.0)
+        );
+        assert_eq!(
+            encyclopedia_surface_origin(1024.0, 600.0, 1.25, EncyclopediaSurfaceAudience::Alliance,),
+            egui::pos2(189.5, 62.5)
+        );
+        assert_eq!(
+            encyclopedia_surface_origin(800.0, 800.0, 1.25, EncyclopediaSurfaceAudience::Alliance,),
+            egui::pos2(77.5, 162.5)
+        );
+    }
 
     fn category(
         command_id: u16,

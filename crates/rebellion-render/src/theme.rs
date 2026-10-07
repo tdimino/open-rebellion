@@ -45,36 +45,44 @@ pub const DANGER_RED: Color32 = Color32::from_rgb(200, 50, 50);
 
 // ── Font loading ─────────────────────────────────────────────────────────────
 
-/// Load Liberation Sans fonts into egui.
-///
-/// Call once at startup. Falls back gracefully to egui defaults if font files
-/// are missing (e.g., in test environments).
-pub fn load_fonts(ctx: &egui::Context) {
+fn production_font_definitions() -> FontDefinitions {
     let mut fonts = FontDefinitions::default();
+    fonts.font_data.insert(
+        "liberation-sans".to_owned(),
+        std::sync::Arc::new(FontData::from_static(include_bytes!(
+            "../../../assets/fonts/LiberationSans-Regular.ttf"
+        ))),
+    );
+    fonts.font_data.insert(
+        "liberation-sans-bold".to_owned(),
+        std::sync::Arc::new(FontData::from_static(include_bytes!(
+            "../../../assets/fonts/LiberationSans-Bold.ttf"
+        ))),
+    );
+    fonts
+        .families
+        .entry(FontFamily::Proportional)
+        .or_default()
+        .insert(0, "liberation-sans".to_owned());
+    fonts.families.insert(
+        FontFamily::Name("liberation-sans-bold".into()),
+        vec!["liberation-sans-bold".to_owned()],
+    );
+    fonts
+}
 
-    // Try to load Liberation Sans Regular
-    if let Ok(regular_bytes) = std::fs::read("assets/fonts/LiberationSans-Regular.ttf") {
-        fonts.font_data.insert(
-            "liberation-sans".to_owned(),
-            std::sync::Arc::new(FontData::from_owned(regular_bytes)),
-        );
-        // Insert as first priority for proportional family
-        fonts
-            .families
-            .entry(FontFamily::Proportional)
-            .or_default()
-            .insert(0, "liberation-sans".to_owned());
-    }
+/// The metric-compatible bold face used by original game-font entry 5.
+#[must_use]
+pub fn original_bold_font(size: f32) -> egui::FontId {
+    egui::FontId::new(size, FontFamily::Name("liberation-sans-bold".into()))
+}
 
-    // Try to load Liberation Sans Bold
-    if let Ok(bold_bytes) = std::fs::read("assets/fonts/LiberationSans-Bold.ttf") {
-        fonts.font_data.insert(
-            "liberation-sans-bold".to_owned(),
-            std::sync::Arc::new(FontData::from_owned(bold_bytes)),
-        );
-    }
-
-    ctx.set_fonts(fonts);
+/// Load the metric-compatible Liberation Sans faces into egui.
+///
+/// The font bytes are embedded so native and production WASM builds use the
+/// same face; WASM cannot satisfy the old runtime filesystem lookup.
+pub fn load_fonts(ctx: &egui::Context) {
+    ctx.set_fonts(production_font_definitions());
 }
 
 // ── Theme application ────────────────────────────────────────────────────────
@@ -152,4 +160,46 @@ pub fn apply_theme(ctx: &egui::Context) {
     style.spacing.window_margin = egui::Margin::same(12);
 
     ctx.set_style(style);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn production_font_definitions_embed_metric_compatible_faces() {
+        let fonts = production_font_definitions();
+
+        assert!(fonts.font_data.contains_key("liberation-sans"));
+        assert!(fonts.font_data.contains_key("liberation-sans-bold"));
+        assert_eq!(
+            fonts.families[&FontFamily::Proportional].first(),
+            Some(&"liberation-sans".to_owned())
+        );
+        assert_eq!(
+            fonts.families[&FontFamily::Name("liberation-sans-bold".into())].first(),
+            Some(&"liberation-sans-bold".to_owned())
+        );
+    }
+
+    #[test]
+    fn original_bold_font_selects_the_embedded_named_family() {
+        assert_eq!(
+            original_bold_font(15.0),
+            egui::FontId::new(15.0, FontFamily::Name("liberation-sans-bold".into()),)
+        );
+    }
+
+    #[test]
+    fn load_fonts_installs_the_production_named_family() {
+        let ctx = egui::Context::default();
+        load_fonts(&ctx);
+        let _ = ctx.run(egui::RawInput::default(), |_| {});
+
+        assert!(ctx.fonts(|fonts| {
+            fonts
+                .families()
+                .contains(&FontFamily::Name("liberation-sans-bold".into()))
+        }));
+    }
 }

@@ -449,3 +449,11 @@ This plan is complete only when:
   superseded by the approved current-schema reader corpus and production
   publication harness rather than imported wholesale. Strict lossless A0 and
   `OBJ-01` acceptance now remain solely E35.
+- 2026-10-07: E35's adapted original-executable-under-Wine comparison finds and
+  corrects faction-specific origin, title placement, production-font,
+  initial-selection, tooltip, and modal-order defects. The expanded
+  final-package journey passes all twelve applicable `OBJ-01` comparisons; the
+  plan-defined source-unavailable state is honestly A0-not-applicable. This
+  establishes a working production Encyclopedia and Wine compatibility, but
+  workspace policy does not treat it as original-Windows parity, so strict
+  ledger acceptance and this plan's final visual gate remain open.

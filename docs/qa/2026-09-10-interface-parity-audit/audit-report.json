@@ -150,7 +150,7 @@
       "id": "UIP-F-006",
       "severity": "P1",
       "status": "partial",
-      "title": "EDATA transport, source-exact Encyclopedia surfaces, the 356-entry catalog, strict bindings, immutable session/presenter contracts, canonical reader parity, packaged journeys, original-first HD, atomic native overlays, production routing, and assembled technical acceptance pass bounded gates; A0 and OBJ-01 remain open",
+      "title": "The working production Encyclopedia and twelve applicable original-executable-under-Wine comparisons pass bounded gates; original-Windows parity and strict OBJ-01 acceptance remain open",
       "evidence": [
         "crates/rebellion-render/src/encyclopedia.rs",
         "crates/rebellion-render/src/encyclopedia_surface.rs",
@@ -162,6 +162,7 @@
         "tools/interface-parity/encyclopedia-index-shell.mjs",
         "tools/interface-parity/encyclopedia-surface.mjs",
         "tools/interface-parity/encyclopedia-publication.mjs",
+        "tools/interface-parity/encyclopedia-a0-acceptance.mjs",
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-28-encyclopedia-artwork-transport.md",
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-30-encyclopedia-index-shell.md",
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-30-encyclopedia-index-catalog.md",
@@ -174,7 +175,8 @@
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-hd-selection.md",
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-07-encyclopedia-mod-overlays.md",
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-07-encyclopedia-production-activation.md",
-        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-07-encyclopedia-technical-acceptance.md"
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-07-encyclopedia-technical-acceptance.md",
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-07-encyclopedia-a0-compatibility.md"
       ],
       "affected_surfaces": ["OBJ-01"]
     },
@@ -390,9 +392,10 @@
     "w7_encyclopedia_mod_overlays": "evidence/2026-10-07-encyclopedia-mod-overlays.md",
     "e32_encyclopedia_production_activation": "evidence/2026-10-07-encyclopedia-production-activation.md",
     "e34_encyclopedia_technical_acceptance": "evidence/2026-10-07-encyclopedia-technical-acceptance.md",
+    "e35_encyclopedia_a0_compatibility": "evidence/2026-10-07-encyclopedia-a0-compatibility.md",
     "ledger_validator": "../../../scripts/validate-interface-parity-ledgers.mjs",
     "screenshot_ledger": "screenshot-ledger.md",
     "capture_manifest": "reference-captures/SHA256SUMS"
   },
-  "next_action": "Preserve the P58-B22 bounded practical launcher while strict A0 work continues. Continue UIP-B05 from the E34 technically accepted production candidate by completing lossless original text/visual comparison and the strict OBJ-01 faction/viewport matrix in E35. Continue CMD-08 separately from the corrected P63 Message Index shell."
+  "next_action": "Preserve the P58-B22 bounded practical launcher. Keep the E35 Encyclopedia candidate and its twelve passing original-executable-under-Wine comparisons; obtain original-Windows evidence before marking any OBJ-01 cell strictly accepted. Continue CMD-08 separately from the corrected P63 Message Index shell."
 }

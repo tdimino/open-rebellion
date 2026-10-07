@@ -112,7 +112,8 @@ and passes the complete comparison contract.
   [W6 original-first HD evidence](evidence/2026-10-06-encyclopedia-hd-selection.md),
   [W7 native-overlay evidence](evidence/2026-10-07-encyclopedia-mod-overlays.md),
   [E32 production-activation evidence](evidence/2026-10-07-encyclopedia-production-activation.md),
-  and [E34 technical-acceptance evidence](evidence/2026-10-07-encyclopedia-technical-acceptance.md)
+  [E34 technical-acceptance evidence](evidence/2026-10-07-encyclopedia-technical-acceptance.md),
+  and [E35 original-executable compatibility evidence](evidence/2026-10-07-encyclopedia-a0-compatibility.md)
   for atomic validated installation, exact session-order projection, both
   faction bindings, explicit source-empty topics, bounded navigation, and
   immutable close/return routes, plus fixture-gated authentic rendering and
@@ -126,11 +127,17 @@ and passes the complete comparison contract.
   simulation. Browser and strict parity evidence remain original-only.
   The current-main assembled candidate also passes final workspace, package,
   native/packed/loose, replay, save/load, production-journey, mutation-identity,
-  and isolation gates. Strict lossless A0 comparison and `OBJ-01` acceptance
-  remain E35.
+  and isolation gates. E35 corrects the faction origins, centered headings,
+  deterministic production fonts, empty selection, tooltips, and modal order;
+  its expanded normal-route browser journey passes twelve applicable lossless
+  comparisons against the original executable under Wine, with the plan's
+  source-unavailable state honestly A0-not-applicable. Workspace policy does
+  not treat Wine as Windows parity, so strict `OBJ-01` ledger acceptance stays
+  open.
   Production cockpit/contextual routing and exact returns now pass native and
   packaged-browser gates with strict new-package content and old-pack
-  unavailable compatibility. A0 and strict `OBJ-01` acceptance remain open.
+  unavailable compatibility. Original-Windows comparison and strict `OBJ-01`
+  acceptance remain open.
 - Review the [P50 GID menu-frame evidence](evidence/2026-09-12-gid-menu-frame.md)
   for original frame tiles, source-pixel checks, and the remaining menu gaps.
 - Review the [P51 GID hover and occlusion evidence](evidence/2026-09-12-gid-hover-and-occlusion.md)
@@ -306,7 +313,7 @@ stage them from a contributor-owned installation.
 ## Progress snapshot
 
 <!-- interface-parity-status:start -->
-Required interface families: 43. Complete: 0. Partial: 15. Failing: 28. Blocked: 0. Strictly accepted cells: 0/627.
+Required interface families: 43. Complete: 0. Partial: 16. Failing: 27. Blocked: 0. Strictly accepted cells: 0/627.
 The current CMD-02 GID catalog has 38 scenarios (29 baseline cells and nine additional native filter variants) and 152 faction/viewport executions. Its strict original-evidence and cross-browser gate remains open.
 <!-- interface-parity-status:end -->
 
