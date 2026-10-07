@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import shutil
+import stat
 import struct
 import tempfile
 from dataclasses import dataclass
@@ -32,8 +33,13 @@ ENCYCLOPEDIA_SOURCE_BYTES_LIMIT = 64 * 1024 * 1024
 ENCYCLOPEDIA_MANIFEST_BYTES_LIMIT = 32 * 1024 * 1024
 ENCYCLOPEDIA_BODY_BYTES_LIMIT = 1024 * 1024
 ENCYCLOPEDIA_RESOURCE_LIMIT = 10_000
+ENCYCLOPEDIA_IMAGE_BYTES_LIMIT = 32 * 1024 * 1024
+ENCYCLOPEDIA_ARTWORK_BYTES_LIMIT = 128 * 1024 * 1024
 ENCYCLOPEDIA_EXPECTED_TEXTS = 348
 ENCYCLOPEDIA_EXPECTED_ARTWORK_MAPPINGS = 191
+ENCYCLOPEDIA_EXPECTED_CATALOG_SHA256 = (
+    "354643f3a5cb58c7bfa92e094d687ba3188c037eac14a961ea843f6b50566994"
+)
 ENCYCLOPEDIA_EXPECTED_ENCYTEXT_SHA256 = (
     "49aea545a5e09e5fe9115a22bc785690f103d2f931e08bd4a53a617a42636d8c"
 )
@@ -140,12 +146,29 @@ def collect_entries(
 
 
 def _read_regular_bounded(path: Path, limit: int, description: str) -> bytes:
-    if path.is_symlink() or not path.is_file():
-        raise ValueError(f"{description} is missing or unsafe: {path}")
-    size = path.stat().st_size
-    if size > limit:
-        raise ValueError(f"{description} exceeds the byte limit: {path}")
-    return path.read_bytes()
+    try:
+        path_metadata = path.lstat()
+        if not stat.S_ISREG(path_metadata.st_mode):
+            raise ValueError(f"{description} is missing or unsafe: {path}")
+        flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
+        flags |= getattr(os, "O_NOFOLLOW", 0)
+        descriptor = os.open(path, flags)
+        with os.fdopen(descriptor, "rb") as handle:
+            handle_metadata = os.fstat(handle.fileno())
+            if (
+                not stat.S_ISREG(handle_metadata.st_mode)
+                or (path_metadata.st_dev, path_metadata.st_ino)
+                != (handle_metadata.st_dev, handle_metadata.st_ino)
+            ):
+                raise ValueError(f"{description} changed before reading: {path}")
+            if handle_metadata.st_size > limit:
+                raise ValueError(f"{description} exceeds the byte limit: {path}")
+            data = handle.read(limit + 1)
+    except OSError as error:
+        raise ValueError(f"{description} is missing or unsafe: {path}: {error}") from error
+    if len(data) > limit:
+        raise ValueError(f"{description} exceeds the byte limit while reading: {path}")
+    return data
 
 
 def _strict_json(data: bytes, description: str) -> dict:
@@ -298,6 +321,13 @@ def collect_encyclopedia_entries(
             "required Encyclopedia publication must contain the verified owned "
             "English profile: 348 texts and 191 artwork mappings"
         )
+    if (
+        require_owned_profile
+        and expected_catalog_digest != ENCYCLOPEDIA_EXPECTED_CATALOG_SHA256
+    ):
+        raise ValueError(
+            "required Encyclopedia publication has an unexpected canonical catalog identity"
+        )
     if edata_dir.is_symlink() or not edata_dir.is_dir():
         raise ValueError(f"EData directory does not exist or is unsafe: {edata_dir}")
 
@@ -315,15 +345,21 @@ def collect_encyclopedia_entries(
             hashlib.sha256(manifest_bytes).hexdigest(),
         ),
     ]
+    artwork_bytes_total = 0
     for filename in sorted(set(artwork.values())):
         path = edata_dir / filename
-        validate_edata_bitmap(path)
+        data = validate_edata_bitmap(path)
+        artwork_bytes_total += len(data)
+        if artwork_bytes_total > ENCYCLOPEDIA_ARTWORK_BYTES_LIMIT:
+            raise ValueError(
+                "Encyclopedia artwork aggregate byte limit exceeded"
+            )
         entries.append(
             Entry(
                 KIND_GAME_DATA,
                 f"{ENCYCLOPEDIA_PREFIX}{filename}",
                 path,
-                hashlib.sha256(path.read_bytes()).hexdigest(),
+                hashlib.sha256(data).hexdigest(),
             )
         )
     return entries
@@ -348,21 +384,34 @@ def collect_edata_entries(edata_dir: Path) -> list[Entry]:
 
     entries: list[Entry] = []
     seen: set[int] = set()
+    artwork_bytes_total = 0
     for number, path in sorted(numbered):
         if number in seen:
             raise ValueError(f"duplicate EData identity: {number:03}")
         seen.add(number)
-        validate_edata_bitmap(path)
-        entries.append(Entry(KIND_GAME_DATA, f"{ENCYCLOPEDIA_PREFIX}{path.name}", path))
+        data = validate_edata_bitmap(path)
+        artwork_bytes_total += len(data)
+        if artwork_bytes_total > ENCYCLOPEDIA_ARTWORK_BYTES_LIMIT:
+            raise ValueError("Encyclopedia artwork aggregate byte limit exceeded")
+        entries.append(
+            Entry(
+                KIND_GAME_DATA,
+                f"{ENCYCLOPEDIA_PREFIX}{path.name}",
+                path,
+                hashlib.sha256(data).hexdigest(),
+            )
+        )
     return entries
 
 
-def validate_edata_bitmap(path: Path) -> None:
+def validate_edata_bitmap(path: Path) -> bytes:
     """Validate the fixed 400x200 indexed BMP contract before packaging."""
     try:
-        if path.is_symlink() or not path.is_file():
-            raise ValueError("missing or unsafe file")
-        data = path.read_bytes()
+        data = _read_regular_bounded(
+            path,
+            ENCYCLOPEDIA_IMAGE_BYTES_LIMIT,
+            "Encyclopedia artwork",
+        )
         if len(data) < 54 or data[:2] != b"BM":
             raise ValueError("invalid BMP header")
         declared_len = struct.unpack_from("<I", data, 2)[0]
@@ -390,6 +439,7 @@ def validate_edata_bitmap(path: Path) -> None:
             )
     except (OSError, ValueError, struct.error) as error:
         raise ValueError(f"invalid encyclopedia artwork {path.name}: {error}") from error
+    return data
 
 
 def collect_tactical_runtime_entries(runtime_dir: Path) -> list[Entry]:

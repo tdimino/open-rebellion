@@ -473,12 +473,14 @@ The implemented production pipeline keeps original content local and ignored:
    index and exact owned `EData` inventory. Each faction must expose 346
    complete topics and ten explicit source-empty mission topics; no replacement
    prose or art is invented.
-3. Strict production builds admit only the verified 348/191 profile and
-   publish its runtime catalog, manifest, and referenced original 400-by-200
-   indexed BMPs into both ORPK and the owned loose web mirror. The packer uses
-   the runtime's exact declared-byte-length rule. Missing or inconsistent
-   required content fails the build; old packs without Encyclopedia content
-   still load with the feature unavailable.
+3. Strict production builds admit only the verified catalog digest, source-DLL
+   identities, and 348/191 profile, then publish its runtime catalog, manifest,
+   and referenced original 400-by-200 indexed BMPs into both ORPK and the owned
+   loose web mirror. The packer uses the runtime's exact declared-byte-length,
+   32 MiB per-image, and 128 MiB aggregate rules. Its single validation read
+   supplies the digest that guards the later packaging read against source
+   replacement. Missing or inconsistent required content fails the build; old
+   packs without Encyclopedia content still load with the feature unavailable.
 4. Native mods may atomically layer presentation-only `encyclopedia.json`
    patches and validated lowercase `.bmp` artwork. Browser builds deliberately
    remain base-only. Encyclopedia data never enters `GameWorld`, saves, replay,

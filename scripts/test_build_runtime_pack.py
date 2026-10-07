@@ -10,6 +10,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 SCRIPT = Path(__file__).with_name("build-runtime-pack.py")
@@ -156,7 +157,7 @@ class RuntimePackBuilderTests(unittest.TestCase):
                     base, ui, edata_dir=edata, encyclopedia_source=source
                 )
 
-    def test_required_encyclopedia_rejects_absent_and_accepts_complete_namespace(self) -> None:
+    def test_required_encyclopedia_rejects_absent_partial_and_noncanonical_sources(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             base = root / "base"
@@ -181,17 +182,81 @@ class RuntimePackBuilderTests(unittest.TestCase):
             canonical_root = root / "canonical"
             canonical_root.mkdir()
             source, edata = self._canonical_count_source(canonical_root)
-            entries = PACKER.collect_entries(
-                base,
-                ui,
-                edata_dir=edata,
-                encyclopedia_source=source,
-                require_encyclopedia=True,
+            with self.assertRaisesRegex(ValueError, "canonical catalog identity"):
+                PACKER.collect_entries(
+                    base,
+                    ui,
+                    edata_dir=edata,
+                    encyclopedia_source=source,
+                    require_encyclopedia=True,
+                )
+
+    def test_encyclopedia_artwork_limits_match_the_rust_session(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, edata = self._encyclopedia_source(root)
+            artwork = self._indexed_bmp()
+
+            with mock.patch.object(
+                PACKER, "ENCYCLOPEDIA_IMAGE_BYTES_LIMIT", len(artwork) - 1
+            ):
+                with self.assertRaisesRegex(ValueError, "byte limit"):
+                    PACKER.collect_encyclopedia_entries(source, edata)
+
+            catalog = json.loads(source.read_text(encoding="utf-8"))
+            catalog["artwork"] = {
+                str(resource_id): f"EDATA.{resource_id:03}"
+                for resource_id in range(1, 5)
+            }
+            catalog_bytes = json.dumps(
+                catalog, sort_keys=True, separators=(",", ":")
+            ).encode()
+            source.write_bytes(catalog_bytes)
+            manifest_path = Path(f"{source}.manifest.json")
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["catalog_sha256"] = hashlib.sha256(catalog_bytes).hexdigest()
+            manifest["counts"]["artwork_mappings"] = 4
+            manifest_path.write_text(
+                json.dumps(manifest, sort_keys=True, separators=(",", ":")),
+                encoding="utf-8",
             )
-            keys = {entry.key for entry in entries}
-            self.assertIn(PACKER.ENCYCLOPEDIA_CATALOG_KEY, keys)
-            self.assertIn(PACKER.ENCYCLOPEDIA_MANIFEST_KEY, keys)
-            self.assertIn("encyclopedia/assets/EDATA.014", keys)
+            for resource_id in range(1, 5):
+                (edata / f"EDATA.{resource_id:03}").write_bytes(artwork)
+
+            with mock.patch.object(
+                PACKER, "ENCYCLOPEDIA_ARTWORK_BYTES_LIMIT", len(artwork) * 3
+            ):
+                with self.assertRaisesRegex(ValueError, "aggregate byte limit"):
+                    PACKER.collect_encyclopedia_entries(source, edata)
+
+    def test_validated_artwork_digest_detects_replacement_before_packaging(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, edata = self._encyclopedia_source(root)
+            artwork_path = edata / "EDATA.014"
+            original_validator = PACKER.validate_edata_bitmap
+
+            def validate_then_replace(path: Path) -> bytes:
+                validated = original_validator(path)
+                replacement = bytearray(validated)
+                replacement[-1] ^= 0xFF
+                path.write_bytes(replacement)
+                return validated
+
+            with mock.patch.object(
+                PACKER,
+                "validate_edata_bitmap",
+                side_effect=validate_then_replace,
+            ):
+                entries = PACKER.collect_encyclopedia_entries(source, edata)
+
+            artwork_entry = next(
+                entry
+                for entry in entries
+                if entry.key == "encyclopedia/assets/EDATA.014"
+            )
+            with self.assertRaisesRegex(ValueError, "changed after validation"):
+                PACKER.entry_bytes(artwork_entry)
 
     def test_atomic_pack_publication_retains_last_known_good_on_failure(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

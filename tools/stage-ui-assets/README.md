@@ -390,11 +390,14 @@ Before compilation, the Rust source audit joins the staged 348 text records
 and 191 logical image mappings to the canonical DAT/TEXTSTRA index and exact
 owned EData inventory, requiring 356 topics, 346 complete bindings per faction,
 and the ten approved source-empty records. The packer then admits only that
-verified source profile, publishes the runtime catalog, manifest, and referenced
-art, and enforces the runtime's exact BMP byte-length contract. Native and
-browser readers use the same validated catalog; older packs without it remain
-compatible but leave the Encyclopedia unavailable. Browser builds publish the
-immutable base only and do not load filesystem mods.
+verified catalog and source-DLL identity, publishes the runtime catalog,
+manifest, and referenced art, and enforces the runtime's exact BMP
+byte-length, 32 MiB per-image, and 128 MiB aggregate contracts. Each artwork
+file is read and validated once; its digest then guards the later packaging
+read against replacement. Native and browser readers use the same validated
+catalog; older packs without it remain compatible but leave the Encyclopedia
+unavailable. Browser builds publish the immutable base only and do not load
+filesystem mods.
 
 `scripts/docker-build.sh` performs the same source-profile stage after copying
 the owned DLL/DAT files and passes `$ORIGINAL_GAME_DIR/EData` explicitly to the
