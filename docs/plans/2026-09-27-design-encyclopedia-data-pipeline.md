@@ -37,11 +37,13 @@ and reports the ten source-empty mission records without fallback content. All
 `EDATA.192` remains outside the proven lookup table. See the
 [P66A evidence record](../qa/2026-09-10-interface-parity-audit/evidence/2026-10-01-encyclopedia-topic-source-bindings.md).
 
-W2 through W7 and E30 now implement immutable installation, topic composition,
-exact bounded navigation, canonical native/browser publication and journeys,
-original-first HD selection, and native presentation overlays. Production
-command `0x131`, original Windows A0 comparison, and strict `OBJ-01` acceptance
-remain open under E32.
+W2 through W7 and E30-E35 now implement immutable installation, topic
+composition, exact bounded navigation, canonical native/browser publication
+and journeys, original-first HD selection, native presentation overlays, and
+production command `0x131`. E35 passes the approved current `OBJ-01` gate using
+lossless original-executable-under-Wine comparison plus functional evidence for
+the original-not-applicable source-unavailable state. Native-Windows parity is
+not claimed and is not a blocker for this delivery.
 
 ## 1. Purpose and scope
 
@@ -54,9 +56,9 @@ This began as a proposed design at repository baseline
 `e101e6c7bc74ec75487e16d81b1c2bb55025562c`. P62, P64, P65, and P66A now
 implement the transport, index shell, index catalog, and local source-binding
 checkpoints described above; W2 through W7 and E30 implement the approved
-runtime, publication, surface, HD, and native-overlay slices. Production
-command routing and A0 acceptance remain future work and confer no acceptance
-from design text alone.
+runtime, publication, surface, HD, native-overlay, production-routing, and
+accepted current-scope A0 compatibility slices. Evidence records rather than
+this design text establish acceptance; native-Windows parity remains unclaimed.
 
 The first delivery includes original-data extraction, a validated catalog,
 native and browser asset loading, native mod overrides, and an original-style

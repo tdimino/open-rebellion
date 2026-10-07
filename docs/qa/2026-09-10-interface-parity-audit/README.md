@@ -124,20 +124,22 @@ and passes the complete comparison contract.
   view. Native presentation mods now use deterministic shared dependency order,
   presence-aware layers, confined synthetic artwork, complete candidate
   validation, atomic rollback, and base restoration without entering saves or
-  simulation. Browser and strict parity evidence remain original-only.
+  simulation. Browser and parity evidence remain original-only.
   The current-main assembled candidate also passes final workspace, package,
   native/packed/loose, replay, save/load, production-journey, mutation-identity,
   and isolation gates. E35 corrects the faction origins, centered headings,
   deterministic production fonts, empty selection, tooltips, and modal order;
   its expanded normal-route browser journey passes twelve applicable lossless
   comparisons against the original executable under Wine, with the plan's
-  source-unavailable state honestly A0-not-applicable. Workspace policy does
-  not treat Wine as Windows parity, so strict `OBJ-01` ledger acceptance stays
-  open.
+  source-unavailable state honestly A0-not-applicable. By explicit user
+  decision on 2026-10-07, that Wine evidence is sufficient for the current
+  delivery: the twelve comparison cells and the functionally verified
+  source-unavailable cell are accepted without claiming native-Windows parity.
   Production cockpit/contextual routing and exact returns now pass native and
   packaged-browser gates with strict new-package content and old-pack
-  unavailable compatibility. Original-Windows comparison and strict `OBJ-01`
-  acceptance remain open.
+  unavailable compatibility. All thirteen `OBJ-01` cells pass the approved
+  current evidence gate; optional native-Windows capture belongs to separate
+  future tooling scope.
 - Review the [P50 GID menu-frame evidence](evidence/2026-09-12-gid-menu-frame.md)
   for original frame tiles, source-pixel checks, and the remaining menu gaps.
 - Review the [P51 GID hover and occlusion evidence](evidence/2026-09-12-gid-hover-and-occlusion.md)
@@ -313,7 +315,7 @@ stage them from a contributor-owned installation.
 ## Progress snapshot
 
 <!-- interface-parity-status:start -->
-Required interface families: 43. Complete: 0. Partial: 16. Failing: 27. Blocked: 0. Strictly accepted cells: 0/627.
+Required interface families: 43. Complete: 1. Partial: 15. Failing: 27. Blocked: 0. Strictly accepted cells: 13/627.
 The current CMD-02 GID catalog has 38 scenarios (29 baseline cells and nine additional native filter variants) and 152 faction/viewport executions. Its strict original-evidence and cross-browser gate remains open.
 <!-- interface-parity-status:end -->
 

@@ -10,7 +10,7 @@ tags: [qa, interface, parity, bitmap, screenshots, rebellion, supremacy]
 # Original Interface Parity Audit
 
 <!-- interface-parity-status:start -->
-Required interface families: 43. Complete: 0. Partial: 16. Failing: 27. Blocked: 0. Strictly accepted cells: 0/627.
+Required interface families: 43. Complete: 1. Partial: 15. Failing: 27. Blocked: 0. Strictly accepted cells: 13/627.
 The current CMD-02 GID catalog has 38 scenarios (29 baseline cells and nine additional native filter variants) and 152 faction/viewport executions. Its strict original-evidence and cross-browser gate remains open.
 <!-- interface-parity-status:end -->
 
@@ -135,7 +135,7 @@ navigation, animation, audio presentation, and the absence of invented UI.
 | [P64 Encyclopedia index-shell evidence](evidence/2026-09-30-encyclopedia-index-shell.md) | Separate source-recovered faction shells, seven selected category states, rail states, native clipping, native input rejection and capture, 32 exact browser states, and bounded independent review; catalog content, topic pages, production routing, and `OBJ-01` remain open. |
 | [P65 Encyclopedia index-catalog evidence](evidence/2026-09-30-encyclopedia-index-catalog.md) | Source-derived 356-entry catalog, seven English TEXTSTRA labels and family filters, stable selection and scrolling, the selected-category no-op, 22 two-faction browser states, and a clean P64 regression; topic pages, production routing, A0, and `OBJ-01` remain open. |
 | [P66A Encyclopedia topic-source evidence](evidence/2026-10-01-encyclopedia-topic-source-bindings.md) | Strict extraction of 348 prose records and 191 artwork mappings, exact ordinary/system/faction lookup identities, 346 complete topics per faction, and ten explicit source-empty missions; browser topic transport/rendering, routing, A0, and `OBJ-01` remain open. |
-| [W2-W7 / E30 / E32 / E34 / E35 Encyclopedia implementation evidence](evidence/README.md#current-strategic-correction) | Immutable installation, pure presentation, authentic topic rendering, canonical native/browser publication and journeys, original-first HD selection, deterministic atomic native overlays, strict new-package content, production cockpit/contextual routing, exact returns, old-pack unavailable compatibility, and twelve passing original-executable-under-Wine comparisons. The source-unavailable state is A0-not-applicable; strict Windows parity and `OBJ-01` acceptance remain open. |
+| [W2-W7 / E30 / E32 / E34 / E35 Encyclopedia implementation evidence](evidence/README.md#current-strategic-correction) | Immutable installation, pure presentation, authentic topic rendering, canonical native/browser publication and journeys, original-first HD selection, deterministic atomic native overlays, strict new-package content, production cockpit/contextual routing, exact returns, old-pack unavailable compatibility, and twelve passing original-executable-under-Wine comparisons. The source-unavailable state is A0-not-applicable and passes functionally. By explicit user decision, all thirteen `OBJ-01` cells pass the current evidence gate without claiming native-Windows parity. |
 | [Evidence index](evidence/README.md) | Reports and artifact bundles, including a required `README.md` inventory for each new bundle. |
 | [JSON Schema](schemas/interface-parity.schema.json) | Validation contract for the audit summary and status vocabulary. |
 | [Ledger validator](../../../scripts/validate-interface-parity-ledgers.mjs) | Dependency-free generator and consistency gate for cell IDs and retrieval-package links. |
@@ -325,8 +325,9 @@ mission records without fallback. W2 through W7 and E30 now provide immutable
 installation, source-ordered presentation, authentic topic rendering,
 canonical native/browser publication and journeys, original-first HD selection,
 and native atomic presentation overlays with base restoration. Briefing,
-dialog, advisor-control, remaining voice resources, Encyclopedia production
-routing, A0 comparison, and `OBJ-01` acceptance remain open. Its 27 packages give every required surface
+dialog, advisor-control, and remaining voice resources remain open. Encyclopedia
+production routing, accepted current-scope A0 compatibility, and all thirteen
+`OBJ-01` cells pass; native-Windows parity is not claimed. Its 27 packages give every required surface
 a named recovery or removal path.
 
 ## What 100% means

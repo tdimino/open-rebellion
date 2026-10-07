@@ -333,11 +333,11 @@
       "id": "RE-ENC-01",
       "surface_ids": ["OBJ-01"],
       "title": "Encyclopedia index and topic views",
-      "status": "static-partial",
+      "status": "accepted",
       "retrieval": {
         "sources": ["REBEXE.EXE", "ENCYBMAP.DLL", "ENCYTEXT.DLL", "EData", "GOKRES.DLL"],
         "method": "Trace topic commands and previous/next navigation through ENCYBMAP mappings, ENCYTEXT records, EData image selection, and missing-entry handling.",
-        "next_proof": "P64 recovers and browser-corroborates the exact empty index shells, category/resource table, rail states, and clipping. P65 adds the source-derived 356-entry English catalog, recovered labels and filters, stable selection, and scrolling. P66A strictly extracts 348 ENCYTEXT records and 191 ENCYBMAP mappings, reproduces ordinary, system-picture, and factional mission lookup rules, binds 346 complete topics per faction, and reports ten source-empty missions. Continue with browser transport, topic composition, interactive navigation, context-open paths, production routing, and A0 evidence."
+        "next_proof": "Accepted for the current Encyclopedia delivery by E35 and the 2026-10-07 user evidence ruling: production browser transport, topic composition, navigation, contextual routing, exact returns, and all twelve applicable original-executable-under-Wine comparisons pass; the source-unavailable state passes functionally with original A0 not applicable. Native-Windows parity is not claimed and any future capture kit is separate tooling scope."
       },
       "runtime_capture_required": true
     },

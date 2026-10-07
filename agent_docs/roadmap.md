@@ -10,7 +10,7 @@ tags: [roadmap, planning, milestones, parity]
 # Roadmap
 
 <!-- interface-parity-status:start -->
-Required interface families: 43. Complete: 0. Partial: 16. Failing: 27. Blocked: 0. Strictly accepted cells: 0/627.
+Required interface families: 43. Complete: 1. Partial: 15. Failing: 27. Blocked: 0. Strictly accepted cells: 13/627.
 The current CMD-02 GID catalog has 38 scenarios (29 baseline cells and nine additional native filter variants) and 152 faction/viewport executions. Its strict original-evidence and cross-browser gate remains open.
 <!-- interface-parity-status:end -->
 
@@ -56,8 +56,10 @@ comparison and strict `OBJ-01` cells to E35. E35 then corrects the faction-speci
 surface origins, headings, production fonts, initial selection, hover tooltip,
 and modal order. Its expanded final-package browser journey passes twelve
 applicable lossless comparisons against the original executable under Wine;
-the plan-defined source-unavailable state has no honest original A0. Workspace
-policy keeps strict Windows parity and the canonical `OBJ-01` cells open. See
+the plan-defined source-unavailable state has no honest original A0 and passes
+from its functional evidence. By explicit user decision on 2026-10-07, the
+Wine evidence is sufficient for this delivery and all thirteen canonical
+`OBJ-01` cells pass without claiming native-Windows parity. See
 the [P66A evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-01-encyclopedia-topic-source-bindings.md),
 [W2 evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-content-session.md),
 [W3 evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-presenter.md),
@@ -817,12 +819,15 @@ would tune around known simulation feedback defects.
   final native, packed and loose readers, deterministic package, both-faction
   production journeys, old-pack behavior, replay/save invariance, scoped
   lint/format and isolation boundaries.
-- [ ] Complete E35 strict Encyclopedia acceptance. The current implementation
+- [x] Complete E35 Encyclopedia acceptance for the approved evidence boundary.
+  The current implementation
   passes all twelve applicable lossless original-executable-under-Wine
   comparisons after correcting faction origins, headings, embedded production
   fonts, empty selection, hover tooltip and modal ordering. The explicit
-  source-unavailable state is functional-only. Original-Windows evidence is
-  still required before any `OBJ-01` cell is marked strictly accepted.
+  source-unavailable state passes from functional evidence with original A0
+  not applicable. The user accepted Wine evidence for this delivery on
+  2026-10-07; all thirteen `OBJ-01` cells pass and native-Windows parity is not
+  claimed.
 - [x] Restore the P50 GID root and submenu frame from STRATEGY 10100 through
   10107. Paint repeated edges in four batched meshes, remove the invented menu
   fade, and check native-size root pixels against the source BMPs in both

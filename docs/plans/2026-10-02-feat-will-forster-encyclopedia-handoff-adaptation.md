@@ -453,7 +453,8 @@ This plan is complete only when:
   corrects faction-specific origin, title placement, production-font,
   initial-selection, tooltip, and modal-order defects. The expanded
   final-package journey passes all twelve applicable `OBJ-01` comparisons; the
-  plan-defined source-unavailable state is honestly A0-not-applicable. This
-  establishes a working production Encyclopedia and Wine compatibility, but
-  workspace policy does not treat it as original-Windows parity, so strict
-  ledger acceptance and this plan's final visual gate remain open.
+  plan-defined source-unavailable state is honestly A0-not-applicable and
+  passes from functional evidence. The user explicitly accepts Wine evidence
+  for the current delivery, so all thirteen `OBJ-01` cells and this plan's
+  visual gate pass without claiming native-Windows parity. A portable Windows
+  capture kit, if pursued later, belongs to separate tooling/repository scope.

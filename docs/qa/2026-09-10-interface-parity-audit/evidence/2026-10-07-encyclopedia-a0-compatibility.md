@@ -23,12 +23,15 @@ approved plan's explicit source-unavailable presentation, has no corresponding
 topic in the accepted original profile and remains functional A1 evidence
 only. No original fixture was fabricated.
 
-This is a compatibility checkpoint, not strict Windows parity. The original
+This is accepted original-executable compatibility evidence for the current
+Encyclopedia delivery, not a claim of native-Windows parity. The original
 executable was captured losslessly at 640 by 480 under the repository's Linux
-Wine environment. The workspace policy states that Wine observations do not by
-themselves establish Windows parity or finish project acceptance. Consequently
-the canonical ledger cells remain pending even though the adapted comparison
-tool reports twelve passes and one honest not-applicable state.
+Wine environment. On 2026-10-07 the user explicitly accepted that evidence as
+sufficient for this delivery: the twelve applicable canonical cells pass from
+the bounded original/production comparisons, while the source-unavailable cell
+passes from its functional evidence with original A0 recorded as not
+applicable. A portable native-Windows capture kit, if pursued later, belongs to
+separate tooling/repository scope and is not an Encyclopedia completion gate.
 
 The normal-route production Encyclopedia is nevertheless working on the final
 candidate: both factions traverse every category, open and navigate topics,
@@ -234,13 +237,15 @@ repeat caught all 21 mutants. The first tooltip run similarly exposed two
 scale operators at scale 1; the scaled case then caught both. These are the
 final no-missed results above.
 
-## Remaining strict gate
+## Acceptance boundary
 
 The functional Encyclopedia and the adapted original-executable compatibility
-matrix pass. Strict `OBJ-01` ledger acceptance remains open until the same
-required visual states are captured on an original Windows runtime (or the
-workspace policy is explicitly revised). The source-unavailable state remains
-functional-only because no legitimate original topic supplies its A0.
+matrix pass for the approved current scope. `OBJ-01-C001` through `C012` are
+accepted from the recorded lossless Wine comparison; `OBJ-01-C013` is accepted
+from the verified source-unavailable production behavior, with original A0
+explicitly not applicable because no legitimate original topic supplies that
+state. This checkpoint does not establish native-Windows parity. Such evidence
+may be added later without reopening the current Encyclopedia implementation.
 
 No original PNG, owned EDATA, generated package, full runtime log, local path,
 or proprietary source content is committed by this checkpoint.

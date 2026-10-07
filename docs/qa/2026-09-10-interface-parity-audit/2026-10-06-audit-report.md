@@ -167,7 +167,8 @@ original-only. E32 pairs mandatory content for new browser packages with
 production cockpit and real contextual routes, exact typed returns, stable
 compound source IDs, four-request startup, and old-pack unavailable
 compatibility. E35's adapted A0 compatibility result is described below; strict
-Windows comparison and every `OBJ-01` cell remain open. Source cross-checking
+native-Windows parity is unclaimed, but every `OBJ-01` cell passes the approved
+current evidence gate. Source cross-checking
 corrects P63: its faction index compositions and ten normal/held controls are
 the Message Index, corroborated by original screenshots and the executable's
 message labels and masks. Its 24 exact browser comparisons and independent
@@ -177,8 +178,9 @@ E35 additionally corrects faction origins, title/font placement, empty
 selection, hover tooltip and caller occlusion, and its expanded final package
 passes all twelve applicable lossless comparisons against the original
 executable under Wine. The approved source-unavailable state has no honest
-original A0. Workspace policy does not treat Wine as original-Windows parity,
-so every canonical `OBJ-01` cell remains pending.
+original A0 and passes from functional evidence. By explicit user decision on
+2026-10-07, all thirteen canonical `OBJ-01` cells pass for this delivery;
+native-Windows parity is not claimed.
 P54 separately stages every original type-301 mesh and type-303 texture or
 palette resource with a source-bound content-addressed manifest. P55 decodes
 the full corpus into verified deterministic mesh and texture objects. P56 and
@@ -272,7 +274,7 @@ acceptance.
 | UIP-F-003 | P0 | Original sector and detailed-system shells replace the invented sidebar, but the System window still carries unapproved Personnel, Fleets, Defenses, and Troops tabs absent from native facility-only window type 9. | partial |
 | UIP-F-004 | P0 | Authentic advisor idle runs render for both factions in the scaled apertures, but complete action, voice, and chrome behavior is absent. | partial |
 | UIP-F-005 | P0 | Runtime pack v3 includes ALSPRITE and EMSPRITE BMP/type-302 content plus all 187 original EDATA images; ALBRIEF, EMBRIEF, REBDLOG, action controls, and remaining voice resources remain omitted. | partial |
-| UIP-F-006 | P1 | The working native/browser Encyclopedia, 356-entry catalog, immutable publication, production cockpit/contextual routes, exact returns, old-pack behavior, and twelve applicable original-executable-under-Wine comparisons pass bounded gates. The source-unavailable state is A0-not-applicable; original-Windows parity and strict `OBJ-01` acceptance remain open. | partial |
+| UIP-F-006 | P1 | The working native/browser Encyclopedia, 356-entry catalog, immutable publication, production cockpit/contextual routes, exact returns, old-pack behavior, and twelve applicable original-executable-under-Wine comparisons pass bounded gates. The source-unavailable state is A0-not-applicable and passes functionally. All thirteen `OBJ-01` cells pass the user-approved current evidence gate; native-Windows parity is not claimed. | complete |
 | UIP-F-007 | P1 | Fleet, Ship, Troop, and Personnel Finders, Message Index rows, fleet destinations, Rename, and en-route marks have bounded source-backed paths; native Manufacturing, Build Selection, complete Status, mission, options, and remaining object layouts are replaced or absent. | partial |
 | UIP-F-008 | P1 | Battle Alert, assault/bombardment reports, and battle-result routing are absent or bypassed. | fail |
 | UIP-F-009 | P1 | The bounded practical tactical launcher passes its implementation gates through P58-B22, including combat, commands, grouping, Death Star and result paths, shared campaign return, tactical RNG sequencing, power allocation, completion/destruction callbacks, and the timed trench-run producer. Original view acceptance, whole-process RNG continuity, strategic commander binding, exact planet framing, native beam/playback comparison, and rare audio paths stay open. | fail |
