@@ -201,6 +201,6 @@ and missing `wasm-opt` warnings.
 
 This is implementation and A1 route evidence, not strict original-interface
 acceptance. Lossless original Windows A0 comparison and the complete `OBJ-01`
-faction/viewport matrix remain E35/E34 work. W8 coalesced filesystem watching
+faction/viewport matrix remain E35 work. W8 coalesced filesystem watching
 also remains optional; explicit Mod Manager reload and atomic last-known-good
 recovery are the supported native path in this increment.

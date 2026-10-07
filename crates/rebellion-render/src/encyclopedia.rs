@@ -2045,15 +2045,8 @@ fn original_index_list_rect(parent: egui::Rect, scale: f32) -> egui::Rect {
 
 fn original_index_row_rect(parent: egui::Rect, scale: f32, visible_row: usize) -> egui::Rect {
     let y = 137.0 + visible_row as f32 * ORIGINAL_INDEX_ROW_HEIGHT;
-    encyclopedia_rect(
-        parent,
-        scale,
-        36.0,
-        y,
-        338.0,
-        ORIGINAL_INDEX_ROW_HEIGHT,
-    )
-    .intersect(original_index_list_rect(parent, scale))
+    encyclopedia_rect(parent, scale, 36.0, y, 338.0, ORIGINAL_INDEX_ROW_HEIGHT)
+        .intersect(original_index_list_rect(parent, scale))
 }
 
 fn paint_original_resource_native(

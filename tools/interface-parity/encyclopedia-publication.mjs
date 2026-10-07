@@ -272,12 +272,18 @@ async function runFactionJourney(browser, origin, faction, namespace) {
     await page.mouse.click(display.x, display.y, { delay: 150 });
     await frames(page, 8);
     const fleetWindow = await screenshot(page, directory, "06-fleet-window");
-    const ship = faction.name === "alliance" ? { x: 320, y: 235 } : { x: 379, y: 241 };
+    // The recovered sector placement opens a first right-half sector in the
+    // secondary column. Sumitra therefore clamps Yavin's Fleet window against
+    // the galaxy view's right edge; the Empire fixture remains in its original
+    // column.
+    const ship = faction.name === "alliance" ? { x: 444, y: 235 } : { x: 379, y: 241 };
     await page.mouse.click(ship.x, ship.y, { button: "right", delay: 150 });
     await frames(page, 6);
     const objectMenu = await screenshot(page, directory, "07-object-menu");
     const encyclopediaRow = faction.name === "alliance"
-      ? { x: 375, y: 327 }
+      // The menu opens left of the click when the right-column window leaves
+      // too little room to its right.
+      ? { x: 385, y: 327 }
       : { x: 434, y: 333 };
     await page.mouse.click(encyclopediaRow.x, encyclopediaRow.y, { delay: 150 });
     await waitForLog(

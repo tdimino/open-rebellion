@@ -49,15 +49,18 @@ original-only. W7 adds deterministic, presence-aware native overlays with
 atomic rollback and exact base restoration. E32 then pairs strict new-package
 requirements with production cockpit and contextual routes, exact returns,
 both-faction packaged journeys, old-pack unavailable compatibility, and native
-foreground contextual evidence. A0 comparison and strict `OBJ-01` cells remain
-open. See the [P66A evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-01-encyclopedia-topic-source-bindings.md),
+foreground contextual evidence. E34 verifies the current-main assembled
+candidate across workspace, package, native/packed/loose, replay, save/load,
+production browser, mutation-identity, and isolation gates. A0 comparison and
+strict `OBJ-01` cells remain E35. See the [P66A evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-01-encyclopedia-topic-source-bindings.md),
 [W2 evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-content-session.md),
 [W3 evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-presenter.md),
 [W4 evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-topic-surface.md),
 [W5A evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-canonical-publication.md),
 [W6 evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-hd-selection.md),
 [W7 evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-07-encyclopedia-mod-overlays.md),
-and [E32 evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-07-encyclopedia-production-activation.md).
+[E32 evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-07-encyclopedia-production-activation.md),
+and [E34 technical acceptance](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-07-encyclopedia-technical-acceptance.md).
 
 The 2026-10-06 strategic-interface batch restores native cockpit accelerators,
 the two-sector-window cap, Message Index interaction, Personnel and Troop

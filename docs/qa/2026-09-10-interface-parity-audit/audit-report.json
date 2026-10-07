@@ -150,7 +150,7 @@
       "id": "UIP-F-006",
       "severity": "P1",
       "status": "partial",
-      "title": "EDATA transport, source-exact Encyclopedia surfaces, the 356-entry catalog, strict bindings, immutable session/presenter contracts, canonical reader parity, packaged journeys, original-first HD, atomic native overlays, strict new-package content, and production routing pass bounded gates; A0 and OBJ-01 remain open",
+      "title": "EDATA transport, source-exact Encyclopedia surfaces, the 356-entry catalog, strict bindings, immutable session/presenter contracts, canonical reader parity, packaged journeys, original-first HD, atomic native overlays, production routing, and assembled technical acceptance pass bounded gates; A0 and OBJ-01 remain open",
       "evidence": [
         "crates/rebellion-render/src/encyclopedia.rs",
         "crates/rebellion-render/src/encyclopedia_surface.rs",
@@ -173,7 +173,8 @@
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-canonical-surface.md",
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-hd-selection.md",
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-07-encyclopedia-mod-overlays.md",
-        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-07-encyclopedia-production-activation.md"
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-07-encyclopedia-production-activation.md",
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-07-encyclopedia-technical-acceptance.md"
       ],
       "affected_surfaces": ["OBJ-01"]
     },
@@ -388,9 +389,10 @@
     "w6_encyclopedia_hd_selection": "evidence/2026-10-06-encyclopedia-hd-selection.md",
     "w7_encyclopedia_mod_overlays": "evidence/2026-10-07-encyclopedia-mod-overlays.md",
     "e32_encyclopedia_production_activation": "evidence/2026-10-07-encyclopedia-production-activation.md",
+    "e34_encyclopedia_technical_acceptance": "evidence/2026-10-07-encyclopedia-technical-acceptance.md",
     "ledger_validator": "../../../scripts/validate-interface-parity-ledgers.mjs",
     "screenshot_ledger": "screenshot-ledger.md",
     "capture_manifest": "reference-captures/SHA256SUMS"
   },
-  "next_action": "Preserve the P58-B22 bounded practical launcher while strict A0 work continues. Continue UIP-B05 from the E32 production cockpit/contextual routes by completing lossless original text/visual comparison and the strict OBJ-01 faction/viewport matrix in E35/E34. Continue CMD-08 separately from the corrected P63 Message Index shell."
+  "next_action": "Preserve the P58-B22 bounded practical launcher while strict A0 work continues. Continue UIP-B05 from the E34 technically accepted production candidate by completing lossless original text/visual comparison and the strict OBJ-01 faction/viewport matrix in E35. Continue CMD-08 separately from the corrected P63 Message Index shell."
 }

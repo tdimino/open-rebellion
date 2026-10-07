@@ -111,7 +111,8 @@ and passes the complete comparison contract.
   [E30 canonical-surface evidence](evidence/2026-10-06-encyclopedia-canonical-surface.md),
   [W6 original-first HD evidence](evidence/2026-10-06-encyclopedia-hd-selection.md),
   [W7 native-overlay evidence](evidence/2026-10-07-encyclopedia-mod-overlays.md),
-  and [E32 production-activation evidence](evidence/2026-10-07-encyclopedia-production-activation.md)
+  [E32 production-activation evidence](evidence/2026-10-07-encyclopedia-production-activation.md),
+  and [E34 technical-acceptance evidence](evidence/2026-10-07-encyclopedia-technical-acceptance.md)
   for atomic validated installation, exact session-order projection, both
   faction bindings, explicit source-empty topics, bounded navigation, and
   immutable close/return routes, plus fixture-gated authentic rendering and
@@ -123,6 +124,10 @@ and passes the complete comparison contract.
   presence-aware layers, confined synthetic artwork, complete candidate
   validation, atomic rollback, and base restoration without entering saves or
   simulation. Browser and strict parity evidence remain original-only.
+  The current-main assembled candidate also passes final workspace, package,
+  native/packed/loose, replay, save/load, production-journey, mutation-identity,
+  and isolation gates. Strict lossless A0 comparison and `OBJ-01` acceptance
+  remain E35.
   Production cockpit/contextual routing and exact returns now pass native and
   packaged-browser gates with strict new-package content and old-pack
   unavailable compatibility. A0 and strict `OBJ-01` acceptance remain open.

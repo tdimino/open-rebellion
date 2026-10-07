@@ -439,4 +439,13 @@ This plan is complete only when:
   native session generations, and reconstruct raw live IDs only through exact
   source-family/name matches. Both-faction packaged journeys and a native real
   contextual journey pass; strict original A0 and `OBJ-01` acceptance remain
-  E35/E34 work.
+  E35 work.
+- 2026-10-07: E34 accepts the current-main assembled technical candidate. The
+  final native, packed, and development-loose readers match one logical
+  fingerprint; two consecutive builds match at the WASM and ORPK boundaries;
+  both production factions, old-pack compatibility, replay, save/load,
+  workspace, scoped lint/format, mutation-identity, and proprietary-data/state
+  isolation gates pass. The divergent PR #16 fixture/fetch harness names are
+  superseded by the approved current-schema reader corpus and production
+  publication harness rather than imported wholesale. Strict lossless A0 and
+  `OBJ-01` acceptance now remain solely E35.

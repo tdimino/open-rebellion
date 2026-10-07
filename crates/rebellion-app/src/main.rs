@@ -36,12 +36,12 @@ use rand_xoshiro::Xoshiro256PlusPlus;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
+use rebellion_core::agent_automation::{AutomationModule, PlayerAgent};
 use rebellion_core::ai::{AIAction, AIState, AISystem, AiFaction, FleetMoveReason};
 use rebellion_core::betrayal::{BetrayalState, BetrayalSystem};
 use rebellion_core::blockade::{BlockadeState, BlockadeSystem};
 use rebellion_core::bombardment::BombardmentSystem;
 use rebellion_core::combat::{CombatSide, CombatSystem};
-use rebellion_core::agent_automation::{AutomationModule, PlayerAgent};
 use rebellion_core::dat::Faction;
 use rebellion_core::death_star::{DeathStarState, DeathStarSystem};
 use rebellion_core::delivery::DeliveryState;
@@ -51,17 +51,17 @@ use rebellion_core::fleet_join::FleetMover;
 use rebellion_core::fog::{FogState, FogSystem};
 use rebellion_core::ids::{CharacterKey, FleetKey, SystemKey};
 use rebellion_core::jedi::{JediState, JediSystem};
-use rebellion_core::manufacturing::{ManufacturingState, ManufacturingSystem, QueueItem};
 #[cfg(test)]
 use rebellion_core::manufacturing::ProductionArea;
+use rebellion_core::manufacturing::{ManufacturingState, ManufacturingSystem, QueueItem};
 use rebellion_core::missions::{
     MissionEffect, MissionFaction, MissionKind, MissionState, MissionSystem,
 };
 use rebellion_core::movement::{
     apply_fleet_arrival, begin_faction_fleet_transit, begin_fleet_transit, fleet_move_confirms,
     fleet_move_enabled, fleet_transit_ticks, fleets_move_enabled, reconcile_fleet_orbits,
-    system_side_fleets, validate_fleet_dispatch,
-    validate_fleets_dispatch, MovementState, MovementSystem,
+    system_side_fleets, validate_fleet_dispatch, validate_fleets_dispatch, MovementState,
+    MovementSystem,
 };
 use rebellion_core::repair::{RepairEvent, RepairState, RepairSystem};
 use rebellion_core::research::{ResearchState, ResearchSystem};
@@ -82,16 +82,12 @@ use rebellion_render::build_selection::{
     draw_build_selection, BuildSelectionAction, BuildSelectionState,
 };
 use rebellion_render::fleet_finder::{draw_fleet_finder, FleetFinderAction, FleetFinderState};
-use rebellion_render::message_index::{MessageIndexAction, MessageIndexState};
-use rebellion_render::personnel_finder::{
-    draw_personnel_finder, PersonnelFinderAction, PersonnelFinderState,
-};
-use rebellion_render::troop_finder::{draw_troop_finder, TroopFinderAction, TroopFinderState};
 use rebellion_render::game_speed::{
     choose_game_speed, draw_day_readout, draw_game_speed_menu, draw_pause_alert,
     open_game_speed_menu_on_right_click, pause_alert_contains_screen_point, stepped_game_speed,
     GameSpeedUiState,
 };
+use rebellion_render::message_index::{MessageIndexAction, MessageIndexState};
 use rebellion_render::mission_dialog::{
     draw_mission_dialog, MissionDialogAction, MissionDialogState,
 };
@@ -106,6 +102,9 @@ use rebellion_render::panels::death_star::draw_death_star;
 use rebellion_render::panels::jedi::{draw_jedi, JediPanelState};
 use rebellion_render::panels::loyalty::draw_loyalty;
 use rebellion_render::panels::research::{draw_research, ResearchPanelState};
+use rebellion_render::personnel_finder::{
+    draw_personnel_finder, PersonnelFinderAction, PersonnelFinderState,
+};
 use rebellion_render::quadrant_icons::Quadrant;
 use rebellion_render::status_window::{draw_status_window, StatusWindowAction, StatusWindowState};
 use rebellion_render::system_window::fleet_label;
@@ -113,27 +112,27 @@ use rebellion_render::targeting::{
     capture_pointer, draw_targeting_cursor, release_destination, ReleaseTarget, ReleaseWindows,
     TargetOrder, Targeting, TargetingEnd,
 };
+use rebellion_render::troop_finder::{draw_troop_finder, TroopFinderAction, TroopFinderState};
+#[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+use rebellion_render::EncyclopediaState;
 use rebellion_render::{
     advisor_combat_result, advisor_death_star, advisor_greet, advisor_manufacturing_complete,
     advisor_mission_result, advisor_uprising, draw_advisor, draw_audio_controls,
     draw_cockpit_background, draw_cockpit_chrome, draw_cockpit_egui_layer, draw_credits,
     draw_event_screen, draw_fleets, draw_galaxy_backdrop, draw_galaxy_map, draw_game_options,
-    draw_game_setup, draw_ground_combat, draw_main_menu, draw_missions,
-    draw_multiplayer_setup, draw_officers, draw_save_load, draw_sector_windows,
-    draw_system_windows, draw_tactical_view, handle_cockpit_egui_input, set_cockpit_viewport_clip,
-    show_event_screen, update_event_screen, AdvisorFaction, AdvisorState, AssetRenderProfile,
-    AudioVolumeState, BmpCache, CockpitButton, CockpitFaction, CockpitState, CreditsState,
-    EventScreenState, FleetsState, GalaxyMapState, GameMessage, GameOptionsAction,
-    GameOptionsOrigin, GameOptionsState, GameSetupAction, GameSetupState, GroundAction,
-    GroundCombatState, MainMenuAction, MainMenuState, MenuDestinationAction,
-    MessageCategory, MessageLog, MessageLogState, MessageRail, MultiplayerSetupAction,
-    MultiplayerSetupState, MusicContext, OfficersState, OriginalEncyclopediaCatalog,
-    OriginalEncyclopediaEntry, PanelAction, RailAudience, SectorWindowAction, SectorWindowState,
-    SfxKind, SystemWindowAction, SystemWindowState, TacticalAction, TacticalState,
-    TacticalTrenchRunOutcome, VideoError, VideoPlayer,
+    draw_game_setup, draw_ground_combat, draw_main_menu, draw_missions, draw_multiplayer_setup,
+    draw_officers, draw_save_load, draw_sector_windows, draw_system_windows, draw_tactical_view,
+    handle_cockpit_egui_input, set_cockpit_viewport_clip, show_event_screen, update_event_screen,
+    AdvisorFaction, AdvisorState, AssetRenderProfile, AudioVolumeState, BmpCache, CockpitButton,
+    CockpitFaction, CockpitState, CreditsState, EventScreenState, FleetsState, GalaxyMapState,
+    GameMessage, GameOptionsAction, GameOptionsOrigin, GameOptionsState, GameSetupAction,
+    GameSetupState, GroundAction, GroundCombatState, MainMenuAction, MainMenuState,
+    MenuDestinationAction, MessageCategory, MessageLog, MessageLogState, MessageRail,
+    MultiplayerSetupAction, MultiplayerSetupState, MusicContext, OfficersState,
+    OriginalEncyclopediaCatalog, OriginalEncyclopediaEntry, PanelAction, RailAudience,
+    SectorWindowAction, SectorWindowState, SfxKind, SystemWindowAction, SystemWindowState,
+    TacticalAction, TacticalState, TacticalTrenchRunOutcome, VideoError, VideoPlayer,
 };
-#[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
-use rebellion_render::EncyclopediaState;
 use rebellion_render::{draw_defenses_windows, DefensesWindowAction, DefensesWindowState};
 use rebellion_render::{draw_fleet_windows, FleetWindowAction, FleetWindowState};
 use rebellion_render::{draw_missions_windows, MissionsWindowAction, MissionsWindowState};
@@ -2819,9 +2818,8 @@ Some(RailAudience::side(*faction_is_alliance)),
             let uprising_tick = tick_events.last().map_or(0, |event| event.tick);
             let uprising_budget =
                 UprisingSystem::roll_budget(&uprising_state, &world, uprising_tick);
-            let uprising_rolls: Vec<f64> = (0..uprising_budget)
-                .map(|_| sim_rng.gen::<f64>())
-                .collect();
+            let uprising_rolls: Vec<f64> =
+                (0..uprising_budget).map(|_| sim_rng.gen::<f64>()).collect();
             let uprising_events = UprisingSystem::advance(
                 &mut uprising_state,
                 &world,
@@ -4974,8 +4972,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                                     // unbound. Preserve the caller and use the
                                     // presenter's unresolved index fallback.
                                     object_id: 0,
-                                    caller:
-                                        EncyclopediaContextCaller::Handler00438800Command67,
+                                    caller: EncyclopediaContextCaller::Handler00438800Command67,
                                 };
                                 match encyclopedia_surface.open(&session, intent) {
                                     Ok(()) => {
@@ -5211,8 +5208,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                                     // admission join is not part of the
                                     // merged upstream contract yet.
                                     object_id: 0,
-                                    caller:
-                                        EncyclopediaContextCaller::Handler004443a0Command66,
+                                    caller: EncyclopediaContextCaller::Handler004443a0Command66,
                                 };
                                 match encyclopedia_surface.open(&session, intent) {
                                     Ok(()) => {
@@ -7591,9 +7587,8 @@ fn apply_panel_action(
                     ));
                 } else if let Some(fleet) = world.fleets.get(fleet_key) {
                     let origin = fleet.location;
-                    let ticks = rebellion_core::movement::fleet_transit_ticks(
-                        fleet, world, origin, system,
-                    );
+                    let ticks =
+                        rebellion_core::movement::fleet_transit_ticks(fleet, world, origin, system);
                     if origin != system && ticks.is_none() {
                         msg_log.push(GameMessage::new(
                             clock.tick,
@@ -8829,7 +8824,9 @@ mod fleet_move_tests {
     use super::*;
     use rebellion_core::dat::{ExplorationStatus, SectorGroup};
     use rebellion_core::ids::DatId;
-    use rebellion_core::world::{CapitalShipClass, ControlKind, Fleet, Sector, ShipInstance, System};
+    use rebellion_core::world::{
+        CapitalShipClass, ControlKind, Fleet, Sector, ShipInstance, System,
+    };
 
     fn system(sector: rebellion_core::ids::SectorKey, x: u16) -> System {
         System {
@@ -8962,7 +8959,10 @@ mod fleet_move_tests {
         let (world, fleets, destination) = world_with_two_fleets();
         let issued = issue(&world, &fleets, true, destination);
         assert!(issued.actions.is_empty());
-        let window = issued.confirmation.confirmation().expect("the window opens");
+        let window = issued
+            .confirmation
+            .confirmation()
+            .expect("the window opens");
         assert_eq!(window.fleets, fleets);
         assert_eq!(window.lines.len(), 2);
         // FUN_0049a350: each line counts the member's days to go.

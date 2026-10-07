@@ -1035,7 +1035,7 @@ pub fn emit_ready(request: FixtureRequest, world: &GameWorld, map: &GalaxyMapSta
         CockpitFaction::Empire => "empire",
     };
     let fingerprint_input = serde_json::to_vec(&(request.code, world, map.selected_system))
-    .expect("serialize deterministic interface fixture state");
+        .expect("serialize deterministic interface fixture state");
     let aperture = CockpitState::new(request.faction)
         .layout_for(640.0, 480.0)
         .galaxy;
