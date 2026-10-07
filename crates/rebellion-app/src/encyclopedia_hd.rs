@@ -21,6 +21,8 @@ use rebellion_render::{EncyclopediaArtworkView, EncyclopediaTextureSampling};
 
 #[cfg(not(target_arch = "wasm32"))]
 const MAX_HD_MANIFEST_BYTES: usize = 8 * 1024 * 1024;
+#[cfg(not(target_arch = "wasm32"))]
+const MAX_ENCYCLOPEDIA_HD_ARTWORK_BYTES: usize = 128 * 1024 * 1024;
 
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -120,6 +122,21 @@ pub(crate) fn prepare_native_encyclopedia_hd(
     hd_root: Option<&Path>,
     session: &EncyclopediaSession,
 ) -> PreparedEncyclopediaHd {
+    prepare_native_encyclopedia_hd_with_limit(
+        profile,
+        hd_root,
+        session,
+        MAX_ENCYCLOPEDIA_HD_ARTWORK_BYTES,
+    )
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn prepare_native_encyclopedia_hd_with_limit(
+    profile: AssetRenderProfile,
+    hd_root: Option<&Path>,
+    session: &EncyclopediaSession,
+    aggregate_limit: usize,
+) -> PreparedEncyclopediaHd {
     let mut prepared = PreparedEncyclopediaHd::original_only();
     if profile == AssetRenderProfile::OriginalParity {
         return prepared;
@@ -156,6 +173,7 @@ pub(crate) fn prepare_native_encyclopedia_hd(
         }
     };
 
+    let mut retained_bytes = 0_usize;
     for (filename, metadata) in session.resource_metadata() {
         let Some(resource_id) = edata_resource_id(filename) else {
             // Presentation overlays use confined `mod:v1:*` identities and
@@ -187,28 +205,31 @@ pub(crate) fn prepare_native_encyclopedia_hd(
         }
 
         let output_filename = format!("EData/EDATA_{resource_id:03}.png");
-        let output_bytes = match read_bounded_file(
-            &hd_root.join(&output_filename),
-            MAX_ENCYCLOPEDIA_IMAGE_BYTES,
-        ) {
-            Ok(bytes) => bytes,
-            Err(BoundedReadError::Unavailable(detail)) => {
-                prepared.diagnostics.push(asset_diagnostic(
-                    "hd_output_unavailable",
-                    filename,
-                    detail,
-                ));
-                continue;
-            }
-            Err(BoundedReadError::ResourceLimit(detail)) => {
-                prepared.diagnostics.push(asset_diagnostic(
-                    "hd_output_resource_limit",
-                    filename,
-                    detail,
-                ));
-                continue;
-            }
-        };
+        let remaining_bytes = aggregate_limit.saturating_sub(retained_bytes);
+        let output_read_limit = MAX_ENCYCLOPEDIA_IMAGE_BYTES.min(remaining_bytes);
+        let output_bytes =
+            match read_bounded_file(&hd_root.join(&output_filename), output_read_limit) {
+                Ok(bytes) => bytes,
+                Err(BoundedReadError::Unavailable(detail)) => {
+                    prepared.diagnostics.push(asset_diagnostic(
+                        "hd_output_unavailable",
+                        filename,
+                        detail,
+                    ));
+                    continue;
+                }
+                Err(BoundedReadError::ResourceLimit(detail)) => {
+                    let code = if output_read_limit < MAX_ENCYCLOPEDIA_IMAGE_BYTES {
+                        "hd_output_aggregate_limit"
+                    } else {
+                        "hd_output_resource_limit"
+                    };
+                    prepared
+                        .diagnostics
+                        .push(asset_diagnostic(code, filename, detail));
+                    continue;
+                }
+            };
         if let Err(detail) = approval.validate_output_bytes(&output_bytes) {
             prepared
                 .diagnostics
@@ -230,6 +251,23 @@ pub(crate) fn prepare_native_encyclopedia_hd(
                 continue;
             }
         };
+        let Some(next_retained_bytes) = retained_bytes.checked_add(output_bytes.len()) else {
+            prepared.diagnostics.push(asset_diagnostic(
+                "hd_output_aggregate_limit",
+                filename,
+                "faithful-HD retained byte length overflow",
+            ));
+            continue;
+        };
+        if next_retained_bytes > aggregate_limit {
+            prepared.diagnostics.push(asset_diagnostic(
+                "hd_output_aggregate_limit",
+                filename,
+                format!("faithful-HD retained artwork exceeds the {aggregate_limit}-byte limit"),
+            ));
+            continue;
+        }
+        retained_bytes = next_retained_bytes;
         prepared.selections.insert(
             filename.clone(),
             PreparedHdArtwork {
@@ -349,7 +387,7 @@ mod tests {
     use sha2::{Digest, Sha256};
     use tempfile::TempDir;
 
-    use super::prepare_native_encyclopedia_hd;
+    use super::{prepare_native_encyclopedia_hd, prepare_native_encyclopedia_hd_with_limit};
     use crate::encyclopedia_surface::{
         adapt_encyclopedia_surface, adapt_encyclopedia_surface_with_hd,
     };
@@ -557,6 +595,34 @@ mod tests {
         assert_eq!(selected.bytes, enhanced);
         assert_eq!(selected.sampling, EncyclopediaTextureSampling::Linear);
         assert_eq!(session.artwork_bytes(ARTWORK).unwrap(), original.bytes);
+    }
+
+    #[test]
+    fn faithful_hd_retained_bytes_respect_the_aggregate_limit() {
+        let session = session();
+        let original = original_surface(&session)
+            .active_topic
+            .unwrap()
+            .artwork
+            .unwrap();
+        let root = TempDir::new().unwrap();
+        let enhanced = png(1600, 800);
+        write_output(&root, &enhanced);
+        write_approval(&root, original.digest, &digest(&enhanced), (1600, 800));
+
+        let prepared = prepare_native_encyclopedia_hd_with_limit(
+            AssetRenderProfile::FaithfulHd,
+            Some(root.path()),
+            &session,
+            enhanced.len() - 1,
+        );
+
+        assert_eq!(prepared.selected_count(), 0);
+        assert_eq!(prepared.select(original), original);
+        assert!(prepared
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code == "hd_output_aggregate_limit"));
     }
 
     #[test]

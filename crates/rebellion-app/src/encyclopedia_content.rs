@@ -2,6 +2,10 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 #[cfg(not(target_arch = "wasm32"))]
+use std::fs::File;
+#[cfg(not(target_arch = "wasm32"))]
+use std::io::Read;
+#[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
 use std::sync::Arc;
 
@@ -214,6 +218,19 @@ pub(crate) fn read_native_encyclopedia(
     gdata_path: &Path,
     edata_path: &Path,
 ) -> Result<Option<EncyclopediaContentPayload>> {
+    read_native_encyclopedia_with_artwork_limit(
+        gdata_path,
+        edata_path,
+        MAX_ENCYCLOPEDIA_ARTWORK_BYTES,
+    )
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn read_native_encyclopedia_with_artwork_limit(
+    gdata_path: &Path,
+    edata_path: &Path,
+    artwork_limit: usize,
+) -> Result<Option<EncyclopediaContentPayload>> {
     let catalog_path = gdata_path.join("encyclopedia/source.json");
     let manifest_path = gdata_path.join("encyclopedia/source.json.manifest.json");
     let catalog_present = catalog_path.exists();
@@ -240,13 +257,21 @@ pub(crate) fn read_native_encyclopedia(
         (CATALOG_KEY.to_owned(), catalog),
         (MANIFEST_KEY.to_owned(), manifest),
     ]);
+    let mut retained_artwork_bytes = 0_usize;
     for filename in source.artwork.values().collect::<BTreeSet<_>>() {
         let path = edata_path.join(filename);
-        let bytes = read_regular_bounded(
-            &path,
-            MAX_ENCYCLOPEDIA_IMAGE_BYTES,
-            "native Encyclopedia artwork",
-        )?;
+        let remaining_artwork_bytes = artwork_limit
+            .checked_sub(retained_artwork_bytes)
+            .context("Encyclopedia artwork aggregate byte limit exceeded")?;
+        let read_limit = MAX_ENCYCLOPEDIA_IMAGE_BYTES.min(remaining_artwork_bytes);
+        let bytes = read_regular_bounded(&path, read_limit, "native Encyclopedia artwork");
+        let bytes = if read_limit < MAX_ENCYCLOPEDIA_IMAGE_BYTES {
+            bytes.context("Encyclopedia artwork aggregate byte limit exceeded")?
+        } else {
+            bytes?
+        };
+        retained_artwork_bytes =
+            checked_artwork_transfer_total(retained_artwork_bytes, bytes.len())?;
         entries.insert(format!("{ASSET_PREFIX}{filename}"), bytes);
     }
     EncyclopediaContentPayload::from_relative_entries(entries).map(Some)
@@ -254,13 +279,37 @@ pub(crate) fn read_native_encyclopedia(
 
 #[cfg(not(target_arch = "wasm32"))]
 fn read_regular_bounded(path: &Path, limit: usize, description: &str) -> Result<Vec<u8>> {
-    let metadata = path
+    let path_metadata = path
         .symlink_metadata()
         .with_context(|| format!("reading {description} metadata from {}", path.display()))?;
+    ensure!(
+        path_metadata.is_file(),
+        "{description} is not a regular file"
+    );
+    let file =
+        File::open(path).with_context(|| format!("opening {description} at {}", path.display()))?;
+    let metadata = file.metadata().with_context(|| {
+        format!(
+            "reading open {description} metadata from {}",
+            path.display()
+        )
+    })?;
     ensure!(metadata.is_file(), "{description} is not a regular file");
     let byte_len = usize::try_from(metadata.len()).context("content length does not fit usize")?;
     ensure!(byte_len <= limit, "{description} exceeds the byte limit");
-    std::fs::read(path).with_context(|| format!("reading {description} from {}", path.display()))
+    let mut bytes = Vec::with_capacity(byte_len.min(limit));
+    let take_limit = u64::try_from(limit)
+        .context("configured content byte limit does not fit u64")?
+        .checked_add(1)
+        .context("configured content byte limit overflow")?;
+    file.take(take_limit)
+        .read_to_end(&mut bytes)
+        .with_context(|| format!("reading {description} from {}", path.display()))?;
+    ensure!(
+        bytes.len() <= limit,
+        "{description} exceeded the byte limit while reading"
+    );
+    Ok(bytes)
 }
 
 #[cfg(test)]
@@ -276,8 +325,8 @@ mod tests {
 
     use super::{
         checked_artwork_transfer_total, parse_encyclopedia_source_with_manifest,
-        parse_loose_pointer, read_native_encyclopedia, safe_relative_key,
-        EncyclopediaContentPayload, CATALOG_BYTES_LIMIT, MANIFEST_BYTES_LIMIT,
+        parse_loose_pointer, read_native_encyclopedia, read_native_encyclopedia_with_artwork_limit,
+        safe_relative_key, EncyclopediaContentPayload, CATALOG_BYTES_LIMIT, MANIFEST_BYTES_LIMIT,
         MAX_ENCYCLOPEDIA_ARTWORK_BYTES, MAX_ENCYCLOPEDIA_IMAGE_BYTES,
     };
 
@@ -445,6 +494,28 @@ mod tests {
         }
         assert!(fingerprints.windows(2).all(|pair| pair[0] == pair[1]));
         assert_eq!(counts, vec![(2, 2); 3]);
+    }
+
+    #[test]
+    fn native_acquisition_enforces_the_aggregate_limit_while_reading() {
+        let root = tempdir().unwrap();
+        let gdata = root.path().join("GData");
+        let source_dir = gdata.join("encyclopedia");
+        let edata = root.path().join("EData");
+        std::fs::create_dir_all(&source_dir).unwrap();
+        std::fs::create_dir_all(&edata).unwrap();
+        std::fs::write(source_dir.join("source.json"), SOURCE).unwrap();
+        std::fs::write(source_dir.join("source.json.manifest.json"), MANIFEST).unwrap();
+        let artwork = indexed_bmp();
+        for filename in ["EDATA.001", "EDATA.014", "EDATA.015", "EDATA.115"] {
+            std::fs::write(edata.join(filename), &artwork).unwrap();
+        }
+
+        let error = read_native_encyclopedia_with_artwork_limit(&gdata, &edata, artwork.len() * 3)
+            .unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("artwork aggregate byte limit exceeded"));
     }
 
     #[test]
