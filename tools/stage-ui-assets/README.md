@@ -372,10 +372,38 @@ go run ./tools/stage-ui-assets \
 ```
 
 This writes ignored `data/base/encyclopedia/source.json` plus a manifest with
-the catalog and source-DLL checksums. `--verify --encyclopedia-only` validates
-those files without reopening the DLLs. The source catalog does not enable the
-production window by itself; runtime topic binding and UI acceptance remain
-separate gates.
+the catalog and source-DLL checksums. A differing generated result requires
+`--force`. `--verify --encyclopedia-only` is read-only and validates those
+files without reopening the DLLs.
+
+Production packaging is strict: it requires that source profile plus the owned
+`EData` directory used to resolve every referenced 400-by-200 indexed BMP.
+
+```sh
+REBELLION_EDATA_DIR="/path/to/Star Wars - Rebellion/EData" \
+  bash scripts/build-wasm.sh
+REBELLION_EDATA_DIR="/path/to/Star Wars - Rebellion/EData" \
+  bash scripts/package-web.sh dev
+```
+
+The packer joins the staged 348 text records and 191 logical image mappings to
+the canonical DAT/TEXTSTRA index, publishes only the runtime catalog,
+manifest, and referenced art, and fails closed if required content is missing
+or inconsistent. Native and browser readers use the same validated catalog;
+older packs without it remain compatible but leave the Encyclopedia
+unavailable. Browser builds publish the immutable base only and do not load
+filesystem mods.
+
+`scripts/docker-build.sh` performs the same source-profile stage after copying
+the owned DLL/DAT files and passes `$ORIGINAL_GAME_DIR/EData` explicitly to the
+strict build. `FORCE_REBUILD=1` applies `--force` to both stages.
+`PREPARE_MODDING=0` skips reference JSON dumps but does not skip production
+Encyclopedia content.
+
+See [README_MOD.md](../../README_MOD.md) for numeric object selectors, native
+text/art overlays, validation rules, and the reload workflow. The current
+acceptance boundary and retained native-Windows limitation are recorded in the
+[A0 compatibility evidence](../../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-07-encyclopedia-a0-compatibility.md).
 
 The supported movie IDs are `000`, `001`, `003`, `004`, `005`, `101`, `102`, `103`,
 `104`, `105`, `106`, `107`, `108`, `201`, and `202`. For each original `MDATA.ID`,

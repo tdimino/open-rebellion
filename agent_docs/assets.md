@@ -3,7 +3,7 @@ title: "Asset Pipeline"
 description: "HD upscaling, 3D model generation, and encyclopedia content pipelines"
 category: "agent-docs"
 created: 2026-03-13
-updated: 2026-09-10
+updated: 2026-10-07
 tags: [asset-pipeline, upscaling, 3d-models, audio, references]
 ---
 
@@ -463,16 +463,36 @@ Adapted from WWW's `scripts/model-compare.html` — Three.js side-by-side viewer
 
 ## Pipeline 3: Encyclopedia Content
 
-The original encyclopedia text lives in `ENCYTEXT.DLL`; `TEXTSTRA.DLL`
-supplies entity names. The former `data/encyclopedia.json` sketch with newly
-written descriptions is superseded by the draft
-[Encyclopedia Data Extraction, Modding, and Display design](../docs/plans/2026-09-27-design-encyclopedia-data-pipeline.md).
+The implemented production pipeline keeps original content local and ignored:
 
-The proposal extends the existing Go staging tool to extract original text,
-image mappings and EData artwork into ignored `data/base/encyclopedia/`, adds a
-versioned catalog and native mod overrides, and uses the existing runtime pack
-for browser display. This is a design under review, not an implemented schema
-or a completed encyclopedia feature.
+1. `tools/stage-ui-assets --encyclopedia-only` strictly extracts the supported
+   English `ENCYTEXT.DLL` prose and `ENCYBMAP.DLL` image-name map into
+   `data/base/encyclopedia/source.json` plus its checksum manifest. The profile
+   contains 348 text records and 191 logical image mappings.
+2. The packer joins those records to the canonical DAT/TEXTSTRA index and the
+   owned `EData` directory. Each faction exposes 346 complete topics and ten
+   explicit source-empty mission topics; no replacement prose or art is
+   invented.
+3. Strict production builds publish a validated runtime catalog, manifest, and
+   only the referenced original 400-by-200 indexed BMPs into both ORPK and the
+   owned loose web mirror. Missing or inconsistent required content fails the
+   build; old packs without Encyclopedia content still load with the feature
+   unavailable.
+4. Native mods may atomically layer presentation-only `encyclopedia.json`
+   patches and validated lowercase `.bmp` artwork. Browser builds deliberately
+   remain base-only. Encyclopedia data never enters `GameWorld`, saves, replay,
+   simulation hashes, or RNG state.
+
+Reproducible extraction, production commands, numeric object selectors, mod
+schema, and reload behavior are documented in
+[README_MOD.md](../README_MOD.md) and the
+[staging tool guide](../tools/stage-ui-assets/README.md). The approved design
+is [Encyclopedia Data Extraction, Modding, and Display](../docs/plans/2026-09-27-design-encyclopedia-data-pipeline.md).
+Current acceptance covers both factions, all seven categories, navigation and
+return paths, strict startup/package behavior, and twelve applicable lossless
+comparisons against the original executable under Wine. Native-Windows parity
+is explicitly not claimed; see the
+[A0 compatibility evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-07-encyclopedia-a0-compatibility.md).
 
 ---
 

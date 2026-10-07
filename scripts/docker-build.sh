@@ -55,9 +55,22 @@ if [ "$FORCE_REBUILD" = "1" ]; then
 fi
 go run ./tools/stage-ui-assets "${asset_args[@]}"
 
+# The production WASM build requires the canonical Encyclopedia source profile.
+# Stage it from the same flattened DLL/DAT copy used by the other browser assets.
+encyclopedia_args=(
+    --encyclopedia-only
+    --source data/base
+    --encyclopedia-output data/base/encyclopedia/source.json
+)
+if [ "$FORCE_REBUILD" = "1" ]; then
+    encyclopedia_args+=(--force)
+fi
+go run ./tools/stage-ui-assets "${encyclopedia_args[@]}"
+
 echo "=== [3/4] Building WASM + browser runtime pack ==="
 export REBELLION_MDATA_DIR="${MDATA_SRC_DIR:-$ORIGINAL_GAME_DIR/MDATA}"
 export REBELLION_GAME_DIR="$ROOT/data/base"
+export REBELLION_EDATA_DIR="$ORIGINAL_GAME_DIR/EData"
 ./scripts/build-wasm.sh
 
 echo "=== [4/4] Preparing modding reference data ==="
