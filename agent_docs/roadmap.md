@@ -18,7 +18,7 @@ The delivery notes before “Audit-Driven Parity” are historical implementatio
 records. They do not establish current parity or release acceptance; the active
 audit-driven milestones are the source of truth.
 
-PR #11 checkpoint (2026-09-14): [cockpit routing is corrected](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-cockpit-routing-correction.md) for commands `0x131` through `0x133`, both factions, and F1/F7. GID uses its authentic bottom control and can open and close its original menu. Encyclopedia remains fail-closed. The [2026-09-26 Game Options review checkpoint](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-26-game-options-review.md) restores the shared bitmap surface and save/audio/display wiring; PRE-03 strict acceptance remains open.
+PR #11 checkpoint (2026-09-14): [cockpit routing is corrected](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-cockpit-routing-correction.md) for commands `0x131` through `0x133`, both factions, and F1/F7. GID uses its authentic bottom control and can open and close its original menu. Encyclopedia was fail-closed at that checkpoint and is activated by E32 below. The [2026-09-26 Game Options review checkpoint](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-26-game-options-review.md) restores the shared bitmap surface and save/audio/display wiring; PRE-03 strict acceptance remains open.
 
 P62 transports all 187 validated original EDATA images through native and
 browser builds. A source cross-check corrects P63 as Message Index evidence.
@@ -45,14 +45,19 @@ preserving the four-request production startup budget. W6 adds opt-in native
 faithful-HD selection at the immutable-session boundary: only manifest-reviewed,
 source-matched, digest-valid exact-4x PNG output can replace a rendered view,
 and every failure retains the original. Browser and strict acceptance remain
-original-only. Packaged visual
-journeys, route activation, A0 comparison, and strict `OBJ-01` cells remain
+original-only. W7 adds deterministic, presence-aware native overlays with
+atomic rollback and exact base restoration. E32 then pairs strict new-package
+requirements with production cockpit and contextual routes, exact returns,
+both-faction packaged journeys, old-pack unavailable compatibility, and native
+foreground contextual evidence. A0 comparison and strict `OBJ-01` cells remain
 open. See the [P66A evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-01-encyclopedia-topic-source-bindings.md),
 [W2 evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-content-session.md),
 [W3 evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-presenter.md),
 [W4 evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-topic-surface.md),
 [W5A evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-canonical-publication.md),
-and [W6 evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-hd-selection.md).
+[W6 evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-hd-selection.md),
+[W7 evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-07-encyclopedia-mod-overlays.md),
+and [E32 evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-07-encyclopedia-production-activation.md).
 
 ## Galaxy Viewer: historical implementation tranche delivered
 *Interactive galaxy data viewer -- native + WASM*
@@ -781,6 +786,14 @@ would tune around known simulation feedback defects.
   session. Invalid candidates retain the last-known-good snapshot; disabling
   all layers restores the exact base. Browser content, save bodies, and
   simulation state remain unchanged.
+- [x] Complete the E32 Encyclopedia production-activation checkpoint: require
+  the complete canonical namespace for every new browser package; keep old
+  packs without that namespace bootable with the route unavailable; activate
+  cockpit and real contextual callers through the shared presenter/renderer;
+  reconstruct stable compound source IDs; preserve typed close/return origins;
+  and pass native plus both-faction packaged journeys with four-request startup
+  and zero production fixture tokens. Strict original A0 and every `OBJ-01`
+  acceptance cell remain open.
 - [x] Restore the P50 GID root and submenu frame from STRATEGY 10100 through
   10107. Paint repeated edges in four batched meshes, remove the invented menu
   fade, and check native-size root pixels against the source BMPs in both

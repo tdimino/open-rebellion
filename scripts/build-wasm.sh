@@ -13,6 +13,17 @@ EDATA_DIR="${REBELLION_EDATA_DIR:-$ORIGINAL_GAME_DIR/EData}"
 ENCYCLOPEDIA_SOURCE="$GDATA/encyclopedia/source.json"
 ENCYCLOPEDIA_MIRROR="$ROOT/web/data/encyclopedia"
 
+# Production browser artifacts activate command 0x131 and therefore require a
+# complete canonical Encyclopedia publication before compilation begins.
+if [ ! -f "$ENCYCLOPEDIA_SOURCE" ] || [ ! -f "$ENCYCLOPEDIA_SOURCE.manifest.json" ]; then
+    echo "ERROR: production browser build requires canonical Encyclopedia source and manifest under $GDATA/encyclopedia/."
+    exit 1
+fi
+if [ ! -d "$EDATA_DIR" ]; then
+    echo "ERROR: production browser build requires Encyclopedia EData at $EDATA_DIR."
+    exit 1
+fi
+
 # Refuse stale UI staging before compilation; the runtime pack builder repeats this gate.
 python3 "$ROOT/scripts/build-runtime-pack.py" --ui "$GDATA/ui" --validate-ui-only
 
@@ -216,24 +227,11 @@ RUNTIME_PACK_ARGS=(
     --audio "$WEB_AUDIO"
     --output "$ROOT/web/data/runtime.orpk"
     --encyclopedia-mirror "$ENCYCLOPEDIA_MIRROR"
+    --require-encyclopedia
+    --encyclopedia-source "$ENCYCLOPEDIA_SOURCE"
+    --edata "$EDATA_DIR"
 )
-if [ -f "$ENCYCLOPEDIA_SOURCE" ] || [ -f "$ENCYCLOPEDIA_SOURCE.manifest.json" ]; then
-    if [ ! -f "$ENCYCLOPEDIA_SOURCE" ] || [ ! -f "$ENCYCLOPEDIA_SOURCE.manifest.json" ]; then
-        echo "ERROR: Encyclopedia source publication is partial under $GDATA/encyclopedia/."
-        exit 1
-    fi
-    if [ ! -d "$EDATA_DIR" ]; then
-        echo "ERROR: Encyclopedia source is present but EData is unavailable at $EDATA_DIR."
-        exit 1
-    fi
-    RUNTIME_PACK_ARGS+=(
-        --encyclopedia-source "$ENCYCLOPEDIA_SOURCE"
-        --edata "$EDATA_DIR"
-    )
-    echo "Including canonical Encyclopedia source and exact artwork from $EDATA_DIR."
-else
-    echo "WARNING: Encyclopedia source publication not found at $ENCYCLOPEDIA_SOURCE; Encyclopedia will remain unavailable."
-fi
+echo "Including required canonical Encyclopedia source and exact artwork from $EDATA_DIR."
 python3 "$ROOT/scripts/build-runtime-pack.py" "${RUNTIME_PACK_ARGS[@]}"
 python3 "$ROOT/scripts/build-runtime-pack.py" "${RUNTIME_PACK_ARGS[@]}" --verify-only
 

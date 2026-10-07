@@ -1,15 +1,19 @@
 //! Application adapter between validated Encyclopedia data and render DTOs.
 
+use egui_macroquad::egui;
+use macroquad::prelude::{screen_height, screen_width};
 use rebellion_data::encyclopedia_presenter::{
-    EncyclopediaPresentation, EncyclopediaPresentationMode, EncyclopediaTopicAvailability,
-    EncyclopediaTopicContent,
+    EncyclopediaEntryIntent, EncyclopediaPresentation, EncyclopediaPresentationMode,
+    EncyclopediaPresenter, EncyclopediaPresenterError, EncyclopediaReturnRoute,
+    EncyclopediaTopicAvailability, EncyclopediaTopicContent,
 };
 use rebellion_data::encyclopedia_session::EncyclopediaSession;
 use rebellion_data::encyclopedia_topics::EncyclopediaAudience;
 use rebellion_render::{
-    EncyclopediaArtworkView, EncyclopediaSurface, EncyclopediaSurfaceAudience,
-    EncyclopediaSurfaceAvailability, EncyclopediaSurfaceCategory, EncyclopediaSurfaceMode,
-    EncyclopediaSurfaceNavigation, EncyclopediaSurfaceTopic, EncyclopediaSurfaceTopicItem,
+    draw_encyclopedia_surface, BmpCache, EncyclopediaArtworkView, EncyclopediaSurface,
+    EncyclopediaSurfaceAction, EncyclopediaSurfaceAudience, EncyclopediaSurfaceAvailability,
+    EncyclopediaSurfaceCategory, EncyclopediaSurfaceMode, EncyclopediaSurfaceNavigation,
+    EncyclopediaSurfaceState, EncyclopediaSurfaceTopic, EncyclopediaSurfaceTopicItem,
     EncyclopediaTextureSampling,
 };
 
@@ -133,6 +137,151 @@ fn adapt_encyclopedia_surface_inner<'a>(
             previous_object_id: presentation.navigation.previous_object_id,
             next_object_id: presentation.navigation.next_object_id,
         },
+    }
+}
+
+/// Production owner for one source-backed Encyclopedia journey.
+///
+/// The immutable origin survives every internal index/topic transition so a
+/// close returns to the exact caller. If a native overlay replacement removes
+/// the selected topic, the controller rebinds from that origin against the new
+/// session instead of retaining a stale selection.
+pub(crate) struct EncyclopediaSurfaceController {
+    origin: Option<EncyclopediaEntryIntent>,
+    current: Option<EncyclopediaEntryIntent>,
+    session_generation: Option<u64>,
+    surface_state: EncyclopediaSurfaceState,
+}
+
+impl Default for EncyclopediaSurfaceController {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl EncyclopediaSurfaceController {
+    #[must_use]
+    pub(crate) fn new() -> Self {
+        Self {
+            origin: None,
+            current: None,
+            session_generation: None,
+            surface_state: EncyclopediaSurfaceState::new(),
+        }
+    }
+
+    #[must_use]
+    pub(crate) const fn is_open(&self) -> bool {
+        self.current.is_some()
+    }
+
+    /// Validate and open one production entry intent.
+    pub(crate) fn open(
+        &mut self,
+        session: &EncyclopediaSession,
+        intent: EncyclopediaEntryIntent,
+    ) -> Result<(), EncyclopediaPresenterError> {
+        EncyclopediaPresenter::present(session, intent)?;
+        self.origin = Some(intent);
+        self.current = Some(intent);
+        self.session_generation = Some(session.texture_generation());
+        self.surface_state = EncyclopediaSurfaceState::new();
+        Ok(())
+    }
+
+    pub(crate) fn close(&mut self) {
+        self.origin = None;
+        self.current = None;
+        self.session_generation = None;
+        self.surface_state = EncyclopediaSurfaceState::new();
+    }
+
+    pub(crate) fn presentation<'a>(
+        &mut self,
+        session: &'a EncyclopediaSession,
+    ) -> Result<EncyclopediaPresentation<'a>, EncyclopediaPresenterError> {
+        let current = self
+            .current
+            .expect("an open Encyclopedia controller has a current intent");
+        if self.session_generation != Some(session.texture_generation()) {
+            if EncyclopediaPresenter::present(session, current).is_err() {
+                self.current = self.origin;
+            }
+            self.session_generation = Some(session.texture_generation());
+        }
+        EncyclopediaPresenter::present(
+            session,
+            self.current
+                .expect("an open Encyclopedia controller retains its origin"),
+        )
+    }
+
+    /// Apply one renderer action. A returned route means the viewer closed.
+    pub(crate) fn apply_action(
+        &mut self,
+        session: &EncyclopediaSession,
+        action: EncyclopediaSurfaceAction,
+    ) -> Result<Option<EncyclopediaReturnRoute>, EncyclopediaPresenterError> {
+        let presentation = self.presentation(session)?;
+        let return_route = presentation.return_route;
+        let next = match action {
+            EncyclopediaSurfaceAction::SelectCategory(command) => {
+                Some(presentation.follow_up(EncyclopediaPresentationMode::Index, command, None))
+            }
+            EncyclopediaSurfaceAction::SelectTopic(object_id) => Some(presentation.follow_up(
+                EncyclopediaPresentationMode::Index,
+                presentation.category.command_id,
+                Some(object_id),
+            )),
+            EncyclopediaSurfaceAction::OpenTopic(object_id) => Some(presentation.follow_up(
+                EncyclopediaPresentationMode::Topic,
+                presentation.category.command_id,
+                Some(object_id),
+            )),
+            EncyclopediaSurfaceAction::ShowIndex => Some(presentation.follow_up(
+                EncyclopediaPresentationMode::Index,
+                presentation.category.command_id,
+                presentation.navigation.selected_object_id,
+            )),
+            EncyclopediaSurfaceAction::Close => None,
+        };
+        if let Some(next) = next {
+            EncyclopediaPresenter::present(session, next)?;
+            self.current = Some(next);
+            Ok(None)
+        } else {
+            self.close();
+            Ok(Some(return_route))
+        }
+    }
+
+    /// Draw one production frame through the same presenter and renderer used
+    /// by the accepted canonical fixture route.
+    pub(crate) fn draw(
+        &mut self,
+        ctx: &egui::Context,
+        cache: &mut BmpCache,
+        session: &EncyclopediaSession,
+        hd: &PreparedEncyclopediaHd,
+    ) -> Result<Option<EncyclopediaReturnRoute>, EncyclopediaPresenterError> {
+        if !self.is_open() {
+            return Ok(None);
+        }
+        let presentation = self.presentation(session)?;
+        let surface = adapt_encyclopedia_surface_with_hd(session, &presentation, hd);
+        let scale = (screen_width() / 640.0)
+            .min(screen_height() / 480.0)
+            .max(f32::EPSILON);
+        let origin = egui::pos2(
+            (screen_width() - 640.0 * scale) / 2.0 + 85.0 * scale,
+            (screen_height() - 480.0 * scale) / 2.0 + 55.0 * scale,
+        );
+        let action =
+            draw_encyclopedia_surface(ctx, cache, origin, scale, &mut self.surface_state, &surface);
+        match action {
+            Some(action) => self.apply_action(session, action),
+            None => Ok(None),
+        }
     }
 }
 
@@ -1032,7 +1181,10 @@ mod tests {
     use rebellion_data::encyclopedia_catalog::{
         EncyclopediaCatalog, EncyclopediaCatalogEntry, EncyclopediaCategory,
     };
-    use rebellion_data::encyclopedia_presenter::{EncyclopediaEntryIntent, EncyclopediaPresenter};
+    use rebellion_data::encyclopedia_presenter::{
+        EncyclopediaContextCaller, EncyclopediaEntryIntent, EncyclopediaPresentationMode,
+        EncyclopediaPresenter, EncyclopediaReturnRoute,
+    };
     use rebellion_data::encyclopedia_session::{
         EncyclopediaResourceBytes, EncyclopediaSessionInput, EncyclopediaSessionStore,
     };
@@ -1041,7 +1193,7 @@ mod tests {
         EncyclopediaSurfaceAudience, EncyclopediaSurfaceAvailability, EncyclopediaSurfaceMode,
     };
 
-    use super::adapt_encyclopedia_surface;
+    use super::{adapt_encyclopedia_surface, EncyclopediaSurfaceController};
 
     const SOURCE: &[u8] = include_bytes!("../../../tests/fixtures/encyclopedia/p66a/source.json");
     const MANIFEST: &[u8] =
@@ -1114,23 +1266,25 @@ mod tests {
         bytes.into()
     }
 
-    fn session() -> Arc<rebellion_data::encyclopedia_session::EncyclopediaSession> {
+    fn session_input() -> EncyclopediaSessionInput {
         let artwork: EncyclopediaResourceBytes = BTreeMap::from([
             ("EDATA.001".into(), indexed_bmp()),
             ("EDATA.014".into(), indexed_bmp()),
             ("EDATA.015".into(), indexed_bmp()),
             ("EDATA.115".into(), indexed_bmp()),
         ]);
+        EncyclopediaSessionInput {
+            catalog: catalog(),
+            source_catalog_bytes: Arc::from(SOURCE),
+            source_manifest_bytes: Arc::from(MANIFEST),
+            system_pictures: HashMap::new(),
+            artwork,
+        }
+    }
+
+    fn session() -> Arc<rebellion_data::encyclopedia_session::EncyclopediaSession> {
         let mut store = EncyclopediaSessionStore::default();
-        store
-            .replace(EncyclopediaSessionInput {
-                catalog: catalog(),
-                source_catalog_bytes: Arc::from(SOURCE),
-                source_manifest_bytes: Arc::from(MANIFEST),
-                system_pictures: HashMap::new(),
-                artwork,
-            })
-            .unwrap();
+        store.replace(session_input()).unwrap();
         store.current().unwrap()
     }
 
@@ -1193,5 +1347,100 @@ mod tests {
         assert_eq!(topic.title, "Source Empty");
         assert_eq!(topic.description, None);
         assert_eq!(topic.artwork, None);
+    }
+
+    #[test]
+    fn production_controller_preserves_cockpit_route_through_open_and_close() {
+        let session = session();
+        let mut controller = EncyclopediaSurfaceController::new();
+
+        controller
+            .open(
+                &session,
+                EncyclopediaEntryIntent::Cockpit {
+                    audience: EncyclopediaAudience::Empire,
+                },
+            )
+            .unwrap();
+
+        assert!(controller.is_open());
+        let presentation = controller.presentation(&session).unwrap();
+        assert_eq!(presentation.mode, EncyclopediaPresentationMode::Index);
+        assert_eq!(
+            presentation.return_route,
+            EncyclopediaReturnRoute::Cockpit {
+                audience: EncyclopediaAudience::Empire
+            }
+        );
+        let route = controller
+            .apply_action(&session, rebellion_render::EncyclopediaSurfaceAction::Close)
+            .unwrap()
+            .unwrap();
+        assert_eq!(route, presentation.return_route);
+        assert!(!controller.is_open());
+    }
+
+    #[test]
+    fn production_controller_keeps_contextual_origin_across_index_transition() {
+        let session = session();
+        let caller = EncyclopediaContextCaller::Handler00486fb0Event100;
+        let mut controller = EncyclopediaSurfaceController::new();
+        controller
+            .open(
+                &session,
+                EncyclopediaEntryIntent::Contextual {
+                    audience: EncyclopediaAudience::Alliance,
+                    object_id: 0x5100_0010,
+                    caller,
+                },
+            )
+            .unwrap();
+
+        controller
+            .apply_action(
+                &session,
+                rebellion_render::EncyclopediaSurfaceAction::ShowIndex,
+            )
+            .unwrap();
+        let presentation = controller.presentation(&session).unwrap();
+        assert_eq!(presentation.mode, EncyclopediaPresentationMode::Index);
+        assert_eq!(
+            presentation.return_route,
+            EncyclopediaReturnRoute::Contextual {
+                audience: EncyclopediaAudience::Alliance,
+                requested_object_id: 0x5100_0010,
+                caller,
+            }
+        );
+    }
+
+    #[test]
+    fn production_controller_rebinds_to_a_replacement_session_generation() {
+        let mut store = EncyclopediaSessionStore::default();
+        store.replace(session_input()).unwrap();
+        let first = store.current().unwrap();
+        let mut controller = EncyclopediaSurfaceController::new();
+        controller
+            .open(
+                &first,
+                EncyclopediaEntryIntent::Cockpit {
+                    audience: EncyclopediaAudience::Alliance,
+                },
+            )
+            .unwrap();
+
+        let mut replacement = session_input();
+        replacement.catalog.title = "Replacement Encyclopedia".into();
+        store.replace(replacement).unwrap();
+        let second = store.current().unwrap();
+        assert_ne!(first.texture_generation(), second.texture_generation());
+
+        let presentation = controller.presentation(&second).unwrap();
+
+        assert_eq!(presentation.title, "Replacement Encyclopedia");
+        assert_eq!(
+            controller.session_generation,
+            Some(second.texture_generation())
+        );
     }
 }

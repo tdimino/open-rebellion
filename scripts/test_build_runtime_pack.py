@@ -113,6 +113,31 @@ class RuntimePackBuilderTests(unittest.TestCase):
                     base, ui, edata_dir=edata, encyclopedia_source=source
                 )
 
+    def test_required_encyclopedia_rejects_absent_and_accepts_complete_namespace(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            base = root / "base"
+            ui = root / "ui"
+            base.mkdir()
+            ui.mkdir()
+            (base / "SYSTEMSD.DAT").write_bytes(b"systems")
+
+            with self.assertRaisesRegex(ValueError, "required Encyclopedia"):
+                PACKER.collect_entries(base, ui, require_encyclopedia=True)
+
+            source, edata = self._encyclopedia_source(root)
+            entries = PACKER.collect_entries(
+                base,
+                ui,
+                edata_dir=edata,
+                encyclopedia_source=source,
+                require_encyclopedia=True,
+            )
+            keys = {entry.key for entry in entries}
+            self.assertIn(PACKER.ENCYCLOPEDIA_CATALOG_KEY, keys)
+            self.assertIn(PACKER.ENCYCLOPEDIA_MANIFEST_KEY, keys)
+            self.assertIn("encyclopedia/assets/EDATA.014", keys)
+
     def test_atomic_pack_publication_retains_last_known_good_on_failure(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

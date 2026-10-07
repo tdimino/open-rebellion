@@ -11,7 +11,9 @@ import { launchBrowser } from "./browser-launch.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../..");
-const site = path.join(root, "web");
+const site = path.resolve(
+  process.env.OPEN_REBELLION_ENCYCLOPEDIA_SITE || path.join(root, "web"),
+);
 const sourcePath = process.env.REBELLION_ENCYCLOPEDIA_TEST_SOURCE
   || path.join(root, "data/base/encyclopedia/source.json");
 const edata = process.env.REBELLION_EDATA_DIR;
@@ -47,6 +49,28 @@ function parsePack(bytes) {
   }
   assert.equal(cursor, bytes.length, "ORPK has trailing bytes");
   return entries;
+}
+
+function withoutEncyclopediaNamespace(bytes) {
+  assert.equal(bytes.toString("ascii", 0, 4), "ORPK");
+  const retained = [];
+  let removed = 0;
+  let cursor = 12;
+  for (let index = 0; index < bytes.readUInt32LE(8); index += 1) {
+    const start = cursor;
+    const kind = bytes[cursor];
+    const keyLength = bytes.readUInt16LE(cursor + 1);
+    const dataLength = bytes.readUInt32LE(cursor + 3);
+    cursor += 7;
+    const key = bytes.toString("utf8", cursor, cursor + keyLength);
+    cursor += keyLength + dataLength;
+    if (kind === 0 && key.startsWith("encyclopedia/")) removed += 1;
+    else retained.push(bytes.subarray(start, cursor));
+  }
+  assert.ok(removed > 2, "old-pack fixture removes the complete Encyclopedia namespace");
+  const header = Buffer.from(bytes.subarray(0, 12));
+  header.writeUInt32LE(retained.length, 8);
+  return Buffer.concat([header, ...retained]);
 }
 
 function inspectCanonicalNamespace() {
@@ -92,7 +116,7 @@ function mimeType(file) {
   return "application/octet-stream";
 }
 
-async function startServer() {
+async function startServer({ oldPack = false } = {}) {
   const server = http.createServer((request, response) => {
     const pathname = new URL(request.url, "http://localhost").pathname;
     const relative = path.posix.normalize(decodeURIComponent(pathname)).replace(/^\/+/, "")
@@ -102,11 +126,14 @@ async function startServer() {
       response.writeHead(403).end();
       return;
     }
-    fs.readFile(candidate, (error, bytes) => {
+    fs.readFile(candidate, (error, sourceBytes) => {
       if (error) {
         response.writeHead(404).end();
         return;
       }
+      const bytes = oldPack && relative === "data/runtime.orpk"
+        ? withoutEncyclopediaNamespace(sourceBytes)
+        : sourceBytes;
       response.writeHead(200, {
         "content-type": mimeType(candidate),
         "content-length": bytes.length,
@@ -123,6 +150,238 @@ async function waitForLog(consoleLines, fragment, timeoutMs = 60_000) {
   while (!consoleLines.some((line) => line.text.includes(fragment))) {
     if (Date.now() >= deadline) throw new Error(`timed out waiting for console log: ${fragment}`);
     await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+}
+
+async function frames(page, count = 6) {
+  for (let index = 0; index < count; index += 1) {
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
+  }
+}
+
+async function screenshot(page, directory, name) {
+  const file = path.join(directory, `${name}.png`);
+  const bytes = await page.screenshot({ path: file, animations: "disabled" });
+  return { file: path.relative(root, file), sha256: sha256(bytes) };
+}
+
+function observePage(page, origin) {
+  const requests = [];
+  const failures = [];
+  const consoleLines = [];
+  page.on("response", (response) => {
+    if (new URL(response.url()).origin === origin) {
+      requests.push({ path: new URL(response.url()).pathname, status: response.status() });
+    }
+  });
+  page.on("requestfailed", (request) => failures.push(
+    `request:${request.url()}:${request.failure()?.errorText}`,
+  ));
+  page.on("pageerror", (error) => failures.push(`page:${error.stack || error.message}`));
+  page.on("console", (message) => {
+    consoleLines.push({ type: message.type(), text: message.text() });
+  });
+  return { requests, failures, consoleLines };
+}
+
+function assertFourRequestStartup(requests) {
+  assert.equal(requests.length, expectedRequests.length, "unexpected duplicate startup request");
+  assert.deepEqual(
+    [...new Set(requests.map(({ path: value }) => value))].sort(),
+    [...expectedRequests].sort(),
+  );
+  assert.ok(requests.every(({ status }) => status === 200));
+}
+
+async function runFactionJourney(browser, origin, faction, namespace) {
+  const directory = path.join(runDir, faction.name);
+  fs.mkdirSync(directory, { recursive: true });
+  const context = await browser.newContext({
+    viewport: { width: 640, height: 480 },
+    deviceScaleFactor: 1,
+    reducedMotion: "reduce",
+  });
+  const page = await context.newPage();
+  const observed = observePage(page, origin);
+  try {
+    await page.goto(`${origin}/`, { waitUntil: "load", timeout: 30_000 });
+    await waitForLog(observed.consoleLines, "[encyclopedia] content_session installed");
+    await waitForLog(observed.consoleLines, "alliance_topics=356 empire_topics=356");
+    assert.ok(observed.consoleLines.some(({ text }) => text.includes(
+      `encyclopedia_assets=${namespace.artwork_count}`,
+    )));
+    assert.ok(observed.consoleLines.some(({ text }) => text.includes(
+      "fingerprint=5c4b64bfd739508e63a87118fd7cac8503ea2d34999144838074a52736b00fe3",
+    )));
+    assertFourRequestStartup(observed.requests);
+    assert.equal(await page.evaluate(() => typeof window.__openRebellionInterfaceReady), "undefined");
+    await page.waitForTimeout(12_000);
+    await page.mouse.click(faction.menu.x, faction.menu.y, { delay: 250 });
+    await waitForLog(observed.consoleLines, `[campaign] faction=${faction.campaign}`);
+    await frames(page, 8);
+    const campaign = await screenshot(page, directory, "01-campaign");
+
+    await page.keyboard.press("F7");
+    await waitForLog(
+      observed.consoleLines,
+      "command=0x131 destination=encyclopedia status=opened_original",
+    );
+    await frames(page, 8);
+    const index = await screenshot(page, directory, "02-index");
+    assert.notEqual(index.sha256, campaign.sha256, "F7 replaces the command center with the index");
+
+    await page.keyboard.press("Enter");
+    await frames(page, 8);
+    const topic = await screenshot(page, directory, "03-topic");
+    assert.notEqual(topic.sha256, index.sha256, "Enter opens the selected topic");
+
+    await page.keyboard.press("ArrowRight");
+    await frames(page, 8);
+    const next = await screenshot(page, directory, "04-next-topic");
+    assert.notEqual(next.sha256, topic.sha256, "Right opens the adjacent topic");
+
+    await page.keyboard.press("Escape");
+    await waitForLog(observed.consoleLines, "production_route status=closed return=Cockpit");
+    await frames(page, 8);
+    const returned = await screenshot(page, directory, "05-returned-campaign");
+    assert.notEqual(returned.sha256, next.sha256, "Escape returns to the command center");
+
+    const opens = observed.consoleLines.filter(({ text }) => text.includes(
+      "command=0x131 destination=encyclopedia status=opened_original",
+    )).length;
+    await page.keyboard.press("F7");
+    await waitForLog(observed.consoleLines, "command=0x131 destination=encyclopedia status=opened_original");
+    await frames(page, 4);
+    assert.equal(observed.consoleLines.filter(({ text }) => text.includes(
+      "command=0x131 destination=encyclopedia status=opened_original",
+    )).length, opens + 1, "returned campaign accepts a second production entry");
+    await page.keyboard.press("Escape");
+    await frames(page, 4);
+
+    await page.keyboard.press("F3");
+    await waitForLog(
+      observed.consoleLines,
+      "command=0x12e destination=fleet_finder status=opened_original",
+    );
+    await frames(page, 6);
+    const finderOrigin = faction.name === "alliance" ? { x: 62.5, y: 50 } : { x: 125, y: 52.5 };
+    await page.mouse.click(finderOrigin.x + 200, finderOrigin.y + 148, { delay: 150 });
+    const display = faction.name === "alliance"
+      ? { x: finderOrigin.x + 439, y: finderOrigin.y + 108 }
+      : { x: finderOrigin.x + 448, y: finderOrigin.y + 109.5 };
+    await page.mouse.click(display.x, display.y, { delay: 150 });
+    await frames(page, 8);
+    const fleetWindow = await screenshot(page, directory, "06-fleet-window");
+    const ship = faction.name === "alliance" ? { x: 320, y: 235 } : { x: 379, y: 241 };
+    await page.mouse.click(ship.x, ship.y, { button: "right", delay: 150 });
+    await frames(page, 6);
+    const objectMenu = await screenshot(page, directory, "07-object-menu");
+    const encyclopediaRow = faction.name === "alliance"
+      ? { x: 375, y: 327 }
+      : { x: 434, y: 333 };
+    await page.mouse.click(encyclopediaRow.x, encyclopediaRow.y, { delay: 150 });
+    await waitForLog(
+      observed.consoleLines,
+      "production_route status=opened origin=contextual caller=FUN_00486fb0_event_0x100",
+    );
+    await frames(page, 8);
+    const contextualTopic = await screenshot(page, directory, "08-contextual-topic");
+    assert.notEqual(
+      contextualTopic.sha256,
+      objectMenu.sha256,
+      "the object popup enters the matched Encyclopedia topic",
+    );
+    await page.keyboard.press("ArrowRight");
+    await frames(page, 8);
+    const contextualNext = await screenshot(page, directory, "09-contextual-next-topic");
+    assert.notEqual(
+      contextualNext.sha256,
+      contextualTopic.sha256,
+      "the contextual journey retains adjacent-topic navigation",
+    );
+    await page.keyboard.press("Escape");
+    await waitForLog(observed.consoleLines, "production_route status=closed return=Contextual");
+    await frames(page, 8);
+    const contextualReturn = await screenshot(page, directory, "10-contextual-return");
+    assert.notEqual(
+      contextualReturn.sha256,
+      contextualNext.sha256,
+      "the contextual return restores the fleet window",
+    );
+
+    assert.deepEqual(observed.failures, []);
+    assert.deepEqual(
+      observed.consoleLines.filter(({ type }) => type === "error"),
+      [],
+      "canonical production journey has no console errors",
+    );
+    return {
+      faction: faction.name,
+      status: "pass",
+      screenshots: {
+        campaign,
+        index,
+        topic,
+        next,
+        returned,
+        fleetWindow,
+        objectMenu,
+        contextualTopic,
+        contextualNext,
+        contextualReturn,
+      },
+      requests: observed.requests,
+      console: observed.consoleLines,
+      failures: observed.failures,
+    };
+  } finally {
+    await context.close();
+  }
+}
+
+async function runOldPackJourney(browser) {
+  const server = await startServer({ oldPack: true });
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  const context = await browser.newContext({
+    viewport: { width: 640, height: 480 },
+    deviceScaleFactor: 1,
+    reducedMotion: "reduce",
+  });
+  const page = await context.newPage();
+  const observed = observePage(page, origin);
+  try {
+    await page.goto(`${origin}/`, { waitUntil: "load", timeout: 30_000 });
+    await waitForLog(
+      observed.consoleLines,
+      "content_session unavailable; production route remains disabled",
+    );
+    assertFourRequestStartup(observed.requests);
+    assert.equal(await page.evaluate(() => typeof window.__openRebellionInterfaceReady), "undefined");
+    await page.waitForTimeout(12_000);
+    await page.mouse.click(472, 333, { delay: 250 });
+    await waitForLog(observed.consoleLines, "[campaign] faction=Rebel Alliance");
+    await page.keyboard.press("F7");
+    await waitForLog(
+      observed.consoleLines,
+      "command=0x131 destination=encyclopedia status=unavailable",
+    );
+    const unavailable = await screenshot(page, runDir, "old-pack-unavailable");
+    assert.deepEqual(observed.failures, []);
+    assert.deepEqual(
+      observed.consoleLines.filter(({ type }) => type === "error"),
+      [],
+      "an old pack without the namespace is unavailable, not corrupt",
+    );
+    return {
+      status: "pass",
+      screenshot: unavailable,
+      requests: observed.requests,
+      console: observed.consoleLines,
+      failures: observed.failures,
+    };
+  } finally {
+    await context.close();
+    await new Promise((resolve) => server.close(resolve));
   }
 }
 
@@ -143,60 +402,31 @@ async function main() {
       args: ["--mute-audio", "--disable-background-networking", "--no-first-run"],
     }, launchAttempts);
     cleanup = "open";
-    const context = await browser.newContext({
-      viewport: { width: 640, height: 480 },
-      deviceScaleFactor: 1,
-      reducedMotion: "reduce",
-    });
-    const page = await context.newPage();
-    const requests = [];
-    const errors = [];
-    const consoleLines = [];
     const origin = `http://127.0.0.1:${server.address().port}`;
-    page.on("response", (response) => {
-      if (new URL(response.url()).origin === origin) {
-        requests.push({ path: new URL(response.url()).pathname, status: response.status() });
-      }
-    });
-    page.on("requestfailed", (request) => errors.push(`request:${request.url()}:${request.failure()?.errorText}`));
-    page.on("pageerror", (error) => errors.push(`page:${error.stack || error.message}`));
-    page.on("console", (message) => {
-      consoleLines.push({ type: message.type(), text: message.text() });
-      if (message.type() === "error") errors.push(`console:${message.text()}`);
-    });
-    await page.goto(`${origin}/`, { waitUntil: "load", timeout: 30_000 });
-    await waitForLog(consoleLines, "[encyclopedia] content_session installed");
-    await waitForLog(consoleLines, "alliance_topics=356 empire_topics=356");
-    assert.ok(consoleLines.some(({ text }) => text.includes(namespace.artwork_count > 0
-      ? `encyclopedia_assets=${namespace.artwork_count}`
-      : "encyclopedia_assets=0")));
-    assert.ok(consoleLines.some(({ text }) => text.includes(
-      "fingerprint=5c4b64bfd739508e63a87118fd7cac8503ea2d34999144838074a52736b00fe3",
-    )));
-    assert.equal(requests.length, expectedRequests.length, "unexpected duplicate startup request");
-    assert.deepEqual([...new Set(requests.map(({ path: value }) => value))].sort(),
-      [...expectedRequests].sort());
-    assert.ok(requests.every(({ status }) => status === 200));
-    assert.deepEqual(errors, []);
-    assert.equal(await page.evaluate(() => typeof window.__openRebellionInterfaceReady), "undefined");
-    await page.screenshot({ path: path.join(runDir, "production-startup.png"), animations: "disabled" });
+    const journeys = [];
+    const requestedFaction = process.env.OPEN_REBELLION_ENCYCLOPEDIA_FACTION;
+    for (const faction of [
+      { name: "alliance", campaign: "Rebel Alliance", menu: { x: 472, y: 333 } },
+      { name: "empire", campaign: "Galactic Empire", menu: { x: 180, y: 333 } },
+    ].filter((faction) => !requestedFaction || faction.name === requestedFaction)) {
+      journeys.push(await runFactionJourney(browser, origin, faction, namespace));
+    }
+    const oldPack = requestedFaction ? { status: "skipped-filtered-run" } : await runOldPackJourney(browser);
     const summary = {
       schema_version: 1,
       family: "encyclopedia-canonical-publication",
       status: "pass",
-      scope: "owned ignored P66A native/ORPK byte parity and packaged production startup; command 0x131 remains gated",
+      scope: "owned canonical namespace, strict production startup, both-faction command 0x131 journeys, exact cockpit return and old-pack unavailable compatibility",
       browser: executable,
       browser_version: browser.version(),
       wasm_sha256: sha256(fs.readFileSync(path.join(site, "open-rebellion.wasm"))),
       ...namespace,
-      requests,
-      console: consoleLines,
-      errors,
+      journeys,
+      old_pack: oldPack,
       launch_attempts: launchAttempts,
     };
     fs.writeFileSync(path.join(runDir, "summary.json"), `${JSON.stringify(summary, null, 2)}\n`);
     console.log(JSON.stringify({ ...summary, run_directory: runDir }, null, 2));
-    await context.close();
   } finally {
     if (browser) {
       await browser.close();

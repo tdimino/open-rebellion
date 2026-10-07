@@ -4,7 +4,7 @@ description: "Execution plan for adapting the strongest test, runtime, presentat
 type: feat
 status: active
 created: 2026-10-02
-updated: 2026-10-06
+updated: 2026-10-07
 attribution: "Will Forster, PR #16"
 source_pr: "https://github.com/tdimino/open-rebellion/pull/16"
 source_head: "82ef2ccc7f5b256470adaa3797898b8d79f2d7fc"
@@ -431,3 +431,12 @@ This plan is complete only when:
   final W2 candidate. Any failure retains the active snapshot, while disabling
   all layers rebuilds the exact base. Browser content and save/simulation
   serialization remain unchanged; W8 watcher recovery stays optional.
+- 2026-10-07: activate E32 only as a paired route/package increment. New
+  production browser builds require the complete canonical namespace before
+  compilation, while old packs with the whole namespace absent still boot with
+  the route unavailable. Cockpit and real object-popup callers now share the
+  accepted presenter/renderer, preserve typed return origins, refresh across
+  native session generations, and reconstruct raw live IDs only through exact
+  source-family/name matches. Both-faction packaged journeys and a native real
+  contextual journey pass; strict original A0 and `OBJ-01` acceptance remain
+  E35/E34 work.

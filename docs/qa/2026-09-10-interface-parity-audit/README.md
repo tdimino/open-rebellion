@@ -107,10 +107,11 @@ and passes the complete comparison contract.
 - Review the [W2 immutable content-session evidence](evidence/2026-10-06-encyclopedia-content-session.md),
   [W3 pure-presenter evidence](evidence/2026-10-06-encyclopedia-presenter.md), and
   [W4 authentic topic-surface evidence](evidence/2026-10-06-encyclopedia-topic-surface.md),
-  plus the [W5A canonical-publication evidence](evidence/2026-10-06-encyclopedia-canonical-publication.md)
-  the [E30 canonical-surface evidence](evidence/2026-10-06-encyclopedia-canonical-surface.md),
+  plus the [W5A canonical-publication evidence](evidence/2026-10-06-encyclopedia-canonical-publication.md),
+  [E30 canonical-surface evidence](evidence/2026-10-06-encyclopedia-canonical-surface.md),
   [W6 original-first HD evidence](evidence/2026-10-06-encyclopedia-hd-selection.md),
-  and [W7 native-overlay evidence](evidence/2026-10-07-encyclopedia-mod-overlays.md)
+  [W7 native-overlay evidence](evidence/2026-10-07-encyclopedia-mod-overlays.md),
+  and [E32 production-activation evidence](evidence/2026-10-07-encyclopedia-production-activation.md)
   for atomic validated installation, exact session-order projection, both
   faction bindings, explicit source-empty topics, bounded navigation, and
   immutable close/return routes, plus fixture-gated authentic rendering and
@@ -122,7 +123,9 @@ and passes the complete comparison contract.
   presence-aware layers, confined synthetic artwork, complete candidate
   validation, atomic rollback, and base restoration without entering saves or
   simulation. Browser and strict parity evidence remain original-only.
-  Production routing, A0, and strict `OBJ-01` acceptance remain open.
+  Production cockpit/contextual routing and exact returns now pass native and
+  packaged-browser gates with strict new-package content and old-pack
+  unavailable compatibility. A0 and strict `OBJ-01` acceptance remain open.
 - Review the [P50 GID menu-frame evidence](evidence/2026-09-12-gid-menu-frame.md)
   for original frame tiles, source-pixel checks, and the remaining menu gaps.
 - Review the [P51 GID hover and occlusion evidence](evidence/2026-09-12-gid-hover-and-occlusion.md)

@@ -1066,9 +1066,11 @@ pub fn draw_encyclopedia_surface(
     let mut surface_rect = None;
     let keyboard_focus_id = surface_keyboard_focus_id(surface.mode);
 
-    egui::Area::new(egui::Id::new("authentic-encyclopedia-surface"))
+    let surface_id = egui::Id::new("authentic-encyclopedia-surface");
+    ctx.move_to_top(egui::LayerId::new(egui::Order::Foreground, surface_id));
+    egui::Area::new(surface_id)
         .fixed_pos(origin)
-        .order(egui::Order::Middle)
+        .order(egui::Order::Foreground)
         .show(ctx, |ui| {
             let size = egui::vec2(
                 ENCYCLOPEDIA_INDEX_WIDTH * scale,

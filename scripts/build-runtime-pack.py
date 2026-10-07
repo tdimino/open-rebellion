@@ -69,6 +69,7 @@ def collect_entries(
     tactical_runtime_dir: Path | None = None,
     edata_dir: Path | None = None,
     encyclopedia_source: Path | None = None,
+    require_encyclopedia: bool = False,
 ) -> list[Entry]:
     entries = [
         Entry(KIND_GAME_DATA, path.name, path)
@@ -109,6 +110,10 @@ def collect_entries(
     if (edata_dir is None) != (encyclopedia_source is None):
         raise ValueError(
             "Encyclopedia publication requires both source catalog and EData directory"
+        )
+    if require_encyclopedia and encyclopedia_source is None:
+        raise ValueError(
+            "required Encyclopedia publication is absent; provide source catalog and EData directory"
         )
     if encyclopedia_source is not None and edata_dir is not None:
         entries.extend(
@@ -697,6 +702,7 @@ def main() -> None:
     parser.add_argument("--edata", type=Path)
     parser.add_argument("--encyclopedia-source", type=Path)
     parser.add_argument("--encyclopedia-mirror", type=Path)
+    parser.add_argument("--require-encyclopedia", action="store_true")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--validate-ui-only", action="store_true")
     parser.add_argument("--verify-only", action="store_true")
@@ -722,6 +728,7 @@ def main() -> None:
         args.tactical_runtime,
         args.edata,
         args.encyclopedia_source,
+        args.require_encyclopedia,
     )
     if not entries:
         parser.error("refusing to create an empty runtime pack")

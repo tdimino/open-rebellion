@@ -25,6 +25,10 @@
   tracks deterministic shared dependency order, presence-aware native content
   layers, confined bitmap acquisition, per-layer validation, atomic rollback,
   disable/base restoration, and unchanged browser/save/simulation boundaries.
+- [E32 Encyclopedia production activation](2026-10-07-encyclopedia-production-activation.md)
+  tracks strict new-package content, old-pack unavailable compatibility,
+  production cockpit and real contextual entry, stable source IDs, exact
+  returns, foreground modality, and native/browser journeys.
 
 This directory contains the durable reports and review artifacts for each
 verified interface checkpoint. The parent [audit index](../README.md) remains
@@ -89,7 +93,7 @@ the source of truth for scope, acceptance, and current work.
 | P64 | [Encyclopedia index-shell checkpoint](2026-09-30-encyclopedia-index-shell.md) | [`p64-encyclopedia-index-shell/`](p64-encyclopedia-index-shell/) |
 | P65 | [Encyclopedia index-catalog checkpoint](2026-09-30-encyclopedia-index-catalog.md) | [`p65-encyclopedia-index-catalog/`](p65-encyclopedia-index-catalog/) |
 | P66A | [Encyclopedia topic-source checkpoint](2026-10-01-encyclopedia-topic-source-bindings.md) | [`p66a-encyclopedia-topic-bindings/`](p66a-encyclopedia-topic-bindings/) |
-| W2-W7 / E30 | [Immutable session](2026-10-06-encyclopedia-content-session.md), [pure presenter](2026-10-06-encyclopedia-presenter.md), [authentic fixture surface](2026-10-06-encyclopedia-topic-surface.md), [canonical publication](2026-10-06-encyclopedia-canonical-publication.md), [canonical surface](2026-10-06-encyclopedia-canonical-surface.md), [original-first HD selection](2026-10-06-encyclopedia-hd-selection.md), and [native overlays](2026-10-07-encyclopedia-mod-overlays.md) | Browser artifacts remain ignored locally and are hash-identified in each report. Native mod fixtures are synthetic and test-temporary. |
+| W2-W7 / E30 / E32 | [Immutable session](2026-10-06-encyclopedia-content-session.md), [pure presenter](2026-10-06-encyclopedia-presenter.md), [authentic fixture surface](2026-10-06-encyclopedia-topic-surface.md), [canonical publication](2026-10-06-encyclopedia-canonical-publication.md), [canonical surface](2026-10-06-encyclopedia-canonical-surface.md), [original-first HD selection](2026-10-06-encyclopedia-hd-selection.md), [native overlays](2026-10-07-encyclopedia-mod-overlays.md), and [production activation](2026-10-07-encyclopedia-production-activation.md) | Browser artifacts remain ignored locally and are hash-identified in each report. Native mod fixtures are synthetic and test-temporary. |
 
 Earlier strategic, GID, shell, control, staging, and render reports are indexed
 in the parent [audit overview](../index.md). Every new artifact directory must
