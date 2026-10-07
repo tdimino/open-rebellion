@@ -158,11 +158,8 @@ pub(crate) fn prepare_native_encyclopedia_hd(
 
     for (filename, metadata) in session.resource_metadata() {
         let Some(resource_id) = edata_resource_id(filename) else {
-            prepared.diagnostics.push(asset_diagnostic(
-                "hd_source_identity_invalid",
-                filename,
-                format!("validated artwork filename {filename:?} is not EDATA.NNN"),
-            ));
+            // Presentation overlays use confined `mod:v1:*` identities and
+            // are outside the original EDATA approval namespace.
             continue;
         };
         let approval_key = format!("edata/EDATA_{resource_id:03}");

@@ -1,6 +1,7 @@
 mod audio;
 mod encyclopedia_content;
 mod encyclopedia_hd;
+mod encyclopedia_mods;
 mod encyclopedia_surface;
 #[cfg(any(test, all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
 #[cfg_attr(
@@ -943,6 +944,16 @@ async fn main() {
         world.characters.len(),
     );
 
+    // mods/ lives alongside data/, not inside it. One resolved runtime order
+    // feeds both world and presentation-content consumers.
+    let mods_dir = gdata_path
+        .parent()
+        .and_then(|p| p.parent())
+        .unwrap_or(std::path::Path::new("."))
+        .join("mods");
+    let mut mod_runtime = rebellion_data::mods::ModRuntime::discover(&mods_dir);
+    let resolved_mod_order = mod_runtime.enabled_sorted();
+
     // The Galactic Encyclopedia is immutable reference data, not campaign
     // state. Rebuild it from the installed DAT/TEXTSTRA source so opening the
     // index after a save/load never changes the serialized world format.
@@ -989,38 +1000,62 @@ async fn main() {
             entries,
         )
     });
-    let mut _encyclopedia_session_store =
+    let mut encyclopedia_session_store =
         rebellion_data::encyclopedia_session::EncyclopediaSessionStore::default();
+    let mut encyclopedia_base_disposition = None;
+    #[cfg(not(target_arch = "wasm32"))]
+    let mut encyclopedia_base_input = None;
     if let (Some(content), Some(catalog)) = (encyclopedia_content, encyclopedia_catalog) {
-        match rebellion_data::encyclopedia_topics::load_encyclopedia_system_pictures(&gdata_path)
-            .and_then(|system_pictures| {
-                _encyclopedia_session_store
-                    .replace(content.into_session_input(catalog, system_pictures))
-            }) {
-            Ok(disposition) => {
-                let session = _encyclopedia_session_store
-                    .current()
-                    .expect("successful Encyclopedia install publishes a session");
-                macroquad::logging::info!(
-                    "[encyclopedia] content_session installed disposition={:?} fingerprint={} alliance_topics={} empire_topics={}",
-                    disposition,
-                    session.logical_fingerprint(),
-                    session
-                        .topics(rebellion_data::encyclopedia_topics::EncyclopediaAudience::Alliance)
-                        .entries
-                        .len(),
-                    session
-                        .topics(rebellion_data::encyclopedia_topics::EncyclopediaAudience::Empire)
-                        .entries
-                        .len(),
-                );
+        match rebellion_data::encyclopedia_topics::load_encyclopedia_system_pictures(&gdata_path) {
+            Ok(system_pictures) => {
+                let input = content.into_session_input(catalog, system_pictures);
+                match encyclopedia_session_store.replace(input.clone()) {
+                    Ok(disposition) => {
+                        encyclopedia_base_disposition = Some(disposition);
+                        #[cfg(not(target_arch = "wasm32"))]
+                        {
+                            let report = encyclopedia_mods::install_native_encyclopedia_mods(
+                                &input,
+                                &mut encyclopedia_session_store,
+                                &mod_runtime,
+                                &resolved_mod_order,
+                            );
+                            encyclopedia_mods::log_native_encyclopedia_mod_report(&report);
+                            encyclopedia_base_input = Some(input.clone());
+                        }
+                    }
+                    Err(error) => {
+                        macroquad::logging::error!(
+                            "[encyclopedia] content_session rejected before publication error={}",
+                            error
+                        );
+                    }
+                }
             }
             Err(error) => {
                 macroquad::logging::error!(
-                    "[encyclopedia] content_session rejected before publication error={}",
+                    "[encyclopedia] system_picture_bindings unavailable error={}",
                     error
                 );
             }
+        }
+        if let (Some(session), Some(disposition)) = (
+            encyclopedia_session_store.current(),
+            encyclopedia_base_disposition,
+        ) {
+            macroquad::logging::info!(
+                "[encyclopedia] content_session installed disposition={:?} fingerprint={} alliance_topics={} empire_topics={}",
+                disposition,
+                session.logical_fingerprint(),
+                session
+                    .topics(rebellion_data::encyclopedia_topics::EncyclopediaAudience::Alliance)
+                    .entries
+                    .len(),
+                session
+                    .topics(rebellion_data::encyclopedia_topics::EncyclopediaAudience::Empire)
+                    .entries
+                    .len(),
+            );
         }
     } else {
         macroquad::logging::warn!(
@@ -1029,11 +1064,8 @@ async fn main() {
     }
     #[cfg(not(target_arch = "wasm32"))]
     let _encyclopedia_hd = {
-        let hd_root = gdata_path
-            .parent()
-            .unwrap_or(Path::new("."))
-            .join("hd");
-        let prepared = _encyclopedia_session_store.current().map_or_else(
+        let hd_root = gdata_path.parent().unwrap_or(Path::new(".")).join("hd");
+        let prepared = encyclopedia_session_store.current().map_or_else(
             encyclopedia_hd::PreparedEncyclopediaHd::original_only,
             |session| {
                 encyclopedia_hd::prepare_native_encyclopedia_hd(
@@ -1065,24 +1097,18 @@ async fn main() {
     let _ = original_encyclopedia_catalog.as_ref();
 
     // ── Mod Runtime ──────────────────────────────────────────────────────────
-    // mods/ lives alongside data/, not inside it: data/base → data → repo root → mods/
-    let mods_dir = gdata_path
-        .parent()
-        .and_then(|p| p.parent())
-        .unwrap_or(std::path::Path::new("."))
-        .join("mods");
-    let mut mod_runtime = rebellion_data::mods::ModRuntime::discover(&mods_dir);
     if !mod_runtime.discovered.is_empty() {
         eprintln!(
             "Discovered {} mods ({} enabled)",
             mod_runtime.discovered.len(),
             mod_runtime.discovered.iter().filter(|m| m.enabled).count()
         );
-        let mod_errors = mod_runtime.apply_enabled(&mut world);
+        let mod_errors = mod_runtime.apply_ordered(&mut world, &resolved_mod_order);
         for err in &mod_errors {
             eprintln!("Mod error: {err:?}");
         }
     }
+    drop(resolved_mod_order);
 
     // ── Game mode ─────────────────────────────────────────────────────────
     let mut game_mode = GameMode::MainMenu;
@@ -1424,7 +1450,7 @@ async fn main() {
                 encyclopedia_surface::EncyclopediaSurfaceFixture::new(audience, start)
                     .unwrap_or_else(|error| panic!("W4 Encyclopedia fixture is invalid: {error}"))
             } else {
-                let session = _encyclopedia_session_store.current().unwrap_or_else(|| {
+                let session = encyclopedia_session_store.current().unwrap_or_else(|| {
                     panic!(
                         "E30 canonical Encyclopedia fixture requires an installed content session"
                     )
@@ -5439,6 +5465,10 @@ Some(RailAudience::side(*faction_is_alliance)),
                         &event_state,
                         &mut mod_runtime,
                         #[cfg(not(target_arch = "wasm32"))]
+                        encyclopedia_base_input.as_ref(),
+                        #[cfg(not(target_arch = "wasm32"))]
+                        &mut encyclopedia_session_store,
+                        #[cfg(not(target_arch = "wasm32"))]
                         &mut audio_engine,
                         #[cfg(not(target_arch = "wasm32"))]
                         &audio_vol,
@@ -5901,6 +5931,10 @@ fn apply_panel_action(
     blockade_state: &mut BlockadeState,
     event_state: &EventState,
     mod_runtime: &mut rebellion_data::mods::ModRuntime,
+    #[cfg(not(target_arch = "wasm32"))] encyclopedia_base_input: Option<
+        &rebellion_data::encyclopedia_session::EncyclopediaSessionInput,
+    >,
+    #[cfg(not(target_arch = "wasm32"))] encyclopedia_session_store: &mut rebellion_data::encyclopedia_session::EncyclopediaSessionStore,
     #[cfg(not(target_arch = "wasm32"))] audio_engine: &mut audio::AudioEngine,
     #[cfg(not(target_arch = "wasm32"))] audio_vol: &AudioVolumeState,
     #[cfg(not(target_arch = "wasm32"))] _sounds_dir: &Path,
@@ -6219,6 +6253,17 @@ fn apply_panel_action(
         }
         PanelAction::ToggleMod { ref name } => {
             mod_runtime.toggle_mod(name);
+            #[cfg(not(target_arch = "wasm32"))]
+            if let Some(base) = encyclopedia_base_input {
+                let resolved_mod_order = mod_runtime.enabled_sorted();
+                let report = encyclopedia_mods::install_native_encyclopedia_mods(
+                    base,
+                    encyclopedia_session_store,
+                    mod_runtime,
+                    &resolved_mod_order,
+                );
+                encyclopedia_mods::log_native_encyclopedia_mod_report(&report);
+            }
             msg_log.push(GameMessage::new(
                 clock.tick,
                 format!("Toggled mod: {name}"),
@@ -6227,7 +6272,18 @@ fn apply_panel_action(
         }
         PanelAction::ReloadMods => {
             mod_runtime.refresh();
-            let mod_errors = mod_runtime.apply_enabled(world);
+            let resolved_mod_order = mod_runtime.enabled_sorted();
+            #[cfg(not(target_arch = "wasm32"))]
+            if let Some(base) = encyclopedia_base_input {
+                let report = encyclopedia_mods::install_native_encyclopedia_mods(
+                    base,
+                    encyclopedia_session_store,
+                    mod_runtime,
+                    &resolved_mod_order,
+                );
+                encyclopedia_mods::log_native_encyclopedia_mod_report(&report);
+            }
+            let mod_errors = mod_runtime.apply_ordered(world, &resolved_mod_order);
             for err in &mod_errors {
                 eprintln!("Mod reload error: {err:?}");
             }

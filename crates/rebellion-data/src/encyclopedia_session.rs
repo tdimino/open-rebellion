@@ -12,6 +12,7 @@ use anyhow::{ensure, Context, Result};
 use sha2::{Digest, Sha256};
 
 use crate::encyclopedia_catalog::EncyclopediaCatalog;
+use crate::encyclopedia_overlay::{apply_encyclopedia_overlay_layer, EncyclopediaOverlayLayer};
 use crate::encyclopedia_topics::{
     bind_encyclopedia_topics, encyclopedia_logical_fingerprint,
     parse_encyclopedia_source_with_manifest, EncyclopediaAudience, EncyclopediaMissingPart,
@@ -166,7 +167,21 @@ impl EncyclopediaSessionStore {
         &mut self,
         input: EncyclopediaSessionInput,
     ) -> Result<EncyclopediaInstallDisposition> {
-        let prepared = PreparedEncyclopediaSession::new(input)?;
+        self.replace_with_overlays(input, Vec::new())
+    }
+
+    /// Validate the immutable base, apply ordered presentation overlays to a
+    /// private candidate, then atomically publish the complete result.
+    ///
+    /// # Errors
+    /// Returns an error without changing the active session or texture
+    /// generation if any layer or complete effective session is invalid.
+    pub fn replace_with_overlays(
+        &mut self,
+        input: EncyclopediaSessionInput,
+        overlays: Vec<EncyclopediaOverlayLayer>,
+    ) -> Result<EncyclopediaInstallDisposition> {
+        let prepared = PreparedEncyclopediaSession::new(input, &overlays)?;
         if self
             .active
             .as_ref()
@@ -227,27 +242,37 @@ struct PreparedEncyclopediaSession {
 }
 
 impl PreparedEncyclopediaSession {
-    fn new(input: EncyclopediaSessionInput) -> Result<Self> {
-        validate_catalog(&input.catalog)?;
-        let (source_catalog, source_manifest) = parse_encyclopedia_source_with_manifest(
+    fn new(
+        mut input: EncyclopediaSessionInput,
+        overlays: &[EncyclopediaOverlayLayer],
+    ) -> Result<Self> {
+        let (mut source_catalog, source_manifest) = parse_encyclopedia_source_with_manifest(
             &input.source_catalog_bytes,
             &input.source_manifest_bytes,
         )?;
-        let resource_metadata = validate_artwork(&source_catalog, &input.artwork)?;
-        let alliance_topics = bind_encyclopedia_topics(
-            &input.catalog,
-            &source_catalog,
-            &input.system_pictures,
-            EncyclopediaAudience::Alliance,
-        );
-        let empire_topics = bind_encyclopedia_topics(
-            &input.catalog,
-            &source_catalog,
-            &input.system_pictures,
-            EncyclopediaAudience::Empire,
-        );
-        validate_topic_bindings(&alliance_topics)?;
-        validate_topic_bindings(&empire_topics)?;
+        let (mut resource_metadata, mut alliance_topics, mut empire_topics) =
+            validate_effective_session(
+                &input.catalog,
+                &source_catalog,
+                &input.system_pictures,
+                &input.artwork,
+            )?;
+        for layer in overlays {
+            apply_encyclopedia_overlay_layer(
+                &mut input.catalog,
+                &mut source_catalog,
+                &input.system_pictures,
+                &mut input.artwork,
+                layer,
+            )?;
+            (resource_metadata, alliance_topics, empire_topics) = validate_effective_session(
+                &input.catalog,
+                &source_catalog,
+                &input.system_pictures,
+                &input.artwork,
+            )
+            .with_context(|| format!("validating Encyclopedia mod {:?}", layer.mod_name()))?;
+        }
         let logical_fingerprint =
             combined_logical_fingerprint(&input.catalog, &alliance_topics, &empire_topics);
         let content_fingerprint = complete_content_fingerprint(
@@ -282,6 +307,35 @@ impl PreparedEncyclopediaSession {
             texture_generation,
         }
     }
+}
+
+fn validate_effective_session(
+    catalog: &EncyclopediaCatalog,
+    source_catalog: &EncyclopediaSourceCatalog,
+    system_pictures: &HashMap<u32, u32>,
+    artwork: &EncyclopediaResourceBytes,
+) -> Result<(
+    BTreeMap<String, EncyclopediaResourceMetadata>,
+    EncyclopediaTopicCatalog,
+    EncyclopediaTopicCatalog,
+)> {
+    validate_catalog(catalog)?;
+    let resource_metadata = validate_artwork(source_catalog, artwork)?;
+    let alliance_topics = bind_encyclopedia_topics(
+        catalog,
+        source_catalog,
+        system_pictures,
+        EncyclopediaAudience::Alliance,
+    );
+    let empire_topics = bind_encyclopedia_topics(
+        catalog,
+        source_catalog,
+        system_pictures,
+        EncyclopediaAudience::Empire,
+    );
+    validate_topic_bindings(&alliance_topics)?;
+    validate_topic_bindings(&empire_topics)?;
+    Ok((resource_metadata, alliance_topics, empire_topics))
 }
 
 fn validate_catalog(catalog: &EncyclopediaCatalog) -> Result<()> {
@@ -363,11 +417,12 @@ fn validate_topic_bindings(topics: &EncyclopediaTopicCatalog) -> Result<()> {
         let source_empty = ENCYCLOPEDIA_SOURCE_EMPTY_OBJECT_IDS.contains(&topic.object_id);
         if source_empty {
             ensure!(
-                topic.missing
-                    == [
-                        EncyclopediaMissingPart::Text,
-                        EncyclopediaMissingPart::ArtworkMapping,
-                    ],
+                topic.missing.is_empty()
+                    || topic.missing
+                        == [
+                            EncyclopediaMissingPart::Text,
+                            EncyclopediaMissingPart::ArtworkMapping,
+                        ],
                 "source-empty Encyclopedia object {:#010x} has unexpected bindings",
                 topic.object_id
             );
@@ -593,6 +648,7 @@ mod tests {
     use crate::encyclopedia_catalog::{
         EncyclopediaCatalog, EncyclopediaCatalogEntry, EncyclopediaCategory,
     };
+    use crate::encyclopedia_overlay::{parse_encyclopedia_overlay, EncyclopediaOverlayLayer};
     use crate::encyclopedia_topics::EncyclopediaAudience;
 
     const SHARED_SOURCE: &[u8] =
@@ -723,6 +779,22 @@ mod tests {
             system_pictures: HashMap::from([(0x9200_0064, 1)]),
             artwork: resources(),
         }
+    }
+
+    fn overlay_layer(
+        name: &str,
+        json: &[u8],
+        images: &[(&str, Arc<[u8]>)],
+    ) -> EncyclopediaOverlayLayer {
+        EncyclopediaOverlayLayer::new(
+            name.to_owned(),
+            parse_encyclopedia_overlay(json).unwrap(),
+            images
+                .iter()
+                .map(|(path, bytes)| ((*path).to_owned(), Arc::clone(bytes)))
+                .collect(),
+        )
+        .unwrap()
     }
 
     #[test]
@@ -1074,5 +1146,230 @@ mod tests {
             );
         }
         assert_eq!(bincode::serialize(&world).unwrap(), world_before);
+    }
+
+    #[test]
+    fn overlays_inherit_absent_fields_and_later_layers_win_in_supplied_order() {
+        let world = GameWorld::default();
+        let world_before = bincode::serialize(&world).unwrap();
+        let replacement = indexed_bmp([90, 91, 92]);
+        let first = overlay_layer(
+            "alpha",
+            br#"[{"id":335544384,"action":"replace","title":"Alpha Cruiser","body":"Alpha body","image":{"path":"encyclopedia/assets/alpha.bmp"}}]"#,
+            &[("encyclopedia/assets/alpha.bmp", Arc::clone(&replacement))],
+        );
+        let second = overlay_layer("zulu", br#"[{"id":335544384,"title":"Zulu Cruiser"}]"#, &[]);
+        let mut store = EncyclopediaSessionStore::default();
+        store.replace(input()).unwrap();
+        let base_lease = store.current().unwrap();
+
+        store
+            .replace_with_overlays(input(), vec![first, second])
+            .unwrap();
+
+        let session = store.current().unwrap();
+        assert_eq!(session.texture_generation(), 2);
+        assert_eq!(
+            base_lease.artwork_bytes("EDATA.014"),
+            Some(indexed_bmp([14, 15, 16]).as_ref())
+        );
+        let topic = session
+            .topics(EncyclopediaAudience::Alliance)
+            .topic(0x1400_0040)
+            .unwrap();
+        assert_eq!(topic.title, "Zulu Cruiser");
+        assert_eq!(topic.body.as_deref(), Some("Alpha body"));
+        assert_eq!(
+            topic.artwork_filename.as_deref(),
+            Some("mod:v1:alpha:encyclopedia/assets/alpha.bmp")
+        );
+        assert_eq!(
+            session.artwork_bytes(topic.artwork_filename.as_deref().unwrap()),
+            Some(replacement.as_ref())
+        );
+        assert_eq!(bincode::serialize(&world).unwrap(), world_before);
+    }
+
+    #[test]
+    fn whole_topic_add_then_remove_restores_the_exact_base_snapshot() {
+        let mut store = EncyclopediaSessionStore::default();
+        store.replace(input()).unwrap();
+        let base_fingerprint = store.current().unwrap().logical_fingerprint().to_owned();
+        let addition = overlay_layer(
+            "addition",
+            br#"[{"id":335544385,"action":"add","text_resource_id":10049,"title":"Nebulon Escort","body":"Added topic","image":{"path":"encyclopedia/assets/added.bmp"}}]"#,
+            &[("encyclopedia/assets/added.bmp", indexed_bmp([31, 32, 33]))],
+        );
+
+        store
+            .replace_with_overlays(input(), vec![addition])
+            .unwrap();
+        assert!(store
+            .current()
+            .unwrap()
+            .catalog()
+            .entries
+            .iter()
+            .any(|entry| entry.object_id == 0x1400_0041));
+
+        store.replace(input()).unwrap();
+        assert_eq!(
+            store.current().unwrap().logical_fingerprint(),
+            base_fingerprint,
+            "disabling all overlay layers rebuilds the immutable base"
+        );
+
+        let remove = overlay_layer("removal", br#"[{"id":335544385,"action":"remove"}]"#, &[]);
+        let mut restored_store = EncyclopediaSessionStore::default();
+        restored_store
+            .replace_with_overlays(input(), vec![
+                overlay_layer(
+                    "addition",
+                    br#"[{"id":335544385,"action":"add","text_resource_id":10049,"title":"Nebulon Escort","body":"Added topic","image":{"path":"encyclopedia/assets/added.bmp"}}]"#,
+                    &[("encyclopedia/assets/added.bmp", indexed_bmp([31, 32, 33]))],
+                ),
+                remove,
+            ])
+            .unwrap();
+
+        let restored = restored_store.current().unwrap();
+        assert_eq!(restored.logical_fingerprint(), base_fingerprint);
+        assert_eq!(restored.resource_metadata().len(), 4);
+        assert!(!restored.source_catalog().texts.contains_key(&0x1741));
+        assert!(!restored.source_catalog().artwork.contains_key(&0x1741));
+        assert!(restored
+            .resource_metadata()
+            .keys()
+            .all(|identity| !identity.starts_with("mod:v1:")));
+    }
+
+    #[test]
+    fn removing_one_topic_retains_source_records_shared_by_another_topic() {
+        let mut base = input();
+        base.catalog
+            .entries
+            .retain(|entry| entry.object_id == 0x1400_0040);
+        base.catalog.entries.push(EncyclopediaCatalogEntry {
+            object_id: 0x1400_0041,
+            text_resource_id: 0x2740,
+            name: "Twin Cruiser".into(),
+        });
+        base.catalog.entries.sort_by(|left, right| {
+            left.name
+                .to_lowercase()
+                .cmp(&right.name.to_lowercase())
+                .then(left.object_id.cmp(&right.object_id))
+        });
+        let remove = overlay_layer(
+            "remove-one-twin",
+            br#"[{"id":335544384,"action":"remove"}]"#,
+            &[],
+        );
+        let mut store = EncyclopediaSessionStore::default();
+
+        store.replace_with_overlays(base, vec![remove]).unwrap();
+
+        let session = store.current().unwrap();
+        assert!(session
+            .catalog()
+            .entries
+            .iter()
+            .all(|entry| entry.object_id != 0x1400_0040));
+        assert!(session.source_catalog().texts.contains_key(&0x1740));
+        assert!(session.source_catalog().artwork.contains_key(&0x1740));
+        for audience in [EncyclopediaAudience::Alliance, EncyclopediaAudience::Empire] {
+            assert!(session
+                .topics(audience)
+                .topic(0x1400_0041)
+                .unwrap()
+                .is_complete());
+        }
+    }
+
+    #[test]
+    fn explicit_null_legally_restores_a_source_empty_topic_after_a_complete_overlay() {
+        let mut base = input();
+        base.catalog.entries.push(EncyclopediaCatalogEntry {
+            object_id: 0x7200_0045,
+            text_resource_id: 0x2450,
+            name: "Vacation".into(),
+        });
+        base.catalog.entries.sort_by(|left, right| {
+            left.name
+                .to_lowercase()
+                .cmp(&right.name.to_lowercase())
+                .then(left.object_id.cmp(&right.object_id))
+        });
+        let mut base_store = EncyclopediaSessionStore::default();
+        base_store.replace(base.clone()).unwrap();
+        let base_fingerprint = base_store
+            .current()
+            .unwrap()
+            .logical_fingerprint()
+            .to_owned();
+        let fill = overlay_layer(
+            "fill-empty",
+            br#"[{"id":1912602693,"body":"Now documented","image":{"path":"encyclopedia/assets/vacation.bmp"}}]"#,
+            &[("encyclopedia/assets/vacation.bmp", indexed_bmp([71, 72, 73]))],
+        );
+        let remove = overlay_layer(
+            "restore-empty",
+            br#"[{"id":1912602693,"body":null,"image":null}]"#,
+            &[],
+        );
+        let mut store = EncyclopediaSessionStore::default();
+
+        store
+            .replace_with_overlays(base, vec![fill, remove])
+            .unwrap();
+
+        let restored = store.current().unwrap();
+        assert_eq!(restored.logical_fingerprint(), base_fingerprint);
+        for audience in [EncyclopediaAudience::Alliance, EncyclopediaAudience::Empire] {
+            let topic = restored.topics(audience).topic(0x7200_0045).unwrap();
+            assert_eq!(topic.body, None);
+            assert_eq!(topic.artwork_filename, None);
+        }
+    }
+
+    #[test]
+    fn invalid_overlay_candidate_preserves_the_published_arc_and_generation() {
+        let mut store = EncyclopediaSessionStore::default();
+        store.replace(input()).unwrap();
+        let previous = store.current().unwrap();
+        let invalid = overlay_layer("invalid", br#"[{"id":335544384,"body":null}]"#, &[]);
+
+        assert!(store.replace_with_overlays(input(), vec![invalid]).is_err());
+        assert!(Arc::ptr_eq(&previous, &store.current().unwrap()));
+        assert_eq!(store.texture_generation(), 1);
+    }
+
+    #[test]
+    fn existing_topic_may_restate_but_not_change_its_text_resource_identity() {
+        let mut store = EncyclopediaSessionStore::default();
+        store.replace(input()).unwrap();
+
+        let disposition = store
+            .replace_with_overlays(
+                input(),
+                vec![overlay_layer(
+                    "same-identity",
+                    br#"[{"id":335544384,"text_resource_id":10048}]"#,
+                    &[],
+                )],
+            )
+            .unwrap();
+        assert_eq!(disposition, EncyclopediaInstallDisposition::Unchanged);
+
+        let previous = store.current().unwrap();
+        let generation = store.texture_generation();
+        let changed = overlay_layer(
+            "changed-identity",
+            br#"[{"id":335544384,"text_resource_id":10049}]"#,
+            &[],
+        );
+        assert!(store.replace_with_overlays(input(), vec![changed]).is_err());
+        assert!(Arc::ptr_eq(&previous, &store.current().unwrap()));
+        assert_eq!(store.texture_generation(), generation);
     }
 }

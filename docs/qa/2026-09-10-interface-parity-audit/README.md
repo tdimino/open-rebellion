@@ -108,7 +108,9 @@ and passes the complete comparison contract.
   [W3 pure-presenter evidence](evidence/2026-10-06-encyclopedia-presenter.md), and
   [W4 authentic topic-surface evidence](evidence/2026-10-06-encyclopedia-topic-surface.md),
   plus the [W5A canonical-publication evidence](evidence/2026-10-06-encyclopedia-canonical-publication.md)
-  and [W6 original-first HD evidence](evidence/2026-10-06-encyclopedia-hd-selection.md)
+  the [E30 canonical-surface evidence](evidence/2026-10-06-encyclopedia-canonical-surface.md),
+  [W6 original-first HD evidence](evidence/2026-10-06-encyclopedia-hd-selection.md),
+  and [W7 native-overlay evidence](evidence/2026-10-07-encyclopedia-mod-overlays.md)
   for atomic validated installation, exact session-order projection, both
   faction bindings, explicit source-empty topics, bounded navigation, and
   immutable close/return routes, plus fixture-gated authentic rendering and
@@ -116,9 +118,11 @@ and passes the complete comparison contract.
   development-loose readers now converge on exact bytes and one logical
   fingerprint through deterministic atomic publication. Native faithful-HD
   selection is opt-in, manifest-approved, and falls back to that exact original
-  view; browser and strict parity evidence remain original-only. Packaged
-  visual journeys, production routing, A0, and strict `OBJ-01` acceptance remain
-  open.
+  view. Native presentation mods now use deterministic shared dependency order,
+  presence-aware layers, confined synthetic artwork, complete candidate
+  validation, atomic rollback, and base restoration without entering saves or
+  simulation. Browser and strict parity evidence remain original-only.
+  Production routing, A0, and strict `OBJ-01` acceptance remain open.
 - Review the [P50 GID menu-frame evidence](evidence/2026-09-12-gid-menu-frame.md)
   for original frame tiles, source-pixel checks, and the remaining menu gaps.
 - Review the [P51 GID hover and occlusion evidence](evidence/2026-09-12-gid-hover-and-occlusion.md)

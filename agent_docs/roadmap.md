@@ -773,6 +773,14 @@ would tune around known simulation feedback defects.
   dimensions, retain original bytes for every absent or invalid candidate, and
   key textures by sampling policy. Browser builds and strict parity evidence
   remain original-only; no enhanced asset is committed or generated.
+- [x] Complete the W7 native Encyclopedia overlay checkpoint: reserve root
+  `encyclopedia.json` outside `GameWorld`, share one deterministic
+  dependency-first order with lexicographic ready tie-breaks, distinguish
+  absent/replacement/legal-removal fields, confine and bound author BMPs,
+  validate the base and every complete layer, and publish only one atomic W2
+  session. Invalid candidates retain the last-known-good snapshot; disabling
+  all layers restores the exact base. Browser content, save bodies, and
+  simulation state remain unchanged.
 - [x] Restore the P50 GID root and submenu frame from STRATEGY 10100 through
   10107. Paint repeated edges in four batched meshes, remove the invented menu
   fade, and check native-size root pixels against the source BMPs in both

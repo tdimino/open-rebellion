@@ -134,6 +134,7 @@ navigation, animation, audio presentation, and the absence of invented UI.
 | [P64 Encyclopedia index-shell evidence](evidence/2026-09-30-encyclopedia-index-shell.md) | Separate source-recovered faction shells, seven selected category states, rail states, native clipping, native input rejection and capture, 32 exact browser states, and bounded independent review; catalog content, topic pages, production routing, and `OBJ-01` remain open. |
 | [P65 Encyclopedia index-catalog evidence](evidence/2026-09-30-encyclopedia-index-catalog.md) | Source-derived 356-entry catalog, seven English TEXTSTRA labels and family filters, stable selection and scrolling, the selected-category no-op, 22 two-faction browser states, and a clean P64 regression; topic pages, production routing, A0, and `OBJ-01` remain open. |
 | [P66A Encyclopedia topic-source evidence](evidence/2026-10-01-encyclopedia-topic-source-bindings.md) | Strict extraction of 348 prose records and 191 artwork mappings, exact ordinary/system/faction lookup identities, 346 complete topics per faction, and ten explicit source-empty missions; browser topic transport/rendering, routing, A0, and `OBJ-01` remain open. |
+| [W2-W7 Encyclopedia implementation evidence](evidence/README.md#current-strategic-correction) | Immutable installation, pure presentation, authentic topic rendering, canonical native/browser publication and journeys, original-first HD selection, and deterministic atomic native overlays; production command routing, A0, and `OBJ-01` remain open. |
 | [Evidence index](evidence/README.md) | Reports and artifact bundles, including a required `README.md` inventory for each new bundle. |
 | [JSON Schema](schemas/interface-parity.schema.json) | Validation contract for the audit summary and status vocabulary. |
 | [Ledger validator](../../../scripts/validate-interface-parity-ledgers.mjs) | Dependency-free generator and consistency gate for cell IDs and retrieval-package links. |
@@ -319,10 +320,12 @@ entries, seven English TEXTSTRA labels and family filters, stable selection,
 scrolling, the selected-category no-op, and 22 two-faction browser states while
 retaining the complete P64 regression matrix. P66A strictly extracts 348 topic texts and 191 image
 mappings, binds 346 complete topics per faction, and exposes ten source-empty
-mission records without fallback. Briefing, dialog, advisor-control, remaining
-voice resources, browser Encyclopedia topics and production routing, A0
-comparison, and
-`OBJ-01` acceptance remain open. Its 27 packages give every required surface
+mission records without fallback. W2 through W7 and E30 now provide immutable
+installation, source-ordered presentation, authentic topic rendering,
+canonical native/browser publication and journeys, original-first HD selection,
+and native atomic presentation overlays with base restoration. Briefing,
+dialog, advisor-control, remaining voice resources, Encyclopedia production
+routing, A0 comparison, and `OBJ-01` acceptance remain open. Its 27 packages give every required surface
 a named recovery or removal path.
 
 ## What 100% means

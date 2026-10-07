@@ -4,7 +4,7 @@ description: "Proposed source-derived encyclopedia catalog, asset staging, mod o
 type: design
 status: draft
 created: 2026-09-27
-updated: 2026-10-02
+updated: 2026-10-07
 tags: [encyclopedia, assets, modding, native, wasm, P35, RE-ENC-01]
 ---
 
@@ -37,10 +37,11 @@ and reports the ten source-empty mission records without fallback content. All
 `EDATA.192` remains outside the proven lookup table. See the
 [P66A evidence record](../qa/2026-09-10-interface-parity-audit/evidence/2026-10-01-encyclopedia-topic-source-bindings.md).
 
-Browser packaging and installation, topic composition, contextual and
-production routing, exact previous/next behavior, mod overlays, and visual A0
-acceptance remain planned. Command `0x131` therefore remains fail-closed, and
-no `OBJ-01` acceptance cell passes from P62 through P66A alone.
+W2 through W7 and E30 now implement immutable installation, topic composition,
+exact bounded navigation, canonical native/browser publication and journeys,
+original-first HD selection, and native presentation overlays. Production
+command `0x131`, original Windows A0 comparison, and strict `OBJ-01` acceptance
+remain open under E32.
 
 ## 1. Purpose and scope
 
@@ -52,16 +53,18 @@ editing DLLs or Rust. Re-extraction must never overwrite a mod author's work.
 This began as a proposed design at repository baseline
 `e101e6c7bc74ec75487e16d81b1c2bb55025562c`. P62, P64, P65, and P66A now
 implement the transport, index shell, index catalog, and local source-binding
-checkpoints described above. Sections that still describe browser topic
-transport, composition, navigation, contextual entry, mod overlays, or
-production routing remain future work and confer no acceptance by themselves.
+checkpoints described above; W2 through W7 and E30 implement the approved
+runtime, publication, surface, HD, and native-overlay slices. Production
+command routing and A0 acceptance remain future work and confer no acceptance
+from design text alone.
 
 The first delivery includes original-data extraction, a validated catalog,
 native and browser asset loading, native mod overrides, and an original-style
 encyclopedia index/topic view. Browser mod discovery/upload/hot reload remains
 outside this delivery, consistent with the current mod runtime. Both platforms
-must display the same unmodified base catalog. Further language packs, custom
-topics and browser mod installation are extension points, not implicit features.
+must display the same unmodified base catalog. Native W7 overlays may add
+strictly validated presentation topics. Further language packs and browser mod
+installation remain extension points, not implicit features.
 
 The data pipeline can land in independently reviewable slices before the full
 original UI is ready. Do not enable the currently gated cockpit/F7 route merely
@@ -466,79 +469,60 @@ simulation state as a side effect.
 
 ## 8. Mod contract
 
-Keep the existing `mods/<name>/mod.toml`. Reserve the root filename
-`encyclopedia.json` as a content overlay target. Its outer structure is an array
-of patch objects, matching existing overlay files. Topic selectors are strings
-because these are content IDs, not world-arena DatIds; this is an explicit new
-target, not an alias that the existing world patcher already understands.
+W7 keeps the existing `mods/<name>/mod.toml` and reserves root
+`encyclopedia.json` as a native presentation-content target outside the world
+patch map. Its outer structure is an array of patch objects. Each numeric `id`
+is the canonical P65/P66 object ID, not a slotmap key or an implicit world-arena
+alias.
 
 Synthetic example:
 
 ```json
 [
+  {"id": 335544384, "title": "Renamed cruiser"},
   {
-    "id": "original:60001",
-    "localized": {
-      "1033": {
-        "body": "My replacement description.",
-        "image": {"path": "encyclopedia/assets/cruiser.png"}
-      }
-    }
+    "id": 335544385,
+    "action": "add",
+    "text_resource_id": 10049,
+    "title": "Escort frigate",
+    "body": "Author-supplied description.",
+    "image": {"path": "encyclopedia/assets/escort.bmp"}
   }
 ]
 ```
 
-`id` selects an existing topic and is removed before applying the patch. V1
-allows only `localized.<LANGID>.title`, `body`, and the author-facing `image`
-field. Omitted values inherit the base. `image` is either `{ "path": "..." }`
-relative to that mod's root, or null to explicitly remove optional art. The
-adapter validates the file, computes its digest/dimensions, creates a
-`mod:<mod-name>:<relative-path>` image descriptor, and translates `image` into
-canonical `image_id` before RFC 7396 merge. Authors do not maintain image hashes.
-Null title/body/language deletions follow merge-patch semantics but are rejected
-if they leave a required localized record invalid. In particular, removing a
-body is not the same as deliberately setting it to the empty string.
+The default `patch` action distinguishes a missing field (inherit), a present
+value (replace), and `null` (explicitly remove where the final P66 binding
+contract permits it). `replace` requires title, body, and image values. `add`
+requires a new supported non-system object ID, a unique nonzero
+`text_resource_id`, and all content fields. `remove` deletes one complete topic
+and accepts no replacement fields. Existing text-resource identities and all
+category definitions remain immutable. Unknown fields, duplicate selectors,
+unsupported families, and any incomplete effective topic fail closed.
 
-Forbid changing source IDs, bindings, categories, provenance, schema version or
-base image descriptors through this overlay. Reject unknown selectors/fields
-and duplicate topic selectors within one file. New topics/categories are a
-future version requiring explicit ordering and binding semantics; do not turn
-a typo into an implicit topic creation.
+Author images use confined `encyclopedia/assets/*.bmp` paths. W7 rejects root,
+intermediate, or final symlinks and requires a regular original-class 400 by
+200 uncompressed 8-bit indexed BMP. The parser and native loader enforce
+bounded overlay, patch-count, per-image, and per-mod aggregate sizes. Effective
+art receives a `mod:v1:<mod-name>:<relative-path>` runtime identity; it is
+validated against already-loaded owning-mod bytes rather than inserted into the
+immutable original manifest.
 
-`ModContent::from_dir` currently scans every root JSON file and assumes a patch
-array, while `ModLoader::apply` targets `GameWorld` arenas. Explicitly split out
-the encyclopedia target before world application so it cannot be skipped as an
-unknown arena or serialized into saves. Resolve the enabled dependency order
-once and use that same order for world and encyclopedia content. Later overlays
-win per field; authors declare a dependency for intentional overriding. Require
-a deterministic name tie-break for unrelated mods in the shared resolver, with
-regression tests for existing world overlays rather than a second sorting rule.
+`ModContent::from_dir` splits the reserved target out before world application.
+Startup and explicit reload resolve enabled mods once in dependency-first order
+with a lexicographic ready tie-break, then feed that same order to world and
+Encyclopedia consumers. Later layers win per field. The W2 store validates the
+immutable base and every complete intermediate layer off-side and publishes
+only the final candidate. Acquisition or validation failure preserves the
+last-known-good session; toggling or reloading always recomputes from the base,
+so disabling all layers restores it exactly.
 
-Validate base content against its immutable manifest before any overlays.
-Effective mod image descriptors are verified against their owning mod files,
-not inserted into or checked against the original base manifest.
-
-Apply one mod's encyclopedia changes to a copy, validate every patch and image,
-then publish the batch atomically. On failure keep the previous valid content
-and report the mod/topic/path through existing mod diagnostics. Recompute from
-the immutable base when toggling or reloading, so disabling a mod restores the
-original text. Extend the native watcher to include declared image assets;
-invalid edits retain the last good snapshot, while removed/disabled mods trigger
-a rebuild of the enabled set. Invalidate only changed texture digests and retain
-selection by topic ID when still present.
-
-Preserve the existing active-mod name/version metadata and hash mechanism.
-Encyclopedia bytes themselves do not enter saves or simulation fingerprints.
-A combined simulation/content mod may still affect gameplay through its normal
-world overlay; this design does not change that mod's existing compatibility
-semantics. Content validation/diagnostics must run on startup, new campaign and
-mod reload without double-applying world patches.
-
-Browser v1 consumes the unmodified staged base catalog. Existing browser mod
-filesystem APIs are stubs; parity of a *modded* native session is not promised.
-Future browser installation should supply the same manifest/overlay/image byte
-provider and pure patcher, not a separate schema or DLL decoder. Shipping a
-pre-modded pack needs a separate package/mod identity contract and is deferred.
+Encyclopedia bytes do not enter saves, replay, multiplayer, or simulation
+fingerprints. A combined mod can still affect gameplay through its ordinary
+world overlays under the existing compatibility contract. Browser v1 consumes
+the unmodified staged base; modded native/browser parity and pre-modded package
+identity remain deferred. W8 may extend the existing watcher for coalesced,
+settled authoring reloads without changing this pure overlay contract.
 
 ## 9. Delivery slices and acceptance
 
@@ -574,15 +558,13 @@ workspace checks, staging tests, package build, and interface-ledger validation.
 
 ## 10. Decisions for review and implementation limits
 
-This proposal recommends the Go extractor, ignored `data/base/encyclopedia/`
-staging, a separate versioned catalog, ORPK v3 kind-0 namespaced transport,
-existing native mod ordering/merge semantics, and original-style UI consumption.
-No production dependency, save format, or DAT format change is requested.
+The implemented checkpoints retain the Go extractor, ignored
+`data/base/encyclopedia/` staging, canonical P66 catalog, ORPK v3 namespaced
+transport, existing native dependency order, and original-style UI
+consumption. No production dependency, save format, or DAT format change was
+introduced.
 
-Source recovery must settle the encoding, category/alias structure, variant
-predicates and visibility rules before freezing schema v1. If those findings
-contradict the proposed model, revise this design and its fixtures before coding
-the runtime. These are evidence questions with named sources and failure gates,
-not permission to guess. Implementation scheduling and any schema expansion
-follow review of this document; this documentation contribution does not claim
-that the proposed system already exists.
+Future language, category, or binding expansion still requires source recovery
+and an explicit schema revision. These remain evidence questions with named
+sources and failure gates, not permission to guess. The evidence records, not
+this design alone, establish the implemented W2-through-W7 and E30 checkpoints.

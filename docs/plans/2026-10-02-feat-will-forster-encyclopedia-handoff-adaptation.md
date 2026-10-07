@@ -423,3 +423,11 @@ This plan is complete only when:
   digest-approved, exact-4x PNG output and otherwise retains the complete
   original view. Browser builds and strict original-interface acceptance stay
   original-only, while E32 retains production route activation.
+- 2026-10-07: implement W7 as a native presentation target reserved outside
+  `GameWorld`. Resolve one dependency-first order with lexicographic ready
+  tie-breaks and feed it to world and Encyclopedia consumers; parse
+  presence-aware patch/replace/add/remove actions; confine bounded author BMPs;
+  validate the immutable base and every complete layer; and publish only the
+  final W2 candidate. Any failure retains the active snapshot, while disabling
+  all layers rebuilds the exact base. Browser content and save/simulation
+  serialization remain unchanged; W8 watcher recovery stays optional.
