@@ -491,7 +491,7 @@ adjudicator run.
   `evidence/2026-09-1x-gid-contract-applied.md` (`p59c-gid-contract/`),
   `evidence/2026-09-1x-message-index-rail-input.md` (`p59e-message-index-rail/`),
   each with the bundle acceptance record fields and an unclaimed-cells section.
-- Ledgers: `surface-ledger.json` `current_implementation` text for CMD-02 and
+- Ledgers: `2026-10-06-surface-ledger.json` `current_implementation` text for CMD-02 and
   CMD-08, `reverse-engineering-ledger.{md,json}`, `reference-ledger.json`
   `owned-a0` block, `audit-report.{json,md}`, catalogs; regenerate status
   markers.
@@ -520,10 +520,11 @@ adjudicator run.
   2046-2141`; `tools/interface-parity/verify-production-exclusion.mjs:11-18`;
   `scripts/build-interface-test-wasm.sh:8`; `scripts/build-wasm.sh:24`;
   `.gitignore:84-88`.
-- Ledgers: `surface-ledger.json` (CMD-02 29 cells, CMD-08 16 cells, 0/564),
+- Ledgers: `2026-10-06-surface-ledger.json` (CMD-02 29 cells, CMD-08 16 cells, 0/564),
   `reverse-engineering-ledger.md:39-40, 135-163` (RE-GID-01, RE-MSG-01,
   RE-A0-01), `screenshot-ledger.md:224-244, 287-290`,
-  `audit-report.md:224-230` (A0/A1/A2 classes).
+  `docs/qa/2026-09-10-interface-parity-audit/2026-10-06-audit-report.md:224-230`
+  (A0/A1/A2 classes).
 - Tooling: `~/.claude/skills/codex-orchestrator/SKILL.md` and
   `references/subagent-patterns.md`; `AGENTS.md` lines 24-32;
   `agent_docs/agent-tooling.md`; `agent_docs/ghidra-re.md`.

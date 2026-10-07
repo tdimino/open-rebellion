@@ -339,7 +339,7 @@ fn centered(bounds: egui::Rect, size: egui::Vec2, scale: f32) -> egui::Rect {
 
 /// One wheel step through `len` items from `row`: down (a negative delta)
 /// goes one on, up goes one back, and neither leaves the list.
-fn scrolled(row: usize, len: usize, wheel: f32) -> usize {
+pub(crate) fn scrolled(row: usize, len: usize, wheel: f32) -> usize {
     if wheel < 0.0 && row + 1 < len {
         row + 1
     } else if wheel > 0.0 {
@@ -350,7 +350,7 @@ fn scrolled(row: usize, len: usize, wheel: f32) -> usize {
 }
 
 /// Paint a bitmap at its own size scaled with the dialog, centered in `bounds`.
-fn paint_centered(
+pub(crate) fn paint_centered(
     painter: &egui::Painter,
     ctx: &egui::Context,
     cache: &mut BmpCache,

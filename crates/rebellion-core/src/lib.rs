@@ -1,7 +1,9 @@
+pub mod agent_automation;
 pub mod ai;
 pub mod betrayal;
 pub mod blockade;
 pub mod bombardment;
+pub mod build_selection;
 pub mod combat;
 pub mod commands;
 pub mod dat;

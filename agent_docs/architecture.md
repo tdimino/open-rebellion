@@ -279,7 +279,7 @@ Round-trip validation is enforced inside `parse_and_dump` in `tools/dat-dumper/s
 7. `targeting::{capture_pointer, draw_targeting_cursor}` -- the galaxy view's targeting mode after the menu's Mission
 8. `draw_status_bar(ctx, world, clock, audio_vol)` -- bottom bar with speed/audio controls
 9. `draw_message_log(ctx, log, state)` -- scrollable event feed
-10. Panel functions: `draw_officers`, `draw_fleets`, `draw_manufacturing`, `draw_missions`, `draw_research`, `draw_jedi`
+10. Panel functions: `draw_officers`, `draw_fleets`, `draw_missions`, `draw_research`, `draw_jedi`
 11. `draw_encyclopedia(ctx, world, state)` -- floating 4-tab entity browser
 12. `draw_main_menu(ctx) -> MainMenuAction` -- title screen
 13. `draw_game_setup(ctx, state) -> GameSetupAction` -- new game config

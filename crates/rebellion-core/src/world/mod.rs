@@ -915,6 +915,9 @@ pub struct ShipInstance {
     pub shield_weapon_packed: u8,
     /// True while `hull_current` > 0 and the ship has not been destroyed.
     pub alive: bool,
+    /// The name the player gave it (`+0x34`, order 0x203); `None` shows the
+    /// class's (`FUN_004f6270`).
+    pub name: Option<String>,
 }
 
 impl ShipInstance {
@@ -929,6 +932,7 @@ impl ShipInstance {
             // not yet been allocated.
             shield_weapon_packed: 0,
             alive: true,
+            name: None,
         }
     }
 
@@ -1298,6 +1302,41 @@ pub struct SpecialForceUnit {
     pub on_mission: bool,
 }
 
+/// What one unit of a regiment, special-force or facility class costs to
+/// build and when it becomes available: the head that TROOPSD, SPECFCSD,
+/// DEFFACSD, MANFACSD and PROFACSD records share. A class record in memory
+/// sits 0x28 bytes past its DAT record (troop detection `+0x5c`,
+/// `decoy-roll.md`), so `FUN_0053b860`'s `+0x48` is the refined material
+/// cost and `FUN_0053b870`'s `+0x4c` the maintenance cost.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BuildableClass {
+    /// The class's TEXTSTRA name.
+    pub name: String,
+    pub is_alliance: bool,
+    pub is_empire: bool,
+    pub refined_material_cost: u32,
+    pub maintenance_cost: u32,
+    /// The research level that makes the class available.
+    pub research_order: u32,
+    pub research_difficulty: u32,
+    /// A yard's days per unit of build progress, class `+0x5c` that
+    /// `FUN_00520b70` reads: MANFACSD and PROFACSD `processing_rate`. Zero
+    /// for the other files.
+    pub processing_rate: u32,
+}
+
+impl BuildableClass {
+    /// Whether the side may build the class (`+0x18`/`+0x1c` of the record).
+    #[must_use]
+    pub const fn serves(&self, is_alliance: bool) -> bool {
+        if is_alliance {
+            self.is_alliance
+        } else {
+            self.is_empire
+        }
+    }
+}
+
 /// A defense facility instance on a system surface.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DefenseFacilityInstance {
@@ -1460,6 +1499,10 @@ pub struct GameWorld {
     /// Special-forces class definitions keyed by `DatId` (from SPECFCSD.DAT).
     /// Saved with the world.
     pub special_force_classes: HashMap<crate::ids::DatId, SpecialForceClassDef>,
+    /// Regiment, special-force and facility classes keyed by `DatId`, with
+    /// what each costs to build (TROOPSD, SPECFCSD, DEFFACSD, MANFACSD,
+    /// PROFACSD). Saved with the world.
+    pub buildable_classes: HashMap<crate::ids::DatId, BuildableClass>,
     /// Game-balance parameters from GNPRTB.DAT (combat formulas, bombardment divisors, etc.).
     pub gnprtb: GnprtbParams,
     /// Side-aware startup parameters from SDPRTB.DAT.
@@ -1504,6 +1547,8 @@ pub struct FleetNames {
     /// counter list, `DAT_006b2bb0 + 0xc4`/`+0xc8`, node `[8]`).
     last_numbers: [u32; 2],
     mode: FleetNaming,
+    /// Fleets the player renamed (order 0x203).
+    renamed: slotmap::SecondaryMap<FleetKey, ()>,
 }
 
 fn default_difficulty_index() -> u8 {
@@ -1560,6 +1605,47 @@ impl GameWorld {
         self.fleet_names.names.insert(fleet, name);
     }
 
+    /// Rename `fleet` (order 0x203): `FUN_004ac950` hands the edit's text to
+    /// the name setter `FUN_004f6e60` only when it is not empty, so an empty
+    /// name changes nothing. port: no signature name replaces a name the
+    /// player gave.
+    pub fn rename_fleet(&mut self, fleet: FleetKey, name: &str) -> bool {
+        if name.is_empty() || !self.fleets.contains_key(fleet) {
+            return false;
+        }
+        self.fleet_names.names.insert(fleet, name.to_owned());
+        self.fleet_names.renamed.insert(fleet, ());
+        true
+    }
+
+    /// Rename capital ship `index` of `fleet` (order 0x203, `FUN_004f6e60`).
+    /// The setter refuses an object that is destroyed (`FUN_0053a000`) and
+    /// `FUN_004ac950` an empty name.
+    pub fn rename_ship(&mut self, fleet: FleetKey, index: usize, name: &str) -> bool {
+        let Some(ship) = self
+            .fleets
+            .get_mut(fleet)
+            .and_then(|value| value.capital_ships.get_mut(index))
+            .filter(|ship| ship.alive && !name.is_empty())
+        else {
+            return false;
+        };
+        ship.name = Some(name.to_owned());
+        true
+    }
+
+    /// A capital ship's name (`FUN_004f6270`): its own (`+0x34`), else its
+    /// class's.
+    #[must_use]
+    pub fn ship_name(&self, fleet: FleetKey, index: usize) -> Option<&str> {
+        let ship = self.fleets.get(fleet)?.capital_ships.get(index)?;
+        ship.name.as_deref().or_else(|| {
+            self.capital_ship_classes
+                .get(ship.class)
+                .map(|class| class.name.as_str())
+        })
+    }
+
     /// How this game names its fleets.
     #[must_use]
     pub const fn fleet_naming(&self) -> FleetNaming {
@@ -1585,7 +1671,7 @@ impl GameWorld {
 
     /// port: each signature name (`BankName::flagship`) no fleet holds goes
     /// to its side's first fleet, in slot order, that holds a ship of the
-    /// flagship's class. That fleet's old name returns to the bank. Only
+    /// flagship's class and that the player has not renamed. That fleet's old name returns to the bank. Only
     /// under Canonical naming.
     pub fn name_flagship_fleets(&mut self) {
         if self.fleet_names.mode != FleetNaming::Canonical {
@@ -1602,8 +1688,10 @@ impl GameWorld {
                 let flagship_fleet = self
                     .fleets
                     .iter()
-                    .find(|(_, fleet)| {
-                        fleet.is_alliance == is_alliance && self.holds_class(fleet, class)
+                    .find(|(key, fleet)| {
+                        fleet.is_alliance == is_alliance
+                            && !self.fleet_names.renamed.contains_key(*key)
+                            && self.holds_class(fleet, class)
                     })
                     .map(|(key, _)| key);
                 if let Some(fleet) = flagship_fleet {
@@ -1809,6 +1897,62 @@ mod tests {
         world.fleets[alpha].capital_ships = cruiser.capital_ships;
         world.name_flagship_fleets();
         assert_eq!(world.fleet_name(alpha), Some("Rebel Command Fleet"));
+        let next = world.insert_fleet(fleet(true));
+        assert_eq!(world.fleet_name(next), Some("Alpha Group"));
+    }
+
+    #[test]
+    fn a_renamed_fleet_keeps_its_name_when_it_gains_the_flagship() {
+        // port: the player's name wins over a signature name; the next
+        // fleet holding the flagship's class takes it instead.
+        let mut world = canonical_world();
+        let alpha = world.insert_fleet(fleet(true));
+        assert!(world.rename_fleet(alpha, "Home One Group"));
+        let cruiser = fleet_with(
+            &mut world,
+            true,
+            crate::fleet_name_bank::MON_CALAMARI_CRUISER,
+        );
+        world.fleets[alpha].capital_ships = cruiser.capital_ships.clone();
+        world.name_flagship_fleets();
+        assert_eq!(world.fleet_name(alpha), Some("Home One Group"));
+        let second = world.insert_fleet(cruiser);
+        world.name_flagship_fleets();
+        assert_eq!(world.fleet_name(second), Some("Rebel Command Fleet"));
+    }
+
+    #[test]
+    fn a_renamed_ship_shows_its_own_name_and_a_destroyed_one_refuses() {
+        // FUN_004f6270: the object's +0x34, else its class's name;
+        // FUN_004f6e60 refuses a destroyed object (FUN_0053a000).
+        let mut world = canonical_world();
+        let value = fleet_with(
+            &mut world,
+            true,
+            crate::fleet_name_bank::MON_CALAMARI_CRUISER,
+        );
+        let fleet = world.insert_fleet(value);
+        let class_name = world.ship_name(fleet, 0).map(str::to_owned);
+        assert!(class_name.is_some());
+        assert!(!world.rename_ship(fleet, 0, ""));
+        assert!(world.rename_ship(fleet, 0, "Home One"));
+        assert_eq!(world.ship_name(fleet, 0), Some("Home One"));
+        world.fleets[fleet].capital_ships[0].alive = false;
+        assert!(!world.rename_ship(fleet, 0, "Wreck"));
+        assert_eq!(world.ship_name(fleet, 0), Some("Home One"));
+        assert!(!world.rename_ship(fleet, 9, "Nobody"));
+    }
+
+    #[test]
+    fn an_empty_name_leaves_the_fleet_as_it_was() {
+        // FUN_004ac950 commits the edit's text only when its length is not 0.
+        let mut world = canonical_world();
+        let alpha = world.insert_fleet(fleet(true));
+        assert!(!world.rename_fleet(alpha, ""));
+        assert_eq!(world.fleet_name(alpha), Some("Alpha Group"));
+        assert!(world.rename_fleet(alpha, "Renegade"));
+        assert_eq!(world.fleet_name(alpha), Some("Renegade"));
+        // The bank name it gave up is free again.
         let next = world.insert_fleet(fleet(true));
         assert_eq!(world.fleet_name(next), Some("Alpha Group"));
     }

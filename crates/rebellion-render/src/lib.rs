@@ -1,8 +1,10 @@
 //! Galaxy map rendering and egui UI panels.
 
 pub mod advisor;
+pub mod agent_menu;
 pub mod audio;
 pub mod bmp_cache;
+pub mod build_selection;
 pub mod cockpit;
 pub mod defenses_window;
 pub mod encyclopedia;
@@ -20,6 +22,7 @@ pub mod game_speed;
 pub mod ground_combat;
 pub mod main_menu;
 pub mod main_menu_destinations;
+pub mod manufacturing_window;
 pub mod message_index;
 pub mod message_log;
 pub mod mission_dialog;
@@ -27,8 +30,10 @@ pub mod missions_window;
 pub mod move_confirmation;
 pub mod object_menu;
 pub mod panels;
+pub mod personnel_finder;
 pub mod quadrant_icons;
 pub mod sector_window;
+pub mod status_window;
 pub mod system_window;
 mod tactical_asset_cache;
 mod tactical_assets;
@@ -36,6 +41,7 @@ mod tactical_resources;
 pub mod tactical_view;
 pub mod targeting;
 pub mod theme;
+pub mod troop_finder;
 pub mod video_player;
 
 use egui_macroquad::egui;
@@ -44,7 +50,7 @@ use rebellion_core::blockade::BlockadeState;
 use rebellion_core::dat::ExplorationStatus;
 use rebellion_core::economy::EconomyState;
 use rebellion_core::ids::SystemKey;
-use rebellion_core::manufacturing::ManufacturingState;
+use rebellion_core::manufacturing::{ManufacturingState, ProductionArea};
 use rebellion_core::missions::MissionState;
 use rebellion_core::movement::MovementState;
 use rebellion_core::world::{ControlKind, GameWorld, System};
@@ -125,9 +131,9 @@ pub use missions_window::{
 };
 pub use panels::game_setup::{draw_game_setup, Difficulty, GameSetupAction, GameSetupState};
 pub use panels::{
-    draw_fleets, draw_manufacturing, draw_missions, draw_mod_manager, draw_officers,
-    draw_save_load, FleetsState, ManufacturingPanelState, ModInfo, ModManagerAction,
-    ModManagerState, OfficersState, PanelAction, SaveLoadPanelState, SaveSlotInfo,
+    draw_fleets, draw_missions, draw_mod_manager, draw_officers, draw_save_load, FleetsState,
+    ModInfo, ModManagerAction, ModManagerState, OfficersState, PanelAction, SaveLoadPanelState,
+    SaveSlotInfo,
 };
 pub use sector_window::{
     draw_sector_windows, SectorWindowAction, SectorWindowState, SECTOR_WINDOW_HEIGHT,
@@ -538,10 +544,13 @@ fn gid_metric(
     gid: &GidOverlayContext<'_>,
 ) -> u32 {
     let same_faction = |is_alliance: bool| is_alliance == player_is_alliance;
-    let queue_idle = gid
-        .manufacturing
-        .queue(system_key)
-        .is_none_or(rebellion_core::manufacturing::ProductionQueue::is_empty);
+    // Manual p. 48: an idle yard is one "that isn't already building
+    // something"; each area builds on its own (FUN_00509670).
+    let area_idle = |area| {
+        gid.manufacturing
+            .queue(system_key, area)
+            .is_none_or(rebellion_core::manufacturing::ProductionQueue::is_empty)
+    };
     match mode {
         GidMode::PopularSupport | GidMode::DisplayOff => 0,
         GidMode::Uprisings => u32::from(system_in_revolt(system_key, system, gid.uprisings)),
@@ -655,15 +664,19 @@ fn gid_metric(
                             }
                             _ => false,
                         };
-                        let idle_mode = matches!(
-                            mode,
-                            GidMode::IdleShipyards
-                                | GidMode::IdleTrainingFacilities
-                                | GidMode::IdleConstructionYards
-                        );
+                        let idle_area = match mode {
+                            GidMode::IdleShipyards => Some(ProductionArea::Shipyard),
+                            GidMode::IdleTrainingFacilities => {
+                                Some(ProductionArea::TrainingFacility)
+                            }
+                            GidMode::IdleConstructionYards => {
+                                Some(ProductionArea::ConstructionYard)
+                            }
+                            _ => None,
+                        };
                         same_faction(facility.is_alliance)
                             && correct_type
-                            && (!idle_mode || queue_idle)
+                            && idle_area.is_none_or(area_idle)
                     })
             })
             .count() as u32,
@@ -1621,5 +1634,72 @@ mod interaction_tests {
         world.systems[key].control = ControlKind::Uprising(rebellion_core::dat::Faction::Empire);
         assert!(system_in_revolt(key, &world.systems[key], &quiet));
         assert_eq!(metric(&quiet, &world), 1);
+    }
+    // Manual p. 48: an idle training yard is one "that isn't already
+    // building something"; a system's areas build on their own
+    // (FUN_00509670), so its shipyard is idle while its troops train.
+    #[test]
+    fn an_idle_yard_is_one_whose_own_area_is_not_building() {
+        let mut world = GameWorld::default();
+        let mut facility = |family: u32| {
+            world.manufacturing_facilities.insert(
+                rebellion_core::world::ManufacturingFacilityInstance {
+                    class_dat_id: rebellion_core::ids::DatId::new((family << 24) | 1),
+                    is_alliance: true,
+                    is_shipyard: family == 0x28,
+                },
+            )
+        };
+        let yards = vec![facility(0x28), facility(0x29)];
+        let key = world.systems.insert(System {
+            dat_id: rebellion_core::ids::DatId::new(0x9000_0001),
+            name: "Naboo".into(),
+            sector: rebellion_core::ids::SectorKey::default(),
+            x: 0,
+            y: 0,
+            exploration_status: rebellion_core::dat::ExplorationStatus::Explored,
+            popularity_alliance: 0.8,
+            popularity_empire: 0.2,
+            is_populated: true,
+            total_energy: 0,
+            raw_materials: 0,
+            espionage_rating: 0.0,
+            fleets: vec![],
+            ground_units: vec![],
+            special_forces: vec![],
+            defense_facilities: vec![],
+            manufacturing_facilities: yards,
+            production_facilities: vec![],
+            is_headquarters: false,
+            is_destroyed: false,
+            control: ControlKind::Controlled(rebellion_core::dat::Faction::Alliance),
+        });
+        let movement = rebellion_core::movement::MovementState::new();
+        let mut manufacturing = ManufacturingState::new();
+        manufacturing.enqueue(
+            key,
+            rebellion_core::manufacturing::QueueItem::new(
+                rebellion_core::manufacturing::BuildableKind::Troop(
+                    rebellion_core::ids::DatId::new(0x1000_0001),
+                ),
+                5,
+                5,
+            ),
+        );
+        let economy = rebellion_core::economy::EconomyState::default();
+        let missions = rebellion_core::missions::MissionState::new();
+        let uprisings = rebellion_core::uprising::UprisingState::default();
+        let gid = GidOverlayContext {
+            movement: &movement,
+            manufacturing: &manufacturing,
+            economy: &economy,
+            missions: &missions,
+            uprisings: &uprisings,
+        };
+        let metric = |mode| gid_metric(&world, key, &world.systems[key], true, mode, &gid);
+
+        assert_eq!(metric(GidMode::IdleShipyards), 1);
+        assert_eq!(metric(GidMode::IdleTrainingFacilities), 0);
+        assert_eq!(metric(GidMode::TrainingFacilities), 1);
     }
 }

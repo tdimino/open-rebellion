@@ -209,6 +209,17 @@ Vtable slots: `[0]` `FUN_004a78d0`, `[5]` `FUN_004a86d0` (window proc),
   - `0x1c..0x1f` page 3;
   - `0x10..0x13` page 2;
   - `0x30..0x3b` page 1.
+- **Menu** (2026-10-06, Claude, from the vtable at `0x0065be30` read out
+  of REBEXE.EXE): the class keeps the base dialog's slot 7 (`+0x1c`,
+  `FUN_004ac5c0`, the right-release handler) and slot 8 (`+0x20`,
+  `FUN_004ac730`, the item handler), as type 9 (vtable `0x00659e68`) does.
+  So a right release on the list opens the object pop-up menu
+  (`object-popup-menu.md`) for slot 22's selection: `FUN_004a7a20` walks
+  the list's selected items (`FUN_00609410`) into the team. A right press
+  selects as a left press does (`FUN_006083c0`), and a press over no item
+  clears the selection (`FUN_006094b0`). port: `defenses_window.rs` opens
+  it for characters, special forces and regiments; a defense facility's
+  class menu is not ported.
 - **Release target** (`FUN_004aa380`): the list item under the point,
   offset by (7, 81), else the window's system.
 - **Labels**: the title `+0x49` is the system name (`FUN_004f62d0`) at

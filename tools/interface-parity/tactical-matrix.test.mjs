@@ -17,7 +17,7 @@ import {
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../..");
 const readJson = (relative) => JSON.parse(fs.readFileSync(path.join(root, relative), "utf8"));
-const ledger = readJson("docs/qa/2026-09-10-interface-parity-audit/surface-ledger.json");
+const ledger = readJson("docs/qa/2026-09-10-interface-parity-audit/2026-10-06-surface-ledger.json");
 const catalog = readJson("tools/interface-parity/scenarios/tactical.catalog.json");
 const example = readJson("tools/interface-parity/tactical-a0-manifest.example.json");
 

@@ -25,7 +25,6 @@ pub mod fleets;
 pub mod game_setup;
 pub mod jedi;
 pub mod loyalty;
-pub mod manufacturing;
 pub mod missions;
 pub mod mod_manager;
 pub mod officers;
@@ -36,7 +35,6 @@ pub mod save_load;
 pub mod command_palette;
 
 pub use fleets::{draw_fleets, FleetsState};
-pub use manufacturing::{draw_manufacturing, ManufacturingPanelState};
 pub use missions::draw_missions;
 pub use mod_manager::{draw_mod_manager, ModInfo, ModManagerAction, ModManagerState};
 pub use officers::{draw_officers, OfficersState};
@@ -79,6 +77,20 @@ pub enum PanelAction {
     /// A fleet's or capital ships' Move (`0x201`) released on a Fleet window
     /// (`fleet_join::join_fleet`).
     JoinFleet { mover: FleetMover, target: FleetKey },
+    /// Destination (`0x214`): `system`'s production areas, or the one
+    /// given, deliver to `destination` (`ManufacturingState::set_destination`).
+    SetDestination {
+        system: SystemKey,
+        area: Option<rebellion_core::manufacturing::ProductionArea>,
+        destination: SystemKey,
+    },
+    /// Rename (`0x203`) issued from its edit: `FUN_004f6e60` sets a fleet's
+    /// or, with `ship`, one of its capital ships' name.
+    Rename {
+        fleet: FleetKey,
+        ship: Option<usize>,
+        name: String,
+    },
     /// A capital ship's Create Fleet (`0x270`, `fleet_join::create_fleet`).
     CreateFleet {
         fleet: FleetKey,
@@ -107,19 +119,20 @@ pub enum PanelAction {
     },
 
     // ── Manufacturing ─────────────────────────────────────────────────────────
-    /// Add a buildable to the production queue at a system. With a
-    /// `destination`, the finished object travels there (F-030).
-    Enqueue {
+    /// Stop (`0x213`): `system`'s `area` drops every unit it was building
+    /// (`ManufacturingState::stop`).
+    StopProduction {
         system: SystemKey,
-        kind: BuildableKind,
-        cost: u32,
-        ticks: u32,
-        destination: Option<SystemKey>,
+        area: rebellion_core::manufacturing::ProductionArea,
     },
-    /// Cancel the queue item at `index` in a system's production queue.
-    CancelQueueItem { system: SystemKey, index: usize },
-    /// Move queue item at `index` to the front (prioritize).
-    PrioritizeQueueItem { system: SystemKey, index: usize },
+    /// Build Selection's Confirm (`FUN_00438980`): `count` units of `kind`
+    /// replace what `system`'s `area` was building.
+    BuildProduction {
+        system: SystemKey,
+        area: rebellion_core::manufacturing::ProductionArea,
+        kind: BuildableKind,
+        count: u32,
+    },
 
     // ── Missions ──────────────────────────────────────────────────────────────
     /// Dispatch a mission ordered on day `tick` with its agents and decoys

@@ -176,6 +176,26 @@ impl GidMode {
     pub const fn is_active(self) -> bool {
         !matches!(self, Self::DisplayOff)
     }
+
+    /// The display Alt+`digit` selects. TEXTCOMM.DLL accelerator table 11
+    /// binds Alt+1..Alt+9 to commands 0xbca..0xbd2, and `FUN_00422ce0`
+    /// hands each to `FUN_00425d00` with modes 0x11, 0x12, 0x21, 0x22, 0x43,
+    /// 0x44, 0x65, 0x66 and 0x67.
+    #[must_use]
+    pub const fn from_accelerator_digit(digit: u8) -> Option<Self> {
+        Some(match digit {
+            1 => Self::PopularSupport,
+            2 => Self::Uprisings,
+            3 => Self::IdleFleets,
+            4 => Self::FleetsEnRoute,
+            5 => Self::IdlePersonnel,
+            6 => Self::ActivePersonnel,
+            7 => Self::IdleShipyards,
+            8 => Self::IdleTrainingFacilities,
+            9 => Self::IdleConstructionYards,
+            _ => return None,
+        })
+    }
 }
 
 /// Root branches built by `FUN_004511e0`.
@@ -550,6 +570,22 @@ pub fn strategic_message_index_controls(
     }
 }
 
+/// The rail control under a 640 by 480 canvas point, by its command
+/// (`0x136..0x13e`, `FUN_00427270`); right and bottom edges are exclusive.
+#[must_use]
+pub fn message_index_command_at(faction: CockpitFaction, point: (f32, f32)) -> Option<u16> {
+    strategic_message_index_controls(faction)
+        .iter()
+        .find(|control| {
+            let rect = control.rect;
+            point.0 >= rect.x
+                && point.0 < rect.x + rect.width
+                && point.1 >= rect.y
+                && point.1 < rect.y + rect.height
+        })
+        .map(|control| control.command_id)
+}
+
 /// Uniformly scaled strategic canvas and its transparent galaxy aperture.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CockpitLayout {
@@ -601,6 +637,18 @@ impl CockpitState {
             faction,
             ..Default::default()
         }
+    }
+
+    /// Show `mode` on the keyboard's behalf, as Alt+1..9 does. Returns false
+    /// when `mode` is already shown: `FUN_00425d00` returns early for the
+    /// current mode, so the key changes nothing. hyp: an open GID menu takes
+    /// the keys, as `TrackPopupMenu`'s modal loop would.
+    pub fn select_gid_from_keyboard(&mut self, mode: GidMode) -> bool {
+        if self.gid_ui.menu_open || self.gid_mode == mode {
+            return false;
+        }
+        self.gid_mode = mode;
+        true
     }
 
     /// Compute the recovered command-center layout for the current screen.
@@ -1593,6 +1641,38 @@ mod tests {
     }
 
     #[test]
+    fn alt_digits_select_the_nine_accelerator_displays_in_order() {
+        // FUN_00422ce0 commands 0xbca..0xbd2 pass these modes to FUN_00425d00.
+        let modes: Vec<u8> = (1..=9)
+            .map(|digit| GidMode::from_accelerator_digit(digit).unwrap().command_id())
+            .collect();
+        assert_eq!(
+            modes,
+            [0x11, 0x12, 0x21, 0x22, 0x43, 0x44, 0x65, 0x66, 0x67]
+        );
+        assert_eq!(GidMode::from_accelerator_digit(0), None);
+        assert_eq!(GidMode::from_accelerator_digit(10), None);
+    }
+
+    #[test]
+    fn an_accelerator_for_the_shown_display_changes_nothing() {
+        // FUN_00425d00 returns early when the requested mode is current.
+        let mut state = CockpitState::new(CockpitFaction::Alliance);
+        assert!(!state.select_gid_from_keyboard(GidMode::PopularSupport));
+        assert!(state.select_gid_from_keyboard(GidMode::IdleFleets));
+        assert_eq!(state.gid_mode, GidMode::IdleFleets);
+        assert!(!state.select_gid_from_keyboard(GidMode::IdleFleets));
+    }
+
+    #[test]
+    fn an_open_gid_menu_holds_the_accelerators() {
+        let mut state = CockpitState::new(CockpitFaction::Empire);
+        state.gid_ui.menu_open = true;
+        assert!(!state.select_gid_from_keyboard(GidMode::Uprisings));
+        assert_eq!(state.gid_mode, GidMode::PopularSupport);
+    }
+
+    #[test]
     fn alliance_uses_recovered_640_by_480_aperture() {
         // Source: FUN_00421c70 command-center client rectangles (ghidra/notes/FUN_00421c70.c).
         let layout = CockpitState::new(CockpitFaction::Alliance).layout_for(640.0, 480.0);
@@ -1873,6 +1953,36 @@ mod tests {
         assert_eq!(
             controls[5].button,
             CockpitButton::GalacticInformationDisplay
+        );
+    }
+
+    #[test]
+    fn a_click_on_a_rail_light_names_its_command() {
+        // FUN_00427270: Alliance 0x136 at (3,109), Empire 0x13e at (611,310),
+        // each 27 by 22.
+        assert_eq!(
+            message_index_command_at(CockpitFaction::Alliance, (3.0, 109.0)),
+            Some(0x136)
+        );
+        assert_eq!(
+            message_index_command_at(CockpitFaction::Alliance, (29.9, 330.9)),
+            Some(0x13e)
+        );
+        assert_eq!(
+            message_index_command_at(CockpitFaction::Alliance, (30.0, 109.0)),
+            None
+        );
+        assert_eq!(
+            message_index_command_at(CockpitFaction::Alliance, (16.0, 131.0)),
+            None
+        );
+        assert_eq!(
+            message_index_command_at(CockpitFaction::Empire, (611.0, 310.0)),
+            Some(0x13e)
+        );
+        assert_eq!(
+            message_index_command_at(CockpitFaction::Empire, (3.0, 109.0)),
+            None
         );
     }
 

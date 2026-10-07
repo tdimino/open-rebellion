@@ -38,10 +38,9 @@ const FLEET_MOVE_BLOCKADE = 47;
 const confirmation = { width: 424, height: 331 };
 const checkmark = { x: 355 + 25.5, y: 244 + 17.5 };
 const cross = { x: 355 + 25.5, y: 281 + 17.5 };
-// The system window the fixture opens 5 pixels in from the galaxy view's
+// The Fleet window the fixture opens 5 pixels in from the galaxy view's
 // top-right corner.
-const systemWindow = { width: 231, height: 304 };
-const BLOCKADE_REFUSAL = "Fleet move rejected: fleet is held in its system by a blockade";
+const fleetWindow = { width: 235, height: 304 };
 const runId = `${new Date().toISOString().replace(/[:.]/g, "-")}-${process.pid}`;
 const runDir = path.join(root, ".artifacts/interface-parity", `fleet-move-${runId}`);
 
@@ -175,17 +174,17 @@ function inside(point, rect) {
 }
 
 // The galaxy view's points that no window covers: outside the sector and
-// system windows the fixture opens, and inside `area` when given.
+// Fleet windows the fixture opens, and inside `area` when given.
 function grown(rect, margin) {
   return { x: rect.x - margin, y: rect.y - margin, width: rect.width + 2 * margin, height: rect.height + 2 * margin };
 }
 
 function bare(faction, point, area) {
   const sector = grown({ ...faction.sector, ...sectorWindow }, PICK_RADIUS);
-  const system = grown({
-    x: faction.galaxy.x + faction.galaxy.width - systemWindow.width - 5,
+  const fleets = grown({
+    x: faction.galaxy.x + faction.galaxy.width - fleetWindow.width - 5,
     y: faction.galaxy.y + 5,
-    ...systemWindow,
+    ...fleetWindow,
   }, PICK_RADIUS);
   // Keep clear of the cockpit frame at the view's edges.
   const view = {
@@ -194,7 +193,7 @@ function bare(faction, point, area) {
     width: faction.galaxy.width - 12,
     height: faction.galaxy.height - 12,
   };
-  return inside(point, view) && !inside(point, sector) && !inside(point, system)
+  return inside(point, view) && !inside(point, sector) && !inside(point, fleets)
     && (!area || inside(point, area));
 }
 
@@ -360,8 +359,9 @@ const cases = [
   {
     name: "drag",
     code: FLEET_MOVE,
-    // A drag out of the system window issues 0x214, which never confirms and
-    // departs at once (FUN_00422ce0, FUN_00487cc0).
+    // A drag out of the Fleet window's list issues 0x201 (FUN_00422ce0,
+    // window type 4), which asks nothing outside a blockade and departs at
+    // once (FUN_00487cc0).
     async run(page, faction, setup) {
       await drag(page, fleetPoint(setup), targetPoint(setup));
       const observed = await until(page, "the dragged fleet departs",
@@ -391,13 +391,16 @@ const cases = [
   {
     name: "blockade-drag",
     code: FLEET_MOVE_BLOCKADE,
-    // FUN_00537180 → FUN_00552210: a blockaded fleet's 0x214 is refused 1/1.
+    // The drag's 0x201 asks only when the blockaded system is the fleet's
+    // own side (FUN_00487cc0); here the other side holds it, so the fleet
+    // departs without the window.
     async run(page, faction, setup) {
       await drag(page, fleetPoint(setup), targetPoint(setup));
-      const observed = await until(page, "the drag is refused",
-        (text) => (window.__openRebellionInterfaceFleetMoves || []).at(-1)?.last_message === text,
-        BLOCKADE_REFUSAL);
-      assert.equal(observed.in_transit, false, "the blockaded fleet left");
+      const observed = await until(page, "the blockaded fleet departs",
+        (target) => (window.__openRebellionInterfaceFleetMoves || []).some(
+          (o) => o.in_transit && o.destination_dat_id === target), setup.target_dat_id);
+      assert.ok(inTransitTo(setup)(observed));
+      assert.ok((await observations(page)).every((o) => !o.confirmation_open), "the drag opened the window");
       return { observed };
     },
   },
@@ -540,7 +543,7 @@ async function main() {
   const summary = {
     schema_version: 1,
     family: "fleet-move",
-    scope: "test-only fleet Move and Confirmed Move through the original entries: the pop-up menu and targeting (0x201, 0x202 with FUN_0044f060's window), and the system window drag (0x214), on both sides",
+    scope: "test-only fleet Move and Confirmed Move through the original entries: the pop-up menu and targeting (0x201, 0x202 with FUN_0044f060's window), and the Fleet window drag (0x201), on both sides",
     status: passed ? "pass" : "fail",
     browser_version: browserManifest.version,
     browser_executable: executable,

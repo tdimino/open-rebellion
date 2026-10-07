@@ -31,12 +31,12 @@ const expectedCategories = [
   { command_id: 0x75, label_resource_id: 0x1853 },
 ];
 const starts = {
-  index: 57,
-  first: 58,
-  last: 59,
-  longest: 60,
-  unavailable: 61,
-  contextual: 62,
+  index: 59,
+  first: 60,
+  last: 61,
+  longest: 62,
+  unavailable: 63,
+  contextual: 64,
 };
 const factions = [
   {

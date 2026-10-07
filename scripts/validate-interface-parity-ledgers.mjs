@@ -11,7 +11,7 @@ const auditDir = path.join(
   root,
   "docs/qa/2026-09-10-interface-parity-audit",
 );
-const surfacePath = path.join(auditDir, "surface-ledger.json");
+const surfacePath = path.join(auditDir, "2026-10-06-surface-ledger.json");
 const reversePath = path.join(auditDir, "reverse-engineering-ledger.json");
 const auditPath = path.join(auditDir, "audit-report.json");
 const catalogPath = path.join(root, "tools/interface-parity/scenarios/gid.catalog.json");

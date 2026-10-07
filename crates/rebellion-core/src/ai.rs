@@ -32,10 +32,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::dat::ExplorationStatus;
 use crate::ids::{
-    CapitalShipKey, CharacterKey, DefenseFacilityKey, FighterKey, FleetKey,
-    ManufacturingFacilityKey, SystemKey, TroopKey,
+    CapitalShipKey, CharacterKey, DatId, FighterKey, FleetKey, ManufacturingFacilityKey, SystemKey,
+    TroopKey,
 };
-use crate::manufacturing::{BuildableKind, ManufacturingState};
+use crate::manufacturing::{BuildableKind, FacilityBuild, ManufacturingState};
 use crate::mission_planning::Planner;
 use crate::missions::{MissionFaction, MissionKind, MissionState};
 use crate::research::{ResearchState, ResearchSystem, TechType};
@@ -1087,8 +1087,7 @@ impl AISystem {
                 continue;
             }
 
-            let queue = mfg_state.queue(sys_key);
-            let queue_len = queue.map_or(0, super::manufacturing::ProductionQueue::len);
+            let queue_len = mfg_state.queued_at(sys_key);
 
             // Allow up to 3 items in queue (don't just wait for empty).
             if queue_len >= 3 {
@@ -1238,7 +1237,7 @@ impl AISystem {
     fn find_manufacturing_facility_class(
         world: &GameWorld,
         faction: AiFaction,
-    ) -> Option<ManufacturingFacilityKey> {
+    ) -> Option<FacilityBuild> {
         world
             .manufacturing_facilities
             .iter()
@@ -1246,11 +1245,14 @@ impl AISystem {
                 AiFaction::Alliance => f.is_alliance,
                 AiFaction::Empire => !f.is_alliance,
             })
-            .map(|(k, _)| k)
+            .map(|(_, f)| FacilityBuild {
+                class: f.class_dat_id,
+                is_alliance: f.is_alliance,
+            })
     }
 
     /// Find a troop unit key to use as a class reference for troop production.
-    fn find_troop_class(world: &GameWorld, faction: AiFaction) -> Option<TroopKey> {
+    fn find_troop_class(world: &GameWorld, faction: AiFaction) -> Option<DatId> {
         world
             .troops
             .iter()
@@ -1258,14 +1260,11 @@ impl AISystem {
                 AiFaction::Alliance => t.is_alliance,
                 AiFaction::Empire => !t.is_alliance,
             })
-            .map(|(k, _)| k)
+            .map(|(_, t)| t.class_dat_id)
     }
 
     /// Find a defense facility key to use as a class reference for defense construction.
-    fn find_defense_facility_class(
-        world: &GameWorld,
-        faction: AiFaction,
-    ) -> Option<DefenseFacilityKey> {
+    fn find_defense_facility_class(world: &GameWorld, faction: AiFaction) -> Option<FacilityBuild> {
         world
             .defense_facilities
             .iter()
@@ -1273,7 +1272,10 @@ impl AISystem {
                 AiFaction::Alliance => d.is_alliance,
                 AiFaction::Empire => !d.is_alliance,
             })
-            .map(|(k, _)| k)
+            .map(|(_, d)| FacilityBuild {
+                class: d.class_dat_id,
+                is_alliance: d.is_alliance,
+            })
     }
 
     // -----------------------------------------------------------------------
@@ -2413,6 +2415,109 @@ mod tests {
             recruited: true,
             ..Default::default()
         })
+    }
+
+    /// port: with no ship class to build, the AI orders regiments, then
+    /// defenses, then construction yards, naming the class of one it owns.
+    #[test]
+    fn the_ai_orders_ground_and_facility_classes_it_already_fields() {
+        let mut world = empty_world();
+        let sector = add_sector(&mut world);
+        let yard =
+            world
+                .manufacturing_facilities
+                .insert(crate::world::ManufacturingFacilityInstance {
+                    class_dat_id: DatId(0x2a00_0003),
+                    is_alliance: false,
+                    is_shipyard: false,
+                });
+        let sys_key = world.systems.insert(System {
+            dat_id: DatId(0),
+            name: "Coruscant".into(),
+            sector,
+            x: 0,
+            y: 0,
+            exploration_status: crate::dat::ExplorationStatus::Explored,
+            popularity_alliance: 0.1,
+            popularity_empire: 0.9,
+            is_populated: true,
+            total_energy: 0,
+            raw_materials: 0,
+            espionage_rating: 0.0,
+            fleets: vec![],
+            ground_units: vec![],
+            special_forces: vec![],
+            defense_facilities: vec![],
+            manufacturing_facilities: vec![yard],
+            production_facilities: vec![],
+            is_headquarters: false,
+            is_destroyed: false,
+            control: ControlKind::Controlled(crate::dat::Faction::Empire),
+        });
+        let trooper = |class| crate::world::TroopUnit {
+            class_dat_id: DatId(class),
+            is_alliance: false,
+            regiment_strength: 100,
+        };
+        // An Alliance regiment first, so the Empire's must be found by side.
+        world.troops.insert(crate::world::TroopUnit {
+            is_alliance: true,
+            ..trooper(0x1000_0001)
+        });
+        world.troops.insert(trooper(0x1000_0006));
+        world
+            .defense_facilities
+            .insert(crate::world::DefenseFacilityInstance {
+                class_dat_id: DatId(0x2200_0001),
+                is_alliance: false,
+            });
+        let ordered = |world: &GameWorld| {
+            AISystem::advance(
+                &mut AIState::new(AiFaction::Empire),
+                world,
+                &ManufacturingState::new(),
+                &MissionState::new(),
+                &crate::movement::MovementState::new(),
+                &ticks(7),
+                &GameConfig::default(),
+                &crate::research::ResearchState::new(),
+            )
+            .into_iter()
+            .find_map(|action| match action {
+                AIAction::EnqueueProduction { system, kind, .. } if system == sys_key => Some(kind),
+                _ => None,
+            })
+        };
+        let empire = |class| FacilityBuild {
+            class: DatId(class),
+            is_alliance: false,
+        };
+
+        assert_eq!(
+            ordered(&world),
+            Some(BuildableKind::Troop(DatId(0x1000_0006)))
+        );
+        for _ in 0..2 {
+            let key = world.troops.insert(trooper(0x1000_0006));
+            world.systems[sys_key].ground_units.push(key);
+        }
+        assert_eq!(
+            ordered(&world),
+            Some(BuildableKind::DefenseFacility(empire(0x2200_0001)))
+        );
+        for _ in 0..2 {
+            let key = world
+                .defense_facilities
+                .insert(crate::world::DefenseFacilityInstance {
+                    class_dat_id: DatId(0x2200_0001),
+                    is_alliance: false,
+                });
+            world.systems[sys_key].defense_facilities.push(key);
+        }
+        assert_eq!(
+            ordered(&world),
+            Some(BuildableKind::ManufacturingFacility(empire(0x2a00_0003)))
+        );
     }
 
     fn ticks(n: u64) -> Vec<TickEvent> {

@@ -24,6 +24,7 @@ const FLEET_LOAD = 48;
 const FLEET_LOAD_FULL = 49;
 const REGIMENT_UNLOAD_REFUSED = 51;
 const FLEET_JOIN = 52;
+const PRODUCTION_DESTINATION = 54;
 // FUN_004a2630: the Fleet window, 235 by 304 (background 10770).
 const windowSize = { width: 235, height: 304 };
 // Side art: the Alliance's resources, the Empire's 50 higher
@@ -257,6 +258,17 @@ async function click(page, point, button = "left") {
   await frames(page);
   await page.mouse.up({ button });
   await frames(page);
+}
+
+async function press(page, name) {
+  await page.keyboard.down(name);
+  await frames(page);
+  await page.keyboard.up(name);
+  await frames(page);
+}
+
+function escapeRegExp(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 // Two clicks inside egui's double-click time.
@@ -503,8 +515,9 @@ const cases = [
       const origin = { x: loaded.origin[0], y: loaded.origin[1] };
       await click(page, { x: origin.x + 218 + 7, y: origin.y + 3 + 7 });
       await until(page, "the close button closes the Fleet window", (o) => !o.window_open);
-      await click(page, point(setup.fleets_tab));
-      const menu = await openMenu(page, point(setup.troop_item), directory, "fleet");
+      // The sector window's fleet icon offers the system's fleets' Move
+      // (FUN_00507290 kind 0x10, sector-icon-menus.md).
+      const menu = await openMenu(page, point(setup.icon), directory, "fleet");
       await choose(page, menu, menu.move_row, "Move");
       await click(page, point(setup.target_planet));
       const departed = await until(page, "the fleet departs", (o) => o.in_transit);
@@ -520,13 +533,13 @@ const cases = [
   {
     name: "unload",
     code: FLEET_LOAD,
-    // A drag out of the Troops tab released on the system window (type 9,
-    // +0x70: its subject) issues 0x201; in its own system the regiment
+    // A drag out of the Troops tab released on the Defenses window (type
+    // 10, +0x70: its subject, FUN_004aa470) issues 0x201; in its own system the regiment
     // changes container at once (FUN_00556390, regiment-unload.md).
     async run(page, faction, setup, directory) {
       const { loaded } = await loadRegiment(page, setup, directory);
       const troops = await openTroopsTab(page, loaded);
-      await dragItem(page, point(troops.first_item), point(setup.fleets_tab));
+      await dragItem(page, point(troops.first_item), point(setup.defenses_window));
       const unloaded = await until(page, "the regiment lands on its planet",
         (o, primary) => !o.aboard && !o.held && !o.regiment_travelling && o.troop_system_dat_id === primary,
         setup.primary_dat_id);
@@ -572,7 +585,7 @@ const cases = [
     code: REGIMENT_UNLOAD_REFUSED,
     // FUN_0053d430: a regiment group's destination of another side, other
     // than an existing unpopulated system, is refused 1/0x28. The regiment
-    // starts aboard and held, and the system window shows the other side's
+    // starts aboard and held, and the Defenses window shows the other side's
     // populated target (the Fleet window covers its planet).
     async run(page, faction, setup, directory) {
       const opened = await openFleetWindow(page, setup);
@@ -580,7 +593,7 @@ const cases = [
       assert.ok(selected.aboard && selected.held, JSON.stringify(selected));
       assert.deepEqual(selected.enabled, [true, false, true, false], "the Troops tab lights with a regiment aboard");
       const troops = await openTroopsTab(page, selected);
-      await dragItem(page, point(troops.first_item), point(setup.fleets_tab));
+      await dragItem(page, point(troops.first_item), point(setup.defenses_window));
       const refusal = "Regiment move rejected: the destination belongs to another side";
       const refused = await until(page, "the other side's planet refuses the regiment",
         (o, text) => o.last_message === text, refusal);
@@ -682,12 +695,12 @@ const cases = [
   {
     name: "ship-to-system",
     code: FLEET_JOIN,
-    // A ship dragged onto its own system's window: a system holds no
+    // A ship dragged onto its own system's Defenses window: a system holds no
     // capital ships (FUN_00507750), so the ship forms a fleet of its own
     // there (FUN_005097d0).
     async run(page, faction, setup, directory) {
       const selected = await openJoining(page, setup);
-      await dragItem(page, point(selected.first_item), point(setup.fleets_tab));
+      await dragItem(page, point(selected.first_item), point(setup.defenses_window));
       const created = await until(page, "the ship forms a fleet of its own",
         (o) => JSON.stringify(o.fleets.map((f) => f.ships)) === "[1,1,1]");
       assert.equal(created.entries, 3);
@@ -712,13 +725,13 @@ const cases = [
   {
     name: "ship-move-system",
     code: FLEET_JOIN,
-    // A ship's pop-up Move released on its own system's window forms a
+    // A ship's pop-up Move released on its own system's Defenses window forms a
     // fleet of its own there (FUN_00507750, FUN_005097d0).
     async run(page, faction, setup, directory) {
       const selected = await openJoining(page, setup);
       const menu = await openMenu(page, point(selected.first_item), directory, "ship");
       await choose(page, menu, menu.move_row, "Move");
-      await click(page, point(setup.fleets_tab));
+      await click(page, point(setup.defenses_window));
       const created = await until(page, "the ship's Move forms a fleet of its own",
         (o) => JSON.stringify(o.fleets.map((f) => f.ships)) === "[1,1,1]");
       return { selected, menu, created };
@@ -778,6 +791,49 @@ const cases = [
       const joined = await until(page, "the checkmark joins the fleets",
         (o) => !o.confirmation_open && JSON.stringify(o.fleets.map((f) => f.ships)) === "[3]");
       return { opened, menu, open, joined };
+    },
+  },
+  {
+    name: "rename",
+    code: FLEET_LOAD,
+    // Rename (0x203, FUN_00486fb0 -> FUN_0041d600 -> FUN_00429350) puts an
+    // edit over the fleet's name with the name selected. An empty name
+    // keeps it open (FUN_004ac950), so the name typed after it is the one
+    // Enter submits.
+    async run(page, faction, setup, directory, source, log) {
+      const opened = await openFleetWindow(page, setup);
+      const menu = await openMenu(page, point(opened.fleet_entry), directory, "fleet");
+      await choose(page, menu, menu.rename_row, "Rename");
+      await frames(page, 2);
+      await press(page, "Backspace");
+      await press(page, "Enter");
+      await page.waitForTimeout(300);
+      assert.equal(log.countOf(/command=0x203 destination=rename/), 0, "an empty name submits nothing");
+      await shot(page, directory, "rename-empty");
+      await page.keyboard.type("Rogue");
+      await frames(page, 2);
+      await press(page, "Enter");
+      const applied = await log.logged("Enter submits the typed name",
+        /command=0x203 destination=rename status=applied name=Rogue$/);
+      await shot(page, directory, "renamed");
+      return { opened, menu, applied };
+    },
+  },
+  {
+    name: "destination",
+    code: PRODUCTION_DESTINATION,
+    // The facility icon's Destination (0x214, TEXTSTRA 12290) released on a
+    // planet sends the system's production areas' output there
+    // (FUN_00512700 kind 4).
+    async run(page, faction, setup, directory, source, log) {
+      assert.ok(setup.system_icon, `the facility icon is shown: ${JSON.stringify(setup)}`);
+      const menu = await openMenu(page, point(setup.system_icon), directory, "facility");
+      await choose(page, menu, menu.destination_row, "Destination");
+      await click(page, point(setup.target_planet));
+      const set = await log.logged("the release sets the destination", new RegExp(
+        `command=0x214 destination=production_destination status=set areas=\\d+ to=${escapeRegExp(setup.target_name)}$`));
+      await shot(page, directory, "destination-set");
+      return { menu, set };
     },
   },
 ];
@@ -847,7 +903,20 @@ async function inspect(server, source, faction, testCase, executable) {
     await page.evaluate(() => document.fonts.ready);
     const { bytes: _ready, ...before } = await shot(page, directory, "ready");
 
-    const checks = await testCase.run(page, faction, setup, directory, source);
+    // Wait for the `count`th console line matching `pattern`.
+    const log = {
+      countOf: (pattern) => consoleLines.filter((line) => pattern.test(line.text)).length,
+      async logged(description, pattern, count = 1, timeout = 10_000) {
+        const started = Date.now();
+        while (Date.now() - started < timeout) {
+          const lines = consoleLines.filter((line) => pattern.test(line.text));
+          if (lines.length >= count) return lines[count - 1].text;
+          await page.waitForTimeout(100);
+        }
+        throw new Error(`${description}: ${pattern} x${count} not logged; last lines ${JSON.stringify(consoleLines.slice(-6).map((line) => line.text))}`);
+      },
+    };
+    const checks = await testCase.run(page, faction, setup, directory, source, log);
     await page.mouse.move(2, 2);
     await frames(page);
     const { bytes: _final, ...after } = await shot(page, directory, "final");
@@ -935,7 +1004,7 @@ async function main() {
   const summary = {
     schema_version: 1,
     family: "fleet-window",
-    scope: "test-only Fleet window (type 4) through its original entry, the sector window's fleet icon: chrome against STRATEGY.DLL, a regiment's Move onto a fleet, the hold, the fleet's move and the landing, a full fleet's refusal, a regiment dragged out of the Troops tab (a wheel mid-drag does not zoom the map) onto its own system's window and onto another side's populated system's window (refused), a regiment travelling on its own, and joining and splitting fleets (a ship dragged or moved onto another fleet or its own system, a ship refused by its own fleet, Create Fleet, a fleet's Move and Confirmed Move onto another fleet, and a Confirmed Move onto itself refused before it asks), on both sides",
+    scope: "test-only Fleet window (type 4) through its original entry, the sector window's fleet icon: chrome against STRATEGY.DLL, a regiment's Move onto a fleet, the hold, the fleet's move and the landing, a full fleet's refusal, a regiment dragged out of the Troops tab (a wheel mid-drag does not zoom the map) onto its own system's window and onto another side's populated system's window (refused), a regiment travelling on its own, and joining and splitting fleets (a ship dragged or moved onto another fleet or its own system, a ship refused by its own fleet, Create Fleet, a fleet's Move and Confirmed Move onto another fleet, and a Confirmed Move onto itself refused before it asks), Rename (0x203: an emptied name keeps the edit open, Enter submits the typed one), and the facility icon's Destination (0x214) released on a planet, on both sides",
     status: passed ? "pass" : "fail",
     browser_version: browserManifest.version,
     browser_executable: executable,

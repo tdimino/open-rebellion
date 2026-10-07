@@ -1,7 +1,7 @@
 # Space-battle graphic inventory
 
 The original battle mode spans
-[106 required interface cells](../../qa/2026-09-10-interface-parity-audit/surface-ledger.json)
+[106 required interface cells](../../qa/2026-09-10-interface-parity-audit/2026-10-06-surface-ledger.json)
 in `TAC-01` through `TAC-07`. This page is the art lookup companion to the
 [standalone battle-launcher plan](../../plans/2026-09-12-tooling-standalone-space-battle-launcher.md).
 The launcher will exercise the same production battle scene as a campaign, but

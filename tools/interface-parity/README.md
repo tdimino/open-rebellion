@@ -24,11 +24,13 @@ node encyclopedia-index-shell.mjs --no-build  # reuse a verified fixture build
 node mission-dialog.mjs  # verify the original mission dialog's chrome on both pages
 node mission-dialog.mjs --no-build  # reuse a verified fixture build
 node fleet-move.mjs  # verify fleet Move, Confirmed Move and the system window drag
-node fleet-window.mjs  # verify the Fleet window, regiments, and joining and splitting
+node fleet-window.mjs  # verify the Fleet window, regiments, joining and splitting, rename and destination
 node sector-quadrants.mjs  # verify the quadrant icons and the Defenses and Missions windows
 node fleet-finder.mjs  # verify the Fleet and Ship Finder
 node fleet-finder.mjs --no-build --only=alliance/chrome  # one faction/case, reusing a build
 node fleet-registry.mjs  # verify the Fleet Registry, a port extension, from the main menu
+node audit-batch.mjs  # verify the Troop/Personnel Finders, Message Index, Alt keys and Agent menu
+node status-window.mjs  # verify a character's Status window from its pop-up menu
 ```
 
 Harness unit regressions can be run from the repository root with
@@ -81,8 +83,10 @@ asserts. `fleet-move.mjs` covers the fleet pop-up menu, targeting, the
 Confirmed Move window and the system window drag. `fleet-window.mjs` opens the
 Fleet window from the sector window's fleet icon, compares its chrome against
 STRATEGY.DLL, and covers loading and holding regiments, landing, unloading by
-hand, a regiment travelling on its own, and joining and splitting fleets.
-`sector-quadrants.mjs` covers the quadrant icons and the System, System
+hand, a regiment travelling on its own, joining and splitting fleets, Rename
+(`0x203`: an emptied name keeps the edit open, Enter submits the typed one)
+and the facility icon's Destination (`0x214`, fixture code 54: the release on
+a planet sets it). `sector-quadrants.mjs` covers the quadrant icons and the System, System
 Defenses and Missions windows they open. `fleet-finder.mjs` opens the Finder
 from the cockpit control and F3, compares its chrome in both modes, and opens a
 chosen fleet or ship in its Fleet window; its tabs case checks that the map
@@ -92,7 +96,16 @@ and a wheel leave the frame unchanged. `fleet-registry.mjs` drives the real
 main menu (no fixture): it opens the Fleet Registry from its chip, lights a
 naming mode, holds a hovered name's row to show its note, closes on Escape
 with the chip's lamp lit, and starts a game whose fleets take canonical
-names. `--only=<faction>/<case>` runs named cases. Each gate writes `result.json` and its captures under
+names. `audit-batch.mjs` opens the Troop and Personnel Finders with F4 and
+F5 and compares their rails against STRATEGY.DLL, opens the Message Index
+with F6 and a rail light once each (a second F6 while open does nothing,
+Close closes it), selects a GID mode with Alt+digit, toggles Manage
+Garrisons with Alt+G, and opens the Agent menu from the droid.
+`status-window.mjs` right-clicks the agent in a system window, chooses
+Status, and compares the 379 by 272 window's STRATEGY background and buttons
+exactly, with the title, list, name and keyed portrait masked and checked for
+content; Close, Escape and the Encyclopedia button each close it.
+`--only=<faction>/<case>` runs named cases. Each gate writes `result.json` and its captures under
 `.artifacts/interface-parity/<gate>-<timestamp>/`; the native GUI checks of the
 same journeys are recorded separately in the audit.
 

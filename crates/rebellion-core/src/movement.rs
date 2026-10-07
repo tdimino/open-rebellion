@@ -697,6 +697,46 @@ pub fn begin_fleet_transit(
     true
 }
 
+/// The fleets a window lists at `system`: those in orbit and those en route
+/// to it. A move changes the fleet's container at once (`FUN_00556390`,
+/// slot `+0xa8`; `ghidra/notes/move-order.md`), so the original's windows
+/// list a fleet in hyperspace at its destination, with the en route overlay
+/// for `+0x50` bit 4 (`fleet-window.md`). The port keeps the origin in
+/// `Fleet.location` and `System.fleets` as the orbit index the simulation
+/// reads, so the destination comes from the order.
+#[must_use]
+pub fn listed_fleets(state: &MovementState, world: &GameWorld, system: SystemKey) -> Vec<FleetKey> {
+    let mut fleets: Vec<FleetKey> = world
+        .systems
+        .get(system)
+        .map(|value| value.fleets.clone())
+        .unwrap_or_default();
+    fleets.extend(
+        state
+            .orders
+            .values()
+            .filter(|order| order.destination == system && world.fleets.contains_key(order.fleet))
+            .map(|order| order.fleet),
+    );
+    fleets.sort_unstable();
+    fleets.dedup();
+    fleets
+}
+
+/// The system a window lists `fleet` at: its destination while en route,
+/// else where it orbits.
+#[must_use]
+pub fn listed_location(
+    state: &MovementState,
+    world: &GameWorld,
+    fleet: FleetKey,
+) -> Option<SystemKey> {
+    state
+        .get(fleet)
+        .map(|order| order.destination)
+        .or_else(|| world.fleets.get(fleet).map(|value| value.location))
+}
+
 /// Rebuild `System.fleets` so it contains each orbiting fleet exactly once and
 /// never contains an in-transit fleet.
 pub fn reconcile_fleet_orbits(state: &MovementState, world: &mut GameWorld) {
@@ -1160,6 +1200,39 @@ mod tests {
         assert_eq!(applied.merged_fleets, 0);
         assert_eq!(world.fleets[fleet].location, destination);
         assert_eq!(world.systems[destination].fleets, vec![fleet]);
+    }
+
+    #[test]
+    fn a_fleet_in_hyperspace_is_listed_at_its_destination() {
+        // move-order.md: FUN_00556390 changes the fleet's container at once,
+        // so its destination's windows list it while it travels.
+        let (mut world, origin, destination) = make_transit_world(0, 0, 30, 40);
+        let ship_key = world.capital_ship_classes.insert(test_ship_class(80));
+        let fleet = add_test_fleet(&mut world, origin, ship_key);
+        let stationed = add_test_fleet(&mut world, origin, ship_key);
+        let mut movement = MovementState::new();
+        assert!(begin_fleet_transit(
+            &mut movement,
+            &mut world,
+            fleet,
+            destination,
+            5
+        ));
+
+        assert_eq!(listed_fleets(&movement, &world, origin), vec![stationed]);
+        assert_eq!(listed_fleets(&movement, &world, destination), vec![fleet]);
+        assert_eq!(listed_location(&movement, &world, fleet), Some(destination));
+        assert_eq!(listed_location(&movement, &world, stationed), Some(origin));
+
+        let arrival = MovementSystem::advance(&mut movement, &ticks(5)).remove(0);
+        apply_fleet_arrival(
+            &mut world,
+            &movement,
+            &mut TroopTransportState::default(),
+            &arrival,
+        );
+        assert_eq!(listed_fleets(&movement, &world, destination), vec![fleet]);
+        assert!(!movement.is_in_transit(fleet));
     }
 
     #[test]

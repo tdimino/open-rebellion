@@ -78,7 +78,7 @@ pub const SAVE_MAGIC: &[u8; 8] = b"OPENREB\0";
 
 /// Current save format version. Increment when `SaveState` layout changes;
 /// saves of any other version are rejected.
-pub const SAVE_VERSION: u32 = 28;
+pub const SAVE_VERSION: u32 = 31;
 
 /// Current state-fingerprint algorithm version.
 ///
@@ -249,6 +249,9 @@ pub struct SaveState {
     // ── v16: en-route manufactured objects (F-030) ──────────────────────
     /// Manufactured objects travelling to their destination.
     pub deliveries: DeliveryState,
+    // ── v29: the player's agent (Manage Garrisons / Manage Production) ──
+    /// Saved with the game as the original saves its agent (`FUN_004397a0`).
+    pub player_agent: rebellion_core::agent_automation::PlayerAgent,
 }
 
 // ---------------------------------------------------------------------------
@@ -961,6 +964,7 @@ mod tests {
             campaign_config: CampaignConfig::default(),
             troop_transport: TroopTransportState::default(),
             deliveries: DeliveryState::default(),
+            player_agent: rebellion_core::agent_automation::PlayerAgent::default(),
         }
     }
 
@@ -1385,8 +1389,53 @@ mod tests {
 
         assert_eq!(loaded.deliveries, state.deliveries);
         assert_eq!(loaded.deliveries.en_route().len(), 1);
-        let queue = loaded.manufacturing.queue(origin).unwrap();
+        let queue = loaded
+            .manufacturing
+            .queue(
+                origin,
+                rebellion_core::manufacturing::ProductionArea::Shipyard,
+            )
+            .unwrap();
         assert_eq!(queue.active().unwrap().destination, Some(destination));
+    }
+
+    // Each production area keeps its own queue and Destination (v30,
+    // FUN_00509670); both survive a save, whose fingerprint reads the state
+    // as JSON.
+    #[test]
+    fn a_round_trip_keeps_each_production_areas_queue_and_destination() {
+        use rebellion_core::manufacturing::ProductionArea;
+        let saves_dir = tmp_dir("v30_area_round_trip");
+        let (mut state, origin, destination) = state_with_delivery();
+        state
+            .manufacturing
+            .set_destination(origin, ProductionArea::TrainingFacility, destination);
+        state.manufacturing.enqueue(
+            origin,
+            rebellion_core::manufacturing::QueueItem::new(
+                rebellion_core::manufacturing::BuildableKind::Troop(
+                    rebellion_core::ids::DatId::new(0x1000_0001),
+                ),
+                4,
+                4,
+            ),
+        );
+        save_slot(&saves_dir, 0, "V30 Save", &state, &[]).unwrap();
+
+        let (_, loaded) = load_slot(&saves_dir, 0).expect("the save should load");
+
+        assert_eq!(
+            loaded
+                .manufacturing
+                .destination(origin, ProductionArea::TrainingFacility),
+            Some(destination)
+        );
+        let troops = loaded
+            .manufacturing
+            .queue(origin, ProductionArea::TrainingFacility)
+            .unwrap();
+        assert_eq!(troops.active().unwrap().destination, Some(destination));
+        assert_eq!(loaded.manufacturing.queued_at(origin), 2);
     }
 
     #[test]

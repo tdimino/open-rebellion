@@ -67,6 +67,28 @@ fn product_speed(world: &GameWorld, kind: BuildableKind) -> i64 {
     }
 }
 
+/// Days a product of `kind` takes from `origin` to `destination`
+/// (`FUN_00555b30`: none unless both are systems and differ). Build Selection
+/// shows it as the best time to deployment (`FUN_00555f90`).
+#[must_use]
+pub fn transit_days(
+    world: &GameWorld,
+    kind: BuildableKind,
+    origin: SystemKey,
+    destination: SystemKey,
+) -> u32 {
+    if origin == destination {
+        return 0;
+    }
+    let position = |key: SystemKey| world.systems.get(key).map_or((0, 0), |s| (s.x, s.y));
+    transit_ticks_between(
+        world,
+        position(origin),
+        position(destination),
+        product_speed(world, kind),
+    )
+}
+
 impl DeliveryState {
     #[must_use]
     pub fn new() -> Self {
@@ -193,8 +215,10 @@ mod tests {
         }
     }
 
+    /// A regiment of a class of its own, distinct per `keys` entry.
     fn troop(keys: &mut slotmap::SlotMap<TroopKey, ()>) -> BuildableKind {
-        BuildableKind::Troop(keys.insert(()))
+        keys.insert(());
+        BuildableKind::Troop(crate::ids::DatId::new(0x1000_0000 | keys.len() as u32))
     }
 
     // FUN_004f63f0: a regiment travels at the GNPRTB 1 default, 100;

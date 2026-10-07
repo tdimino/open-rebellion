@@ -24,6 +24,17 @@ use rebellion_core::ids::SystemKey;
 use serde::Serialize;
 
 // ---------------------------------------------------------------------------
+// MessageId
+// ---------------------------------------------------------------------------
+
+/// Stable identity for a message, assigned by [`MessageLog::push`].
+///
+/// The counter is monotonically increasing and never reused, even after
+/// deletion or capacity eviction. Selection and delete in the Message
+/// Index address messages by this id.
+pub type MessageId = u64;
+
+// ---------------------------------------------------------------------------
 // MessageCategory
 // ---------------------------------------------------------------------------
 
@@ -162,6 +173,9 @@ impl RailAudience {
 /// One entry in the message log.
 #[derive(Debug, Clone, Serialize)]
 pub struct GameMessage {
+    /// Stable identity, assigned by [`MessageLog::push`]. Zero before push.
+    #[serde(skip)]
+    pub id: MessageId,
     /// Game-day on which this message was generated.
     pub tick: u64,
     /// Human-readable message text.
@@ -192,6 +206,7 @@ impl GameMessage {
     /// Construct a message without a system link.
     pub fn new(tick: u64, text: impl Into<String>, category: MessageCategory) -> Self {
         GameMessage {
+            id: 0,
             tick,
             text: text.into(),
             category,
@@ -211,6 +226,7 @@ impl GameMessage {
         system: SystemKey,
     ) -> Self {
         GameMessage {
+            id: 0,
             tick,
             text: text.into(),
             category,
@@ -245,6 +261,7 @@ impl GameMessage {
 pub struct MessageLog {
     messages: Vec<GameMessage>,
     capacity: usize,
+    next_id: MessageId,
 }
 
 impl Default for MessageLog {
@@ -260,15 +277,23 @@ impl MessageLog {
         MessageLog {
             messages: Vec::with_capacity(capacity.min(512)),
             capacity,
+            next_id: 1,
         }
     }
 
-    /// Append a message. Drops the oldest entry when capacity is exceeded.
-    pub fn push(&mut self, msg: GameMessage) {
+    /// Append a message, assigning it a stable [`MessageId`].
+    ///
+    /// Drops the oldest entry when capacity is exceeded. The returned id
+    /// is unique for this log's lifetime.
+    pub fn push(&mut self, mut msg: GameMessage) -> MessageId {
+        let id = self.next_id;
+        self.next_id += 1;
+        msg.id = id;
         if self.messages.len() >= self.capacity {
             self.messages.remove(0);
         }
         self.messages.push(msg);
+        id
     }
 
     /// Remove all messages.
@@ -301,6 +326,33 @@ impl MessageLog {
                 msg.unread = false;
             }
         }
+    }
+
+    /// Mark every message read, as closing the All Messages category does
+    /// (`FUN_0048a530` with param 0).
+    pub fn mark_all_read(&mut self) {
+        for msg in &mut self.messages {
+            msg.unread = false;
+        }
+    }
+
+    /// Mark a single message read by its id.
+    ///
+    /// port: the original sets the list item's font to 10 (`FUN_00469de0`)
+    /// without modifying the message node's `+0x24`; the port collapses
+    /// the read/unread distinction into the message's `unread` field.
+    pub fn mark_message_read(&mut self, id: MessageId) {
+        if let Some(msg) = self.messages.iter_mut().find(|m| m.id == id) {
+            msg.unread = false;
+        }
+    }
+
+    /// Remove every message whose id appears in `ids` (`FUN_005f54a0`).
+    ///
+    /// After deletion the caller should recompute the unread mask
+    /// (`FUN_0048a2a0`).
+    pub fn delete_by_ids(&mut self, ids: &[MessageId]) {
+        self.messages.retain(|msg| !ids.contains(&msg.id));
     }
 
     /// Number of messages currently stored.
@@ -648,6 +700,119 @@ mod tests {
         );
         log.push(GameMessage::new(2, "saved", MessageCategory::Event));
         assert_eq!(log.unread_mask(true), 0);
+    }
+
+    #[test]
+    fn push_assigns_a_stable_monotonic_id() {
+        let mut log = MessageLog::new(10);
+        let a = log.push(GameMessage::new(1, "first", MessageCategory::Event));
+        let b = log.push(GameMessage::new(2, "second", MessageCategory::Event));
+        let c = log.push(GameMessage::new(3, "third", MessageCategory::Event));
+
+        assert_eq!(a, 1);
+        assert_eq!(b, 2);
+        assert_eq!(c, 3);
+        assert_eq!(log.messages()[0].id, 1);
+        assert_eq!(log.messages()[2].id, 3);
+    }
+
+    #[test]
+    fn ids_survive_capacity_eviction_and_never_reuse() {
+        let mut log = MessageLog::new(2);
+        let a = log.push(GameMessage::new(1, "first", MessageCategory::Event));
+        let _b = log.push(GameMessage::new(2, "second", MessageCategory::Event));
+        let c = log.push(GameMessage::new(3, "third", MessageCategory::Event));
+
+        // a was evicted but c's id is still > a's
+        assert!(c > a);
+        assert_eq!(log.messages().len(), 2);
+        assert_eq!(log.messages()[0].id, 2);
+        assert_eq!(log.messages()[1].id, 3);
+    }
+
+    #[test]
+    fn delete_by_ids_removes_matching_messages() {
+        // FUN_005f54a0: delete a single message by key from the manager's list.
+        let mut log = MessageLog::new(10);
+        let a = log.push(
+            GameMessage::new(1, "fleet", MessageCategory::Mission)
+                .on_rail(MessageRail::Fleet, RailAudience::Both),
+        );
+        let _b = log.push(
+            GameMessage::new(2, "built", MessageCategory::Manufacturing)
+                .on_rail(MessageRail::Manufacturing, RailAudience::Both),
+        );
+        let c = log.push(
+            GameMessage::new(3, "arrived", MessageCategory::Mission)
+                .on_rail(MessageRail::Fleet, RailAudience::Both),
+        );
+
+        log.delete_by_ids(&[a, c]);
+
+        assert_eq!(log.len(), 1);
+        assert_eq!(log.messages()[0].text, "built");
+    }
+
+    #[test]
+    fn delete_recomputes_the_unread_mask() {
+        // FUN_0048a2a0: after deletion the unread mask drops categories
+        // that no longer have unread messages.
+        let mut log = MessageLog::new(10);
+        let a = log.push(
+            GameMessage::new(1, "fleet", MessageCategory::Mission)
+                .on_rail(MessageRail::Fleet, RailAudience::Both),
+        );
+        log.push(
+            GameMessage::new(2, "built", MessageCategory::Manufacturing)
+                .on_rail(MessageRail::Manufacturing, RailAudience::Both),
+        );
+
+        assert_eq!(log.unread_mask(true), 0x080 | 0x008);
+
+        log.delete_by_ids(&[a]);
+
+        assert_eq!(log.unread_mask(true), 0x008);
+    }
+
+    #[test]
+    fn mark_all_read_clears_every_message() {
+        // FUN_0048a530 with param 0: clears all unread bits.
+        let mut log = MessageLog::new(10);
+        log.push(
+            GameMessage::new(1, "fleet", MessageCategory::Mission)
+                .on_rail(MessageRail::Fleet, RailAudience::Both),
+        );
+        log.push(
+            GameMessage::new(2, "built", MessageCategory::Manufacturing)
+                .on_rail(MessageRail::Manufacturing, RailAudience::Both),
+        );
+
+        log.mark_all_read();
+
+        assert_eq!(log.unread_mask(true), 0);
+    }
+
+    #[test]
+    fn mark_message_read_clears_one_message() {
+        // FUN_00469de0: displaying a message sets its font to 10 (read).
+        // port: the original only changes the list item's font; the port
+        // sets the message's unread field.
+        let mut log = MessageLog::new(10);
+        let a = log.push(
+            GameMessage::new(1, "fleet", MessageCategory::Mission)
+                .on_rail(MessageRail::Fleet, RailAudience::Both),
+        );
+        log.push(
+            GameMessage::new(2, "arrived", MessageCategory::Mission)
+                .on_rail(MessageRail::Fleet, RailAudience::Both),
+        );
+
+        log.mark_message_read(a);
+
+        assert!(!log.messages()[0].unread);
+        assert!(log.messages()[1].unread);
+        // The rail stays lit because the second message is still unread.
+        assert_eq!(log.unread_mask(true), 0x080);
     }
 
     #[test]

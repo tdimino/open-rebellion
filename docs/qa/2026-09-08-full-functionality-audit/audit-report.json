@@ -7,7 +7,7 @@
     "campaign_history": "docs/reference/campaign-history/index.md",
     "campaign_history_sources": "docs/reference/campaign-history/sources.json",
     "original_interface_parity": "docs/qa/2026-09-10-interface-parity-audit/index.md",
-    "original_interface_surface_ledger": "docs/qa/2026-09-10-interface-parity-audit/surface-ledger.json",
+    "original_interface_surface_ledger": "docs/qa/2026-09-10-interface-parity-audit/2026-10-06-surface-ledger.json",
     "original_interface_reference_ledger": "docs/qa/2026-09-10-interface-parity-audit/reference-ledger.json",
     "tactical_3d_asset_plan": "docs/plans/2026-09-12-feat-tactical-3d-asset-pipeline.md",
     "tactical_3d_staging_evidence": "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-3d-staging.md",

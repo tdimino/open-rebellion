@@ -150,7 +150,7 @@ lossless images, not recompressed video frames.
 
 The machine-readable audit files remain canonical:
 
-- `surface-ledger.json` owns surface and cell status;
+- `2026-10-06-surface-ledger.json` owns surface and cell status;
 - `reverse-engineering-ledger.json` owns retrieval and executable evidence;
 - `audit-report.json` owns findings, thresholds, and aggregate status; and
 - the scenario catalog and evidence manifest own automation coverage.

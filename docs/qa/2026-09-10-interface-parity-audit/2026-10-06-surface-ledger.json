@@ -271,7 +271,7 @@
       "phase": "front_end",
       "title": "Unified Game Options, save, load, and delete",
       "required": true,
-      "status": "fail",
+      "status": "partial",
       "required_states": [
         "save list empty",
         "save list populated",
@@ -709,7 +709,7 @@
         21,
         66
       ],
-      "current_implementation": "P46A renders STRATEGY 900/901 on one centered, uniformly scaled 640x480 canvas, crops the 481st source row, applies the recovered faction apertures, and shares their transform across map layers, hit tests, blockades, and advisors. Authentic controls, the reference rail, GID and map art, original system windows, message and status surfaces, and other required aperture content remain open.",
+      "current_implementation": "P46A renders STRATEGY 900/901 on one centered, uniformly scaled 640x480 canvas, crops the 481st source row, applies the recovered faction apertures, and shares their transform across map layers, hit tests, blockades, and advisors. P46B restores the six primary bitmap controls, and 8fc9d983 routes the native Alt+1 through Alt+9 GID accelerators plus Alt+G and Alt+U management toggles. The bounded both-faction browser batch passes. Exact aperture population, disabled and focus states, original destination families, message/status behavior, and A0 comparison remain open.",
       "finding_ids": [
         "UIP-F-001"
       ],
@@ -1285,7 +1285,7 @@
         61,
         66
       ],
-      "current_implementation": "UIP-B01 implements modeless focus and close plus faction-specific 12-slot minimize and restore routing with preserved tab, selected item, scroll row, and window position. Detailed-system windows retain foreground ownership over sector windows. Exact active and inactive rail thumbnails and the complete A0 multiwindow/browser matrix remain open.",
+      "current_implementation": "UIP-B01 implements modeless focus and close plus faction-specific 12-slot minimize and restore routing with preserved tab, selected item, scroll row, and window position. Detailed-system windows retain foreground ownership over sector windows. Commit 8fc9d983 enforces the native two-sector-window cap and replaces a third request on its own galaxy half. Exact active and inactive rail thumbnails, modal placement and key ownership, and the complete A0 multiwindow/browser matrix remain open.",
       "finding_ids": [
         "UIP-F-001",
         "UIP-F-011"
@@ -1423,7 +1423,7 @@
       "phase": "strategy",
       "title": "Pause, day, and speed controls",
       "required": true,
-      "status": "fail",
+      "status": "partial",
       "required_states": [
         "paused",
         "very slow",
@@ -1782,7 +1782,7 @@
         158,
         159
       ],
-      "current_implementation": "P49 restores the nine original resting Message Index rail BMPs for each faction at the exact constructor rectangles. Both 640x480 browser rails match all source BMP pixels. The illuminated/unread predicate, control input, original Message Index window, category filtering, report routing, clear/delete actions, and A0 state matrix remain open. Replacement message interfaces elsewhere do not count as parity. P60 statically recovers the Message Index window, category-to-rail mapping, rail resting path, and the Advice Very Slow drop without implementing them; the illumination-on path remains unrecovered.",
+      "current_implementation": "P49 restores the nine original resting Message Index rail BMPs for each faction, and P63 restores the faction window shells and ten category controls. Commit 8fc9d983 adds production message rows, click/Ctrl-click/Shift-click/double-click gestures, filtering, Display/Delete/Close, F6 and rail entry, Agent Advice defaults and speed hold/restore, plus the Agent-menu toggle. The bounded both-faction browser batch passes entry and close routes. Rail illumination, exact native placement and Escape behavior, complete report navigation, chat, alerts, and A0 state comparison remain open.",
       "finding_ids": [
         "UIP-F-007"
       ],
@@ -1938,7 +1938,7 @@
       "phase": "strategy",
       "title": "Galaxy facility and construction indicators",
       "required": true,
-      "status": "fail",
+      "status": "partial",
       "required_states": [
         "mine active",
         "mine building",
@@ -2518,7 +2518,7 @@
         99,
         100
       ],
-      "current_implementation": "Custom Officers panel uses some portraits but not the original finder/status family.",
+      "current_implementation": "Commit 8fc9d983 adds the source-backed Personnel Finder with Alliance/Imperial tabs, distinct Character and SpecForces views, the type-by-system special-forces grid, prefix search, state labels, selection, and Display routing. Its both-faction F5 entry and rail composition pass the bounded browser batch. Display follows FUN_00429440: a fleet parent opens the Fleet window, a visible mission the Missions window (kind 11) on that mission, anything else Defenses (kind 10). The object menu's Status opens the generic Status window (type 0x1a, FUN_00442d70) with the Character Status rows (FUN_004486f0); the both-side browser gate status-window.mjs compares its background and buttons exactly (DEV-UI-018). Complete Status for other families, item-menu, modal, scrollbar, state, and A0 coverage remain open.",
       "finding_ids": [
         "UIP-F-007"
       ],
@@ -2685,7 +2685,7 @@
         131,
         132
       ],
-      "current_implementation": "The original Fleet Finder shell, faction tabs, Fleet and Ship modes, filtering, selection, keyboard navigation, and Fleet-window routing work in bounded native and browser journeys. Troop Finder, strict modal behavior, original scrollbars, full hyperspace membership, and A0 comparison remain open.",
+      "current_implementation": "The original Fleet Finder shell, faction tabs, Fleet and Ship modes, filtering, selection, keyboard navigation, and Fleet-window routing work in bounded native and browser journeys. Commit 8fc9d983 adds the source-backed Troop Finder, F4 entry, faction tabs, system-name search, Display routing, and destination-based listing of en-route fleets. The Troop/Personnel browser batch passes both factions. Exact modal behavior, original scrollbars, full state coverage, and A0 comparison remain open.",
       "finding_ids": [
         "UIP-F-007"
       ],
@@ -2843,7 +2843,7 @@
         119,
         120
       ],
-      "current_implementation": "The original Fleet window shell, faction composition, tabs, fleet and ship rows, cargo counts, selection, item menus, move, confirmed move, split, merge, ship transfer, troop embarkation and landing, minimize, close, and system routing work in bounded native and browser journeys. Hyperspace presentation, complete item-menu commands, exact modal interactions, A0 comparison, and the full cell matrix remain open.",
+      "current_implementation": "The original Fleet window shell, faction composition, tabs, fleet and ship rows, cargo counts, selection, item menus, move, confirmed move, split, merge, ship transfer, troop embarkation and landing, minimize, close, and system routing work in bounded native and browser journeys. Commits c60881b3 and 8b51ec9c add the source-routed travelling-fleet marks to fleet, ship-mini, selected-ship portrait, troop, character, and special-force presentations. The 38-case two-faction Fleet-window browser gate passes. Complete disabled-order and item-menu states, exact modal interactions, A0 comparison, and the full cell matrix remain open.",
       "finding_ids": [
         "UIP-F-007"
       ],
@@ -3149,7 +3149,7 @@
         85,
         86
       ],
-      "current_implementation": "Custom SidePanel replaces the original tabbed window family.",
+      "current_implementation": "Commit 8fc9d983 stores and saves a separate Destination for each shipyard, training-facility, and construction-yard production area, routes command 0x214 through system, Defenses, current manufacturing-tab, and Fleet-window targets, and renders queue completion as an absolute game day. The two-faction Destination browser case passes. The visible SidePanel and system-level shipyard combo still replace the original type-9 Manufacturing and Build Selection windows, so this family remains failed pending source-backed composition and A0 comparison.",
       "finding_ids": [
         "UIP-F-007"
       ],
@@ -3877,7 +3877,7 @@
         107,
         108
       ],
-      "current_implementation": "Replacement mission panel and partial generic event mapping.",
+      "current_implementation": "The replacement mission panel and partial generic event mapping remain. Commit c60881b3 adds the source-routed static hyperspace mark to travelling character and special-force minis in the Missions window, including class-specific GOKRES variants. Mission Status composition, order disabling, reports, uncommon outcomes, and A0 comparison remain open, so the family remains failed.",
       "finding_ids": [
         "UIP-F-007",
         "UIP-F-012"
@@ -4141,7 +4141,7 @@
         132,
         133
       ],
-      "current_implementation": "Source-recovered item menus now open from sector quadrant icons and Fleet-window objects, with enabled routing for a bounded subset of Move, Confirmed Move, Create Fleet, Mission, Encyclopedia, Status, Scrap, and system-wide fleet movement paths. The complete per-object command trees, nested states, Rename, disabled-state matrix, and A0 comparison remain open.",
+      "current_implementation": "Source-recovered item menus now open from sector quadrant icons and Fleet-window objects, with enabled routing for a bounded subset of Move, Confirmed Move, Create Fleet, Mission, Encyclopedia, Status, Scrap, Destination, Rename, and system-wide fleet movement paths. Commit 8fc9d983 adds in-place Rename for fleets and capital ships; the 38-case two-faction Fleet-window browser gate covers Rename and Destination. The complete per-object command trees, nested and disabled states, exact focus-loss behavior, and A0 comparison remain open.",
       "finding_ids": [
         "UIP-F-003",
         "UIP-F-007"
@@ -6057,7 +6057,7 @@
     "required_surface_families": 43,
     "baseline_cells": 633,
     "required_baseline_cells": 627,
-    "excluded_baseline_cells": 5,
+    "excluded_baseline_cells": 6,
     "required_surfaces_with_retrieval_packages": 43
   }
 }

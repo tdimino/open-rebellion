@@ -10,7 +10,7 @@ tags: [roadmap, planning, milestones, parity]
 # Roadmap
 
 <!-- interface-parity-status:start -->
-Required interface families: 43. Complete: 0. Partial: 12. Failing: 31. Blocked: 0. Strictly accepted cells: 0/627.
+Required interface families: 43. Complete: 0. Partial: 15. Failing: 28. Blocked: 0. Strictly accepted cells: 0/627.
 The current CMD-02 GID catalog has 38 scenarios (29 baseline cells and nine additional native filter variants) and 152 faction/viewport executions. Its strict original-evidence and cross-browser gate remains open.
 <!-- interface-parity-status:end -->
 
@@ -58,6 +58,15 @@ open. See the [P66A evidence](../docs/qa/2026-09-10-interface-parity-audit/evide
 [W6 evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-hd-selection.md),
 [W7 evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-07-encyclopedia-mod-overlays.md),
 and [E32 evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-07-encyclopedia-production-activation.md).
+
+The 2026-10-06 strategic-interface batch restores native cockpit accelerators,
+the two-sector-window cap, Message Index interaction, Personnel and Troop
+Finders, per-area production destinations, absolute completion days, fleet and
+ship Rename, and en-route marks. Both-faction bounded browser gates pass. This
+raises the planning estimate to approximately 25%, but accepts no strict cells:
+the native Manufacturing and Build Selection windows, complete Status-window
+coverage, A0 evidence, and complete state matrices remain open. The recovered production-window
+contract is indexed in [the Manufacturing and Build Selection Ghidra note](../ghidra/notes/manufacturing-build-selection.md).
 
 ## Galaxy Viewer: historical implementation tranche delivered
 *Interactive galaxy data viewer -- native + WASM*

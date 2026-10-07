@@ -192,6 +192,51 @@ From the selected left entries (`+0x3c` bit 0):
   and the right-aligned one is the capacity (`+0x26c` / `+0x270`, summed)
   (`DrawTextA` flags `0x20` and `0x22`).
 
+## En route marks (`FUN_0042c3b0`)
+
+The left list's ship entries (`FUN_004a3d40`), the right list's items
+(`FUN_004a6e70`) and the one-ship picture (`FUN_004a5c00`) draw their
+object through `FUN_0042c3b0(gokres, id, object, picture, 1)`: `picture` 0
+for a mini (GOKRES `(class & 0xfff) + 0x4000`), 1 for a portrait (`& 0xfff`).
+Its last argument draws the status marks. The en route mark needs `+0x50`
+bit 4 set and bit 3 (destroyed) clear, and goes at the image's origin
+(`FUN_005fd0f0(.., 0, 0)`, keyed):
+
+| Object (`id >> 24`) | Mini | Portrait |
+|---|---|---|
+| Default (capital ships, squadrons) | GOKRES `(class & 0xfff) + 0x5000` | GOKRES `+ 0x1000` |
+| Regiments `0x10..0x13`, but classes `0x10000002`, `0x10000008` | STRATEGY 11515 (`0x2cfb`) | 11516 |
+| Facilities `0x22..0x27` | 11509 (`0x2cf5`) | 11510 |
+| Other facilities `0x20..0x2f` | 11505 (`0x2cf1`) | 11506 |
+| Characters `0x30..0x3b` | 11501 (`0x2ced`) | none (`0x2ced + 0xffffd313` wraps to 0) |
+| Special forces `0x3c..0x3f`, but classes `0x3c000003`, `0x3c000005` | 11501 | 11520 (`0x2d00`) |
+| Fleets `0x08..0x0f` | 10423 (side 2: 10473) | 10426 (10476) |
+
+The excepted regiment and special force classes keep the GOKRES default,
+and GOKRES has exactly those four marks (21569, 21634, 21826, 21888). The
+craft marks are engine glows on the blue key; the STRATEGY marks and the
+four class marks are starfields with one key pixel, so they cover the mini.
+`FUN_004f8240` makes an object en route while its container is, so every
+ship, squadron, regiment and character aboard a travelling fleet carries
+its mark. The manual's "blue engine glow" (Fleet window, pp. 112-113) and
+"starfield behind the portrait" (hyperspace, pp. 96-97) are these static
+bitmaps; nothing animates them.
+
+In the picture panel (`FUN_004a5c00`), a fleet's 10426 (and 10427 on
+`+0x200`) is blitted first, then the picture 10425 keyed over it at the
+same centered left edge, so the glow shows behind the ships. One selected
+ship's portrait, with its mark already drawn in, is blitted keyed at the
+panel's (0, 0); the craft portraits are GOKRES `0x640..0x78f` (122 by 50)
+and their marks `0x1640..0x178f`.
+
+Where travelling mission members show: their target's container holds them
+at once (`FUN_00556430`), but the System Defenses window's personnel page
+lists only personnel not on a visible mission (`sector-quadrants.md`), and
+the System window (type 9) builds only facility pages (`FUN_004568a0`,
+pages `0x67..0x6c`, items from `FUN_00458fe0`, families `0x28..0x2f`; its
+object-added slot `FUN_00454160` at vtable `0x00659ec4`). So only the
+Missions window draws them (`FUN_004a0e10`).
+
 ## Input
 
 `FUN_004a29c0` (slot `+0x14`, the window procedure) and `FUN_004a6390`
@@ -218,7 +263,10 @@ From the selected left entries (`+0x3c` bit 0):
 - **Drag source**: a drag out of either list posts `0x29a`. The galaxy view
   (`FUN_00422ce0`, `move-order.md` "A drag is a move") moves the whole
   selection against the drop window's `+0x70`, as `0x201` (`0x202` with
-  Ctrl), because the source is type 4.
+  Ctrl), because the source is type 4. port: `fleet_window.rs` drags a
+  left-list fleet or ship entry and a right-list regiment or ship; Ctrl's
+  `0x202` is not ported. A fleet's drop goes through the Move path
+  (`issue_fleet_move`): it joins a fleet under the point, else moves.
 - **Refresh**: object notifications (slots `+0x5c`/`+0x60`, `FUN_004a2e70`,
   `FUN_004a2d60`) set `+0x14c` bit `0x10000000` for ships and fighters
   (`0x14..0x1f`), fleets, regiments and characters or special forces. Slot
@@ -327,17 +375,26 @@ therefore joins a fleet when a move names the Fleet window's `+0x70` target.
   while it orbits the loading system; any arrival releases it, and the cargo
   lands as before. The hold is saved (save v24, no migration).
 - **Port rules.** The left list follows the system window's fog rule; one
-  entry is selected at a time; there are no scroll bars, no in-place rename,
-  no right-click menu; a listed ship
+  entry is selected at a time; there are no scroll bars; a listed ship
   stands for its fleet as a release target and draws no selected look; the
   pressed state of the sector window's icon is not drawn. Only a Troops tab
   regiment drags out of the window (`regiment-unload.md`).
-- **Gate.** `tools/interface-parity/fleet-window.mjs` (fixture codes 48 and
-  49, both sides): the icon opens the window, whose chrome matches
+- **Gate.** `tools/interface-parity/fleet-window.mjs` (fixture codes 48, 49,
+  51, 52 and 54, both sides): the icon opens the window, whose chrome matches
   STRATEGY.DLL pixel for pixel outside masked text, the tree's dotted pen and
   the right list; a regiment's Move onto the fleet loads it (Troops tab,
   `1`/capacity) and holds it while the clock runs; the fleet's Move lands it
-  at the target; a full fleet refuses it.
+  at the target; a full fleet refuses it; fleets join and split; Rename
+  (`0x203`, `rename-order.md`) keeps an emptied field open and submits the
+  typed name; and the facility icon's Destination (`0x214`,
+  `production-destination.md`) released on a planet sets it.
+- **En route marks.** The ship entries and right-list items of a travelling
+  fleet draw the marks above (`fleet_window::en_route_mark`), as the
+  Missions window's members do, and one selected ship's portrait (its mini
+  less `0x4000`) carries its mark. port: the other status marks (`+0x200`,
+  `+0x50` bit 2, GOKRES `+0x7000`) are not drawn. The port's System window
+  lists personnel, fleets, defenses and troops, which the original's type 9
+  window does not (see above); that deviation is open.
 - The port's capacity rules (F-007E: 0/0, 2/2, 3/3 by class) stand in for
   `FUN_00500b40`'s `+0x270`/`+0x26c`. Check them against the capital ships'
   DAT capacities.
@@ -352,4 +409,3 @@ therefore joins a fleet when a move names the Fleet window's `+0x70` target.
 - `FUN_00558380`'s base order list; the regiment `0x214` refusal's status
   (native check pending). The leg builders and the full-fleet refusal are
   traced in `regiment-unload.md`.
-- What starts an in-place rename.

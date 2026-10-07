@@ -40,12 +40,12 @@ Open Rebellion reads the original game data files, converts them to clean JSON, 
 
 ### Current development state
 
-> **Verification (2026-10-01):** The workspace suite passes. The bounded tactical launcher has 106/106 deterministic A1 mappings; strict A0 acceptance remains 0/106. The authentic Encyclopedia index has 356 source entries, and strict local extraction binds 346 complete topics per faction while exposing ten source-empty mission records. Production topic rendering, wider interface parity, multiplayer, and release acceptance remain open in the [interface audit](docs/qa/2026-09-10-interface-parity-audit/).
+> **Verification (2026-10-06):** The bounded tactical launcher has 106/106 deterministic A1 mappings, while strict A0 acceptance remains 0/106. Recent strategic gates cover native keyboard shortcuts, the two-sector-window cap, Message Index interaction, Personnel and Troop Finders, per-area production destinations, fleet/ship Rename, and en-route marks. Authentic Manufacturing, Build Selection, and complete Status-window coverage, the wider interface matrix, multiplayer, and release acceptance remain open in the [interface audit](docs/qa/2026-09-10-interface-parity-audit/).
 
 | Layer | Implementation status | Release acceptance |
 |-------|-----------------------|--------------------|
 | **Core** | 15 simulation systems and config-driven AI implemented | Audit open |
-| **UI** | Original shuttle menu plus campaign/tactical implementation scaffolding | Original-interface audit failing |
+| **UI** | Original shuttle menu, bounded strategic windows, and practical tactical launcher | Original-interface audit failing |
 | **Combat** | Space and ground pipelines implemented | Audit open |
 
 Major implemented areas (each remains subject to the linked acceptance audit):
@@ -254,7 +254,7 @@ This project exists because a small, stubborn community kept Rebellion alive for
 - **[swrebellion.net](https://swrebellion.net)**—The hub. Forums, mods, the [Mechanics Inside Rebellion](https://swrebellion.net/forums/topic/9639-mechanics-inside-rebellion-part-ii/) thread that documented game internals.
 - **[RebED](https://swrebellion.net/files/)**—240+ mod cards created by the community over two decades.
 - **[Metasharp's Editor](https://github.com/MetasharpNet/StarWarsRebellionEditor.NET)**—686 commits of .NET code reverse-engineering every binary format. Without this, Open Rebellion wouldn't exist.
-- **[Faction Wars](https://github.com/TeeJS/faction-wars)** by TeeJS. Its manual-driven audit informed Open Rebellion's [manual window cross-check](docs/qa/2026-09-10-interface-parity-audit/manual-window-checklists.md). Findings were independently paraphrased and checked against the manual and executable traces; no code or documentation was copied.
+- **[Faction Wars](https://github.com/TeeJS/faction-wars)** by TeeJS. Its manual-driven audit informed Open Rebellion's [manual window cross-check](docs/qa/2026-09-10-interface-parity-audit/2026-10-06-manual-window-checklists.md). Findings were independently paraphrased and checked against the manual and executable traces; no code or documentation was copied.
 - **[Prima Strategy Guide](https://archive.org/details/star-wars-rebellion-guide/mode/2up)**—276 pages, free on archive.org.
 
 We stand on their shoulders.

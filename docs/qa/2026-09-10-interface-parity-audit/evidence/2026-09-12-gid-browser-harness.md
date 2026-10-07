@@ -36,6 +36,6 @@ unusual marker identities, expanded-legend composition,
 keyboard focus, native rendering, original-executable screenshots for each
 filter/state, and cross-browser evidence still need independent adjudication.
 Do not count a green harness result as exact bitmap/interface parity. The
-[surface ledger](../surface-ledger.json), [screenshot ledger](../screenshot-ledger.md),
+[surface ledger](../2026-10-06-surface-ledger.json), [screenshot ledger](../screenshot-ledger.md),
 and [acceleration sidecar](../../../plans/2026-09-11-tooling-interface-parity-acceleration-sidecar.md)
 retain these open gates.

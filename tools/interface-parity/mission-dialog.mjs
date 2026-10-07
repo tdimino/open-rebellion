@@ -27,7 +27,8 @@ const factions = [
 ];
 // Fixture codes are the Scenario index plus one (interface_test_fixture.rs).
 // "targeting" reaches the dialog through the original entry: a right-click on
-// the agent in a system window, Mission, and a release over a map system.
+// the agent in the Defenses window's personnel page, Mission, and a release
+// over a map system.
 const scenarios = [
   { name: "mission", code: 43, page: "mission" },
   { name: "agents", code: 44, page: "agents" },
@@ -222,11 +223,12 @@ async function click(page, point, button = "left") {
 // The original entry (manual p. 100): right-click the agent, choose Mission,
 // then click the target. Returns the cursor check and the menu report.
 async function target(page, faction, directory) {
-  // The fixture opens the 231-pixel system window 5 pixels in from the
-  // galaxy view's top-right corner; its first item's picture is centred 40
-  // by 88 into the window. The target's sector window opens on the left.
-  const windowLeft = faction.galaxy.x + faction.galaxy.width - 231 - 5;
-  const agent = { x: windowLeft + 40, y: faction.galaxy.y + 5 + 88 };
+  // The fixture opens the 235-pixel Defenses window 5 pixels in from the
+  // galaxy view's top-right corner on its personnel page; the agent's cell,
+  // the list's first (70 by 70 at (7, 81), FUN_00609ae0), is centred 42 by
+  // 116 into the window. The target's sector window opens on the left.
+  const windowLeft = faction.galaxy.x + faction.galaxy.width - 235 - 5;
+  const agent = { x: windowLeft + 42, y: faction.galaxy.y + 5 + 116 };
   await click(page, agent, "right");
   await page.waitForFunction(() => window.__openRebellionInterfaceObjectMenu?.status === "object-menu",
     null, { timeout: 10_000 });

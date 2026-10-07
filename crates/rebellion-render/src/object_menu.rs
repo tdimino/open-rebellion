@@ -1,6 +1,7 @@
-//! The object pop-up menu a right-click on a character, special force, fleet
-//! or regiment opens in a system window (`FUN_004ac5c0`), or on a capital
-//! ship in the Fleet window. Recovery notes:
+//! The object pop-up menu a right-click opens (`FUN_004ac5c0`): on a
+//! character, special force or regiment in the Defenses window, on a fleet,
+//! ship or regiment in the Fleet window, on a sector window's icon, or on a
+//! producer band in the Manufacturing window. Recovery notes:
 //! `ghidra/notes/object-popup-menu.md`, `ghidra/notes/move-order.md` and
 //! `ghidra/notes/fleet-join-split.md`.
 //!
@@ -11,6 +12,7 @@
 
 use egui_macroquad::egui;
 use rebellion_core::ids::{CharacterKey, FleetKey, SpecialForceKey, SystemKey, TroopKey};
+use rebellion_core::manufacturing::ProductionArea;
 use rebellion_core::missions::MissionMember;
 
 use crate::bmp_cache::BmpCache;
@@ -40,6 +42,10 @@ pub enum ObjectMenuCommand {
     Reserved,
     /// A mission's Abort (`0x250`).
     Abort,
+    /// A production manager's Build (`0x210..0x212`).
+    Build,
+    /// A production manager's Stop (`0x213`).
+    Stop,
 }
 
 /// The object a menu opens for.
@@ -64,6 +70,12 @@ pub enum MenuObject {
         system: SystemKey,
         quadrant: Quadrant,
     },
+    /// A Manufacturing window band: its system's production manager for
+    /// `area` (families `0xa0..0xaf`, `FUN_00509670`).
+    Producer {
+        system: SystemKey,
+        area: ProductionArea,
+    },
 }
 
 impl MenuObject {
@@ -73,7 +85,11 @@ impl MenuObject {
         match self {
             Self::Character(key) => Some(MissionMember::Character(key)),
             Self::SpecialForce(key) => Some(MissionMember::SpecialForce(key)),
-            Self::Fleet(_) | Self::Troop(_) | Self::Ship { .. } | Self::SystemIcon { .. } => None,
+            Self::Fleet(_)
+            | Self::Troop(_)
+            | Self::Ship { .. }
+            | Self::SystemIcon { .. }
+            | Self::Producer { .. } => None,
         }
     }
 }
@@ -215,6 +231,24 @@ const RESERVED: ObjectMenuItem = item(
     false,
 );
 const ABORT: ObjectMenuItem = item(0x250, ObjectMenuCommand::Abort, 2003, 12362, "Abort", false);
+/// STRATEGY records `0x210..0x216` (`ghidra/notes/manufacturing-build-selection.md`,
+/// "Selection and menu"): Build for facilities, ships and troops, Stop, and a
+/// manager's Rename.
+const BUILD_FACILITIES: ObjectMenuItem =
+    item(0x210, ObjectMenuCommand::Build, 100, 12288, "Build", false);
+const BUILD_SHIPS: ObjectMenuItem =
+    item(0x211, ObjectMenuCommand::Build, 100, 12288, "Build", false);
+const BUILD_TROOPS: ObjectMenuItem =
+    item(0x212, ObjectMenuCommand::Build, 100, 12288, "Build", false);
+const STOP: ObjectMenuItem = item(0x213, ObjectMenuCommand::Stop, 110, 12289, "Stop", false);
+const PRODUCER_RENAME: ObjectMenuItem = item(
+    0x215,
+    ObjectMenuCommand::Rename,
+    500,
+    12291,
+    "Rename",
+    false,
+);
 
 /// One row of an open object menu.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -256,6 +290,12 @@ impl ObjectMenuRow {
 /// follow `gates.fleet_move` for the system's fleets of the player's side.
 /// port: the icons' other orders stay disabled until their system-wide forms
 /// (`FUN_00512700`) are ported.
+/// A Manufacturing window band offers its manager class's orders
+/// (`FUN_0052ae30`, `FUN_0055b580`, `FUN_0055b900`, `FUN_0055bd30`): Build,
+/// Stop, Destination and Reserved, and for ships Rename. Build, Stop and
+/// Destination follow `gates.build`, `gates.stop` and `gates.destination`;
+/// port: Rename and Reserved stay disabled until the band's in-place rename
+/// and the reserve bit are ported.
 /// An empty selection lists only Encyclopedia and Status, both disabled.
 ///
 /// - Mission is enabled when `gates.mission` says so
@@ -270,11 +310,13 @@ impl ObjectMenuRow {
 ///   `gates.ship_move` says so (its fleet is the player's and in orbit).
 ///   port: its Confirmed Move stays disabled.
 /// - Encyclopedia is enabled for a single selection.
+/// - Status is enabled for a character (`ghidra/notes/status-window.md`).
+///   In the original it is enabled for any single selection that is not a
+///   system; port: the other families' Status windows are not ported.
 /// - port: a character's or special force's Move and Confirmed Move,
-///   Command, Status, Retire and the other fleet orders stay disabled until
-///   their windows and orders are ported. In the original, Status is
-///   enabled for a single selection that is not a system, and Command is a
-///   submenu parent.
+///   Command, Retire and the other fleet orders stay disabled until their
+///   windows and orders are ported. In the original, Command is a submenu
+///   parent.
 #[must_use]
 pub fn object_menu_rows(selection: Option<MenuObject>, gates: OrderGates) -> Vec<ObjectMenuRow> {
     // A fleet icon's Move rows act on the system's fleets of the player's
@@ -290,7 +332,9 @@ pub fn object_menu_rows(selection: Option<MenuObject>, gates: OrderGates) -> Vec
         )
     );
     let troop = matches!(selection, Some(MenuObject::Troop(_)));
+    let fleet_entry = matches!(selection, Some(MenuObject::Fleet(_)));
     let ship = matches!(selection, Some(MenuObject::Ship { .. }));
+    let producer = matches!(selection, Some(MenuObject::Producer { .. }));
     let offered: &[ObjectMenuItem] = match selection {
         Some(MenuObject::Character(_)) => &[MOVE, CONFIRMED_MOVE, RETIRE, MISSION, COMMAND],
         Some(MenuObject::SpecialForce(_)) => &[MOVE, CONFIRMED_MOVE, RETIRE, MISSION],
@@ -302,6 +346,13 @@ pub fn object_menu_rows(selection: Option<MenuObject>, gates: OrderGates) -> Vec
             Quadrant::Defenses => &[MOVE, CONFIRMED_MOVE, SCRAP],
             Quadrant::Fleets => &[MOVE, CONFIRMED_MOVE, SCRAP, BOMBARDMENT, ASSAULT],
             Quadrant::Missions => &[ABORT],
+        },
+        Some(MenuObject::Producer { area, .. }) => match area {
+            ProductionArea::Shipyard => {
+                &[BUILD_SHIPS, STOP, DESTINATION, PRODUCER_RENAME, RESERVED]
+            }
+            ProductionArea::TrainingFacility => &[BUILD_TROOPS, STOP, DESTINATION, RESERVED],
+            ProductionArea::ConstructionYard => &[BUILD_FACILITIES, STOP, DESTINATION, RESERVED],
         },
         None => &[],
     };
@@ -318,8 +369,15 @@ pub fn object_menu_rows(selection: Option<MenuObject>, gates: OrderGates) -> Vec
                         || (ship && gates.ship_move)
                 }
                 ObjectMenuCommand::CreateFleet => ship && gates.ship_move,
+                ObjectMenuCommand::Rename => (fleet_entry || ship) && gates.rename,
+                ObjectMenuCommand::Destination => gates.destination,
+                ObjectMenuCommand::Stop => producer && gates.stop,
+                ObjectMenuCommand::Build => producer && gates.build,
                 ObjectMenuCommand::ConfirmedMove => fleet && gates.fleet_move,
                 ObjectMenuCommand::Encyclopedia => selection.is_some(),
+                // FUN_0051d990: a single selection that is not a system.
+                // port: only a character's Status window is ported.
+                ObjectMenuCommand::Status => matches!(selection, Some(MenuObject::Character(_))),
                 _ => false,
             },
         })
@@ -335,6 +393,19 @@ pub struct OrderGates {
     pub fleet_move: bool,
     pub troop_move: bool,
     pub ship_move: bool,
+    /// Rename (0x203): the selection is the player's and can take a name
+    /// (`FUN_004f6e60` refuses a destroyed object).
+    pub rename: bool,
+    /// Destination (0x214) on a facility icon: the system has production
+    /// areas of the player's (`FUN_00512700` kind 4); on a band, the band's
+    /// area is the player's.
+    pub destination: bool,
+    /// Stop (0x213) on a band: the band's area is the player's and is
+    /// building something.
+    pub stop: bool,
+    /// Build (0x210..0x212) on a band: the band's area is the player's and
+    /// lists something to build.
+    pub build: bool,
 }
 
 /// An open object pop-up menu.
@@ -438,6 +509,10 @@ mod tests {
         fleet_move: false,
         troop_move: false,
         ship_move: false,
+        rename: false,
+        destination: false,
+        stop: false,
+        build: false,
     };
 
     fn labels(rows: &[ObjectMenuRow]) -> Vec<&'static str> {
@@ -568,6 +643,10 @@ mod tests {
             fleet_move: true,
             troop_move: true,
             ship_move: true,
+            rename: false,
+            destination: false,
+            stop: false,
+            build: false,
         };
         assert_eq!(
             enabled(&object_menu_rows(fleet, gates)),
@@ -581,8 +660,80 @@ mod tests {
         let character = Some(MenuObject::Character(CharacterKey::default()));
         assert_eq!(
             enabled(&object_menu_rows(character, gates)),
-            ["Encyclopedia"]
+            ["Encyclopedia", "Status"]
         );
+    }
+
+    #[test]
+    fn rename_is_enabled_for_a_fleet_or_ship_its_rule_allows() {
+        // 0x203 (TEXTSTRA 12291) on a fleet's and a ship's menu
+        // (FUN_00502bd0); a character's menu does not offer it.
+        let gates = OrderGates {
+            rename: true,
+            ..OrderGates::default()
+        };
+        let fleet = Some(MenuObject::Fleet(FleetKey::default()));
+        let ship = Some(MenuObject::Ship {
+            fleet: FleetKey::default(),
+            index: 0,
+            roster: 0,
+        });
+        for selection in [fleet, ship] {
+            assert!(enabled(&object_menu_rows(selection, gates)).contains(&"Rename"));
+            assert!(
+                !enabled(&object_menu_rows(selection, OrderGates::default())).contains(&"Rename")
+            );
+        }
+        let character = Some(MenuObject::Character(CharacterKey::default()));
+        assert!(!enabled(&object_menu_rows(character, gates)).contains(&"Rename"));
+    }
+
+    #[test]
+    fn a_facility_icons_destination_follows_its_rule() {
+        // sector-icon-menus.md: Destination (0x214, TEXTSTRA 12290) on the
+        // facility icon acts on the system's production areas.
+        let gates = OrderGates {
+            destination: true,
+            ..OrderGates::default()
+        };
+        assert!(enabled(&object_menu_rows(icon(Quadrant::System), gates)).contains(&"Destination"));
+        assert!(!enabled(&object_menu_rows(
+            icon(Quadrant::System),
+            OrderGates::default()
+        ))
+        .contains(&"Destination"));
+    }
+
+    #[test]
+    fn a_bands_build_stop_and_destination_follow_their_rules() {
+        // manufacturing-build-selection.md, "Selection and menu": a band's
+        // manager offers Build (0x210..0x212), Stop (0x213), Destination
+        // (0x214) and Reserved (0x216), and for ships Rename (0x215).
+        let band = |area| {
+            Some(MenuObject::Producer {
+                system: SystemKey::default(),
+                area,
+            })
+        };
+        let gates = OrderGates {
+            destination: true,
+            stop: true,
+            build: true,
+            ..OrderGates::default()
+        };
+        for area in ProductionArea::ALL {
+            assert_eq!(
+                enabled(&object_menu_rows(band(area), gates)),
+                ["Build", "Stop", "Destination", "Encyclopedia"]
+            );
+            assert_eq!(
+                enabled(&object_menu_rows(band(area), OrderGates::default())),
+                ["Encyclopedia"]
+            );
+        }
+        // Build and Stop belong to the bands alone.
+        let icon_rows = enabled(&object_menu_rows(icon(Quadrant::System), gates));
+        assert!(!icon_rows.contains(&"Stop") && !icon_rows.contains(&"Build"));
     }
 
     fn icon(quadrant: Quadrant) -> Option<MenuObject> {
@@ -666,6 +817,10 @@ mod tests {
             fleet_move: true,
             troop_move: true,
             ship_move: true,
+            rename: false,
+            destination: false,
+            stop: true,
+            build: true,
         };
         assert_eq!(
             enabled(&object_menu_rows(icon(Quadrant::Fleets), every_gate)),
@@ -812,12 +967,28 @@ mod tests {
         let character = Some(MenuObject::Character(CharacterKey::default()));
         assert_eq!(
             enabled(&object_menu_rows(character, MISSION_GATE)),
-            ["Mission", "Encyclopedia"]
+            ["Mission", "Encyclopedia", "Status"]
         );
         assert_eq!(
             enabled(&object_menu_rows(character, OrderGates::default())),
-            ["Encyclopedia"]
+            ["Encyclopedia", "Status"]
         );
+    }
+
+    #[test]
+    fn status_is_enabled_for_a_character_and_not_yet_for_other_objects() {
+        // FUN_0051d990 enables 0x103 for a single selection that is not a
+        // system; the port has only the character's window
+        // (FUN_004486f0, ghidra/notes/status-window.md).
+        let status = |selection| {
+            enabled(&object_menu_rows(Some(selection), OrderGates::default())).contains(&"Status")
+        };
+        assert!(status(MenuObject::Character(CharacterKey::default())));
+        assert!(!status(
+            MenuObject::SpecialForce(SpecialForceKey::default())
+        ));
+        assert!(!status(MenuObject::Fleet(FleetKey::default())));
+        assert!(!status(MenuObject::Troop(TroopKey::default())));
     }
 
     #[test]

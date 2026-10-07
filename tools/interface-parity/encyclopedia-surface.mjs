@@ -19,10 +19,10 @@ const expectedRequests = ["/", "/data/runtime.orpk", "/gl.js", "/open-rebellion-
 const runId = `${new Date().toISOString().replace(/[:.]/g, "-")}-${process.pid}`;
 const runDir = path.join(root, ".artifacts/interface-parity", `encyclopedia-surface-${runId}`);
 const starts = [
-  { name: "middle", scenario: 53 },
-  { name: "first", scenario: 54 },
-  { name: "unavailable", scenario: 55 },
-  { name: "index", scenario: 56 },
+  { name: "middle", scenario: 55 },
+  { name: "first", scenario: 56 },
+  { name: "unavailable", scenario: 57 },
+  { name: "index", scenario: 58 },
 ];
 const factions = [
   { name: "alliance", byte: 1, middleColor: [84, 52, 102], indexResource: 10372 },

@@ -228,7 +228,7 @@ native playback, remaining rare voice callers, and mixing/interruption remain
 open. The source 3D window uses the standard arrow cursor, so no invented
 targeting cursor is required. All 106 `TAC-01` through `TAC-07` cells remain
 pending in the
-[surface ledger](../../qa/2026-09-10-interface-parity-audit/surface-ledger.json).
+[surface ledger](../../qa/2026-09-10-interface-parity-audit/2026-10-06-surface-ledger.json).
 
 ## Evidence and asset maps
 

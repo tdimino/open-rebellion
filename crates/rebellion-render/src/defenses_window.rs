@@ -6,7 +6,10 @@
 //! It opens from the icon a sector window shows at the bottom left of a
 //! planet (`FUN_0045ce80`, `FUN_0045aac0` kind 8). Every page lists only the
 //! side that holds the system (`+0x148`), and a move released over the
-//! window targets its system (`+0x70`, `FUN_004aa470`).
+//! window targets its system (`+0x70`, `FUN_004aa470`). A right release
+//! opens the object pop-up menu for the list's selection: the class keeps
+//! the base dialog's slots 7 and 8 (`FUN_004ac5c0`, `FUN_004ac730`), and
+//! slot 22 (`FUN_004a7a20`) gives the list's selected items.
 
 use egui_macroquad::egui;
 use rebellion_core::dat::{ExplorationStatus, Faction};
@@ -19,10 +22,12 @@ use rebellion_core::world::GameWorld;
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{CockpitFaction, CockpitLayout};
 use crate::fleet_window::{control_side, faction_side, fleet_side, paint_native};
+use crate::object_menu::MenuObject;
 use crate::quadrant_icons::{mission_keys, system_members};
 use crate::system_window::{
-    character_mini_resource_id, clamp_window_to_galaxy, defense_facility_mini, exact_clicked,
-    logical_rect, opposing_contents_visible, rect_contains, special_force_mini, troop_mini,
+    canvas_point, character_mini_resource_id, clamp_window_to_galaxy, defense_facility_mini,
+    exact_clicked, logical_rect, opposing_contents_visible, rect_contains, special_force_mini,
+    troop_mini,
 };
 
 pub const DEFENSES_WINDOW_WIDTH: f32 = 235.0;
@@ -147,6 +152,21 @@ pub enum DefensesItem {
     Defense(DefenseFacilityKey),
 }
 
+impl DefensesItem {
+    /// The object its pop-up menu opens for, when that class's menu is
+    /// ported: a character (`FUN_004ed350`), a special force
+    /// (`FUN_00503b50`) or a regiment (`FUN_00504b30`). port: a defense
+    /// facility's class menu is not ported, so it opens none.
+    const fn menu_object(self) -> Option<MenuObject> {
+        match self {
+            Self::Character(key) => Some(MenuObject::Character(key)),
+            Self::SpecialForce(key) => Some(MenuObject::SpecialForce(key)),
+            Self::Troop(key) => Some(MenuObject::Troop(key)),
+            Self::Defense(_) => None,
+        }
+    }
+}
+
 /// One list row: the object, its GOKRES mini and its name (`FUN_004a9ab0`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct DefensesRow {
@@ -230,6 +250,26 @@ impl DefensesWindowState {
         self.windows
             .iter()
             .any(|window| rect_contains(window_screen_rect(window, layout), point))
+    }
+
+    /// The screen rect of `system`'s window.
+    #[must_use]
+    pub fn screen_rect(&self, layout: CockpitLayout, system: SystemKey) -> Option<egui::Rect> {
+        let window = self.windows.iter().find(|window| window.system == system)?;
+        Some(window_screen_rect(window, layout))
+    }
+
+    /// Show `page` in `system`'s open window, as a click on its tab does
+    /// (`FUN_004a90d0` refills only for a different page).
+    pub fn show_page(&mut self, system: SystemKey, page: DefensesPage) -> bool {
+        let Some(window) = self.window_mut(system) else {
+            return false;
+        };
+        if window.page != page {
+            window.page = page;
+            window.selected = None;
+        }
+        true
     }
 
     /// The screen rect of `page`'s button in `system`'s window.
@@ -367,6 +407,13 @@ pub enum DefensesWindowAction {
     Minimize {
         system: SystemKey,
         logical_position: (i16, i16),
+    },
+    /// A right release on the list opens the object pop-up menu
+    /// (`FUN_004ac5c0`) for the selection, at a 640 by 480 canvas point.
+    OpenObjectMenu {
+        system: SystemKey,
+        selection: Option<MenuObject>,
+        point: (i16, i16),
     },
 }
 
@@ -595,6 +642,11 @@ struct WindowDrawResult {
     open_sector: bool,
     page: Option<DefensesPage>,
     select: Option<DefensesItem>,
+    /// A press on the list's empty space clears the selection
+    /// (`FUN_006094b0`).
+    deselect: bool,
+    /// The selection and canvas point of a right release on the list.
+    object_menu: Option<(Option<MenuObject>, (i16, i16))>,
 }
 
 /// Draw every open Defenses window.
@@ -657,6 +709,9 @@ pub fn draw_defenses_windows(
                 open.page = page;
                 open.selected = None;
             }
+            if result.deselect {
+                open.selected = None;
+            }
             if let Some(item) = result.select {
                 open.selected = Some(item);
             }
@@ -664,6 +719,13 @@ pub fn draw_defenses_windows(
         if result.focus {
             state.focus(system);
             actions.push(DefensesWindowAction::SelectSystem(system));
+        }
+        if let Some((selection, point)) = result.object_menu {
+            actions.push(DefensesWindowAction::OpenObjectMenu {
+                system,
+                selection,
+                point,
+            });
         }
     }
     actions
@@ -832,6 +894,32 @@ fn draw_defenses_window(
             // (`FUN_0060a490`) is not drawn, so only the first nine cells show.
             let list = logical_rect(local, scale, LIST.0, LIST.1, LIST.2, LIST.3);
             let list_painter = painter.with_clip_rect(list);
+            // The list control under the rows (FUN_006083c0): a left or
+            // right press on its empty space clears the selection
+            // (FUN_006094b0), and a right release there opens the menu for
+            // the empty selection.
+            let list_response = ui.interact(
+                list,
+                ui.id().with((window.system, "list")),
+                egui::Sense::click(),
+            );
+            let (any_pressed, right_pressed, release_point) = ctx.input(|input| {
+                (
+                    input.pointer.button_pressed(egui::PointerButton::Primary)
+                        || input.pointer.button_pressed(egui::PointerButton::Secondary),
+                    input.pointer.button_pressed(egui::PointerButton::Secondary),
+                    input.pointer.interact_pos(),
+                )
+            });
+            if any_pressed && list_response.is_pointer_button_down_on() {
+                result.deselect = true;
+                result.focus = true;
+            }
+            if list_response.secondary_clicked() {
+                if let Some(point) = release_point.filter(|point| rect_contains(list, *point)) {
+                    result.object_menu = Some((None, canvas_point(layout, point)));
+                }
+            }
             let font = egui::FontId::proportional((9.0 * scale).max(6.0));
             let frame = if side == 1 {
                 ROW_FRAME[0]
@@ -889,6 +977,23 @@ fn draw_defenses_window(
                 if exact_clicked(&response, cell) {
                     result.select = Some(row.item);
                     result.focus = true;
+                }
+                // A right press selects the row as a left press does
+                // (FUN_006083c0 shares the WM_LBUTTONDOWN path); the release
+                // opens its menu.
+                if right_pressed && response.is_pointer_button_down_on() {
+                    result.select = Some(row.item);
+                    result.focus = true;
+                }
+                if response.secondary_clicked() {
+                    if let (Some(object), Some(point)) = (
+                        row.item.menu_object(),
+                        response
+                            .interact_pointer_pos()
+                            .filter(|point| rect_contains(cell.intersect(list), *point)),
+                    ) {
+                        result.object_menu = Some((Some(object), canvas_point(layout, point)));
+                    }
                 }
             }
 
@@ -1565,6 +1670,127 @@ mod tests {
         assert!(held.painted.contains(&(CLOSE_PRESSED, at(218.0, 3.0))));
         assert!(held.painted.contains(&(MINIMIZE_NORMAL, at(204.0, 3.0))));
         assert_eq!(state.window_count(), 1);
+    }
+
+    fn right_click(point: egui::Pos2) -> Vec<Vec<egui::Event>> {
+        let button = |pressed| egui::Event::PointerButton {
+            pos: point,
+            button: egui::PointerButton::Secondary,
+            pressed,
+            modifiers: egui::Modifiers::default(),
+        };
+        let mut frames = hover(point);
+        frames.extend([vec![button(true)], vec![button(false)], vec![]]);
+        frames
+    }
+
+    fn menus(run: &Run) -> Vec<(Option<MenuObject>, (i16, i16))> {
+        run.actions
+            .iter()
+            .filter_map(|action| match *action {
+                DefensesWindowAction::OpenObjectMenu {
+                    selection, point, ..
+                } => Some((selection, point)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_right_click_on_a_character_selects_it_and_opens_its_menu_at_the_cursor() {
+        // FUN_004ac5c0 (the class's slot 7) opens the menu for slot 22's
+        // selection (FUN_004a7a20), the list's selected rows, at the
+        // release point in 640 by 480 canvas pixels.
+        let (world, system, missions) = stocked();
+        let mut state = opened(&world, system);
+        let hidden = world
+            .characters
+            .iter()
+            .find(|(_, value)| value.name == "Hidden")
+            .unwrap()
+            .0;
+
+        let opened = run(&world, &missions, &mut state, right_click(at(100.0, 100.0)));
+        assert_eq!(
+            state.windows[0].selected,
+            Some(DefensesItem::Character(hidden))
+        );
+        assert_eq!(
+            menus(&opened),
+            [(Some(MenuObject::Character(hidden)), (120, 130))]
+        );
+    }
+
+    #[test]
+    fn a_right_click_on_a_regiment_opens_its_menu() {
+        let (world, system, missions) = stocked();
+        let mut state = opened(&world, system);
+        let _ = run(&world, &missions, &mut state, click(at(80.0, 30.0)));
+        let troop = world.systems[system].ground_units[0];
+        let opened = run(&world, &missions, &mut state, right_click(at(30.0, 100.0)));
+        assert_eq!(
+            menus(&opened),
+            [(Some(MenuObject::Troop(troop)), (50, 130))]
+        );
+    }
+
+    #[test]
+    fn a_right_click_on_a_defense_facility_selects_it_but_opens_nothing() {
+        // port: a defense facility's class menu is not ported.
+        let (world, system, missions) = stocked();
+        let mut state = opened(&world, system);
+        let _ = run(&world, &missions, &mut state, click(at(150.0, 30.0)));
+        assert_eq!(state.windows[0].page, DefensesPage::Shields);
+        let opened = run(&world, &missions, &mut state, right_click(at(30.0, 100.0)));
+        assert!(matches!(
+            state.windows[0].selected,
+            Some(DefensesItem::Defense(_))
+        ));
+        assert!(menus(&opened).is_empty());
+    }
+
+    #[test]
+    fn a_right_click_on_empty_list_space_clears_the_selection_and_opens_an_empty_menu() {
+        // FUN_006094b0 clears the selection on a press over no item; the
+        // release then opens the menu for nothing (Encyclopedia and Status,
+        // both disabled).
+        let (world, system, missions) = stocked();
+        let mut state = opened(&world, system);
+        let _ = run(&world, &missions, &mut state, click(at(100.0, 100.0)));
+        assert!(state.windows[0].selected.is_some());
+
+        let empty = run(&world, &missions, &mut state, right_click(at(100.0, 250.0)));
+        assert_eq!(state.windows[0].selected, None);
+        assert_eq!(menus(&empty), [(None, (120, 280))]);
+
+        // Above the list, a right click opens nothing.
+        let outside = run(&world, &missions, &mut state, right_click(at(100.0, 60.0)));
+        assert!(menus(&outside).is_empty());
+    }
+
+    #[test]
+    fn showing_a_page_clears_the_selection_only_when_the_page_changes() {
+        // FUN_004a90d0 refills only for a different page, as a tab click.
+        let (world, system, missions) = stocked();
+        let mut state = opened(&world, system);
+        let _ = run(&world, &missions, &mut state, click(at(100.0, 100.0)));
+        assert!(state.show_page(system, DefensesPage::Personnel));
+        assert!(state.windows[0].selected.is_some());
+        assert!(state.show_page(system, DefensesPage::Regiments));
+        assert_eq!(state.windows[0].page, DefensesPage::Regiments);
+        assert_eq!(state.windows[0].selected, None);
+
+        let mut other = world.clone();
+        let missing = other.systems.insert(world.systems[system].clone());
+        assert!(!state.show_page(missing, DefensesPage::Shields));
+        assert_eq!(
+            state.screen_rect(scaled(), system),
+            Some(egui::Rect::from_min_size(
+                at(0.0, 0.0),
+                egui::vec2(470.0, 608.0)
+            ))
+        );
+        assert_eq!(state.screen_rect(scaled(), missing), None);
     }
 
     #[test]

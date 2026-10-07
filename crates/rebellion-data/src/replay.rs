@@ -722,6 +722,7 @@ struct ReplayRuntime {
     player_is_alliance: bool,
     sim_rng: rand_xoshiro::Xoshiro256PlusPlus,
     game_config: GameConfig,
+    player_agent: rebellion_core::agent_automation::PlayerAgent,
 }
 
 impl ReplayRuntime {
@@ -753,6 +754,7 @@ impl ReplayRuntime {
             campaign_config,
             troop_transport,
             deliveries,
+            player_agent,
         } = state;
         let (fog, inactive_fog) = if player_is_alliance {
             (fog_alliance, fog_empire)
@@ -788,6 +790,7 @@ impl ReplayRuntime {
             player_is_alliance,
             sim_rng,
             game_config,
+            player_agent,
         }
     }
 
@@ -891,6 +894,7 @@ impl ReplayRuntime {
             campaign_config: self.states.campaign_config,
             troop_transport: self.states.troop_transport.clone(),
             deliveries: self.states.deliveries.clone(),
+            player_agent: self.player_agent.clone(),
         }
     }
 }
@@ -1220,6 +1224,7 @@ mod tests {
             campaign_config: CampaignConfig::default(),
             troop_transport: rebellion_core::troop_transport::TroopTransportState::default(),
             deliveries: rebellion_core::delivery::DeliveryState::default(),
+            player_agent: rebellion_core::agent_automation::PlayerAgent::default(),
         }
     }
 

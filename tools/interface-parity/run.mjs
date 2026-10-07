@@ -293,9 +293,10 @@ function verifyGidRootFrame(viewport, screenshotBytes, systemWindowOpen = false)
     );
   }
   const check = (sx, sy, id, bx, by) => {
-    // The detailed system window and its edge span x=226..455, y=75..379. It is in front
-    // of the GID popup, so compare the authored frame everywhere else.
-    if (systemWindowOpen && sx <= 455 && sy <= 379) {
+    // The Manufacturing window (type 9, 226 by 304 at (225, 76)) spans x=225..450,
+    // y=76..379. It is in front of the GID popup, so compare the authored frame
+    // everywhere else.
+    if (systemWindowOpen && sx <= 450 && sy <= 379) {
       pixelsOccluded++;
       return;
     }

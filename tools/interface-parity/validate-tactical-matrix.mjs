@@ -17,7 +17,7 @@ const resolveArgument = (name, fallback) => path.resolve(root, argumentsByName.g
 
 const surfaceLedger = readJson(resolveArgument(
   "--surface-ledger",
-  "docs/qa/2026-09-10-interface-parity-audit/surface-ledger.json",
+  "docs/qa/2026-09-10-interface-parity-audit/2026-10-06-surface-ledger.json",
 ));
 const catalog = readJson(resolveArgument(
   "--catalog",

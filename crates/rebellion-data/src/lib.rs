@@ -12,6 +12,7 @@ use dat_dumper::types::fighters::FightersFile;
 use dat_dumper::types::general_params::GeneralParamsFile;
 use dat_dumper::types::int_table::IntTableFile;
 use dat_dumper::types::major_characters::{CharacterEntry, MajorCharactersFile};
+use dat_dumper::types::manufacturing_facilities::ManufacturingFacilitiesFile;
 use dat_dumper::types::minor_characters::MinorCharactersFile;
 use dat_dumper::types::missions::{Mission, MissionsFile};
 use dat_dumper::types::sectors::SectorsFile;
@@ -24,10 +25,10 @@ use dat_dumper::types::troops::TroopsFile;
 use rebellion_core::dat::{ExplorationStatus, SectorGroup};
 use rebellion_core::ids::{DatId, SectorKey, SystemKey};
 use rebellion_core::world::{
-    CapitalShipClass, Character, ControlKind, DefenseFacilityClassDef, FighterClass, GameWorld,
-    GnprtbEntry, GnprtbParams, MissionMemberRules, MissionRecord, MissionTargetRules, MstbEntry,
-    MstbTable, SdprtbEntry, SdprtbParams, Sector, SeedOptions, SkillPair, SpecialForceClassDef,
-    System, TroopClassDef,
+    BuildableClass, CapitalShipClass, Character, ControlKind, DefenseFacilityClassDef,
+    FighterClass, GameWorld, GnprtbEntry, GnprtbParams, MissionMemberRules, MissionRecord,
+    MissionTargetRules, MstbEntry, MstbTable, SdprtbEntry, SdprtbParams, Sector, SeedOptions,
+    SkillPair, SpecialForceClassDef, System, TroopClassDef,
 };
 
 pub mod encyclopedia_catalog;
@@ -153,6 +154,7 @@ pub fn load_game_data_with_options(
         troop_classes: std::collections::HashMap::new(),
         defense_facility_classes: std::collections::HashMap::new(),
         special_force_classes: std::collections::HashMap::new(),
+        buildable_classes: std::collections::HashMap::new(),
         difficulty_index: seed_options.gnprtb_index(),
         recruit_pool_empty: [false; 2],
         fleet_names: rebellion_core::world::FleetNames::default(),
@@ -545,12 +547,100 @@ pub fn load_game_data_with_options(
     if file_available(&deffac_path) {
         let deffac_file: DefenseFacilitiesFile = read_dat_file(&deffac_path)?;
         for dat in &deffac_file.facilities {
+            // Keyed like the seeded instances' `class_dat_id`: the record's
+            // family byte over its sequential id (0x22000001..).
             world.defense_facility_classes.insert(
-                DatId::new(dat.id),
+                class_dat_id(dat.family_id, dat.id),
                 DefenseFacilityClassDef {
                     bombardment_defense: dat.bombardment_defense.cast_signed(),
                 },
             );
+        }
+    }
+
+    // ── 10a. Buildable classes ─────────────────────────────────────────────
+    // What each regiment, special-force and facility class costs to build,
+    // for Build Selection (FUN_00437880 lists them, FUN_00538220 prices them).
+    let mut buildable = |family: u32, id: u32, text: u16, head: [u32; 6], rate: u32| {
+        let [is_alliance, is_empire, refined, maintenance, order, difficulty] = head;
+        world.buildable_classes.insert(
+            class_dat_id(family, id),
+            BuildableClass {
+                name: lookup(text, "Class"),
+                is_alliance: is_alliance != 0,
+                is_empire: is_empire != 0,
+                refined_material_cost: refined,
+                maintenance_cost: maintenance,
+                research_order: order,
+                research_difficulty: difficulty,
+                processing_rate: rate,
+            },
+        );
+    };
+    let troops_path = gdata_path.join("TROOPSD.DAT");
+    if file_available(&troops_path) {
+        let file: TroopsFile = read_dat_file(&troops_path)?;
+        for d in &file.troops {
+            let head = [
+                d.is_alliance,
+                d.is_empire,
+                d.refined_material_cost,
+                d.maintenance_cost,
+                d.research_order,
+                d.research_difficulty,
+            ];
+            buildable(d.family_id, d.id, d.text_stra_dll_id, head, 0);
+        }
+    }
+    if file_available(&specfc_path) {
+        let file: SpecialForcesFile = read_dat_file(&specfc_path)?;
+        for d in &file.units {
+            let head = [
+                d.is_alliance,
+                d.is_empire,
+                d.refined_material_cost,
+                d.maintenance_cost,
+                d.research_order,
+                d.research_difficulty,
+            ];
+            buildable(d.family_id, d.id, d.text_stra_dll_id, head, 0);
+        }
+    }
+    if file_available(&deffac_path) {
+        let file: DefenseFacilitiesFile = read_dat_file(&deffac_path)?;
+        for d in &file.facilities {
+            let head = [
+                d.is_alliance,
+                d.is_empire,
+                d.refined_material_cost,
+                d.maintenance_cost,
+                d.research_order,
+                d.research_difficulty,
+            ];
+            buildable(d.family_id, d.id, d.text_stra_dll_id, head, 0);
+        }
+    }
+    for name in ["MANFACSD.DAT", "PROFACSD.DAT"] {
+        let path = gdata_path.join(name);
+        if file_available(&path) {
+            let file: ManufacturingFacilitiesFile = read_dat_file(&path)?;
+            for d in &file.facilities {
+                let head = [
+                    d.is_alliance,
+                    d.is_empire,
+                    d.refined_material_cost,
+                    d.maintenance_cost,
+                    d.research_order,
+                    d.research_difficulty,
+                ];
+                buildable(
+                    d.family_id,
+                    d.id,
+                    d.text_stra_dll_id,
+                    head,
+                    d.processing_rate,
+                );
+            }
         }
     }
 
@@ -626,6 +716,16 @@ pub fn init_mod_runtime(gdata_path: &Path) -> Option<crate::mods::ModRuntime> {
 /// record id takes the header's family; the skill pairs are the class record's
 /// `+0x58..+0x94` and the mission mask its `+0x98`
 /// (ghidra/notes/mission-lifecycle.md, "The mission record").
+/// A class record's `DatId`: files store a sequential id (1..N) under the
+/// record's family byte, which the seeded instances carry compounded.
+fn class_dat_id(family_id: u32, id: u32) -> DatId {
+    if id >> 24 == 0 {
+        DatId::new((family_id << 24) | id)
+    } else {
+        DatId::new(id)
+    }
+}
+
 fn special_force_class(family_id: u32, dat: &SpecialForce) -> (DatId, SpecialForceClassDef) {
     let class_dat_id = if dat.id >> 24 == 0 {
         DatId::new((family_id << 24) | dat.id)

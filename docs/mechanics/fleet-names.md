@@ -20,6 +20,16 @@ Each side numbers its own fleets galaxy-wide, from 1, and never gives a
 number twice, even after its fleet is gone (`FUN_00517760`,
 `FUN_005302c0`; see `ghidra/notes/fleet-names.md`). This is the default.
 
+## Renaming (order 0x203)
+
+The object pop-up menu's **Rename** edits a fleet's or capital ship's name in
+place in the Fleet window (`FUN_004ac950`; see
+`ghidra/notes/rename-order.md`). Enter commits a name that is not empty, and
+an empty name keeps the field open. The original sets no length limit. A
+ship without a name of its own shows its class name (`FUN_004f6270`). A
+renamed fleet keeps its name under both modes, so a signature name never
+takes it over. port: Escape or a click elsewhere drops the edit unissued.
+
 ## Canonical names (port extension)
 
 The original has no other naming. Open Rebellion adds one, chosen in the

@@ -68,7 +68,7 @@ can prove presentation but cannot prove the action that normally reaches it.
 
 Tracked artifacts:
 
-- `surface-ledger.json` owns the 106 stable cell IDs and acceptance status.
+- `2026-10-06-surface-ledger.json` owns the 106 stable cell IDs and acceptance status.
 - `tactical.catalog.json` owns deterministic A1 scenarios and exact `audit_cells`
   mappings.
 - `tactical-a0-manifest.schema.json` validates original-capture metadata.
@@ -101,7 +101,7 @@ reviewable and must leave all existing focused tests green.
 Status: complete at P58-B07. The generator reports the current honest boundary
 as 0 mapped, 0 A0, and 0 accepted while preserving all 106 stable rows.
 
-- Generate the tactical matrix directly from `surface-ledger.json`.
+- Generate the tactical matrix directly from `2026-10-06-surface-ledger.json`.
 - Fail on missing, duplicate, unknown, or non-counting cell IDs.
 - Require exactly 106 unique rows distributed 13/13/20/14/23/9/14.
 - Add A0 manifest schema validation and redacted evidence paths.

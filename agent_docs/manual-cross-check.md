@@ -43,10 +43,18 @@ handler that would do it.
 
 ## Reading the manual
 
+- `docs/reference/campaign-history/archive/star-wars-rebellion-manual.md`
+  is the grep-able Markdown transcription (Mistral OCR 4.1, 2026-10-06).
+  Each page carries a `<!-- pdf-page: N | printed: M -->` anchor and a
+  `## p. M` heading; figures are blockquote annotations. Use this for text
+  search and citation lookup.
 - `docs/reference/campaign-history/archive/star-wars-rebellion-manual.pdf`
-  is scanned pages with no text layer. Read pages directly
-  (`Read` with `pages`). Printed page numbers run two ahead of PDF pages in
-  chapter 3 (printed p. 123 is PDF page 121); check the footer.
+  is the scanned original and remains the authority for figures, layout,
+  and visual details. Read pages directly (`Read` with `pages`) when you
+  need to verify a screenshot or callout leader line.
+- Printed page numbers run ahead of PDF pages; the offset varies by chapter
+  (see the YAML `page_offset_table` in the Markdown front matter). In
+  chapter 3, printed p. 123 is PDF page 121 (offset +2); check the footer.
 - Cite the printed page and figure: "manual p. 123", "Fig. 3.70".
 - A figure's callouts are claims too (Fig. 3.70: "Open Fleet window and
   Sector window for selected fleet").

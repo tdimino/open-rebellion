@@ -12,6 +12,7 @@ use rebellion_core::dat::{ExplorationStatus, Faction};
 use rebellion_core::fog::FogState;
 use rebellion_core::ids::SystemKey;
 use rebellion_core::missions::{MissionMember, MissionState};
+use rebellion_core::movement::MovementState;
 use rebellion_core::world::GameWorld;
 
 use crate::fleet_window::{control_side, faction_side, fleet_side, icon_side};
@@ -61,6 +62,7 @@ pub fn quadrant_side(
     world: &GameWorld,
     fog: &FogState,
     missions: &MissionState,
+    movement: &MovementState,
     player: Faction,
     system: SystemKey,
     quadrant: Quadrant,
@@ -75,7 +77,7 @@ pub fn quadrant_side(
         // mission.
         Quadrant::Defenses => (contents.defenses(missions) > 0).then(|| contents.side()),
         // FUN_0045ccc0, ported in `fleet_window`.
-        Quadrant::Fleets => match icon_side(world, fog, player, system) {
+        Quadrant::Fleets => match icon_side(world, movement, fog, player, system) {
             (_, 0) => None,
             (side, _) => Some(side),
         },
@@ -120,11 +122,12 @@ pub fn quadrant_icon(
     world: &GameWorld,
     fog: &FogState,
     missions: &MissionState,
+    movement: &MovementState,
     player: Faction,
     system: SystemKey,
     quadrant: Quadrant,
 ) -> Option<(u32, u32)> {
-    quadrant_side(world, fog, missions, player, system, quadrant)
+    quadrant_side(world, fog, missions, movement, player, system, quadrant)
         .and_then(|side| quadrant_art(quadrant, side))
 }
 
@@ -379,7 +382,15 @@ mod tests {
         // The player sees the system, so every side's objects count.
         let mut fog = FogState::new(player);
         fog.reveal(system);
-        quadrant_side(world, &fog, missions, player, system, quadrant)
+        quadrant_side(
+            world,
+            &fog,
+            missions,
+            &rebellion_core::movement::MovementState::default(),
+            player,
+            system,
+            quadrant,
+        )
     }
 
     fn alliance_side(world: &GameWorld, system: SystemKey, quadrant: Quadrant) -> Option<u8> {
@@ -700,6 +711,7 @@ mod tests {
                 &world,
                 &fog,
                 &missions,
+                &rebellion_core::movement::MovementState::default(),
                 Faction::Alliance,
                 system,
                 Quadrant::System
@@ -712,6 +724,7 @@ mod tests {
                 &world,
                 &fog,
                 &missions,
+                &rebellion_core::movement::MovementState::default(),
                 Faction::Alliance,
                 system,
                 Quadrant::System
@@ -726,6 +739,7 @@ mod tests {
                 &world,
                 &blind,
                 &missions,
+                &rebellion_core::movement::MovementState::default(),
                 Faction::Alliance,
                 system,
                 Quadrant::System
@@ -754,6 +768,7 @@ mod tests {
                 &world,
                 &fog,
                 &missions,
+                &rebellion_core::movement::MovementState::default(),
                 Faction::Alliance,
                 system,
                 Quadrant::System
@@ -765,6 +780,7 @@ mod tests {
                 &world,
                 &fog,
                 &missions,
+                &rebellion_core::movement::MovementState::default(),
                 Faction::Alliance,
                 system,
                 Quadrant::Defenses

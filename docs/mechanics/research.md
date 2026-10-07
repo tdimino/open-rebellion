@@ -80,10 +80,14 @@ so they unlock against the Ship tree, the counter behind `SideShipyardRdOrderNot
 
 ### Where the Gate Applies
 
-The manufacturing panel lists, and the AI builds, only capital ships and
-fighters the faction has researched. Troop and facility classes carry
-`research_order` in their DAT records, but the runtime class types do not yet
-load it, so those trees gate nothing.
+The Build Selection window (`FUN_0052e580`) lists only classes the faction has
+researched. A shipyard checks its capital ships and fighters against the Ship
+tree. A training facility checks its troops and special forces (TROOPSD,
+SPECFCSD) against the Troop tree. A construction yard checks its defense,
+manufacturing and production facilities (DEFFACSD, MANFACSD, PROFACSD) against
+the Facility tree. The AI's capital ships and fighters pass the same gate. Its
+troops and facilities copy classes the side already fields, so it builds
+nothing new on those two trees (port).
 
 ### Evidence
 

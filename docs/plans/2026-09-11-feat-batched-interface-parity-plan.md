@@ -24,17 +24,17 @@ one-commit family gates used to execute this plan more quickly.
 ## Progress snapshot
 
 <!-- interface-parity-status:start -->
-Required interface families: 43. Complete: 0. Partial: 12. Failing: 31. Blocked: 0. Strictly accepted cells: 0/627.
+Required interface families: 43. Complete: 0. Partial: 15. Failing: 28. Blocked: 0. Strictly accepted cells: 0/627.
 The current CMD-02 GID catalog has 38 scenarios (29 baseline cells and nine additional native filter variants) and 152 faction/viewport executions. Its strict original-evidence and cross-browser gate remains open.
 <!-- interface-parity-status:end -->
 
 | Measure | Current position |
 |---|---:|
-| Practical interface scope materially tackled | approximately 20 to 25% |
-| Practical interface scope remaining | approximately 75 to 80% |
+| Practical interface scope materially tackled | approximately 25% |
+| Practical interface scope remaining | approximately 75% |
 | Bounded practical space-battle launcher implementation | complete at P58-B22 |
 | Required surface families | 43 |
-| Family status | 0 complete, 12 partial, 31 fail |
+| Family status | 0 complete, 15 partial, 28 fail |
 | Strictly accepted required cells | 0 of 627 |
 
 The practical percentage is a planning estimate based on scoped implementation
@@ -280,6 +280,6 @@ For each bundle, its evidence file must record:
 - remaining cells that were deliberately not claimed;
 - the commit and pushed branch containing the accepted checkpoint.
 
-The [surface ledger](../qa/2026-09-10-interface-parity-audit/surface-ledger.json)
+The [surface ledger](../qa/2026-09-10-interface-parity-audit/2026-10-06-surface-ledger.json)
 remains the acceptance denominator. This plan controls execution cadence, not
 the meaning of parity.

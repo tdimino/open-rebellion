@@ -622,7 +622,7 @@
       "title": "Remove visible replacement dashboards from parity mode",
       "status": "implementation-needed",
       "retrieval": {
-        "sources": ["Open Rebellion source", "surface-ledger.json", "original interface navigation map"],
+        "sources": ["Open Rebellion source", "2026-10-06-surface-ledger.json", "original interface navigation map"],
         "method": "Move each action into its original surface, preserve model behavior, then remove or isolate the replacement route and visible pixels.",
         "next_proof": "Show zero replacement dashboards and zero lost actions in parity mode."
       },

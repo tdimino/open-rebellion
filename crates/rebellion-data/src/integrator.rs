@@ -55,7 +55,8 @@ use rebellion_core::troop_transport::{RegimentArrivals, RegimentLeg, TroopTransp
 use rebellion_core::uprising::{UprisingEvent, UprisingState};
 use rebellion_core::victory::VictoryOutcome;
 use rebellion_core::world::{
-    CapitalShipClass, ControlKind, FighterEntry, Fleet, GameWorld, ShipInstance, SpecialForceUnit,
+    CapitalShipClass, ControlKind, DefenseFacilityInstance, FighterEntry, Fleet, GameWorld,
+    ManufacturingFacilityInstance, ProductionFacilityInstance, ShipInstance, SpecialForceUnit,
     TroopUnit,
 };
 
@@ -541,8 +542,7 @@ impl PerceptionIntegrator {
     /// Apply build completions: add manufactured items to `GameWorld` + emit telemetry.
     ///
     /// Emits two telemetry records per completion — `EVT_BUILD_COMPLETE`
-    /// (the "construction finished" signal used by the manufacturing panel
-    /// and test harnesses) and `EVT_UNITS_DEPLOYED` (0x107, Knesset
+    /// (the "construction finished" signal test harnesses use) and `EVT_UNITS_DEPLOYED` (0x107, Knesset
     /// Shamash-Bet Dabora 2 #K5 — the "new forces in the field" signal
     /// that strategic AIs and story events listen for).
     pub fn apply_build_completions(
@@ -2886,29 +2886,90 @@ mod tests {
     }
 
     #[test]
-    fn troop_production_preserves_original_class_and_faction() {
+    fn troop_production_builds_its_class_for_the_classes_side() {
+        // TROOPSD record 3 (Sullustan) serves the Alliance only (+0x18).
         let mut world = GameWorld::default();
         let system = add_system(&mut world, "Training World");
-        let template = world.troops.insert(TroopUnit {
-            class_dat_id: DatId::new(0x1000_0003),
-            is_alliance: true,
-            regiment_strength: 37,
-        });
+        world.buildable_classes.insert(
+            DatId::new(0x1000_0003),
+            rebellion_core::world::BuildableClass {
+                is_alliance: true,
+                ..Default::default()
+            },
+        );
 
         apply_build_completion_inner(
             &CompletionEvent {
                 system,
                 tick: 1,
-                kind: BuildableKind::Troop(template),
+                kind: BuildableKind::Troop(DatId::new(0x1000_0003)),
             },
             &mut world,
         );
 
         let built = *world.systems[system].ground_units.last().unwrap();
-        assert_ne!(built, template);
         assert_eq!(world.troops[built].class_dat_id, DatId::new(0x1000_0003));
         assert!(world.troops[built].is_alliance);
         assert_eq!(world.troops[built].regiment_strength, 100);
+    }
+
+    #[test]
+    fn facility_and_special_force_production_build_their_class_for_the_builder() {
+        // MANFACSD and PROFACSD serve both sides, so the order carries its
+        // builder's; family 0x28 is a shipyard and 0x2c a mine
+        // (FUN_00537ff0, FUN_00458fe0).
+        use rebellion_core::manufacturing::FacilityBuild;
+        let mut world = GameWorld::default();
+        let system = add_system(&mut world, "Kuat");
+        let empire = |class| FacilityBuild {
+            class: DatId::new(class),
+            is_alliance: false,
+        };
+        world.buildable_classes.insert(
+            DatId::new(0x3c00_0007),
+            rebellion_core::world::BuildableClass {
+                is_empire: true,
+                ..Default::default()
+            },
+        );
+        world.special_force_classes.insert(
+            DatId::new(0x3c00_0007),
+            rebellion_core::world::SpecialForceClassDef {
+                skills: [rebellion_core::world::SkillPair {
+                    base: 30,
+                    variance: 10,
+                }; 8],
+                mission_mask: 0,
+            },
+        );
+        for kind in [
+            BuildableKind::ManufacturingFacility(empire(0x2800_0004)),
+            BuildableKind::ProductionFacility(empire(0x2c00_0001)),
+            BuildableKind::DefenseFacility(empire(0x2200_0001)),
+            BuildableKind::SpecialForce(DatId::new(0x3c00_0007)),
+        ] {
+            apply_build_completion_inner(
+                &CompletionEvent {
+                    system,
+                    tick: 1,
+                    kind,
+                },
+                &mut world,
+            );
+        }
+
+        let at = &world.systems[system];
+        let yard = &world.manufacturing_facilities[at.manufacturing_facilities[0]];
+        assert_eq!(yard.class_dat_id, DatId::new(0x2800_0004));
+        assert!(!yard.is_alliance && yard.is_shipyard);
+        let mine = &world.production_facilities[at.production_facilities[0]];
+        assert!(!mine.is_alliance && mine.is_mine);
+        let defense = &world.defense_facilities[at.defense_facilities[0]];
+        assert_eq!(defense.class_dat_id, DatId::new(0x2200_0001));
+        assert!(!defense.is_alliance);
+        let unit = &world.special_forces[at.special_forces[0]];
+        assert!(!unit.is_alliance);
+        assert_eq!(unit.skills, [30; 8]);
     }
 }
 
@@ -3559,42 +3620,74 @@ pub fn apply_build_completion_inner(completion: &CompletionEvent, world: &mut Ga
                 }
             }
         }
-        BuildableKind::ManufacturingFacility(class_key) => {
-            if let Some(template) = world.manufacturing_facilities.get(*class_key).cloned() {
-                let fac_key = world.manufacturing_facilities.insert(template);
-                if let Some(sys) = world.systems.get_mut(sys_key) {
-                    sys.manufacturing_facilities.push(fac_key);
-                }
+        BuildableKind::ManufacturingFacility(build) => {
+            let fac_key = world
+                .manufacturing_facilities
+                .insert(ManufacturingFacilityInstance {
+                    class_dat_id: build.class,
+                    is_alliance: build.is_alliance,
+                    is_shipyard: build.class.family() == 0x28,
+                });
+            if let Some(sys) = world.systems.get_mut(sys_key) {
+                sys.manufacturing_facilities.push(fac_key);
             }
         }
-        BuildableKind::DefenseFacility(class_key) => {
-            if let Some(template) = world.defense_facilities.get(*class_key).cloned() {
-                let fac_key = world.defense_facilities.insert(template);
-                if let Some(sys) = world.systems.get_mut(sys_key) {
-                    sys.defense_facilities.push(fac_key);
-                }
+        BuildableKind::DefenseFacility(build) => {
+            let fac_key = world.defense_facilities.insert(DefenseFacilityInstance {
+                class_dat_id: build.class,
+                is_alliance: build.is_alliance,
+            });
+            if let Some(sys) = world.systems.get_mut(sys_key) {
+                sys.defense_facilities.push(fac_key);
             }
         }
-        BuildableKind::ProductionFacility(class_key) => {
-            if let Some(template) = world.production_facilities.get(*class_key).cloned() {
-                let fac_key = world.production_facilities.insert(template);
-                if let Some(sys) = world.systems.get_mut(sys_key) {
-                    sys.production_facilities.push(fac_key);
-                }
+        BuildableKind::ProductionFacility(build) => {
+            let fac_key = world
+                .production_facilities
+                .insert(ProductionFacilityInstance {
+                    class_dat_id: build.class,
+                    is_alliance: build.is_alliance,
+                    is_mine: build.class.family() == 0x2c,
+                });
+            if let Some(sys) = world.systems.get_mut(sys_key) {
+                sys.production_facilities.push(fac_key);
             }
         }
-        BuildableKind::Troop(class_key) => {
-            let Some(template) = world.troops.get(*class_key).cloned() else {
+        // A regiment or special-force class serves one side.
+        BuildableKind::Troop(class) => {
+            let Some(is_alliance) = world.buildable_classes.get(class).map(|c| c.is_alliance)
+            else {
                 return;
             };
-            let unit = TroopUnit {
-                class_dat_id: template.class_dat_id,
-                is_alliance: template.is_alliance,
+            let tk = world.troops.insert(TroopUnit {
+                class_dat_id: *class,
+                is_alliance,
                 regiment_strength: 100,
-            };
-            let tk = world.troops.insert(unit);
+            });
             if let Some(sys) = world.systems.get_mut(sys_key) {
                 sys.ground_units.push(tk);
+            }
+        }
+        // port: a built unit takes its class's base skills; the creation
+        // roll (`FUN_00535e40`, base + rand(0..=variance)) needs the
+        // simulation's random stream, which completion does not carry.
+        BuildableKind::SpecialForce(class) => {
+            let Some(is_alliance) = world.buildable_classes.get(class).map(|c| c.is_alliance)
+            else {
+                return;
+            };
+            let skills = world
+                .special_force_classes
+                .get(class)
+                .map_or([0; 8], |def| def.skills.map(|pair| pair.base));
+            let key = world.special_forces.insert(SpecialForceUnit {
+                class_dat_id: *class,
+                is_alliance,
+                skills,
+                on_mission: false,
+            });
+            if let Some(sys) = world.systems.get_mut(sys_key) {
+                sys.special_forces.push(key);
             }
         }
     }

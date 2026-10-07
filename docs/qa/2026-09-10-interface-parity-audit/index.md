@@ -10,7 +10,7 @@ tags: [qa, interface, parity, bitmap, screenshots, rebellion, supremacy]
 # Original Interface Parity Audit
 
 <!-- interface-parity-status:start -->
-Required interface families: 43. Complete: 0. Partial: 12. Failing: 31. Blocked: 0. Strictly accepted cells: 0/627.
+Required interface families: 43. Complete: 0. Partial: 15. Failing: 28. Blocked: 0. Strictly accepted cells: 0/627.
 The current CMD-02 GID catalog has 38 scenarios (29 baseline cells and nine additional native filter variants) and 152 faction/viewport executions. Its strict original-evidence and cross-browser gate remains open.
 <!-- interface-parity-status:end -->
 
@@ -18,12 +18,12 @@ The current CMD-02 GID catalog has 38 scenarios (29 baseline cells and nine addi
 
 | Measure | Current position |
 |---|---:|
-| Practical interface scope materially tackled | approximately 20 to 25% |
-| Practical interface scope remaining | approximately 75 to 80% |
+| Practical interface scope materially tackled | approximately 25% |
+| Practical interface scope remaining | approximately 75% |
 | Bounded practical space-battle launcher implementation | complete at P58-B22 |
 | Strict tactical acceptance | 0 of 106 cells |
 | Required surface families | 43 |
-| Family status | 0 complete, 12 partial, 31 fail |
+| Family status | 0 complete, 15 partial, 28 fail |
 | Strictly accepted required cells | 0 of 627 |
 
 The practical percentage is an implementation-planning estimate. The strict
@@ -43,10 +43,11 @@ rail lifecycle for both factions. The original galaxy resources now back both
 Display Off and the default active Popular Support view. Popular Support uses
 the exact faction GID control, compact legend, native marker families, and
 recovered size thresholds. Other GID modes, sector and object overlays,
-incomplete system contents, approximate window thumbnails, authentic message
-and status surfaces, and other controls remain open. The nine Message Index
-side-rail resting icons per faction now match their original bitmaps exactly;
-their unread states and destination window remain open.
+incomplete system contents, approximate window thumbnails, remaining authentic
+status surfaces, and other controls remain open. The Message Index now has
+source-backed rail icons, shell, category controls, rows, and bounded
+interaction; unread illumination, full report routing, native placement, and
+A0 comparison remain open.
 Original advisor idle frames render in the scaled
 apertures, but their authored actions, voice, and chrome remain open.
 
@@ -60,10 +61,10 @@ navigation, animation, audio presentation, and the absence of invented UI.
 
 | File | Purpose |
 |------|---------|
-| [Audit report](audit-report.md) | Findings, acceptance rules, immediate implementation order, and the answer to why the current UI looks synthetic or blank. |
+| [Audit report](2026-10-06-audit-report.md) | Findings, acceptance rules, immediate implementation order, and the answer to why the current UI looks synthetic or blank. |
 | [Audit data](audit-report.json) | Machine-readable baseline, thresholds, findings, tranches, and release gates. |
-| [Surface ledger](surface-ledger.json) | Stable inventory of every known original surface family, 627 required cells plus six excluded extension cells, retrieval-package links, and the derived execution contract. |
-| [Manual window matrix](manual-window-checklists.md) | Present, Partial, Missing, and Disabled checks for manual-named controls, gestures, modal rules, keyboard routes, and split acceptance cells. |
+| [Surface ledger](2026-10-06-surface-ledger.json) | Stable inventory of every known original surface family, 627 required cells plus six excluded extension cells, retrieval-package links, and the derived execution contract. |
+| [Manual window matrix](2026-10-06-manual-window-checklists.md) | Present, Partial, Missing, and Disabled checks for manual-named controls, gestures, modal rules, keyboard routes, and split acceptance cells. |
 | [Known deviations](known-deviations.md) | Approved extensions, temporary port differences, unapproved divergences, affected cells, and change rules. |
 | [Screenshot ledger](screenshot-ledger.md) | Human-readable map of the 370 retained reference images and the still-missing owned-executable captures. |
 | [Reference ledger](reference-ledger.json) | Source URLs, provenance, confidence, locale, local paths, and coverage. |

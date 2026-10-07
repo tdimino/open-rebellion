@@ -141,6 +141,24 @@ pub fn choose_game_speed(clock: &mut GameClock, requested: GameSpeed) {
     }
 }
 
+/// Hold or release the speed for the Message Index's Advice category, as
+/// `FUN_00487ff0` does: showing it saves the speed once and drops to Very
+/// Slow, and hiding it restores a saved speed. A second show while one is
+/// saved, or a hide with none saved, changes nothing.
+pub fn hold_speed_for_advice(clock: &mut GameClock, saved: &mut Option<GameSpeed>, shown: bool) {
+    match (*saved, shown) {
+        (Some(speed), false) => {
+            choose_game_speed(clock, speed);
+            *saved = None;
+        }
+        (None, true) => {
+            *saved = Some(clock.speed);
+            choose_game_speed(clock, GameSpeed::VerySlow);
+        }
+        _ => {}
+    }
+}
+
 /// The speed an Alt+NumPad step selects, or `None` while paused, when
 /// `FUN_00422ce0` ignores the keys.
 #[must_use]
@@ -469,6 +487,32 @@ mod tests {
         let mut clock = GameClock::new();
         clock.set_speed(speed);
         clock
+    }
+
+    #[test]
+    fn advice_drops_to_very_slow_once_and_hiding_it_restores_the_speed() {
+        // FUN_00487ff0: +0x58 saves +0x54 only when empty, then speed 1;
+        // a hide restores +0x58 and clears it.
+        let mut clock = running(GameSpeed::Fast);
+        let mut saved = None;
+        hold_speed_for_advice(&mut clock, &mut saved, true);
+        assert_eq!(clock.speed, GameSpeed::VerySlow);
+        clock.set_speed(GameSpeed::Medium);
+        hold_speed_for_advice(&mut clock, &mut saved, true);
+        assert_eq!(
+            clock.speed,
+            GameSpeed::Medium,
+            "a second show saves nothing"
+        );
+        hold_speed_for_advice(&mut clock, &mut saved, false);
+        assert_eq!(clock.speed, GameSpeed::Fast);
+        assert_eq!(saved, None);
+        hold_speed_for_advice(&mut clock, &mut saved, false);
+        assert_eq!(
+            clock.speed,
+            GameSpeed::Fast,
+            "a hide with nothing saved holds"
+        );
     }
 
     #[test]

@@ -954,6 +954,7 @@ mod tests {
                 hull_current: 1,
                 shield_weapon_packed: 0,
                 alive: true,
+                name: None,
             }],
             fighters: vec![],
             characters: vec![],
@@ -1261,6 +1262,7 @@ mod tests {
             hull_current: 0,
             shield_weapon_packed: 0,
             alive: false,
+            name: None,
         });
         world.fleets[fleet]
             .fighters

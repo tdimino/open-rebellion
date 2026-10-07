@@ -11,6 +11,7 @@
 use egui_macroquad::egui;
 use rebellion_core::dat::Faction;
 use rebellion_core::fog::FogState;
+use rebellion_core::movement::{listed_location, MovementState};
 use rebellion_core::world::GameWorld;
 
 use crate::bmp_cache::{BmpCache, DllSource};
@@ -177,12 +178,14 @@ pub struct FinderRow {
 ///
 /// hyp: the side's objects (`FUN_0053ef50`) are its own and the other
 /// side's it can see; the port shows the other side's fleets where the
-/// Fleet window does (`opposing_contents_visible`). port: only fleets in
-/// their system's list, so none in transit; a fleet's name is its own
+/// Fleet window does (`opposing_contents_visible`), at the system the
+/// Fleet window lists it at: a fleet en route at its destination
+/// (`listed_location`). A fleet's name is its own
 /// ("Fleet N", `fleet_label`), a ship's its class's (`FUN_004f6270`).
 #[must_use]
 pub fn rows(
     world: &GameWorld,
+    movement: &MovementState,
     fog: &FogState,
     player: Faction,
     mode: FinderMode,
@@ -194,16 +197,15 @@ pub fn rows(
         if !tab.lists(value.is_alliance) {
             continue;
         }
+        let Some(location) = listed_location(movement, world, fleet) else {
+            continue;
+        };
         if value.is_alliance != player_is_alliance
-            && !opposing_contents_visible(world, fog, player, value.location)
+            && !opposing_contents_visible(world, fog, player, location)
         {
             continue;
         }
-        let in_orbit = world
-            .systems
-            .get(value.location)
-            .is_some_and(|system| system.fleets.contains(&fleet));
-        let Some(label) = fleet_label(world, fleet).filter(|_| in_orbit) else {
+        let Some(label) = fleet_label(world, fleet) else {
             continue;
         };
         match mode {
@@ -337,11 +339,12 @@ impl FleetFinderState {
     pub fn report(
         &self,
         world: &GameWorld,
+        movement: &MovementState,
         fog: &FogState,
         player: Faction,
     ) -> Option<FleetFinderReport> {
         let window = self.window.as_ref()?;
-        let rows = rows(world, fog, player, window.mode, window.tab);
+        let rows = rows(world, movement, fog, player, window.mode, window.tab);
         let chosen = window
             .chosen
             .and_then(|object| rows.iter().position(|row| row.object == object));
@@ -482,6 +485,7 @@ const VISIBLE_ROWS: usize = (LIST.3 / ROW_HEIGHT) as usize;
 pub fn draw_fleet_finder(
     ctx: &egui::Context,
     world: &GameWorld,
+    movement: &MovementState,
     fog: &FogState,
     state: &mut FleetFinderState,
     layout: CockpitLayout,
@@ -494,6 +498,7 @@ pub fn draw_fleet_finder(
     let rect = window_rect(layout);
     let list = rows(
         world,
+        movement,
         fog,
         player_side(window.faction),
         window.mode,
@@ -916,6 +921,7 @@ mod tests {
 
         let rows = rows(
             &galaxy.world,
+            &rebellion_core::movement::MovementState::default(),
             &galaxy.fog,
             Faction::Alliance,
             FinderMode::Ships,
@@ -943,6 +949,7 @@ mod tests {
 
         let listed: Vec<_> = rows(
             &galaxy.world,
+            &rebellion_core::movement::MovementState::default(),
             &galaxy.fog,
             Faction::Alliance,
             FinderMode::Fleets,
@@ -969,6 +976,7 @@ mod tests {
         let list = |tab| {
             names(&rows(
                 &galaxy.world,
+                &rebellion_core::movement::MovementState::default(),
                 &galaxy.fog,
                 Faction::Alliance,
                 FinderMode::Ships,
@@ -1008,6 +1016,7 @@ mod tests {
         let listed = |mode| {
             rows(
                 &galaxy.world,
+                &rebellion_core::movement::MovementState::default(),
                 &galaxy.fog,
                 Faction::Alliance,
                 mode,
@@ -1030,22 +1039,30 @@ mod tests {
     }
 
     #[test]
-    fn a_fleet_in_transit_is_not_listed() {
-        // port: a fleet that has left its system's list is in transit.
+    fn a_fleet_in_hyperspace_is_judged_where_it_is_bound() {
+        // move-order.md: a move puts the fleet in its destination at once,
+        // so the Finder lists it as the destination's Fleet window does: an
+        // unseen enemy fleet bound for a system the player sees is listed.
         let mut galaxy = galaxy();
-        let home = galaxy.world.fleets[galaxy.own].location;
-        galaxy.world.systems[home].fleets.clear();
-
-        let rows = rows(
-            &galaxy.world,
-            &galaxy.fog,
-            Faction::Alliance,
-            FinderMode::Fleets,
-            FinderTab::All,
-        );
-
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].object, FleetWindowEntry::Fleet(galaxy.seen));
+        let seen_at = galaxy.world.fleets[galaxy.seen].location;
+        let hidden = galaxy.world.fleets[galaxy.unseen].location;
+        let listed = |galaxy: &Galaxy, movement: &MovementState| {
+            rows(
+                &galaxy.world,
+                movement,
+                &galaxy.fog,
+                Faction::Alliance,
+                FinderMode::Fleets,
+                FinderTab::All,
+            )
+            .iter()
+            .any(|row| row.object == FleetWindowEntry::Fleet(galaxy.unseen))
+        };
+        let mut movement = MovementState::default();
+        assert!(!listed(&galaxy, &movement));
+        assert!(movement.order(galaxy.unseen, hidden, seen_at, 5));
+        galaxy.world.systems[hidden].fleets.clear();
+        assert!(listed(&galaxy, &movement));
     }
 
     #[test]
@@ -1176,9 +1193,15 @@ mod tests {
                 ..Default::default()
             };
             let _ = ctx.run(input, |ctx| {
-                if let Some(action) =
-                    draw_fleet_finder(ctx, &galaxy.world, &galaxy.fog, state, layout, &mut cache)
-                {
+                if let Some(action) = draw_fleet_finder(
+                    ctx,
+                    &galaxy.world,
+                    &rebellion_core::movement::MovementState::default(),
+                    &galaxy.fog,
+                    state,
+                    layout,
+                    &mut cache,
+                ) {
                     emitted = Some(action);
                 }
             });
@@ -1402,7 +1425,12 @@ mod tests {
                 click(),
             );
             let report = state
-                .report(&galaxy.world, &galaxy.fog, Faction::Alliance)
+                .report(
+                    &galaxy.world,
+                    &rebellion_core::movement::MovementState::default(),
+                    &galaxy.fog,
+                    Faction::Alliance,
+                )
                 .unwrap();
             assert_eq!(report.mode, FinderMode::Ships, "{faction:?}");
             assert_eq!(names(&report.rows), ["Victory Star Destroyer"]);
@@ -1493,9 +1521,15 @@ mod tests {
             };
             crate::fleet_window::tests::PAINTED.with(|painted| painted.borrow_mut().clear());
             let output = ctx.run(input, |ctx| {
-                if let Some(action) =
-                    draw_fleet_finder(ctx, &galaxy.world, &galaxy.fog, state, layout, &mut cache)
-                {
+                if let Some(action) = draw_fleet_finder(
+                    ctx,
+                    &galaxy.world,
+                    &rebellion_core::movement::MovementState::default(),
+                    &galaxy.fog,
+                    state,
+                    layout,
+                    &mut cache,
+                ) {
                     result.action = Some(action);
                 }
             });
@@ -1664,6 +1698,7 @@ mod tests {
         let galaxy = crowded(9);
         let list = rows(
             &galaxy.world,
+            &rebellion_core::movement::MovementState::default(),
             &galaxy.fog,
             Faction::Alliance,
             FinderMode::Fleets,
@@ -1759,7 +1794,12 @@ mod tests {
         state.window.as_mut().unwrap().chosen = Some(FleetWindowEntry::Fleet(galaxy.seen));
 
         let report = state
-            .report(&galaxy.world, &galaxy.fog, Faction::Alliance)
+            .report(
+                &galaxy.world,
+                &rebellion_core::movement::MovementState::default(),
+                &galaxy.fog,
+                Faction::Alliance,
+            )
             .unwrap();
 
         assert_eq!(report.chosen, Some(1));
@@ -1850,6 +1890,7 @@ mod tests {
                 let _ = draw_fleet_finder(
                     ctx,
                     &galaxy.world,
+                    &rebellion_core::movement::MovementState::default(),
                     &galaxy.fog,
                     &mut state,
                     layout,

@@ -32,7 +32,7 @@ if (!manifestPath.startsWith(`${allowedManifestRoot}${path.sep}`)) {
 
 const surfaceLedger = readJson(path.join(
   root,
-  "docs/qa/2026-09-10-interface-parity-audit/surface-ledger.json",
+  "docs/qa/2026-09-10-interface-parity-audit/2026-10-06-surface-ledger.json",
 ));
 const manifest = readJson(manifestPath);
 const metadata = readJson(metadataPath);

@@ -42,8 +42,8 @@ and passes the complete comparison contract.
   for the permanent muted harness, deterministic fixtures, visual comparisons,
   generated summaries, and complete-family GID pilot.
 - Choose a bounded surface and state from the
-  [machine-readable surface ledger](surface-ledger.json).
-- Check the [manual window matrix](manual-window-checklists.md) for named
+  [machine-readable surface ledger](2026-10-06-surface-ledger.json).
+- Check the [manual window matrix](2026-10-06-manual-window-checklists.md) for named
   controls, gestures, modal rules, keyboard routes, and newly split cells.
 - Record any deliberate departure in the
   [known-deviations register](known-deviations.md) before implementation.
@@ -57,7 +57,7 @@ and passes the complete comparison contract.
   scopes test-only tactical entry and the `TAC-01` through `TAC-07` gate.
 - Use the [space-battle launcher reference](../../reference/space-battle-launcher/README.md)
   for its production route, fixture codes, harness commands, and evidence chain.
-- Read the [audit report](audit-report.md) for findings, thresholds, and the
+- Read the [audit report](2026-10-06-audit-report.md) for findings, thresholds, and the
   six-tranche implementation order.
 - Review the [P46A strategic shell evidence](evidence/2026-09-11-strategic-shell-canvas.md)
   for the verified canvas, aperture, and browser-transform checkpoint.
@@ -282,9 +282,9 @@ and passes the complete comparison contract.
 | Lane | Best starting record |
 |------|----------------------|
 | Original resource extraction or Ghidra analysis | An open `RE-*` package in [reverse-engineering-ledger.md](reverse-engineering-ledger.md) |
-| Interface implementation | A required family or cell in [surface-ledger.json](surface-ledger.json) |
+| Interface implementation | A required family or cell in [2026-10-06-surface-ledger.json](2026-10-06-surface-ledger.json) |
 | Screenshot and provenance research | A missing state in [screenshot-ledger.md](screenshot-ledger.md) |
-| Automated visual verification | The gates and thresholds in [audit-report.md](audit-report.md) |
+| Automated visual verification | The gates and thresholds in [2026-10-06-audit-report.md](2026-10-06-audit-report.md) |
 | Space-battle interface | `TAC-01` through `TAC-07`, covering 106 baseline cells, plus the [ranked Windows/Ghidra recovery map](../../reference/space-battle-launcher/reverse-engineering-map.md) |
 
 ## Acceptance rule
@@ -301,13 +301,13 @@ stage them from a contributor-owned installation.
 ## Progress snapshot
 
 <!-- interface-parity-status:start -->
-Required interface families: 43. Complete: 0. Partial: 12. Failing: 31. Blocked: 0. Strictly accepted cells: 0/627.
+Required interface families: 43. Complete: 0. Partial: 15. Failing: 28. Blocked: 0. Strictly accepted cells: 0/627.
 The current CMD-02 GID catalog has 38 scenarios (29 baseline cells and nine additional native filter variants) and 152 faction/viewport executions. Its strict original-evidence and cross-browser gate remains open.
 <!-- interface-parity-status:end -->
 
-The practical implementation estimate is approximately 20 to 25% tackled and
-75 to 80% remaining. Formally, the ledger has 43 required families: 0 complete,
-12 partial, and 31 failing. All 627 required cells remain pending until their
+The practical implementation estimate is approximately 25% tackled and 75%
+remaining. Formally, the ledger has 43 required families: 0 complete,
+15 partial, and 28 failing. All 627 required cells remain pending until their
 complete evidence and execution matrices pass. The practical estimate guides
 bundle planning; it does not replace strict acceptance.
 
@@ -354,8 +354,11 @@ matrix. The [P48 evidence](evidence/2026-09-12-gid-browser-harness.md) keeps
 non-support filter rules, expanded legend, special state overlays, and
 original-executable capture acceptance open.
 P49 restores the nine original Message Index rail icons per faction. Their
-resting pixels match the source BMPs, but the index window and unread states
-remain open. See the [rail evidence](evidence/2026-09-12-message-index-rail.md).
+resting pixels match the source BMPs. P63 and the 2026-10-06 strategic batch
+add the authentic shell, category controls, message rows, selection gestures,
+Display, Delete, and Close; unread illumination, complete report routing,
+native placement, and A0 comparison remain open. See the
+[rail evidence](evidence/2026-09-12-message-index-rail.md).
 P50 restores the eight original GID frame tiles to the root and submenu and
 removes the invented fade. Its native-size root border matches the source BMPs
 where unobscured. See the [frame evidence](evidence/2026-09-12-gid-menu-frame.md).
@@ -363,6 +366,13 @@ P51 removes a provisional hover wash and extends those checks to the visible
 frame border beneath a foreground system window. Its
 [evidence](evidence/2026-09-12-gid-hover-and-occlusion.md) keeps original hover
 and focus states open.
+The 2026-10-06 strategic batch adds source-backed cockpit accelerators, the
+two-sector-window cap, interactive Message Index rows, Personnel and Troop
+Finders, per-area production destinations, absolute completion days, Rename,
+and en-route marks. Its bounded two-faction browser gates pass, but it accepts
+no strict cells. The [Manufacturing and Build Selection trace](../../../ghidra/notes/manufacturing-build-selection.md)
+now specifies the authentic facility-only type-9 window and separate 210 by
+261 Build Selection child that must replace the remaining production UI.
 P52 through P55 restore the first tactical shell and controls, stage the full
 original 3D corpus, and decode it into a deterministic runtime store. P56
 proves one exact mesh and texture pair. P57A extends that path to all three

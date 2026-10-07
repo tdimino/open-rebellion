@@ -19,6 +19,11 @@ use crate::fleet_window::paint_native;
 use crate::object_menu::MenuObject;
 use crate::quadrant_icons::{quadrant_icon, Quadrant};
 
+/// `DAT_00658bd8`, a static 1023: the galaxy's width, whose half
+/// `FUN_00429ce0` compares a sector's x with (`FUN_00526560`, the record's
+/// `+0x48`). hyp: that x is `Sector.x`, SECTORSD's map position.
+const GALAXY_WIDTH: i32 = 1023;
+
 pub const SECTOR_WINDOW_WIDTH: f32 = 235.0;
 pub const SECTOR_WINDOW_HEIGHT: f32 = 360.0;
 
@@ -95,8 +100,12 @@ impl Default for SectorWindowState {
 }
 
 impl SectorWindowState {
-    /// Open the selected system's parent sector. Existing windows raise rather
-    /// than duplicate, matching the original child-window lookup.
+    /// Open the selected system's parent sector (`FUN_00429ce0`;
+    /// `ghidra/notes/sector-window-placement.md`). An open window raises
+    /// rather than duplicate. At most two are open, one per column: a sector
+    /// on the galaxy's right half takes the second column when both are
+    /// free, the free column otherwise, and with both taken it replaces the
+    /// window in its own half's column.
     pub fn open_for_system(
         &mut self,
         world: &GameWorld,
@@ -110,10 +119,23 @@ impl SectorWindowState {
         if self.focus(sector) {
             return true;
         }
-        let column = self
-            .windows
-            .last()
-            .map_or(WindowColumn::Primary, |window| window.column.opposite());
+        let right_half = world
+            .sectors
+            .get(sector)
+            .is_some_and(|value| i32::from(value.x) >= GALAXY_WIDTH / 2);
+        let half = if right_half {
+            WindowColumn::Secondary
+        } else {
+            WindowColumn::Primary
+        };
+        let taken = |column| self.windows.iter().any(|window| window.column == column);
+        let column = match (taken(WindowColumn::Primary), taken(WindowColumn::Secondary)) {
+            (false, false) | (true, true) => half,
+            (true, false) => WindowColumn::Secondary,
+            (false, true) => WindowColumn::Primary,
+        };
+        // FUN_00600f90 destroys the window the new one replaces.
+        self.windows.retain(|window| window.column != column);
         self.windows.push(OpenSectorWindow {
             sector,
             column,
@@ -186,7 +208,21 @@ impl SectorWindowState {
         layout: CockpitLayout,
         system: SystemKey,
     ) -> Option<(i16, i16)> {
-        let icon = self.fleet_icon_screen_rect(world, layout, system)?;
+        self.quadrant_window_point(world, layout, system, Quadrant::Fleets)
+    }
+
+    /// The logical point the window behind one of `system`'s quadrant icons
+    /// opens at, as [`fleet_window_point`](Self::fleet_window_point) does
+    /// for the Fleet window: the icon's center.
+    #[must_use]
+    pub fn quadrant_window_point(
+        &self,
+        world: &GameWorld,
+        layout: CockpitLayout,
+        system: SystemKey,
+        quadrant: Quadrant,
+    ) -> Option<(i16, i16)> {
+        let icon = self.quadrant_screen_rect(world, layout, system, quadrant)?;
         Some(screen_to_logical(layout, icon.center()))
     }
 
@@ -351,6 +387,7 @@ struct WindowDrawResult {
 pub fn draw_sector_windows(
     ctx: &egui::Context,
     world: &GameWorld,
+    movement: &rebellion_core::movement::MovementState,
     fog: &FogState,
     state: &mut SectorWindowState,
     faction: CockpitFaction,
@@ -372,6 +409,7 @@ pub fn draw_sector_windows(
         let result = draw_sector_window(
             ctx,
             world,
+            movement,
             fog,
             window,
             focused_sector == Some(window.sector),
@@ -470,6 +508,7 @@ pub fn draw_sector_windows(
 fn draw_sector_window(
     ctx: &egui::Context,
     world: &GameWorld,
+    movement: &rebellion_core::movement::MovementState,
     fog: &FogState,
     window: OpenSectorWindow,
     focused: bool,
@@ -612,8 +651,15 @@ fn draw_sector_window(
                 let icons: Vec<(Quadrant, egui::Rect, u32)> = Quadrant::ALL
                     .into_iter()
                     .filter_map(|quadrant| {
-                        let (normal, _) =
-                            quadrant_icon(world, fog, missions, player, *system_key, quadrant)?;
+                        let (normal, _) = quadrant_icon(
+                            world,
+                            fog,
+                            missions,
+                            movement,
+                            player,
+                            *system_key,
+                            quadrant,
+                        )?;
                         Some((
                             quadrant,
                             quadrant_rect(planet_rect, layout.scale, quadrant),
@@ -1331,6 +1377,84 @@ mod tests {
         );
     }
 
+    /// Add a one-system sector at map x `x` and return its system.
+    fn add_sector(world: &mut GameWorld, x: u16) -> SystemKey {
+        let template = world.systems.values().next().unwrap().clone();
+        let sector = world.sectors.insert(Sector {
+            dat_id: DatId::new(38),
+            name: "Added".into(),
+            group: SectorGroup::Core,
+            x,
+            y: 300,
+            systems: Vec::new(),
+        });
+        let system = world.systems.insert(System { sector, ..template });
+        world.sectors[sector].systems.push(system);
+        system
+    }
+
+    #[test]
+    fn a_first_window_takes_the_column_of_its_sectors_half_of_the_galaxy() {
+        // FUN_00429ce0: with both columns free, a sector at x >= 1023 / 2
+        // (DAT_00658bd8) opens in the second column.
+        let (world, left, right) = fixture_world();
+        for (system, column) in [
+            (left, WindowColumn::Primary),
+            (right, WindowColumn::Secondary),
+        ] {
+            let mut state = SectorWindowState::default();
+            assert!(state.open_for_system(&world, system, CockpitFaction::Empire));
+            assert_eq!(state.windows[0].column, column);
+        }
+        // The other column is the free one, whatever the half.
+        let mut state = SectorWindowState::default();
+        state.open_for_system(&world, right, CockpitFaction::Alliance);
+        let mut world = world;
+        let also_right = add_sector(&mut world, 900);
+        state.open_for_system(&world, also_right, CockpitFaction::Alliance);
+        assert_eq!(state.windows[1].column, WindowColumn::Primary);
+    }
+
+    #[test]
+    fn a_third_sector_window_replaces_the_one_on_its_half_of_the_galaxy() {
+        // FUN_00429ce0 → FUN_00600f90: with both columns taken, the window
+        // in the new sector's half's column is destroyed and replaced.
+        let (mut world, left, right) = fixture_world();
+        let far_left = add_sector(&mut world, 100);
+        let far_right = add_sector(&mut world, 1000);
+        let mut state = SectorWindowState::default();
+        state.open_for_system(&world, left, CockpitFaction::Alliance);
+        state.open_for_system(&world, right, CockpitFaction::Alliance);
+
+        state.open_for_system(&world, far_left, CockpitFaction::Alliance);
+        assert_eq!(state.window_count(), 2);
+        let sectors = |state: &SectorWindowState| {
+            let mut open: Vec<_> = state
+                .windows
+                .iter()
+                .map(|window| (window.column == WindowColumn::Primary, window.sector))
+                .collect();
+            open.sort_by_key(|(primary, _)| !primary);
+            open
+        };
+        assert_eq!(
+            sectors(&state),
+            [
+                (true, world.systems[far_left].sector),
+                (false, world.systems[right].sector)
+            ]
+        );
+
+        state.open_for_system(&world, far_right, CockpitFaction::Alliance);
+        assert_eq!(
+            sectors(&state),
+            [
+                (true, world.systems[far_left].sector),
+                (false, world.systems[far_right].sector)
+            ]
+        );
+    }
+
     #[test]
     fn faction_change_clears_stale_windows() {
         let (world, first, _) = fixture_world();
@@ -1421,6 +1545,7 @@ mod tests {
                 actions.extend(draw_sector_windows(
                     ctx,
                     world,
+                    &rebellion_core::movement::MovementState::default(),
                     &fog,
                     &mut state,
                     CockpitFaction::Alliance,
@@ -1480,6 +1605,7 @@ mod tests {
                 actions.extend(draw_sector_windows(
                     ctx,
                     world,
+                    &rebellion_core::movement::MovementState::default(),
                     &fog,
                     &mut state,
                     CockpitFaction::Alliance,
@@ -1663,6 +1789,7 @@ mod tests {
                 actions.extend(draw_sector_windows(
                     ctx,
                     world,
+                    &rebellion_core::movement::MovementState::default(),
                     &fog,
                     &mut state,
                     CockpitFaction::Alliance,
@@ -2050,6 +2177,7 @@ mod tests {
                 let _ = draw_sector_windows(
                     ctx,
                     world,
+                    &rebellion_core::movement::MovementState::default(),
                     &fog,
                     &mut state,
                     CockpitFaction::Alliance,

@@ -9,7 +9,7 @@ tags: [qa, interface, ghidra, resources, bitmap, wasm]
 
 # Interface Reverse-Engineering Ledger
 
-This ledger connects the [surface ledger](surface-ledger.json) to the original
+This ledger connects the [surface ledger](2026-10-06-surface-ledger.json) to the original
 executable and game resources. It tracks questions that static analysis can
 answer without duplicating the screenshot inventory. The machine-readable queue
 is in [reverse-engineering-ledger.json](reverse-engineering-ledger.json).

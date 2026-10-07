@@ -9,7 +9,7 @@ bounded, auditable unit at a time.
 | Work | Start here |
 |------|------------|
 | Gameplay, simulation, persistence, browser, or multiplayer | [Full-functionality audit](docs/qa/2026-09-08-full-functionality-audit/) and its `P00` through `P40` acceptance passes |
-| Original interface implementation | [Interface parity guide](docs/qa/2026-09-10-interface-parity-audit/) and a required family or cell in `surface-ledger.json` |
+| Original interface implementation | [Interface parity guide](docs/qa/2026-09-10-interface-parity-audit/) and a required family or cell in `2026-10-06-surface-ledger.json` |
 | Ghidra or resource recovery | An open `RE-*` package in the [reverse-engineering ledger](docs/qa/2026-09-10-interface-parity-audit/reverse-engineering-ledger.md) |
 | Reference screenshot research | A missing state in the [screenshot ledger](docs/qa/2026-09-10-interface-parity-audit/screenshot-ledger.md) |
 | Optional HD assets | A P45 milestone in the [faithful-HD plan](docs/plans/2026-09-10-faithful-hd-pipeline/) |

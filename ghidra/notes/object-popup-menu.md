@@ -169,13 +169,17 @@ with Ctrl held, for window types 1, 4 and 10; type 9 issues `0x214`.
   (`FUN_004abe10`, `FUN_004aba60`). The P60 speed menu had the first two
   swapped. A submenu parent without an icon reserves 20 pixels
   (`FUN_004abf60`). port: Escape closes the menu.
-- 7b: a right press selects a system window item and a right release on a
-  character (Personnel), a special force (Troops) or empty list space opens
-  the menu in the galaxy view (`system_window.rs`, `object_menu.rs`). Rows
+- 7b: a right press selects a list item and a right release on a
+  character, a special force, a regiment or empty list space opens the menu
+  in the galaxy view. Since 2026-10-06 that list is the Defenses window's
+  (type 10, `defenses_window.rs`, `sector-quadrants.md` "Menu"); the
+  invented System window tabs that held it are gone, and type 9 opens the
+  menu for its producer bands (`system_window.rs`,
+  `manufacturing-build-selection.md`). Rows
   follow the STRATEGY records; Mission follows
   `MissionState::mission_order_enabled` and Encyclopedia opens the
-  Encyclopedia. port: Move, Confirmed Move, Command, Status and Retire are
-  drawn disabled, the other tabs' classes open no menu, and the global gate
+  Encyclopedia. Status opens the Status window (`status-window.md`).
+  port: Move, Confirmed Move, Command and Retire are drawn disabled, the other tabs' classes open no menu, and the global gate
   `FUN_0051de80` is taken as clear.
 - 7c: Mission starts targeting (`targeting.rs`). The galaxy view takes the
   capture, so no window or cockpit control gets a press, and a press on the
