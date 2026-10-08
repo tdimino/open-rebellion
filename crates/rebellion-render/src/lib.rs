@@ -41,7 +41,9 @@ mod tactical_assets;
 mod tactical_resources;
 pub mod tactical_view;
 pub mod targeting;
+pub mod sector_hover;
 pub mod theme;
+pub mod tooltip;
 pub mod troop_finder;
 pub mod video_player;
 
@@ -173,8 +175,10 @@ pub use panels::command_palette::{
 /// coordinates without recomputing screen dimensions.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CameraView {
-    pub cam_x: f32,
-    pub cam_y: f32,
+    /// Screen position of galaxy point (0, 0): the starfield's top-left
+    /// corner.
+    pub origin_x: f32,
+    pub origin_y: f32,
     /// Effective screen-space zoom, including the strategic canvas scale.
     pub zoom: f32,
     /// Player-controlled gameplay zoom, independent of window size.
@@ -187,13 +191,23 @@ pub struct CameraView {
     pub viewport_height: f32,
 }
 
+/// Starfield pixels per galaxy unit across and down: `FUN_00425d00` maps
+/// galaxy coordinates 0..=1023 onto the 607x437 starfield
+/// (`DAT_00658be0` = 607.0, `DAT_00658be8` = 437.0, over 0x3ff + 1).
+pub const GALAXY_UNITS_TO_PIXELS: (f32, f32) = (607.0 / 1024.0, 437.0 / 1024.0);
+
 impl CameraView {
-    /// Convert original DAT coordinates into this aperture's screen space.
+    /// Convert original DAT coordinates into this aperture's screen space,
+    /// as `FUN_00425d00` does: `(int)(x * 607 / 1024) + offset` across and
+    /// `(int)(y * 437 / 1024) + offset` down, in 640x480 pixels.
     #[must_use]
     pub fn to_screen(self, dat_x: f32, dat_y: f32) -> (f32, f32) {
-        let sx = (dat_x - self.cam_x) * self.zoom + self.viewport_x + self.viewport_width / 2.0;
-        let sy = (dat_y - self.cam_y) * self.zoom + self.viewport_y + self.viewport_height / 2.0;
-        (sx, sy)
+        let x = (dat_x * GALAXY_UNITS_TO_PIXELS.0).trunc();
+        let y = (dat_y * GALAXY_UNITS_TO_PIXELS.1).trunc();
+        (
+            self.origin_x + x * self.display_scale,
+            self.origin_y + y * self.display_scale,
+        )
     }
 
     /// Whether a screen-space point is inside the recovered map aperture.
@@ -227,19 +241,22 @@ impl CameraView {
     }
 }
 
-/// The galaxy point the map centres on. The galaxy view (`FUN_00422ce0`)
-/// has no wheel case and no right-button drag, so the map neither zooms nor
-/// pans: every galaxy point keeps one place in the aperture. hyp: this
-/// centre and scale 1 give the original's framing (not traced).
-pub const GALAXY_CAMERA_CENTER: (f32, f32) = (450.0, 470.0);
-
-/// The galaxy map's one transform for `viewport` at `display_scale`.
+/// The galaxy map's one transform for `faction`'s aperture `viewport` at
+/// `display_scale`. The galaxy view (`FUN_00422ce0`) has no wheel case and
+/// no right-button drag, so the map neither zooms nor pans: galaxy point
+/// (0, 0) stays at the starfield's corner (`galaxy_backdrop_offset`).
 #[must_use]
-pub fn galaxy_camera(viewport: (f32, f32, f32, f32), display_scale: f32) -> CameraView {
+pub fn galaxy_camera(
+    viewport: (f32, f32, f32, f32),
+    display_scale: f32,
+    faction: CockpitFaction,
+) -> CameraView {
     let (viewport_x, viewport_y, viewport_width, viewport_height) = viewport;
+    let (aperture_x, aperture_y, ..) = cockpit::galaxy_aperture(faction);
+    let (offset_x, offset_y) = cockpit::galaxy_backdrop_offset(faction);
     CameraView {
-        cam_x: GALAXY_CAMERA_CENTER.0,
-        cam_y: GALAXY_CAMERA_CENTER.1,
+        origin_x: viewport_x + (offset_x - aperture_x) * display_scale,
+        origin_y: viewport_y + (offset_y - aperture_y) * display_scale,
         zoom: display_scale,
         logical_zoom: 1.0,
         display_scale,
@@ -308,6 +325,7 @@ impl Default for GalaxyMapState {
 /// fallback when the original resource is unavailable.
 pub fn draw_galaxy_backdrop(
     layout: CockpitLayout,
+    faction: CockpitFaction,
     cache: &mut BmpCache,
     gid_mode: GidMode,
 ) -> bool {
@@ -325,7 +343,8 @@ pub fn draw_galaxy_backdrop(
     else {
         return false;
     };
-    let destination = galaxy_backdrop_destination(layout, texture.width(), texture.height());
+    let destination =
+        galaxy_backdrop_destination(layout, faction, texture.width(), texture.height());
     draw_texture_ex(
         texture,
         destination.x,
@@ -360,12 +379,14 @@ fn gid_backdrop_resource(gid_mode: GidMode) -> u32 {
 
 fn galaxy_backdrop_destination(
     layout: CockpitLayout,
+    faction: CockpitFaction,
     source_width: f32,
     source_height: f32,
 ) -> CockpitViewport {
+    let (offset_x, offset_y) = cockpit::galaxy_backdrop_offset(faction);
     CockpitViewport {
-        x: layout.canvas.x,
-        y: layout.canvas.y,
+        x: layout.canvas.x + offset_x * layout.scale,
+        y: layout.canvas.y + offset_y * layout.scale,
         width: source_width * layout.scale,
         height: source_height * layout.scale,
     }
@@ -396,11 +417,7 @@ pub fn draw_galaxy_map(
         && my >= viewport_y
         && my < viewport_y + viewport_height;
 
-    let cam = galaxy_camera(viewport, state.display_scale);
-
-    if gid_mode.is_active() {
-        draw_gid_caption(cam, faction, gid_mode);
-    }
+    let cam = galaxy_camera(viewport, state.display_scale, faction);
 
     // ── Find hovered system (reset each frame) ────────────────────────────────
     state.hovered_system = None;
@@ -447,25 +464,38 @@ pub fn draw_galaxy_map(
     cam
 }
 
-#[expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    reason = "Preserve existing font-size rounding and narrowing for rendering."
-)]
-fn draw_gid_caption(cam: CameraView, faction: CockpitFaction, mode: GidMode) {
-    let caption = mode.label();
-    let font_size = cam.scale_pixels(11.0);
-    let text_width = measure_text(caption, None, font_size.round() as u16, 1.0).width;
-    let color = match faction {
-        CockpitFaction::Alliance => Color::new(0.78, 0.16, 0.16, 1.0),
-        CockpitFaction::Empire => Color::new(0.16, 0.65, 0.20, 1.0),
-    };
-    draw_text(
-        caption,
-        cam.viewport_x + (cam.viewport_width - text_width) / 2.0,
-        cam.viewport_y + cam.scale_pixels(13.0),
-        font_size,
-        color,
+/// Top of the GID caption's text box in the 640x480 canvas. hyp: measured,
+/// not traced: in a capture of the original Empire galaxy (2026-10-08) the
+/// caption's glyphs span y 43 to 55, which font 10's 11-pixel ascent puts
+/// on a box from y 41.
+const GID_CAPTION_TOP: f32 = 41.0;
+
+/// Paint the selected display's name centred over the galaxy aperture.
+///
+/// hyp: font 10 in the faction text color, the day readout's label style
+/// (`FUN_00422ce0`). A capture of the original measures the Empire's
+/// "Popular Support" 90 pixels wide in `0x200ff00` green, centred at x 359
+/// over the aperture's centre, 360; font 10 matches that width.
+pub fn draw_gid_caption(
+    ctx: &egui_macroquad::egui::Context,
+    layout: CockpitLayout,
+    faction: CockpitFaction,
+    mode: GidMode,
+) {
+    use egui_macroquad::egui;
+    if !mode.is_active() || layout.scale <= 0.0 {
+        return;
+    }
+    let (x, _, width, _) = cockpit::galaxy_aperture(faction);
+    ctx.layer_painter(egui::LayerId::background()).text(
+        egui::pos2(
+            layout.canvas.x + (x + width / 2.0) * layout.scale,
+            layout.canvas.y + GID_CAPTION_TOP * layout.scale,
+        ),
+        egui::Align2::CENTER_TOP,
+        mode.label(),
+        theme::game_font(10, layout.scale),
+        game_menu::faction_text_color(faction),
     );
 }
 
@@ -1404,21 +1434,24 @@ mod interaction_tests {
         clippy::float_cmp,
         reason = "These regression checks require exact copied values, endpoints, and pixel coordinates."
     )]
-    fn galaxy_backdrop_uses_canvas_origin_and_native_resource_size() {
-        // Source: FUN_00421c70 canvas origin, STRATEGY.DLL 607x437 galaxy backdrop.
+    fn galaxy_backdrop_sits_at_its_faction_offset_at_native_size() {
+        // FUN_00425d00 / FUN_00427010: the 607x437 starfield (STRATEGY 902
+        // and 903) is blitted at (0x15, 0x19) for the Alliance and (0x54,
+        // 0x1b) for the Empire.
         let alliance = CockpitState::new(CockpitFaction::Alliance).layout_for(640.0, 480.0);
-        let destination = galaxy_backdrop_destination(alliance, 607.0, 437.0);
-        assert_eq!(destination.x, 0.0);
-        assert_eq!(destination.y, 0.0);
+        let destination =
+            galaxy_backdrop_destination(alliance, CockpitFaction::Alliance, 607.0, 437.0);
+        assert_eq!(destination.x, 21.0);
+        assert_eq!(destination.y, 25.0);
         assert_eq!(destination.width, 607.0);
         assert_eq!(destination.height, 437.0);
         assert_eq!(alliance.galaxy.x, 55.0);
         assert_eq!(alliance.galaxy.y, 40.0);
 
         let empire = CockpitState::new(CockpitFaction::Empire).layout_for(1280.0, 960.0);
-        let destination = galaxy_backdrop_destination(empire, 607.0, 437.0);
-        assert_eq!(destination.x, 0.0);
-        assert_eq!(destination.y, 0.0);
+        let destination = galaxy_backdrop_destination(empire, CockpitFaction::Empire, 607.0, 437.0);
+        assert_eq!(destination.x, 168.0);
+        assert_eq!(destination.y, 54.0);
         assert_eq!(destination.width, 1214.0);
         assert_eq!(destination.height, 874.0);
         assert_eq!(empire.galaxy.x, 240.0);
@@ -1474,10 +1507,10 @@ mod interaction_tests {
         clippy::float_cmp,
         reason = "These regression checks require exact copied values, endpoints, and pixel coordinates."
     )]
-    fn camera_transform_includes_aperture_offset() {
+    fn camera_transform_starts_at_the_starfield_origin() {
         let camera = CameraView {
-            cam_x: 450.0,
-            cam_y: 470.0,
+            origin_x: 60.0,
+            origin_y: 30.0,
             zoom: 2.0,
             logical_zoom: 1.0,
             display_scale: 2.0,
@@ -1487,7 +1520,8 @@ mod interaction_tests {
             viewport_height: 355.0,
         };
 
-        assert_eq!(camera.to_screen(450.0, 470.0), (340.0, 217.5));
+        // FUN_00425d00: 1024 galaxy units span the 607x437 starfield.
+        assert_eq!(camera.to_screen(1024.0, 1024.0), (60.0 + 1214.0, 30.0 + 874.0));
         assert!(camera.contains(100.0, 40.0));
         assert!(camera.contains(579.999, 394.999));
         assert!(!camera.contains(99.0, 40.0));
@@ -1505,8 +1539,8 @@ mod interaction_tests {
     )]
     fn display_scale_does_not_change_logical_visibility_thresholds() {
         let baseline = CameraView {
-            cam_x: 0.0,
-            cam_y: 0.0,
+            origin_x: 0.0,
+            origin_y: 0.0,
             zoom: 0.7,
             logical_zoom: 0.7,
             display_scale: 1.0,
@@ -1534,18 +1568,57 @@ mod interaction_tests {
     }
 
     #[test]
-    fn the_galaxy_map_keeps_one_framing_at_every_display_scale() {
-        // FUN_00422ce0 has no WM_MOUSEWHEEL case and no right-button drag:
-        // the map's centre and scale never change.
+    fn galaxy_points_map_linearly_onto_the_starfield_at_every_display_scale() {
+        // FUN_00425d00: (int)(x * 607 / 1024) + 0x54 and
+        // (int)(y * 437 / 1024) + 0x1b for the Empire; the view neither
+        // zooms nor pans (FUN_00422ce0).
         for scale in [1.0, 2.0] {
-            let camera = galaxy_camera((100.0, 40.0, 480.0 * scale, 355.0 * scale), scale);
-            let (x, y) = camera.to_screen(GALAXY_CAMERA_CENTER.0, GALAXY_CAMERA_CENTER.1);
-            assert!((x - (100.0 + 240.0 * scale)).abs() < 0.001);
-            assert!((y - (40.0 + 177.5 * scale)).abs() < 0.001);
-            let (east, _) = camera.to_screen(GALAXY_CAMERA_CENTER.0 + 10.0, 0.0);
-            assert!((east - x - 10.0 * scale).abs() < 0.001);
+            let aperture = (120.0 * scale, 40.0 * scale, 480.0 * scale, 355.0 * scale);
+            let camera = galaxy_camera(aperture, scale, CockpitFaction::Empire);
+            assert_eq!(camera.to_screen(0.0, 0.0), (84.0 * scale, 27.0 * scale));
+            // 500 * 607 / 1024 = 296.39 and 500 * 437 / 1024 = 213.38.
+            assert_eq!(
+                camera.to_screen(500.0, 500.0),
+                ((84.0 + 296.0) * scale, (27.0 + 213.0) * scale)
+            );
             assert!((camera.logical_zoom - 1.0).abs() < f32::EPSILON);
         }
+        let alliance = galaxy_camera((55.0, 40.0, 485.0, 350.0), 1.0, CockpitFaction::Alliance);
+        assert_eq!(
+            alliance.to_screen(1023.0, 1023.0),
+            (21.0 + 606.0, 25.0 + 436.0)
+        );
+    }
+
+    #[test]
+    fn the_gid_caption_is_centred_over_the_aperture_in_the_game_font() {
+        // hyp (measured): the original Empire caption is centred at x 359
+        // over the aperture's 360, glyphs from y 43, in 0x200ff00 green.
+        use egui_macroquad::egui;
+        let layout = CockpitState::new(CockpitFaction::Empire).layout_for(1280.0, 960.0);
+        let ctx = egui::Context::default();
+        let shapes = |mode| {
+            ctx.run(egui::RawInput::default(), |ctx| {
+                draw_gid_caption(ctx, layout, CockpitFaction::Empire, mode);
+            })
+            .shapes
+        };
+        let painted = shapes(GidMode::PopularSupport);
+        let text = painted
+            .iter()
+            .find_map(|clipped| match &clipped.shape {
+                egui::Shape::Text(text) => Some(text.clone()),
+                _ => None,
+            })
+            .expect("the caption is painted");
+        assert_eq!(text.galley.text(), "Popular Support");
+        assert!((text.pos.x + text.galley.size().x / 2.0 - 720.0).abs() < 0.01);
+        assert_eq!(text.pos.y, 82.0);
+        assert_eq!(
+            text.fallback_color,
+            egui::Color32::from_rgb(0, 255, 0)
+        );
+        assert!(shapes(GidMode::DisplayOff).is_empty());
     }
 
     #[test]

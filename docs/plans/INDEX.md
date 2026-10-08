@@ -3,7 +3,7 @@ title: "Plans Index"
 description: "All feature plans, ExecPlans, and design proposals for Open Rebellion"
 category: plan
 created: 2026-03-22
-updated: 2026-10-02
+updated: 2026-10-08
 tags: [index, plans]
 ---
 
@@ -35,6 +35,7 @@ defines the deterministic harness and one-gate family cadence.
 
 | Plan | Type | Status | Date |
 |------|------|--------|------|
+| [Resource Stockpiles and Top-Bar Counters](2026-10-08-feat-resource-stockpiles.md) | feat | active; Phase 1 (Maintenance Monitor) done, Phases 2–4 model the raw and refined stockpiles, facility cycles and yards' refined draw | 2026-10-08 |
 | [Will Forster Encyclopedia Handoff Adaptation](2026-10-02-feat-will-forster-encyclopedia-handoff-adaptation.md) | feat | active companion to P66; selectively adapts PR #16 conformance, immutable-session, presentation, publication, HD, and native-overlay patterns into the canonical upstream pipeline | 2026-10-02 |
 | [Encyclopedia Data Extraction, Modding, and Display](2026-09-27-design-encyclopedia-data-pipeline.md) | design | draft for review; source extraction, schema, staging, mod overlays, and native/browser display | 2026-09-27 |
 | [Tactical 106-Cell Acceptance Train](2026-09-22-tooling-tactical-106-cell-acceptance.md) | tooling | active, final local commit train for authoritative A0 capture, complete A1 execution, comparison, and strict 106/106 acceptance | 2026-09-22 |

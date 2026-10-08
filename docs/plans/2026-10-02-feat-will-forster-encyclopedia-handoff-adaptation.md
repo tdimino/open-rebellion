@@ -119,8 +119,10 @@ upstream type or namespace changed after P65.
 
 Preflight requirements:
 
-- repair the PR's isolated `rebellion-data` test compile defect before using its
-  test module as a reference. The test needs `std::io::Read` for `.take(...)`;
+- recheck the PR's earlier isolated `Read::take` test compile defect before
+  using its test module as a reference. The retained `82ef2ccc` head already
+  contains the required `std::io::Read` imports and compiles; do not regress
+  that import when adapting individual cases;
 - treat the PR's 45 passing `encyclopedia_contract` cases as useful design
   evidence, not as proof against current main;
 - resolve the four known direct conflicts conceptually before extracting code:
@@ -132,6 +134,11 @@ Preflight requirements:
 
 Exit: every retained idea has one upstream owner, destination, test gate, and
 source commit. No planned change requires a second runtime authority.
+
+Status: complete on 2026-10-06. The current-main owners, per-commit path map,
+four conflict rulings, test gates, fixture boundary, and corrected PR compile
+evidence are recorded in the
+[W0 handoff preflight](../reference/asset-library/encyclopedia-handoff-preflight.md).
 
 ### W1. Current-schema conformance corpus
 
@@ -388,6 +395,10 @@ This plan is complete only when:
   boundary once its checkpoint lands.
 - 2026-10-02: schedule conformance, immutable sessions, presenter, authentic
   rendering, and production routing before optional authoring hot reload.
+- 2026-10-06: complete W0 against `origin/main` `3393d5c8`. Retain P66A as the
+  sole index/source/binding authority, treat PR #16 as read-only provenance,
+  and begin W1 at the current P66A parser and binder boundary. The earlier
+  `Read::take` compile caveat is not present at retained PR head `82ef2ccc`.
 - 2026-10-06: implement W2 as a caller-owned, platform-neutral data session
   over P66A types. The inactive store performs full candidate preparation before
   one-pointer publication, admits only the source-backed 400-by-200 indexed BMP

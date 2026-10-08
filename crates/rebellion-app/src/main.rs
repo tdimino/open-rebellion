@@ -1315,6 +1315,7 @@ async fn main() {
     // ── Cockpit chrome ───────────────────────────────────────────────────────
     let mut cockpit_state = CockpitState::new(CockpitFaction::Alliance);
     let mut game_speed_ui = GameSpeedUiState::default();
+    let mut cockpit_tooltips = rebellion_render::tooltip::TooltipState::default();
     let mut sector_window_state = SectorWindowState::default();
     let mut system_window_state = SystemWindowState::default();
     let mut fleet_window_state = FleetWindowState::default();
@@ -3895,7 +3896,12 @@ Some(RailAudience::side(*faction_is_alliance)),
                 // 2. Recovered GID baseline. Replacement fog, fleet, sector,
                 // facility, and blockade primitives stay off the parity surface
                 // until their original GID modes are reconstructed.
-                draw_galaxy_backdrop(cockpit_layout, &mut bmp_cache, cockpit_state.gid_mode);
+                draw_galaxy_backdrop(
+                    cockpit_layout,
+                    cockpit_state.faction,
+                    &mut bmp_cache,
+                    cockpit_state.gid_mode,
+                );
                 draw_galaxy_map(
                     &world,
                     &mut map_state,
@@ -3953,9 +3959,46 @@ Some(RailAudience::side(*faction_is_alliance)),
                         }
                     }
 
+                    rebellion_render::draw_gid_caption(
+                        ctx,
+                        cockpit_layout,
+                        cockpit_state.faction,
+                        cockpit_state.gid_mode,
+                    );
+                    rebellion_render::sector_hover::draw_sector_hover_label(
+                        ctx,
+                        &world,
+                        cockpit_layout,
+                        cockpit_state.faction,
+                    );
                     // The day readout is the Game Speed control; a right
                     // click on it opens the original speed menu.
-                    draw_day_readout(ctx, cockpit_layout, cockpit_state.faction, clock.tick);
+                    draw_day_readout(
+                        ctx,
+                        &mut bmp_cache,
+                        cockpit_layout,
+                        cockpit_state.faction,
+                        clock.tick,
+                        clock.speed,
+                    );
+                    // port: the raw and refined stockpiles are not modelled
+                    // yet, so their monitors stay blank.
+                    let side = match cockpit_state.faction {
+                        rebellion_render::cockpit::CockpitFaction::Alliance => Faction::Alliance,
+                        rebellion_render::cockpit::CockpitFaction::Empire => Faction::Empire,
+                    };
+                    rebellion_render::game_speed::draw_resource_counters(
+                        ctx,
+                        cockpit_layout,
+                        cockpit_state.faction,
+                        [
+                            None,
+                            None,
+                            Some(rebellion_core::resources::maintenance_surplus(
+                                &world, &mfg_state, side,
+                            )),
+                        ],
+                    );
                     let speed_input = strategic_input_enabled;
                     if speed_input {
                         open_game_speed_menu_on_right_click(
@@ -3965,6 +4008,12 @@ Some(RailAudience::side(*faction_is_alliance)),
                             cockpit_state.faction,
                         );
                     }
+                    rebellion_render::tooltip::draw_cockpit_tooltips(
+                        ctx,
+                        &mut cockpit_tooltips,
+                        cockpit_layout,
+                        cockpit_state.faction,
+                    );
                     if let Some(speed) = draw_game_speed_menu(
                         ctx,
                         &mut game_speed_ui,
@@ -4329,7 +4378,6 @@ Some(RailAudience::side(*faction_is_alliance)),
                         cockpit_state.faction,
                         cockpit_layout,
                         &mut bmp_cache,
-                        &uprising_state,
                         &mission_state,
                     )
                     .into_iter()

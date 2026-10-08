@@ -35,23 +35,34 @@ pub const SEED42_FIXTURE_ID: &str = "seed42-v1";
 pub const SEED42_ARTIFACT_BYTES: &[u8] = include_bytes!("../tests/fixtures/replay_seed42_v1.json");
 pub const SEED42_ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const SEED42_SEED: u64 = 42;
-pub const SEED42_INITIAL_FINGERPRINT: &str = "v1:def9666124cd1433";
-pub const SEED42_FINAL_FINGERPRINT: &str = "v1:a079b9347c1c574e";
+pub const SEED42_INITIAL_FINGERPRINT: &str = "v1:b232d3dd0e0fe767";
+pub const SEED42_FINAL_FINGERPRINT: &str = "v1:7d80543f9bbf3aab";
 pub const SEED42_FINAL_TICK: u64 = 25;
 pub const SEED42_DATA_INPUTS: usize = 51;
 pub const SEED42_DATA_BYTES: u64 = 50_597;
 pub const SEED42_DATA_FINGERPRINT: &str = "5facb1c7ba0e81ad";
 
+/// The fixture's seeding: seed 42 on a Huge galaxy, the size that loads all
+/// 200 systems (SECTORSD `galaxy_size` 1..3).
+#[must_use]
+pub fn seed42_seed_options() -> SeedOptions {
+    SeedOptions {
+        galaxy_size: rebellion_core::dat::GalaxySize::Huge,
+        rng_seed: Some(SEED42_SEED),
+        ..SeedOptions::default()
+    }
+}
+
 pub const SEED42_CHECKPOINTS: &[(u64, u64, &str)] = &[
-    (1, 0, "v1:fdc87843c2cbdc9f"),
-    (2, 0, "v1:9f2ea58d12454c91"),
-    (3, 5, "v1:032faa23588252e9"),
-    (4, 10, "v1:50dccbfcface8261"),
-    (5, 15, "v1:fc679e07cd76bfd4"),
-    (6, 20, "v1:b405f1d46c212dc8"),
-    (7, 25, "v1:2cef66eb7402e1dc"),
-    (8, 25, "v1:a079b9347c1c574e"),
-    (9, 25, "v1:a079b9347c1c574e"),
+    (1, 0, "v1:51e922635d66a7b7"),
+    (2, 0, "v1:9c100530c84d4719"),
+    (3, 5, "v1:c82ba3cb0f0fe241"),
+    (4, 10, "v1:e5800afeeb49ebaa"),
+    (5, 15, "v1:0593d02185d358d6"),
+    (6, 20, "v1:e461092b1613ba31"),
+    (7, 25, "v1:a8b4bffbba7b2e91"),
+    (8, 25, "v1:7d80543f9bbf3aab"),
+    (9, 25, "v1:7d80543f9bbf3aab"),
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -161,10 +172,7 @@ pub fn seed42_initial_state(world: GameWorld) -> anyhow::Result<SaveState> {
     FogSystem::seed(&mut fog_empire, &world);
     let mut events = EventState::new();
     rebellion_core::story_events::define_story_events(&mut events, &world);
-    let options = SeedOptions {
-        rng_seed: Some(SEED42_SEED),
-        ..SeedOptions::default()
-    };
+    let options = seed42_seed_options();
 
     Ok(SaveState {
         world,

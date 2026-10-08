@@ -552,10 +552,32 @@ pub fn strategic_gid_control(faction: CockpitFaction) -> &'static StrategicContr
 }
 
 /// Side control outside the six bottom controls.
-fn strategic_side_control(faction: CockpitFaction) -> &'static StrategicControlSpec {
+pub(crate) fn strategic_side_control(faction: CockpitFaction) -> &'static StrategicControlSpec {
     match faction {
         CockpitFaction::Alliance => &ALLIANCE_GAME_OPTIONS_CONTROL,
         CockpitFaction::Empire => &EMPIRE_GAME_OPTIONS_CONTROL,
+    }
+}
+
+/// The galaxy aperture in the 640x480 canvas as (x, y, width, height).
+/// `FUN_00421c70` constructs these exact client rectangles; the right and
+/// bottom values are exclusive in the original Win32 RECT contract.
+#[must_use]
+pub const fn galaxy_aperture(faction: CockpitFaction) -> (f32, f32, f32, f32) {
+    match faction {
+        CockpitFaction::Alliance => (55.0, 40.0, 485.0, 350.0),
+        CockpitFaction::Empire => (120.0, 40.0, 480.0, 355.0),
+    }
+}
+
+/// Where the 607x437 starfield's top-left corner sits in the 640x480
+/// canvas: `FUN_00425d00` and `FUN_00427010` add (0x15, 0x19) for the
+/// Alliance and (0x54, 0x1b) for the Empire.
+#[must_use]
+pub const fn galaxy_backdrop_offset(faction: CockpitFaction) -> (f32, f32) {
+    match faction {
+        CockpitFaction::Alliance => (21.0, 25.0),
+        CockpitFaction::Empire => (84.0, 27.0),
     }
 }
 
@@ -673,12 +695,7 @@ impl CockpitState {
             height: STRATEGIC_LOGICAL_HEIGHT * scale,
         };
 
-        // FUN_00421c70 constructs these exact client rectangles. The right and
-        // bottom values are exclusive in the original Win32 RECT contract.
-        let (x, y, width, height) = match self.faction {
-            CockpitFaction::Alliance => (55.0, 40.0, 485.0, 350.0),
-            CockpitFaction::Empire => (120.0, 40.0, 480.0, 355.0),
-        };
+        let (x, y, width, height) = galaxy_aperture(self.faction);
         let galaxy = CockpitViewport {
             x: canvas.x + x * scale,
             y: canvas.y + y * scale,
@@ -1118,9 +1135,15 @@ fn gid_submenu_items(category: GidCategory, faction: CockpitFaction) -> Vec<GidM
     }
 }
 
+/// Fill of the GID pop-ups and Game Menu Windows.
+/// port: opaque, as the original's speed and object menus are in captures
+/// of the original (2026-10-08 parity QA: a flat grey over both the galaxy
+/// and a black fleet window). hyp: the grey value is not traced.
+pub(crate) const GID_POPUP_FILL: egui::Color32 = egui::Color32::from_rgb(45, 47, 48);
+
 pub(crate) fn gid_popup_frame() -> egui::Frame {
     egui::Frame::new()
-        .fill(egui::Color32::from_rgba_premultiplied(45, 47, 48, 218))
+        .fill(GID_POPUP_FILL)
         // Keep the stroke's layout inset, but paint its visible edge from the
         // eight original STRATEGY bitmap tiles below.
         .stroke(egui::Stroke::new(1.0_f32, egui::Color32::TRANSPARENT))
@@ -2236,5 +2259,13 @@ mod tests {
         let control = &strategic_primary_controls(CockpitFaction::Alliance)[0];
         assert_eq!(control_resource(control, false), control.normal_resource);
         assert_eq!(control_resource(control, true), control.pressed_resource);
+    }
+
+    #[test]
+    fn game_menus_and_gid_pop_ups_are_opaque() {
+        // Captures of the original (2026-10-08 parity QA): the speed menu
+        // over the galaxy and the object menu over a fleet window are one
+        // flat grey, with nothing behind them showing through.
+        assert_eq!(gid_popup_frame().fill.a(), 255);
     }
 }

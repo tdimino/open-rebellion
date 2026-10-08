@@ -445,7 +445,7 @@ pub(crate) fn holder(sys: &System) -> Option<Faction> {
     clippy::cast_possible_truncation,
     reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
 )]
-pub(crate) fn support_points(sys: &System, side: Faction) -> i32 {
+pub fn support_points(sys: &System, side: Faction) -> i32 {
     let fraction = if side == Faction::Alliance {
         sys.popularity_alliance
     } else {

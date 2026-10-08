@@ -26,6 +26,7 @@ pub mod movement;
 pub mod net_protocol;
 pub mod repair;
 pub mod research;
+pub mod resources;
 #[doc(hidden)]
 pub mod serde_ordered;
 pub mod story_events;
