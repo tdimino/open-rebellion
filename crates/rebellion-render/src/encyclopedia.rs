@@ -586,6 +586,8 @@ pub const ENCYCLOPEDIA_INDEX_HEIGHT: f32 = 330.0;
 
 const ORIGINAL_INDEX_VISIBLE_ROWS: usize = 9;
 const ORIGINAL_INDEX_ROW_HEIGHT: f32 = 18.0;
+const ORIGINAL_TOPIC_ARTWORK_WIDTH: f32 = 400.0;
+const ORIGINAL_TOPIC_ARTWORK_HEIGHT: f32 = 200.0;
 
 /// One immutable source object shown by the authentic index list.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1620,14 +1622,14 @@ fn draw_surface_topic(
     let Some(topic) = surface.active_topic.as_ref() else {
         return;
     };
-    if let (Some(texture), Some(artwork)) = (texture, topic.artwork.as_ref()) {
+    if let (Some(texture), Some(_artwork)) = (texture, topic.artwork.as_ref()) {
         let rect = encyclopedia_rect(
             window_rect,
             scale,
             12.0,
             31.0,
-            artwork.width as f32,
-            artwork.height as f32,
+            ORIGINAL_TOPIC_ARTWORK_WIDTH,
+            ORIGINAL_TOPIC_ARTWORK_HEIGHT,
         );
         ui.painter().image(
             texture,
@@ -2934,6 +2936,29 @@ mod tests {
             .sum()
     }
 
+    fn image_rect(output: &egui::FullOutput, texture_id: egui::TextureId) -> egui::Rect {
+        fn find(shape: &egui::Shape, texture_id: egui::TextureId) -> Option<egui::Rect> {
+            match shape {
+                egui::Shape::Mesh(mesh) if mesh.texture_id == texture_id => {
+                    let points = mesh
+                        .vertices
+                        .iter()
+                        .map(|vertex| vertex.pos)
+                        .collect::<Vec<_>>();
+                    Some(egui::Rect::from_points(&points))
+                }
+                egui::Shape::Vec(shapes) => shapes.iter().find_map(|shape| find(shape, texture_id)),
+                _ => None,
+            }
+        }
+
+        output
+            .shapes
+            .iter()
+            .find_map(|clipped| find(&clipped.shape, texture_id))
+            .expect("texture must be painted")
+    }
+
     fn has_rect_fill(output: &egui::FullOutput, fill: Color32) -> bool {
         fn has_fill(shape: &egui::Shape, fill: Color32) -> bool {
             match shape {
@@ -3097,6 +3122,39 @@ mod tests {
 
         assert_eq!(position, egui::pos2(269.0, 69.0));
         assert_eq!(alignment, egui::Align2::CENTER_TOP);
+    }
+
+    #[test]
+    fn hd_topic_pixels_render_into_the_original_logical_artwork_rect() {
+        let mut surface = test_surface(EncyclopediaSurfaceMode::Topic, Some(1));
+        surface.active_topic.as_mut().unwrap().artwork = Some(EncyclopediaArtworkView {
+            resource_id: 0x2740,
+            filename: "EDATA_064.png",
+            digest: "approved-hd",
+            width: 1600,
+            height: 800,
+            bytes: &[],
+            sampling: EncyclopediaTextureSampling::Linear,
+        });
+        let ctx = egui::Context::default();
+        crate::theme::load_fonts(&ctx);
+        let texture = ctx.load_texture(
+            "approved-hd-test",
+            egui::ColorImage::new([1, 1], Color32::WHITE),
+            TextureOptions::LINEAR,
+        );
+        let texture_id = texture.id();
+        let mut state = EncyclopediaSurfaceState::new();
+        let output = ctx.run(surface_input(vec![], 0.0), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let (window_rect, _) =
+                    ui.allocate_exact_size(egui::vec2(424.0, 320.0), egui::Sense::hover());
+                draw_surface_topic(ui, window_rect, 1.0, &mut state, &surface, Some(texture_id));
+            });
+        });
+
+        let rect = image_rect(&output, texture_id);
+        assert_eq!(rect.size(), egui::vec2(400.0, 200.0));
     }
 
     #[test]
