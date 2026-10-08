@@ -25,12 +25,13 @@ use crate::cockpit::{
 use crate::game_menu::{
     draw_game_menu, faction_text_color, GameMenuEntry, GameMenuPlacement, GameMenuResponse,
 };
+use crate::theme::game_font_size;
 
 /// Game-font entry 10 (`FUN_0060eed0`): 14-pixel Arial, normal weight.
 ///
 /// Arial is not redistributable in the browser build, so text uses egui's
 /// proportional face at the recovered height.
-const DAY_FONT_HEIGHT: f32 = 14.0;
+const DAY_FONT_HEIGHT: f32 = game_font_size(10);
 
 /// One record of the original speed menu.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -195,7 +196,7 @@ const ALERT_BUTTON_RECT: CockpitViewport = CockpitViewport {
     height: 28.0,
 };
 /// Game-font entry 5: 16 pixels, bold. Drawn with egui's proportional face.
-const ALERT_FONT_HEIGHT: f32 = 16.0;
+const ALERT_FONT_HEIGHT: f32 = game_font_size(5);
 const SPEED_MENU_ID: &str = "original_game_speed_menu";
 /// Text color `0x2f0fbff`.
 const ALERT_TEXT_COLOR: egui::Color32 = egui::Color32::from_rgb(255, 251, 240);
@@ -312,27 +313,163 @@ pub fn draw_pause_alert(
     clicked || enter
 }
 
-/// Paint the day readout as `FUN_00601ce0` draws it: centered, transparent,
-/// in the faction text color.
+/// Width `FUN_00422ce0` fixes for the day text object (`param_1[0x38] =
+/// 0x3c`, flag 1). Its format 1 (`DT_CENTER`) centres the day in this box.
+const DAY_TEXT_WIDTH: f32 = 60.0;
+
+/// Top-left corner where `FUN_0042d230` blits the speed icon, just right of
+/// the day: `(0xa7,0x14)` for the Alliance and `(0x231,0x14)` for the Empire.
+#[must_use]
+pub const fn speed_icon_origin(faction: CockpitFaction) -> (f32, f32) {
+    match faction {
+        CockpitFaction::Alliance => (167.0, 20.0),
+        CockpitFaction::Empire => (561.0, 20.0),
+    }
+}
+
+/// The STRATEGY icon `FUN_0042d230` shows for a speed. They are the speed
+/// menu's own icons: 0x2d3c..0x2d3f and 0x2d44 for the Alliance, four (or
+/// for Fast one) higher for the Empire.
+#[must_use]
+pub fn speed_icon_resource(faction: CockpitFaction, speed: GameSpeed) -> u32 {
+    game_speed_menu_items(faction)
+        .iter()
+        .find(|item| item.speed == speed)
+        .map_or(game_speed_menu_items(faction)[0].icon_resource, |item| {
+            item.icon_resource
+        })
+}
+
+/// Paint the day readout and speed icon as `FUN_0042d230` and
+/// `FUN_00601ce0` draw them: the day centred in its 60-pixel box,
+/// transparent, in the faction text color, and the speed's icon beside it.
+///
+/// Pause does not change the speed index (`FUN_0041d2f0`), so a paused game
+/// keeps showing the speed it will resume at.
 pub fn draw_day_readout(
     ctx: &egui::Context,
+    cache: &mut BmpCache,
     layout: CockpitLayout,
     faction: CockpitFaction,
     day: u64,
+    speed: GameSpeed,
 ) {
-    let (x, y) = day_text_origin(faction);
-    let hit = day_readout_rect(faction);
-    let center_x = x + (hit.x + hit.width - x) / 2.0;
-    ctx.layer_painter(egui::LayerId::background()).text(
+    let painter = ctx.layer_painter(egui::LayerId::background());
+    let to_screen = |(x, y): (f32, f32)| {
         egui::pos2(
-            layout.canvas.x + center_x * layout.scale,
+            layout.canvas.x + x * layout.scale,
             layout.canvas.y + y * layout.scale,
-        ),
+        )
+    };
+    let (x, y) = day_text_origin(faction);
+    painter.text(
+        to_screen((x + DAY_TEXT_WIDTH / 2.0, y)),
         egui::Align2::CENTER_TOP,
         day.to_string(),
         egui::FontId::proportional(DAY_FONT_HEIGHT * layout.scale),
         faction_text_color(faction),
     );
+    if let Some(texture) = cache.get(
+        ctx,
+        DllSource::Strategy,
+        speed_icon_resource(faction, speed),
+    ) {
+        painter.image(
+            texture.id(),
+            egui::Rect::from_min_size(
+                to_screen(speed_icon_origin(faction)),
+                texture.size_vec2() * layout.scale,
+            ),
+            egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+            egui::Color32::WHITE,
+        );
+    }
+}
+
+/// Game-font entry 8 (`FUN_0060eed0`): 12-pixel Arial, normal weight, drawn
+/// with egui's proportional face as the day is.
+const COUNTER_FONT_HEIGHT: f32 = game_font_size(8);
+/// Fixed size of each counter text object (`param_1[0x5e] = 0x3f`,
+/// `[0x5f] = 0x11`, flags 3).
+const COUNTER_WIDTH: f32 = 63.0;
+const COUNTER_HEIGHT: f32 = 17.0;
+/// `FUN_00429200` shows TEXTSTRA 0x1302 for a maintenance figure above this.
+const COUNTER_LIMIT: i64 = 99_999;
+/// TEXTSTRA 0x1302.
+pub const COUNTER_OVERFLOW: &str = "MAX";
+
+/// One of the three top-strip readouts `FUN_00422ce0` builds, in left to
+/// right order; their tooltips are TEXTSTRA 0x1510..0x1512.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResourceCounter {
+    /// "Raw Materials Monitor", side `+0x78` (message 0x14c).
+    RawMaterials,
+    /// "Refined Materials Monitor", side `+0x7c` (message 0x14d).
+    RefinedMaterials,
+    /// "Maintenance Monitor", capacity minus side `+0x74` (message 0x14e).
+    Maintenance,
+}
+
+impl ResourceCounter {
+    pub const ALL: [Self; 3] = [
+        Self::RawMaterials,
+        Self::RefinedMaterials,
+        Self::Maintenance,
+    ];
+}
+
+/// Top-left anchor `FUN_00601b30` gives a counter's 63x17 text box.
+#[must_use]
+pub const fn resource_counter_origin(
+    faction: CockpitFaction,
+    counter: ResourceCounter,
+) -> (f32, f32) {
+    match (faction, counter) {
+        (CockpitFaction::Alliance, ResourceCounter::RawMaterials) => (265.0, 16.0),
+        (CockpitFaction::Alliance, ResourceCounter::RefinedMaterials) => (360.0, 16.0),
+        (CockpitFaction::Alliance, ResourceCounter::Maintenance) => (457.0, 16.0),
+        (CockpitFaction::Empire, ResourceCounter::RawMaterials) => (175.0, 19.0),
+        (CockpitFaction::Empire, ResourceCounter::RefinedMaterials) => (273.0, 19.0),
+        (CockpitFaction::Empire, ResourceCounter::Maintenance) => (371.0, 19.0),
+    }
+}
+
+/// The text `FUN_00429200` sets for a counter value.
+#[must_use]
+pub fn resource_counter_text(counter: ResourceCounter, value: i64) -> String {
+    if counter == ResourceCounter::Maintenance && value > COUNTER_LIMIT {
+        COUNTER_OVERFLOW.to_owned()
+    } else {
+        value.to_string()
+    }
+}
+
+/// Paint the three resource counters as `FUN_00601ce0` draws them: format
+/// 0x26 (`DT_RIGHT | DT_VCENTER | DT_SINGLELINE`) in the faction text color.
+/// A `None` value draws nothing.
+pub fn draw_resource_counters(
+    ctx: &egui::Context,
+    layout: CockpitLayout,
+    faction: CockpitFaction,
+    values: [Option<i64>; 3],
+) {
+    let painter = ctx.layer_painter(egui::LayerId::background());
+    for (counter, value) in ResourceCounter::ALL.into_iter().zip(values) {
+        let Some(value) = value else {
+            continue;
+        };
+        let (x, y) = resource_counter_origin(faction, counter);
+        painter.text(
+            egui::pos2(
+                layout.canvas.x + (x + COUNTER_WIDTH) * layout.scale,
+                layout.canvas.y + (y + COUNTER_HEIGHT / 2.0) * layout.scale,
+            ),
+            egui::Align2::RIGHT_CENTER,
+            resource_counter_text(counter, value),
+            egui::FontId::proportional(COUNTER_FONT_HEIGHT * layout.scale),
+            faction_text_color(faction),
+        );
+    }
 }
 
 /// Open the menu on a right-button release inside the day readout.
@@ -927,14 +1064,16 @@ mod tests {
     }
 
     #[test]
-    fn the_day_readout_is_centred_between_its_anchor_and_the_hit_rectangle() {
-        // FUN_00601ce0 centres the text from FUN_00601b30's anchor to the
-        // right edge of the readout.
+    fn the_day_readout_is_centred_in_its_sixty_pixel_box() {
+        // FUN_00422ce0.c:231-232: the day text object is 60 pixels wide
+        // (param_1[0x38] = 0x3c) with format 1, DT_CENTER, from the
+        // FUN_00601b30 anchor; the wider right-click rectangle plays no part.
         for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
             let layout = crate::cockpit::CockpitState::new(faction).layout_for(1280.0, 960.0);
             let ctx = egui::Context::default();
+            let mut cache = BmpCache::new();
             let shapes = frame(&ctx, egui::Pos2::ZERO, vec![], |ctx| {
-                draw_day_readout(ctx, layout, faction, 42);
+                draw_day_readout(ctx, &mut cache, layout, faction, 42, GameSpeed::Medium);
             });
             let text = shapes
                 .into_iter()
@@ -945,8 +1084,7 @@ mod tests {
                 .expect("the day is painted");
             assert_eq!(text.galley.text(), "42");
             let (x, y) = day_text_origin(faction);
-            let hit = day_readout_rect(faction);
-            let centre = screen(layout, ((x + hit.x + hit.width) / 2.0, y));
+            let centre = screen(layout, (x + 30.0, y));
             assert!(
                 (text.pos.x + text.galley.size().x / 2.0 - centre.x).abs() < 0.01,
                 "{faction:?}"
@@ -964,5 +1102,107 @@ mod tests {
             });
             assert_eq!(text.galley.size(), expected, "{faction:?}");
         }
+        // Centres at x = 134 and 530, as in the original's Empire capture.
+        assert_eq!(
+            day_text_origin(CockpitFaction::Empire).0 + DAY_TEXT_WIDTH / 2.0,
+            530.0
+        );
+    }
+
+    #[test]
+    fn the_speed_icon_follows_the_speed_beside_the_day() {
+        // FUN_0042d230.c:45-95: index 0..3 -> 0x2d3c..0x2d3f and 4 -> 0x2d44
+        // for the Alliance (+0x9c == 1), +4 (Fast +1) for the Empire, blitted
+        // at (0xa7,0x14) or (0x231,0x14).
+        assert_eq!(
+            GameSpeed::ALL.map(|speed| speed_icon_resource(CockpitFaction::Alliance, speed)),
+            [0x2d3c, 0x2d3d, 0x2d3e, 0x2d3f, 0x2d44]
+        );
+        assert_eq!(
+            GameSpeed::ALL.map(|speed| speed_icon_resource(CockpitFaction::Empire, speed)),
+            [0x2d40, 0x2d41, 0x2d42, 0x2d43, 0x2d45]
+        );
+        assert_eq!(speed_icon_origin(CockpitFaction::Alliance), (167.0, 20.0));
+        assert_eq!(speed_icon_origin(CockpitFaction::Empire), (561.0, 20.0));
+    }
+    #[test]
+    fn resource_counters_sit_right_aligned_in_their_recovered_boxes() {
+        // FUN_00422ce0.c:186-258: anchors (0x109,0x10), (0x168,0x10),
+        // (0x1c9,0x10) for the Alliance and (0xaf,0x13), (0x111,0x13),
+        // (0x173,0x13) for the Empire; 63x17 boxes, format 0x26, font 8.
+        for (faction, lefts, top) in [
+            (CockpitFaction::Alliance, [265.0, 360.0, 457.0], 16.0),
+            (CockpitFaction::Empire, [175.0, 273.0, 371.0], 19.0),
+        ] {
+            let layout = crate::cockpit::CockpitState::new(faction).layout_for(1280.0, 960.0);
+            let ctx = egui::Context::default();
+            let shapes = frame(&ctx, egui::Pos2::ZERO, vec![], |ctx| {
+                draw_resource_counters(ctx, layout, faction, [Some(1), Some(12), Some(317)]);
+            });
+            let texts: Vec<_> = shapes
+                .into_iter()
+                .filter_map(|clipped| match clipped.shape {
+                    egui::Shape::Text(text) => Some(text),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(
+                texts
+                    .iter()
+                    .map(|t| t.galley.text().to_owned())
+                    .collect::<Vec<_>>(),
+                ["1", "12", "317"],
+                "{faction:?}"
+            );
+            for (text, left) in texts.iter().zip(lefts) {
+                let right = screen(layout, (left + 63.0, top + 8.5));
+                assert!(
+                    (text.pos.x + text.galley.size().x - right.x).abs() < 0.01,
+                    "{faction:?}"
+                );
+                assert!(
+                    (text.pos.y + text.galley.size().y / 2.0 - right.y).abs() < 0.01,
+                    "{faction:?}"
+                );
+                assert_eq!(text.fallback_color, faction_text_color(faction));
+            }
+        }
+        let ctx = egui::Context::default();
+        let layout = strategic_layout(1.0);
+        let shapes = frame(&ctx, egui::Pos2::ZERO, vec![], |ctx| {
+            draw_resource_counters(ctx, layout, CockpitFaction::Alliance, [None, Some(5), None]);
+        });
+        assert_eq!(
+            shapes
+                .iter()
+                .filter(|c| matches!(c.shape, egui::Shape::Text(_)))
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn only_the_maintenance_counter_caps_at_max() {
+        // FUN_00429200: message 0x14e above 99999 shows TEXTSTRA 0x1302.
+        assert_eq!(
+            resource_counter_text(ResourceCounter::Maintenance, 99_999),
+            "99999"
+        );
+        assert_eq!(
+            resource_counter_text(ResourceCounter::Maintenance, 100_000),
+            "MAX"
+        );
+        assert_eq!(
+            resource_counter_text(ResourceCounter::RawMaterials, 100_000),
+            "100000"
+        );
+        assert_eq!(
+            resource_counter_text(ResourceCounter::RefinedMaterials, 100_000),
+            "100000"
+        );
+        assert_eq!(
+            resource_counter_text(ResourceCounter::Maintenance, -3),
+            "-3"
+        );
     }
 }

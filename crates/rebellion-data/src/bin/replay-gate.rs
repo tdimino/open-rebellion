@@ -1,8 +1,7 @@
 use std::path::PathBuf;
 
-use rebellion_core::world::SeedOptions;
 use rebellion_data::replay::compute_simulation_data_manifest_from_dir;
-use rebellion_data::replay_fixture::{run_seed42_gate, SEED42_ARTIFACT_BYTES, SEED42_SEED};
+use rebellion_data::replay_fixture::{run_seed42_gate, seed42_seed_options, SEED42_ARTIFACT_BYTES};
 
 fn main() {
     let data_dir = std::env::args_os()
@@ -15,10 +14,7 @@ fn main() {
             std::process::exit(1);
         }
     };
-    let options = SeedOptions {
-        rng_seed: Some(SEED42_SEED),
-        ..SeedOptions::default()
-    };
+    let options = seed42_seed_options();
     let world = match rebellion_data::load_game_data_with_options(&data_dir, &options) {
         Ok(world) => world,
         Err(error) => {

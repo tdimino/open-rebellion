@@ -568,7 +568,6 @@ mod tests {
             let ctx = egui::Context::default();
             let mut cache = BmpCache::new();
             let fog = FogState::new(Faction::Alliance);
-            let uprisings = rebellion_core::uprising::UprisingState::default();
             for _ in 0..2 {
                 let input = egui::RawInput {
                     screen_rect: Some(egui::Rect::from_min_size(
@@ -588,7 +587,6 @@ mod tests {
                         faction,
                         layout,
                         &mut cache,
-                        &uprisings,
                         missions,
                     );
                     let _ = draw_system_windows(
@@ -672,18 +670,18 @@ mod tests {
             sectors.open_for_system(&world, first, CockpitFaction::Alliance);
             let mut systems = SystemWindowState::default();
 
-            let at = planet_center((14.0, 44.0));
+            let at = planet_center((14.0, 42.0));
             assert_eq!(
                 release_at(&world, &mut sectors, &mut systems, at),
                 Some(first)
             );
-            let at = planet_center((159.0, 89.0));
+            let at = planet_center((167.0, 84.0));
             assert_eq!(
                 release_at(&world, &mut sectors, &mut systems, at),
                 Some(second)
             );
             // Past the first planet's right edge, between the two.
-            let at = (60.0 + 14.0 + 37.0, 35.0 + 44.0 + 18.5);
+            let at = (60.0 + 14.0 + 37.0, 35.0 + 42.0 + 18.5);
             assert_eq!(release_at(&world, &mut sectors, &mut systems, at), None);
         }
 
@@ -699,8 +697,8 @@ mod tests {
                 .planet_screen_rect(&world, layout, second)
                 .expect("the sector's window is open");
             let min = egui::pos2(
-                layout.canvas.x + 60.0 + 159.0,
-                layout.canvas.y + 35.0 + 89.0,
+                layout.canvas.x + 60.0 + 167.0,
+                layout.canvas.y + 35.0 + 84.0,
             );
             assert_eq!(rect, egui::Rect::from_min_size(min, egui::vec2(37.0, 37.0)));
             let center = rect.center();
@@ -743,7 +741,7 @@ mod tests {
             );
 
             // Over the first planet, which the system window covers.
-            let at = planet_center((14.0, 44.0));
+            let at = planet_center((14.0, 42.0));
             assert_eq!(
                 release_at(&world, &mut sectors, &mut systems, at),
                 Some(second)

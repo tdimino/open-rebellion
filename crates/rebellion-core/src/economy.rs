@@ -841,7 +841,7 @@ fn calculate_support_drift(
     clippy::cast_possible_truncation,
     reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
 )]
-fn calculate_resource_allocation(world: &GameWorld, sys: &crate::world::System) -> (u32, u32) {
+pub fn calculate_resource_allocation(world: &GameWorld, sys: &crate::world::System) -> (u32, u32) {
     // Sum production facility outputs (energy generators).
     // Each production facility contributes 1 unit of energy output.
     let energy_output = sys.production_facilities.len() as u32;

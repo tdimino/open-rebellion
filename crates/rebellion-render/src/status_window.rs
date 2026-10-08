@@ -20,6 +20,7 @@ use crate::fleet_window::paint_native;
 use crate::mission_dialog::{button, galaxy_centered_rect, paint};
 use crate::status_rows::{status_view, StatusObject, StatusSources};
 use crate::system_window::{fleet_label, logical_rect, rect_contains};
+use crate::theme::game_font;
 
 pub const STATUS_WINDOW_WIDTH: f32 = 379.0;
 pub const STATUS_WINDOW_HEIGHT: f32 = 272.0;
@@ -337,12 +338,11 @@ pub fn draw_status_window(
                 scale,
             );
 
-            // hyp: fonts 5 and 10 are not mapped; the Missions window's
-            // sizes stand in.
-            // hyp: the production manager's font 0x11 is not mapped
-            // either; its title takes font 5's size.
-            let title_font = egui::FontId::proportional((11.0 * scale).max(7.0));
-            let list_font = egui::FontId::proportional((9.0 * scale).max(6.0));
+            // The title and name take font 5 and the list font 10
+            // (FUN_0060eed0). The production manager's font 0x11 is the
+            // table's default, the same 16 pixels as font 5.
+            let title_font = game_font(5, scale);
+            let list_font = game_font(10, scale);
 
             let title = at(TITLE);
             painter.text(
@@ -1029,7 +1029,8 @@ mod tests {
     fn the_title_name_and_rows_sit_where_the_window_lays_them_out() {
         // FUN_00443130 at scale 2: the title centred in (15, 18, 211, 18),
         // the name centred in (242, 137, 130, 44), labels at the list's
-        // (18, 47) and values 103 to their right (FUN_00449e00).
+        // (18, 47) and values 103 to their right (FUN_00449e00). Fonts 5
+        // and 10 are 16 and 14 pixels (FUN_0060eed0).
         let (world, key, ..) = world_with_luke();
         let mut state = StatusWindowState::default();
         state.open_character(key);
@@ -1042,17 +1043,17 @@ mod tests {
             near(*pos + *size / 2.0, at(15.0 + 105.5, 18.0 + 9.0)),
             "{pos:?} {size:?}"
         );
-        assert_eq!(*font, 22.0);
+        assert_eq!(*font, crate::theme::game_font_size(5) * 2.0);
         let (_, pos, size, font) = find(&texts, "Luke Skywalker");
         assert!(
             near(*pos + *size / 2.0, at(242.0 + 65.0, 137.0 + 22.0)),
             "{pos:?} {size:?}"
         );
-        assert_eq!(*font, 22.0);
+        assert_eq!(*font, crate::theme::game_font_size(5) * 2.0);
 
         let (_, commanding, row, font) = find(&texts, "Commanding:");
         assert!(near(*commanding, at(18.0, 47.0)), "{commanding:?}");
-        assert_eq!(*font, 18.0);
+        assert_eq!(*font, crate::theme::game_font_size(10) * 2.0);
         let (_, none, ..) = find(&texts, "None");
         assert!(near(*none, at(18.0 + 103.0, 47.0)), "{none:?}");
         let (_, yavin, ..) = find(&texts, "Yavin");

@@ -66,15 +66,84 @@ pub fn load_fonts(ctx: &egui::Context) {
             .insert(0, "liberation-sans".to_owned());
     }
 
-    // Try to load Liberation Sans Bold
+    // Try to load Liberation Sans Bold, the face of the game's bold entries.
     if let Ok(bold_bytes) = std::fs::read("assets/fonts/LiberationSans-Bold.ttf") {
         fonts.font_data.insert(
             "liberation-sans-bold".to_owned(),
             std::sync::Arc::new(FontData::from_owned(bold_bytes)),
         );
+        let mut bold = vec!["liberation-sans-bold".to_owned()];
+        bold.extend(
+            fonts
+                .families
+                .get(&FontFamily::Proportional)
+                .cloned()
+                .unwrap_or_default(),
+        );
+        fonts
+            .families
+            .insert(FontFamily::Name(GAME_BOLD_FAMILY.into()), bold);
     }
 
     ctx.set_fonts(fonts);
+}
+
+/// The pixel height `FUN_0060eed0` gives the game's font entry `entry`
+/// (`lfHeight`): 1, 5 and the default 16; 2 and 10 14; 3 8; 6 and 7 18;
+/// 8, 9 and 13 12; 11 24; 12 30. Any other entry takes the default.
+#[must_use]
+pub const fn game_font_height(entry: u8) -> f32 {
+    match entry {
+        2 | 10 => 14.0,
+        3 => 8.0,
+        6 | 7 => 18.0,
+        8 | 9 | 13 => 12.0,
+        11 => 24.0,
+        12 => 30.0,
+        _ => 16.0,
+    }
+}
+
+/// Whether `FUN_0060eed0` makes entry `entry` bold: weight 700 for 1, 2, 5
+/// and 7, and 900 for 13; every other entry is 400.
+#[must_use]
+pub const fn game_font_is_bold(entry: u8) -> bool {
+    matches!(entry, 1 | 2 | 5 | 7 | 13)
+}
+
+/// Em size per pixel of cell height for Arial and Liberation Sans: 2048
+/// units per em over a 1854 + 434 Windows ascent and descent. A positive
+/// `lfHeight` asks GDI for that cell height, while egui sizes a font by its
+/// em, so the game's heights shrink by this before reaching egui.
+const EM_PER_CELL: f32 = 2048.0 / 2288.0;
+
+/// The egui size of the game's font entry `entry`: its cell height as an em.
+#[must_use]
+pub const fn game_font_size(entry: u8) -> f32 {
+    game_font_height(entry) * EM_PER_CELL
+}
+
+/// The game's font entry `entry` at `scale`, in Liberation Sans, which has
+/// Arial's metrics. port: drawn at the regular weight; a bold entry is not
+/// yet bold.
+#[must_use]
+pub fn game_font(entry: u8, scale: f32) -> egui::FontId {
+    egui::FontId::proportional(game_font_size(entry) * scale)
+}
+
+/// The egui family `load_fonts` registers for the game's bold entries.
+const GAME_BOLD_FAMILY: &str = "game-bold";
+
+/// `game_font`, in bold for a bold entry when `ctx` has the bold face
+/// loaded; without it, as in tests, the regular face stands in.
+#[must_use]
+pub fn game_font_on(ctx: &egui::Context, entry: u8, scale: f32) -> egui::FontId {
+    let bold = FontFamily::Name(GAME_BOLD_FAMILY.into());
+    if game_font_is_bold(entry) && ctx.fonts(|fonts| fonts.families().contains(&bold)) {
+        egui::FontId::new(game_font_size(entry) * scale, bold)
+    } else {
+        game_font(entry, scale)
+    }
 }
 
 // ── Theme application ────────────────────────────────────────────────────────
@@ -152,4 +221,31 @@ pub fn apply_theme(ctx: &egui::Context) {
     style.spacing.window_margin = egui::Margin::same(12);
 
     ctx.set_style(style);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn game_fonts_take_the_heights_and_weights_of_the_original_table() {
+        // FUN_0060eed0: the lfHeight and lfWeight switch over the entry.
+        let heights: Vec<f32> = (0..=14).map(game_font_height).collect();
+        assert_eq!(
+            heights,
+            [
+                16.0, 16.0, 14.0, 8.0, 16.0, 16.0, 18.0, 18.0, 12.0, 12.0, 14.0, 24.0, 30.0, 12.0,
+                16.0
+            ]
+        );
+        let bold: Vec<u8> = (0..=14).filter(|entry| game_font_is_bold(*entry)).collect();
+        assert_eq!(bold, [1, 2, 5, 7, 13]);
+        // A 14-pixel cell is a 12.53-pixel em (Liberation Sans OS/2 and
+        // head tables: 2048 units per em, ascent 1854, descent 434).
+        assert!((game_font_size(10) - 12.531_469).abs() < 1e-4);
+        assert_eq!(
+            game_font(10, 2.0),
+            egui::FontId::proportional(game_font_size(10) * 2.0)
+        );
+    }
 }

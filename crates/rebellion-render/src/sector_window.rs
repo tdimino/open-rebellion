@@ -20,6 +20,7 @@ use crate::object_menu::MenuObject;
 #[cfg(any(debug_assertions, not(target_arch = "wasm32")))]
 use crate::panels::command_palette::InterfaceCommand;
 use crate::quadrant_icons::{quadrant_icon, Quadrant};
+use crate::theme::game_font;
 
 /// `DAT_00658bd8`, a static 1023: the galaxy's width, whose half
 /// `FUN_00429ce0` compares a sector's x with (`FUN_00526560`, the record's
@@ -481,7 +482,6 @@ pub fn draw_sector_windows(
     faction: CockpitFaction,
     layout: CockpitLayout,
     cache: &mut BmpCache,
-    uprisings: &rebellion_core::uprising::UprisingState,
     missions: &rebellion_core::missions::MissionState,
 ) -> Vec<SectorWindowAction> {
     state.prepare_faction(faction);
@@ -504,7 +504,6 @@ pub fn draw_sector_windows(
             faction,
             layout,
             cache,
-            uprisings,
             missions,
         );
         if result.focus {
@@ -597,7 +596,6 @@ fn draw_sector_window(
     faction: CockpitFaction,
     layout: CockpitLayout,
     cache: &mut BmpCache,
-    uprisings: &rebellion_core::uprising::UprisingState,
     missions: &rebellion_core::missions::MissionState,
 ) -> WindowDrawResult {
     let mut result = WindowDrawResult::default();
@@ -646,13 +644,14 @@ fn draw_sector_window(
                 .rect_filled(window_rect, 0.0, egui::Color32::from_rgb(42, 42, 42));
             paint_window_border(ui.painter(), ctx, cache, window_rect, layout.scale);
 
-            let title_color = sector_title_color(world, window.sector, faction);
+            // FUN_00459e30: the title label at (2, 2), 20 tall, format 0x25
+            // (centred both ways, one line), font 4, color 0x200f0f0.
             ui.painter().text(
-                logical_point(window_rect, layout.scale, 117.5, 2.0),
-                egui::Align2::CENTER_TOP,
+                logical_point(window_rect, layout.scale, 117.5, 12.0),
+                egui::Align2::CENTER_CENTER,
                 &sector.name,
-                egui::FontId::proportional((13.0 * layout.scale).max(8.0)),
-                title_color,
+                game_font(4, layout.scale),
+                SECTOR_TITLE_COLOR,
             );
 
             let switch_rect = logical_rect(window_rect, layout.scale, 204.0, 2.0, 14.0, 14.0);
@@ -728,7 +727,6 @@ fn draw_sector_window(
                     ui.id().with((window.sector, *system_key)),
                     egui::Sense::click(),
                 );
-                let planet_hovered = pointer.is_some_and(|point| rect_contains(planet_rect, point));
                 let planet_clicked = exact_clicked(&planet_response, planet_rect);
                 // FUN_0045d140 draws an overlay only while its rule has
                 // something to show; a double click finds it first
@@ -792,23 +790,22 @@ fn draw_sector_window(
                     planet_resource_id(system.dat_id),
                     planet_rect,
                 );
-                paint_status_tracks(
-                    ui.painter(),
-                    window_rect,
+                paint_status_bars(
+                    &ui.painter().with_clip_rect(window_rect),
+                    world,
+                    system,
+                    player,
+                    logical_rect(window_rect, layout.scale, planet_x, planet_y, 37.0, 37.0),
                     layout.scale,
-                    planet_x,
-                    planet_y,
-                    system.popularity_alliance,
-                    system.popularity_empire,
-                    system.total_energy,
-                    system.raw_materials,
                 );
+                // FUN_004593e0: the name at the planet's height plus 11
+                // (FUN_00459e30 item +0x34), centred, font 10.
                 ui.painter().text(
-                    logical_point(window_rect, layout.scale, planet_x + 18.5, planet_y + 37.0),
+                    logical_point(window_rect, layout.scale, planet_x + 18.5, planet_y + 48.0),
                     egui::Align2::CENTER_TOP,
                     &system.name,
-                    egui::FontId::proportional((10.0 * layout.scale).max(7.0)),
-                    system_name_color(system.control, uprisings.is_uprising(*system_key), player),
+                    game_font(10, layout.scale),
+                    system_name_color(system.control),
                 );
 
                 overlays.extend(
@@ -827,9 +824,6 @@ fn draw_sector_window(
                     result.focus = true;
                 }
 
-                if planet_hovered || planet_clicked {
-                    paint_selection_brackets(ui.painter(), planet_rect, layout.scale);
-                }
                 if planet_clicked {
                     result.selected = Some(*system_key);
                     result.focus = true;
@@ -1018,17 +1012,27 @@ fn rect_contains(rect: egui::Rect, point: egui::Pos2) -> bool {
     point.x >= rect.min.x && point.x < rect.max.x && point.y >= rect.min.y && point.y < rect.max.y
 }
 
+/// A system's planet origin in its sector window. `FUN_00459e30`
+/// (0x45a3d4..0x45a44c) divides the sector-relative position by 1024
+/// (`DAT_00659ef8` 1023 less `DAT_00659f00` -1), multiplies by 13 or 10
+/// (`DAT_00659f08`, `DAT_00659f10`) and by the window's width or height
+/// (`+0x30`, `+0x34`), and truncates with `__ftol`.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "__ftol truncates the product to a whole pixel."
+)]
 fn sector_planet_position(
     sector_x: u16,
     sector_y: u16,
     system_x: u16,
     system_y: u16,
 ) -> (f32, f32) {
-    let relative_x = f32::from(system_x.saturating_sub(sector_x));
-    let relative_y = f32::from(system_y.saturating_sub(sector_y));
+    let place = |relative: u16, factor: f64, extent: f32| {
+        (f64::from(relative) / 1024.0 * factor * f64::from(extent)).trunc() as f32
+    };
     (
-        (relative_x / 13.0 * 37.0).round(),
-        (relative_y / 10.0 * 37.0).round(),
+        place(system_x.saturating_sub(sector_x), 13.0, SECTOR_WINDOW_WIDTH),
+        place(system_y.saturating_sub(sector_y), 10.0, SECTOR_WINDOW_HEIGHT),
     )
 }
 
@@ -1059,47 +1063,19 @@ fn cockpit_faction(faction: CockpitFaction) -> Faction {
     }
 }
 
-fn system_name_color(control: ControlKind, in_revolt: bool, player: Faction) -> egui::Color32 {
-    let control = match control {
-        ControlKind::Controlled(owner) if in_revolt => ControlKind::Uprising(owner),
-        other => other,
-    };
-    match control {
-        ControlKind::Controlled(owner) if owner == player => egui::Color32::from_rgb(0, 255, 64),
-        ControlKind::Uprising(owner) if owner == player => egui::Color32::from_rgb(255, 230, 0),
-        ControlKind::Controlled(_) | ControlKind::Uprising(_) => {
-            egui::Color32::from_rgb(255, 32, 32)
-        }
-        ControlKind::Contested => egui::Color32::from_rgb(255, 230, 0),
-        ControlKind::Uncontrolled => egui::Color32::from_rgb(0, 255, 255),
+/// `FUN_0045bbb0`: a system's name takes its side's color whoever the
+/// player is, `0x20000ff` red for the Alliance and `0x200ff00` green for the
+/// Empire; any other side is `0x2ffff00` cyan.
+fn system_name_color(control: ControlKind) -> egui::Color32 {
+    match control.faction() {
+        Some(Faction::Alliance) => egui::Color32::from_rgb(255, 0, 0),
+        Some(Faction::Empire) => egui::Color32::from_rgb(0, 255, 0),
+        _ => egui::Color32::from_rgb(0, 255, 255),
     }
 }
 
-fn sector_title_color(
-    world: &GameWorld,
-    sector_key: SectorKey,
-    faction: CockpitFaction,
-) -> egui::Color32 {
-    let Some(sector) = world.sectors.get(sector_key) else {
-        return egui::Color32::YELLOW;
-    };
-    let player = cockpit_faction(faction);
-    let (friendly, hostile) = sector.systems.iter().fold((0, 0), |counts, key| {
-        let Some(system) = world.systems.get(*key) else {
-            return counts;
-        };
-        match system.control.faction() {
-            Some(owner) if owner == player => (counts.0 + 1, counts.1),
-            Some(_) => (counts.0, counts.1 + 1),
-            None => counts,
-        }
-    });
-    match friendly.cmp(&hostile) {
-        std::cmp::Ordering::Greater => egui::Color32::from_rgb(0, 255, 64),
-        std::cmp::Ordering::Less => egui::Color32::from_rgb(255, 32, 32),
-        std::cmp::Ordering::Equal => egui::Color32::YELLOW,
-    }
-}
+/// `FUN_00459e30`: the sector name is always `0x200f0f0`.
+const SECTOR_TITLE_COLOR: egui::Color32 = egui::Color32::from_rgb(240, 240, 0);
 
 fn paint_resource(
     painter: &egui::Painter,
@@ -1278,88 +1254,127 @@ fn paint_tiled_vertical(
     painter.add(mesh);
 }
 
-#[allow(clippy::too_many_arguments)]
-fn paint_status_tracks(
+/// One sector-window meter as `FUN_0060e460` paints it: the background
+/// across the whole bar, the foreground across `value / max` of it, and,
+/// when `ticks` is set, a one-pixel line at the start of every unit.
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Meter units are small counts drawn at pixel positions."
+)]
+fn paint_meter(
     painter: &egui::Painter,
-    parent: egui::Rect,
+    rect: egui::Rect,
     scale: f32,
-    x: f32,
-    y: f32,
-    alliance: f32,
-    empire: f32,
-    energy: u8,
-    raw_materials: u8,
+    (value, max): (u32, u32),
+    (foreground, background): (egui::Color32, egui::Color32),
+    ticks: Option<egui::Color32>,
 ) {
-    let track_width = 37.0;
-    let alliance_width = track_width * alliance.clamp(0.0, 1.0);
-    let empire_width = track_width * empire.clamp(0.0, 1.0);
+    painter.rect_filled(rect, 0.0, background);
+    if value == 0 || max == 0 {
+        return;
+    }
+    // Integer pixels, as the original's Rectangle call takes them.
+    let width = (rect.width() / scale).round() as u32;
+    let filled = (width * value.min(max) / max) as f32;
     painter.rect_filled(
-        logical_rect(parent, scale, x, y + 48.0, track_width, 3.0),
+        egui::Rect::from_min_size(rect.min, egui::vec2(filled * scale, rect.height())),
         0.0,
-        egui::Color32::from_rgb(22, 22, 22),
+        foreground,
     );
-    painter.rect_filled(
-        logical_rect(parent, scale, x, y + 48.0, alliance_width, 3.0),
-        0.0,
-        egui::Color32::from_rgb(32, 112, 255),
-    );
-    painter.rect_filled(
-        logical_rect(
-            parent,
-            scale,
-            x + track_width - empire_width,
-            y + 48.0,
-            empire_width,
-            3.0,
-        ),
-        0.0,
-        egui::Color32::from_rgb(255, 32, 32),
-    );
-    painter.rect_filled(
-        logical_rect(
-            parent,
-            scale,
-            x,
-            y + 52.0,
-            track_width * (f32::from(energy) / 14.0).clamp(0.0, 1.0),
-            3.0,
-        ),
-        0.0,
-        egui::Color32::from_rgb(255, 220, 0),
-    );
-    painter.rect_filled(
-        logical_rect(
-            parent,
-            scale,
-            x,
-            y + 56.0,
-            track_width * (f32::from(raw_materials) / 14.0).clamp(0.0, 1.0),
-            3.0,
-        ),
-        0.0,
-        egui::Color32::from_rgb(0, 240, 240),
-    );
+    if let Some(color) = ticks {
+        for unit in 0..max {
+            let x = rect.min.x + (unit * width / max) as f32 * scale;
+            painter.line_segment(
+                [egui::pos2(x, rect.min.y), egui::pos2(x, rect.max.y)],
+                egui::Stroke::new(scale.max(1.0), color),
+            );
+        }
+    }
 }
 
-fn paint_selection_brackets(painter: &egui::Painter, rect: egui::Rect, scale: f32) {
-    let color = egui::Color32::from_rgb(255, 32, 32);
-    let stroke = egui::Stroke::new(scale.max(1.0), color);
-    let length = 5.0 * scale;
-    for (corner, dx, dy) in [
-        (rect.left_top(), 1.0, 1.0),
-        (rect.right_top(), -1.0, 1.0),
-        (rect.left_bottom(), 1.0, -1.0),
-        (rect.right_bottom(), -1.0, -1.0),
-    ] {
-        painter.line_segment(
-            [corner, egui::pos2(corner.x + dx * length, corner.y)],
-            stroke,
-        );
-        painter.line_segment(
-            [corner, egui::pos2(corner.x, corner.y + dy * length)],
-            stroke,
-        );
+/// The three bars under a planet (`FUN_00459e30`), 3 pixels tall from two
+/// below the planet with a pixel between them:
+/// - Energy Consumption (TEXTSTRA 0x1822): white on blue, three pixels per
+///   unit of the system's energy, `FUN_0045c240`.
+/// - Raw Materials (0x1823): yellow on `0x20f5cf9`, three pixels per unit of
+///   its raw materials, `FUN_0045c450`.
+/// - Popular Support (0x1821): the player's side color on the other's, as
+///   wide as the planet, filled to the player's support out of 100
+///   (`FUN_0045baf0`, `FUN_00507270`).
+///
+/// The first two take grey `0x808080` unit lines (`FUN_0060e3b0`). An
+/// unexplored system shows none: `FUN_0045c240` hides them on the system's
+/// `+0x50` bit 3. hyp: that bit marks the system unexplored.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_precision_loss,
+    reason = "Support points are 0..=100 and resource counts are small."
+)]
+fn paint_status_bars(
+    painter: &egui::Painter,
+    world: &GameWorld,
+    system: &rebellion_core::world::System,
+    player: Faction,
+    planet: egui::Rect,
+    scale: f32,
+) {
+    if system.exploration_status != rebellion_core::dat::ExplorationStatus::Explored {
+        return;
     }
+    let (energy_used, raw_used) =
+        rebellion_core::economy::calculate_resource_allocation(world, system);
+    let bar = |row: f32, units: u32| {
+        // FUN_0045c240 widens a bar to three pixels a unit only for a
+        // positive total; otherwise it keeps the planet's width.
+        let width = if units > 0 { units as f32 * 3.0 } else { 37.0 };
+        egui::Rect::from_min_size(
+            planet.min + egui::vec2(0.0, (39.0 + row * 4.0) * scale),
+            egui::vec2(width * scale, 3.0 * scale),
+        )
+    };
+    let tick = Some(egui::Color32::from_rgb(128, 128, 128));
+    let energy = u32::from(system.total_energy);
+    paint_meter(
+        painter,
+        bar(0.0, energy),
+        scale,
+        (energy_used, energy),
+        (egui::Color32::WHITE, egui::Color32::from_rgb(0, 0, 255)),
+        tick,
+    );
+    let raw = u32::from(system.raw_materials);
+    paint_meter(
+        painter,
+        bar(1.0, raw),
+        scale,
+        (raw_used, raw),
+        (
+            egui::Color32::from_rgb(255, 255, 0),
+            egui::Color32::from_rgb(249, 92, 15),
+        ),
+        tick,
+    );
+    let (mine, theirs) = if player == Faction::Alliance {
+        (
+            egui::Color32::from_rgb(255, 0, 0),
+            egui::Color32::from_rgb(0, 255, 0),
+        )
+    } else {
+        (
+            egui::Color32::from_rgb(0, 255, 0),
+            egui::Color32::from_rgb(255, 0, 0),
+        )
+    };
+    let support = rebellion_core::uprising::support_points(system, player).clamp(0, 100) as u32;
+    paint_meter(
+        painter,
+        bar(2.0, 0),
+        scale,
+        (support, 100),
+        (mine, theirs),
+        None,
+    );
 }
 
 #[cfg(test)]
@@ -1370,25 +1385,24 @@ mod tests {
     use rebellion_core::world::{Sector, System};
 
     #[test]
-    fn a_system_in_revolt_takes_the_uprising_name_colour() {
-        // UprisingState, not ControlKind, records a revolt (F-026), so a held
-        // system in revolt must colour like ControlKind::Uprising.
-        let held = ControlKind::Controlled(Faction::Alliance);
+    fn system_names_take_their_sides_color_whoever_plays() {
+        // FUN_0045bbb0: side bits 2 -> 0x20000ff, 4 -> 0x200ff00, else
+        // 0x2ffff00; nothing depends on the player.
         assert_eq!(
-            system_name_color(held, true, Faction::Alliance),
-            system_name_color(
-                ControlKind::Uprising(Faction::Alliance),
-                false,
-                Faction::Alliance
-            )
-        );
-        assert_ne!(
-            system_name_color(held, true, Faction::Alliance),
-            system_name_color(held, false, Faction::Alliance)
+            system_name_color(ControlKind::Controlled(Faction::Alliance)),
+            egui::Color32::from_rgb(255, 0, 0)
         );
         assert_eq!(
-            system_name_color(ControlKind::Contested, true, Faction::Alliance),
-            system_name_color(ControlKind::Contested, false, Faction::Alliance)
+            system_name_color(ControlKind::Uprising(Faction::Empire)),
+            egui::Color32::from_rgb(0, 255, 0)
+        );
+        assert_eq!(
+            system_name_color(ControlKind::Contested),
+            egui::Color32::from_rgb(0, 255, 255)
+        );
+        assert_eq!(
+            system_name_color(ControlKind::Uncontrolled),
+            egui::Color32::from_rgb(0, 255, 255)
         );
     }
 
@@ -1493,11 +1507,13 @@ mod tests {
     }
 
     #[test]
-    fn sector_relative_coordinates_scale_x_by_37_over_13_and_y_by_37_over_10() {
-        // No recovered source: the 13, 10 and 37 scale constants, kept as a regression pin.
-        assert_eq!(sector_planet_position(317, 248, 322, 260), (14.0, 44.0));
-        assert_eq!(sector_planet_position(317, 248, 373, 272), (159.0, 89.0));
-        assert_eq!(sector_planet_position(317, 248, 322, 333), (14.0, 315.0));
+    fn a_planet_sits_at_its_share_of_the_window_from_the_sector_origin() {
+        // FUN_00459e30 0x45a3d4..0x45a44c: trunc(rel / 1024 * 13 * 235) and
+        // trunc(rel / 1024 * 10 * 360). The bottom row lands at 298, so its
+        // name (y + 48) stays inside the 360-pixel window.
+        assert_eq!(sector_planet_position(317, 248, 322, 260), (14.0, 42.0));
+        assert_eq!(sector_planet_position(317, 248, 373, 272), (167.0, 84.0));
+        assert_eq!(sector_planet_position(317, 248, 322, 333), (14.0, 298.0));
     }
 
     #[test]
@@ -1653,7 +1669,6 @@ mod tests {
         fog.reveal(system);
         let ctx = egui::Context::default();
         let mut cache = BmpCache::new();
-        let uprisings = rebellion_core::uprising::UprisingState::default();
         let point = egui::pos2(layout.canvas.x + at.0, layout.canvas.y + at.1);
         let button = |pressed| egui::Event::PointerButton {
             pos: point,
@@ -1691,7 +1706,6 @@ mod tests {
                     CockpitFaction::Alliance,
                     layout,
                     &mut cache,
-                    &uprisings,
                     missions,
                 ));
             });
@@ -1714,7 +1728,6 @@ mod tests {
         let missions = rebellion_core::missions::MissionState::new();
         let ctx = egui::Context::default();
         let mut cache = BmpCache::new();
-        let uprisings = rebellion_core::uprising::UprisingState::default();
         let mut frames = Vec::new();
         for &(button, at) in clicks {
             let pos = egui::pos2(layout.canvas.x + at.0, layout.canvas.y + at.1);
@@ -1751,7 +1764,6 @@ mod tests {
                     CockpitFaction::Alliance,
                     layout,
                     &mut cache,
-                    &uprisings,
                     &missions,
                 ));
             });
@@ -1895,7 +1907,6 @@ mod tests {
         let missions = rebellion_core::missions::MissionState::new();
         let ctx = egui::Context::default();
         let mut cache = BmpCache::new();
-        let uprisings = rebellion_core::uprising::UprisingState::default();
         let at =
             |point: (f32, f32)| egui::pos2(layout.canvas.x + point.0, layout.canvas.y + point.1);
         let button = |pos, pressed| egui::Event::PointerButton {
@@ -1935,7 +1946,6 @@ mod tests {
                     CockpitFaction::Alliance,
                     layout,
                     &mut cache,
-                    &uprisings,
                     &missions,
                 ));
             });
@@ -2080,7 +2090,7 @@ mod tests {
     fn a_double_click_on_the_fleet_icon_opens_the_fleet_window() {
         // FUN_004593e0 case 0x203: the shown overlay under the point;
         // FUN_0045aac0 maps kind 0x10 to window type 4. Chandrila's planet
-        // sits at (74, 79), so the icon spans (93, 78) to (121, 97).
+        // sits at (74, 77), so the icon spans (93, 76) to (121, 95).
         let (mut world, system, _) = fixture_world();
         add_fleet(&mut world, system);
         let actions = double_click_at(&world, system, (100.0, 85.0));
@@ -2103,7 +2113,7 @@ mod tests {
     #[test]
     fn the_fleet_window_opens_from_the_fleet_icons_point() {
         // FUN_0045c8e0 opens the Fleet window at the sector item's stored
-        // point; port: the center of the icon at (93, 78) to (121, 97).
+        // point; port: the center of the icon at (93, 76) to (121, 95).
         let (world, system, _) = fixture_world();
         let mut state = SectorWindowState::default();
         assert_eq!(state.fleet_window_point(&world, layout(1.0), system), None);
@@ -2111,11 +2121,11 @@ mod tests {
 
         assert_eq!(
             state.fleet_window_point(&world, layout(1.0), system),
-            Some((107, 88))
+            Some((107, 86))
         );
         assert_eq!(
             state.fleet_window_point(&world, layout(2.0), system),
-            Some((107, 88))
+            Some((107, 86))
         );
     }
 
@@ -2143,7 +2153,7 @@ mod tests {
         assert_eq!(
             state.fleet_icon_screen_rect(&world, layout, system),
             Some(egui::Rect::from_min_size(
-                egui::pos2(10.0 + 93.0, 20.0 + 78.0),
+                egui::pos2(10.0 + 93.0, 20.0 + 76.0),
                 egui::vec2(28.0, 19.0)
             ))
         );
@@ -2155,7 +2165,7 @@ mod tests {
         assert_eq!(
             state.fleet_icon_screen_rect(&world, doubled, system),
             Some(egui::Rect::from_min_size(
-                egui::pos2(10.0 + 93.0 * 2.0, 20.0 + 78.0 * 2.0),
+                egui::pos2(10.0 + 93.0 * 2.0, 20.0 + 76.0 * 2.0),
                 egui::vec2(56.0, 38.0)
             ))
         );
@@ -2165,16 +2175,16 @@ mod tests {
     fn each_quadrant_icon_sits_at_its_corner_of_the_planet() {
         // FUN_00459e30:369-447: 28 by 19 each; the left ones end at cx, the
         // right ones start at cx + 1; the top ones end at cy, the bottom ones
-        // start at cy + 1. Chandrila's planet sits at (74, 79), so cx = 92
-        // and cy = 97.
+        // start at cy + 1. Chandrila's planet sits at (74, 77), so cx = 92
+        // and cy = 95.
         let (world, system, _) = fixture_world();
         let mut state = SectorWindowState::default();
         state.open_for_system(&world, system, CockpitFaction::Alliance);
         let corners = [
-            (Quadrant::System, (64.0, 78.0)),
-            (Quadrant::Defenses, (64.0, 98.0)),
-            (Quadrant::Fleets, (93.0, 78.0)),
-            (Quadrant::Missions, (93.0, 98.0)),
+            (Quadrant::System, (64.0, 76.0)),
+            (Quadrant::Defenses, (64.0, 96.0)),
+            (Quadrant::Fleets, (93.0, 76.0)),
+            (Quadrant::Missions, (93.0, 96.0)),
         ];
         for scale in [1.0, 2.0] {
             for (quadrant, (x, y)) in corners {
@@ -2302,7 +2312,6 @@ mod tests {
         fog.reveal(system);
         let ctx = egui::Context::default();
         let mut cache = BmpCache::new();
-        let uprisings = rebellion_core::uprising::UprisingState::default();
         for index in 0..2 {
             crate::fleet_window::tests::PAINTED.with(|painted| painted.borrow_mut().clear());
             let input = egui::RawInput {
@@ -2323,7 +2332,6 @@ mod tests {
                     CockpitFaction::Alliance,
                     layout,
                     &mut cache,
-                    &uprisings,
                     missions,
                 );
             });
@@ -2374,10 +2382,10 @@ mod tests {
         assert_eq!(
             painted_quadrant_icons(&world, system, &missions, 2.0),
             [
-                (10771, at(64.0, 78.0)),
-                (10773, at(64.0, 98.0)),
-                (10775, at(93.0, 78.0)),
-                (10777, at(93.0, 98.0)),
+                (10771, at(64.0, 76.0)),
+                (10773, at(64.0, 96.0)),
+                (10775, at(93.0, 76.0)),
+                (10777, at(93.0, 96.0)),
             ]
         );
     }
@@ -2438,7 +2446,6 @@ mod tests {
         let missions = rebellion_core::missions::MissionState::new();
         let ctx = egui::Context::default();
         let mut cache = BmpCache::new();
-        let uprisings = rebellion_core::uprising::UprisingState::default();
         let mut frames = vec![vec![], vec![]];
         for &(x, y) in clicks {
             let pos = egui::pos2(
@@ -2478,7 +2485,6 @@ mod tests {
                     cockpit(owner),
                     layout,
                     &mut cache,
-                    &uprisings,
                     &missions,
                 );
             });

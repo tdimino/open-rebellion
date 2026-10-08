@@ -7,7 +7,7 @@ use rebellion_data::replay::{
     ReplayManifest,
 };
 use rebellion_data::replay_fixture::{
-    seed42_commands, seed42_initial_state, validate_seed42_artifact, SEED42_ARTIFACT_BYTES,
+    seed42_commands, seed42_initial_state, seed42_seed_options, validate_seed42_artifact, SEED42_ARTIFACT_BYTES,
     SEED42_ENGINE_VERSION, SEED42_FINAL_FINGERPRINT, SEED42_FINAL_TICK, SEED42_INITIAL_FINGERPRINT,
     SEED42_SEED,
 };
@@ -48,10 +48,7 @@ fn original_campaign_replay_matches_after_save_reload() {
     };
     let world = rebellion_data::load_game_data_with_options(
         &data_dir(),
-        &rebellion_core::world::SeedOptions {
-            rng_seed: Some(seed),
-            ..rebellion_core::world::SeedOptions::default()
-        },
+        &seed42_seed_options(),
     )
     .expect("load original campaign data");
     let initial = seed42_initial_state(world).expect("build seed-42 initial state");
@@ -94,15 +91,15 @@ fn original_campaign_replay_matches_after_save_reload() {
     assert_eq!(
         observed_fingerprints,
         vec![
-            (1, 0, "v1:fdc87843c2cbdc9f".into()),
-            (2, 0, "v1:9f2ea58d12454c91".into()),
-            (3, 5, "v1:032faa23588252e9".into()),
-            (4, 10, "v1:50dccbfcface8261".into()),
-            (5, 15, "v1:fc679e07cd76bfd4".into()),
-            (6, 20, "v1:b405f1d46c212dc8".into()),
-            (7, 25, "v1:2cef66eb7402e1dc".into()),
-            (8, 25, "v1:a079b9347c1c574e".into()),
-            (9, 25, "v1:a079b9347c1c574e".into()),
+            (1, 0, "v1:51e922635d66a7b7".into()),
+            (2, 0, "v1:9c100530c84d4719".into()),
+            (3, 5, "v1:c82ba3cb0f0fe241".into()),
+            (4, 10, "v1:e5800afeeb49ebaa".into()),
+            (5, 15, "v1:0593d02185d358d6".into()),
+            (6, 20, "v1:e461092b1613ba31".into()),
+            (7, 25, "v1:a8b4bffbba7b2e91".into()),
+            (8, 25, "v1:7d80543f9bbf3aab".into()),
+            (9, 25, "v1:7d80543f9bbf3aab".into()),
         ]
     );
     assert_eq!(executed_fingerprint.to_string(), SEED42_FINAL_FINGERPRINT);

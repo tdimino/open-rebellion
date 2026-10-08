@@ -166,7 +166,17 @@ pub fn load_game_data_with_options(
     let mut sector_key_map: HashMap<u32, SectorKey> =
         HashMap::with_capacity(sectors_file.sectors.len());
 
+    // hyp: a game holds only the sectors whose SECTORSD `galaxy_size` (1, 2
+    // or 3) is within its own: 10 sectors for Small, 15 for Medium and 20
+    // for Large. The original's filter is not traced; a capture of a Small
+    // original game shows its 10 sector clusters (2026-10-08 parity QA).
+    let galaxy_size = seed_options.galaxy_size as u32;
+    let mut excluded_sectors: std::collections::HashSet<u32> = std::collections::HashSet::new();
     for dat in &sectors_file.sectors {
+        if dat.galaxy_size > galaxy_size {
+            excluded_sectors.insert(dat.id);
+            continue;
+        }
         let group = match dat.group {
             1 => SectorGroup::Core,
             2 => SectorGroup::RimInner,
@@ -193,6 +203,9 @@ pub fn load_game_data_with_options(
         HashMap::with_capacity(systems_file.systems.len());
 
     for dat in &systems_file.systems {
+        if excluded_sectors.contains(&dat.sector_id) {
+            continue;
+        }
         let sector_key = *sector_key_map.get(&dat.sector_id).with_context(|| {
             format!(
                 "system {} references unknown sector_id {}",

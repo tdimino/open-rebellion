@@ -3,10 +3,9 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use rebellion_core::world::SeedOptions;
 use rebellion_data::replay::compute_simulation_data_manifest;
 use rebellion_data::replay_fixture::{
-    run_seed42_gate, ReplayGateReport, SEED42_ARTIFACT_BYTES, SEED42_SEED,
+    run_seed42_gate, seed42_seed_options, ReplayGateReport, SEED42_ARTIFACT_BYTES,
 };
 
 const REPLAY_MODE_ABSENT: u32 = 0;
@@ -115,10 +114,7 @@ async fn run_seed42_from_runtime_pack(data_path: &Path) -> ReplayGateReport {
     rebellion_data::set_string_table(strings);
     rebellion_data::set_file_cache(pack.game_files);
 
-    let options = SeedOptions {
-        rng_seed: Some(SEED42_SEED),
-        ..SeedOptions::default()
-    };
+    let options = seed42_seed_options();
     let world = match rebellion_data::load_game_data_with_options(data_path, &options) {
         Ok(world) => world,
         Err(error) => {

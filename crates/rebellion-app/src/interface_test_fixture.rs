@@ -983,7 +983,7 @@ pub fn emit_ready(request: FixtureRequest, world: &GameWorld, map: &GalaxyMapSta
         CockpitFaction::Empire => "empire",
     };
     let fingerprint_input = serde_json::to_vec(&(request.code, world, map.selected_system))
-    .expect("serialize deterministic interface fixture state");
+        .expect("serialize deterministic interface fixture state");
     let aperture = CockpitState::new(request.faction)
         .layout_for(640.0, 480.0)
         .galaxy;
@@ -1033,6 +1033,7 @@ fn screen_point(system: &rebellion_core::world::System, faction: CockpitFaction)
     rebellion_render::galaxy_camera(
         (aperture.x, aperture.y, aperture.width, aperture.height),
         1.0,
+        faction,
     )
     .to_screen(f32::from(system.x), f32::from(system.y))
 }
@@ -2587,9 +2588,9 @@ mod tests {
             (0x9000_0002, "Target")
         );
         // The Alliance's first sector window sits at (60, 35); the target's
-        // planet at (74, 74) in it is 37 by 37.
+        // planet at (77, 70) in it is 37 by 37.
         let target = (report.target_screen_x, report.target_screen_y);
-        assert_eq!(target, (60.0 + 74.0 + 18.5, 35.0 + 74.0 + 18.5));
+        assert_eq!(target, (60.0 + 77.0 + 18.5, 35.0 + 70.0 + 18.5));
         assert!(sectors.contains_screen_point(layout, target));
         assert!(!defenses.contains_screen_point(layout, target));
     }
@@ -4103,23 +4104,16 @@ mod tests {
     }
 
     #[test]
-    fn a_system_point_is_its_offset_from_the_fixed_map_centre() {
-        // FUN_00422ce0 neither zooms nor pans: the map keeps one framing.
+    fn a_system_point_is_its_place_on_the_starfield() {
+        // FUN_00425d00: (int)(x * 607 / 1024) + 0x54, (int)(y * 437 / 1024)
+        // + 0x1b for the Empire, with no zoom or pan.
         let world = diplomacy_world(Faction::Alliance);
         let mut system = world.systems.values().next().unwrap().clone();
-        let (centre_x, centre_y) = rebellion_render::GALAXY_CAMERA_CENTER;
-        system.x = centre_x as u16 + 10;
-        system.y = centre_y as u16 - 10;
-        let galaxy = CockpitState::new(CockpitFaction::Empire)
-            .layout_for(640.0, 480.0)
-            .galaxy;
-
+        system.x = 1024;
+        system.y = 1024;
         assert_eq!(
             screen_point(&system, CockpitFaction::Empire),
-            (
-                galaxy.x + galaxy.width / 2.0 + 10.0,
-                galaxy.y + galaxy.height / 2.0 - 10.0
-            )
+            (84.0 + 607.0, 27.0 + 437.0)
         );
     }
 
