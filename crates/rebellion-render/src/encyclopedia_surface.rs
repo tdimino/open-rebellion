@@ -180,17 +180,34 @@ pub fn encyclopedia_index_list_action(
     selected_object_id: Option<u32>,
 ) -> Option<EncyclopediaSurfaceAction> {
     let last = topic_ids.len().checked_sub(1)?;
-    let current = selected_object_id
-        .and_then(|selected| topic_ids.iter().position(|id| *id == selected))
-        .unwrap_or(0);
+    let current =
+        selected_object_id.and_then(|selected| topic_ids.iter().position(|id| *id == selected));
+    let current_or_first = current.unwrap_or(0);
     let next = match key {
-        EncyclopediaSurfaceKey::Up => current.saturating_sub(1),
-        EncyclopediaSurfaceKey::Down => current.saturating_add(1).min(last),
-        EncyclopediaSurfaceKey::PageUp => current.saturating_sub(9),
-        EncyclopediaSurfaceKey::PageDown => current.saturating_add(9).min(last),
+        EncyclopediaSurfaceKey::Up => current_or_first.saturating_sub(1),
+        EncyclopediaSurfaceKey::Down => {
+            current.map_or(0, |index| index.saturating_add(1).min(last))
+        }
+        EncyclopediaSurfaceKey::PageUp => current_or_first.saturating_sub(9),
+        EncyclopediaSurfaceKey::PageDown => current_or_first.saturating_add(9).min(last),
         EncyclopediaSurfaceKey::Home => 0,
         EncyclopediaSurfaceKey::End => last,
         _ => return None,
     };
     Some(EncyclopediaSurfaceAction::SelectTopic(topic_ids[next]))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn down_from_an_unselected_index_selects_the_first_topic() {
+        let topics = [11, 12, 13];
+
+        assert_eq!(
+            encyclopedia_index_list_action(EncyclopediaSurfaceKey::Down, &topics, None),
+            Some(EncyclopediaSurfaceAction::SelectTopic(11))
+        );
+    }
 }

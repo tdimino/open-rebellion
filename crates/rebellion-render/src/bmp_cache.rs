@@ -1861,6 +1861,7 @@ fn uses_blue_screen_transparency(source: DllSource, resource_id: u32) -> bool {
                     ..=resources::strategy::SECTOR_PLANET_LAST
                 | resources::strategy::SECTOR_PLANET_SPECIAL_FIRST
                     ..=resources::strategy::SECTOR_PLANET_SPECIAL_LAST
+                | 10382..=10387
                 // The Fleet window's frames, pictures and indicators, the
                 // Defenses window's tabs and row frames, the Missions
                 // window's row frames and tabs (buttons blit keyed,
@@ -2279,6 +2280,32 @@ mod tests {
 
         assert_eq!(decoded.pixels[0].a(), 0);
         assert_eq!(decoded.pixels[1].a(), 255);
+    }
+
+    #[test]
+    fn encyclopedia_topic_controls_key_the_blue_matte_but_keep_fill_and_shadow() {
+        // STRATEGY 10382..10387 use pure palette blue as the transparent
+        // control matte. The enabled arrow fill and dark drop shadow are
+        // authored pixels and must remain opaque.
+        let mut image = image::RgbaImage::new(3, 1);
+        image.put_pixel(0, 0, image::Rgba([0, 0, 255, 255]));
+        image.put_pixel(1, 0, image::Rgba([30, 62, 166, 255]));
+        image.put_pixel(2, 0, image::Rgba([0, 0, 0, 255]));
+
+        let mut encoded = Vec::new();
+        image::DynamicImage::ImageRgba8(image)
+            .write_to(
+                &mut std::io::Cursor::new(&mut encoded),
+                image::ImageFormat::Png,
+            )
+            .unwrap();
+
+        for resource_id in 10_382..=10_387 {
+            let decoded = decode_color_image(&encoded, DllSource::Strategy, resource_id).unwrap();
+            assert_eq!(decoded.pixels[0].a(), 0, "resource {resource_id}");
+            assert_eq!(decoded.pixels[1].a(), 255, "resource {resource_id}");
+            assert_eq!(decoded.pixels[2].a(), 255, "resource {resource_id}");
+        }
     }
 
     #[test]
