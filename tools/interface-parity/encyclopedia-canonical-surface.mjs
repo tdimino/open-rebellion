@@ -21,6 +21,7 @@ const executable = process.env.OPEN_REBELLION_CHROME_FOR_TESTING || chromium.exe
 const launchArguments = ["--mute-audio", "--disable-background-networking", "--no-first-run"];
 const expectedRequests = ["/", "/data/runtime.orpk", "/gl.js", "/open-rebellion-test.wasm"];
 const expectedFingerprint = "20c342868cee50e80ef3b94b9f81a898c48f4b593ddd0d83ab69b67d755ae9ea";
+const talonKarrdeObjectId = 0x3800034d;
 const expectedCategories = [
   { command_id: 0x6f, label_resource_id: 0x1850 },
   { command_id: 0x70, label_resource_id: 0x1855 },
@@ -270,6 +271,41 @@ async function clickCloseControl(page, faction, origin, scale) {
   return waitForObservation(page, { open: false }, before);
 }
 
+async function focusTitleSearch(page, origin, scale) {
+  await page.mouse.click(
+    origin.x + (143 + 24) * scale,
+    origin.y + (45 + 9) * scale,
+  );
+}
+
+async function typeTitleSearchAndWait(page, origin, scale, query, expectedObjectId) {
+  await focusTitleSearch(page, origin, scale);
+  await page.keyboard.press("Control+A");
+  const before = (await observations(page)).length;
+  await page.keyboard.type(query);
+  return waitForObservation(page, {
+    mode: "index",
+    selected_object_id: expectedObjectId,
+  }, before);
+}
+
+async function clickCategoryAndWait(page, origin, scale, commandId, expectedObjectId) {
+  const xByCommand = new Map([
+    [0x6f, 36], [0x70, 88], [0x71, 140], [0x72, 192],
+    [0x73, 244], [0x74, 296], [0x75, 348],
+  ]);
+  const before = (await observations(page)).length;
+  await page.mouse.click(
+    origin.x + (xByCommand.get(commandId) + 24) * scale,
+    origin.y + (78 + 20) * scale,
+  );
+  return waitForObservation(page, {
+    mode: "index",
+    category_command: commandId,
+    selected_object_id: expectedObjectId,
+  }, before);
+}
+
 async function runIndexJourney(page, directory, faction, origin, scale, initial, owned) {
   const screenshots = [];
   const categories = [];
@@ -293,6 +329,52 @@ async function runIndexJourney(page, directory, faction, origin, scale, initial,
   }
   assert.equal(categories.slice(1).reduce((sum, category) => sum + category.topic_count, 0), 346);
   observation = await pressAndWait(page, "ArrowRight", { mode: "index", category_command: 0x6f });
+
+  const searched = await typeTitleSearchAndWait(page, origin, scale, "tallon", talonKarrdeObjectId);
+  assert.equal(searched.index_scroll_row > 0, true);
+  // Remove the blinking edit caret before the deterministic pixel capture;
+  // the query and selected row remain unchanged.
+  await page.mouse.click(origin.x + 400 * scale, origin.y + 70 * scale);
+  const searchedShot = await stableScreenshot(page, directory, "search-tallon-selected-talon-karrde");
+  const searchedPersonnel = await clickCategoryAndWait(
+    page,
+    origin,
+    scale,
+    0x75,
+    talonKarrdeObjectId,
+  );
+  const searchedAllAgain = await clickCategoryAndWait(
+    page,
+    origin,
+    scale,
+    0x6f,
+    talonKarrdeObjectId,
+  );
+  await focusTitleSearch(page, origin, scale);
+  await page.keyboard.press("Control+A");
+  const beforeClear = (await observations(page)).length;
+  await page.keyboard.press("Backspace");
+  const cleared = await waitForObservation(page, {
+    mode: "index",
+    selected_object_id: null,
+  }, beforeClear);
+  assert.equal(cleared.index_scroll_row, searched.index_scroll_row);
+  const searchedAgain = await typeTitleSearchAndWait(
+    page,
+    origin,
+    scale,
+    "tallon",
+    talonKarrdeObjectId,
+  );
+  const searchedTopic = await pressAndWait(page, "Enter", {
+    mode: "topic",
+    active_object_id: talonKarrdeObjectId,
+  });
+  assert.equal(searchedTopic.active_object_id, searchedAgain.selected_object_id);
+  const searchedTopicShot = await stableScreenshot(page, directory, "search-enter-opened-talon-karrde");
+  const searchedArtwork = compareArtwork(searchedTopicShot.png, searchedTopic, origin, scale, owned);
+  const searchedIndex = await clickIndexControl(page, faction, origin, scale);
+  assert.equal(searchedIndex.selected_object_id, talonKarrdeObjectId);
 
   const last = await pressAndWait(page, "End", { mode: "index" });
   assert.ok(last.selected_object_id !== null);
@@ -321,6 +403,15 @@ async function runIndexJourney(page, directory, faction, origin, scale, initial,
       last_object_id: last.selected_object_id,
       first_screenshot_sha256: firstShot.sha256,
       last_screenshot_sha256: lastShot.sha256,
+    },
+    title_search: {
+      query: "tallon",
+      matched_object_id: searched.selected_object_id,
+      personnel_object_id: searchedPersonnel.selected_object_id,
+      all_again_object_id: searchedAllAgain.selected_object_id,
+      cleared_object_id: cleared.selected_object_id,
+      selected_screenshot_sha256: searchedShot.sha256,
+      opened_artwork: searchedArtwork,
     },
     opened_artwork: artwork,
     returned_selected_object_id: indexed.selected_object_id,

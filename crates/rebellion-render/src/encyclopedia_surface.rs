@@ -108,6 +108,7 @@ pub enum EncyclopediaSurfaceKey {
 pub enum EncyclopediaSurfaceAction {
     SelectCategory(u16),
     SelectTopic(u32),
+    ClearTopicSelection,
     OpenTopic(u32),
     ShowIndex,
     Close,
@@ -197,9 +198,84 @@ pub fn encyclopedia_index_list_action(
     Some(EncyclopediaSurfaceAction::SelectTopic(topic_ids[next]))
 }
 
+/// Reproduce the original index edit control's ordered title lookup.
+///
+/// The viewer compares titles case-insensitively and retains the first entry
+/// with the longest common prefix. It deliberately does not require the full
+/// query to match, so a typo after a useful prefix (for example `tallon`)
+/// still resolves `Talon Karrde`. A non-empty query with no shared prefix
+/// retains the first ordered entry, matching `FUN_00609650`.
+#[must_use]
+pub fn encyclopedia_title_search_match(
+    query: &str,
+    topics: &[EncyclopediaSurfaceTopicItem<'_>],
+) -> Option<u32> {
+    if query.is_empty() {
+        return None;
+    }
+
+    topics
+        .iter()
+        .map(|topic| {
+            let prefix = topic
+                .title
+                .chars()
+                .zip(query.chars())
+                .take_while(|(title, query)| title.eq_ignore_ascii_case(query))
+                .count();
+            (topic.object_id, prefix)
+        })
+        .reduce(|best, candidate| {
+            if candidate.1 > best.1 {
+                candidate
+            } else {
+                best
+            }
+        })
+        .map(|(object_id, _)| object_id)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn topic(object_id: u32, title: &'static str) -> EncyclopediaSurfaceTopicItem<'static> {
+        EncyclopediaSurfaceTopicItem {
+            object_id,
+            title,
+            availability: EncyclopediaSurfaceAvailability::Resolved,
+        }
+    }
+
+    #[test]
+    fn title_search_keeps_the_longest_case_insensitive_prefix_after_a_typo() {
+        let topics = [
+            topic(11, "TIE Defender"),
+            topic(12, "Talon Karrde"),
+            topic(13, "Tatooine"),
+        ];
+
+        assert_eq!(encyclopedia_title_search_match("tallon", &topics), Some(12));
+        assert_eq!(encyclopedia_title_search_match("TALON", &topics), Some(12));
+    }
+
+    #[test]
+    fn title_search_retains_the_first_ordered_match_on_equal_prefixes() {
+        let topics = [topic(11, "TIE Bomber"), topic(12, "TIE Defender")];
+
+        assert_eq!(
+            encyclopedia_title_search_match("tie fighter", &topics),
+            Some(11)
+        );
+        assert_eq!(encyclopedia_title_search_match("x", &topics), Some(11));
+    }
+
+    #[test]
+    fn title_search_clears_selection_for_empty_input() {
+        let topics = [topic(11, "A-wing")];
+
+        assert_eq!(encyclopedia_title_search_match("", &topics), None);
+    }
 
     #[test]
     fn down_from_an_unselected_index_selects_the_first_topic() {

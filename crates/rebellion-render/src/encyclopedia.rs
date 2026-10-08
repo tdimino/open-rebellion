@@ -46,10 +46,11 @@ use rebellion_core::world::GameWorld;
 use crate::bmp_cache::{load_approved_hd_assets, validated_hd_bytes};
 use crate::bmp_cache::{ApprovedHdAsset, AssetRenderProfile, BmpCache, DllSource};
 pub use crate::encyclopedia_surface::{
-    encyclopedia_index_list_action, encyclopedia_keyboard_action, EncyclopediaArtworkView,
-    EncyclopediaSurface, EncyclopediaSurfaceAction, EncyclopediaSurfaceAudience,
-    EncyclopediaSurfaceAvailability, EncyclopediaSurfaceCategory, EncyclopediaSurfaceKey,
-    EncyclopediaSurfaceMode, EncyclopediaSurfaceNavigation, EncyclopediaSurfaceTopicItem,
+    encyclopedia_index_list_action, encyclopedia_keyboard_action, encyclopedia_title_search_match,
+    EncyclopediaArtworkView, EncyclopediaSurface, EncyclopediaSurfaceAction,
+    EncyclopediaSurfaceAudience, EncyclopediaSurfaceAvailability, EncyclopediaSurfaceCategory,
+    EncyclopediaSurfaceKey, EncyclopediaSurfaceMode, EncyclopediaSurfaceNavigation,
+    EncyclopediaSurfaceTopicItem,
 };
 pub use crate::encyclopedia_textures::{
     EncyclopediaTextureBackend, EncyclopediaTextureSampling, EncyclopediaTextureUpload,
@@ -969,6 +970,10 @@ pub struct EncyclopediaSurfaceState {
     captured_control: Option<u16>,
     focused_mode: Option<EncyclopediaSurfaceMode>,
     index_selection_key: Option<(u64, u16, Option<u32>)>,
+    search_text: String,
+    search_binding: Option<(u64, u16, Option<u32>)>,
+    preserve_search_for_category: bool,
+    preserve_search_for_selection: bool,
     active_topic_key: Option<(u64, u32)>,
     topic_textures: Option<EncyclopediaTopicTextureCache<EguiEncyclopediaTextureBackend>>,
     last_texture_error: Option<String>,
@@ -982,6 +987,10 @@ impl Default for EncyclopediaSurfaceState {
             captured_control: None,
             focused_mode: None,
             index_selection_key: None,
+            search_text: String::new(),
+            search_binding: None,
+            preserve_search_for_category: false,
+            preserve_search_for_selection: false,
             active_topic_key: None,
             topic_textures: None,
             last_texture_error: None,
@@ -1054,6 +1063,9 @@ pub fn draw_encyclopedia_surface(
     };
     let effective_selection = surface.navigation.selected_object_id;
     reconcile_surface_scroll(state, surface, effective_selection);
+    let search_action = (surface.mode == EncyclopediaSurfaceMode::Index)
+        .then(|| reconcile_surface_search(ctx, state, surface, effective_selection))
+        .flatten();
     state.reconcile_active_topic(
         surface.texture_generation,
         surface.active_topic.as_ref().map(|topic| topic.object_id),
@@ -1062,8 +1074,9 @@ pub fn draw_encyclopedia_surface(
     if ctx.input(|input| input.pointer.primary_pressed()) {
         state.captured_control = None;
     }
-    let mut action = None;
+    let mut action = search_action;
     let mut surface_rect = None;
+    let mut search_rect = None;
     let mut category_tooltip = None;
     let keyboard_focus_id = surface_keyboard_focus_id(surface.mode);
 
@@ -1177,7 +1190,7 @@ pub fn draw_encyclopedia_surface(
                     }
                 }
             } else {
-                draw_surface_index(
+                search_rect = Some(draw_surface_index(
                     ui,
                     window_rect,
                     scale,
@@ -1185,7 +1198,7 @@ pub fn draw_encyclopedia_surface(
                     surface,
                     effective_selection,
                     &mut action,
-                );
+                ));
                 for control in encyclopedia_category_controls(faction) {
                     let control_rect = encyclopedia_rect(
                         window_rect,
@@ -1238,6 +1251,7 @@ pub fn draw_encyclopedia_surface(
                             effective_selection.map(EncyclopediaSurfaceAction::OpenTopic)
                         }
                         0x68 if surface.mode == EncyclopediaSurfaceMode::Topic => {
+                            bind_search_to_selection(state, surface, effective_selection);
                             Some(EncyclopediaSurfaceAction::ShowIndex)
                         }
                         _ => action,
@@ -1254,6 +1268,10 @@ pub fn draw_encyclopedia_surface(
             ctx.pointer_latest_pos()
                 .is_some_and(|point| rect.contains(point))
         })
+        && !search_rect.is_some_and(|rect| {
+            ctx.pointer_latest_pos()
+                .is_some_and(|point| rect.contains(point))
+        })
     {
         ctx.memory_mut(|memory| memory.request_focus(keyboard_focus_id));
     }
@@ -1262,13 +1280,17 @@ pub fn draw_encyclopedia_surface(
         state.captured_control = None;
     }
 
-    action.or_else(|| {
+    let action = action.or_else(|| {
         if ctx.memory(|memory| memory.has_focus(keyboard_focus_id)) {
             surface_keyboard_input(ctx, state, surface, effective_selection)
         } else {
             None
         }
-    })
+    });
+    if matches!(action, Some(EncyclopediaSurfaceAction::SelectCategory(_))) {
+        state.preserve_search_for_category = true;
+    }
+    action
 }
 
 fn surface_keyboard_focus_id(mode: EncyclopediaSurfaceMode) -> egui::Id {
@@ -1279,6 +1301,10 @@ fn surface_keyboard_focus_id(mode: EncyclopediaSurfaceMode) -> egui::Id {
             EncyclopediaSurfaceMode::Topic => 1,
         },
     ))
+}
+
+fn surface_search_focus_id() -> egui::Id {
+    egui::Id::new("authentic-encyclopedia-title-search")
 }
 
 const fn encyclopedia_surface_order() -> egui::Order {
@@ -1349,6 +1375,85 @@ fn reconcile_surface_scroll(
     }
 }
 
+fn selected_surface_title<'a>(
+    surface: &'a EncyclopediaSurface<'_>,
+    selection: Option<u32>,
+) -> &'a str {
+    selection
+        .and_then(|selected| {
+            surface
+                .topics
+                .iter()
+                .find(|topic| topic.object_id == selected)
+        })
+        .map_or("", |topic| topic.title)
+}
+
+fn bind_search_to_selection(
+    state: &mut EncyclopediaSurfaceState,
+    surface: &EncyclopediaSurface<'_>,
+    selection: Option<u32>,
+) {
+    state.search_text = selected_surface_title(surface, selection).to_owned();
+    state.search_binding = Some((
+        surface.texture_generation,
+        surface.category.command_id,
+        selection,
+    ));
+    state.preserve_search_for_category = false;
+    state.preserve_search_for_selection = false;
+}
+
+fn title_search_action(
+    query: &str,
+    topics: &[EncyclopediaSurfaceTopicItem<'_>],
+    selection: Option<u32>,
+) -> Option<EncyclopediaSurfaceAction> {
+    match encyclopedia_title_search_match(query, topics) {
+        Some(object_id) if selection != Some(object_id) => {
+            Some(EncyclopediaSurfaceAction::SelectTopic(object_id))
+        }
+        None if selection.is_some() => Some(EncyclopediaSurfaceAction::ClearTopicSelection),
+        _ => None,
+    }
+}
+
+fn reconcile_surface_search(
+    ctx: &egui::Context,
+    state: &mut EncyclopediaSurfaceState,
+    surface: &EncyclopediaSurface<'_>,
+    selection: Option<u32>,
+) -> Option<EncyclopediaSurfaceAction> {
+    let next = (
+        surface.texture_generation,
+        surface.category.command_id,
+        selection,
+    );
+    if state.search_binding == Some(next) {
+        return None;
+    }
+
+    let category_changed = state
+        .search_binding
+        .is_some_and(|current| current.0 != next.0 || current.1 != next.1);
+    state.search_binding = Some(next);
+
+    if category_changed && state.preserve_search_for_category {
+        state.preserve_search_for_category = false;
+        let action = title_search_action(&state.search_text, &surface.topics, selection);
+        state.preserve_search_for_selection = action.is_some();
+        return action;
+    }
+    state.preserve_search_for_category = false;
+
+    if state.preserve_search_for_selection {
+        state.preserve_search_for_selection = false;
+    } else if !ctx.memory(|memory| memory.has_focus(surface_search_focus_id())) {
+        state.search_text = selected_surface_title(surface, selection).to_owned();
+    }
+    None
+}
+
 fn draw_surface_index(
     ui: &mut egui::Ui,
     window_rect: egui::Rect,
@@ -1357,17 +1462,9 @@ fn draw_surface_index(
     surface: &EncyclopediaSurface<'_>,
     effective_selection: Option<u32>,
     action: &mut Option<EncyclopediaSurfaceAction>,
-) {
+) -> egui::Rect {
     let title_font = crate::theme::original_bold_font(15.0 * scale);
     let list_font = egui::FontId::proportional(14.0 * scale);
-    let selected_name = effective_selection
-        .and_then(|selected| {
-            surface
-                .topics
-                .iter()
-                .find(|topic| topic.object_id == selected)
-        })
-        .map_or("", |topic| topic.title);
     ui.painter().text(
         encyclopedia_point(window_rect, scale, ENCYCLOPEDIA_HEADER_CENTER_X, 14.0),
         egui::Align2::CENTER_TOP,
@@ -1382,13 +1479,58 @@ fn draw_surface_index(
         list_font.clone(),
         Color32::WHITE,
     );
-    ui.painter().text(
-        encyclopedia_point(window_rect, scale, 143.0, 47.0),
-        egui::Align2::LEFT_TOP,
-        selected_name,
-        list_font.clone(),
-        Color32::WHITE,
+    let search_rect = encyclopedia_rect(window_rect, scale, 143.0, 45.0, 245.0, 18.0);
+    let search = ui.put(
+        search_rect,
+        egui::TextEdit::singleline(&mut state.search_text)
+            .id(surface_search_focus_id())
+            .frame(false)
+            .font(list_font.clone())
+            .text_color(Color32::WHITE)
+            .desired_width(search_rect.width()),
     );
+    if search.changed() {
+        if state.search_text.chars().count() > 100 {
+            state.search_text = state.search_text.chars().take(100).collect();
+        }
+        let search_action =
+            title_search_action(&state.search_text, &surface.topics, effective_selection);
+        state.preserve_search_for_selection = search_action.is_some();
+        *action = search_action;
+    }
+    if search.has_focus() {
+        let list_key = if ui.input(|input| input.key_pressed(egui::Key::ArrowUp)) {
+            Some(EncyclopediaSurfaceKey::Up)
+        } else if ui.input(|input| input.key_pressed(egui::Key::ArrowDown)) {
+            Some(EncyclopediaSurfaceKey::Down)
+        } else if ui.input(|input| input.key_pressed(egui::Key::PageUp)) {
+            Some(EncyclopediaSurfaceKey::PageUp)
+        } else if ui.input(|input| input.key_pressed(egui::Key::PageDown)) {
+            Some(EncyclopediaSurfaceKey::PageDown)
+        } else {
+            None
+        };
+        if let Some(key) = list_key {
+            let list_action = encyclopedia_index_list_action(
+                key,
+                &surface
+                    .topics
+                    .iter()
+                    .map(|topic| topic.object_id)
+                    .collect::<Vec<_>>(),
+                effective_selection,
+            );
+            if let Some(EncyclopediaSurfaceAction::SelectTopic(object_id)) = list_action {
+                bind_search_to_selection(state, surface, Some(object_id));
+            }
+            *action = list_action;
+        }
+    }
+    if search.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter)) {
+        *action = encyclopedia_title_search_match(&state.search_text, &surface.topics)
+            .or(effective_selection)
+            .map(EncyclopediaSurfaceAction::OpenTopic);
+    }
     ui.painter().text(
         encyclopedia_point(window_rect, scale, 40.0, 120.0),
         egui::Align2::LEFT_TOP,
@@ -1457,11 +1599,14 @@ fn draw_surface_index(
             },
         );
         if response.double_clicked() {
+            bind_search_to_selection(state, surface, Some(topic.object_id));
             *action = Some(EncyclopediaSurfaceAction::OpenTopic(topic.object_id));
         } else if response.clicked() {
+            bind_search_to_selection(state, surface, Some(topic.object_id));
             *action = Some(EncyclopediaSurfaceAction::SelectTopic(topic.object_id));
         }
     }
+    search_rect
 }
 
 fn draw_surface_topic(

@@ -249,6 +249,11 @@ impl EncyclopediaSurfaceController {
                 presentation.category.command_id,
                 Some(object_id),
             )),
+            EncyclopediaSurfaceAction::ClearTopicSelection => Some(presentation.follow_up(
+                EncyclopediaPresentationMode::Index,
+                presentation.category.command_id,
+                None,
+            )),
             EncyclopediaSurfaceAction::OpenTopic(object_id) => Some(presentation.follow_up(
                 EncyclopediaPresentationMode::Topic,
                 presentation.category.command_id,
@@ -630,6 +635,11 @@ mod fixture {
                     EncyclopediaPresentationMode::Index,
                     presentation.category.command_id,
                     Some(object_id),
+                ),
+                Some(EncyclopediaSurfaceAction::ClearTopicSelection) => presentation.follow_up(
+                    EncyclopediaPresentationMode::Index,
+                    presentation.category.command_id,
+                    None,
                 ),
                 Some(EncyclopediaSurfaceAction::OpenTopic(object_id)) => presentation.follow_up(
                     EncyclopediaPresentationMode::Topic,

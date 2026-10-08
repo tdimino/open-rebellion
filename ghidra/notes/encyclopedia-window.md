@@ -87,6 +87,23 @@ the visible collection.
 ## Recovered workflow
 
 - Index mode uses category commands `0x6f` through `0x75`.
+- The index selector is an editable title field, not a read-only selected-name
+  label. `FUN_0045d8f0` handles its change notification `0x408` for control
+  `0x64`, calls `FUN_00609650` against the current list, and stores the
+  resolved record at window `+0x148`. Its `0x407` Enter notification switches
+  to topic mode through `FUN_0045f480(this, 2)` when a record is selected.
+- `FUN_00609650` performs an ordered, case-insensitive longest-common-prefix
+  search. The first equal-scoring row wins, and comparison does not require
+  the whole query to match. Thus `tallon` retains `Talon Karrde` after the
+  second `l` stops increasing the prefix score. An empty query clears the
+  selection; a non-empty query with no shared first character retains the
+  first ordered row.
+- `FUN_00605160` gives the title field native edit focus and posts `0x408`
+  after typing, backspace, or delete and `0x407` on Enter. The parent forwards
+  Up, Down, Page Up, and Page Down to the list while the edit owns focus.
+- `FUN_0045da70` copies a pointer/list-selected row title back into the edit
+  field. `FUN_0045f100` reapplies the current edit query after rebuilding a
+  category, so category changes retain the same lookup behavior.
 - `FUN_0045f100` rebuilds the object list for a selected category from the
   authoritative game-object collection and updates the selected category label.
 - `FUN_0045f480` switches between index and topic modes.
@@ -100,7 +117,8 @@ the visible collection.
 
 - Static source: `FUN_00429f30.c`, `FUN_0045d400.c`, `FUN_0045ddc0.c`,
   `FUN_0045f100.c`, `FUN_0045f480.c`, `FUN_0045fa60.c`, `FUN_0045fd20.c`, and
-  `FUN_0045fe60.c` in this directory.
+  `FUN_0045fe60.c` in this directory, plus disassembly of `FUN_0045d8f0`,
+  `FUN_0045da70`, `FUN_00605160`, and decompiled `FUN_00609650.c`.
 - Visual corroboration: the Encyclopedia index and topic captures classified in
   `docs/qa/2026-09-10-interface-parity-audit/screenshot-ledger.md`.
 - P62 proves transport for all 187 owned EDATA images. It does not prove this
