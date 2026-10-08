@@ -15207,7 +15207,7 @@ mod tests {
         let fleet = world.fleets.insert(rebellion_core::world::Fleet {
             location: SystemKey::default(),
             capital_ships: Vec::new(),
-            fighters: vec![rebellion_core::world::FighterEntry { class, count: 2 }],
+            fighters: vec![rebellion_core::world::FighterEntry { class, count: 2, carrier: 0 }],
             characters: Vec::new(),
             is_alliance: true,
             has_death_star: false,

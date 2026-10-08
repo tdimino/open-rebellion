@@ -19,6 +19,7 @@ pub mod fog;
 pub mod game_menu;
 pub mod game_options;
 pub mod game_speed;
+pub mod gid_legend;
 pub mod ground_combat;
 pub mod main_menu;
 pub mod main_menu_destinations;
@@ -329,7 +330,8 @@ pub fn draw_galaxy_backdrop(
     cache: &mut BmpCache,
     gid_mode: GidMode,
 ) -> bool {
-    let viewport = layout.galaxy;
+    // The fill stands in for the whole 607x437 starfield when it is missing.
+    let viewport = galaxy_backdrop_destination(layout, faction, 607.0, 437.0);
     draw_rectangle(
         viewport.x,
         viewport.y,
@@ -1763,7 +1765,6 @@ mod interaction_tests {
                 rebellion_core::manufacturing::BuildableKind::Troop(
                     rebellion_core::ids::DatId::new(0x1000_0001),
                 ),
-                5,
                 5,
             ),
         );

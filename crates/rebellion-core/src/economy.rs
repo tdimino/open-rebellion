@@ -184,6 +184,12 @@ pub struct SystemEconomy {
     pub garrison_requirement: u32,
     /// Production speed modifier from fleet/KDY presence (0-100).
     pub production_modifier: i8,
+    /// System `+0x6c` (`FUN_00509ec0` from `FUN_0050b230` →
+    /// `FUN_00559c40`): the support drift, positive while the Alliance
+    /// holds the system and negative for the Empire. Its magnitude is the
+    /// percent chance that a finished mine's or refinery's unit goes to the
+    /// other side (`FUN_005166a0`; `crate::stockpiles`).
+    pub support_drift: i8,
     /// Current energy output (sum of production facility outputs, capped at system capacity).
     /// `FUN_0050ad60`: if `energy_allocated` > `System.total_energy`, cap it.
     pub energy_allocated: u32,
@@ -220,6 +226,7 @@ impl Default for SystemEconomy {
             collection_rate: 1.0,
             garrison_requirement: 0,
             production_modifier: 0,
+            support_drift: 0,
             energy_allocated: 0,
             raw_material_allocated: 0,
             energy_overcapped: false,
@@ -505,6 +512,7 @@ impl EconomySystem {
             eco.collection_rate = new_rate;
             eco.garrison_requirement = new_garrison;
             eco.production_modifier = new_prod_mod;
+            eco.support_drift = support_drift_value(sys.control, alliance_delta, empire_delta);
 
             // 6. Troop/fleet summary propagation (FUN_0050b500 through FUN_0050b8e0).
             eco.summary = compute_system_summary(
@@ -707,6 +715,22 @@ fn count_military_presence(world: &GameWorld, sys: &crate::world::System) -> Mil
 // ---------------------------------------------------------------------------
 // Popular support drift (FUN_00559c40)
 // ---------------------------------------------------------------------------
+
+/// The drift as the original stores it at system `+0x6c`: the integer
+/// percentage, negated for side 2 (`FUN_00559c40`). It is 0 at an unheld
+/// system.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "a drift is at most 100 percent"
+)]
+fn support_drift_value(control: ControlKind, alliance_delta: f32, empire_delta: f32) -> i8 {
+    let percent = |delta: f32| (delta * 100.0).round() as i8;
+    match control {
+        ControlKind::Controlled(crate::dat::Faction::Alliance) => percent(-alliance_delta),
+        ControlKind::Controlled(crate::dat::Faction::Empire) => percent(empire_delta),
+        _ => 0,
+    }
+}
 
 /// Calculate support drift for a system based on military presence.
 ///
@@ -1395,6 +1419,17 @@ mod tests {
         GnprtbParams::new(entries)
     }
 
+
+    // FUN_00559c40 negates the drift for side 2, and FUN_00509ec0 stores it
+    // at system +0x6c; an unheld system stores 0.
+    #[test]
+    fn the_stored_drift_is_positive_for_the_alliance_and_negative_for_the_empire() {
+        let alliance = ControlKind::Controlled(crate::dat::Faction::Alliance);
+        let empire = ControlKind::Controlled(crate::dat::Faction::Empire);
+        assert_eq!(support_drift_value(alliance, -0.25, 0.25), 25);
+        assert_eq!(support_drift_value(empire, 0.5, -0.5), -50);
+        assert_eq!(support_drift_value(ControlKind::Uncontrolled, 0.0, 0.0), 0);
+    }
     #[test]
     fn support_drift_no_garrison_low_support() {
         let gnprtb = stock_gnprtb();
@@ -1720,6 +1755,7 @@ mod tests {
             fighters: vec![crate::world::FighterEntry {
                 class: crate::ids::FighterKey::default(),
                 count: 4,
+                carrier: 0,
             }],
             characters: vec![],
             is_alliance: true,
@@ -1788,6 +1824,7 @@ mod tests {
             fighters: vec![crate::world::FighterEntry {
                 class: crate::ids::FighterKey::default(),
                 count: 30,
+                carrier: 0,
             }],
             characters: vec![],
             is_alliance: true,
@@ -2297,6 +2334,7 @@ mod tests {
             fighters: vec![crate::world::FighterEntry {
                 class: crate::ids::FighterKey::default(),
                 count: 5,
+                carrier: 0,
             }],
             characters: vec![],
             is_alliance: true,

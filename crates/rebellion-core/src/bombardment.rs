@@ -237,6 +237,7 @@ mod tests {
             difficulty_index: 2,
             recruit_pool_empty: [false; 2],
             fleet_names: crate::world::FleetNames::default(),
+            last_ship_tag: 0,
         }
     }
 

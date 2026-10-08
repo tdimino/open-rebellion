@@ -955,6 +955,7 @@ mod tests {
                 shield_weapon_packed: 0,
                 alive: true,
                 name: None,
+                tag: 0,
             }],
             fighters: vec![],
             characters: vec![],
@@ -1263,12 +1264,14 @@ mod tests {
             shield_weapon_packed: 0,
             alive: false,
             name: None,
+            tag: 0,
         });
         world.fleets[fleet]
             .fighters
             .push(crate::world::FighterEntry {
                 class: crate::ids::FighterKey::default(),
                 count: 2,
+                carrier: 0,
             });
         imperial_fleet(&mut world, there, false);
         let ids = |flags, kinds| -> Vec<DefenderId> {

@@ -144,16 +144,12 @@ pub fn ai_action_json(action: &AIAction, world: &GameWorld) -> serde_json::Value
                 "decoys": member_names(world, decoys),
             })
         }
-        AIAction::EnqueueProduction {
-            system,
-            kind,
-            ticks,
-        } => {
+        AIAction::EnqueueProduction { system, kind, work } => {
             serde_json::json!({
                 "type": "EnqueueProduction",
                 "system": sys_name(world, *system),
                 "kind": format!("{:?}", kind),
-                "ticks": ticks,
+                "work": work,
             })
         }
         AIAction::DispatchResearch {
@@ -2047,12 +2043,8 @@ fn apply_ai_actions_inner(
                 }
                 dispatched
             }
-            AIAction::EnqueueProduction {
-                system,
-                kind,
-                ticks,
-            } => {
-                mfg_state.enqueue(*system, QueueItem::new(*kind, *ticks, *ticks));
+            AIAction::EnqueueProduction { system, kind, work } => {
+                mfg_state.enqueue(*system, QueueItem::new(*kind, *work));
                 true
             }
             AIAction::DispatchResearch {
@@ -3262,6 +3254,7 @@ pub fn apply_space_combat_result_inner(result: &SpaceCombatResult, world: &mut G
         });
         if let Some(fleet) = world.fleets.get_mut(fleet_key) {
             fleet.capital_ships.retain(|s| s.alive);
+            rebellion_core::carriage::drop_lost_squadrons(fleet);
             if let Some((true, death_star_alive)) = death_star_status {
                 fleet.has_death_star = death_star_alive;
             }
@@ -3383,6 +3376,7 @@ mod combat_application_tests {
             fighters: vec![FighterEntry {
                 class: FighterKey::default(),
                 count: 4,
+                carrier: 0,
             }],
             characters: vec![],
             is_alliance: true,
@@ -3394,6 +3388,7 @@ mod combat_application_tests {
             fighters: vec![FighterEntry {
                 class: FighterKey::default(),
                 count: 3,
+                carrier: 0,
             }],
             characters: vec![],
             is_alliance: false,
@@ -3665,16 +3660,10 @@ pub fn apply_build_completion_inner(completion: &CompletionEvent, world: &mut Ga
             };
 
             if let Some(fk) = fleet_key {
-                if let Some(fleet) = world.fleets.get_mut(fk) {
-                    if let Some(entry) = fleet.fighters.iter_mut().find(|e| e.class == *class_key) {
-                        entry.count += 1;
-                    } else {
-                        fleet.fighters.push(FighterEntry {
-                            class: *class_key,
-                            count: 1,
-                        });
-                    }
-                }
+                // hyp: the squadron boards by the move's rule
+                // (rebellion_core::carriage; build-delivery's queue-time
+                // placement is untraced).
+                rebellion_core::carriage::board_squadrons(world, fk, *class_key, 1);
             } else {
                 let fleet = Fleet {
                     location: sys_key,
@@ -3682,6 +3671,7 @@ pub fn apply_build_completion_inner(completion: &CompletionEvent, world: &mut Ga
                     fighters: vec![FighterEntry {
                         class: *class_key,
                         count: 1,
+                        carrier: 0,
                     }],
                     characters: vec![],
                     is_alliance,

@@ -9,7 +9,7 @@
 use crate::delivery::transit_days;
 use crate::ids::{DatId, SystemKey};
 use crate::manufacturing::{
-    completion_day, unit_build_days, BuildableKind, FacilityBuild, ManufacturingState,
+    completion_day, BuildableKind, FacilityBuild, ManufacturingState,
     ProductionArea, QueueItem,
 };
 use crate::research::{ResearchState, TechType};
@@ -186,8 +186,9 @@ pub fn estimate(
     }
 }
 
-/// The queue items a confirmed order adds: `count` units, each with its
-/// own build days (`unit_build_days`). `None` when no yard can build.
+/// The queue items a confirmed order adds: `count` units, each needing its
+/// class's refined cost in units of work. `None` when no yard can build
+/// (`FUN_00439160` disables Confirm).
 #[must_use]
 pub fn order_items(
     world: &GameWorld,
@@ -198,16 +199,8 @@ pub fn order_items(
     is_alliance: bool,
 ) -> Option<Vec<QueueItem>> {
     let (refined, _) = unit_costs(world, kind)?;
-    let days = unit_build_days(
-        &yard_periods(world, system, area, is_alliance),
-        refined,
-        count,
-    )?;
-    Some(
-        days.into_iter()
-            .map(|days| QueueItem::new(kind, days, refined))
-            .collect(),
-    )
+    completion_day(&yard_periods(world, system, area, is_alliance), refined)?;
+    Some((0..count).map(|_| QueueItem::new(kind, refined)).collect())
 }
 
 #[cfg(test)]
@@ -465,8 +458,10 @@ mod tests {
         assert_eq!(empire.completion, None);
     }
 
+    // FUN_00538220 prices each unit at its class's refined cost; the
+    // yards' cycles draw it one unit at a time (FUN_00530950).
     #[test]
-    fn an_order_queues_each_unit_with_its_own_build_days() {
+    fn an_order_queues_each_unit_with_its_classs_work() {
         let mut world = catalog();
         let home = system(&mut world, 0);
         yard(&mut world, home, 0x2a00_0003, true);
@@ -475,8 +470,6 @@ mod tests {
             class: DatId::new(0x2a00_0003),
             is_alliance: true,
         });
-        // Periods 4 and 2: 10 units of work end on day 14 (3 + 7), 20 on
-        // day 28 (7 + 14).
         let items = order_items(
             &world,
             home,
@@ -486,11 +479,10 @@ mod tests {
             true,
         )
         .expect("the yards can build");
-        let days: Vec<u32> = items.iter().map(|item| item.ticks_remaining).collect();
-        assert_eq!(days, [14, 14]);
+        assert_eq!(items.len(), 2);
         assert!(items
             .iter()
-            .all(|item| item.total_cost == 10 && item.kind == kind));
+            .all(|item| item.total_cost == 10 && item.work_done == 0 && item.kind == kind));
         assert!(order_items(
             &world,
             home,

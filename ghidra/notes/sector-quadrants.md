@@ -119,10 +119,25 @@ when its key is set and bit 8 is clear.
   precedence.**
 - **Kind `0x10`, top-right** (`FUN_0045ccc0`): see `fleet-window.md`.
 
-The object these rules read is the galaxy view's system. hyp: it is the
-player side's view (`FUN_00539fd0`), so enemy objects appear only as the
-player knows them. The port must decide this with a `port:` rule, using the
-visibility already used by the System and Fleet windows.
+The object these rules read is the player side's view of the system. The
+refresh handler `FUN_0045b770` resolves it with `FUN_004f3220(side, id)`,
+the side being the galaxy view's `+0x194` → `+0x9c` (lines 31-33), and
+passes it to `FUN_0045ccc0`, `FUN_0045cdc0` and `FUN_0045ce80`. Every object
+keeps one view per side (`FUN_005844e0`: `+0x24` + side × 4), so the
+builders count what that side knows. What a view holds is untraced; the
+manual says each side starts knowing "your opponent's and neutral systems'
+resources, popular support, and production facilities for core systems",
+that defenses, troops, personnel and ships are "likely to be inaccurate
+and/or incomplete", and that "you won't know when things on that system
+change" except control and support in the core (p. 69).
+
+port: each side's fog keeps the manufacturing and production facilities it
+knows per system (`FogState::known_facilities`), learned at the start for
+every explored system of a core sector (not the rim system seeding explores
+for the Alliance headquarters) and again whenever the side sees or holds the system
+(hyp); the System icon and the System window's facility pages show those
+where the side does not see the system. Other contents follow the System
+window's visibility (`opposing_contents_visible`).
 
 ## Type 10: the System Defenses window (FUN_004a7790)
 

@@ -33,6 +33,14 @@ pub struct TroopTransportState {
     held: Vec<FleetKey>,
     /// Regiments travelling on their own, in departure order.
     transit: Vec<RegimentTransit>,
+    /// Each carried regiment's ship, by its tag (`ShipInstance::tag`; the
+    /// original's regiments are children of a ship, `FUN_00504c40`). 0, or
+    /// no entry, holds it on the fleet itself.
+    #[serde(
+        serialize_with = "crate::serde_ordered::serialize_hash_map",
+        deserialize_with = "crate::serde_ordered::deserialize_hash_map"
+    )]
+    carriers: HashMap<TroopKey, u32>,
 }
 
 /// Where a regiment's Move is released: the drop window's `+0x70` object
@@ -352,7 +360,7 @@ impl TroopTransportState {
                     _ => false,
                 },
                 RegimentLeg::Fleet(fleet) if world.fleets.contains_key(fleet) => {
-                    self.board(fleet, transit.troop);
+                    self.board(world, fleet, transit.troop);
                     true
                 }
                 RegimentLeg::Fleet(_) => false,
@@ -549,7 +557,7 @@ impl TroopTransportState {
                 RegimentLeg::Surface(system) => {
                     insert_sorted(&mut world.systems[system].ground_units, troop);
                 }
-                RegimentLeg::Fleet(fleet) => self.board(fleet, troop),
+                RegimentLeg::Fleet(fleet) => self.board(world, fleet, troop),
             }
             return Ok(RegimentMove::Placed(leg));
         }
@@ -570,9 +578,40 @@ impl TroopTransportState {
         Ok(RegimentMove::Departed(transit))
     }
 
-    /// Put `troop` aboard `fleet` and hold the fleet's cargo there.
-    fn board(&mut self, fleet: FleetKey, troop: TroopKey) {
+    /// Regiments aboard `fleet`'s ship tagged `tag`.
+    #[must_use]
+    pub fn regiments_aboard(&self, fleet: FleetKey, tag: u32) -> usize {
+        self.cargo(fleet)
+            .iter()
+            .filter(|troop| self.carrier(**troop) == tag)
+            .count()
+    }
+
+    /// The tag of the ship `troop` rides aboard; 0 when it is held on its
+    /// fleet or not carried.
+    #[must_use]
+    pub fn carrier(&self, troop: TroopKey) -> u32 {
+        self.carriers.get(&troop).copied().unwrap_or(0)
+    }
+
+    /// Put `troop` in `fleet`'s cargo aboard the ship with the most room
+    /// (`crate::carriage::ship_for_regiment`), or on the fleet when none
+    /// has room.
+    fn stow(&mut self, world: &mut GameWorld, fleet: FleetKey, troop: TroopKey) {
+        let carrier = crate::carriage::ship_for_regiment(world, self, fleet)
+                .and_then(|index| crate::carriage::tag_ship(world, fleet, index))
+                .unwrap_or(0);
         insert_sorted(self.cargo.entry(fleet).or_default(), troop);
+        if carrier == 0 {
+            self.carriers.remove(&troop);
+        } else {
+            self.carriers.insert(troop, carrier);
+        }
+    }
+
+    /// Put `troop` aboard `fleet` and hold the fleet's cargo there.
+    fn board(&mut self, world: &mut GameWorld, fleet: FleetKey, troop: TroopKey) {
+        self.stow(world, fleet, troop);
         if let Err(index) = self.held.binary_search(&fleet) {
             self.held.insert(index, fleet);
         }
@@ -681,10 +720,9 @@ impl TroopTransportState {
                 .ground_units
                 .retain(|troop| !requested_keys.contains(troop));
         }
-        let cargo = self.cargo.entry(fleet).or_default();
-        cargo.extend(troops.iter().copied());
-        cargo.sort_unstable();
-        cargo.dedup();
+        for &troop in troops {
+            self.stow(world, fleet, troop);
+        }
         Ok(())
     }
 
@@ -864,23 +902,47 @@ impl TroopTransportState {
     ) -> Vec<(FleetKey, Vec<TroopKey>)> {
         let mut destroyed = Vec::new();
         for fleet in self.fleet_keys() {
+            // hyp: a regiment aboard a ship that was lost or left the fleet
+            // is destroyed with it (`crate::carriage::drop_lost_squadrons`).
+            let mut lost: Vec<TroopKey> = match world.fleets.get(fleet) {
+                Some(value) => self
+                    .cargo(fleet)
+                    .iter()
+                    .copied()
+                    .filter(|&troop| {
+                        let tag = self.carrier(troop);
+                        tag != 0 && !crate::carriage::carried_by_living_ship(value, tag)
+                    })
+                    .collect(),
+                None => Vec::new(),
+            };
+            if let Some(cargo) = self.cargo.get_mut(&fleet) {
+                cargo.retain(|troop| !lost.contains(troop));
+            }
             let capacity = Self::fleet_capacity(world, fleet).map(|value| value as usize);
-            let lost = match capacity {
+            let excess = match capacity {
                 None => self.cargo.remove(&fleet).unwrap_or_default(),
                 Some(capacity) => {
                     let cargo = self.cargo.entry(fleet).or_default();
                     if cargo.len() <= capacity {
-                        continue;
+                        Vec::new()
+                    } else {
+                        cargo.split_off(capacity)
                     }
-                    cargo.split_off(capacity)
                 }
             };
+            lost.extend(excess);
+            if lost.is_empty() {
+                continue;
+            }
             for troop in &lost {
                 world.troops.remove(*troop);
             }
             self.forget_if_empty(fleet);
             destroyed.push((fleet, lost));
         }
+        let carried: HashSet<TroopKey> = self.cargo.values().flatten().copied().collect();
+        self.carriers.retain(|troop, _| carried.contains(troop));
         destroyed
     }
 }
@@ -1099,22 +1161,34 @@ mod tests {
         assert!(world.troops.contains_key(troops[2]));
     }
 
+    // FUN_00552300/FUN_00552b10: each regiment boards the ship with the
+    // most room, the earlier on a tie. hyp: those aboard a lost ship are
+    // lost with it.
     #[test]
-    fn cargo_above_surviving_transport_capacity_is_destroyed() {
+    fn regiments_board_the_roomiest_ship_and_are_lost_with_it() {
         let (mut world, _, _, fleet, troops) = fixture(3);
         let transport_class = world.fleets[fleet].capital_ships[0].class;
-        let survivor_class = world.capital_ship_classes.insert(CapitalShipClass {
-            name: "Surviving Transport".into(),
+        let second = world.capital_ship_classes.insert(CapitalShipClass {
+            name: "Second Transport".into(),
             is_alliance: true,
-            troop_capacity: 1,
+            troop_capacity: 3,
             hull: 100,
             ..CapitalShipClass::default()
         });
         world.fleets[fleet]
             .capital_ships
-            .push(ShipInstance::new(survivor_class, 100, true));
+            .push(ShipInstance::new(second, 100, true));
         let mut state = TroopTransportState::new();
         state.embark(&mut world, fleet, &troops).unwrap();
+        let tags: Vec<u32> = world.fleets[fleet]
+            .capital_ships
+            .iter()
+            .map(|ship| ship.tag)
+            .collect();
+        assert_eq!(
+            troops.iter().map(|&troop| state.carrier(troop)).collect::<Vec<_>>(),
+            [tags[0], tags[1], tags[0]]
+        );
         world.fleets[fleet]
             .capital_ships
             .iter_mut()
@@ -1124,10 +1198,10 @@ mod tests {
 
         let destroyed = state.destroy_untransportable_cargo(&mut world);
 
-        assert_eq!(state.cargo(fleet), &troops[..1]);
-        assert_eq!(destroyed, vec![(fleet, troops[1..].to_vec())]);
-        assert!(world.troops.contains_key(troops[0]));
-        assert!(!world.troops.contains_key(troops[1]));
+        assert_eq!(state.cargo(fleet), &troops[1..2]);
+        assert_eq!(destroyed, vec![(fleet, vec![troops[0], troops[2]])]);
+        assert!(world.troops.contains_key(troops[1]));
+        assert!(!world.troops.contains_key(troops[0]));
         assert!(!world.troops.contains_key(troops[2]));
     }
 

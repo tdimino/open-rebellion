@@ -1,8 +1,10 @@
-//! Manufacturing system: production queues and per-tick advancement.
+//! Manufacturing system: production queues and their completions.
 //!
-//! Each star system can have a queue of items under construction. Every game-day
-//! (tick) the active item's remaining time decrements. When it reaches zero the
-//! item completes and the next item in the queue becomes active.
+//! Each star system keeps one queue per production area. The front unit is
+//! under construction: every yard cycle (`crate::stockpiles`) draws one
+//! refined unit and adds one unit of work, and the unit completes once its
+//! work reaches its refined-material cost. The next unit then becomes
+//! active.
 //!
 //! # Architecture
 //!
@@ -11,29 +13,10 @@
 //! (`CapitalShipClass`, `FighterClass`, etc.); `ManufacturingState` stores the
 //! per-system work-in-progress queues.
 //!
-//! Each tick, the caller feeds the `Vec<TickEvent>` from `GameClock::advance`
-//! directly to `ManufacturingSystem::advance`, which returns a list of
-//! `CompletionEvent`s for the caller to act on (spawn units, add to fleet, etc.).
-//!
-//! # Usage
-//!
-//! ```
-//! use rebellion_core::ids::SystemKey;
-//! use rebellion_core::manufacturing::{
-//!     BuildableKind, ManufacturingState, ManufacturingSystem, QueueItem,
-//! };
-//! use rebellion_core::tick::{GameClock, GameSpeed};
-//!
-//! let mut clock = GameClock::new();
-//! clock.set_speed(GameSpeed::Medium);
-//!
-//! let mut state = ManufacturingState::new();
-//! // ... populate queues ...
-//!
-//! let tick_events = clock.advance(1.0 / 60.0);
-//! let completions = ManufacturingSystem::advance(&mut state, &tick_events);
-//! // Handle completions: add ships to fleets, place facilities, etc.
-//! ```
+//! Each tick, the caller runs `crate::stockpiles::StockpileSystem::advance`,
+//! whose yard cycles add the work, then `ManufacturingSystem::advance_tracked`,
+//! which returns the finished units as `CompletionEvent`s for the caller to
+//! act on (spawn units, add to fleet, etc.).
 
 use std::collections::{HashMap, VecDeque};
 
@@ -121,23 +104,6 @@ pub fn completion_day(periods: &[u32], work: u32) -> Option<u32> {
     Some(high)
 }
 
-/// Each of `count` units' build days when one unit's work is `cost`: the
-/// units share the yards one after another, so unit `k` ends on
-/// `completion_day(k * cost)` (`FUN_00528d30` multiplies the class cost by
-/// the quantity).
-#[must_use]
-pub fn unit_build_days(periods: &[u32], cost: u32, count: u32) -> Option<Vec<u32>> {
-    let mut previous = 0;
-    (1..=count)
-        .map(|unit| {
-            let day = completion_day(periods, cost.saturating_mul(unit))?;
-            let days = (day - previous).max(1);
-            previous = day;
-            Some(days)
-        })
-        .collect()
-}
-
 // ---------------------------------------------------------------------------
 // QueueItem
 // ---------------------------------------------------------------------------
@@ -145,18 +111,19 @@ pub fn unit_build_days(periods: &[u32], cost: u32, count: u32) -> Option<Vec<u32
 /// One item under construction in a system's production queue.
 ///
 /// The first item in the queue is actively being built; the rest are waiting
-/// their turn. Only the active item's `ticks_remaining` decrements each tick.
+/// their turn. A unit's work is its class's refined-material cost: each yard
+/// cycle draws one refined unit and adds one unit of progress
+/// (`FUN_00530950` → `FUN_0052a430`), and the unit completes once its
+/// progress reaches the cost (`FUN_0052b960`;
+/// `ghidra/notes/top-bar-resource-counters.md`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct QueueItem {
     /// What is being built.
     pub kind: BuildableKind,
-    /// Game-days remaining until construction completes.
-    ///
-    /// Derived from `refined_material_cost` and the system's facility
-    /// `processing_rate` at queue time. Stored here so the queue is
-    /// self-contained and survives facility changes mid-build.
-    pub ticks_remaining: u32,
-    /// Original construction cost in refined materials (for UI display).
+    /// Units of progress made: the manager's `+0x5c`.
+    pub work_done: u32,
+    /// Units of progress the unit needs: its class's refined-material cost,
+    /// the manager's `+0x68`.
     pub total_cost: u32,
     /// Where the finished object goes; `None` keeps it at the building
     /// system. A different system makes it travel there once completed
@@ -165,12 +132,12 @@ pub struct QueueItem {
 }
 
 impl QueueItem {
-    /// Create a new queue item with the given cost and build duration.
+    /// A unit of `kind` that needs `total_cost` units of work.
     #[must_use]
-    pub fn new(kind: BuildableKind, ticks_remaining: u32, total_cost: u32) -> Self {
+    pub fn new(kind: BuildableKind, total_cost: u32) -> Self {
         QueueItem {
             kind,
-            ticks_remaining,
+            work_done: 0,
             total_cost,
             destination: None,
         }
@@ -185,10 +152,18 @@ impl QueueItem {
         }
     }
 
-    /// How many ticks have been spent so far (for progress bar rendering).
+    /// Units of work still to do.
     #[must_use]
-    pub fn ticks_spent(&self) -> u32 {
-        self.total_cost.saturating_sub(self.ticks_remaining)
+    pub fn work_left(&self) -> u32 {
+        self.total_cost.saturating_sub(self.work_done)
+    }
+
+    /// Whether the unit is finished: `FUN_0052b960` completes it once its
+    /// progress reaches the cost. port: a unit costing nothing completes at
+    /// once; the original's test needs some progress first.
+    #[must_use]
+    pub fn is_complete(&self) -> bool {
+        self.work_done >= self.total_cost
     }
 
     /// Progress fraction in [0.0, 1.0].
@@ -201,7 +176,7 @@ impl QueueItem {
         if self.total_cost == 0 {
             return 1.0;
         }
-        1.0 - (self.ticks_remaining as f32 / self.total_cost as f32)
+        (self.work_done as f32 / self.total_cost as f32).min(1.0)
     }
 }
 
@@ -211,14 +186,18 @@ impl QueueItem {
 
 /// The ordered production queue for one star system.
 ///
-/// Items are processed front-to-back. The front item is "active" — its
-/// `ticks_remaining` decrements each tick. Items at index > 0 are queued.
+/// Items are processed front-to-back. The front item is "active": the
+/// yards' cycles add to its progress. Items at index > 0 are queued.
 ///
 /// Capacity is uncapped; the original game had a soft limit of ~5 items
 /// per system enforced by the UI, not the engine.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ProductionQueue {
     items: VecDeque<QueueItem>,
+    /// Progress made beyond the active unit's cost, credited to the next
+    /// unit when it starts: the manager's `+0x60` (`FUN_0052a430`,
+    /// `FUN_00529d70`).
+    credit: u32,
 }
 
 impl ProductionQueue {
@@ -226,6 +205,7 @@ impl ProductionQueue {
     pub fn new() -> Self {
         ProductionQueue {
             items: VecDeque::new(),
+            credit: 0,
         }
     }
 
@@ -264,17 +244,61 @@ impl ProductionQueue {
         &self.items
     }
 
-    /// The game day each item completes when the queue keeps building from
-    /// day `today`: each waits for those ahead of it, as only the active
-    /// item advances. The manual's Best Time to Completion is a day of the
-    /// game (Fig. 3.58).
+    /// Units of work the queue still needs: the manager's
+    /// `+0x6c − +0x60 − +0x5c` (`FUN_00529dd0`), the number of yards it
+    /// keeps working.
     #[must_use]
-    pub fn completion_days(&self, today: u64) -> Vec<u64> {
+    pub fn work_left(&self) -> u32 {
         self.items
             .iter()
-            .scan(today, |day, item| {
-                *day += u64::from(item.ticks_remaining);
-                Some(*day)
+            .map(QueueItem::work_left)
+            .sum::<u32>()
+            .saturating_sub(self.credit)
+    }
+
+    /// One yard cycle's unit of progress (`FUN_0052a430`): to the active
+    /// unit while it is short of its cost, else to the next unit's credit.
+    pub fn add_progress(&mut self) {
+        match self.items.front_mut() {
+            Some(front) if front.work_done < front.total_cost => front.work_done += 1,
+            _ => self.credit += 1,
+        }
+    }
+
+    /// Remove and return the finished units from the front. Each next unit
+    /// starts with as much of the credit as it needs (`FUN_00529d70`:
+    /// progress `min(cost, +0x60)`, taken from `+0x60`).
+    fn take_completed(&mut self) -> Vec<QueueItem> {
+        let mut completed = Vec::new();
+        while self.items.front().is_some_and(QueueItem::is_complete) {
+            completed.extend(self.items.pop_front());
+            if let Some(next) = self.items.front_mut() {
+                let take = next.work_left().min(self.credit);
+                next.work_done += take;
+                self.credit -= take;
+            }
+        }
+        if self.items.is_empty() {
+            self.credit = 0;
+        }
+        completed
+    }
+
+    /// The game day each item completes when the yards with these
+    /// `periods` keep building from day `today` with materials on hand: the
+    /// manual's "best case" (p. 84; `FUN_00528d30`). `None` for every item
+    /// when no yard can build.
+    #[must_use]
+    pub fn completion_days(&self, today: u64, periods: &[u32]) -> Vec<Option<u64>> {
+        let mut work = 0_u32;
+        let mut credit = self.credit;
+        self.items
+            .iter()
+            .map(|item| {
+                let used = item.work_left().min(credit);
+                credit -= used;
+                work = work.saturating_add(item.work_left() - used);
+                completion_day(periods, work).map(|days| today + u64::from(days))
             })
             .collect()
     }
@@ -288,30 +312,6 @@ impl ProductionQueue {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
-    }
-
-    /// Advance the queue by `ticks` game-days.
-    ///
-    /// Returns a list of `BuildableKind` items that completed during this
-    /// advance. Multiple completions are possible if `ticks` is large and
-    /// several items have small remaining costs.
-    fn advance_ticks(&mut self, ticks: u32) -> Vec<QueueItem> {
-        let mut completed = Vec::new();
-        let mut remaining_ticks = ticks;
-
-        while let Some(front) = self.items.front_mut() {
-            if remaining_ticks >= front.ticks_remaining {
-                // This item completes; consume its cost and continue with leftover ticks.
-                remaining_ticks -= front.ticks_remaining;
-                completed.push(self.items.pop_front().unwrap());
-            } else {
-                // Partial progress — item survives.
-                front.ticks_remaining -= remaining_ticks;
-                break;
-            }
-        }
-
-        completed
     }
 }
 
@@ -480,6 +480,14 @@ impl ManufacturingState {
         }
     }
 
+    /// One yard cycle's unit of progress for `system`'s `area`; nothing when
+    /// it has no queue.
+    pub fn add_progress(&mut self, system: SystemKey, area: ProductionArea) {
+        if let Some(queue) = self.queues.get_mut(&(system, area)) {
+            queue.add_progress();
+        }
+    }
+
     /// All system queues (including empty ones that were created lazily).
     #[must_use]
     pub fn queues(&self) -> &HashMap<(SystemKey, ProductionArea), ProductionQueue> {
@@ -545,11 +553,8 @@ pub struct Departure {
 pub struct ManufacturingSystem;
 
 impl ManufacturingSystem {
-    /// Advance all production queues by the number of ticks in `tick_events`.
-    ///
-    /// Each `TickEvent` represents one game-day. If multiple ticks fired in
-    /// one frame (e.g., at Faster speed) they are batched into a single pass
-    /// per queue.
+    /// Complete every queued unit whose work is done (the yards' cycles add
+    /// it: `crate::stockpiles`), stamped with the last tick in `tick_events`.
     ///
     /// Systems in `blocked_systems` (e.g., blockaded systems) are skipped —
     /// their queues do not advance while blocked.
@@ -580,17 +585,13 @@ impl ManufacturingSystem {
         Self::advance_tracked(state, tick_events, blocked_systems).completions
     }
 
-    /// Advance with full tracking: completions **and** K6 idle transitions.
+    /// Complete with full tracking: completions **and** K6 idle transitions.
     ///
     /// The `newly_idle` vec contains system keys whose queue transitioned
     /// from non-empty (1+ items before advance) to empty (0 items after
     /// advance). Detection is purely intra-tick — pre/post length compare
     /// against a local snapshot. No persistent `was_empty` bit on world
     /// state (SIMP-H4).
-    #[expect(
-        clippy::cast_possible_truncation,
-        reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
-    )]
     ///
     /// # Panics
     /// Panics if a queue key collected for this batch is absent when its queue is advanced.
@@ -603,8 +604,6 @@ impl ManufacturingSystem {
             return ManufacturingAdvance::default();
         };
 
-        // Batch all ticks that fired this frame into a single advance.
-        let tick_count = tick_events.len() as u32;
         // The last tick number in this batch (used as the completion timestamp).
         let final_tick = last_tick_event.tick;
 
@@ -633,7 +632,7 @@ impl ManufacturingSystem {
                 .get_mut(&(system_key, area))
                 .expect("manufacturing queue key collected from the same map");
             pre_len += queue.len();
-            for item in queue.advance_ticks(tick_count) {
+            for item in queue.take_completed() {
                 match item
                     .destination
                     .filter(|&destination| destination != system_key)
@@ -680,7 +679,6 @@ impl ManufacturingSystem {
 mod tests {
     use super::*;
     use crate::ids::SystemKey;
-    use crate::tick::{GameClock, GameSpeed};
 
     // Helper: fabricate distinct SystemKeys from one shared slotmap.
     fn mock_system_keys(n: usize) -> Vec<SystemKey> {
@@ -692,17 +690,32 @@ mod tests {
         mock_system_keys(1).into_iter().next().unwrap()
     }
 
-    fn cap_ship_item(ticks: u32) -> QueueItem {
+    fn cap_ship_item(cost: u32) -> QueueItem {
         // We need a CapitalShipKey to build the kind. Use a slotmap.
         let mut sm: slotmap::SlotMap<CapitalShipKey, ()> = slotmap::SlotMap::with_key();
         let key = sm.insert(());
-        QueueItem::new(BuildableKind::CapitalShip(key), ticks, ticks)
+        QueueItem::new(BuildableKind::CapitalShip(key), cost)
     }
 
-    fn fighter_item(ticks: u32) -> QueueItem {
+    fn fighter_item(cost: u32) -> QueueItem {
         let mut sm: slotmap::SlotMap<FighterKey, ()> = slotmap::SlotMap::with_key();
         let key = sm.insert(());
-        QueueItem::new(BuildableKind::Fighter(key), ticks, ticks)
+        QueueItem::new(BuildableKind::Fighter(key), cost)
+    }
+
+    fn troop_item(cost: u32) -> QueueItem {
+        QueueItem::new(BuildableKind::Troop(DatId::new(0x1000_0001)), cost)
+    }
+
+    /// `units` yard cycles' progress on `system`'s `area`.
+    fn work(state: &mut ManufacturingState, system: SystemKey, area: ProductionArea, units: u32) {
+        for _ in 0..units {
+            state.add_progress(system, area);
+        }
+    }
+
+    fn ticks(range: std::ops::RangeInclusive<u64>) -> Vec<TickEvent> {
+        range.map(|tick| TickEvent { tick }).collect()
     }
 
     // FUN_00528b30: each yard adds days / period units, and FUN_00528d30
@@ -719,17 +732,6 @@ mod tests {
         assert_eq!(completion_day(&[4], 0), Some(0));
     }
 
-    // FUN_00528d30 prices the whole order as cost * quantity; the units
-    // share the yards one after another.
-    #[test]
-    fn consecutive_units_take_the_days_between_their_shares_of_the_work() {
-        assert_eq!(unit_build_days(&[4], 8, 3), Some(vec![32, 32, 32]));
-        assert_eq!(unit_build_days(&[4, 4], 3, 2), Some(vec![8, 4]));
-        assert_eq!(unit_build_days(&[], 3, 2), None);
-        // A free unit still takes a day.
-        assert_eq!(unit_build_days(&[4], 0, 1), Some(vec![1]));
-    }
-
     #[test]
     fn build_units_replaces_the_areas_queue_with_the_units_in_order() {
         let system = mock_system_key();
@@ -738,12 +740,8 @@ mod tests {
         state.enqueue(system, fighter_item(9));
         state.build_units(system, vec![cap_ship_item(8), cap_ship_item(4)]);
         let queue = state.queue(system, ProductionArea::Shipyard).unwrap();
-        let days: Vec<u32> = queue
-            .items()
-            .iter()
-            .map(|item| item.ticks_remaining)
-            .collect();
-        assert_eq!(days, [8, 4]);
+        let costs: Vec<u32> = queue.items().iter().map(|item| item.total_cost).collect();
+        assert_eq!(costs, [8, 4]);
         state.build_units(system, Vec::new());
         assert_eq!(
             state.queue(system, ProductionArea::Shipyard).unwrap().len(),
@@ -759,12 +757,11 @@ mod tests {
         let mut state = ManufacturingState::new();
         state.enqueue(systems[0], cap_ship_item(1).delivered_to(systems[1]));
         state.enqueue(systems[2], fighter_item(1).delivered_to(systems[2]));
+        work(&mut state, systems[0], ProductionArea::Shipyard, 1);
+        work(&mut state, systems[2], ProductionArea::Shipyard, 1);
 
-        let advance = ManufacturingSystem::advance_tracked(
-            &mut state,
-            &[TickEvent { tick: 9 }],
-            &HashSet::new(),
-        );
+        let advance =
+            ManufacturingSystem::advance_tracked(&mut state, &ticks(9..=9), &HashSet::new());
 
         assert_eq!(
             advance.departures,
@@ -779,10 +776,6 @@ mod tests {
         assert_eq!(advance.completions[0].system, systems[2]);
     }
 
-    fn troop_item(ticks: u32) -> QueueItem {
-        QueueItem::new(BuildableKind::Troop(DatId::new(0x1000_0001)), ticks, ticks)
-    }
-
     // FUN_00509670: a system has one manager per area (ships 0, facilities
     // 1, troops 2) and the overview shows each one's product at once
     // (FUN_00455060, FUN_00457c90).
@@ -793,12 +786,11 @@ mod tests {
         state.enqueue(system, cap_ship_item(2));
         state.enqueue(system, troop_item(2));
         assert_eq!(state.queued_at(system), 2);
+        work(&mut state, system, ProductionArea::Shipyard, 2);
+        work(&mut state, system, ProductionArea::TrainingFacility, 2);
 
-        let advance = ManufacturingSystem::advance_tracked(
-            &mut state,
-            &[TickEvent { tick: 1 }, TickEvent { tick: 2 }],
-            &HashSet::new(),
-        );
+        let advance =
+            ManufacturingSystem::advance_tracked(&mut state, &ticks(1..=2), &HashSet::new());
 
         assert_eq!(advance.completions.len(), 2);
         assert_eq!(advance.newly_idle, [system]);
@@ -812,20 +804,17 @@ mod tests {
         let mut state = ManufacturingState::new();
         state.enqueue(system, cap_ship_item(1));
         state.enqueue(system, troop_item(3));
+        work(&mut state, system, ProductionArea::Shipyard, 1);
+        work(&mut state, system, ProductionArea::TrainingFacility, 1);
 
-        let first = ManufacturingSystem::advance_tracked(
-            &mut state,
-            &[TickEvent { tick: 1 }],
-            &HashSet::new(),
-        );
+        let first =
+            ManufacturingSystem::advance_tracked(&mut state, &ticks(1..=1), &HashSet::new());
         assert_eq!(first.completions.len(), 1);
         assert!(first.newly_idle.is_empty());
 
-        let second = ManufacturingSystem::advance_tracked(
-            &mut state,
-            &[TickEvent { tick: 2 }, TickEvent { tick: 3 }],
-            &HashSet::new(),
-        );
+        work(&mut state, system, ProductionArea::TrainingFacility, 2);
+        let second =
+            ManufacturingSystem::advance_tracked(&mut state, &ticks(2..=3), &HashSet::new());
         assert_eq!(second.completions.len(), 1);
         assert_eq!(second.newly_idle, [system]);
     }
@@ -843,7 +832,7 @@ mod tests {
 
         let ships = state.queue(system, ProductionArea::Shipyard).unwrap();
         assert_eq!(ships.len(), 3);
-        assert!(ships.items().iter().all(|item| item.ticks_remaining == 2));
+        assert!(ships.items().iter().all(|item| item.total_cost == 2));
         assert_eq!(
             state
                 .queue(system, ProductionArea::TrainingFacility)
@@ -889,8 +878,8 @@ mod tests {
         assert!(q.active().is_none());
 
         q.enqueue(cap_ship_item(10));
-        assert!(q.active().is_some());
-        assert_eq!(q.active().unwrap().ticks_remaining, 10);
+        let active = q.active().unwrap();
+        assert_eq!((active.work_done, active.total_cost), (0, 10));
     }
 
     #[test]
@@ -901,10 +890,7 @@ mod tests {
         let (home, away) = (systems.insert(()), systems.insert(()));
         let mut state = ManufacturingState::new();
         state.enqueue(home, cap_ship_item(10));
-        state.enqueue(
-            home,
-            QueueItem::new(BuildableKind::Troop(DatId::new(0x1000_0001)), 5, 5),
-        );
+        state.enqueue(home, troop_item(5));
 
         state.set_destination(home, ProductionArea::Shipyard, away);
         let destinations = |state: &ManufacturingState| {
@@ -926,10 +912,7 @@ mod tests {
 
         // A later product of that area takes it; another area's does not.
         state.enqueue(home, cap_ship_item(3));
-        state.enqueue(
-            home,
-            QueueItem::new(BuildableKind::Troop(DatId::new(0x1000_0001)), 5, 5),
-        );
+        state.enqueue(home, troop_item(5));
         assert_eq!(destinations(&state), [Some(away), Some(away), None, None]);
 
         // Back at home clears it.
@@ -938,59 +921,90 @@ mod tests {
         assert_eq!(state.destination(home, ProductionArea::Shipyard), None);
     }
 
+    // Manual Fig. 3.58: completion is a game day. Manual p. 84: the time is
+    // a best case, FUN_00528d30 over the yards' periods; each unit waits
+    // for the work of those ahead of it.
     #[test]
-    fn each_queued_item_completes_after_those_ahead_of_it() {
-        // Manual Fig. 3.58: completion is a game day; only the active item
-        // advances, so the rest wait their turn.
+    fn each_queued_item_completes_after_the_work_ahead_of_it() {
         let mut q = ProductionQueue::new();
         q.enqueue(cap_ship_item(10));
         q.enqueue(cap_ship_item(4));
-        q.advance_ticks(3);
-        assert_eq!(q.completion_days(100), [107, 111]);
-        assert!(ProductionQueue::new().completion_days(5).is_empty());
+        for _ in 0..3 {
+            q.add_progress();
+        }
+        assert_eq!(q.completion_days(100, &[1]), [Some(107), Some(111)]);
+        assert_eq!(q.completion_days(100, &[2, 2]), [Some(108), Some(112)]);
+        assert_eq!(q.completion_days(100, &[]), [None, None]);
+        assert!(ProductionQueue::new().completion_days(5, &[1]).is_empty());
     }
 
+    // FUN_00529dd0: the manager keeps working as many yards as there are
+    // units of work left, +0x6c − +0x60 − +0x5c.
     #[test]
-    fn partial_advance_reduces_ticks_remaining() {
+    fn the_work_left_is_the_queues_cost_less_progress_and_credit() {
+        let mut q = ProductionQueue::new();
+        q.enqueue(cap_ship_item(3));
+        q.enqueue(cap_ship_item(4));
+        assert_eq!(q.work_left(), 7);
+        for _ in 0..5 {
+            q.add_progress();
+        }
+        assert_eq!(q.work_left(), 2);
+    }
+
+    // FUN_0052a430: a cycle adds to the active unit while it is short of its
+    // cost.
+    #[test]
+    fn a_cycle_adds_one_unit_of_progress_to_the_active_unit() {
         let mut q = ProductionQueue::new();
         q.enqueue(cap_ship_item(10));
-        let completed = q.advance_ticks(4);
-        assert!(completed.is_empty());
-        assert_eq!(q.active().unwrap().ticks_remaining, 6);
+        for _ in 0..4 {
+            q.add_progress();
+        }
+        assert!(q.take_completed().is_empty());
+        assert_eq!(q.active().unwrap().work_done, 4);
+        assert_eq!(q.active().unwrap().work_left(), 6);
     }
 
+    // FUN_0052b960: the unit completes once its progress reaches its cost.
     #[test]
-    fn advance_exact_completes_item() {
+    fn a_unit_completes_when_its_progress_reaches_its_cost() {
         let mut q = ProductionQueue::new();
         q.enqueue(cap_ship_item(5));
-        let completed = q.advance_ticks(5);
-        assert_eq!(completed.len(), 1);
+        for _ in 0..5 {
+            q.add_progress();
+        }
+        assert_eq!(q.take_completed().len(), 1);
         assert!(q.is_empty());
     }
 
+    // FUN_0052a430: progress beyond the active unit's cost goes to the
+    // credit +0x60, and FUN_00529d70 starts the next unit with
+    // min(cost, credit).
     #[test]
-    fn advance_overflow_completes_and_starts_next() {
+    fn progress_beyond_a_units_cost_starts_the_next_unit() {
         let mut q = ProductionQueue::new();
         q.enqueue(cap_ship_item(3));
         q.enqueue(fighter_item(10));
-
-        // 5 ticks: completes first item (3 ticks), 2 ticks into next
-        let completed = q.advance_ticks(5);
-        assert_eq!(completed.len(), 1);
-        assert_eq!(q.active().unwrap().ticks_remaining, 8);
+        for _ in 0..5 {
+            q.add_progress();
+        }
+        assert_eq!(q.take_completed().len(), 1);
+        assert_eq!(q.active().unwrap().work_done, 2);
     }
 
     #[test]
-    fn advance_completes_multiple_items() {
+    fn enough_credit_completes_several_units_at_once() {
         let mut q = ProductionQueue::new();
         q.enqueue(cap_ship_item(2));
         q.enqueue(cap_ship_item(3));
         q.enqueue(cap_ship_item(4));
-
-        // 10 ticks — all three should complete (2+3+4 = 9 ticks, 1 leftover)
-        let completed = q.advance_ticks(10);
-        assert_eq!(completed.len(), 3);
+        for _ in 0..9 {
+            q.add_progress();
+        }
+        assert_eq!(q.take_completed().len(), 3);
         assert!(q.is_empty());
+        assert_eq!(q.work_left(), 0);
     }
 
     #[test]
@@ -1001,7 +1015,7 @@ mod tests {
 
         q.cancel(0);
         assert_eq!(q.len(), 1);
-        assert_eq!(q.active().unwrap().ticks_remaining, 5);
+        assert_eq!(q.active().unwrap().total_cost, 5);
     }
 
     #[test]
@@ -1023,27 +1037,31 @@ mod tests {
         let mut q = ProductionQueue::new();
         q.enqueue(cap_ship_item(10));
         q.prioritize(0); // no-op
-        assert_eq!(q.active().unwrap().ticks_remaining, 10);
+        assert_eq!(q.active().unwrap().total_cost, 10);
     }
 
     #[test]
-    fn progress_fraction_reports_half_after_half_the_ticks() {
+    fn progress_fraction_reports_half_after_half_the_work() {
         let mut q = ProductionQueue::new();
         q.enqueue(cap_ship_item(10));
-        q.advance_ticks(5);
+        for _ in 0..5 {
+            q.add_progress();
+        }
         let frac = q.active().unwrap().progress_fraction();
         assert!((frac - 0.5).abs() < 0.001, "expected ~0.5, got {frac}");
     }
 
     // --- ManufacturingSystem integration tests ---
 
+    // The days alone build nothing: the work comes from yard cycles
+    // (FUN_00530950), which draw refined material.
     #[test]
-    fn system_advance_no_ticks_no_completions() {
+    fn days_without_yard_work_complete_nothing() {
         let system = mock_system_key();
         let mut state = ManufacturingState::new();
-        state.enqueue(system, cap_ship_item(5));
+        state.enqueue(system, cap_ship_item(2));
 
-        let completions = ManufacturingSystem::advance(&mut state, &[]);
+        let completions = ManufacturingSystem::advance(&mut state, &ticks(1..=30));
         assert!(completions.is_empty());
         assert_eq!(
             state
@@ -1051,28 +1069,22 @@ mod tests {
                 .unwrap()
                 .active()
                 .unwrap()
-                .ticks_remaining,
-            5
+                .work_done,
+            0
         );
     }
 
     #[test]
-    fn system_advance_with_tick_events() {
+    fn a_completion_is_stamped_with_the_batchs_last_tick() {
         let system = mock_system_key();
         let mut state = ManufacturingState::new();
         state.enqueue(system, cap_ship_item(3));
+        work(&mut state, system, ProductionArea::Shipyard, 3);
 
-        // Simulate GameClock emitting 3 TickEvents
-        let tick_events = vec![
-            TickEvent { tick: 1 },
-            TickEvent { tick: 2 },
-            TickEvent { tick: 3 },
-        ];
-
-        let completions = ManufacturingSystem::advance(&mut state, &tick_events);
+        let completions = ManufacturingSystem::advance(&mut state, &ticks(1..=3));
         assert_eq!(completions.len(), 1);
         assert_eq!(completions[0].system, system);
-        assert_eq!(completions[0].tick, 3); // last tick in the batch
+        assert_eq!(completions[0].tick, 3);
         assert!(state
             .queue(system, ProductionArea::Shipyard)
             .unwrap()
@@ -1080,45 +1092,26 @@ mod tests {
     }
 
     #[test]
-    fn multiple_systems_advance_independently() {
+    fn multiple_systems_complete_independently() {
         let keys = mock_system_keys(2);
         let (sys_a, sys_b) = (keys[0], keys[1]);
         let mut state = ManufacturingState::new();
         state.enqueue(sys_a, cap_ship_item(2));
         state.enqueue(sys_b, cap_ship_item(5));
+        work(&mut state, sys_a, ProductionArea::Shipyard, 2);
+        work(&mut state, sys_b, ProductionArea::Shipyard, 2);
 
-        let tick_events = vec![TickEvent { tick: 1 }, TickEvent { tick: 2 }];
-        let completions = ManufacturingSystem::advance(&mut state, &tick_events);
+        let completions = ManufacturingSystem::advance(&mut state, &ticks(1..=2));
 
-        // sys_a completes, sys_b still has 3 ticks left
         assert_eq!(completions.len(), 1);
         assert_eq!(completions[0].system, sys_a);
         assert_eq!(
             state
                 .queue(sys_b, ProductionArea::Shipyard)
                 .unwrap()
-                .active()
-                .unwrap()
-                .ticks_remaining,
+                .work_left(),
             3
         );
-    }
-
-    #[test]
-    fn integration_clock_drives_manufacturing() {
-        let system = mock_system_key();
-        let mut state = ManufacturingState::new();
-        state.enqueue(system, cap_ship_item(2));
-
-        let mut clock = GameClock::new();
-        clock.set_speed(GameSpeed::Fast);
-
-        // 0.81 real seconds at 0.4 s/day = 2 ticks — should complete the item
-        let tick_events = clock.advance(0.81);
-        assert_eq!(tick_events.len(), 2);
-
-        let completions = ManufacturingSystem::advance(&mut state, &tick_events);
-        assert_eq!(completions.len(), 1);
     }
 
     // -----------------------------------------------------------------------
@@ -1132,12 +1125,12 @@ mod tests {
         let system = mock_system_key();
         let mut state = ManufacturingState::new();
         state.enqueue(system, cap_ship_item(2));
+        work(&mut state, system, ProductionArea::Shipyard, 2);
 
-        // First advance: 2 ticks drain the single item, completions=1,
-        // and the queue transitions from non-empty → empty → fires K6.
-        let tick_events = vec![TickEvent { tick: 1 }, TickEvent { tick: 2 }];
+        // First advance completes the single item, and the queue
+        // transitions from non-empty → empty → fires K6.
         let advance =
-            ManufacturingSystem::advance_tracked(&mut state, &tick_events, &HashSet::new());
+            ManufacturingSystem::advance_tracked(&mut state, &ticks(1..=2), &HashSet::new());
         assert_eq!(advance.completions.len(), 1);
         assert_eq!(
             advance.newly_idle,
@@ -1147,9 +1140,8 @@ mod tests {
 
         // Second advance: queue is already empty — pre/post length match,
         // transition detection must NOT emit again.
-        let tick_events2 = vec![TickEvent { tick: 3 }];
         let advance2 =
-            ManufacturingSystem::advance_tracked(&mut state, &tick_events2, &HashSet::new());
+            ManufacturingSystem::advance_tracked(&mut state, &ticks(3..=3), &HashSet::new());
         assert!(advance2.completions.is_empty());
         assert!(
             advance2.newly_idle.is_empty(),
@@ -1164,13 +1156,14 @@ mod tests {
         let mut state = ManufacturingState::new();
         state.enqueue(sys_a, cap_ship_item(2));
         state.enqueue(sys_b, cap_ship_item(2));
+        work(&mut state, sys_a, ProductionArea::Shipyard, 2);
+        work(&mut state, sys_b, ProductionArea::Shipyard, 2);
 
-        // Blockade sys_a — it must NOT advance, so no idle transition.
+        // Blockade sys_a — it must NOT complete, so no idle transition.
         let mut blocked = HashSet::new();
         blocked.insert(sys_a);
 
-        let tick_events = vec![TickEvent { tick: 1 }, TickEvent { tick: 2 }];
-        let advance = ManufacturingSystem::advance_tracked(&mut state, &tick_events, &blocked);
+        let advance = ManufacturingSystem::advance_tracked(&mut state, &ticks(1..=2), &blocked);
         assert_eq!(advance.completions.len(), 1, "only sys_b should complete");
         assert_eq!(advance.completions[0].system, sys_b);
         assert_eq!(
@@ -1190,13 +1183,11 @@ mod tests {
         let mut state = ManufacturingState::new();
         for &system in keys.iter().rev() {
             state.enqueue(system, cap_ship_item(1));
+            work(&mut state, system, ProductionArea::Shipyard, 1);
         }
 
-        let advance = ManufacturingSystem::advance_tracked(
-            &mut state,
-            &[TickEvent { tick: 1 }],
-            &HashSet::new(),
-        );
+        let advance =
+            ManufacturingSystem::advance_tracked(&mut state, &ticks(1..=1), &HashSet::new());
         let completion_systems: Vec<_> = advance
             .completions
             .iter()

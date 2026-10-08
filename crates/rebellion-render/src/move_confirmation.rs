@@ -9,6 +9,7 @@
 use egui_macroquad::egui;
 use rebellion_core::ids::{FleetKey, SystemKey};
 use rebellion_core::missions::MissionFaction;
+use rebellion_core::scrap::ScrapTarget;
 
 use crate::bmp_cache::BmpCache;
 use crate::cockpit::CockpitLayout;
@@ -149,15 +150,37 @@ pub fn draw_move_confirmation(
     cache: &mut BmpCache,
 ) -> Option<MoveConfirmationAction> {
     let window = state.window.as_ref()?;
+    let answer = draw_window(
+        ctx,
+        "original-move-confirmation",
+        side(window.faction),
+        window.picture(),
+        window.text(),
+        layout,
+        cache,
+    );
+    answer.and_then(|confirm| state.answer(confirm))
+}
+
+/// The confirmation window every confirmed order shares (`FUN_0044f060`,
+/// `FUN_0044f180`): the side's background, the order's picture at (12, 30),
+/// its text, the checkmark and the X. `Some(true)` for the checkmark or
+/// Enter, `Some(false)` for the X or Escape (`FUN_0044f640`).
+fn draw_window(
+    ctx: &egui::Context,
+    id: &str,
+    side: usize,
+    picture: u32,
+    text: String,
+    layout: CockpitLayout,
+    cache: &mut BmpCache,
+) -> Option<bool> {
     let scale = layout.scale;
-    let side = side(window.faction);
-    let text = window.text();
-    let picture = window.picture();
     let rect = window_rect(layout);
     let mut answer = None;
 
     // Above the modeless windows, as the mission dialog is.
-    egui::Area::new(egui::Id::new("original-move-confirmation"))
+    egui::Area::new(egui::Id::new(id))
         .fixed_pos(rect.min)
         .order(egui::Order::Tooltip)
         .show(ctx, |ui| {
@@ -214,7 +237,110 @@ pub fn draw_move_confirmation(
     } else if escape {
         answer = Some(false);
     }
-    answer.and_then(|confirm| state.answer(confirm))
+    answer
+}
+
+// ---------------------------------------------------------------------------
+// Scrap (0x200)
+// ---------------------------------------------------------------------------
+
+/// TEXTSTRA `RT_RCDATA` 0x7050.
+const SCRAP_QUESTION: &str = "Are you sure you want to scrap the following units?";
+/// STRATEGY pictures for Scrap (`FUN_0049a350` case 0x200: `+0x2e` is
+/// 0x408 for side 1, else 0x409).
+const SCRAP_PICTURE: [u32; 2] = [1032, 1033];
+
+/// A Scrap order waiting for the player's answer: `FUN_00487cc0` always
+/// confirms kind 0x200.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScrapConfirmation {
+    pub faction: MissionFaction,
+    /// The order's objects.
+    pub targets: Vec<ScrapTarget>,
+    /// Each object's name, in order.
+    pub names: Vec<String>,
+}
+
+impl ScrapConfirmation {
+    /// The text box: 0x7050, then 0x7054 (`"\n"` and the name, the
+    /// object's `+0x30`) for each object (`FUN_0049a880`).
+    #[must_use]
+    pub fn text(&self) -> String {
+        let mut text = SCRAP_QUESTION.to_string();
+        for name in &self.names {
+            text.push('\n');
+            text.push_str(name);
+        }
+        text
+    }
+
+    /// The picture `+0x2e`: 1032 for side 1, 1033 otherwise.
+    #[must_use]
+    pub fn picture(&self) -> u32 {
+        SCRAP_PICTURE[side(self.faction)]
+    }
+}
+
+/// What the player answered a Scrap confirmation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ScrapConfirmationAction {
+    /// The checkmark or Enter: scrap every object.
+    Confirm(Vec<ScrapTarget>),
+    /// The X or Escape: the order is destroyed.
+    Cancel,
+}
+
+/// Whether a Scrap confirmation is open.
+#[derive(Debug, Clone, Default)]
+pub struct ScrapConfirmationState {
+    window: Option<ScrapConfirmation>,
+}
+
+impl ScrapConfirmationState {
+    pub fn open(&mut self, confirmation: ScrapConfirmation) {
+        self.window = Some(confirmation);
+    }
+
+    #[must_use]
+    pub fn is_open(&self) -> bool {
+        self.window.is_some()
+    }
+
+    #[must_use]
+    pub fn confirmation(&self) -> Option<&ScrapConfirmation> {
+        self.window.as_ref()
+    }
+
+    /// Whether `point` falls on the open window.
+    #[must_use]
+    pub fn contains_screen_point(&self, layout: CockpitLayout, point: (f32, f32)) -> bool {
+        self.window.is_some() && rect_contains(window_rect(layout), egui::pos2(point.0, point.1))
+    }
+}
+
+/// Draw the open Scrap confirmation, if any, and report the answer.
+pub fn draw_scrap_confirmation(
+    ctx: &egui::Context,
+    state: &mut ScrapConfirmationState,
+    layout: CockpitLayout,
+    cache: &mut BmpCache,
+) -> Option<ScrapConfirmationAction> {
+    let window = state.window.as_ref()?;
+    let confirm = draw_window(
+        ctx,
+        "original-scrap-confirmation",
+        side(window.faction),
+        window.picture(),
+        window.text(),
+        layout,
+        cache,
+    )?;
+    let window = state.window.take()?;
+    Some(if confirm {
+        ScrapConfirmationAction::Confirm(window.targets)
+    } else {
+        ScrapConfirmationAction::Cancel
+    })
 }
 
 #[cfg(test)]
@@ -474,5 +600,98 @@ mod tests {
         assert!(!state.contains_screen_point(layout, (rect.min.x - 1.0, rect.min.y)));
         assert!(!MoveConfirmationState::default()
             .contains_screen_point(layout, (rect.min.x, rect.min.y)));
+    }
+
+    fn scrap(faction: MissionFaction) -> ScrapConfirmationState {
+        let mut state = ScrapConfirmationState::default();
+        state.open(ScrapConfirmation {
+            faction,
+            targets: vec![ScrapTarget::Troop(rebellion_core::ids::TroopKey::default())],
+            names: vec!["Army Regiment".into(), "Mine".into()],
+        });
+        state
+    }
+
+    #[test]
+    fn a_scrap_lists_each_unit_under_the_question() {
+        // FUN_0049a350 loads 0x7050; FUN_0049a880 appends 0x7054, "\n" and
+        // the name, for each object.
+        let state = scrap(MissionFaction::Alliance);
+        assert_eq!(
+            state.confirmation().unwrap().text(),
+            "Are you sure you want to scrap the following units?\nArmy Regiment\nMine"
+        );
+    }
+
+    #[test]
+    fn each_side_has_its_own_scrap_picture() {
+        // FUN_0049a350 case 0x200: +0x2e is 0x408 for side 1, else 0x409.
+        assert_eq!(scrap(MissionFaction::Alliance).confirmation().unwrap().picture(), 1032);
+        assert_eq!(scrap(MissionFaction::Empire).confirmation().unwrap().picture(), 1033);
+    }
+
+    fn drive_scrap(
+        state: &mut ScrapConfirmationState,
+        (x, y): (f32, f32),
+        frames: Vec<Vec<egui::Event>>,
+    ) -> Option<ScrapConfirmationAction> {
+        let layout = layout();
+        let pos = window_rect(layout).min + egui::vec2(x, y);
+        let ctx = egui::Context::default();
+        let mut cache = BmpCache::new();
+        let mut emitted = None;
+        for extra in [vec![], vec![]].into_iter().chain(frames) {
+            let mut events = vec![egui::Event::PointerMoved(pos)];
+            events.extend(extra.into_iter().map(|event| match event {
+                egui::Event::PointerButton { pressed, .. } => press(pos, pressed),
+                other => other,
+            }));
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(700.0, 520.0),
+                )),
+                events,
+                ..Default::default()
+            };
+            let _ = ctx.run(input, |ctx| {
+                if let Some(action) = draw_scrap_confirmation(ctx, state, layout, &mut cache) {
+                    emitted = Some(action);
+                }
+            });
+        }
+        emitted
+    }
+
+    #[test]
+    fn the_scrap_checkmark_scraps_the_units_and_the_x_does_not() {
+        // FUN_0044f5e0: control 0x14 submits the order, 0x15 destroys it.
+        let at = egui::Pos2::ZERO;
+        let mut state = scrap(MissionFaction::Empire);
+        let action = drive_scrap(
+            &mut state,
+            (355.0 + 25.0, 244.0 + 17.0),
+            vec![vec![press(at, true)], vec![press(at, false)]],
+        );
+        assert_eq!(
+            action,
+            Some(ScrapConfirmationAction::Confirm(vec![ScrapTarget::Troop(
+                rebellion_core::ids::TroopKey::default()
+            )]))
+        );
+        assert!(!state.is_open());
+
+        let mut state = scrap(MissionFaction::Empire);
+        let action = drive_scrap(
+            &mut state,
+            (355.0 + 25.0, 281.0 + 17.0),
+            vec![vec![press(at, true)], vec![press(at, false)]],
+        );
+        assert_eq!(action, Some(ScrapConfirmationAction::Cancel));
+        assert!(!state.is_open());
+
+        let mut state = scrap(MissionFaction::Empire);
+        let action = drive_scrap(&mut state, (0.0, 0.0), vec![vec![key(egui::Key::Escape)]]);
+        assert_eq!(action, Some(ScrapConfirmationAction::Cancel));
     }
 }

@@ -7,11 +7,13 @@
 //! (`FUN_00580b00`, `FUN_00509b40`).
 //!
 //! The original's fleet holds only capital ships, and fighters, regiments
-//! and characters ride aboard them. The port keeps those on the fleet: a
-//! whole fleet takes them along, and a split leaves them with the fleet the
-//! ships came from unless every ship leaves, except the regiments the ships
-//! that stay have no room for, which go with the ships that leave. port:
-//! which ship carries which fighter or regiment is not modelled.
+//! and characters ride aboard them, so they go wherever their ship goes
+//! (`crate::carriage`). The port keeps the rosters on the fleet, tagged with
+//! their ship: a split takes the squadrons and regiments aboard the ships
+//! that leave, and the characters when the fleet's first living ship
+//! leaves. port: squadrons and regiments held on the fleet itself (no
+//! ship) stay, but for the regiments the ships that stay have no room for,
+//! which go with the ships that leave.
 
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashSet;
@@ -251,7 +253,7 @@ pub fn merge_fleet_into(
         if let Some(entry) = target
             .fighters
             .iter_mut()
-            .find(|entry| entry.class == fighter.class)
+            .find(|entry| entry.class == fighter.class && entry.carrier == fighter.carrier)
         {
             entry.count = entry.count.saturating_add(fighter.count);
         } else {
@@ -283,12 +285,43 @@ fn move_ships_into(
     }
     let ships_carried_it = holds_death_star_ship(world, from);
     let source = &mut world.fleets[from];
+    let characters_leave = crate::carriage::character_ship(source)
+        .is_some_and(|first| ships.contains(&first));
     let mut moved = Vec::with_capacity(ships.len());
     for &index in ships.iter().rev() {
         moved.push(source.capital_ships.remove(index));
     }
     moved.reverse();
-    world.fleets[to].capital_ships.extend(moved);
+    let tags: Vec<u32> = moved.iter().map(|ship| ship.tag).filter(|&tag| tag != 0).collect();
+    let mut squadrons = Vec::new();
+    source.fighters.retain(|entry| {
+        let aboard = tags.contains(&entry.carrier);
+        if aboard {
+            squadrons.push(entry.clone());
+        }
+        !aboard
+    });
+    let characters = if characters_leave {
+        std::mem::take(&mut source.characters)
+    } else {
+        Vec::new()
+    };
+    let regiments: Vec<_> = troop_transport
+        .cargo(from)
+        .iter()
+        .copied()
+        .filter(|&troop| tags.contains(&troop_transport.carrier(troop)))
+        .collect();
+    troop_transport.transfer_some(from, to, &regiments);
+    for &character in &characters {
+        if let Some(value) = world.characters.get_mut(character) {
+            value.current_fleet = Some(to);
+        }
+    }
+    let target = &mut world.fleets[to];
+    target.capital_ships.extend(moved);
+    target.fighters.extend(squadrons);
+    target.characters.extend(characters);
     // A Death Star among the ships flies under its own flag; a flag with
     // no Death Star ship is the separate tactical object and stays.
     if ships_carried_it {
@@ -313,8 +346,9 @@ fn holds_death_star_ship(world: &GameWorld, fleet: FleetKey) -> bool {
     })
 }
 
-/// After ships leave `from` for `to`: the regiments `from`'s remaining ships
-/// have no room for go with them, the last in key order first, as
+/// After ships leave `from` for `to`: the regiments held on `from` itself
+/// that its remaining ships have no room for go with them, the last in key
+/// order first, as
 /// [`TroopTransportState::destroy_untransportable_cargo`] would drop them.
 /// Regiments travelling to board `from` keep their room.
 fn hand_over_excess_cargo(
@@ -326,11 +360,17 @@ fn hand_over_excess_cargo(
     let room = TroopTransportState::fleet_capacity(world, from)
         .map_or(0, |room| usize::try_from(room).unwrap_or(usize::MAX));
     let room = room.saturating_sub(troop_transport.incoming_count(from));
+    let aboard = troop_transport
+        .cargo(from)
+        .iter()
+        .filter(|&&troop| troop_transport.carrier(troop) != 0)
+        .count();
     let excess: Vec<_> = troop_transport
         .cargo(from)
         .iter()
-        .skip(room)
         .copied()
+        .filter(|&troop| troop_transport.carrier(troop) == 0)
+        .skip(room.saturating_sub(aboard))
         .collect();
     troop_transport.transfer_some(from, to, &excess);
 }
@@ -573,10 +613,17 @@ fn undo_split(
     if let Some(system) = world.systems.get_mut(value.location) {
         system.fleets.retain(|&key| key != split);
     }
+    for &character in &value.characters {
+        if let Some(record) = world.characters.get_mut(character) {
+            record.current_fleet = Some(fleet);
+        }
+    }
     let source = &mut world.fleets[fleet];
     for (&index, ship) in ships.iter().zip(value.capital_ships) {
         source.capital_ships.insert(index, ship);
     }
+    source.fighters.extend(value.fighters);
+    source.characters.extend(value.characters);
 }
 
 /// Send the ships to `destination` as a fleet of their own. A split that
@@ -741,10 +788,12 @@ mod tests {
         setup.world.fleets[mover].fighters.push(FighterEntry {
             class: fighter,
             count: 2,
+            carrier: 0,
         });
         setup.world.fleets[target].fighters.push(FighterEntry {
             class: fighter,
             count: 1,
+            carrier: 0,
         });
         let admiral = setup.world.characters.insert(Character {
             name: "Admiral".into(),
@@ -849,7 +898,10 @@ mod tests {
         assert_eq!(outcome, Ok(FleetOrderOutcome::Joined(target)));
         assert_eq!(hulls(&setup.world, mover), [20]);
         assert_eq!(hulls(&setup.world, target), [40, 10, 30]);
-        assert_eq!(transport.cargo(mover), [troop]);
+        // The regiment boarded the first of the equal ships (FUN_00552b10)
+        // and, a child of that ship, goes where it goes.
+        assert_eq!(transport.cargo(target), [troop]);
+        assert!(transport.cargo(mover).is_empty());
     }
 
     // FUN_004fe630: a fleet whose last ship leaves disbands, so moving every
@@ -1168,36 +1220,18 @@ mod tests {
             .is_empty());
     }
 
+    // FUN_00552b10: each regiment boards the ship with the most room, the
+    // earlier on a tie (ships 0, 1, 0 at two each); a split takes those
+    // aboard the ships that leave.
     #[test]
-    fn a_split_keeps_what_the_staying_ships_can_carry_counting_regiments_on_their_way() {
-        // port: as above; a regiment travelling to board keeps its room
-        // (incoming_count, FUN_00556390).
+    fn a_split_takes_the_regiments_aboard_the_ships_that_leave() {
         let mut setup = setup();
-        let (here, there) = (setup.here, setup.there);
+        let here = setup.here;
         let source = fleet(&mut setup, here, &[10, 20], true);
         let mut transport = TroopTransportState::default();
-        let mut aboard: Vec<_> = (0..3)
+        let aboard: Vec<_> = (0..3)
             .map(|_| embark(&mut setup, &mut transport, source))
             .collect();
-        aboard.sort_unstable();
-        setup.world.systems[there].control = ControlKind::Controlled(crate::dat::Faction::Alliance);
-        let walker = setup.world.troops.insert(TroopUnit {
-            class_dat_id: DatId::new(0x1000_0001),
-            is_alliance: true,
-            regiment_strength: 100,
-        });
-        setup.world.systems[there].ground_units.push(walker);
-        transport
-            .move_regiment(
-                &mut setup.world,
-                &MovementState::new(),
-                &std::collections::HashSet::new(),
-                walker,
-                crate::troop_transport::RegimentTarget::Fleet(source),
-                0,
-            )
-            .unwrap();
-        assert_eq!(transport.incoming_count(source), 1);
         let chosen = roster(&setup.world, source).unwrap();
 
         let created = create_fleet(
@@ -1211,9 +1245,49 @@ mod tests {
         )
         .unwrap();
 
-        // Room 2 for the staying ship, one held for the walker.
-        assert_eq!(transport.cargo(source), &aboard[..1]);
-        assert_eq!(transport.cargo(created), &aboard[1..]);
+        assert_eq!(transport.cargo(source), [aboard[0], aboard[2]]);
+        assert_eq!(transport.cargo(created), [aboard[1]]);
+    }
+
+    // The original's squadrons and characters are children of a ship
+    // (FUN_005039d0, FUN_00536da0), so they go where it goes; characters
+    // ride the first living ship (crate::carriage::character_ship).
+    #[test]
+    fn a_split_takes_the_squadrons_and_characters_aboard_the_ships_that_leave() {
+        let mut setup = setup();
+        let here = setup.here;
+        let source = fleet(&mut setup, here, &[10, 20], true);
+        setup.world.capital_ship_classes[setup.class].fighter_capacity = 1;
+        let fighter = setup.world.fighter_classes.insert(Default::default());
+        crate::carriage::board_squadrons(&mut setup.world, source, fighter, 2);
+        let admiral = setup.world.characters.insert(Character {
+            current_fleet: Some(source),
+            ..Character::default()
+        });
+        setup.world.fleets[source].characters.push(admiral);
+        let mut transport = TroopTransportState::default();
+        let chosen = roster(&setup.world, source).unwrap();
+
+        let created = create_fleet(
+            &mut setup.world,
+            &MovementState::new(),
+            &mut transport,
+            source,
+            &[0],
+            chosen,
+            true,
+        )
+        .unwrap();
+
+        let world = &setup.world;
+        let squadrons = |fleet: FleetKey| -> Vec<u32> {
+            world.fleets[fleet].fighters.iter().map(|entry| entry.carrier).collect()
+        };
+        assert_eq!(squadrons(created), [world.fleets[created].capital_ships[0].tag]);
+        assert_eq!(squadrons(source), [world.fleets[source].capital_ships[0].tag]);
+        assert_eq!(world.fleets[created].characters, [admiral]);
+        assert!(world.fleets[source].characters.is_empty());
+        assert_eq!(world.characters[admiral].current_fleet, Some(created));
     }
 
     // FUN_005073d0 refuses a destroyed destination; port: the undone split
@@ -1526,7 +1600,9 @@ mod tests {
         let mut expected = vec![source, created];
         expected.sort_unstable();
         assert_eq!(world.systems[here].fleets, expected);
-        assert_eq!(transport.cargo(source), [troop]);
+        // The regiment rides ship 0 (FUN_00552b10), which leaves.
+        assert_eq!(transport.cargo(created), [troop]);
+        assert!(transport.cargo(source).is_empty());
     }
 
     // FUN_004fe630: when every ship leaves, the old fleet disbands and its

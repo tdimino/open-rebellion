@@ -11,12 +11,13 @@
 
 use egui_macroquad::egui;
 use rebellion_core::dat::{ExplorationStatus, Faction};
+use rebellion_core::carriage;
 use rebellion_core::fleet_join;
 use rebellion_core::fog::FogState;
 use rebellion_core::ids::{DatId, FleetKey, SystemKey, TroopKey};
 use rebellion_core::movement::MovementState;
 use rebellion_core::troop_transport::TroopTransportState;
-use rebellion_core::world::{ControlKind, GameWorld};
+use rebellion_core::world::{ControlKind, Fleet, GameWorld};
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{CockpitFaction, CockpitLayout};
@@ -52,6 +53,9 @@ const FLEET_PICTURE: u32 = 10425;
 const EN_ROUTE_ENTRY: u32 = 10423;
 const EN_ROUTE_PICTURE: u32 = 10426;
 const NO_HYPERDRIVE: u32 = 10430;
+const SQUADRONS_ABOARD: u32 = 10404;
+const REGIMENTS_ABOARD: u32 = 10405;
+const PERSONNEL_ABOARD: u32 = 10406;
 /// STRATEGY 11501 (`0x2ced`): the en route mark of a character's mini.
 const EN_ROUTE_PERSONNEL: u32 = 11501;
 /// STRATEGY 11515 (`0x2cfb`): the en route mark of a regiment's mini.
@@ -895,6 +899,85 @@ fn drop_target(
     }
 }
 
+/// Each set indicator flag's side-1 bitmap and x (`FUN_004a67a0`): squadrons
+/// (1, 10404 at x 25), regiments (2, 10405 at 41), characters or special
+/// forces (4, 10406 at 57) aboard, and no hyperdrive (`0x40`, 10430 at 9).
+fn indicator_bitmaps(flags: u8) -> Vec<(u32, f32)> {
+    [
+        (1, SQUADRONS_ABOARD, 25.0),
+        (2, REGIMENTS_ABOARD, 41.0),
+        (4, PERSONNEL_ABOARD, 57.0),
+        (0x40, NO_HYPERDRIVE, 9.0),
+    ]
+    .into_iter()
+    .filter(|&(flag, _, _)| flags & flag != 0)
+    .map(|(_, bitmap, x)| (bitmap, x))
+    .collect()
+}
+
+/// The indicators on a fleet's left-list entry: the union of its ships'
+/// flags (`FUN_004a3d40` ORs `FUN_004a66a0` over them and paints
+/// `FUN_004a67a0` at y 33). port: with what the port holds on the fleet
+/// itself (`rebellion_core::carriage`).
+fn fleet_indicators(
+    world: &GameWorld,
+    transport: &TroopTransportState,
+    fleet: FleetKey,
+) -> Vec<(u32, f32)> {
+    let Some(value) = world.fleets.get(fleet) else {
+        return Vec::new();
+    };
+    let mut flags = (0..value.capital_ships.len())
+        .map(|index| carriage::ship_flags(world, transport, fleet, index))
+        .fold(0, |all, flags| all | flags);
+    if value.fighters.iter().any(|entry| entry.carrier == 0 && entry.count > 0) {
+        flags |= 1;
+    }
+    if transport.regiments_aboard(fleet, 0) > 0 {
+        flags |= 2;
+    }
+    if !value.characters.is_empty() {
+        flags |= 4;
+    }
+    indicator_bitmaps(flags)
+}
+
+/// What the right list and tabs show for the selection: a fleet's whole
+/// contents, or one ship's (`FUN_004a5c00`, "One ship").
+#[derive(Debug, Clone, Copy)]
+struct Scope {
+    fleet: FleetKey,
+    /// The selected ship's index and tag.
+    ship: Option<(usize, u32)>,
+}
+
+impl Scope {
+    fn of(world: &GameWorld, selected: Option<FleetWindowEntry>) -> Option<Self> {
+        match selected? {
+            FleetWindowEntry::Fleet(fleet) => Some(Self { fleet, ship: None }),
+            FleetWindowEntry::Ship { fleet, index } => {
+                let ship = world.fleets.get(fleet)?.capital_ships.get(index)?;
+                Some(Self {
+                    fleet,
+                    ship: Some((index, ship.tag)),
+                })
+            }
+        }
+    }
+
+    /// Whether a squadron or regiment carried by `carrier` is in scope.
+    fn carries(self, carrier: u32) -> bool {
+        self.ship.is_none_or(|(_, tag)| tag != 0 && carrier == tag)
+    }
+
+    /// Whether the fleet's characters are in scope: they ride its first
+    /// living ship (`rebellion_core::carriage::character_ship`).
+    fn has_characters(self, fleet: &Fleet) -> bool {
+        self.ship
+            .is_none_or(|(index, _)| carriage::character_ship(fleet) == Some(index))
+    }
+}
+
 /// A tab's state for the selection: Capital ships is disabled for a ship;
 /// the others unless the selection carries their contents (`FUN_004a5c00`,
 /// flags 1, 2 and 4).
@@ -904,31 +987,37 @@ fn tab_enabled(
     selected: Option<FleetWindowEntry>,
     tab: FleetWindowTab,
 ) -> bool {
-    let Some(FleetWindowEntry::Fleet(fleet)) = selected else {
-        // port: a ship's own contents are not modelled; the port's cargo,
-        // fighters and characters belong to the fleet.
+    let Some(scope) = Scope::of(world, selected) else {
         return false;
     };
-    let Some(value) = world.fleets.get(fleet) else {
+    let Some(value) = world.fleets.get(scope.fleet) else {
         return false;
     };
     match tab {
-        FleetWindowTab::CapitalShips => true,
-        FleetWindowTab::Fighters => value.fighters.iter().any(|entry| entry.count > 0),
-        FleetWindowTab::Troops => transport.carried_count(fleet) > 0,
-        FleetWindowTab::Personnel => !value.characters.is_empty(),
+        FleetWindowTab::CapitalShips => scope.ship.is_none(),
+        FleetWindowTab::Fighters => value
+            .fighters
+            .iter()
+            .any(|entry| entry.count > 0 && scope.carries(entry.carrier)),
+        FleetWindowTab::Troops => transport
+            .cargo(scope.fleet)
+            .iter()
+            .any(|&troop| scope.carries(transport.carrier(troop))),
+        FleetWindowTab::Personnel => {
+            !value.characters.is_empty() && scope.has_characters(value)
+        }
     }
 }
 
-/// One right-list item: its GOKRES mini, name and whether it lacks a
-/// hyperdrive (indicator 10430, flag `0x40`).
+/// One right-list item: its GOKRES mini, name and, for a capital ship, its
+/// indicator flags (`FUN_004a66a0`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct RightItem {
     mini: Option<u32>,
     /// What the mini stands for, for its en route mark.
     kind: MiniObject,
     label: String,
-    no_hyperdrive: bool,
+    flags: u8,
     /// The regiment or ship the item stands for.
     object: Option<ItemObject>,
 }
@@ -940,14 +1029,16 @@ fn right_items(
     selected: Option<FleetWindowEntry>,
     tab: FleetWindowTab,
 ) -> Vec<RightItem> {
-    let Some(FleetWindowEntry::Fleet(fleet)) = selected else {
+    let Some(scope) = Scope::of(world, selected) else {
         return Vec::new();
     };
+    let fleet = scope.fleet;
     let Some(value) = world.fleets.get(fleet) else {
         return Vec::new();
     };
     let roster = fleet_join::roster(world, fleet).unwrap_or_default();
     match tab {
+        FleetWindowTab::CapitalShips if scope.ship.is_some() => Vec::new(),
         FleetWindowTab::CapitalShips => value
             .capital_ships
             .iter()
@@ -962,7 +1053,7 @@ fn right_items(
                     .ship_name(fleet, index)
                     .unwrap_or(&class.name)
                     .to_owned(),
-                no_hyperdrive: class.hyperdrive == 0,
+                flags: carriage::ship_flags(world, transport, fleet, index),
                 object: Some(ItemObject::Ship {
                     fleet,
                     index,
@@ -975,6 +1066,7 @@ fn right_items(
             .fighters
             .iter()
             .enumerate()
+            .filter(|(_, entry)| scope.carries(entry.carrier))
             .filter_map(|(index, entry)| {
                 Some((index, world.fighter_classes.get(entry.class)?, entry.count))
             })
@@ -983,7 +1075,7 @@ fn right_items(
                     mini: fighter_mini_id(class.dat_id),
                     kind: MiniObject::Craft,
                     label: class.name.clone(),
-                    no_hyperdrive: false,
+                    flags: 0,
                     object: Some(ItemObject::Fighter { fleet, index }),
                 })
             })
@@ -991,6 +1083,7 @@ fn right_items(
         FleetWindowTab::Troops => transport
             .cargo(fleet)
             .iter()
+            .filter(|&&key| scope.carries(transport.carrier(key)))
             .filter_map(|&key| Some((key, world.troops.get(key)?)))
             .filter_map(|(key, troop)| {
                 Some((key, troop.class_dat_id, troop_mini(troop.class_dat_id)?))
@@ -999,10 +1092,11 @@ fn right_items(
                 mini: Some(mini),
                 kind: MiniObject::Regiment(class),
                 label: label.to_owned(),
-                no_hyperdrive: false,
+                flags: 0,
                 object: Some(ItemObject::Regiment(key)),
             })
             .collect(),
+        FleetWindowTab::Personnel if !scope.has_characters(value) => Vec::new(),
         FleetWindowTab::Personnel => value
             .characters
             .iter()
@@ -1011,7 +1105,7 @@ fn right_items(
                 mini: character_mini_resource_id(character.dat_id, character.is_major),
                 kind: MiniObject::Character,
                 label: character.name.clone(),
-                no_hyperdrive: false,
+                flags: 0,
                 object: None,
             })
             .collect(),
@@ -1027,25 +1121,40 @@ fn tab_counts(
     selected: Option<FleetWindowEntry>,
     tab: FleetWindowTab,
 ) -> Option<(u32, u32)> {
-    let Some(FleetWindowEntry::Fleet(fleet)) = selected else {
-        return None;
+    let scope = Scope::of(world, selected)?;
+    let value = world.fleets.get(scope.fleet)?;
+    let capacity = |room: fn(&rebellion_core::world::CapitalShipClass) -> u32| {
+        value
+            .capital_ships
+            .iter()
+            .enumerate()
+            .filter(|(index, ship)| {
+                ship.alive && scope.ship.is_none_or(|(selected, _)| selected == *index)
+            })
+            .filter_map(|(_, ship)| world.capital_ship_classes.get(ship.class))
+            .map(room)
+            .fold(0_u32, u32::saturating_add)
     };
-    let value = world.fleets.get(fleet)?;
     match tab {
-        FleetWindowTab::Fighters => {
-            let aboard = value.fighters.iter().map(|entry| entry.count).sum();
-            let capacity = value
-                .capital_ships
+        FleetWindowTab::Fighters => Some((
+            value
+                .fighters
                 .iter()
-                .filter(|ship| ship.alive)
-                .filter_map(|ship| world.capital_ship_classes.get(ship.class))
-                .map(|class| class.fighter_capacity)
-                .fold(0_u32, u32::saturating_add);
-            Some((aboard, capacity))
-        }
+                .filter(|entry| scope.carries(entry.carrier))
+                .map(|entry| entry.count)
+                .sum(),
+            capacity(|class| class.fighter_capacity),
+        )),
         FleetWindowTab::Troops => Some((
-            u32::try_from(transport.carried_count(fleet)).unwrap_or(u32::MAX),
-            TroopTransportState::fleet_capacity(world, fleet)?,
+            u32::try_from(
+                transport
+                    .cargo(scope.fleet)
+                    .iter()
+                    .filter(|&&troop| scope.carries(transport.carrier(troop)))
+                    .count(),
+            )
+            .unwrap_or(u32::MAX),
+            capacity(|class| class.troop_capacity),
         )),
         FleetWindowTab::CapitalShips | FleetWindowTab::Personnel => None,
     }
@@ -1449,6 +1558,19 @@ fn draw_fleet_window(
                                 5.0,
                             );
                         }
+                        for (bitmap, x) in fleet_indicators(world, transport, fleet) {
+                            paint_native(
+                                &list_painter,
+                                ctx,
+                                cache,
+                                DllSource::Strategy,
+                                side_art(bitmap, side),
+                                item,
+                                scale,
+                                x,
+                                33.0,
+                            );
+                        }
                         paint_dotted(&list_painter, item, scale, (2.0, 6.0), (5.0, 6.0));
                         if expanded {
                             paint_dotted(&list_painter, item, scale, (2.0, 6.0), (2.0, 50.0));
@@ -1508,16 +1630,18 @@ fn draw_fleet_window(
                                     );
                                 }
                             }
-                            if class.hyperdrive == 0 {
+                            for (bitmap, x) in indicator_bitmaps(carriage::ship_flags(
+                                world, transport, fleet, index,
+                            )) {
                                 paint_native(
                                     &list_painter,
                                     ctx,
                                     cache,
                                     DllSource::Strategy,
-                                    side_art(NO_HYPERDRIVE, side),
+                                    side_art(bitmap, side),
                                     item,
                                     scale,
-                                    9.0,
+                                    x,
                                     33.0,
                                 );
                             }
@@ -1775,16 +1899,16 @@ fn draw_fleet_window(
                             );
                         }
                     }
-                    if item.no_hyperdrive {
+                    for (bitmap, x) in indicator_bitmaps(item.flags) {
                         paint_native(
                             &right_painter,
                             ctx,
                             cache,
                             DllSource::Strategy,
-                            side_art(NO_HYPERDRIVE, side),
+                            side_art(bitmap, side),
                             cell,
                             scale,
-                            9.0,
+                            x,
                             23.0,
                         );
                     }
@@ -2298,7 +2422,7 @@ pub(crate) mod tests {
                 mini: Some(17_472),
                 kind: MiniObject::Regiment(DatId::new(0x1000_0001)),
                 label: "Alliance Fleet Regiment".into(),
-                no_hyperdrive: false,
+                flags: 0,
                 object: Some(ItemObject::Regiment(troop)),
             }]
         );
@@ -3043,6 +3167,7 @@ pub(crate) mod tests {
                 .push(rebellion_core::world::FighterEntry {
                     class: fighter,
                     count: 1,
+                    carrier: 0,
                 });
         }
         let mut state = opened(&world, system);
@@ -3779,6 +3904,7 @@ pub(crate) mod tests {
             .push(rebellion_core::world::FighterEntry {
                 class: squadron,
                 count: 0,
+                carrier: 0,
             });
         assert!(!lit(&world, FleetWindowTab::Fighters));
         world.fleets[fleet].fighters[0].count = 1;
@@ -3820,13 +3946,85 @@ pub(crate) mod tests {
         let flags = |world: &GameWorld| {
             right_items(world, &transport, selected, FleetWindowTab::CapitalShips)
                 .iter()
-                .map(|item| item.no_hyperdrive)
+                .map(|item| item.flags & 0x40 != 0)
                 .collect::<Vec<_>>()
         };
         assert_eq!(flags(&world), [false]);
         let class = world.fleets[fleet].capital_ships[0].class;
         world.capital_ship_classes[class].hyperdrive = 0;
         assert_eq!(flags(&world), [true]);
+    }
+
+    #[test]
+    fn a_fleets_entry_shows_what_its_ships_carry() {
+        // FUN_004a3d40 paints the union of its ships' FUN_004a66a0 flags
+        // through FUN_004a67a0: 10404 at x 25, 10405 at 41, 10406 at 57 and
+        // 10430 at 9.
+        let (mut world, system) = world(ControlKind::Controlled(Faction::Alliance));
+        let fleet = add_fleet(&mut world, system, true, 1);
+        let mut transport = TroopTransportState::default();
+        assert!(fleet_indicators(&world, &transport, fleet).is_empty());
+        let fighters = world.fighter_classes.insert(Default::default());
+        world.fleets[fleet].fighters.push(rebellion_core::world::FighterEntry {
+            class: fighters,
+            count: 1,
+            carrier: 0,
+        });
+        let character = world.characters.insert(Default::default());
+        world.fleets[fleet].characters.push(character);
+        let class = world.fleets[fleet].capital_ships[0].class;
+        world.capital_ship_classes[class].hyperdrive = 0;
+        assert_eq!(
+            fleet_indicators(&world, &transport, fleet),
+            [(10404, 25.0), (10406, 57.0), (10430, 9.0)]
+        );
+        world.capital_ship_classes[class].troop_capacity = 2;
+        let troop = add_troop(&mut world, system);
+        transport.embark(&mut world, fleet, &[troop]).unwrap();
+        assert!(fleet_indicators(&world, &transport, fleet).contains(&(10405, 41.0)));
+    }
+
+    #[test]
+    fn each_ship_shows_and_lists_what_it_carries() {
+        // FUN_004a66a0 per ship (left entry y 33, right item y 23); one
+        // selected ship lists its own contents (FUN_004a5c00). Squadrons
+        // board the ship with the most room (FUN_00552b10), characters the
+        // first living ship.
+        let (mut world, system) = world(ControlKind::Controlled(Faction::Alliance));
+        let fleet = add_fleet(&mut world, system, true, 2);
+        let class = world.fleets[fleet].capital_ships[0].class;
+        world.capital_ship_classes[class].fighter_capacity = 2;
+        world.fleets[fleet]
+            .capital_ships
+            .push(ShipInstance::new(class, 100, true));
+        let fighters = world.fighter_classes.insert(Default::default());
+        let character = world.characters.insert(Default::default());
+        world.fleets[fleet].characters.push(character);
+        rebellion_core::carriage::board_squadrons(&mut world, fleet, fighters, 1);
+        let transport = TroopTransportState::default();
+
+        assert_eq!(carriage::ship_flags(&world, &transport, fleet, 0), 1 | 4);
+        assert_eq!(carriage::ship_flags(&world, &transport, fleet, 1), 0);
+        let ship = |index| Some(FleetWindowEntry::Ship { fleet, index });
+        assert!(tab_enabled(&world, &transport, ship(0), FleetWindowTab::Fighters));
+        assert!(tab_enabled(&world, &transport, ship(0), FleetWindowTab::Personnel));
+        assert!(!tab_enabled(&world, &transport, ship(0), FleetWindowTab::CapitalShips));
+        assert!(!tab_enabled(&world, &transport, ship(1), FleetWindowTab::Fighters));
+        assert!(!tab_enabled(&world, &transport, ship(1), FleetWindowTab::Personnel));
+        assert_eq!(
+            right_items(&world, &transport, ship(0), FleetWindowTab::Fighters).len(),
+            1
+        );
+        assert_eq!(
+            tab_counts(&world, &transport, ship(0), FleetWindowTab::Fighters),
+            Some((1, 2))
+        );
+        let whole = Some(FleetWindowEntry::Fleet(fleet));
+        let flags: Vec<u8> = right_items(&world, &transport, whole, FleetWindowTab::CapitalShips)
+            .iter()
+            .map(|item| item.flags)
+            .collect();
+        assert_eq!(flags, [1 | 4, 0]);
     }
 
     #[test]

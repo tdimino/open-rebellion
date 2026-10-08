@@ -127,15 +127,17 @@ Fleet 2, etc."); untraced.
 
 ## Port notes
 
-- The port's fleet owns its fighters, characters and regiment cargo
-  (`Fleet`, `TroopTransportState`); the original's ships carry them. A port
-  join moves them with the ships; a split moves the ships and leaves the
-  fleet's fighters, characters and cargo with the fleet they came from
-  unless every ship leaves. The regiments the staying ships have no room
-  for (counting regiments on their way to board) go with the ships that
-  leave, the last in key order first, so the capacity cleanup
-  (`destroy_untransportable_cargo`) loses none; a hold goes with them.
-  port: which ship carries which fighter or regiment is not modelled.
+- The original's ships carry the fighters, regiments and characters, so
+  they go with their ship; nothing re-homes them in a split or join. The
+  port keeps the rosters on the fleet, each squadron and regiment naming
+  its ship (`rebellion-core/src/carriage.rs`, `fleet-window.md` "Which
+  ship"): a split takes those aboard the ships that leave, and the
+  characters when the fleet's first living ship leaves (they ride it). A
+  join keeps every unit's ship. port: regiments held on the fleet itself
+  (no ship had room) that the staying ships cannot carry, counting
+  regiments on their way to board, go with the ships that leave, the last
+  in key order first, so `destroy_untransportable_cargo` loses none; a hold
+  goes with them.
 - port: a Death Star whose class is a capital ship's
   (`CapitalShipClass::is_death_star`) carries the fleet's Death Star flag
   with it in a split or join; a flag with no Death Star ship is the separate

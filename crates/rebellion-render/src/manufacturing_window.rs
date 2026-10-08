@@ -9,7 +9,7 @@ use rebellion_core::delivery::DeliveryState;
 use rebellion_core::fog::FogState;
 use rebellion_core::ids::{DatId, ManufacturingFacilityKey, ProductionFacilityKey, SystemKey};
 use rebellion_core::manufacturing::{BuildableKind, ManufacturingState, ProductionArea};
-use rebellion_core::world::GameWorld;
+use rebellion_core::world::{FacilityRef, GameWorld};
 
 use crate::fleet_window::{control_side, fleet_side};
 use crate::panels::fleets::{capital_ship_mini_id, fighter_mini_id};
@@ -329,28 +329,51 @@ fn pending_class(kind: BuildableKind) -> Option<(DatId, u8)> {
 /// port: a facility the original creates at the order sits in the port's
 /// construction queues until done, and in its deliveries while travelling;
 /// they show here as the original's under-construction and en-route
-/// objects. The other side's facilities show only where the player sees
-/// that side's objects (`opposing_contents_visible`).
+/// objects. Where the player does not see that side's objects
+/// (`opposing_contents_visible`), the page shows the facilities the
+/// player's side knows there (`known`, `FogState::known_facilities`;
+/// manual p. 69), and nothing building or on its way.
 #[must_use]
 pub fn page_cells(
     world: &GameWorld,
     manufacturing: &ManufacturingState,
     deliveries: &DeliveryState,
     visible: bool,
+    known: &[FacilityRef],
     system: SystemKey,
     page: FacilityPage,
 ) -> Vec<FacilityCell> {
     let Some(value) = world.systems.get(system) else {
         return Vec::new();
     };
-    if !visible {
-        return Vec::new();
-    }
     let side = control_side(value.control);
     let family = page_family(page);
     let wanted = |class: DatId, owner: u8| class.family() == family && owner == side;
     let mut cells: Vec<FacilityCell> = Vec::new();
-    for &key in &value.manufacturing_facilities {
+    let (manufacturing_keys, production_keys): (Vec<_>, Vec<_>) = if visible {
+        (
+            value.manufacturing_facilities.clone(),
+            value.production_facilities.clone(),
+        )
+    } else {
+        (
+            known
+                .iter()
+                .filter_map(|facility| match facility {
+                    FacilityRef::Manufacturing(key) => Some(*key),
+                    _ => None,
+                })
+                .collect(),
+            known
+                .iter()
+                .filter_map(|facility| match facility {
+                    FacilityRef::Production(key) => Some(*key),
+                    _ => None,
+                })
+                .collect(),
+        )
+    };
+    for &key in &manufacturing_keys {
         let Some(facility) = world.manufacturing_facilities.get(key) else {
             continue;
         };
@@ -366,7 +389,7 @@ pub fn page_cells(
             }
         }
     }
-    for &key in &value.production_facilities {
+    for &key in &production_keys {
         let Some(facility) = world.production_facilities.get(key) else {
             continue;
         };
@@ -381,6 +404,9 @@ pub fn page_cells(
                 });
             }
         }
+    }
+    if !visible {
+        return cells;
     }
     let queued = pending_units(manufacturing, system)
         .map(|kind| (kind, FacilityState::UnderConstruction))
@@ -658,7 +684,7 @@ mod tests {
         manufacturing.set_destination(system, ProductionArea::Shipyard, away);
         manufacturing.build(
             system,
-            &QueueItem::new(BuildableKind::CapitalShip(class), 10, 10),
+            &QueueItem::new(BuildableKind::CapitalShip(class), 10),
             3,
         );
 
@@ -695,7 +721,7 @@ mod tests {
         let mut manufacturing = ManufacturingState::new();
         manufacturing.build(
             system,
-            &QueueItem::new(BuildableKind::Troop(DatId::new(0x1000_0002)), 4, 4),
+            &QueueItem::new(BuildableKind::Troop(DatId::new(0x1000_0002)), 4),
             2,
         );
         let shown = band(
@@ -724,7 +750,7 @@ mod tests {
         let mut manufacturing = ManufacturingState::new();
         manufacturing.enqueue(
             elsewhere,
-            QueueItem::new(BuildableKind::ManufacturingFacility(template), 5, 5)
+            QueueItem::new(BuildableKind::ManufacturingFacility(template), 5)
                 .delivered_to(system),
         );
         // Built for its own system, this one is not listed here.
@@ -732,7 +758,6 @@ mod tests {
             elsewhere,
             QueueItem::new(
                 BuildableKind::ManufacturingFacility(alliance(0x2800_0001)),
-                5,
                 5,
             ),
         );
@@ -752,6 +777,7 @@ mod tests {
             &manufacturing,
             &deliveries,
             true,
+            &[],
             system,
             FacilityPage::Shipyards,
         );
@@ -779,6 +805,7 @@ mod tests {
             &manufacturing,
             &deliveries,
             false,
+            &[],
             system,
             FacilityPage::Shipyards,
         );
@@ -802,6 +829,7 @@ mod tests {
             &manufacturing,
             &deliveries,
             true,
+            &[],
             system,
             FacilityPage::Mines,
         );
@@ -819,6 +847,7 @@ mod tests {
             &manufacturing,
             &deliveries,
             true,
+            &[],
             system,
             FacilityPage::Refineries,
         );
@@ -831,6 +860,7 @@ mod tests {
             &manufacturing,
             &deliveries,
             true,
+            &[],
             system,
             FacilityPage::Mines,
         );
@@ -851,7 +881,6 @@ mod tests {
             QueueItem::new(
                 BuildableKind::ProductionFacility(alliance(0x2c00_0001)),
                 5,
-                5,
             ),
         );
 
@@ -860,6 +889,7 @@ mod tests {
             &manufacturing,
             &DeliveryState::new(),
             true,
+            &[],
             system,
             FacilityPage::Mines,
         );

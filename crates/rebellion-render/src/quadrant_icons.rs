@@ -131,23 +131,53 @@ pub fn quadrant_icon(
         .and_then(|side| quadrant_art(quadrant, side))
 }
 
+/// STRATEGY 904 (`0x388`): the headquarters marker, a 37x37 gold disc on a
+/// mast laid over the planet.
+pub const HEADQUARTERS_ART: u32 = 904;
+
+/// Whether the sector window lays the headquarters marker over `system`'s
+/// planet. `FUN_0045bbb0` counts the objects of families `0x20..=0x22` in
+/// the player side's view of the system (`FUN_00526cf0`; ALLFACSD
+/// `0x20000001` is the Alliance headquarters) and, while any are there and
+/// the system is not destroyed, keeps an overlay item (`0x10000`, bitmap
+/// `0x388`) on the planet's rect. The view is [`SystemContents`]'s.
+#[must_use]
+pub fn shows_headquarters(
+    world: &GameWorld,
+    fog: &FogState,
+    player: Faction,
+    system: SystemKey,
+) -> bool {
+    world
+        .systems
+        .get(system)
+        .is_some_and(|value| !value.is_destroyed)
+        && SystemContents::new(world, fog, player, system)
+            .is_some_and(|contents| contents.holds_headquarters())
+}
+
 /// What the player sees at a system: every side's objects where the System
-/// window shows opposing contents, otherwise only the player's own.
+/// window shows opposing contents, otherwise the player's own and, of the
+/// facilities, those the player's side knows.
 ///
-/// port: the original reads the galaxy view's system (hyp: the player
-/// side's view, `FUN_00539fd0`); the port uses the System window's
-/// visibility so an icon never reveals what that window hides.
+/// The original reads the player side's view of the system
+/// (`FUN_0045b770` → `FUN_004f3220`, `FUN_00539fd0`), which holds the
+/// core systems' production facilities of every side from the start
+/// (manual p. 69; `FogState::known_facilities`). port: the other contents
+/// follow the System window's visibility, so an icon never reveals what
+/// that window hides.
 struct SystemContents<'a> {
     world: &'a GameWorld,
     system: SystemKey,
     player_side: u8,
     opposing_visible: bool,
+    known: &'a [rebellion_core::world::FacilityRef],
 }
 
 impl<'a> SystemContents<'a> {
     fn new(
         world: &'a GameWorld,
-        fog: &FogState,
+        fog: &'a FogState,
         player: Faction,
         system: SystemKey,
     ) -> Option<Self> {
@@ -160,6 +190,11 @@ impl<'a> SystemContents<'a> {
             system,
             player_side: faction_side(player),
             opposing_visible: opposing_contents_visible(world, fog, player, system),
+            known: if fog.faction == player {
+                fog.known_facilities(system)
+            } else {
+                &[]
+            },
         })
     }
 
@@ -175,10 +210,74 @@ impl<'a> SystemContents<'a> {
         self.opposing_visible || side == self.player_side
     }
 
+    /// Whether the view holds a family `0x20..=0x22` object
+    /// ([`shows_headquarters`]): one the player sees, or one its side knows
+    /// that still stands.
+    fn holds_headquarters(&self) -> bool {
+        let headquarters = |key: rebellion_core::ids::ManufacturingFacilityKey| {
+            self.world
+                .manufacturing_facilities
+                .get(key)
+                .filter(|facility| (0x20..=0x22).contains(&(facility.class_dat_id.raw() >> 24)))
+        };
+        let seen = self.world.systems.get(self.system).is_some_and(|value| {
+            value.manufacturing_facilities.iter().any(|key| {
+                headquarters(*key).is_some_and(|facility| self.seen(faction_side(facility.side)))
+            })
+        });
+        seen || self.known.iter().any(|facility| {
+            matches!(facility, rebellion_core::world::FacilityRef::Manufacturing(key)
+                if headquarters(*key).is_some())
+        })
+    }
+
     fn manufacturing_and_production(&self) -> usize {
         let Some(value) = self.world.systems.get(self.system) else {
             return 0;
         };
+        if !self.opposing_visible {
+            let own = |side: rebellion_core::dat::Faction| {
+                crate::fleet_window::faction_side(side) == self.player_side
+            };
+            let live = value
+                .manufacturing_facilities
+                .iter()
+                .filter(|key| {
+                    self.world
+                        .manufacturing_facilities
+                        .get(**key)
+                        .is_some_and(|facility| own(facility.side))
+                })
+                .count()
+                + value
+                    .production_facilities
+                    .iter()
+                    .filter(|key| {
+                        self.world
+                            .production_facilities
+                            .get(**key)
+                            .is_some_and(|facility| own(facility.side))
+                    })
+                    .count();
+            let known = self
+                .known
+                .iter()
+                .filter(|facility| match facility {
+                    rebellion_core::world::FacilityRef::Manufacturing(key) => self
+                        .world
+                        .manufacturing_facilities
+                        .get(*key)
+                        .is_some_and(|facility| !own(facility.side)),
+                    rebellion_core::world::FacilityRef::Production(key) => self
+                        .world
+                        .production_facilities
+                        .get(*key)
+                        .is_some_and(|facility| !own(facility.side)),
+                    rebellion_core::world::FacilityRef::Defense(_) => false,
+                })
+                .count();
+            return live + known;
+        }
         let manufacturing = value.manufacturing_facilities.iter().filter(|key| {
             self.world
                 .manufacturing_facilities
@@ -746,6 +845,107 @@ mod tests {
             ),
             Some(2)
         );
+    }
+
+    #[test]
+    fn a_neutral_core_systems_facilities_show_from_the_start() {
+        // Manual p. 69: the side's view (FUN_004f3220, FUN_00539fd0) holds
+        // neutral and enemy core systems' production facilities from the
+        // start, without the player seeing the system.
+        let (mut world, system) = world(ControlKind::Uncontrolled);
+        let mine = world
+            .production_facilities
+            .insert(ProductionFacilityInstance {
+                class_dat_id: DatId::new(0x2c00_0001),
+                side: Faction::Neutral,
+                is_mine: true,
+            });
+        world.systems[system].production_facilities.push(mine);
+        let missions = MissionState::new();
+        let movement = rebellion_core::movement::MovementState::default();
+        let icon = |fog: &FogState| {
+            quadrant_side(
+                &world,
+                fog,
+                &missions,
+                &movement,
+                Faction::Alliance,
+                system,
+                Quadrant::System,
+            )
+        };
+        let blind = FogState::new(Faction::Alliance);
+        assert_eq!(icon(&blind), None);
+        let mut fog = FogState::new(Faction::Alliance);
+        rebellion_core::fog::FogSystem::seed(&mut fog, &world);
+        assert!(!fog.is_visible(system));
+        assert_eq!(icon(&fog), Some(0));
+    }
+
+    #[test]
+    fn the_headquarters_marker_shows_where_the_players_view_holds_the_headquarters() {
+        // FUN_0045bbb0: the 0x388 overlay shows while the player side's view
+        // of the system (FUN_004f3220) holds a family 0x20..0x22 object
+        // (FUN_00526cf0), and not on a destroyed system (flag 0x40).
+        let (mut world, system) = world(ControlKind::Controlled(Faction::Alliance));
+        let alliance_blind = FogState::new(Faction::Alliance);
+        let mut empire = FogState::new(Faction::Empire);
+        assert!(!shows_headquarters(
+            &world,
+            &alliance_blind,
+            Faction::Alliance,
+            system
+        ));
+        let headquarters = world
+            .manufacturing_facilities
+            .insert(ManufacturingFacilityInstance {
+                class_dat_id: DatId::new(0x2000_0001),
+                side: Faction::Alliance,
+                is_shipyard: false,
+            });
+        world.systems[system]
+            .manufacturing_facilities
+            .push(headquarters);
+        assert!(shows_headquarters(
+            &world,
+            &alliance_blind,
+            Faction::Alliance,
+            system
+        ));
+        assert!(!shows_headquarters(
+            &world,
+            &empire,
+            Faction::Empire,
+            system
+        ));
+        empire.visible.insert(system);
+        assert!(shows_headquarters(&world, &empire, Faction::Empire, system));
+        empire.visible.clear();
+        empire.learn_facilities(&world, system);
+        assert!(shows_headquarters(&world, &empire, Faction::Empire, system));
+        world.systems[system].is_destroyed = true;
+        assert!(!shows_headquarters(
+            &world,
+            &alliance_blind,
+            Faction::Alliance,
+            system
+        ));
+    }
+
+    #[test]
+    fn a_construction_yard_is_not_a_headquarters() {
+        // FUN_00526cf0 counts families 0x20..0x22 only; 0x2a is a yard.
+        let (mut world, system) = world(ControlKind::Controlled(Faction::Alliance));
+        let yard = world
+            .manufacturing_facilities
+            .insert(ManufacturingFacilityInstance {
+                class_dat_id: DatId::new(0x2a00_0001),
+                side: Faction::Alliance,
+                is_shipyard: false,
+            });
+        world.systems[system].manufacturing_facilities.push(yard);
+        let fog = FogState::new(Faction::Alliance);
+        assert!(!shows_headquarters(&world, &fog, Faction::Alliance, system));
     }
 
     #[test]

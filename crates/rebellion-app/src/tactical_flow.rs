@@ -244,6 +244,7 @@ pub(crate) fn apply_results(
             for (entry, surviving_squadrons) in fleet.fighters.iter_mut().zip(survivors) {
                 entry.count = surviving_squadrons;
             }
+            rebellion_core::carriage::drop_lost_squadrons(fleet);
         }
 
         let is_empty = world

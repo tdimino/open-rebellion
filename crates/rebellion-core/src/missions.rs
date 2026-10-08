@@ -497,6 +497,7 @@ pub fn destroy_target(world: &mut GameWorld, target: MissionTarget) {
                     hull.alive = false;
                 }
                 fleet.capital_ships.retain(|ship| ship.alive);
+                crate::carriage::drop_lost_squadrons(fleet);
                 fleet.has_death_star = false;
             }
         }

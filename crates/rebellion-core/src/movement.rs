@@ -1627,6 +1627,7 @@ mod tests {
         world.fleets[fleet].fighters.push(FighterEntry {
             class: world.fighter_classes.insert(FighterClass::default()),
             count: 1,
+            carrier: 0,
         });
         let movement = MovementState::new();
 
@@ -1801,7 +1802,7 @@ mod tests {
     fn a_fleet_of_fighters_alone_cannot_enter_hyperspace() {
         let (mut world, origin, dest) = make_transit_world(0, 0, 300, 320);
         let mut fleet = fleet_of(&mut world, origin, &[]);
-        fleet.fighters.push(FighterEntry { class: world.fighter_classes.insert(Default::default()), count: 1 });
+        fleet.fighters.push(FighterEntry { class: world.fighter_classes.insert(Default::default()), count: 1, carrier: 0 });
         assert_eq!(fleet_transit_ticks(&fleet, &world, origin, dest), None);
         let key = world.fleets.insert(fleet);
         world.systems[origin].fleets.push(key);

@@ -238,10 +238,18 @@ struct GidMenuItem {
 }
 
 /// State for the original code-built GID menu.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct GidUiState {
     pub menu_open: bool,
     pub category: Option<GidCategory>,
+    /// The detailed legend is open (`+0x124`) in place of the compact one
+    /// (`+0x248`).
+    pub legend_open: bool,
+    /// Where the detailed legend opens and has been dragged to.
+    pub legend: crate::gid_legend::LegendWindow,
+    /// Where the compact legend has been dragged to, on the 640x480
+    /// canvas; `None` at its constructed place.
+    pub compact_legend: Option<(f32, f32)>,
 }
 
 /// Recovered native control record for one strategic command button.
@@ -679,6 +687,37 @@ impl CockpitState {
         self.layout_for(screen_width(), screen_height())
     }
 
+    /// Whether the shown legend, compact or detailed, covers `point`, so
+    /// the galaxy map beneath ignores it.
+    #[must_use]
+    pub fn gid_legend_contains(&self, layout: CockpitLayout, point: (f32, f32)) -> bool {
+        let point = egui::pos2(point.0, point.1);
+        if self.gid_mode == GidMode::DisplayOff {
+            return false;
+        }
+        if self.gid_ui.legend_open {
+            return crate::gid_legend::window_rect(
+                layout,
+                self.faction,
+                self.gid_mode,
+                &self.gid_ui.legend,
+            )
+            .is_some_and(|rect| rect.contains(point));
+        }
+        let (x, y) = self
+            .gid_ui
+            .compact_legend
+            .unwrap_or_else(|| compact_legend_origin(self.faction));
+        egui::Rect::from_min_size(
+            egui::pos2(
+                layout.canvas.x + x * layout.scale,
+                layout.canvas.y + y * layout.scale,
+            ),
+            egui::vec2(COMPACT_LEGEND_SIZE.0, COMPACT_LEGEND_SIZE.1) * layout.scale,
+        )
+        .contains(point)
+    }
+
     /// Compute the recovered command-center layout for an arbitrary screen.
     ///
     /// This pure variant keeps the 640×480 composition testable without a
@@ -834,8 +873,32 @@ pub fn draw_cockpit_egui_layer(
         state.message_unread_mask,
     );
 
-    if state.gid_mode != GidMode::DisplayOff {
-        draw_compact_gid_legend(ctx, cache, &painter, layout, state.faction);
+    // FUN_00426d00: Display Off (0x80) closes the detailed legend and shows
+    // the compact one; any other display rebuilds an open legend for it.
+    if state.gid_mode == GidMode::DisplayOff {
+        state.gid_ui.legend_open = false;
+    } else if state.gid_ui.legend_open {
+        if crate::gid_legend::draw_legend_window(
+            ctx,
+            cache,
+            layout,
+            state.faction,
+            state.gid_mode,
+            &mut state.gid_ui.legend,
+            input_enabled,
+        ) {
+            state.gid_ui.legend_open = false;
+        }
+    } else if draw_compact_gid_legend(
+        ctx,
+        cache,
+        layout,
+        state.faction,
+        &mut state.gid_ui.compact_legend,
+        input_enabled,
+    ) {
+        crate::gid_legend::clamp_on_open(&mut state.gid_ui.legend, state.faction);
+        state.gid_ui.legend_open = true;
     }
 
     let selected = draw_gid_menu(ctx, state, cache, layout, input_enabled);
@@ -936,47 +999,81 @@ fn draw_control(
     clippy::cast_precision_loss,
     reason = "Preserve existing conversion of bitmap sizes and bounded UI indices into pixel coordinates."
 )]
+/// The compact legend's constructed place on the 640x480 canvas.
+const fn compact_legend_origin(faction: CockpitFaction) -> (f32, f32) {
+    match faction {
+        CockpitFaction::Alliance => (55.0, 50.0),
+        CockpitFaction::Empire => (113.0, 50.0),
+    }
+}
+
+/// STRATEGY 10168's size.
+const COMPACT_LEGEND_SIZE: (f32, f32) = (47.0, 25.0);
+
+/// Draw the compact legend (STRATEGY 10168, `FUN_00427270` →
+/// `FUN_00452ab0`, at (55, 50) for the Alliance and (113, 50) for the
+/// Empire until dragged); returns whether it was double-clicked, which opens
+/// the detailed legend (`FUN_00422ce0`, command 0x134). port: hyp: it drags
+/// as the detailed legend does (the original drags it in captures,
+/// 2026-10-08 parity QA).
 fn draw_compact_gid_legend(
     ctx: &egui::Context,
     cache: &mut BmpCache,
-    painter: &egui::Painter,
     layout: CockpitLayout,
     faction: CockpitFaction,
-) {
+    position: &mut Option<(f32, f32)>,
+    input_enabled: bool,
+) -> bool {
     let resource_id = resources::strategy::GID_COMPACT_LEGEND;
     let Some(original_size) = cache.original_resource_size(DllSource::Strategy, resource_id) else {
-        return;
+        return false;
     };
     let Some(texture_id) = cache
         .get(ctx, DllSource::Strategy, resource_id)
         .map(egui_macroquad::egui::TextureHandle::id)
     else {
-        return;
+        return false;
     };
-    let logical_x = match faction {
-        CockpitFaction::Alliance => 55.0,
-        CockpitFaction::Empire => 113.0,
+    let size = (original_size[0] as f32, original_size[1] as f32);
+    let (view_x, view_y, view_width, view_height) = galaxy_aperture(faction);
+    let initial = compact_legend_origin(faction);
+    // port: hyp: kept inside the galaxy view, as the detailed legend is.
+    let clamp = |(x, y): (f32, f32)| {
+        (
+            x.clamp(view_x, view_x + view_width - size.0),
+            y.clamp(view_y, view_y + view_height - size.1),
+        )
     };
-    let image_rect = egui::Rect::from_min_size(
-        egui::pos2(
-            layout.canvas.x + logical_x * layout.scale,
-            layout.canvas.y + 50.0 * layout.scale,
-        ),
-        egui::vec2(
-            original_size[0] as f32 * layout.scale,
-            original_size[1] as f32 * layout.scale,
-        ),
-    );
-    let canvas_clip = egui::Rect::from_min_size(
-        egui::pos2(layout.canvas.x, layout.canvas.y),
-        egui::vec2(layout.canvas.width, layout.canvas.height),
-    );
-    painter.with_clip_rect(canvas_clip).image(
-        texture_id,
-        image_rect,
-        egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
-        egui::Color32::WHITE,
-    );
+    let (x, y) = position.unwrap_or(initial);
+    let mut double_clicked = false;
+    egui::Area::new(egui::Id::new("original_gid_compact_legend"))
+        .order(egui::Order::Middle)
+        .fixed_pos(egui::pos2(
+            layout.canvas.x + x * layout.scale,
+            layout.canvas.y + y * layout.scale,
+        ))
+        .show(ctx, |ui| {
+            let (rect, response) = ui.allocate_exact_size(
+                egui::vec2(size.0, size.1) * layout.scale,
+                if input_enabled {
+                    egui::Sense::click_and_drag()
+                } else {
+                    egui::Sense::hover()
+                },
+            );
+            ui.painter().image(
+                texture_id,
+                rect,
+                egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+                egui::Color32::WHITE,
+            );
+            if response.dragged() {
+                let delta = response.drag_delta() / layout.scale;
+                *position = Some(clamp((x + delta.x, y + delta.y)));
+            }
+            double_clicked = response.double_clicked();
+        });
+    double_clicked
 }
 
 #[expect(
@@ -1260,6 +1357,24 @@ pub(crate) fn paint_gid_icon(
     }
 }
 
+/// The GID menu's highlight text color: `FUN_004511e0` passes `0x20000ff`
+/// (red) for side 1 and `0x200ff00` (green) otherwise to `FUN_004ab1b0`;
+/// other rows keep `0x2ffffff` (white).
+fn gid_highlight_color(faction: CockpitFaction) -> egui::Color32 {
+    match faction {
+        CockpitFaction::Alliance => egui::Color32::from_rgb(0xff, 0, 0),
+        CockpitFaction::Empire => egui::Color32::from_rgb(0, 0xff, 0),
+    }
+}
+
+/// One GID menu row. `FUN_004aab50` paints the row under the pointer (its
+/// `+0x46` item) in the highlight color (`FUN_004aba60(item, hdc, 1)`); a
+/// category whose submenu is open keeps it (`held`), since the cursor in
+/// the child popup sends the parent no `WM_MOUSEMOVE`.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "A row takes its art, its state and its layout scale together."
+)]
 fn gid_menu_row(
     ui: &mut egui::Ui,
     cache: &mut BmpCache,
@@ -1267,6 +1382,7 @@ fn gid_menu_row(
     icon_resource: Option<u32>,
     arrow_resource: Option<u32>,
     checked_resource: Option<u32>,
+    highlight: (egui::Color32, bool),
     scale: f32,
 ) -> egui::Response {
     let height = 21.0 * scale;
@@ -1307,7 +1423,11 @@ fn gid_menu_row(
         egui::Align2::LEFT_CENTER,
         label,
         egui::FontId::proportional((11.0 * scale).max(8.0)),
-        egui::Color32::WHITE,
+        if highlight.1 || response.hovered() {
+            highlight.0
+        } else {
+            egui::Color32::WHITE
+        },
     );
     if let Some(resource_id) = arrow_resource {
         paint_gid_icon(
@@ -1340,6 +1460,7 @@ fn draw_gid_menu(
     }
 
     let scale = layout.scale.max(0.5);
+    let highlight = gid_highlight_color(state.faction);
     let root_pos = egui::pos2(
         layout.canvas.x + 425.0 * layout.scale,
         layout.canvas.y + 230.0 * layout.scale,
@@ -1363,6 +1484,7 @@ fn draw_gid_menu(
                         Some(gid_category_resource(category, state.faction)),
                         Some(gid_arrow_resource(state.faction)),
                         None,
+                        (highlight, state.gid_ui.category == Some(category)),
                         scale,
                     );
                     if response.hovered() || response.clicked() {
@@ -1378,6 +1500,7 @@ fn draw_gid_menu(
                     None,
                     None,
                     checked,
+                    (highlight, false),
                     scale,
                 )
                 .clicked()
@@ -1422,6 +1545,7 @@ fn draw_gid_menu(
                             Some(item.resource_id),
                             None,
                             checked,
+                            (highlight, false),
                             scale,
                         )
                         .clicked()

@@ -46,35 +46,61 @@ fixed day counts and never draw refined material.
 - The app draws the right counter; the other two stay blank (`port:`).
 - hyp: queued units count from their order (manual p. 84).
 
-### Phase 2: Stockpiles and mine and refinery cycles
+### Phase 2: Stockpiles and mine and refinery cycles (done)
 
-- Trace how `FUN_0052f6b0`/`FUN_0052f8f0` spread the maintenance load over
-  facilities (the `allocated` share) before coding.
-- Per-side raw and refined counts. Per-facility cycle state, the ready day
-  and the first-cycle flag, run in the tick after economy.
-- The refinery's wait queue (`FUN_0052fbb0`, `FUN_0052fbf0`).
-- Open: the enemy-diversion roll's source record (`FUN_005166a0`,
-  `FUN_005185c0`) and the starting stockpiles.
-- Bump `SAVE_VERSION`; regenerate the replay golden for this named cause.
+- `rebellion-core/src/stockpiles.rs`: per-side raw and refined counts and a
+  cycle per facility (idle, waiting, working; ready day; first-cycle flag),
+  run daily between the economy and manufacturing.
+- The load spread (`FUN_0052f6b0`/`FUN_0052f8f0`, `FUN_0055a820`/`FUN_0055a960`)
+  deals the change one unit at a time and takes from the fullest first; a
+  new facility gets no share until the load changes.
+- Refineries and yards that find their input empty wait in a FIFO queue
+  (`FUN_0052fbb0`, `FUN_0052fbf0`).
+- A finished unit goes to the other side with chance |system `+0x6c`|%
+  (`FUN_005166a0`), the support drift `economy` now stores.
+- Starting stockpiles are 0 (hyp). Save v33; the replay golden was
+  regenerated for this cause.
 
-### Phase 3: Yards draw refined material
+### Phase 3: Yards draw refined material (done)
 
-- Each yard cycle takes 1 refined unit or waits; a build's progress is its
-  completed cycles. This replaces `QueueItem::ticks_remaining`.
-- The scrap refund (`FUN_00530270`).
-- Check Build Selection's best-case times and the AI's build choices
-  against the new flow.
+- A queue item's progress is units of work: each yard cycle takes 1 refined
+  unit or waits, and a unit's cost is its class's refined cost. This replaces
+  `QueueItem::ticks_remaining`.
+- The yard manager (`FUN_00529dd0`) runs as many yards as work is left,
+  starting the fastest first; blockade stops the draw.
+- Overdrawn maintenance arms event `0x382` every 10 days (GNPRTB 7168) and
+  scraps a random unit that costs maintenance (`FUN_00530350`).
+- Scrapping (`rebellion-core/src/scrap.rs`): the player's order `0x200`
+  with its confirmation (TEXTSTRA `0x7050`/`0x7054`, pictures 1032/1033)
+  and the half refined refund (`FUN_00530270`).
+- The AI orders no unit whose maintenance it cannot cover (hyp; manual p. 30).
 
 ### Phase 4: Raw and Refined monitors
 
-- Wire the left and middle counters; verify natively for both factions
-  against captures of the original.
+- The left and middle counters show the side's stockpiles. Native and browser
+  checks for both factions remain.
 
 ## Known gaps
+
+- **Exploration is shared by both sides.** Seeding explores the rim system
+  holding the Alliance headquarters, so an Empire player sees its name and
+  support in the Alliance's colors (Hoth on seed 42), although its facility
+  view no longer holds the headquarters. Per-side exploration is untraced.
+- **Compact legend art.** STRATEGY 10168's white border shares palette
+  index 255 with its text, so keying its first pixel would erase the text;
+  the original shows no border. How the original draws it is untraced.
+- **Flame marks.** `FUN_0045bbb0` composites STRATEGY 905/906 onto a planet
+  when system `+0x88` bit 4 is set; what sets it is untraced, and the port
+  draws neither.
 
 - **Seeding**: on seed 42 (Small, Medium) our Empire starts with 11 mines,
   11 refineries and 515 maintenance in use, a surplus of 35; the original's
   Empire showed 317 on day 10. The facility counts or unit mix differ.
 - `seeds::compute_faction_maintenance` charges each regiment a flat 1; the
   original charges the class's `maintenance_cost` (TROOPSD 1..8). It sets
-  the seeding budget.
+  the seeding budget. On seed 42 the Alliance starts 16 over its capacity,
+  so its overdraft timer arms on the first day.
+- Untraced: what scrapping a fleet does to its members (hyp: they go with
+  it), destruction reason `0x16`, whether an uprising halts facilities
+  (manual says so), and whether the player's Build Selection checks
+  maintenance.

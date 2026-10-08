@@ -62,6 +62,7 @@ use rebellion_core::missions::MissionState;
 use rebellion_core::movement::MovementState;
 use rebellion_core::repair::RepairState;
 use rebellion_core::research::ResearchState;
+use rebellion_core::stockpiles::StockpileState;
 use rebellion_core::tick::GameClock;
 use rebellion_core::troop_transport::TroopTransportState;
 use rebellion_core::tuning::GameConfig;
@@ -78,7 +79,7 @@ pub const SAVE_MAGIC: &[u8; 8] = b"OPENREB\0";
 
 /// Current save format version. Increment when `SaveState` layout changes;
 /// saves of any other version are rejected.
-pub const SAVE_VERSION: u32 = 32;
+pub const SAVE_VERSION: u32 = 34;
 
 /// Current state-fingerprint algorithm version.
 ///
@@ -252,6 +253,13 @@ pub struct SaveState {
     // ── v29: the player's agent (Manage Garrisons / Manage Production) ──
     /// Saved with the game as the original saves its agent (`FUN_004397a0`).
     pub player_agent: rebellion_core::agent_automation::PlayerAgent,
+    // ── v33: raw and refined stockpiles and facility cycles ─────────────
+    /// Each side's stockpiles and every facility's cycle
+    /// (`ghidra/notes/top-bar-resource-counters.md`).
+    pub stockpiles: StockpileState,
+    // v34 changes no field here: ships carry tags, squadrons and regiments
+    // name their ship (`rebellion_core::carriage`), and each side's fog
+    // keeps the facilities it knows (`FogState::known_facilities`).
 }
 
 // ---------------------------------------------------------------------------
@@ -275,6 +283,9 @@ pub struct SaveMeta {
     pub mod_hash: u64,
     /// Fingerprint of the canonical logical state, verified on load.
     pub state_fingerprint: StateFingerprint,
+    /// The side the player chose, when the save records it: Game Options
+    /// marks an occupied slot with that side's emblem.
+    pub player_is_alliance: Option<bool>,
 }
 
 // ---------------------------------------------------------------------------
@@ -509,6 +520,7 @@ mod native {
             mod_names,
             mod_hash,
             state_fingerprint,
+            player_is_alliance: Some(state.player_is_alliance),
         };
 
         Ok((meta, state))
@@ -604,6 +616,9 @@ pub mod wasm_impl {
         name: String,
         game_tick: u64,
         state_fingerprint: BrowserStateFingerprint,
+        /// Absent from metadata written before Game Options showed the side.
+        #[serde(default)]
+        player_is_alliance: Option<bool>,
     }
 
     #[link(wasm_import_module = "env")]
@@ -782,6 +797,7 @@ pub mod wasm_impl {
             name: name.to_string(),
             game_tick: state.clock.tick,
             state_fingerprint: BrowserStateFingerprint::from_fingerprint(state_fingerprint),
+            player_is_alliance: Some(state.player_is_alliance),
         })?;
         if let Err(error) = storage_set(&meta_key(slot), &meta) {
             // Drop the orphaned body so it is never paired with stale metadata.
@@ -823,6 +839,7 @@ pub mod wasm_impl {
             mod_names: vec![],
             mod_hash: compute_mod_hash(&[]),
             state_fingerprint,
+            player_is_alliance: Some(state.player_is_alliance),
         };
 
         Ok((meta, state))
@@ -849,6 +866,7 @@ pub mod wasm_impl {
                         mod_names: vec![],
                         mod_hash: compute_mod_hash(&[]),
                         state_fingerprint: meta.state_fingerprint.to_fingerprint()?,
+                        player_is_alliance: meta.player_is_alliance,
                     })
                 })),
                 Err(error) => Some(Err(error)),
@@ -965,6 +983,7 @@ mod tests {
             troop_transport: TroopTransportState::default(),
             deliveries: DeliveryState::default(),
             player_agent: rebellion_core::agent_automation::PlayerAgent::default(),
+            stockpiles: rebellion_core::stockpiles::StockpileState::default(),
         }
     }
 
@@ -1365,7 +1384,7 @@ mod tests {
         let kind = rebellion_core::manufacturing::BuildableKind::CapitalShip(class);
         state.manufacturing.enqueue(
             origin,
-            rebellion_core::manufacturing::QueueItem::new(kind, 5, 10).delivered_to(destination),
+            rebellion_core::manufacturing::QueueItem::new(kind, 10).delivered_to(destination),
         );
         state.deliveries.depart(
             &state.world,
@@ -1416,7 +1435,6 @@ mod tests {
                 rebellion_core::manufacturing::BuildableKind::Troop(
                     rebellion_core::ids::DatId::new(0x1000_0001),
                 ),
-                4,
                 4,
             ),
         );

@@ -77,19 +77,137 @@ impl NativeRect {
     }
 }
 
-const MUSIC_RECT: NativeRect = NativeRect::new(351.0, 76.0, 19.0, 35.0);
-const MUSIC_SLIDER_RECT: NativeRect = NativeRect::new(391.0, 130.0, 212.0, 54.0);
-const SOUND_SLIDER_RECT: NativeRect = NativeRect::new(391.0, 192.0, 212.0, 54.0);
+// Control rectangles from the window's control constructor `FUN_00407180`.
+const MUSIC_RECT: NativeRect = NativeRect::new(352.0, 76.0, 19.0, 35.0);
+/// The volume sliders' origins (`FUN_00604570` at (392,130) and (392,190)).
+/// hyp: their extent is the rail bitmap's, 212 by 54; the slider's own
+/// width argument is untraced.
+const MUSIC_SLIDER_RECT: NativeRect = NativeRect::new(392.0, 130.0, 212.0, 54.0);
+const SOUND_SLIDER_RECT: NativeRect = NativeRect::new(392.0, 190.0, 212.0, 54.0);
+/// The tactical display switches, 35 by 22 at x 357; their rows are not
+/// evenly spaced.
 const TACTICAL_TOGGLE_RECTS: [NativeRect; 5] = [
-    NativeRect::new(359.0, 310.0, 35.0, 22.0),
-    NativeRect::new(359.0, 337.0, 35.0, 22.0),
-    NativeRect::new(359.0, 364.0, 35.0, 22.0),
-    NativeRect::new(359.0, 391.0, 35.0, 22.0),
-    NativeRect::new(359.0, 418.0, 35.0, 22.0),
+    NativeRect::new(357.0, 311.0, 35.0, 22.0),
+    NativeRect::new(357.0, 337.0, 35.0, 22.0),
+    NativeRect::new(357.0, 365.0, 35.0, 22.0),
+    NativeRect::new(357.0, 392.0, 35.0, 22.0),
+    NativeRect::new(357.0, 419.0, 35.0, 22.0),
 ];
-const RESTART_RECT: NativeRect = NativeRect::new(77.0, 383.0, 42.0, 42.0);
-const RETURN_RECT: NativeRect = NativeRect::new(164.0, 383.0, 42.0, 42.0);
-const EXIT_RECT: NativeRect = NativeRect::new(251.0, 383.0, 42.0, 42.0);
+const RESTART_RECT: NativeRect = NativeRect::new(76.0, 381.0, 42.0, 42.0);
+const RETURN_RECT: NativeRect = NativeRect::new(162.0, 382.0, 42.0, 42.0);
+const EXIT_RECT: NativeRect = NativeRect::new(248.0, 381.0, 42.0, 42.0);
+/// The first saved-game row's y; each row is 42 lower (`FUN_00407180`'s
+/// table: 0x51, 0x7b, 0xa5, 0xcf, 0xf9, 0x123).
+const SAVE_ROW_Y: f32 = 81.0;
+const SAVE_ROW_STEP: f32 = 42.0;
+/// A row's name field (`FUN_00604cf0` at x 0x77, 160 by 20).
+const NAME_FIELD_X: f32 = 119.0;
+const NAME_FIELD_WIDTH: f32 = 160.0;
+/// An occupied row's side emblem, two pixels below the row's top
+/// (`FUN_005fd0f0` at x 0x55 with the 0x53.. table).
+const SLOT_EMBLEM_X: f32 = 85.0;
+const SLOT_EMBLEM_DY: f32 = 2.0;
+
+/// How `DrawText` places a label in its box: the format flags passed to
+/// `FUN_00601620` and `FUN_005ff6b0`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TextAlign {
+    /// `0x25`: `DT_CENTER | DT_VCENTER | DT_SINGLELINE`.
+    Centered,
+    /// `0x24`: `DT_VCENTER | DT_SINGLELINE`, left-aligned.
+    LeftMiddle,
+    /// `0x10`: `DT_WORDBREAK`, left- and top-aligned.
+    LeftTop,
+}
+
+/// One label of the window, as `FUN_004084b0` builds it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct OptionsText {
+    rect: NativeRect,
+    align: TextAlign,
+    /// The game-font entry (`FUN_0060eed0`).
+    font: u8,
+}
+
+/// The three panel titles (`FUN_005ff6b0`, arguments at `0x4084e1`):
+/// TEXTCOMM 0x1028, 0x1026 and 0x1027, font 7, colour `0x200ff00`.
+const TITLES: [(&str, NativeRect); 3] = [
+    ("Saved Games", NativeRect::new(58.0, 37.0, 241.0, 21.0)),
+    ("Sound Options", NativeRect::new(362.0, 37.0, 241.0, 21.0)),
+    (
+        "Tactical Display Options",
+        NativeRect::new(363.0, 273.0, 239.0, 21.0),
+    ),
+];
+/// TEXTCOMM 0x1025 "Play Music" and its On/Off at (581,79,31,33).
+const MUSIC_LABEL: OptionsText = OptionsText {
+    rect: NativeRect::new(376.0, 79.0, 183.0, 33.0),
+    align: TextAlign::LeftMiddle,
+    font: 7,
+};
+const MUSIC_STATE: OptionsText = OptionsText {
+    rect: NativeRect::new(581.0, 79.0, 31.0, 33.0),
+    align: TextAlign::LeftMiddle,
+    font: 7,
+};
+/// TEXTCOMM 0x101f..0x1022 and 0x1024, in the order of their switches.
+const TACTICAL_LABELS: [&str; 5] = [
+    "Show Starfield",
+    "Show Planet",
+    "Show Pyrotechnics",
+    "Use High Detail Models",
+    "Display Holocube",
+];
+/// The tactical labels' tops: 0x139, 0x154, 0x16f, 0x18a, 0x1a5.
+const TACTICAL_LABEL_Y: [f32; 5] = [313.0, 340.0, 367.0, 394.0, 421.0];
+const fn tactical_label(row: usize) -> OptionsText {
+    OptionsText {
+        rect: NativeRect::new(394.0, TACTICAL_LABEL_Y[row], 183.0, 16.0),
+        align: TextAlign::LeftTop,
+        font: 7,
+    }
+}
+const fn tactical_state(row: usize) -> OptionsText {
+    OptionsText {
+        rect: NativeRect::new(577.0, TACTICAL_LABEL_Y[row], 31.0, 16.0),
+        align: TextAlign::LeftTop,
+        font: 7,
+    }
+}
+/// TEXTCOMM 0x1031 and 0x1032: `FUN_004084b0` passes `0x1032 - on`.
+const fn on_off(on: bool) -> &'static str {
+    if on {
+        "On"
+    } else {
+        "Off"
+    }
+}
+/// The version line: font 10, black (`0x2000000`), centred.
+const VERSION_TEXT: OptionsText = OptionsText {
+    rect: NativeRect::new(25.0, 437.0, 310.0, 18.0),
+    align: TextAlign::Centered,
+    font: 10,
+};
+/// The original composes TEXTCOMM 0x100c, its own "1.01.00", a space and
+/// the locale's language name (`FUN_00406840`). port: Open Rebellion's own
+/// version number stands in for "1.01.00"; the English data's language.
+fn version_line() -> String {
+    format!(
+        "Version: {} English (United States)",
+        env!("CARGO_PKG_VERSION")
+    )
+}
+/// Title colour `0x200ff00`.
+const TITLE_RGB: [u8; 3] = [0, 255, 0];
+/// An option label's colour: `0x2008000`, plus `0x7f00` while the option
+/// is on (`FUN_004084b0`).
+const fn option_rgb(on: bool) -> [u8; 3] {
+    if on {
+        [0, 255, 0]
+    } else {
+        [0, 128, 0]
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 struct OptionsCanvas {
@@ -129,10 +247,11 @@ pub struct GameOptionsState {
     pub pending: Option<GameOptionsAction>,
     pub occupied: [bool; 10],
     pub names: [String; 6],
-    pub suspended: bool,
     pub error: Option<String>,
     origin: GameOptionsOrigin,
     pressed: Option<GameOptionsControl>,
+    /// Whether music plays, refreshed each frame for the overlay's label.
+    music_on: bool,
     pub show_starfield: bool,
     pub show_planet: bool,
     pub show_pyrotechnics: bool,
@@ -145,11 +264,11 @@ impl Default for GameOptionsState {
         Self {
             pending: None,
             occupied: [false; 10],
-            names: std::array::from_fn(|slot| format!("Saved Game {}", slot + 1)),
-            suspended: false,
+            names: std::array::from_fn(|_| String::new()),
             error: None,
             origin: GameOptionsOrigin::ShuttleCockpit,
             pressed: None,
+            music_on: true,
             show_starfield: true,
             show_planet: true,
             show_pyrotechnics: true,
@@ -161,8 +280,10 @@ impl Default for GameOptionsState {
 
 impl GameOptionsState {
     pub fn refresh_saves(&mut self, saves: &[SaveSlotInfo]) {
+        // An empty slot's field is blank (`FUN_00407180` writes the empty
+        // string at DAT_006b120c when a slot holds no save).
         self.occupied.fill(false);
-        self.names = std::array::from_fn(|slot| format!("Saved Game {}", slot + 1));
+        self.names = std::array::from_fn(|_| String::new());
         for save in saves {
             if let Some(occupied) = self.occupied.get_mut(save.slot) {
                 *occupied = true;
@@ -191,7 +312,7 @@ impl GameOptionsState {
     }
 
     pub fn request(&mut self, action: GameOptionsAction) -> GameOptionsAction {
-        if self.suspended || self.pending.is_some() || !self.enabled(&action) {
+        if self.pending.is_some() || !self.enabled(&action) {
             return GameOptionsAction::None;
         }
         let confirm = match &action {
@@ -238,7 +359,6 @@ impl GameOptionsState {
         self.origin = origin;
         self.pressed = None;
         self.pending = None;
-        self.suspended = false;
         self.error = None;
     }
 
@@ -259,12 +379,16 @@ impl GameOptionsState {
     }
 }
 
+fn row_y(slot: usize) -> f32 {
+    SAVE_ROW_Y + slot as f32 * SAVE_ROW_STEP
+}
+
 fn save_rect(slot: usize) -> NativeRect {
-    NativeRect::new(35.0, 81.0 + slot as f32 * 42.0, 42.0, 20.0)
+    NativeRect::new(34.0, row_y(slot), 42.0, 20.0)
 }
 
 fn load_rect(slot: usize) -> NativeRect {
-    NativeRect::new(285.0, 81.0 + slot as f32 * 42.0, 41.0, 20.0)
+    NativeRect::new(287.0, row_y(slot), 41.0, 20.0)
 }
 
 fn control_at(origin: GameOptionsOrigin, x: f32, y: f32) -> Option<GameOptionsControl> {
@@ -318,7 +442,7 @@ fn masked_control_at(
             SOUND_SLIDER_RECT,
         ),
         GameOptionsControl::Tactical(index) => (
-            resources::common::OPTIONS_TOGGLE_ON,
+            resources::common::OPTIONS_TOGGLE_NORMAL,
             TACTICAL_TOGGLE_RECTS[index],
         ),
         GameOptionsControl::Restart => (resources::common::BTN_RESTART_GAME_NORMAL, RESTART_RECT),
@@ -358,17 +482,6 @@ fn draw_bitmap(cache: &mut BmpCache, canvas: OptionsCanvas, resource_id: u32, x:
     );
 }
 
-fn draw_label(canvas: OptionsCanvas, text: &str, x: f32, y: f32, size: f32) {
-    let (screen_x, screen_y) = canvas.point(x, y);
-    draw_text(
-        text,
-        screen_x,
-        screen_y,
-        size * canvas.scale,
-        Color::from_rgba(0, 255, 24, 255),
-    );
-}
-
 fn draw_volume(cache: &mut BmpCache, canvas: OptionsCanvas, y: f32, value: f32, alternate: bool) {
     draw_bitmap(
         cache,
@@ -378,10 +491,10 @@ fn draw_volume(cache: &mut BmpCache, canvas: OptionsCanvas, y: f32, value: f32, 
         } else {
             resources::common::OPTIONS_VOLUME_RAIL
         },
-        391.0,
+        MUSIC_SLIDER_RECT.x,
         y,
     );
-    let handle_x = 392.0 + value.clamp(0.0, 1.0) * 199.0;
+    let handle_x = MUSIC_SLIDER_RECT.x + 1.0 + value.clamp(0.0, 1.0) * 199.0;
     draw_bitmap(
         cache,
         canvas,
@@ -391,8 +504,33 @@ fn draw_volume(cache: &mut BmpCache, canvas: OptionsCanvas, y: f32, value: f32, 
     );
 }
 
+/// A tactical switch's bitmap: disabled 0x273d, pressed or checked
+/// 0x273c, normal 0x273b (`FUN_00407180` states 2 and 4).
+const fn toggle_resource(enabled: bool, held: bool, on: bool) -> u32 {
+    if !enabled {
+        resources::common::OPTIONS_TOGGLE_DISABLED
+    } else if held || on {
+        resources::common::OPTIONS_TOGGLE_PRESSED
+    } else {
+        resources::common::OPTIONS_TOGGLE_NORMAL
+    }
+}
+
+/// An occupied slot's emblem: 0x2748 for side 1, the Alliance, and 0x2747
+/// for side 2 (`FUN_00407180`). hyp: the 0x2749 case, chosen by a save
+/// field not yet identified, is not drawn.
+fn slot_emblem(save: &SaveSlotInfo) -> Option<u32> {
+    save.player_is_alliance.map(|alliance| {
+        if alliance {
+            resources::common::OPTIONS_ALLIANCE_MARKER
+        } else {
+            resources::common::OPTIONS_EMPIRE_MARKER
+        }
+    })
+}
+
 fn set_slider(audio: &mut AudioVolumeState, control: GameOptionsControl, logical_x: f32) {
-    let value = ((logical_x - 396.0) / 199.0).clamp(0.0, 1.0);
+    let value = ((logical_x - (MUSIC_SLIDER_RECT.x + 5.0)) / 199.0).clamp(0.0, 1.0);
     match control {
         GameOptionsControl::MusicVolume => audio.music_volume = value,
         GameOptionsControl::SoundVolume => audio.sfx_volume = value,
@@ -462,42 +600,7 @@ pub fn draw_game_options(
     clear_background(BLACK);
     draw_bitmap(cache, canvas, resources::common::GAME_OPTIONS_BG, 0.0, 0.0);
 
-    draw_label(canvas, "Saved Games", 132.0, 54.0, 17.0);
-    draw_label(canvas, "Sound Options", 438.0, 54.0, 17.0);
-    draw_label(canvas, "Play Music", 376.0, 100.0, 17.0);
-    draw_label(
-        canvas,
-        if audio.music_enabled() { "On" } else { "Off" },
-        580.0,
-        100.0,
-        17.0,
-    );
-    draw_label(canvas, "Tactical Display Options", 377.0, 289.0, 17.0);
-    for (index, label) in [
-        "Show Starfield",
-        "Show Planet",
-        "Show Pyrotechnics",
-        "Use High Detail Models",
-        "Display Holocube",
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        let y = 329.0 + index as f32 * 27.0;
-        draw_label(canvas, label, 395.0, y, 16.0);
-        draw_label(
-            canvas,
-            if state.tactical_flags()[index] {
-                "On"
-            } else {
-                "Off"
-            },
-            580.0,
-            y,
-            16.0,
-        );
-    }
-    draw_label(canvas, "Version: 1.0.0 Open Rebellion", 84.0, 454.0, 11.0);
+    state.music_on = audio.music_enabled();
 
     let pointer = canvas.logical_pointer();
     let held = state
@@ -508,7 +611,9 @@ pub fn draw_game_options(
         canvas,
         if !audio.backend_available {
             resources::common::OPTIONS_MUSIC_DISABLED
-        } else if held == Some(GameOptionsControl::Music) {
+        } else if held == Some(GameOptionsControl::Music) || state.music_on {
+            // A checked button shows its pressed bitmap (`FUN_00407180`
+            // sets state 4 to 0x2739 while music is on).
             resources::common::OPTIONS_MUSIC_PRESSED
         } else {
             resources::common::OPTIONS_MUSIC_NORMAL
@@ -526,15 +631,11 @@ pub fn draw_game_options(
     draw_volume(cache, canvas, SOUND_SLIDER_RECT.y, audio.sfx_volume, true);
 
     for (index, rect) in TACTICAL_TOGGLE_RECTS.into_iter().enumerate() {
-        let resource = if !state.origin.tactical_toggles_enabled() {
-            resources::common::OPTIONS_TOGGLE_OFF
-        } else if held == Some(GameOptionsControl::Tactical(index)) {
-            resources::common::OPTIONS_TOGGLE_PRESSED
-        } else if state.tactical_flags()[index] {
-            resources::common::OPTIONS_TOGGLE_ON
-        } else {
-            resources::common::OPTIONS_TOGGLE_OFF
-        };
+        let resource = toggle_resource(
+            state.origin.tactical_toggles_enabled(),
+            held == Some(GameOptionsControl::Tactical(index)),
+            state.tactical_flags()[index],
+        );
         draw_bitmap(cache, canvas, resource, rect.x, rect.y);
     }
 
@@ -559,10 +660,14 @@ pub fn draw_game_options(
         let load_bounds = load_rect(slot);
         draw_bitmap(cache, canvas, save_resource, save_bounds.x, save_bounds.y);
         draw_bitmap(cache, canvas, load_resource, load_bounds.x, load_bounds.y);
-        if state.origin != GameOptionsOrigin::CommandCenter {
-            if let Some(save) = occupied {
-                draw_label(canvas, &save.name, 116.0, 99.0 + slot as f32 * 42.0, 14.0);
-            }
+        if let Some(emblem) = occupied.and_then(slot_emblem) {
+            draw_bitmap(
+                cache,
+                canvas,
+                emblem,
+                SLOT_EMBLEM_X,
+                row_y(slot) + SLOT_EMBLEM_DY,
+            );
         }
     }
 
@@ -604,7 +709,7 @@ pub fn draw_game_options(
         EXIT_RECT.y,
     );
 
-    if state.pending.is_some() || state.suspended {
+    if state.pending.is_some() {
         state.pressed = None;
         return GameOptionsAction::None;
     }
@@ -649,16 +754,51 @@ pub fn draw_game_options_overlay(
         Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, h) * canvas.scale)
     };
     let mut answer = None;
+    let label = |ui: &egui::Ui, text: &str, spec: OptionsText, rgb: [u8; 3]| {
+        let font = crate::theme::game_font_on(ctx, spec.font, canvas.scale);
+        let color = Color32::from_rgb(rgb[0], rgb[1], rgb[2]);
+        let galley = ui.painter().layout_no_wrap(text.to_owned(), font, color);
+        let bounds = rect(spec.rect.x, spec.rect.y, spec.rect.width, spec.rect.height);
+        let size = galley.size();
+        let x = match spec.align {
+            TextAlign::Centered => bounds.center().x - size.x / 2.0,
+            TextAlign::LeftMiddle | TextAlign::LeftTop => bounds.left(),
+        };
+        let y = match spec.align {
+            TextAlign::LeftTop => bounds.top(),
+            TextAlign::Centered | TextAlign::LeftMiddle => bounds.center().y - size.y / 2.0,
+        };
+        ui.painter().galley(Pos2::new(x, y), galley, color);
+    };
     egui::CentralPanel::default().frame(egui::Frame::NONE).show(ctx, |ui| {
+        for (text, bounds) in TITLES {
+            let spec = OptionsText { rect: bounds, align: TextAlign::Centered, font: 7 };
+            label(ui, text, spec, TITLE_RGB);
+        }
+        label(ui, "Play Music", MUSIC_LABEL, option_rgb(state.music_on));
+        label(ui, on_off(state.music_on), MUSIC_STATE, option_rgb(state.music_on));
+        for (row, text) in TACTICAL_LABELS.into_iter().enumerate() {
+            let on = state.tactical_flags()[row];
+            label(ui, text, tactical_label(row), option_rgb(on));
+            label(ui, on_off(on), tactical_state(row), option_rgb(on));
+        }
+        label(ui, &version_line(), VERSION_TEXT, [0, 0, 0]);
+        // A row's name field: white text (`FUN_00407180` sets +0xe4 to
+        // 0x2ffffff). hyp: the window's font, entry 10.
+        let name_font = crate::theme::game_font_on(ctx, 10, canvas.scale);
         // The area itself must not claim the entire canvas; only actual controls do.
-        if state.origin == GameOptionsOrigin::CommandCenter {
-            for slot in 0..6 {
-                ui.add_enabled_ui(state.pending.is_none() && !state.suspended, |ui| {
-                    ui.put(rect(116.0, 81.0 + slot as f32 * 42.0, 162.0, 20.0),
+        for slot in 0..6 {
+            let bounds = rect(NAME_FIELD_X, row_y(slot), NAME_FIELD_WIDTH, 20.0);
+            if state.origin == GameOptionsOrigin::CommandCenter {
+                ui.add_enabled_ui(state.pending.is_none(), |ui| {
+                    ui.put(bounds,
                         egui::TextEdit::singleline(&mut state.names[slot])
                             .id_source(("options_save_name", slot)).frame(false)
-                            .font(FontId::monospace(12.0 * canvas.scale)).text_color(Color32::WHITE));
+                            .font(name_font.clone()).text_color(Color32::WHITE));
                 });
+            } else if state.occupied[slot] {
+                ui.painter().text(bounds.left_center(), Align2::LEFT_CENTER,
+                    &state.names[slot], name_font.clone(), Color32::WHITE);
             }
         }
         if let Some(action) = &state.pending {
@@ -727,6 +867,7 @@ mod tests {
             name: "Legacy".into(),
             timestamp: String::new(),
             game_tick: 0,
+            player_is_alliance: None,
         }]);
         let action = GameOptionsAction::Load { slot: 9 };
         assert_eq!(state.request(action.clone()), GameOptionsAction::None);
@@ -764,13 +905,6 @@ mod tests {
             );
             assert!(state.pending.is_none());
         }
-        state.suspended = true;
-        assert_eq!(
-            state.request(GameOptionsAction::Exit),
-            GameOptionsAction::None
-        );
-        assert!(state.pending.is_none());
-        state.suspended = false;
         state.request(GameOptionsAction::Exit);
         assert_eq!(
             state.request(GameOptionsAction::Return),
@@ -872,15 +1006,15 @@ mod tests {
         cache.set_base_path(&root);
         let origin = GameOptionsOrigin::CommandCenter;
         assert_eq!(
-            masked_control_at(&mut cache, origin, 355.0, 80.0),
+            masked_control_at(&mut cache, origin, 356.0, 80.0),
             Some(GameOptionsControl::Music)
         );
         for (x, y) in [
-            (351.0, 80.0),
-            (355.0, 76.0),
-            (370.0, 80.0),
-            (355.0, 111.0),
-            (352.0, 77.0),
+            (352.0, 80.0),
+            (356.0, 76.0),
+            (371.0, 80.0),
+            (356.0, 111.0),
+            (353.0, 77.0),
         ] {
             assert_eq!(masked_control_at(&mut cache, origin, x, y), None, "{x},{y}");
         }
@@ -888,24 +1022,86 @@ mod tests {
     }
 
     #[test]
-    fn hit_regions_reject_exact_outer_edges() {
-        // No recovered source: hit-region pixel coordinates, kept as a regression pin.
+    fn controls_sit_where_the_original_constructor_places_them() {
+        // FUN_00407180: Play Music (0x160,0x4c), save x 0x22 and load x
+        // 0x11f on rows 0x51 + 42n, switches at x 0x165 on 0x137, 0x151,
+        // 0x16d, 0x188, 0x1a3, Restart (0x4c,0x17d), Return (0xa2,0x17e),
+        // Exit (0xf8,0x17d). Each rectangle excludes its outer edge.
+        let at = |x, y| control_at(GameOptionsOrigin::CommandCenter, x, y);
+        assert_eq!(at(352.0, 76.0), Some(GameOptionsControl::Music));
+        assert_eq!(at(351.0, 76.0), None);
+        assert_eq!(at(371.0, 76.0), None);
+        assert_eq!(at(34.0, 81.0), Some(GameOptionsControl::Save(0)));
+        assert_eq!(at(33.0, 81.0), None);
+        assert_eq!(at(287.0, 291.0), Some(GameOptionsControl::Load(5)));
+        assert_eq!(at(286.0, 291.0), None);
+        for (row, y) in [311.0, 337.0, 365.0, 392.0, 419.0].into_iter().enumerate() {
+            assert_eq!(at(357.0, y), Some(GameOptionsControl::Tactical(row)));
+            assert_ne!(at(357.0, y - 1.0), Some(GameOptionsControl::Tactical(row)));
+        }
+        assert_eq!(at(76.0, 381.0), Some(GameOptionsControl::Restart));
+        assert_eq!(at(162.0, 382.0), Some(GameOptionsControl::Return));
+        assert_eq!(at(162.0, 381.0), None);
+        assert_eq!(at(248.0, 381.0), Some(GameOptionsControl::Exit));
+        assert_eq!(at(247.0, 381.0), None);
+    }
+
+    #[test]
+    fn a_checked_switch_shows_its_pressed_bitmap() {
+        // FUN_00407180: normal 0x273b, pressed 0x273c, disabled 0x273d, and
+        // state 4 (checked) also 0x273c.
+        assert_eq!(toggle_resource(true, false, true), 10044);
+        assert_eq!(toggle_resource(true, false, false), 10043);
+        assert_eq!(toggle_resource(true, true, false), 10044);
+        assert_eq!(toggle_resource(false, false, true), 10045);
+    }
+
+    #[test]
+    fn empty_slots_are_blank_and_saved_slots_carry_their_name_and_side() {
+        // FUN_00407180: an empty slot's field gets the empty string; an
+        // occupied one its name and the emblem 0x2748 (side 1) or 0x2747.
+        let mut state = GameOptionsState::new(GameOptionsOrigin::CommandCenter);
+        let save = |slot, player_is_alliance| SaveSlotInfo {
+            slot,
+            name: format!("Campaign {slot}"),
+            timestamp: String::new(),
+            game_tick: 0,
+            player_is_alliance,
+        };
+        state.refresh_saves(&[save(1, Some(true)), save(3, Some(false))]);
+        assert_eq!(state.names[0], "");
+        assert_eq!(state.names[1], "Campaign 1");
+        assert_eq!(state.names[3], "Campaign 3");
+        assert_eq!(slot_emblem(&save(1, Some(true))), Some(10056));
+        assert_eq!(slot_emblem(&save(3, Some(false))), Some(10055));
+        assert_eq!(slot_emblem(&save(4, None)), None);
+    }
+
+    #[test]
+    fn labels_take_the_original_boxes_fonts_and_colours() {
+        // FUN_004084b0 and the FUN_005ff6b0 calls at 0x4084e1: titles in
+        // RECTs (58,37)-(299,58), (362,37)-(603,58), (363,273)-(602,294),
+        // font 7; switch labels at x 0x18a on 0x139..0x1a5, 183 by 16;
+        // colour 0x2008000, plus 0x7f00 when on.
         assert_eq!(
-            control_at(GameOptionsOrigin::CommandCenter, 351.0, 76.0),
-            Some(GameOptionsControl::Music)
+            TITLES.map(|(_, r)| (r.x, r.y, r.x + r.width, r.y + r.height)),
+            [
+                (58.0, 37.0, 299.0, 58.0),
+                (362.0, 37.0, 603.0, 58.0),
+                (363.0, 273.0, 602.0, 294.0)
+            ]
         );
         assert_eq!(
-            control_at(GameOptionsOrigin::CommandCenter, 370.0, 76.0),
-            None
+            (0..5).map(|row| tactical_label(row).rect.y).collect::<Vec<_>>(),
+            [313.0, 340.0, 367.0, 394.0, 421.0]
         );
-        assert_eq!(
-            control_at(GameOptionsOrigin::CommandCenter, 35.0, 81.0),
-            Some(GameOptionsControl::Save(0))
-        );
-        assert_eq!(
-            control_at(GameOptionsOrigin::CommandCenter, 285.0, 291.0),
-            Some(GameOptionsControl::Load(5))
-        );
+        assert_eq!(tactical_label(2).rect, NativeRect::new(394.0, 367.0, 183.0, 16.0));
+        assert_eq!(tactical_state(4).rect, NativeRect::new(577.0, 421.0, 31.0, 16.0));
+        assert_eq!(tactical_label(0).font, 7);
+        assert_eq!(VERSION_TEXT.font, 10);
+        assert_eq!(option_rgb(false), [0, 128, 0]);
+        assert_eq!(option_rgb(true), [0, 255, 0]);
+        assert_eq!((on_off(true), on_off(false)), ("On", "Off"));
     }
 
     #[test]

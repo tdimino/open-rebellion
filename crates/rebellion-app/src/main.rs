@@ -47,6 +47,7 @@ use rebellion_core::combat::{CombatSide, CombatSystem};
 use rebellion_core::dat::Faction;
 use rebellion_core::death_star::{DeathStarState, DeathStarSystem};
 use rebellion_core::delivery::DeliveryState;
+use rebellion_core::stockpiles::{StockpileEvent, StockpileState, StockpileSystem};
 use rebellion_core::economy::{EconomyEvent, EconomyState, EconomySystem};
 use rebellion_core::events::{EventAction, EventState, EventSystem};
 use rebellion_core::fleet_join::FleetMover;
@@ -92,7 +93,8 @@ use rebellion_render::mission_dialog::{
     draw_mission_dialog, MissionDialogAction, MissionDialogState,
 };
 use rebellion_render::move_confirmation::{
-    draw_move_confirmation, MoveConfirmation, MoveConfirmationAction, MoveConfirmationState,
+    draw_move_confirmation, draw_scrap_confirmation, MoveConfirmation, MoveConfirmationAction,
+    MoveConfirmationState, ScrapConfirmation, ScrapConfirmationAction, ScrapConfirmationState,
 };
 use rebellion_render::object_menu::{
     draw_object_menu, MenuObject, ObjectMenuCommand, ObjectMenuState, OrderGates,
@@ -342,6 +344,7 @@ fn read_save_slots(saves_dir: &Path) -> Vec<rebellion_render::SaveSlotInfo> {
                 format!("{hours:02}:{minutes:02}")
             },
             game_tick: meta.game_tick,
+            player_is_alliance: meta.player_is_alliance,
         })
         .collect();
     for slot in 0..rebellion_data::save::MAX_SAVE_SLOTS {
@@ -353,6 +356,7 @@ fn read_save_slots(saves_dir: &Path) -> Vec<rebellion_render::SaveSlotInfo> {
                 name: "Unreadable save".into(),
                 timestamp: "Load to inspect error".into(),
                 game_tick: 0,
+                player_is_alliance: None,
             });
         }
     }
@@ -385,6 +389,7 @@ struct LiveCampaign<'a> {
     troop_transport: &'a mut TroopTransportState,
     deliveries: &'a mut DeliveryState,
     player_agent: &'a mut PlayerAgent,
+    stockpiles: &'a mut StockpileState,
     combat_cooldowns: &'a mut std::collections::HashMap<rebellion_core::ids::SystemKey, u64>,
     game_config: &'a mut rebellion_core::tuning::GameConfig,
     campaign_config: &'a mut CampaignConfig,
@@ -420,6 +425,7 @@ impl LiveCampaign<'_> {
             troop_transport: self.troop_transport.clone(),
             deliveries: self.deliveries.clone(),
             player_agent: self.player_agent.clone(),
+            stockpiles: self.stockpiles.clone(),
         }
     }
 
@@ -455,6 +461,7 @@ impl LiveCampaign<'_> {
         *self.troop_transport = state.troop_transport;
         *self.deliveries = state.deliveries;
         *self.player_agent = state.player_agent;
+        *self.stockpiles = state.stockpiles;
     }
 }
 
@@ -1244,6 +1251,7 @@ async fn main() {
     let mut repair_state = RepairState::default();
     let mut troop_transport_state = TroopTransportState::default();
     let mut delivery_state = DeliveryState::new();
+    let mut stockpile_state = StockpileState::new();
     let mut economy_state = EconomyState::default();
     // The player's agent: Manage Garrisons and Manage Production, both off
     // at a new game (FUN_00439950).
@@ -1290,6 +1298,7 @@ async fn main() {
     let mut build_selection_state = BuildSelectionState::default();
     let mut mission_dialog_state = MissionDialogState::default();
     let mut move_confirmation_state = MoveConfirmationState::default();
+    let mut scrap_confirmation_state = ScrapConfirmationState::default();
     let mut status_window_state = StatusWindowState::default();
     let mut fleet_finder_state = FleetFinderState::default();
     let mut encyclopedia_surface = encyclopedia_surface::EncyclopediaSurfaceController::new();
@@ -1335,7 +1344,6 @@ async fn main() {
     let mut show_bombardment = false;
     let mut show_death_star = false;
     let mut show_loyalty = false;
-    let mut show_save_load = false;
     let mut save_load_panel_state = rebellion_render::SaveLoadPanelState::default();
     let saves_dir = rebellion_data::save::default_saves_dir();
     let mut save_slots = read_save_slots(&saves_dir);
@@ -1677,10 +1685,7 @@ async fn main() {
             }
         } else if is_key_pressed(KeyCode::Escape) && !event_screen_state.is_active() {
             if let GameMode::GameOptions { origin } = game_mode.clone() {
-                if game_options_state.suspended {
-                    save_load_panel_state.close();
-                    game_options_state.suspended = false;
-                } else if game_options_state.escape() == GameOptionsAction::Return {
+                if game_options_state.escape() == GameOptionsAction::Return {
                     game_mode = match origin {
                         GameOptionsOrigin::ShuttleCockpit => GameMode::MainMenu,
                         GameOptionsOrigin::CommandCenter => GameMode::Galaxy,
@@ -1716,7 +1721,7 @@ async fn main() {
                     // port: Escape cancels targeting, as command 0x15e does
                     // in mode 2; no traced key posts 0x15e.
                     targeting = None;
-                } else if move_confirmation_state.is_open() {
+                } else if move_confirmation_state.is_open() || scrap_confirmation_state.is_open() {
                     // The window's own key slot answers Escape (FUN_0044f640).
                 } else if build_selection_state.is_open() {
                     // Build Selection's key slot closes it (FUN_00438b60).
@@ -1759,7 +1764,6 @@ async fn main() {
                     show_bombardment = false;
                     show_death_star = false;
                     show_loyalty = false;
-                    show_save_load = false;
                     save_load_panel_state.close();
                     game_mode = GameMode::MainMenu;
                     macroquad::logging::info!(
@@ -1779,7 +1783,6 @@ async fn main() {
         // rename edit for the name it holds.
         if game_mode == GameMode::Galaxy
             && !event_screen_state.is_active()
-            && !show_save_load
             && frame_keyboard_owner.allows_galaxy_shortcuts()
             && !fleet_finder_state.is_open()
             && !troop_finder_state.is_open()
@@ -1896,13 +1899,16 @@ async fn main() {
                     GameMode::Cutscene { .. } | GameMode::VictoryModal { .. }
                 )
             {
-                if show_save_load {
-                    save_load_panel_state.close();
-                    show_save_load = false;
-                } else {
+                // port: the save shortcut opens the original Game Options
+                // screen, whose six rows save and load
+                // (ghidra/notes/game-options.md), as its cockpit button does.
+                if matches!(game_mode, GameMode::Galaxy) {
                     save_slots = read_save_slots(&saves_dir);
-                    save_load_panel_state.open_save();
-                    show_save_load = true;
+                    game_options_state.set_origin(GameOptionsOrigin::CommandCenter);
+                    game_options_state.refresh_saves(&save_slots);
+                    game_mode = GameMode::GameOptions {
+                        origin: GameOptionsOrigin::CommandCenter,
+                    };
                 }
             }
             if is_key_pressed(KeyCode::Tab) {
@@ -2008,6 +2014,28 @@ Some(RailAudience::side(*faction_is_alliance)),
                     _ => {} // Telemetry-only events (collection rate, garrison, incidents, support change tier)
                 }
             }
+
+            // ── Stockpiles: facility cycles, yard work, overdraft scraps ─────
+            let stockpile_rolls: Vec<f64> =
+                (0..tick_events.len()).map(|_| sim_rng.gen::<f64>()).collect();
+            let stockpile_events = StockpileSystem::advance(
+                &mut stockpile_state,
+                &world,
+                &mut mfg_state,
+                &economy_state,
+                &tick_events,
+                blockade_state.blockaded_systems(),
+                &stockpile_rolls,
+            );
+            rebellion_core::scrap::scrap_all(
+                &mut world,
+                &mut stockpile_state,
+                &mut troop_transport_state,
+                stockpile_events.iter().filter_map(|event| match *event {
+                    StockpileEvent::OverdraftScrap { target, .. } => Some(target),
+                    _ => None,
+                }),
+            );
 
             // ── Manufacturing (blockaded systems are skipped) ─────────────────
             // Use advance_tracked so we also pick up K6 EVT_MANUFACTURING_IDLE
@@ -3523,23 +3551,6 @@ Some(RailAudience::side(*faction_is_alliance)),
             }
 
             GameMode::GameOptions { origin } => {
-                let control =
-                    is_key_down(KeyCode::LeftControl) || is_key_down(KeyCode::RightControl);
-                let legacy_load =
-                    is_key_pressed(KeyCode::F8) || (control && is_key_pressed(KeyCode::L));
-                let legacy_save =
-                    is_key_pressed(KeyCode::F9) || (control && is_key_pressed(KeyCode::S));
-                if game_options_state.pending.is_none()
-                    && origin != GameOptionsOrigin::TacticalBattle
-                    && (legacy_load || (legacy_save && origin == GameOptionsOrigin::CommandCenter))
-                {
-                    if legacy_save {
-                        save_load_panel_state.open_save();
-                    } else {
-                        save_load_panel_state.open_load();
-                    }
-                    game_options_state.suspended = true;
-                }
                 let mut action = draw_game_options(
                     &mut game_options_state,
                     &mut bmp_cache,
@@ -3554,13 +3565,6 @@ Some(RailAudience::side(*faction_is_alliance)),
                     );
                     if overlay != GameOptionsAction::None {
                         action = overlay;
-                    }
-                    if game_options_state.suspended {
-                        if let Some(action) =
-                            draw_save_load(ctx, &save_slots, &mut save_load_panel_state)
-                        {
-                            panel_actions.push(action);
-                        }
                     }
                 });
                 egui_macroquad::draw();
@@ -3681,6 +3685,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                                     repair_state = RepairState::default();
                                     troop_transport_state = TroopTransportState::default();
                                     delivery_state = DeliveryState::new();
+                                    stockpile_state = StockpileState::new();
                                     economy_state = EconomyState::default();
                                     player_agent =
                                         PlayerAgent::for_new_game(campaign_config.difficulty);
@@ -3715,7 +3720,6 @@ Some(RailAudience::side(*faction_is_alliance)),
                                     show_bombardment = false;
                                     show_death_star = false;
                                     show_loyalty = false;
-                                    show_save_load = false;
                                     save_load_panel_state =
                                         rebellion_render::SaveLoadPanelState::default();
                                     save_slots = read_save_slots(&saves_dir);
@@ -3903,6 +3907,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                 let original_modal_fixture_open = false;
                 map_state.pointer_blocked = sector_window_state
                     .contains_screen_point(cockpit_layout, pointer)
+                    || cockpit_state.gid_legend_contains(cockpit_layout, pointer)
                     || system_window_state.contains_screen_point(cockpit_layout, pointer)
                     || fleet_window_state.contains_screen_point(cockpit_layout, pointer)
                     || defenses_window_state.contains_screen_point(cockpit_layout, pointer)
@@ -3911,6 +3916,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                     || mission_dialog_state.contains_screen_point(cockpit_layout, pointer)
                     || build_selection_state.contains_screen_point(cockpit_layout, pointer)
                     || move_confirmation_state.contains_screen_point(cockpit_layout, pointer)
+                    || scrap_confirmation_state.contains_screen_point(cockpit_layout, pointer)
                     || status_window_state.contains_screen_point(cockpit_layout, pointer)
                     || fleet_finder_state.contains_screen_point(cockpit_layout, pointer)
                     || troop_finder_state.contains_screen_point(cockpit_layout, pointer)
@@ -3927,19 +3933,27 @@ Some(RailAudience::side(*faction_is_alliance)),
                     || event_screen_state.is_active();
                 map_state.targeting = targeting.is_some();
 
-                // Keep every macroquad map layer inside the shell's transparent
-                // galaxy aperture. The clip is cleared before the egui pass.
-                set_cockpit_viewport_clip(Some(cockpit_vp));
-
-                // 2. Recovered GID baseline. Replacement fog, fleet, sector,
-                // facility, and blockade primitives stay off the parity surface
-                // until their original GID modes are reconstructed.
+                // The whole 607x437 starfield lies behind the shell at its
+                // FUN_00427010 offset, so it shows through every transparent
+                // part of the shell (beside the droids, between the consoles),
+                // not only through the galaxy aperture. The 640x480 screen
+                // cuts it off: the Empire's (84, 27) offset runs it 51
+                // pixels past the right edge.
+                set_cockpit_viewport_clip(Some(cockpit_layout.canvas));
                 draw_galaxy_backdrop(
                     cockpit_layout,
                     cockpit_state.faction,
                     &mut bmp_cache,
                     cockpit_state.gid_mode,
                 );
+
+                // Keep the map's own layers inside the shell's transparent
+                // galaxy aperture. The clip is cleared before the egui pass.
+                set_cockpit_viewport_clip(Some(cockpit_vp));
+
+                // 2. Recovered GID baseline. Replacement fog, fleet, sector,
+                // facility, and blockade primitives stay off the parity surface
+                // until their original GID modes are reconstructed.
                 draw_galaxy_map(
                     &world,
                     &mut map_state,
@@ -4019,8 +4033,8 @@ Some(RailAudience::side(*faction_is_alliance)),
                         clock.tick,
                         clock.speed,
                     );
-                    // port: the raw and refined stockpiles are not modelled
-                    // yet, so their monitors stay blank.
+                    // Raw, refined and maintenance: side `+0x78`, `+0x7c`
+                    // and `+0x58 − +0x74` (`FUN_00422620`).
                     let side = match cockpit_state.faction {
                         rebellion_render::cockpit::CockpitFaction::Alliance => Faction::Alliance,
                         rebellion_render::cockpit::CockpitFaction::Empire => Faction::Empire,
@@ -4030,8 +4044,8 @@ Some(RailAudience::side(*faction_is_alliance)),
                         cockpit_layout,
                         cockpit_state.faction,
                         [
-                            None,
-                            None,
+                            Some(stockpile_state.side(side).raw),
+                            Some(stockpile_state.side(side).refined),
                             Some(rebellion_core::resources::maintenance_surplus(
                                 &world, &mfg_state, side,
                             )),
@@ -4258,22 +4272,6 @@ Some(RailAudience::side(*faction_is_alliance)),
                         }
                     }
 
-                    // Save/Load panel (floating window)
-                    if show_save_load {
-                        save_load_panel_state.open = true;
-                        if let Some(action) =
-                            draw_save_load(ctx, &save_slots, &mut save_load_panel_state)
-                        {
-                            match &action {
-                                PanelAction::CloseSaveLoadPanel => {
-                                    show_save_load = false;
-                                }
-                                _ => {
-                                    panel_actions.push(action);
-                                }
-                            }
-                        }
-                    }
 
                     #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
                     if interface_fixture_request.is_some_and(|request| {
@@ -4980,6 +4978,28 @@ Some(RailAudience::side(*faction_is_alliance)),
                         Some((ObjectMenuCommand::Move, Some(MenuObject::Troop(troop)))) => {
                             targeting = Some(Targeting::new(TargetOrder::TroopMove { troop }));
                         }
+                        // FUN_00487cc0 always confirms kind 0x200; the
+                        // window lists the order's team (FUN_0049a350).
+                        Some((ObjectMenuCommand::Scrap, selection)) => {
+                            if let Some(order) = scrap_order(selection) {
+                                let side = if player_faction == MissionFaction::Alliance {
+                                    Faction::Alliance
+                                } else {
+                                    Faction::Empire
+                                };
+                                scrap_confirmation_state.open(ScrapConfirmation {
+                                    faction: player_faction,
+                                    targets: rebellion_core::scrap::order_targets(
+                                        &world, order, side,
+                                    ),
+                                    names: rebellion_core::scrap::order_names(&world, order, side),
+                                });
+                                macroquad::logging::info!(
+                                    "[interface] command=0x200 destination=scrap_confirmation status=opened order={:?}",
+                                    order
+                                );
+                            }
+                        }
                         Some((
                             ObjectMenuCommand::Move,
                             Some(MenuObject::Ship {
@@ -5498,6 +5518,28 @@ Some(RailAudience::side(*faction_is_alliance)),
                                 troops: Vec::new(),
                             },
                         }));
+                    }
+
+                    // FUN_0044f5e0: the checkmark submits the Scrap order,
+                    // which scraps each object at once (FUN_004f84e0 →
+                    // FUN_00534c00, reason 0x14).
+                    if let Some(ScrapConfirmationAction::Confirm(targets)) = draw_scrap_confirmation(
+                        ctx,
+                        &mut scrap_confirmation_state,
+                        cockpit_layout,
+                        &mut bmp_cache,
+                    ) {
+                        let refund = rebellion_core::scrap::scrap_all(
+                            &mut world,
+                            &mut stockpile_state,
+                            &mut troop_transport_state,
+                            targets.iter().copied(),
+                        );
+                        macroquad::logging::info!(
+                            "[interface] command=0x200 status=scrapped objects={} refund={}",
+                            targets.len(),
+                            refund
+                        );
                     }
 
                     if targeting.is_some() {
@@ -6254,25 +6296,6 @@ Some(RailAudience::side(*faction_is_alliance)),
 
         // 5. Apply panel actions
         for action in panel_actions {
-            if matches!(game_mode, GameMode::GameOptions { .. }) && game_options_state.suspended {
-                let intent = match &action {
-                    PanelAction::SaveGame { slot, name } => Some(GameOptionsAction::Save {
-                        slot: *slot,
-                        name: name.clone(),
-                    }),
-                    PanelAction::LoadGame { slot } => Some(GameOptionsAction::Load { slot: *slot }),
-                    PanelAction::DeleteSave { slot } => {
-                        Some(GameOptionsAction::Delete { slot: *slot })
-                    }
-                    _ => None,
-                };
-                if let Some(intent) = intent {
-                    game_options_state.suspended = false;
-                    if game_options_state.request(intent) == GameOptionsAction::None {
-                        continue;
-                    }
-                }
-            }
             match action {
                 PanelAction::SaveGame { slot, name } => {
                     let state = LiveCampaign {
@@ -6300,6 +6323,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                         troop_transport: &mut troop_transport_state,
                         deliveries: &mut delivery_state,
                         player_agent: &mut player_agent,
+                        stockpiles: &mut stockpile_state,
                         combat_cooldowns: &mut combat_cooldowns,
                         game_config: &mut game_config,
                         campaign_config: &mut campaign_config,
@@ -6370,6 +6394,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                                 troop_transport: &mut troop_transport_state,
                                 deliveries: &mut delivery_state,
                                 player_agent: &mut player_agent,
+                                stockpiles: &mut stockpile_state,
                                 combat_cooldowns: &mut combat_cooldowns,
                                 game_config: &mut game_config,
                                 campaign_config: &mut campaign_config,
@@ -6405,6 +6430,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                             build_selection_state = BuildSelectionState::default();
                             mission_dialog_state = MissionDialogState::default();
                             move_confirmation_state = MoveConfirmationState::default();
+                            scrap_confirmation_state = ScrapConfirmationState::default();
                             status_window_state = StatusWindowState::default();
                             fleet_finder_state = FleetFinderState::default();
                             troop_finder_state = TroopFinderState::default();
@@ -6423,7 +6449,6 @@ Some(RailAudience::side(*faction_is_alliance)),
                             show_bombardment = false;
                             show_death_star = false;
                             show_loyalty = false;
-                            show_save_load = false;
                             save_load_panel_state.close();
                             event_screen_state = EventScreenState::new();
                             tactical_state = TacticalState::new();
@@ -6471,9 +6496,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                 }
                 PanelAction::SetGameSpeed(speed) => choose_game_speed(&mut clock, speed),
                 PanelAction::CloseSaveLoadPanel => {
-                    game_options_state.suspended = false;
                     save_load_panel_state.close();
-                    show_save_load = false;
                     if game_mode == GameMode::LoadGame {
                         game_mode = GameMode::MainMenu;
                     }
@@ -7062,6 +7085,7 @@ mod encyclopedia_route_tests {
             fighters: vec![rebellion_core::world::FighterEntry {
                 class: fighter_class,
                 count: 1,
+                carrier: 0,
             }],
             characters: Vec::new(),
             is_alliance: true,
@@ -7251,6 +7275,33 @@ fn order_gates(
             }
             _ => false,
         },
+        scrap: scrap_order(selection).is_some_and(|order| {
+            rebellion_core::scrap::order_enabled(
+                world,
+                movement_state,
+                troop_transport_state,
+                order,
+                side,
+            )
+        }),
+    }
+}
+
+/// The Scrap order (`0x200`) a menu's object makes: its own, or a sector
+/// window icon's team (`FUN_00512700`).
+fn scrap_order(selection: Option<MenuObject>) -> Option<rebellion_core::scrap::ScrapOrder> {
+    use rebellion_core::scrap::ScrapOrder;
+    match selection? {
+        MenuObject::Fleet(fleet) => Some(ScrapOrder::Fleet(fleet)),
+        MenuObject::Ship { fleet, index, .. } => Some(ScrapOrder::Ship { fleet, index }),
+        MenuObject::Troop(troop) => Some(ScrapOrder::Troop(troop)),
+        MenuObject::SystemIcon { system, quadrant } => match quadrant {
+            Quadrant::System => Some(ScrapOrder::Facilities(system)),
+            Quadrant::Defenses => Some(ScrapOrder::Defenses(system)),
+            Quadrant::Fleets => Some(ScrapOrder::Fleets(system)),
+            Quadrant::Missions => None,
+        },
+        _ => None,
     }
 }
 
@@ -8477,12 +8528,8 @@ fn apply_ai_actions(
                     *target_system,
                 ));
             }
-            AIAction::EnqueueProduction {
-                system,
-                kind,
-                ticks,
-            } => {
-                mfg_state.enqueue(*system, QueueItem::new(*kind, *ticks, *ticks));
+            AIAction::EnqueueProduction { system, kind, work } => {
+                mfg_state.enqueue(*system, QueueItem::new(*kind, *work));
             }
             AIAction::MoveFleet {
                 fleet,
@@ -8840,10 +8887,12 @@ mod tactical_ground_tests {
                 FighterEntry {
                     class: fighter_class,
                     count: 12,
+                    carrier: 0,
                 },
                 FighterEntry {
                     class: fighter_class,
                     count: 12,
+                    carrier: 0,
                 },
             ],
             characters: vec![],
@@ -9397,7 +9446,6 @@ mod fleet_move_tests {
                 system,
                 &QueueItem::new(
                     rebellion_core::manufacturing::BuildableKind::CapitalShip(class),
-                    10,
                     10,
                 ),
                 1,

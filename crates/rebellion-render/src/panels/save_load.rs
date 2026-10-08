@@ -45,6 +45,8 @@ pub struct SaveSlotInfo {
     pub timestamp: String,
     /// Game tick at save time (displayed as "Day N").
     pub game_tick: u64,
+    /// The side the player chose, when the save records it.
+    pub player_is_alliance: Option<bool>,
 }
 
 // ---------------------------------------------------------------------------
@@ -294,6 +296,7 @@ mod tests {
             name: "Campaign".to_string(),
             timestamp: "Browser save".to_string(),
             game_tick: 42,
+            player_is_alliance: Some(true),
         }
     }
 

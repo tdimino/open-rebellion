@@ -759,7 +759,17 @@ pub fn producer_rows(
     ];
     if let (true, Some(queue)) = (yards > 0, queue) {
         rows.push(row("Items to Build:", queue.len().to_string()));
-        if let Some(day) = queue.completion_days(sources.today).last() {
+        // The best case (manual p. 84): the holder's yards with materials
+        // on hand.
+        let periods = value.control.faction().map_or_else(Vec::new, |side| {
+            rebellion_core::build_selection::yard_periods(
+                world,
+                system,
+                area,
+                side == rebellion_core::dat::Faction::Alliance,
+            )
+        });
+        if let Some(Some(day)) = queue.completion_days(sources.today, &periods).last() {
             rows.push(row("Estimated Day of Completion:", day.to_string()));
         }
     }
@@ -1066,6 +1076,7 @@ mod tests {
             fighters: vec![FighterEntry {
                 class: fighter,
                 count: 4,
+                carrier: 0,
             }],
             characters: vec![character],
             is_alliance: true,
@@ -1387,10 +1398,21 @@ mod tests {
 
         assert_eq!(status(&world, &states)[1], pair("Status:", "No Facilities"));
 
+        // A standard training facility works one unit per 4 days (MANFACSD
+        // processing_rate).
+        let yard_class = catalog(
+            &mut world,
+            0x2900_0001,
+            "Training Facility",
+            BuildableClass {
+                processing_rate: 4,
+                ..BuildableClass::default()
+            },
+        );
         let yard = world
             .manufacturing_facilities
             .insert(ManufacturingFacilityInstance {
-                class_dat_id: DatId::new(0x2900_0001),
+                class_dat_id: yard_class,
                 side: Faction::Alliance,
                 is_shipyard: false,
             });
@@ -1399,11 +1421,14 @@ mod tests {
 
         states.manufacturing.enqueue(
             here,
-            QueueItem::new(BuildableKind::Troop(DatId::new(0x1000_0002)), 4, 9),
+            QueueItem::new(BuildableKind::Troop(DatId::new(0x1000_0002)), 9),
         );
         let rows = status(&world, &states);
         assert_eq!(rows[1], pair("Status:", "Training"));
         assert_eq!(rows[2], pair("Items to Build:", "1"));
+        // The best case: 9 units at one unit per 4 days end 36 days after
+        // day 7 (FUN_00528d30).
+        assert_eq!(rows[3], pair("Estimated Day of Completion:", "43"));
         assert_eq!(rows.len(), 4);
     }
 
@@ -1619,7 +1644,7 @@ mod tests {
         let mut states = States::new();
         states.manufacturing.enqueue(
             here,
-            QueueItem::new(BuildableKind::Troop(DatId::new(0x1000_0002)), 4, 9),
+            QueueItem::new(BuildableKind::Troop(DatId::new(0x1000_0002)), 9),
         );
 
         let rows =

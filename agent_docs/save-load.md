@@ -18,7 +18,7 @@ that loads.
 
 ```text
 [magic: 8 bytes "OPENREB\0"]
-[version: u32 LE]             — SAVE_VERSION = 30
+[version: u32 LE]             — SAVE_VERSION = 34
 [save_name: u32 len + UTF-8]
 [timestamp_secs: u64 LE]
 [mod_count: u32 LE]

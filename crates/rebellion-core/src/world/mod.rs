@@ -892,6 +892,11 @@ impl Fleet {
 pub struct FighterEntry {
     pub class: FighterKey,
     pub count: u32,
+    /// The tag of the capital ship the squadrons ride aboard
+    /// (`ShipInstance::tag`; the original's squadrons are children of a
+    /// ship, `FUN_005039d0`). 0 holds them on the fleet itself. port: a
+    /// fleet with no capital ship, or more squadrons than its ships hold.
+    pub carrier: u32,
 }
 
 /// A single hull of a capital ship — the primary ship record in Fleet.
@@ -918,6 +923,9 @@ pub struct ShipInstance {
     /// The name the player gave it (`+0x34`, order 0x203); `None` shows the
     /// class's (`FUN_004f6270`).
     pub name: Option<String>,
+    /// The world-unique tag its squadrons and regiments name as their
+    /// carrier (`GameWorld::last_ship_tag`); 0 until something boards it.
+    pub tag: u32,
 }
 
 impl ShipInstance {
@@ -933,6 +941,7 @@ impl ShipInstance {
             shield_weapon_packed: 0,
             alive: true,
             name: None,
+            tag: 0,
         }
     }
 
@@ -1367,7 +1376,7 @@ impl BuildableClass {
 }
 
 /// A facility at a system, from any of the three facility arenas.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FacilityRef {
     Defense(DefenseFacilityKey),
     Manufacturing(ManufacturingFacilityKey),
@@ -1567,6 +1576,9 @@ pub struct GameWorld {
     pub recruit_pool_empty: [bool; 2],
     /// Each fleet's name (`+0x34`) and each side's default-name counter.
     pub fleet_names: FleetNames,
+    /// The last tag given to a capital ship that took a squadron or a
+    /// regiment aboard (`ShipInstance::tag`).
+    pub last_ship_tag: u32,
 }
 
 /// The fleet record's name (`+0x34`, TEXTSTRA 11523): a fleet's name until

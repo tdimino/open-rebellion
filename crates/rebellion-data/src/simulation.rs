@@ -28,6 +28,7 @@ use rebellion_core::missions::{MissionState, MissionSystem};
 use rebellion_core::movement::{reconcile_fleet_orbits, MovementState, MovementSystem};
 use rebellion_core::repair::{RepairState, RepairSystem};
 use rebellion_core::research::{ResearchState, ResearchSystem};
+use rebellion_core::stockpiles::{StockpileEvent, StockpileState, StockpileSystem};
 use rebellion_core::tick::{GameClock, TickEvent};
 use rebellion_core::troop_transport::TroopTransportState;
 use rebellion_core::uprising::{UprisingState, UprisingSystem};
@@ -68,6 +69,8 @@ pub struct SimulationStates {
     pub troop_transport: TroopTransportState,
     /// Manufactured objects travelling to their destination (F-030).
     pub deliveries: DeliveryState,
+    /// Each side's raw and refined materials and the facility cycles.
+    pub stockpiles: StockpileState,
     pub combat_cooldowns: HashMap<SystemKey, u64>,
     /// Original new-game choices that continue to govern this campaign.
     pub campaign_config: CampaignConfig,
@@ -134,6 +137,26 @@ pub fn run_simulation_tick(
         &states.uprising,
     );
     integrator.apply_economy_events(world, &economy_events);
+
+    // ── 0b. Stockpiles: facility cycles, yard work, overdraft scraps ─────
+    let stockpile_events = StockpileSystem::advance(
+        &mut states.stockpiles,
+        world,
+        &mut states.manufacturing,
+        &states.economy,
+        tick_events,
+        states.blockade.blockaded_systems(),
+        &take_rolls(tick_events.len()),
+    );
+    rebellion_core::scrap::scrap_all(
+        world,
+        &mut states.stockpiles,
+        &mut states.troop_transport,
+        stockpile_events.iter().filter_map(|event| match *event {
+            StockpileEvent::OverdraftScrap { target, .. } => Some(target),
+            _ => None,
+        }),
+    );
 
     // ── 1. Manufacturing ─────────────────────────────────────────────────
     // Use advance_tracked so the K6 EVT_MANUFACTURING_IDLE telemetry is
@@ -837,6 +860,7 @@ mod tests {
             repair: RepairState::default(),
             troop_transport: TroopTransportState::default(),
             deliveries: DeliveryState::default(),
+            stockpiles: StockpileState::default(),
             combat_cooldowns: HashMap::new(),
             campaign_config: CampaignConfig::default(),
         };
@@ -1049,6 +1073,7 @@ mod tests {
             repair: RepairState::default(),
             troop_transport: TroopTransportState::default(),
             deliveries: DeliveryState::default(),
+            stockpiles: StockpileState::default(),
             combat_cooldowns: HashMap::new(),
             campaign_config: CampaignConfig::default(),
         };
@@ -1194,6 +1219,7 @@ mod tests {
             repair: RepairState::default(),
             troop_transport: TroopTransportState::default(),
             deliveries: DeliveryState::default(),
+            stockpiles: StockpileState::default(),
             combat_cooldowns: HashMap::new(),
             campaign_config: CampaignConfig {
                 victory_conditions: VictoryConditions::HeadquartersOnly,
@@ -1325,6 +1351,7 @@ mod tests {
             repair: RepairState::default(),
             troop_transport: TroopTransportState::default(),
             deliveries: DeliveryState::default(),
+            stockpiles: StockpileState::default(),
             combat_cooldowns: HashMap::new(),
             campaign_config: CampaignConfig {
                 victory_conditions: VictoryConditions::HeadquartersOnly,
@@ -1474,6 +1501,7 @@ mod tests {
             repair: RepairState::default(),
             troop_transport: TroopTransportState::default(),
             deliveries: DeliveryState::default(),
+            stockpiles: StockpileState::default(),
             combat_cooldowns: HashMap::new(),
             campaign_config: CampaignConfig::default(),
         };

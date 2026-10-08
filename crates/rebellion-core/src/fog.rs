@@ -28,14 +28,14 @@
 //! let reveals = FogSystem::advance(&mut fog, &world, &movement_state);
 //! ```
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
 use crate::dat::Faction;
 use crate::ids::SystemKey;
 use crate::movement::MovementState;
-use crate::world::GameWorld;
+use crate::world::{FacilityRef, GameWorld};
 
 // ---------------------------------------------------------------------------
 // FogState
@@ -57,6 +57,17 @@ pub struct FogState {
         deserialize_with = "crate::serde_ordered::deserialize_hash_set"
     )]
     pub visible: HashSet<SystemKey>,
+    /// Each system's manufacturing and production facilities as this side
+    /// last knew them. The side's view of a system (`FUN_00539fd0`, the
+    /// view `FUN_004f3220` resolves for the sector window) starts with
+    /// "your opponent's and neutral systems' ... production facilities for
+    /// core systems", and "you won't know when things on that system
+    /// change" (manual p. 69).
+    #[serde(
+        serialize_with = "crate::serde_ordered::serialize_hash_map",
+        deserialize_with = "crate::serde_ordered::deserialize_hash_map"
+    )]
+    pub known_facilities: HashMap<SystemKey, Vec<FacilityRef>>,
 }
 
 impl FogState {
@@ -65,7 +76,35 @@ impl FogState {
         FogState {
             faction,
             visible: HashSet::new(),
+            known_facilities: HashMap::new(),
         }
+    }
+
+    /// The manufacturing and production facilities this side knows at
+    /// `system`.
+    #[must_use]
+    pub fn known_facilities(&self, system: SystemKey) -> &[FacilityRef] {
+        self.known_facilities.get(&system).map_or(&[], Vec::as_slice)
+    }
+
+    /// Record `system`'s manufacturing and production facilities as they are
+    /// now.
+    pub fn learn_facilities(&mut self, world: &GameWorld, system: SystemKey) {
+        let Some(value) = world.systems.get(system) else {
+            return;
+        };
+        let facilities = value
+            .manufacturing_facilities
+            .iter()
+            .map(|&key| FacilityRef::Manufacturing(key))
+            .chain(
+                value
+                    .production_facilities
+                    .iter()
+                    .map(|&key| FacilityRef::Production(key)),
+            )
+            .collect();
+        self.known_facilities.insert(system, facilities);
     }
 
     /// Returns true if `system` is currently visible to this faction.
@@ -123,6 +162,40 @@ impl FogSystem {
             if fleet.is_alliance == is_alliance {
                 fog.reveal(fleet.location);
             }
+        }
+        // Manual p. 69: at the start each side knows the core systems'
+        // production facilities. Exploration alone is not enough: seeding
+        // explores the rim system holding the Alliance headquarters, which
+        // the Empire must still locate. hyp: the per-side views are seeded
+        // from the world (the seeder is untraced).
+        for (key, system) in &world.systems {
+            let core = world
+                .sectors
+                .get(system.sector)
+                .is_some_and(|sector| sector.group == crate::dat::SectorGroup::Core);
+            if core
+                && system.exploration_status != crate::dat::ExplorationStatus::Unexplored
+                && !fog.known_facilities.contains_key(&key)
+            {
+                fog.learn_facilities(world, key);
+            }
+        }
+    }
+
+    /// Bring the side's facility knowledge up to date where it holds or
+    /// sees the system. port: hyp: the original's view updates are
+    /// untraced; manual p. 69 says only that changes elsewhere go unseen.
+    pub fn refresh_known_facilities(fog: &mut FogState, world: &GameWorld) {
+        let keys: Vec<SystemKey> = world
+            .systems
+            .iter()
+            .filter(|(key, system)| {
+                fog.is_visible(*key) || system.control.is_controlled_by(fog.faction)
+            })
+            .map(|(key, _)| key)
+            .collect();
+        for key in keys {
+            fog.learn_facilities(world, key);
         }
     }
 
@@ -225,6 +298,7 @@ impl FogSystem {
             }
         }
 
+        Self::refresh_known_facilities(fog, world);
         events
     }
 }
@@ -306,6 +380,66 @@ mod tests {
             .collect();
 
         (world, sys_keys, fleet_keys)
+    }
+
+    fn add_mine(world: &mut GameWorld, system: SystemKey) -> FacilityRef {
+        let key = world
+            .production_facilities
+            .insert(crate::world::ProductionFacilityInstance {
+                class_dat_id: crate::ids::DatId(0x2400_0001),
+                side: Faction::Empire,
+                is_mine: true,
+            });
+        world.systems[system].production_facilities.push(key);
+        FacilityRef::Production(key)
+    }
+
+    // Manual p. 69: at the start a side knows the core systems' production
+    // facilities, its opponent's and neutral ones included; rim systems
+    // (unexplored) stay unknown.
+    #[test]
+    fn a_side_starts_knowing_every_core_systems_facilities() {
+        let (mut world, systems, _) = make_world_with_fleets(2, &[], true);
+        world.systems[systems[1]].exploration_status = crate::dat::ExplorationStatus::Unexplored;
+        let core = add_mine(&mut world, systems[0]);
+        add_mine(&mut world, systems[1]);
+        let mut fog = FogState::new(Faction::Alliance);
+        FogSystem::seed(&mut fog, &world);
+        assert_eq!(fog.known_facilities(systems[0]), [core]);
+        assert!(fog.known_facilities(systems[1]).is_empty());
+    }
+
+    // Manual p. 69: only the core systems' facilities are known at the
+    // start, so an explored rim system, such as the one seeding picks for
+    // the Alliance headquarters, stays unknown to the Empire.
+    #[test]
+    fn a_side_does_not_start_knowing_an_explored_rim_systems_facilities() {
+        let (mut world, systems, _) = make_world_with_fleets(1, &[], true);
+        let rim = world.sectors.insert(crate::world::Sector {
+            group: crate::dat::SectorGroup::RimOuter,
+            ..world.sectors[world.systems[systems[0]].sector].clone()
+        });
+        world.systems[systems[0]].sector = rim;
+        add_mine(&mut world, systems[0]);
+        let mut fog = FogState::new(Faction::Empire);
+        FogSystem::seed(&mut fog, &world);
+        assert!(fog.known_facilities(systems[0]).is_empty());
+    }
+
+    // Manual p. 69: "you won't know when things on that system change".
+    // hyp: the side learns them again while it sees or holds the system.
+    #[test]
+    fn a_side_learns_a_systems_changes_only_while_it_sees_it() {
+        let (mut world, systems, fleets) = make_world_with_fleets(2, &[1], true);
+        let mut fog = FogState::new(Faction::Alliance);
+        FogSystem::seed(&mut fog, &world);
+        let movement = MovementState::new();
+        add_mine(&mut world, systems[0]);
+        FogSystem::advance(&mut fog, &world, &movement);
+        assert!(fog.known_facilities(systems[0]).is_empty());
+        world.fleets[fleets[0]].location = systems[0];
+        FogSystem::advance(&mut fog, &world, &movement);
+        assert_eq!(fog.known_facilities(systems[0]).len(), 1);
     }
 
     #[test]

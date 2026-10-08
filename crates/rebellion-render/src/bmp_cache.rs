@@ -483,10 +483,11 @@ pub mod resources {
         pub const OPTIONS_MUSIC_NORMAL: u32 = 10040;
         pub const OPTIONS_MUSIC_PRESSED: u32 = 10041;
         pub const OPTIONS_MUSIC_DISABLED: u32 = 10042;
-        /// Game Options tactical toggle: on, pressed, and off or disabled.
-        pub const OPTIONS_TOGGLE_ON: u32 = 10043;
+        /// Game Options tactical switch: normal (off), pressed (also drawn
+        /// while checked, `FUN_00407180` state 4), and disabled.
+        pub const OPTIONS_TOGGLE_NORMAL: u32 = 10043;
         pub const OPTIONS_TOGGLE_PRESSED: u32 = 10044;
-        pub const OPTIONS_TOGGLE_OFF: u32 = 10045;
+        pub const OPTIONS_TOGGLE_DISABLED: u32 = 10045;
         /// Per-slot save control: normal, pressed, and disabled.
         pub const OPTIONS_SAVE_NORMAL: u32 = 10046;
         pub const OPTIONS_SAVE_PRESSED: u32 = 10047;
@@ -1862,6 +1863,29 @@ fn uses_blue_screen_transparency(source: DllSource, resource_id: u32) -> bool {
                 | resources::strategy::SECTOR_PLANET_SPECIAL_FIRST
                     ..=resources::strategy::SECTOR_PLANET_SPECIAL_LAST
                 | 10382..=10387
+                // The headquarters marker, which FUN_0045c6b0 pixel-tests
+                // against its transparent color (FUN_005fca00).
+                | 904
+                // The detailed legend's glyphs, rule and key emblems
+                // (FUN_00452630 blits them keyed, FUN_005fd0f0).
+                | 10180..=10182
+                | 10241
+                | 10243
+                | 10245
+                // The Manufacturing window's facility pictures and the mines
+                // page's empty deposit (FUN_004568a0), which the original
+                // shows over the window's background (Wine captures of the
+                // Construction Yards, Refineries and Mines pages).
+                | 9001..=9032
+                // The Manufacturing window's band frame and title strips,
+                // blitted keyed into a copy of the background
+                // (FUN_00457690 → FUN_005fd0f0), its yard column, whose
+                // gaps show the background in the original, and the
+                // selected item's side frames (`+0x15c`)
+                // (`ghidra/notes/manufacturing-build-selection.md`).
+                | 10262..=10264
+                | 10290..=10296
+                | 10298
                 // The Fleet window's frames, pictures and indicators, the
                 // Defenses window's tabs and row frames, the Missions
                 // window's row frames and tabs (buttons blit keyed,
@@ -1995,8 +2019,17 @@ fn decode_rgba_image(
 ) -> image::ImageResult<image::RgbaImage> {
     let mut rgba = image::load_from_memory(bytes)?.to_rgba8();
     if uses_blue_screen_transparency(source, resource_id) {
+        // The facility pictures carry authored near-blue pixels (9006 and
+        // 9010's (0, 0, 196)) that the palette-index key leaves alone, so
+        // they key only the exact matte blue.
+        let exact = source == DllSource::Strategy && (9001..=9032).contains(&resource_id);
         for pixel in rgba.pixels_mut() {
-            if pixel[0] < 32 && pixel[1] < 32 && pixel[2] > 192 {
+            let matte = if exact {
+                pixel[0] == 0 && pixel[1] == 0 && pixel[2] == 255
+            } else {
+                pixel[0] < 32 && pixel[1] < 32 && pixel[2] > 192
+            };
+            if matte {
                 pixel[3] = 0;
             }
         }
@@ -2538,6 +2571,58 @@ mod tests {
         for resource_id in [10407, 10409, 10416, 10770] {
             let decoded = decode_color_image(&encoded, DllSource::Strategy, resource_id).unwrap();
             assert_eq!(decoded.pixels[0].a(), 255, "{resource_id}");
+        }
+    }
+
+    #[test]
+    fn the_headquarters_marker_keys_out_its_blue_matte() {
+        // STRATEGY 904 (0x388, FUN_0045bbb0) sits on a palette-blue matte
+        // that FUN_005fca00 treats as transparent.
+        let mut image = image::RgbaImage::new(2, 1);
+        image.put_pixel(0, 0, image::Rgba([0, 0, 255, 255]));
+        image.put_pixel(1, 0, image::Rgba([255, 200, 0, 255]));
+        let mut encoded = Vec::new();
+        image::DynamicImage::ImageRgba8(image)
+            .write_to(
+                &mut std::io::Cursor::new(&mut encoded),
+                image::ImageFormat::Png,
+            )
+            .unwrap();
+        let decoded = decode_color_image(&encoded, DllSource::Strategy, 904).unwrap();
+        assert_eq!(decoded.pixels[0].a(), 0);
+        assert_eq!(decoded.pixels[1].a(), 255);
+    }
+
+    #[test]
+    fn the_manufacturing_windows_frames_key_out_their_blue_matte_over_its_background() {
+        // FUN_00457690 blits 10290 and the strips 10291..10296 keyed
+        // (FUN_005fd0f0) and the selected item's frame 10262..10264 keyed;
+        // the original's yard column 10298 shows the background through its
+        // gaps. The background 10297 is opaque: its blue is the line under
+        // the tabs.
+        let mut image = image::RgbaImage::new(1, 1);
+        image.put_pixel(0, 0, image::Rgba([0, 0, 255, 255]));
+        let mut encoded = Vec::new();
+        image::DynamicImage::ImageRgba8(image)
+            .write_to(
+                &mut std::io::Cursor::new(&mut encoded),
+                image::ImageFormat::Png,
+            )
+            .unwrap();
+        let alpha = |resource_id| {
+            decode_color_image(&encoded, DllSource::Strategy, resource_id)
+                .unwrap()
+                .pixels[0]
+                .a()
+        };
+        for resource_id in [10262, 10264, 10290, 10291, 10296, 10298] {
+            assert_eq!(alpha(resource_id), 0, "{resource_id}");
+        }
+        assert_eq!(alpha(10297), 255);
+        // FUN_004568a0's facility pictures and the deposit 9005 sit on the
+        // same matte over the background.
+        for resource_id in [9001, 9005, 9014, 9022, 9030, 9032] {
+            assert_eq!(alpha(resource_id), 0, "{resource_id}");
         }
     }
 

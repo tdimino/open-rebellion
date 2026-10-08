@@ -127,6 +127,154 @@ units use them up. `FUN_00530350` (event `0x382`) locks a random object when
 the load over the facilities' allocated halves (`FUN_0055a820`,
 `FUN_0055a960`).
 
+### Load allocation (`FUN_0052f6b0`, `FUN_0052f8f0`)
+
+`FUN_0052fff0` ends by spreading the load: `FUN_0052f6b0` over the mines,
+`FUN_0052f8f0` over the refineries, the same algorithm on each. Side
+`+0x60` pair is (capacity C, allocated A) summed over the eligible
+facilities; `+0x70`/`+0x74` is the load L.
+
+- `delta = min(L − A, C − A)`. Zero does nothing: a new facility gets no
+  share until the load or the capacity changes.
+- The walk visits the side's completed (`+0x50` bit 0), enabled (`+0x60`
+  bit 0 clear) facilities of the family in object order (`FUN_00506630`,
+  `FUN_00506960`, then `FUN_004f6010`), and repeats the walk while any of them
+  changed and has room left.
+- Adding (`FUN_0055a820`): a facility with pair (c, a) takes
+  `clamp(A × c / C − a + 1, 0, min(delta, c − a))`, and A grows by it. With
+  every facility at c = 50 this hands out one unit per facility per walk:
+  the load is dealt round-robin, so shares differ by at most one, the
+  earlier facilities in walk order holding the extra unit.
+- Removing (`FUN_0055a960`): a facility gives up
+  `clamp(a − (A − 1) × c / C, 0, delta)`, so units leave the fullest first.
+- `FUN_0055a6e0` writes the facility pair and calls slot `+0x204`; a
+  facility that goes offline drops its share (`FUN_0055ab60`: pair second
+  half set to 0), and A, rebuilt from the facilities each time, shrinks with
+  it.
+- `FUN_0052fff0`'s callers are object add, remove, completion and side change
+  handlers (`FUN_005140c0`, `FUN_00514510`, `FUN_00514890`, `FUN_00515cd0`,
+  `FUN_00515f40`): the load is respread on change, not on a clock.
+
+### Waiting for input (`FUN_0052fbb0`, `FUN_0052fbd0`)
+
+- A refinery in state 1 with no raw left (`FUN_005306b0`) appends a 0x18-byte
+  request naming itself to the side's raw queue (`+0x88`, count `+0x80`,
+  `FUN_00533570`); a yard does the same for refined (`FUN_00530820` →
+  `FUN_00533610`, count `+0x84`).
+- `FUN_0052fbf0` (raw) and `FUN_0052fd30` (refined) pop the head
+  (`FUN_005f5e90`: first in, first out). If that facility is still in state
+  1 and the request is current (`FUN_0053a6e0`), they take one unit and set
+  its bit 1; a stale request is dropped. They report whether another waiter
+  and unit remain, so their events (`FUN_00577a20`, `FUN_00577d40`) repeat.
+- `FUN_0052fb30` spends no raw when `DAT_006b90e0` is clear (before play);
+  `FUN_0052fb80` has no such guard.
+
+### Diverted output (`FUN_005166a0`)
+
+- `FUN_005185c0` returns the system holding the facility (a parent key in
+  `0x90..0x97`); `FUN_005166a0` reads its `+0x6c` and, when it is not 0,
+  rolls `FUN_0053e2f0(|v|)`: `rand(0..=99) < |v|` (`FUN_0053e2e0`,
+  `FUN_0053e290`).
+- On success the finished mine's raw or refinery's refined goes to the other
+  side (`FUN_00516360`: `local_14`, `FUN_00506f30(2 − (side != 1))`).
+- System `+0x6c` is written by `FUN_00509ec0` (range ±100) from
+  `FUN_0050b230` → `FUN_00559c40(side, support, bit 11, …)`: the support
+  drift the port already computes in `economy::calculate_support_drift`,
+  negative for side 2. `economy-systems.md` named it `production_modifier`.
+  It is 0 above the drift threshold (40) or while a friendly fleet is
+  present, so diversion happens only in restless systems.
+
+### Yards and the build (`FUN_00530950`, `FUN_00529dd0`)
+
+- A yard at the end of its cycle (state 3) clears bit 1 and, when its system
+  has a manager for the yard's family (`FUN_0052eb60` → `FUN_00509670`),
+  adds one to that manager's progress (`FUN_0052a430`: `+0x5c` while below
+  the cost `+0x68`, else the next unit's credit `+0x60`).
+- The yard is not always cycling. `FUN_00529dd0` keeps the number of active
+  yards (states 1..3) equal to the work left,
+  `+0x6c − +0x60 − +0x5c`:
+  - too few: start idle yards (state 4 → 1, `FUN_0053aac0`), the one with
+    the lowest `processing_rate` first, one at a time;
+  - too many: stop yards (→ 4, `FUN_0053ab10`), waiting ones (state 1)
+    before working (2) before done (3), the slowest first;
+  - no queued work: `FUN_0052a2c0`.
+- So each yard cycle draws one refined unit and adds one unit of work, and
+  an idle yard draws nothing.
+
+### Overdrawn maintenance scraps units (`FUN_00530350`)
+
+- `FUN_0052f670` sets side `+0xa8` to 1 when the load (`+0x70` or `+0x74`)
+  exceeds the capacity `+0x58`, else 0 (`FUN_0052f3d0`). Its change hook,
+  side vtable (`0x00660af8`) slot `+0x1f8` (`0x5329f0`, a function Ghidra had
+  not split out), enables or disables the side's timer `0x382` with that
+  value (`FUN_0053fa60(0x382, new, side, side + 0xcc)`).
+- The timer's record `+0xcc` takes its period from GNPRTB 7168, 10 days
+  (`FUN_00532350`, `timer-scheduler.md`).
+- Each firing (`FUN_00578060` → `FUN_00530350`), while still overdrawn,
+  counts the side's objects (families `0x10..0x3f`, `FUN_0052e8b0`) that
+  exist (`+0x50` bit 6), share the side, have `+0x50` bit 2 set and a
+  non-zero class `maintenance_cost` (`FUN_0052e530`), draws
+  `r = rand(0..=count − 1)` (`FUN_0053e290`), and sets Locked (`+0x50`
+  bit 13, `FUN_004f7950`) on the r-th of them in walk order (the counter is
+  the stack slot `[ESP + 0x18]`, `0x530418`; Ghidra's `local_4`).
+- Setting Locked calls slot `+0x140` (`FUN_004fbaa0` on the capital ship
+  vtable `0x0065d650`) → slot `+0xe0` (`FUN_004f8850`): a completed
+  (`+0x50` bit 0) Locked object calls slot `+0xac` (`FUN_004f8660` →
+  `FUN_004f71d0`) with 0x15, which writes 0x15 (Autoscrap) into its
+  destruction-reason byte `+0x40`. The unit is scrapped.
+- Mines and refineries (maintenance cost 0) are never picked. One unit goes
+  per 10 days until the load fits; scrapping returns its maintenance, which
+  ends the overdraft sooner.
+- Manual p. 30 (tutorial): "If your maintenance capacity falls below zero,
+  you will find your facilities, troops, or ships will begin to be
+  scrapped." Confirmed.
+- Correction: `FUN_00530270` reads `+0x40 & 0xff`, the destruction reason,
+  not the family. The half-cost refund applies to any object destroyed with
+  reason 0x14..0x16 whose `+0x50` bit 2 is set, so an autoscrapped unit
+  refunds half its refined cost too.
+
+### The player's Scrap order (`0x200`)
+
+- Offered by a fleet (`FUN_004ff8e0`), a regiment (`FUN_00504b30`), a
+  capital ship (`FUN_00557ce0`) and the sector window's facility, defense
+  and fleet icons (`FUN_00512700`: facilities `FUN_0053b6e0`; regiments,
+  squadrons and defenses; fleets `FUN_004ffe70`).
+- Order vtable `0x006619b0` (constructor `FUN_0053dcd0`, factory
+  `FUN_0053dd20`, registered by `FUN_0051f4b0`): kind `FUN_0048b450`,
+  enabled `FUN_0051fe20`, validator `FUN_0051ff30`, execute `FUN_00520040`,
+  command factory `FUN_0053dda0` → `FUN_00579570` (vtable `0x006695a8`,
+  whose execute `FUN_00579860` calls the object's `+0x98`).
+- Enabled (the object's `+0x5c`; `FUN_004f9860`, a fleet's `FUN_004ffa70`):
+  the order's side, completed (`+0x50` bit 2), not destroyed, not en route
+  (bit 4), not on a mission (`+0x78` bit 7); a fleet also needs every ship
+  completed (status `1`/`0x10`) and none en route (`1`/`0x11`).
+- `FUN_00487cc0` always confirms kind `0x200`. `FUN_0049a350` case `0x200`:
+  text TEXTSTRA RCDATA `0x7050` "Are you sure you want to scrap the
+  following units?", then for each object of the team `FUN_0049a880`
+  appends `0x7054` ("\n" and the name `+0x30`); picture `+0x2e` 1032 for
+  side 1, else 1033. The window is the move confirmation's
+  (`FUN_0044f060`): checkmark `0x14`, X `0x15`, Enter and Escape.
+- Execution is immediate: `+0x98` (`FUN_004f84e0` on a fleet) → `+0xa0`
+  (`FUN_00534c00`) → `+0xac(0x14)` → `FUN_004f71d0` writes reason `0x14`
+  and sets destroyed (`+0x100`, `FUN_004fb200` → `FUN_004f7560`). Event
+  `0x302` follows; only reason `0x15` adds `0x304` (DestroyedAutoscrap).
+- The destroy handler `FUN_005140c0` recomputes maintenance
+  (`FUN_0052fff0`) and refunds (`FUN_00530270`): any object with reason
+  `0x14..0x16` and `+0x50` bit 2 returns half its class's refined cost.
+- Manual p. 86: "This returns to you the maintenance and some of the refined
+  material the unit used." "You can scrap any facility, troop, or ship in
+  this way."
+- Open: what scrapping a fleet does to the ships and squadrons it carries
+  (the fleet's own destroy path); reason `0x16`.
+
+### Starting stockpiles
+
+The only writes to side `+0x78` in the side class's code
+(`0x52c000..0x536000`) are `FUN_0052ef90` and the stream readers
+`FUN_00531a70`, `FUN_00533300` and `FUN_005336b0`. Nothing seeds the
+stockpiles, so a new game starts at 0 raw and 0 refined (hyp: the
+constructor zeroes them; not read).
+
 ## Corrections
 
 - `FUN_00433620`/`FUN_00433780`/`FUN_00484630` do not feed the counters.
@@ -140,16 +288,33 @@ the load over the facilities' allocated halves (`FUN_0055a820`,
 
 ## Port
 
-The port keeps no side stockpiles and runs no facility cycles
-(`manufacturing-build-selection.md`: "refined material is not drawn down"),
-so `game_speed::draw_resource_counters` stays unwired. The maintenance
-counter needs only the formula above and class `maintenance_cost`. The two
-stockpiles need the facility cycle above.
+- `rebellion-core/src/stockpiles.rs`: each side's raw and refined
+  (`SideStock`), every facility's cycle (`FacilityCycle`: stage, ready
+  tick, first-cycle flag, load share, request number), the load spread
+  (`spread_load`), the yard assignment, the diversion roll and the
+  overdraft timer. It runs each tick between the economy and
+  manufacturing, in `rebellion_data::simulation` and the app's own loop.
+- `rebellion-core/src/manufacturing.rs`: a unit's progress is units of work
+  (`work_done` of `total_cost`, its refined cost) with the manager's credit;
+  only yard cycles add it. Build Selection's and the Status window's days
+  stay the best case over the yards' periods.
+- `rebellion-core/src/scrap.rs`: the Scrap order's team, gate, names and
+  the scrap itself with its half-cost refund; the overdraft's candidates.
+- `rebellion-core/src/economy.rs`: `SystemEconomy::support_drift`, the
+  system's `+0x6c`.
+- The app draws all three monitors and opens the Scrap confirmation from
+  the object menus.
+- port: a unit's daily order is finish, assign, start; the original runs
+  them on events within the day.
+- hyp: a new game starts with empty stockpiles; the AI and agent order only
+  what their maintenance covers (manual p. 30); a scrapped fleet scraps its
+  ships and squadrons, and a fleet left with no unit is removed, its
+  characters staying in the system.
 
 ## Open
 
-- How `FUN_0052f6b0`/`FUN_0052f8f0` choose which facilities carry the load
-  (walk order, `FUN_0055a820`'s proportional share). This sets `allocated`
-  and so the cycle lengths.
-- The enemy-diversion roll's source record (`FUN_005185c0`, `record[0x1b]`).
-- The starting stockpiles (side `+0x78`, `+0x7c` at seeding).
+- The manager's `+0x6c` (the queue's total work) and its writer; what
+  `FUN_0052a2c0` does with no yards.
+- Whether the original respreads load when a facility is added with no load
+  change (the trace says no; untested in play).
+- Who calls `FUN_0055aa80`, which starts a completed mine or refinery.

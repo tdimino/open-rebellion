@@ -403,6 +403,7 @@ pub fn object_menu_rows(selection: Option<MenuObject>, gates: OrderGates) -> Vec
                 ObjectMenuCommand::Stop => producer && gates.stop,
                 ObjectMenuCommand::Build => producer && gates.build,
                 ObjectMenuCommand::ConfirmedMove => fleet && gates.fleet_move,
+                ObjectMenuCommand::Scrap => gates.scrap,
                 ObjectMenuCommand::Encyclopedia => selection.is_some(),
                 // FUN_0051d990: a single selection that is not a system.
                 ObjectMenuCommand::Status => {
@@ -436,6 +437,9 @@ pub struct OrderGates {
     /// Build (0x210..0x212) on a band: the band's area is the player's and
     /// lists something to build.
     pub build: bool,
+    /// Scrap (0x200): every object of the order is the player's and not en
+    /// route (`FUN_004f9860`, `FUN_004ffa70`; `rebellion_core::scrap`).
+    pub scrap: bool,
 }
 
 /// An open object pop-up menu.
@@ -543,6 +547,7 @@ mod tests {
         destination: false,
         stop: false,
         build: false,
+        scrap: false,
     };
 
     fn labels(rows: &[ObjectMenuRow]) -> Vec<&'static str> {
@@ -677,6 +682,7 @@ mod tests {
             destination: false,
             stop: false,
             build: false,
+            scrap: false,
         };
         assert_eq!(
             enabled(&object_menu_rows(fleet, gates)),
@@ -851,6 +857,7 @@ mod tests {
             destination: false,
             stop: true,
             build: true,
+            scrap: false,
         };
         assert_eq!(
             enabled(&object_menu_rows(icon(Quadrant::Fleets), every_gate)),
@@ -862,6 +869,28 @@ mod tests {
                 ["Encyclopedia"],
                 "{quadrant:?}"
             );
+        }
+    }
+
+    // FUN_004f9860 (FUN_004ffa70 for a fleet): Scrap is enabled by its own
+    // rule on every object that offers it.
+    #[test]
+    fn scrap_follows_its_own_rule() {
+        let scrap = OrderGates {
+            scrap: true,
+            ..OrderGates::default()
+        };
+        for selection in [
+            Some(MenuObject::Fleet(FleetKey::default())),
+            Some(MenuObject::Troop(rebellion_core::ids::TroopKey::default())),
+            icon(Quadrant::System),
+            icon(Quadrant::Defenses),
+            icon(Quadrant::Fleets),
+        ] {
+            let rows = object_menu_rows(selection, scrap);
+            assert!(enabled(&rows).contains(&"Scrap"), "{selection:?}");
+            let rows = object_menu_rows(selection, OrderGates::default());
+            assert!(!enabled(&rows).contains(&"Scrap"), "{selection:?}");
         }
     }
 

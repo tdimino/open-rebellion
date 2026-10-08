@@ -4,6 +4,7 @@ pub mod betrayal;
 pub mod blockade;
 pub mod bombardment;
 pub mod build_selection;
+pub mod carriage;
 pub mod combat;
 pub mod commands;
 pub mod dat;
@@ -27,8 +28,10 @@ pub mod net_protocol;
 pub mod repair;
 pub mod research;
 pub mod resources;
+pub mod scrap;
 #[doc(hidden)]
 pub mod serde_ordered;
+pub mod stockpiles;
 pub mod story_events;
 pub mod tick;
 pub mod troop_transport;

@@ -153,6 +153,13 @@ list and 23 in the right; +50 for side 2), from `FUN_004a66a0`'s flags:
 Flags 8 (`+0x50` bit 4), `0x10` (`+0x200`) and `0x20` (`+0x50` bit 2 clear)
 are stored but draw nothing here.
 
+The fleet's own entry carries indicators too. `FUN_004a3d40`, which builds
+the ship entries, ORs every ship's `FUN_004a66a0` flags (`local_6c |=`) and
+repaints the fleet entry (frame 10400/10450, the 10423/10424 overlays, then
+`FUN_004a67a0(.., local_6c, 1)` at y 33). `FUN_004a37c0` itself paints
+none, so a fleet entry shows them once its ships are listed. 10424 is an
+explosion overlay, not a contents mark.
+
 Selection: a click selects (`0x29b`, `FUN_004a6390` id `0xc9`) and refreshes
 the right side (`FUN_004a5c00`). A double click (notification `0x309`)
 toggles the selected fleets' expanded bit and rebuilds them (`FUN_004a3d40`).
@@ -330,9 +337,19 @@ therefore joins a fleet when a move names the Fleet window's `+0x70` target.
   - characters and special forces (`0x30..0x40`): unlimited;
   - anything else: refused.
 
-  untraced: the leg builders (`FUN_00552000`, `FUN_005529a0`,
-  `FUN_00552300`, `FUN_00552dd0`) that call it and pick the ship within a
-  fleet, and the refusal a full fleet gives.
+- **Which ship.** For a fleet destination, `FUN_00552300` walks the
+  fleet's capital ships in child-list order (`FUN_00502e30(fleet, 1, side)`)
+  and evaluates each with `FUN_00552b10`: accept
+  (`FUN_00500ac0`) and room (`FUN_00500b40`, one evaluation per capacity,
+  `FUN_00550c90`/`FUN_00550de0` keeping the tightest). `FUN_0054fbb0(a, b)`
+  is true when `b` is more constrained than `a`: an evaluated room
+  (`+4 == 0`) beats an unlimited one, then the smaller room (`+8`) wins.
+  `FUN_00552b10` replaces the best so far with the candidate when
+  `FUN_0054fbb0(candidate, best)` (`0x552c82`: `push` best, `ecx` the
+  candidate), so the ship with the **most room left** takes the unit, the
+  earlier ship on a tie; characters, unlimited everywhere, go to the first
+  accepting ship. No ship with room refuses the order, status `(1, 0x27)`.
+  A capital-ship destination evaluates only that ship.
 - **From the system window** (type 9), a drag issues `0x214` (`move-order.md`
   "Order 0x214"). Its per-object command (vtable `0x00669a30`) calls the
   object's slots `+0x1e0`, `+0x1e4` and `+0x200`. A regiment's `+0x1e4` is
@@ -350,6 +367,21 @@ therefore joins a fleet when a move names the Fleet window's `+0x70` target.
   (`blockade-troop-withdrawal.md`, "Regiment copy").
 
 ## Port notes
+
+- **Carriage** (`rebellion-core/src/carriage.rs`). The port keeps the
+  rosters on the fleet, each squadron entry and regiment naming its ship
+  by a world-unique tag (`ShipInstance::tag`, `FighterEntry::carrier`,
+  `TroopTransportState`'s carriers), placed by the rule above. A tag
+  travels with its ship through splits, joins and removals. hyp: squadrons
+  and regiments aboard a lost ship are lost with it (`FUN_004f84e0`; cargo
+  aboard a destroyed hull is open in `mission-lifecycle.md`). port: the
+  fleet's characters ride its first living ship, so one whose ship is lost
+  moves to the next; a squadron or regiment no ship has room for is held on
+  the fleet (carrier 0) where the original refuses. hyp: seeding and build
+  delivery board by the same rule (their own placement is untraced).
+- Each ship entry and right-list capital ship paints its `FUN_004a66a0`
+  flags, the fleet entry their union plus what the fleet holds itself, and
+  a selected ship's tabs list its own contents (`FUN_004a5c00`).
 
 - `crates/rebellion-render/src/fleet_window.rs` is type 4; `system_window.rs`
   is type 9; `defenses_window.rs` and `missions_window.rs` are types 10 and

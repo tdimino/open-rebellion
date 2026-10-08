@@ -298,6 +298,17 @@ pub fn apply_seeds(
     apply_seeds_with_rng(gdata_path, world, system_key_map, seed_options, &mut rng)
 }
 
+/// Put each seeded fleet's squadrons aboard its ships. hyp: by the move's
+/// rule (`rebellion_core::carriage::board_squadrons`); the seeders place
+/// each squadron in a ship directly (`FUN_0051aa50`), by a choice that is
+/// untraced.
+fn board_seeded_squadrons(world: &mut GameWorld) {
+    let fleets: Vec<_> = world.fleets.keys().collect();
+    for fleet in fleets {
+        rebellion_core::carriage::board_held_squadrons(world, fleet);
+    }
+}
+
 /// Apply all seed tables with an injected RNG for deterministic tests.
 ///
 /// Uses the 3-system model: Coruscant (Empire HQ), Yavin (Alliance base),
@@ -455,6 +466,8 @@ pub fn apply_seeds_with_rng<R: Rng + ?Sized>(
     let cmunal = load_seed(gdata_path, "CMUNALTB.DAT")?;
     seed_maintenance_budget_units(world, seed_options, cmunem.as_ref(), cmunal.as_ref(), rng);
     seed_low_support_garrisons(world, seed_options, rng);
+
+    board_seeded_squadrons(world);
 
     // Every seeded special force now exists; roll their skills.
     roll_special_force_skills(world, rng);
@@ -761,6 +774,8 @@ pub fn apply_seeds_from_files_with_rng<R: Rng + ?Sized>(
     seed_maintenance_budget_units(world, seed_options, cmunem.as_ref(), cmunal.as_ref(), rng);
     seed_low_support_garrisons(world, seed_options, rng);
 
+    board_seeded_squadrons(world);
+
     // Every seeded special force now exists; roll their skills.
     roll_special_force_skills(world, rng);
 
@@ -991,7 +1006,7 @@ fn dispatch_fleet_item(
                 if let Some(entry) = fighters.iter_mut().find(|e| e.class == class) {
                     entry.count += 1;
                 } else {
-                    fighters.push(FighterEntry { class, count: 1 });
+                    fighters.push(FighterEntry { class, count: 1, carrier: 0 });
                 }
             }
         }
@@ -1817,7 +1832,7 @@ fn deploy_bundle_to_system<R: Rng + ?Sized>(
                     if let Some(entry) = fleet_fighters.iter_mut().find(|e| e.class == class) {
                         entry.count += 1;
                     } else {
-                        fleet_fighters.push(FighterEntry { class, count: 1 });
+                        fleet_fighters.push(FighterEntry { class, count: 1, carrier: 0 });
                     }
                 }
             }

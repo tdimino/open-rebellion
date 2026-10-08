@@ -65,9 +65,10 @@ and (229,135), with bitmap pairs 10624/10625 and 10626/10627; both are 57 by
 
 ## Compatibility and evidence gaps
 
-- The authentic window has six rows. The compatibility panel retains all ten
-  existing slots through F8 / Ctrl+L (load) and campaign F9 / Ctrl+S
-  (save/delete), sharing confirmation guards. No storage migration is needed.
+- The authentic window has six rows. port: the galaxy's save shortcut (S)
+  opens this screen, as its cockpit button does; the stand-in ten-slot
+  save panel no longer opens from it, and F8 / F9 / Ctrl+L / Ctrl+S no
+  longer open the stand-in over it (2026-10-08).
 - No native delete button is present in this constructor or the inspected
   manual pages. Do not invent one; existing legacy deletion remains separate
   until its native gesture is recovered.

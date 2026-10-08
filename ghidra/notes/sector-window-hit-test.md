@@ -93,17 +93,19 @@ If items overlap, the item added first to the list wins (append order from
 
 1. `FUN_0045c660` finds the planet item whose rect holds the point.
 2. `FUN_0060a860` searches overlay list `+0x174` for the first item with
-   flag `0x10000` at `+0x0c` (the fleet-status overlay).
+   id `0x10000` at `+0x0c` (the headquarters overlay).
 3. If no overlay: return the planet item's id.
 4. If overlay found: `PtInRect` on overlay `+0x40` (same rect as planet).
 5. If point in overlay rect: `FUN_005fca00` does a per-pixel transparent-color
    test on overlay `+0x20` (bitmap at `(x - rect.left, y - rect.top)`).
-6. Pixel opaque → return overlay id (the fleet). Pixel transparent or miss →
-   return planet id.
+6. Pixel opaque → return overlay id (the headquarters). Pixel transparent or
+   miss → return planet id.
 
-The fleet-status overlay is a 37x37 icon (STRATEGY 0x388 = resource 904,
-verified 37x37). Created in `FUN_0045bbb0` via `FUN_00442130(alloc, 0x10000,
-fleet_id)`, added to list `+0x174` by `FUN_005f59f0`.
+The headquarters overlay is a 37x37 icon (STRATEGY 0x388 = resource 904,
+verified 37x37: a gold disc on a mast). Created in `FUN_0045bbb0` via
+`FUN_00442130(alloc, 0x10000, object id)`, added to list `+0x174` by
+`FUN_005f59f0`. Corrected 2026-10-08: earlier revisions of this note called it
+a fleet-status overlay.
 
 `FUN_005fca00` pixel test (`FUN_005fca00.c`):
 ```c
@@ -122,19 +124,37 @@ missed. hyp: off-by-one inherited from the original engine's bitmap class.
 
 Two kinds of overlay in list `+0x174`:
 
-### Fleet-status overlay (flag 0x10000)
+### Headquarters overlay (id 0x10000)
 
-Created per-system in `FUN_0045bbb0` when a fleet is present at the system
-(status bit 8). Rect matches the parent planet's rect (37x37). Bitmap is
-resource 0x388 (904), a 37x37 fleet icon with transparent background.
-`FUN_0045c6b0` pixel-tests this overlay.
+`FUN_0045bbb0` (the planet refresh) resolves the player side's view of the
+system (`FUN_004f3220` on galaxy view `+0x194` → `+0x9c`) and counts its
+objects of families `0x20..=0x22` (`FUN_00526cf0(out, view, 3)`, which fills
+`local_3c` and leaves the count at `local_20`). ALLFACSD `0x20000001`, family `0x20`, is the Alliance
+headquarters. A nonzero count sets status bit 8; a destroyed system
+(view `+0x50` bit 3) takes status `0x40` and the `0x2800` picture instead.
+While bit 8 holds, the refresh creates the overlay once (bitmap `0x388`,
+`+0x54` = 1, `+0x3c` = 6), takes the object `FUN_0052bed0` found as its id, and
+copies the planet's rect into `+0x40..+0x4c`. When bit 8 clears it removes
+the overlay (`FUN_005f5ac0`, then the destructor) unless the object it names
+is not destroyed and its container's id matches window `+0x144` (hyp: the
+headquarters still stands at a system in this sector).
 
-hyp: `FUN_0060a860` returns the FIRST item with flag `0x10000`. With multiple
-systems having fleets, the search may return a different system's overlay.
-The `PtInRect` check on the wrong overlay's rect would fail (different
-position), so the hit test degrades to returning the planet id—never a wrong
-fleet. But it means fleet-icon clicks on systems whose overlay is not first in
-the list would be missed (planet returned instead of fleet).
+Because the overlay is found by its fixed id (`FUN_0060a860(+0x174,
+0x10000)`), a window holds at most one: there is one headquarters. The
+quadrant items are built first (`FUN_00459e30`), so the marker is appended
+after them and painted above them. `FUN_0045c6b0` pixel-tests it, so a press
+on the disc selects the headquarters and a press on its transparent corners
+falls through to the planet.
+
+The same refresh composites STRATEGY 905 (`0x389`, side 1) or 906 (`0x38a`,
+side 2) onto the planet picture when the view's `+0x88` bit 4 is set. Both are
+flame marks; what sets the bit is untraced (hyp: an uprising).
+
+Port: `quadrant_icons::shows_headquarters` reads the view as the quadrant
+icons do (the player's own objects, everything in a system it sees, and the
+facilities its side knows), and `sector_window.rs` paints 904 over the planet
+after the quadrant icons. port: a press on the marker selects the planet; the
+port has no headquarters object to select. 905 and 906 are not drawn.
 
 ### Quadrant fleet-position overlays (flags 0x40000..0x400000)
 

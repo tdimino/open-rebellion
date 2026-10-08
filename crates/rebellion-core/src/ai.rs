@@ -243,8 +243,9 @@ pub enum AIAction {
     EnqueueProduction {
         system: SystemKey,
         kind: BuildableKind,
-        /// Suggested tick cost for the `QueueItem`.
-        ticks: u32,
+        /// Units of work: the class's refined-material cost, which the
+        /// yards' cycles draw one unit at a time (`crate::stockpiles`).
+        work: u32,
     },
 
     /// Move a fleet to a target system (attack or reinforce).
@@ -1064,6 +1065,7 @@ impl AISystem {
             crate::dat::Faction::Empire
         };
 
+        let first_order = actions.len();
         for (sys_key, system) in &world.systems {
             // A faction cannot use an isolated facility after losing control of
             // its system. Without this ownership gate, seeded facilities on
@@ -1099,11 +1101,10 @@ impl AISystem {
             // Capital ships are the bottleneck — without them, no fleets.
             if our_capship_count < config.production.capship_threshold {
                 if let Some((capship_key, capship_class)) = best_capship {
-                    let ticks = capship_class.refined_material_cost.max(20);
                     actions.push(AIAction::EnqueueProduction {
                         system: sys_key,
                         kind: BuildableKind::CapitalShip(capship_key),
-                        ticks,
+                        work: capship_class.refined_material_cost,
                     });
                     continue;
                 }
@@ -1118,11 +1119,10 @@ impl AISystem {
             };
             if needs_fighters {
                 if let Some((fighter_key, fighter_class)) = best_fighter {
-                    let ticks = fighter_class.refined_material_cost.max(5);
                     actions.push(AIAction::EnqueueProduction {
                         system: sys_key,
                         kind: BuildableKind::Fighter(fighter_key),
-                        ticks,
+                        work: fighter_class.refined_material_cost,
                     });
                     continue;
                 }
@@ -1144,7 +1144,11 @@ impl AISystem {
                     actions.push(AIAction::EnqueueProduction {
                         system: sys_key,
                         kind: BuildableKind::Troop(troop_key),
-                        ticks: 15,
+                        work: crate::build_selection::unit_costs(
+                            world,
+                            BuildableKind::Troop(troop_key),
+                        )
+                        .map_or(0, |(refined, _)| refined),
                     });
                     continue;
                 }
@@ -1166,7 +1170,11 @@ impl AISystem {
                     actions.push(AIAction::EnqueueProduction {
                         system: sys_key,
                         kind: BuildableKind::DefenseFacility(def_key),
-                        ticks: 25,
+                        work: crate::build_selection::unit_costs(
+                            world,
+                            BuildableKind::DefenseFacility(def_key),
+                        )
+                        .map_or(0, |(refined, _)| refined),
                     });
                     continue;
                 }
@@ -1179,7 +1187,11 @@ impl AISystem {
                     actions.push(AIAction::EnqueueProduction {
                         system: sys_key,
                         kind: BuildableKind::ManufacturingFacility(mfg_key),
-                        ticks: 30,
+                        work: crate::build_selection::unit_costs(
+                            world,
+                            BuildableKind::ManufacturingFacility(mfg_key),
+                        )
+                        .map_or(0, |(refined, _)| refined),
                     });
                     continue;
                 }
@@ -1187,12 +1199,34 @@ impl AISystem {
 
             // Default: build more capital ships.
             if let Some((capship_key, capship_class)) = best_capship {
-                let ticks = capship_class.refined_material_cost.max(20);
                 actions.push(AIAction::EnqueueProduction {
                     system: sys_key,
                     kind: BuildableKind::CapitalShip(capship_key),
-                    ticks,
+                    work: capship_class.refined_material_cost,
                 });
+            }
+        }
+
+        // Manual p. 30: with too little maintenance capacity "you won't be
+        // able to build anything new except mines and refineries"; an order
+        // takes its maintenance at once (p. 81). hyp: the AI orders only what
+        // its unused capacity covers, in its own order of preference, so it
+        // does not overdraw and set off the scrap timer (`FUN_00530350`).
+        let mut surplus = crate::resources::maintenance_surplus(world, mfg_state, our_faction);
+        let mut index = first_order;
+        while index < actions.len() {
+            let cost = match &actions[index] {
+                AIAction::EnqueueProduction { kind, .. } => {
+                    crate::build_selection::unit_costs(world, *kind)
+                        .map_or(0, |(_, maintenance)| i64::from(maintenance))
+                }
+                _ => 0,
+            };
+            if cost > surplus {
+                actions.remove(index);
+            } else {
+                surplus -= cost;
+                index += 1;
             }
         }
     }
@@ -2520,6 +2554,89 @@ mod tests {
         );
     }
 
+    /// Manual p. 30: with too little maintenance capacity a side cannot
+    /// build. hyp: the AI orders only what its unused capacity covers, so it
+    /// never overdraws into the scrap timer (`FUN_00530350`).
+    #[test]
+    fn the_ai_orders_nothing_its_maintenance_cannot_cover() {
+        let mut world = empty_world();
+        let sector = add_sector(&mut world);
+        let yard =
+            world
+                .manufacturing_facilities
+                .insert(crate::world::ManufacturingFacilityInstance {
+                    class_dat_id: DatId(0x2a00_0003),
+                    side: crate::dat::Faction::Empire,
+                    is_shipyard: false,
+                });
+        let sys_key = world.systems.insert(System {
+            dat_id: DatId(0),
+            name: "Coruscant".into(),
+            sector,
+            x: 0,
+            y: 0,
+            exploration_status: crate::dat::ExplorationStatus::Explored,
+            popularity_alliance: 0.1,
+            popularity_empire: 0.9,
+            is_populated: true,
+            total_energy: 0,
+            raw_materials: 0,
+            espionage_rating: 0.0,
+            fleets: vec![],
+            ground_units: vec![],
+            special_forces: vec![],
+            defense_facilities: vec![],
+            manufacturing_facilities: vec![yard],
+            production_facilities: vec![],
+            is_headquarters: false,
+            is_destroyed: false,
+            control: ControlKind::Controlled(crate::dat::Faction::Empire),
+        });
+        // A regiment class costing 8 maintenance (TROOPSD maintenance_cost).
+        world.buildable_classes.insert(
+            DatId(0x1000_0006),
+            crate::world::BuildableClass {
+                maintenance_cost: 8,
+                ..crate::world::BuildableClass::default()
+            },
+        );
+        world.troops.insert(crate::world::TroopUnit {
+            class_dat_id: DatId(0x1000_0006),
+            is_alliance: false,
+            regiment_strength: 100,
+        });
+        let ordered = |world: &GameWorld| {
+            AISystem::advance(
+                &mut AIState::new(AiFaction::Empire),
+                world,
+                &ManufacturingState::new(),
+                &MissionState::new(),
+                &crate::movement::MovementState::new(),
+                &ticks(7),
+                &GameConfig::default(),
+                &crate::research::ResearchState::new(),
+            )
+            .into_iter()
+            .any(|action| matches!(action, AIAction::EnqueueProduction { system, .. } if system == sys_key))
+        };
+
+        // No mine and refinery pair: no capacity, so no order.
+        assert!(!ordered(&world));
+
+        // A pair adds 50 (FUN_0052d540, FUN_0052d100): the regiment fits.
+        for (class, is_mine) in [(0x2c00_0001, true), (0x2d00_0002, false)] {
+            let key = world
+                .production_facilities
+                .insert(crate::world::ProductionFacilityInstance {
+                    class_dat_id: DatId(class),
+                    side: crate::dat::Faction::Empire,
+                    is_mine,
+                });
+            world.systems[sys_key].production_facilities.push(key);
+        }
+        assert!(ordered(&world));
+    }
+
     fn ticks(n: u64) -> Vec<TickEvent> {
         (1..=n).map(|t| TickEvent { tick: t }).collect()
     }
@@ -2753,6 +2870,19 @@ mod tests {
             is_destroyed: false,
             control: ControlKind::Controlled(crate::dat::Faction::Empire),
         });
+
+        // A mine and refinery pair gives the 50 maintenance capacity the
+        // fighter needs (manual p. 30; FUN_0052d540, FUN_0052d100).
+        for (class, is_mine) in [(0x2c00_0001, true), (0x2d00_0002, false)] {
+            let key = world
+                .production_facilities
+                .insert(crate::world::ProductionFacilityInstance {
+                    class_dat_id: DatId(class),
+                    side: crate::dat::Faction::Empire,
+                    is_mine,
+                });
+            world.systems[sys_key].production_facilities.push(key);
+        }
 
         // Add a TIE fighter class
         let _ = world.fighter_classes.insert(FighterClass {

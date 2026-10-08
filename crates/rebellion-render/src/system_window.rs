@@ -819,6 +819,11 @@ fn draw_system_window(
     let player = cockpit_faction(faction);
     let side = control_side(system.control);
     let visible = contents_visible(world, sources.fog, player, window.system);
+    let known = if sources.fog.faction == player {
+        sources.fog.known_facilities(window.system)
+    } else {
+        &[]
+    };
     let pages = SystemWindowTab::ALL.map(|tab| {
         tab.page().map(|page| {
             page_cells(
@@ -826,6 +831,7 @@ fn draw_system_window(
                 sources.manufacturing,
                 sources.deliveries,
                 visible,
+                known,
                 window.system,
                 page,
             )
@@ -1947,7 +1953,7 @@ mod tests {
         let mut manufacturing = ManufacturingState::new();
         manufacturing.build(
             systems[0],
-            &QueueItem::new(BuildableKind::CapitalShip(class), 10, 10),
+            &QueueItem::new(BuildableKind::CapitalShip(class), 10),
             2,
         );
         let mut state = opened(&world, systems[0]);
@@ -2110,7 +2116,7 @@ mod tests {
         let mut manufacturing = ManufacturingState::new();
         manufacturing.build(
             systems[0],
-            &QueueItem::new(BuildableKind::CapitalShip(class), 10, 10),
+            &QueueItem::new(BuildableKind::CapitalShip(class), 10),
             1,
         );
         let mut state = opened(&world, systems[0]);

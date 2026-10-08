@@ -19,7 +19,7 @@ use crate::fleet_window::paint_native;
 use crate::object_menu::MenuObject;
 #[cfg(any(debug_assertions, not(target_arch = "wasm32")))]
 use crate::panels::command_palette::InterfaceCommand;
-use crate::quadrant_icons::{quadrant_icon, Quadrant};
+use crate::quadrant_icons::{self, quadrant_icon, Quadrant};
 use crate::theme::game_font;
 
 /// `DAT_00658bd8`, a static 1023: the galaxy's width, whose half
@@ -715,6 +715,7 @@ fn draw_sector_window(
             // WM_PAINT draws the planet list (`+0x164`), then the overlay
             // list (`+0x174`), so every icon lies above every planet.
             let mut overlays: Vec<(SystemKey, Quadrant, egui::Rect, (u32, u32))> = Vec::new();
+            let mut headquarters: Option<egui::Rect> = None;
             for system_key in &sector.systems {
                 let Some(system) = world.systems.get(*system_key) else {
                     continue;
@@ -808,6 +809,9 @@ fn draw_sector_window(
                     system_name_color(system.control),
                 );
 
+                if quadrant_icons::shows_headquarters(world, fog, player, *system_key) {
+                    headquarters = Some(planet_rect);
+                }
                 overlays.extend(
                     icons
                         .iter()
@@ -849,6 +853,25 @@ fn draw_sector_window(
                     cache,
                     DllSource::Strategy,
                     if chosen { pressed } else { normal },
+                    rect,
+                    layout.scale,
+                    0.0,
+                    0.0,
+                );
+            }
+
+            // FUN_0045bbb0 appends the headquarters item to the overlay
+            // list after FUN_00459e30 builds the quadrant items, so it lies
+            // above them. Only one exists: FUN_0060a860 finds it by its
+            // `0x10000` id. port: a click on it selects the planet, where
+            // FUN_0045c6b0 would return the headquarters object.
+            if let Some(rect) = headquarters {
+                paint_native(
+                    ui.painter(),
+                    ctx,
+                    cache,
+                    DllSource::Strategy,
+                    quadrant_icons::HEADQUARTERS_ART,
                     rect,
                     layout.scale,
                     0.0,
@@ -2305,6 +2328,19 @@ mod tests {
         missions: &rebellion_core::missions::MissionState,
         scale: f32,
     ) -> Vec<(u32, egui::Pos2)> {
+        painted_bitmaps(world, system, missions, scale)
+            .into_iter()
+            .filter(|(id, _)| (10771..=10790).contains(id))
+            .collect()
+    }
+
+    /// Every native bitmap `system`'s sector window paints, in order.
+    fn painted_bitmaps(
+        world: &GameWorld,
+        system: SystemKey,
+        missions: &rebellion_core::missions::MissionState,
+        scale: f32,
+    ) -> Vec<(u32, egui::Pos2)> {
         let layout = layout(scale);
         let mut state = SectorWindowState::default();
         state.open_for_system(world, system, CockpitFaction::Alliance);
@@ -2336,11 +2372,33 @@ mod tests {
                 );
             });
         }
-        crate::fleet_window::tests::PAINTED
-            .with(|painted| painted.take())
-            .into_iter()
-            .filter(|(id, _)| (10771..=10790).contains(id))
-            .collect()
+        crate::fleet_window::tests::PAINTED.with(|painted| painted.take())
+    }
+
+    #[test]
+    fn the_headquarters_marker_lies_over_its_planet_above_the_quadrant_icons() {
+        // FUN_0045bbb0: the 0x388 (904) item takes the planet's rect and is
+        // appended to the overlay list after the quadrant items.
+        let (mut world, system, _) = fixture_world();
+        add_mine(&mut world, system);
+        let missions = rebellion_core::missions::MissionState::new();
+        assert!(!painted_bitmaps(&world, system, &missions, 2.0)
+            .iter()
+            .any(|(id, _)| *id == 904));
+        let headquarters = world.manufacturing_facilities.insert(
+            rebellion_core::world::ManufacturingFacilityInstance {
+                class_dat_id: DatId::new(0x2000_0001),
+                side: Faction::Alliance,
+                is_shipyard: false,
+            },
+        );
+        world.systems[system]
+            .manufacturing_facilities
+            .push(headquarters);
+        let painted = painted_bitmaps(&world, system, &missions, 2.0);
+        let at = |x: f32, y: f32| egui::pos2(10.0 + x * 2.0, 20.0 + y * 2.0);
+        assert_eq!(painted.last(), Some(&(904, at(74.0, 77.0))));
+        assert!(painted.iter().any(|(id, _)| *id == 10771));
     }
 
     #[test]

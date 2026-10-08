@@ -568,7 +568,7 @@ pub(crate) fn apply(
                         // `FighterEntry::count` is the number of strategic
                         // squadrons. `FIGHTSD.squadron_size` supplies the
                         // twelve craft inside each tactical object.
-                        .map(|_| FighterEntry { class, count: 1 })
+                        .map(|_| FighterEntry { class, count: 1, carrier: 0 })
                         .collect()
                 })
                 .unwrap_or_default(),
