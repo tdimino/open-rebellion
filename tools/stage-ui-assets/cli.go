@@ -134,12 +134,18 @@ func runCLIWithMedia(args []string, stdout, stderr io.Writer, targets []dllTarge
 		if err := stageStrings(*sourceDir, *stringsOutput, *force, stdout); err != nil {
 			return err
 		}
+		if err := stageEncyclopediaSource(*sourceDir, *encyclopediaOutput, *force, stdout); err != nil {
+			return err
+		}
 		if err := stageCutscenes(*mdata, *cutsceneOutput, *force, movieIDs, run, stdout); err != nil {
 			return err
 		}
 	}
 	if !*noVerify {
 		if err := verifyStrings(*stringsOutput, stdout); err != nil {
+			return err
+		}
+		if err := verifyEncyclopediaSource(*encyclopediaOutput, stdout); err != nil {
 			return err
 		}
 		if err := verifyCutscenes(*cutsceneOutput, movieIDs, stdout); err != nil {

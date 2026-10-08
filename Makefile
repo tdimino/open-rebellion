@@ -70,13 +70,11 @@ stage-assets:
 	@test -d "$(GAME_SOURCE)/MDATA" || { echo "ERROR: GAME_SOURCE/MDATA not found: $(GAME_SOURCE)/MDATA" >&2; exit 1; }
 	@test -d "$(GAME_SOURCE)/EData" || { echo "ERROR: GAME_SOURCE/EData not found: $(GAME_SOURCE)/EData" >&2; exit 1; }
 	go run ./tools/stage-ui-assets --source "$(GAME_SOURCE)" --mdata "$(GAME_SOURCE)/MDATA" --no-verify
-	go run ./tools/stage-ui-assets --encyclopedia-only --source "$(GAME_SOURCE)" --no-verify
 
 extract-assets: stage-assets
 
 verify-assets:
 	go run ./tools/stage-ui-assets --verify
-	go run ./tools/stage-ui-assets --encyclopedia-only --verify
 
 # Browser harness synchronization and launch-policy regressions (no browser).
 .PHONY: test-interface-harness

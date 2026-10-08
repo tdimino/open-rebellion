@@ -73,6 +73,87 @@ func buildTestPE32WithResource(t *testing.T, resourceType, id, language uint32, 
 	return file
 }
 
+func buildTestPE32WithResources(t *testing.T, resourceType uint32, resources []rawResource) []byte {
+	t.Helper()
+	if len(resources) == 0 || len(resources) > 0xffff {
+		t.Fatalf("invalid test resource count: %d", len(resources))
+	}
+	const (
+		peOffset      = 0x80
+		optionalSize  = 224
+		sectionRVA    = 0x1000
+		sectionOffset = 0x200
+		typeDirectory = 0x20
+	)
+	align := func(value, boundary int) int {
+		return (value + boundary - 1) &^ (boundary - 1)
+	}
+	typeEntriesEnd := typeDirectory + 16 + len(resources)*8
+	languageDirectories := align(typeEntriesEnd, 8)
+	dataEntries := languageDirectories + len(resources)*24
+	payloadOffset := align(dataEntries+len(resources)*16, 4)
+	resourceSize := payloadOffset
+	for _, resource := range resources {
+		resourceSize = align(resourceSize+len(resource.Data), 4)
+	}
+	sectionSize := align(resourceSize, 0x200)
+
+	resourceData := make([]byte, sectionSize)
+	putResourceDirectory(resourceData, 0, 0, 1)
+	putResourceEntry(resourceData, 0x10, resourceType, resourceSubdirectory|typeDirectory)
+	putResourceDirectory(resourceData, typeDirectory, 0, uint16(len(resources)))
+	cursor := payloadOffset
+	for index, resource := range resources {
+		languageDirectory := languageDirectories + index*24
+		dataEntry := dataEntries + index*16
+		putResourceEntry(
+			resourceData,
+			typeDirectory+16+index*8,
+			resource.ID,
+			resourceSubdirectory|uint32(languageDirectory),
+		)
+		putResourceDirectory(resourceData, languageDirectory, 0, 1)
+		putResourceEntry(resourceData, languageDirectory+16, resource.Language, uint32(dataEntry))
+		binary.LittleEndian.PutUint32(resourceData[dataEntry:dataEntry+4], sectionRVA+uint32(cursor))
+		binary.LittleEndian.PutUint32(resourceData[dataEntry+4:dataEntry+8], uint32(len(resource.Data)))
+		binary.LittleEndian.PutUint32(resourceData[dataEntry+8:dataEntry+12], resource.CodePage)
+		binary.LittleEndian.PutUint32(resourceData[dataEntry+12:dataEntry+16], resource.Reserved)
+		copy(resourceData[cursor:], resource.Data)
+		cursor = align(cursor+len(resource.Data), 4)
+	}
+
+	file := make([]byte, sectionOffset+sectionSize)
+	copy(file[0:2], "MZ")
+	binary.LittleEndian.PutUint32(file[0x3c:0x40], peOffset)
+	copy(file[peOffset:peOffset+4], "PE\x00\x00")
+	coff := peOffset + 4
+	binary.LittleEndian.PutUint16(file[coff:coff+2], 0x14c)
+	binary.LittleEndian.PutUint16(file[coff+2:coff+4], 1)
+	binary.LittleEndian.PutUint16(file[coff+16:coff+18], optionalSize)
+	binary.LittleEndian.PutUint16(file[coff+18:coff+20], 0x2102)
+
+	optional := coff + 20
+	binary.LittleEndian.PutUint16(file[optional:optional+2], 0x10b)
+	binary.LittleEndian.PutUint32(file[optional+32:optional+36], 0x1000)
+	binary.LittleEndian.PutUint32(file[optional+36:optional+40], 0x200)
+	binary.LittleEndian.PutUint32(file[optional+56:optional+60], uint32(align(sectionRVA+resourceSize, 0x1000)))
+	binary.LittleEndian.PutUint32(file[optional+60:optional+64], sectionOffset)
+	binary.LittleEndian.PutUint32(file[optional+92:optional+96], 16)
+	resourceDirectory := optional + 96 + 2*8
+	binary.LittleEndian.PutUint32(file[resourceDirectory:resourceDirectory+4], sectionRVA)
+	binary.LittleEndian.PutUint32(file[resourceDirectory+4:resourceDirectory+8], uint32(resourceSize))
+
+	section := optional + optionalSize
+	copy(file[section:section+8], ".rsrc")
+	binary.LittleEndian.PutUint32(file[section+8:section+12], uint32(resourceSize))
+	binary.LittleEndian.PutUint32(file[section+12:section+16], sectionRVA)
+	binary.LittleEndian.PutUint32(file[section+16:section+20], uint32(sectionSize))
+	binary.LittleEndian.PutUint32(file[section+20:section+24], sectionOffset)
+	binary.LittleEndian.PutUint32(file[section+36:section+40], 0x40000040)
+	copy(file[sectionOffset:], resourceData)
+	return file
+}
+
 func buildTestPE32WithNamedResource(t *testing.T, resourceType uint32, name string, language uint32, data []byte) []byte {
 	t.Helper()
 	file := buildTestPE32WithResource(t, resourceType, 1, language, data)

@@ -3,21 +3,23 @@
 Extract original Star Wars Rebellion assets into the directory layout
 Open Rebellion loads at runtime. One command stages 2,326 standard BMPs and
 3,988 custom advisor frames from seven game DLLs, plus voices, menu effects,
-and soundtrack WAVs, 15 cutscenes, and original text strings. It then verifies
-all outputs. The Go code uses only its standard library; cutscene conversion
-requires `ffmpeg` and `ffprobe`. No Python environment or Windows runtime is needed.
+and soundtrack WAVs, 15 cutscenes, original text strings, and the Encyclopedia
+source catalog. It then verifies all outputs. The Go code uses only its standard
+library; cutscene conversion requires `ffmpeg` and `ffprobe`. No Python
+environment or Windows runtime is needed.
 
 An opt-in tactical-only path also preserves all 87 type-301 DirectX meshes and
 397 type-303 texture/palette resources from `TACTICAL.DLL` in a
 content-addressed raw store. It does not require the media tools.
 
-An opt-in Encyclopedia-only path extracts the owned English `ENCYTEXT.DLL`
-prose and `ENCYBMAP.DLL` EDATA-name table into one ignored, checksummed JSON
-source catalog. It uses strict Windows-1252 decoding and rejects unknown
-languages, undefined bytes, duplicate IDs, malformed filenames, and traversal.
+Normal extraction also extracts the owned English `ENCYTEXT.DLL` prose and
+`ENCYBMAP.DLL` EDATA-name table into one ignored, checksummed JSON source
+catalog. The `--encyclopedia-only` mode performs just that focused operation.
+Both paths use strict Windows-1252 decoding and reject unknown languages,
+undefined bytes, duplicate IDs, malformed filenames, and traversal.
 
-The repository Make workflow combines the standard and Encyclopedia modes and
-keeps extraction separate from the slower full verification pass:
+The repository Make workflow uses the combined default mode and keeps
+extraction separate from the slower full verification pass:
 
 ```sh
 make stage-assets GAME_SOURCE="/path/to/Star Wars - Rebellion"
@@ -41,8 +43,9 @@ resource byte for byte. It does not resize or re-encode the artwork.
 - Your own copy of the seven UI DLLs listed below plus `VOICEFXA.DLL` and
   `VOICEFXE.DLL` and `TEXTSTRA.DLL`, together in one source directory, and the original
   `MDATA.300`–`MDATA.315` soundtrack files and the 15 movies listed below in `source/MDATA` or `--mdata`. Extraction reads these files without modifying them.
-- `--encyclopedia-only` additionally requires `ENCYTEXT.DLL` and
-  `ENCYBMAP.DLL` in `--source`; it does not require ffmpeg.
+- Normal extraction additionally requires `ENCYTEXT.DLL` and `ENCYBMAP.DLL`
+  in `--source`. The focused `--encyclopedia-only` mode does not require
+  ffmpeg.
 
 The compiled executable does not require Go to run. Game files are not included
 in this repository.
@@ -87,8 +90,10 @@ Verified 6291 UI resources across 6 DLLs
 Staged 310 audio files (310 written, 0 unchanged)
 Verified 310 audio files
 Staged 1347 TEXTSTRA strings
+Staged 348 ENCYTEXT topics and 191 ENCYBMAP mappings
 ...
 Verified 1347 TEXTSTRA strings
+Verified 348 ENCYTEXT topics and 191 ENCYBMAP mappings
 Verified cutscene 000 (259 frames)
 ...
 ```
@@ -192,8 +197,8 @@ Successful runs and help exit with status 0. Errors exit with status 1 and an
 `ERROR:` message on stderr. Positional arguments are not accepted.
 `--verify` and `--no-verify` are mutually exclusive. Direct extraction retains
 its stage-then-verify behavior by default; `make stage-assets` uses
-`--no-verify`, and `make verify-assets` performs both source-free verification
-passes explicitly.
+`--no-verify`, and `make verify-assets` performs the combined source-free
+verification pass explicitly.
 
 - **Missing DLL:** check `--source`, filenames, and case.
 - **Unexpected resource count or unsupported named resource:** the input does

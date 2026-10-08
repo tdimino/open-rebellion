@@ -32,15 +32,17 @@ class MakeAssetTargetTests(unittest.TestCase):
 
         self.assertIn(f'--source "{GAME_SOURCE}"', output)
         self.assertIn(f'--mdata "{GAME_SOURCE}/MDATA"', output)
-        self.assertIn("--encyclopedia-only", output)
-        self.assertEqual(output.count("--no-verify"), 2)
+        self.assertNotIn("--encyclopedia-only", output)
+        self.assertEqual(output.count("go run ./tools/stage-ui-assets"), 1)
+        self.assertEqual(output.count("--no-verify"), 1)
         self.assertNotIn(" --verify", output)
 
     def test_verify_assets_checks_generic_and_encyclopedia_outputs(self) -> None:
         output = dry_run("verify-assets")
 
-        self.assertEqual(output.count("--verify"), 2)
-        self.assertIn("--encyclopedia-only", output)
+        self.assertEqual(output.count("go run ./tools/stage-ui-assets"), 1)
+        self.assertEqual(output.count("--verify"), 1)
+        self.assertNotIn("--encyclopedia-only", output)
         self.assertNotIn("--source", output)
 
     def test_run_derives_edata_but_keeps_staged_runtime_root(self) -> None:
