@@ -473,6 +473,10 @@ The implemented production pipeline keeps original content local and ignored:
    never copied. The profile contains 348 text records and 191 logical image
    mappings. `make verify-assets` separately performs source-free verification
    of both the normal and Encyclopedia outputs.
+   Successful full staging also records source hashes and output sizes in the
+   ignored `data/base/.stage-ui-assets.json`. Unchanged reruns use that manifest
+   to skip extraction; `--force` bypasses it, while `make verify-assets` ignores
+   it and performs the deep content checks.
 2. A prebuild Rust audit joins those records to the canonical DAT/TEXTSTRA
    index and exact owned `EData` inventory. Each faction must expose 346
    complete topics and ten explicit source-empty mission topics; no replacement

@@ -87,7 +87,33 @@ func runCLIWithMedia(args []string, stdout, stderr io.Writer, targets []dllTarge
 		return verifyTactical3D(*outputDir, tacticalMeshCount, tacticalTextureCount, stdout)
 	}
 
-	if !*verifyOnly {
+	if *mdata == "" {
+		*mdata = filepath.Join(*sourceDir, "MDATA")
+	}
+	cacheConfig, err := newStageCacheConfig(
+		*sourceDir,
+		*outputDir,
+		*audioOutput,
+		*mdata,
+		*stringsOutput,
+		*encyclopediaOutput,
+		*cutsceneOutput,
+		targets,
+		movieIDs,
+		*tactical3D,
+	)
+	if err != nil {
+		return err
+	}
+	stageRequired := !*verifyOnly
+	if stageRequired && !*force {
+		if hit, sources, outputs := stageCacheHit(cacheConfig, targets, movieIDs); hit {
+			fmt.Fprintf(stdout, "Staging cache hit (%d unchanged source files, %d present outputs)\n", sources, outputs)
+			stageRequired = false
+		}
+	}
+
+	if stageRequired {
 		for _, tool := range []string{"ffmpeg", "ffprobe"} {
 			if _, err := run(tool, "-version"); err != nil {
 				return fmt.Errorf("cutscene extraction requires %s: %w", tool, err)
@@ -103,8 +129,22 @@ func runCLIWithMedia(args []string, stdout, stderr io.Writer, targets []dllTarge
 				return err
 			}
 		}
+		if err := stageAudio(*sourceDir, *mdata, *audioOutput, *force, stdout); err != nil {
+			return err
+		}
+		if err := stageStrings(*sourceDir, *stringsOutput, *force, stdout); err != nil {
+			return err
+		}
+		if err := stageEncyclopediaSource(*sourceDir, *encyclopediaOutput, *force, stdout); err != nil {
+			return err
+		}
+		if err := stageCutscenes(*mdata, *cutsceneOutput, *force, movieIDs, run, stdout); err != nil {
+			return err
+		}
+		if err := publishStageCache(cacheConfig, targets, movieIDs); err != nil {
+			return fmt.Errorf("publish staging cache: %w", err)
+		}
 	}
-
 	if !*noVerify {
 		verified, err := verifyTargets(*outputDir, targets, stdout)
 		if err != nil {
@@ -116,32 +156,9 @@ func runCLIWithMedia(args []string, stdout, stderr io.Writer, targets []dllTarge
 				return err
 			}
 		}
-	}
-	if !*verifyOnly {
-		if *mdata == "" {
-			*mdata = filepath.Join(*sourceDir, "MDATA")
-		}
-		if err := stageAudio(*sourceDir, *mdata, *audioOutput, *force, stdout); err != nil {
-			return err
-		}
-	}
-	if !*noVerify {
 		if err := verifyAudio(*audioOutput, stdout); err != nil {
 			return err
 		}
-	}
-	if !*verifyOnly {
-		if err := stageStrings(*sourceDir, *stringsOutput, *force, stdout); err != nil {
-			return err
-		}
-		if err := stageEncyclopediaSource(*sourceDir, *encyclopediaOutput, *force, stdout); err != nil {
-			return err
-		}
-		if err := stageCutscenes(*mdata, *cutsceneOutput, *force, movieIDs, run, stdout); err != nil {
-			return err
-		}
-	}
-	if !*noVerify {
 		if err := verifyStrings(*stringsOutput, stdout); err != nil {
 			return err
 		}

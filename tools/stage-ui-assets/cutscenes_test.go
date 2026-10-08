@@ -87,6 +87,10 @@ func TestCutsceneExtractionAndVerification(t *testing.T) {
 }
 
 func runTestCLI(t *testing.T, args []string, stdout, stderr io.Writer, targets []dllTarget) error {
+	return runTestCLIWithRunner(t, args, stdout, stderr, targets, fakeMedia)
+}
+
+func runTestCLIWithRunner(t *testing.T, args []string, stdout, stderr io.Writer, targets []dllTarget, run mediaRunner) error {
 	t.Helper()
 	var output string
 	var source string
@@ -108,7 +112,7 @@ func runTestCLI(t *testing.T, args []string, stdout, stderr io.Writer, targets [
 	if source == "" {
 		return fmt.Errorf("test must provide a source directory")
 	}
-	if !verifyOnly {
+	if _, err := os.Stat(filepath.Join(source, "ENCYTEXT.DLL")); !verifyOnly && os.IsNotExist(err) {
 		writeCompleteEncyclopediaFixture(t, source)
 	}
 	args = append(
@@ -117,7 +121,7 @@ func runTestCLI(t *testing.T, args []string, stdout, stderr io.Writer, targets [
 		"--encyclopedia-output", filepath.Join(output, "encyclopedia", "source.json"),
 		"--cutscene-output", filepath.Join(output, "media"),
 	)
-	return runCLIWithMedia(args, stdout, stderr, targets, []string{"000"}, fakeMedia)
+	return runCLIWithMedia(args, stdout, stderr, targets, []string{"000"}, run)
 }
 
 func TestCutscenePublishRollsBackEveryOutput(t *testing.T) {

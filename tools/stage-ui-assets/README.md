@@ -100,6 +100,19 @@ Verified cutscene 000 (259 frames)
 
 Write and unchanged counts depend on what is already staged.
 
+After a complete full extraction, the tool writes the ignored
+`data/base/.stage-ui-assets.json` cache manifest. A later full extraction
+hashes the source DLL/MDATA inputs and checks that every recorded output is
+still a regular file with the recorded size. When both match, it skips PE
+parsing, per-asset comparisons, and cutscene decoding. `--force` always bypasses
+this shortcut. Focused modes such as `--encyclopedia-only` do not use the full
+staging cache.
+
+The cache is an extraction shortcut, not integrity evidence: same-size output
+corruption is deliberately left to the separate content checks in `--verify`.
+Deleting an output or changing its size invalidates the cache and returns to
+normal staging.
+
 ## Output layout
 
 Each DLL has its own directory, so equal resource IDs in different DLLs do not
@@ -152,6 +165,8 @@ numeric filenames. It validates BMP signatures, declared sizes, DIB headers,
 and pixel offsets. It also validates every type-302 header, scanline table,
 payload size, unchanged skip, additive run, and row boundary.
 `--source` and `--force` have no effect with `--verify`.
+Verification never trusts `.stage-ui-assets.json` and does not read the original
+source directory.
 
 Verification does **not** compare files against the DLLs, check an exact inventory
 of resource IDs, apply the advisor palette, or prove that the game displays the assets.

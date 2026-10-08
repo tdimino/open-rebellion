@@ -44,20 +44,16 @@ class EncyclopediaProductionStagingTests(unittest.TestCase):
                     #!/usr/bin/env bash
                     set -euo pipefail
                     printf '%s\\n' "$*" >> data/go-args.log
-                    output=""
-                    encyclopedia=0
+                    output="data/base/encyclopedia/source.json"
                     while [ "$#" -gt 0 ]; do
                         case "$1" in
-                            --encyclopedia-only) encyclopedia=1 ;;
                             --encyclopedia-output) shift; output="$1" ;;
                         esac
                         shift
                     done
-                    if [ "$encyclopedia" = 1 ]; then
-                        mkdir -p "$(dirname "$output")"
-                        printf '{}\\n' > "$output"
-                        printf '{}\\n' > "$output.manifest.json"
-                    fi
+                    mkdir -p "$(dirname "$output")"
+                    printf '{}\\n' > "$output"
+                    printf '{}\\n' > "$output.manifest.json"
                     """
                 ),
                 encoding="utf-8",
@@ -109,15 +105,12 @@ class EncyclopediaProductionStagingTests(unittest.TestCase):
                 ).strip(),
                 str(original / "EData"),
             )
-            invocations = (root / "data" / "go-args.log").read_text(
-                encoding="utf-8"
-            )
-            self.assertIn("--encyclopedia-only", invocations)
-            self.assertIn(
-                "--encyclopedia-output data/base/encyclopedia/source.json",
-                invocations,
-            )
-            self.assertEqual(invocations.count("--force"), 2)
+            invocations = (
+                root / "data" / "go-args.log"
+            ).read_text(encoding="utf-8").splitlines()
+            self.assertEqual(len(invocations), 1)
+            self.assertNotIn("--encyclopedia-only", invocations[0])
+            self.assertEqual(invocations[0].count("--force"), 1)
 
     def test_wasm_build_requires_encyclopedia_before_compilation(self) -> None:
         script = (ROOT / "scripts" / "build-wasm.sh").read_text(encoding="utf-8")

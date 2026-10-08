@@ -142,7 +142,7 @@ func TestAudioCLIStagesAndVerifiesWithoutSources(t *testing.T) {
 	if err := runTestCLI(t, args, &out, &errs, nil); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "0 written, 28 unchanged") {
+	if !strings.Contains(out.String(), "Staging cache hit") {
 		t.Fatal(out.String())
 	}
 	// Verify must operate on staged files without consulting source DLLs/MDATA.
