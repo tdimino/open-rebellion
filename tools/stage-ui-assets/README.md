@@ -16,6 +16,19 @@ prose and `ENCYBMAP.DLL` EDATA-name table into one ignored, checksummed JSON
 source catalog. It uses strict Windows-1252 decoding and rejects unknown
 languages, undefined bytes, duplicate IDs, malformed filenames, and traversal.
 
+The repository Make workflow combines the standard and Encyclopedia modes and
+keeps extraction separate from the slower full verification pass:
+
+```sh
+make stage-assets GAME_SOURCE="/path/to/Star Wars - Rebellion"
+make verify-assets
+make run GAME_SOURCE="/path/to/Star Wars - Rebellion"
+```
+
+`GAME_SOURCE` is the original install directory. `MDATA` and `EData` are always
+resolved beneath it; `EData` remains in the owned install and is passed to the
+native runtime rather than copied into the repository.
+
 For standard bitmaps, the extractor preserves the original DIB bytes and adds a
 BMP file header. For advisor animations, it preserves each custom PE type-302
 resource byte for byte. It does not resize or re-encode the artwork.
@@ -168,6 +181,7 @@ make the final count check fail even with `--force`.
 | `--encyclopedia-output` | `data/base/encyclopedia/source.json` | Ignored ENCYTEXT/ENCYBMAP source catalog |
 | `--cutscene-output` | `assets/references` | Parent for `ref-videos` and `cutscene-frames` |
 | `--verify` | `false` | Check existing output without extraction |
+| `--no-verify` | `false` | Extract without the usual follow-up verification pass |
 | `--encyclopedia-only` | `false` | Stage or verify only the Encyclopedia source catalog |
 | `--force` | `false` | Replace files whose contents differ |
 | `--tactical-3d` | `false` | Add tactical type-301/type-303 staging to the full extraction |
@@ -176,6 +190,10 @@ make the final count check fail even with `--force`.
 
 Successful runs and help exit with status 0. Errors exit with status 1 and an
 `ERROR:` message on stderr. Positional arguments are not accepted.
+`--verify` and `--no-verify` are mutually exclusive. Direct extraction retains
+its stage-then-verify behavior by default; `make stage-assets` uses
+`--no-verify`, and `make verify-assets` performs both source-free verification
+passes explicitly.
 
 - **Missing DLL:** check `--source`, filenames, and case.
 - **Unexpected resource count or unsupported named resource:** the input does

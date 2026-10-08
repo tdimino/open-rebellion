@@ -23,6 +23,7 @@ func runCLIWithMedia(args []string, stdout, stderr io.Writer, targets []dllTarge
 	cutsceneOutput := flags.String("cutscene-output", "assets/references", "parent of ref-videos and cutscene-frames outputs")
 	force := flags.Bool("force", false, "replace staged assets whose contents differ")
 	verifyOnly := flags.Bool("verify", false, "verify staged assets without reading source files")
+	noVerify := flags.Bool("no-verify", false, "stage assets without the follow-up verification pass")
 	tactical3D := flags.Bool("tactical-3d", false, "also stage and verify original type-301/type-303 tactical resources")
 	tactical3DOnly := flags.Bool("tactical-3d-only", false, "stage or verify only original type-301/type-303 tactical resources")
 	tactical3DConvert := flags.Bool("tactical-3d-convert", false, "convert or verify the staged tactical resources")
@@ -33,6 +34,9 @@ func runCLIWithMedia(args []string, stdout, stderr io.Writer, targets []dllTarge
 	}
 	if flags.NArg() != 0 {
 		return fmt.Errorf("unexpected arguments: %v", flags.Args())
+	}
+	if *verifyOnly && *noVerify {
+		return fmt.Errorf("--verify and --no-verify are mutually exclusive")
 	}
 	selectedExclusiveModes := 0
 	for _, selected := range []bool{*tactical3D, *tactical3DOnly, *tactical3DConvert, *tactical3DAssimpOracle != "", *encyclopediaOnly} {
@@ -49,9 +53,15 @@ func runCLIWithMedia(args []string, stdout, stderr io.Writer, targets []dllTarge
 				return err
 			}
 		}
+		if *noVerify {
+			return nil
+		}
 		return verifyEncyclopediaSource(*encyclopediaOutput, stdout)
 	}
 	if *tactical3DAssimpOracle != "" {
+		if *noVerify {
+			return fmt.Errorf("--no-verify cannot be used with --tactical-3d-assimp-oracle")
+		}
 		return verifyTactical3DWithAssimp(*outputDir, *tactical3DAssimpOracle, stdout)
 	}
 	if *tactical3DConvert {
@@ -60,6 +70,9 @@ func runCLIWithMedia(args []string, stdout, stderr io.Writer, targets []dllTarge
 				return err
 			}
 		}
+		if *noVerify {
+			return nil
+		}
 		return verifyTactical3DRuntime(*outputDir, stdout)
 	}
 	if *tactical3DOnly {
@@ -67,6 +80,9 @@ func runCLIWithMedia(args []string, stdout, stderr io.Writer, targets []dllTarge
 			if _, err := stageTactical3D(*sourceDir, *outputDir, *force, stdout); err != nil {
 				return err
 			}
+		}
+		if *noVerify {
+			return nil
 		}
 		return verifyTactical3D(*outputDir, tacticalMeshCount, tacticalTextureCount, stdout)
 	}
@@ -89,14 +105,16 @@ func runCLIWithMedia(args []string, stdout, stderr io.Writer, targets []dllTarge
 		}
 	}
 
-	verified, err := verifyTargets(*outputDir, targets, stdout)
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(stdout, "Verified %d UI resources across %d DLLs\n", verified.Resources, verified.DLLs)
-	if *tactical3D {
-		if err := verifyTactical3D(*outputDir, tacticalMeshCount, tacticalTextureCount, stdout); err != nil {
+	if !*noVerify {
+		verified, err := verifyTargets(*outputDir, targets, stdout)
+		if err != nil {
 			return err
+		}
+		fmt.Fprintf(stdout, "Verified %d UI resources across %d DLLs\n", verified.Resources, verified.DLLs)
+		if *tactical3D {
+			if err := verifyTactical3D(*outputDir, tacticalMeshCount, tacticalTextureCount, stdout); err != nil {
+				return err
+			}
 		}
 	}
 	if !*verifyOnly {
@@ -107,8 +125,10 @@ func runCLIWithMedia(args []string, stdout, stderr io.Writer, targets []dllTarge
 			return err
 		}
 	}
-	if err := verifyAudio(*audioOutput, stdout); err != nil {
-		return err
+	if !*noVerify {
+		if err := verifyAudio(*audioOutput, stdout); err != nil {
+			return err
+		}
 	}
 	if !*verifyOnly {
 		if err := stageStrings(*sourceDir, *stringsOutput, *force, stdout); err != nil {
@@ -118,11 +138,13 @@ func runCLIWithMedia(args []string, stdout, stderr io.Writer, targets []dllTarge
 			return err
 		}
 	}
-	if err := verifyStrings(*stringsOutput, stdout); err != nil {
-		return err
-	}
-	if err := verifyCutscenes(*cutsceneOutput, movieIDs, stdout); err != nil {
-		return err
+	if !*noVerify {
+		if err := verifyStrings(*stringsOutput, stdout); err != nil {
+			return err
+		}
+		if err := verifyCutscenes(*cutsceneOutput, movieIDs, stdout); err != nil {
+			return err
+		}
 	}
 	return nil
 }

@@ -66,7 +66,7 @@ Major implemented areas (each remains subject to the linked acceptance audit):
 ## You Will Need
 
 - **Rust** (stable toolchain)
-- **A legal copy of Star Wars Rebellion**—[GOG](https://www.gog.com/en/game/star_wars_rebellion) ($5.99), Steam, or original CD. Extract the `GData/` directory.
+- **A legal copy of Star Wars Rebellion**—[GOG](https://www.gog.com/en/game/star_wars_rebellion) ($5.99), Steam, or original CD. Keep the installed game directory available; the native Encyclopedia reads its owned `EData/` artwork at runtime.
 
 We don't distribute any game data. Same model as [DevilutionX](https://github.com/diasurgical/devilutionX), [OpenMW](https://openmw.org), and [The Force Engine](https://theforceengine.github.io)—you bring the data, we bring the engine.
 
@@ -101,17 +101,27 @@ the build image instead.
 git clone https://github.com/tdimino/open-rebellion.git
 cd open-rebellion
 
-# Copy your GData files
-cp -r /path/to/star-wars-rebellion/GData/* data/base/
+# Copy the original DAT files into the staged runtime root
+cp -r "/path/to/Star Wars - Rebellion/GData/"* data/base/
 
-# Run native (macOS)
-cargo run -p rebellion-app -- data/base
+# Stage UI, audio, strings, cutscenes, and the Encyclopedia source catalog
+make stage-assets GAME_SOURCE="/path/to/Star Wars - Rebellion"
+
+# Run the slower source-free integrity checks separately
+make verify-assets
+
+# Run native with Encyclopedia artwork from the owned install
+make run GAME_SOURCE="/path/to/Star Wars - Rebellion"
 
 # Or build for browser
-bash scripts/build-wasm.sh
+REBELLION_EDATA_DIR="/path/to/Star Wars - Rebellion/EData" bash scripts/build-wasm.sh
 # Then serve web/ with any HTTP server
 python3 -m http.server 8080 -d web/
 ```
+
+`GAME_SOURCE` is the directory containing the game DLLs plus `GData/`,
+`MDATA/`, and `EData/`. The Make targets always derive `MDATA/` and `EData/`
+from that directory; generated and proprietary assets remain ignored.
 
 **Controls**: scroll to zoom, right-drag to pan, left-click to select a system, `R` to reset view, `Esc` to quit.
 

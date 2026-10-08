@@ -50,27 +50,26 @@ source data and original artwork ignored:
 
 ```bash
 OWNED_INSTALL="/path/to/owned-install"
-SOURCE_JSON="$PWD/data/base/encyclopedia/source.json"
 
-go run ./tools/stage-ui-assets --encyclopedia-only \
-  --source "$OWNED_INSTALL" \
-  --encyclopedia-output "$SOURCE_JSON"
+# Stages the normal runtime assets and the canonical Encyclopedia source.
+# MDATA and EData are always resolved beneath GAME_SOURCE.
+make stage-assets GAME_SOURCE="$OWNED_INSTALL"
 
-# Read-only: rechecks the JSON and sidecar without reopening the DLLs.
-go run ./tools/stage-ui-assets --encyclopedia-only --verify \
-  --encyclopedia-output "$SOURCE_JSON"
+# Read-only: checks every staged output without reopening the owned install.
+make verify-assets
 
 # data/base must already contain the selected DAT/TEXTSTRA/UI inputs.
 REBELLION_EDATA_DIR="$OWNED_INSTALL/EData" bash scripts/build-wasm.sh
 REBELLION_EDATA_DIR="$OWNED_INSTALL/EData" bash scripts/package-web.sh dev
 ```
 
-The stage writes `source.json` and `source.json.manifest.json`. The sidecar is
-generated provenance: do not edit hashes to repair a mismatch. Restage from
-the same owned DLL/DAT/EData profile. A differing generated output requires
-the explicit `--force` flag; verification is read-only. Browser production
-builds require the complete canonical source and exact referenced EData,
-whereas browser mods remain deliberately unsupported.
+The stage writes `data/base/encyclopedia/source.json` and
+`source.json.manifest.json`. The sidecar is generated provenance: do not edit
+hashes to repair a mismatch. Restage from the same owned DLL/DAT/EData profile.
+A differing generated output requires the extractor's explicit `--force` flag;
+verification is read-only. Browser production builds require the complete
+canonical source and exact referenced EData, whereas browser mods remain
+deliberately unsupported.
 
 An Encyclopedia overlay selects the compound catalog object ID, not a slotmap
 key. For ordinary DAT records the ID is `(family_id << 24) | id`; if the DAT

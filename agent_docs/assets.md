@@ -465,10 +465,14 @@ Adapted from WWW's `scripts/model-compare.html` — Three.js side-by-side viewer
 
 The implemented production pipeline keeps original content local and ignored:
 
-1. `tools/stage-ui-assets --encyclopedia-only` strictly extracts the supported
-   English `ENCYTEXT.DLL` prose and `ENCYBMAP.DLL` image-name map into
-   `data/base/encyclopedia/source.json` plus its checksum manifest. The profile
-   contains 348 text records and 191 logical image mappings.
+1. `make stage-assets GAME_SOURCE=/owned/install` stages the normal runtime
+   assets and then strictly extracts the supported English `ENCYTEXT.DLL` prose
+   and `ENCYBMAP.DLL` image-name map into
+   `data/base/encyclopedia/source.json` plus its checksum manifest. `MDATA` and
+   `EData` are derived beneath `GAME_SOURCE`; the owned `EData` directory is
+   never copied. The profile contains 348 text records and 191 logical image
+   mappings. `make verify-assets` separately performs source-free verification
+   of both the normal and Encyclopedia outputs.
 2. A prebuild Rust audit joins those records to the canonical DAT/TEXTSTRA
    index and exact owned `EData` inventory. Each faction must expose 346
    complete topics and ten explicit source-empty mission topics; no replacement

@@ -1,5 +1,7 @@
 .PHONY: all check test test-assets fmt-check clippy build run fmt clean
 
+GAME_SOURCE ?= data/base
+
 # Full workflow: validate first, then build. Stop on the first failure.
 all: check
 	$(MAKE) build
@@ -43,7 +45,8 @@ build:
 	cargo build -p rebellion-app
 
 run:
-	cargo run -p rebellion-app -- data/base
+	@test -d "$(GAME_SOURCE)/EData" || { echo "ERROR: GAME_SOURCE/EData not found: $(GAME_SOURCE)/EData" >&2; exit 1; }
+	REBELLION_EDATA_DIR="$(GAME_SOURCE)/EData" cargo run -p rebellion-app -- data/base
 
 # Maintenance
 fmt:
@@ -56,20 +59,24 @@ clean:
 .PHONY: test-go fmt-go vet-go
 test-go:
 	go test ./tools/stage-ui-assets
+	python3 scripts/test_make_asset_targets.py
 fmt-go:
 	gofmt -w tools/stage-ui-assets/*.go
 vet-go:
 	go vet ./tools/stage-ui-assets
 
-GAME_SOURCE ?= data/base
-MDATA_DIR ?= $(GAME_SOURCE)/MDATA
-.PHONY: extract-assets
-extract-assets:
-	go run ./tools/stage-ui-assets --source "$(GAME_SOURCE)" --mdata "$(MDATA_DIR)"
+.PHONY: stage-assets extract-assets verify-assets
+stage-assets:
+	@test -d "$(GAME_SOURCE)/MDATA" || { echo "ERROR: GAME_SOURCE/MDATA not found: $(GAME_SOURCE)/MDATA" >&2; exit 1; }
+	@test -d "$(GAME_SOURCE)/EData" || { echo "ERROR: GAME_SOURCE/EData not found: $(GAME_SOURCE)/EData" >&2; exit 1; }
+	go run ./tools/stage-ui-assets --source "$(GAME_SOURCE)" --mdata "$(GAME_SOURCE)/MDATA" --no-verify
+	go run ./tools/stage-ui-assets --encyclopedia-only --source "$(GAME_SOURCE)" --no-verify
 
-.PHONY: verify-assets
+extract-assets: stage-assets
+
 verify-assets:
 	go run ./tools/stage-ui-assets --verify
+	go run ./tools/stage-ui-assets --encyclopedia-only --verify
 
 # Browser harness synchronization and launch-policy regressions (no browser).
 .PHONY: test-interface-harness
