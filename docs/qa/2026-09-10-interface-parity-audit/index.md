@@ -10,7 +10,7 @@ tags: [qa, interface, parity, bitmap, screenshots, rebellion, supremacy]
 # Original Interface Parity Audit
 
 <!-- interface-parity-status:start -->
-Required interface families: 43. Complete: 0. Partial: 15. Failing: 28. Blocked: 0. Strictly accepted cells: 0/627.
+Required interface families: 43. Complete: 1. Partial: 15. Failing: 27. Blocked: 0. Strictly accepted cells: 13/627.
 The current CMD-02 GID catalog has 38 scenarios (29 baseline cells and nine additional native filter variants) and 152 faction/viewport executions. Its strict original-evidence and cross-browser gate remains open.
 <!-- interface-parity-status:end -->
 
@@ -133,8 +133,9 @@ navigation, animation, audio presentation, and the absence of invented UI.
 | [P58-B22 source-completion evidence](evidence/2026-09-28-tactical-source-completion.md) | Recovered tactical RNG, persisted power allocation, completion/destruction callbacks, and the timed trench-run producer; strict A0 remains 0/106. |
 | [Corrected P63 Message Index-shell evidence](evidence/2026-09-28-message-index-shell.md) | Source-recovered faction compositions, ten normal/held message-category controls, modal pointer blocking, 24 exact browser states, and independent visual review; populated behavior, production routing, and `CMD-08` acceptance remain open. |
 | [P64 Encyclopedia index-shell evidence](evidence/2026-09-30-encyclopedia-index-shell.md) | Separate source-recovered faction shells, seven selected category states, rail states, native clipping, native input rejection and capture, 32 exact browser states, and bounded independent review; catalog content, topic pages, production routing, and `OBJ-01` remain open. |
-| [P65 Encyclopedia index-catalog evidence](evidence/2026-09-30-encyclopedia-index-catalog.md) | Source-derived 356-entry catalog, seven English TEXTSTRA labels and family filters, stable selection and scrolling, the selected-category no-op, 22 two-faction browser states, and a clean P64 regression; topic pages, production routing, A0, and `OBJ-01` remain open. |
-| [P66A Encyclopedia topic-source evidence](evidence/2026-10-01-encyclopedia-topic-source-bindings.md) | Strict extraction of 348 prose records and 191 artwork mappings, exact ordinary/system/faction lookup identities, 346 complete topics per faction, and ten explicit source-empty missions; browser topic transport/rendering, routing, A0, and `OBJ-01` remain open. |
+| [P65/P68 Encyclopedia index-catalog evidence](evidence/2026-10-08-encyclopedia-visible-catalog-correction.md) | Corrected source-derived 346-entry visible catalog, seven English TEXTSTRA labels and family filters, complete bindings, stable selection and scrolling, plus a separate ten-record gameplay-only/hidden exclusion ledger. |
+| [P66A Encyclopedia topic-source evidence](evidence/2026-10-01-encyclopedia-topic-source-bindings.md) | Strict extraction of 348 prose records and 191 artwork mappings, exact ordinary/system/faction lookup identities, and 346 complete visible topics per faction; P68 supersedes the former source-empty interpretation. |
+| [W2-W7 / E30 / E32 / E34 / E35 Encyclopedia implementation evidence](evidence/README.md#current-strategic-correction) | Immutable installation, pure presentation, authentic topic rendering, canonical native/browser publication and journeys, original-first HD selection, deterministic atomic native overlays, strict new-package content, production cockpit/contextual routing, exact returns, old-pack unavailable compatibility, and twelve passing original-executable-under-Wine comparisons. Gameplay-only/hidden-record exclusion is A0-not-applicable and passes functionally. By explicit user decision, all thirteen `OBJ-01` cells pass the current evidence gate without claiming native-Windows parity. |
 | [Evidence index](evidence/README.md) | Reports and artifact bundles, including a required `README.md` inventory for each new bundle. |
 | [JSON Schema](schemas/interface-parity.schema.json) | Validation contract for the audit summary and status vocabulary. |
 | [Ledger validator](../../../scripts/validate-interface-parity-ledgers.mjs) | Dependency-free generator and consistency gate for cell IDs and retrieval-package links. |
@@ -315,15 +316,18 @@ with independent visual review, while keeping that production route and every
 `CMD-08` cell open. P64 separately proves both empty Encyclopedia index shells,
 seven selected category states, rail states, native clipping, edge and
 transparent-pixel rejection, press capture, drag cancellation, and modal
-blocking through 32 exact browser comparisons. P65 adds all 356 source catalog
+blocking through 32 exact browser comparisons. P68 corrects P65 to 346 visible catalog
 entries, seven English TEXTSTRA labels and family filters, stable selection,
 scrolling, the selected-category no-op, and 22 two-faction browser states while
 retaining the complete P64 regression matrix. P66A strictly extracts 348 topic texts and 191 image
-mappings, binds 346 complete topics per faction, and exposes ten source-empty
-mission records without fallback. Briefing, dialog, advisor-control, remaining
-voice resources, browser Encyclopedia topics and production routing, A0
-comparison, and
-`OBJ-01` acceptance remain open. Its 27 packages give every required surface
+mappings and binds 346 complete visible topics per faction. Ten gameplay-only
+or hidden mission records remain audit-only exclusions. W2 through W7 and E30 now provide immutable
+installation, source-ordered presentation, authentic topic rendering,
+canonical native/browser publication and journeys, original-first HD selection,
+and native atomic presentation overlays with base restoration. Briefing,
+dialog, advisor-control, and remaining voice resources remain open. Encyclopedia
+production routing, accepted current-scope A0 compatibility, and all thirteen
+`OBJ-01` cells pass; native-Windows parity is not claimed. Its 27 packages give every required surface
 a named recovery or removal path.
 
 ## What 100% means

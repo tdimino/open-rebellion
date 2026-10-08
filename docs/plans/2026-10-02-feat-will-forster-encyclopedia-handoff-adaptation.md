@@ -2,9 +2,9 @@
 title: "Will Forster Encyclopedia Handoff Adaptation"
 description: "Execution plan for adapting the strongest test, runtime, presentation, publication, HD, and modding ideas from PR #16 into the canonical P66 Encyclopedia pipeline"
 type: feat
-status: active
+status: complete
 created: 2026-10-02
-updated: 2026-10-06
+updated: 2026-10-07
 attribution: "Will Forster, PR #16"
 source_pr: "https://github.com/tdimino/open-rebellion/pull/16"
 source_head: "82ef2ccc7f5b256470adaa3797898b8d79f2d7fc"
@@ -44,8 +44,8 @@ publication, original-first HD selection, and bounded native mod overlays.
 The production result must:
 
 - retain one source-derived catalog and resource namespace on both platforms;
-- resolve 346 of 356 topics per faction and preserve the ten source-empty
-  mission records without invented fallback content;
+- expose the original 346 visible topics per faction and keep gameplay-only or
+  hidden mission records out of the catalog;
 - use original artwork by default and keep enhanced artwork opt-in;
 - leave Encyclopedia content outside `GameWorld`, saves, command replay, and
   simulation fingerprints;
@@ -69,7 +69,7 @@ or enables a production route before that checkpoint passes.
 
 | Concern | Canonical authority | Adaptation rule |
 |---|---|---|
-| Source extraction | P66A `source.json`, manifest, hashes, and source-empty ledger | Extend tests around it. Do not replace it. |
+| Source extraction | P66A `source.json`, manifest, hashes, and P68 excluded-gameplay ledger | Extend tests around it. Do not replace it. |
 | Entity binding | P66A family-qualified typed join | Present its results. Do not add a parallel ID system. |
 | Browser transport | Planned P66B ORPK namespaces and validation | Install an immutable session after the canonical transport checkpoint lands. |
 | Production routing | Current cockpit, object, and command contracts | Enable only after topic and return-path acceptance. |
@@ -157,8 +157,7 @@ Required rejection cases:
 - invalid encoded text boundaries and malformed JSON;
 - declared count, byte length, digest, or resource-key mismatches;
 - decompression or allocation requests beyond documented limits;
-- bindings that reference absent source text or artwork except for the ten
-  explicit source-empty mission records.
+- any visible binding that references absent source text or artwork.
 
 Run identical semantic cases through the native loader, runtime-pack reader,
 and any development loose reader. Their errors may be platform-shaped, but
@@ -191,21 +190,21 @@ last-known-good recovery tests pass without stale texture or state ownership.
 
 Add a pure presenter over the immutable session. It owns no textures and
 performs no I/O. It derives the visible title, description, image resource,
-category, faction, previous/next targets, source-empty state, and return route.
+category, faction, previous/next targets, and return route.
 
 Required behavior:
 
 - reproduce the source-derived category and index order exactly;
 - preserve faction-specific topic binding;
 - define boundary behavior for previous and next without wraparound guesses;
-- show the ten source-empty mission records as explicit unavailable-source
-  states, not fabricated descriptions or borrowed artwork;
+- reject incomplete visible topics rather than displaying blank entries or
+  inventing fallback content;
 - accept cockpit, index, object, and contextual entry intents through one API;
 - close or return to the exact caller without leaking a fixture-only route;
 - keep deterministic test selectors behind test compilation or fixture gates.
 
-Exit: table-driven presenter tests cover all 356 logical objects per faction,
-including 346 resolved topics and ten explicit source-empty records.
+Exit: table-driven presenter tests cover all 346 visible logical objects per
+faction and require every topic to resolve.
 
 ### W4. Authentic topic surface and texture lifecycle
 
@@ -218,7 +217,7 @@ Required evidence:
 - resource mapping from the selected logical topic to its exact staged asset;
 - cache hit and decoded dimensions for the displayed bitmap;
 - inspected screenshots for both factions, representative categories, long and
-  short descriptions, source-empty topics, and previous/next boundaries;
+  short descriptions and previous/next boundaries;
 - hover, pressed, selected, disabled, keyboard-focus, close, and return states;
 - no per-frame decode, unbounded cache growth, stale session texture, console
   error, missing-asset error, or unexpected network request;
@@ -313,7 +312,7 @@ without changing source extraction or save compatibility.
 
 | Gate | Required proof |
 |---|---|
-| Source | Exact extraction counts, hashes, provenance, 346/356 factional resolution, and ten explicit source-empty records |
+| Source | Exact extraction counts, hashes, provenance, 346 complete visible topics per faction, and a separate ten-record gameplay-only exclusion ledger |
 | Conformance | Shared valid and adversarial corpus with matching native and WASM-facing decisions |
 | Installation | Atomic replacement, invalid-candidate rollback, deterministic catalog fingerprint, and clean teardown |
 | Presentation | All topics enumerated, source order preserved, boundaries deterministic, and no invented fallback content |
@@ -400,3 +399,83 @@ This plan is complete only when:
   sole index/source/binding authority, treat PR #16 as read-only provenance,
   and begin W1 at the current P66A parser and binder boundary. The earlier
   `Read::take` compile caveat is not present at retained PR head `82ef2ccc`.
+- 2026-10-06: implement W2 as a caller-owned, platform-neutral data session
+  over P66A types. The inactive store performs full candidate preparation before
+  one-pointer publication, admits only the source-backed 400-by-200 indexed BMP
+  class within per-resource and aggregate byte limits, and exposes only an
+  Encyclopedia texture generation. W5 remains responsible for native and
+  packaged readers, cross-target reader parity, and production install.
+- 2026-10-06: implement W3 as a pure projection over the installed W2 session.
+  The presenter preserves the validated P65 sequence, requires complete visible
+  topics, bounds native-style previous/next without wrap, and carries one
+  immutable origin route through cockpit, index, object and typed contextual
+  journeys. W4 still owns rendering/textures and W5 still owns production
+  routing and reader parity.
+- 2026-10-06: implement W4 through a render-owned borrowed DTO and a mechanical
+  application adapter, preserving the one-way render dependency boundary. The
+  authentic STRATEGY shell, index/topic controls, scrolling and keyboard paths
+  now have a ten-case two-faction fixture-gated browser A1 matrix. One selected
+  topic texture is keyed by session generation and exact resource metadata and
+  released on every replacement, unavailable/index state, error, or teardown.
+  Synthetic topic bytes prove the surface only; W5 still owns canonical-reader
+  parity, packaged production journeys, and route activation, while original
+  A0 comparison retains exact typography/title-placement acceptance.
+- 2026-10-06: split W5 at the dependency boundary instead of creating a cycle.
+  W5A publishes and installs the canonical bytes first so W1 and W2 can close
+  their native/packed/loose parity gates; E30 then owns packaged visual
+  acceptance, and E32 retains final command `0x131` activation. ORPK remains
+  the production authority, while the development-only loose form uses an
+  independently atomic immutable generation pointer and cannot override a
+  present production pack.
+- 2026-10-06: implement W6 as one native startup snapshot over the validated
+  W2 session and the existing faithful-HD approval manifest. Original parity
+  never reads the enhanced path; faithful-HD admits only source-matched,
+  digest-approved, exact-4x PNG output and otherwise retains the complete
+  original view. Browser builds and strict original-interface acceptance stay
+  original-only, while E32 retains production route activation.
+- 2026-10-07: implement W7 as a native presentation target reserved outside
+  `GameWorld`. Resolve one dependency-first order with lexicographic ready
+  tie-breaks and feed it to world and Encyclopedia consumers; parse
+  presence-aware patch/replace/add/remove actions; confine bounded author BMPs;
+  validate the immutable base and every complete layer; and publish only the
+  final W2 candidate. Any failure retains the active snapshot, while disabling
+  all layers rebuilds the exact base. Browser content and save/simulation
+  serialization remain unchanged; W8 watcher recovery stays optional.
+- 2026-10-07: activate E32 only as a paired route/package increment. New
+  production browser builds require the complete canonical namespace before
+  compilation, while old packs with the whole namespace absent still boot with
+  the route unavailable. Cockpit and real object-popup callers now share the
+  accepted presenter/renderer, preserve typed return origins, refresh across
+  native session generations, and reconstruct raw live IDs only through exact
+  source-family/name matches. Both-faction packaged journeys and a native real
+  contextual journey pass; strict original A0 and `OBJ-01` acceptance remain
+  E35 work.
+- 2026-10-07: E34 accepts the current-main assembled technical candidate. The
+  final native, packed, and development-loose readers match one logical
+  fingerprint; two consecutive builds match at the WASM and ORPK boundaries;
+  both production factions, old-pack compatibility, replay, save/load,
+  workspace, scoped lint/format, mutation-identity, and proprietary-data/state
+  isolation gates pass. The divergent PR #16 fixture/fetch harness names are
+  superseded by the approved current-schema reader corpus and production
+  publication harness rather than imported wholesale. Strict lossless A0 and
+  `OBJ-01` acceptance now remain solely E35.
+- 2026-10-07: E35's adapted original-executable-under-Wine comparison finds and
+  corrects faction-specific origin, title placement, production-font,
+  initial-selection, tooltip, and modal-order defects. The expanded
+  final-package journey passes all twelve applicable `OBJ-01` comparisons.
+  The user explicitly accepts Wine evidence for the current delivery, so the
+  twelve original-visible `OBJ-01` cells and this plan's
+  visual gate pass without claiming native-Windows parity. A portable Windows
+  capture kit, if pursued later, belongs to separate tooling/repository scope.
+- 2026-10-07: E36 reconciles the plan, bead graph, audit records, release
+  documentation, and proposed branch diff. A test-first repair restores clean
+  Docker source staging and owned `EData` handoff to the strict WASM build.
+  W1-W7 and all required production gates are closed; optional W8 automatic
+  reload remains deferred in favor of the documented native **Reload Mods**
+  action. No push or pull-request action is part of this checkpoint.
+- 2026-10-08: P68 corrects the P65/P66A mission visibility interpretation.
+  `FUN_00422620` admits only mission families `0x50..0x7f` whose record `+0x5c`
+  hidden flag is zero. The production catalog is therefore 346 fully bound
+  visible topics, not 356 topics with ten source-unavailable placeholders.
+  Extraction counts remain unchanged; the ten gameplay-only records are kept
+  only in audit provenance and cannot be reintroduced as blank topics.

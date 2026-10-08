@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "language_id": 1033,
+  "encoding": "windows-1252",
+  "source_code_page": 0,
+  "texts": {
+    "5952": {
+      "body": "Synthetic ship body.",
+      "body_sha256": "e0394d60c082d169215dcdb7100918479478936965e59700d9fcb1000851b263"
+    },
+    "7248": {
+      "body": "Synthetic mission body.",
+      "body_sha256": "093b40bc4a268491393fa37c7735b4fedf6a3044b41a87f6a2098f352d4e7e19"
+    },
+    "7680": {
+      "body": "Synthetic system body.",
+      "body_sha256": "773621448ff74ba9dce5aceb43b7bf70b347037a9705320b10df816b55b3fca3"
+    }
+  },
+  "artwork": {
+    "5952": "EDATA.014",
+    "7248": "EDATA.015",
+    "11100": "EDATA.001",
+    "11344": "EDATA.115"
+  }
+}

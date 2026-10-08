@@ -3,18 +3,33 @@
 Extract original Star Wars Rebellion assets into the directory layout
 Open Rebellion loads at runtime. One command stages 2,326 standard BMPs and
 3,988 custom advisor frames from seven game DLLs, plus voices, menu effects,
-and soundtrack WAVs, 15 cutscenes, and original text strings. It then verifies
-all outputs. The Go code uses only its standard library; cutscene conversion
-requires `ffmpeg` and `ffprobe`. No Python environment or Windows runtime is needed.
+and soundtrack WAVs, 15 cutscenes, original text strings, and the Encyclopedia
+source catalog. It then verifies all outputs. The Go code uses only its standard
+library; cutscene conversion requires `ffmpeg` and `ffprobe`. No Python
+environment or Windows runtime is needed.
 
 An opt-in tactical-only path also preserves all 87 type-301 DirectX meshes and
 397 type-303 texture/palette resources from `TACTICAL.DLL` in a
 content-addressed raw store. It does not require the media tools.
 
-An opt-in Encyclopedia-only path extracts the owned English `ENCYTEXT.DLL`
-prose and `ENCYBMAP.DLL` EDATA-name table into one ignored, checksummed JSON
-source catalog. It uses strict Windows-1252 decoding and rejects unknown
-languages, undefined bytes, duplicate IDs, malformed filenames, and traversal.
+Normal extraction also extracts the owned English `ENCYTEXT.DLL` prose and
+`ENCYBMAP.DLL` EDATA-name table into one ignored, checksummed JSON source
+catalog. The `--encyclopedia-only` mode performs just that focused operation.
+Both paths use strict Windows-1252 decoding and reject unknown languages,
+undefined bytes, duplicate IDs, malformed filenames, and traversal.
+
+The repository Make workflow uses the combined default mode and keeps
+extraction separate from the slower full verification pass:
+
+```sh
+make stage-assets GAME_SOURCE="/path/to/Star Wars - Rebellion"
+make verify-assets
+make run GAME_SOURCE="/path/to/Star Wars - Rebellion"
+```
+
+`GAME_SOURCE` is the original install directory. `MDATA` and `EData` are always
+resolved beneath it; `EData` remains in the owned install and is passed to the
+native runtime rather than copied into the repository.
 
 For standard bitmaps, the extractor preserves the original DIB bytes and adds a
 BMP file header. For advisor animations, it preserves each custom PE type-302
@@ -28,8 +43,9 @@ resource byte for byte. It does not resize or re-encode the artwork.
 - Your own copy of the seven UI DLLs listed below plus `VOICEFXA.DLL` and
   `VOICEFXE.DLL` and `TEXTSTRA.DLL`, together in one source directory, and the original
   `MDATA.300`–`MDATA.315` soundtrack files and the 15 movies listed below in `source/MDATA` or `--mdata`. Extraction reads these files without modifying them.
-- `--encyclopedia-only` additionally requires `ENCYTEXT.DLL` and
-  `ENCYBMAP.DLL` in `--source`; it does not require ffmpeg.
+- Normal extraction additionally requires `ENCYTEXT.DLL` and `ENCYBMAP.DLL`
+  in `--source`. The focused `--encyclopedia-only` mode does not require
+  ffmpeg.
 
 The compiled executable does not require Go to run. Game files are not included
 in this repository.
@@ -74,13 +90,28 @@ Verified 6291 UI resources across 6 DLLs
 Staged 310 audio files (310 written, 0 unchanged)
 Verified 310 audio files
 Staged 1347 TEXTSTRA strings
+Staged 348 ENCYTEXT topics and 191 ENCYBMAP mappings
 ...
 Verified 1347 TEXTSTRA strings
+Verified 348 ENCYTEXT topics and 191 ENCYBMAP mappings
 Verified cutscene 000 (259 frames)
 ...
 ```
 
 Write and unchanged counts depend on what is already staged.
+
+After a complete full extraction, the tool writes the ignored
+`data/base/.stage-ui-assets.json` cache manifest. A later full extraction
+hashes the source DLL/MDATA inputs and checks that every recorded output is
+still a regular file with the recorded size. When both match, it skips PE
+parsing, per-asset comparisons, and cutscene decoding. `--force` always bypasses
+this shortcut. Focused modes such as `--encyclopedia-only` do not use the full
+staging cache.
+
+The cache is an extraction shortcut, not integrity evidence: same-size output
+corruption is deliberately left to the separate content checks in `--verify`.
+Deleting an output or changing its size invalidates the cache and returns to
+normal staging.
 
 ## Output layout
 
@@ -134,6 +165,8 @@ numeric filenames. It validates BMP signatures, declared sizes, DIB headers,
 and pixel offsets. It also validates every type-302 header, scanline table,
 payload size, unchanged skip, additive run, and row boundary.
 `--source` and `--force` have no effect with `--verify`.
+Verification never trusts `.stage-ui-assets.json` and does not read the original
+source directory.
 
 Verification does **not** compare files against the DLLs, check an exact inventory
 of resource IDs, apply the advisor palette, or prove that the game displays the assets.
@@ -168,6 +201,7 @@ make the final count check fail even with `--force`.
 | `--encyclopedia-output` | `data/base/encyclopedia/source.json` | Ignored ENCYTEXT/ENCYBMAP source catalog |
 | `--cutscene-output` | `assets/references` | Parent for `ref-videos` and `cutscene-frames` |
 | `--verify` | `false` | Check existing output without extraction |
+| `--no-verify` | `false` | Extract without the usual follow-up verification pass |
 | `--encyclopedia-only` | `false` | Stage or verify only the Encyclopedia source catalog |
 | `--force` | `false` | Replace files whose contents differ |
 | `--tactical-3d` | `false` | Add tactical type-301/type-303 staging to the full extraction |
@@ -176,6 +210,10 @@ make the final count check fail even with `--force`.
 
 Successful runs and help exit with status 0. Errors exit with status 1 and an
 `ERROR:` message on stderr. Positional arguments are not accepted.
+`--verify` and `--no-verify` are mutually exclusive. Direct extraction retains
+its stage-then-verify behavior by default; `make stage-assets` uses
+`--no-verify`, and `make verify-assets` performs the combined source-free
+verification pass explicitly.
 
 - **Missing DLL:** check `--source`, filenames, and case.
 - **Unexpected resource count or unsupported named resource:** the input does
@@ -372,10 +410,43 @@ go run ./tools/stage-ui-assets \
 ```
 
 This writes ignored `data/base/encyclopedia/source.json` plus a manifest with
-the catalog and source-DLL checksums. `--verify --encyclopedia-only` validates
-those files without reopening the DLLs. The source catalog does not enable the
-production window by itself; runtime topic binding and UI acceptance remain
-separate gates.
+the catalog and source-DLL checksums. A differing generated result requires
+`--force`. `--verify --encyclopedia-only` is read-only and validates those
+files without reopening the DLLs.
+
+Production packaging is strict: it requires that source profile plus the owned
+`EData` directory used to resolve every referenced 400-by-200 indexed BMP.
+
+```sh
+REBELLION_EDATA_DIR="/path/to/Star Wars - Rebellion/EData" \
+  bash scripts/build-wasm.sh
+REBELLION_EDATA_DIR="/path/to/Star Wars - Rebellion/EData" \
+  bash scripts/package-web.sh dev
+```
+
+Before compilation, the Rust source audit joins the staged 348 text records
+and 191 logical image mappings to the canonical DAT/TEXTSTRA index and exact
+owned EData inventory, requiring 346 complete visible topics per faction and
+recording the ten excluded gameplay-only mission identities separately. The packer then admits only that
+verified catalog and source-DLL identity, publishes the runtime catalog,
+manifest, and referenced art, and enforces the runtime's exact BMP
+byte-length, 32 MiB per-image, and 128 MiB aggregate contracts. Each artwork
+file is read and validated once; its digest then guards the later packaging
+read against replacement. Native and browser readers use the same validated
+catalog; older packs without it remain compatible but leave the Encyclopedia
+unavailable. Browser builds publish the immutable base only and do not load
+filesystem mods.
+
+`scripts/docker-build.sh` performs the same source-profile stage after copying
+the owned DLL/DAT files and passes `$ORIGINAL_GAME_DIR/EData` explicitly to the
+strict build. `FORCE_REBUILD=1` applies `--force` to both stages.
+`PREPARE_MODDING=0` skips reference JSON dumps but does not skip production
+Encyclopedia content.
+
+See [README_MOD.md](../../README_MOD.md) for numeric object selectors, native
+text/art overlays, validation rules, and the reload workflow. The current
+acceptance boundary and retained native-Windows limitation are recorded in the
+[A0 compatibility evidence](../../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-07-encyclopedia-a0-compatibility.md).
 
 The supported movie IDs are `000`, `001`, `003`, `004`, `005`, `101`, `102`, `103`,
 `104`, `105`, `106`, `107`, `108`, `201`, and `202`. For each original `MDATA.ID`,

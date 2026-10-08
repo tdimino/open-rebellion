@@ -26,6 +26,24 @@ use dat_dumper::types::troops::TroopsFile;
 
 use crate::read_dat_file;
 
+/// Gameplay-only or hidden mission objects present in the owned English
+/// `MISSNSD.DAT` profile but excluded by the original Encyclopedia builder.
+///
+/// This is audit provenance only. Runtime inclusion is governed by
+/// [`is_visible_encyclopedia_mission`], not by an identity denylist.
+pub const ENCYCLOPEDIA_EXCLUDED_MISSION_OBJECT_IDS: [u32; 10] = [
+    0x4100_0001,
+    0x4200_0002,
+    0x4300_0003,
+    0x4400_0004,
+    0x6400_0044,
+    0x6500_0083,
+    0x7100_0043,
+    0x7200_0045,
+    0x7200_0046,
+    0x7300_0082,
+];
+
 /// One original game-object entry available to the Encyclopedia index.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EncyclopediaCatalogEntry {
@@ -54,6 +72,25 @@ pub struct EncyclopediaCategory {
 }
 
 impl EncyclopediaCategory {
+    /// Construct one original index category.
+    ///
+    /// This is primarily useful to platform-neutral validated-session inputs;
+    /// production loading still derives the same fields from original data.
+    #[must_use]
+    pub fn new(
+        command_id: u16,
+        label_resource_id: u16,
+        label: String,
+        family_range: Option<std::ops::Range<u8>>,
+    ) -> Self {
+        Self {
+            command_id,
+            label_resource_id,
+            label,
+            family_range,
+        }
+    }
+
     #[must_use]
     pub fn contains(&self, entry: &EncyclopediaCatalogEntry) -> bool {
         self.family_range
@@ -187,6 +224,9 @@ pub fn load_encyclopedia_catalog(gdata_path: &Path) -> Result<EncyclopediaCatalo
 
     let missions: MissionsFile = read_dat_file(&gdata_path.join("MISSNSD.DAT"))?;
     for record in missions.missions {
+        if !is_visible_encyclopedia_mission(record.family_id, record.hidden) {
+            continue;
+        }
         push_entry(
             &mut entries,
             record.id,
@@ -254,18 +294,19 @@ pub fn load_encyclopedia_catalog(gdata_path: &Path) -> Result<EncyclopediaCatalo
     })
 }
 
+/// `FUN_00422620` admits mission records only from families `0x50..0x80` and
+/// then rejects records whose in-memory `+0x5c` hidden flag is non-zero.
+fn is_visible_encyclopedia_mission(family_id: u32, hidden: u32) -> bool {
+    (0x50..0x80).contains(&family_id) && hidden == 0
+}
+
 fn category(
     command_id: u16,
     label_resource_id: u16,
     label: String,
     family_range: Option<std::ops::Range<u8>>,
 ) -> EncyclopediaCategory {
-    EncyclopediaCategory {
-        command_id,
-        label_resource_id,
-        label,
-        family_range,
-    }
+    EncyclopediaCategory::new(command_id, label_resource_id, label, family_range)
 }
 
 fn push_entry(
@@ -366,6 +407,15 @@ mod tests {
     }
 
     #[test]
+    fn mission_visibility_matches_the_original_collection_builder() {
+        assert!(!is_visible_encyclopedia_mission(0x4f, 0));
+        assert!(is_visible_encyclopedia_mission(0x50, 0));
+        assert!(is_visible_encyclopedia_mission(0x7f, 0));
+        assert!(!is_visible_encyclopedia_mission(0x80, 0));
+        assert!(!is_visible_encyclopedia_mission(0x50, 1));
+    }
+
+    #[test]
     fn push_entry_requires_and_preserves_the_source_name() {
         let strings = HashMap::from([(0x2001, "A-wing".to_owned())]);
         let mut entries = Vec::new();
@@ -383,5 +433,26 @@ mod tests {
         let error = push_entry(&mut entries, 8, 0x14, 0x2002, &strings).unwrap_err();
         assert!(error.to_string().contains("0x2002"));
         assert_eq!(entries.len(), 1);
+    }
+
+    #[test]
+    #[ignore = "requires an owned original-game data/base directory"]
+    fn owned_catalog_excludes_gameplay_only_and_hidden_mission_records() {
+        let owned_data = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data/base");
+        let catalog = load_encyclopedia_catalog(&owned_data).unwrap();
+        let mission_entries = catalog.entries_for(0x73);
+
+        assert_eq!(catalog.entries.len(), 346);
+        assert_eq!(mission_entries.len(), 15);
+
+        for excluded_object_id in ENCYCLOPEDIA_EXCLUDED_MISSION_OBJECT_IDS {
+            assert!(
+                catalog
+                    .entries
+                    .iter()
+                    .all(|entry| entry.object_id != excluded_object_id),
+                "gameplay-only mission {excluded_object_id:#010x} entered the Encyclopedia"
+            );
+        }
     }
 }

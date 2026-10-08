@@ -7,11 +7,13 @@
 //! campaign saves or inventing a fallback topic.
 
 use std::collections::HashMap;
+use std::marker::PhantomData;
 use std::path::Path;
 
 use anyhow::{ensure, Context, Result};
 use dat_dumper::types::systems::SystemsFile;
-use serde::Deserialize;
+use serde::de::{self, MapAccess, Visitor};
+use serde::{Deserialize, Deserializer};
 use sha2::{Digest, Sha256};
 
 use crate::encyclopedia_catalog::{
@@ -22,6 +24,10 @@ use crate::read_dat_file;
 const SOURCE_SCHEMA_VERSION: u32 = 1;
 const ENGLISH_LANGUAGE_ID: u32 = 1033;
 const ENGLISH_ENCODING: &str = "windows-1252";
+const SOURCE_JSON_BYTES_LIMIT: usize = 64 * 1024 * 1024;
+const SOURCE_MANIFEST_JSON_BYTES_LIMIT: usize = 32 * 1024 * 1024;
+const SOURCE_RESOURCE_LIMIT: usize = 10_000;
+const SOURCE_BODY_BYTES_LIMIT: usize = 1_048_576;
 
 /// Faction-specific Encyclopedia artwork profile used by mission objects.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -46,8 +52,46 @@ pub struct EncyclopediaSourceCatalog {
     pub language_id: u32,
     pub encoding: String,
     pub source_code_page: u32,
+    #[serde(deserialize_with = "deserialize_unique_u16_map")]
     pub texts: HashMap<u16, EncyclopediaSourceText>,
+    #[serde(deserialize_with = "deserialize_unique_u16_map")]
     pub artwork: HashMap<u16, String>,
+}
+
+fn deserialize_unique_u16_map<'de, D, V>(deserializer: D) -> Result<HashMap<u16, V>, D::Error>
+where
+    D: Deserializer<'de>,
+    V: Deserialize<'de>,
+{
+    struct UniqueMapVisitor<V>(PhantomData<V>);
+
+    impl<'de, V> Visitor<'de> for UniqueMapVisitor<V>
+    where
+        V: Deserialize<'de>,
+    {
+        type Value = HashMap<u16, V>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str("an object with unique u16 resource identities")
+        }
+
+        fn visit_map<A>(self, mut entries: A) -> Result<Self::Value, A::Error>
+        where
+            A: MapAccess<'de>,
+        {
+            let mut values = HashMap::with_capacity(entries.size_hint().unwrap_or(0));
+            while let Some((key, value)) = entries.next_entry::<u16, V>()? {
+                if values.insert(key, value).is_some() {
+                    return Err(de::Error::custom(format!(
+                        "duplicate Encyclopedia resource identity {key}"
+                    )));
+                }
+            }
+            Ok(values)
+        }
+    }
+
+    deserializer.deserialize_map(UniqueMapVisitor(PhantomData))
 }
 
 /// Source-DLL identities retained by the local extraction manifest.
@@ -130,6 +174,101 @@ impl EncyclopediaTopicCatalog {
     }
 }
 
+/// Return a versioned, platform-neutral digest of the complete logical view.
+///
+/// The digest covers index chrome, categories, display order, both source and
+/// compound identities, bound text and artwork, audience, and explicit missing
+/// parts. It uses explicit little-endian integers, length-prefixed UTF-8, and
+/// stable enum tags, so it does not depend on map iteration, filesystem paths,
+/// native object layout, or presentation cache state.
+#[must_use]
+pub fn encyclopedia_logical_fingerprint(
+    index: &EncyclopediaCatalog,
+    topics: &EncyclopediaTopicCatalog,
+) -> String {
+    let mut digest = Sha256::new();
+    digest.update(b"open-rebellion:encyclopedia-logical-catalog:v1\0");
+    hash_bytes(&mut digest, index.title.as_bytes());
+    hash_bytes(&mut digest, index.topic_label.as_bytes());
+    hash_length(&mut digest, index.categories.len());
+    for category in &index.categories {
+        digest.update(category.command_id.to_le_bytes());
+        digest.update(category.label_resource_id.to_le_bytes());
+        hash_bytes(&mut digest, category.label.as_bytes());
+        match &category.family_range {
+            Some(range) => {
+                digest.update([1, range.start, range.end]);
+            }
+            None => {
+                digest.update([0]);
+            }
+        }
+    }
+    hash_length(&mut digest, index.entries.len());
+    for entry in &index.entries {
+        digest.update(entry.object_id.to_le_bytes());
+        digest.update(entry.text_resource_id.to_le_bytes());
+        hash_bytes(&mut digest, entry.name.as_bytes());
+    }
+
+    digest.update(topics.language_id.to_le_bytes());
+    digest.update([match topics.audience {
+        EncyclopediaAudience::Alliance => 0,
+        EncyclopediaAudience::Empire => 1,
+    }]);
+    hash_length(&mut digest, topics.entries.len());
+    for entry in &topics.entries {
+        digest.update(entry.object_id.to_le_bytes());
+        hash_bytes(&mut digest, entry.title.as_bytes());
+        digest.update(entry.topic_text_resource_id.to_le_bytes());
+        match entry.artwork_resource_id {
+            Some(resource_id) => {
+                digest.update([1]);
+                digest.update(resource_id.to_le_bytes());
+            }
+            None => {
+                digest.update([0]);
+            }
+        }
+        hash_optional_bytes(&mut digest, entry.body.as_deref().map(str::as_bytes));
+        hash_optional_bytes(
+            &mut digest,
+            entry.artwork_filename.as_deref().map(str::as_bytes),
+        );
+        hash_length(&mut digest, entry.missing.len());
+        for missing in &entry.missing {
+            digest.update([match missing {
+                EncyclopediaMissingPart::Text => 0,
+                EncyclopediaMissingPart::ArtworkMapping => 1,
+                EncyclopediaMissingPart::SystemPicture => 2,
+            }]);
+        }
+    }
+    format!("{:x}", digest.finalize())
+}
+
+fn hash_length(digest: &mut Sha256, length: usize) {
+    let length = u64::try_from(length).expect("Encyclopedia length fits u64");
+    digest.update(length.to_le_bytes());
+}
+
+fn hash_bytes(digest: &mut Sha256, bytes: &[u8]) {
+    hash_length(digest, bytes.len());
+    digest.update(bytes);
+}
+
+fn hash_optional_bytes(digest: &mut Sha256, bytes: Option<&[u8]>) {
+    match bytes {
+        Some(bytes) => {
+            digest.update([1]);
+            hash_bytes(digest, bytes);
+        }
+        None => {
+            digest.update([0]);
+        }
+    }
+}
+
 /// Parse and validate an extracted source catalog.
 ///
 /// # Errors
@@ -138,6 +277,10 @@ impl EncyclopediaTopicCatalog {
 /// not a parse error; they remain explicit in
 /// [`EncyclopediaTopicBinding::missing`].
 pub fn parse_encyclopedia_source(bytes: &[u8]) -> Result<EncyclopediaSourceCatalog> {
+    ensure!(
+        bytes.len() <= SOURCE_JSON_BYTES_LIMIT,
+        "Encyclopedia source JSON byte limit exceeded"
+    );
     let source: EncyclopediaSourceCatalog =
         serde_json::from_slice(bytes).context("parsing Encyclopedia source catalog")?;
     ensure!(
@@ -155,10 +298,17 @@ pub fn parse_encyclopedia_source(bytes: &[u8]) -> Result<EncyclopediaSourceCatal
         !source.texts.is_empty() && !source.artwork.is_empty(),
         "Encyclopedia source catalog is empty"
     );
+    ensure!(
+        source.texts.len() <= SOURCE_RESOURCE_LIMIT
+            && source.artwork.len() <= SOURCE_RESOURCE_LIMIT,
+        "Encyclopedia source catalog exceeds the resource limit"
+    );
     for (&resource_id, text) in &source.texts {
         ensure!(resource_id != 0, "Encyclopedia text resource 0 is invalid");
         ensure!(
-            !text.body.is_empty() && is_lower_hex_sha256(&text.body_sha256),
+            !text.body.is_empty()
+                && text.body.len() <= SOURCE_BODY_BYTES_LIMIT
+                && is_lower_hex_sha256(&text.body_sha256),
             "Encyclopedia text resource {resource_id} has invalid content metadata"
         );
         ensure!(
@@ -186,6 +336,10 @@ pub fn parse_encyclopedia_source_with_manifest(
     catalog_bytes: &[u8],
     manifest_bytes: &[u8],
 ) -> Result<(EncyclopediaSourceCatalog, EncyclopediaSourceManifest)> {
+    ensure!(
+        manifest_bytes.len() <= SOURCE_MANIFEST_JSON_BYTES_LIMIT,
+        "Encyclopedia source manifest JSON byte limit exceeded"
+    );
     let manifest: EncyclopediaSourceManifest =
         serde_json::from_slice(manifest_bytes).context("parsing Encyclopedia source manifest")?;
     ensure!(
@@ -224,6 +378,25 @@ pub fn load_encyclopedia_topics(
     source: &EncyclopediaSourceCatalog,
     audience: EncyclopediaAudience,
 ) -> Result<EncyclopediaTopicCatalog> {
+    let system_pictures = load_encyclopedia_system_pictures(gdata_path)?;
+    Ok(bind_encyclopedia_topics(
+        index,
+        source,
+        &system_pictures,
+        audience,
+    ))
+}
+
+/// Load the source system-object to picture-id join used by both audiences.
+///
+/// Keeping this outside the session builder lets native and browser readers
+/// converge after their selected `SYSTEMSD.DAT` bytes have entered the normal
+/// data cache.
+///
+/// # Errors
+/// Returns an error if `SYSTEMSD.DAT` is malformed, contains an out-of-range
+/// family identity, or repeats a compound object identity.
+pub fn load_encyclopedia_system_pictures(gdata_path: &Path) -> Result<HashMap<u32, u32>> {
     let systems: SystemsFile = read_dat_file(&gdata_path.join("SYSTEMSD.DAT"))?;
     let mut system_pictures = HashMap::with_capacity(systems.systems.len());
     for system in systems.systems {
@@ -241,12 +414,7 @@ pub fn load_encyclopedia_topics(
             "duplicate Encyclopedia system object {object_id:#010x}"
         );
     }
-    Ok(bind_encyclopedia_topics(
-        index,
-        source,
-        &system_pictures,
-        audience,
-    ))
+    Ok(system_pictures)
 }
 
 /// Pure binding helper used by the native loader, WASM loader, and tests.
@@ -354,6 +522,11 @@ mod tests {
     use super::*;
     use crate::encyclopedia_catalog::{EncyclopediaCatalog, EncyclopediaCategory};
 
+    const SHARED_SOURCE: &[u8] =
+        include_bytes!("../../../tests/fixtures/encyclopedia/p66a/source.json");
+    const SHARED_MANIFEST: &[u8] =
+        include_bytes!("../../../tests/fixtures/encyclopedia/p66a/source.json.manifest.json");
+
     fn fixture_index() -> EncyclopediaCatalog {
         let category = |command_id| EncyclopediaCategory {
             command_id,
@@ -415,6 +588,147 @@ mod tests {
                 (0x2b5c, "EDATA.001".into()),
             ]),
         }
+    }
+
+    fn minimal_source_json(body: &str) -> String {
+        format!(
+            r#"{{"schema_version":1,"language_id":1033,"encoding":"windows-1252","source_code_page":0,"texts":{{"5952":{{"body":{},"body_sha256":"{}"}}}},"artwork":{{"5952":"EDATA.014"}}}}"#,
+            serde_json::to_string(body).unwrap(),
+            sha256_hex(body.as_bytes()),
+        )
+    }
+
+    fn generated_source_json(text_count: usize) -> String {
+        let digest = sha256_hex(b"x");
+        let mut texts = String::new();
+        for resource_id in 1..=text_count {
+            if resource_id > 1 {
+                texts.push(',');
+            }
+            texts.push_str(&format!(
+                r#""{resource_id}":{{"body":"x","body_sha256":"{digest}"}}"#
+            ));
+        }
+        format!(
+            r#"{{"schema_version":1,"language_id":1033,"encoding":"windows-1252","source_code_page":0,"texts":{{{texts}}},"artwork":{{"1":"EDATA.001"}}}}"#
+        )
+    }
+
+    #[test]
+    fn shared_p66a_fixture_parses_and_binds_both_audiences() {
+        let (source, manifest) =
+            parse_encyclopedia_source_with_manifest(SHARED_SOURCE, SHARED_MANIFEST).unwrap();
+        assert_eq!(manifest.counts.texts, 3);
+        assert_eq!(manifest.counts.artwork_mappings, 4);
+
+        let index = fixture_index();
+        let pictures = HashMap::from([(0x9200_0064, 1)]);
+        for audience in [EncyclopediaAudience::Alliance, EncyclopediaAudience::Empire] {
+            let topics = bind_encyclopedia_topics(&index, &source, &pictures, audience);
+            assert_eq!(topics.entries.len(), 3);
+            assert_eq!(topics.complete_count(), 3);
+        }
+    }
+
+    #[test]
+    fn logical_fingerprint_is_stable_and_content_sensitive() {
+        let source = parse_encyclopedia_source(SHARED_SOURCE).unwrap();
+        let index = fixture_index();
+        let pictures = HashMap::from([(0x9200_0064, 1)]);
+        let alliance =
+            bind_encyclopedia_topics(&index, &source, &pictures, EncyclopediaAudience::Alliance);
+        let repeated =
+            bind_encyclopedia_topics(&index, &source, &pictures, EncyclopediaAudience::Alliance);
+        let empire =
+            bind_encyclopedia_topics(&index, &source, &pictures, EncyclopediaAudience::Empire);
+
+        assert_eq!(
+            encyclopedia_logical_fingerprint(&index, &alliance),
+            encyclopedia_logical_fingerprint(&index, &repeated)
+        );
+        assert_ne!(
+            encyclopedia_logical_fingerprint(&index, &alliance),
+            encyclopedia_logical_fingerprint(&index, &empire)
+        );
+        assert!(is_lower_hex_sha256(&encyclopedia_logical_fingerprint(
+            &index, &alliance
+        )));
+
+        let mut changed_source = source;
+        changed_source
+            .texts
+            .get_mut(&0x1740)
+            .unwrap()
+            .body
+            .push('!');
+        let changed = bind_encyclopedia_topics(
+            &index,
+            &changed_source,
+            &pictures,
+            EncyclopediaAudience::Alliance,
+        );
+        assert_ne!(
+            encyclopedia_logical_fingerprint(&index, &alliance),
+            encyclopedia_logical_fingerprint(&index, &changed)
+        );
+    }
+
+    #[test]
+    fn source_parser_rejects_duplicate_resource_identities() {
+        let digest = sha256_hex(b"Synthetic");
+        let duplicate = format!(
+            r#"{{"schema_version":1,"language_id":1033,"encoding":"windows-1252","source_code_page":0,"texts":{{"5952":{{"body":"Synthetic","body_sha256":"{digest}"}},"5952":{{"body":"Synthetic","body_sha256":"{digest}"}}}},"artwork":{{"5952":"EDATA.014"}}}}"#
+        );
+
+        assert!(parse_encyclopedia_source(duplicate.as_bytes()).is_err());
+    }
+
+    #[test]
+    fn source_parser_rejects_closed_schema_and_malformed_values() {
+        let valid = minimal_source_json("Synthetic");
+        let invalid = [
+            valid.replace(r#""body_sha256":"#, r#""unexpected":true,"body_sha256":"#),
+            valid.replace(
+                r#""body":"Synthetic""#,
+                r#""body":"duplicate","body":"Synthetic""#,
+            ),
+            valid.replacen(r#""5952":"#, r#""65536":"#, 1),
+            valid.replace(r#""artwork":"#, r#""missing_artwork":"#),
+            format!("{valid}{{}}"),
+        ];
+        for bytes in invalid {
+            assert!(
+                parse_encyclopedia_source(bytes.as_bytes()).is_err(),
+                "accepted invalid source: {}",
+                &bytes[..bytes.len().min(160)]
+            );
+        }
+        assert!(parse_encyclopedia_source(&[0xff]).is_err());
+    }
+
+    #[test]
+    fn source_parser_enforces_the_documented_body_byte_limit() {
+        let boundary = "x".repeat(1_048_576);
+        parse_encyclopedia_source(minimal_source_json(&boundary).as_bytes()).unwrap();
+
+        let oversized = format!("{boundary}x");
+        assert!(parse_encyclopedia_source(minimal_source_json(&oversized).as_bytes()).is_err());
+    }
+
+    #[test]
+    fn source_parser_enforces_the_generated_resource_count_limit() {
+        parse_encyclopedia_source(generated_source_json(SOURCE_RESOURCE_LIMIT).as_bytes()).unwrap();
+        assert!(parse_encyclopedia_source(
+            generated_source_json(SOURCE_RESOURCE_LIMIT + 1).as_bytes()
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn source_parser_rejects_oversized_json_before_deserialization() {
+        let oversized = vec![b' '; 64 * 1024 * 1024 + 1];
+        let error = parse_encyclopedia_source(&oversized).unwrap_err();
+        assert!(error.to_string().contains("byte limit"));
     }
 
     #[test]

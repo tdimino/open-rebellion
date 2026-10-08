@@ -1,6 +1,10 @@
 mod audio;
 #[cfg(any(debug_assertions, not(target_arch = "wasm32")))]
 mod dev_commands;
+mod encyclopedia_content;
+mod encyclopedia_hd;
+mod encyclopedia_mods;
+mod encyclopedia_surface;
 #[cfg(any(test, all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
 #[cfg_attr(
     all(test, not(target_arch = "wasm32")),
@@ -34,12 +38,12 @@ use rand_xoshiro::Xoshiro256PlusPlus;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
+use rebellion_core::agent_automation::{AutomationModule, PlayerAgent};
 use rebellion_core::ai::{AIAction, AIState, AISystem, AiFaction, FleetMoveReason};
 use rebellion_core::betrayal::{BetrayalState, BetrayalSystem};
 use rebellion_core::blockade::{BlockadeState, BlockadeSystem};
 use rebellion_core::bombardment::BombardmentSystem;
 use rebellion_core::combat::{CombatSide, CombatSystem};
-use rebellion_core::agent_automation::{AutomationModule, PlayerAgent};
 use rebellion_core::dat::Faction;
 use rebellion_core::death_star::{DeathStarState, DeathStarSystem};
 use rebellion_core::delivery::DeliveryState;
@@ -49,17 +53,15 @@ use rebellion_core::fleet_join::FleetMover;
 use rebellion_core::fog::{FogState, FogSystem};
 use rebellion_core::ids::{CharacterKey, FleetKey, SystemKey};
 use rebellion_core::jedi::{JediState, JediSystem};
-use rebellion_core::manufacturing::{
-    ManufacturingState, ManufacturingSystem, QueueItem,
-};
+use rebellion_core::manufacturing::{ManufacturingState, ManufacturingSystem, QueueItem};
 use rebellion_core::missions::{
     MissionEffect, MissionFaction, MissionKind, MissionState, MissionSystem,
 };
 use rebellion_core::movement::{
     apply_fleet_arrival, begin_faction_fleet_transit, begin_fleet_transit, fleet_move_confirms,
     fleet_move_enabled, fleet_transit_ticks, fleets_move_enabled, reconcile_fleet_orbits,
-    system_side_fleets, validate_fleet_dispatch,
-    validate_fleets_dispatch, MovementState, MovementSystem,
+    system_side_fleets, validate_fleet_dispatch, validate_fleets_dispatch, MovementState,
+    MovementSystem,
 };
 use rebellion_core::repair::{RepairEvent, RepairState, RepairSystem};
 use rebellion_core::research::{ResearchState, ResearchSystem};
@@ -70,21 +72,22 @@ use rebellion_core::victory::{VictoryState, VictorySystem};
 use rebellion_core::world::{
     CampaignConfig, GameWorld, MstbTable, SeedDifficulty, SeedOptions, VictoryConditions,
 };
+use rebellion_data::encyclopedia_catalog::EncyclopediaCatalog;
+use rebellion_data::encyclopedia_presenter::{
+    EncyclopediaContextCaller, EncyclopediaEntryIntent, EncyclopediaReturnRoute,
+};
+use rebellion_data::encyclopedia_topics::EncyclopediaAudience;
 
 use rebellion_render::build_selection::{
     draw_build_selection, BuildSelectionAction, BuildSelectionState,
 };
 use rebellion_render::fleet_finder::{draw_fleet_finder, FleetFinderAction, FleetFinderState};
-use rebellion_render::message_index::{MessageIndexAction, MessageIndexState};
-use rebellion_render::personnel_finder::{
-    draw_personnel_finder, PersonnelFinderAction, PersonnelFinderState,
-};
-use rebellion_render::troop_finder::{draw_troop_finder, TroopFinderAction, TroopFinderState};
 use rebellion_render::game_speed::{
     choose_game_speed, draw_day_readout, draw_game_speed_menu, draw_pause_alert,
     open_game_speed_menu_on_right_click, pause_alert_contains_screen_point, stepped_game_speed,
     GameSpeedUiState,
 };
+use rebellion_render::message_index::{MessageIndexAction, MessageIndexState};
 use rebellion_render::mission_dialog::{
     draw_mission_dialog, MissionDialogAction, MissionDialogState,
 };
@@ -95,11 +98,14 @@ use rebellion_render::object_menu::{
     draw_object_menu, MenuObject, ObjectMenuCommand, ObjectMenuState, OrderGates,
 };
 use rebellion_render::panels::bombardment::{draw_bombardment, BombardmentPanelState};
-use rebellion_render::quadrant_icons::Quadrant;
 use rebellion_render::panels::death_star::draw_death_star;
 use rebellion_render::panels::jedi::{draw_jedi, JediPanelState};
 use rebellion_render::panels::loyalty::draw_loyalty;
 use rebellion_render::panels::research::{draw_research, ResearchPanelState};
+use rebellion_render::personnel_finder::{
+    draw_personnel_finder, PersonnelFinderAction, PersonnelFinderState,
+};
+use rebellion_render::quadrant_icons::Quadrant;
 use rebellion_render::status_rows::StatusSources;
 use rebellion_render::status_window::{draw_status_window, StatusWindowAction, StatusWindowState};
 use rebellion_render::system_window::fleet_label;
@@ -107,24 +113,26 @@ use rebellion_render::targeting::{
     capture_pointer, draw_targeting_cursor, release_destination, ReleaseTarget, ReleaseWindows,
     TargetOrder, Targeting, TargetingEnd,
 };
+use rebellion_render::troop_finder::{draw_troop_finder, TroopFinderAction, TroopFinderState};
+#[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+use rebellion_render::EncyclopediaState;
 use rebellion_render::{
     advisor_combat_result, advisor_death_star, advisor_greet, advisor_manufacturing_complete,
     advisor_mission_result, advisor_uprising, draw_advisor, draw_audio_controls,
     draw_cockpit_background, draw_cockpit_chrome, draw_cockpit_egui_layer, draw_credits,
-    draw_encyclopedia, draw_event_screen, draw_fleets, draw_galaxy_backdrop, draw_galaxy_map,
-    draw_game_options, draw_game_setup, draw_ground_combat, draw_main_menu, draw_missions,
-    draw_multiplayer_setup, draw_officers, draw_save_load, draw_sector_windows,
-    draw_system_windows, draw_tactical_view, handle_cockpit_egui_input, set_cockpit_viewport_clip,
-    show_event_screen, update_event_screen, AdvisorFaction, AdvisorState, AssetRenderProfile,
-    AudioVolumeState, BmpCache, CockpitButton, CockpitFaction, CockpitState, CreditsState,
-    EncyclopediaState, EventScreenState, FleetsState, GalaxyMapState, GameMessage,
-    GameOptionsAction, GameOptionsOrigin, GameOptionsState, GameSetupAction, GameSetupState,
-    GroundAction, GroundCombatState, MainMenuAction, MainMenuState, MenuDestinationAction,
-    MessageCategory, MessageLog, MessageLogState, MessageRail, MultiplayerSetupAction,
-    MultiplayerSetupState, MusicContext, OfficersState, OriginalEncyclopediaCatalog,
-    OriginalEncyclopediaEntry, PanelAction, RailAudience, SectorWindowAction, SectorWindowState,
-    SfxKind, SystemWindowAction, SystemWindowState, TacticalAction, TacticalState,
-    TacticalTrenchRunOutcome, VideoError, VideoPlayer,
+    draw_event_screen, draw_fleets, draw_galaxy_backdrop, draw_galaxy_map, draw_game_options,
+    draw_game_setup, draw_ground_combat, draw_main_menu, draw_missions, draw_multiplayer_setup,
+    draw_officers, draw_save_load, draw_sector_windows, draw_system_windows, draw_tactical_view,
+    handle_cockpit_egui_input, set_cockpit_viewport_clip, show_event_screen, update_event_screen,
+    AdvisorFaction, AdvisorState, AssetRenderProfile, AudioVolumeState, BmpCache, CockpitButton,
+    CockpitFaction, CockpitState, CreditsState, EventScreenState, FleetsState, GalaxyMapState,
+    GameMessage, GameOptionsAction, GameOptionsOrigin, GameOptionsState, GameSetupAction,
+    GameSetupState, GroundAction, GroundCombatState, MainMenuAction, MainMenuState,
+    MenuDestinationAction, MessageCategory, MessageLog, MessageLogState, MessageRail,
+    MultiplayerSetupAction, MultiplayerSetupState, MusicContext, OfficersState,
+    OriginalEncyclopediaCatalog, OriginalEncyclopediaEntry, PanelAction, RailAudience,
+    SectorWindowAction, SectorWindowState, SfxKind, SystemWindowAction, SystemWindowState,
+    TacticalAction, TacticalState, TacticalTrenchRunOutcome, VideoError, VideoPlayer,
 };
 use rebellion_render::{draw_defenses_windows, DefensesWindowAction, DefensesWindowState};
 use rebellion_render::{draw_fleet_windows, FleetWindowAction, FleetWindowState};
@@ -287,6 +295,36 @@ fn configured_asset_render_profile() -> AssetRenderProfile {
     {
         AssetRenderProfile::OriginalParity
     }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn prepare_encyclopedia_hd_snapshot(
+    profile: AssetRenderProfile,
+    gdata_path: &Path,
+    store: &rebellion_data::encyclopedia_session::EncyclopediaSessionStore,
+) -> encyclopedia_hd::PreparedEncyclopediaHd {
+    let hd_root = gdata_path.parent().unwrap_or(Path::new(".")).join("hd");
+    let prepared = store.current().map_or_else(
+        encyclopedia_hd::PreparedEncyclopediaHd::original_only,
+        |session| {
+            encyclopedia_hd::prepare_native_encyclopedia_hd(profile, Some(&hd_root), &session)
+        },
+    );
+    for diagnostic in prepared.diagnostics() {
+        macroquad::logging::warn!(
+            "[encyclopedia] faithful_hd fallback code={} asset={} detail={}",
+            diagnostic.code,
+            diagnostic.asset_id.as_deref().unwrap_or("all"),
+            diagnostic.detail
+        );
+    }
+    macroquad::logging::info!(
+        "[encyclopedia] faithful_hd prepared profile={} selected={} diagnostics={}",
+        profile.as_str(),
+        prepared.selected_count(),
+        prepared.diagnostics().len()
+    );
+    prepared
 }
 
 fn read_save_slots(saves_dir: &Path) -> Vec<rebellion_render::SaveSlotInfo> {
@@ -531,9 +569,13 @@ fn draw_loading_progress(label: &str, loaded: usize, total: usize) {
 }
 
 #[cfg(target_arch = "wasm32")]
-fn install_runtime_pack(
-    bytes: &[u8],
-) -> Result<std::collections::HashMap<String, Vec<u8>>, String> {
+struct WasmRuntimeAssets {
+    audio_files: std::collections::HashMap<String, Vec<u8>>,
+    encyclopedia: Option<encyclopedia_content::EncyclopediaContentPayload>,
+}
+
+#[cfg(target_arch = "wasm32")]
+fn install_runtime_pack(bytes: &[u8]) -> Result<WasmRuntimeAssets, String> {
     let mut pack = runtime_pack::parse_runtime_pack(bytes).map_err(|error| error.to_string())?;
     for required in REQUIRED_WASM_DATA {
         if !pack.game_files.contains_key(*required) {
@@ -541,9 +583,14 @@ fn install_runtime_pack(
         }
     }
 
-    let encyclopedia_assets =
-        runtime_pack::take_namespace(&mut pack.game_files, "encyclopedia/assets/");
-    let encyclopedia_asset_count = encyclopedia_assets.len();
+    let encyclopedia = encyclopedia_content::EncyclopediaContentPayload::take_from_runtime_pack(
+        &mut pack.game_files,
+    )
+    .map_err(|error| error.to_string())?;
+    let encyclopedia_asset_count = encyclopedia.as_ref().map_or(
+        0,
+        encyclopedia_content::EncyclopediaContentPayload::artwork_count,
+    );
     let game_file_count = pack.game_files.len();
     let string_table: std::collections::HashMap<u16, String> = pack
         .game_files
@@ -567,7 +614,16 @@ fn install_runtime_pack(
         .collect();
 
     rebellion_data::set_string_table(string_table);
-    rebellion_render::set_encyclopedia_asset_cache(encyclopedia_assets);
+    #[cfg(feature = "interface-test-fixtures")]
+    rebellion_render::set_encyclopedia_asset_cache(
+        encyclopedia
+            .as_ref()
+            .map_or_else(std::collections::HashMap::new, |content| {
+                content.legacy_renderer_artwork()
+            }),
+    );
+    #[cfg(not(feature = "interface-test-fixtures"))]
+    rebellion_render::set_encyclopedia_asset_cache(std::collections::HashMap::new());
     rebellion_data::set_file_cache(pack.game_files);
     rebellion_render::set_advisor_asset_cache(pack.advisor_frames, advisor_bitmaps);
     rebellion_render::set_bmp_cache(pack.bitmaps);
@@ -583,11 +639,63 @@ fn install_runtime_pack(
         tactical_texture_count,
         bytes.len()
     );
-    Ok(pack.audio_files)
+    Ok(WasmRuntimeAssets {
+        audio_files: pack.audio_files,
+        encyclopedia,
+    })
 }
 
 #[cfg(target_arch = "wasm32")]
-async fn load_legacy_wasm_assets() {
+async fn load_loose_wasm_encyclopedia(
+) -> Result<Option<encyclopedia_content::EncyclopediaContentPayload>, String> {
+    let pointer_bytes = match macroquad::file::load_file("data/encyclopedia/current.json").await {
+        Ok(bytes) => bytes,
+        Err(_) => return Ok(None),
+    };
+    let Some(generation) = encyclopedia_content::parse_loose_pointer(&pointer_bytes)
+        .map_err(|error| error.to_string())?
+    else {
+        return Ok(None);
+    };
+    let base = format!("data/encyclopedia/generations/{generation}");
+    let catalog_path = format!("{base}/catalog.json");
+    let manifest_path = format!("{base}/manifest.json");
+    let catalog = macroquad::file::load_file(&catalog_path)
+        .await
+        .map_err(|error| format!("{catalog_path} failed to load: {error:?}"))?;
+    let manifest = macroquad::file::load_file(&manifest_path)
+        .await
+        .map_err(|error| format!("{manifest_path} failed to load: {error:?}"))?;
+    let (source, _) = rebellion_data::encyclopedia_topics::parse_encyclopedia_source_with_manifest(
+        &catalog, &manifest,
+    )
+    .map_err(|error| error.to_string())?;
+    let mut entries = std::collections::HashMap::from([
+        ("encyclopedia/catalog.json".to_string(), catalog),
+        ("encyclopedia/manifest.json".to_string(), manifest),
+    ]);
+    let filenames: std::collections::BTreeSet<String> = source.artwork.values().cloned().collect();
+    let mut retained_artwork_bytes = 0;
+    for filename in filenames {
+        let path = format!("{base}/assets/{filename}");
+        let bytes = macroquad::file::load_file(&path)
+            .await
+            .map_err(|error| format!("{path} failed to load: {error:?}"))?;
+        retained_artwork_bytes = encyclopedia_content::checked_artwork_transfer_total(
+            retained_artwork_bytes,
+            bytes.len(),
+        )
+        .map_err(|error| error.to_string())?;
+        entries.insert(format!("encyclopedia/assets/{filename}"), bytes);
+    }
+    encyclopedia_content::EncyclopediaContentPayload::from_loose_entries(entries)
+        .map(Some)
+        .map_err(|error| error.to_string())
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn load_legacy_wasm_assets(
+) -> Result<Option<encyclopedia_content::EncyclopediaContentPayload>, String> {
     use std::collections::HashMap;
 
     let total = REQUIRED_WASM_DATA.len() + OPTIONAL_WASM_DATA.len();
@@ -631,15 +739,20 @@ async fn load_legacy_wasm_assets() {
         id: u32,
     }
 
-    let Ok(manifest_bytes) = macroquad::file::load_file("data/ui/bmp-manifest.json").await else {
-        eprintln!("WARNING: bmp-manifest.json not found — UI textures will be missing");
-        return;
-    };
-    let entries: Vec<BmpEntry> = match serde_json::from_slice(&manifest_bytes) {
-        Ok(entries) => entries,
+    let entries: Vec<BmpEntry> = match macroquad::file::load_file("data/ui/bmp-manifest.json").await
+    {
+        Ok(manifest_bytes) => match serde_json::from_slice(&manifest_bytes) {
+            Ok(entries) => entries,
+            Err(error) => {
+                eprintln!(
+                    "ERROR: bmp-manifest.json is malformed: {error} — UI textures will be missing"
+                );
+                Vec::new()
+            }
+        },
         Err(error) => {
             eprintln!(
-                "ERROR: bmp-manifest.json is malformed: {error} — UI textures will be missing"
+                "WARNING: bmp-manifest.json failed to load ({error:?}) — UI textures will be missing"
             );
             Vec::new()
         }
@@ -679,10 +792,22 @@ async fn load_legacy_wasm_assets() {
         bmp_total
     );
     rebellion_render::set_bmp_cache(bmp_cache);
+    let encyclopedia = load_loose_wasm_encyclopedia().await?;
+    #[cfg(feature = "interface-test-fixtures")]
+    rebellion_render::set_encyclopedia_asset_cache(
+        encyclopedia
+            .as_ref()
+            .map_or_else(std::collections::HashMap::new, |content| {
+                content.legacy_renderer_artwork()
+            }),
+    );
+    #[cfg(not(feature = "interface-test-fixtures"))]
+    rebellion_render::set_encyclopedia_asset_cache(std::collections::HashMap::new());
+    Ok(encyclopedia)
 }
 
 #[cfg(target_arch = "wasm32")]
-async fn load_wasm_assets() -> std::collections::HashMap<String, Vec<u8>> {
+async fn load_wasm_assets() -> WasmRuntimeAssets {
     draw_loading_progress("Loading optimized runtime assets…", 0, 0);
     next_frame().await;
 
@@ -693,8 +818,13 @@ async fn load_wasm_assets() -> std::collections::HashMap<String, Vec<u8>> {
             eprintln!(
                 "WARNING: data/runtime.orpk unavailable ({error:?}); using legacy per-file loading"
             );
-            load_legacy_wasm_assets().await;
-            std::collections::HashMap::new()
+            let encyclopedia = load_legacy_wasm_assets()
+                .await
+                .unwrap_or_else(|error| panic!("Invalid loose Encyclopedia publication: {error}"));
+            WasmRuntimeAssets {
+                audio_files: std::collections::HashMap::new(),
+                encyclopedia,
+            }
         }
     }
 }
@@ -765,9 +895,44 @@ fn panel_letters_open_panels(debug_build: bool, alt_down: bool) -> bool {
     debug_build && !alt_down
 }
 
+/// The surface that owns keyboard input for the current frame.
+///
+/// Ownership is sampled once before any key can close a surface. This prevents
+/// the same key press from falling through to the cockpit after a modal closes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FrameKeyboardOwner {
+    Cockpit,
+    Encyclopedia,
+}
+
+impl FrameKeyboardOwner {
+    fn at_frame_start(encyclopedia_open: bool) -> Self {
+        if encyclopedia_open {
+            Self::Encyclopedia
+        } else {
+            Self::Cockpit
+        }
+    }
+
+    const fn allows_galaxy_shortcuts(self) -> bool {
+        matches!(self, Self::Cockpit)
+    }
+}
+
 #[cfg(test)]
 mod panel_toggle_tests {
-    use super::{panel_letters_open_panels, toggle_exclusive_panel};
+    use super::{panel_letters_open_panels, toggle_exclusive_panel, FrameKeyboardOwner};
+
+    #[test]
+    fn an_encyclopedia_open_at_frame_start_owns_the_whole_frames_keyboard() {
+        let owner = FrameKeyboardOwner::at_frame_start(true);
+
+        // The owner is retained even when Escape closes the surface later in
+        // this frame, so that key cannot also reach a cockpit shortcut.
+        assert_eq!(owner, FrameKeyboardOwner::Encyclopedia);
+        assert!(!owner.allows_galaxy_shortcuts());
+        assert!(FrameKeyboardOwner::at_frame_start(false).allows_galaxy_shortcuts());
+    }
 
     #[test]
     fn panel_letters_open_panels_only_in_debug_builds_without_alt() {
@@ -831,6 +996,21 @@ async fn main() {
     let asset_render_profile = configured_asset_render_profile();
     macroquad::logging::info!("[assets] render_profile={}", asset_render_profile.as_str());
 
+    #[cfg(not(target_arch = "wasm32"))]
+    let encyclopedia_content = match encyclopedia_content::read_native_encyclopedia(
+        &gdata_path,
+        &configured_edata_path(&gdata_path),
+    ) {
+        Ok(content) => content,
+        Err(error) => {
+            macroquad::logging::error!(
+                "[encyclopedia] native_content rejected before installation error={}",
+                error
+            );
+            None
+        }
+    };
+
     #[cfg(target_arch = "wasm32")]
     if web_replay::requested() {
         web_replay::run(&gdata_path).await;
@@ -853,11 +1033,11 @@ async fn main() {
     };
 
     #[cfg(target_arch = "wasm32")]
-    let (mut world, mut browser_audio_files) = {
-        let audio_files = load_wasm_assets().await;
+    let (mut world, mut browser_audio_files, encyclopedia_content) = {
+        let assets = load_wasm_assets().await;
         let world = rebellion_data::load_game_data(&gdata_path)
             .unwrap_or_else(|error| panic!("Failed to parse game data: {error}"));
-        (world, audio_files)
+        (world, assets.audio_files, assets.encyclopedia)
     };
 
     eprintln!(
@@ -869,35 +1049,31 @@ async fn main() {
         world.characters.len(),
     );
 
+    // mods/ lives alongside data/, not inside it. One resolved runtime order
+    // feeds both world and presentation-content consumers.
+    let mods_dir = gdata_path
+        .parent()
+        .and_then(|p| p.parent())
+        .unwrap_or(std::path::Path::new("."))
+        .join("mods");
+    let mut mod_runtime = rebellion_data::mods::ModRuntime::discover(&mods_dir);
+    let resolved_mod_order = mod_runtime.enabled_sorted();
+
     // The Galactic Encyclopedia is immutable reference data, not campaign
     // state. Rebuild it from the installed DAT/TEXTSTRA source so opening the
     // index after a save/load never changes the serialized world format.
-    let original_encyclopedia_catalog =
-        match rebellion_data::encyclopedia_catalog::load_encyclopedia_catalog(&gdata_path) {
-            Ok(source) => {
-                let category_counts: [usize; 7] = std::array::from_fn(|index| {
-                    source
-                        .entries_for(source.categories[index].command_id)
-                        .len()
-                });
-                let category_labels = source.categories.map(|category| category.label);
-                let entries = source
-                    .entries
-                    .into_iter()
-                    .map(|entry| OriginalEncyclopediaEntry {
-                        object_id: entry.object_id,
-                        name: entry.name,
-                    })
-                    .collect();
-                let catalog = OriginalEncyclopediaCatalog::new(
-                    source.title,
-                    source.topic_label,
-                    category_labels,
-                    entries,
-                );
-                macroquad::logging::info!(
+    let encyclopedia_catalog = match rebellion_data::encyclopedia_catalog::load_encyclopedia_catalog(
+        &gdata_path,
+    ) {
+        Ok(source) => {
+            let category_counts: [usize; 7] = std::array::from_fn(|index| {
+                source
+                    .entries_for(source.categories[index].command_id)
+                    .len()
+            });
+            macroquad::logging::info!(
                     "[encyclopedia] source_catalog loaded entries={} categories=all:{},systems:{},ships:{},facilities:{},missions:{},troops:{},personnel:{}",
-                    catalog.len(),
+                    source.entries.len(),
                     category_counts[0],
                     category_counts[1],
                     category_counts[2],
@@ -906,37 +1082,117 @@ async fn main() {
                     category_counts[5],
                     category_counts[6],
                 );
-                Some(catalog)
+            Some(source)
+        }
+        Err(error) => {
+            macroquad::logging::error!("[encyclopedia] source_catalog unavailable error={error}");
+            None
+        }
+    };
+    let original_encyclopedia_catalog = encyclopedia_catalog.as_ref().map(|source| {
+        let entries = source
+            .entries
+            .iter()
+            .map(|entry| OriginalEncyclopediaEntry {
+                object_id: entry.object_id,
+                name: entry.name.clone(),
+            })
+            .collect();
+        OriginalEncyclopediaCatalog::new(
+            source.title.clone(),
+            source.topic_label.clone(),
+            std::array::from_fn(|index| source.categories[index].label.clone()),
+            entries,
+        )
+    });
+    let mut encyclopedia_session_store =
+        rebellion_data::encyclopedia_session::EncyclopediaSessionStore::default();
+    let mut encyclopedia_base_disposition = None;
+    #[cfg(not(target_arch = "wasm32"))]
+    let mut encyclopedia_base_input = None;
+    if let (Some(content), Some(catalog)) = (encyclopedia_content, encyclopedia_catalog) {
+        match rebellion_data::encyclopedia_topics::load_encyclopedia_system_pictures(&gdata_path) {
+            Ok(system_pictures) => {
+                let input = content.into_session_input(catalog, system_pictures);
+                match encyclopedia_session_store.replace(input.clone()) {
+                    Ok(disposition) => {
+                        encyclopedia_base_disposition = Some(disposition);
+                        #[cfg(not(target_arch = "wasm32"))]
+                        {
+                            let report = encyclopedia_mods::install_native_encyclopedia_mods(
+                                &input,
+                                &mut encyclopedia_session_store,
+                                &mod_runtime,
+                                &resolved_mod_order,
+                            );
+                            encyclopedia_mods::log_native_encyclopedia_mod_report(&report);
+                            encyclopedia_base_input = Some(input.clone());
+                        }
+                    }
+                    Err(error) => {
+                        macroquad::logging::error!(
+                            "[encyclopedia] content_session rejected before publication error={}",
+                            error
+                        );
+                    }
+                }
             }
             Err(error) => {
                 macroquad::logging::error!(
-                    "[encyclopedia] source_catalog unavailable error={error}"
+                    "[encyclopedia] system_picture_bindings unavailable error={}",
+                    error
                 );
-                None
             }
-        };
+        }
+        if let (Some(session), Some(disposition)) = (
+            encyclopedia_session_store.current(),
+            encyclopedia_base_disposition,
+        ) {
+            macroquad::logging::info!(
+                "[encyclopedia] content_session installed disposition={:?} fingerprint={} alliance_topics={} empire_topics={}",
+                disposition,
+                session.logical_fingerprint(),
+                session
+                    .topics(rebellion_data::encyclopedia_topics::EncyclopediaAudience::Alliance)
+                    .entries
+                    .len(),
+                session
+                    .topics(rebellion_data::encyclopedia_topics::EncyclopediaAudience::Empire)
+                    .entries
+                    .len(),
+            );
+        }
+    } else {
+        macroquad::logging::warn!(
+            "[encyclopedia] content_session unavailable; production route remains disabled"
+        );
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    let mut encyclopedia_hd = prepare_encyclopedia_hd_snapshot(
+        asset_render_profile,
+        &gdata_path,
+        &encyclopedia_session_store,
+    );
+    #[cfg(target_arch = "wasm32")]
+    let encyclopedia_hd = encyclopedia_hd::PreparedEncyclopediaHd::original_only();
+    #[cfg(not(target_arch = "wasm32"))]
+    let mut encyclopedia_hd_generation = encyclopedia_session_store.texture_generation();
     #[cfg(not(all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
     let _ = original_encyclopedia_catalog.as_ref();
 
     // ── Mod Runtime ──────────────────────────────────────────────────────────
-    // mods/ lives alongside data/, not inside it: data/base → data → repo root → mods/
-    let mods_dir = gdata_path
-        .parent()
-        .and_then(|p| p.parent())
-        .unwrap_or(std::path::Path::new("."))
-        .join("mods");
-    let mut mod_runtime = rebellion_data::mods::ModRuntime::discover(&mods_dir);
     if !mod_runtime.discovered.is_empty() {
         eprintln!(
             "Discovered {} mods ({} enabled)",
             mod_runtime.discovered.len(),
             mod_runtime.discovered.iter().filter(|m| m.enabled).count()
         );
-        let mod_errors = mod_runtime.apply_enabled(&mut world);
+        let mod_errors = mod_runtime.apply_ordered(&mut world, &resolved_mod_order);
         for err in &mod_errors {
             eprintln!("Mod error: {err:?}");
         }
     }
+    drop(resolved_mod_order);
 
     // ── Game mode ─────────────────────────────────────────────────────────
     let mut game_mode = GameMode::MainMenu;
@@ -1036,12 +1292,14 @@ async fn main() {
     let mut move_confirmation_state = MoveConfirmationState::default();
     let mut status_window_state = StatusWindowState::default();
     let mut fleet_finder_state = FleetFinderState::default();
+    let mut encyclopedia_surface = encyclopedia_surface::EncyclopediaSurfaceController::new();
     let mut troop_finder_state = TroopFinderState::default();
     let mut personnel_finder_state = PersonnelFinderState::default();
     // The open Message Index (window 0x0d) and the speed its Advice
     // category saved (FUN_00487ff0 +0x58).
     let mut message_index: Option<MessageIndexState> = None;
     let mut advice_saved_speed: Option<GameSpeed> = None;
+    #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
     let mut enc_state = EncyclopediaState::new();
     let mut research_panel_state = ResearchPanelState::default();
     let mut jedi_panel_state = JediPanelState::default();
@@ -1056,16 +1314,18 @@ async fn main() {
     let mut pending_interface: Vec<rebellion_render::InterfaceCommand> = Vec::new();
     #[cfg(not(target_arch = "wasm32"))]
     let mut command_script = dev_commands::CommandScript::from_env();
-    enc_state.set_edata_path(configured_edata_path(&gdata_path));
-    enc_state.set_asset_profile(asset_render_profile);
-    // HD upscaled PNGs live as a sibling of the base data directory.
-    let hd_path = gdata_path
-        .parent()
-        .unwrap_or(Path::new("."))
-        .join("hd")
-        .join("EData");
-    enc_state.set_hd_path(hd_path);
-
+    #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+    {
+        enc_state.set_edata_path(configured_edata_path(&gdata_path));
+        enc_state.set_asset_profile(asset_render_profile);
+        // HD upscaled PNGs live as a sibling of the base data directory.
+        let hd_path = gdata_path
+            .parent()
+            .unwrap_or(Path::new("."))
+            .join("hd")
+            .join("EData");
+        enc_state.set_hd_path(hd_path);
+    }
     // Panel visibility (mutually exclusive left panels)
     let mut show_officers = false;
     let mut show_fleets = false;
@@ -1292,6 +1552,38 @@ async fn main() {
         );
     }
     #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+    let mut encyclopedia_surface_fixture = interface_fixture_request
+        .filter(|request| request.scenario.is_encyclopedia_surface())
+        .map(|request| {
+            let audience = match request.faction {
+                CockpitFaction::Alliance => {
+                    rebellion_data::encyclopedia_topics::EncyclopediaAudience::Alliance
+                }
+                CockpitFaction::Empire => {
+                    rebellion_data::encyclopedia_topics::EncyclopediaAudience::Empire
+                }
+            };
+            if let Some(start) = request.scenario.encyclopedia_fixture_start() {
+                encyclopedia_surface::EncyclopediaSurfaceFixture::new(audience, start)
+                    .unwrap_or_else(|error| panic!("W4 Encyclopedia fixture is invalid: {error}"))
+            } else {
+                let session = encyclopedia_session_store.current().unwrap_or_else(|| {
+                    panic!(
+                        "E30 canonical Encyclopedia fixture requires an installed content session"
+                    )
+                });
+                encyclopedia_surface::EncyclopediaSurfaceFixture::from_session(
+                    session,
+                    audience,
+                    request
+                        .scenario
+                        .canonical_encyclopedia_fixture_start()
+                        .expect("canonical Encyclopedia scenario has a fixture start"),
+                )
+                .unwrap_or_else(|error| panic!("E30 Encyclopedia fixture is invalid: {error}"))
+            }
+        });
+    #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
     let tactical_fixture_request = tactical_test_fixture::requested();
     #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
     let tactical_fixture_failed = if let Some(request) = tactical_fixture_request {
@@ -1345,6 +1637,8 @@ async fn main() {
     loop {
         let dt = get_frame_time();
         let mut targeting_cursor_drawn = false;
+        let frame_keyboard_owner =
+            FrameKeyboardOwner::at_frame_start(encyclopedia_surface.is_open());
 
         #[cfg(target_arch = "wasm32")]
         if !browser_menu_audio_requested
@@ -1399,7 +1693,26 @@ async fn main() {
             } else if matches!(game_mode, GameMode::Credits | GameMode::MultiplayerSetup) {
                 game_mode = GameMode::MainMenu;
             } else if game_mode == GameMode::Galaxy {
-                if targeting.is_some() {
+                if encyclopedia_surface.is_open() {
+                    if let Some(session) = encyclopedia_session_store.current() {
+                        match encyclopedia_surface.apply_action(
+                            &session,
+                            rebellion_render::EncyclopediaSurfaceAction::Close,
+                        ) {
+                            Ok(Some(route)) => log_encyclopedia_return(route),
+                            Ok(None) => {}
+                            Err(error) => {
+                                encyclopedia_surface.close();
+                                macroquad::logging::error!(
+                                    "[encyclopedia] production_route close_failed error={}",
+                                    error
+                                );
+                            }
+                        }
+                    } else {
+                        encyclopedia_surface.close();
+                    }
+                } else if targeting.is_some() {
                     // port: Escape cancels targeting, as command 0x15e does
                     // in mode 2; no traced key posts 0x15e.
                     targeting = None;
@@ -1467,6 +1780,7 @@ async fn main() {
         if game_mode == GameMode::Galaxy
             && !event_screen_state.is_active()
             && !show_save_load
+            && frame_keyboard_owner.allows_galaxy_shortcuts()
             && !fleet_finder_state.is_open()
             && !troop_finder_state.is_open()
             && !personnel_finder_state.is_open()
@@ -2596,9 +2910,8 @@ Some(RailAudience::side(*faction_is_alliance)),
             let uprising_tick = tick_events.last().map_or(0, |event| event.tick);
             let uprising_budget =
                 UprisingSystem::roll_budget(&uprising_state, &world, uprising_tick);
-            let uprising_rolls: Vec<f64> = (0..uprising_budget)
-                .map(|_| sim_rng.gen::<f64>())
-                .collect();
+            let uprising_rolls: Vec<f64> =
+                (0..uprising_budget).map(|_| sim_rng.gen::<f64>()).collect();
             let uprising_events = UprisingSystem::advance(
                 &mut uprising_state,
                 &world,
@@ -3393,16 +3706,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                                     research_panel_state = ResearchPanelState::default();
                                     jedi_panel_state = JediPanelState::default();
                                     bombardment_panel_state = BombardmentPanelState::default();
-                                    enc_state = EncyclopediaState::new();
-                                    enc_state.set_edata_path(configured_edata_path(&gdata_path));
-                                    enc_state.set_asset_profile(asset_render_profile);
-                                    enc_state.set_hd_path(
-                                        gdata_path
-                                            .parent()
-                                            .unwrap_or(Path::new("."))
-                                            .join("hd")
-                                            .join("EData"),
-                                    );
+                                    encyclopedia_surface.close();
                                     show_officers = false;
                                     show_fleets = false;
                                     show_missions = false;
@@ -3552,6 +3856,15 @@ Some(RailAudience::side(*faction_is_alliance)),
             }
 
             GameMode::Galaxy => {
+                #[cfg(not(target_arch = "wasm32"))]
+                if encyclopedia_hd_generation != encyclopedia_session_store.texture_generation() {
+                    encyclopedia_hd = prepare_encyclopedia_hd_snapshot(
+                        asset_render_profile,
+                        &gdata_path,
+                        &encyclopedia_session_store,
+                    );
+                    encyclopedia_hd_generation = encyclopedia_session_store.texture_generation();
+                }
                 prewarm_galaxy_font_sizes(&world, &map_state, &mut warmed_galaxy_font_sizes);
                 let fog_state = if player_faction == MissionFaction::Alliance {
                     &fog_alliance_state
@@ -3584,7 +3897,8 @@ Some(RailAudience::side(*faction_is_alliance)),
                                 | interface_test_fixture::Scenario::EncyclopediaIndexShell
                                 | interface_test_fixture::Scenario::EncyclopediaIndexCatalog
                         )
-                    });
+                    }) || interface_fixture_request
+                        .is_some_and(|request| request.scenario.is_encyclopedia_surface());
                 #[cfg(not(all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
                 let original_modal_fixture_open = false;
                 map_state.pointer_blocked = sector_window_state
@@ -3605,7 +3919,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                         && rebellion_render::message_index::window_rect(cockpit_layout)
                             .contains(egui_macroquad::egui::pos2(pointer.0, pointer.1))
                     || cockpit_state.gid_ui.menu_open
-                    || enc_state.open
+                    || encyclopedia_surface.is_open()
                     || original_modal_fixture_open
                     || game_speed_ui.menu_anchor.is_some()
                     || object_menu.is_some()
@@ -3658,8 +3972,9 @@ Some(RailAudience::side(*faction_is_alliance)),
 
                 // 4. All egui panels in a single ui() + draw() pass
                 egui_macroquad::ui(|ctx| {
-                    let strategic_input_enabled =
-                        !event_screen_state.is_active() && !original_modal_fixture_open;
+                    let strategic_input_enabled = !event_screen_state.is_active()
+                        && !original_modal_fixture_open
+                        && !encyclopedia_surface.is_open();
                     // Register the cockpit background before panels so the
                     // opaque chrome never covers their content or artwork.
                     draw_cockpit_background(ctx, &cockpit_state, &mut bmp_cache);
@@ -3960,12 +4275,6 @@ Some(RailAudience::side(*faction_is_alliance)),
                         }
                     }
 
-                    // Encyclopedia (floating window)
-                    if let Some(sys_key) =
-                        draw_encyclopedia(ctx, &world, &mut enc_state, &mut bmp_cache)
-                    {
-                        panel_actions.push(PanelAction::FocusFleetSystem(sys_key));
-                    }
                     #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
                     if interface_fixture_request.is_some_and(|request| {
                         request.scenario == interface_test_fixture::Scenario::EncyclopediaArtwork
@@ -4015,6 +4324,16 @@ Some(RailAudience::side(*faction_is_alliance)),
                             request.faction,
                             &mut enc_state,
                             catalog,
+                        );
+                    }
+                    #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+                    if let Some(fixture) = encyclopedia_surface_fixture.as_mut() {
+                        fixture.draw(
+                            ctx,
+                            &mut bmp_cache,
+                            interface_fixture_request
+                                .expect("Encyclopedia fixture has an interface request")
+                                .code,
                         );
                     }
 
@@ -4566,7 +4885,42 @@ Some(RailAudience::side(*faction_is_alliance)),
                         cockpit_state.faction,
                         strategic_input_enabled,
                     ) {
-                        Some((ObjectMenuCommand::Encyclopedia, _)) => enc_state.open = true,
+                        Some((ObjectMenuCommand::Encyclopedia, selection)) => {
+                            if let Some(session) = encyclopedia_session_store.current() {
+                                let requested_object_id = selection
+                                    .and_then(|object| {
+                                        menu_object_encyclopedia_id(
+                                            &world,
+                                            session.catalog(),
+                                            object,
+                                        )
+                                    })
+                                    .unwrap_or(0);
+                                let intent = EncyclopediaEntryIntent::Contextual {
+                                    audience: encyclopedia_audience(player_faction),
+                                    object_id: requested_object_id,
+                                    caller: EncyclopediaContextCaller::Handler00486fb0Event100,
+                                };
+                                match encyclopedia_surface.open(&session, intent) {
+                                    Ok(()) => {
+                                        macroquad::logging::info!(
+                                            "[encyclopedia] production_route status=opened origin=contextual caller=FUN_00486fb0_event_0x100 requested={:#010x}",
+                                            requested_object_id
+                                        );
+                                    }
+                                    Err(error) => {
+                                        macroquad::logging::error!(
+                                            "[encyclopedia] production_route rejected origin=contextual error={}",
+                                            error
+                                        );
+                                    }
+                                }
+                            } else {
+                                macroquad::logging::warn!(
+                                    "[encyclopedia] production_route unavailable origin=contextual reason=no_session"
+                                );
+                            }
+                        }
                         // FUN_00486fb0 0x103 → FUN_0042a440: the Status
                         // window (type 0x1a) for the selection.
                         Some((ObjectMenuCommand::Status, Some(selection)))
@@ -4794,7 +5148,37 @@ Some(RailAudience::side(*faction_is_alliance)),
                             target_character: None,
                             tick: clock.tick,
                         }),
-                        Some(MissionDialogAction::Encyclopedia) => enc_state.open = true,
+                        Some(MissionDialogAction::Encyclopedia) => {
+                            if let Some(session) = encyclopedia_session_store.current() {
+                                let intent = EncyclopediaEntryIntent::Contextual {
+                                    audience: encyclopedia_audience(player_faction),
+                                    // The selected mission-kind-to-object join
+                                    // is not source-proven. Preserve the exact
+                                    // caller and use the presenter's explicit
+                                    // unresolved-context index fallback.
+                                    object_id: 0,
+                                    caller:
+                                        EncyclopediaContextCaller::MissionDialog0046c3c0Command67,
+                                };
+                                match encyclopedia_surface.open(&session, intent) {
+                                    Ok(()) => {
+                                        macroquad::logging::info!(
+                                            "[encyclopedia] production_route status=opened origin=contextual caller=FUN_0046c3c0_command_0x67 requested=unresolved"
+                                        );
+                                    }
+                                    Err(error) => {
+                                        macroquad::logging::error!(
+                                            "[encyclopedia] production_route rejected origin=mission_dialog error={}",
+                                            error
+                                        );
+                                    }
+                                }
+                            } else {
+                                macroquad::logging::warn!(
+                                    "[encyclopedia] production_route unavailable origin=mission_dialog reason=no_session"
+                                );
+                            }
+                        }
                         None => {}
                     }
 
@@ -4817,7 +5201,36 @@ Some(RailAudience::side(*faction_is_alliance)),
                             kind,
                             count,
                         }),
-                        Some(BuildSelectionAction::Encyclopedia) => enc_state.open = true,
+                        Some(BuildSelectionAction::Encyclopedia) => {
+                            if let Some(session) = encyclopedia_session_store.current() {
+                                let intent = EncyclopediaEntryIntent::Contextual {
+                                    audience: encyclopedia_audience(player_faction),
+                                    // Upstream recovered this caller while the
+                                    // class-to-topic join remains explicitly
+                                    // unbound. Preserve the caller and use the
+                                    // presenter's unresolved index fallback.
+                                    object_id: 0,
+                                    caller: EncyclopediaContextCaller::Handler00438800Command67,
+                                };
+                                match encyclopedia_surface.open(&session, intent) {
+                                    Ok(()) => {
+                                        macroquad::logging::info!(
+                                            "[encyclopedia] production_route status=opened origin=contextual caller=FUN_00438800_command_0x67 requested=unresolved"
+                                        );
+                                    }
+                                    Err(error) => {
+                                        macroquad::logging::error!(
+                                            "[encyclopedia] production_route rejected origin=build_selection error={}",
+                                            error
+                                        );
+                                    }
+                                }
+                            } else {
+                                macroquad::logging::warn!(
+                                    "[encyclopedia] production_route unavailable origin=build_selection reason=no_session"
+                                );
+                            }
+                        }
                         None => {}
                     }
                     #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
@@ -5032,7 +5445,33 @@ Some(RailAudience::side(*faction_is_alliance)),
                             }
                         );
                         if action == StatusWindowAction::Encyclopedia {
-                            enc_state.open = true;
+                            if let Some(session) = encyclopedia_session_store.current() {
+                                let intent = EncyclopediaEntryIntent::Contextual {
+                                    audience: encyclopedia_audience(player_faction),
+                                    // The Status window's selected-object
+                                    // admission join is not part of the
+                                    // merged upstream contract yet.
+                                    object_id: 0,
+                                    caller: EncyclopediaContextCaller::Handler004443a0Command66,
+                                };
+                                match encyclopedia_surface.open(&session, intent) {
+                                    Ok(()) => {
+                                        macroquad::logging::info!(
+                                            "[encyclopedia] production_route status=opened origin=contextual caller=FUN_004443a0_command_0x66 requested=unresolved"
+                                        );
+                                    }
+                                    Err(error) => {
+                                        macroquad::logging::error!(
+                                            "[encyclopedia] production_route rejected origin=status_window error={}",
+                                            error
+                                        );
+                                    }
+                                }
+                            } else {
+                                macroquad::logging::warn!(
+                                    "[encyclopedia] production_route unavailable origin=status_window reason=no_session"
+                                );
+                            }
                         }
                     }
 
@@ -5200,6 +5639,35 @@ Some(RailAudience::side(*faction_is_alliance)),
                     // Droid advisor (floating window, bottom-right)
                     draw_advisor(ctx, &mut advisor_state);
 
+                    // Source-backed production Encyclopedia is modal over
+                    // every retained command-center window. The legacy
+                    // replacement panel remains fixture-only above.
+                    if encyclopedia_surface.is_open() {
+                        if let Some(session) = encyclopedia_session_store.current() {
+                            match encyclopedia_surface.draw(
+                                ctx,
+                                &mut bmp_cache,
+                                &session,
+                                &encyclopedia_hd,
+                            ) {
+                                Ok(Some(route)) => log_encyclopedia_return(route),
+                                Ok(None) => {}
+                                Err(error) => {
+                                    encyclopedia_surface.close();
+                                    macroquad::logging::error!(
+                                        "[encyclopedia] production_route draw_failed error={}",
+                                        error
+                                    );
+                                }
+                            }
+                        } else {
+                            encyclopedia_surface.close();
+                            macroquad::logging::warn!(
+                                "[encyclopedia] production_route unavailable reason=no_session"
+                            );
+                        }
+                    }
+
                     // Story event screen overlay (top-most, including the advisor). Preserve
                     // the pre-draw state so the click that dismisses an event cannot also
                     // activate a cockpit control underneath it in the same frame.
@@ -5208,6 +5676,7 @@ Some(RailAudience::side(*faction_is_alliance)),
 
                     // The galaxy view holds the capture while targeting.
                     let cockpit_command = (!original_modal_fixture_open
+                        && !encyclopedia_surface.is_open()
                         && targeting.is_none()
                         && !event_screen_was_active
                         && !event_screen_state.is_active())
@@ -5258,7 +5727,36 @@ Some(RailAudience::side(*faction_is_alliance)),
                                 return;
                             }
                         };
-                        if btn == CockpitButton::GameOptions {
+                        if btn == CockpitButton::Encyclopedia {
+                            if let Some(session) = encyclopedia_session_store.current() {
+                                let intent = EncyclopediaEntryIntent::Cockpit {
+                                    audience: encyclopedia_audience(player_faction),
+                                };
+                                match encyclopedia_surface.open(&session, intent) {
+                                    Ok(()) => {
+                                        macroquad::logging::info!(
+                                            "[interface] command=0x{:x} destination={} status=opened_original",
+                                            command,
+                                            destination
+                                        );
+                                    }
+                                    Err(error) => {
+                                        macroquad::logging::error!(
+                                            "[interface] command=0x{:x} destination={} status=rejected error={}",
+                                            command,
+                                            destination,
+                                            error
+                                        );
+                                    }
+                                }
+                            } else {
+                                macroquad::logging::warn!(
+                                    "[interface] command=0x{:x} destination={} status=unavailable",
+                                    command,
+                                    destination
+                                );
+                            }
+                        } else if btn == CockpitButton::GameOptions {
                             save_slots = read_save_slots(&saves_dir);
                             game_options_state.set_origin(GameOptionsOrigin::CommandCenter);
                             game_options_state.refresh_saves(&save_slots);
@@ -5916,16 +6414,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                             research_panel_state = ResearchPanelState::default();
                             jedi_panel_state = JediPanelState::default();
                             bombardment_panel_state = BombardmentPanelState::default();
-                            enc_state = EncyclopediaState::new();
-                            enc_state.set_edata_path(configured_edata_path(&gdata_path));
-                            enc_state.set_asset_profile(asset_render_profile);
-                            enc_state.set_hd_path(
-                                gdata_path
-                                    .parent()
-                                    .unwrap_or(Path::new("."))
-                                    .join("hd")
-                                    .join("EData"),
-                            );
+                            encyclopedia_surface.close();
                             show_officers = false;
                             show_fleets = false;
                             show_missions = false;
@@ -6018,6 +6507,10 @@ Some(RailAudience::side(*faction_is_alliance)),
                         &mut blockade_state,
                         &event_state,
                         &mut mod_runtime,
+                        #[cfg(not(target_arch = "wasm32"))]
+                        encyclopedia_base_input.as_ref(),
+                        #[cfg(not(target_arch = "wasm32"))]
+                        &mut encyclopedia_session_store,
                         #[cfg(not(target_arch = "wasm32"))]
                         &mut audio_engine,
                         #[cfg(not(target_arch = "wasm32"))]
@@ -6390,6 +6883,247 @@ fn issue_fleet_move(
     });
 }
 
+const fn encyclopedia_audience(faction: MissionFaction) -> EncyclopediaAudience {
+    match faction {
+        MissionFaction::Alliance => EncyclopediaAudience::Alliance,
+        MissionFaction::Empire => EncyclopediaAudience::Empire,
+    }
+}
+
+fn catalog_object_id(
+    catalog: &EncyclopediaCatalog,
+    dat_id: u32,
+    family_range: std::ops::Range<u8>,
+    source_name: Option<&str>,
+) -> Option<u32> {
+    if catalog
+        .entries
+        .iter()
+        .any(|entry| entry.object_id == dat_id)
+    {
+        return Some(dat_id);
+    }
+    if dat_id >> 24 != 0 {
+        return None;
+    }
+    catalog
+        .entries
+        .iter()
+        .find(|entry| {
+            entry.object_id & 0x00ff_ffff == dat_id
+                && family_range.contains(&entry.family())
+                && source_name.is_none_or(|name| entry.name == name)
+        })
+        .map(|entry| entry.object_id)
+}
+
+fn menu_object_encyclopedia_id(
+    world: &GameWorld,
+    catalog: &EncyclopediaCatalog,
+    object: MenuObject,
+) -> Option<u32> {
+    match object {
+        MenuObject::Character(key) => {
+            let value = world.characters.get(key)?;
+            catalog_object_id(catalog, value.dat_id.raw(), 0x30..0x40, Some(&value.name))
+        }
+        MenuObject::SpecialForce(key) => {
+            let value = world.special_forces.get(key)?;
+            catalog_object_id(catalog, value.class_dat_id.raw(), 0x30..0x40, None)
+        }
+        MenuObject::Troop(key) => {
+            let value = world.troops.get(key)?;
+            catalog_object_id(catalog, value.class_dat_id.raw(), 0x10..0x14, None)
+        }
+        MenuObject::Ship {
+            fleet,
+            index,
+            roster,
+        } => {
+            if rebellion_core::fleet_join::roster(world, fleet) != Some(roster) {
+                return None;
+            }
+            let class = world.fleets.get(fleet)?.capital_ships.get(index)?.class;
+            let value = world.capital_ship_classes.get(class)?;
+            catalog_object_id(catalog, value.dat_id.raw(), 0x14..0x20, Some(&value.name))
+        }
+        MenuObject::Fighter { fleet, index } => {
+            let class = world.fleets.get(fleet)?.fighters.get(index)?.class;
+            let value = world.fighter_classes.get(class)?;
+            catalog_object_id(catalog, value.dat_id.raw(), 0x1c..0x20, Some(&value.name))
+        }
+        MenuObject::DefenseFacility(key) => {
+            let value = world.defense_facilities.get(key)?;
+            catalog_object_id(catalog, value.class_dat_id.raw(), 0x20..0x28, None)
+        }
+        MenuObject::SystemIcon {
+            system,
+            quadrant: Quadrant::System,
+        } => {
+            let value = world.systems.get(system)?;
+            catalog_object_id(catalog, value.dat_id.raw(), 0x90..0x98, Some(&value.name))
+        }
+        MenuObject::Fleet(_)
+        | MenuObject::Producer { .. }
+        | MenuObject::SystemIcon {
+            quadrant: Quadrant::Defenses | Quadrant::Fleets | Quadrant::Missions,
+            ..
+        } => None,
+    }
+}
+
+fn log_encyclopedia_return(route: EncyclopediaReturnRoute) {
+    macroquad::logging::info!(
+        "[encyclopedia] production_route status=closed return={:?}",
+        route
+    );
+}
+
+#[cfg(test)]
+mod encyclopedia_route_tests {
+    use super::*;
+
+    fn route_catalog() -> EncyclopediaCatalog {
+        use rebellion_data::encyclopedia_catalog::{
+            EncyclopediaCatalogEntry, EncyclopediaCategory,
+        };
+
+        EncyclopediaCatalog {
+            title: "Galactic Encyclopedia".into(),
+            topic_label: "Topic".into(),
+            categories: [
+                EncyclopediaCategory::new(0x6f, 0x1850, "All".into(), None),
+                EncyclopediaCategory::new(0x70, 0x1855, "Systems".into(), Some(0x90..0x98)),
+                EncyclopediaCategory::new(0x71, 0x1854, "Ships".into(), Some(0x14..0x20)),
+                EncyclopediaCategory::new(0x72, 0x1852, "Facilities".into(), Some(0x20..0x30)),
+                EncyclopediaCategory::new(0x73, 0x1851, "Missions".into(), Some(0x40..0x80)),
+                EncyclopediaCategory::new(0x74, 0x1856, "Troops".into(), Some(0x10..0x14)),
+                EncyclopediaCategory::new(0x75, 0x1853, "Personnel".into(), Some(0x30..0x40)),
+            ],
+            entries: vec![
+                EncyclopediaCatalogEntry {
+                    object_id: 0x1000_0002,
+                    text_resource_id: 1,
+                    name: "Troop".into(),
+                },
+                EncyclopediaCatalogEntry {
+                    object_id: 0x1400_0045,
+                    text_resource_id: 2,
+                    name: "Corellian Corvette".into(),
+                },
+                EncyclopediaCatalogEntry {
+                    object_id: 0x1c00_0003,
+                    text_resource_id: 5,
+                    name: "A-wing".into(),
+                },
+                EncyclopediaCatalogEntry {
+                    object_id: 0x2000_0004,
+                    text_resource_id: 6,
+                    name: "Planetary Shield".into(),
+                },
+                EncyclopediaCatalogEntry {
+                    object_id: 0x3100_0001,
+                    text_resource_id: 3,
+                    name: "Leia".into(),
+                },
+                EncyclopediaCatalogEntry {
+                    object_id: 0x9200_002a,
+                    text_resource_id: 4,
+                    name: "Yavin".into(),
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn contextual_menu_objects_use_stable_source_class_identities() {
+        let catalog = route_catalog();
+        let mut world = GameWorld::default();
+        let character = world.characters.insert(rebellion_core::world::Character {
+            dat_id: rebellion_core::ids::DatId::new(0x3100_0001),
+            name: "Leia".into(),
+            ..rebellion_core::world::Character::default()
+        });
+        let troop = world.troops.insert(rebellion_core::world::TroopUnit {
+            class_dat_id: rebellion_core::ids::DatId::new(0x1000_0002),
+            is_alliance: true,
+            regiment_strength: 10,
+        });
+        let fighter_class = world
+            .fighter_classes
+            .insert(rebellion_core::world::FighterClass {
+                dat_id: rebellion_core::ids::DatId::new(0x1c00_0003),
+                name: "A-wing".into(),
+                ..rebellion_core::world::FighterClass::default()
+            });
+        let fleet = world.fleets.insert(rebellion_core::world::Fleet {
+            location: rebellion_core::ids::SystemKey::default(),
+            capital_ships: Vec::new(),
+            fighters: vec![rebellion_core::world::FighterEntry {
+                class: fighter_class,
+                count: 1,
+            }],
+            characters: Vec::new(),
+            is_alliance: true,
+            has_death_star: false,
+        });
+        let defense =
+            world
+                .defense_facilities
+                .insert(rebellion_core::world::DefenseFacilityInstance {
+                    class_dat_id: rebellion_core::ids::DatId::new(0x2000_0004),
+                    side: Faction::Alliance,
+                });
+
+        assert_eq!(
+            menu_object_encyclopedia_id(&world, &catalog, MenuObject::Character(character)),
+            Some(0x3100_0001)
+        );
+        assert_eq!(
+            menu_object_encyclopedia_id(&world, &catalog, MenuObject::Troop(troop)),
+            Some(0x1000_0002)
+        );
+        assert_eq!(
+            menu_object_encyclopedia_id(&world, &catalog, MenuObject::Fighter { fleet, index: 0 },),
+            Some(0x1c00_0003)
+        );
+        assert_eq!(
+            menu_object_encyclopedia_id(&world, &catalog, MenuObject::DefenseFacility(defense),),
+            Some(0x2000_0004)
+        );
+    }
+
+    #[test]
+    fn contextual_raw_dat_ids_rejoin_their_source_family_and_name() {
+        let catalog = route_catalog();
+
+        assert_eq!(
+            catalog_object_id(&catalog, 0x45, 0x14..0x20, Some("Corellian Corvette")),
+            Some(0x1400_0045)
+        );
+        assert_eq!(
+            catalog_object_id(&catalog, 0x2a, 0x90..0x98, Some("Yavin")),
+            Some(0x9200_002a)
+        );
+        assert_eq!(
+            catalog_object_id(&catalog, 0x45, 0x14..0x20, Some("Wrong ship")),
+            None
+        );
+    }
+
+    #[test]
+    fn player_faction_selects_the_matching_encyclopedia_audience() {
+        assert_eq!(
+            encyclopedia_audience(MissionFaction::Alliance),
+            EncyclopediaAudience::Alliance
+        );
+        assert_eq!(
+            encyclopedia_audience(MissionFaction::Empire),
+            EncyclopediaAudience::Empire
+        );
+    }
+}
+
 /// Whether each order of `selection`'s menu passes its own rule (`+0x18`).
 fn order_gates(
     selection: Option<MenuObject>,
@@ -6624,6 +7358,10 @@ fn apply_panel_action(
     blockade_state: &mut BlockadeState,
     event_state: &EventState,
     mod_runtime: &mut rebellion_data::mods::ModRuntime,
+    #[cfg(not(target_arch = "wasm32"))] encyclopedia_base_input: Option<
+        &rebellion_data::encyclopedia_session::EncyclopediaSessionInput,
+    >,
+    #[cfg(not(target_arch = "wasm32"))] encyclopedia_session_store: &mut rebellion_data::encyclopedia_session::EncyclopediaSessionStore,
     #[cfg(not(target_arch = "wasm32"))] audio_engine: &mut audio::AudioEngine,
     #[cfg(not(target_arch = "wasm32"))] audio_vol: &AudioVolumeState,
     #[cfg(not(target_arch = "wasm32"))] _sounds_dir: &Path,
@@ -6984,6 +7722,17 @@ fn apply_panel_action(
         }
         PanelAction::ToggleMod { ref name } => {
             mod_runtime.toggle_mod(name);
+            #[cfg(not(target_arch = "wasm32"))]
+            if let Some(base) = encyclopedia_base_input {
+                let resolved_mod_order = mod_runtime.enabled_sorted();
+                let report = encyclopedia_mods::install_native_encyclopedia_mods(
+                    base,
+                    encyclopedia_session_store,
+                    mod_runtime,
+                    &resolved_mod_order,
+                );
+                encyclopedia_mods::log_native_encyclopedia_mod_report(&report);
+            }
             msg_log.push(GameMessage::new(
                 clock.tick,
                 format!("Toggled mod: {name}"),
@@ -6992,7 +7741,18 @@ fn apply_panel_action(
         }
         PanelAction::ReloadMods => {
             mod_runtime.refresh();
-            let mod_errors = mod_runtime.apply_enabled(world);
+            let resolved_mod_order = mod_runtime.enabled_sorted();
+            #[cfg(not(target_arch = "wasm32"))]
+            if let Some(base) = encyclopedia_base_input {
+                let report = encyclopedia_mods::install_native_encyclopedia_mods(
+                    base,
+                    encyclopedia_session_store,
+                    mod_runtime,
+                    &resolved_mod_order,
+                );
+                encyclopedia_mods::log_native_encyclopedia_mod_report(&report);
+            }
+            let mod_errors = mod_runtime.apply_ordered(world, &resolved_mod_order);
             for err in &mod_errors {
                 eprintln!("Mod reload error: {err:?}");
             }
@@ -7126,9 +7886,8 @@ fn apply_panel_action(
                     ));
                 } else if let Some(fleet) = world.fleets.get(fleet_key) {
                     let origin = fleet.location;
-                    let ticks = rebellion_core::movement::fleet_transit_ticks(
-                        fleet, world, origin, system,
-                    );
+                    let ticks =
+                        rebellion_core::movement::fleet_transit_ticks(fleet, world, origin, system);
                     if origin != system && ticks.is_none() {
                         msg_log.push(GameMessage::new(
                             clock.tick,
@@ -8374,7 +9133,9 @@ mod fleet_move_tests {
     use super::*;
     use rebellion_core::dat::{ExplorationStatus, SectorGroup};
     use rebellion_core::ids::DatId;
-    use rebellion_core::world::{CapitalShipClass, ControlKind, Fleet, Sector, ShipInstance, System};
+    use rebellion_core::world::{
+        CapitalShipClass, ControlKind, Fleet, Sector, ShipInstance, System,
+    };
 
     fn system(sector: rebellion_core::ids::SectorKey, x: u16) -> System {
         System {
@@ -8507,7 +9268,10 @@ mod fleet_move_tests {
         let (world, fleets, destination) = world_with_two_fleets();
         let issued = issue(&world, &fleets, true, destination);
         assert!(issued.actions.is_empty());
-        let window = issued.confirmation.confirmation().expect("the window opens");
+        let window = issued
+            .confirmation
+            .confirmation()
+            .expect("the window opens");
         assert_eq!(window.fleets, fleets);
         assert_eq!(window.lines.len(), 2);
         // FUN_0049a350: each line counts the member's days to go.

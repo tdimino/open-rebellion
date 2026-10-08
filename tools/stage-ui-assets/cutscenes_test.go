@@ -86,18 +86,42 @@ func TestCutsceneExtractionAndVerification(t *testing.T) {
 	}
 }
 
-func runTestCLI(args []string, stdout, stderr io.Writer, targets []dllTarget) error {
+func runTestCLI(t *testing.T, args []string, stdout, stderr io.Writer, targets []dllTarget) error {
+	return runTestCLIWithRunner(t, args, stdout, stderr, targets, fakeMedia)
+}
+
+func runTestCLIWithRunner(t *testing.T, args []string, stdout, stderr io.Writer, targets []dllTarget, run mediaRunner) error {
+	t.Helper()
 	var output string
+	var source string
+	verifyOnly := false
 	for i, arg := range args {
 		if arg == "--audio-output" {
 			output = filepath.Dir(args[i+1])
+		}
+		if arg == "--source" {
+			source = args[i+1]
+		}
+		if arg == "--verify" {
+			verifyOnly = true
 		}
 	}
 	if output == "" {
 		return fmt.Errorf("test must isolate audio output")
 	}
-	args = append(append([]string{}, args...), "--strings-output", filepath.Join(output, "textstra.json"), "--cutscene-output", filepath.Join(output, "media"))
-	return runCLIWithMedia(args, stdout, stderr, targets, []string{"000"}, fakeMedia)
+	if source == "" {
+		return fmt.Errorf("test must provide a source directory")
+	}
+	if _, err := os.Stat(filepath.Join(source, "ENCYTEXT.DLL")); !verifyOnly && os.IsNotExist(err) {
+		writeCompleteEncyclopediaFixture(t, source)
+	}
+	args = append(
+		append([]string{}, args...),
+		"--strings-output", filepath.Join(output, "textstra.json"),
+		"--encyclopedia-output", filepath.Join(output, "encyclopedia", "source.json"),
+		"--cutscene-output", filepath.Join(output, "media"),
+	)
+	return runCLIWithMedia(args, stdout, stderr, targets, []string{"000"}, run)
 }
 
 func TestCutscenePublishRollsBackEveryOutput(t *testing.T) {

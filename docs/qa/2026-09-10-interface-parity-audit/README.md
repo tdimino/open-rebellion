@@ -96,14 +96,50 @@ and passes the complete comparison contract.
   for the separate source-recovered faction composition, seven selected
   category states, rail states, native clipping, and exact browser comparisons.
 - Review the [P65 Encyclopedia index-catalog evidence](evidence/2026-09-30-encyclopedia-index-catalog.md)
-  for all 356 source entries, seven TEXTSTRA labels and family filters, stable
+  for the corrected 346 visible source entries, seven TEXTSTRA labels and family filters, stable
   selection, scrolling, and both faction browser journeys. Topic pages,
   ENCYTEXT/EDATA bindings, production routing, A0, and `OBJ-01` remain open.
 - Review the [P66A Encyclopedia topic-source evidence](evidence/2026-10-01-encyclopedia-topic-source-bindings.md)
   for strict English ENCYTEXT/ENCYBMAP extraction, exact system and factional
   lookup rules, 346 complete source joins per faction, and ten explicit
-  source-empty mission records. Browser transport, topic rendering, routing,
+  ten gameplay-only/hidden mission records excluded from the visible catalog. Browser transport, topic rendering, routing,
   A0, and `OBJ-01` remain open.
+- Review the [W2 immutable content-session evidence](evidence/2026-10-06-encyclopedia-content-session.md),
+  [W3 pure-presenter evidence](evidence/2026-10-06-encyclopedia-presenter.md), and
+  [W4 authentic topic-surface evidence](evidence/2026-10-06-encyclopedia-topic-surface.md),
+  plus the [W5A canonical-publication evidence](evidence/2026-10-06-encyclopedia-canonical-publication.md),
+  [E30 canonical-surface evidence](evidence/2026-10-06-encyclopedia-canonical-surface.md),
+  [W6 original-first HD evidence](evidence/2026-10-06-encyclopedia-hd-selection.md),
+  [W7 native-overlay evidence](evidence/2026-10-07-encyclopedia-mod-overlays.md),
+  [E32 production-activation evidence](evidence/2026-10-07-encyclopedia-production-activation.md),
+  [E34 technical-acceptance evidence](evidence/2026-10-07-encyclopedia-technical-acceptance.md),
+  and [E35 original-executable compatibility evidence](evidence/2026-10-07-encyclopedia-a0-compatibility.md)
+  for atomic validated installation, exact session-order projection, both
+  faction bindings, complete visible topics, bounded navigation, and
+  immutable close/return routes, plus fixture-gated authentic rendering and
+  selected-only texture ownership. Native, packed-browser, and
+  development-loose readers now converge on exact bytes and one logical
+  fingerprint through deterministic atomic publication. Native faithful-HD
+  selection is opt-in, manifest-approved, and falls back to that exact original
+  view. Native presentation mods now use deterministic shared dependency order,
+  presence-aware layers, confined synthetic artwork, complete candidate
+  validation, atomic rollback, and base restoration without entering saves or
+  simulation. Browser and parity evidence remain original-only.
+  The current-main assembled candidate also passes final workspace, package,
+  native/packed/loose, replay, save/load, production-journey, mutation-identity,
+  and isolation gates. E35 corrects the faction origins, centered headings,
+  deterministic production fonts, empty selection, tooltips, and modal order;
+  its expanded normal-route browser journey passes twelve applicable lossless
+  comparisons against the original executable under Wine, with the plan's
+  gameplay-record exclusion honestly A0-not-applicable. By explicit user
+  decision on 2026-10-07, that Wine evidence is sufficient for the current
+  delivery: the twelve comparison cells and the functionally verified
+  non-visible exclusion cell are accepted without claiming native-Windows parity.
+  Production cockpit/contextual routing and exact returns now pass native and
+  packaged-browser gates with strict new-package content and old-pack
+  unavailable compatibility. All thirteen `OBJ-01` cells pass the approved
+  current evidence gate; optional native-Windows capture belongs to separate
+  future tooling scope.
 - Review the [P50 GID menu-frame evidence](evidence/2026-09-12-gid-menu-frame.md)
   for original frame tiles, source-pixel checks, and the remaining menu gaps.
 - Review the [P51 GID hover and occlusion evidence](evidence/2026-09-12-gid-hover-and-occlusion.md)
@@ -279,7 +315,7 @@ stage them from a contributor-owned installation.
 ## Progress snapshot
 
 <!-- interface-parity-status:start -->
-Required interface families: 43. Complete: 0. Partial: 15. Failing: 28. Blocked: 0. Strictly accepted cells: 0/627.
+Required interface families: 43. Complete: 1. Partial: 15. Failing: 27. Blocked: 0. Strictly accepted cells: 13/627.
 The current CMD-02 GID catalog has 38 scenarios (29 baseline cells and nine additional native filter variants) and 152 faction/viewport executions. Its strict original-evidence and cross-browser gate remains open.
 <!-- interface-parity-status:end -->
 

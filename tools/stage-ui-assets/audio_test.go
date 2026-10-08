@@ -132,45 +132,45 @@ func TestAudioCLIStagesAndVerifiesWithoutSources(t *testing.T) {
 	writeAudioFixture(t, source)
 	var out, errs bytes.Buffer
 	args := []string{"--source", source, "--output", filepath.Join(output, "ui"), "--audio-output", filepath.Join(output, "sounds")}
-	if err := runTestCLI(args, &out, &errs, nil); err != nil {
+	if err := runTestCLI(t, args, &out, &errs, nil); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "Staged 28 audio files (28 written, 0 unchanged)") {
 		t.Fatal(out.String())
 	}
 	out.Reset()
-	if err := runTestCLI(args, &out, &errs, nil); err != nil {
+	if err := runTestCLI(t, args, &out, &errs, nil); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "0 written, 28 unchanged") {
+	if !strings.Contains(out.String(), "Staging cache hit") {
 		t.Fatal(out.String())
 	}
 	// Verify must operate on staged files without consulting source DLLs/MDATA.
 	verify := []string{"--verify", "--source", filepath.Join(source, "missing"), "--output", filepath.Join(output, "ui"), "--audio-output", filepath.Join(output, "sounds")}
-	if err := runTestCLI(verify, &out, &errs, nil); err != nil {
+	if err := runTestCLI(t, verify, &out, &errs, nil); err != nil {
 		t.Fatal(err)
 	}
 	voice := filepath.Join(output, "sounds", "voice", "alliance", "14002-voicefxa.wav")
 	if err := os.Remove(voice); err != nil {
 		t.Fatal(err)
 	}
-	if err := runTestCLI(verify, &out, &errs, nil); err == nil {
+	if err := runTestCLI(t, verify, &out, &errs, nil); err == nil {
 		t.Fatal("verification missed deleted voice")
 	}
-	if err := runTestCLI(args, &out, &errs, nil); err != nil {
+	if err := runTestCLI(t, args, &out, &errs, nil); err != nil {
 		t.Fatal(err)
 	}
 	track := filepath.Join(output, "sounds", "music", "main_theme.wav")
 	if err := os.WriteFile(track, []byte("broken"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := runTestCLI(verify, &out, &errs, nil); err == nil {
+	if err := runTestCLI(t, verify, &out, &errs, nil); err == nil {
 		t.Fatal("accepted corrupt audio")
 	}
-	if err := runTestCLI(args, &out, &errs, nil); err == nil {
+	if err := runTestCLI(t, args, &out, &errs, nil); err == nil {
 		t.Fatal("replaced corrupt audio without force")
 	}
-	if err := runTestCLI(append(args, "--force"), &out, &errs, nil); err != nil {
+	if err := runTestCLI(t, append(args, "--force"), &out, &errs, nil); err != nil {
 		t.Fatal(err)
 	}
 }

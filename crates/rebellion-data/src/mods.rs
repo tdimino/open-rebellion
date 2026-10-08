@@ -48,7 +48,9 @@
 //! watches the mods directory for file-system events and signals when a reload
 //! is needed. Call `ModWatcher::changed()` each frame to check.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
+#[cfg(not(target_arch = "wasm32"))]
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context};
@@ -164,30 +166,100 @@ impl ModConfig {
 // Content (overlay data from JSON files)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// The parsed overlay content from one mod's JSON files.
+/// Reserved root filename for presentation-only Encyclopedia content.
+pub const ENCYCLOPEDIA_MOD_FILENAME: &str = "encyclopedia.json";
+
+/// Raw Encyclopedia input discovered beside a mod's world overlays.
 ///
-/// `patches` maps entity type name (the JSON filename stem) to a vec of
-/// patch objects. Each patch object is a JSON `Value::Object` that must
-/// contain an `"id"` field identifying the target entity.
+/// Parsing stays with the presentation-content layer. Retaining read failures
+/// separately prevents malformed Encyclopedia content from being serialized
+/// into `GameWorld` or silently treated as an unknown world arena.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum ModContentTarget {
+    #[default]
+    Missing,
+    Bytes(Vec<u8>),
+    ReadError {
+        path: PathBuf,
+        kind: std::io::ErrorKind,
+        message: String,
+    },
+}
+
+/// Parsed world overlays plus the separately retained Encyclopedia target.
+///
+/// `patches` maps entity type name (the JSON filename stem) to patch objects.
+/// The reserved [`ENCYCLOPEDIA_MOD_FILENAME`] never enters that world map.
 #[derive(Debug, Default)]
 pub struct ModContent {
     pub patches: HashMap<String, Vec<Value>>,
+    pub encyclopedia: ModContentTarget,
 }
 
 impl ModContent {
+    /// Read only the reserved native Encyclopedia target with a strict bound.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[must_use]
+    pub fn encyclopedia_target_from_dir(dir: &Path) -> ModContentTarget {
+        let path = dir.join(ENCYCLOPEDIA_MOD_FILENAME);
+        let metadata = match std::fs::symlink_metadata(&path) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return ModContentTarget::Missing;
+            }
+            Err(error) => return content_target_error(path, error),
+        };
+        if metadata.file_type().is_symlink() || !metadata.is_file() {
+            return ModContentTarget::ReadError {
+                path,
+                kind: std::io::ErrorKind::InvalidInput,
+                message: "Encyclopedia mod target must be a regular non-symlink file".to_owned(),
+            };
+        }
+        let limit = crate::encyclopedia_overlay::ENCYCLOPEDIA_OVERLAY_BYTES_LIMIT;
+        if metadata.len() > limit as u64 {
+            return ModContentTarget::ReadError {
+                path,
+                kind: std::io::ErrorKind::InvalidData,
+                message: format!("Encyclopedia mod target exceeds the {limit}-byte limit"),
+            };
+        }
+        let result = std::fs::File::open(&path).and_then(|file| {
+            let mut bytes = Vec::with_capacity(metadata.len() as usize);
+            file.take(limit as u64 + 1).read_to_end(&mut bytes)?;
+            if bytes.len() > limit {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "Encyclopedia mod target grew beyond its byte limit",
+                ));
+            }
+            Ok(bytes)
+        });
+        match result {
+            Ok(bytes) => ModContentTarget::Bytes(bytes),
+            Err(error) => content_target_error(path, error),
+        }
+    }
+
     /// Load all `*.json` overlay files from the mod directory.
     #[cfg(not(target_arch = "wasm32"))]
     ///
     /// # Errors
     /// Returns an error if a present content file cannot be read or parsed.
     pub fn from_dir(dir: &Path) -> anyhow::Result<Self> {
-        let mut content = ModContent::default();
+        let mut content = ModContent {
+            encyclopedia: Self::encyclopedia_target_from_dir(dir),
+            ..ModContent::default()
+        };
         let entries = match std::fs::read_dir(dir) {
             Ok(e) => e,
             Err(e) => bail!("cannot read mod directory {}: {}", dir.display(), e),
         };
         for entry in entries.flatten() {
             let path = entry.path();
+            if path.file_name().and_then(|name| name.to_str()) == Some(ENCYCLOPEDIA_MOD_FILENAME) {
+                continue;
+            }
             if path.extension().and_then(|s| s.to_str()) != Some("json") {
                 continue;
             }
@@ -211,6 +283,15 @@ impl ModContent {
     #[cfg(target_arch = "wasm32")]
     pub fn from_dir(_dir: &Path) -> anyhow::Result<Self> {
         anyhow::bail!("mod content loading from filesystem not supported on WASM")
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn content_target_error(path: PathBuf, error: std::io::Error) -> ModContentTarget {
+    ModContentTarget::ReadError {
+        message: format!("reading mod content target {}: {error}", path.display()),
+        path,
+        kind: error.kind(),
     }
 }
 
@@ -329,15 +410,18 @@ impl ModLoader {
             }
         }
 
-        let mut queue: Vec<usize> = (0..n).filter(|&i| in_degree[i] == 0).collect();
+        let mut ready: BTreeSet<(&str, usize)> = (0..n)
+            .filter(|&i| in_degree[i] == 0)
+            .map(|i| (manifests[i].name.as_str(), i))
+            .collect();
         let mut order: Vec<usize> = Vec::with_capacity(n);
 
-        while let Some(node) = queue.pop() {
+        while let Some((_, node)) = ready.pop_first() {
             order.push(node);
             for &dependent in &rev_adj[node] {
                 in_degree[dependent] -= 1;
                 if in_degree[dependent] == 0 {
-                    queue.push(dependent);
+                    ready.insert((manifests[dependent].name.as_str(), dependent));
                 }
             }
         }
@@ -776,6 +860,16 @@ impl ModRuntime {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn apply_enabled(&self, world: &mut rebellion_core::world::GameWorld) -> Vec<ModError> {
         let sorted = self.enabled_sorted();
+        self.apply_ordered(world, &sorted)
+    }
+
+    /// Apply world overlays in an already-resolved shared dependency order.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn apply_ordered(
+        &self,
+        world: &mut rebellion_core::world::GameWorld,
+        sorted: &[&ModManifest],
+    ) -> Vec<ModError> {
         if sorted.is_empty() {
             return Vec::new();
         }
@@ -792,7 +886,7 @@ impl ModRuntime {
         };
 
         let mut errors = Vec::new();
-        for manifest in &sorted {
+        for manifest in sorted {
             let content = match ModContent::from_dir(&manifest.path) {
                 Ok(c) => c,
                 Err(e) => {
@@ -868,6 +962,15 @@ impl ModRuntime {
     /// WASM stub: apply_enabled (no filesystem access).
     #[cfg(target_arch = "wasm32")]
     pub fn apply_enabled(&self, _world: &mut rebellion_core::world::GameWorld) -> Vec<ModError> {
+        Vec::new()
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn apply_ordered(
+        &self,
+        _world: &mut rebellion_core::world::GameWorld,
+        _sorted: &[&ModManifest],
+    ) -> Vec<ModError> {
         Vec::new()
     }
 
@@ -1012,6 +1115,26 @@ version = "0.1.0"
     }
 
     #[test]
+    fn unrelated_mods_resolve_lexicographically_regardless_of_discovery_order() {
+        let forward = vec![
+            make_manifest("alpha", "1.0.0", &[]),
+            make_manifest("middle", "1.0.0", &[]),
+            make_manifest("zulu", "1.0.0", &[]),
+        ];
+        let reverse = forward.iter().cloned().rev().collect();
+        let names = |manifests| {
+            ModLoader::resolve_load_order(manifests)
+                .unwrap()
+                .into_iter()
+                .map(|manifest| manifest.name)
+                .collect::<Vec<_>>()
+        };
+
+        assert_eq!(names(forward), ["alpha", "middle", "zulu"]);
+        assert_eq!(names(reverse), ["alpha", "middle", "zulu"]);
+    }
+
+    #[test]
     fn load_order_missing_dep_errors() {
         let mods = vec![make_manifest(
             "mod-b",
@@ -1121,6 +1244,27 @@ version = "0.1.0"
         assert_eq!(world["sdprtb"]["entries"][0]["multiplayer_alliance"], 55);
         assert!(world["gnprtb"]["entries"][0].get("id").is_none());
         assert_eq!(world["gnprtb"]["entries"][0]["parameter_id"], 3588);
+    }
+
+    #[test]
+    fn reserved_encyclopedia_target_is_retained_outside_world_patches() {
+        let tmp = tempfile::tempdir().unwrap();
+        let raw = br#"[{"id":1358954512,"title":"Overlay"}]"#;
+        std::fs::write(tmp.path().join("encyclopedia.json"), raw).unwrap();
+        std::fs::write(
+            tmp.path().join("gnprtb.json"),
+            r#"[{"id":77,"development":9}]"#,
+        )
+        .unwrap();
+
+        let content = ModContent::from_dir(tmp.path()).unwrap();
+
+        assert!(matches!(
+            &content.encyclopedia,
+            ModContentTarget::Bytes(bytes) if bytes == raw
+        ));
+        assert!(content.patches.contains_key("gnprtb"));
+        assert!(!content.patches.contains_key("encyclopedia"));
     }
 
     // ── ModRuntime tests ────────────────────────────────────────────────────

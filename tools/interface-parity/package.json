@@ -11,6 +11,9 @@
     "test:gid:no-build": "node run.mjs --all --no-build",
     "test:encyclopedia-art": "node encyclopedia-art.mjs",
     "test:encyclopedia-art:no-build": "node encyclopedia-art.mjs --no-build",
+    "test:encyclopedia-publication:no-build": "node encyclopedia-publication.mjs",
+    "test:encyclopedia-canonical-surface:no-build": "node encyclopedia-canonical-surface.mjs",
+    "test:encyclopedia-surface:no-build": "node encyclopedia-surface.mjs",
     "test:message-index-shell": "node message-index-shell.mjs",
     "test:message-index-shell:no-build": "node message-index-shell.mjs --no-build",
     "check": "node validate-catalog.mjs && node validate-tactical-matrix.mjs && node verify-tactical-a0-exclusion.mjs && node verify-production-exclusion.mjs"

@@ -45,6 +45,17 @@ use rebellion_core::world::GameWorld;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::bmp_cache::{load_approved_hd_assets, validated_hd_bytes};
 use crate::bmp_cache::{ApprovedHdAsset, AssetRenderProfile, BmpCache, DllSource};
+pub use crate::encyclopedia_surface::{
+    encyclopedia_index_list_action, encyclopedia_keyboard_action, encyclopedia_title_search_match,
+    EncyclopediaArtworkView, EncyclopediaSurface, EncyclopediaSurfaceAction,
+    EncyclopediaSurfaceAudience, EncyclopediaSurfaceAvailability, EncyclopediaSurfaceCategory,
+    EncyclopediaSurfaceKey, EncyclopediaSurfaceMode, EncyclopediaSurfaceNavigation,
+    EncyclopediaSurfaceTopicItem,
+};
+pub use crate::encyclopedia_textures::{
+    EncyclopediaTextureBackend, EncyclopediaTextureSampling, EncyclopediaTextureUpload,
+    EncyclopediaTopicTextureCache,
+};
 
 #[cfg(target_arch = "wasm32")]
 static WASM_EDATA_CACHE: std::sync::LazyLock<std::sync::Mutex<HashMap<String, Vec<u8>>>> =
@@ -575,6 +586,8 @@ pub const ENCYCLOPEDIA_INDEX_HEIGHT: f32 = 330.0;
 
 const ORIGINAL_INDEX_VISIBLE_ROWS: usize = 9;
 const ORIGINAL_INDEX_ROW_HEIGHT: f32 = 18.0;
+const ORIGINAL_TOPIC_ARTWORK_WIDTH: f32 = 400.0;
+const ORIGINAL_TOPIC_ARTWORK_HEIGHT: f32 = 200.0;
 
 /// One immutable source object shown by the authentic index list.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -664,8 +677,10 @@ const fn original_category_contains(command_id: u16, family: u8) -> bool {
 }
 
 const INDEX_CONTENT: u32 = 10_338;
+const TOPIC_CONTENT: u32 = 10_337;
 const INDEX_CONTENT_X: f32 = 12.0;
 const INDEX_CONTENT_Y: f32 = 13.0;
+const ENCYCLOPEDIA_HEADER_CENTER_X: f32 = 211.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct OriginalControlSpec {
@@ -837,6 +852,997 @@ const fn encyclopedia_rail_controls(
             },
         ],
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SurfaceControlSpec {
+    command_id: u16,
+    x: u16,
+    y: u16,
+    width: u16,
+    height: u16,
+    normal_resource: u32,
+    pressed_resource: u32,
+    disabled_resource: Option<u32>,
+    selected: bool,
+}
+
+const fn encyclopedia_rail_controls_for_mode(
+    faction: crate::cockpit::CockpitFaction,
+    mode: EncyclopediaSurfaceMode,
+) -> [SurfaceControlSpec; 3] {
+    let legacy = encyclopedia_rail_controls(faction);
+    [
+        surface_control(legacy[0], None, false),
+        surface_control(
+            legacy[1],
+            None,
+            matches!(mode, EncyclopediaSurfaceMode::Topic),
+        ),
+        surface_control(
+            legacy[2],
+            None,
+            matches!(mode, EncyclopediaSurfaceMode::Index),
+        ),
+    ]
+}
+
+const fn surface_control(
+    control: OriginalControlSpec,
+    disabled_resource: Option<u32>,
+    selected: bool,
+) -> SurfaceControlSpec {
+    SurfaceControlSpec {
+        command_id: control.command_id,
+        x: control.x,
+        y: control.y,
+        width: control.width,
+        height: control.height,
+        normal_resource: control.normal_resource,
+        pressed_resource: control.pressed_resource,
+        disabled_resource,
+        selected,
+    }
+}
+
+const fn encyclopedia_topic_controls(
+    _faction: crate::cockpit::CockpitFaction,
+) -> [SurfaceControlSpec; 2] {
+    [
+        SurfaceControlSpec {
+            command_id: 0x83,
+            x: 28,
+            y: 14,
+            width: 21,
+            height: 17,
+            normal_resource: 10_385,
+            pressed_resource: 10_386,
+            disabled_resource: Some(10_387),
+            selected: false,
+        },
+        SurfaceControlSpec {
+            command_id: 0x84,
+            x: 380,
+            y: 14,
+            width: 21,
+            height: 17,
+            normal_resource: 10_382,
+            pressed_resource: 10_383,
+            disabled_resource: Some(10_384),
+            selected: false,
+        },
+    ]
+}
+
+struct EguiEncyclopediaTextureBackend {
+    context: egui::Context,
+}
+
+impl EncyclopediaTextureBackend for EguiEncyclopediaTextureBackend {
+    type Texture = TextureHandle;
+
+    fn upload(&mut self, upload: EncyclopediaTextureUpload<'_>) -> Result<Self::Texture, String> {
+        let width = usize::try_from(upload.width)
+            .map_err(|_| format!("{} width does not fit usize", upload.filename))?;
+        let height = usize::try_from(upload.height)
+            .map_err(|_| format!("{} height does not fit usize", upload.filename))?;
+        let image = egui::ColorImage::from_rgba_unmultiplied([width, height], upload.rgba);
+        Ok(self.context.load_texture(
+            format!("encyclopedia:{}:{}", upload.filename, upload.digest),
+            image,
+            match upload.sampling {
+                EncyclopediaTextureSampling::Nearest => TextureOptions::NEAREST,
+                EncyclopediaTextureSampling::Linear => TextureOptions::LINEAR,
+            },
+        ))
+    }
+
+    fn release(&mut self, texture: Self::Texture) {
+        drop(texture);
+    }
+}
+
+/// Local view state for the authentic, graphics-neutral Encyclopedia surface.
+///
+/// Selection and routing remain application/presenter state. This object owns
+/// only pixels and viewport offsets, and retains at most one topic texture.
+pub struct EncyclopediaSurfaceState {
+    pub scroll_row: usize,
+    body_scroll: f32,
+    captured_control: Option<u16>,
+    focused_mode: Option<EncyclopediaSurfaceMode>,
+    index_selection_key: Option<(u64, u16, Option<u32>)>,
+    search_text: String,
+    search_binding: Option<(u64, u16, Option<u32>)>,
+    preserve_search_for_category: bool,
+    preserve_search_for_selection: bool,
+    active_topic_key: Option<(u64, u32)>,
+    topic_textures: Option<EncyclopediaTopicTextureCache<EguiEncyclopediaTextureBackend>>,
+    last_texture_error: Option<String>,
+}
+
+impl Default for EncyclopediaSurfaceState {
+    fn default() -> Self {
+        Self {
+            scroll_row: 0,
+            body_scroll: 0.0,
+            captured_control: None,
+            focused_mode: None,
+            index_selection_key: None,
+            search_text: String::new(),
+            search_binding: None,
+            preserve_search_for_category: false,
+            preserve_search_for_selection: false,
+            active_topic_key: None,
+            topic_textures: None,
+            last_texture_error: None,
+        }
+    }
+}
+
+impl EncyclopediaSurfaceState {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    fn reconcile_active_topic(&mut self, generation: u64, object_id: Option<u32>) {
+        let next = object_id.map(|object_id| (generation, object_id));
+        if self.active_topic_key != next {
+            self.body_scroll = 0.0;
+            self.active_topic_key = next;
+        }
+    }
+
+    fn resolve_topic_texture(
+        &mut self,
+        ctx: &egui::Context,
+        surface: &EncyclopediaSurface<'_>,
+    ) -> Option<egui::TextureId> {
+        let cache = self.topic_textures.get_or_insert_with(|| {
+            EncyclopediaTopicTextureCache::new(EguiEncyclopediaTextureBackend {
+                context: ctx.clone(),
+            })
+        });
+        let artwork = surface
+            .active_topic
+            .as_ref()
+            .and_then(|topic| topic.artwork.as_ref());
+        match cache.resolve(surface.texture_generation, artwork) {
+            Ok(resolution) => {
+                self.last_texture_error = None;
+                resolution.texture.map(TextureHandle::id)
+            }
+            Err(error) => {
+                if self.last_texture_error.as_deref() != Some(&error) {
+                    eprintln!("[encyclopedia] topic artwork unavailable: {error}");
+                }
+                self.last_texture_error = Some(error);
+                None
+            }
+        }
+    }
+}
+
+/// Paint one source-backed authentic index or topic frame.
+///
+/// The function consumes only the renderer-owned DTO and emits logical
+/// presenter actions; it never reads campaign state, files, or source catalogs.
+pub fn draw_encyclopedia_surface(
+    ctx: &egui::Context,
+    cache: &mut BmpCache,
+    origin: egui::Pos2,
+    scale: f32,
+    state: &mut EncyclopediaSurfaceState,
+    surface: &EncyclopediaSurface<'_>,
+) -> Option<EncyclopediaSurfaceAction> {
+    if scale <= 0.0 || surface.categories.is_empty() {
+        return None;
+    }
+    let faction = match surface.audience {
+        EncyclopediaSurfaceAudience::Alliance => crate::cockpit::CockpitFaction::Alliance,
+        EncyclopediaSurfaceAudience::Empire => crate::cockpit::CockpitFaction::Empire,
+    };
+    let effective_selection = surface.navigation.selected_object_id;
+    reconcile_surface_scroll(state, surface, effective_selection);
+    let search_action = (surface.mode == EncyclopediaSurfaceMode::Index)
+        .then(|| reconcile_surface_search(ctx, state, surface, effective_selection))
+        .flatten();
+    state.reconcile_active_topic(
+        surface.texture_generation,
+        surface.active_topic.as_ref().map(|topic| topic.object_id),
+    );
+    let topic_texture = state.resolve_topic_texture(ctx, surface);
+    if ctx.input(|input| input.pointer.primary_pressed()) {
+        state.captured_control = None;
+    }
+    let mut action = search_action;
+    let mut surface_rect = None;
+    let mut search_rect = None;
+    let mut category_tooltip = None;
+    let keyboard_focus_id = surface_keyboard_focus_id(surface.mode);
+
+    let surface_id = egui::Id::new("authentic-encyclopedia-surface");
+    let surface_order = encyclopedia_surface_order();
+    ctx.move_to_top(egui::LayerId::new(surface_order, surface_id));
+    egui::Area::new(surface_id)
+        .fixed_pos(origin)
+        .order(surface_order)
+        .show(ctx, |ui| {
+            let size = egui::vec2(
+                ENCYCLOPEDIA_INDEX_WIDTH * scale,
+                ENCYCLOPEDIA_INDEX_HEIGHT * scale,
+            );
+            let (window_rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+            surface_rect = Some(window_rect);
+            let (base, rail) = match faction {
+                crate::cockpit::CockpitFaction::Alliance => (10_335, 10_585),
+                crate::cockpit::CockpitFaction::Empire => (10_336, 10_589),
+            };
+            paint_original_resource_native(
+                ui.painter(),
+                ctx,
+                cache,
+                base,
+                window_rect.min,
+                scale,
+                window_rect,
+            );
+            paint_original_resource_native(
+                ui.painter(),
+                ctx,
+                cache,
+                rail,
+                encyclopedia_point(window_rect, scale, 412.0, 0.0),
+                scale,
+                window_rect,
+            );
+            let content_rect = encyclopedia_rect(
+                window_rect,
+                scale,
+                12.0,
+                if surface.mode == EncyclopediaSurfaceMode::Index {
+                    13.0
+                } else {
+                    14.0
+                },
+                400.0,
+                306.0,
+            );
+            paint_original_resource_native(
+                ui.painter(),
+                ctx,
+                cache,
+                if surface.mode == EncyclopediaSurfaceMode::Index {
+                    INDEX_CONTENT
+                } else {
+                    TOPIC_CONTENT
+                },
+                content_rect.min,
+                scale,
+                content_rect,
+            );
+
+            let focus_rect = if surface.mode == EncyclopediaSurfaceMode::Index {
+                original_index_list_rect(window_rect, scale)
+            } else {
+                encyclopedia_rect(window_rect, scale, 17.0, 231.0, 395.0, 80.0)
+            };
+            ui.interact(
+                focus_rect,
+                keyboard_focus_id,
+                egui::Sense::focusable_noninteractive(),
+            );
+            if state.focused_mode != Some(surface.mode) {
+                ctx.memory_mut(|memory| memory.request_focus(keyboard_focus_id));
+                state.focused_mode = Some(surface.mode);
+            }
+            ctx.memory_mut(|memory| {
+                memory.set_focus_lock_filter(
+                    keyboard_focus_id,
+                    egui::EventFilter {
+                        tab: true,
+                        horizontal_arrows: true,
+                        vertical_arrows: true,
+                        escape: true,
+                    },
+                );
+            });
+
+            if surface.mode == EncyclopediaSurfaceMode::Topic {
+                draw_surface_topic(ui, window_rect, scale, state, surface, topic_texture);
+                for (index, control) in encyclopedia_topic_controls(faction).into_iter().enumerate()
+                {
+                    let destination = if index == 0 {
+                        surface.navigation.previous_object_id
+                    } else {
+                        surface.navigation.next_object_id
+                    };
+                    if draw_surface_control(
+                        ui,
+                        ctx,
+                        cache,
+                        window_rect,
+                        scale,
+                        control,
+                        destination.is_some(),
+                        &mut state.captured_control,
+                    ) {
+                        action = destination.map(EncyclopediaSurfaceAction::OpenTopic);
+                    }
+                }
+            } else {
+                search_rect = Some(draw_surface_index(
+                    ui,
+                    window_rect,
+                    scale,
+                    state,
+                    surface,
+                    effective_selection,
+                    &mut action,
+                ));
+                for control in encyclopedia_category_controls(faction) {
+                    let control_rect = encyclopedia_rect(
+                        window_rect,
+                        scale,
+                        f32::from(control.x),
+                        f32::from(control.y),
+                        f32::from(control.width),
+                        f32::from(control.height),
+                    );
+                    if let Some(pointer) = ctx
+                        .pointer_latest_pos()
+                        .filter(|pointer| control_rect.contains(*pointer))
+                    {
+                        category_tooltip = surface
+                            .categories
+                            .iter()
+                            .find(|category| category.command_id == control.command_id)
+                            .map(|category| (category.label, pointer));
+                    }
+                    if draw_original_control(
+                        ui,
+                        ctx,
+                        cache,
+                        window_rect,
+                        scale,
+                        control,
+                        control.command_id == surface.category.command_id,
+                    ) {
+                        action = Some(EncyclopediaSurfaceAction::SelectCategory(
+                            control.command_id,
+                        ));
+                    }
+                }
+            }
+
+            for control in encyclopedia_rail_controls_for_mode(faction, surface.mode) {
+                if draw_surface_control(
+                    ui,
+                    ctx,
+                    cache,
+                    window_rect,
+                    scale,
+                    control,
+                    true,
+                    &mut state.captured_control,
+                ) {
+                    action = match control.command_id {
+                        0xfb => Some(EncyclopediaSurfaceAction::Close),
+                        0x67 if surface.mode == EncyclopediaSurfaceMode::Index => {
+                            effective_selection.map(EncyclopediaSurfaceAction::OpenTopic)
+                        }
+                        0x68 if surface.mode == EncyclopediaSurfaceMode::Topic => {
+                            bind_search_to_selection(state, surface, effective_selection);
+                            Some(EncyclopediaSurfaceAction::ShowIndex)
+                        }
+                        _ => action,
+                    };
+                }
+            }
+            if let Some((label, pointer)) = category_tooltip {
+                draw_encyclopedia_category_tooltip(ui.painter(), pointer, scale, label);
+            }
+        });
+
+    if ctx.input(|input| input.pointer.primary_pressed())
+        && surface_rect.is_some_and(|rect| {
+            ctx.pointer_latest_pos()
+                .is_some_and(|point| rect.contains(point))
+        })
+        && !search_rect.is_some_and(|rect| {
+            ctx.pointer_latest_pos()
+                .is_some_and(|point| rect.contains(point))
+        })
+    {
+        ctx.memory_mut(|memory| memory.request_focus(keyboard_focus_id));
+    }
+
+    if ctx.input(|input| input.pointer.button_released(egui::PointerButton::Primary)) {
+        state.captured_control = None;
+    }
+
+    let action = action.or_else(|| {
+        if ctx.memory(|memory| memory.has_focus(keyboard_focus_id)) {
+            surface_keyboard_input(ctx, state, surface, effective_selection)
+        } else {
+            None
+        }
+    });
+    if matches!(action, Some(EncyclopediaSurfaceAction::SelectCategory(_))) {
+        state.preserve_search_for_category = true;
+    }
+    action
+}
+
+fn surface_keyboard_focus_id(mode: EncyclopediaSurfaceMode) -> egui::Id {
+    egui::Id::new((
+        "authentic-encyclopedia-keyboard-focus",
+        match mode {
+            EncyclopediaSurfaceMode::Index => 0_u8,
+            EncyclopediaSurfaceMode::Topic => 1,
+        },
+    ))
+}
+
+fn surface_search_focus_id() -> egui::Id {
+    egui::Id::new("authentic-encyclopedia-title-search")
+}
+
+const fn encyclopedia_surface_order() -> egui::Order {
+    egui::Order::Tooltip
+}
+
+fn encyclopedia_category_tooltip_origin(pointer: egui::Pos2, scale: f32) -> egui::Pos2 {
+    pointer + egui::vec2(-2.0 * scale, 16.0 * scale)
+}
+
+fn draw_encyclopedia_category_tooltip(
+    painter: &egui::Painter,
+    pointer: egui::Pos2,
+    scale: f32,
+    label: &str,
+) {
+    let font = egui::FontId::proportional(11.0 * scale);
+    let galley = painter.layout_no_wrap(label.to_owned(), font, Color32::BLACK);
+    let origin = encyclopedia_category_tooltip_origin(pointer, scale);
+    let rect = egui::Rect::from_min_size(
+        origin,
+        egui::vec2(galley.size().x + 8.0 * scale, 20.0 * scale),
+    );
+    painter.rect_filled(rect, 0.0, Color32::from_rgb(255, 255, 225));
+    painter.rect_stroke(
+        rect,
+        0.0,
+        egui::Stroke::new(scale.max(1.0), Color32::BLACK),
+        egui::StrokeKind::Inside,
+    );
+    painter.galley(
+        origin + egui::vec2(4.0 * scale, 3.0 * scale),
+        galley,
+        Color32::BLACK,
+    );
+}
+
+fn reconcile_surface_scroll(
+    state: &mut EncyclopediaSurfaceState,
+    surface: &EncyclopediaSurface<'_>,
+    selection: Option<u32>,
+) {
+    let max_scroll = surface
+        .topics
+        .len()
+        .saturating_sub(ORIGINAL_INDEX_VISIBLE_ROWS);
+    state.scroll_row = state.scroll_row.min(max_scroll);
+    let selection_key = (
+        surface.texture_generation,
+        surface.category.command_id,
+        selection,
+    );
+    if state.index_selection_key == Some(selection_key) {
+        return;
+    }
+    state.index_selection_key = Some(selection_key);
+    if let Some(position) = selection.and_then(|selected| {
+        surface
+            .topics
+            .iter()
+            .position(|topic| topic.object_id == selected)
+    }) {
+        if position < state.scroll_row {
+            state.scroll_row = position;
+        } else if position >= state.scroll_row + ORIGINAL_INDEX_VISIBLE_ROWS {
+            state.scroll_row = position + 1 - ORIGINAL_INDEX_VISIBLE_ROWS;
+        }
+    }
+}
+
+fn selected_surface_title<'a>(
+    surface: &'a EncyclopediaSurface<'_>,
+    selection: Option<u32>,
+) -> &'a str {
+    selection
+        .and_then(|selected| {
+            surface
+                .topics
+                .iter()
+                .find(|topic| topic.object_id == selected)
+        })
+        .map_or("", |topic| topic.title)
+}
+
+fn bind_search_to_selection(
+    state: &mut EncyclopediaSurfaceState,
+    surface: &EncyclopediaSurface<'_>,
+    selection: Option<u32>,
+) {
+    state.search_text = selected_surface_title(surface, selection).to_owned();
+    state.search_binding = Some((
+        surface.texture_generation,
+        surface.category.command_id,
+        selection,
+    ));
+    state.preserve_search_for_category = false;
+    state.preserve_search_for_selection = false;
+}
+
+fn title_search_action(
+    query: &str,
+    topics: &[EncyclopediaSurfaceTopicItem<'_>],
+    selection: Option<u32>,
+) -> Option<EncyclopediaSurfaceAction> {
+    match encyclopedia_title_search_match(query, topics) {
+        Some(object_id) if selection != Some(object_id) => {
+            Some(EncyclopediaSurfaceAction::SelectTopic(object_id))
+        }
+        None if selection.is_some() => Some(EncyclopediaSurfaceAction::ClearTopicSelection),
+        _ => None,
+    }
+}
+
+fn reconcile_surface_search(
+    ctx: &egui::Context,
+    state: &mut EncyclopediaSurfaceState,
+    surface: &EncyclopediaSurface<'_>,
+    selection: Option<u32>,
+) -> Option<EncyclopediaSurfaceAction> {
+    let next = (
+        surface.texture_generation,
+        surface.category.command_id,
+        selection,
+    );
+    if state.search_binding == Some(next) {
+        return None;
+    }
+
+    let category_changed = state
+        .search_binding
+        .is_some_and(|current| current.0 != next.0 || current.1 != next.1);
+    state.search_binding = Some(next);
+
+    if category_changed && state.preserve_search_for_category {
+        state.preserve_search_for_category = false;
+        let action = title_search_action(&state.search_text, &surface.topics, selection);
+        state.preserve_search_for_selection = action.is_some();
+        return action;
+    }
+    state.preserve_search_for_category = false;
+
+    if state.preserve_search_for_selection {
+        state.preserve_search_for_selection = false;
+    } else if !ctx.memory(|memory| memory.has_focus(surface_search_focus_id())) {
+        state.search_text = selected_surface_title(surface, selection).to_owned();
+    }
+    None
+}
+
+fn draw_surface_index(
+    ui: &mut egui::Ui,
+    window_rect: egui::Rect,
+    scale: f32,
+    state: &mut EncyclopediaSurfaceState,
+    surface: &EncyclopediaSurface<'_>,
+    effective_selection: Option<u32>,
+    action: &mut Option<EncyclopediaSurfaceAction>,
+) -> egui::Rect {
+    let title_font = crate::theme::original_bold_font(15.0 * scale);
+    let list_font = egui::FontId::proportional(14.0 * scale);
+    ui.painter().text(
+        encyclopedia_point(window_rect, scale, ENCYCLOPEDIA_HEADER_CENTER_X, 14.0),
+        egui::Align2::CENTER_TOP,
+        surface.title,
+        title_font,
+        Color32::WHITE,
+    );
+    ui.painter().text(
+        encyclopedia_point(window_rect, scale, 36.0, 48.0),
+        egui::Align2::LEFT_TOP,
+        surface.topic_label,
+        list_font.clone(),
+        Color32::WHITE,
+    );
+    let search_rect = encyclopedia_rect(window_rect, scale, 143.0, 45.0, 245.0, 18.0);
+    let search = ui.put(
+        search_rect,
+        egui::TextEdit::singleline(&mut state.search_text)
+            .id(surface_search_focus_id())
+            .frame(false)
+            .font(list_font.clone())
+            .text_color(Color32::WHITE)
+            .desired_width(search_rect.width()),
+    );
+    if search.changed() {
+        if state.search_text.chars().count() > 100 {
+            state.search_text = state.search_text.chars().take(100).collect();
+        }
+        let search_action =
+            title_search_action(&state.search_text, &surface.topics, effective_selection);
+        state.preserve_search_for_selection = search_action.is_some();
+        *action = search_action;
+    }
+    if search.has_focus() {
+        let list_key = if ui.input(|input| input.key_pressed(egui::Key::ArrowUp)) {
+            Some(EncyclopediaSurfaceKey::Up)
+        } else if ui.input(|input| input.key_pressed(egui::Key::ArrowDown)) {
+            Some(EncyclopediaSurfaceKey::Down)
+        } else if ui.input(|input| input.key_pressed(egui::Key::PageUp)) {
+            Some(EncyclopediaSurfaceKey::PageUp)
+        } else if ui.input(|input| input.key_pressed(egui::Key::PageDown)) {
+            Some(EncyclopediaSurfaceKey::PageDown)
+        } else {
+            None
+        };
+        if let Some(key) = list_key {
+            let list_action = encyclopedia_index_list_action(
+                key,
+                &surface
+                    .topics
+                    .iter()
+                    .map(|topic| topic.object_id)
+                    .collect::<Vec<_>>(),
+                effective_selection,
+            );
+            if let Some(EncyclopediaSurfaceAction::SelectTopic(object_id)) = list_action {
+                bind_search_to_selection(state, surface, Some(object_id));
+            }
+            *action = list_action;
+        }
+    }
+    if search.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter)) {
+        *action = encyclopedia_title_search_match(&state.search_text, &surface.topics)
+            .or(effective_selection)
+            .map(EncyclopediaSurfaceAction::OpenTopic);
+    }
+    ui.painter().text(
+        encyclopedia_point(window_rect, scale, 40.0, 120.0),
+        egui::Align2::LEFT_TOP,
+        surface.category.label,
+        crate::theme::original_bold_font(14.0 * scale),
+        Color32::WHITE,
+    );
+
+    let max_scroll = surface
+        .topics
+        .len()
+        .saturating_sub(ORIGINAL_INDEX_VISIBLE_ROWS);
+    let list_rect = original_index_list_rect(window_rect, scale);
+    let list_painter = ui.painter().with_clip_rect(list_rect);
+    if ui.rect_contains_pointer(list_rect) {
+        let wheel = ui.input(|input| input.raw_scroll_delta.y);
+        if wheel.abs() > f32::EPSILON {
+            let rows = ((wheel.abs() / 24.0).ceil() as usize).clamp(1, 3);
+            state.scroll_row = if wheel < 0.0 {
+                state.scroll_row.saturating_add(rows).min(max_scroll)
+            } else {
+                state.scroll_row.saturating_sub(rows)
+            };
+        }
+    }
+    if max_scroll > 0 {
+        state.scroll_row = draw_encyclopedia_scrollbar(
+            ui,
+            EncyclopediaScrollbar {
+                id: ui.id().with("authentic-encyclopedia-index-scrollbar"),
+                rect: encyclopedia_rect(window_rect, scale, 374.0, 137.0, 12.0, 160.0),
+                arrow_extent: 13.0 * scale,
+                value: state.scroll_row as f32,
+                viewport_extent: ORIGINAL_INDEX_VISIBLE_ROWS as f32,
+                content_extent: surface.topics.len() as f32,
+                step: 1.0,
+            },
+        )
+        .round() as usize;
+    }
+    for (visible_row, topic) in surface
+        .topics
+        .iter()
+        .skip(state.scroll_row)
+        .take(ORIGINAL_INDEX_VISIBLE_ROWS)
+        .enumerate()
+    {
+        let y = 137.0 + visible_row as f32 * ORIGINAL_INDEX_ROW_HEIGHT;
+        let row_rect = original_index_row_rect(window_rect, scale, visible_row);
+        let selected = Some(topic.object_id) == effective_selection;
+        let response = ui.interact(
+            row_rect,
+            ui.id()
+                .with(("authentic-encyclopedia-row", topic.object_id)),
+            egui::Sense::click(),
+        );
+        list_painter.text(
+            encyclopedia_point(window_rect, scale, 40.0, y + 1.0),
+            egui::Align2::LEFT_TOP,
+            topic.title,
+            list_font.clone(),
+            if selected {
+                Color32::WHITE
+            } else {
+                Color32::from_gray(128)
+            },
+        );
+        if response.double_clicked() {
+            bind_search_to_selection(state, surface, Some(topic.object_id));
+            *action = Some(EncyclopediaSurfaceAction::OpenTopic(topic.object_id));
+        } else if response.clicked() {
+            bind_search_to_selection(state, surface, Some(topic.object_id));
+            *action = Some(EncyclopediaSurfaceAction::SelectTopic(topic.object_id));
+        }
+    }
+    search_rect
+}
+
+fn draw_surface_topic(
+    ui: &mut egui::Ui,
+    window_rect: egui::Rect,
+    scale: f32,
+    state: &mut EncyclopediaSurfaceState,
+    surface: &EncyclopediaSurface<'_>,
+    texture: Option<egui::TextureId>,
+) {
+    let Some(topic) = surface.active_topic.as_ref() else {
+        return;
+    };
+    if let (Some(texture), Some(_artwork)) = (texture, topic.artwork.as_ref()) {
+        let rect = encyclopedia_rect(
+            window_rect,
+            scale,
+            12.0,
+            31.0,
+            ORIGINAL_TOPIC_ARTWORK_WIDTH,
+            ORIGINAL_TOPIC_ARTWORK_HEIGHT,
+        );
+        ui.painter().image(
+            texture,
+            rect,
+            egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+            Color32::WHITE,
+        );
+    }
+    let (title_position, title_alignment) = encyclopedia_topic_title_layout(window_rect, scale);
+    ui.painter().text(
+        title_position,
+        title_alignment,
+        topic.title,
+        crate::theme::original_bold_font(15.0 * scale),
+        Color32::WHITE,
+    );
+    let Some(description) = topic.description else {
+        state.body_scroll = 0.0;
+        return;
+    };
+    let body_viewport_rect = encyclopedia_rect(window_rect, scale, 17.0, 231.0, 395.0, 80.0);
+    let full_width_galley = ui.painter().layout(
+        description.to_owned(),
+        egui::FontId::proportional(14.0 * scale),
+        Color32::WHITE,
+        body_viewport_rect.width(),
+    );
+    let (body_rect, galley) = if full_width_galley.size().y > body_viewport_rect.height() {
+        let body_rect = encyclopedia_rect(window_rect, scale, 17.0, 231.0, 378.0, 80.0);
+        let galley = ui.painter().layout(
+            description.to_owned(),
+            egui::FontId::proportional(14.0 * scale),
+            Color32::WHITE,
+            body_rect.width(),
+        );
+        (body_rect, galley)
+    } else {
+        (body_viewport_rect, full_width_galley)
+    };
+    let content_height = galley.size().y;
+    let max_scroll = (content_height - body_rect.height()).max(0.0);
+    if ui.rect_contains_pointer(body_viewport_rect) {
+        let wheel = ui.input(|input| input.raw_scroll_delta.y);
+        state.body_scroll = (state.body_scroll - wheel).clamp(0.0, max_scroll);
+    } else {
+        state.body_scroll = state.body_scroll.min(max_scroll);
+    }
+    ui.painter().with_clip_rect(body_rect).galley(
+        body_rect.min - egui::vec2(0.0, state.body_scroll),
+        galley,
+        Color32::WHITE,
+    );
+    if max_scroll > 0.0 {
+        state.body_scroll = draw_encyclopedia_scrollbar(
+            ui,
+            EncyclopediaScrollbar {
+                id: ui.id().with("authentic-encyclopedia-topic-scrollbar"),
+                rect: encyclopedia_rect(window_rect, scale, 400.0, 231.0, 12.0, 80.0),
+                arrow_extent: 12.0 * scale,
+                value: state.body_scroll,
+                viewport_extent: body_rect.height(),
+                content_extent: content_height,
+                step: 14.0 * scale,
+            },
+        );
+    }
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the recovered control geometry and renderer state stay explicit"
+)]
+fn draw_surface_control(
+    ui: &mut egui::Ui,
+    ctx: &egui::Context,
+    cache: &mut BmpCache,
+    window_rect: egui::Rect,
+    scale: f32,
+    control: SurfaceControlSpec,
+    enabled: bool,
+    captured_control: &mut Option<u16>,
+) -> bool {
+    let rect = encyclopedia_rect(
+        window_rect,
+        scale,
+        f32::from(control.x),
+        f32::from(control.y),
+        f32::from(control.width),
+        f32::from(control.height),
+    );
+    let control_id = ui
+        .id()
+        .with(("encyclopedia-surface-control", control.command_id));
+    ui.interact(
+        rect,
+        control_id,
+        if enabled {
+            egui::Sense::click()
+        } else {
+            egui::Sense::hover()
+        },
+    );
+    if enabled && ctx.input(|input| input.pointer.primary_pressed()) {
+        let captured = ctx.pointer_latest_pos().is_some_and(|point| {
+            original_control_contains(cache, control.normal_resource, rect, scale, point)
+        });
+        if captured {
+            *captured_control = Some(control.command_id);
+        }
+    }
+    let captured = enabled && *captured_control == Some(control.command_id);
+    let (pointer, primary_down, primary_released) = ctx.input(|input| {
+        (
+            input.pointer.interact_pos(),
+            input.pointer.button_down(egui::PointerButton::Primary),
+            input.pointer.button_released(egui::PointerButton::Primary),
+        )
+    });
+    let pointer_hits = pointer.is_some_and(|point| {
+        original_control_contains(cache, control.normal_resource, rect, scale, point)
+    });
+    let pressed = control.selected || (enabled && primary_down && captured && pointer_hits);
+    let resource = if !enabled {
+        control.disabled_resource.unwrap_or(control.normal_resource)
+    } else if pressed {
+        control.pressed_resource
+    } else {
+        control.normal_resource
+    };
+    paint_original_resource_native(ui.painter(), ctx, cache, resource, rect.min, scale, rect);
+    enabled && captured && primary_released && pointer_hits
+}
+
+fn surface_keyboard_input(
+    ctx: &egui::Context,
+    state: &mut EncyclopediaSurfaceState,
+    surface: &EncyclopediaSurface<'_>,
+    effective_selection: Option<u32>,
+) -> Option<EncyclopediaSurfaceAction> {
+    let pressed = |key| {
+        let pressed = ctx.input(|input| input.key_pressed(key));
+        if pressed {
+            ctx.input_mut(|input| {
+                input.consume_key(egui::Modifiers::NONE, key);
+            });
+        }
+        pressed
+    };
+    if pressed(egui::Key::Tab) {
+        return None;
+    }
+    if pressed(egui::Key::Escape) {
+        return Some(EncyclopediaSurfaceAction::Close);
+    }
+    if surface.mode == EncyclopediaSurfaceMode::Topic {
+        if pressed(egui::Key::ArrowUp) {
+            state.body_scroll = (state.body_scroll - 14.0).max(0.0);
+        } else if pressed(egui::Key::ArrowDown) {
+            state.body_scroll += 14.0;
+        } else if pressed(egui::Key::PageUp) {
+            state.body_scroll = (state.body_scroll - 80.0).max(0.0);
+        } else if pressed(egui::Key::PageDown) {
+            state.body_scroll += 80.0;
+        }
+    }
+    let (logical_key, list_key) = if pressed(egui::Key::ArrowLeft) {
+        (Some(EncyclopediaSurfaceKey::Left), None)
+    } else if pressed(egui::Key::ArrowRight) {
+        (Some(EncyclopediaSurfaceKey::Right), None)
+    } else if pressed(egui::Key::Enter) {
+        (Some(EncyclopediaSurfaceKey::Enter), None)
+    } else if pressed(egui::Key::ArrowUp) {
+        (None, Some(EncyclopediaSurfaceKey::Up))
+    } else if pressed(egui::Key::ArrowDown) {
+        (None, Some(EncyclopediaSurfaceKey::Down))
+    } else if pressed(egui::Key::PageUp) {
+        (None, Some(EncyclopediaSurfaceKey::PageUp))
+    } else if pressed(egui::Key::PageDown) {
+        (None, Some(EncyclopediaSurfaceKey::PageDown))
+    } else if pressed(egui::Key::Home) {
+        (None, Some(EncyclopediaSurfaceKey::Home))
+    } else if pressed(egui::Key::End) {
+        (None, Some(EncyclopediaSurfaceKey::End))
+    } else {
+        (None, None)
+    };
+    if let Some(key) = logical_key {
+        let categories = surface
+            .categories
+            .iter()
+            .map(|category| category.command_id)
+            .collect::<Vec<_>>();
+        return encyclopedia_keyboard_action(
+            surface.mode,
+            key,
+            &categories,
+            surface.category.command_id,
+            effective_selection,
+            surface.navigation.previous_object_id,
+            surface.navigation.next_object_id,
+        );
+    }
+    if surface.mode == EncyclopediaSurfaceMode::Index {
+        return list_key.and_then(|key| {
+            let topics = surface
+                .topics
+                .iter()
+                .map(|topic| topic.object_id)
+                .collect::<Vec<_>>();
+            encyclopedia_index_list_action(key, &topics, effective_selection)
+        });
+    }
+    None
 }
 
 /// Paint the source-exact Galactic Encyclopedia index bitmap layers.
@@ -1071,7 +2077,7 @@ fn draw_original_index_content(
     outcome: &mut OriginalIndexOutcome,
 ) {
     let painter = ui.painter();
-    let title_font = egui::FontId::proportional(15.0 * scale);
+    let title_font = crate::theme::original_bold_font(15.0 * scale);
     let list_font = egui::FontId::proportional(14.0 * scale);
     painter.text(
         encyclopedia_point(window_rect, scale, 211.0, 14.0),
@@ -1098,7 +2104,7 @@ fn draw_original_index_content(
         encyclopedia_point(window_rect, scale, 40.0, 120.0),
         egui::Align2::LEFT_TOP,
         content.category_label,
-        list_font.clone(),
+        crate::theme::original_bold_font(14.0 * scale),
         Color32::WHITE,
     );
 
@@ -1119,27 +2125,23 @@ fn draw_original_index_content(
             });
         }
     }
-    let up_rect = encyclopedia_rect(window_rect, scale, 374.0, 137.0, 12.0, 13.0);
-    let down_rect = encyclopedia_rect(window_rect, scale, 374.0, 284.0, 12.0, 13.0);
-    if ui
-        .interact(
-            up_rect,
-            ui.id().with("encyclopedia-index-scroll-up"),
-            egui::Sense::click(),
+    if max_scroll > 0 {
+        let next_scroll = draw_encyclopedia_scrollbar(
+            ui,
+            EncyclopediaScrollbar {
+                id: ui.id().with("encyclopedia-original-index-scrollbar"),
+                rect: encyclopedia_rect(window_rect, scale, 374.0, 137.0, 12.0, 160.0),
+                arrow_extent: 13.0 * scale,
+                value: content.scroll_row as f32,
+                viewport_extent: ORIGINAL_INDEX_VISIBLE_ROWS as f32,
+                content_extent: content.entries.len() as f32,
+                step: 1.0,
+            },
         )
-        .clicked()
-    {
-        outcome.scroll_row = Some(content.scroll_row.saturating_sub(1));
-    }
-    if ui
-        .interact(
-            down_rect,
-            ui.id().with("encyclopedia-index-scroll-down"),
-            egui::Sense::click(),
-        )
-        .clicked()
-    {
-        outcome.scroll_row = Some(content.scroll_row.saturating_add(1).min(max_scroll));
+        .round() as usize;
+        if next_scroll != content.scroll_row {
+            outcome.scroll_row = Some(next_scroll);
+        }
     }
 
     for (visible_row, entry) in content
@@ -1152,9 +2154,6 @@ fn draw_original_index_content(
         let y = 137.0 + visible_row as f32 * ORIGINAL_INDEX_ROW_HEIGHT;
         let row_rect = original_index_row_rect(window_rect, scale, visible_row);
         let selected = Some(entry.object_id) == content.selected_object_id;
-        if selected {
-            list_painter.rect_filled(row_rect, 0.0, Color32::from_rgb(0, 0, 96));
-        }
         let response = ui.interact(
             row_rect,
             ui.id().with(("encyclopedia-index-row", entry.object_id)),
@@ -1165,7 +2164,11 @@ fn draw_original_index_content(
             egui::Align2::LEFT_TOP,
             &entry.name,
             list_font.clone(),
-            Color32::WHITE,
+            if selected {
+                Color32::WHITE
+            } else {
+                Color32::from_gray(128)
+            },
         );
         if response.clicked() {
             outcome.selected_object_id = Some(entry.object_id);
@@ -1256,6 +2259,13 @@ fn encyclopedia_point(parent: egui::Rect, scale: f32, x: f32, y: f32) -> egui::P
     egui::pos2(parent.min.x + x * scale, parent.min.y + y * scale)
 }
 
+fn encyclopedia_topic_title_layout(parent: egui::Rect, scale: f32) -> (egui::Pos2, egui::Align2) {
+    (
+        encyclopedia_point(parent, scale, ENCYCLOPEDIA_HEADER_CENTER_X, 14.0),
+        egui::Align2::CENTER_TOP,
+    )
+}
+
 fn encyclopedia_rect(
     parent: egui::Rect,
     scale: f32,
@@ -1276,15 +2286,205 @@ fn original_index_list_rect(parent: egui::Rect, scale: f32) -> egui::Rect {
 
 fn original_index_row_rect(parent: egui::Rect, scale: f32, visible_row: usize) -> egui::Rect {
     let y = 137.0 + visible_row as f32 * ORIGINAL_INDEX_ROW_HEIGHT;
-    encyclopedia_rect(
-        parent,
-        scale,
-        36.0,
-        y,
-        338.0,
-        ORIGINAL_INDEX_ROW_HEIGHT,
-    )
-    .intersect(original_index_list_rect(parent, scale))
+    encyclopedia_rect(parent, scale, 36.0, y, 338.0, ORIGINAL_INDEX_ROW_HEIGHT)
+        .intersect(original_index_list_rect(parent, scale))
+}
+
+#[derive(Clone, Copy)]
+struct EncyclopediaScrollbar {
+    id: egui::Id,
+    rect: egui::Rect,
+    arrow_extent: f32,
+    value: f32,
+    viewport_extent: f32,
+    content_extent: f32,
+    step: f32,
+}
+
+/// Draw and operate the narrow blue scrollbar retained in original-game
+/// Encyclopedia captures. The arrows step, the track pages, and the thumb maps
+/// directly onto the bounded scroll range; wheel and keyboard input continue
+/// to update the same caller-owned value.
+fn draw_encyclopedia_scrollbar(ui: &mut egui::Ui, spec: EncyclopediaScrollbar) -> f32 {
+    let max_scroll = (spec.content_extent - spec.viewport_extent).max(0.0);
+    if max_scroll <= f32::EPSILON {
+        return 0.0;
+    }
+
+    let arrow_extent = spec
+        .arrow_extent
+        .clamp(1.0, (spec.rect.height() / 2.0).max(1.0));
+    let up_rect =
+        egui::Rect::from_min_size(spec.rect.min, egui::vec2(spec.rect.width(), arrow_extent));
+    let down_rect = egui::Rect::from_min_max(
+        egui::pos2(spec.rect.min.x, spec.rect.max.y - arrow_extent),
+        spec.rect.max,
+    );
+    let track_rect = egui::Rect::from_min_max(
+        egui::pos2(spec.rect.min.x, up_rect.max.y),
+        egui::pos2(spec.rect.max.x, down_rect.min.y),
+    );
+    let thumb_extent = (track_rect.height() * spec.viewport_extent / spec.content_extent)
+        .clamp(spec.rect.width(), track_rect.height());
+    let thumb_travel = (track_rect.height() - thumb_extent).max(0.0);
+    let mut value = spec.value.clamp(0.0, max_scroll);
+    let thumb_top = track_rect.min.y + thumb_travel * value / max_scroll;
+    let thumb_rect = egui::Rect::from_min_size(
+        egui::pos2(track_rect.min.x, thumb_top),
+        egui::vec2(track_rect.width(), thumb_extent),
+    );
+
+    let track_response = ui.interact(track_rect, spec.id.with("track"), egui::Sense::click());
+    let up_response = ui.interact(up_rect, spec.id.with("up"), egui::Sense::click());
+    let down_response = ui.interact(down_rect, spec.id.with("down"), egui::Sense::click());
+    let thumb_response = ui.interact(
+        thumb_rect,
+        spec.id.with("thumb"),
+        egui::Sense::click_and_drag(),
+    );
+
+    if up_response.clicked() {
+        value = (value - spec.step).max(0.0);
+    }
+    if down_response.clicked() {
+        value = (value + spec.step).min(max_scroll);
+    }
+    if track_response.clicked() {
+        if let Some(pointer) = track_response.interact_pointer_pos() {
+            value = if pointer.y < thumb_rect.min.y {
+                (value - spec.viewport_extent).max(0.0)
+            } else if pointer.y > thumb_rect.max.y {
+                (value + spec.viewport_extent).min(max_scroll)
+            } else {
+                value
+            };
+        }
+    }
+
+    let drag_offset_id = spec.id.with("thumb-drag-offset");
+    if thumb_response.drag_started() {
+        if let Some(pointer) = thumb_response.interact_pointer_pos() {
+            ui.data_mut(|data| {
+                data.insert_temp(
+                    drag_offset_id,
+                    (pointer.y - thumb_rect.min.y).clamp(0.0, thumb_rect.height()),
+                );
+            });
+        }
+    }
+    if thumb_response.dragged() && thumb_travel > f32::EPSILON {
+        if let Some(pointer) = thumb_response.interact_pointer_pos() {
+            let drag_offset = ui.data(|data| {
+                data.get_temp::<f32>(drag_offset_id)
+                    .unwrap_or(thumb_rect.height() / 2.0)
+            });
+            value = ((pointer.y - drag_offset - track_rect.min.y) / thumb_travel * max_scroll)
+                .clamp(0.0, max_scroll);
+        }
+    }
+    if thumb_response.drag_stopped() {
+        ui.data_mut(|data| data.remove::<f32>(drag_offset_id));
+    }
+
+    paint_encyclopedia_scrollbar(
+        ui.painter(),
+        up_rect,
+        down_rect,
+        track_rect,
+        thumb_rect,
+        up_response.is_pointer_button_down_on(),
+        down_response.is_pointer_button_down_on(),
+    );
+    value
+}
+
+fn paint_encyclopedia_scrollbar(
+    painter: &egui::Painter,
+    up_rect: egui::Rect,
+    down_rect: egui::Rect,
+    track_rect: egui::Rect,
+    thumb_rect: egui::Rect,
+    up_pressed: bool,
+    down_pressed: bool,
+) {
+    const TRACK: Color32 = Color32::from_rgb(0, 0, 12);
+    const FACE: Color32 = Color32::from_rgb(0, 52, 150);
+    const PRESSED: Color32 = Color32::from_rgb(0, 34, 105);
+    const HIGHLIGHT: Color32 = Color32::from_rgb(0, 139, 232);
+    const SHADOW: Color32 = Color32::from_rgb(0, 12, 62);
+    const GLYPH: Color32 = Color32::from_rgb(174, 196, 202);
+
+    painter.rect_filled(track_rect, 0.0, TRACK);
+    painter.rect_stroke(
+        track_rect,
+        0.0,
+        egui::Stroke::new((track_rect.width() / 12.0).max(0.5), SHADOW),
+        egui::StrokeKind::Inside,
+    );
+    paint_encyclopedia_scrollbar_box(
+        painter,
+        up_rect,
+        if up_pressed { PRESSED } else { FACE },
+        HIGHLIGHT,
+        SHADOW,
+    );
+    paint_encyclopedia_scrollbar_box(
+        painter,
+        down_rect,
+        if down_pressed { PRESSED } else { FACE },
+        HIGHLIGHT,
+        SHADOW,
+    );
+    paint_encyclopedia_scrollbar_box(painter, thumb_rect, FACE, HIGHLIGHT, SHADOW);
+
+    let glyph_half = up_rect.width() * 0.24;
+    let up_center = up_rect.center();
+    painter.add(egui::Shape::convex_polygon(
+        vec![
+            egui::pos2(up_center.x, up_center.y - glyph_half),
+            egui::pos2(up_center.x - glyph_half, up_center.y + glyph_half),
+            egui::pos2(up_center.x + glyph_half, up_center.y + glyph_half),
+        ],
+        GLYPH,
+        egui::Stroke::NONE,
+    ));
+    let down_center = down_rect.center();
+    painter.add(egui::Shape::convex_polygon(
+        vec![
+            egui::pos2(down_center.x - glyph_half, down_center.y - glyph_half),
+            egui::pos2(down_center.x + glyph_half, down_center.y - glyph_half),
+            egui::pos2(down_center.x, down_center.y + glyph_half),
+        ],
+        GLYPH,
+        egui::Stroke::NONE,
+    ));
+}
+
+fn paint_encyclopedia_scrollbar_box(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    fill: Color32,
+    highlight: Color32,
+    shadow: Color32,
+) {
+    let edge = (rect.width() / 12.0).max(0.5);
+    painter.rect_filled(rect, 0.0, fill);
+    painter.line_segment(
+        [rect.left_bottom(), rect.left_top()],
+        egui::Stroke::new(edge, highlight),
+    );
+    painter.line_segment(
+        [rect.left_top(), rect.right_top()],
+        egui::Stroke::new(edge, highlight),
+    );
+    painter.line_segment(
+        [rect.right_top(), rect.right_bottom()],
+        egui::Stroke::new(edge, shadow),
+    );
+    painter.line_segment(
+        [rect.right_bottom(), rect.left_bottom()],
+        egui::Stroke::new(edge, shadow),
+    );
 }
 
 fn paint_original_resource_native(
@@ -1540,7 +2740,469 @@ fn stat_row_pair(ui: &mut egui::Ui, label: &str, base: u32, variance: u32) {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
     use super::*;
+
+    const TEST_TOPIC_TITLES: [&str; 18] = [
+        "A-wing",
+        "Abduction",
+        "Ackbar",
+        "Adar Tallon",
+        "Adega",
+        "Advanced Construction Yard",
+        "Advanced Shipyard",
+        "Advanced Training Facility",
+        "Aeten II",
+        "Alderaan",
+        "Alliance Dreadnaught",
+        "Alliance Escort Carrier",
+        "Alliance Headquarters",
+        "Alliance Special Forces",
+        "Alliance Transport",
+        "Alzoc III",
+        "Anaxes",
+        "Antilles",
+    ];
+
+    const LONG_TOPIC_DESCRIPTION: &str = concat!(
+        "Refined Material Cost: 5\n",
+        "Maintenance Cost: 4\n",
+        "Attack Strength (Laser Cannon): 5\n",
+        "Attack Strength (Ion Cannon): 0\n",
+        "Shield Energy: 5\n",
+        "Hyperdrive: Yes\n\n",
+        "The A-wing is a lightweight, extremely quick and agile fighter. ",
+        "Its speed makes it ideal for interception and reconnaissance. ",
+        "Experienced pilots use that agility to evade heavier ships and ",
+        "strike exposed targets before withdrawing."
+    );
+
+    fn test_surface(
+        mode: EncyclopediaSurfaceMode,
+        selected_object_id: Option<u32>,
+    ) -> EncyclopediaSurface<'static> {
+        let categories = vec![EncyclopediaSurfaceCategory {
+            command_id: 0x6f,
+            label_resource_id: 0x1850,
+            label: "All Databases",
+            topic_count: TEST_TOPIC_TITLES.len(),
+        }];
+        EncyclopediaSurface {
+            texture_generation: 7,
+            title: "Galactic Encyclopedia",
+            topic_label: "Topic",
+            audience: EncyclopediaSurfaceAudience::Alliance,
+            mode,
+            category: categories[0],
+            categories,
+            topics: TEST_TOPIC_TITLES
+                .iter()
+                .enumerate()
+                .map(|(index, title)| EncyclopediaSurfaceTopicItem {
+                    object_id: index as u32 + 1,
+                    title,
+                    availability: EncyclopediaSurfaceAvailability::Resolved,
+                })
+                .collect(),
+            active_topic: (mode == EncyclopediaSurfaceMode::Topic).then_some(
+                crate::encyclopedia_surface::EncyclopediaSurfaceTopic {
+                    object_id: 1,
+                    title: "A-wing",
+                    topic_text_resource_id: 0x2000,
+                    description: Some(LONG_TOPIC_DESCRIPTION),
+                    artwork: None,
+                },
+            ),
+            navigation: EncyclopediaSurfaceNavigation {
+                selected_object_id,
+                previous_object_id: None,
+                next_object_id: Some(2),
+            },
+        }
+    }
+
+    fn surface_input(events: Vec<egui::Event>, time: f64) -> egui::RawInput {
+        egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(800.0, 600.0),
+            )),
+            time: Some(time),
+            events,
+            ..Default::default()
+        }
+    }
+
+    fn pointer_button(point: egui::Pos2, pressed: bool) -> egui::Event {
+        egui::Event::PointerButton {
+            pos: point,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        }
+    }
+
+    fn run_surface_frames(
+        state: &mut EncyclopediaSurfaceState,
+        surface: &EncyclopediaSurface<'_>,
+        frames: Vec<Vec<egui::Event>>,
+    ) -> egui::FullOutput {
+        let ctx = egui::Context::default();
+        crate::theme::load_fonts(&ctx);
+        let mut cache = BmpCache::new();
+        let _ = ctx.run(surface_input(vec![], -0.05), |ctx| {
+            let _ =
+                draw_encyclopedia_surface(ctx, &mut cache, egui::Pos2::ZERO, 1.0, state, surface);
+        });
+        let mut output = None;
+        for (index, events) in frames.into_iter().enumerate() {
+            output = Some(ctx.run(surface_input(events, index as f64 * 0.05), |ctx| {
+                let _ = draw_encyclopedia_surface(
+                    ctx,
+                    &mut cache,
+                    egui::Pos2::ZERO,
+                    1.0,
+                    state,
+                    surface,
+                );
+            }));
+        }
+        output.expect("at least one frame")
+    }
+
+    fn click_frames(point: egui::Pos2) -> Vec<Vec<egui::Event>> {
+        vec![
+            vec![egui::Event::PointerMoved(point)],
+            vec![egui::Event::PointerMoved(point)],
+            vec![pointer_button(point, true)],
+            vec![pointer_button(point, false)],
+            vec![],
+        ]
+    }
+
+    fn text_color(output: &egui::FullOutput, value: &str) -> Color32 {
+        fn find(shape: &egui::Shape, value: &str) -> Option<Color32> {
+            match shape {
+                egui::Shape::Text(text) if text.galley.text() == value => {
+                    Some(text.galley.job.sections[0].format.color)
+                }
+                egui::Shape::Vec(shapes) => shapes.iter().find_map(|shape| find(shape, value)),
+                _ => None,
+            }
+        }
+        fn collect_text<'a>(shape: &'a egui::Shape, text: &mut Vec<&'a str>) {
+            match shape {
+                egui::Shape::Text(shape) => text.push(shape.galley.text()),
+                egui::Shape::Vec(shapes) => {
+                    for shape in shapes {
+                        collect_text(shape, text);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let rendered = output
+            .shapes
+            .iter()
+            .find_map(|clipped| find(&clipped.shape, value));
+        rendered.unwrap_or_else(|| {
+            let mut available = Vec::new();
+            for clipped in &output.shapes {
+                collect_text(&clipped.shape, &mut available);
+            }
+            panic!("missing rendered text {value:?}; available text: {available:?}")
+        })
+    }
+
+    fn filled_rects_intersecting(output: &egui::FullOutput, area: egui::Rect) -> usize {
+        fn count(shape: &egui::Shape, area: egui::Rect) -> usize {
+            match shape {
+                egui::Shape::Rect(rect)
+                    if rect.fill != Color32::TRANSPARENT && rect.rect.intersects(area) =>
+                {
+                    1
+                }
+                egui::Shape::Vec(shapes) => shapes.iter().map(|shape| count(shape, area)).sum(),
+                _ => 0,
+            }
+        }
+        output
+            .shapes
+            .iter()
+            .map(|clipped| count(&clipped.shape, area))
+            .sum()
+    }
+
+    fn image_rect(output: &egui::FullOutput, texture_id: egui::TextureId) -> egui::Rect {
+        fn find(shape: &egui::Shape, texture_id: egui::TextureId) -> Option<egui::Rect> {
+            match shape {
+                egui::Shape::Mesh(mesh) if mesh.texture_id == texture_id => {
+                    let points = mesh
+                        .vertices
+                        .iter()
+                        .map(|vertex| vertex.pos)
+                        .collect::<Vec<_>>();
+                    Some(egui::Rect::from_points(&points))
+                }
+                egui::Shape::Vec(shapes) => shapes.iter().find_map(|shape| find(shape, texture_id)),
+                _ => None,
+            }
+        }
+
+        output
+            .shapes
+            .iter()
+            .find_map(|clipped| find(&clipped.shape, texture_id))
+            .expect("texture must be painted")
+    }
+
+    fn has_rect_fill(output: &egui::FullOutput, fill: Color32) -> bool {
+        fn has_fill(shape: &egui::Shape, fill: Color32) -> bool {
+            match shape {
+                egui::Shape::Rect(rect) if rect.fill == fill => true,
+                egui::Shape::Vec(shapes) => shapes.iter().any(|shape| has_fill(shape, fill)),
+                _ => false,
+            }
+        }
+        output
+            .shapes
+            .iter()
+            .any(|clipped| has_fill(&clipped.shape, fill))
+    }
+
+    fn filled_rects(output: &egui::FullOutput) -> Vec<egui::Rect> {
+        fn collect(shape: &egui::Shape, rects: &mut Vec<egui::Rect>) {
+            match shape {
+                egui::Shape::Rect(rect) if rect.fill != Color32::TRANSPARENT => {
+                    rects.push(rect.rect)
+                }
+                egui::Shape::Vec(shapes) => {
+                    for shape in shapes {
+                        collect(shape, rects);
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut rects = Vec::new();
+        for clipped in &output.shapes {
+            collect(&clipped.shape, &mut rects);
+        }
+        rects
+    }
+
+    #[test]
+    fn authentic_index_selection_changes_only_the_selected_title_to_white() {
+        let surface = test_surface(EncyclopediaSurfaceMode::Index, Some(1));
+        let mut state = EncyclopediaSurfaceState::new();
+        let output = run_surface_frames(&mut state, &surface, vec![vec![]]);
+
+        assert_eq!(text_color(&output, "A-wing"), Color32::WHITE);
+        let unselected = text_color(&output, "Abduction");
+        assert_eq!(unselected, Color32::from_gray(128));
+        assert!(!has_rect_fill(&output, Color32::from_rgb(0, 0, 96)));
+    }
+
+    #[test]
+    fn index_reveals_changed_selection_but_preserves_manual_scroll_for_a_stable_selection() {
+        let first = test_surface(EncyclopediaSurfaceMode::Index, Some(1));
+        let mut state = EncyclopediaSurfaceState::new();
+        state.scroll_row = 9;
+
+        reconcile_surface_scroll(&mut state, &first, Some(1));
+        assert_eq!(state.scroll_row, 0);
+
+        state.scroll_row = 5;
+        reconcile_surface_scroll(&mut state, &first, Some(1));
+        assert_eq!(state.scroll_row, 5);
+
+        let last = test_surface(EncyclopediaSurfaceMode::Index, Some(18));
+        reconcile_surface_scroll(&mut state, &last, Some(18));
+        assert_eq!(state.scroll_row, 9);
+
+        state.scroll_row = usize::MAX;
+        reconcile_surface_scroll(&mut state, &last, Some(18));
+        assert_eq!(state.scroll_row, 9);
+    }
+
+    #[test]
+    fn overflowing_index_and_topic_paint_visible_scrollbar_controls() {
+        let mut index_state = EncyclopediaSurfaceState::new();
+        let index = test_surface(EncyclopediaSurfaceMode::Index, Some(1));
+        let index_output = run_surface_frames(&mut index_state, &index, vec![vec![]]);
+        assert!(
+            filled_rects_intersecting(
+                &index_output,
+                egui::Rect::from_min_max(egui::pos2(374.0, 137.0), egui::pos2(386.0, 297.0)),
+            ) >= 3,
+            "the overflowing index needs painted arrows, track, and thumb"
+        );
+
+        let mut topic_state = EncyclopediaSurfaceState::new();
+        let topic = test_surface(EncyclopediaSurfaceMode::Topic, Some(1));
+        let topic_output = run_surface_frames(&mut topic_state, &topic, vec![vec![]]);
+        assert!(
+            filled_rects_intersecting(
+                &topic_output,
+                egui::Rect::from_min_max(egui::pos2(400.0, 231.0), egui::pos2(412.0, 311.0)),
+            ) >= 3,
+            "the overflowing article needs painted arrows, track, and thumb"
+        );
+    }
+
+    #[test]
+    fn index_scrollbar_thumb_position_tracks_the_current_row() {
+        let mut state = EncyclopediaSurfaceState::new();
+        let index = test_surface(EncyclopediaSurfaceMode::Index, Some(18));
+        let output = run_surface_frames(&mut state, &index, vec![vec![]]);
+
+        let thumb = filled_rects(&output)
+            .into_iter()
+            .find(|rect| {
+                rect.min.x == 374.0
+                    && rect.width() == 12.0
+                    && rect.height() > 20.0
+                    && rect.height() < 100.0
+            })
+            .expect("the proportional index thumb must be painted");
+        assert_eq!(thumb.min, egui::pos2(374.0, 217.0));
+        assert_eq!(thumb.max, egui::pos2(386.0, 284.0));
+    }
+
+    #[test]
+    fn index_scrollbar_track_pages_and_thumb_drags() {
+        let surface = test_surface(EncyclopediaSurfaceMode::Index, Some(1));
+
+        let mut paged = EncyclopediaSurfaceState::new();
+        let _ = run_surface_frames(&mut paged, &surface, click_frames(egui::pos2(380.0, 260.0)));
+        assert_eq!(paged.scroll_row, ORIGINAL_INDEX_VISIBLE_ROWS);
+        let _ = run_surface_frames(&mut paged, &surface, click_frames(egui::pos2(380.0, 160.0)));
+        assert_eq!(paged.scroll_row, 0);
+
+        let start = egui::pos2(380.0, 160.0);
+        let end = egui::pos2(380.0, 225.0);
+        let mut dragged = EncyclopediaSurfaceState::new();
+        let _ = run_surface_frames(
+            &mut dragged,
+            &surface,
+            vec![
+                vec![egui::Event::PointerMoved(start)],
+                vec![egui::Event::PointerMoved(start)],
+                vec![pointer_button(start, true)],
+                vec![egui::Event::PointerMoved(egui::pos2(380.0, 170.0))],
+                vec![egui::Event::PointerMoved(egui::pos2(380.0, 190.0))],
+                vec![egui::Event::PointerMoved(end)],
+                vec![pointer_button(end, false)],
+                vec![],
+            ],
+        );
+        assert_eq!(dragged.scroll_row, 7);
+    }
+
+    #[test]
+    fn topic_scrollbar_arrow_scrolls_the_article() {
+        let surface = test_surface(EncyclopediaSurfaceMode::Topic, Some(1));
+        let mut state = EncyclopediaSurfaceState::new();
+
+        let _ = run_surface_frames(&mut state, &surface, click_frames(egui::pos2(406.0, 305.0)));
+
+        assert_eq!(state.body_scroll, 14.0);
+
+        let _ = run_surface_frames(&mut state, &surface, click_frames(egui::pos2(406.0, 237.0)));
+        assert_eq!(state.body_scroll, 0.0);
+    }
+
+    #[test]
+    fn topic_header_uses_the_original_centered_title_span() {
+        let parent = egui::Rect::from_min_size(egui::pos2(58.0, 55.0), egui::vec2(470.0, 330.0));
+        let (position, alignment) = encyclopedia_topic_title_layout(parent, 1.0);
+
+        assert_eq!(position, egui::pos2(269.0, 69.0));
+        assert_eq!(alignment, egui::Align2::CENTER_TOP);
+    }
+
+    #[test]
+    fn hd_topic_pixels_render_into_the_original_logical_artwork_rect() {
+        let mut surface = test_surface(EncyclopediaSurfaceMode::Topic, Some(1));
+        surface.active_topic.as_mut().unwrap().artwork = Some(EncyclopediaArtworkView {
+            resource_id: 0x2740,
+            filename: "EDATA_064.png",
+            digest: "approved-hd",
+            width: 1600,
+            height: 800,
+            bytes: &[],
+            sampling: EncyclopediaTextureSampling::Linear,
+        });
+        let ctx = egui::Context::default();
+        crate::theme::load_fonts(&ctx);
+        let texture = ctx.load_texture(
+            "approved-hd-test",
+            egui::ColorImage::new([1, 1], Color32::WHITE),
+            TextureOptions::LINEAR,
+        );
+        let texture_id = texture.id();
+        let mut state = EncyclopediaSurfaceState::new();
+        let output = ctx.run(surface_input(vec![], 0.0), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let (window_rect, _) =
+                    ui.allocate_exact_size(egui::vec2(424.0, 320.0), egui::Sense::hover());
+                draw_surface_topic(ui, window_rect, 1.0, &mut state, &surface, Some(texture_id));
+            });
+        });
+
+        let rect = image_rect(&output, texture_id);
+        assert_eq!(rect.size(), egui::vec2(400.0, 200.0));
+    }
+
+    #[test]
+    fn production_surface_is_modal_above_retained_callers() {
+        assert_eq!(encyclopedia_surface_order(), egui::Order::Tooltip);
+    }
+
+    #[test]
+    fn category_tooltip_uses_the_original_cursor_offset() {
+        assert_eq!(
+            encyclopedia_category_tooltip_origin(egui::pos2(174.0, 148.0), 1.0),
+            egui::pos2(172.0, 164.0)
+        );
+        assert_eq!(
+            encyclopedia_category_tooltip_origin(egui::pos2(174.0, 148.0), 1.25),
+            egui::pos2(171.5, 168.0)
+        );
+    }
+
+    #[derive(Debug, Default, PartialEq, Eq)]
+    struct TextureCounts {
+        uploads: usize,
+        releases: usize,
+        last_dimensions: Option<(u32, u32)>,
+        last_sampling: Option<EncyclopediaTextureSampling>,
+    }
+
+    #[derive(Clone)]
+    struct CountingTextureBackend(Rc<RefCell<TextureCounts>>);
+
+    impl EncyclopediaTextureBackend for CountingTextureBackend {
+        type Texture = u64;
+
+        fn upload(
+            &mut self,
+            upload: EncyclopediaTextureUpload<'_>,
+        ) -> Result<Self::Texture, String> {
+            let mut counts = self.0.borrow_mut();
+            counts.uploads += 1;
+            counts.last_dimensions = Some((upload.width, upload.height));
+            counts.last_sampling = Some(upload.sampling);
+            Ok(counts.uploads as u64)
+        }
+
+        fn release(&mut self, _texture: Self::Texture) {
+            self.0.borrow_mut().releases += 1;
+        }
+    }
 
     fn synthetic_indexed_edata() -> Vec<u8> {
         const WIDTH: usize = 400;
@@ -1561,6 +3223,422 @@ mod tests {
         bytes[54 + 4..54 + 8].copy_from_slice(&[0x20, 0x80, 0xe0, 0]);
         bytes[PIXEL_OFFSET..].fill(1);
         bytes
+    }
+
+    fn artwork_view<'a>(
+        filename: &'a str,
+        digest: &'a str,
+        bytes: &'a [u8],
+    ) -> EncyclopediaArtworkView<'a> {
+        EncyclopediaArtworkView {
+            resource_id: 0x2740,
+            filename,
+            digest,
+            width: 400,
+            height: 200,
+            bytes,
+            sampling: EncyclopediaTextureSampling::Nearest,
+        }
+    }
+
+    #[test]
+    fn topic_texture_cache_hits_once_and_releases_on_resource_or_generation_change() {
+        let counts = Rc::new(RefCell::new(TextureCounts::default()));
+        let backend = CountingTextureBackend(counts.clone());
+        let mut cache = EncyclopediaTopicTextureCache::new(backend);
+        let first_bytes = synthetic_indexed_edata();
+        let second_bytes = synthetic_indexed_edata();
+        let first = artwork_view("EDATA.014", "digest-14", &first_bytes);
+        let second = artwork_view("EDATA.015", "digest-15", &second_bytes);
+
+        assert!(!cache.resolve(7, Some(&first)).unwrap().cache_hit);
+        assert!(cache.resolve(7, Some(&first)).unwrap().cache_hit);
+        assert_eq!(
+            *counts.borrow(),
+            TextureCounts {
+                uploads: 1,
+                releases: 0,
+                last_dimensions: Some((400, 200)),
+                last_sampling: Some(EncyclopediaTextureSampling::Nearest),
+            }
+        );
+
+        assert!(!cache.resolve(7, Some(&second)).unwrap().cache_hit);
+        assert_eq!(counts.borrow().uploads, 2);
+        assert_eq!(counts.borrow().releases, 1);
+
+        assert!(!cache.resolve(8, Some(&second)).unwrap().cache_hit);
+        assert_eq!(counts.borrow().uploads, 3);
+        assert_eq!(counts.borrow().releases, 2);
+
+        assert!(cache.resolve(8, None).unwrap().texture.is_none());
+        assert_eq!(counts.borrow().releases, 3);
+    }
+
+    #[test]
+    fn topic_texture_cache_invalidates_when_only_sampling_profile_changes() {
+        let counts = Rc::new(RefCell::new(TextureCounts::default()));
+        let backend = CountingTextureBackend(counts.clone());
+        let mut cache = EncyclopediaTopicTextureCache::new(backend);
+        let bytes = synthetic_indexed_edata();
+        let nearest = artwork_view("EDATA.014", "same-digest", &bytes);
+        let mut linear = nearest;
+        linear.sampling = EncyclopediaTextureSampling::Linear;
+
+        assert!(!cache.resolve(7, Some(&nearest)).unwrap().cache_hit);
+        assert!(!cache.resolve(7, Some(&linear)).unwrap().cache_hit);
+        assert_eq!(counts.borrow().uploads, 2);
+        assert_eq!(counts.borrow().releases, 1);
+        assert_eq!(
+            counts.borrow().last_sampling,
+            Some(EncyclopediaTextureSampling::Linear)
+        );
+    }
+
+    #[test]
+    fn topic_texture_cache_drop_releases_the_retained_handle() {
+        let counts = Rc::new(RefCell::new(TextureCounts::default()));
+        let bytes = synthetic_indexed_edata();
+        let artwork = artwork_view("EDATA.014", "digest-14", &bytes);
+
+        {
+            let backend = CountingTextureBackend(counts.clone());
+            let mut cache = EncyclopediaTopicTextureCache::new(backend);
+            assert!(cache.resolve(7, Some(&artwork)).unwrap().texture.is_some());
+            assert_eq!(counts.borrow().uploads, 1);
+            assert_eq!(counts.borrow().releases, 0);
+        }
+
+        assert_eq!(counts.borrow().releases, 1);
+    }
+
+    #[test]
+    fn topic_texture_cache_rejects_a_single_dimension_mismatch_before_upload() {
+        let counts = Rc::new(RefCell::new(TextureCounts::default()));
+        let backend = CountingTextureBackend(counts.clone());
+        let mut cache = EncyclopediaTopicTextureCache::new(backend);
+        let bytes = synthetic_indexed_edata();
+        let mut artwork = artwork_view("EDATA.014", "digest-14", &bytes);
+        artwork.height = 199;
+
+        let error = match cache.resolve(7, Some(&artwork)) {
+            Ok(_) => panic!("a height mismatch must be rejected"),
+            Err(error) => error,
+        };
+
+        assert!(error.contains("400x200 do not match validated 400x199"));
+        assert_eq!(counts.borrow().uploads, 0);
+        assert_eq!(counts.borrow().releases, 0);
+    }
+
+    #[test]
+    fn topic_changes_reset_body_scroll_while_stable_frames_preserve_it() {
+        let mut state = EncyclopediaSurfaceState::new();
+        state.body_scroll = 80.0;
+
+        state.reconcile_active_topic(7, Some(11));
+        assert_eq!(state.body_scroll, 0.0);
+        state.body_scroll = 40.0;
+        state.reconcile_active_topic(7, Some(11));
+        assert_eq!(state.body_scroll, 40.0);
+
+        state.reconcile_active_topic(7, Some(12));
+        assert_eq!(state.body_scroll, 0.0);
+        state.body_scroll = 20.0;
+        state.reconcile_active_topic(8, Some(12));
+        assert_eq!(state.body_scroll, 0.0);
+    }
+
+    #[test]
+    fn authentic_surface_consumes_keys_only_while_its_mode_child_owns_focus() {
+        let categories = vec![
+            EncyclopediaSurfaceCategory {
+                command_id: 0x6f,
+                label_resource_id: 0x1850,
+                label: "All",
+                topic_count: 1,
+            },
+            EncyclopediaSurfaceCategory {
+                command_id: 0x70,
+                label_resource_id: 0x1855,
+                label: "Systems",
+                topic_count: 1,
+            },
+        ];
+        let surface = EncyclopediaSurface {
+            texture_generation: 7,
+            title: "Galactic Encyclopedia",
+            topic_label: "Topic",
+            audience: EncyclopediaSurfaceAudience::Alliance,
+            mode: EncyclopediaSurfaceMode::Index,
+            category: categories[0],
+            categories,
+            topics: vec![EncyclopediaSurfaceTopicItem {
+                object_id: 11,
+                title: "Abregado-rae",
+                availability: EncyclopediaSurfaceAvailability::Resolved,
+            }],
+            active_topic: None,
+            navigation: EncyclopediaSurfaceNavigation {
+                selected_object_id: Some(11),
+                previous_object_id: None,
+                next_object_id: None,
+            },
+        };
+        let ctx = egui::Context::default();
+        crate::theme::load_fonts(&ctx);
+        let mut state = EncyclopediaSurfaceState::new();
+        let mut cache = BmpCache::new();
+        let focus_id = surface_keyboard_focus_id(EncyclopediaSurfaceMode::Index);
+
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            assert_eq!(
+                draw_encyclopedia_surface(
+                    ctx,
+                    &mut cache,
+                    egui::Pos2::ZERO,
+                    1.0,
+                    &mut state,
+                    &surface,
+                ),
+                None
+            );
+        });
+        assert!(ctx.memory(|memory| memory.has_focus(focus_id)));
+
+        let key_input = || egui::RawInput {
+            events: vec![egui::Event::Key {
+                key: egui::Key::ArrowRight,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            }],
+            ..Default::default()
+        };
+        let unrelated = egui::Id::new("unrelated-encyclopedia-test-widget");
+        let mut unfocused_action = None;
+        let mut unfocused_key_remained = false;
+        let _ = ctx.run(key_input(), |ctx| {
+            ctx.memory_mut(|memory| memory.request_focus(unrelated));
+            unfocused_action = draw_encyclopedia_surface(
+                ctx,
+                &mut cache,
+                egui::Pos2::ZERO,
+                1.0,
+                &mut state,
+                &surface,
+            );
+            unfocused_key_remained = ctx.input(|input| input.key_pressed(egui::Key::ArrowRight));
+        });
+        assert_eq!(unfocused_action, None);
+        assert!(unfocused_key_remained);
+        assert!(ctx.memory(|memory| memory.has_focus(unrelated)));
+
+        let mut focused_action = None;
+        let mut focused_key_remained = true;
+        let _ = ctx.run(key_input(), |ctx| {
+            ctx.memory_mut(|memory| memory.request_focus(focus_id));
+            focused_action = draw_encyclopedia_surface(
+                ctx,
+                &mut cache,
+                egui::Pos2::ZERO,
+                1.0,
+                &mut state,
+                &surface,
+            );
+            focused_key_remained = ctx.input(|input| input.key_pressed(egui::Key::ArrowRight));
+        });
+        assert_eq!(
+            focused_action,
+            Some(EncyclopediaSurfaceAction::SelectCategory(0x70))
+        );
+        assert!(!focused_key_remained);
+
+        let unselected_surface = EncyclopediaSurface {
+            navigation: EncyclopediaSurfaceNavigation {
+                selected_object_id: None,
+                previous_object_id: None,
+                next_object_id: None,
+            },
+            ..surface
+        };
+        let enter = egui::RawInput {
+            events: vec![egui::Event::Key {
+                key: egui::Key::Enter,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            }],
+            ..Default::default()
+        };
+        let mut unselected_action = None;
+        let _ = ctx.run(enter, |ctx| {
+            ctx.memory_mut(|memory| memory.request_focus(focus_id));
+            unselected_action = draw_encyclopedia_surface(
+                ctx,
+                &mut cache,
+                egui::Pos2::ZERO,
+                1.0,
+                &mut state,
+                &unselected_surface,
+            );
+        });
+        assert_eq!(unselected_action, None);
+    }
+
+    #[test]
+    fn authentic_keyboard_actions_keep_index_and_topic_edge_rules_distinct() {
+        let categories = [0x6f, 0x70, 0x71, 0x72, 0x73, 0x74, 0x75];
+
+        assert_eq!(
+            encyclopedia_keyboard_action(
+                EncyclopediaSurfaceMode::Index,
+                EncyclopediaSurfaceKey::Left,
+                &categories,
+                0x6f,
+                Some(0x1400_0001),
+                None,
+                None,
+            ),
+            Some(EncyclopediaSurfaceAction::SelectCategory(0x6f))
+        );
+        assert_eq!(
+            encyclopedia_keyboard_action(
+                EncyclopediaSurfaceMode::Index,
+                EncyclopediaSurfaceKey::Left,
+                &categories,
+                0x73,
+                Some(0x1400_0001),
+                None,
+                None,
+            ),
+            Some(EncyclopediaSurfaceAction::SelectCategory(0x72))
+        );
+        assert_eq!(
+            encyclopedia_keyboard_action(
+                EncyclopediaSurfaceMode::Index,
+                EncyclopediaSurfaceKey::Right,
+                &categories,
+                0x75,
+                Some(0x1400_0001),
+                None,
+                None,
+            ),
+            Some(EncyclopediaSurfaceAction::SelectCategory(0x6f))
+        );
+        assert_eq!(
+            encyclopedia_keyboard_action(
+                EncyclopediaSurfaceMode::Index,
+                EncyclopediaSurfaceKey::Enter,
+                &categories,
+                0x71,
+                Some(0x1400_0001),
+                None,
+                None,
+            ),
+            Some(EncyclopediaSurfaceAction::OpenTopic(0x1400_0001))
+        );
+        assert_eq!(
+            encyclopedia_keyboard_action(
+                EncyclopediaSurfaceMode::Topic,
+                EncyclopediaSurfaceKey::Left,
+                &categories,
+                0x71,
+                Some(0x1400_0001),
+                None,
+                Some(0x1400_0002),
+            ),
+            None
+        );
+        assert_eq!(
+            encyclopedia_keyboard_action(
+                EncyclopediaSurfaceMode::Topic,
+                EncyclopediaSurfaceKey::Right,
+                &categories,
+                0x71,
+                Some(0x1400_0001),
+                None,
+                Some(0x1400_0002),
+            ),
+            Some(EncyclopediaSurfaceAction::OpenTopic(0x1400_0002))
+        );
+        assert_eq!(
+            encyclopedia_keyboard_action(
+                EncyclopediaSurfaceMode::Topic,
+                EncyclopediaSurfaceKey::Escape,
+                &categories,
+                0x71,
+                Some(0x1400_0001),
+                None,
+                None,
+            ),
+            Some(EncyclopediaSurfaceAction::Close)
+        );
+    }
+
+    #[test]
+    fn authentic_index_list_keys_are_bounded_and_page_by_visible_rows() {
+        let topics = [11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21];
+
+        assert_eq!(
+            encyclopedia_index_list_action(EncyclopediaSurfaceKey::Up, &topics, Some(11)),
+            Some(EncyclopediaSurfaceAction::SelectTopic(11))
+        );
+        assert_eq!(
+            encyclopedia_index_list_action(EncyclopediaSurfaceKey::Down, &topics, Some(11)),
+            Some(EncyclopediaSurfaceAction::SelectTopic(12))
+        );
+        assert_eq!(
+            encyclopedia_index_list_action(EncyclopediaSurfaceKey::PageDown, &topics, Some(11)),
+            Some(EncyclopediaSurfaceAction::SelectTopic(20))
+        );
+        assert_eq!(
+            encyclopedia_index_list_action(EncyclopediaSurfaceKey::PageUp, &topics, Some(21)),
+            Some(EncyclopediaSurfaceAction::SelectTopic(12))
+        );
+        assert_eq!(
+            encyclopedia_index_list_action(EncyclopediaSurfaceKey::Home, &topics, Some(17)),
+            Some(EncyclopediaSurfaceAction::SelectTopic(11))
+        );
+        assert_eq!(
+            encyclopedia_index_list_action(EncyclopediaSurfaceKey::End, &topics, None),
+            Some(EncyclopediaSurfaceAction::SelectTopic(21))
+        );
+    }
+
+    #[test]
+    fn authentic_topic_controls_use_recovered_faction_geometry_and_endpoint_resources() {
+        let alliance = encyclopedia_topic_controls(crate::cockpit::CockpitFaction::Alliance);
+        assert_eq!(
+            alliance.map(|control| (
+                control.command_id,
+                control.x,
+                control.y,
+                control.width,
+                control.height,
+                control.normal_resource,
+                control.pressed_resource,
+                control.disabled_resource,
+            )),
+            [
+                (0x83, 28, 14, 21, 17, 10_385, 10_386, Some(10_387)),
+                (0x84, 380, 14, 21, 17, 10_382, 10_383, Some(10_384)),
+            ]
+        );
+        let empire_rail = encyclopedia_rail_controls_for_mode(
+            crate::cockpit::CockpitFaction::Empire,
+            EncyclopediaSurfaceMode::Topic,
+        );
+        assert_eq!(
+            empire_rail.map(|control| (control.command_id, control.x, control.y, control.selected)),
+            [
+                (0xfb, 426, 21, false),
+                (0x67, 426, 89, true),
+                (0x68, 426, 143, false)
+            ]
+        );
     }
 
     #[test]

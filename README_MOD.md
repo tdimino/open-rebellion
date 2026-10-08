@@ -42,6 +42,46 @@ cargo build -p dat-dumper --release
 Both `data/base/json/` and the game data itself are gitignored — this is
 local reference material, not something to commit.
 
+### Stage the Encyclopedia source profile
+
+The production Encyclopedia uses the supported owned English `ENCYTEXT.DLL`
+and `ENCYBMAP.DLL` profile plus the selected DAT files. Keep all generated
+source data and original artwork ignored:
+
+```bash
+OWNED_INSTALL="/path/to/owned-install"
+
+# Stages the normal runtime assets and the canonical Encyclopedia source.
+# MDATA and EData are always resolved beneath GAME_SOURCE.
+make stage-assets GAME_SOURCE="$OWNED_INSTALL"
+
+# Read-only: checks every staged output without reopening the owned install.
+make verify-assets
+
+# data/base must already contain the selected DAT/TEXTSTRA/UI inputs.
+REBELLION_EDATA_DIR="$OWNED_INSTALL/EData" bash scripts/build-wasm.sh
+REBELLION_EDATA_DIR="$OWNED_INSTALL/EData" bash scripts/package-web.sh dev
+```
+
+The stage writes `data/base/encyclopedia/source.json` and
+`source.json.manifest.json`. The sidecar is generated provenance: do not edit
+hashes to repair a mismatch. Restage from the same owned DLL/DAT/EData profile.
+A differing generated output requires the extractor's explicit `--force` flag;
+verification is read-only. Browser production builds require the complete
+canonical source and exact referenced EData, whereas browser mods remain
+deliberately unsupported.
+
+An Encyclopedia overlay selects the compound catalog object ID, not a slotmap
+key. For ordinary DAT records the ID is `(family_id << 24) | id`; if the DAT
+ID already has a high byte, retain it unchanged. After finding `family_id` and
+`id` in the corresponding JSON reference dump, this prints the selector:
+
+```bash
+FAMILY_ID=0x14
+DAT_ID=64
+printf '0x%08x\n' "$(( (FAMILY_ID << 24) | DAT_ID ))"
+```
+
 ### Finding an entity's `dat_id`
 
 Open the relevant JSON file and find your entity by name, cross-referencing
@@ -130,15 +170,69 @@ Rules:
 See the worked example at `mods/examples/star-destroyer-rebalance/` — it
 raises the Imperial Star Destroyer's hull to 3000 and shields to 2000.
 
+### Encyclopedia text and artwork overlays
+
+Native mods reserve one presentation-only root file, `encyclopedia.json`; it
+never enters `GameWorld`, saves, replay, or simulation fingerprints:
+
+```text
+mods/my-encyclopedia-mod/
+├── mod.toml
+├── encyclopedia.json
+└── encyclopedia/
+    └── assets/
+        └── cruiser.bmp
+```
+
+```json
+[
+  {
+    "id": 335544384,
+    "title": "Contributor cruiser",
+    "body": "Contributor-authored replacement text.",
+    "image": {"path": "encyclopedia/assets/cruiser.bmp"}
+  }
+]
+```
+
+The default action is `patch`: absent fields inherit the lower layer, values
+replace it, and `null` requests removal where the complete effective topic
+remains valid. Empty title/body strings are invalid. `replace` requires title,
+body, and image; `add` also requires a new supported non-system object ID and a
+unique nonzero `text_resource_id`; `remove` accepts only `id`. Existing text
+resource IDs are immutable.
+
+Artwork paths must stay below `encyclopedia/assets/`, contain only safe ASCII
+segments, and end in lowercase `.bmp`. Files must be regular, non-symlinked,
+400-by-200 uncompressed 8-bit indexed BMPs. The runtime derives hashes and the
+`mod:v1:...` identity from the retained bytes; authors do not provide either.
+Encyclopedia mod names must be 1–128 ASCII letters, digits, `.`, `_`, or `-`.
+
+The base source manifest remains immutable. Enabled overlays apply in the
+shared dependency-first order; unrelated ready mods use lexical name order and
+later layers win per field. A malformed JSON file, missing artwork, unsafe
+path, dependency error, or invalid final session rejects the whole candidate
+and keeps the last-known-good publication. Fix the files and choose **Reload
+Mods** to retry. Disabling the mod rebuilds from the immutable base plus the
+remaining enabled layers, restoring original content when none remain.
+
+The supported base profile is English language 1033. This overlay format does
+not invent per-language records or aliases. Browser builds consume the
+unmodified staged base and do not discover native mod directories. The lower
+level loader has an explicit catalog-root adapter, but the application does
+not read a `REBELLION_ENCYCLOPEDIA_DIR` environment override; use the selected
+DAT root's implemented `encyclopedia/source.json` layout.
+
 ## 5. Installing and testing
 
 1. Drop your mod directory under `mods/`.
 2. Launch the game — mods are auto-discovered on startup.
 3. Press **Tab** to open the Mod Manager panel and enable your mod (or edit
    `mods/config.toml` directly: `enabled = ["my-mod"]`).
-4. **Native builds only**: editing an enabled mod's files hot-reloads it
-   immediately, no restart needed (`ModWatcher`, backed by `notify`). This
-   doesn't work in the browser/WASM build yet.
+4. **Native builds only**: world overlays can hot-reload through `ModWatcher`.
+   After editing `encyclopedia.json` or its artwork, choose **Reload Mods** so
+   the complete candidate is reacquired and validated atomically. Browser/WASM
+   builds do not load filesystem mods.
 
 Load order is dependency-first: if mod B depends on mod A, A's patches apply
 before B's, and B can override anything A set for the same entity/field.

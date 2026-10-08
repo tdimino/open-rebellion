@@ -4,6 +4,10 @@ P66A establishes the fail-closed source-data contract needed by the authentic
 Galactic Encyclopedia topic view. It does not enable the cockpit route or
 claim a visible `OBJ-01` state.
 
+> Corrected 2026-10-08 by P68: the ten records previously described as
+> source-empty topics are gameplay-only or hidden mission records excluded by
+> the original collection builder. All 346 visible topics bind completely.
+
 ## Recovered identity rules
 
 The implementation follows the original executable rather than matching names
@@ -19,6 +23,14 @@ or list positions:
 - `FUN_0045fd20` disables previous or next when the selected source object has
   no corresponding neighbor. The exact native neighbor order still requires a
   separate trace and is not inferred from the P65 alphabetical index.
+
+Later checkpoint note (2026-10-06): W3 uses a subsequent trace of
+`FUN_0060a790`, `FUN_0060a890`, `FUN_00626ad0`, `FUN_005f59f0`,
+`FUN_00442130`, `FUN_004ad730`, `FUN_004ad750`, and `FUN_0045da70` to establish
+case-folded list ordering, skip-disabled neighbors, and null endpoint behavior.
+The [W3 evidence](2026-10-06-encyclopedia-presenter.md) records that result and
+the bounded equal-fold tie distinction; it does not retroactively expand this
+P66A extraction checkpoint.
 
 ## Extraction and validation
 
@@ -50,21 +62,22 @@ under ignored `data/base/` or another operator-selected output path.
 
 ## Object coverage
 
-`rebellion-data::encyclopedia_topics` joins the staged source to P65's 356
+`rebellion-data::encyclopedia_topics` joins the staged source to the corrected 346
 compound object identities. The join is deterministic for both factions:
 
 | Result | Alliance | Empire |
 |---|---:|---:|
 | Complete text and artwork mapping | 346 | 346 |
-| Missing text | 10 | 10 |
-| Missing artwork mapping | 10 | 10 |
+| Missing text | 0 | 0 |
+| Missing artwork mapping | 0 | 0 |
 | Invalid or missing system-picture mapping | 0 | 0 |
 | Distinct bound artwork files | 172 | 172 |
 
-The same ten internal/special mission records lack both source resources:
+The following ten gameplay-only or hidden mission records are excluded before
+binding because they are not visible Encyclopedia topics:
 Adrift, Autorouting, Bounty, Dagobah, Move, Palace, Pickup, Return, Sabbatical,
-and Vacation. P66A exposes those missing parts explicitly. It does not borrow
-another topic, generate lore, or guess an image. Two source prose records
+and Vacation. P68 retains their identities in audit provenance rather than
+borrowing another topic, generating lore, or guessing an image. Two source prose records
 (`7176`, obsolete-mission diagnostic; `7427`, generic fleet text) and four
 artwork lookup records (`7188`, `7427`, `11284`, `11523`) are not bound to the
 supported P65 objects and remain reported rather than silently reassigned.
@@ -86,7 +99,7 @@ The machine-readable inventory is
 | Workspace tests | pass |
 | Production WASM build | pass; existing missing-local-media warnings only |
 | Owned extraction and offline verify | pass; 348 texts and 191 mappings |
-| Two-faction source audit | pass; 346 complete and 10 explicit missing per faction |
+| Two-faction source audit | pass; 346 complete and zero missing visible bindings per faction |
 | EDATA filename cross-check | pass; 186 of 186 mapped filenames present |
 | Independent source/code review | pass after all findings were corrected; final review reported no P0/P1 and its P2 documentation plus P3 test-coverage cleanup were also corrected |
 
@@ -112,8 +125,8 @@ git diff --check
 
 Here `$ORIGINAL` is the operator's owned English installation root. The two
 stager invocations each report 348 texts and 191 mappings. The audit reports
-356 index entries; 346 complete topics, ten missing texts, ten missing artwork
-mappings, zero missing system pictures, and 172 distinct bound artwork files
+346 visible index entries; 346 complete topics, zero missing text or artwork
+bindings, zero missing system pictures, and 172 distinct bound artwork files
 for each faction; exactly 186 mapped EData names are present in the 187-file
 owned directory; and only `EDATA.192` is unbound. Focused Rust tests report five
 topic-binding tests and one fail-closed audit-gate test passing. Scoped Clippy,
@@ -123,7 +136,7 @@ check pass.
 ## Acceptance boundary
 
 P66A proves local extraction, decoding, resource identity, system-picture
-mapping, factional mission-art selection, and explicit missing-source behavior.
+mapping, factional mission-art selection, and complete visible-source behavior.
 It does not yet transport this catalog in
 the browser pack, compose the topic window, render text or EDATA, enable
 previous/next controls, connect contextual or cockpit routes, prove other

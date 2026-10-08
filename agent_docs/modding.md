@@ -3,13 +3,16 @@ title: "Mod System"
 description: "TOML manifest + JSON overlay mod system with directory layout and hot reload"
 category: "agent-docs"
 created: 2026-03-15
-updated: 2026-03-16
+updated: 2026-10-07
 tags: [modding, toml, semver, merge-patch]
 ---
 
 # Mod System
 
-Open Rebellion supports user mods via a TOML manifest + JSON overlay system. Implementation: `crates/rebellion-data/src/mods.rs` (637 LOC, 15 tests).
+Open Rebellion supports user mods via a TOML manifest and JSON overlay system.
+World overlays are implemented in `crates/rebellion-data/src/mods.rs`; native
+Encyclopedia presentation overlays use the same manifests and dependency order
+without entering `GameWorld` or campaign saves.
 
 ## Directory Layout
 
@@ -56,10 +59,74 @@ Each `.json` file in the mod directory patches one entity category. `ModRuntime:
 ```
 
 Rules (per RFC 7396):
+
 - `"id"` field required — matches entity's `dat_id` numeric value
 - Present values **overwrite** the target field
 - `null` values **delete** the target field
 - Absent fields are **preserved unchanged**
+
+The reserved root filename `encyclopedia.json` is not a world arena. It is
+parsed by the native Encyclopedia content path described below.
+
+## Encyclopedia Overlay (Native Only)
+
+An enabled mod may provide `encyclopedia.json` and referenced bitmap files:
+
+```text
+mods/my-encyclopedia-mod/
+├── mod.toml
+├── encyclopedia.json
+└── encyclopedia/assets/my-cruiser.bmp
+```
+
+```json
+[
+  {
+    "id": 335544384,
+    "title": "Renamed cruiser"
+  },
+  {
+    "id": 335544385,
+    "action": "add",
+    "text_resource_id": 10049,
+    "title": "Escort frigate",
+    "body": "Author-supplied description.",
+    "image": {"path": "encyclopedia/assets/escort.bmp"}
+  }
+]
+```
+
+Each object selects one numeric Encyclopedia object ID. Fields distinguish
+three states: an absent field inherits the lower layer, a value replaces it,
+and `null` explicitly removes it where the complete session remains legal.
+Unknown fields, duplicate selectors, unsafe paths, and invalid candidates are
+rejected.
+
+Supported actions are:
+
+- `patch` (the default): update only present `title`, `body`, or `image` fields;
+- `replace`: require replacement values for `title`, `body`, and `image`;
+- `add`: create a new topic in a supported non-system family, requiring a new
+  object ID, unique nonzero `text_resource_id`, title, body, and image;
+- `remove`: remove the whole selected topic and include no replacement fields.
+
+An existing topic's `text_resource_id` is immutable, and a title cannot be
+removed. Explicitly removing body or image is accepted only when the resulting
+topic is one of the source-approved empty records; every layer must produce a
+complete valid session before the next layer is considered.
+
+Image paths must remain beneath `encyclopedia/assets/`, use a lowercase `.bmp`
+extension, and traverse no symlink. The referenced file must be a regular
+400-by-200 uncompressed 8-bit indexed BMP. Inputs are bounded to 16 MiB for the
+overlay, 32 MiB per image, 128 MiB of retained images per mod, and 10,000 topic
+patches.
+
+The native runtime validates the immutable base first, applies enabled layers
+in the shared dependency order, and publishes the complete candidate in one
+atomic session swap. Later layers win per field. Any dependency, JSON, artwork,
+or final-session error preserves the last-known-good session; disabling all
+layers rebuilds the exact base. Browser builds intentionally use the staged
+base catalog and do not load filesystem mods.
 
 ## Load Order
 
@@ -70,6 +137,7 @@ Mods are sorted topologically via Kahn's algorithm:
    - All declared dependencies must exist in the discovered set
    - Installed versions must satisfy semver requirements
    - No dependency cycles allowed (detected via in-degree analysis)
+   - Ready mods with no ordering relationship use a lexicographic name tie-break
    - Returns manifests in dependency-first order
 
 Load sequence: base game data → mods in resolved order. Later mods can override entities set by earlier mods.
@@ -94,7 +162,8 @@ On WASM targets, `ModWatcher` is a no-op stub. Browser mod loading would use a f
 | Type | Purpose |
 |------|---------|
 | `ModManifest` | Parsed `mod.toml` — name, version, author, description, dependencies, enabled |
-| `ModContent` | `HashMap<String, Vec<Value>>` — entity type → patch objects from JSON files |
+| `ModContent` | World patch map plus a separately retained reserved Encyclopedia target |
+| `ModContentTarget` | Missing, bounded bytes, or a retained read error for `encyclopedia.json` |
 | `ModLoader` | Stateless namespace: `discover()`, `resolve_load_order()`, `apply()` |
 | `ModWatcher` | File system watcher (native) / no-op (WASM) |
 | `ModRuntime` | Runtime orchestrator: discover, validate, apply enabled, toggle, refresh |
@@ -104,8 +173,8 @@ On WASM targets, `ModWatcher` is a no-op stub. Browser mod loading would use a f
 
 ## Integration Points
 
-1. **Startup**: `load_game_data()` calls `ModRuntime::discover()` + `apply_enabled()` after base DAT loading
-2. **UI**: `init_mod_runtime(gdata_path)` returns `Option<ModRuntime>` for the Mod Manager panel
+1. **Startup**: the app discovers one `ModRuntime`, resolves one enabled order, and feeds it to world and native Encyclopedia consumers after base loading
+2. **UI**: the Mod Manager toggles the persisted enabled set; native Encyclopedia content is rebuilt from its immutable base
 3. **Save**: `ModRuntime::enabled_mod_list()` provides (name, version) pairs for save metadata
 4. **Hot reload**: `ModRuntime::check_reload(&watcher)` checked each tick (native only)
 
@@ -117,4 +186,5 @@ For full runtime details see `agent_docs/mod-runtime.md`.
 2. Add JSON overlay files named after entity categories
 3. Each overlay is an array of patch objects with `"id"` matching `dat_id`
 4. Test: run the game — mod loader auto-discovers and applies on startup
-5. On native: edits to mod files trigger hot reload automatically
+5. Use the Mod Manager reload action after editing files; filesystem-watcher
+   recovery for the complete Encyclopedia authoring loop remains W8 work

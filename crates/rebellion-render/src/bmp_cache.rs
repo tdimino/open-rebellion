@@ -176,22 +176,101 @@ struct HdApprovalGates {
 #[derive(Debug, Deserialize)]
 struct HdApprovalSource {
     sha256: String,
+    width: Option<u32>,
+    height: Option<u32>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Debug, Deserialize)]
 struct HdApprovalOutput {
     sha256: String,
+    width: Option<u32>,
+    height: Option<u32>,
+    format: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ApprovedHdAsset {
+pub struct ApprovedHdAsset {
     source_sha256: String,
     output_sha256: String,
+    source_dimensions: Option<(u32, u32)>,
+    output_dimensions: Option<(u32, u32)>,
+    output_format: Option<String>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub(crate) fn approved_hd_assets_from_bytes(
+impl ApprovedHdAsset {
+    /// Verify exact original bytes against the reviewed source digest.
+    pub fn validate_source_bytes(&self, bytes: &[u8]) -> Result<(), String> {
+        validate_retained_digest(bytes, &self.source_sha256, "HD source")
+    }
+
+    /// Require manifest source dimensions to match the validated original.
+    pub fn validate_source_dimensions(&self, width: u32, height: u32) -> Result<(), String> {
+        match self.source_dimensions {
+            Some(observed) if observed == (width, height) => Ok(()),
+            Some(observed) => Err(format!(
+                "HD source dimensions {}x{} do not match validated {width}x{height}",
+                observed.0, observed.1
+            )),
+            None => Err("HD source dimensions are missing from the approval".to_owned()),
+        }
+    }
+
+    /// Verify exact replacement bytes against the reviewed output digest.
+    pub fn validate_output_bytes(&self, bytes: &[u8]) -> Result<(), String> {
+        validate_retained_digest(bytes, &self.output_sha256, "HD output")
+    }
+
+    /// Decode a reviewed PNG and require exact faithful-HD 4x dimensions.
+    pub fn validate_encyclopedia_output_dimensions(
+        &self,
+        bytes: &[u8],
+        source_width: u32,
+        source_height: u32,
+    ) -> Result<(u32, u32), String> {
+        if self.output_format.as_deref() != Some("png") {
+            return Err("HD output format must be png".to_owned());
+        }
+        let expected = (
+            source_width
+                .checked_mul(4)
+                .ok_or_else(|| "HD output width overflow".to_owned())?,
+            source_height
+                .checked_mul(4)
+                .ok_or_else(|| "HD output height overflow".to_owned())?,
+        );
+        match self.output_dimensions {
+            Some(observed) if observed == expected => {}
+            Some(observed) => {
+                return Err(format!(
+                    "HD manifest output dimensions {}x{} do not match required {}x{}",
+                    observed.0, observed.1, expected.0, expected.1
+                ));
+            }
+            None => return Err("HD output dimensions are missing from the approval".to_owned()),
+        }
+        let decoded = image::load_from_memory_with_format(bytes, image::ImageFormat::Png)
+            .map_err(|error| format!("HD output is not a valid PNG: {error}"))?;
+        let observed = (decoded.width(), decoded.height());
+        if observed != expected {
+            return Err(format!(
+                "decoded HD output dimensions {}x{} do not match required {}x{}",
+                observed.0, observed.1, expected.0, expected.1
+            ));
+        }
+        Ok(observed)
+    }
+
+    /// Reviewed output digest used as the selected texture identity.
+    #[must_use]
+    pub fn output_sha256(&self) -> &str {
+        &self.output_sha256
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn approved_hd_assets_from_bytes(
     bytes: &[u8],
 ) -> Result<HashMap<String, ApprovedHdAsset>, String> {
     let manifest: HdApprovalManifest =
@@ -253,6 +332,9 @@ pub(crate) fn approved_hd_assets_from_bytes(
             ApprovedHdAsset {
                 source_sha256: source_digest,
                 output_sha256: output_digest,
+                source_dimensions: source.width.zip(source.height),
+                output_dimensions: output.width.zip(output.height),
+                output_format: output.format.map(|format| format.to_ascii_lowercase()),
             },
         );
     }
@@ -262,6 +344,18 @@ pub(crate) fn approved_hd_assets_from_bytes(
 #[cfg(not(target_arch = "wasm32"))]
 fn is_sha256(value: &str) -> bool {
     value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn validate_retained_digest(bytes: &[u8], expected: &str, label: &str) -> Result<(), String> {
+    let actual = format!("{:x}", Sha256::digest(bytes));
+    if actual == expected {
+        Ok(())
+    } else {
+        Err(format!(
+            "{label} digest mismatch: expected {expected}, observed {actual}"
+        ))
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -1767,6 +1861,7 @@ fn uses_blue_screen_transparency(source: DllSource, resource_id: u32) -> bool {
                     ..=resources::strategy::SECTOR_PLANET_LAST
                 | resources::strategy::SECTOR_PLANET_SPECIAL_FIRST
                     ..=resources::strategy::SECTOR_PLANET_SPECIAL_LAST
+                | 10382..=10387
                 // The Fleet window's frames, pictures and indicators, the
                 // Defenses window's tabs and row frames, the Missions
                 // window's row frames and tabs (buttons blit keyed,
@@ -2045,6 +2140,9 @@ mod tests {
                     .to_string(),
                 output_sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
                     .to_string(),
+                source_dimensions: None,
+                output_dimensions: None,
+                output_format: None,
             })
         );
         assert!(!approved.contains_key("common-dll/10002"));
@@ -2091,6 +2189,9 @@ mod tests {
                     .to_string(),
                 output_sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
                     .to_string(),
+                source_dimensions: None,
+                output_dimensions: None,
+                output_format: None,
             },
         );
 
@@ -2118,6 +2219,9 @@ mod tests {
                 .to_string(),
             output_sha256: "3608bca1e44ea6c4d268eb6db02260269892c0b42b86bbf1e77a6fa16c3c9282"
                 .to_string(),
+            source_dimensions: None,
+            output_dimensions: None,
+            output_format: None,
         };
         assert_eq!(
             validated_hd_bytes(&source, &output, &approval),
@@ -2182,6 +2286,32 @@ mod tests {
 
         assert_eq!(decoded.pixels[0].a(), 0);
         assert_eq!(decoded.pixels[1].a(), 255);
+    }
+
+    #[test]
+    fn encyclopedia_topic_controls_key_the_blue_matte_but_keep_fill_and_shadow() {
+        // STRATEGY 10382..10387 use pure palette blue as the transparent
+        // control matte. The enabled arrow fill and dark drop shadow are
+        // authored pixels and must remain opaque.
+        let mut image = image::RgbaImage::new(3, 1);
+        image.put_pixel(0, 0, image::Rgba([0, 0, 255, 255]));
+        image.put_pixel(1, 0, image::Rgba([30, 62, 166, 255]));
+        image.put_pixel(2, 0, image::Rgba([0, 0, 0, 255]));
+
+        let mut encoded = Vec::new();
+        image::DynamicImage::ImageRgba8(image)
+            .write_to(
+                &mut std::io::Cursor::new(&mut encoded),
+                image::ImageFormat::Png,
+            )
+            .unwrap();
+
+        for resource_id in 10_382..=10_387 {
+            let decoded = decode_color_image(&encoded, DllSource::Strategy, resource_id).unwrap();
+            assert_eq!(decoded.pixels[0].a(), 0, "resource {resource_id}");
+            assert_eq!(decoded.pixels[1].a(), 255, "resource {resource_id}");
+            assert_eq!(decoded.pixels[2].a(), 255, "resource {resource_id}");
+        }
     }
 
     #[test]

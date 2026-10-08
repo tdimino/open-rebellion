@@ -3,7 +3,7 @@ title: "Full Functionality Audit Index"
 description: "Entry point for the September 2026 Open Rebellion functionality, parity, and bitmap audit"
 category: qa
 created: 2026-09-08
-updated: 2026-09-28
+updated: 2026-10-06
 tags: [qa, audit, functionality, parity, bitmap, astra, fable]
 ---
 
@@ -90,8 +90,13 @@ acceptance plan required before the project can claim 100% functionality.
 | [Encyclopedia artwork transport proof](../2026-09-10-interface-parity-audit/evidence/2026-09-28-encyclopedia-artwork-transport.md) | All 187 owned original EDATA images validate and travel through native/WASM caches; one native-size browser image matches all 80,000 source pixels while authentic `OBJ-01` windows remain open. |
 | [Corrected Message Index-shell proof](../2026-09-10-interface-parity-audit/evidence/2026-09-28-message-index-shell.md) | Both source-recovered faction shells and all ten normal/held message-category controls pass 24 exact browser comparisons and independent visual review; populated behavior, production routing, and `CMD-08` acceptance remain open. |
 | [Encyclopedia index-shell proof](../2026-09-10-interface-parity-audit/evidence/2026-09-30-encyclopedia-index-shell.md) | Both source-recovered faction shells, seven selected categories, rail states, native clipping, and native input rejection and capture pass 32 exact browser comparisons; catalog content, topic pages, production routing, and `OBJ-01` remain open. |
-| [Encyclopedia index-catalog proof](../2026-09-10-interface-parity-audit/evidence/2026-09-30-encyclopedia-index-catalog.md) | All 356 source entries, seven English TEXTSTRA labels and family filters, stable selection, scrolling, and the selected-category no-op pass a 22-state two-faction browser checkpoint; topic pages, production routing, A0, and `OBJ-01` remain open. |
-| [Encyclopedia topic-source proof](../2026-09-10-interface-parity-audit/evidence/2026-10-01-encyclopedia-topic-source-bindings.md) | Strict local extraction yields 348 prose records and 191 image mappings; exact lookup rules bind 346 topics per faction and expose ten source-empty missions without invented fallback. Browser transport, topic rendering, routing, A0, and `OBJ-01` remain open. |
+| [Encyclopedia visible-catalog correction](../2026-09-10-interface-parity-audit/evidence/2026-10-08-encyclopedia-visible-catalog-correction.md) | P68 corrects P65 to 346 visible source entries with complete bindings, seven English TEXTSTRA labels and family filters, and a separate ten-record gameplay-only/hidden exclusion ledger. |
+| [Encyclopedia topic-source proof](../2026-09-10-interface-parity-audit/evidence/2026-10-01-encyclopedia-topic-source-bindings.md) | Strict local extraction yields 348 prose records and 191 image mappings; exact lookup rules bind all 346 visible topics per faction. Browser transport, topic rendering, routing, A0, and `OBJ-01` remain open. |
+| [Encyclopedia content-session proof](../2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-content-session.md) | One platform-neutral immutable session validates both faction bindings and bounded 400-by-200 indexed artwork; atomic replacement, rollback, repeated install, teardown, native tests, canonical WASM compilation, and mutation gates pass. Cross-target reader parity, packaged readers, rendering, routing, A0, and `OBJ-01` remain open. |
+| [Encyclopedia pure-presenter proof](../2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-presenter.md) | One graphics-free API projects exact session order, complete faction bindings, bounded previous/next and immutable cockpit/index/contextual return routes. Rendering, packaged readers, production routing, A0, and `OBJ-01` remain open. |
+| [Encyclopedia authentic topic-surface proof](../2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-topic-surface.md) | The W3 presenter drives the authentic faction shell, index/topic controls, bounded navigation and a selected-only generation-keyed texture through ten fixture-gated two-faction browser A1 cases. Canonical packaged readers, production routes, original A0/title placement, and strict `OBJ-01` acceptance remain open. |
+| [Encyclopedia canonical-publication proof](../2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-canonical-publication.md) | Deterministic, read-back-verified ORPK and development-loose publication feed exact canonical bytes through native, packed-browser, and loose readers into one corrected 346/346-topic session fingerprint. Production retains four startup requests and excludes fixture routes; packaged visual journeys, command activation, A0, and strict `OBJ-01` remain open. |
+| [Encyclopedia final acceptance](../2026-09-10-interface-parity-audit/evidence/2026-10-07-encyclopedia-a0-compatibility.md) | The final production package passes both factions, all seven categories, topic/endpoints/contextual routes, exact returns, old-pack failure behavior, four-request startup, and twelve applicable lossless original-executable-under-Wine comparisons. Source-unavailable passes functionally with original A0 not applicable. All thirteen `OBJ-01` cells pass the user-approved current gate; native-Windows parity is not claimed. |
 | [GitHub Pages proof](evidence/2026-09-08-github-pages.md) | Successful deployment run and public HTTP smoke tests for P40. |
 | [Project archive](../../../archive/INDEX.md) | Superseded progress and playtest artifacts retained for provenance. |
 
@@ -116,12 +121,19 @@ their complete actions, voice, chrome, and shell integration remain open.
 Original encyclopedia artwork reaches native and browser renderers through
 P62. Source cross-checking corrects P63 as Message Index evidence. P64 proves
 both authentic Encyclopedia index shells and their bounded control states.
-P65 adds the complete source-derived 356-entry English index catalog, category
+P68 corrects P65 to the complete source-derived 346-entry visible English index catalog, category
 filtering, stable selection, and scrolling. P66A extracts 348 topic texts and
 191 image mappings, joins 346 complete topics per faction, and exposes ten
-source-empty mission records without fallback. Browser transport, topic
-composition, navigation, contextual entry, A0 comparison, and production
-routing remain absent, so command `0x131` continues to fail closed.
+gameplay-only/hidden mission records excluded from the visible catalog. W2 provides an inactive,
+immutable content session and atomic last-known-good publication point. W3
+provides pure topic composition, bounded logical navigation and exact typed
+return origins. W4 drives the authentic index/topic shell and selected-only
+texture lifecycle through a synthetic, fixture-gated two-faction browser A1
+matrix. W5A now supplies canonical native, packed-browser, and development-loose
+transport with exact-byte and logical-fingerprint parity, deterministic atomic
+publication, and four-request production startup. Packaged visual journeys and
+route activation remain assigned to E30 and E32 respectively, while A0
+comparison remains absent and command `0x131` continues to fail closed.
 Fleet-miniature acceptance, deterministic four-request browser
 startup, F-001 browser Save/Load/Delete, the F-011A fingerprint primitive,
 F-011B1 save continuation, the F-011B2 replay/data contract, F-011B3 native

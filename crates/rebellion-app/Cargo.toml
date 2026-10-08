@@ -25,3 +25,8 @@ rand_xoshiro = "0.6"
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
+
+[dev-dependencies]
+image = { version = "0.25", default-features = false, features = ["png"] }
+sha2 = "0.10"
+tempfile = "3"

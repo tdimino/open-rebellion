@@ -24,7 +24,7 @@ one-commit family gates used to execute this plan more quickly.
 ## Progress snapshot
 
 <!-- interface-parity-status:start -->
-Required interface families: 43. Complete: 0. Partial: 15. Failing: 28. Blocked: 0. Strictly accepted cells: 0/627.
+Required interface families: 43. Complete: 1. Partial: 15. Failing: 27. Blocked: 0. Strictly accepted cells: 13/627.
 The current CMD-02 GID catalog has 38 scenarios (29 baseline cells and nine additional native filter variants) and 152 faction/viewport executions. Its strict original-evidence and cross-browser gate remains open.
 <!-- interface-parity-status:end -->
 
@@ -103,8 +103,10 @@ exclusive-edge and transparent-pixel rejection, opaque press capture, drag
 cancellation, and modal click-through blocking pass 32 exact comparisons and
 4,963,200 source pixels. The fixture remains test-only.
 
-P65 adds the complete source-derived English index catalog: 356 immutable DAT
-entries, the seven recovered TEXTSTRA labels and family filters, alphabetical
+P65 originally counted 356 DAT records. P68 corrects the source-derived English
+visible index to 346 immutable entries after applying the original mission
+family and hidden-record predicate. It retains the seven recovered TEXTSTRA
+labels and family filters, alphabetical
 source ordering, stable compound-object selection, and nine-row scrolling.
 Twenty-two two-faction browser states, including the native selected-category
 no-op, preserve all 1,567,280 checked static shell pixels, and a separate

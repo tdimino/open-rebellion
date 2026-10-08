@@ -3,7 +3,7 @@ title: "Asset Pipeline"
 description: "HD upscaling, 3D model generation, and encyclopedia content pipelines"
 category: "agent-docs"
 created: 2026-03-13
-updated: 2026-09-10
+updated: 2026-10-07
 tags: [asset-pipeline, upscaling, 3d-models, audio, references]
 ---
 
@@ -463,16 +463,47 @@ Adapted from WWW's `scripts/model-compare.html` — Three.js side-by-side viewer
 
 ## Pipeline 3: Encyclopedia Content
 
-The original encyclopedia text lives in `ENCYTEXT.DLL`; `TEXTSTRA.DLL`
-supplies entity names. The former `data/encyclopedia.json` sketch with newly
-written descriptions is superseded by the draft
-[Encyclopedia Data Extraction, Modding, and Display design](../docs/plans/2026-09-27-design-encyclopedia-data-pipeline.md).
+The implemented production pipeline keeps original content local and ignored:
 
-The proposal extends the existing Go staging tool to extract original text,
-image mappings and EData artwork into ignored `data/base/encyclopedia/`, adds a
-versioned catalog and native mod overrides, and uses the existing runtime pack
-for browser display. This is a design under review, not an implemented schema
-or a completed encyclopedia feature.
+1. `make stage-assets GAME_SOURCE=/owned/install` stages the normal runtime
+   assets and then strictly extracts the supported English `ENCYTEXT.DLL` prose
+   and `ENCYBMAP.DLL` image-name map into
+   `data/base/encyclopedia/source.json` plus its checksum manifest. `MDATA` and
+   `EData` are derived beneath `GAME_SOURCE`; the owned `EData` directory is
+   never copied. The profile contains 348 text records and 191 logical image
+   mappings. `make verify-assets` separately performs source-free verification
+   of both the normal and Encyclopedia outputs.
+   Successful full staging also records source hashes and output sizes in the
+   ignored `data/base/.stage-ui-assets.json`. Unchanged reruns use that manifest
+   to skip extraction; `--force` bypasses it, while `make verify-assets` ignores
+   it and performs the deep content checks.
+2. A prebuild Rust audit joins those records to the canonical DAT/TEXTSTRA
+   index and exact owned `EData` inventory. Each faction must expose 346
+   complete topics and ten explicit source-empty mission topics; no replacement
+   prose or art is invented.
+3. Strict production builds admit only the verified catalog digest, source-DLL
+   identities, and 348/191 profile, then publish its runtime catalog, manifest,
+   and referenced original 400-by-200 indexed BMPs into both ORPK and the owned
+   loose web mirror. The packer uses the runtime's exact declared-byte-length,
+   32 MiB per-image, and 128 MiB aggregate rules. Its single validation read
+   supplies the digest that guards the later packaging read against source
+   replacement. Missing or inconsistent required content fails the build; old
+   packs without Encyclopedia content still load with the feature unavailable.
+4. Native mods may atomically layer presentation-only `encyclopedia.json`
+   patches and validated lowercase `.bmp` artwork. Browser builds deliberately
+   remain base-only. Encyclopedia data never enters `GameWorld`, saves, replay,
+   simulation hashes, or RNG state.
+
+Reproducible extraction, production commands, numeric object selectors, mod
+schema, and reload behavior are documented in
+[README_MOD.md](../README_MOD.md) and the
+[staging tool guide](../tools/stage-ui-assets/README.md). The approved design
+is [Encyclopedia Data Extraction, Modding, and Display](../docs/plans/2026-09-27-design-encyclopedia-data-pipeline.md).
+Current acceptance covers both factions, all seven categories, navigation and
+return paths, strict startup/package behavior, and twelve applicable lossless
+comparisons against the original executable under Wine. Native-Windows parity
+is explicitly not claimed; see the
+[A0 compatibility evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-07-encyclopedia-a0-compatibility.md).
 
 ---
 

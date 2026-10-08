@@ -32,6 +32,7 @@ pub struct RuntimePack {
 /// Returned keys have the namespace removed. This keeps presentation assets
 /// out of the basename-oriented game-data cache while preserving their
 /// original filenames for the renderer.
+#[cfg(test)]
 pub(crate) fn take_namespace(
     entries: &mut HashMap<String, Vec<u8>>,
     namespace: &str,

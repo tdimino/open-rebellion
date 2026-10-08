@@ -6,6 +6,10 @@ catalog loader compile on native and browser targets, while the browser route
 remains test-only until topic composition and the complete modal lifecycle are
 implemented.
 
+> Corrected 2026-10-08 by P68: the original shared-object builder excludes ten
+> gameplay-only or hidden mission records. The visible catalog is 346 entries,
+> not 356. Historical browser artifact hashes below remain the P65 record.
+
 ## Source contract
 
 `FUN_0045f100` maps the seven index controls to original object-family ranges.
@@ -13,17 +17,17 @@ The corresponding TEXTSTRA resources supply the displayed English labels:
 
 | Command | Category | Object families | TEXTSTRA | Entries |
 |---|---|---|---:|---:|
-| `0x6f` | All Databases | all supported families | `0x1850` | 356 |
+| `0x6f` | All Databases | all supported families | `0x1850` | 346 |
 | `0x70` | System Database | `[0x90,0x98)` | `0x1855` | 200 |
 | `0x71` | Ship Database | `[0x14,0x20)` | `0x1854` | 38 |
 | `0x72` | Facilities Database | `[0x20,0x30)` | `0x1852` | 14 |
-| `0x73` | Missions Database | `[0x40,0x80)` | `0x1851` | 25 |
+| `0x73` | Missions Database | visible `[0x50,0x80)` records with hidden flag clear | `0x1851` | 15 |
 | `0x74` | Troop Database | `[0x10,0x14)` | `0x1856` | 10 |
 | `0x75` | Personnel Database | `[0x30,0x40)` | `0x1853` | 69 |
 
 The total is independently reproduced from the source DAT families: 200
 systems, 30 capital ships, eight fighters, six defenses, six manufacturing
-facilities, two production facilities, 25 mission types, ten troop types, six
+facilities, two production facilities, 15 visible mission types, ten troop types, six
 major characters, 54 minor characters, and nine special-forces types. Entries
 are sorted case-insensitively by their source name, with compound object ID as
 the stable tie breaker.
@@ -85,8 +89,10 @@ screenshots. It found no P0-P3 issue and confirmed that scrolling preserves the
 current object and geometry while row selection updates both the highlight and
 current-object field.
 
-Independent source/code review reproduced all 356 unique compound identities
-from the owned DAT headers and confirmed the executable family ranges. It also
+Independent source/code review originally reproduced all 356 compound
+identities from the owned DAT headers but did not apply the earlier
+`FUN_00422620` collection predicate. P68 corrects that omission to 346 visible
+identities. The review also
 found three pre-commit gaps: two catalog DATs were absent from the legacy WASM
 fallback, the ninth row extended two pixels beyond the native list, and the
 dynamic comparison mask covered the lower edge of the category controls. P65

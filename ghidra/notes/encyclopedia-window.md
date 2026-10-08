@@ -72,18 +72,38 @@ The owned English TEXTSTRA table resolves `0x1842` to `Galactic Encyclopedia`,
 Database`, `Ship Database`, `Facilities Database`, `Missions Database`, `Troop
 Database`, and `Personnel Database` in command order `0x6f..0x75`.
 
-The supported source families produce 356 entries: 200 systems; 30 capital
+The shared collection built by `FUN_00422620` produces 346 visible entries: 200 systems; 30 capital
 ships and eight fighters; six defenses, six manufacturing facilities, and two
-production facilities; 25 mission types; ten troop types; and six major
+production facilities; 15 visible mission types; ten troop types; and six major
 characters, 54 minor characters, and nine special-forces types. A compound
 object ID uses the DAT family as its high byte and the source record ID as its
 low word. P65 sorts case-insensitively by source name with that identity as a
 stable tie breaker, matching the alphabetical index behavior visible in the
-classified original capture.
+classified original capture. Missions are restricted to family `[0x50,0x80)`
+and then require the resolved mission record's `+0x5c` hidden flag to be zero.
+Four `0x41..0x44` gameplay states and six hidden missions are therefore outside
+the visible collection.
 
 ## Recovered workflow
 
 - Index mode uses category commands `0x6f` through `0x75`.
+- The index selector is an editable title field, not a read-only selected-name
+  label. `FUN_0045d8f0` handles its change notification `0x408` for control
+  `0x64`, calls `FUN_00609650` against the current list, and stores the
+  resolved record at window `+0x148`. Its `0x407` Enter notification switches
+  to topic mode through `FUN_0045f480(this, 2)` when a record is selected.
+- `FUN_00609650` performs an ordered, case-insensitive longest-common-prefix
+  search. The first equal-scoring row wins, and comparison does not require
+  the whole query to match. Thus `tallon` retains `Talon Karrde` after the
+  second `l` stops increasing the prefix score. An empty query clears the
+  selection; a non-empty query with no shared first character retains the
+  first ordered row.
+- `FUN_00605160` gives the title field native edit focus and posts `0x408`
+  after typing, backspace, or delete and `0x407` on Enter. The parent forwards
+  Up, Down, Page Up, and Page Down to the list while the edit owns focus.
+- `FUN_0045da70` copies a pointer/list-selected row title back into the edit
+  field. `FUN_0045f100` reapplies the current edit query after rebuilding a
+  category, so category changes retain the same lookup behavior.
 - `FUN_0045f100` rebuilds the object list for a selected category from the
   authoritative game-object collection and updates the selected category label.
 - `FUN_0045f480` switches between index and topic modes.
@@ -97,13 +117,15 @@ classified original capture.
 
 - Static source: `FUN_00429f30.c`, `FUN_0045d400.c`, `FUN_0045ddc0.c`,
   `FUN_0045f100.c`, `FUN_0045f480.c`, `FUN_0045fa60.c`, `FUN_0045fd20.c`, and
-  `FUN_0045fe60.c` in this directory.
+  `FUN_0045fe60.c` in this directory, plus disassembly of `FUN_0045d8f0`,
+  `FUN_0045da70`, `FUN_00605160`, and decompiled `FUN_00609650.c`.
 - Visual corroboration: the Encyclopedia index and topic captures classified in
   `docs/qa/2026-09-10-interface-parity-audit/screenshot-ledger.md`.
 - P62 proves transport for all 187 owned EDATA images. It does not prove this
   window's category ordering, entity bindings, text, navigation, geometry, or
   A0 parity.
-- P65 proves the 356-entry English source catalog, source-family filtering,
+- P68 corrects P65's count and proves the 346-entry English visible catalog,
+  including mission-family and hidden-record filtering,
   alphabetical ordering, stable row identity, and scrolling inside both
   faction shells. The route remains test-only.
 - P66A proves strict local English ENCYTEXT/ENCYBMAP extraction plus ordinary,

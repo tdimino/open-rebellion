@@ -1415,6 +1415,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "egui-macroquad",
+ "image 0.25.10",
  "macroquad",
  "quad-snd",
  "rand",
@@ -1424,6 +1425,8 @@ dependencies = [
  "rebellion-render",
  "serde",
  "serde_json",
+ "sha2",
+ "tempfile",
 ]
 
 [[package]]

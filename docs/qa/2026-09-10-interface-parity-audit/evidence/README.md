@@ -14,13 +14,47 @@
   independent source and visual review. Production content and routing remain
   open, so it accepts no `OBJ-01` cell.
 - [P65 Encyclopedia index catalog](2026-09-30-encyclopedia-index-catalog.md)
-  tracks all 356 source entries, seven English labels and family filters,
+  is superseded on visible-object count by P68; its shell, labels, ordering,
+  and interaction evidence remain historical context.
+- [P68 Encyclopedia visible-catalog correction](2026-10-08-encyclopedia-visible-catalog-correction.md)
+  proves 346 visible entries, all completely bound, plus a separate audit
+  ledger for ten excluded gameplay-only or hidden mission records.
+  The corrected catalog retains seven English labels and family filters,
   stable selection, scrolling, and a two-faction browser checkpoint.
 - [P66A Encyclopedia topic sources](2026-10-01-encyclopedia-topic-source-bindings.md)
-  tracks strict extraction of 348 prose records and 191 image mappings, 346
-  complete per-faction object joins, and ten explicit source-empty mission
-  records. Browser transport, topic rendering, routing, A0, and `OBJ-01` remain
+  tracks strict extraction of 348 prose records and 191 image mappings. P68
+  corrects the join to 346 complete visible objects per faction. Browser
+  transport, topic rendering, routing, A0, and `OBJ-01` remain
   open.
+- [W7 native Encyclopedia overlays](2026-10-07-encyclopedia-mod-overlays.md)
+  tracks deterministic shared dependency order, presence-aware native content
+  layers, confined bitmap acquisition, per-layer validation, atomic rollback,
+  disable/base restoration, and unchanged browser/save/simulation boundaries.
+- [E32 Encyclopedia production activation](2026-10-07-encyclopedia-production-activation.md)
+  tracks strict new-package content, old-pack unavailable compatibility,
+  production cockpit and real contextual entry, stable source IDs, exact
+  returns, foreground modality, and native/browser journeys.
+- [E34 Encyclopedia technical acceptance](2026-10-07-encyclopedia-technical-acceptance.md)
+  tracks the current-main integration, final native/packed/loose identity,
+  deterministic package, both-faction production journeys, replay/save
+  invariance, scoped mutation identity, and explicit proprietary-data and
+  state-isolation review. Strict A0 and `OBJ-01` remain E35.
+- [E35 Encyclopedia original-executable compatibility](2026-10-07-encyclopedia-a0-compatibility.md)
+  tracks the corrected faction origins, typography, selection and modal
+  behavior, the expanded both-faction production journey, and twelve passing
+  lossless comparisons against the original executable under Wine. The
+  non-visible gameplay-record exclusion is honestly A0-not-applicable and
+  passes from functional evidence. The user accepted this evidence for the current
+  delivery on 2026-10-07, so all thirteen `OBJ-01` cells pass without a
+  native-Windows parity claim.
+- [E36 Encyclopedia final reconciliation](2026-10-07-encyclopedia-final-reconciliation.md)
+  maps every approved-plan phase to its bead, implementation commits, and
+  durable evidence; records the clean Docker staging repair and final safety
+  checks; and preserves the optional-W8 and native-Windows limitations.
+- [P69 Encyclopedia title search](2026-10-08-encyclopedia-title-search.md)
+  restores the original editable selector, ordered longest-prefix matching,
+  clear-selection behavior, category reapplication, Enter-to-open journey,
+  and frame-stable modal keyboard ownership.
 
 This directory contains the durable reports and review artifacts for each
 verified interface checkpoint. The parent [audit index](../README.md) remains
@@ -85,6 +119,8 @@ the source of truth for scope, acceptance, and current work.
 | P64 | [Encyclopedia index-shell checkpoint](2026-09-30-encyclopedia-index-shell.md) | [`p64-encyclopedia-index-shell/`](p64-encyclopedia-index-shell/) |
 | P65 | [Encyclopedia index-catalog checkpoint](2026-09-30-encyclopedia-index-catalog.md) | [`p65-encyclopedia-index-catalog/`](p65-encyclopedia-index-catalog/) |
 | P66A | [Encyclopedia topic-source checkpoint](2026-10-01-encyclopedia-topic-source-bindings.md) | [`p66a-encyclopedia-topic-bindings/`](p66a-encyclopedia-topic-bindings/) |
+| P69 | [Encyclopedia title-search correction](2026-10-08-encyclopedia-title-search.md) | Ignored browser bundle hash recorded in the report |
+| W1-W7 + deferred W8 / E18 / E30 / E32 / E34-E36 | [Final reconciliation](2026-10-07-encyclopedia-final-reconciliation.md) indexes the [immutable session](2026-10-06-encyclopedia-content-session.md), [pure presenter](2026-10-06-encyclopedia-presenter.md), [authentic fixture surface](2026-10-06-encyclopedia-topic-surface.md), [canonical publication](2026-10-06-encyclopedia-canonical-publication.md), [canonical surface](2026-10-06-encyclopedia-canonical-surface.md), [original-first HD selection](2026-10-06-encyclopedia-hd-selection.md), [native overlays](2026-10-07-encyclopedia-mod-overlays.md), [production activation](2026-10-07-encyclopedia-production-activation.md), [technical acceptance](2026-10-07-encyclopedia-technical-acceptance.md), and [original-executable compatibility](2026-10-07-encyclopedia-a0-compatibility.md). | Browser and Wine artifacts remain ignored locally and are hash-identified in lower reports. Native mod fixtures are synthetic and test-temporary. Optional W8 automatic reload is deferred. The current delivery accepts all thirteen `OBJ-01` cells without claiming native-Windows parity. |
 
 Earlier strategic, GID, shell, control, staging, and render reports are indexed
 in the parent [audit overview](../index.md). Every new artifact directory must

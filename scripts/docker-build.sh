@@ -58,6 +58,7 @@ go run ./tools/stage-ui-assets "${asset_args[@]}"
 echo "=== [3/4] Building WASM + browser runtime pack ==="
 export REBELLION_MDATA_DIR="${MDATA_SRC_DIR:-$ORIGINAL_GAME_DIR/MDATA}"
 export REBELLION_GAME_DIR="$ROOT/data/base"
+export REBELLION_EDATA_DIR="$ORIGINAL_GAME_DIR/EData"
 ./scripts/build-wasm.sh
 
 echo "=== [4/4] Preparing modding reference data ==="

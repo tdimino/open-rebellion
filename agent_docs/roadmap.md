@@ -10,7 +10,7 @@ tags: [roadmap, planning, milestones, parity]
 # Roadmap
 
 <!-- interface-parity-status:start -->
-Required interface families: 43. Complete: 0. Partial: 15. Failing: 28. Blocked: 0. Strictly accepted cells: 0/627.
+Required interface families: 43. Complete: 1. Partial: 15. Failing: 27. Blocked: 0. Strictly accepted cells: 13/627.
 The current CMD-02 GID catalog has 38 scenarios (29 baseline cells and nine additional native filter variants) and 152 faction/viewport executions. Its strict original-evidence and cross-browser gate remains open.
 <!-- interface-parity-status:end -->
 
@@ -18,19 +18,60 @@ The delivery notes before “Audit-Driven Parity” are historical implementatio
 records. They do not establish current parity or release acceptance; the active
 audit-driven milestones are the source of truth.
 
-PR #11 checkpoint (2026-09-14): [cockpit routing is corrected](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-cockpit-routing-correction.md) for commands `0x131` through `0x133`, both factions, and F1/F7. GID uses its authentic bottom control and can open and close its original menu. Encyclopedia remains fail-closed. The [2026-09-26 Game Options review checkpoint](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-26-game-options-review.md) restores the shared bitmap surface and save/audio/display wiring; PRE-03 strict acceptance remains open.
+PR #11 checkpoint (2026-09-14): [cockpit routing is corrected](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-cockpit-routing-correction.md) for commands `0x131` through `0x133`, both factions, and F1/F7. GID uses its authentic bottom control and can open and close its original menu. Encyclopedia was fail-closed at that checkpoint and is activated by E32 below. The [2026-09-26 Game Options review checkpoint](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-26-game-options-review.md) restores the shared bitmap surface and save/audio/display wiring; PRE-03 strict acceptance remains open.
 
 P62 transports all 187 validated original EDATA images through native and
 browser builds. A source cross-check corrects P63 as Message Index evidence.
 P64 separately reconstructs both authentic Encyclopedia index shells, seven
 category states, right-rail states, and native clipping in a bounded exact
-browser gate. P65 adds the complete source-derived 356-entry English catalog,
-seven category filters, stable selection, and scrolling without changing saves
+browser gate. P65 initially inventories all 356 source records; P68 corrects
+that set to 346 visible topics and ten excluded mission records. Seven category
+filters, stable selection, and scrolling do not change saves
 or exposing the unfinished production route. P66A strictly extracts 348 topic
 texts and 191 image mappings, binds 346 complete topics per faction, and keeps
-ten source-empty mission records explicit. Browser topic transport and
-composition, contextual entry, production routing, A0 comparison, and every
-`OBJ-01` cell remain open. See the [P66A evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-01-encyclopedia-topic-source-bindings.md).
+ten source-empty mission records explicit. W2 adds one immutable content
+session with strict catalog/binding and original-BMP validation, atomic
+replacement, rollback, deterministic logical and texture generations, and no
+campaign-state ownership. W3 adds a pure presenter with exact session order,
+both faction bindings, bounded navigation, explicit unavailable-source topics,
+and immutable close/return origins across complete logical journeys. Browser
+reader parity and production routing were then separated. W4 connects that presenter
+to the authentic topic/index shell behind fixture compilation, owns one
+generation-keyed selected-topic texture, and passes ten two-faction browser A1
+cases at native and scaled viewports. W5A atomically publishes the canonical
+catalog, sidecar, and exact referenced artwork through ORPK plus a
+development-only loose generation, then proves native, packed-browser, and
+loose-reader convergence on one 346/346-visible-topic W2 session fingerprint,
+with ten source-hidden mission records excluded, while
+preserving the four-request production startup budget. W6 adds opt-in native
+faithful-HD selection at the immutable-session boundary: only manifest-reviewed,
+source-matched, digest-valid exact-4x PNG output can replace a rendered view,
+and every failure retains the original. Browser and strict acceptance remain
+original-only. W7 adds deterministic, presence-aware native overlays with
+atomic rollback and exact base restoration. E32 then pairs strict new-package
+requirements with production cockpit and contextual routes, exact returns,
+both-faction packaged journeys, old-pack unavailable compatibility, and native
+foreground contextual evidence. E34 verifies the current-main assembled
+candidate across workspace, package, native/packed/loose, replay, save/load,
+production browser, mutation-identity, and isolation gates, leaving A0
+comparison and strict `OBJ-01` cells to E35. E35 then corrects the faction-specific
+surface origins, headings, production fonts, initial selection, hover tooltip,
+and modal order. Its expanded final-package browser journey passes twelve
+applicable lossless comparisons against the original executable under Wine;
+the plan-defined source-unavailable state has no honest original A0 and passes
+from its functional evidence. By explicit user decision on 2026-10-07, the
+Wine evidence is sufficient for this delivery and all thirteen canonical
+`OBJ-01` cells pass without claiming native-Windows parity. See
+the [P66A evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-01-encyclopedia-topic-source-bindings.md),
+[W2 evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-content-session.md),
+[W3 evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-presenter.md),
+[W4 evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-topic-surface.md),
+[W5A evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-canonical-publication.md),
+[W6 evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-hd-selection.md),
+[W7 evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-07-encyclopedia-mod-overlays.md),
+[E32 evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-07-encyclopedia-production-activation.md),
+[E34 technical acceptance](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-07-encyclopedia-technical-acceptance.md),
+and [E35 compatibility evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-07-encyclopedia-a0-compatibility.md).
 
 The 2026-10-06 strategic-interface batch restores native cockpit accelerators,
 the two-sector-window cap, Message Index interaction, Personnel and Troop
@@ -722,6 +763,74 @@ would tune around known simulation feedback defects.
   index objects, and report missing source parts without invented fallback.
   Browser transport, topic composition, interactive navigation, contextual and
   production routing, other languages, A0, and every `OBJ-01` cell remain open.
+- [x] Complete the W2 immutable Encyclopedia content-session checkpoint: parse
+  and bind a complete candidate off to the side, retain exact artwork bytes and
+  dimensions/digest metadata, validate the fixed 400-by-200 indexed BMP class,
+  publish atomically, preserve the prior session on failure, and invalidate only
+  its texture generation on replacement or teardown. The session is inactive
+  until W5 supplies and installs canonical packaged or native bytes; no
+  production route or `OBJ-01` cell is accepted.
+- [x] Complete the W3 pure Encyclopedia presenter checkpoint: project the
+  immutable session without I/O or texture ownership, retain the validated
+  catalog order and faction-specific bindings, expose all ten source-empty
+  topics without fallback, bound previous/next without wrapping, and preserve
+  exact cockpit, index and typed contextual return origins through follow-up
+  transitions. W5 packaged production routing, A0 comparison, and every strict
+  `OBJ-01` cell remain open.
+- [x] Complete the W4 authentic Encyclopedia topic-surface checkpoint: adapt
+  W3's borrowed presentation into renderer-owned DTOs, reuse the recovered
+  faction shell/index/topic controls, implement bounded keyboard and scrolling
+  behavior, and retain at most one generation-keyed decoded topic texture.
+  Ten two-faction fixture-gated browser A1 cases cover native and scaled
+  viewports, endpoints, pressed/disabled states, source-unavailable clearing,
+  close, and navigation with zero runtime errors. W5 canonical-reader and
+  production routes, original A0/title placement, and strict `OBJ-01`
+  acceptance remain open.
+- [x] Complete the W5A canonical Encyclopedia publication checkpoint: publish
+  the P66A catalog, sidecar, and exact 186-file referenced artwork set through
+  deterministic, read-back-verified, atomically replaced ORPK and a
+  development-only immutable loose generation. Native, packed-browser, and
+  loose readers now install identical bytes into one W2 session with the same
+  logical fingerprint and 346 visible topics per faction; ten source-hidden
+  mission records remain excluded, and the production artifact
+  retains its four-request startup budget and excludes fixture routes. E30
+  packaged visual journeys, E32 command `0x131` activation, A0 comparison, and
+  strict `OBJ-01` acceptance remain open.
+- [x] Complete the W6 original-first Encyclopedia HD checkpoint: prepare one
+  native selection snapshot from the validated W2 session, require the existing
+  faithful-HD manifest review plus exact source/output digests and 4x PNG
+  dimensions, retain original bytes for every absent or invalid candidate, and
+  key textures by sampling policy. Browser builds and strict parity evidence
+  remain original-only; no enhanced asset is committed or generated.
+- [x] Complete the W7 native Encyclopedia overlay checkpoint: reserve root
+  `encyclopedia.json` outside `GameWorld`, share one deterministic
+  dependency-first order with lexicographic ready tie-breaks, distinguish
+  absent/replacement/legal-removal fields, confine and bound author BMPs,
+  validate the base and every complete layer, and publish only one atomic W2
+  session. Invalid candidates retain the last-known-good snapshot; disabling
+  all layers restores the exact base. Browser content, save bodies, and
+  simulation state remain unchanged.
+- [x] Complete the E32 Encyclopedia production-activation checkpoint: require
+  the complete canonical namespace for every new browser package; keep old
+  packs without that namespace bootable with the route unavailable; activate
+  cockpit and real contextual callers through the shared presenter/renderer;
+  reconstruct stable compound source IDs; preserve typed close/return origins;
+  and pass native plus both-faction packaged journeys with four-request startup
+  and zero production fixture tokens. Strict original A0 and every `OBJ-01`
+  acceptance cell remain open.
+- [x] Complete the E34 assembled technical-acceptance checkpoint: verify the
+  final native, packed and loose readers, deterministic package, both-faction
+  production journeys, old-pack behavior, replay/save invariance, scoped
+  lint/format and isolation boundaries.
+- [x] Complete E35 Encyclopedia acceptance for the approved evidence boundary.
+  The current implementation
+  passes all twelve applicable lossless original-executable-under-Wine
+  comparisons after correcting faction origins, headings, embedded production
+  fonts, empty selection, hover tooltip and modal ordering. The explicit
+  source-unavailable state passes from functional evidence with original A0
+  not applicable. The user accepted Wine evidence for this delivery on
+  2026-10-07; all thirteen `OBJ-01` cells pass and native-Windows parity is not
+  claimed.
 - [x] Restore the P50 GID root and submenu frame from STRATEGY 10100 through
   10107. Paint repeated edges in four batched meshes, remove the invented menu
   fade, and check native-size root pixels against the source BMPs in both

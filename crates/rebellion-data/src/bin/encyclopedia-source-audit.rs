@@ -4,12 +4,16 @@ use std::fs;
 use std::path::PathBuf;
 
 use anyhow::{ensure, Context, Result};
-use rebellion_data::encyclopedia_catalog::load_encyclopedia_catalog;
+use rebellion_data::encyclopedia_catalog::{
+    load_encyclopedia_catalog, ENCYCLOPEDIA_EXCLUDED_MISSION_OBJECT_IDS,
+};
 use rebellion_data::encyclopedia_topics::{
-    load_encyclopedia_topics, parse_encyclopedia_source_with_manifest, EncyclopediaAudience,
-    EncyclopediaMissingPart, EncyclopediaTopicCatalog,
+    encyclopedia_logical_fingerprint, load_encyclopedia_topics,
+    parse_encyclopedia_source_with_manifest, EncyclopediaAudience, EncyclopediaMissingPart,
+    EncyclopediaTopicCatalog,
 };
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 
 #[derive(Clone, Serialize)]
 struct AudienceSummary {
@@ -35,6 +39,8 @@ struct AuditSummary {
     encytext_sha256: String,
     encybmap_sha256: String,
     index_entries: usize,
+    logical_fingerprint: String,
+    excluded_gameplay_mission_object_ids: Vec<String>,
     source_texts: usize,
     source_artwork_mappings: usize,
     unbound_text_resource_ids: Vec<u16>,
@@ -113,6 +119,10 @@ fn main() -> Result<()> {
         encytext_sha256: manifest.source_files.encytext_sha256,
         encybmap_sha256: manifest.source_files.encybmap_sha256,
         index_entries: index.entries.len(),
+        logical_fingerprint: combined_logical_fingerprint(&index, &alliance, &empire),
+        excluded_gameplay_mission_object_ids: ENCYCLOPEDIA_EXCLUDED_MISSION_OBJECT_IDS
+            .map(|object_id| format!("{object_id:#010x}"))
+            .to_vec(),
         source_texts: source.texts.len(),
         source_artwork_mappings: source.artwork.len(),
         unbound_text_resource_ids,
@@ -131,6 +141,20 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+fn combined_logical_fingerprint(
+    catalog: &rebellion_data::encyclopedia_catalog::EncyclopediaCatalog,
+    alliance: &EncyclopediaTopicCatalog,
+    empire: &EncyclopediaTopicCatalog,
+) -> String {
+    let alliance = encyclopedia_logical_fingerprint(catalog, alliance);
+    let empire = encyclopedia_logical_fingerprint(catalog, empire);
+    let mut digest = Sha256::new();
+    digest.update(b"open-rebellion:encyclopedia-session-logical:v1\0");
+    digest.update(alliance.as_bytes());
+    digest.update(empire.as_bytes());
+    format!("{:x}", digest.finalize())
+}
+
 fn validate_owned_english_profile(summary: &AuditSummary) -> Result<()> {
     ensure!(
         summary.catalog_sha256
@@ -147,19 +171,21 @@ fn validate_owned_english_profile(summary: &AuditSummary) -> Result<()> {
             == "fb545d19ae24b0277753494dbfaabf2dbdde660beab821287a32016c290e4560",
         "unexpected owned ENCYBMAP identity"
     );
-    const EXPECTED_MISSING_OBJECTS: [&str; 10] = [
-        "0x41000001",
-        "0x42000002",
-        "0x43000003",
-        "0x44000004",
-        "0x64000044",
-        "0x65000083",
-        "0x71000043",
-        "0x72000045",
-        "0x72000046",
-        "0x73000082",
-    ];
-    ensure!(summary.index_entries == 356, "expected 356 index entries");
+    let expected_excluded_missions =
+        ENCYCLOPEDIA_EXCLUDED_MISSION_OBJECT_IDS.map(|object_id| format!("{object_id:#010x}"));
+    ensure!(
+        summary.index_entries == 346,
+        "expected 346 visible index entries"
+    );
+    ensure!(
+        summary.logical_fingerprint
+            == "20c342868cee50e80ef3b94b9f81a898c48f4b593ddd0d83ab69b67d755ae9ea",
+        "unexpected visible Encyclopedia logical fingerprint"
+    );
+    ensure!(
+        summary.excluded_gameplay_mission_object_ids == expected_excluded_missions,
+        "unexpected excluded gameplay mission identities"
+    );
     ensure!(summary.source_texts == 348, "expected 348 source texts");
     ensure!(
         summary.source_artwork_mappings == 191,
@@ -199,7 +225,7 @@ fn validate_owned_english_profile(summary: &AuditSummary) -> Result<()> {
             "{audience}: expected 346 complete topics"
         );
         ensure!(
-            result.missing_text == 10 && result.missing_artwork_mapping == 10,
+            result.missing_text == 0 && result.missing_artwork_mapping == 0,
             "{audience}: unexpected missing source counts"
         );
         ensure!(
@@ -210,22 +236,9 @@ fn validate_owned_english_profile(summary: &AuditSummary) -> Result<()> {
             result.distinct_bound_artwork == 172,
             "{audience}: expected 172 distinct bound artwork files"
         );
-        let mut missing_ids = result
-            .missing_entries
-            .iter()
-            .map(|entry| entry.object_id.as_str())
-            .collect::<Vec<_>>();
-        missing_ids.sort_unstable();
         ensure!(
-            missing_ids == EXPECTED_MISSING_OBJECTS,
-            "{audience}: unexpected missing object identities"
-        );
-        ensure!(
-            result
-                .missing_entries
-                .iter()
-                .all(|entry| entry.missing == ["text", "artwork_mapping"]),
-            "{audience}: missing objects must lack exactly text and artwork mapping"
+            result.missing_entries.is_empty(),
+            "{audience}: visible topics must all have complete bindings"
         );
     }
     Ok(())
@@ -302,32 +315,13 @@ mod tests {
     use super::*;
 
     fn expected_summary() -> AuditSummary {
-        let missing_entries = [
-            ("0x44000004", "Adrift"),
-            ("0x43000003", "Autorouting"),
-            ("0x65000083", "Bounty"),
-            ("0x71000043", "Dagobah"),
-            ("0x41000001", "Move"),
-            ("0x64000044", "Palace"),
-            ("0x73000082", "Pickup"),
-            ("0x42000002", "Return"),
-            ("0x72000046", "Sabbatical"),
-            ("0x72000045", "Vacation"),
-        ]
-        .into_iter()
-        .map(|(object_id, title)| MissingEntry {
-            object_id: object_id.into(),
-            title: title.into(),
-            missing: vec!["text", "artwork_mapping"],
-        })
-        .collect();
         let audience = AudienceSummary {
             complete: 346,
-            missing_text: 10,
-            missing_artwork_mapping: 10,
+            missing_text: 0,
+            missing_artwork_mapping: 0,
             missing_system_picture: 0,
             distinct_bound_artwork: 172,
-            missing_entries,
+            missing_entries: Vec::new(),
         };
         AuditSummary {
             schema_version: 1,
@@ -337,7 +331,12 @@ mod tests {
                 .into(),
             encybmap_sha256: "fb545d19ae24b0277753494dbfaabf2dbdde660beab821287a32016c290e4560"
                 .into(),
-            index_entries: 356,
+            index_entries: 346,
+            logical_fingerprint: "20c342868cee50e80ef3b94b9f81a898c48f4b593ddd0d83ab69b67d755ae9ea"
+                .into(),
+            excluded_gameplay_mission_object_ids: ENCYCLOPEDIA_EXCLUDED_MISSION_OBJECT_IDS
+                .map(|object_id| format!("{object_id:#010x}"))
+                .to_vec(),
             source_texts: 348,
             source_artwork_mappings: 191,
             unbound_text_resource_ids: vec![7176, 7427],
@@ -359,12 +358,7 @@ mod tests {
         assert!(validate_owned_english_profile(&wrong_count).is_err());
 
         let mut wrong_identity = expected_summary();
-        wrong_identity
-            .audiences
-            .get_mut("empire")
-            .unwrap()
-            .missing_entries[0]
-            .object_id = "0x44000005".into();
+        wrong_identity.excluded_gameplay_mission_object_ids[0] = "0x44000005".into();
         assert!(validate_owned_english_profile(&wrong_identity).is_err());
     }
 }

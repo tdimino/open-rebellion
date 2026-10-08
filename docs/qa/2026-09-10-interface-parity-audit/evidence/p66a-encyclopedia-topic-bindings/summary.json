@@ -3,6 +3,13 @@
   "checkpoint": "P66A",
   "date": "2026-10-01",
   "status": "source_binding_pass_visual_acceptance_open",
+  "superseded_by": {
+    "checkpoint": "P68",
+    "date": "2026-10-08",
+    "reason": "the ten formerly source-empty objects are excluded gameplay-only or hidden mission records, not visible topics",
+    "visible_topics_per_faction": 346,
+    "missing_visible_bindings_per_faction": 0
+  },
   "source": {
     "language_id": 1033,
     "encoding": "windows-1252",

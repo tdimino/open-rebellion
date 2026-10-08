@@ -1,0 +1,127 @@
+# E36 Encyclopedia final reconciliation
+
+Date: 2026-10-07
+
+Bead: `orlocal-818.36`
+
+Candidate branch: `test/encyclopedia-conformance`
+
+Upstream baseline: `c460831f37cdaeb3acbae1d5bb19b61b23becb33`
+
+Accepted audit checkpoint: `20f141847c13d4da23d2f0f1e8a2af2ecb2d6327`
+
+## Result
+
+The approved handoff adaptation is complete for its first production route.
+W1 through W7, production publication and routing, technical isolation, and
+the current visual gate pass. W8 automatic authoring reload remains the plan's
+explicitly optional follow-up; native authors use **Reload Mods** after
+Encyclopedia text or artwork changes.
+
+The visual decision is deliberately bounded. Twelve applicable cells pass
+lossless production/original-executable comparison under Wine. The thirteenth
+cell verifies that gameplay-only/hidden mission records stay out of the visible
+catalog, with original A0 not applicable.
+The user accepted this as sufficient for the current delivery on 2026-10-07.
+Native-Windows parity is not claimed, and a portable Windows capture kit is
+separate tooling/repository scope rather than an Encyclopedia release blocker.
+
+## Approved-plan traceability
+
+| Plan phase | Bead result | Implementation commit(s) | Durable evidence |
+|---|---|---|---|
+| W0 provenance and preflight | `orlocal-818.57` closed | `7e280c3e` is already in upstream history | [Approved handoff plan](../../../plans/2026-10-02-feat-will-forster-encyclopedia-handoff-adaptation.md) |
+| W1 current-schema corpus | `orlocal-818.58` closed | `0d4a5273` | [Canonical publication](2026-10-06-encyclopedia-canonical-publication.md), [technical acceptance](2026-10-07-encyclopedia-technical-acceptance.md) |
+| W2 immutable atomic session | `orlocal-818.59` closed | `2e67c313` | [Content session](2026-10-06-encyclopedia-content-session.md) |
+| W3 pure presenter and routes | `orlocal-818.60` closed | `72604ee1` | [Presenter](2026-10-06-encyclopedia-presenter.md) |
+| W4 authentic topic surface | `orlocal-818.61` closed | `2934a736`, `01cd59d0`, `77acc48a` | [Topic surface](2026-10-06-encyclopedia-topic-surface.md), [canonical surface](2026-10-06-encyclopedia-canonical-surface.md), [A0 compatibility](2026-10-07-encyclopedia-a0-compatibility.md) |
+| W5 publication and routing | `orlocal-818.62`, `orlocal-818.18`, `orlocal-818.30`, and `orlocal-818.32` closed | `ee7ff7fd`, `01cd59d0`, `6e09dbee`, `ff7ea6f0`, `3a5e480a`, `7c4aaac3` | [Canonical publication](2026-10-06-encyclopedia-canonical-publication.md), [production activation](2026-10-07-encyclopedia-production-activation.md) |
+| W6 original-first HD | `orlocal-818.63` closed | `b38c6d7e` | [HD selection](2026-10-06-encyclopedia-hd-selection.md) |
+| W7 native overlays | `orlocal-818.64` closed | `b78a1980` | [Mod overlays](2026-10-07-encyclopedia-mod-overlays.md) |
+| W8 watcher/authoring loop | optional first-route phase, explicitly deferred | no automatic Encyclopedia watcher commit | [README_MOD.md](../../../../README_MOD.md) documents the bounded manual reload workflow |
+| Cross-cutting technical gate | `orlocal-818.34` closed | `2d2befff`, `6eb4c421` | [Technical acceptance](2026-10-07-encyclopedia-technical-acceptance.md) |
+| Current visual gate | `orlocal-818.35` closed | `77acc48a`, `20f14184` | [A0 compatibility](2026-10-07-encyclopedia-a0-compatibility.md) |
+
+The earlier E01-E56 source-recovery, schema, validation, transport, mod-lifecycle,
+and UI-control beads are closed in the local issue graph. Their accepted
+results feed the P66A source authority and the W1-W7 rows above; this index does
+not duplicate their lower-level reports.
+
+## Specification coverage
+
+| Contract area | Final authority and result |
+|---|---|
+| Owned extraction and source identity | P66A strictly stages 348 prose records and 191 logical mappings; [P68](2026-10-08-encyclopedia-visible-catalog-correction.md) records 346 complete visible topics per faction and ten excluded gameplay-only/hidden mission identities. |
+| Validation and installation | W1 and W2 reject malformed or oversized candidates before one atomic session publication and retain the last-known-good session on failure. Native base and faithful-HD acquisition enforce the 128 MiB retained-artwork ceiling while reading rather than after retaining the complete corpus. |
+| Native, packed, and loose readers | W5 and E34 prove one logical fingerprint and exact referenced bytes; ORPK remains the release authority and loose content is development-only. |
+| Presentation and navigation | W3, W4, E30, E32, E35, and P68 cover both factions, all seven categories, bounded previous/next, cockpit and contextual origins, exact returns, and 346 complete visible topics with gameplay-only mission records excluded. |
+| Production packaging | New builds require the exact canonical catalog digest, 348-text/191-mapping source profile, and Rust source audit before compilation; old or partial packs fail closed. Single-read artwork validation matches Rust's BMP, 32 MiB per-image, and 128 MiB aggregate rules, with a digest guard against later replacement. `ff7ea6f0` restores clean Docker source staging, `EData` handoff, `FORCE_REBUILD`, and `PREPARE_MODDING=0` behavior. |
+| HD and mods | W6 retains original-first selection. W7 applies validated native-only presentation overlays outside `GameWorld`; browser content remains base-only. |
+| Persistence and determinism | E34 verifies unchanged save, replay, simulation, RNG, and world fingerprints. |
+| Visual evidence | E35 supplies twelve applicable lossless Wine comparisons; gameplay-record exclusion is functional with original A0 not applicable. All thirteen `OBJ-01` cells pass the accepted current gate without a native-Windows claim. |
+
+## Final reconciliation checks
+
+E36 did not rerun the unchanged browser, Wine, or mutation journeys already
+hash-identified by E34 and E35. It did rerun the full workspace and available
+owned-data/bitmap tests in addition to the focused shell integration gates:
+
+```text
+python3 -m unittest scripts.test_encyclopedia_staging.EncyclopediaProductionStagingTests.test_clean_docker_build_stages_required_encyclopedia_before_strict_wasm -v
+  RED before repair: failed when the strict build found no canonical source/EData handoff
+  GREEN after repair: 1 test passed
+
+python3 -m unittest discover -s scripts -p 'test_encyclopedia_staging.py' -v
+  3 tests passed
+
+bash -n scripts/build-wasm.sh scripts/docker-build.sh scripts/package-web.sh
+  passed
+
+node scripts/validate-interface-parity-ledgers.mjs --check
+  pass: 44 families, 43 required, 633 cells, 627 required, 27 recovery packages
+
+git diff --check
+  passed
+```
+
+The first `make check` attempt stopped at native linking because this host has
+`libasound.so.2` but not the development `libasound.so` link. Repeating with a
+temporary, external `LIBRARY_PATH` shim completed `cargo test --workspace` and
+the Makefile's available asset-dependent ignored tests with no failures. The
+subsequent global `cargo fmt --check` found existing formatting drift in eight
+files unchanged by `origin/main...HEAD`; `make check` therefore stopped before
+its global Clippy phase. The E34 scoped lint evidence remains the candidate's
+accepted lint gate; E36 did not reformat unrelated upstream work.
+
+Additional fresh gates passed: Go stage-tool tests and vet, fifteen Python
+runtime-pack/staging tests, and three Node A0-contract tests.
+
+An independent branch review and two focused follow-ups found and resolved the
+release-integrity gaps after the initial reconciliation. `3a5e480a` adds the
+first strict source-profile/BMP repair and prebuild Rust audit. `6eb4c421`
+bounds native base and faithful-HD retained bytes during acquisition.
+`7c4aaac3` seals strict publication to the canonical catalog identity and
+enforces the runtime's artwork budgets from one validated read. The final
+review reports no Critical or Important findings. The full `rebellion-app`
+suite passes 95 tests with three intentional owned-data ignores, and the actual
+owned 348/191 profile passes the strict pack collector. A strict package-level
+pedantic Clippy attempt stops in existing `rebellion-core` warnings outside
+this branch diff; no unrelated source was changed.
+
+An explicit `origin/main...7c4aaac3` path review found 19 focused commits and
+no tracked `.beads`, `data/base`, `web/data`, distribution, build-output, BMP,
+PNG, ORPK, or ZIP path. Checked-in Encyclopedia JSON files are compact synthetic
+fixtures. Generated source catalogs, original artwork, packages, browser/Wine
+artifacts, credentials, and local installation paths remain ignored.
+
+## Retained limitations and handoff
+
+- Native-Windows parity is unclaimed; current original-executable evidence is
+  the accepted Wine capture set.
+- Gameplay-only and hidden mission records create no visible original topic and
+  therefore have no A0 image.
+- Browser mods and filesystem discovery remain unsupported by design.
+- Automatic Encyclopedia watcher reload is deferred; native manual reload is
+  documented and validated.
+- This branch is local and ahead of the fork. No push, PR creation, PR update,
+  merge, or upstream write was performed during E36.

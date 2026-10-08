@@ -10,9 +10,29 @@ WEB_AUDIO="$ROOT/web/data/sounds"
 MDATA_DIR="${REBELLION_MDATA_DIR:-$ROOT/../star-wars-rebellion/MDATA}"
 ORIGINAL_GAME_DIR="${REBELLION_GAME_DIR:-$(dirname "$MDATA_DIR")}"
 EDATA_DIR="${REBELLION_EDATA_DIR:-$ORIGINAL_GAME_DIR/EData}"
+ENCYCLOPEDIA_SOURCE="$GDATA/encyclopedia/source.json"
+ENCYCLOPEDIA_MIRROR="$ROOT/web/data/encyclopedia"
+
+# Production browser artifacts activate command 0x131 and therefore require a
+# complete canonical Encyclopedia publication before compilation begins.
+if [ ! -f "$ENCYCLOPEDIA_SOURCE" ] || [ ! -f "$ENCYCLOPEDIA_SOURCE.manifest.json" ]; then
+    echo "ERROR: production browser build requires canonical Encyclopedia source and manifest under $GDATA/encyclopedia/."
+    exit 1
+fi
+if [ ! -d "$EDATA_DIR" ]; then
+    echo "ERROR: production browser build requires Encyclopedia EData at $EDATA_DIR."
+    exit 1
+fi
 
 # Refuse stale UI staging before compilation; the runtime pack builder repeats this gate.
 python3 "$ROOT/scripts/build-runtime-pack.py" --ui "$GDATA/ui" --validate-ui-only
+
+# Validate the exact owned English source profile and its complete DAT/TEXTSTRA
+# join before compiling or publishing a route-enabled production artifact.
+echo "Validating canonical Encyclopedia source and topic bindings…"
+PATH="/usr/bin:$PATH" cargo run --manifest-path "$ROOT/Cargo.toml" \
+    -q -p rebellion-data --bin encyclopedia-source-audit -- \
+    "$GDATA" "$ENCYCLOPEDIA_SOURCE" "$EDATA_DIR" >/dev/null
 
 echo "Building rebellion-app for wasm32…"
 PATH="/usr/bin:$PATH" cargo build --manifest-path "$ROOT/Cargo.toml" \
@@ -213,14 +233,14 @@ RUNTIME_PACK_ARGS=(
     --ui "$WEB_UI"
     --audio "$WEB_AUDIO"
     --output "$ROOT/web/data/runtime.orpk"
+    --encyclopedia-mirror "$ENCYCLOPEDIA_MIRROR"
+    --require-encyclopedia
+    --encyclopedia-source "$ENCYCLOPEDIA_SOURCE"
+    --edata "$EDATA_DIR"
 )
-if [ -d "$EDATA_DIR" ]; then
-    RUNTIME_PACK_ARGS+=(--edata "$EDATA_DIR")
-    echo "Including original encyclopedia artwork from $EDATA_DIR."
-else
-    echo "WARNING: EData not found at $EDATA_DIR; encyclopedia artwork will remain unavailable."
-fi
+echo "Including required canonical Encyclopedia source and exact artwork from $EDATA_DIR."
 python3 "$ROOT/scripts/build-runtime-pack.py" "${RUNTIME_PACK_ARGS[@]}"
+python3 "$ROOT/scripts/build-runtime-pack.py" "${RUNTIME_PACK_ARGS[@]}" --verify-only
 
 WASM_SIZE=$(du -h "$ROOT/web/open-rebellion.wasm" | cut -f1)
 echo "Done. WASM size: $WASM_SIZE"
