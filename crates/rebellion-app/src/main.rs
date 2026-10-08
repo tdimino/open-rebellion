@@ -755,9 +755,27 @@ fn toggle_exclusive_panel(panels: &mut [&mut bool], selected: usize) {
     *panels[selected] = !was_open;
 }
 
+/// Whether the single-letter keys open the egui side panels (Officers,
+/// Fleets, Missions, Research, Jedi, Bombardment, Death Star, Loyalty).
+/// port: those panels are not original interface and hide the cockpit's
+/// left side, so only debug builds open them. Release builds, including
+/// native acceptance runs with `OPEN_REBELLION_DEV`, never do. Alt chords
+/// belong to the original accelerators.
+fn panel_letters_open_panels(debug_build: bool, alt_down: bool) -> bool {
+    debug_build && !alt_down
+}
+
 #[cfg(test)]
 mod panel_toggle_tests {
-    use super::toggle_exclusive_panel;
+    use super::{panel_letters_open_panels, toggle_exclusive_panel};
+
+    #[test]
+    fn panel_letters_open_panels_only_in_debug_builds_without_alt() {
+        assert!(panel_letters_open_panels(true, false));
+        assert!(!panel_letters_open_panels(false, false));
+        assert!(!panel_letters_open_panels(true, true));
+        assert!(!panel_letters_open_panels(false, true));
+    }
 
     #[test]
     fn opens_closes_and_switches_exclusive_panels() {
@@ -1529,7 +1547,9 @@ async fn main() {
             // belong to the original accelerators, never these letters.
             macro_rules! toggle_panel {
                 ($key:expr, $index:expr) => {
-                    if !alt_down && is_key_pressed($key) {
+                    if panel_letters_open_panels(cfg!(debug_assertions), alt_down)
+                        && is_key_pressed($key)
+                    {
                         toggle_exclusive_panel(
                             &mut [
                                 &mut show_officers,
