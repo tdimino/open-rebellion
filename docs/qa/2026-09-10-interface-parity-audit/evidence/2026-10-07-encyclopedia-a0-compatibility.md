@@ -18,18 +18,18 @@ Candidate branch: `test/encyclopedia-conformance`
 ## Result
 
 The adapted E35 production comparison passes for all twelve `OBJ-01` states
-that have an honest original-executable baseline. The thirteenth state, the
-approved plan's explicit source-unavailable presentation, has no corresponding
-topic in the accepted original profile and remains functional A1 evidence
-only. No original fixture was fabricated.
+that have an honest original-executable baseline. The thirteenth cell now
+tracks the exclusion of gameplay-only or hidden mission records. It has no
+visible surface and remains functional A1 evidence only. No original fixture
+was fabricated.
 
 This is accepted original-executable compatibility evidence for the current
 Encyclopedia delivery, not a claim of native-Windows parity. The original
 executable was captured losslessly at 640 by 480 under the repository's Linux
 Wine environment. On 2026-10-07 the user explicitly accepted that evidence as
 sufficient for this delivery: the twelve applicable canonical cells pass from
-the bounded original/production comparisons, while the source-unavailable cell
-passes from its functional evidence with original A0 recorded as not
+the bounded original/production comparisons, while the gameplay-record
+exclusion cell passes from functional evidence with original A0 recorded as not
 applicable. A portable native-Windows capture kit, if pursued later, belongs to
 separate tooling/repository scope and is not an Encyclopedia completion gate.
 
@@ -82,7 +82,7 @@ captures available for those states.
 | `OBJ-01-C010` | disabled previous endpoint | pass |
 | `OBJ-01-C011` | disabled next endpoint | pass within documented Wine repaint boundary |
 | `OBJ-01-C012` | real contextual open | pass for caller-independent opaque rail |
-| `OBJ-01-C013` | approved source-unavailable state | A0 not applicable; functional evidence only |
+| `OBJ-01-C013` | gameplay-only/hidden records excluded | A0 not applicable; functional evidence only |
 
 The tool crops each faction's exact 470-by-330 surface, validates the 640-by-480
 source geometry and capture hashes, and writes original, production, and diff
@@ -228,7 +228,7 @@ OPEN_REBELLION_ENCYCLOPEDIA_A0_CROSSWALK=<ignored E51 crosswalk> \
 OPEN_REBELLION_ENCYCLOPEDIA_A0_ROOT=<ignored original capture root> \
 OPEN_REBELLION_ENCYCLOPEDIA_PUBLICATION_RUN=<final production run> \
   node tools/interface-parity/encyclopedia-a0-acceptance.mjs
-PASS; 12 applicable cells pass, source-unavailable cell is honest N/A
+PASS; 12 applicable cells pass, non-visible exclusion cell is honest N/A
 ```
 
 The first origin mutation run left four centering operators alive because its
@@ -242,9 +242,9 @@ final no-missed results above.
 The functional Encyclopedia and the adapted original-executable compatibility
 matrix pass for the approved current scope. `OBJ-01-C001` through `C012` are
 accepted from the recorded lossless Wine comparison; `OBJ-01-C013` is accepted
-from the verified source-unavailable production behavior, with original A0
-explicitly not applicable because no legitimate original topic supplies that
-state. This checkpoint does not establish native-Windows parity. Such evidence
+from the verified catalog exclusion behavior, with original A0 explicitly not
+applicable because the rejected records do not create a visible topic. This
+checkpoint does not establish native-Windows parity. Such evidence
 may be added later without reopening the current Encyclopedia implementation.
 
 No original PNG, owned EDATA, generated package, full runtime log, local path,

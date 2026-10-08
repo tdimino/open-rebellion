@@ -19,8 +19,9 @@ explicitly optional follow-up; native authors use **Reload Mods** after
 Encyclopedia text or artwork changes.
 
 The visual decision is deliberately bounded. Twelve applicable cells pass
-lossless production/original-executable comparison under Wine. The thirteenth,
-source-unavailable state passes functionally with original A0 not applicable.
+lossless production/original-executable comparison under Wine. The thirteenth
+cell verifies that gameplay-only/hidden mission records stay out of the visible
+catalog, with original A0 not applicable.
 The user accepted this as sufficient for the current delivery on 2026-10-07.
 Native-Windows parity is not claimed, and a portable Windows capture kit is
 separate tooling/repository scope rather than an Encyclopedia release blocker.
@@ -50,14 +51,14 @@ not duplicate their lower-level reports.
 
 | Contract area | Final authority and result |
 |---|---|
-| Owned extraction and source identity | P66A strictly stages 348 prose records and 191 logical mappings; [topic-source evidence](2026-10-01-encyclopedia-topic-source-bindings.md) records 346 complete and ten explicit source-empty topics per faction. |
+| Owned extraction and source identity | P66A strictly stages 348 prose records and 191 logical mappings; [P68](2026-10-08-encyclopedia-visible-catalog-correction.md) records 346 complete visible topics per faction and ten excluded gameplay-only/hidden mission identities. |
 | Validation and installation | W1 and W2 reject malformed or oversized candidates before one atomic session publication and retain the last-known-good session on failure. Native base and faithful-HD acquisition enforce the 128 MiB retained-artwork ceiling while reading rather than after retaining the complete corpus. |
 | Native, packed, and loose readers | W5 and E34 prove one logical fingerprint and exact referenced bytes; ORPK remains the release authority and loose content is development-only. |
-| Presentation and navigation | W3, W4, E30, E32, and E35 cover both factions, all seven categories, bounded previous/next, cockpit and contextual origins, exact returns, and the unavailable-source state. |
+| Presentation and navigation | W3, W4, E30, E32, E35, and P68 cover both factions, all seven categories, bounded previous/next, cockpit and contextual origins, exact returns, and 346 complete visible topics with gameplay-only mission records excluded. |
 | Production packaging | New builds require the exact canonical catalog digest, 348-text/191-mapping source profile, and Rust source audit before compilation; old or partial packs fail closed. Single-read artwork validation matches Rust's BMP, 32 MiB per-image, and 128 MiB aggregate rules, with a digest guard against later replacement. `ff7ea6f0` restores clean Docker source staging, `EData` handoff, `FORCE_REBUILD`, and `PREPARE_MODDING=0` behavior. |
 | HD and mods | W6 retains original-first selection. W7 applies validated native-only presentation overlays outside `GameWorld`; browser content remains base-only. |
 | Persistence and determinism | E34 verifies unchanged save, replay, simulation, RNG, and world fingerprints. |
-| Visual evidence | E35 supplies twelve applicable lossless Wine comparisons; source-unavailable is functional with original A0 not applicable. All thirteen `OBJ-01` cells pass the accepted current gate without a native-Windows claim. |
+| Visual evidence | E35 supplies twelve applicable lossless Wine comparisons; gameplay-record exclusion is functional with original A0 not applicable. All thirteen `OBJ-01` cells pass the accepted current gate without a native-Windows claim. |
 
 ## Final reconciliation checks
 
@@ -117,8 +118,8 @@ artifacts, credentials, and local installation paths remain ignored.
 
 - Native-Windows parity is unclaimed; current original-executable evidence is
   the accepted Wine capture set.
-- The source-unavailable state has no legitimate original topic and therefore
-  no A0 image.
+- Gameplay-only and hidden mission records create no visible original topic and
+  therefore have no A0 image.
 - Browser mods and filesystem discovery remain unsupported by design.
 - Automatic Encyclopedia watcher reload is deferred; native manual reload is
   documented and validated.

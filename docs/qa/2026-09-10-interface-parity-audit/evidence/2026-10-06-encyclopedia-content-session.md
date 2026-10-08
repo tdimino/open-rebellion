@@ -17,9 +17,9 @@ The session owns the validated index and source catalog, both typed faction
 topic catalogs, exact artwork bytes and SHA-256/length/dimension/bit-depth
 metadata, one combined logical fingerprint, and one Encyclopedia-only
 texture-generation identity. Catalog categories, entry identity/order, and
-bindings are checked before publication. Only the ten P66A source-empty mission
-objects may lack exactly prose and artwork; a missing system picture always
-fails. Artwork must match the established original 400-by-200, 8-bit indexed,
+bindings are checked before publication. Every visible topic must have prose
+and artwork; a missing system picture also fails. The ten P68 gameplay-only or
+hidden mission records never enter the catalog. Artwork must match the established original 400-by-200, 8-bit indexed,
 uncompressed BMP class, fit 32 MiB per resource and 128 MiB in aggregate, and
 contain its complete declared pixel range. It performs no filesystem, network,
 renderer, GPU, `GameWorld`, save, replay, RNG, multiplayer, or simulation

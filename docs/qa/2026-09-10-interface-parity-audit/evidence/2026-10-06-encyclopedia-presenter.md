@@ -11,7 +11,7 @@ This checkpoint adds one graphics-free presenter over the W2 immutable
 Encyclopedia session. It performs no filesystem or network I/O, owns no decoded
 texture or renderer handle, and does not inspect or mutate `GameWorld`. Its
 output contains the selected audience, category and rows; resolved prose and
-validated artwork metadata or an explicit source-unavailable state; bounded
+validated artwork metadata; bounded
 previous and next targets; and the immutable route to which close must return.
 
 Cockpit, index, object and the five recovered contextual callers enter through
@@ -54,10 +54,10 @@ reconciliation, not permission for the presenter to invent a second sort.
 
 ## Coverage
 
-The generated synthetic corpus exercises all 356 logical objects for Alliance
-and Empire. For each audience it produces 346 resolved topics and exactly the
-ten P66A source-empty mission identities as `SourceUnavailable`, with no prose
-or artwork fallback. Independent cases cover:
+The generated synthetic corpus exercises all 346 visible logical objects for
+Alliance and Empire. Every topic resolves complete prose and artwork. Session
+validation rejects incomplete rows rather than presenting blank topics.
+Independent cases cover:
 
 - exact resolved title, prose, factional artwork identity and resource metadata;
 - seven category counts and order-preserving category projection;

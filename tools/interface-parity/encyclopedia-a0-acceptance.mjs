@@ -294,7 +294,7 @@ export function runAcceptance({ crosswalkPath, a0Root, publicationRun }) {
     comparison_profile: "lossless 640x480 Wine A0 versus normal-route production browser; pixelmatch threshold 0.1 with explicit per-region maxima",
     limitations: [
       "A0 captures are Wine compatibility observations, not original-Windows rendering proof.",
-      "The source-empty state is plan-defined and has no honest original A0 fixture.",
+      "The gameplay-only mission exclusion has no visible surface and therefore no A0 fixture.",
       "The contextual A0 and production captures use different source-proven callers, so only the caller-independent opaque rail is compared.",
       "The retained final-topic A0 has a documented Wine repaint lag and a different visible topic from its traced endpoint identity, so endpoint comparison is limited to caller-independent frame regions.",
     ],

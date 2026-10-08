@@ -716,11 +716,11 @@ mod tests {
             let session = store.current().unwrap();
             assert_eq!(
                 session.topics(EncyclopediaAudience::Alliance).entries.len(),
-                356
+                346
             );
             assert_eq!(
                 session.topics(EncyclopediaAudience::Empire).entries.len(),
-                356
+                346
             );
             assert_eq!(
                 session

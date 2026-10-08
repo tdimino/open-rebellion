@@ -21,7 +21,7 @@ controls, topic/index rail controls, and previous/next normal, pressed, and
 disabled resources. The original 400-by-200 topic art is drawn at `(12,31)`;
 the bounded body aperture is `(17,231,395,80)`. Index selection, nine-row page
 movement, category traversal, bounded previous/next, body scrolling, mode
-switching, close, source-unavailable topics, transparent hit rejection, and
+switching, close, transparent hit rejection, and
 captured press/release behavior all emit typed actions back to the application.
 
 This is still a production-dormant rollback point. The new adapter and fixture
@@ -34,18 +34,18 @@ fingerprints across them, packaged journeys, and production route activation.
 `EncyclopediaTopicTextureCache` retains at most one selected-topic handle. Its
 key contains the W2 texture generation, resource identity, filename, and digest.
 An unchanged key is a cache hit; a topic/resource/generation change, index or
-source-unavailable frame, decode error, dimension mismatch, explicit clear, or
+non-topic frame, decode error, dimension mismatch, explicit clear, or
 cache drop releases the old handle. Decoding occurs only on a key change, the
 decoded dimensions must equal the W2 metadata, and upload uses nearest sampling.
-The browser gate proves that a source-unavailable endpoint contains no pixels
-from the previously selected synthetic topic.
+The session gate now prevents an incomplete visible endpoint from reaching the
+surface at all.
 
 ## Synthetic evidence boundary
 
 The checked-in W4 fixture is redistributable synthetic P66A-shaped data. It
 covers short prose, long wrapped prose, an explicit newline, a long token, four
-ordered entries, both factions, both navigation endpoints, and an explicit
-source-unavailable mission. Its source SHA-256 is
+ordered entries, both factions, and both navigation endpoints. Its historical
+source SHA-256 is
 `3962987aff1ea257ae1b3915dd80773355faa9a888eff4ed9f15ba2bfba6715a`.
 It is not original prose, an A0 capture, or proof of the W5 canonical packaged
 reader. The displayed synthetic bitmaps are generated only inside the
@@ -80,8 +80,8 @@ pixels of the prior middle-topic color. The scaled cases retain 124,251 of
 125,000 expected solid pixels; the sub-one-percent edge difference is the
 browser's scaled raster boundary, not stretched fixed-control geometry.
 
-Visual inspection covered Alliance index and topic transitions, the Imperial
-source-unavailable topic, and the Imperial 800-by-600 scaled topic. The known
+Visual inspection covered Alliance index and topic transitions and the
+Imperial 800-by-600 scaled topic. The known
 `topic_title_arrow_overlap` remains visible. Its exact title/font placement is
 not changed speculatively and remains part of the strict original A0 gate.
 

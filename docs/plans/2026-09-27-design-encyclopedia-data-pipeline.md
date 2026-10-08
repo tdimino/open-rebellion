@@ -31,8 +31,10 @@ stager now extracts all 348 `ENCYTEXT` type-10 records and all 191 logical
 `ENCYBMAP` strings into an ignored, checksummed catalog with strict
 Windows-1252 decoding. The typed Rust join reproduces the ordinary low-12-bit
 plus `0x1000` lookup, the 26-value system-picture switch, and the factional
-mission-art offset. It resolves 346 of the 356 index objects for each faction
-and reports the ten source-empty mission records without fallback content. All
+mission-art offset. P68 applies the original `FUN_00422620` visibility
+predicate and resolves all 346 visible index objects for each faction. Ten
+gameplay-only or hidden mission records are reported as excluded provenance
+rather than displayed as blank topics. All
 186 mapped EDATA filenames exist in the 187-file owned set; unreferenced
 `EDATA.192` remains outside the proven lookup table. See the
 [P66A evidence record](../qa/2026-09-10-interface-parity-audit/evidence/2026-10-01-encyclopedia-topic-source-bindings.md).
@@ -41,8 +43,8 @@ W2 through W7 and E30-E35 now implement immutable installation, topic
 composition, exact bounded navigation, canonical native/browser publication
 and journeys, original-first HD selection, native presentation overlays, and
 production command `0x131`. E35 passes the approved current `OBJ-01` gate using
-lossless original-executable-under-Wine comparison plus functional evidence for
-the original-not-applicable source-unavailable state. Native-Windows parity is
+lossless original-executable-under-Wine comparison for the twelve applicable
+original-visible states. Native-Windows parity is
 not claimed and is not a blocker for this delivery.
 
 ## 1. Purpose and scope

@@ -96,13 +96,13 @@ and passes the complete comparison contract.
   for the separate source-recovered faction composition, seven selected
   category states, rail states, native clipping, and exact browser comparisons.
 - Review the [P65 Encyclopedia index-catalog evidence](evidence/2026-09-30-encyclopedia-index-catalog.md)
-  for all 356 source entries, seven TEXTSTRA labels and family filters, stable
+  for the corrected 346 visible source entries, seven TEXTSTRA labels and family filters, stable
   selection, scrolling, and both faction browser journeys. Topic pages,
   ENCYTEXT/EDATA bindings, production routing, A0, and `OBJ-01` remain open.
 - Review the [P66A Encyclopedia topic-source evidence](evidence/2026-10-01-encyclopedia-topic-source-bindings.md)
   for strict English ENCYTEXT/ENCYBMAP extraction, exact system and factional
   lookup rules, 346 complete source joins per faction, and ten explicit
-  source-empty mission records. Browser transport, topic rendering, routing,
+  ten gameplay-only/hidden mission records excluded from the visible catalog. Browser transport, topic rendering, routing,
   A0, and `OBJ-01` remain open.
 - Review the [W2 immutable content-session evidence](evidence/2026-10-06-encyclopedia-content-session.md),
   [W3 pure-presenter evidence](evidence/2026-10-06-encyclopedia-presenter.md), and
@@ -115,7 +115,7 @@ and passes the complete comparison contract.
   [E34 technical-acceptance evidence](evidence/2026-10-07-encyclopedia-technical-acceptance.md),
   and [E35 original-executable compatibility evidence](evidence/2026-10-07-encyclopedia-a0-compatibility.md)
   for atomic validated installation, exact session-order projection, both
-  faction bindings, explicit source-empty topics, bounded navigation, and
+  faction bindings, complete visible topics, bounded navigation, and
   immutable close/return routes, plus fixture-gated authentic rendering and
   selected-only texture ownership. Native, packed-browser, and
   development-loose readers now converge on exact bytes and one logical
@@ -131,10 +131,10 @@ and passes the complete comparison contract.
   deterministic production fonts, empty selection, tooltips, and modal order;
   its expanded normal-route browser journey passes twelve applicable lossless
   comparisons against the original executable under Wine, with the plan's
-  source-unavailable state honestly A0-not-applicable. By explicit user
+  gameplay-record exclusion honestly A0-not-applicable. By explicit user
   decision on 2026-10-07, that Wine evidence is sufficient for the current
   delivery: the twelve comparison cells and the functionally verified
-  source-unavailable cell are accepted without claiming native-Windows parity.
+  non-visible exclusion cell are accepted without claiming native-Windows parity.
   Production cockpit/contextual routing and exact returns now pass native and
   packaged-browser gates with strict new-package content and old-pack
   unavailable compatibility. All thirteen `OBJ-01` cells pass the approved

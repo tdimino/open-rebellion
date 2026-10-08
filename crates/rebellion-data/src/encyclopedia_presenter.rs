@@ -517,7 +517,7 @@ mod tests {
         EncyclopediaResourceBytes, EncyclopediaSession, EncyclopediaSessionInput,
         EncyclopediaSessionStore,
     };
-    use crate::encyclopedia_topics::{EncyclopediaAudience, ENCYCLOPEDIA_SOURCE_EMPTY_OBJECT_IDS};
+    use crate::encyclopedia_topics::EncyclopediaAudience;
 
     const SHARED_SOURCE: &[u8] =
         include_bytes!("../../../tests/fixtures/encyclopedia/p66a/source.json");
@@ -621,7 +621,7 @@ mod tests {
     }
 
     fn full_catalog() -> EncyclopediaCatalog {
-        let mut entries = Vec::with_capacity(356);
+        let mut entries = Vec::with_capacity(346);
         let mut ordinal = 1_u16;
         let mut push = |object_id: u32| {
             entries.push(EncyclopediaCatalogEntry {
@@ -641,10 +641,7 @@ mod tests {
             push(0x2000_0000 | record_id);
         }
         for record_id in 1..=15 {
-            push(0x4000_0000 | record_id);
-        }
-        for object_id in ENCYCLOPEDIA_SOURCE_EMPTY_OBJECT_IDS {
-            push(object_id);
+            push(0x5000_0000 | record_id);
         }
         for record_id in 1..=10 {
             push(0x1000_0000 | record_id);
@@ -652,7 +649,7 @@ mod tests {
         for record_id in 1..=69 {
             push(0x3000_0000 | record_id);
         }
-        assert_eq!(entries.len(), 356);
+        assert_eq!(entries.len(), 346);
 
         EncyclopediaCatalog {
             title: "Galactic Encyclopedia".into(),
@@ -676,31 +673,27 @@ mod tests {
         let mut artwork = serde_json::Map::new();
         let mut system_pictures = HashMap::new();
         for entry in &catalog.entries {
-            let source_empty = ENCYCLOPEDIA_SOURCE_EMPTY_OBJECT_IDS.contains(&entry.object_id);
             let key = (entry.text_resource_id & 0x0fff) + 0x1000;
-            if !source_empty {
-                let body = format!("Synthetic body for {}.", entry.name);
-                texts.insert(
-                    key.to_string(),
-                    serde_json::json!({
-                        "body": body,
-                        "body_sha256": format!("{:x}", Sha256::digest(body.as_bytes())),
-                    }),
-                );
-            }
+            let body = format!("Synthetic body for {}.", entry.name);
+            texts.insert(
+                key.to_string(),
+                serde_json::json!({
+                    "body": body,
+                    "body_sha256": format!("{:x}", Sha256::digest(body.as_bytes())),
+                }),
+            );
             match entry.family() {
                 0x90..=0x97 => {
                     system_pictures.insert(entry.object_id, 1);
                     artwork.insert("11100".into(), serde_json::json!("EDATA.001"));
                 }
-                0x40..=0x7f if !source_empty => {
+                0x40..=0x7f => {
                     artwork.insert(key.to_string(), serde_json::json!("EDATA.001"));
                     artwork.insert((key + 0x1000).to_string(), serde_json::json!("EDATA.001"));
                 }
-                _ if !source_empty => {
+                _ => {
                     artwork.insert(key.to_string(), serde_json::json!("EDATA.001"));
                 }
-                _ => {}
             }
         }
         assert_eq!(texts.len(), 346);
@@ -790,7 +783,7 @@ mod tests {
     }
 
     #[test]
-    fn every_entry_for_both_factions_is_resolved_or_explicitly_source_unavailable() {
+    fn every_visible_entry_for_both_factions_is_resolved() {
         let session = full_session();
 
         for audience in [EncyclopediaAudience::Alliance, EncyclopediaAudience::Empire] {
@@ -800,14 +793,14 @@ mod tests {
             )
             .unwrap();
             assert_eq!(index.mode, EncyclopediaPresentationMode::Index);
-            assert_eq!(index.topics.len(), 356);
+            assert_eq!(index.topics.len(), 346);
             assert_eq!(
                 index
                     .categories
                     .iter()
                     .map(|category| category.topic_count)
                     .collect::<Vec<_>>(),
-                [356, 200, 38, 14, 25, 10, 69]
+                [346, 200, 38, 14, 15, 10, 69]
             );
             assert_eq!(
                 index
@@ -817,17 +810,10 @@ mod tests {
                     .count(),
                 346
             );
-            assert_eq!(
-                index
-                    .topics
-                    .iter()
-                    .filter(|topic| {
-                        topic.availability == EncyclopediaTopicAvailability::SourceUnavailable
-                    })
-                    .map(|topic| topic.object_id)
-                    .collect::<Vec<_>>(),
-                ENCYCLOPEDIA_SOURCE_EMPTY_OBJECT_IDS
-            );
+            assert!(index
+                .topics
+                .iter()
+                .all(|topic| topic.availability == EncyclopediaTopicAvailability::Resolved));
 
             for expected in &session.catalog().entries {
                 let topic = EncyclopediaPresenter::present(
@@ -843,14 +829,10 @@ mod tests {
                 .unwrap();
                 assert_eq!(topic.object_id, expected.object_id);
                 assert_eq!(topic.title, expected.name);
-                if ENCYCLOPEDIA_SOURCE_EMPTY_OBJECT_IDS.contains(&expected.object_id) {
-                    assert_eq!(topic.content, EncyclopediaTopicContent::SourceUnavailable);
-                } else {
-                    assert!(matches!(
-                        topic.content,
-                        EncyclopediaTopicContent::Resolved { .. }
-                    ));
-                }
+                assert!(matches!(
+                    topic.content,
+                    EncyclopediaTopicContent::Resolved { .. }
+                ));
             }
         }
     }

@@ -65,14 +65,14 @@ capture is tracked.
 | P66A catalog SHA-256 | `354643f3a5cb58c7bfa92e094d687ba3188c037eac14a961ea843f6b50566994` |
 | P66A manifest SHA-256 | `238b8879565ab2603594a8705f3538c652da3541b147457be09ec1f3ef25e8b1` |
 | Referenced unique artwork | 186 exact files |
-| Alliance topics | 356 total, 346 complete, 10 explicit source-empty |
-| Empire topics | 356 total, 346 complete, 10 explicit source-empty |
-| Native/packed/loose logical fingerprint | `5c4b64bfd739508e63a87118fd7cac8503ea2d34999144838074a52736b00fe3` |
-| Final ORPK SHA-256 | `e4c0157a8701aa1631f642db04c71b5e01d7280cf3e0cb691b428c502a1afa4e` |
-| Final ORPK size | 50,846,574 bytes |
-| Final production WASM SHA-256 | `a12e9a9dae22340717fb9889f7b1e2230b94b485e1ea64207516f7d059d866de` |
+| Alliance topics | 346 visible, 346 complete |
+| Empire topics | 346 visible, 346 complete |
+| Native/packed/loose logical fingerprint | `20c342868cee50e80ef3b94b9f81a898c48f4b593ddd0d83ab69b67d755ae9ea` |
+| Historical W5A ORPK SHA-256 | `e4c0157a8701aa1631f642db04c71b5e01d7280cf3e0cb691b428c502a1afa4e` |
+| Historical W5A ORPK size | 50,846,574 bytes |
+| Historical W5A production WASM SHA-256 | `a12e9a9dae22340717fb9889f7b1e2230b94b485e1ea64207516f7d059d866de` |
 
-Two independent final pack builds and `web/data/runtime.orpk` were byte-equal
+Two independent W5A pack builds and `web/data/runtime.orpk` were byte-equal
 and shared the ORPK hash above. The pack contained 52 ordinary game files, two
 Encyclopedia metadata records, 186 Encyclopedia artwork records, 2,326 UI
 bitmaps, and 3,988 advisor frames.
@@ -89,7 +89,8 @@ WASM above. It loaded exactly four successful requests:
 
 The harness exact-compared the packed catalog, manifest, and every declared
 artwork byte with the ignored owned inputs. The application logged the expected
-fingerprint and `356/356` faction counts. There were zero page, request, or
+fingerprint and `346/346` faction counts after the P68 visible-catalog
+correction. There were zero page, request, or
 console errors, and the interface-fixture bridge was absent.
 
 Local ignored evidence:

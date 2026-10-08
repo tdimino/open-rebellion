@@ -2,6 +2,12 @@
   "schema_version": 1,
   "checkpoint": "P65",
   "status": "bounded_pass",
+  "superseded_by": {
+    "checkpoint": "P68",
+    "date": "2026-10-08",
+    "reason": "FUN_00422620 excludes ten gameplay-only or hidden mission records before the visible catalog is built",
+    "visible_object_count": 346
+  },
   "scope": "production-dormant source-derived Galactic Encyclopedia index catalog with a test-only browser route",
   "source": {
     "object_count": 356,

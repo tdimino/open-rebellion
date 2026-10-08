@@ -202,7 +202,6 @@ impl Scenario {
         match self {
             Self::EncyclopediaSurfaceMiddle => Some(FixtureStart::MiddleTopic),
             Self::EncyclopediaSurfaceFirst => Some(FixtureStart::FirstTopic),
-            Self::EncyclopediaSurfaceUnavailable => Some(FixtureStart::SourceUnavailableTopic),
             Self::EncyclopediaSurfaceIndex => Some(FixtureStart::Index),
             _ => None,
         }
@@ -214,9 +213,6 @@ impl Scenario {
             Self::EncyclopediaCanonicalFirst => Some(CanonicalFixtureStart::FirstTopic),
             Self::EncyclopediaCanonicalLast => Some(CanonicalFixtureStart::LastTopic),
             Self::EncyclopediaCanonicalLongest => Some(CanonicalFixtureStart::LongestResolvedTopic),
-            Self::EncyclopediaCanonicalUnavailable => {
-                Some(CanonicalFixtureStart::SourceUnavailableTopic)
-            }
             Self::EncyclopediaCanonicalContextual => {
                 Some(CanonicalFixtureStart::ContextualFirstTopic)
             }

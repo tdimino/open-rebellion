@@ -337,7 +337,7 @@
       "retrieval": {
         "sources": ["REBEXE.EXE", "ENCYBMAP.DLL", "ENCYTEXT.DLL", "EData", "GOKRES.DLL"],
         "method": "Trace topic commands and previous/next navigation through ENCYBMAP mappings, ENCYTEXT records, EData image selection, and missing-entry handling.",
-        "next_proof": "Accepted for the current Encyclopedia delivery by E35 and the 2026-10-07 user evidence ruling: production browser transport, topic composition, navigation, contextual routing, exact returns, and all twelve applicable original-executable-under-Wine comparisons pass; the source-unavailable state passes functionally with original A0 not applicable. Native-Windows parity is not claimed and any future capture kit is separate tooling scope."
+        "next_proof": "Accepted for the current Encyclopedia delivery by E35, P68, and the 2026-10-07 user evidence ruling: production browser transport, 346 complete visible topics, navigation, contextual routing, exact returns, and all twelve applicable original-executable-under-Wine comparisons pass; gameplay-only/hidden-record exclusion passes functionally with original A0 not applicable. Native-Windows parity is not claimed and any future capture kit is separate tooling scope."
       },
       "runtime_capture_required": true
     },

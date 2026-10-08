@@ -339,14 +339,12 @@ mod fixture {
     const SYSTEM_ID: u32 = 0x9200_0064;
     const MISSION_ID: u32 = 0x5100_0010;
     const SHIP_ID: u32 = 0x1400_0040;
-    const SOURCE_UNAVAILABLE_ID: u32 = 0x4100_0001;
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum FixtureStart {
         Index,
         FirstTopic,
         MiddleTopic,
-        SourceUnavailableTopic,
     }
 
     /// Canonical fixture entry points selected from the installed session.
@@ -360,7 +358,6 @@ mod fixture {
         FirstTopic,
         LastTopic,
         LongestResolvedTopic,
-        SourceUnavailableTopic,
         ContextualFirstTopic,
     }
 
@@ -443,11 +440,6 @@ mod fixture {
                     category_command: 0x6f,
                     object_id: MISSION_ID,
                 },
-                FixtureStart::SourceUnavailableTopic => EncyclopediaEntryIntent::Object {
-                    audience,
-                    category_command: 0x6f,
-                    object_id: SOURCE_UNAVAILABLE_ID,
-                },
             };
             Ok(Self::from_intent(session, intent))
         }
@@ -486,20 +478,6 @@ mod fixture {
                     object_id: longest_resolved_object_id(&session, audience).ok_or_else(|| {
                         "canonical Encyclopedia catalog has no resolved topic".to_owned()
                     })?,
-                },
-                CanonicalFixtureStart::SourceUnavailableTopic => EncyclopediaEntryIntent::Object {
-                    audience,
-                    category_command: all,
-                    object_id: session
-                        .topics(audience)
-                        .entries
-                        .iter()
-                        .find(|entry| !entry.is_complete())
-                        .ok_or_else(|| {
-                            "canonical Encyclopedia catalog has no source-unavailable topic"
-                                .to_owned()
-                        })?
-                        .object_id,
                 },
                 CanonicalFixtureStart::ContextualFirstTopic => {
                     EncyclopediaEntryIntent::Contextual {
@@ -810,11 +788,6 @@ mod fixture {
                     text_resource_id: 0x2740,
                     name: "Mon Calamari Cruiser".into(),
                 },
-                EncyclopediaCatalogEntry {
-                    object_id: SOURCE_UNAVAILABLE_ID,
-                    text_resource_id: 0x2f00,
-                    name: "Source Unavailable".into(),
-                },
             ],
         };
         let artwork: EncyclopediaResourceBytes = BTreeMap::from([
@@ -873,12 +846,12 @@ mod fixture {
         use super::*;
 
         #[test]
-        fn fixture_starts_cover_index_endpoints_long_prose_and_source_unavailable() {
+        fn fixture_starts_cover_index_endpoints_and_long_prose() {
             for audience in [EncyclopediaAudience::Alliance, EncyclopediaAudience::Empire] {
                 let index = EncyclopediaSurfaceFixture::new(audience, FixtureStart::Index).unwrap();
                 let view = EncyclopediaPresenter::present(&index.session, index.intent).unwrap();
                 assert_eq!(view.mode, EncyclopediaPresentationMode::Index);
-                assert_eq!(view.topics.len(), 4);
+                assert_eq!(view.topics.len(), 3);
 
                 let first =
                     EncyclopediaSurfaceFixture::new(audience, FixtureStart::FirstTopic).unwrap();
@@ -896,17 +869,6 @@ mod fixture {
                     EncyclopediaTopicContent::Resolved { description, .. }
                         if description.len() > 200
                 ));
-
-                let unavailable =
-                    EncyclopediaSurfaceFixture::new(audience, FixtureStart::SourceUnavailableTopic)
-                        .unwrap();
-                let view = EncyclopediaPresenter::present(&unavailable.session, unavailable.intent)
-                    .unwrap();
-                assert_eq!(view.navigation.next_object_id, None);
-                assert_eq!(
-                    view.active_topic.unwrap().content,
-                    EncyclopediaTopicContent::SourceUnavailable
-                );
             }
         }
 
@@ -971,27 +933,6 @@ mod fixture {
                         if description.len() == longest_body_bytes
                 ));
 
-                let unavailable = EncyclopediaSurfaceFixture::from_session(
-                    Arc::clone(&session),
-                    audience,
-                    CanonicalFixtureStart::SourceUnavailableTopic,
-                )
-                .unwrap();
-                let unavailable_view =
-                    EncyclopediaPresenter::present(&unavailable.session, unavailable.intent)
-                        .unwrap();
-                let expected = session
-                    .topics(audience)
-                    .entries
-                    .iter()
-                    .find(|entry| !entry.is_complete())
-                    .map(|entry| entry.object_id);
-                assert_eq!(unavailable_view.navigation.selected_object_id, expected);
-                assert_eq!(
-                    unavailable_view.active_topic.unwrap().content,
-                    EncyclopediaTopicContent::SourceUnavailable
-                );
-
                 let contextual = EncyclopediaSurfaceFixture::from_session(
                     Arc::clone(&session),
                     audience,
@@ -1033,7 +974,7 @@ mod fixture {
             assert_eq!(observation.categories.len(), 7);
             assert_eq!(observation.topic_count, session.catalog().entries.len());
             assert_eq!(observation.resolved_count, 3);
-            assert_eq!(observation.source_unavailable_count, 1);
+            assert_eq!(observation.source_unavailable_count, 0);
             assert_eq!(
                 observation.logical_fingerprint,
                 session.logical_fingerprint()
@@ -1046,17 +987,6 @@ mod fixture {
             let encoded = serde_json::to_string(&observation).unwrap();
             assert!(!encoded.contains("Diplomacy"));
             assert!(!encoded.contains("Synthetic mission body"));
-
-            let unavailable = EncyclopediaSurfaceFixture::from_session(
-                session,
-                EncyclopediaAudience::Empire,
-                CanonicalFixtureStart::SourceUnavailableTopic,
-            )
-            .unwrap();
-            let observation = unavailable.observation(0x23_003e).unwrap();
-            assert_eq!(observation.availability, Some("source-unavailable"));
-            assert_eq!(observation.body_utf8_bytes, None);
-            assert_eq!(observation.artwork, None);
 
             let contextual = EncyclopediaSurfaceFixture::from_session(
                 fixture_session().unwrap(),
@@ -1113,7 +1043,7 @@ mod fixture {
             let session = store.current().unwrap();
             assert_eq!(
                 session.logical_fingerprint(),
-                "5c4b64bfd739508e63a87118fd7cac8503ea2d34999144838074a52736b00fe3"
+                "20c342868cee50e80ef3b94b9f81a898c48f4b593ddd0d83ab69b67d755ae9ea"
             );
 
             for audience in [EncyclopediaAudience::Alliance, EncyclopediaAudience::Empire] {
@@ -1125,9 +1055,9 @@ mod fixture {
                 .unwrap();
                 let observation = index.observation(1).unwrap();
                 assert_eq!(observation.categories.len(), 7);
-                assert_eq!(observation.topic_count, 356);
+                assert_eq!(observation.topic_count, 346);
                 assert_eq!(observation.resolved_count, 346);
-                assert_eq!(observation.source_unavailable_count, 10);
+                assert_eq!(observation.source_unavailable_count, 0);
                 for category in &observation.categories {
                     let category_view = EncyclopediaPresenter::present(
                         &session,
@@ -1146,7 +1076,6 @@ mod fixture {
                     CanonicalFixtureStart::FirstTopic,
                     CanonicalFixtureStart::LastTopic,
                     CanonicalFixtureStart::LongestResolvedTopic,
-                    CanonicalFixtureStart::SourceUnavailableTopic,
                     CanonicalFixtureStart::ContextualFirstTopic,
                 ] {
                     let fixture = EncyclopediaSurfaceFixture::from_session(
@@ -1158,16 +1087,10 @@ mod fixture {
                     let observation = fixture.observation(1).unwrap();
                     assert_eq!(observation.mode, "topic");
                     assert_eq!(observation.selected_object_id, observation.active_object_id);
-                    if start == CanonicalFixtureStart::SourceUnavailableTopic {
-                        assert_eq!(observation.availability, Some("source-unavailable"));
-                        assert_eq!(observation.body_utf8_bytes, None);
-                        assert_eq!(observation.artwork, None);
-                    } else {
-                        assert_eq!(observation.availability, Some("resolved"));
-                        let artwork = observation.artwork.unwrap();
-                        assert_eq!((artwork.width, artwork.height), (400, 200));
-                        assert_eq!(artwork.sha256.len(), 64);
-                    }
+                    assert_eq!(observation.availability, Some("resolved"));
+                    let artwork = observation.artwork.unwrap();
+                    assert_eq!((artwork.width, artwork.height), (400, 200));
+                    assert_eq!(artwork.sha256.len(), 64);
                     if start == CanonicalFixtureStart::ContextualFirstTopic {
                         assert_eq!(observation.return_route.kind, "contextual");
                         assert_eq!(
@@ -1206,9 +1129,7 @@ mod tests {
         EncyclopediaResourceBytes, EncyclopediaSessionInput, EncyclopediaSessionStore,
     };
     use rebellion_data::encyclopedia_topics::EncyclopediaAudience;
-    use rebellion_render::{
-        EncyclopediaSurfaceAudience, EncyclopediaSurfaceAvailability, EncyclopediaSurfaceMode,
-    };
+    use rebellion_render::{EncyclopediaSurfaceAudience, EncyclopediaSurfaceMode};
 
     use super::{
         adapt_encyclopedia_surface, encyclopedia_surface_origin, EncyclopediaSurfaceController,
@@ -1272,18 +1193,11 @@ mod tests {
                 category(0x74, 0x1856, Some(0x10..0x14)),
                 category(0x75, 0x1853, Some(0x30..0x40)),
             ],
-            entries: vec![
-                EncyclopediaCatalogEntry {
-                    object_id: 0x5100_0010,
-                    text_resource_id: 0x2c50,
-                    name: "Diplomacy".into(),
-                },
-                EncyclopediaCatalogEntry {
-                    object_id: 0x4100_0001,
-                    text_resource_id: 0x2f00,
-                    name: "Source Empty".into(),
-                },
-            ],
+            entries: vec![EncyclopediaCatalogEntry {
+                object_id: 0x5100_0010,
+                text_resource_id: 0x2c50,
+                name: "Diplomacy".into(),
+            }],
         }
     }
 
@@ -1355,11 +1269,7 @@ mod tests {
         assert_eq!(surface.mode, EncyclopediaSurfaceMode::Topic);
         assert_eq!(surface.category.command_id, 0x6f);
         assert_eq!(surface.categories.len(), 7);
-        assert_eq!(surface.topics.len(), 2);
-        assert_eq!(
-            surface.topics[1].availability,
-            EncyclopediaSurfaceAvailability::SourceUnavailable
-        );
+        assert_eq!(surface.topics.len(), 1);
         let topic = surface.active_topic.unwrap();
         assert_eq!(topic.title, "Diplomacy");
         assert_eq!(topic.description, Some("Synthetic mission body."));
@@ -1372,28 +1282,6 @@ mod tests {
             session.artwork_bytes("EDATA.115").unwrap().as_ptr()
         ));
         assert_eq!(artwork.digest.len(), 64);
-    }
-
-    #[test]
-    fn adapter_keeps_source_unavailable_topic_visibly_empty() {
-        let session = session();
-        let presentation = EncyclopediaPresenter::present(
-            &session,
-            EncyclopediaEntryIntent::Object {
-                audience: EncyclopediaAudience::Alliance,
-                category_command: 0x6f,
-                object_id: 0x4100_0001,
-            },
-        )
-        .unwrap();
-
-        let topic = adapt_encyclopedia_surface(&session, &presentation)
-            .active_topic
-            .unwrap();
-
-        assert_eq!(topic.title, "Source Empty");
-        assert_eq!(topic.description, None);
-        assert_eq!(topic.artwork, None);
     }
 
     #[test]

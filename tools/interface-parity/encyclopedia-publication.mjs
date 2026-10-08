@@ -215,7 +215,7 @@ async function runFactionJourney(browser, origin, faction, namespace) {
   try {
     await page.goto(`${origin}/`, { waitUntil: "load", timeout: 30_000 });
     await waitForLog(observed.consoleLines, "[encyclopedia] content_session installed");
-    await waitForLog(observed.consoleLines, "alliance_topics=356 empire_topics=356");
+    await waitForLog(observed.consoleLines, "alliance_topics=346 empire_topics=346");
     assert.ok(observed.consoleLines.some(({ text }) => text.includes(
       `encyclopedia_assets=${namespace.artwork_count}`,
     )));

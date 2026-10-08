@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "checkpoint": "P68",
+  "date": "2026-10-08",
+  "status": "visible_catalog_corrected",
+  "source_inventory": {
+    "texts": 348,
+    "artwork_mappings": 191,
+    "owned_artwork_files": 187,
+    "catalog_sha256": "354643f3a5cb58c7bfa92e094d687ba3188c037eac14a961ea843f6b50566994",
+    "encytext_sha256": "49aea545a5e09e5fe9115a22bc785690f103d2f931e08bd4a53a617a42636d8c",
+    "encybmap_sha256": "fb545d19ae24b0277753494dbfaabf2dbdde660beab821287a32016c290e4560"
+  },
+  "visible_catalog": {
+    "objects": 346,
+    "category_counts": {
+      "all": 346,
+      "systems": 200,
+      "ships": 38,
+      "facilities": 14,
+      "missions": 15,
+      "troops": 10,
+      "personnel": 69
+    },
+    "alliance_complete": 346,
+    "empire_complete": 346,
+    "missing_bindings_per_faction": 0,
+    "distinct_bound_artwork_per_faction": 172,
+    "logical_fingerprint": "20c342868cee50e80ef3b94b9f81a898c48f4b593ddd0d83ab69b67d755ae9ea"
+  },
+  "excluded_gameplay_mission_object_ids": [
+    "0x41000001",
+    "0x42000002",
+    "0x43000003",
+    "0x44000004",
+    "0x64000044",
+    "0x65000083",
+    "0x71000043",
+    "0x72000045",
+    "0x72000046",
+    "0x73000082"
+  ],
+  "source_rule": "FUN_00422620 admits mission families 0x50..0x7f only when record +0x5c equals zero",
+  "packed_browser_verification": {
+    "status": "pass",
+    "cases": 12,
+    "factions": [
+      "alliance",
+      "empire"
+    ],
+    "wasm_sha256": "b7e5a27606ecbf7f70df2f2179c18ae0cbbba62f30284bd0e1e0d663dca468ac",
+    "runtime_pack_sha256": "e3fd72ad1efc71e7d01a4068b67e826756c3145b26bc7132fd54ce955e0d99c1",
+    "summary_sha256": "973b0ea42a658de3340a522978687113c5ff2fdd27a692e72df68a0b89a91f09",
+    "runtime_errors": 0
+  },
+  "supersedes": [
+    "P65 claim that every MISSNSD.DAT record is a visible index object",
+    "P66A source-unavailable presentation for ten gameplay-only mission records"
+  ]
+}

@@ -150,7 +150,7 @@
       "id": "UIP-F-006",
       "severity": "P1",
       "status": "complete",
-      "title": "The production Encyclopedia, twelve applicable original-executable-under-Wine comparisons, and the functional source-unavailable state pass the accepted current evidence gate; native-Windows parity is not claimed",
+      "title": "The production Encyclopedia, corrected 346-topic visible catalog, twelve applicable original-executable-under-Wine comparisons, and functional gameplay-record exclusion pass the accepted current evidence gate; native-Windows parity is not claimed",
       "evidence": [
         "crates/rebellion-render/src/encyclopedia.rs",
         "crates/rebellion-render/src/encyclopedia_surface.rs",
@@ -167,6 +167,7 @@
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-30-encyclopedia-index-shell.md",
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-30-encyclopedia-index-catalog.md",
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-01-encyclopedia-topic-source-bindings.md",
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-08-encyclopedia-visible-catalog-correction.md",
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-content-session.md",
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-presenter.md",
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-06-encyclopedia-topic-surface.md",

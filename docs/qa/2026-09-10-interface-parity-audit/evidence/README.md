@@ -14,12 +14,17 @@
   independent source and visual review. Production content and routing remain
   open, so it accepts no `OBJ-01` cell.
 - [P65 Encyclopedia index catalog](2026-09-30-encyclopedia-index-catalog.md)
-  tracks all 356 source entries, seven English labels and family filters,
+  is superseded on visible-object count by P68; its shell, labels, ordering,
+  and interaction evidence remain historical context.
+- [P68 Encyclopedia visible-catalog correction](2026-10-08-encyclopedia-visible-catalog-correction.md)
+  proves 346 visible entries, all completely bound, plus a separate audit
+  ledger for ten excluded gameplay-only or hidden mission records.
+  The corrected catalog retains seven English labels and family filters,
   stable selection, scrolling, and a two-faction browser checkpoint.
 - [P66A Encyclopedia topic sources](2026-10-01-encyclopedia-topic-source-bindings.md)
-  tracks strict extraction of 348 prose records and 191 image mappings, 346
-  complete per-faction object joins, and ten explicit source-empty mission
-  records. Browser transport, topic rendering, routing, A0, and `OBJ-01` remain
+  tracks strict extraction of 348 prose records and 191 image mappings. P68
+  corrects the join to 346 complete visible objects per faction. Browser
+  transport, topic rendering, routing, A0, and `OBJ-01` remain
   open.
 - [W7 native Encyclopedia overlays](2026-10-07-encyclopedia-mod-overlays.md)
   tracks deterministic shared dependency order, presence-aware native content
@@ -38,8 +43,8 @@
   tracks the corrected faction origins, typography, selection and modal
   behavior, the expanded both-faction production journey, and twelve passing
   lossless comparisons against the original executable under Wine. The
-  source-unavailable state is honestly A0-not-applicable and passes from
-  functional evidence. The user accepted this evidence for the current
+  non-visible gameplay-record exclusion is honestly A0-not-applicable and
+  passes from functional evidence. The user accepted this evidence for the current
   delivery on 2026-10-07, so all thirteen `OBJ-01` cells pass without a
   native-Windows parity claim.
 - [E36 Encyclopedia final reconciliation](2026-10-07-encyclopedia-final-reconciliation.md)

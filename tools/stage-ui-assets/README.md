@@ -426,8 +426,8 @@ REBELLION_EDATA_DIR="/path/to/Star Wars - Rebellion/EData" \
 
 Before compilation, the Rust source audit joins the staged 348 text records
 and 191 logical image mappings to the canonical DAT/TEXTSTRA index and exact
-owned EData inventory, requiring 356 topics, 346 complete bindings per faction,
-and the ten approved source-empty records. The packer then admits only that
+owned EData inventory, requiring 346 complete visible topics per faction and
+recording the ten excluded gameplay-only mission identities separately. The packer then admits only that
 verified catalog and source-DLL identity, publishes the runtime catalog,
 manifest, and referenced art, and enforces the runtime's exact BMP
 byte-length, 32 MiB per-image, and 128 MiB aggregate contracts. Each artwork

@@ -138,14 +138,14 @@ dialog, advisor-control, and voice families remain incomplete. P62 adds all
 native-size browser display pixel-for-pixel. P64 separately reconstructs both
 authentic Encyclopedia index shells, seven selected category states, rail
 states, native clipping, and native input rejection and capture through 32
-exact browser comparisons. P65 adds the complete source-derived 356-entry
+exact browser comparisons. P68 corrects P65 to the complete source-derived 346-entry visible
 English catalog, seven family filters, stable selection, and scrolling through
 22 two-faction browser states, including the native selected-category no-op,
 while preserving the full P64 regression matrix.
 P66A strictly extracts 348 ENCYTEXT prose records and 191 ENCYBMAP mappings,
 binds 346 complete topics per faction through the recovered ordinary, system,
-and mission lookup rules, and reports ten source-empty missions without
-fallback. W2 validates and atomically installs one immutable platform-neutral
+and mission lookup rules. Ten gameplay-only or hidden mission records are
+excluded from the visible catalog. W2 validates and atomically installs one immutable platform-neutral
 session while preserving the prior session on failure. W3 projects that session
 through one graphics-free API with exact catalog order, bounded no-wrap
 neighbors, explicit unavailable-source topics and immutable cockpit, index or
@@ -154,7 +154,7 @@ topic/index rendering with bounded
 navigation and one selected-only texture. W5A publishes exact canonical bytes
 through deterministic atomically replaced ORPK and a development-only loose
 generation, then proves native, packed-browser, and loose-reader convergence
-on the same 356/356-topic fingerprint without expanding the four-request
+on the same 346/346-topic fingerprint without expanding the four-request
 production budget. W6 adds an opt-in native faithful-HD selection snapshot;
 every candidate must match the validated source identity and reviewed manifest,
 and every rejection retains the original view. E30 proves the canonical
@@ -177,8 +177,8 @@ Encyclopedia production routes now pass bounded implementation journeys;
 E35 additionally corrects faction origins, title/font placement, empty
 selection, hover tooltip and caller occlusion, and its expanded final package
 passes all twelve applicable lossless comparisons against the original
-executable under Wine. The approved source-unavailable state has no honest
-original A0 and passes from functional evidence. By explicit user decision on
+executable under Wine. The gameplay-record exclusion has no visible original
+A0 and passes from functional evidence. By explicit user decision on
 2026-10-07, all thirteen canonical `OBJ-01` cells pass for this delivery;
 native-Windows parity is not claimed.
 P54 separately stages every original type-301 mesh and type-303 texture or
@@ -274,7 +274,7 @@ acceptance.
 | UIP-F-003 | P0 | Original sector and detailed-system shells replace the invented sidebar, but the System window still carries unapproved Personnel, Fleets, Defenses, and Troops tabs absent from native facility-only window type 9. | partial |
 | UIP-F-004 | P0 | Authentic advisor idle runs render for both factions in the scaled apertures, but complete action, voice, and chrome behavior is absent. | partial |
 | UIP-F-005 | P0 | Runtime pack v3 includes ALSPRITE and EMSPRITE BMP/type-302 content plus all 187 original EDATA images; ALBRIEF, EMBRIEF, REBDLOG, action controls, and remaining voice resources remain omitted. | partial |
-| UIP-F-006 | P1 | The working native/browser Encyclopedia, 356-entry catalog, immutable publication, production cockpit/contextual routes, exact returns, old-pack behavior, and twelve applicable original-executable-under-Wine comparisons pass bounded gates. The source-unavailable state is A0-not-applicable and passes functionally. All thirteen `OBJ-01` cells pass the user-approved current evidence gate; native-Windows parity is not claimed. | complete |
+| UIP-F-006 | P1 | The working native/browser Encyclopedia, corrected 346-entry visible catalog, immutable publication, production cockpit/contextual routes, exact returns, old-pack behavior, and twelve applicable original-executable-under-Wine comparisons pass bounded gates. Gameplay-only/hidden-record exclusion is A0-not-applicable and passes functionally. All thirteen `OBJ-01` cells pass the user-approved current evidence gate; native-Windows parity is not claimed. | complete |
 | UIP-F-007 | P1 | Fleet, Ship, Troop, and Personnel Finders, Message Index rows, fleet destinations, Rename, and en-route marks have bounded source-backed paths; native Manufacturing, Build Selection, complete Status, mission, options, and remaining object layouts are replaced or absent. | partial |
 | UIP-F-008 | P1 | Battle Alert, assault/bombardment reports, and battle-result routing are absent or bypassed. | fail |
 | UIP-F-009 | P1 | The bounded practical tactical launcher passes its implementation gates through P58-B22, including combat, commands, grouping, Death Star and result paths, shared campaign return, tactical RNG sequencing, power allocation, completion/destruction callbacks, and the timed trench-run producer. Original view acceptance, whole-process RNG continuity, strategic commander binding, exact planet framing, native beam/playback comparison, and rare audio paths stay open. | fail |

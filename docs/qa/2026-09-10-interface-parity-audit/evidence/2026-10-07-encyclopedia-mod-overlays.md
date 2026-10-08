@@ -70,7 +70,8 @@ Synthetic tests cover:
   permitted addition/removal, and exact base restoration;
 - removal cleanup for unreferenced source/art records while retaining records
   still shared by another topic;
-- legal explicit null restoration of a source-empty topic;
+- rejection and atomic rollback when explicit null would make a visible topic
+  incomplete;
 - immutable existing text-resource IDs and complete validation after each
   layer;
 - missing artwork, invalid overlay candidates, exact active-`Arc` and texture

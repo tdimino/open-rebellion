@@ -21,7 +21,6 @@ const runDir = path.join(root, ".artifacts/interface-parity", `encyclopedia-surf
 const starts = [
   { name: "middle", scenario: 55 },
   { name: "first", scenario: 56 },
-  { name: "unavailable", scenario: 57 },
   { name: "index", scenario: 58 },
 ];
 const factions = [
@@ -246,23 +245,6 @@ async function runCase(server, faction, start, viewport) {
       await page.keyboard.press("ArrowLeft");
       const retained = await stableScreenshot(page, directory, "left-endpoint-retained");
       assert.equal(retained.sha256, initial.sha256, "first topic wrapped backward");
-    } else if (start.name === "unavailable") {
-      checks.middle_color_pixels = countColor(initial.png, artRect, faction.middleColor);
-      assert.equal(checks.middle_color_pixels, 0, "source-unavailable topic retained stale artwork");
-      if (scale === 1) {
-        checks.disabled_forward_differences = compareResource(
-          initial.png,
-          10384,
-          origin.x + 380,
-          origin.y + 14,
-          21,
-          17,
-        );
-        assert.equal(checks.disabled_forward_differences, 0);
-      }
-      await page.keyboard.press("ArrowRight");
-      const retained = await stableScreenshot(page, directory, "right-endpoint-retained");
-      assert.equal(retained.sha256, initial.sha256, "last topic wrapped forward");
     } else {
       await page.keyboard.press("ArrowRight");
       const category = await stableScreenshot(page, directory, "next-category");

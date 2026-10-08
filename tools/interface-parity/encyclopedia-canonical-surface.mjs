@@ -20,7 +20,7 @@ const edata = process.env.REBELLION_EDATA_DIR;
 const executable = process.env.OPEN_REBELLION_CHROME_FOR_TESTING || chromium.executablePath();
 const launchArguments = ["--mute-audio", "--disable-background-networking", "--no-first-run"];
 const expectedRequests = ["/", "/data/runtime.orpk", "/gl.js", "/open-rebellion-test.wasm"];
-const expectedFingerprint = "5c4b64bfd739508e63a87118fd7cac8503ea2d34999144838074a52736b00fe3";
+const expectedFingerprint = "20c342868cee50e80ef3b94b9f81a898c48f4b593ddd0d83ab69b67d755ae9ea";
 const expectedCategories = [
   { command_id: 0x6f, label_resource_id: 0x1850 },
   { command_id: 0x70, label_resource_id: 0x1855 },
@@ -35,13 +35,13 @@ const starts = {
   first: 60,
   last: 61,
   longest: 62,
-  unavailable: 63,
   contextual: 64,
 };
 const factions = [
   {
     name: "alliance",
     byte: 1,
+    nativeOrigin: { x: 62, y: 50 },
     indexResource: 10372,
     indexOrigin: { x: 423, y: 147 },
     closeResource: 10370,
@@ -50,6 +50,7 @@ const factions = [
   {
     name: "empire",
     byte: 2,
+    nativeOrigin: { x: 125, y: 52 },
     indexResource: 10378,
     indexOrigin: { x: 426, y: 143 },
     closeResource: 10376,
@@ -153,10 +154,14 @@ function opaqueProbe(resourceId) {
 }
 
 function compareResource(screenshot, resourceId, x, y, width, height) {
-  const expected = decodeIndexedBmp(fs.readFileSync(path.join(chromeSource, `${resourceId}.bmp`))).png;
+  const decoded = decodeIndexedBmp(fs.readFileSync(path.join(chromeSource, `${resourceId}.bmp`)));
+  const { png: expected, bytes, dataOffset, stride, signedHeight } = decoded;
+  const transparent = bytes[dataOffset];
   let different = 0;
   for (let row = 0; row < height; row += 1) {
+    const sourceRow = signedHeight > 0 ? expected.height - 1 - row : row;
     for (let column = 0; column < width; column += 1) {
+      if (bytes[dataOffset + sourceRow * stride + column] === transparent) continue;
       const actualOffset = ((y + row) * screenshot.width + x + column) * 4;
       const expectedOffset = (row * expected.width + column) * 4;
       if (screenshot.data[actualOffset] !== expected.data[expectedOffset]
@@ -232,9 +237,9 @@ function assertCanonicalObservation(observation, code, faction) {
     observation.categories.map(({ command_id, label_resource_id }) => ({ command_id, label_resource_id })),
     expectedCategories,
   );
-  assert.equal(observation.categories[0].topic_count, 356);
+  assert.equal(observation.categories[0].topic_count, 346);
   assert.equal(observation.resolved_count + observation.source_unavailable_count, observation.topic_count);
-  assert.equal(observation.source_unavailable_count, observation.category_command === 0x6f ? 10 : 0);
+  assert.equal(observation.source_unavailable_count, 0);
   assert.ok(!Object.hasOwn(observation, "title"));
   assert.ok(!Object.hasOwn(observation, "description"));
 }
@@ -286,7 +291,7 @@ async function runIndexJourney(page, directory, faction, origin, scale, initial,
       screenshot_sha256: shot.sha256,
     });
   }
-  assert.equal(categories.slice(1).reduce((sum, category) => sum + category.topic_count, 0), 356);
+  assert.equal(categories.slice(1).reduce((sum, category) => sum + category.topic_count, 0), 346);
   observation = await pressAndWait(page, "ArrowRight", { mode: "index", category_command: 0x6f });
 
   const last = await pressAndWait(page, "End", { mode: "index" });
@@ -381,36 +386,6 @@ async function runLongestJourney(page, directory, faction, origin, scale, initia
   };
 }
 
-async function runUnavailableJourney(page, directory, origin, scale, initial, owned) {
-  assert.equal(initial.availability, "source-unavailable");
-  assert.equal(initial.body_utf8_bytes, null);
-  assert.equal(initial.artwork, null);
-  const initialShot = await stableScreenshot(page, directory, "initial-empty");
-  const forward = initial.next_object_id !== null;
-  const destination = forward ? initial.next_object_id : initial.previous_object_id;
-  assert.ok(destination !== null);
-  const adjacent = await pressAndWait(page, forward ? "ArrowRight" : "ArrowLeft", {
-    mode: "topic",
-    active_object_id: destination,
-  });
-  const adjacentShot = await stableScreenshot(page, directory, "adjacent-topic");
-  const adjacentArtwork = compareArtwork(adjacentShot.png, adjacent, origin, scale, owned);
-  const restored = await pressAndWait(page, forward ? "ArrowLeft" : "ArrowRight", {
-    mode: "topic",
-    active_object_id: initial.active_object_id,
-    availability: "source-unavailable",
-  });
-  assert.equal(restored.artwork, null);
-  const restoredShot = await stableScreenshot(page, directory, "empty-restored");
-  assert.equal(restoredShot.sha256, initialShot.sha256, "source-unavailable topic retained stale pixels");
-  return {
-    object_id: initial.active_object_id,
-    initial_screenshot_sha256: initialShot.sha256,
-    restored_screenshot_sha256: restoredShot.sha256,
-    adjacent_artwork: adjacentArtwork,
-  };
-}
-
 async function runContextualJourney(page, directory, faction, origin, scale, initial, owned) {
   assert.equal(initial.return_route.kind, "contextual");
   assert.equal(initial.return_route.audience, faction.name);
@@ -481,17 +456,17 @@ async function runCase(browser, server, faction, startName, viewport, owned) {
     });
     assertCanonicalObservation(initial, code, faction);
     assert.equal(initial.category_command, 0x6f);
-    assert.equal(initial.topic_count, 356);
+    assert.equal(initial.topic_count, 346);
     assert.equal(initial.resolved_count, 346);
-    assert.equal(initial.source_unavailable_count, 10);
+    assert.equal(initial.source_unavailable_count, 0);
     assert.deepEqual([...new Set(requests.map(({ path: value }) => value))].sort(), [...expectedRequests].sort());
     assert.equal(requests.length, expectedRequests.length, "unexpected duplicate startup request");
     assert.ok(requests.every(({ status }) => status === 200));
     const startupRequests = requests.length;
     const scale = Math.min(viewport.width / 640, viewport.height / 480);
     const origin = {
-      x: Math.round((viewport.width - 640 * scale) / 2 + 85 * scale),
-      y: Math.round((viewport.height - 480 * scale) / 2 + 55 * scale),
+      x: Math.round((viewport.width - 640 * scale) / 2 + faction.nativeOrigin.x * scale),
+      y: Math.round((viewport.height - 480 * scale) / 2 + faction.nativeOrigin.y * scale),
     };
     let journey;
     if (startName === "index") {
@@ -500,8 +475,6 @@ async function runCase(browser, server, faction, startName, viewport, owned) {
       journey = await runEndpointJourney(page, directory, startName, origin, scale, initial, owned);
     } else if (startName === "longest") {
       journey = await runLongestJourney(page, directory, faction, origin, scale, initial, owned);
-    } else if (startName === "unavailable") {
-      journey = await runUnavailableJourney(page, directory, origin, scale, initial, owned);
     } else {
       journey = await runContextualJourney(page, directory, faction, origin, scale, initial, owned);
     }

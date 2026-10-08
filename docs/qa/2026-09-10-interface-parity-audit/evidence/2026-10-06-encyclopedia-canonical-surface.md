@@ -25,7 +25,7 @@ HD selection, or W7 native mod/null/language-overlay precedence.
 The retained browser run contains 14 independent cases and 62 screenshots:
 
 - both factions at 640 by 480 for canonical index, first topic, last topic,
-  longest resolved topic, source-unavailable topic, and contextual topic;
+  longest resolved topic, and contextual topic;
 - both factions at 800 by 600 for the longest resolved topic;
 - all seven recovered category commands (`0x6f` through `0x75`) for each
   faction, for 14 category cells total;
@@ -34,8 +34,6 @@ The retained browser run contains 14 independent cases and 62 screenshots:
 - strict non-wrapping first/last navigation and exact disabled-control chrome;
 - a 1,015-byte longest body with a visible PageDown delta and deterministic
   scroll reset after adjacent-topic navigation;
-- a source-unavailable object with no body or artwork, followed by a resolved
-  adjacent topic and an exact pixel-identical return to the empty topic;
 - contextual entry with the requested object and stable caller token retained
   through adjacent/back navigation and the authentic faction close control;
 - native-size artwork comparison against owned EData bytes for 16 topic
@@ -51,7 +49,7 @@ The canonical category counts were stable for both factions:
 
 | Command | Label resource | Topics |
 |---:|---:|---:|
-| `0x6f` | `0x1850` | 356 |
+| `0x6f` | `0x1850` | 346 |
 | `0x70` | `0x1855` | 200 |
 | `0x71` | `0x1854` | 38 |
 | `0x72` | `0x1852` | 14 |
@@ -59,8 +57,8 @@ The canonical category counts were stable for both factions:
 | `0x74` | `0x1856` | 10 |
 | `0x75` | `0x1853` | 69 |
 
-The all-category view contains 346 resolved topics and the ten exact
-source-empty topics. The browser observation channel records only stable IDs,
+The all-category view contains 346 resolved topics and no incomplete visible
+topics. The browser observation channel records only stable IDs,
 counts, byte lengths, resource filenames, dimensions, and digests; it does not
 export source prose or topic names into tracked fixtures or evidence.
 
@@ -68,8 +66,8 @@ export source prose or topic names into tracked fixtures or evidence.
 
 The ignored owned native test installed the canonical native bytes through the
 W2 session boundary and exercised both audiences, every category, first/last
-endpoints, the dynamically selected longest resolved topic, the first
-source-unavailable topic, and a contextual topic with its exact return token.
+endpoints, the dynamically selected longest resolved topic, and a contextual
+topic with its exact return token.
 Each resolved sample retained validated 400 by 200 artwork metadata and a
 64-character SHA-256 identity.
 

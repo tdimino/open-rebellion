@@ -17,7 +17,6 @@ use crate::encyclopedia_topics::{
     bind_encyclopedia_topics, encyclopedia_logical_fingerprint,
     parse_encyclopedia_source_with_manifest, EncyclopediaAudience, EncyclopediaMissingPart,
     EncyclopediaSourceCatalog, EncyclopediaSourceManifest, EncyclopediaTopicCatalog,
-    ENCYCLOPEDIA_SOURCE_EMPTY_OBJECT_IDS,
 };
 
 /// Maximum retained size of one original Encyclopedia bitmap.
@@ -414,25 +413,11 @@ fn validate_topic_bindings(topics: &EncyclopediaTopicCatalog) -> Result<()> {
                 topic.object_id
             );
         }
-        let source_empty = ENCYCLOPEDIA_SOURCE_EMPTY_OBJECT_IDS.contains(&topic.object_id);
-        if source_empty {
-            ensure!(
-                topic.missing.is_empty()
-                    || topic.missing
-                        == [
-                            EncyclopediaMissingPart::Text,
-                            EncyclopediaMissingPart::ArtworkMapping,
-                        ],
-                "source-empty Encyclopedia object {:#010x} has unexpected bindings",
-                topic.object_id
-            );
-        } else {
-            ensure!(
-                topic.missing.is_empty(),
-                "unapproved missing Encyclopedia binding for object {:#010x}",
-                topic.object_id
-            );
-        }
+        ensure!(
+            topic.missing.is_empty(),
+            "unapproved missing Encyclopedia binding for object {:#010x}",
+            topic.object_id
+        );
     }
     Ok(())
 }
@@ -979,28 +964,22 @@ mod tests {
     }
 
     #[test]
-    fn only_the_source_proven_empty_mission_identities_may_remain_unbound() {
-        let mut valid = input();
-        valid.catalog.entries.push(EncyclopediaCatalogEntry {
+    fn gameplay_only_mission_identities_cannot_reenter_as_unbound_topics() {
+        let mut invalid = input();
+        invalid.catalog.entries.push(EncyclopediaCatalogEntry {
             object_id: 0x7200_0045,
             text_resource_id: 0x2450,
             name: "Vacation".into(),
         });
 
         let mut store = EncyclopediaSessionStore::default();
-        store.replace(valid).unwrap();
+        let error = store.replace(invalid).unwrap_err();
 
-        for audience in [EncyclopediaAudience::Alliance, EncyclopediaAudience::Empire] {
-            let topics = store.current().unwrap();
-            let vacation = topics.topics(audience).topic(0x7200_0045).unwrap();
-            assert_eq!(
-                vacation.missing,
-                [
-                    crate::encyclopedia_topics::EncyclopediaMissingPart::Text,
-                    crate::encyclopedia_topics::EncyclopediaMissingPart::ArtworkMapping,
-                ]
-            );
-        }
+        assert!(
+            format!("{error:#}").contains("unapproved missing"),
+            "{error:#}"
+        );
+        assert!(store.current().is_none());
     }
 
     #[test]
@@ -1287,49 +1266,25 @@ mod tests {
     }
 
     #[test]
-    fn explicit_null_legally_restores_a_source_empty_topic_after_a_complete_overlay() {
-        let mut base = input();
-        base.catalog.entries.push(EncyclopediaCatalogEntry {
-            object_id: 0x7200_0045,
-            text_resource_id: 0x2450,
-            name: "Vacation".into(),
-        });
-        base.catalog.entries.sort_by(|left, right| {
-            left.name
-                .to_lowercase()
-                .cmp(&right.name.to_lowercase())
-                .then(left.object_id.cmp(&right.object_id))
-        });
-        let mut base_store = EncyclopediaSessionStore::default();
-        base_store.replace(base.clone()).unwrap();
-        let base_fingerprint = base_store
-            .current()
-            .unwrap()
-            .logical_fingerprint()
-            .to_owned();
-        let fill = overlay_layer(
-            "fill-empty",
-            br#"[{"id":1912602693,"body":"Now documented","image":{"path":"encyclopedia/assets/vacation.bmp"}}]"#,
-            &[("encyclopedia/assets/vacation.bmp", indexed_bmp([71, 72, 73]))],
-        );
-        let remove = overlay_layer(
-            "restore-empty",
-            br#"[{"id":1912602693,"body":null,"image":null}]"#,
+    fn explicit_null_cannot_make_a_visible_topic_blank() {
+        let clear = overlay_layer(
+            "clear-visible-topic",
+            br#"[{"id":335544384,"body":null,"image":null}]"#,
             &[],
         );
         let mut store = EncyclopediaSessionStore::default();
+        store.replace(input()).unwrap();
+        let previous = store.current().unwrap();
 
-        store
-            .replace_with_overlays(base, vec![fill, remove])
-            .unwrap();
+        let error = store
+            .replace_with_overlays(input(), vec![clear])
+            .unwrap_err();
 
-        let restored = store.current().unwrap();
-        assert_eq!(restored.logical_fingerprint(), base_fingerprint);
-        for audience in [EncyclopediaAudience::Alliance, EncyclopediaAudience::Empire] {
-            let topic = restored.topics(audience).topic(0x7200_0045).unwrap();
-            assert_eq!(topic.body, None);
-            assert_eq!(topic.artwork_filename, None);
-        }
+        assert!(
+            format!("{error:#}").contains("unapproved missing"),
+            "{error:#}"
+        );
+        assert!(Arc::ptr_eq(&previous, &store.current().unwrap()));
     }
 
     #[test]

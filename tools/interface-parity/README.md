@@ -61,7 +61,7 @@ processes compare
 category selection, held rail controls, native clipping, exclusive-edge and
 transparent-pixel rejection, press capture, drag cancellation, and modal
 click-through blocking pixel-for-pixel against the owned STRATEGY resources.
-`--catalog` runs P65's source-derived 356-entry index, seven TEXTSTRA category
+`--catalog` runs the corrected source-derived 346-entry visible index, seven TEXTSTRA category
 labels and filters, scrolling, row selection, and modal-block checks. P65
 compares every static shell pixel while treating rendered text/list rectangles
 as dynamic; those regions must be visibly populated but remain outside exact

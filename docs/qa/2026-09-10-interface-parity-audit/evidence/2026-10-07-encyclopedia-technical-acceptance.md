@@ -15,7 +15,7 @@ adapted plan's final technical, publication, replay, save, and isolation gates.
 This checkpoint does not accept strict `OBJ-01`: lossless original A0
 comparison and the strict faction/viewport matrix remain E35.
 
-The final package installs the same 356-topic logical catalog on native,
+The final package installs the same 346-topic visible logical catalog on native,
 packed-browser, and development-loose readers. Both production factions pass
 cockpit entry, topic navigation, close/return, real object-popup contextual
 entry, adjacent navigation, exact contextual return, four-request startup, and

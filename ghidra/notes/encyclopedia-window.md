@@ -72,14 +72,17 @@ The owned English TEXTSTRA table resolves `0x1842` to `Galactic Encyclopedia`,
 Database`, `Ship Database`, `Facilities Database`, `Missions Database`, `Troop
 Database`, and `Personnel Database` in command order `0x6f..0x75`.
 
-The supported source families produce 356 entries: 200 systems; 30 capital
+The shared collection built by `FUN_00422620` produces 346 visible entries: 200 systems; 30 capital
 ships and eight fighters; six defenses, six manufacturing facilities, and two
-production facilities; 25 mission types; ten troop types; and six major
+production facilities; 15 visible mission types; ten troop types; and six major
 characters, 54 minor characters, and nine special-forces types. A compound
 object ID uses the DAT family as its high byte and the source record ID as its
 low word. P65 sorts case-insensitively by source name with that identity as a
 stable tie breaker, matching the alphabetical index behavior visible in the
-classified original capture.
+classified original capture. Missions are restricted to family `[0x50,0x80)`
+and then require the resolved mission record's `+0x5c` hidden flag to be zero.
+Four `0x41..0x44` gameplay states and six hidden missions are therefore outside
+the visible collection.
 
 ## Recovered workflow
 
@@ -103,7 +106,8 @@ classified original capture.
 - P62 proves transport for all 187 owned EDATA images. It does not prove this
   window's category ordering, entity bindings, text, navigation, geometry, or
   A0 parity.
-- P65 proves the 356-entry English source catalog, source-family filtering,
+- P68 corrects P65's count and proves the 346-entry English visible catalog,
+  including mission-family and hidden-record filtering,
   alphabetical ordering, stable row identity, and scrolling inside both
   faction shells. The route remains test-only.
 - P66A proves strict local English ENCYTEXT/ENCYBMAP extraction plus ordinary,
