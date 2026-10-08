@@ -53,7 +53,8 @@
   checks; and preserves the optional-W8 and native-Windows limitations.
 - [P69 Encyclopedia title search](2026-10-08-encyclopedia-title-search.md)
   restores the original editable selector, ordered longest-prefix matching,
-  clear-selection behavior, category reapplication, and Enter-to-open journey.
+  clear-selection behavior, category reapplication, Enter-to-open journey,
+  and frame-stable modal keyboard ownership.
 
 This directory contains the durable reports and review artifacts for each
 verified interface checkpoint. The parent [audit index](../README.md) remains

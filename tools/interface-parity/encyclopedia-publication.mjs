@@ -19,6 +19,7 @@ const sourcePath = process.env.REBELLION_ENCYCLOPEDIA_TEST_SOURCE
 const edata = process.env.REBELLION_EDATA_DIR;
 const executable = process.env.OPEN_REBELLION_CHROME_FOR_TESTING || chromium.executablePath();
 const expectedRequests = ["/", "/data/runtime.orpk", "/gl.js", "/open-rebellion.wasm"];
+const expectedLogicalFingerprint = "20c342868cee50e80ef3b94b9f81a898c48f4b593ddd0d83ab69b67d755ae9ea";
 const categoryControls = [
   { name: "all", command: 0x6f, x: 36 },
   { name: "systems", command: 0x70, x: 88 },
@@ -220,7 +221,7 @@ async function runFactionJourney(browser, origin, faction, namespace) {
       `encyclopedia_assets=${namespace.artwork_count}`,
     )));
     assert.ok(observed.consoleLines.some(({ text }) => text.includes(
-      "fingerprint=5c4b64bfd739508e63a87118fd7cac8503ea2d34999144838074a52736b00fe3",
+      `fingerprint=${expectedLogicalFingerprint}`,
     )));
     assertFourRequestStartup(observed.requests);
     assert.equal(await page.evaluate(() => typeof window.__openRebellionInterfaceReady), "undefined");

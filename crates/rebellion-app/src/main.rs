@@ -895,9 +895,44 @@ fn panel_letters_open_panels(debug_build: bool, alt_down: bool) -> bool {
     debug_build && !alt_down
 }
 
+/// The surface that owns keyboard input for the current frame.
+///
+/// Ownership is sampled once before any key can close a surface. This prevents
+/// the same key press from falling through to the cockpit after a modal closes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FrameKeyboardOwner {
+    Cockpit,
+    Encyclopedia,
+}
+
+impl FrameKeyboardOwner {
+    fn at_frame_start(encyclopedia_open: bool) -> Self {
+        if encyclopedia_open {
+            Self::Encyclopedia
+        } else {
+            Self::Cockpit
+        }
+    }
+
+    const fn allows_galaxy_shortcuts(self) -> bool {
+        matches!(self, Self::Cockpit)
+    }
+}
+
 #[cfg(test)]
 mod panel_toggle_tests {
-    use super::{panel_letters_open_panels, toggle_exclusive_panel};
+    use super::{panel_letters_open_panels, toggle_exclusive_panel, FrameKeyboardOwner};
+
+    #[test]
+    fn an_encyclopedia_open_at_frame_start_owns_the_whole_frames_keyboard() {
+        let owner = FrameKeyboardOwner::at_frame_start(true);
+
+        // The owner is retained even when Escape closes the surface later in
+        // this frame, so that key cannot also reach a cockpit shortcut.
+        assert_eq!(owner, FrameKeyboardOwner::Encyclopedia);
+        assert!(!owner.allows_galaxy_shortcuts());
+        assert!(FrameKeyboardOwner::at_frame_start(false).allows_galaxy_shortcuts());
+    }
 
     #[test]
     fn panel_letters_open_panels_only_in_debug_builds_without_alt() {
@@ -1602,6 +1637,8 @@ async fn main() {
     loop {
         let dt = get_frame_time();
         let mut targeting_cursor_drawn = false;
+        let frame_keyboard_owner =
+            FrameKeyboardOwner::at_frame_start(encyclopedia_surface.is_open());
 
         #[cfg(target_arch = "wasm32")]
         if !browser_menu_audio_requested
@@ -1743,6 +1780,7 @@ async fn main() {
         if game_mode == GameMode::Galaxy
             && !event_screen_state.is_active()
             && !show_save_load
+            && frame_keyboard_owner.allows_galaxy_shortcuts()
             && !fleet_finder_state.is_open()
             && !troop_finder_state.is_open()
             && !personnel_finder_state.is_open()

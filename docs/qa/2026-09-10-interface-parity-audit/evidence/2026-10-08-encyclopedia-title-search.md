@@ -13,6 +13,11 @@ The source-backed Encyclopedia painted the current topic name over the original
 blue selector field, but the field was not focusable or editable. Pointer focus,
 incremental title lookup, clearing, and Enter-to-open were therefore absent.
 
+The first production implementation also allowed title-field keystrokes to
+reach Galaxy shortcuts beneath the modal. Queries containing `S` or `R` could
+therefore open Save/Load or reset the map, and Escape could close the
+Encyclopedia before the same frame evaluated the cockpit shortcuts.
+
 ## Recovered contract
 
 The original field is control `0x64` at `(143,45,245,18)`. Its edit procedure
@@ -30,6 +35,12 @@ The implementation keeps that behavior in renderer-local state and emits only
 the existing presenter actions plus an explicit clear-selection action. It
 does not add substring, token, or fuzzy matching and performs no I/O.
 
+Keyboard ownership is now sampled once at the beginning of each frame. An
+Encyclopedia that was open at that point retains the complete frame, including
+the frame in which Escape closes it. The small owner enum is reusable by later
+modal surfaces without changing the behavior of intentionally non-modal
+cockpit panels.
+
 ## Verification
 
 - `cargo check -p rebellion-app --tests` passed. The only app diagnostics were
@@ -46,6 +57,13 @@ does not add substring, token, or fuzzy matching and performs no I/O.
 - `REBELLION_EDATA_DIR=/data/projects/open-rebellion/open-rebellion/data/base/EData node tools/interface-parity/encyclopedia-canonical-surface.mjs`
   passed all 12 Alliance/Empire canonical cases with zero browser errors and
   zero navigation requests.
+- The full workspace, Go staging, Python packaging, Node acceptance, ledger,
+  formatting, and diff gates passed on the final revision.
+- The production browser journey passed both factions, the old-pack
+  unavailable case, exact four-request startup, contextual return, and zero
+  page errors. A separate fresh muted Chromium pass typed `star` with real key
+  events in both factions, selected `Star Galleon`, and returned to the command
+  center with one Escape without exposing Save/Load or another panel.
 
 The browser journey clicks the real canvas field, types `tallon`, observes
 object `0x3800034d` (`Talon Karrde`), clears the field and observes a null
@@ -55,13 +73,18 @@ matched the owned bitmap with zero differing pixels in both faction journeys.
 All existing category, first/last, long-body, contextual-return, close, and
 scaled-render journeys remained green.
 
-Ignored local evidence:
+Latest ignored local evidence:
 
-- run directory: `.artifacts/interface-parity/encyclopedia-canonical-surface-2026-10-08T14-52-24-481Z-936906/`
-- summary SHA-256: `6db3859094f598ed6f6f5ca21c9d511f11d97d47d5c5cbc4eac94fbc2af57854`
-- fixture WASM SHA-256: `11ce614a8108f1a4279d7e4a19eaa5066f5b2cb404332ec169b6662b43cb0519`
-- final production WASM SHA-256: `228de3dad2f1935394fcb6bb42ad6340d144ecaf586a0d874237dbab0ea60d11`
-- runtime pack SHA-256: `e4c0157a8701aa1631f642db04c71b5e01d7280cf3e0cb691b428c502a1afa4e`
+- canonical run: `.artifacts/interface-parity/encyclopedia-canonical-surface-2026-10-08T18-47-57-104Z-89270/`
+- canonical summary SHA-256: `2f55dc0adba859cc1f48294f83d74a2bb9008625f3d983faee285cacba8b1307`
+- production run: `.artifacts/interface-parity/encyclopedia-publication-2026-10-08T18-49-34-613Z-92002/`
+- production summary SHA-256: `2c92f3900cf7cc8f9d52cd50bf43ea022031a92e5848274f5111faae6b53d1fd`
+- fixture WASM SHA-256: `7dfbfcbbd98f13178f25458a3d0f05fdaf3a348df65ee85fd1842300baffd4c3`
+- final production WASM SHA-256: `c307f0136c5b765d7d7b46abe0f8f01e63f7658a6b022aa99691d099ceb7be0b`
+- packaged ZIP SHA-256: `54bc2f05baad2a3348178558a8d97f93992b61dcbeb9061f2d616324b5dad3b1`
+- runtime pack SHA-256: `5c441dbf6d78a5a4afbc827b753b00090bdb8e0fda5cbf40daa5cbf41555e613`
+- live-browser evidence: `/tmp/pr18-browser-evidence/`
+- live-browser hash-manifest SHA-256: `80093b19b3a6da749f58e7a27ca617efac45a28d20589e0bb5c71c0175746b9e`
 - visible catalog fingerprint: `20c342868cee50e80ef3b94b9f81a898c48f4b593ddd0d83ab69b67d755ae9ea`
 
 Owned EData, generated runtime packs, screenshots, and browser profiles remain

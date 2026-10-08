@@ -283,10 +283,19 @@ async function typeTitleSearchAndWait(page, origin, scale, query, expectedObject
   await page.keyboard.press("Control+A");
   const before = (await observations(page)).length;
   await page.keyboard.type(query);
-  return waitForObservation(page, {
-    mode: "index",
-    selected_object_id: expectedObjectId,
-  }, before);
+  await page.waitForFunction(
+    ({ minimum, objectId }) => {
+      const reports = window.__openRebellionEncyclopediaSurfaces || [];
+      if (reports.length <= minimum) return false;
+      const latest = reports.at(-1);
+      return latest.mode === "index"
+        && latest.selected_object_id === objectId
+        && latest.index_scroll_row > 0;
+    },
+    { minimum: before, objectId: expectedObjectId },
+    { timeout: 30_000 },
+  );
+  return (await observations(page)).at(-1);
 }
 
 async function clickCategoryAndWait(page, origin, scale, commandId, expectedObjectId) {

@@ -24,8 +24,9 @@ P62 transports all 187 validated original EDATA images through native and
 browser builds. A source cross-check corrects P63 as Message Index evidence.
 P64 separately reconstructs both authentic Encyclopedia index shells, seven
 category states, right-rail states, and native clipping in a bounded exact
-browser gate. P65 adds the complete source-derived 356-entry English catalog,
-seven category filters, stable selection, and scrolling without changing saves
+browser gate. P65 initially inventories all 356 source records; P68 corrects
+that set to 346 visible topics and ten excluded mission records. Seven category
+filters, stable selection, and scrolling do not change saves
 or exposing the unfinished production route. P66A strictly extracts 348 topic
 texts and 191 image mappings, binds 346 complete topics per faction, and keeps
 ten source-empty mission records explicit. W2 adds one immutable content
@@ -40,7 +41,8 @@ generation-keyed selected-topic texture, and passes ten two-faction browser A1
 cases at native and scaled viewports. W5A atomically publishes the canonical
 catalog, sidecar, and exact referenced artwork through ORPK plus a
 development-only loose generation, then proves native, packed-browser, and
-loose-reader convergence on one 356/356-topic W2 session fingerprint while
+loose-reader convergence on one 346/346-visible-topic W2 session fingerprint,
+with ten source-hidden mission records excluded, while
 preserving the four-request production startup budget. W6 adds opt-in native
 faithful-HD selection at the immutable-session boundary: only manifest-reviewed,
 source-matched, digest-valid exact-4x PNG output can replace a rendered view,
@@ -789,7 +791,8 @@ would tune around known simulation feedback defects.
   deterministic, read-back-verified, atomically replaced ORPK and a
   development-only immutable loose generation. Native, packed-browser, and
   loose readers now install identical bytes into one W2 session with the same
-  logical fingerprint and 356 topics per faction; the production artifact
+  logical fingerprint and 346 visible topics per faction; ten source-hidden
+  mission records remain excluded, and the production artifact
   retains its four-request startup budget and excludes fixture routes. E30
   packaged visual journeys, E32 command `0x131` activation, A0 comparison, and
   strict `OBJ-01` acceptance remain open.
