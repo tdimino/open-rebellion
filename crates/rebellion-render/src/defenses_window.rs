@@ -153,16 +153,16 @@ pub enum DefensesItem {
 }
 
 impl DefensesItem {
-    /// The object its pop-up menu opens for, when that class's menu is
-    /// ported: a character (`FUN_004ed350`), a special force
-    /// (`FUN_00503b50`) or a regiment (`FUN_00504b30`). port: a defense
-    /// facility's class menu is not ported, so it opens none.
+    /// The object its pop-up menu opens for: a character (`FUN_004ed350`),
+    /// a special force (`FUN_00503b50`), a regiment (`FUN_00504b30`) or a
+    /// defense facility, whose menu holds Encyclopedia and Status
+    /// (`FUN_0051d990`).
     const fn menu_object(self) -> Option<MenuObject> {
         match self {
             Self::Character(key) => Some(MenuObject::Character(key)),
             Self::SpecialForce(key) => Some(MenuObject::SpecialForce(key)),
             Self::Troop(key) => Some(MenuObject::Troop(key)),
-            Self::Defense(_) => None,
+            Self::Defense(key) => Some(MenuObject::DefenseFacility(key)),
         }
     }
 }
@@ -549,7 +549,7 @@ fn page_rows(
                 } else {
                     matches!(family, 0x22 | 0x23)
                 };
-                if !wanted || fleet_side(facility.is_alliance) != side {
+                if !wanted || crate::fleet_window::faction_side(facility.side) != side {
                     return None;
                 }
                 let (mini, label) = defense_facility_mini(facility.class_dat_id)?;
@@ -1067,7 +1067,7 @@ mod tests {
     fn add_defense(world: &mut GameWorld, system: SystemKey, dat_id: u32, is_alliance: bool) {
         let key = world.defense_facilities.insert(DefenseFacilityInstance {
             class_dat_id: DatId::new(dat_id),
-            is_alliance,
+            side: rebellion_core::dat::Faction::of_alliance(is_alliance),
         });
         world.systems[system].defense_facilities.push(key);
     }
@@ -1735,18 +1735,21 @@ mod tests {
     }
 
     #[test]
-    fn a_right_click_on_a_defense_facility_selects_it_but_opens_nothing() {
-        // port: a defense facility's class menu is not ported.
+    fn a_right_click_on_a_defense_facility_opens_its_menu() {
+        // FUN_004ac5c0 opens the pop-up for slot 22's selection
+        // (FUN_004a7a20); FUN_0051d990 gives it Encyclopedia and Status.
         let (world, system, missions) = stocked();
         let mut state = opened(&world, system);
         let _ = run(&world, &missions, &mut state, click(at(150.0, 30.0)));
         assert_eq!(state.windows[0].page, DefensesPage::Shields);
         let opened = run(&world, &missions, &mut state, right_click(at(30.0, 100.0)));
-        assert!(matches!(
-            state.windows[0].selected,
-            Some(DefensesItem::Defense(_))
-        ));
-        assert!(menus(&opened).is_empty());
+        let Some(DefensesItem::Defense(shield)) = state.windows[0].selected else {
+            panic!("the right press selects the shield");
+        };
+        assert_eq!(
+            menus(&opened),
+            [(Some(MenuObject::DefenseFacility(shield)), (50, 130))]
+        );
     }
 
     #[test]

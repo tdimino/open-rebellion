@@ -17,6 +17,8 @@ use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{CockpitFaction, CockpitLayout};
 use crate::fleet_window::paint_native;
 use crate::object_menu::MenuObject;
+#[cfg(any(debug_assertions, not(target_arch = "wasm32")))]
+use crate::panels::command_palette::InterfaceCommand;
 use crate::quadrant_icons::{quadrant_icon, Quadrant};
 
 /// `DAT_00658bd8`, a static 1023: the galaxy's width, whose half
@@ -70,13 +72,23 @@ impl WindowColumn {
     }
 }
 
+/// A selected quadrant icon and the art it showed when chosen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SelectedIcon {
+    system: SystemKey,
+    quadrant: Quadrant,
+    /// The icon's first bitmap when it was chosen, which tells a changed
+    /// icon from the one chosen.
+    art: u32,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct OpenSectorWindow {
     sector: SectorKey,
     column: WindowColumn,
     /// The icon a left or right press chose last (`+0x184`,
-    /// `FUN_0045b1b0`): its system and quadrant.
-    selection: Option<(SystemKey, Quadrant)>,
+    /// `FUN_0045b1b0`).
+    selection: Option<SelectedIcon>,
     /// Where a left press on an icon began a drag, as a canvas point
     /// (`+0x14c`/`+0x150`, set by `FUN_004593e0` case `0x201`).
     drag_from: Option<(i16, i16)>,
@@ -143,6 +155,81 @@ impl SectorWindowState {
             drag_from: None,
         });
         true
+    }
+
+    /// What a palette command asks of the sector windows. It opens the
+    /// sector window holding its system, then gives the action a double
+    /// click (`FUN_004593e0` case `0x203`) or a right click (cases `0x204`
+    /// and `0x205`) on the system's icon would, at the icon's center. The
+    /// System window needs no icon, as a double click on the planet opens
+    /// it; every other quadrant needs its icon shown. `Err` says why the
+    /// command did nothing.
+    #[cfg(any(debug_assertions, not(target_arch = "wasm32")))]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "The command reads the same world views the window paints from."
+    )]
+    pub fn command_actions(
+        &mut self,
+        world: &GameWorld,
+        fog: &FogState,
+        missions: &rebellion_core::missions::MissionState,
+        movement: &rebellion_core::movement::MovementState,
+        faction: CockpitFaction,
+        layout: CockpitLayout,
+        command: InterfaceCommand,
+    ) -> Result<Vec<SectorWindowAction>, &'static str> {
+        let (system, quadrant, menu) = match command {
+            InterfaceCommand::StartGame(_) => return Err("the app starts a game"),
+            InterfaceCommand::OpenSector(system) => {
+                return if self.open_for_system(world, system, faction) {
+                    Ok(Vec::new())
+                } else {
+                    Err("no such system")
+                };
+            }
+            InterfaceCommand::OpenQuadrantWindow { system, quadrant } => (system, quadrant, false),
+            InterfaceCommand::OpenIconMenu { system, quadrant } => (system, quadrant, true),
+        };
+        if !self.open_for_system(world, system, faction) {
+            return Err("no such system");
+        }
+        let point = self
+            .quadrant_window_point(world, layout, system, quadrant)
+            .ok_or("no such system")?;
+        let shown = quadrant_icon(
+            world,
+            fog,
+            missions,
+            movement,
+            cockpit_faction(faction),
+            system,
+            quadrant,
+        );
+        if menu {
+            let (art, _) = shown.ok_or("the icon is hidden")?;
+            // As a press on it does (FUN_0045b1b0).
+            let sector = world.systems[system].sector;
+            if let Some(window) = self
+                .windows
+                .iter_mut()
+                .find(|window| window.sector == sector)
+            {
+                window.selection = Some(SelectedIcon {
+                    system,
+                    quadrant,
+                    art,
+                });
+            }
+            return Ok(vec![SectorWindowAction::OpenObjectMenu {
+                selection: Some(MenuObject::SystemIcon { system, quadrant }),
+                point,
+            }]);
+        }
+        if quadrant != Quadrant::System && shown.is_none() {
+            return Err("the icon is hidden");
+        }
+        Ok(vec![quadrant_window_action(system, quadrant, point)])
     }
 
     /// True when the pointer lies inside any visible window. Logical right and
@@ -363,11 +450,12 @@ struct WindowDrawResult {
     switch_side: bool,
     selected: Option<SystemKey>,
     opened: Option<(SystemKey, (i16, i16))>,
-    opened_fleet: Option<(SystemKey, (i16, i16))>,
-    opened_defenses: Option<(SystemKey, (i16, i16))>,
-    opened_missions: Option<(SystemKey, (i16, i16))>,
+    /// A double click on a Defenses, Fleet or Missions icon.
+    opened_icon: Option<(SystemKey, Quadrant, (i16, i16))>,
     /// A left or right press on a shown icon.
-    icon_pressed: Option<(SystemKey, Quadrant)>,
+    icon_pressed: Option<SelectedIcon>,
+    /// The window's selected icon hid or changed its art.
+    selection_lapsed: bool,
     /// A right-button release in the window, as a canvas point.
     object_menu: Option<(i16, i16)>,
     /// A left press on a shown icon, as a canvas point.
@@ -432,37 +520,29 @@ pub fn draw_sector_windows(
             actions.push(SectorWindowAction::SelectSystem(system));
         }
         if let Some((system, logical_position)) = result.opened {
-            actions.push(SectorWindowAction::OpenSystemWindow {
+            actions.push(quadrant_window_action(
                 system,
+                Quadrant::System,
                 logical_position,
-            });
+            ));
         }
-        if let Some((system, logical_position)) = result.opened_fleet {
-            actions.push(SectorWindowAction::OpenFleetWindow {
-                system,
-                logical_position,
-            });
+        if let Some((system, quadrant, logical_position)) = result.opened_icon {
+            actions.push(quadrant_window_action(system, quadrant, logical_position));
         }
-        if let Some((system, logical_position)) = result.opened_defenses {
-            actions.push(SectorWindowAction::OpenDefensesWindow {
-                system,
-                logical_position,
-            });
-        }
-        if let Some((system, logical_position)) = result.opened_missions {
-            actions.push(SectorWindowAction::OpenMissionsWindow {
-                system,
-                logical_position,
-            });
-        }
-        let selection = result.icon_pressed.or(window.selection);
+        let selection = result
+            .icon_pressed
+            .or(window.selection.filter(|_| !result.selection_lapsed));
         // A press on an icon sets the selection and the drag; a release
         // ends the drag.
-        if result.icon_pressed.is_some() || result.drag_end.is_some() {
+        if result.icon_pressed.is_some() || result.drag_end.is_some() || result.selection_lapsed {
             chosen.push((window.sector, selection, result.drag_from));
         }
-        if let (Some(Some((point, confirmed))), Some((system, quadrant))) =
-            (result.drag_end, selection)
+        if let (
+            Some(Some((point, confirmed))),
+            Some(SelectedIcon {
+                system, quadrant, ..
+            }),
+        ) = (result.drag_end, selection)
         {
             actions.push(SectorWindowAction::DropSelection {
                 selection: MenuObject::SystemIcon { system, quadrant },
@@ -472,8 +552,10 @@ pub fn draw_sector_windows(
         }
         if let Some(point) = result.object_menu {
             actions.push(SectorWindowAction::OpenObjectMenu {
-                selection: selection
-                    .map(|(system, quadrant)| MenuObject::SystemIcon { system, quadrant }),
+                selection: selection.map(|icon| MenuObject::SystemIcon {
+                    system: icon.system,
+                    quadrant: icon.quadrant,
+                }),
                 point,
             });
         }
@@ -631,6 +713,9 @@ fn draw_sector_window(
             // FUN_004593e0 cases 0x201 and 0x204 hit-test the overlays
             // (FUN_0045cc10); a press that finds none keeps the selection.
             let press = any_pressed.then_some(pointer).flatten().filter(on_window);
+            // WM_PAINT draws the planet list (`+0x164`), then the overlay
+            // list (`+0x174`), so every icon lies above every planet.
+            let mut overlays: Vec<(SystemKey, Quadrant, egui::Rect, (u32, u32))> = Vec::new();
             for system_key in &sector.systems {
                 let Some(system) = world.systems.get(*system_key) else {
                     continue;
@@ -648,10 +733,10 @@ fn draw_sector_window(
                 // FUN_0045d140 draws an overlay only while its rule has
                 // something to show; a double click finds it first
                 // (`FUN_0045cc10`).
-                let icons: Vec<(Quadrant, egui::Rect, u32)> = Quadrant::ALL
+                let icons: Vec<(Quadrant, egui::Rect, (u32, u32))> = Quadrant::ALL
                     .into_iter()
                     .filter_map(|quadrant| {
-                        let (normal, _) = quadrant_icon(
+                        let art = quadrant_icon(
                             world,
                             fog,
                             missions,
@@ -663,22 +748,36 @@ fn draw_sector_window(
                         Some((
                             quadrant,
                             quadrant_rect(planet_rect, layout.scale, quadrant),
-                            normal,
+                            art,
                         ))
                     })
                     .collect();
+                // port: FUN_0045d140 deselects an icon (FUN_0045afc0) on every
+                // change notice FUN_0045b770 takes for its system, changed or
+                // not. The port has no change notices, so the selection lapses
+                // when its icon hides or its art changes
+                // (ghidra/notes/sector-quadrants.md).
+                if let Some(selected) = window.selection.filter(|icon| icon.system == *system_key) {
+                    result.selection_lapsed = !icons.iter().any(|(quadrant, _, (normal, _))| {
+                        *quadrant == selected.quadrant && *normal == selected.art
+                    });
+                }
                 let icon_double_clicked = double_click.and_then(|point| {
                     icons
                         .iter()
                         .find(|(_, rect, _)| rect_contains(*rect, point))
                         .map(|(quadrant, rect, _)| (*quadrant, *rect))
                 });
-                if let Some((quadrant, _, _)) = press.and_then(|point| {
+                if let Some((quadrant, _, (normal, _))) = press.and_then(|point| {
                     icons
                         .iter()
                         .find(|(_, rect, _)| rect_contains(*rect, point))
                 }) {
-                    result.icon_pressed = Some((*system_key, *quadrant));
+                    result.icon_pressed = Some(SelectedIcon {
+                        system: *system_key,
+                        quadrant: *quadrant,
+                        art: *normal,
+                    });
                     if primary_pressed {
                         result.drag_from = press.map(|point| screen_to_logical(layout, point));
                     }
@@ -712,32 +811,18 @@ fn draw_sector_window(
                     system_name_color(system.control, uprisings.is_uprising(*system_key), player),
                 );
 
-                for (_, icon_rect, normal) in &icons {
-                    // port: the second bitmap (hyp: the pressed state) is not
-                    // drawn.
-                    paint_native(
-                        ui.painter(),
-                        ctx,
-                        cache,
-                        DllSource::Strategy,
-                        *normal,
-                        *icon_rect,
-                        layout.scale,
-                        0.0,
-                        0.0,
-                    );
-                }
+                overlays.extend(
+                    icons
+                        .iter()
+                        .map(|(quadrant, rect, art)| (*system_key, *quadrant, *rect, *art)),
+                );
                 if let Some((quadrant, icon_rect)) = icon_double_clicked {
                     let open_point = double_click.unwrap_or_else(|| icon_rect.center());
-                    let opened = Some((*system_key, screen_to_logical(layout, open_point)));
-                    // FUN_0045aac0: kind 4 opens the System window, kind 8
-                    // the Defenses window, kind 0x10 the Fleet window and
-                    // kind 0x40 the Missions window.
-                    match quadrant {
-                        Quadrant::System => result.opened = opened,
-                        Quadrant::Defenses => result.opened_defenses = opened,
-                        Quadrant::Fleets => result.opened_fleet = opened,
-                        Quadrant::Missions => result.opened_missions = opened,
+                    let open_point = screen_to_logical(layout, open_point);
+                    if quadrant == Quadrant::System {
+                        result.opened = Some((*system_key, open_point));
+                    } else {
+                        result.opened_icon = Some((*system_key, quadrant, open_point));
                     }
                     result.focus = true;
                 }
@@ -753,6 +838,28 @@ fn draw_sector_window(
                     let open_point = pointer.unwrap_or_else(|| planet_rect.center());
                     result.opened = Some((*system_key, screen_to_logical(layout, open_point)));
                 }
+            }
+
+            // WM_PAINT draws a shown overlay's second bitmap (`+0x24`) while
+            // it is selected (`+0x3c` bit 0, set by FUN_0045b1b0), else its
+            // first (`+0x20`).
+            let selected = result
+                .icon_pressed
+                .or(window.selection.filter(|_| !result.selection_lapsed));
+            for (system, quadrant, rect, (normal, pressed)) in overlays {
+                let chosen =
+                    selected.is_some_and(|icon| icon.system == system && icon.quadrant == quadrant);
+                paint_native(
+                    ui.painter(),
+                    ctx,
+                    cache,
+                    DllSource::Strategy,
+                    if chosen { pressed } else { normal },
+                    rect,
+                    layout.scale,
+                    0.0,
+                    0.0,
+                );
             }
 
             // FUN_004593e0 case 0x202: the window holds the capture, so the
@@ -810,6 +917,35 @@ fn planet_rect(window_rect: egui::Rect, scale: f32, x: f32, y: f32) -> egui::Rec
 /// 28 by 19, the 27 by 18 icon 10771 plus one (`FUN_00459e30:369-447`):
 /// the left ones end at `cx`, the right ones start at `cx + 1`; the top ones
 /// end at `cy`, the bottom ones start at `cy + 1`.
+/// The window a double click on `system`'s `quadrant` icon opens at
+/// `logical_position`. `FUN_0045aac0`: kind 4 opens the System window,
+/// kind 8 the Defenses window, kind 0x10 the Fleet window and kind 0x40 the
+/// Missions window.
+fn quadrant_window_action(
+    system: SystemKey,
+    quadrant: Quadrant,
+    logical_position: (i16, i16),
+) -> SectorWindowAction {
+    match quadrant {
+        Quadrant::System => SectorWindowAction::OpenSystemWindow {
+            system,
+            logical_position,
+        },
+        Quadrant::Defenses => SectorWindowAction::OpenDefensesWindow {
+            system,
+            logical_position,
+        },
+        Quadrant::Fleets => SectorWindowAction::OpenFleetWindow {
+            system,
+            logical_position,
+        },
+        Quadrant::Missions => SectorWindowAction::OpenMissionsWindow {
+            system,
+            logical_position,
+        },
+    }
+}
+
 fn quadrant_rect(planet: egui::Rect, scale: f32, quadrant: Quadrant) -> egui::Rect {
     let (x, y) = match quadrant {
         Quadrant::System => (-10.0, -1.0),
@@ -972,6 +1108,10 @@ fn paint_resource(
     resource_id: u32,
     rect: egui::Rect,
 ) {
+    #[cfg(test)]
+    crate::fleet_window::tests::PAINTED.with(|painted| {
+        painted.borrow_mut().push((resource_id, rect.min));
+    });
     let Some(texture_id) = cache
         .get(ctx, DllSource::Strategy, resource_id)
         .map(egui_macroquad::egui::TextureHandle::id)
@@ -2056,7 +2196,7 @@ mod tests {
                 .production_facilities
                 .insert(rebellion_core::world::ProductionFacilityInstance {
                     class_dat_id: DatId::new(0x2c00_0001),
-                    is_alliance: true,
+                    side: rebellion_core::dat::Faction::Alliance,
                     is_mine: true,
                 });
         world.systems[system].production_facilities.push(mine);
@@ -2240,5 +2380,577 @@ mod tests {
                 (10777, at(93.0, 98.0)),
             ]
         );
+    }
+
+    /// `system`'s sector window, played as `owner`, with a mine and a
+    /// fleet of `owner`'s at the system so its system and fleet icons
+    /// show.
+    fn owned_icons_world(owner: Faction) -> (GameWorld, SystemKey) {
+        let (mut world, system, _) = fixture_world();
+        world.systems[system].control = ControlKind::Controlled(owner);
+        add_mine(&mut world, system);
+        add_fleet(&mut world, system);
+        let alliance = owner == Faction::Alliance;
+        for fleet in world.systems[system].fleets.clone() {
+            world.fleets[fleet].is_alliance = alliance;
+        }
+        for mine in world.systems[system].production_facilities.clone() {
+            world.production_facilities[mine].side = owner;
+        }
+        (world, system)
+    }
+
+    fn cockpit(owner: Faction) -> CockpitFaction {
+        if owner == Faction::Alliance {
+            CockpitFaction::Alliance
+        } else {
+            CockpitFaction::Empire
+        }
+    }
+
+    /// Left-click each logical point in turn in `state`'s windows and
+    /// return the quadrant bitmaps the last frame painted.
+    fn icons_after_clicks(
+        world: &GameWorld,
+        owner: Faction,
+        state: &mut SectorWindowState,
+        clicks: &[(i16, i16)],
+    ) -> Vec<u32> {
+        painted_after_clicks(world, owner, state, clicks)
+            .into_iter()
+            .filter(|id| (10771..=10790).contains(id))
+            .collect()
+    }
+
+    /// As [`icons_after_clicks`], every bitmap the last frame painted, in
+    /// paint order.
+    fn painted_after_clicks(
+        world: &GameWorld,
+        owner: Faction,
+        state: &mut SectorWindowState,
+        clicks: &[(i16, i16)],
+    ) -> Vec<u32> {
+        let layout = layout(1.0);
+        let mut fog = FogState::new(owner);
+        for system in world.systems.keys() {
+            fog.reveal(system);
+        }
+        let missions = rebellion_core::missions::MissionState::new();
+        let ctx = egui::Context::default();
+        let mut cache = BmpCache::new();
+        let uprisings = rebellion_core::uprising::UprisingState::default();
+        let mut frames = vec![vec![], vec![]];
+        for &(x, y) in clicks {
+            let pos = egui::pos2(
+                layout.canvas.x + f32::from(x),
+                layout.canvas.y + f32::from(y),
+            );
+            let event = |pressed| egui::Event::PointerButton {
+                pos,
+                button: LEFT,
+                pressed,
+                modifiers: egui::Modifiers::default(),
+            };
+            frames.push(vec![egui::Event::PointerMoved(pos)]);
+            frames.push(vec![event(true)]);
+            frames.push(vec![event(false)]);
+        }
+        frames.push(vec![]);
+        for (index, events) in frames.into_iter().enumerate() {
+            crate::fleet_window::tests::PAINTED.with(|painted| painted.borrow_mut().clear());
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(700.0, 520.0),
+                )),
+                // Far enough apart that no two clicks make a double click.
+                time: Some(index as f64 * 0.5),
+                events,
+                ..Default::default()
+            };
+            let _ = ctx.run(input, |ctx| {
+                let _ = draw_sector_windows(
+                    ctx,
+                    world,
+                    &rebellion_core::movement::MovementState::default(),
+                    &fog,
+                    state,
+                    cockpit(owner),
+                    layout,
+                    &mut cache,
+                    &uprisings,
+                    &missions,
+                );
+            });
+        }
+        crate::fleet_window::tests::PAINTED
+            .with(|painted| painted.take())
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect()
+    }
+
+    /// A system in `system`'s sector at `(x, y)` with DAT id `dat_id`, held
+    /// by `control`, with nothing in it.
+    fn add_neighbour(
+        world: &mut GameWorld,
+        system: SystemKey,
+        dat_id: u32,
+        (x, y): (u16, u16),
+        control: ControlKind,
+    ) -> SystemKey {
+        let mut neighbour = world.systems[system].clone();
+        neighbour.dat_id = DatId::new(dat_id);
+        neighbour.name = format!("Neighbour {dat_id}");
+        (neighbour.x, neighbour.y) = (x, y);
+        neighbour.control = control;
+        neighbour.fleets.clear();
+        neighbour.production_facilities.clear();
+        let sector = neighbour.sector;
+        let key = world.systems.insert(neighbour);
+        world.sectors[sector].systems.push(key);
+        key
+    }
+
+    #[test]
+    fn the_selected_icon_paints_its_second_bitmap_on_either_side() {
+        // FUN_004593e0 WM_PAINT draws a shown overlay's `+0x24` bitmap
+        // while `+0x3c` bit 0 is set, else its `+0x20`; FUN_0045b1b0 sets
+        // the bit for the pressed overlay after FUN_0045afc0 clears the
+        // rest. FUN_0045ca80 pairs kind 4 with 10771/10772 (side 1) and
+        // 10779/10780 (side 2), kind 0x10 with 10775/10776 and 10783/10784.
+        for (owner, (system_art, system_pressed), (fleet_art, fleet_pressed)) in [
+            (Faction::Alliance, (10771, 10772), (10775, 10776)),
+            (Faction::Empire, (10779, 10780), (10783, 10784)),
+        ] {
+            let (world, system) = owned_icons_world(owner);
+            let mut state = SectorWindowState::default();
+            state.open_for_system(&world, system, cockpit(owner));
+            let layout = layout(1.0);
+            let point = |quadrant| {
+                state
+                    .quadrant_window_point(&world, layout, system, quadrant)
+                    .unwrap()
+            };
+            let (system_icon, fleet_icon) = (point(Quadrant::System), point(Quadrant::Fleets));
+
+            let mut fresh = SectorWindowState::default();
+            fresh.open_for_system(&world, system, cockpit(owner));
+            assert_eq!(
+                icons_after_clicks(&world, owner, &mut fresh, &[]),
+                [system_art, fleet_art],
+                "{owner:?}: nothing selected"
+            );
+            assert_eq!(
+                icons_after_clicks(&world, owner, &mut state, &[fleet_icon]),
+                [system_art, fleet_pressed],
+                "{owner:?}: the fleet icon"
+            );
+            assert_eq!(
+                icons_after_clicks(&world, owner, &mut state, &[system_icon]),
+                [system_pressed, fleet_art],
+                "{owner:?}: the system icon replaces it"
+            );
+            // A press that finds no overlay returns before FUN_0045afc0,
+            // whether it lands on empty window space or on the planet.
+            let planet = state
+                .planet_screen_rect(&world, layout, system)
+                .map(|rect| screen_to_logical(layout, rect.center()))
+                .unwrap();
+            for (press, what) in [((200, 250), "empty space"), (planet, "the planet")] {
+                assert_eq!(
+                    icons_after_clicks(&world, owner, &mut state, &[press]),
+                    [system_pressed, fleet_art],
+                    "{owner:?}: a press on {what}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn selecting_one_systems_icon_leaves_a_neighbours_matching_icon_unselected() {
+        // FUN_0045b1b0 sets `+0x3c` bit 0 on the pressed overlay alone, and
+        // WM_PAINT draws the `+0x164` planet list before the `+0x174`
+        // overlay list. FUN_0045ca80 pairs kind 0x10 with 10775/10776
+        // (side 1) and 10783/10784 (side 2).
+        for (owner, system_art, (fleet_art, fleet_pressed)) in [
+            (Faction::Alliance, 10771, (10775, 10776)),
+            (Faction::Empire, 10779, (10783, 10784)),
+        ] {
+            let (mut world, system) = owned_icons_world(owner);
+            let neighbour = add_neighbour(
+                &mut world,
+                system,
+                269,
+                (380, 300),
+                ControlKind::Controlled(owner),
+            );
+            add_fleet(&mut world, neighbour);
+            for fleet in world.systems[neighbour].fleets.clone() {
+                world.fleets[fleet].is_alliance = owner == Faction::Alliance;
+            }
+            // Last in the sector, with no icon to lapse the selection.
+            let quiet = add_neighbour(&mut world, system, 271, (330, 330), ControlKind::Uncontrolled);
+            let mut state = SectorWindowState::default();
+            state.open_for_system(&world, system, cockpit(owner));
+            let layout = layout(1.0);
+            let planets: Vec<egui::Rect> = [system, neighbour, quiet]
+                .map(|key| state.planet_screen_rect(&world, layout, key).unwrap())
+                .to_vec();
+            assert!(
+                !planets[0].intersects(planets[1])
+                    && !planets[0].intersects(planets[2])
+                    && !planets[1].intersects(planets[2]),
+                "the planets are apart: {planets:?}"
+            );
+            let fleet_icon = state
+                .quadrant_window_point(&world, layout, system, Quadrant::Fleets)
+                .unwrap();
+
+            assert_eq!(
+                icons_after_clicks(&world, owner, &mut state, &[fleet_icon]),
+                [system_art, fleet_pressed, fleet_art],
+                "{owner:?}: only the pressed system's fleet icon"
+            );
+            let painted = painted_after_clicks(&world, owner, &mut state, &[]);
+            assert_eq!(
+                painted
+                    .iter()
+                    .filter(|id| (10771..=10790).contains(*id))
+                    .copied()
+                    .collect::<Vec<_>>(),
+                [system_art, fleet_pressed, fleet_art],
+                "{owner:?}: the selection holds"
+            );
+            let position = |id: u32| painted.iter().position(|painted| *painted == id).unwrap();
+            let last_planet = [system, neighbour, quiet]
+                .map(|key| position(planet_resource_id(world.systems[key].dat_id)))
+                .into_iter()
+                .max()
+                .unwrap();
+            assert!(
+                last_planet < position(system_art),
+                "{owner:?}: every planet before every icon: {painted:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_icon_that_hides_or_changes_art_is_no_longer_selected() {
+        // FUN_0045b770 refreshes an icon on its system's change notice, and
+        // FUN_0045d140 first deselects it (FUN_0045afc0). port: with no
+        // change notices, the port deselects an icon that hides or changes
+        // art, and keeps one that changed nothing it shows. A side change
+        // repaints it from the new side's pair; FUN_0045ca80 pairs each
+        // first bitmap with the next id.
+        for (owner, other, (system_art, other_art), (fleet_art, fleet_pressed)) in [
+            (
+                Faction::Alliance,
+                Faction::Empire,
+                (10771, 10779),
+                (10775, 10776),
+            ),
+            (
+                Faction::Empire,
+                Faction::Alliance,
+                (10779, 10771),
+                (10783, 10784),
+            ),
+        ] {
+            let (mut world, system) = owned_icons_world(owner);
+            let mut state = SectorWindowState::default();
+            state.open_for_system(&world, system, cockpit(owner));
+            let layout = layout(1.0);
+            let system_icon = state
+                .quadrant_window_point(&world, layout, system, Quadrant::System)
+                .unwrap();
+            let fleet_icon = state
+                .quadrant_window_point(&world, layout, system, Quadrant::Fleets)
+                .unwrap();
+            assert_eq!(
+                icons_after_clicks(&world, owner, &mut state, &[system_icon]),
+                [system_art + 1, fleet_art],
+                "{owner:?}: the system icon is selected"
+            );
+            world.systems[system].control = ControlKind::Controlled(other);
+            assert_eq!(
+                icons_after_clicks(&world, owner, &mut state, &[])[0],
+                other_art,
+                "{owner:?}: the side change"
+            );
+            world.systems[system].control = ControlKind::Controlled(owner);
+            assert_eq!(
+                icons_after_clicks(&world, owner, &mut state, &[])[0],
+                system_art,
+                "{owner:?}: back to its own side"
+            );
+
+            assert_eq!(
+                icons_after_clicks(&world, owner, &mut state, &[fleet_icon]),
+                [system_art, fleet_pressed],
+                "{owner:?}: the fleet icon is selected"
+            );
+            add_fleet(&mut world, system);
+            for fleet in world.systems[system].fleets.clone() {
+                world.fleets[fleet].is_alliance = owner == Faction::Alliance;
+            }
+            assert_eq!(
+                icons_after_clicks(&world, owner, &mut state, &[]),
+                [system_art, fleet_pressed],
+                "{owner:?}: a second fleet leaves the art as it was"
+            );
+            let fleets = std::mem::take(&mut world.systems[system].fleets);
+            assert_eq!(
+                icons_after_clicks(&world, owner, &mut state, &[]),
+                [system_art],
+                "{owner:?}: the fleet icon hides"
+            );
+            world.systems[system].fleets = fleets;
+            assert_eq!(
+                icons_after_clicks(&world, owner, &mut state, &[]),
+                [system_art, fleet_art],
+                "{owner:?}: the fleet icon hid and returned"
+            );
+        }
+    }
+
+    /// The interface command a script line `label` names for `world`.
+    fn palette_command(world: &GameWorld, label: &str) -> InterfaceCommand {
+        let mut palette = crate::CommandPaletteState::new();
+        palette.refresh_script(world);
+        match palette.command_named(label).map(|item| item.action.clone()) {
+            Some(crate::PaletteAction::Interface(command)) => command,
+            other => panic!("{label}: {other:?}"),
+        }
+    }
+
+    fn run_command(
+        world: &GameWorld,
+        owner: Faction,
+        state: &mut SectorWindowState,
+        command: InterfaceCommand,
+    ) -> Result<Vec<SectorWindowAction>, &'static str> {
+        let mut fog = FogState::new(owner);
+        for system in world.systems.keys() {
+            fog.reveal(system);
+        }
+        state.command_actions(
+            world,
+            &fog,
+            &rebellion_core::missions::MissionState::new(),
+            &rebellion_core::movement::MovementState::default(),
+            cockpit(owner),
+            layout(1.0),
+            command,
+        )
+    }
+
+    #[test]
+    fn the_palette_names_each_systems_windows_and_menus_once_ignoring_case() {
+        let (world, system, other) = fixture_world();
+        let mut palette = crate::CommandPaletteState::new();
+        palette.refresh_interface(&world);
+        palette.refresh_interface(&world);
+        let named = |label: &str| {
+            palette
+                .command_named(label)
+                .map(|item| match item.action {
+                    crate::PaletteAction::Interface(command) => Some(command),
+                    crate::PaletteAction::Panel(_) => None,
+                })
+                .flatten()
+        };
+        assert_eq!(
+            named("  open fleet WINDOW: chandrila "),
+            Some(InterfaceCommand::OpenQuadrantWindow {
+                system,
+                quadrant: Quadrant::Fleets
+            })
+        );
+        assert_eq!(
+            named("Open defenses icon menu: Chandrila"),
+            Some(InterfaceCommand::OpenIconMenu {
+                system,
+                quadrant: Quadrant::Defenses
+            })
+        );
+        let other_name = world.systems[other].name.clone();
+        assert_eq!(
+            named(&format!("Open sector window: {other_name}")),
+            Some(InterfaceCommand::OpenSector(other))
+        );
+        assert_eq!(named("Open Fleet window: Coruscant"), None);
+        // The palette draws in the galaxy, where a start cannot run.
+        assert_eq!(named("Start game: Empire"), None);
+        // A second refresh replaces the interface commands, not adds them.
+        let mut labels: Vec<&str> = palette
+            .commands()
+            .iter()
+            .map(|item| item.label.as_str())
+            .collect();
+        let total = labels.len();
+        labels.sort_unstable();
+        labels.dedup();
+        assert_eq!(labels.len(), total);
+        // A sector window, four windows and four menus a system.
+        let interface = |palette: &crate::CommandPaletteState| {
+            palette
+                .commands()
+                .iter()
+                .filter(|item| matches!(item.action, crate::PaletteAction::Interface(_)))
+                .count()
+        };
+        assert_eq!(interface(&palette), 9 * world.systems.len());
+
+        // A script adds the two starts and reaches the simulation commands.
+        palette.refresh_script(&world);
+        assert_eq!(interface(&palette), 2 + 9 * world.systems.len());
+        assert!(matches!(
+            palette.command_named("start game: empire").map(|item| &item.action),
+            Some(crate::PaletteAction::Interface(InterfaceCommand::StartGame(
+                rebellion_core::missions::MissionFaction::Empire
+            )))
+        ));
+        assert!(matches!(
+            palette.command_named("Game Speed: Pause").map(|item| &item.action),
+            Some(crate::PaletteAction::Panel(crate::PanelAction::SetGameSpeed(
+                rebellion_core::tick::GameSpeed::Paused
+            )))
+        ));
+    }
+
+    #[test]
+    fn a_sector_command_opens_the_systems_sector_window() {
+        let (world, system, other) = fixture_world();
+        for owner in [Faction::Alliance, Faction::Empire] {
+            let mut state = SectorWindowState::default();
+            let name = world.systems[other].name.clone();
+            assert_eq!(
+                run_command(
+                    &world,
+                    owner,
+                    &mut state,
+                    palette_command(&world, &format!("Open sector window: {name}"))
+                ),
+                Ok(Vec::new()),
+                "{owner:?}"
+            );
+            assert!(state.planet_screen_rect(&world, layout(1.0), other).is_some());
+            assert!(state.planet_screen_rect(&world, layout(1.0), system).is_none());
+        }
+    }
+
+    #[test]
+    fn a_window_command_opens_the_sector_and_the_window_at_its_icon() {
+        // As a double click on the icon (FUN_004593e0 case 0x203,
+        // FUN_0045aac0): the window opens at the icon's point.
+        for owner in [Faction::Alliance, Faction::Empire] {
+            let (world, system) = owned_icons_world(owner);
+            let mut state = SectorWindowState::default();
+            let actions = run_command(
+                &world,
+                owner,
+                &mut state,
+                palette_command(&world, "Open Fleet window: Chandrila"),
+            )
+            .unwrap();
+            let point = state
+                .quadrant_window_point(&world, layout(1.0), system, Quadrant::Fleets)
+                .expect("the sector window is open");
+            assert_eq!(
+                actions,
+                [SectorWindowAction::OpenFleetWindow {
+                    system,
+                    logical_position: point
+                }],
+                "{owner:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_hidden_icon_refuses_its_window_and_menu_but_the_system_window_opens() {
+        // A double click on the planet opens the System window without an
+        // icon; every other window and menu needs its icon shown.
+        let (world, system, _) = fixture_world();
+        for owner in [Faction::Alliance, Faction::Empire] {
+            let mut state = SectorWindowState::default();
+            for label in [
+                "Open Defenses window: Chandrila",
+                "Open Fleet window: Chandrila",
+                "Open Missions window: Chandrila",
+                "Open system icon menu: Chandrila",
+            ] {
+                assert_eq!(
+                    run_command(&world, owner, &mut state, palette_command(&world, label)),
+                    Err("the icon is hidden"),
+                    "{owner:?}: {label}"
+                );
+            }
+            let point = state
+                .quadrant_window_point(&world, layout(1.0), system, Quadrant::System)
+                .unwrap();
+            assert_eq!(
+                run_command(
+                    &world,
+                    owner,
+                    &mut state,
+                    palette_command(&world, "Open System window: Chandrila"),
+                ),
+                Ok(vec![SectorWindowAction::OpenSystemWindow {
+                    system,
+                    logical_position: point
+                }]),
+                "{owner:?}"
+            );
+            assert_eq!(
+                run_command(
+                    &world,
+                    owner,
+                    &mut state,
+                    palette_command(&world, "Start game: Alliance")
+                ),
+                Err("the app starts a game"),
+                "{owner:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_icon_menu_command_selects_the_icon_and_opens_its_menu_there() {
+        // As a right click on the icon: FUN_0045b1b0 selects it, so it
+        // paints its second bitmap, and the release opens its menu at the
+        // icon (FUN_004ac5c0).
+        for (owner, (fleet_art, fleet_pressed)) in [
+            (Faction::Alliance, (10775, 10776)),
+            (Faction::Empire, (10783, 10784)),
+        ] {
+            let (world, system) = owned_icons_world(owner);
+            let mut state = SectorWindowState::default();
+            let actions = run_command(
+                &world,
+                owner,
+                &mut state,
+                palette_command(&world, "Open fleet icon menu: Chandrila"),
+            )
+            .unwrap();
+            let point = state
+                .quadrant_window_point(&world, layout(1.0), system, Quadrant::Fleets)
+                .unwrap();
+            assert_eq!(
+                actions,
+                [SectorWindowAction::OpenObjectMenu {
+                    selection: Some(MenuObject::SystemIcon {
+                        system,
+                        quadrant: Quadrant::Fleets
+                    }),
+                    point
+                }],
+                "{owner:?}"
+            );
+            let painted = icons_after_clicks(&world, owner, &mut state, &[]);
+            assert!(painted.contains(&fleet_pressed), "{owner:?}: {painted:?}");
+            assert!(!painted.contains(&fleet_art), "{owner:?}: {painted:?}");
+        }
     }
 }

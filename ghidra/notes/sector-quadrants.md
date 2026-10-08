@@ -53,8 +53,27 @@ window).
 | `0x10` | 10775/10776 (`0x2a17/18`) | 10783/10784 (`0x2a1f/20`) | none |
 | `0x40` | 10777/10778 (`0x2a19/1a`) | 10785/10786 (`0x2a21/22`) | none |
 
-Any other state returns 0. The second id is the item's other state.
-hyp: it is the pressed or highlighted state, as in `fleet-window.md`.
+Any other state returns 0. The second id is the **selected** state:
+
+- **Paint.** `FUN_004593e0` `WM_PAINT` draws the planet list (`+0x164`,
+  pictures and names) and then the overlay list (`+0x174`), so every icon
+  lies above every planet. A shown overlay (`+0x3c` bit 1) draws its
+  `+0x24` bitmap while `+0x3c` bit 0 is set and that bitmap exists, else its
+  `+0x20`. There is no hover state: case `0x200` only drives drags.
+- **Select.** Cases `0x201` and `0x204` hit-test the overlay list only
+  (`FUN_0045cc10`). A press on an unselected overlay without Ctrl clears
+  every overlay's bit 0 (`FUN_0045afc0(0)`) and sets the pressed one's
+  (`FUN_0045b1b0`). A press that finds no overlay, a planet included,
+  returns first and keeps the selection. With Ctrl (`MK_CONTROL`), the left
+  release toggles the overlay (case `0x202`).
+- **Refresh.** `FUN_0045d140` begins with `FUN_0045afc0(item)`, which
+  clears the item's bit 0. Slot 25 (`FUN_0045b770`) runs the show rules on
+  each change notice for the system or an object at it, so a refresh always
+  deselects.
+- **Port.** The port has no change notices. It deselects an icon when it
+  hides or its art changes, which only a refresh can cause (`port:`). A
+  refresh that changes nothing still deselects in the original, and Ctrl's
+  toggle is not ported.
 
 ## The show rules
 

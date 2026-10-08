@@ -39,8 +39,9 @@ type 4: its id is `(system index & 0x3ff) << 6 | 4` (`FUN_0045aac0`).
   count is 0 (clears `+0x3c` bit 2, `FUN_00600db0`) and otherwise shows it
   with `FUN_0045ca80(0x10, side, 0/1)`: **10775/10776** (`0x2a17`/`0x2a18`)
   for side 1, **10783/10784** (`0x2a1f`/`0x2a20`) for side 2, none for
-  sides 0 and 3. The two ids are the item's two states (`FUN_0060bd20`).
-  hyp: the second is the pressed or highlighted state. The overlay rect is
+  sides 0 and 3. The two ids are the item's two states (`FUN_0060bd20`):
+  the second is drawn while the icon is selected (`sector-quadrants.md`,
+  "Art"). The overlay rect is
   one pixel larger than the 27 by 18 icon 10771 (`0x2a13`).
 - The other quadrants open other windows: kind 4 (top-left, flag
   `0x40000`, icons `0x2a13/14`, `0x2a1b/1c`, `0x2a23/24`) the system window

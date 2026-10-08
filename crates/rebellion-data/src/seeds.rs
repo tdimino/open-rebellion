@@ -1054,7 +1054,7 @@ fn dispatch_facility_item(
             // Alliance HQ is a manufacturing facility (construction yard class).
             let inst = ManufacturingFacilityInstance {
                 class_dat_id,
-                is_alliance: true,
+                side: rebellion_core::dat::Faction::Alliance,
                 is_shipyard: false,
             };
             let key = world.manufacturing_facilities.insert(inst);
@@ -1063,7 +1063,7 @@ fn dispatch_facility_item(
         f if (FAM_DEF_MIN..=FAM_DEF_MAX).contains(&f) => {
             let inst = DefenseFacilityInstance {
                 class_dat_id,
-                is_alliance,
+                side: rebellion_core::dat::Faction::of_alliance(is_alliance),
             };
             let key = world.defense_facilities.insert(inst);
             world.systems[system_key].defense_facilities.push(key);
@@ -1073,18 +1073,19 @@ fn dispatch_facility_item(
             let is_shipyard = f == 0x28;
             let inst = ManufacturingFacilityInstance {
                 class_dat_id,
-                is_alliance,
+                side: rebellion_core::dat::Faction::of_alliance(is_alliance),
                 is_shipyard,
             };
             let key = world.manufacturing_facilities.insert(inst);
             world.systems[system_key].manufacturing_facilities.push(key);
         }
         f if (FAM_PROD_MIN..=FAM_PROD_MAX).contains(&f) => {
-            // Family 0x2D = mine, 0x2C = refinery
-            let is_mine = f == 0x2D;
+            // Family 0x2C = mine, 0x2D = refinery (FUN_0056a6f0 places
+            // 0x2c000001 as its mine; ghidra/notes/facility-ownership.md).
+            let is_mine = f == 0x2C;
             let inst = ProductionFacilityInstance {
                 class_dat_id,
-                is_alliance,
+                side: rebellion_core::dat::Faction::of_alliance(is_alliance),
                 is_mine,
             };
             let key = world.production_facilities.insert(inst);
@@ -1656,13 +1657,12 @@ fn generate_procedural_facilities<R: Rng + ?Sized>(
             let is_mine = mine_chance > 0 && rng.gen_range(0u32..100) < mine_chance;
 
             if is_mine {
-                // Place a mine (production facility — family 0x2D = mine)
-                // Use a generic mine DatId. The original uses a specific mine class.
-                // Family 0x2D index 1 = first mine type.
-                let mine_dat_id = DatId::new(0x2D00_0001);
+                // FUN_00566de0 / FUN_0056a6f0 place the mine class
+                // 0x2c000001. Its side is the system's, set once control is
+                // final (assign_facility_sides).
                 let inst = ProductionFacilityInstance {
-                    class_dat_id: mine_dat_id,
-                    is_alliance: false, // Mines are neutral/faction-inherited
+                    class_dat_id: DatId::new(0x2C00_0001),
+                    side: rebellion_core::dat::Faction::Neutral,
                     is_mine: true,
                 };
                 let fac_key = world.production_facilities.insert(inst);
@@ -1681,6 +1681,21 @@ fn generate_procedural_facilities<R: Rng + ?Sized>(
 // ─────────────────────────────────────────────────────────────────────────────
 // M7: Maintenance-budget common unit seeding
 // ─────────────────────────────────────────────────────────────────────────────
+
+/// Each seeded facility takes its system's side: the setup seeders create it
+/// with the system's own side bits, a neutral system's facilities belong to
+/// neither side (`ghidra/notes/facility-ownership.md`). Run once control is
+/// final.
+pub(crate) fn assign_facility_sides(world: &mut GameWorld) {
+    let systems: Vec<SystemKey> = world.systems.keys().collect();
+    for system in systems {
+        let holder = GameWorld::facility_holder(world.systems[system].control)
+            .unwrap_or(rebellion_core::dat::Faction::Neutral);
+        for facility in world.facilities_at(system) {
+            world.set_facility_side(facility, holder);
+        }
+    }
+}
 
 /// Compute total maintenance cost of all units belonging to a faction.
 fn compute_faction_maintenance(world: &GameWorld, is_alliance: bool) -> u32 {
@@ -2228,6 +2243,111 @@ mod tests {
         assert_eq!(world.characters[certain].force_tier, ForceTier::Aware);
         assert_eq!(world.characters[never].force_tier, ForceTier::None);
         assert_eq!(world.characters[known].force_tier, ForceTier::None);
+    }
+
+    fn bare_system(world: &mut GameWorld, control: ControlKind) -> SystemKey {
+        world.systems.insert(rebellion_core::world::System {
+            dat_id: DatId::new(0x9000_0001),
+            name: "Here".into(),
+            sector: rebellion_core::ids::SectorKey::default(),
+            x: 0,
+            y: 0,
+            exploration_status: ExplorationStatus::Explored,
+            popularity_alliance: 0.5,
+            popularity_empire: 0.5,
+            is_populated: true,
+            total_energy: 4,
+            raw_materials: 2,
+            espionage_rating: 0.0,
+            fleets: Vec::new(),
+            ground_units: Vec::new(),
+            special_forces: Vec::new(),
+            defense_facilities: Vec::new(),
+            manufacturing_facilities: Vec::new(),
+            production_facilities: Vec::new(),
+            is_headquarters: false,
+            is_destroyed: false,
+            control,
+        })
+    }
+
+    #[test]
+    fn seeded_facilities_take_their_systems_side_and_neutral_systems_serve_nobody() {
+        // The setup seeders create each facility with its system's side bits
+        // (ghidra/notes/facility-ownership.md); seeding marks them all one
+        // side first, so a skipped pass would leave Empire everywhere.
+        let mut world = GameWorld::default();
+        let alliance = bare_system(&mut world, ControlKind::Controlled(Faction::Alliance));
+        let empire = bare_system(&mut world, ControlKind::Controlled(Faction::Empire));
+        let neutral = bare_system(&mut world, ControlKind::Uncontrolled);
+        for system in [alliance, empire, neutral] {
+            dispatch_facility_item(0x2900_0001, system, false, &mut world);
+            dispatch_facility_item(0x2200_0001, system, false, &mut world);
+            dispatch_facility_item(0x2C00_0001, system, false, &mut world);
+        }
+
+        assign_facility_sides(&mut world);
+
+        for (system, side) in [
+            (alliance, Faction::Alliance),
+            (empire, Faction::Empire),
+            (neutral, Faction::Neutral),
+        ] {
+            let sides: Vec<Faction> = world
+                .facilities_at(system)
+                .into_iter()
+                .map(|f| world.facility(f).unwrap().1)
+                .collect();
+            assert_eq!(sides, vec![side; 3], "{side:?} system");
+        }
+    }
+
+    #[test]
+    fn facility_family_0x2c_seeds_a_mine_and_0x2d_a_refinery() {
+        // FUN_0056a6f0 places 0x2c000001 as its mine; the System Status
+        // counters and Build Selection command 0x6c read 0x2c as mine
+        // (ghidra/notes/facility-ownership.md).
+        let mut world = GameWorld::default();
+        let system = bare_system(&mut world, ControlKind::Uncontrolled);
+        dispatch_facility_item(0x2C00_0001, system, false, &mut world);
+        dispatch_facility_item(0x2D00_0001, system, false, &mut world);
+
+        let kinds: Vec<(u32, bool)> = world.systems[system]
+            .production_facilities
+            .iter()
+            .map(|&k| {
+                let f = &world.production_facilities[k];
+                (f.class_dat_id.raw(), f.is_mine)
+            })
+            .collect();
+        assert_eq!(kinds, vec![(0x2C00_0001, true), (0x2D00_0001, false)]);
+    }
+
+    #[test]
+    fn facility_items_land_in_their_familys_list() {
+        // SYFC family ranges (module header): HQ 0x20 and yards 0x28..0x2a
+        // manufacture, 0x22..0x25 defend, an unknown family is skipped.
+        let mut world = GameWorld::default();
+        let system = bare_system(&mut world, ControlKind::Uncontrolled);
+        for item in [0x2000_0001, 0x2800_0001, 0x2900_0001, 0x2200_0001, 0x3000_0001] {
+            dispatch_facility_item(item, system, false, &mut world);
+        }
+
+        let here = &world.systems[system];
+        let yards: Vec<(u32, bool)> = here
+            .manufacturing_facilities
+            .iter()
+            .map(|&k| {
+                let f = &world.manufacturing_facilities[k];
+                (f.class_dat_id.raw(), f.is_shipyard)
+            })
+            .collect();
+        assert_eq!(
+            yards,
+            vec![(0x2000_0001, false), (0x2800_0001, true), (0x2900_0001, false)]
+        );
+        assert_eq!(here.defense_facilities.len(), 1);
+        assert!(here.production_facilities.is_empty());
     }
 
     fn gdata_path() -> PathBuf {

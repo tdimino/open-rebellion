@@ -171,7 +171,7 @@ mod tests {
             .manufacturing_facilities
             .insert(ManufacturingFacilityInstance {
                 class_dat_id: DatId::new(0),
-                is_alliance: false,
+                side: crate::dat::Faction::Empire,
                 is_shipyard: false,
             });
 

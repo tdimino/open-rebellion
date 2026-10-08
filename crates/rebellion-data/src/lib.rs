@@ -6,6 +6,7 @@ use std::path::Path;
 use anyhow::Context;
 use dat_dumper::codec::ByteReader;
 use dat_dumper::dat_record::DatRecord;
+use dat_dumper::types::all_facilities::AllFacilitiesFile;
 use dat_dumper::types::capital_ships::CapitalShipsFile;
 use dat_dumper::types::defense_facilities::DefenseFacilitiesFile;
 use dat_dumper::types::fighters::FightersFile;
@@ -25,7 +26,7 @@ use dat_dumper::types::troops::TroopsFile;
 use rebellion_core::dat::{ExplorationStatus, SectorGroup};
 use rebellion_core::ids::{DatId, SectorKey, SystemKey};
 use rebellion_core::world::{
-    BuildableClass, CapitalShipClass, Character, ControlKind, DefenseFacilityClassDef,
+    BuildableClass, CapitalShipClass, ClassStats, Character, ControlKind, DefenseFacilityClassDef,
     FighterClass, GameWorld, GnprtbEntry, GnprtbParams, MissionMemberRules, MissionRecord,
     MissionTargetRules, MstbEntry, MstbTable, SdprtbEntry, SdprtbParams, Sector, SeedOptions,
     SkillPair, SpecialForceClassDef, System, TroopClassDef,
@@ -433,23 +434,10 @@ pub fn load_game_data_with_options(
             .map(|f| (f.location, f.is_alliance))
             .collect();
 
+        // A facility takes its system's side, never gives it
+        // (ghidra/notes/facility-ownership.md), so only units count here.
         let mut asset_factions: Vec<(SystemKey, bool)> = Vec::new();
         for (sys_key, sys) in &world.systems {
-            for &k in &sys.defense_facilities {
-                if let Some(f) = world.defense_facilities.get(k) {
-                    asset_factions.push((sys_key, f.is_alliance));
-                }
-            }
-            for &k in &sys.manufacturing_facilities {
-                if let Some(f) = world.manufacturing_facilities.get(k) {
-                    asset_factions.push((sys_key, f.is_alliance));
-                }
-            }
-            for &k in &sys.production_facilities {
-                if let Some(f) = world.production_facilities.get(k) {
-                    asset_factions.push((sys_key, f.is_alliance));
-                }
-            }
             for &k in &sys.ground_units {
                 if let Some(t) = world.troops.get(k) {
                     asset_factions.push((sys_key, t.is_alliance));
@@ -494,6 +482,9 @@ pub fn load_game_data_with_options(
             }
         }
     }
+
+    // ── 8b'. Facilities take their system's side ───────────────────────────
+    seeds::assign_facility_sides(&mut world);
 
     // ── 8c. Populate character location tracking ────────────────────────────
     // Scan all fleets to back-fill each character's current_system and current_fleet.
@@ -561,7 +552,12 @@ pub fn load_game_data_with_options(
     // ── 10a. Buildable classes ─────────────────────────────────────────────
     // What each regiment, special-force and facility class costs to build,
     // for Build Selection (FUN_00437880 lists them, FUN_00538220 prices them).
-    let mut buildable = |family: u32, id: u32, text: u16, head: [u32; 6], rate: u32| {
+    let mut buildable = |family: u32,
+                         id: u32,
+                         text: u16,
+                         head: [u32; 6],
+                         rate: u32,
+                         stats: ClassStats| {
         let [is_alliance, is_empire, refined, maintenance, order, difficulty] = head;
         world.buildable_classes.insert(
             class_dat_id(family, id),
@@ -574,6 +570,7 @@ pub fn load_game_data_with_options(
                 research_order: order,
                 research_difficulty: difficulty,
                 processing_rate: rate,
+                stats,
             },
         );
     };
@@ -589,7 +586,11 @@ pub fn load_game_data_with_options(
                 d.research_order,
                 d.research_difficulty,
             ];
-            buildable(d.family_id, d.id, d.text_stra_dll_id, head, 0);
+            let stats = ClassStats {
+                bombardment: d.bombardment_defense,
+                ..ClassStats::default()
+            };
+            buildable(d.family_id, d.id, d.text_stra_dll_id, head, 0, stats);
         }
     }
     if file_available(&specfc_path) {
@@ -603,7 +604,7 @@ pub fn load_game_data_with_options(
                 d.research_order,
                 d.research_difficulty,
             ];
-            buildable(d.family_id, d.id, d.text_stra_dll_id, head, 0);
+            buildable(d.family_id, d.id, d.text_stra_dll_id, head, 0, ClassStats::default());
         }
     }
     if file_available(&deffac_path) {
@@ -617,7 +618,31 @@ pub fn load_game_data_with_options(
                 d.research_order,
                 d.research_difficulty,
             ];
-            buildable(d.family_id, d.id, d.text_stra_dll_id, head, 0);
+            let stats = ClassStats {
+                bombardment: d.bombardment_defense,
+                attack_strength: d.attack_strength,
+                shield_strength: d.shield_strength,
+            };
+            buildable(d.family_id, d.id, d.text_stra_dll_id, head, 0, stats);
+        }
+    }
+    // ALLFACSD: the Alliance HQ (family 0x20). It builds nothing, but its
+    // side flags decide whether it survives a change of holder
+    // (FUN_004f27d0). Its record has the common head after the 24-byte
+    // prefix.
+    let allfac_path = gdata_path.join("ALLFACSD.DAT");
+    if file_available(&allfac_path) {
+        let file: AllFacilitiesFile = read_dat_file(&allfac_path)?;
+        for d in &file.entries {
+            let head = [d.extra1, d.extra2, d.extra3, d.extra4, d.extra5, d.extra6];
+            buildable(
+                d.family_id,
+                d.id,
+                d.text_stra_dll_id,
+                head,
+                0,
+                ClassStats::default(),
+            );
         }
     }
     for name in ["MANFACSD.DAT", "PROFACSD.DAT"] {
@@ -633,12 +658,17 @@ pub fn load_game_data_with_options(
                     d.research_order,
                     d.research_difficulty,
                 ];
+                let stats = ClassStats {
+                    bombardment: d.bombardment_defense,
+                    ..ClassStats::default()
+                };
                 buildable(
                     d.family_id,
                     d.id,
                     d.text_stra_dll_id,
                     head,
                     d.processing_rate,
+                    stats,
                 );
             }
         }

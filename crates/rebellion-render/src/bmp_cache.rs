@@ -1883,7 +1883,11 @@ fn uses_blue_screen_transparency(source: DllSource, resource_id: u32) -> bool {
                 | 11533..=11541
                 | 11560..=11569
         ),
-        // The craft portraits (`0x640..0x78f`) and their en route marks
+        // The unit and facility pictures (`0x001..0x584`, all 122 by 50 on
+        // a blue matte), which the Status window blits keyed through
+        // `FUN_0042c3b0` (`FUN_00443130`); the production managers' scenes
+        // 262..264 are opaque. The craft portraits (`0x640..0x78f`) and
+        // their en route marks
         // (`+0x1000`), the character portraits (`0x840..0xa9b`, which the
         // Status window blits keyed, `FUN_00443130`), the minis and their
         // marks (`0x5000..0x57ff`), which `FUN_0042c3b0` composes and its
@@ -1892,7 +1896,9 @@ fn uses_blue_screen_transparency(source: DllSource, resource_id: u32) -> bool {
         // (`FUN_00609960`).
         DllSource::Gokres => matches!(
             resource_id,
-            1_600..=1_935
+            1..=261
+                | 265..=1_412
+                | 1_600..=1_935
                 | 2_112..=2_715
                 | 5_696..=6_031
                 | 16_000..=19_999
@@ -2452,6 +2458,36 @@ mod tests {
             assert_eq!(decoded.pixels[0].a(), 0);
             assert_eq!(decoded.pixels[1].a(), 0);
             assert_eq!(decoded.pixels[2].a(), 255);
+        }
+    }
+
+    #[test]
+    fn status_pictures_drop_their_blue_matte_but_manager_scenes_stay_opaque() {
+        // FUN_0042c3b0 composes a unit's or facility's picture and the
+        // Status window blits it keyed (FUN_005fd0f0, FUN_00443130); GOKRES
+        // 262..264 are full production-manager scenes.
+        let mut image = image::RgbaImage::new(2, 1);
+        image.put_pixel(0, 0, image::Rgba([0, 0, 255, 255]));
+        image.put_pixel(1, 0, image::Rgba([90, 100, 180, 255]));
+        let mut encoded = Vec::new();
+        image::DynamicImage::ImageRgba8(image)
+            .write_to(
+                &mut std::io::Cursor::new(&mut encoded),
+                image::ImageFormat::Png,
+            )
+            .unwrap();
+        let alpha = |resource_id| {
+            decode_color_image(&encoded, DllSource::Gokres, resource_id)
+                .unwrap()
+                .pixels[0]
+                .a()
+        };
+
+        for keyed in [1, 261, 512, 1_089, 1_412] {
+            assert_eq!(alpha(keyed), 0, "{keyed}");
+        }
+        for opaque in [262, 263, 264] {
+            assert_eq!(alpha(opaque), 255, "{opaque}");
         }
     }
 

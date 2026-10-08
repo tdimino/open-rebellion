@@ -74,12 +74,19 @@ checks for a newer release.
 
 ### Run a check
 
-1. Build `target/release/open-rebellion`, record its SHA-256 and the source
-   commit, and launch it with `data/base`. Mute before anything else: the
-   main menu speaker mutes music only, so open the options screen from the
-   main menu and click the left end of both the music and the effects
-   sliders, then press Escape.
-2. Find the window with `cua-driver call list_windows` (app `open-rebellion`).
+1. Launch with `scripts/launch-native.sh --build --evidence
+   .artifacts/native-checks/<date>-<slug>`. It builds
+   `target/release/open-rebellion` and starts it with `data/base` and
+   `OPEN_REBELLION_MUTE=1`, which silences music, effects and cutscenes from
+   launch, so no options-screen clicks are needed. It then prints, and writes
+   to `binary.txt`, the SHA-256, the source commit, the pid and the window
+   id. Pass game arguments after `--`. The variable accepts 1, true, yes or
+   on, in any case; set it yourself when launching another way. Without it,
+   mute by hand: the main menu speaker mutes music only, so open the options
+   screen from the main menu, click the left end of both the music and the
+   effects sliders, then press Escape.
+2. The script prints the window id. Otherwise, find the window with
+   `cua-driver call list_windows` (app `open-rebellion`).
 3. Pass the same `"session":"<name>"` on every call, or captures come back
    `capture_not_found`.
 4. Capture with `get_window_state` (`include_accessibility_tree:false`,
@@ -94,6 +101,49 @@ Coordinates are in the returned screenshot's pixels (`screenshot_width`,
 `screenshot_scale`). The scale changes with the display the window sits on.
 Keep evidence under `.artifacts/native-checks/<date>-<slug>/` with the
 binary hash, and record each check as an agent check, never a human one.
+
+### Reach a state with commands
+
+The developer command palette (backtick) skips the clicks that lead to the
+state under test. It is on in debug builds and, in release builds, when
+`OPEN_REBELLION_DEV` is 1, true, yes or on. Release browser builds never
+compile it. Beside the simulation commands (advance days, game speed, reveal
+all), it lists for every system by name:
+
+- `Open sector window: <system>`;
+- `Open System|Defenses|Fleet|Missions window: <system>`, which opens the
+  window at its icon, as a double click there does;
+- `Open system|defenses|fleet|missions icon menu: <system>`, which selects
+  the icon (it paints its selected art) and opens its pop-up menu, as a right
+  click does.
+
+A window or menu behind a hidden icon is refused. Only the System window
+opens without one, as a double click on the planet opens it.
+
+For a native run, write the commands one per line (`#` starts a comment)
+and pass the file with `scripts/launch-native.sh --commands FILE`. A script
+also takes `Start game: Alliance` or `Start game: Empire`, which runs from
+the main menu through the menu's own faction control; the palette lists no
+start, since it draws only in the galaxy. The launcher sets
+`OPEN_REBELLION_COMMANDS` and `OPEN_REBELLION_DEV=1`; without the dev switch
+a release build ignores the script. The game runs one line per frame, once
+it reaches the main menu or the galaxy and the last line's commands have
+run, and waits in between while a start is setting up. Each line logs
+`[dev-command] sent` or `unknown` to `game.log`; a `refused: <why>` line
+belongs to the command sent just before it, and a sent line with no refusal
+after it ran. `[dev-command] done` follows once the last command has run.
+Every new campaign takes a fresh random seed. Add `--seed N`
+(`OPEN_REBELLION_SEED`, which also needs the dev switch; the launcher sets
+it) so the script meets the same galaxy each run, and record the seed with
+the evidence.
+
+cua-driver's `press_key` cannot send the backtick (it takes letters, digits
+and named keys; "`" arrives as another key), so drive the palette itself by
+hand or through a script.
+
+Commands reach a state. They do not test the input that leads to it, so
+drive the step under test with `cua-driver`. Then say in the evidence
+summary which steps a command took.
 
 ## Reverse Engineering
 
@@ -194,6 +244,19 @@ stand-in with the finding that replaces it.
 `proptest` is deferred until economy or combat math has edge cases the replay
 goldens do not pin. Adding it needs approval as a dev dependency. Formal
 verification (`kani`) is out of scope for now.
+
+### Build Cache
+
+Cargo never prunes `target/`. Each change to a crate's code, flags or
+features writes a new hashed copy of its outputs and test binaries, and the
+old copies stay. Mutants runs leave
+`cargo-mutants-*` scratch copies in `$TMPDIR` when interrupted.
+`scripts/check-build-cache.sh` reports `target/`, `.artifacts/` and those
+copies, and warns once `target/` passes `OPEN_REBELLION_TARGET_LIMIT_GB`
+(default 20). A local Claude Code SessionStart hook (`.claude/settings.json`,
+untracked) runs it. On a warning, run it with `--prune` once no build, test or
+mutants run is in flight: it runs `cargo clean` and removes the copies. Remove
+scratch worktrees and their target directories when a split or check ends.
 
 ## Voice Resource Identification
 

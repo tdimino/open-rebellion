@@ -33,6 +33,7 @@ pub mod panels;
 pub mod personnel_finder;
 pub mod quadrant_icons;
 pub mod sector_window;
+pub mod status_rows;
 pub mod status_window;
 pub mod system_window;
 mod tactical_asset_cache;
@@ -161,8 +162,10 @@ pub use tactical_view::{
 };
 pub use video_player::{VideoError, VideoPlayer};
 
-#[cfg(debug_assertions)]
-pub use panels::command_palette::{draw_command_palette, CommandPaletteState};
+#[cfg(any(debug_assertions, not(target_arch = "wasm32")))]
+pub use panels::command_palette::{
+    draw_command_palette, CommandPaletteState, InterfaceCommand, PaletteAction,
+};
 
 /// Computed camera parameters for overlay rendering.
 ///
@@ -544,6 +547,11 @@ fn gid_metric(
     gid: &GidOverlayContext<'_>,
 ) -> u32 {
     let same_faction = |is_alliance: bool| is_alliance == player_is_alliance;
+    let player_faction = if player_is_alliance {
+        rebellion_core::dat::Faction::Alliance
+    } else {
+        rebellion_core::dat::Faction::Empire
+    };
     // Manual p. 48: an idle yard is one "that isn't already building
     // something"; each area builds on its own (FUN_00509670).
     let area_idle = |area| {
@@ -633,7 +641,7 @@ fn gid_metric(
                     .production_facilities
                     .get(**key)
                     .is_some_and(|facility| {
-                        same_faction(facility.is_alliance)
+                        facility.side == player_faction
                             && (facility.is_mine == (mode == GidMode::Mines))
                     })
             })
@@ -674,7 +682,7 @@ fn gid_metric(
                             }
                             _ => None,
                         };
-                        same_faction(facility.is_alliance)
+                        facility.side == player_faction
                             && correct_type
                             && idle_area.is_none_or(area_idle)
                     })
@@ -703,7 +711,7 @@ fn gid_metric(
             .iter()
             .filter(|key| {
                 world.defense_facilities.get(**key).is_some_and(|facility| {
-                    same_faction(facility.is_alliance) && facility.class_dat_id.index() == 4
+                    facility.side == player_faction && facility.class_dat_id.index() == 4
                 })
             })
             .count() as u32,
@@ -712,7 +720,7 @@ fn gid_metric(
             .iter()
             .filter(|key| {
                 world.defense_facilities.get(**key).is_some_and(|facility| {
-                    same_faction(facility.is_alliance)
+                    facility.side == player_faction
                         && matches!(facility.class_dat_id.index(), 3 | 6)
                 })
             })
@@ -722,7 +730,7 @@ fn gid_metric(
             .iter()
             .filter(|key| {
                 world.defense_facilities.get(**key).is_some_and(|facility| {
-                    same_faction(facility.is_alliance)
+                    facility.side == player_faction
                         && matches!(facility.class_dat_id.index(), 1 | 2 | 5)
                 })
             })
@@ -1645,7 +1653,7 @@ mod interaction_tests {
             world.manufacturing_facilities.insert(
                 rebellion_core::world::ManufacturingFacilityInstance {
                     class_dat_id: rebellion_core::ids::DatId::new((family << 24) | 1),
-                    is_alliance: true,
+                    side: rebellion_core::dat::Faction::Alliance,
                     is_shipyard: family == 0x28,
                 },
             )

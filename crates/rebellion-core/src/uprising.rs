@@ -37,10 +37,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::dat::Faction;
 use crate::economy::{self, EconomyState};
-use crate::ids::{
-    CharacterKey, DefenseFacilityKey, ManufacturingFacilityKey, ProductionFacilityKey, SystemKey,
-    TroopKey,
-};
+use crate::ids::{CharacterKey, SystemKey, TroopKey};
 use crate::missions::{member_skill, ActiveMission, MissionKind, MissionState};
 use crate::tick::TickEvent;
 use crate::world::{Character, GameWorld, MstbTable, Skill, System};
@@ -105,13 +102,7 @@ const STORMTROOPER_REGIMENT: u32 = 0x1000_0006;
 // Events
 // ---------------------------------------------------------------------------
 
-/// A facility at a system, from any of the three facility arenas.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FacilityRef {
-    Defense(DefenseFacilityKey),
-    Manufacturing(ManufacturingFacilityKey),
-    Production(ProductionFacilityKey),
-}
+pub use crate::world::FacilityRef;
 
 /// One outcome of an uprising incident (`FUN_0050d150`).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -480,24 +471,24 @@ fn regiments(world: &GameWorld, sys: &System, side: Faction) -> Vec<TroopKey> {
 /// The facilities of `side` at `sys`, in family order (defense 0x22..0x25,
 /// manufacturing 0x28..0x2a, production 0x2c..0x2d).
 fn facilities(world: &GameWorld, sys: &System, side: Option<Faction>) -> Vec<FacilityRef> {
-    let ours = |is_alliance: bool| side.is_none_or(|s| is_alliance == (s == Faction::Alliance));
+    let ours = |owner: Faction| side.is_none_or(|s| owner == s);
     let defense = sys.defense_facilities.iter().filter(|k| {
         world
             .defense_facilities
             .get(**k)
-            .is_some_and(|f| ours(f.is_alliance))
+            .is_some_and(|f| ours(f.side))
     });
     let manufacturing = sys.manufacturing_facilities.iter().filter(|k| {
         world
             .manufacturing_facilities
             .get(**k)
-            .is_some_and(|f| ours(f.is_alliance))
+            .is_some_and(|f| ours(f.side))
     });
     let production = sys.production_facilities.iter().filter(|k| {
         world
             .production_facilities
             .get(**k)
-            .is_some_and(|f| ours(f.is_alliance))
+            .is_some_and(|f| ours(f.side))
     });
     defense
         .map(|k| FacilityRef::Defense(*k))
@@ -1012,23 +1003,7 @@ pub fn apply_uprising_event(world: &mut GameWorld, event: &UprisingEvent) {
 }
 
 fn remove_facility(world: &mut GameWorld, system: SystemKey, facility: FacilityRef) {
-    let Some(sys) = world.systems.get_mut(system) else {
-        return;
-    };
-    match facility {
-        FacilityRef::Defense(key) => {
-            sys.defense_facilities.retain(|k| *k != key);
-            world.defense_facilities.remove(key);
-        }
-        FacilityRef::Manufacturing(key) => {
-            sys.manufacturing_facilities.retain(|k| *k != key);
-            world.manufacturing_facilities.remove(key);
-        }
-        FacilityRef::Production(key) => {
-            sys.production_facilities.retain(|k| *k != key);
-            world.production_facilities.remove(key);
-        }
-    }
+    world.remove_facility(system, facility);
 }
 
 // ---------------------------------------------------------------------------
@@ -1039,7 +1014,7 @@ fn remove_facility(world: &mut GameWorld, system: SystemKey, facility: FacilityR
 mod tests {
     use super::*;
     use crate::dat::{ExplorationStatus, SectorGroup};
-    use crate::ids::DatId;
+    use crate::ids::{DatId, ProductionFacilityKey};
     use crate::missions::MissionFaction;
     use crate::missions::MissionRequest;
     use crate::world::{
@@ -1170,7 +1145,7 @@ mod tests {
             .production_facilities
             .insert(ProductionFacilityInstance {
                 class_dat_id: DatId::new(0x2c00_0001),
-                is_alliance: alliance,
+                side: crate::dat::Faction::of_alliance(alliance),
                 is_mine: true,
             });
         world.systems[system].production_facilities.push(mine);
@@ -1640,7 +1615,7 @@ mod tests {
         let ours = add_mine(&mut world, system, true);
         let theirs = world.defense_facilities.insert(DefenseFacilityInstance {
             class_dat_id: DatId::new(0x2200_0001),
-            is_alliance: false,
+            side: crate::dat::Faction::Empire,
         });
         world.systems[system].defense_facilities.push(theirs);
         let mut state = UprisingState {
@@ -1762,14 +1737,14 @@ mod tests {
         world.systems[system].total_energy = 1;
         let defense = world.defense_facilities.insert(DefenseFacilityInstance {
             class_dat_id: DatId::new(0x2200_0001),
-            is_alliance: true,
+            side: crate::dat::Faction::Alliance,
         });
         world.systems[system].defense_facilities.push(defense);
         let shipyard = world
             .manufacturing_facilities
             .insert(ManufacturingFacilityInstance {
                 class_dat_id: DatId::new(0x2800_0001),
-                is_alliance: false,
+                side: crate::dat::Faction::Empire,
                 is_shipyard: true,
             });
         world.systems[system]
@@ -2126,14 +2101,14 @@ mod tests {
         add_mine(&mut world, system, false);
         let defense = world.defense_facilities.insert(DefenseFacilityInstance {
             class_dat_id: DatId::new(0x2200_0001),
-            is_alliance: true,
+            side: crate::dat::Faction::Alliance,
         });
         world.systems[system].defense_facilities.push(defense);
         let yard = world
             .manufacturing_facilities
             .insert(ManufacturingFacilityInstance {
                 class_dat_id: DatId::new(0x2800_0001),
-                is_alliance: false,
+                side: crate::dat::Faction::Empire,
                 is_shipyard: true,
             });
         world.systems[system].manufacturing_facilities.push(yard);

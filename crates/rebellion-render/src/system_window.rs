@@ -1502,7 +1502,7 @@ mod tests {
             .manufacturing_facilities
             .insert(ManufacturingFacilityInstance {
                 class_dat_id: DatId::new(class),
-                is_alliance: true,
+                side: rebellion_core::dat::Faction::Alliance,
                 is_shipyard: class >> 24 == 0x28,
             });
         world.systems[system].manufacturing_facilities.push(key);
@@ -1514,7 +1514,7 @@ mod tests {
             .production_facilities
             .insert(ProductionFacilityInstance {
                 class_dat_id: DatId::new(0x2c00_0001),
-                is_alliance: true,
+                side: rebellion_core::dat::Faction::Alliance,
                 is_mine: true,
             });
         world.systems[system].production_facilities.push(key);

@@ -405,7 +405,7 @@ impl MissionTarget {
     /// The side holding the object and where it stands, or `None` once it
     /// is gone.
     fn state(self, world: &GameWorld) -> Option<ObjectState> {
-        let side = crate::mission_detection::faction_of;
+        let faction_of = crate::mission_detection::faction_of;
         let at = |listed: &dyn Fn(&crate::world::System) -> bool| {
             world
                 .systems
@@ -413,25 +413,25 @@ impl MissionTarget {
                 .find(|(_, sys)| listed(sys))
                 .map(|(key, _)| key)
         };
-        let (is_alliance, location) = match self {
+        let (side, location) = match self {
             MissionTarget::DefenseFacility(key) => (
-                world.defense_facilities.get(key)?.is_alliance,
+                world.defense_facilities.get(key)?.side,
                 at(&|sys| sys.defense_facilities.contains(&key)),
             ),
             MissionTarget::ManufacturingFacility(key) => (
-                world.manufacturing_facilities.get(key)?.is_alliance,
+                world.manufacturing_facilities.get(key)?.side,
                 at(&|sys| sys.manufacturing_facilities.contains(&key)),
             ),
             MissionTarget::ProductionFacility(key) => (
-                world.production_facilities.get(key)?.is_alliance,
+                world.production_facilities.get(key)?.side,
                 at(&|sys| sys.production_facilities.contains(&key)),
             ),
             MissionTarget::Troop(key) => (
-                world.troops.get(key)?.is_alliance,
+                faction_of(world.troops.get(key)?.is_alliance),
                 at(&|sys| sys.ground_units.contains(&key)),
             ),
             MissionTarget::SpecialForce(key) => (
-                world.special_forces.get(key)?.is_alliance,
+                faction_of(world.special_forces.get(key)?.is_alliance),
                 at(&|sys| sys.special_forces.contains(&key)),
             ),
             MissionTarget::DeathStar(key) => {
@@ -443,11 +443,11 @@ impl MissionTarget {
                             .get(ship.class)
                             .is_some_and(crate::world::CapitalShipClass::is_death_star)
                 })?;
-                (fleet.is_alliance, Some(fleet.location))
+                (faction_of(fleet.is_alliance), Some(fleet.location))
             }
         };
         Some(ObjectState {
-            side: side(is_alliance),
+            side,
             location,
         })
     }
@@ -4852,7 +4852,7 @@ mod tests {
                 .manufacturing_facilities
                 .insert(crate::world::ManufacturingFacilityInstance {
                     class_dat_id: crate::ids::DatId::new(0x2800_0001),
-                    is_alliance: false,
+                    side: crate::dat::Faction::Empire,
                     is_shipyard: true,
                 });
         world.systems[system].manufacturing_facilities.push(key);
@@ -5009,14 +5009,14 @@ mod tests {
             .defense_facilities
             .insert(crate::world::DefenseFacilityInstance {
                 class_dat_id: crate::ids::DatId::new(0x2200_0001),
-                is_alliance: false,
+                side: crate::dat::Faction::Empire,
             });
         world.systems[here].defense_facilities.push(turret);
         let mine = world
             .production_facilities
             .insert(crate::world::ProductionFacilityInstance {
                 class_dat_id: crate::ids::DatId::new(0x2c00_0001),
-                is_alliance: false,
+                side: crate::dat::Faction::Empire,
                 is_mine: true,
             });
         world.systems[here].production_facilities.push(mine);
@@ -5135,7 +5135,7 @@ mod tests {
         let yard = enemy_yard(&mut world, here);
         let mut state =
             waiting_sabotage(&mut world, here, MissionTarget::ManufacturingFacility(yard));
-        world.manufacturing_facilities[yard].is_alliance = true;
+        world.manufacturing_facilities[yard].side = crate::dat::Faction::Alliance;
 
         let advance = step(&mut state, &world, 5, &[0.0]);
 

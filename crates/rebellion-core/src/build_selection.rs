@@ -139,7 +139,8 @@ pub fn yard_periods(
         .iter()
         .filter_map(|&key| world.manufacturing_facilities.get(key))
         .filter(|yard| {
-            yard.is_alliance == is_alliance && yard.class_dat_id.family() == area_family(area)
+            yard.side == crate::dat::Faction::of_alliance(is_alliance)
+                && yard.class_dat_id.family() == area_family(area)
         })
         .filter_map(|yard| world.buildable_classes.get(&yard.class_dat_id))
         .map(|class| class.processing_rate)
@@ -260,6 +261,7 @@ mod tests {
                 research_order: order,
                 research_difficulty: 0,
                 processing_rate: rate,
+                ..BuildableClass::default()
             },
         );
     }
@@ -269,7 +271,7 @@ mod tests {
             .manufacturing_facilities
             .insert(ManufacturingFacilityInstance {
                 class_dat_id: DatId::new(id),
-                is_alliance,
+                side: crate::dat::Faction::of_alliance(is_alliance),
                 is_shipyard: false,
             });
         world.systems[at].manufacturing_facilities.push(key);

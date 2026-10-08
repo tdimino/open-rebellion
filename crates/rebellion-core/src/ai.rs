@@ -729,8 +729,8 @@ impl AISystem {
                             .manufacturing_facilities
                             .get(*mfk)
                             .is_some_and(|f| match faction {
-                                AiFaction::Alliance => !f.is_alliance, // enemy = empire
-                                AiFaction::Empire => f.is_alliance,    // enemy = alliance
+                                AiFaction::Alliance => f.side == crate::dat::Faction::Empire,
+                                AiFaction::Empire => f.side == crate::dat::Faction::Alliance,
                             })
                     })
                     .collect();
@@ -1078,8 +1078,8 @@ impl AISystem {
                     .manufacturing_facilities
                     .get(*mfk)
                     .is_some_and(|f| match faction {
-                        AiFaction::Alliance => f.is_alliance,
-                        AiFaction::Empire => !f.is_alliance,
+                        AiFaction::Alliance => f.side == crate::dat::Faction::Alliance,
+                        AiFaction::Empire => f.side == crate::dat::Faction::Empire,
                     })
             });
 
@@ -1158,7 +1158,7 @@ impl AISystem {
                     world
                         .defense_facilities
                         .get(**dk)
-                        .is_some_and(|d| d.is_alliance == is_alliance)
+                        .is_some_and(|d| d.side == crate::dat::Faction::of_alliance(is_alliance))
                 })
                 .count();
             if friendly_defenses < 2 {
@@ -1242,12 +1242,12 @@ impl AISystem {
             .manufacturing_facilities
             .iter()
             .find(|(_, f)| match faction {
-                AiFaction::Alliance => f.is_alliance,
-                AiFaction::Empire => !f.is_alliance,
+                AiFaction::Alliance => f.side == crate::dat::Faction::Alliance,
+                AiFaction::Empire => f.side == crate::dat::Faction::Empire,
             })
             .map(|(_, f)| FacilityBuild {
                 class: f.class_dat_id,
-                is_alliance: f.is_alliance,
+                is_alliance: f.side == crate::dat::Faction::Alliance,
             })
     }
 
@@ -1269,12 +1269,12 @@ impl AISystem {
             .defense_facilities
             .iter()
             .find(|(_, d)| match faction {
-                AiFaction::Alliance => d.is_alliance,
-                AiFaction::Empire => !d.is_alliance,
+                AiFaction::Alliance => d.side == crate::dat::Faction::Alliance,
+                AiFaction::Empire => d.side == crate::dat::Faction::Empire,
             })
             .map(|(_, d)| FacilityBuild {
                 class: d.class_dat_id,
-                is_alliance: d.is_alliance,
+                is_alliance: d.side == crate::dat::Faction::Alliance,
             })
     }
 
@@ -2428,7 +2428,7 @@ mod tests {
                 .manufacturing_facilities
                 .insert(crate::world::ManufacturingFacilityInstance {
                     class_dat_id: DatId(0x2a00_0003),
-                    is_alliance: false,
+                    side: crate::dat::Faction::Empire,
                     is_shipyard: false,
                 });
         let sys_key = world.systems.insert(System {
@@ -2469,7 +2469,7 @@ mod tests {
             .defense_facilities
             .insert(crate::world::DefenseFacilityInstance {
                 class_dat_id: DatId(0x2200_0001),
-                is_alliance: false,
+                side: crate::dat::Faction::Empire,
             });
         let ordered = |world: &GameWorld| {
             AISystem::advance(
@@ -2510,7 +2510,7 @@ mod tests {
                 .defense_facilities
                 .insert(crate::world::DefenseFacilityInstance {
                     class_dat_id: DatId(0x2200_0001),
-                    is_alliance: false,
+                    side: crate::dat::Faction::Empire,
                 });
             world.systems[sys_key].defense_facilities.push(key);
         }
@@ -2726,7 +2726,7 @@ mod tests {
                 .manufacturing_facilities
                 .insert(crate::world::ManufacturingFacilityInstance {
                     class_dat_id: DatId(1),
-                    is_alliance: false, // empire
+                    side: crate::dat::Faction::Empire, // empire
                     is_shipyard: false,
                 });
 
@@ -2808,7 +2808,7 @@ mod tests {
                 .manufacturing_facilities
                 .insert(crate::world::ManufacturingFacilityInstance {
                     class_dat_id: DatId(1),
-                    is_alliance: false,
+                    side: crate::dat::Faction::Empire,
                     is_shipyard: false,
                 });
         world.systems.insert(System {
@@ -2911,7 +2911,7 @@ mod tests {
                 .manufacturing_facilities
                 .insert(crate::world::ManufacturingFacilityInstance {
                     class_dat_id: DatId(1),
-                    is_alliance: false,
+                    side: crate::dat::Faction::Empire,
                     is_shipyard: false,
                 });
         let sys_key = add_system(&mut world, sector, 0.5, 0.5);
@@ -3464,7 +3464,7 @@ mod tests {
                 .manufacturing_facilities
                 .insert(crate::world::ManufacturingFacilityInstance {
                     class_dat_id: DatId(1),
-                    is_alliance: !alliance_ai, // owned by the AI's enemy
+                    side: crate::dat::Faction::of_alliance(!alliance_ai), // owned by the AI's enemy
                     is_shipyard: false,
                 });
         let enemy_sys = world.systems.insert(System {
@@ -3551,7 +3551,7 @@ mod tests {
                 .manufacturing_facilities
                 .insert(crate::world::ManufacturingFacilityInstance {
                     class_dat_id: DatId(1),
-                    is_alliance: true,
+                    side: crate::dat::Faction::Alliance,
                     is_shipyard: false,
                 });
         let _ = world.systems.insert(System {
@@ -3696,7 +3696,7 @@ mod tests {
             let mfg_key = world.manufacturing_facilities.insert(
                 crate::world::ManufacturingFacilityInstance {
                     class_dat_id: DatId(i),
-                    is_alliance: true,
+                    side: crate::dat::Faction::Alliance,
                     is_shipyard: false,
                 },
             );
@@ -4434,7 +4434,7 @@ mod tests {
             let yard = world.manufacturing_facilities.insert(
                 crate::world::ManufacturingFacilityInstance {
                     class_dat_id: DatId(1),
-                    is_alliance: true,
+                    side: crate::dat::Faction::Alliance,
                     is_shipyard: false,
                 },
             );

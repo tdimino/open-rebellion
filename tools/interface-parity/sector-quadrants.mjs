@@ -433,6 +433,33 @@ const cases = [
     },
   },
   {
+    name: "selected",
+    // FUN_004593e0 WM_PAINT draws a selected overlay's second bitmap, the
+    // next id in FUN_0045ca80's pair; a press selects the overlay under it
+    // (FUN_0045b1b0) and deselects the rest (FUN_0045afc0).
+    async run(page, faction, setup, directory, source) {
+      const shown = Object.entries(expectedSides(faction).primary)
+        .filter(([, side]) => side !== null);
+      assert.ok(shown.length >= 2, "the primary system shows two icons");
+      const compares = [];
+      for (const [pressed] of shown) {
+        const [left, top] = quadrant(setup, "primary", pressed);
+        await click(page, { x: Math.round(left) + 4, y: Math.round(top) + 9 });
+        const screenshot = await stableScreen(page, directory, `selected-${pressed}`);
+        for (const [name, side] of shown) {
+          const id = art[name][side] + (name === pressed ? 1 : 0);
+          compares.push({
+            id,
+            ...compareIcon(screenshot, quadrant(setup, "primary", name), resource(source, id),
+              `selected-${pressed}-${name}`, directory),
+          });
+        }
+      }
+      assertExact(compares);
+      return { compares };
+    },
+  },
+  {
     name: "open-system",
     // FUN_004593e0 case 0x203 finds the shown overlay under the point;
     // FUN_0045aac0 maps kind 4 to the System window (type 9). The point lies
@@ -779,7 +806,7 @@ async function main() {
   const summary = {
     schema_version: 1,
     family: "sector-quadrants",
-    scope: "test-only sector window quadrant icons (FUN_00459e30): each shown icon's art against STRATEGY.DLL, hidden icons absent, the system icon opening the System window, and the defenses icon opening the System Defenses window (tabs, rows, selection frame, rail), and the missions icon opening the Missions window (rows, selection frame, tabs, rail) against STRATEGY.DLL and GOKRES.DLL, on both sides",
+    scope: "test-only sector window quadrant icons (FUN_00459e30): each shown icon's art against STRATEGY.DLL, a pressed icon's selected art, hidden icons absent, the system icon opening the System window, and the defenses icon opening the System Defenses window (tabs, rows, selection frame, rail), and the missions icon opening the Missions window (rows, selection frame, tabs, rail) against STRATEGY.DLL and GOKRES.DLL, on both sides",
     status: passed ? "pass" : "fail",
     browser_version: browserManifest.version,
     browser_executable: executable,

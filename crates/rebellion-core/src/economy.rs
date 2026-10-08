@@ -1867,35 +1867,35 @@ mod tests {
                     .production_facilities
                     .insert(crate::world::ProductionFacilityInstance {
                         class_dat_id: DatId(0x1800_0001),
-                        is_alliance: true,
+                        side: crate::dat::Faction::Alliance,
                         is_mine: false,
                     }),
                 world
                     .production_facilities
                     .insert(crate::world::ProductionFacilityInstance {
                         class_dat_id: DatId(0x1800_0002),
-                        is_alliance: true,
+                        side: crate::dat::Faction::Alliance,
                         is_mine: false,
                     }),
                 world
                     .production_facilities
                     .insert(crate::world::ProductionFacilityInstance {
                         class_dat_id: DatId(0x1800_0003),
-                        is_alliance: true,
+                        side: crate::dat::Faction::Alliance,
                         is_mine: false,
                     }),
                 world
                     .production_facilities
                     .insert(crate::world::ProductionFacilityInstance {
                         class_dat_id: DatId(0x1800_0004),
-                        is_alliance: true,
+                        side: crate::dat::Faction::Alliance,
                         is_mine: false,
                     }),
                 world
                     .production_facilities
                     .insert(crate::world::ProductionFacilityInstance {
                         class_dat_id: DatId(0x1800_0005),
-                        is_alliance: true,
+                        side: crate::dat::Faction::Alliance,
                         is_mine: false,
                     }),
             ],
@@ -1962,14 +1962,14 @@ mod tests {
                     .production_facilities
                     .insert(crate::world::ProductionFacilityInstance {
                         class_dat_id: DatId(0x1800_0001),
-                        is_alliance: true,
+                        side: crate::dat::Faction::Alliance,
                         is_mine: false,
                     }),
                 world
                     .production_facilities
                     .insert(crate::world::ProductionFacilityInstance {
                         class_dat_id: DatId(0x1800_0002),
-                        is_alliance: true,
+                        side: crate::dat::Faction::Alliance,
                         is_mine: false,
                     }),
             ],
@@ -2026,21 +2026,21 @@ mod tests {
                 world.manufacturing_facilities.insert(
                     crate::world::ManufacturingFacilityInstance {
                         class_dat_id: DatId(0x1600_0001),
-                        is_alliance: true,
+                        side: crate::dat::Faction::Alliance,
                         is_shipyard: false,
                     },
                 ),
                 world.manufacturing_facilities.insert(
                     crate::world::ManufacturingFacilityInstance {
                         class_dat_id: DatId(0x1600_0002),
-                        is_alliance: true,
+                        side: crate::dat::Faction::Alliance,
                         is_shipyard: false,
                     },
                 ),
                 world.manufacturing_facilities.insert(
                     crate::world::ManufacturingFacilityInstance {
                         class_dat_id: DatId(0x1600_0003),
-                        is_alliance: true,
+                        side: crate::dat::Faction::Alliance,
                         is_shipyard: false,
                     },
                 ),
@@ -2050,21 +2050,21 @@ mod tests {
                     .production_facilities
                     .insert(crate::world::ProductionFacilityInstance {
                         class_dat_id: DatId(0x2D00_0001),
-                        is_alliance: true,
+                        side: crate::dat::Faction::Alliance,
                         is_mine: true,
                     }),
                 world
                     .production_facilities
                     .insert(crate::world::ProductionFacilityInstance {
                         class_dat_id: DatId(0x2D00_0002),
-                        is_alliance: true,
+                        side: crate::dat::Faction::Alliance,
                         is_mine: true,
                     }),
                 world
                     .production_facilities
                     .insert(crate::world::ProductionFacilityInstance {
                         class_dat_id: DatId(0x2D00_0003),
-                        is_alliance: true,
+                        side: crate::dat::Faction::Alliance,
                         is_mine: true,
                     }),
             ],
@@ -2921,7 +2921,7 @@ mod tests {
             .insert(crate::world::ProductionFacilityInstance {
                 class_dat_id: DatId(0x2200_0001),
                 is_mine: true,
-                is_alliance: true,
+                side: crate::dat::Faction::Alliance,
             });
         world.systems[sys_key].production_facilities.push(mine);
 

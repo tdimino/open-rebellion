@@ -31,7 +31,7 @@ pub mod officers;
 pub mod research;
 pub mod save_load;
 
-#[cfg(debug_assertions)]
+#[cfg(any(debug_assertions, not(target_arch = "wasm32")))]
 pub mod command_palette;
 
 pub use fleets::{draw_fleets, FleetsState};

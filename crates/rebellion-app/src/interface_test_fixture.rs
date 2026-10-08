@@ -458,7 +458,7 @@ pub fn apply(
             let yard = world.manufacturing_facilities.insert(
                 rebellion_core::world::ManufacturingFacilityInstance {
                     class_dat_id: rebellion_core::ids::DatId::new(class),
-                    is_alliance: player_is_alliance,
+                    side: rebellion_core::dat::Faction::of_alliance(player_is_alliance),
                     is_shipyard: class == 0x2800_0001,
                 },
             );
@@ -823,7 +823,7 @@ fn place_loading_fleet(
         let shipyard = world.manufacturing_facilities.insert(
             rebellion_core::world::ManufacturingFacilityInstance {
                 class_dat_id: rebellion_core::ids::DatId::new(0x2800_0001),
-                is_alliance: player_is_alliance,
+                side: rebellion_core::dat::Faction::of_alliance(player_is_alliance),
                 is_shipyard: true,
             },
         );
@@ -933,7 +933,7 @@ fn place_quadrant_contents(
             .production_facilities
             .insert(rebellion_core::world::ProductionFacilityInstance {
                 class_dat_id: rebellion_core::ids::DatId::new(0x2c00_0001),
-                is_alliance: player_is_alliance,
+                side: rebellion_core::dat::Faction::of_alliance(player_is_alliance),
                 is_mine: true,
             });
     world.systems[primary].production_facilities.push(mine);
@@ -941,7 +941,7 @@ fn place_quadrant_contents(
         .defense_facilities
         .insert(rebellion_core::world::DefenseFacilityInstance {
             class_dat_id: rebellion_core::ids::DatId::new(0x2200_0001),
-            is_alliance: player_is_alliance,
+            side: rebellion_core::dat::Faction::of_alliance(player_is_alliance),
         });
     world.systems[primary].defense_facilities.push(battery);
     let class_dat_id = rebellion_core::ids::DatId::new(if player_is_alliance {
@@ -2880,7 +2880,8 @@ mod tests {
                     .filter(|key| {
                         let facility = &world.manufacturing_facilities[**key];
                         facility.is_shipyard
-                            && facility.is_alliance == (faction == CockpitFaction::Alliance)
+                            && (facility.side == rebellion_core::dat::Faction::Alliance)
+                                == (faction == CockpitFaction::Alliance)
                     })
                     .count();
                 (shipyards, setup.system_icon.is_some())

@@ -78,7 +78,7 @@ pub const SAVE_MAGIC: &[u8; 8] = b"OPENREB\0";
 
 /// Current save format version. Increment when `SaveState` layout changes;
 /// saves of any other version are rejected.
-pub const SAVE_VERSION: u32 = 31;
+pub const SAVE_VERSION: u32 = 32;
 
 /// Current state-fingerprint algorithm version.
 ///
@@ -1020,7 +1020,7 @@ mod tests {
         let facility = state.world.manufacturing_facilities.insert(
             rebellion_core::world::ManufacturingFacilityInstance {
                 class_dat_id: rebellion_core::ids::DatId::new(0x2800_0001),
-                is_alliance: false,
+                side: rebellion_core::dat::Faction::Empire,
                 is_shipyard: true,
             },
         );
@@ -1731,7 +1731,7 @@ mod tests {
             .manufacturing_facilities
             .insert(ManufacturingFacilityInstance {
                 class_dat_id: rebellion_core::ids::DatId::new(0x2800_0001),
-                is_alliance: false,
+                side: rebellion_core::dat::Faction::Empire,
                 is_shipyard: true,
             });
         state.world.systems[system]

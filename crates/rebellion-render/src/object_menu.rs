@@ -11,7 +11,9 @@
 //! submenu (word 1) and its sort key (word 2).
 
 use egui_macroquad::egui;
-use rebellion_core::ids::{CharacterKey, FleetKey, SpecialForceKey, SystemKey, TroopKey};
+use rebellion_core::ids::{
+    CharacterKey, DefenseFacilityKey, FleetKey, SpecialForceKey, SystemKey, TroopKey,
+};
 use rebellion_core::manufacturing::ProductionArea;
 use rebellion_core::missions::MissionMember;
 
@@ -19,6 +21,7 @@ use crate::bmp_cache::BmpCache;
 use crate::cockpit::{CockpitFaction, CockpitLayout, CockpitViewport};
 use crate::game_menu::{draw_game_menu, GameMenuEntry, GameMenuPlacement, GameMenuResponse};
 use crate::quadrant_icons::Quadrant;
+use crate::status_rows::StatusObject;
 
 /// What an item does when chosen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -76,6 +79,11 @@ pub enum MenuObject {
         system: SystemKey,
         area: ProductionArea,
     },
+    /// A Fleet window squadron item (`0x1c..0x1f`): the fleet and its
+    /// squadron entry's index. port: squadrons are counts per class.
+    Fighter { fleet: FleetKey, index: usize },
+    /// A Defenses window facility (`0x20..0x27`).
+    DefenseFacility(DefenseFacilityKey),
 }
 
 impl MenuObject {
@@ -89,7 +97,26 @@ impl MenuObject {
             | Self::Troop(_)
             | Self::Ship { .. }
             | Self::SystemIcon { .. }
-            | Self::Producer { .. } => None,
+            | Self::Producer { .. }
+            | Self::Fighter { .. }
+            | Self::DefenseFacility(_) => None,
+        }
+    }
+
+    /// The object's Status window (`FUN_0042a440`). A sector window's icon
+    /// stands for its system, which has none.
+    #[must_use]
+    pub const fn status_object(self) -> Option<StatusObject> {
+        match self {
+            Self::Character(key) => Some(StatusObject::Character(key)),
+            Self::SpecialForce(key) => Some(StatusObject::SpecialForce(key)),
+            Self::Fleet(key) => Some(StatusObject::Fleet(key)),
+            Self::Troop(key) => Some(StatusObject::Troop(key)),
+            Self::Ship { fleet, index, .. } => Some(StatusObject::Ship { fleet, index }),
+            Self::Producer { system, area } => Some(StatusObject::Producer { system, area }),
+            Self::Fighter { fleet, index } => Some(StatusObject::Fighter { fleet, index }),
+            Self::DefenseFacility(key) => Some(StatusObject::DefenseFacility(key)),
+            Self::SystemIcon { .. } => None,
         }
     }
 }
@@ -310,9 +337,8 @@ impl ObjectMenuRow {
 ///   `gates.ship_move` says so (its fleet is the player's and in orbit).
 ///   port: its Confirmed Move stays disabled.
 /// - Encyclopedia is enabled for a single selection.
-/// - Status is enabled for a character (`ghidra/notes/status-window.md`).
-///   In the original it is enabled for any single selection that is not a
-///   system; port: the other families' Status windows are not ported.
+/// - Status is enabled for any single selection that is not a system
+///   (`FUN_0051d990`, `ghidra/notes/status-window.md`).
 /// - port: a character's or special force's Move and Confirmed Move,
 ///   Command, Retire and the other fleet orders stay disabled until their
 ///   windows and orders are ported. In the original, Command is a submenu
@@ -354,7 +380,10 @@ pub fn object_menu_rows(selection: Option<MenuObject>, gates: OrderGates) -> Vec
             ProductionArea::TrainingFacility => &[BUILD_TROOPS, STOP, DESTINATION, RESERVED],
             ProductionArea::ConstructionYard => &[BUILD_FACILITIES, STOP, DESTINATION, RESERVED],
         },
-        None => &[],
+        // port: a squadron's and a defense facility's class order lists
+        // (vtable `+0x3c`) are untraced; FUN_0051d990's Encyclopedia and
+        // Status are always added.
+        Some(MenuObject::Fighter { .. } | MenuObject::DefenseFacility(_)) | None => &[],
     };
     let mut rows: Vec<ObjectMenuRow> = offered
         .iter()
@@ -376,8 +405,9 @@ pub fn object_menu_rows(selection: Option<MenuObject>, gates: OrderGates) -> Vec
                 ObjectMenuCommand::ConfirmedMove => fleet && gates.fleet_move,
                 ObjectMenuCommand::Encyclopedia => selection.is_some(),
                 // FUN_0051d990: a single selection that is not a system.
-                // port: only a character's Status window is ported.
-                ObjectMenuCommand::Status => matches!(selection, Some(MenuObject::Character(_))),
+                ObjectMenuCommand::Status => {
+                    selection.and_then(MenuObject::status_object).is_some()
+                }
                 _ => false,
             },
         })
@@ -630,7 +660,7 @@ mod tests {
             ["Planetary Bombardment"]
         );
         // A fleet is no mission member, so Mission's gate never reaches it.
-        assert_eq!(enabled(&rows), ["Encyclopedia"]);
+        assert_eq!(enabled(&rows), ["Encyclopedia", "Status"]);
     }
 
     #[test]
@@ -650,11 +680,11 @@ mod tests {
         };
         assert_eq!(
             enabled(&object_menu_rows(fleet, gates)),
-            ["Move", "Confirmed Move", "Encyclopedia"]
+            ["Move", "Confirmed Move", "Encyclopedia", "Status"]
         );
         assert_eq!(
             enabled(&object_menu_rows(fleet, OrderGates::default())),
-            ["Encyclopedia"]
+            ["Encyclopedia", "Status"]
         );
         // port: a character's move is not ported, so its rows stay disabled.
         let character = Some(MenuObject::Character(CharacterKey::default()));
@@ -724,11 +754,11 @@ mod tests {
         for area in ProductionArea::ALL {
             assert_eq!(
                 enabled(&object_menu_rows(band(area), gates)),
-                ["Build", "Stop", "Destination", "Encyclopedia"]
+                ["Build", "Stop", "Destination", "Encyclopedia", "Status"]
             );
             assert_eq!(
                 enabled(&object_menu_rows(band(area), OrderGates::default())),
-                ["Encyclopedia"]
+                ["Encyclopedia", "Status"]
             );
         }
         // Build and Stop belong to the bands alone.
@@ -879,14 +909,17 @@ mod tests {
         };
         assert_eq!(
             enabled(&object_menu_rows(ship, gates)),
-            ["Move", "Create Fleet", "Encyclopedia"]
+            ["Move", "Create Fleet", "Encyclopedia", "Status"]
         );
         assert_eq!(
             enabled(&object_menu_rows(ship, OrderGates::default())),
-            ["Encyclopedia"]
+            ["Encyclopedia", "Status"]
         );
         let fleet = Some(MenuObject::Fleet(FleetKey::default()));
-        assert_eq!(enabled(&object_menu_rows(fleet, gates)), ["Encyclopedia"]);
+        assert_eq!(
+            enabled(&object_menu_rows(fleet, gates)),
+            ["Encyclopedia", "Status"]
+        );
     }
 
     #[test]
@@ -913,11 +946,11 @@ mod tests {
         };
         assert_eq!(
             enabled(&object_menu_rows(troop, gates)),
-            ["Move", "Encyclopedia"]
+            ["Move", "Encyclopedia", "Status"]
         );
         assert_eq!(
             enabled(&object_menu_rows(troop, OrderGates::default())),
-            ["Encyclopedia"]
+            ["Encyclopedia", "Status"]
         );
         // The fleet's gate does not reach a regiment, nor the regiment's a
         // fleet.
@@ -927,14 +960,14 @@ mod tests {
         };
         assert_eq!(
             enabled(&object_menu_rows(troop, fleet_gate)),
-            ["Encyclopedia"]
+            ["Encyclopedia", "Status"]
         );
         assert_eq!(
             enabled(&object_menu_rows(
                 Some(MenuObject::Fleet(FleetKey::default())),
                 gates
             )),
-            ["Encyclopedia"]
+            ["Encyclopedia", "Status"]
         );
     }
 
@@ -976,19 +1009,72 @@ mod tests {
     }
 
     #[test]
-    fn status_is_enabled_for_a_character_and_not_yet_for_other_objects() {
+    fn status_is_enabled_for_any_single_object_that_is_not_a_system() {
         // FUN_0051d990 enables 0x103 for a single selection that is not a
-        // system; the port has only the character's window
-        // (FUN_004486f0, ghidra/notes/status-window.md).
+        // system (ghidra/notes/status-window.md); a sector window's icon
+        // stands for its system.
         let status = |selection| {
             enabled(&object_menu_rows(Some(selection), OrderGates::default())).contains(&"Status")
         };
-        assert!(status(MenuObject::Character(CharacterKey::default())));
-        assert!(!status(
-            MenuObject::SpecialForce(SpecialForceKey::default())
-        ));
-        assert!(!status(MenuObject::Fleet(FleetKey::default())));
-        assert!(!status(MenuObject::Troop(TroopKey::default())));
+        for selection in [
+            MenuObject::Character(CharacterKey::default()),
+            MenuObject::SpecialForce(SpecialForceKey::default()),
+            MenuObject::Fleet(FleetKey::default()),
+            MenuObject::Troop(TroopKey::default()),
+            MenuObject::Ship {
+                fleet: FleetKey::default(),
+                index: 0,
+                roster: 0,
+            },
+            MenuObject::Producer {
+                system: SystemKey::default(),
+                area: ProductionArea::Shipyard,
+            },
+            MenuObject::Fighter {
+                fleet: FleetKey::default(),
+                index: 0,
+            },
+            MenuObject::DefenseFacility(DefenseFacilityKey::default()),
+        ] {
+            assert!(status(selection), "{selection:?}");
+        }
+        assert!(!status(MenuObject::SystemIcon {
+            system: SystemKey::default(),
+            quadrant: Quadrant::Fleets,
+        }));
+    }
+
+    #[test]
+    fn a_squadron_or_defense_facility_lists_only_encyclopedia_and_status() {
+        // FUN_0051d990 adds 0x100 and 0x103 to every menu; port: the
+        // classes' own order lists are untraced.
+        for selection in [
+            MenuObject::Fighter {
+                fleet: FleetKey::default(),
+                index: 1,
+            },
+            MenuObject::DefenseFacility(DefenseFacilityKey::default()),
+        ] {
+            let rows = object_menu_rows(Some(selection), MISSION_GATE);
+            assert_eq!(labels(&rows), ["Encyclopedia", "Status"], "{selection:?}");
+            assert_eq!(enabled(&rows), ["Encyclopedia", "Status"], "{selection:?}");
+            assert_eq!(selection.mission_member(), None);
+        }
+        assert_eq!(
+            MenuObject::Fighter {
+                fleet: FleetKey::default(),
+                index: 1,
+            }
+            .status_object(),
+            Some(StatusObject::Fighter {
+                fleet: FleetKey::default(),
+                index: 1,
+            })
+        );
+        assert_eq!(
+            MenuObject::DefenseFacility(DefenseFacilityKey::default()).status_object(),
+            Some(StatusObject::DefenseFacility(DefenseFacilityKey::default()))
+        );
     }
 
     #[test]

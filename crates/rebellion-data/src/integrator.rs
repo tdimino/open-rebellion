@@ -454,6 +454,9 @@ impl PerceptionIntegrator {
                     if let Some(sys) = world.systems.get_mut(*system) {
                         sys.control = *new_control;
                     }
+                    // FUN_00510d70 → FUN_004f6f40: the system's facilities
+                    // follow its new holder.
+                    world.hand_over_facilities(*system);
                     self.emit(
                         SYS_ECONOMY,
                         EVT_CONTROL_CHANGED,
@@ -822,6 +825,9 @@ impl PerceptionIntegrator {
         if let Some(value) = world.systems.get_mut(system) {
             value.control = ControlKind::Controlled(winner);
         }
+        // FUN_00510d70 → FUN_004f6f40: the system's facilities follow its
+        // new holder.
+        world.hand_over_facilities(system);
         if previous != Some(ControlKind::Controlled(winner)) {
             self.emit(
                 SYS_COMBAT,
@@ -2349,6 +2355,73 @@ mod tests {
             .any(|e| e.event_type == EVT_NATURAL_DISASTER));
     }
 
+    /// An Empire-held system with a yard both sides can run and a defense
+    /// only the Empire can field.
+    fn empire_facilities(world: &mut GameWorld, name: &str) -> SystemKey {
+        let system = add_system(world, name);
+        for (id, is_alliance) in [(0x2900_0001, true), (0x2200_0001, false)] {
+            world.buildable_classes.insert(
+                DatId(id),
+                rebellion_core::world::BuildableClass {
+                    is_alliance,
+                    is_empire: true,
+                    ..Default::default()
+                },
+            );
+        }
+        let yard = world.manufacturing_facilities.insert(ManufacturingFacilityInstance {
+            class_dat_id: DatId(0x2900_0001),
+            side: Faction::Empire,
+            is_shipyard: false,
+        });
+        let defense = world.defense_facilities.insert(rebellion_core::world::DefenseFacilityInstance {
+            class_dat_id: DatId(0x2200_0001),
+            side: Faction::Empire,
+        });
+        world.systems[system].manufacturing_facilities.push(yard);
+        world.systems[system].defense_facilities.push(defense);
+        system
+    }
+
+    fn assert_alliance_took_over(world: &GameWorld, system: SystemKey) {
+        let held = &world.systems[system];
+        assert!(held.defense_facilities.is_empty(), "the Empire-only defense is removed");
+        let sides: Vec<Faction> = held
+            .manufacturing_facilities
+            .iter()
+            .map(|&k| world.manufacturing_facilities[k].side)
+            .collect();
+        assert_eq!(sides, vec![Faction::Alliance]);
+    }
+
+    #[test]
+    fn a_resolved_control_change_hands_facilities_to_the_new_holder() {
+        // FUN_00510d70 → FUN_004f6f40 → FUN_004fae40: a facility whose class
+        // serves the new holder passes to it, any other is removed
+        // (ghidra/notes/facility-ownership.md).
+        let mut world = GameWorld::default();
+        let system = empire_facilities(&mut world, "Kuat");
+        let mut integrator = PerceptionIntegrator::new(1, 0);
+        integrator.apply_economy_events(
+            &mut world,
+            &[EconomyEvent::ControlResolved {
+                system,
+                new_control: ControlKind::Controlled(Faction::Alliance),
+            }],
+        );
+        assert_alliance_took_over(&world, system);
+    }
+
+    #[test]
+    fn a_ground_occupation_hands_facilities_to_the_victor() {
+        // Same path as a resolved control change (FUN_00510d70).
+        let mut world = GameWorld::default();
+        let system = empire_facilities(&mut world, "Kuat");
+        let mut integrator = PerceptionIntegrator::new(1, 0);
+        integrator.apply_ground_occupation(&mut world, system, Faction::Alliance, 1);
+        assert_alliance_took_over(&world, system);
+    }
+
     #[test]
     fn support_drift_moves_both_sides_popularity() {
         let mut world = GameWorld::default();
@@ -2961,12 +3034,12 @@ mod tests {
         let at = &world.systems[system];
         let yard = &world.manufacturing_facilities[at.manufacturing_facilities[0]];
         assert_eq!(yard.class_dat_id, DatId::new(0x2800_0004));
-        assert!(!yard.is_alliance && yard.is_shipyard);
+        assert!(yard.side == rebellion_core::dat::Faction::Empire && yard.is_shipyard);
         let mine = &world.production_facilities[at.production_facilities[0]];
-        assert!(!mine.is_alliance && mine.is_mine);
+        assert!(mine.side == rebellion_core::dat::Faction::Empire && mine.is_mine);
         let defense = &world.defense_facilities[at.defense_facilities[0]];
         assert_eq!(defense.class_dat_id, DatId::new(0x2200_0001));
-        assert!(!defense.is_alliance);
+        assert_eq!(defense.side, rebellion_core::dat::Faction::Empire);
         let unit = &world.special_forces[at.special_forces[0]];
         assert!(!unit.is_alliance);
         assert_eq!(unit.skills, [30; 8]);
@@ -3625,7 +3698,7 @@ pub fn apply_build_completion_inner(completion: &CompletionEvent, world: &mut Ga
                 .manufacturing_facilities
                 .insert(ManufacturingFacilityInstance {
                     class_dat_id: build.class,
-                    is_alliance: build.is_alliance,
+                    side: rebellion_core::dat::Faction::of_alliance(build.is_alliance),
                     is_shipyard: build.class.family() == 0x28,
                 });
             if let Some(sys) = world.systems.get_mut(sys_key) {
@@ -3635,7 +3708,7 @@ pub fn apply_build_completion_inner(completion: &CompletionEvent, world: &mut Ga
         BuildableKind::DefenseFacility(build) => {
             let fac_key = world.defense_facilities.insert(DefenseFacilityInstance {
                 class_dat_id: build.class,
-                is_alliance: build.is_alliance,
+                side: rebellion_core::dat::Faction::of_alliance(build.is_alliance),
             });
             if let Some(sys) = world.systems.get_mut(sys_key) {
                 sys.defense_facilities.push(fac_key);
@@ -3646,7 +3719,7 @@ pub fn apply_build_completion_inner(completion: &CompletionEvent, world: &mut Ga
                 .production_facilities
                 .insert(ProductionFacilityInstance {
                     class_dat_id: build.class,
-                    is_alliance: build.is_alliance,
+                    side: rebellion_core::dat::Faction::of_alliance(build.is_alliance),
                     is_mine: build.class.family() == 0x2c,
                 });
             if let Some(sys) = world.systems.get_mut(sys_key) {

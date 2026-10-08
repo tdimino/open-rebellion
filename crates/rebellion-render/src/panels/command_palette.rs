@@ -1,12 +1,49 @@
 //! VS Code-style command palette for play-testing.
 //!
-//! Triggered by backtick (`` ` ``). Fuzzy search via nucleo-matcher.
-//! Gated behind `#[cfg(debug_assertions)]` for release builds.
+//! Triggered by backtick (`` ` ``). Fuzzy search via nucleo-matcher. Beside
+//! the shared simulation commands it lists interface commands for every
+//! system, which reach a window or menu without the clicks that lead to it.
+//! The app enables it in debug builds, or with `OPEN_REBELLION_DEV=1`, and
+//! a native command script resolves its lines against the same labels.
 
 use egui_macroquad::egui::{self, Align, Color32, Key, Layout, RichText, ScrollArea};
 use nucleo_matcher::pattern::{AtomKind, CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Config, Matcher};
+use rebellion_core::ids::SystemKey;
+use rebellion_core::missions::MissionFaction;
 use rebellion_core::tick::GameSpeed;
+use rebellion_core::world::GameWorld;
+
+use crate::quadrant_icons::Quadrant;
+
+/// An interface state the palette reaches directly. The app routes each
+/// through the path the clicks would take.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InterfaceCommand {
+    /// Start a new campaign as a side, as the main menu's faction choice.
+    StartGame(MissionFaction),
+    /// Open the sector window holding a system.
+    OpenSector(SystemKey),
+    /// Open the window behind one of a system's quadrant icons, at the
+    /// icon, as a double click on it does.
+    OpenQuadrantWindow {
+        system: SystemKey,
+        quadrant: Quadrant,
+    },
+    /// Select a shown quadrant icon and open its pop-up menu at the icon,
+    /// as a right click on it does.
+    OpenIconMenu {
+        system: SystemKey,
+        quadrant: Quadrant,
+    },
+}
+
+/// What running a palette command asks the app to do.
+#[derive(Debug, Clone)]
+pub enum PaletteAction {
+    Panel(super::PanelAction),
+    Interface(InterfaceCommand),
+}
 
 /// A registered command in the palette.
 #[derive(Debug, Clone)]
@@ -14,7 +51,88 @@ pub struct CommandItem {
     pub label: String,
     pub description: String,
     pub category: String,
-    pub action: super::PanelAction,
+    pub action: PaletteAction,
+}
+
+/// The palette name of a quadrant's window.
+const fn window_name(quadrant: Quadrant) -> &'static str {
+    match quadrant {
+        Quadrant::System => "System",
+        Quadrant::Defenses => "Defenses",
+        Quadrant::Fleets => "Fleet",
+        Quadrant::Missions => "Missions",
+    }
+}
+
+/// The palette name of a quadrant's icon.
+const fn icon_name(quadrant: Quadrant) -> &'static str {
+    match quadrant {
+        Quadrant::System => "system",
+        Quadrant::Defenses => "defenses",
+        Quadrant::Fleets => "fleet",
+        Quadrant::Missions => "missions",
+    }
+}
+
+fn interface_item(label: String, description: &str, command: InterfaceCommand) -> CommandItem {
+    CommandItem {
+        label,
+        description: description.to_string(),
+        category: "Interface".to_string(),
+        action: PaletteAction::Interface(command),
+    }
+}
+
+/// A start for each side. Only a script runs one, from the main menu; the
+/// palette draws in the galaxy, where neither can start.
+fn start_commands() -> Vec<CommandItem> {
+    vec![
+        interface_item(
+            "Start game: Alliance".to_string(),
+            "Start a new campaign as the Alliance",
+            InterfaceCommand::StartGame(MissionFaction::Alliance),
+        ),
+        interface_item(
+            "Start game: Empire".to_string(),
+            "Start a new campaign as the Empire",
+            InterfaceCommand::StartGame(MissionFaction::Empire),
+        ),
+    ]
+}
+
+/// The interface commands for `world`: for each system, by name, its
+/// sector window, its four quadrant windows and its four icon menus.
+#[must_use]
+pub fn interface_commands(world: &GameWorld) -> Vec<CommandItem> {
+    let mut items = Vec::new();
+    let mut systems: Vec<(SystemKey, &str)> = world
+        .systems
+        .iter()
+        .map(|(key, system)| (key, system.name.as_str()))
+        .collect();
+    systems.sort_by(|a, b| a.1.cmp(b.1));
+    for (system, name) in systems {
+        items.push(interface_item(
+            format!("Open sector window: {name}"),
+            "Open the sector window holding the system",
+            InterfaceCommand::OpenSector(system),
+        ));
+        for quadrant in Quadrant::ALL {
+            items.push(interface_item(
+                format!("Open {} window: {name}", window_name(quadrant)),
+                "Open the window behind the quadrant icon",
+                InterfaceCommand::OpenQuadrantWindow { system, quadrant },
+            ));
+        }
+        for quadrant in Quadrant::ALL {
+            items.push(interface_item(
+                format!("Open {} icon menu: {name}", icon_name(quadrant)),
+                "Select the shown icon and open its pop-up menu",
+                InterfaceCommand::OpenIconMenu { system, quadrant },
+            ));
+        }
+    }
+    items
 }
 
 /// State for the command palette modal.
@@ -63,7 +181,7 @@ impl CommandPaletteState {
                     label: def.label.to_string(),
                     description: def.description.to_string(),
                     category: def.category.to_string(),
-                    action,
+                    action: PaletteAction::Panel(action),
                 })
             })
             .collect();
@@ -78,6 +196,43 @@ impl CommandPaletteState {
             commands,
             filtered_indices,
         }
+    }
+
+    /// Replace the interface commands with `world`'s, keeping the shared
+    /// simulation commands, and reset the filter.
+    pub fn refresh_interface(&mut self, world: &GameWorld) {
+        self.replace_interface(interface_commands(world));
+    }
+
+    /// As [`Self::refresh_interface`], with the two starts a script can
+    /// run from the main menu.
+    pub fn refresh_script(&mut self, world: &GameWorld) {
+        let mut commands = start_commands();
+        commands.extend(interface_commands(world));
+        self.replace_interface(commands);
+    }
+
+    fn replace_interface(&mut self, commands: Vec<CommandItem>) {
+        self.commands
+            .retain(|command| !matches!(command.action, PaletteAction::Interface(_)));
+        self.commands.extend(commands);
+        self.update_filter();
+    }
+
+    /// Every registered command, in the order the palette lists them.
+    #[must_use]
+    pub fn commands(&self) -> &[CommandItem] {
+        &self.commands
+    }
+
+    /// The command whose label is `line`, ignoring case and the spaces
+    /// around it: a script line names a command exactly.
+    #[must_use]
+    pub fn command_named(&self, line: &str) -> Option<&CommandItem> {
+        let line = line.trim();
+        self.commands
+            .iter()
+            .find(|command| command.label.eq_ignore_ascii_case(line))
     }
 
     /// Toggle the palette open/closed.
@@ -146,7 +301,7 @@ impl Default for CommandPaletteState {
 pub fn draw_command_palette(
     ctx: &egui::Context,
     state: &mut CommandPaletteState,
-) -> Vec<super::PanelAction> {
+) -> Vec<PaletteAction> {
     if !state.open {
         return Vec::new();
     }

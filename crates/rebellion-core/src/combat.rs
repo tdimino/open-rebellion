@@ -1115,7 +1115,7 @@ impl CombatSystem {
             .defense_facilities
             .iter()
             .filter_map(|&key| world.defense_facilities.get(key))
-            .filter(|fac| fac.is_alliance == defender_is_alliance)
+            .filter(|fac| fac.side == crate::dat::Faction::of_alliance(defender_is_alliance))
             .map(|fac| {
                 f64::from(
                     world
@@ -1711,7 +1711,7 @@ mod tests {
         );
         let fac_key = world.defense_facilities.insert(DefenseFacilityInstance {
             class_dat_id: fac_class_id,
-            is_alliance: false, // empire facility
+            side: crate::dat::Faction::Empire, // empire facility
         });
         world.systems[sys].defense_facilities.push(fac_key);
 

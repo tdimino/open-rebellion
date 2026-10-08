@@ -910,7 +910,7 @@ mod tests {
             .defense_facilities
             .insert(DefenseFacilityInstance {
                 class_dat_id: DatId::new(KDY_150_CLASS_ID),
-                is_alliance: true,
+                side: crate::dat::Faction::Alliance,
             });
         run.world.systems[run.target].defense_facilities.push(kdy);
         run.carry_into_target();

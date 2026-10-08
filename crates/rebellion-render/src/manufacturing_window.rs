@@ -354,7 +354,7 @@ pub fn page_cells(
         let Some(facility) = world.manufacturing_facilities.get(key) else {
             continue;
         };
-        let owner = fleet_side(facility.is_alliance);
+        let owner = crate::fleet_window::faction_side(facility.side);
         if wanted(facility.class_dat_id, owner) {
             if let Some(picture) =
                 facility_picture(facility.class_dat_id, owner, FacilityState::Built)
@@ -370,7 +370,7 @@ pub fn page_cells(
         let Some(facility) = world.production_facilities.get(key) else {
             continue;
         };
-        let owner = fleet_side(facility.is_alliance);
+        let owner = crate::fleet_window::faction_side(facility.side);
         if wanted(facility.class_dat_id, owner) {
             if let Some(picture) =
                 facility_picture(facility.class_dat_id, owner, FacilityState::Built)
@@ -524,7 +524,7 @@ mod tests {
             .manufacturing_facilities
             .insert(ManufacturingFacilityInstance {
                 class_dat_id: DatId::new(class),
-                is_alliance: alliance,
+                side: rebellion_core::dat::Faction::of_alliance(alliance),
                 is_shipyard: class >> 24 == 0x28,
             });
         world.systems[system].manufacturing_facilities.push(key);
@@ -536,7 +536,7 @@ mod tests {
             .production_facilities
             .insert(ProductionFacilityInstance {
                 class_dat_id: DatId::new(class),
-                is_alliance: true,
+                side: rebellion_core::dat::Faction::Alliance,
                 is_mine: class == 0x2c00_0001,
             });
         world.systems[system].production_facilities.push(key);

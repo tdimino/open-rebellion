@@ -5,19 +5,21 @@
 //!
 //! A 379 by 272 window: a two-column list of labels and values on the left,
 //! the object's portrait and name on the right, and the Encyclopedia and
-//! Close buttons under them. The port fills it for characters
-//! (`FUN_004486f0`, manual p. 101, Fig. 3.46).
+//! Close buttons under them. Each object family has its own filler
+//! (`status_rows.rs`); characters are `FUN_004486f0` (manual p. 101, Fig.
+//! 3.46).
 
 use egui_macroquad::egui;
 use rebellion_core::ids::CharacterKey;
 use rebellion_core::missions::{MemberTransit, MissionMember};
-use rebellion_core::world::{Character, GameWorld};
+use rebellion_core::world::GameWorld;
 
-use crate::bmp_cache::{BmpCache, DllSource};
+use crate::bmp_cache::BmpCache;
 use crate::cockpit::{CockpitFaction, CockpitLayout};
 use crate::fleet_window::paint_native;
 use crate::mission_dialog::{button, galaxy_centered_rect, paint};
-use crate::system_window::{character_mini_resource_id, fleet_label, logical_rect, rect_contains};
+use crate::status_rows::{status_view, StatusObject, StatusSources};
+use crate::system_window::{fleet_label, logical_rect, rect_contains};
 
 pub const STATUS_WINDOW_WIDTH: f32 = 379.0;
 pub const STATUS_WINDOW_HEIGHT: f32 = 272.0;
@@ -41,9 +43,6 @@ const LIST: (f32, f32, f32, f32) = (18.0, 47.0, 208.0, 204.0);
 const COLUMN: f32 = 103.0;
 /// The picture is centred on (307, 64) (`FUN_00443130`).
 const PICTURE_CENTRE: (i32, i32) = (307, 64);
-
-/// TEXTSTRA 34595.
-const CHARACTER_STATUS: &str = "Character Status";
 
 /// One list row: `FUN_0044b1d0` appends the label to one list and the value
 /// to the other.
@@ -162,17 +161,6 @@ pub fn character_rows(
     Some(rows)
 }
 
-/// The object's side bits (`+0x24 >> 6 & 3`) as a background index.
-const fn character_side(character: &Character) -> usize {
-    if character.is_alliance {
-        0
-    } else if character.is_empire {
-        1
-    } else {
-        2
-    }
-}
-
 /// The background for an object of side index `side`, seen by `viewer`
 /// (`FUN_00443130`); a side past 2 takes the third ("other") bitmap.
 #[must_use]
@@ -182,12 +170,6 @@ pub fn background(side: usize, viewer: CockpitFaction) -> u32 {
         CockpitFaction::Alliance => base,
         CockpitFaction::Empire => base + 3,
     }
-}
-
-/// A character's GOKRES portrait, `class & 0xfff`: its mini less `0x4000`
-/// (`FUN_0042c3b0(.., 1, 1)`).
-fn character_portrait(character: &Character) -> Option<u32> {
-    character_mini_resource_id(character.dat_id, character.is_major).map(|mini| mini - 0x4000)
 }
 
 /// What the player chose.
@@ -202,7 +184,7 @@ pub enum StatusWindowAction {
 
 #[derive(Debug, Clone, PartialEq)]
 struct OpenStatusWindow {
-    character: CharacterKey,
+    object: StatusObject,
     /// The list's scroll offset, in window pixels.
     scroll: f32,
 }
@@ -215,13 +197,15 @@ pub struct StatusWindowState {
 }
 
 impl StatusWindowState {
-    /// `FUN_0042a440` → the `0x468` handler: open on a character the player
+    /// `FUN_0042a440` → the `0x468` handler: open on an object the player
     /// knows (`FUN_004f2d10`).
+    pub fn open(&mut self, object: StatusObject) {
+        self.window = Some(OpenStatusWindow { object, scroll: 0.0 });
+    }
+
+    /// Open on a character.
     pub fn open_character(&mut self, character: CharacterKey) {
-        self.window = Some(OpenStatusWindow {
-            character,
-            scroll: 0.0,
-        });
+        self.open(StatusObject::Character(character));
     }
 
     #[must_use]
@@ -319,19 +303,18 @@ fn layout_rows(
 /// Draw the open window, if any, and report what the player chose.
 pub fn draw_status_window(
     ctx: &egui::Context,
-    world: &GameWorld,
-    en_route: &[MemberTransit],
+    sources: StatusSources<'_>,
     state: &mut StatusWindowState,
     viewer: CockpitFaction,
     layout: CockpitLayout,
     cache: &mut BmpCache,
 ) -> Option<StatusWindowAction> {
     let open = state.window.as_mut()?;
-    let Some(character) = world.characters.get(open.character) else {
+    // The window closes once its object is gone.
+    let Some(view) = status_view(sources, open.object) else {
         state.window = None;
         return None;
     };
-    let rows = character_rows(world, en_route, open.character).unwrap_or_default();
     let scale = layout.scale;
     let rect = window_rect(layout);
     let mut action = None;
@@ -349,13 +332,15 @@ pub fn draw_status_window(
                 &painter,
                 ctx,
                 cache,
-                background(character_side(character), viewer),
+                background(view.side, viewer),
                 frame,
                 scale,
             );
 
             // hyp: fonts 5 and 10 are not mapped; the Missions window's
             // sizes stand in.
+            // hyp: the production manager's font 0x11 is not mapped
+            // either; its title takes font 5's size.
             let title_font = egui::FontId::proportional((11.0 * scale).max(7.0));
             let list_font = egui::FontId::proportional((9.0 * scale).max(6.0));
 
@@ -363,24 +348,22 @@ pub fn draw_status_window(
             painter.text(
                 title.center(),
                 egui::Align2::CENTER_CENTER,
-                CHARACTER_STATUS,
+                view.title,
                 title_font.clone(),
                 egui::Color32::WHITE,
             );
 
             // The picture, keyed (FUN_005fd0f0), centred with integer
             // offsets on (307, 64).
-            if let Some(portrait) = character_portrait(character) {
-                if let Some([width, height]) =
-                    cache.original_resource_size(DllSource::Gokres, portrait)
-                {
+            if let Some((source, picture)) = view.picture {
+                if let Some([width, height]) = cache.original_resource_size(source, picture) {
                     let (x, y) = picture_origin(width, height);
                     paint_native(
                         &painter,
                         ctx,
                         cache,
-                        DllSource::Gokres,
-                        portrait,
+                        source,
+                        picture,
                         frame,
                         scale,
                         x,
@@ -391,7 +374,7 @@ pub fn draw_status_window(
 
             let name = at(NAME);
             let galley = painter.layout(
-                character.name.clone(),
+                view.name.clone(),
                 title_font,
                 egui::Color32::WHITE,
                 name.width(),
@@ -406,7 +389,7 @@ pub fn draw_status_window(
 
             // The list. port: the wheel scrolls it; no scroll bar is drawn.
             let list = at(LIST);
-            let (laid, height) = layout_rows(&painter, &rows, &list_font, COLUMN * scale);
+            let (laid, height) = layout_rows(&painter, &view.rows, &list_font, COLUMN * scale);
             let list_response =
                 ui.interact(list, ui.id().with("status-list"), egui::Sense::hover());
             let wheel = if list_response.hovered() {
@@ -467,10 +450,11 @@ pub fn draw_status_window(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bmp_cache::DllSource;
     use crate::cockpit::CockpitViewport;
     use rebellion_core::dat::{ExplorationStatus, Faction, SectorGroup};
     use rebellion_core::ids::{DatId, SystemKey};
-    use rebellion_core::world::{ControlKind, ForceTier, Sector, SkillPair, System};
+    use rebellion_core::world::{Character, ControlKind, ForceTier, Sector, SkillPair, System};
 
     fn skill(base: u32) -> SkillPair {
         SkillPair { base, variance: 0 }
@@ -694,7 +678,48 @@ mod tests {
     fn a_characters_picture_is_its_portrait_its_mini_less_0x4000() {
         // FUN_0042c3b0(.., 1, 1): class +0x30 & 0xfff. Luke's TEXTSTRA id
         // is 0x2842, so his mini is 18498 and his portrait 2114.
-        assert_eq!(character_portrait(&luke()), Some(2_114));
+        let (world, key, _, _) = world_with_luke();
+        let view = Empty::new().view(&world, StatusObject::Character(key)).unwrap();
+        assert_eq!(view.picture, Some((DllSource::Gokres, 2_114)));
+        assert_eq!(view.title, "Character Status");
+    }
+
+    /// The other state the fillers read, empty.
+    pub(crate) struct Empty {
+        missions: rebellion_core::missions::MissionState,
+        movement: rebellion_core::movement::MovementState,
+        transport: rebellion_core::troop_transport::TroopTransportState,
+        manufacturing: rebellion_core::manufacturing::ManufacturingState,
+    }
+
+    impl Empty {
+        pub(crate) fn new() -> Self {
+            Self {
+                missions: rebellion_core::missions::MissionState::new(),
+                movement: rebellion_core::movement::MovementState::new(),
+                transport: rebellion_core::troop_transport::TroopTransportState::new(),
+                manufacturing: rebellion_core::manufacturing::ManufacturingState::new(),
+            }
+        }
+
+        pub(crate) fn sources<'a>(&'a self, world: &'a GameWorld) -> StatusSources<'a> {
+            StatusSources {
+                world,
+                missions: &self.missions,
+                movement: &self.movement,
+                transport: &self.transport,
+                manufacturing: &self.manufacturing,
+                today: 0,
+            }
+        }
+
+        fn view(
+            &self,
+            world: &GameWorld,
+            object: StatusObject,
+        ) -> Option<crate::status_rows::StatusView> {
+            crate::status_rows::status_view(self.sources(world), object)
+        }
     }
 
     fn layout() -> CockpitLayout {
@@ -736,6 +761,7 @@ mod tests {
         let pos = window_rect(layout).min + egui::vec2(x, y);
         let ctx = egui::Context::default();
         let mut cache = BmpCache::new();
+        let empty = Empty::new();
         let mut emitted = None;
         for extra in [vec![], vec![]].into_iter().chain(frames) {
             let mut events = vec![egui::Event::PointerMoved(pos)];
@@ -751,8 +777,7 @@ mod tests {
             let _ = ctx.run(input, |ctx| {
                 if let Some(action) = draw_status_window(
                     ctx,
-                    world,
-                    &[],
+                    empty.sources(world),
                     state,
                     CockpitFaction::Alliance,
                     layout,
@@ -918,6 +943,7 @@ mod tests {
         let ctx = egui::Context::default();
         let mut cache = BmpCache::new();
         cache.set_base_path(staged_portrait());
+        let empty = Empty::new();
         let mut output = None;
         crate::fleet_window::tests::PAINTED.with(|painted| painted.borrow_mut().clear());
         for _ in 0..2 {
@@ -931,8 +957,7 @@ mod tests {
             output = Some(ctx.run(input, |ctx| {
                 let _ = draw_status_window(
                     ctx,
-                    world,
-                    &[],
+                    empty.sources(world),
                     state,
                     CockpitFaction::Alliance,
                     scaled(),

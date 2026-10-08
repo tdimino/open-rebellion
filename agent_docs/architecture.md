@@ -113,7 +113,7 @@ crates/rebellion-render/src/
     ├── loyalty.rs        — Loyalty dashboard: per-system danger, uprising risk, betrayal risk
     ├── save_load.rs      — Save/load UI: 10 slots, auto-save
     ├── mod_manager.rs    — Mod Manager: discover, enable/disable, reload, dependency display
-    └── command_palette.rs — VS Code-style fuzzy command palette (nucleo-matcher, debug-only)
+    └── command_palette.rs — developer command palette: simulation and per-system interface commands (debug or native builds)
 ```
 
 ## App Modules (rebellion-app)
@@ -122,6 +122,7 @@ crates/rebellion-render/src/
 crates/rebellion-app/src/
 ├── main.rs   — Entry point, interactive loop, panel action handling (~7,300 LOC; no headless tests, see agent-tooling.md)
 ├── audio.rs  — quad-snd AudioEngine: load, play_sfx, play_music, volume sync, WASM audio base-path resolution
+├── dev_commands.rs — The command palette's gate (`OPEN_REBELLION_DEV`), and behind it the native command script (`OPEN_REBELLION_COMMANDS`) and campaign seed (`OPEN_REBELLION_SEED`)
 ├── interface_test_fixture.rs — Test-only interface fixture scenarios and the observations the browser gates in tools/interface-parity read
 ├── tactical_flow.rs / tactical_test_fixture.rs — The production tactical-battle entry and its test-only direct entry
 ├── runtime_pack.rs — Parser for the browser runtime asset pack

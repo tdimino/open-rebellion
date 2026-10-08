@@ -56,6 +56,14 @@ Threaded from Game Setup screen → `load_game_data()` → `apply_seeds_with_rng
 - M8: Integration wiring (GameSetup → SeedOptions → loader) + regression tests
 - 23 seeding-specific tests (deterministic, seed-reproducible)
 
+**Facility sides.** Every seeded facility takes its system's holder once
+control is final (`seeds::assign_facility_sides`, load step 8b'); a neutral
+system's facilities serve nobody, and facilities no longer count toward
+control inference. Family `0x2c` is the mine and `0x2d` the refinery. A later
+control change hands each facility to the new holder or removes it when its
+class cannot serve that side (`GameWorld::hand_over_facilities`). Source:
+`ghidra/notes/facility-ownership.md`.
+
 **Confirmed complete.** Rim systems excluded from maintenance-budget seeding — verified against TheArchitect2018 `seed.js` Section 10: `fetch_galaxy(session, side, ...)` only returns faction-controlled systems. Uncontrolled rim systems are excluded from the seed pool in the original game.
 
 ExecPlan: `docs/plans/2026-03-24-003-game-seeding-parity-execplan.md`

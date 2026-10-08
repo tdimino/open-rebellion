@@ -434,9 +434,9 @@ mod tests {
                     name: "Diplomacy".into(),
                 },
                 EncyclopediaCatalogEntry {
-                    object_id: 0x4100_0001,
-                    text_resource_id: 0x2f00,
-                    name: "Source Empty".into(),
+                    object_id: 0x1400_0040,
+                    text_resource_id: 0x2740,
+                    name: "Mon Calamari Cruiser".into(),
                 },
             ],
         }

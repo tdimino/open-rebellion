@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 
 // The Status window (window type 0x1a, FUN_00442d70; ghidra/notes/status-window.md)
-// reached as manual p. 101 says: right-click the agent in a system window (the
-// System Defenses window's personnel page) and choose Status. Its STRATEGY background and buttons are compared exactly; the
-// title, list, name and portrait are masked and checked for content. Close,
-// Escape and the Encyclopedia button each close it. Both sides.
+// opened from each object family's pop-up menu (Status, 0x103): a character
+// (manual p. 101: the System Defenses window's personnel page), a regiment
+// (its regiment page), a fleet and a capital ship (the Fleet window) and a
+// production manager (a Manufacturing window band). Its STRATEGY background
+// and buttons are compared exactly; the title, list, name and picture are
+// masked and checked for content. Close closes each; for the character,
+// Escape and the Encyclopedia button close it too. Both sides.
 
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -31,18 +34,24 @@ const factions = [
   { name: "alliance", byte: 1, galaxy: { x: 55, y: 40, width: 485 }, background: 11554 },
   { name: "empire", byte: 2, galaxy: { x: 120, y: 40, width: 480 }, background: 11558 },
 ];
-const fixture = 45;
+// Fixture codes are the Scenario index plus one (interface_test_fixture.rs):
+// 45 MissionTargeting, 48 FleetLoad, 55 BuildSelection.
+const MISSION_TARGETING = 45;
+const FLEET_LOAD = 48;
+const BUILD_SELECTION = 55;
 // FUN_00443020: 0x66 Encyclopedia and 0x65 Close, 32 by 31.
 const buttons = {
   encyclopedia: { x: 258, y: 218, id: 11552 },
   close: { x: 324, y: 218, id: 10370 },
 };
-// Dynamic content: the title, the list, the name and the portrait box.
+// Dynamic content: the title, the list, the name and the picture frame's
+// interior (x 242..371, y 15..112 of the owned backgrounds), which a fleet's
+// or a production manager's picture fills.
 const masks = {
   title: { x: 15, y: 18, width: 211, height: 18 },
   list: { x: 18, y: 47, width: 208, height: 204 },
   name: { x: 242, y: 137, width: 130, height: 44 },
-  picture: { x: 267, y: 24, width: 80, height: 80 },
+  picture: { x: 242, y: 15, width: 130, height: 98 },
 };
 const runId = `${new Date().toISOString().replace(/[:.]/g, "-")}-${process.pid}`;
 const runDir = path.join(root, ".artifacts/interface-parity", `status-window-${runId}`);
@@ -155,7 +164,7 @@ function crop(screenshotBytes, rect) {
   return window;
 }
 
-function compare(actual, expected, directory) {
+function compare(actual, expected, directory, label) {
   let different = 0;
   let checked = 0;
   const content = Object.fromEntries(Object.keys(masks).map((name) => [name, 0]));
@@ -174,8 +183,8 @@ function compare(actual, expected, directory) {
       if (!same) different += 1;
     }
   }
-  fs.writeFileSync(path.join(directory, "window-actual.png"), PNG.sync.write(actual));
-  fs.writeFileSync(path.join(directory, "window-expected.png"), PNG.sync.write(expected));
+  fs.writeFileSync(path.join(directory, `${label}-actual.png`), PNG.sync.write(actual));
+  fs.writeFileSync(path.join(directory, `${label}-expected.png`), PNG.sync.write(expected));
   return { pixels_checked: checked, different_pixels: different, changed_in_masks: content, picture_blue_pixels: blue };
 }
 
@@ -193,8 +202,101 @@ async function click(page, point, button = "left") {
   await frames(page);
 }
 
-async function inspect(server, source, faction, executable) {
-  const directory = path.join(runDir, faction.name);
+// Right-click `at`, wait for the pop-up menu and choose its Status row.
+// Rows below a 2-pixel border share one height (object_menu.rs).
+async function chooseStatus(page, at) {
+  await page.evaluate(() => { window.__openRebellionInterfaceObjectMenu = undefined; });
+  await click(page, at, "right");
+  await page.waitForFunction(() => window.__openRebellionInterfaceObjectMenu?.status === "object-menu", null, { timeout: 10_000 });
+  const menu = await page.evaluate(() => window.__openRebellionInterfaceObjectMenu);
+  assert.notEqual(menu.status_window_row, null, "the menu lists Status");
+  const row = (menu.height - 2) / menu.rows;
+  await click(page, { x: menu.left + menu.width / 2, y: menu.top + 2 + row * (menu.status_window_row + 0.5) });
+  return menu;
+}
+
+const point = ([x, y]) => ({ x: Math.round(x), y: Math.round(y) });
+
+async function doubleClick(page, at) {
+  await page.mouse.move(at.x, at.y);
+  await frames(page);
+  await page.mouse.dblclick(at.x, at.y);
+  await frames(page);
+}
+
+async function fleetLoadSetup(page) {
+  await page.waitForFunction(() => window.__openRebellionInterfaceFleetLoadSetup
+    && (window.__openRebellionInterfaceFleetLoads || []).length > 0, null, { timeout: 10_000 });
+  return page.evaluate(() => window.__openRebellionInterfaceFleetLoadSetup);
+}
+
+async function fleetLoad(page, predicate) {
+  await page.waitForFunction(
+    (source) => {
+      const last = (window.__openRebellionInterfaceFleetLoads || []).at(-1);
+      return last && new Function("o", `return (${source})(o);`)(last);
+    },
+    predicate.toString(),
+    { timeout: 10_000, polling: 100 },
+  );
+  return page.evaluate(() => window.__openRebellionInterfaceFleetLoads.at(-1));
+}
+
+// The sector window's fleet icon opens the Fleet window (fleet-window.mjs).
+async function openFleetWindow(page) {
+  const setup = await fleetLoadSetup(page);
+  await doubleClick(page, point(setup.icon));
+  return fleetLoad(page, (o) => o.window_open && o.fleet_entry);
+}
+
+// Each case reaches one family's object and returns the point to right-click.
+// The fixture's 235-pixel Defenses window sits 5 pixels in from the galaxy
+// view's top-right corner; the agent's cell is centred 42 by 116 into it
+// (mission-dialog.mjs).
+const cases = [
+  {
+    name: "character",
+    code: MISSION_TARGETING,
+    family: "Character",
+    closes: true,
+    target: async (page, faction) => ({ x: faction.galaxy.x + faction.galaxy.width - 235 - 5 + 42, y: faction.galaxy.y + 5 + 116 }),
+  },
+  {
+    name: "regiment",
+    code: FLEET_LOAD,
+    family: "Troop",
+    target: async (page) => point((await fleetLoadSetup(page)).troop_item),
+  },
+  {
+    name: "fleet",
+    code: FLEET_LOAD,
+    family: "Fleet",
+    target: async (page) => point((await openFleetWindow(page)).fleet_entry),
+  },
+  {
+    name: "capital-ship",
+    code: FLEET_LOAD,
+    family: "Ship",
+    target: async (page) => {
+      const opened = await openFleetWindow(page);
+      await click(page, point(opened.fleet_entry));
+      return point((await fleetLoad(page, (o) => o.selected === "fleet" && o.first_item)).first_item);
+    },
+  },
+  {
+    name: "production-manager",
+    code: BUILD_SELECTION,
+    family: "Producer",
+    target: async (page) => {
+      await page.waitForFunction(() => window.__openRebellionInterfaceProduction?.bands?.length === 3, null, { timeout: 10_000 });
+      const [band] = (await page.evaluate(() => window.__openRebellionInterfaceProduction)).bands;
+      return { x: band.left + band.width / 2, y: band.top + band.height / 2 };
+    },
+  },
+];
+
+async function inspect(server, source, faction, testCase, executable) {
+  const directory = path.join(runDir, faction.name, testCase.name);
   fs.mkdirSync(directory, { recursive: true });
   const errors = [];
   const consoleLines = [];
@@ -221,28 +323,16 @@ async function inspect(server, source, faction, executable) {
       consoleLines.push(message.text());
       if (message.type() === "error" || /\[bmp_cache\] asset unavailable/i.test(message.text())) errors.push(`console:${message.type()}:${message.text()}`);
     });
-    const fixtureCode = fixture | (faction.byte << 8);
+    const fixtureCode = testCase.code | (faction.byte << 8);
     await page.goto(`http://127.0.0.1:${server.address().port}/?fixture-code=${fixtureCode}`, { waitUntil: "load", timeout: 30_000 });
     await page.waitForFunction(() => window.__openRebellionInterfaceReady?.status, null, { timeout: 30_000 });
     const ready = await page.evaluate(() => window.__openRebellionInterfaceReady);
     assert.equal(ready.status, "ready", JSON.stringify(ready));
     await page.evaluate(() => document.fonts.ready);
 
-    // The fixture's 235-pixel Defenses window sits 5 pixels in from the
-    // galaxy view's top-right corner; the agent's cell is centred 42 by 116
-    // into it (mission-dialog.mjs).
-    const agent = { x: faction.galaxy.x + faction.galaxy.width - 235 - 5 + 42, y: faction.galaxy.y + 5 + 116 };
-    const openStatus = async () => {
-      await page.evaluate(() => { window.__openRebellionInterfaceObjectMenu = undefined; });
-      await click(page, agent, "right");
-      await page.waitForFunction(() => window.__openRebellionInterfaceObjectMenu?.status === "object-menu", null, { timeout: 10_000 });
-      const menu = await page.evaluate(() => window.__openRebellionInterfaceObjectMenu);
-      assert.notEqual(menu.status_window_row, null, "the agent's menu lists Status");
-      const row = (menu.height - 2) / menu.rows;
-      await click(page, { x: menu.left + menu.width / 2, y: menu.top + 2 + row * (menu.status_window_row + 0.5) });
-      return menu;
-    };
-    const opened = /command=0x103 destination=status_window status=opened character=.+ rect=(\d+),(\d+),(\d+),(\d+)/;
+    const target = await testCase.target(page, faction);
+    const openStatus = () => chooseStatus(page, target);
+    const opened = new RegExp(`command=0x103 destination=status_window status=opened object=${testCase.family}[ (].+ rect=(\\d+),(\\d+),(\\d+),(\\d+)`);
     const closed = /destination=status_window status=closed action=(\w+)/;
 
     const menu = await openStatus();
@@ -258,32 +348,38 @@ async function inspect(server, source, faction, executable) {
     const second = await page.screenshot({ animations: "disabled" });
     fs.writeFileSync(path.join(directory, "status-screen.png"), second);
     assert.equal(sha256(PNG.sync.write(crop(first, rect))), sha256(PNG.sync.write(crop(second, rect))), "the window did not stabilize");
-    const comparison = compare(crop(second, rect), composeExpected(source, faction), directory);
+    // FUN_00443130: every case's object is the player's, so its background
+    // is the player's own-side one.
+    const comparison = compare(crop(second, rect), composeExpected(source, faction), directory, "window");
     assert.equal(comparison.different_pixels, 0, JSON.stringify(comparison));
     for (const name of Object.keys(masks)) assert.ok(comparison.changed_in_masks[name] > 0, `${name} shows nothing`);
-    assert.equal(comparison.picture_blue_pixels, 0, "the portrait's blue matte is not keyed");
+    assert.equal(comparison.picture_blue_pixels, 0, "the picture's blue matte is not keyed");
 
     const closes = {};
     // 0x65 closes.
     await click(page, { x: rect.x + buttons.close.x + 16, y: rect.y + buttons.close.y + 15 });
     closes.close = (await logged("Close closes it", closed, 1)).match(closed)[1];
-    // Escape closes (port: no key slot is traced).
-    await openStatus();
-    await logged("Status opens it again", opened, 2);
-    await page.keyboard.press("Escape");
-    closes.escape = (await logged("Escape closes it", closed, 2)).match(closed)[1];
-    // 0x66 closes and opens the Encyclopedia.
-    await openStatus();
-    await logged("Status opens it a third time", opened, 3);
-    await click(page, { x: rect.x + buttons.encyclopedia.x + 16, y: rect.y + buttons.encyclopedia.y + 15 });
-    closes.encyclopedia = (await logged("Encyclopedia closes it", closed, 3)).match(closed)[1];
-    assert.deepEqual(closes, { close: "close", escape: "close", encyclopedia: "encyclopedia" });
-    await page.waitForTimeout(200);
-    fs.writeFileSync(path.join(directory, "encyclopedia-screen.png"), await page.screenshot({ animations: "disabled" }));
+    if (testCase.closes) {
+      // Escape closes (port: no key slot is traced).
+      await openStatus();
+      await logged("Status opens it again", opened, 2);
+      await page.keyboard.press("Escape");
+      closes.escape = (await logged("Escape closes it", closed, 2)).match(closed)[1];
+      // 0x66 closes and opens the Encyclopedia.
+      await openStatus();
+      await logged("Status opens it a third time", opened, 3);
+      await click(page, { x: rect.x + buttons.encyclopedia.x + 16, y: rect.y + buttons.encyclopedia.y + 15 });
+      closes.encyclopedia = (await logged("Encyclopedia closes it", closed, 3)).match(closed)[1];
+      assert.deepEqual(closes, { close: "close", escape: "close", encyclopedia: "encyclopedia" });
+      await page.waitForTimeout(200);
+      fs.writeFileSync(path.join(directory, "encyclopedia-screen.png"), await page.screenshot({ animations: "disabled" }));
+    } else {
+      assert.deepEqual(closes, { close: "close" });
+    }
     assert.deepEqual(errors, [], `browser diagnostics: ${errors.join("; ")}`);
-    result = { status: "pass", faction: faction.name, fixture_code: fixtureCode, object_menu: menu, rect, comparison, closes, console: consoleLines.slice(-20), launch_attempts: launchAttempts };
+    result = { status: "pass", faction: faction.name, case: testCase.name, fixture_code: fixtureCode, object_menu: menu, opened: line, rect, comparison, closes, console: consoleLines.slice(-20), launch_attempts: launchAttempts };
   } catch (error) {
-    result = { status: "fail", faction: faction.name, error: String(error.stack || error), errors, console: consoleLines.slice(-20), launch_attempts: launchAttempts };
+    result = { status: "fail", faction: faction.name, case: testCase.name, error: String(error.stack || error), errors, console: consoleLines.slice(-20), launch_attempts: launchAttempts };
   } finally {
     if (page) await page.close().catch(() => {});
     if (context) await context.close().catch(() => {});
@@ -303,7 +399,9 @@ async function main() {
   const server = await startServer();
   const results = [];
   try {
-    for (const faction of factions) results.push(await inspect(server, source, faction, executable));
+    for (const faction of factions) {
+      for (const testCase of cases) results.push(await inspect(server, source, faction, testCase, executable));
+    }
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
@@ -311,7 +409,7 @@ async function main() {
   const summary = {
     schema_version: 1,
     family: "status-window",
-    scope: "test-only Status window (FUN_00442d70) for a character, opened from its pop-up menu: STRATEGY background and buttons compared exactly; title, list, name and portrait masked and checked for content and keying; Close, Escape and Encyclopedia close it; on both sides",
+    scope: "test-only Status window (FUN_00442d70) for a character, a regiment, a fleet, a capital ship and a production manager, each opened from its pop-up menu: STRATEGY background and buttons compared exactly; title, list, name and picture masked and checked for content and keying; Close closes each, and Escape and Encyclopedia close the character's; on both sides",
     status: passed ? "pass" : "fail",
     browser_version: browserManifest.version,
     viewport: { width: 640, height: 480, device_scale_factor: 1 },
@@ -322,7 +420,7 @@ async function main() {
   };
   fs.writeFileSync(path.join(runDir, "result.json"), `${JSON.stringify(summary, null, 2)}\n`);
   if (!passed) throw new Error(JSON.stringify(results.filter((result) => result.status !== "pass"), null, 2));
-  process.stdout.write(`${JSON.stringify({ run_dir: runDir, status: summary.status, factions: results.map(({ faction, rect, comparison, closes }) => ({ faction, rect, comparison, closes })) }, null, 2)}\n`);
+  process.stdout.write(`${JSON.stringify({ run_dir: runDir, status: summary.status, cases: results.map(({ faction, case: name, rect, comparison, closes }) => ({ faction, case: name, rect, comparison, closes })) }, null, 2)}\n`);
 }
 
 await main();

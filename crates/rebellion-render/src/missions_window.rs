@@ -1731,7 +1731,7 @@ mod tests {
                 .defense_facilities
                 .insert(rebellion_core::world::DefenseFacilityInstance {
                     class_dat_id: DatId::new(0x2200_0001),
-                    is_alliance: false,
+                    side: rebellion_core::dat::Faction::Empire,
                 });
         assert_eq!(
             target_view(

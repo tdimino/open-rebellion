@@ -1323,6 +1323,24 @@ pub struct BuildableClass {
     /// `FUN_00520b70` reads: MANFACSD and PROFACSD `processing_rate`. Zero
     /// for the other files.
     pub processing_rate: u32,
+    /// The Status window's class figures (`ghidra/notes/status-window.md`).
+    #[serde(default)]
+    pub stats: ClassStats,
+}
+
+/// A class record's figures that only the Status window reads.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ClassStats {
+    /// "Bombardment Value" / "Bombardment Defense Strength": the
+    /// `bombardment_defense` field of TROOPSD (class `+0x60`), DEFFACSD,
+    /// MANFACSD and PROFACSD (class `+0x58`, `FUN_00520b60`).
+    pub bombardment: u32,
+    /// DEFFACSD `attack_strength`, class `+0x5c` (`FUN_00520b70`): "Weapons
+    /// Rating".
+    pub attack_strength: u32,
+    /// DEFFACSD `shield_strength`, class `+0x60` (`FUN_00520b80`): "Shield
+    /// Strength".
+    pub shield_strength: u32,
 }
 
 impl BuildableClass {
@@ -1335,6 +1353,25 @@ impl BuildableClass {
             self.is_empire
         }
     }
+
+    /// Whether an object of the class may belong to `side`
+    /// (`FUN_004f27d0`): neutral needs both flags.
+    #[must_use]
+    pub const fn serves_side(&self, side: Faction) -> bool {
+        match side {
+            Faction::Alliance => self.is_alliance,
+            Faction::Empire => self.is_empire,
+            Faction::Neutral => self.is_alliance && self.is_empire,
+        }
+    }
+}
+
+/// A facility at a system, from any of the three facility arenas.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FacilityRef {
+    Defense(DefenseFacilityKey),
+    Manufacturing(ManufacturingFacilityKey),
+    Production(ProductionFacilityKey),
 }
 
 /// A defense facility instance on a system surface.
@@ -1342,7 +1379,10 @@ impl BuildableClass {
 pub struct DefenseFacilityInstance {
     /// The class definition (from DEFFACSD.DAT).
     pub class_dat_id: DatId,
-    pub is_alliance: bool,
+    /// Its side (`+0x24` bits 6..7). It follows its system's holder:
+    /// seeding copies the system's side, and a change of control hands it
+    /// over (`ghidra/notes/facility-ownership.md`).
+    pub side: Faction,
 }
 
 /// A manufacturing facility instance (shipyard, training center, construction yard).
@@ -1350,7 +1390,10 @@ pub struct DefenseFacilityInstance {
 pub struct ManufacturingFacilityInstance {
     /// The class definition (from MANFACSD.DAT).
     pub class_dat_id: DatId,
-    pub is_alliance: bool,
+    /// Its side (`+0x24` bits 6..7). It follows its system's holder:
+    /// seeding copies the system's side, and a change of control hands it
+    /// over (`ghidra/notes/facility-ownership.md`).
+    pub side: Faction,
     /// True if this facility is a shipyard (can build/repair ships).
     /// Set during loading from the DAT `production_family` field.
     #[serde(default)]
@@ -1362,7 +1405,10 @@ pub struct ManufacturingFacilityInstance {
 pub struct ProductionFacilityInstance {
     /// The class definition (from PROFACSD.DAT).
     pub class_dat_id: DatId,
-    pub is_alliance: bool,
+    /// Its side (`+0x24` bits 6..7). It follows its system's holder:
+    /// seeding copies the system's side, and a change of control hands it
+    /// over (`ghidra/notes/facility-ownership.md`).
+    pub side: Faction,
     /// True if this facility is a mine (raw material extraction).
     /// Set during loading from the DAT `production_family` field.
     #[serde(default)]
@@ -1556,6 +1602,139 @@ fn default_difficulty_index() -> u8 {
 }
 
 impl GameWorld {
+    /// The facilities at `system`: defense, then manufacturing, then
+    /// production.
+    #[must_use]
+    pub fn facilities_at(&self, system: SystemKey) -> Vec<FacilityRef> {
+        self.systems.get(system).map_or_else(Vec::new, |value| {
+            value
+                .defense_facilities
+                .iter()
+                .map(|&key| FacilityRef::Defense(key))
+                .chain(
+                    value
+                        .manufacturing_facilities
+                        .iter()
+                        .map(|&key| FacilityRef::Manufacturing(key)),
+                )
+                .chain(
+                    value
+                        .production_facilities
+                        .iter()
+                        .map(|&key| FacilityRef::Production(key)),
+                )
+                .collect()
+        })
+    }
+
+    /// A facility's class and side.
+    #[must_use]
+    pub fn facility(&self, facility: FacilityRef) -> Option<(DatId, Faction)> {
+        match facility {
+            FacilityRef::Defense(key) => self
+                .defense_facilities
+                .get(key)
+                .map(|value| (value.class_dat_id, value.side)),
+            FacilityRef::Manufacturing(key) => self
+                .manufacturing_facilities
+                .get(key)
+                .map(|value| (value.class_dat_id, value.side)),
+            FacilityRef::Production(key) => self
+                .production_facilities
+                .get(key)
+                .map(|value| (value.class_dat_id, value.side)),
+        }
+    }
+
+    /// Set a facility's side.
+    pub fn set_facility_side(&mut self, facility: FacilityRef, side: Faction) {
+        match facility {
+            FacilityRef::Defense(key) => {
+                if let Some(value) = self.defense_facilities.get_mut(key) {
+                    value.side = side;
+                }
+            }
+            FacilityRef::Manufacturing(key) => {
+                if let Some(value) = self.manufacturing_facilities.get_mut(key) {
+                    value.side = side;
+                }
+            }
+            FacilityRef::Production(key) => {
+                if let Some(value) = self.production_facilities.get_mut(key) {
+                    value.side = side;
+                }
+            }
+        }
+    }
+
+    /// Remove a facility from `system` and from its arena.
+    pub fn remove_facility(&mut self, system: SystemKey, facility: FacilityRef) {
+        let Some(value) = self.systems.get_mut(system) else {
+            return;
+        };
+        match facility {
+            FacilityRef::Defense(key) => {
+                value.defense_facilities.retain(|k| *k != key);
+                self.defense_facilities.remove(key);
+            }
+            FacilityRef::Manufacturing(key) => {
+                value.manufacturing_facilities.retain(|k| *k != key);
+                self.manufacturing_facilities.remove(key);
+            }
+            FacilityRef::Production(key) => {
+                value.production_facilities.retain(|k| *k != key);
+                self.production_facilities.remove(key);
+            }
+        }
+    }
+
+    /// The side a system's facilities belong to under `control`: its
+    /// holder, neutral when uncontrolled, and none while contested, when
+    /// the last holder keeps them (`ghidra/notes/facility-ownership.md`).
+    #[must_use]
+    pub const fn facility_holder(control: ControlKind) -> Option<Faction> {
+        match control {
+            ControlKind::Controlled(side) | ControlKind::Uprising(side) => Some(side),
+            ControlKind::Uncontrolled => Some(Faction::Neutral),
+            ControlKind::Contested => None,
+        }
+    }
+
+    /// A change of `system`'s holder (`FUN_004f6f40` → `FUN_004fae40` →
+    /// `FUN_004f8680`): each facility of another side passes to the holder
+    /// when its class serves that side (`FUN_004f27d0`), and is removed
+    /// otherwise. Returns the facilities removed. A class missing from the
+    /// catalog keeps its facility (port).
+    pub fn hand_over_facilities(&mut self, system: SystemKey) -> Vec<FacilityRef> {
+        let Some(holder) = self
+            .systems
+            .get(system)
+            .and_then(|value| Self::facility_holder(value.control))
+        else {
+            return Vec::new();
+        };
+        let mut removed = Vec::new();
+        for facility in self.facilities_at(system) {
+            let Some((class, side)) = self.facility(facility) else {
+                continue;
+            };
+            if side == holder {
+                continue;
+            }
+            let serves = self
+                .buildable_classes
+                .get(&class)
+                .is_none_or(|value| value.serves_side(holder));
+            if serves {
+                self.set_facility_side(facility, holder);
+            } else {
+                self.remove_facility(system, facility);
+                removed.push(facility);
+            }
+        }
+        removed
+    }
+
     /// The MISSNSD record with id `id` (e.g. `0x51000010` for Diplomacy).
     /// A mission class reads one record through `+0x2c`
     /// (`ghidra/notes/mission-lifecycle.md`). The id, not the family, picks
@@ -1758,6 +1937,163 @@ fn recruit_side_index(side: crate::dat::Faction) -> Option<usize> {
         crate::dat::Faction::Alliance => Some(0),
         crate::dat::Faction::Empire => Some(1),
         crate::dat::Faction::Neutral => None,
+    }
+}
+
+#[cfg(test)]
+mod facility_ownership_tests {
+    use super::*;
+
+    fn system(world: &mut GameWorld, control: ControlKind) -> SystemKey {
+        world.systems.insert(System {
+            dat_id: DatId::new(0x9000_0001),
+            name: "Here".into(),
+            sector: SectorKey::default(),
+            x: 0,
+            y: 0,
+            exploration_status: ExplorationStatus::Explored,
+            popularity_alliance: 0.5,
+            popularity_empire: 0.5,
+            is_populated: true,
+            total_energy: 4,
+            raw_materials: 2,
+            espionage_rating: 0.0,
+            fleets: Vec::new(),
+            ground_units: Vec::new(),
+            special_forces: Vec::new(),
+            defense_facilities: Vec::new(),
+            manufacturing_facilities: Vec::new(),
+            production_facilities: Vec::new(),
+            is_headquarters: false,
+            is_destroyed: false,
+            control,
+        })
+    }
+
+    /// A catalog class serving the given sides.
+    fn class(world: &mut GameWorld, id: u32, is_alliance: bool, is_empire: bool) -> DatId {
+        let class = DatId::new(id);
+        world.buildable_classes.insert(
+            class,
+            BuildableClass {
+                is_alliance,
+                is_empire,
+                ..BuildableClass::default()
+            },
+        );
+        class
+    }
+
+    fn yard(world: &mut GameWorld, at: SystemKey, class: DatId, side: Faction) -> FacilityRef {
+        let key = world
+            .manufacturing_facilities
+            .insert(ManufacturingFacilityInstance {
+                class_dat_id: class,
+                side,
+                is_shipyard: class.family() == 0x28,
+            });
+        world.systems[at].manufacturing_facilities.push(key);
+        FacilityRef::Manufacturing(key)
+    }
+
+    fn side_of(world: &GameWorld, facility: FacilityRef) -> Option<Faction> {
+        world.facility(facility).map(|(_, side)| side)
+    }
+
+    #[test]
+    fn a_new_holder_takes_the_facilities_its_classes_serve() {
+        // FUN_00510d70 -> FUN_004f6f40 -> FUN_004fae40 -> FUN_004f8680: each
+        // facility passes to the system's new side when its class serves it
+        // (FUN_004f27d0, the DAT is_alliance / is_empire flags).
+        let mut world = GameWorld::default();
+        let here = system(&mut world, ControlKind::Controlled(Faction::Empire));
+        let shipyard = class(&mut world, 0x2800_0001, true, true);
+        let facility = yard(&mut world, here, shipyard, Faction::Alliance);
+        assert!(world.hand_over_facilities(here).is_empty());
+        assert_eq!(side_of(&world, facility), Some(Faction::Empire));
+    }
+
+    #[test]
+    fn a_facility_its_new_holder_cannot_own_is_removed() {
+        // FUN_004f8680: a facility whose class does not serve the new side is
+        // removed (+0xac(3)), as the Alliance HQ (ALLFACSD, Alliance only) is
+        // when its system goes to the Empire.
+        let mut world = GameWorld::default();
+        let here = system(&mut world, ControlKind::Controlled(Faction::Empire));
+        let hq = class(&mut world, 0x2000_0001, true, false);
+        let facility = yard(&mut world, here, hq, Faction::Alliance);
+        assert_eq!(world.hand_over_facilities(here), vec![facility]);
+        assert_eq!(side_of(&world, facility), None);
+        assert!(world.systems[here].manufacturing_facilities.is_empty());
+    }
+
+    #[test]
+    fn a_contested_system_keeps_its_last_holders_facilities() {
+        // A battle only sets the system's battle bit; ownership changes only
+        // with the side (ghidra/notes/facility-ownership.md, "Contested").
+        let mut world = GameWorld::default();
+        let here = system(&mut world, ControlKind::Contested);
+        let shipyard = class(&mut world, 0x2800_0001, true, true);
+        let facility = yard(&mut world, here, shipyard, Faction::Alliance);
+        assert!(world.hand_over_facilities(here).is_empty());
+        assert_eq!(side_of(&world, facility), Some(Faction::Alliance));
+    }
+
+    #[test]
+    fn a_system_gone_neutral_keeps_only_classes_serving_both_sides() {
+        // FUN_004f27d0: neutral (side 3) needs both flags.
+        let mut world = GameWorld::default();
+        let here = system(&mut world, ControlKind::Uncontrolled);
+        let both = class(&mut world, 0x2c00_0001, true, true);
+        let imperial = class(&mut world, 0x2800_0004, false, true);
+        let mine = yard(&mut world, here, both, Faction::Empire);
+        let yard_kept = yard(&mut world, here, imperial, Faction::Empire);
+        assert_eq!(world.hand_over_facilities(here), vec![yard_kept]);
+        assert_eq!(side_of(&world, mine), Some(Faction::Neutral));
+    }
+
+    #[test]
+    fn the_holders_own_facilities_stay_whatever_their_class() {
+        // Only an object of another side is handed over (FUN_004fae40 walks
+        // the system and FUN_004f8680 acts on a side change).
+        let mut world = GameWorld::default();
+        let here = system(&mut world, ControlKind::Controlled(Faction::Alliance));
+        let imperial = class(&mut world, 0x2800_0004, false, true);
+        let facility = yard(&mut world, here, imperial, Faction::Alliance);
+        assert!(world.hand_over_facilities(here).is_empty());
+        assert_eq!(side_of(&world, facility), Some(Faction::Alliance));
+    }
+
+    #[test]
+    fn a_class_serves_neutral_only_with_both_flags() {
+        let class = |is_alliance, is_empire| BuildableClass {
+            is_alliance,
+            is_empire,
+            ..BuildableClass::default()
+        };
+        assert!(class(true, false).serves_side(Faction::Alliance));
+        assert!(!class(true, false).serves_side(Faction::Empire));
+        assert!(class(false, true).serves_side(Faction::Empire));
+        assert!(!class(true, false).serves_side(Faction::Neutral));
+        assert!(!class(false, true).serves_side(Faction::Neutral));
+        assert!(class(true, true).serves_side(Faction::Neutral));
+    }
+
+    #[test]
+    fn the_facility_holder_follows_control_and_holds_while_contested() {
+        assert_eq!(
+            GameWorld::facility_holder(ControlKind::Controlled(Faction::Empire)),
+            Some(Faction::Empire)
+        );
+        assert_eq!(
+            GameWorld::facility_holder(ControlKind::Uprising(Faction::Alliance)),
+            Some(Faction::Alliance)
+        );
+        assert_eq!(
+            GameWorld::facility_holder(ControlKind::Uncontrolled),
+            Some(Faction::Neutral)
+        );
+        assert_eq!(GameWorld::facility_holder(ControlKind::Contested), None);
     }
 }
 

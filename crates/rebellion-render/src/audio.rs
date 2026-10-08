@@ -169,6 +169,16 @@ impl AudioVolumeState {
         }
     }
 
+    /// Cutscene audio volume: 0.0 when muted, otherwise full volume.
+    #[must_use]
+    pub const fn cutscene_volume(&self) -> f32 {
+        if self.muted {
+            0.0
+        } else {
+            1.0
+        }
+    }
+
     /// Toggle music independently of sound effects.
     pub fn toggle_music(&mut self) {
         self.music_muted = !self.music_muted;
@@ -243,6 +253,14 @@ pub fn draw_audio_controls(ui: &mut egui::Ui, state: &mut AudioVolumeState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn muting_silences_cutscenes_too() {
+        let mut state = AudioVolumeState::default();
+        assert!((state.cutscene_volume() - 1.0).abs() < f32::EPSILON);
+        state.muted = true;
+        assert!(state.cutscene_volume().abs() < f32::EPSILON);
+    }
 
     #[test]
     #[expect(

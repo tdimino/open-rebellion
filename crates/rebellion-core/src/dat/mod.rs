@@ -21,6 +21,19 @@ pub enum Faction {
     Neutral,
 }
 
+impl Faction {
+    /// The side of an object flagged `is_alliance`: the Alliance, or else
+    /// the Empire.
+    #[must_use]
+    pub const fn of_alliance(is_alliance: bool) -> Self {
+        if is_alliance {
+            Self::Alliance
+        } else {
+            Self::Empire
+        }
+    }
+}
+
 /// Galaxy size categories from the SECTORSD record header.
 ///
 /// Encoded as a u8 in the file; values 1–3 map to these variants.

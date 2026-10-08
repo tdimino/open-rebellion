@@ -110,7 +110,7 @@ mod native {
             clippy::cast_possible_truncation,
             reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
         )]
-        pub fn open(path: &Path) -> Result<VideoPlayer, VideoError> {
+        pub fn open(path: &Path, volume: f32) -> Result<VideoPlayer, VideoError> {
             let assets = resolve_decoded_assets(path)?;
             if !assets.frames_dir.exists() || !assets.metadata_path.exists() {
                 return Err(VideoError::NotDecoded {
@@ -137,7 +137,7 @@ mod native {
                 finished: false,
                 audio: None,
             };
-            player.audio = load_audio_track(&player.assets.audio_path)?;
+            player.audio = load_audio_track(&player.assets.audio_path, volume)?;
             player.prime_cache()?;
             Ok(player)
         }
@@ -327,7 +327,7 @@ mod native {
         Ok(image.to_rgba8().into_raw())
     }
 
-    fn load_audio_track(path: &Path) -> Result<Option<AudioTrack>, VideoError> {
+    fn load_audio_track(path: &Path, volume: f32) -> Result<Option<AudioTrack>, VideoError> {
         if !path.exists() {
             return Ok(None);
         }
@@ -342,7 +342,7 @@ mod native {
             &ctx,
             quad_snd::PlaySoundParams {
                 looped: false,
-                volume: 1.0,
+                volume,
             },
         );
 
@@ -395,7 +395,7 @@ mod native {
             let source = root.join("assets/references/ref-videos/000.webm");
             fs::create_dir_all(source.parent().unwrap()).expect("create temp ref-videos dir");
 
-            match VideoPlayer::open(&source) {
+            match VideoPlayer::open(&source, 1.0) {
                 Err(VideoError::NotDecoded { path }) => {
                     assert_eq!(path, root.join("assets/references/cutscene-frames/000"));
                 }
@@ -419,7 +419,7 @@ mod wasm_stub {
     pub struct VideoPlayer;
 
     impl VideoPlayer {
-        pub fn open(_path: &Path) -> Result<VideoPlayer, VideoError> {
+        pub fn open(_path: &Path, _volume: f32) -> Result<VideoPlayer, VideoError> {
             Ok(VideoPlayer)
         }
 

@@ -496,7 +496,7 @@ impl PlayerAgent {
                             .manufacturing_facilities
                             .get(*facility)
                             .is_some_and(|value| {
-                                value.is_alliance == player_is_alliance && !value.is_shipyard
+                                value.side == crate::dat::Faction::of_alliance(player_is_alliance) && !value.is_shipyard
                             })
                     })
                     && mfg.queued_at(*key) < 3
@@ -682,7 +682,7 @@ fn count_player_resources(
         // Count mines and refineries owned by the player at this system.
         for pfk in &sys.production_facilities {
             if let Some(pf) = world.production_facilities.get(*pfk) {
-                if pf.is_alliance == player_is_alliance {
+                if pf.side == crate::dat::Faction::of_alliance(player_is_alliance) {
                     if pf.is_mine {
                         total_raw += 1;
                     } else {
@@ -824,7 +824,7 @@ fn find_training_system(
             world
                 .manufacturing_facilities
                 .get(*mfk)
-                .is_some_and(|f| f.is_alliance == player_is_alliance && !f.is_shipyard)
+                .is_some_and(|f| f.side == crate::dat::Faction::of_alliance(player_is_alliance) && !f.is_shipyard)
         });
 
         if has_training {
@@ -864,7 +864,7 @@ fn find_production_facility_class(
     world
         .production_facilities
         .iter()
-        .find(|(_, f)| f.is_alliance == player_is_alliance && f.is_mine == want_mine)
+        .find(|(_, f)| f.side == crate::dat::Faction::of_alliance(player_is_alliance) && f.is_mine == want_mine)
         .map(|(_, facility)| FacilityBuild {
             class: facility.class_dat_id,
             is_alliance: player_is_alliance,
@@ -942,7 +942,7 @@ mod tests {
             .production_facilities
             .insert(ProductionFacilityInstance {
                 class_dat_id: crate::ids::DatId(if is_mine { 0x2c00_0001 } else { 0x2d00_0001 }),
-                is_alliance,
+                side: crate::dat::Faction::of_alliance(is_alliance),
                 is_mine,
             });
         world
@@ -964,7 +964,7 @@ mod tests {
             .manufacturing_facilities
             .insert(ManufacturingFacilityInstance {
                 class_dat_id: crate::ids::DatId(0xa400_0001),
-                is_alliance,
+                side: crate::dat::Faction::of_alliance(is_alliance),
                 is_shipyard: false,
             });
         world
@@ -1007,7 +1007,7 @@ mod tests {
             .manufacturing_facilities
             .insert(ManufacturingFacilityInstance {
                 class_dat_id: crate::ids::DatId(0xa000_0001),
-                is_alliance,
+                side: crate::dat::Faction::of_alliance(is_alliance),
                 is_shipyard: true,
             });
         world.systems[sys_key].manufacturing_facilities.push(mfk);

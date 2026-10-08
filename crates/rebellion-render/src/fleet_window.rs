@@ -219,11 +219,14 @@ enum ItemObject {
         index: usize,
         roster: u64,
     },
+    /// A squadron, by its entry's index in the fleet's `fighters`.
+    Fighter { fleet: FleetKey, index: usize },
 }
 
 impl ItemObject {
     const fn menu_object(self) -> MenuObject {
         match self {
+            Self::Fighter { fleet, index } => MenuObject::Fighter { fleet, index },
             Self::Fleet(fleet) => MenuObject::Fleet(fleet),
             Self::Regiment(troop) => MenuObject::Troop(troop),
             Self::Ship {
@@ -544,6 +547,8 @@ impl FleetWindowState {
             return None;
         }
         Some(match drag.object {
+            // port: a squadron cannot move apart from its fleet.
+            ItemObject::Fighter { .. } => return None,
             ItemObject::Fleet(fleet) => FleetWindowAction::DragFleet { fleet, point },
             ItemObject::Regiment(troop) => FleetWindowAction::DragRegiment { troop, point },
             ItemObject::Ship {
@@ -969,14 +974,17 @@ fn right_items(
         FleetWindowTab::Fighters => value
             .fighters
             .iter()
-            .filter_map(|entry| Some((world.fighter_classes.get(entry.class)?, entry.count)))
-            .flat_map(|(class, count)| {
+            .enumerate()
+            .filter_map(|(index, entry)| {
+                Some((index, world.fighter_classes.get(entry.class)?, entry.count))
+            })
+            .flat_map(|(index, class, count)| {
                 (0..count).map(move |_| RightItem {
                     mini: fighter_mini_id(class.dat_id),
                     kind: MiniObject::Craft,
                     label: class.name.clone(),
                     no_hyperdrive: false,
-                    object: None,
+                    object: Some(ItemObject::Fighter { fleet, index }),
                 })
             })
             .collect(),
@@ -3023,16 +3031,20 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn a_right_click_on_a_fleet_entry_opens_the_fleets_menu_and_on_a_fighter_none() {
-        // FUN_004ff8e0's fleet menu; port: a squadron has no menu yet.
+    fn a_right_click_on_a_fleet_entry_or_a_squadron_opens_its_menu() {
+        // FUN_004a2c40 opens the pop-up menu (FUN_004ac5c0) for the hit
+        // list's selected items: FUN_004ff8e0's fleet menu, and a squadron's
+        // with FUN_0051d990's Encyclopedia and Status.
         let (mut world, transport, system, fleet, _) = fleet_with_regiment();
-        let fighter = world.fighter_classes.insert(Default::default());
-        world.fleets[fleet]
-            .fighters
-            .push(rebellion_core::world::FighterEntry {
-                class: fighter,
-                count: 1,
-            });
+        for _ in 0..2 {
+            let fighter = world.fighter_classes.insert(Default::default());
+            world.fleets[fleet]
+                .fighters
+                .push(rebellion_core::world::FighterEntry {
+                    class: fighter,
+                    count: 1,
+                });
+        }
         let mut state = opened(&world, system);
         let entry = state
             .entry_screen_rect(scaled(), system, 0)
@@ -3052,8 +3064,18 @@ pub(crate) mod tests {
             window.selected = Some(FleetWindowEntry::Fleet(fleet));
             window.tab = FleetWindowTab::Fighters;
         }
-        let actions = right_click(&world, &transport, &mut state, at(160.0, 150.0));
-        assert!(menus(&actions).is_empty());
+        let second = state
+            .item_screen_rect(scaled(), system, 1)
+            .unwrap()
+            .center();
+        let actions = right_click(&world, &transport, &mut state, second);
+        assert_eq!(
+            menus(&actions)
+                .into_iter()
+                .map(|(selection, _)| selection)
+                .collect::<Vec<_>>(),
+            [MenuObject::Fighter { fleet, index: 1 }]
+        );
     }
 
     #[test]

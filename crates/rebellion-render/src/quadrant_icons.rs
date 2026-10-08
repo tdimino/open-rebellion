@@ -183,13 +183,13 @@ impl<'a> SystemContents<'a> {
             self.world
                 .manufacturing_facilities
                 .get(**key)
-                .is_some_and(|facility| self.seen(fleet_side(facility.is_alliance)))
+                .is_some_and(|facility| self.seen(crate::fleet_window::faction_side(facility.side)))
         });
         let production = value.production_facilities.iter().filter(|key| {
             self.world
                 .production_facilities
                 .get(**key)
-                .is_some_and(|facility| self.seen(fleet_side(facility.is_alliance)))
+                .is_some_and(|facility| self.seen(crate::fleet_window::faction_side(facility.side)))
         });
         manufacturing.count() + production.count()
     }
@@ -207,7 +207,7 @@ impl<'a> SystemContents<'a> {
             self.world
                 .defense_facilities
                 .get(**key)
-                .is_some_and(|facility| self.seen(fleet_side(facility.is_alliance)))
+                .is_some_and(|facility| self.seen(crate::fleet_window::faction_side(facility.side)))
         });
         let regiments = value.ground_units.iter().filter(|key| {
             self.world
@@ -408,7 +408,7 @@ mod tests {
             .production_facilities
             .insert(ProductionFacilityInstance {
                 class_dat_id: DatId::new(0x2c00_0001),
-                is_alliance,
+                side: rebellion_core::dat::Faction::of_alliance(is_alliance),
                 is_mine: true,
             });
         world.systems[system].production_facilities.push(mine);
@@ -516,7 +516,7 @@ mod tests {
             .manufacturing_facilities
             .insert(ManufacturingFacilityInstance {
                 class_dat_id: DatId::new(0x2800_0001),
-                is_alliance: true,
+                side: rebellion_core::dat::Faction::Alliance,
                 is_shipyard: true,
             });
         world.systems[system].manufacturing_facilities.push(yard);
@@ -543,7 +543,7 @@ mod tests {
         let (mut world, system) = alliance_world();
         let shield = world.defense_facilities.insert(DefenseFacilityInstance {
             class_dat_id: DatId::new(0x2400_0003),
-            is_alliance: true,
+            side: rebellion_core::dat::Faction::Alliance,
         });
         world.systems[system].defense_facilities.push(shield);
         assert_eq!(alliance_side(&world, system, Quadrant::System), None);
