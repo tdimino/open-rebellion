@@ -104,13 +104,6 @@ func TestRunCLIStageOnlySkipsTheVerificationPass(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeAudioFixture(t, sourceDir)
-	extra := filepath.Join(outputDir, "test-dll", "BMP", "999.bmp")
-	if err := os.MkdirAll(filepath.Dir(extra), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(extra, []byte("deliberate extra file"), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	var stdout, stderr bytes.Buffer
 
 	err := runTestCLI(
@@ -133,6 +126,10 @@ func TestRunCLIStageOnlySkipsTheVerificationPass(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(outputDir, "test-dll", "BMP", "88.bmp")); err != nil {
 		t.Fatalf("staged runtime asset: %v", err)
+	}
+	extra := filepath.Join(outputDir, "test-dll", "BMP", "999.bmp")
+	if err := os.WriteFile(extra, []byte("deliberate extra file"), 0o600); err != nil {
+		t.Fatal(err)
 	}
 
 	stdout.Reset()

@@ -109,6 +109,33 @@ func TestFullCLIStageCacheInvalidatesChangedInputsAndMissingOutputs(t *testing.T
 			},
 		},
 		{
+			name: "same-size corrupted output",
+			mutate: func(t *testing.T, fixture fullStageFixture) []string {
+				t.Helper()
+				path := filepath.Join(fixture.output, "test-dll", "BMP", "88.bmp")
+				data, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				data[len(data)-1] ^= 0xff
+				if err := os.WriteFile(path, data, 0o600); err != nil {
+					t.Fatal(err)
+				}
+				return fixture.args
+			},
+		},
+		{
+			name: "unexpected managed output",
+			mutate: func(t *testing.T, fixture fullStageFixture) []string {
+				t.Helper()
+				path := filepath.Join(fixture.output, "test-dll", "BMP", "unexpected.bin")
+				if err := os.WriteFile(path, []byte("unexpected"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				return fixture.args
+			},
+		},
+		{
 			name: "force requested",
 			mutate: func(t *testing.T, fixture fullStageFixture) []string {
 				t.Helper()

@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	stageCacheVersion   = 1
+	stageCacheVersion   = 2
 	stageCacheByteLimit = 32 * 1024 * 1024
 )
 
@@ -136,11 +136,9 @@ func stageCacheHit(config stageCacheConfig, targets []dllTarget, movieIDs []stri
 	if err != nil || !reflect.DeepEqual(sources, manifest.Sources) {
 		return false, 0, 0
 	}
-	for _, output := range manifest.Outputs {
-		info, err := os.Lstat(output.Path)
-		if err != nil || !info.Mode().IsRegular() || info.Size() != output.Size {
-			return false, 0, 0
-		}
+	outputs, err := collectStageOutputs(config, targets, movieIDs)
+	if err != nil || !reflect.DeepEqual(outputs, manifest.Outputs) {
+		return false, 0, 0
 	}
 	return true, len(manifest.Sources), len(manifest.Outputs)
 }
@@ -154,7 +152,11 @@ func addStageOutput(outputs map[string]stageCacheFile, path string) error {
 	if !info.Mode().IsRegular() {
 		return fmt.Errorf("staged output is not a regular file: %s", path)
 	}
-	outputs[path] = stageCacheFile{Path: path, Size: info.Size()}
+	hash, err := fileSHA256(path)
+	if err != nil {
+		return err
+	}
+	outputs[path] = stageCacheFile{Path: path, Size: info.Size(), SHA256: hash}
 	return nil
 }
 
@@ -173,12 +175,20 @@ func addStageOutputTree(outputs map[string]stageCacheFile, root string) error {
 func collectStageOutputs(config stageCacheConfig, targets []dllTarget, movieIDs []string) ([]stageCacheFile, error) {
 	outputs := make(map[string]stageCacheFile)
 	for _, target := range targets {
+		before := len(outputs)
 		if err := addStageOutputTree(outputs, filepath.Join(config.OutputDir, target.Directory, "BMP")); err != nil {
 			return nil, err
 		}
+		if found := len(outputs) - before; found != target.Expected {
+			return nil, fmt.Errorf("%s: found %d staged BMP outputs, expected %d", target.Directory, found, target.Expected)
+		}
 		if target.ExpectedType302 > 0 {
+			before = len(outputs)
 			if err := addStageOutputTree(outputs, filepath.Join(config.OutputDir, target.Directory, "TYPE302")); err != nil {
 				return nil, err
+			}
+			if found := len(outputs) - before; found != target.ExpectedType302 {
+				return nil, fmt.Errorf("%s: found %d staged type-302 outputs, expected %d", target.Directory, found, target.ExpectedType302)
 			}
 		}
 	}
