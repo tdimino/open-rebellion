@@ -939,10 +939,6 @@ fn resolve_system_control(
 
 /// Compute the per-system derived summary from troop/fleet/facility presence.
 /// Implements functions 9-15 of the economy tick pipeline.
-#[expect(
-    clippy::cast_possible_truncation,
-    reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
-)]
 fn compute_system_summary(
     world: &GameWorld,
     sys: &crate::world::System,

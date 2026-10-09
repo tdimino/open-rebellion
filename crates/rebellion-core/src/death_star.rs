@@ -14,9 +14,9 @@
 //!    - Target system is not already destroyed (`!system.is_destroyed`).
 //!    - Death Star fleet is present at that system.
 //!    - Target is enemy-controlled (Empire Death Star → non-Empire system).
-//!    The real superlaser fire path is unrecovered. FUN_005617b0 is the
-//!    CharacterMgr SeatOfPower check; FUN_0055f650 stores that flag.
-//!    On success emits `PlanetDestroyed`.  Caller sets `system.is_destroyed = true`.
+//!      The real superlaser fire path is unrecovered. FUN_005617b0 is the
+//!      CharacterMgr SeatOfPower check; FUN_0055f650 stores that flag.
+//!      On success emits `PlanetDestroyed`. Caller sets `system.is_destroyed = true`.
 //!
 //! # Advance contract
 //! `DeathStarSystem::advance()` never mutates `GameWorld`.
