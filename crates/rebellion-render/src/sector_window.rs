@@ -483,6 +483,7 @@ pub fn draw_sector_windows(
     layout: CockpitLayout,
     cache: &mut BmpCache,
     missions: &rebellion_core::missions::MissionState,
+    uprisings: &rebellion_core::uprising::UprisingState,
 ) -> Vec<SectorWindowAction> {
     state.prepare_faction(faction);
     let windows = state.windows.clone();
@@ -505,6 +506,7 @@ pub fn draw_sector_windows(
             layout,
             cache,
             missions,
+            uprisings,
         );
         if result.focus {
             focused = Some(window.sector);
@@ -597,6 +599,7 @@ fn draw_sector_window(
     layout: CockpitLayout,
     cache: &mut BmpCache,
     missions: &rebellion_core::missions::MissionState,
+    uprisings: &rebellion_core::uprising::UprisingState,
 ) -> WindowDrawResult {
     let mut result = WindowDrawResult::default();
     let Some(sector) = world.sectors.get(window.sector) else {
@@ -791,6 +794,23 @@ fn draw_sector_window(
                     planet_resource_id(system.dat_id),
                     planet_rect,
                 );
+                // FUN_0045bbb0 keys a flame over the planet picture, before
+                // the status bars, while the system revolts (`+0x88` bit 2):
+                // 905 when side 1 holds it, 906 for side 2. A destroyed
+                // system takes its own picture and no flame.
+                if let Some(flame) = revolt_flame(*system_key, system, uprisings) {
+                    paint_native(
+                        ui.painter(),
+                        ctx,
+                        cache,
+                        DllSource::Strategy,
+                        flame,
+                        planet_rect,
+                        layout.scale,
+                        0.0,
+                        0.0,
+                    );
+                }
                 paint_status_bars(
                     &ui.painter().with_clip_rect(window_rect),
                     world,
@@ -1094,6 +1114,24 @@ fn system_name_color(control: ControlKind) -> egui::Color32 {
         Some(Faction::Alliance) => egui::Color32::from_rgb(255, 0, 0),
         Some(Faction::Empire) => egui::Color32::from_rgb(0, 255, 0),
         _ => egui::Color32::from_rgb(0, 255, 255),
+    }
+}
+
+/// `FUN_0045bbb0`: the flame keyed over a revolting system's planet, STRATEGY
+/// 905 (`0x389`) when side 1 holds it and 906 (`0x38a`) for side 2; a
+/// destroyed system (view `+0x50` bit 3) shows none.
+fn revolt_flame(
+    key: SystemKey,
+    system: &rebellion_core::world::System,
+    uprisings: &rebellion_core::uprising::UprisingState,
+) -> Option<u32> {
+    if system.is_destroyed || !crate::system_in_revolt(key, system, uprisings) {
+        return None;
+    }
+    match system.control.faction()? {
+        Faction::Alliance => Some(905),
+        Faction::Empire => Some(906),
+        _ => None,
     }
 }
 
@@ -1730,6 +1768,7 @@ mod tests {
                     layout,
                     &mut cache,
                     missions,
+                    &rebellion_core::uprising::UprisingState::default(),
                 ));
             });
         }
@@ -1788,6 +1827,7 @@ mod tests {
                     layout,
                     &mut cache,
                     &missions,
+                    &rebellion_core::uprising::UprisingState::default(),
                 ));
             });
         }
@@ -1970,6 +2010,7 @@ mod tests {
                     layout,
                     &mut cache,
                     &missions,
+                    &rebellion_core::uprising::UprisingState::default(),
                 ));
             });
         }
@@ -2369,6 +2410,7 @@ mod tests {
                     layout,
                     &mut cache,
                     missions,
+                    &rebellion_core::uprising::UprisingState::default(),
                 );
             });
         }
@@ -2544,6 +2586,7 @@ mod tests {
                     layout,
                     &mut cache,
                     &missions,
+                    &rebellion_core::uprising::UprisingState::default(),
                 );
             });
         }

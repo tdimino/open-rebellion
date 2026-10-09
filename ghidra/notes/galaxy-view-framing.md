@@ -39,6 +39,17 @@ The starfield is not clipped to the galaxy view's client rect: it shows
 through every transparent part of the shell, beside the droids and between
 the consoles (Wine captures, 2026-10-08).
 
+It is clipped to the shell, though. `FUN_00427010` makes an offscreen bitmap
+the shell's size (`FUN_005fbda0` with 900's or 901's width and height, 640 by
+481), blits the starfield into it at the offset (`FUN_005fcc30`), keys the
+shell over it at (0, 0) (`FUN_005fd0f0`), and makes the result the view's
+backdrop (`FUN_005ff2d0`). The Empire's starfield ends at x 84 + 607 = 691, so
+its last 51 columns fall outside that bitmap and are never drawn; the
+Alliance's ends at 628, inside it. The original never shows the overflow.
+The port draws straight to a window wider than 640, so the overflow showed in
+the side margin until `main.rs` clipped the starfield to the 640 by 480
+canvas, the shell's bounds.
+
 **Current port**: the aperture rects Alliance (55, 40, 485, 350) and
 Empire (120, 40, 480, 355) are the galaxy view's client rects
 (`FUN_00421c70`) and bound input and the map's own layers.

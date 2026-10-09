@@ -588,6 +588,7 @@ mod tests {
                         layout,
                         &mut cache,
                         missions,
+                        &rebellion_core::uprising::UprisingState::default(),
                     );
                     let _ = draw_system_windows(
                         ctx,

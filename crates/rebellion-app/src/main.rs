@@ -4415,6 +4415,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                         cockpit_layout,
                         &mut bmp_cache,
                         &mission_state,
+                        &uprising_state,
                     )
                     .into_iter()
                     .chain(commanded_sector_actions)

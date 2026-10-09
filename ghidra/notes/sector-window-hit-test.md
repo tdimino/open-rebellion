@@ -146,15 +146,23 @@ after them and painted above them. `FUN_0045c6b0` pixel-tests it, so a press
 on the disc selects the headquarters and a press on its transparent corners
 falls through to the planet.
 
-The same refresh composites STRATEGY 905 (`0x389`, side 1) or 906 (`0x38a`,
-side 2) onto the planet picture when the view's `+0x88` bit 4 is set. Both are
-flame marks; what sets the bit is untraced (hyp: an uprising).
+The same refresh composites a flame onto the planet picture while the view's
+`+0x88` bit 2 (mask 4) is set, the uprising in progress
+(`uprising-incident.md`). The caller, `FUN_0045b770`, passes the system's side
+bits (`+0x24 >> 6 & 3`): STRATEGY 905 (`0x389`, the Alliance emblem) for side
+1 and 906 (`0x38a`, the Imperial one) for side 2; a neutral system takes none.
+The composite is the planet picture four pixels taller, then the flame keyed
+at (0, 0), then the status bars (`+0x70`) keyed at the bottom. A destroyed
+system (`+0x50` bit 3) returns early with its own picture, so no flame.
 
 Port: `quadrant_icons::shows_headquarters` reads the view as the quadrant
 icons do (the player's own objects, everything in a system it sees, and the
 facilities its side knows), and `sector_window.rs` paints 904 over the planet
 after the quadrant icons. port: a press on the marker selects the planet; the
-port has no headquarters object to select. 905 and 906 are not drawn.
+port has no headquarters object to select. `sector_window::revolt_flame` keys
+905 or 906 over the planet before its status bars, for a system in revolt
+(`system_in_revolt`) held by the Alliance or the Empire. hyp: the port reads the
+uprising itself, not the player's view of it, as the Uprisings display does.
 
 ### Quadrant fleet-position overlays (flags 0x40000..0x400000)
 

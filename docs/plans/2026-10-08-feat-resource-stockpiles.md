@@ -89,9 +89,11 @@ fixed day counts and never draw refined material.
 - **Compact legend art.** STRATEGY 10168's white border shares palette
   index 255 with its text, so keying its first pixel would erase the text;
   the original shows no border. How the original draws it is untraced.
-- **Flame marks.** `FUN_0045bbb0` composites STRATEGY 905/906 onto a planet
-  when system `+0x88` bit 4 is set; what sets it is untraced, and the port
-  draws neither.
+- **Flame marks.** Ported: the sector window keys 905 (Alliance-held) or
+  906 (Empire-held) over a revolting planet (`+0x88` bit 2). The native
+  check forced every held system into revolt with a temporary local switch,
+  because seed 42 had no held system in revolt by day 300; a real uprising
+  on screen is still to see.
 
 - **Seeding**: on seed 42 (Small, Medium) our Empire starts with 11 mines,
   11 refineries and 515 maintenance in use, a surplus of 35; the original's

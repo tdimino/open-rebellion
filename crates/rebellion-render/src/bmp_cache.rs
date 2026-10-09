@@ -1866,6 +1866,8 @@ fn uses_blue_screen_transparency(source: DllSource, resource_id: u32) -> bool {
                 // The headquarters marker, which FUN_0045c6b0 pixel-tests
                 // against its transparent color (FUN_005fca00).
                 | 904
+                // The revolt flames FUN_0045bbb0 keys over a planet picture.
+                | 905..=906
                 // The detailed legend's glyphs, rule and key emblems
                 // (FUN_00452630 blits them keyed, FUN_005fd0f0).
                 | 10180..=10182
