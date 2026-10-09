@@ -51,12 +51,12 @@ use rebellion_core::ai::AIState;
 use rebellion_core::betrayal::BetrayalState;
 use rebellion_core::blockade::BlockadeState;
 use rebellion_core::death_star::DeathStarState;
+use rebellion_core::delivery::DeliveryState;
 use rebellion_core::economy::EconomyState;
 use rebellion_core::events::EventState;
 use rebellion_core::fog::FogState;
 use rebellion_core::ids::SystemKey;
 use rebellion_core::jedi::JediState;
-use rebellion_core::delivery::DeliveryState;
 use rebellion_core::manufacturing::ManufacturingState;
 use rebellion_core::missions::MissionState;
 use rebellion_core::movement::MovementState;
@@ -477,8 +477,7 @@ mod native {
             file.read_exact(&mut vbytes)
                 .context("reading mod version")?;
             // We store name only in meta; version is folded into the hash.
-            let _mod_version =
-                String::from_utf8(vbytes).context("invalid mod version encoding")?;
+            let _mod_version = String::from_utf8(vbytes).context("invalid mod version encoding")?;
 
             mod_names.push(mod_name);
         }
@@ -757,10 +756,12 @@ pub mod wasm_impl {
     ///
     /// A body without its metadata (an interrupted write) counts as no save.
     fn stored_save(slot: usize) -> anyhow::Result<Option<(String, String)>> {
-        Ok(match (storage_get(&slot_key(slot))?, storage_get(&meta_key(slot))?) {
-            (Some(body), Some(meta)) => Some((body, meta)),
-            _ => None,
-        })
+        Ok(
+            match (storage_get(&slot_key(slot))?, storage_get(&meta_key(slot))?) {
+                (Some(body), Some(meta)) => Some((body, meta)),
+                _ => None,
+            },
+        )
     }
 
     fn parse_meta(encoded: &str) -> anyhow::Result<BrowserSaveMeta> {
@@ -1269,7 +1270,9 @@ mod tests {
             bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + 4].copy_from_slice(&version.to_le_bytes());
             std::fs::write(&path, bytes).unwrap();
 
-            let msg = load_slot(&saves_dir, 0).expect_err("only the current version loads").to_string();
+            let msg = load_slot(&saves_dir, 0)
+                .expect_err("only the current version loads")
+                .to_string();
             assert!(
                 msg.contains(&format!("save version {version}")) && msg.contains("new game"),
                 "error should name the version and suggest a new game: {msg}"

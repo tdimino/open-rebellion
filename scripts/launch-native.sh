@@ -2,7 +2,7 @@
 # Launch the native release build muted, for native GUI acceptance runs.
 #
 #   scripts/launch-native.sh [--build] [--evidence DIR] [--commands FILE]
-#                            [--seed N] [-- GAME_ARGS...]
+#                            [--seed N] [--live] [-- GAME_ARGS...]
 #
 # --build          rebuild target/release/open-rebellion first
 # --evidence DIR   write binary.txt (sha256, source commit, pid, window id)
@@ -13,6 +13,10 @@
 # --seed N         seed every new campaign with N (OPEN_REBELLION_SEED), so
 #                  a script meets the same galaxy each run; the seed, like a
 #                  script, needs OPEN_REBELLION_DEV=1, which this sets
+# --live           open the live channel (needs --evidence): the game runs
+#                  each line appended to DIR/commands.in and answers in
+#                  DIR/commands.out; send with scripts/dev-send.sh. Captures
+#                  go to DIR (OPEN_REBELLION_EVIDENCE). agent_docs/dev-commands.md
 #
 # OPEN_REBELLION_MUTE=1 silences music, effects and cutscenes from launch,
 # so the options-screen sliders need no clicks. Prints the pid and, when
@@ -25,6 +29,7 @@ build=0
 evidence=""
 commands=""
 seed=""
+live=0
 game_args=()
 
 while [ $# -gt 0 ]; do
@@ -32,6 +37,7 @@ while [ $# -gt 0 ]; do
     --build) build=1 ;;
     --evidence) evidence="$2"; shift ;;
     --seed) seed="$2"; shift ;;
+    --live) live=1 ;;
     --commands) commands="$(cd "$(dirname "$2")" && pwd)/$(basename "$2")"; shift ;;
     --) shift; game_args=("$@"); break ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
@@ -39,6 +45,9 @@ while [ $# -gt 0 ]; do
   shift
 done
 [ ${#game_args[@]} -eq 0 ] && game_args=(data/base)
+if [ "$live" -eq 1 ] && [ -z "$evidence" ]; then
+  echo "--live needs --evidence DIR" >&2; exit 2
+fi
 
 if [ "$build" -eq 1 ]; then
   # ~/.local/bin/cc is not a C compiler; build with the sanitized PATH.
@@ -50,6 +59,7 @@ fi
 log=/dev/null
 if [ -n "$evidence" ]; then
   mkdir -p "$evidence"
+  evidence="$(cd "$evidence" && pwd)"
   log="$evidence/game.log"
 fi
 
@@ -57,13 +67,19 @@ cd "$repo"
 dev_env=()
 [ -n "$commands" ] && dev_env=(OPEN_REBELLION_DEV=1 OPEN_REBELLION_COMMANDS="$commands")
 [ -n "$seed" ] && dev_env+=(OPEN_REBELLION_DEV=1 OPEN_REBELLION_SEED="$seed")
+[ -n "$evidence" ] && dev_env+=(OPEN_REBELLION_EVIDENCE="$evidence")
+if [ "$live" -eq 1 ]; then
+  # A fresh inbox each launch: sequence numbers count its lines from 1.
+  : >"$evidence/commands.in"
+  dev_env+=(OPEN_REBELLION_DEV=1 OPEN_REBELLION_INBOX="$evidence/commands.in")
+fi
 env OPEN_REBELLION_MUTE=1 ${dev_env[@]+"${dev_env[@]}"} nohup "$binary" "${game_args[@]}" >"$log" 2>&1 &
 pid=$!
 
 window=""
 if command -v cua-driver >/dev/null; then
-  # A cold start loads the data before the window appears: wait up to 30 s.
-  for _ in $(seq 1 120); do
+  # A cold start loads the data before the window appears: wait up to 60 s.
+  for _ in $(seq 1 240); do
     window="$(cua-driver call list_windows '{}' 2>/dev/null | python3 -c '
 import json, sys
 pid = int(sys.argv[1])
@@ -82,6 +98,7 @@ sha="$(shasum -a 256 "$binary" | cut -d' ' -f1)"
 commit="$(git -C "$repo" rev-parse --short HEAD)"
 dirty="$(git -C "$repo" status --porcelain --untracked-files=no | head -c1)"
 summary="binary_sha256=$sha source=$commit${dirty:+ (dirty tree)} pid=$pid window_id=${window:-unknown} muted=1${commands:+ commands=$commands}${seed:+ seed=$seed}"
+[ "$live" -eq 1 ] && summary="$summary inbox=$evidence/commands.in"
 echo "$summary"
 [ -n "$evidence" ] && echo "$summary" >"$evidence/binary.txt"
 exit 0

@@ -43,6 +43,44 @@ pub enum InterfaceCommand {
 pub enum PaletteAction {
     Panel(super::PanelAction),
     Interface(InterfaceCommand),
+    /// Run this line as a command-script line: the native app's developer
+    /// commands that take no arguments (`agent_docs/dev-commands.md`).
+    #[cfg(not(target_arch = "wasm32"))]
+    Script(String),
+}
+
+/// The argument-free developer commands, run as script lines. Native only:
+/// the browser build has no command channel.
+#[cfg(not(target_arch = "wasm32"))]
+fn script_commands() -> Vec<CommandItem> {
+    let item = |label: String, description: &str| CommandItem {
+        label: label.clone(),
+        description: description.to_string(),
+        category: "Developer".to_string(),
+        action: PaletteAction::Script(label),
+    };
+    let mut items = vec![
+        item("Capture".into(), "Save this frame as a numbered PNG"),
+        item("Skip briefing".into(), "Skip the opening briefing as Escape does"),
+    ];
+    for category in [
+        "All",
+        "Popular Support",
+        "Fleet",
+        "Mission",
+        "Resource",
+        "Manufacturing",
+        "Defense",
+        "Conflict",
+        "Chat",
+        "Advice",
+    ] {
+        items.push(item(
+            format!("Open Message Index: {category}"),
+            "Open the Message Index on this category",
+        ));
+    }
+    items
 }
 
 /// A registered command in the palette.
@@ -185,6 +223,12 @@ impl CommandPaletteState {
                 })
             })
             .collect();
+        #[cfg(not(target_arch = "wasm32"))]
+        let commands = {
+            let mut commands = commands;
+            commands.extend(script_commands());
+            commands
+        };
 
         let filtered_indices = (0..commands.len()).map(|i| (i, 0u32)).collect();
 

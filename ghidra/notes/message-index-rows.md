@@ -3,7 +3,7 @@ title: "Message Index rows and selection"
 description: "The list control, item fill, selection model, delete semantics, and single-message display mode of the Message Index window"
 category: "ghidra"
 created: 2026-10-06
-updated: 2026-10-06
+updated: 2026-10-09
 tags: [message-index, coolDragList, selection, delete, advice-slowdown]
 ---
 
@@ -108,8 +108,8 @@ message):
    `0x8019` ("Message Index"), with bitmaps:
    - Alliance: `0x2884` / `0x2885`
    - Empire: `0x288a` / `0x288b`
-5. The list and its controls are hidden; the navigation buttons `0x96` (scroll
-   up) and `0x9a` (scroll down) are shown. Delete (`0x91`), navigate (`0x90`),
+5. The list and its controls are hidden; the arrows `0x96` (down) and `0x9a`
+   (up) are shown. Delete (`0x91`), Select All (`0x90`),
    Display toggle (`0x97`), Encyclopedia (`0x98`) and Detail (`0x99`) are
    hidden.
 6. `FUN_00469de0` lays out the single message.
@@ -134,37 +134,104 @@ record (the message object).
 - Type 4: the Display button shows `0x2d20/0x2d21` (Alliance) or
   `0x2d47/0x2d48` (Empire) and label `0x8031`.
 - Type 5 without a target: the Display button is hidden.
-- After layout, the artwork overlays are started (`FUN_00610c30`) when the
-  message has resource ids at `+0x30` and `+0x32`.
+- After layout, the message's sounds start (`FUN_00610c30`) when it has
+  resource ids at `+0x30` and `+0x32`: WAVE resources of module 7
+  (STRATEGY, `+0x130 = 7`) and module 9 (`+0x148 = 9`). `0x454`, `0x455`,
+  `0x461` and `0x462` are STRATEGY WAVEs, not bitmaps. `FUN_0046a6e0`
+  stops the previous message's sounds first.
+- `FUN_0046a320` blits the picture: the background (`+0x2e`) with the
+  overlay (`+0x2c`) keyed over its centre (`FUN_005fd0f0`), at (12, 33).
+
+### The view
+
+`FUN_004665f0` lays out the rest. The title strip (`0x2ab5`, 400x18) sits
+at (12, 14) and the bottom text frame (`0x2ab4`, 400x87) at (12, 232). The
+body text widget is at (17, 234), 395x80, font 4. A Wine capture of "Drall
+Joins Enemy" shows the title bar holding the message's category icon (the
+row icon, `FUN_00468ab0`) at about (17, 16), its title from about x = 39,
+and the arrows at the right. The arrows' pure-blue field is their key
+colour. `message-display.md` covers the text and each class's picture.
 - The message is marked read: `*(param_1 + 0x38) = 10` (font 10, the read
   font).
+- The text widget is built with font 4, a 16-pixel cell (`FUN_0060eed0`),
+  yet the Wine captures measure smaller: the body line "An uprising has
+  begun on the Imperial controlled system Bothawui." spans 385 logical
+  pixels and the title "Uprising Begins on Bothawui" 165, which Arial's
+  metrics give at a 14-pixel cell (387, 166) and not at 16 (422, 181).
+  hyp: the port draws both at 14 pixels; why font 4 renders at 14 is
+  untraced (the widget's face, `+0x38` of the font object, is unread). The
+  Battle Alert's lists measure the same way (`battle-alert-lists.md`).
 
-## Navigate (0x90, 0x96, 0x9a)
+## Select All (0x90) and the arrows (0x96, 0x9a)
 
 | Button | Position | Bitmaps | TEXTSTRA | Visible in mode |
 |---|---|---|---|---|
-| `0x90` navigate | (282, 87) | 10900 / 10901 | `0x8008` | 1 |
+| `0x90` Select All | (282, 87) | 10900 / 10901 | `0x8008` "Select All" | 1 |
 | `0x91` delete | (340, 87) | 10902 / 10903 | `0x8009` | 1 |
-| `0x96` scroll up | (390, 15) | 10919 / 10920 | — | 2 |
-| `0x9a` scroll down | (367, 15) | 10948 / 10949 | — | 2 |
+| `0x96` down | (390, 15) | 10919 / 10920, disabled 10921 | — | 2 |
+| `0x9a` up | (367, 15) | 10948 / 10949, disabled 10950 | — | 2 |
 | `0x97` display toggle | (352, 255) | 10934 / 10935 | `0x8030` | 2 (type 5) |
 | `0x98` encyclopedia | (355, 244) | 10934 / 10935 | — | 2 (type 5) |
 | `0x99` detail | (355, 281) | 10938 / 10939 | — | 2 (type 5) |
 
-In mode 2, scroll up/down navigate through the filtered message list. In mode
-1, navigate (`0x90`) advances to the next message. hyp: `0x96` and `0x9a`
-are the list view's scroll arrows, reused in mode 2 as prev/next.
+The bitmaps settle the directions: 10919 points down and 10948 up.
+`FUN_0046a200` enables `0x96` while the shown message has a next one
+(list node `+0xc`) and `0x9a` while it has a previous one (`+0x10`); a
+disabled arrow shows its hollow frame (Wine captures of "Uprising Begins
+on Bothawui", first, and "Orto Joins Enemy", last). Select All
+(`FUN_00467f10` case `0x90`) sets the selected bit on every row the
+category lists. hyp: in mode 2 the
+arrows show the previous and next message of the filtered list; the port
+stops at either end.
 
-## Close (0x28) and Display Message (0x65)
+## The right rail (0x28, 0x65..0x68)
 
-`FUN_004665f0` builds both on the right rail, by side (`+0x114 +0x9c`):
+`FUN_004665f0` builds five buttons on the right rail, by side
+(`+0x114 +0x9c`), Alliance 32x31 at x 423, Empire 44x41 at x 426. They show
+in both modes. A third bitmap is the disabled frame (`FUN_00603150(.., 2, ..)`).
 
-| Button | Alliance | Empire | Bitmaps (Alliance / Empire) | Label |
+| Button | Alliance y | Empire y | Bitmaps (Alliance / Empire) | Label (TEXTSTRA) |
 |---|---|---|---|---|
-| `0x28` close | (423, 25) 32x31 | (426, 21) 44x41 | `0x2882`/`0x2883`, `0x2888`/`0x2889` | `0x1954` |
-| `0x65` display | (423, 93) 32x31 | (426, 89) 44x41 | `0x2884`/`0x2885`, `0x288a`/`0x288b` | — |
+| `0x28` Close | 25 | 21 | `0x2882`/`0x2883`, `0x2888`/`0x2889` | `0x1954` "Close" |
+| `0x65` Display Message | 93 | 89 | `0x2884`/`0x2885`, `0x288a`/`0x288b` | `0x8020` "Display Message" |
+| `0x66` Post Messages Silently | 147 | 148 | `0x2a78`/`0x2a79`, `0x2a7a`/`0x2a7b` | `0x8005` "Post Messages Silently" |
+| `0x67` Display | 201 | 207 | `0x2a78`/`0x2a79`, `0x2a7a`/`0x2a7b`; disabled `0x2acf`, `0x2ad0` | `0x8030` "Display" |
+| `0x68` Compose Chat Message | 255 | 266 | `0x2a7c`/`0x2a7d`, `0x2a7f`/`0x2a80`; disabled `0x2a7e`, `0x2a81` | `0x8022` "Compose Chat Message" |
 
-Navigate (`0x90`, 10900/10901) and Delete (`0x91`, 10902/10903) are 56x20
+The handler is `FUN_00467f10` (vtable `0x65a1c0` slot 18).
+
+- **Post Messages Silently (`0x66`)** flips bit 4 of the active category's
+  posting flags (`FUN_0041d250`/`FUN_0041d230` with the filter mask at
+  `+0x158`; All, mask 0, uses `FUN_0041d270`/`FUN_0041d290`). The flags live
+  on the side's message manager: one shared word (`+0xc`) and per-mask
+  overrides (`+0x44`); `FUN_0048a1c0` reads the override, else the word;
+  `FUN_0048a1f0` sets the word and clears every override; `FUN_0048a210`
+  sets one override. The bit set shows `0x2ac7`/`0x2ac9` (R2 with dots)
+  labelled `0x8006`; clear shows the waves, labelled `0x8005`.
+  `FUN_004697b0` refreshes the picture on every category change. The bit
+  is what `FUN_0048a060` tests before passing a filed message's advice
+  code to the droid (`droid-advisor-triggers.md`). It does not touch the
+  message's own sound, which mode 2 plays regardless.
+- **Display (`0x67`)** starts disabled. `FUN_00469de0` lights it with
+  `0x2916`/`0x2917` (Alliance) or `0x2918`/`0x2919` (Empire) for a kind-3
+  message, and kind 5 with a target; kind 4 gets the Encyclopedia pictures
+  `0x2d20`/`0x2d47` (label `0x8031`). In mode 1 the selection notice
+  (`0x6e`, `0x29b`) and Select All (`0x90`) do the same when exactly one
+  row is selected. Nothing turns it off again. Clicked, it takes the shown
+  message (mode 2) or the first selected (mode 1): kinds 3 and 5 with a
+  target (`FUN_004ece60`) go to `+0x5c` through `FUN_00429440`, kind 4
+  opens the Encyclopedia (`FUN_0041d6b0`), and the window then posts
+  itself `0x28` (Close).
+- **Compose Chat Message (`0x68`)** is disabled when `FUN_00401080`
+  returns 1 (`DAT_006be3b8 + 0xe4`, a game without other players).
+
+Message kinds (vtable slot `+0x10`): uprising (`0x65bab0`), loyalty
+(`0x65baf8`), fleet arrival (`0x65b948`) and blockade (`0x65b828`) are
+kind 3; advice (`0x65b188`) is kind 8. Their targets at `+0x5c`: the
+system for uprising, loyalty and blockade, the arriving object for fleet
+arrival.
+
+Select All (`0x90`, 10900/10901) and Delete (`0x91`, 10902/10903) are 56x20
 at (282, 87) and (340, 87). `FUN_0042a240` opens the window only while
 window `0x0d` is not open; a rail light (`0x136..0x13e`) or F6 (`0x75`)
 while it is open does nothing.

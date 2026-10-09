@@ -626,8 +626,20 @@ mod tests {
     #[test]
     fn each_side_has_its_own_scrap_picture() {
         // FUN_0049a350 case 0x200: +0x2e is 0x408 for side 1, else 0x409.
-        assert_eq!(scrap(MissionFaction::Alliance).confirmation().unwrap().picture(), 1032);
-        assert_eq!(scrap(MissionFaction::Empire).confirmation().unwrap().picture(), 1033);
+        assert_eq!(
+            scrap(MissionFaction::Alliance)
+                .confirmation()
+                .unwrap()
+                .picture(),
+            1032
+        );
+        assert_eq!(
+            scrap(MissionFaction::Empire)
+                .confirmation()
+                .unwrap()
+                .picture(),
+            1033
+        );
     }
 
     fn drive_scrap(

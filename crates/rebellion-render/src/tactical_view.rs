@@ -31,6 +31,7 @@ use rebellion_core::troop_transport::TroopTransportState;
 use rebellion_core::world::GameWorld;
 
 use crate::bmp_cache::{resources, BmpCache, DllSource};
+use crate::scroll_bar::{ScrollBar, ScrollPointer, ScrollRange, LIST_BAR_29FC};
 use crate::sector_window::planet_picture_id;
 #[cfg(feature = "interface-test-fixtures")]
 use crate::tactical_assets::TacticalLodView;
@@ -5402,6 +5403,14 @@ pub struct TacticalState {
     /// command, simulates, or attempts to retreat.
     battle_alert_open: bool,
     battle_alert_tab: BattleAlertTab,
+    /// The first row the Battle Alert's list shows; a tab change refills
+    /// the list from the top (`FUN_00450660` → `FUN_0060a280`).
+    battle_alert_scroll: usize,
+    /// The scroll arrow held down, drawn pressed.
+    battle_alert_scroll_drag: crate::scroll_bar::ScrollDrag,
+    /// The Battle Alert's title and summary, formatted from TEXTSTRA by the
+    /// caller (`FUN_0049c0d0`); `None` keeps the port's own wording.
+    battle_alert_text: Option<(String, String)>,
     battle_alert_pressed: Option<BattleAlertControl>,
     /// The strategic world already consumed the auto-resolve result. Closing
     /// the result window must not apply the same losses a second time.
@@ -5458,6 +5467,9 @@ impl Default for TacticalState {
             battle_result_category: BattleResultCategory::CapitalShips,
             battle_alert_open: false,
             battle_alert_tab: BattleAlertTab::Summary,
+            battle_alert_scroll: 0,
+            battle_alert_scroll_drag: crate::scroll_bar::ScrollDrag::default(),
+            battle_alert_text: None,
             battle_alert_pressed: None,
             strategic_results_applied: false,
             battle_options_open: false,
@@ -5542,7 +5554,11 @@ impl TacticalState {
         self.battle_result_tab = BattleResultTab::Summary;
         self.battle_result_category = BattleResultCategory::CapitalShips;
         self.battle_alert_open = true;
+        macroquad::logging::info!("[battle_alert] opened");
         self.battle_alert_tab = BattleAlertTab::Summary;
+        self.battle_alert_scroll = 0;
+        self.battle_alert_scroll_drag = crate::scroll_bar::ScrollDrag::default();
+        self.battle_alert_text = None;
         self.battle_alert_pressed = None;
         self.strategic_results_applied = false;
         self.battle_options_open = false;
@@ -6858,10 +6874,27 @@ impl TacticalState {
         self.session.is_some()
     }
 
+    /// Set the Battle Alert's title and summary paragraph for this battle.
+    pub fn set_battle_alert_text(&mut self, title: String, summary: String) {
+        self.battle_alert_text = Some((title, summary));
+    }
+
     /// Whether the pre-battle source surface still owns tactical entry.
     #[must_use]
     pub const fn battle_alert_open(&self) -> bool {
         self.battle_alert_open
+    }
+
+    /// Whether the battle shows as a window over the command center: the
+    /// Battle Alert before it, the results after it (the 470x331 window on
+    /// the strategic canvas). The app draws the live command center beneath.
+    #[must_use]
+    pub fn over_command_center(&self) -> bool {
+        self.battle_alert_open
+            || self
+                .session
+                .as_ref()
+                .is_some_and(|session| session.phase == BattlePhase::Results)
     }
 
     /// Existing fixture scenarios predate Battle Alert and intentionally
@@ -10211,6 +10244,8 @@ struct BattleResultSkin {
 struct BattleAlertSkin {
     frame: u32,
     scene: u32,
+    /// The list pages' picture (layer 0x33, `FUN_0044f860`).
+    list_scene: u32,
     rail: u32,
     tabs: [[u32; 2]; 4],
     tab_rects: [NativeRect; 4],
@@ -10223,6 +10258,7 @@ fn battle_alert_skin(player_is_alliance: bool) -> BattleAlertSkin {
         BattleAlertSkin {
             frame: art::BATTLE_ALERT_WINDOW_ALLIANCE,
             scene: art::BATTLE_ALERT_SCENE_ALLIANCE,
+            list_scene: art::BATTLE_ALERT_SCENE_ALLIANCE_DISABLED,
             rail: art::BATTLE_RAIL_ALLIANCE,
             tabs: [
                 [
@@ -10270,6 +10306,7 @@ fn battle_alert_skin(player_is_alliance: bool) -> BattleAlertSkin {
         BattleAlertSkin {
             frame: art::BATTLE_ALERT_WINDOW_EMPIRE,
             scene: art::BATTLE_ALERT_SCENE_EMPIRE,
+            list_scene: art::BATTLE_ALERT_SCENE_EMPIRE_DISABLED,
             rail: art::BATTLE_RAIL_EMPIRE,
             tabs: [
                 [
@@ -10570,6 +10607,34 @@ fn battle_result_entries(
     }
 }
 
+thread_local! {
+    /// The bold face of the Battle Alert's fleet and ship rows (font 5).
+    static RESULT_BOLD_FONT: Option<Font> = load_ttf_font_from_bytes(include_bytes!(
+        "../../../assets/fonts/LiberationSans-Bold.ttf"
+    ))
+    .ok();
+}
+
+thread_local! {
+    /// The face the Battle Alert and result screens draw their text in.
+    /// port: the original's Windows font is Arial (Wine capture of "Battle
+    /// at Coruscant"); Liberation Sans shares its metrics.
+    static RESULT_FONT: Option<Font> = load_ttf_font_from_bytes(include_bytes!(
+        "../../../assets/fonts/LiberationSans-Regular.ttf"
+    ))
+    .ok();
+}
+
+/// The result text face, if it loaded.
+fn result_font() -> Option<Font> {
+    RESULT_FONT.with(Clone::clone)
+}
+
+/// The width of `text` in the result face at `font_size` screen pixels.
+fn result_text_width(text: &str, font: Option<&Font>, font_size: u16) -> f32 {
+    measure_text(text, font, font_size, 1.0).width
+}
+
 fn draw_result_text(
     canvas: TacticalCanvas,
     text: &str,
@@ -10579,7 +10644,18 @@ fn draw_result_text(
     color: Color,
 ) {
     let (screen_x, screen_y) = canvas.point(x, baseline_y);
-    draw_text(text, screen_x, screen_y, size * canvas.scale, color);
+    let font = result_font();
+    draw_text_ex(
+        text,
+        screen_x,
+        screen_y,
+        TextParams {
+            font: font.as_ref(),
+            font_size: (size * canvas.scale).max(1.0) as u16,
+            color,
+            ..TextParams::default()
+        },
+    );
 }
 
 fn draw_result_text_centered(
@@ -10590,18 +10666,25 @@ fn draw_result_text_centered(
     size: f32,
     color: Color,
 ) {
+    let font = result_font();
     let font_size = (size * canvas.scale).max(1.0) as u16;
-    let dimensions = measure_text(text, None, font_size, 1.0);
+    let width = result_text_width(text, font.as_ref(), font_size);
     let (screen_x, screen_y) = canvas.point(center_x, baseline_y);
-    draw_text(
+    draw_text_ex(
         text,
-        screen_x - dimensions.width * 0.5,
+        screen_x - width * 0.5,
         screen_y,
-        f32::from(font_size),
-        color,
+        TextParams {
+            font: font.as_ref(),
+            font_size,
+            color,
+            ..TextParams::default()
+        },
     );
 }
 
+/// Lines wrap at `max_width` and advance 1.35 sizes, the spacing of the
+/// Wine capture's body text.
 fn draw_result_wrapped_lines(
     canvas: TacticalCanvas,
     lines: &[String],
@@ -10611,7 +10694,9 @@ fn draw_result_wrapped_lines(
     size: f32,
     color: Color,
 ) {
+    let font = result_font();
     let font_size = (size * canvas.scale).max(1.0) as u16;
+    let advance = size * 1.35;
     for line in lines {
         let mut current = String::new();
         for word in line.split_whitespace() {
@@ -10621,10 +10706,11 @@ fn draw_result_wrapped_lines(
                 format!("{current} {word}")
             };
             if !current.is_empty()
-                && measure_text(&candidate, None, font_size, 1.0).width > max_width * canvas.scale
+                && result_text_width(&candidate, font.as_ref(), font_size)
+                    > max_width * canvas.scale
             {
                 draw_result_text(canvas, &current, x, baseline_y, size, color);
-                baseline_y += size + 2.0;
+                baseline_y += advance;
                 current = word.to_owned();
             } else {
                 current = candidate;
@@ -10632,7 +10718,7 @@ fn draw_result_wrapped_lines(
         }
         if !current.is_empty() {
             draw_result_text(canvas, &current, x, baseline_y, size, color);
-            baseline_y += size + 2.0;
+            baseline_y += advance;
         }
     }
 }
@@ -10917,18 +11003,97 @@ fn battle_alert_retreat_enabled(session: &BattleSession) -> bool {
     })
 }
 
+/// The summary's text box (`FUN_0044f860`): font 6 at (0x24, 0xd8), 0x148
+/// wide, over a black copy one pixel down and right.
+const BATTLE_ALERT_SUMMARY_X: f32 = 36.0;
+const BATTLE_ALERT_SUMMARY_Y: f32 = 216.0;
+const BATTLE_ALERT_SUMMARY_WIDTH: f32 = 328.0;
+/// Font 6's cell (`FUN_0060eed0`: lfHeight 18), the summary's line pitch.
+const BATTLE_ALERT_SUMMARY_LINE: f32 = 18.0;
+/// hyp: measured, not traced. Steam-guide 055's lines ("The Imperial fleet
+/// has entered the Deyer" 275 pixels, "system. Alliance forces have been
+/// detected on" 318) measure at an em of 15.5, not the 18-pixel cell's
+/// 16.1, as the alert's other fonts do; its title, font 0xb, measures at 21.
+const BATTLE_ALERT_SUMMARY_EM: f32 = 15.5;
+const BATTLE_ALERT_TITLE_EM: f32 = 21.0;
+/// Arial's ascent, 1854 of its 2048 units: GDI puts a cell's top there.
+const ARIAL_ASCENT: f32 = 1854.0 / 2048.0;
+
+/// The summary, wrapped in its box, each line over its shadow.
+fn draw_battle_alert_summary(canvas: TacticalCanvas, lines: &[String], color: Color) {
+    let font = result_font();
+    let font_size = (BATTLE_ALERT_SUMMARY_EM * canvas.scale).round().max(1.0) as u16;
+    let fits = |text: &str| {
+        result_text_width(text, font.as_ref(), font_size)
+            <= BATTLE_ALERT_SUMMARY_WIDTH * canvas.scale
+    };
+    let mut wrapped = Vec::new();
+    for line in lines {
+        let mut current = String::new();
+        for word in line.split_whitespace() {
+            let candidate = if current.is_empty() {
+                word.to_owned()
+            } else {
+                format!("{current} {word}")
+            };
+            if current.is_empty() || fits(&candidate) {
+                current = candidate;
+            } else {
+                wrapped.push(std::mem::replace(&mut current, word.to_owned()));
+            }
+        }
+        if !current.is_empty() {
+            wrapped.push(current);
+        }
+    }
+    let x = BATTLE_ALERT_WINDOW_X + BATTLE_ALERT_SUMMARY_X;
+    let top = BATTLE_ALERT_WINDOW_Y + BATTLE_ALERT_SUMMARY_Y;
+    for (index, line) in wrapped.iter().enumerate() {
+        let baseline =
+            top + index as f32 * BATTLE_ALERT_SUMMARY_LINE + BATTLE_ALERT_SUMMARY_EM * ARIAL_ASCENT;
+        for (dx, tint) in [(1.0, BLACK), (0.0, color)] {
+            let (screen_x, screen_y) = canvas.point(x + dx, baseline + dx);
+            draw_text_ex(
+                line,
+                screen_x,
+                screen_y,
+                TextParams {
+                    font: font.as_ref(),
+                    font_size,
+                    color: tint,
+                    ..TextParams::default()
+                },
+            );
+        }
+    }
+}
+
 fn draw_battle_alert_text(state: &TacticalState, canvas: TacticalCanvas, text_color: Color) {
     let session = state.session.as_ref().expect("active Battle Alert session");
+    let title = state.battle_alert_text.as_ref().map_or_else(
+        || format!("Battle at {}", session.system_name),
+        |(title, _)| title.clone(),
+    );
+    // FUN_0044f860: the title in font 0xb, centred in 400 from the window's
+    // left with its cell at y 16 (steam-guide 055, window at (4, 12):
+    // "Battle at Deyer" centres on x 200 and starts at y 20).
     draw_result_text_centered(
         canvas,
-        &format!("Battle at {}", session.system_name),
-        BATTLE_ALERT_WINDOW_X + 212.0,
-        BATTLE_ALERT_WINDOW_Y + 40.0,
-        18.0,
+        &title,
+        BATTLE_ALERT_WINDOW_X + 200.0,
+        BATTLE_ALERT_WINDOW_Y + 16.0 + BATTLE_ALERT_TITLE_EM * ARIAL_ASCENT,
+        BATTLE_ALERT_TITLE_EM,
         text_color,
     );
     let player_alliance = player_is_alliance(session);
     let lines = match state.battle_alert_tab {
+        BattleAlertTab::Summary if state.battle_alert_text.is_some() => {
+            vec![state
+                .battle_alert_text
+                .as_ref()
+                .map(|(_, summary)| summary.clone())
+                .unwrap_or_default()]
+        }
         BattleAlertTab::Summary => vec![
             format!(
                 "The {} fleet has entered the {} system.",
@@ -10948,55 +11113,375 @@ fn draw_battle_alert_text(state: &TacticalState, canvas: TacticalCanvas, text_co
                 }
             ),
         ],
-        BattleAlertTab::AllianceForces => vec![
-            "Alliance forces".to_owned(),
-            format!(
-                "Capital ships: {}   Fighter groups: {}",
-                session
-                    .ships
-                    .iter()
-                    .filter(|ship| ship.identity.is_alliance && ship.alive)
-                    .count(),
-                session
-                    .fighters
-                    .iter()
-                    .filter(|fighter| fighter.identity.is_alliance && fighter.alive)
-                    .count()
-            ),
-        ],
-        BattleAlertTab::ImperialForces => vec![
-            "Imperial forces".to_owned(),
-            format!(
-                "Capital ships: {}   Fighter groups: {}",
-                session
-                    .ships
-                    .iter()
-                    .filter(|ship| !ship.identity.is_alliance && ship.alive)
-                    .count(),
-                session
-                    .fighters
-                    .iter()
-                    .filter(|fighter| !fighter.identity.is_alliance && fighter.alive)
-                    .count()
-            ),
-        ],
-        BattleAlertTab::System => vec![
-            format!("System summary: {}", session.system_name),
-            "Opposing fleets are present. A space battle is imminent.".to_owned(),
-        ],
+        // The other tabs show the list instead (FUN_00450660).
+        BattleAlertTab::AllianceForces
+        | BattleAlertTab::ImperialForces
+        | BattleAlertTab::System => Vec::new(),
     };
-    draw_result_wrapped_lines(
-        canvas,
-        &lines,
-        BATTLE_ALERT_WINDOW_X + 38.0,
-        BATTLE_ALERT_WINDOW_Y + 225.0,
-        340.0,
-        14.0,
-        text_color,
-    );
+    draw_battle_alert_summary(canvas, &lines, text_color);
 }
 
-fn draw_original_battle_alert(state: &mut TacticalState, cache: &mut BmpCache) -> TacticalAction {
+/// The Battle Alert's list (`FUN_0044f860`): `FUN_00607ea0` at (0x53, 0x28),
+/// 0x100 by 0xea, rows 0x28 high. A row's picture and text cell start at
+/// its top left: the GOKRES minis of the System Assets capture (steam-guide
+/// 056, whose window sits at (1, 5)) are exactly at (83, 80) and (83, 120).
+const BATTLE_ALERT_LIST_X: f32 = 83.0;
+const BATTLE_ALERT_LIST_Y: f32 = 40.0;
+const BATTLE_ALERT_LIST_WIDTH: f32 = 256.0;
+const BATTLE_ALERT_LIST_HEIGHT: f32 = 234.0;
+const BATTLE_ALERT_ROW_HEIGHT: f32 = 40.0;
+/// `FUN_00450e10`: the text starts 0x46 in, 0x5a when indented, the
+/// indented picture 0x14 in.
+const BATTLE_ALERT_TEXT_X: f32 = 70.0;
+const BATTLE_ALERT_INDENT: f32 = 20.0;
+/// The centred rows (`+0x50 = 1`) centre on x 203.5 in captures 056 and
+/// 057.
+const BATTLE_ALERT_CENTRE_WIDTH: f32 = 241.0;
+/// hyp: measured, not traced. Font 4's rows measure at a 14-pixel cell
+/// ("GenCore Level II" 91 pixels wide, "A-wing" 36), font 5's in bold
+/// ("Deyer" 34), and the 0xb heading at an em of 20.5 ("Alliance Forces"
+/// 142 wide; a 24-pixel cell would give 148), as the Message Index's text
+/// does (`ghidra/notes/message-index-rows.md`).
+const BATTLE_ALERT_ROW_EM: f32 = 14.0 * 2048.0 / 2288.0;
+const BATTLE_ALERT_HEADING_EM: f32 = 20.5;
+
+/// How a Battle Alert row draws (`FUN_00450e10`'s font and `+0x50`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BattleAlertRowStyle {
+    /// The page's heading, 0x1923..0x1925, font 0xb, centred.
+    Heading,
+    /// A fleet, font 5 (bold) without a picture, centred.
+    Fleet,
+    /// A capital ship, font 5 with its mini.
+    Ship,
+    /// What a ship carries or the system holds, font 4 with its mini.
+    Unit,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct BattleAlertRow {
+    label: String,
+    style: BattleAlertRowStyle,
+    /// The GOKRES mini (`FUN_0042c3b0(.., 0, 1)`).
+    mini: Option<u32>,
+    /// Carried by a ship: picture and text 0x14 further in.
+    indented: bool,
+}
+
+impl BattleAlertRow {
+    fn heading(label: &str) -> Self {
+        Self {
+            label: label.to_owned(),
+            style: BattleAlertRowStyle::Heading,
+            mini: None,
+            indented: false,
+        }
+    }
+
+    fn unit(mini: Option<u32>, label: String, indented: bool) -> Self {
+        Self {
+            label,
+            style: BattleAlertRowStyle::Unit,
+            mini,
+            indented,
+        }
+    }
+}
+
+/// The rows `FUN_00450770` fills the list with for `tab`. The force pages
+/// list each of that side's fleets at the system (`FUN_004ffef0`), then each
+/// ship (`FUN_00502db0`) and what it carries: squadrons, regiments and
+/// personnel (`FUN_00450ce0`). System Assets lists the system's facilities
+/// (families 0x20..0x2f, `FUN_00539d70`), regiments (`FUN_00504c40`) and
+/// personnel (`FUN_00536da0`).
+///
+/// port: squadrons stationed at the system (`FUN_00503a50`, under the
+/// system's name) are not listed; the port keeps squadrons aboard fleets.
+/// The facilities follow the port's lists: defenses, then manufacturing,
+/// then production.
+fn battle_alert_rows(
+    session: &BattleSession,
+    world: &GameWorld,
+    transport: &TroopTransportState,
+    tab: BattleAlertTab,
+) -> Vec<BattleAlertRow> {
+    use crate::fleet_window::{listed_units, FleetWindowEntry, FleetWindowTab};
+    let Some(system) = world.systems.get(session.system) else {
+        return Vec::new();
+    };
+    let alliance = match tab {
+        BattleAlertTab::Summary => return Vec::new(),
+        BattleAlertTab::AllianceForces => true,
+        BattleAlertTab::ImperialForces => false,
+        BattleAlertTab::System => {
+            use crate::system_window::{
+                character_mini_resource_id, defense_facility_mini, manufacturing_facility_mini,
+                production_facility_mini, special_force_mini, troop_mini,
+            };
+            let unit = |found: Option<(u32, &str)>| {
+                found.map(|(mini, label)| BattleAlertRow::unit(Some(mini), label.to_owned(), false))
+            };
+            let mut rows = vec![BattleAlertRow::heading("System Assets")];
+            rows.extend(system.defense_facilities.iter().filter_map(|&key| {
+                unit(defense_facility_mini(
+                    world.defense_facilities.get(key)?.class_dat_id,
+                ))
+            }));
+            rows.extend(system.manufacturing_facilities.iter().filter_map(|&key| {
+                unit(manufacturing_facility_mini(
+                    world.manufacturing_facilities.get(key)?.class_dat_id,
+                ))
+            }));
+            rows.extend(system.production_facilities.iter().filter_map(|&key| {
+                unit(production_facility_mini(
+                    world.production_facilities.get(key)?.class_dat_id,
+                ))
+            }));
+            rows.extend(
+                system
+                    .ground_units
+                    .iter()
+                    .filter_map(|&key| unit(troop_mini(world.troops.get(key)?.class_dat_id))),
+            );
+            rows.extend(
+                crate::quadrant_icons::system_members(world, session.system).filter_map(
+                    |(member, _, _)| match member {
+                        rebellion_core::missions::MissionMember::Character(key) => {
+                            let character = world.characters.get(key)?;
+                            Some(BattleAlertRow::unit(
+                                character_mini_resource_id(character.dat_id, character.is_major),
+                                character.name.clone(),
+                                false,
+                            ))
+                        }
+                        rebellion_core::missions::MissionMember::SpecialForce(key) => unit(
+                            special_force_mini(world.special_forces.get(key)?.class_dat_id),
+                        ),
+                    },
+                ),
+            );
+            return rows;
+        }
+    };
+    let mut rows = vec![BattleAlertRow::heading(if alliance {
+        "Alliance Forces"
+    } else {
+        "Imperial Forces"
+    })];
+    for &fleet in &system.fleets {
+        if world
+            .fleets
+            .get(fleet)
+            .is_none_or(|value| value.is_alliance != alliance)
+        {
+            continue;
+        }
+        rows.push(BattleAlertRow {
+            label: world.fleet_name(fleet).unwrap_or_default().to_owned(),
+            style: BattleAlertRowStyle::Fleet,
+            mini: None,
+            indented: false,
+        });
+        let ships = listed_units(
+            world,
+            transport,
+            FleetWindowEntry::Fleet(fleet),
+            FleetWindowTab::CapitalShips,
+        );
+        for (mini, label, index) in ships {
+            rows.push(BattleAlertRow {
+                label,
+                style: BattleAlertRowStyle::Ship,
+                mini,
+                indented: false,
+            });
+            let Some(index) = index else {
+                continue;
+            };
+            for tab in [
+                FleetWindowTab::Fighters,
+                FleetWindowTab::Troops,
+                FleetWindowTab::Personnel,
+            ] {
+                rows.extend(
+                    listed_units(
+                        world,
+                        transport,
+                        FleetWindowEntry::Ship { fleet, index },
+                        tab,
+                    )
+                    .into_iter()
+                    .map(|(mini, label, _)| BattleAlertRow::unit(mini, label, true)),
+                );
+            }
+        }
+    }
+    rows
+}
+
+/// The rows the list shows at once, a partial last row included.
+fn battle_alert_visible_rows() -> usize {
+    (BATTLE_ALERT_LIST_HEIGHT / BATTLE_ALERT_ROW_HEIGHT).ceil() as usize
+}
+
+/// Draw the list page and its scroll bar, and scroll on the arrows, the
+/// track and the wheel.
+fn draw_battle_alert_list(
+    state: &mut TacticalState,
+    cache: &mut BmpCache,
+    canvas: TacticalCanvas,
+    rows: &[BattleAlertRow],
+    mouse: (f32, f32),
+) {
+    state.battle_alert_scroll = state
+        .battle_alert_scroll
+        .min(battle_alert_scroll_range(0, rows.len()).max_first());
+    let origin_x = BATTLE_ALERT_WINDOW_X + BATTLE_ALERT_LIST_X;
+    let origin_y = BATTLE_ALERT_WINDOW_Y + BATTLE_ALERT_LIST_Y;
+    let (clip_x, clip_y) = canvas.point(origin_x, origin_y);
+    set_tactical_aperture_clip(Some(NativeRect::new(
+        clip_x,
+        clip_y,
+        BATTLE_ALERT_LIST_WIDTH * canvas.scale,
+        BATTLE_ALERT_LIST_HEIGHT * canvas.scale,
+    )));
+    let regular = result_font();
+    let bold = RESULT_BOLD_FONT.with(Clone::clone);
+    let first = state.battle_alert_scroll;
+    for (line, row) in rows
+        .iter()
+        .skip(first)
+        .take(battle_alert_visible_rows())
+        .enumerate()
+    {
+        let top = origin_y + line as f32 * BATTLE_ALERT_ROW_HEIGHT;
+        let indent = if row.indented {
+            BATTLE_ALERT_INDENT
+        } else {
+            0.0
+        };
+        if let Some(mini) = row.mini {
+            draw_original_bitmap(
+                cache,
+                DllSource::Gokres,
+                mini,
+                canvas,
+                origin_x + indent,
+                top,
+                None,
+            );
+        }
+        let (em, font) = match row.style {
+            BattleAlertRowStyle::Heading => (BATTLE_ALERT_HEADING_EM, regular.as_ref()),
+            BattleAlertRowStyle::Fleet | BattleAlertRowStyle::Ship => {
+                (BATTLE_ALERT_ROW_EM, bold.as_ref().or(regular.as_ref()))
+            }
+            BattleAlertRowStyle::Unit => (BATTLE_ALERT_ROW_EM, regular.as_ref()),
+        };
+        // GDI places the cell's top at `top`; Arial's ascent is 1854 of
+        // its 2048 units.
+        let baseline = top + em * 1854.0 / 2048.0;
+        let font_size = (em * canvas.scale).max(1.0) as u16;
+        let centred = matches!(
+            row.style,
+            BattleAlertRowStyle::Heading | BattleAlertRowStyle::Fleet
+        );
+        let (x, y) = if centred {
+            let width = result_text_width(&row.label, font, font_size) / canvas.scale;
+            canvas.point(
+                origin_x + (BATTLE_ALERT_CENTRE_WIDTH - width) / 2.0,
+                baseline,
+            )
+        } else {
+            canvas.point(origin_x + indent + BATTLE_ALERT_TEXT_X, baseline)
+        };
+        draw_text_ex(
+            &row.label,
+            x,
+            y,
+            TextParams {
+                font,
+                font_size,
+                color: WHITE,
+                ..TextParams::default()
+            },
+        );
+    }
+    set_tactical_aperture_clip(None);
+
+    // The scroll bar shows while the rows overflow the list (captures 056
+    // and 057).
+    let bar = battle_alert_scroll_bar();
+    let range = battle_alert_scroll_range(first, rows.len());
+    let pointer = ScrollPointer {
+        at: Some((
+            mouse.0 - BATTLE_ALERT_WINDOW_X,
+            mouse.1 - BATTLE_ALERT_WINDOW_Y,
+        )),
+        pressed: is_mouse_button_pressed(MouseButton::Left),
+        down: is_mouse_button_down(MouseButton::Left),
+        released: is_mouse_button_released(MouseButton::Left),
+    };
+    state.battle_alert_scroll = bar.update(
+        &mut state.battle_alert_scroll_drag,
+        range,
+        range.visible.floor() as usize,
+        pointer,
+    );
+    let range = ScrollRange {
+        first: state.battle_alert_scroll,
+        ..range
+    };
+    for blit in bar.blits(range, &state.battle_alert_scroll_drag, pointer) {
+        draw_original_bitmap(
+            cache,
+            DllSource::Strategy,
+            blit.resource,
+            canvas,
+            BATTLE_ALERT_WINDOW_X + blit.x,
+            BATTLE_ALERT_WINDOW_Y + blit.y,
+            Some(Rect::new(0.0, 0.0, 13.0, blit.height)),
+        );
+    }
+    let in_list = mouse.0 >= origin_x
+        && mouse.0 < origin_x + BATTLE_ALERT_LIST_WIDTH
+        && mouse.1 >= origin_y
+        && mouse.1 < origin_y + BATTLE_ALERT_LIST_HEIGHT;
+    let wheel = mouse_wheel().1;
+    if in_list && wheel != 0.0 && range.overflows() {
+        state.battle_alert_scroll = if wheel > 0.0 {
+            state.battle_alert_scroll.saturating_sub(1)
+        } else {
+            (state.battle_alert_scroll + 1).min(range.max_first())
+        };
+    }
+}
+
+/// The list's bar, RCDATA `0x29fc` (`FUN_0044f860`), in window coordinates.
+fn battle_alert_scroll_bar() -> ScrollBar {
+    ScrollBar::new(
+        LIST_BAR_29FC,
+        BATTLE_ALERT_LIST_X,
+        BATTLE_ALERT_LIST_Y,
+        BATTLE_ALERT_LIST_WIDTH,
+        BATTLE_ALERT_LIST_HEIGHT,
+    )
+}
+
+fn battle_alert_scroll_range(first: usize, rows: usize) -> ScrollRange {
+    ScrollRange {
+        first,
+        visible: BATTLE_ALERT_LIST_HEIGHT / BATTLE_ALERT_ROW_HEIGHT,
+        total: rows,
+    }
+}
+
+fn draw_original_battle_alert(
+    state: &mut TacticalState,
+    cache: &mut BmpCache,
+    world: &GameWorld,
+    transport: &TroopTransportState,
+) -> TacticalAction {
     let canvas = TacticalCanvas::new(screen_width(), screen_height());
     let session = state.session.as_ref().expect("active Battle Alert session");
     prewarm_tactical_font_atlas(session, canvas, &mut state.warmed_font_sizes);
@@ -11008,20 +11493,7 @@ fn draw_original_battle_alert(state: &mut TacticalState, cache: &mut BmpCache) -
         Color::from_rgba(40, 255, 65, 255)
     };
 
-    clear_background(BLACK);
-    draw_original_bitmap(
-        cache,
-        DllSource::Strategy,
-        if player_alliance {
-            resources::strategy::ALLIANCE_COMMAND_CENTER_SHELL
-        } else {
-            resources::strategy::EMPIRE_COMMAND_CENTER_SHELL
-        },
-        canvas,
-        0.0,
-        0.0,
-        Some(Rect::new(0.0, 0.0, 640.0, 480.0)),
-    );
+    // The app has drawn the live command center beneath this window.
     draw_strategy_bitmap(
         cache,
         skin.frame,
@@ -11029,14 +11501,27 @@ fn draw_original_battle_alert(state: &mut TacticalState, cache: &mut BmpCache) -
         BATTLE_ALERT_WINDOW_X,
         BATTLE_ALERT_WINDOW_Y,
     );
+    // FUN_00450660: Summary shows layer 0x32, the scene; the list pages
+    // layer 0x33, their own picture under the same title.
     draw_strategy_bitmap(
         cache,
-        skin.scene,
+        if state.battle_alert_tab == BattleAlertTab::Summary {
+            skin.scene
+        } else {
+            skin.list_scene
+        },
         canvas,
         BATTLE_ALERT_WINDOW_X + 12.0,
         BATTLE_ALERT_WINDOW_Y + 13.0,
     );
     draw_battle_alert_text(state, canvas, text_color);
+    if state.battle_alert_tab != BattleAlertTab::Summary {
+        let rows = battle_alert_rows(session, world, transport, state.battle_alert_tab);
+        let (pointer_x, pointer_y) = mouse_position();
+        let pointer = canvas.logical_pointer(pointer_x, pointer_y);
+        draw_battle_alert_list(state, cache, canvas, &rows, pointer);
+    }
+    let session = state.session.as_ref().expect("active Battle Alert session");
     draw_strategy_bitmap(
         cache,
         skin.rail,
@@ -11067,6 +11552,9 @@ fn draw_original_battle_alert(state: &mut TacticalState, cache: &mut BmpCache) -
             BATTLE_ALERT_WINDOW_Y + rect.y,
         );
         if mouse_released && rect.contains(local_mouse.0, local_mouse.1) {
+            if state.battle_alert_tab != tab {
+                state.battle_alert_scroll = 0;
+            }
             state.battle_alert_tab = tab;
             macroquad::logging::info!("[battle_alert] tab={}", tab.label());
         }
@@ -11170,21 +11658,7 @@ fn draw_original_battle_results(
         Color::from_rgba(40, 255, 65, 255)
     };
 
-    clear_background(BLACK);
-    let shell = if player_alliance {
-        resources::strategy::ALLIANCE_COMMAND_CENTER_SHELL
-    } else {
-        resources::strategy::EMPIRE_COMMAND_CENTER_SHELL
-    };
-    draw_original_bitmap(
-        cache,
-        DllSource::Strategy,
-        shell,
-        canvas,
-        0.0,
-        0.0,
-        Some(Rect::new(0.0, 0.0, 640.0, 480.0)),
-    );
+    // The app has drawn the live command center beneath this window.
     draw_strategy_bitmap(
         cache,
         skin.frame,
@@ -11344,7 +11818,7 @@ pub fn draw_tactical_view(
     }
 
     if state.battle_alert_open {
-        return draw_original_battle_alert(state, bmp_cache);
+        return draw_original_battle_alert(state, bmp_cache, world, troop_transport);
     }
 
     let mut action = TacticalAction::None;
@@ -15207,7 +15681,11 @@ mod tests {
         let fleet = world.fleets.insert(rebellion_core::world::Fleet {
             location: SystemKey::default(),
             capital_ships: Vec::new(),
-            fighters: vec![rebellion_core::world::FighterEntry { class, count: 2, carrier: 0 }],
+            fighters: vec![rebellion_core::world::FighterEntry {
+                class,
+                count: 2,
+                carrier: 0,
+            }],
             characters: Vec::new(),
             is_alliance: true,
             has_death_star: false,

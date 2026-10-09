@@ -3,7 +3,7 @@ title: "Droid Advisor Triggers and Playback"
 description: "When the cockpit droids animate: the per-side advice agent's reaction slots, the GData SPT action tables, the message codes that fill them, idle chatter, and the droid command player"
 category: "ghidra"
 created: 2026-10-08
-updated: 2026-10-08
+updated: 2026-10-09
 ---
 
 # Droid Advisor Triggers and Playback
@@ -154,7 +154,9 @@ At creation, one slot's stamp is set to 40000, so it plays first:
 A game message carries an advice code at `+0x28`. When `FUN_0048a060` files
 a message of kinds 3, 4, 5 or 8, it passes that code to the agent's
 `VT[5]`: `FUN_004c44b0` (Alliance) or `FUN_004c22f0` (Empire). That sets the
-slot's stamp to now plus a window.
+slot's stamp to now plus a window. It withholds the code when bit 4 of the
+message's category flags (`FUN_0048a1c0`) is set: the Message Index's Post
+Messages Silently button (`message-index-rows.md`, "The right rail").
 
 The setters are the message classes that `FUN_00489740` builds. The table
 below names each code from the message text (TEXTSTRA `RT_RCDATA`) beside
@@ -162,12 +164,12 @@ its setter.
 
 | Code | Event | Setter | Alliance slot (window) | Empire slot (window) |
 |---|---|---|---|---|
-| 1 | Uprising begins | `FUN_00499460` | 52 (10) | 48 (10) |
-| 2 | Uprising ends | `FUN_00499460` | 53 (10) | 49 (10) |
+| 1 | Uprising news for the side: it begins on an enemy world or ends on its own; a world joins the side (`FUN_00499760`) | `FUN_00499460`, `FUN_00499760` | 52 (10) | 48 (10) |
+| 2 | The reverse: an uprising begins on the side's world or ends on an enemy's; a world joins the enemy | `FUN_00499460`, `FUN_00499760` | 53 (10) | 49 (10) |
 | 3 | Facility idle, deployed or lost | `FUN_0048be60`, `FUN_00497690`, `FUN_00497940` | 56 (5) | 52 (10) |
 | 4 | Research complete | `FUN_00499aa0` | 58 (10) | 54 (10) |
-| 5 | Headquarters arrives | `FUN_004981c0` | 59 (10) | 55 (10) |
-| 6 | Units arrive | `FUN_004981c0` | 61 (10) | 57 (10) |
+| 5 | A fleet or capital ships arrive (cases 1, 2) | `FUN_004981c0` | 59 (10) | 55 (10) |
+| 6 | Other units or the headquarters arrive (cases 3, 4) | `FUN_004981c0` | 61 (10) | 57 (10) |
 | 8 | Capital ship repaired | `FUN_00499de0` | 60 (10) | 56 (10) |
 | 9 | Squadron at full strength | `FUN_00499de0` | 62 (10) | 58 (10) |
 | `0xc` | Saboteurs strike; maintenance shortfall | `FUN_0048b9a0`, `FUN_00498970` | 57 (10) | 53 (10) |
@@ -281,6 +283,53 @@ droids' queues (`FUN_0041da30` → `FUN_0042d620`, keys `0xdead` and
 one clip (ALBRIEF 10165, wave 1165, 4.3 s; EMBRIEF 11157, wave 1157,
 1.3 s) and step 13.
 
+### Advice topics
+
+The agent's topics are a TEXTSTRA `RT_RCDATA` table: `0x6000` for the
+Alliance, `0x6800` for the Empire. Word 0 is the count (31). Entry `i`
+sits at `base + 3i`; its kind is the low nibble of byte 0 and its order is
+the u16 at byte 2 (10..310). The topic's title is `base + 3i + 1` and its
+body `base + 3i + 2`, both ending at `0x01`. `FUN_0048b460` reads the table
+and `FUN_005f5440` keeps it in order.
+
+`FUN_0048b2e0` files a topic in the Advice category with code `0x2a`, the
+advice picture (`0x42f` Alliance, `0x430` Empire) and sound (`0x461`,
+`0x462`).
+
+- Step 13 calls `FUN_00439f20`. It builds the held list once (`+0x150`
+  bit `0x10000000`) and files every kind 7 topic: nine for the Alliance.
+- `FUN_0043a0b0(bit)` files the first held topic of a window's kind the
+  first time the player opens it: the sector window (`FUN_00429ce0`, bit
+  1, kind 6), System (type 9, bit 2, kind 2), Fleet (type 4, bit 4, kind
+  3), System Defenses (type 10, bit 8, kind 5) and Missions (type 11, bit
+  `0x10`, kind 4). `FUN_0045aac0` opens the typed windows.
+- The side update (`FUN_004866b0` → `FUN_00439bc0`) files one more every
+  300 steps: `FUN_00439fb0` takes the first held topic whose kind is open.
+  Kinds 2..6 wait for their window's bit; the others are always open.
+
+All of it waits on Agent Advice (`DAT_006b28b0` bit `0x8000` clear), which
+Easy turns on. `FUN_004397a0` saves neither `+0x150` nor `+0x154`, so a
+loaded game builds the list again at its first release.
+
+### Advice codes `0x2a` and `0x2b`
+
+`0x2a` stamps one of four slots ten steps on, and only when none of the
+four is pending: `FUN_004c4430` (Alliance, slots 69..72) and `FUN_004c2270`
+(Empire, 66..69). `0x2b` stamps one of two whatever is pending:
+`FUN_004c4480` (Alliance, 73..74) and `FUN_004c22c0` (Empire, 70..71).
+`FUN_0041cd80(n)` picks the slot.
+
+### Mission refusals
+
+A refused mission reaches agent slot `+0xc`: `FUN_004c2940` (Alliance) or
+`FUN_004c0870` (Empire). The same status twice stamps the first repeat
+slot; a third time stamps the second and clears the memory
+(`FUN_004c43d0`, `FUN_004c21d0`). The repeat slots are 15 and 16 for the
+Alliance, 16 and 17 for the Empire. A generic `0x40` status rolls
+`FUN_0041cd80(2)` and stamps one of two slots ten steps on: 17/18 for the
+Alliance, 18/19 for the Empire. The port maps its refusals to statuses in
+`MissionRefusal::status`.
+
 ### The step clock
 
 The scheduler's step count advances by the speed's rate each day. Timed in
@@ -291,13 +340,9 @@ Slow.
 
 ## Open
 
-- `FUN_0048a1c0`'s bit 4, which withholds a message's code, is untraced.
 - Who sets bit `0x4000` (`FUN_00487f80`) is untraced.
 - The 50% chatter roll uses the session random stream (`FUN_005f5700`).
 - What adds the 0.2 s to each day is untraced.
 - The session mode at `+0x104` is not named.
-- Step 13's `FUN_00439f20` flushes held events into the Message Index, and
-  the original's Advice list then holds introductory topics. Which events
-  are held is untraced; the port's Advice list is empty after the tour.
 - `+0x84` bits 2..3, which split modes 0x13..0x16, are written by no
   recovered function. hyp: the port uses the popularity majority.

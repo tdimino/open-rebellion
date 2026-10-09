@@ -26,7 +26,7 @@ use dat_dumper::types::troops::TroopsFile;
 use rebellion_core::dat::{ExplorationStatus, SectorGroup};
 use rebellion_core::ids::{DatId, SectorKey, SystemKey};
 use rebellion_core::world::{
-    BuildableClass, CapitalShipClass, ClassStats, Character, ControlKind, DefenseFacilityClassDef,
+    BuildableClass, CapitalShipClass, Character, ClassStats, ControlKind, DefenseFacilityClassDef,
     FighterClass, GameWorld, GnprtbEntry, GnprtbParams, MissionMemberRules, MissionRecord,
     MissionTargetRules, MstbEntry, MstbTable, SdprtbEntry, SdprtbParams, Sector, SeedOptions,
     SkillPair, SpecialForceClassDef, System, TroopClassDef,
@@ -44,6 +44,7 @@ pub mod replay_fixture;
 pub mod save;
 pub mod seeds;
 pub mod simulation;
+pub mod text_templates;
 
 /// Load selected named `WAVE` resources from an original Win32 DLL.
 #[cfg(not(target_arch = "wasm32"))]
@@ -431,6 +432,177 @@ pub fn load_game_data_with_options(
         }
     }
 
+    // Classes before the seeds: the starting budget prices every unit and
+    // facility by its class maintenance (FUN_0051b1f0).
+    // ── 9. Troop classes ──────────────────────────────────────────────────
+    let troops_path = gdata_path.join("TROOPSD.DAT");
+    if file_available(&troops_path) {
+        let troops_file: TroopsFile = read_dat_file(&troops_path)?;
+        for dat in &troops_file.troops {
+            // TROOPSD stores a sequential record id (1..N), while army
+            // deployments reference the original compound DatId. Reattach
+            // the file header's family byte so combat resolves the real class
+            // statistics instead of falling back to generic 10/10 values.
+            let class_dat_id = if dat.id >> 24 == 0 {
+                DatId::new((troops_file.family_id << 24) | dat.id)
+            } else {
+                DatId::new(dat.id)
+            };
+            world.troop_classes.insert(
+                class_dat_id,
+                TroopClassDef {
+                    attack_strength: dat.attack_strength,
+                    defense_strength: dat.defense_strength,
+                    detection: dat.detection,
+                },
+            );
+        }
+    }
+
+    // ── 10. Defense facility classes ─────────────────────────────────────────
+    let deffac_path = gdata_path.join("DEFFACSD.DAT");
+    if file_available(&deffac_path) {
+        let deffac_file: DefenseFacilitiesFile = read_dat_file(&deffac_path)?;
+        for dat in &deffac_file.facilities {
+            // Keyed like the seeded instances' `class_dat_id`: the record's
+            // family byte over its sequential id (0x22000001..).
+            world.defense_facility_classes.insert(
+                class_dat_id(dat.family_id, dat.id),
+                DefenseFacilityClassDef {
+                    bombardment_defense: dat.bombardment_defense.cast_signed(),
+                },
+            );
+        }
+    }
+
+    // ── 10a. Buildable classes ─────────────────────────────────────────────
+    // What each regiment, special-force and facility class costs to build,
+    // for Build Selection (FUN_00437880 lists them, FUN_00538220 prices them).
+    let mut buildable =
+        |family: u32, id: u32, text: u16, head: [u32; 6], rate: u32, stats: ClassStats| {
+            let [is_alliance, is_empire, refined, maintenance, order, difficulty] = head;
+            world.buildable_classes.insert(
+                class_dat_id(family, id),
+                BuildableClass {
+                    name: lookup(text, "Class"),
+                    is_alliance: is_alliance != 0,
+                    is_empire: is_empire != 0,
+                    refined_material_cost: refined,
+                    maintenance_cost: maintenance,
+                    research_order: order,
+                    research_difficulty: difficulty,
+                    processing_rate: rate,
+                    stats,
+                },
+            );
+        };
+    let troops_path = gdata_path.join("TROOPSD.DAT");
+    if file_available(&troops_path) {
+        let file: TroopsFile = read_dat_file(&troops_path)?;
+        for d in &file.troops {
+            let head = [
+                d.is_alliance,
+                d.is_empire,
+                d.refined_material_cost,
+                d.maintenance_cost,
+                d.research_order,
+                d.research_difficulty,
+            ];
+            let stats = ClassStats {
+                bombardment: d.bombardment_defense,
+                ..ClassStats::default()
+            };
+            buildable(d.family_id, d.id, d.text_stra_dll_id, head, 0, stats);
+        }
+    }
+    if file_available(&specfc_path) {
+        let file: SpecialForcesFile = read_dat_file(&specfc_path)?;
+        for d in &file.units {
+            let head = [
+                d.is_alliance,
+                d.is_empire,
+                d.refined_material_cost,
+                d.maintenance_cost,
+                d.research_order,
+                d.research_difficulty,
+            ];
+            buildable(
+                d.family_id,
+                d.id,
+                d.text_stra_dll_id,
+                head,
+                0,
+                ClassStats::default(),
+            );
+        }
+    }
+    if file_available(&deffac_path) {
+        let file: DefenseFacilitiesFile = read_dat_file(&deffac_path)?;
+        for d in &file.facilities {
+            let head = [
+                d.is_alliance,
+                d.is_empire,
+                d.refined_material_cost,
+                d.maintenance_cost,
+                d.research_order,
+                d.research_difficulty,
+            ];
+            let stats = ClassStats {
+                bombardment: d.bombardment_defense,
+                attack_strength: d.attack_strength,
+                shield_strength: d.shield_strength,
+            };
+            buildable(d.family_id, d.id, d.text_stra_dll_id, head, 0, stats);
+        }
+    }
+    // ALLFACSD: the Alliance HQ (family 0x20). It builds nothing, but its
+    // side flags decide whether it survives a change of holder
+    // (FUN_004f27d0). Its record has the common head after the 24-byte
+    // prefix.
+    let allfac_path = gdata_path.join("ALLFACSD.DAT");
+    if file_available(&allfac_path) {
+        let file: AllFacilitiesFile = read_dat_file(&allfac_path)?;
+        for d in &file.entries {
+            let head = [d.extra1, d.extra2, d.extra3, d.extra4, d.extra5, d.extra6];
+            buildable(
+                d.family_id,
+                d.id,
+                d.text_stra_dll_id,
+                head,
+                0,
+                ClassStats::default(),
+            );
+        }
+    }
+    for name in ["MANFACSD.DAT", "PROFACSD.DAT"] {
+        let path = gdata_path.join(name);
+        if file_available(&path) {
+            let file: ManufacturingFacilitiesFile = read_dat_file(&path)?;
+            for d in &file.facilities {
+                let head = [
+                    d.is_alliance,
+                    d.is_empire,
+                    d.refined_material_cost,
+                    d.maintenance_cost,
+                    d.research_order,
+                    d.research_difficulty,
+                ];
+                let stats = ClassStats {
+                    bombardment: d.bombardment_defense,
+                    ..ClassStats::default()
+                };
+                buildable(
+                    d.family_id,
+                    d.id,
+                    d.text_stra_dll_id,
+                    head,
+                    d.processing_rate,
+                    stats,
+                );
+            }
+        }
+    }
+
     // ── 8. Seed tables ──────────────────────────────────────────────────────
     // Populate starting fleets, ground units, and facilities from the DAT
     // tables after seeding parameters are available.
@@ -520,172 +692,6 @@ pub fn load_game_data_with_options(
     // target (`FUN_0055fe70`).
     for (_, c) in &mut world.characters {
         c.recruited = c.current_system.is_some() || c.current_fleet.is_some();
-    }
-
-    // ── 9. Troop classes ──────────────────────────────────────────────────
-    let troops_path = gdata_path.join("TROOPSD.DAT");
-    if file_available(&troops_path) {
-        let troops_file: TroopsFile = read_dat_file(&troops_path)?;
-        for dat in &troops_file.troops {
-            // TROOPSD stores a sequential record id (1..N), while army
-            // deployments reference the original compound DatId. Reattach
-            // the file header's family byte so combat resolves the real class
-            // statistics instead of falling back to generic 10/10 values.
-            let class_dat_id = if dat.id >> 24 == 0 {
-                DatId::new((troops_file.family_id << 24) | dat.id)
-            } else {
-                DatId::new(dat.id)
-            };
-            world.troop_classes.insert(
-                class_dat_id,
-                TroopClassDef {
-                    attack_strength: dat.attack_strength,
-                    defense_strength: dat.defense_strength,
-                    detection: dat.detection,
-                },
-            );
-        }
-    }
-
-    // ── 10. Defense facility classes ─────────────────────────────────────────
-    let deffac_path = gdata_path.join("DEFFACSD.DAT");
-    if file_available(&deffac_path) {
-        let deffac_file: DefenseFacilitiesFile = read_dat_file(&deffac_path)?;
-        for dat in &deffac_file.facilities {
-            // Keyed like the seeded instances' `class_dat_id`: the record's
-            // family byte over its sequential id (0x22000001..).
-            world.defense_facility_classes.insert(
-                class_dat_id(dat.family_id, dat.id),
-                DefenseFacilityClassDef {
-                    bombardment_defense: dat.bombardment_defense.cast_signed(),
-                },
-            );
-        }
-    }
-
-    // ── 10a. Buildable classes ─────────────────────────────────────────────
-    // What each regiment, special-force and facility class costs to build,
-    // for Build Selection (FUN_00437880 lists them, FUN_00538220 prices them).
-    let mut buildable = |family: u32,
-                         id: u32,
-                         text: u16,
-                         head: [u32; 6],
-                         rate: u32,
-                         stats: ClassStats| {
-        let [is_alliance, is_empire, refined, maintenance, order, difficulty] = head;
-        world.buildable_classes.insert(
-            class_dat_id(family, id),
-            BuildableClass {
-                name: lookup(text, "Class"),
-                is_alliance: is_alliance != 0,
-                is_empire: is_empire != 0,
-                refined_material_cost: refined,
-                maintenance_cost: maintenance,
-                research_order: order,
-                research_difficulty: difficulty,
-                processing_rate: rate,
-                stats,
-            },
-        );
-    };
-    let troops_path = gdata_path.join("TROOPSD.DAT");
-    if file_available(&troops_path) {
-        let file: TroopsFile = read_dat_file(&troops_path)?;
-        for d in &file.troops {
-            let head = [
-                d.is_alliance,
-                d.is_empire,
-                d.refined_material_cost,
-                d.maintenance_cost,
-                d.research_order,
-                d.research_difficulty,
-            ];
-            let stats = ClassStats {
-                bombardment: d.bombardment_defense,
-                ..ClassStats::default()
-            };
-            buildable(d.family_id, d.id, d.text_stra_dll_id, head, 0, stats);
-        }
-    }
-    if file_available(&specfc_path) {
-        let file: SpecialForcesFile = read_dat_file(&specfc_path)?;
-        for d in &file.units {
-            let head = [
-                d.is_alliance,
-                d.is_empire,
-                d.refined_material_cost,
-                d.maintenance_cost,
-                d.research_order,
-                d.research_difficulty,
-            ];
-            buildable(d.family_id, d.id, d.text_stra_dll_id, head, 0, ClassStats::default());
-        }
-    }
-    if file_available(&deffac_path) {
-        let file: DefenseFacilitiesFile = read_dat_file(&deffac_path)?;
-        for d in &file.facilities {
-            let head = [
-                d.is_alliance,
-                d.is_empire,
-                d.refined_material_cost,
-                d.maintenance_cost,
-                d.research_order,
-                d.research_difficulty,
-            ];
-            let stats = ClassStats {
-                bombardment: d.bombardment_defense,
-                attack_strength: d.attack_strength,
-                shield_strength: d.shield_strength,
-            };
-            buildable(d.family_id, d.id, d.text_stra_dll_id, head, 0, stats);
-        }
-    }
-    // ALLFACSD: the Alliance HQ (family 0x20). It builds nothing, but its
-    // side flags decide whether it survives a change of holder
-    // (FUN_004f27d0). Its record has the common head after the 24-byte
-    // prefix.
-    let allfac_path = gdata_path.join("ALLFACSD.DAT");
-    if file_available(&allfac_path) {
-        let file: AllFacilitiesFile = read_dat_file(&allfac_path)?;
-        for d in &file.entries {
-            let head = [d.extra1, d.extra2, d.extra3, d.extra4, d.extra5, d.extra6];
-            buildable(
-                d.family_id,
-                d.id,
-                d.text_stra_dll_id,
-                head,
-                0,
-                ClassStats::default(),
-            );
-        }
-    }
-    for name in ["MANFACSD.DAT", "PROFACSD.DAT"] {
-        let path = gdata_path.join(name);
-        if file_available(&path) {
-            let file: ManufacturingFacilitiesFile = read_dat_file(&path)?;
-            for d in &file.facilities {
-                let head = [
-                    d.is_alliance,
-                    d.is_empire,
-                    d.refined_material_cost,
-                    d.maintenance_cost,
-                    d.research_order,
-                    d.research_difficulty,
-                ];
-                let stats = ClassStats {
-                    bombardment: d.bombardment_defense,
-                    ..ClassStats::default()
-                };
-                buildable(
-                    d.family_id,
-                    d.id,
-                    d.text_stra_dll_id,
-                    head,
-                    d.processing_rate,
-                    stats,
-                );
-            }
-        }
     }
 
     // ── 10. Mission probability tables (*MSTB.DAT and *TB.DAT) ──────────────

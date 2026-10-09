@@ -90,9 +90,10 @@ def collect_entries(
         for path in sorted(base_dir.glob("*.DAT"), key=lambda item: item.name)
     ]
 
-    textstra = base_dir / "textstra.json"
-    if textstra.is_file():
-        entries.append(Entry(KIND_GAME_DATA, textstra.name, textstra))
+    for name in ("textstra.json", "textstra-rcdata.json"):
+        textstra = base_dir / name
+        if textstra.is_file():
+            entries.append(Entry(KIND_GAME_DATA, textstra.name, textstra))
 
     for dll_dir in sorted(ui_dir.iterdir(), key=lambda item: item.name):
         bmp_dir = dll_dir / "BMP"
@@ -757,7 +758,7 @@ def entry_bytes(entry: Entry) -> bytes:
         raise ValueError(
             f"runtime pack source changed after validation: {entry.key}"
         )
-    if entry.kind == KIND_GAME_DATA and entry.key == "textstra.json":
+    if entry.kind == KIND_GAME_DATA and entry.key in ("textstra.json", "textstra-rcdata.json"):
         parsed = json.loads(data)
         return json.dumps(
             parsed, ensure_ascii=False, sort_keys=True, separators=(",", ":")

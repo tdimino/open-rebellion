@@ -1244,7 +1244,11 @@ mod tests {
             pressed,
             modifiers: egui::Modifiers::default(),
         };
-        vec![vec![egui::Event::PointerMoved(pos)], vec![press(true)], vec![press(false)]]
+        vec![
+            vec![egui::Event::PointerMoved(pos)],
+            vec![press(true)],
+            vec![press(false)],
+        ]
     }
 
     #[test]
@@ -1276,7 +1280,10 @@ mod tests {
         assert!(!state.registry_open());
         assert_eq!(state.take_sfx(), Some(SfxKind::MenuSelect));
         let started = run_menu(&mut state, click_at(empire.0, empire.1));
-        assert!(matches!(started.as_slice(), [MainMenuAction::StartGame { .. }]));
+        assert!(matches!(
+            started.as_slice(),
+            [MainMenuAction::StartGame { .. }]
+        ));
     }
 
     #[test]

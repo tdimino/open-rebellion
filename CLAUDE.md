@@ -25,9 +25,11 @@ functional. Do not repeat historical parity percentages as verified results.
 - Run browser acceptance yourself with `agent-browser`, or through
   `codex-orchestrator` with Astra at medium effort. Either way, retain
   screenshots, network logs, console logs, and artifact hashes.
-- Run native GUI acceptance with `cua-driver`, which sends background right
-  clicks and keys (F3) into the macroquad window. Install, permissions, and
-  call quirks are in `agent_docs/agent-tooling.md` ("Native GUI Acceptance").
+- Run native GUI acceptance with the game's developer commands:
+  `scripts/launch-native.sh --live`, then `scripts/dev-send.sh` per step
+  (`Capture`, `Click`, `Battle at` …; `agent_docs/dev-commands.md`). Fall
+  back to `cua-driver` for what the game cannot do itself
+  (`agent_docs/agent-tooling.md`, "Native GUI Acceptance").
 - v1.0 is the complete browser build deployed through password-protected
   Cloudflare Pages; credentials belong in encrypted secrets, never in Git.
 - GitHub Actions workflow definitions are intentionally local and untracked as
@@ -98,10 +100,12 @@ green until their dedicated findings close.
 - Ask before adding production dependencies, changing architecture, or breaking
   save/data/network formats.
 - Never commit original game data, generated bitmap packs, secrets, or tokens.
+  The one exception is the saves we made on the capture VM
+  (`tools/original-capture/saves/`).
 
 ## Detailed Guides
 
-- `docs/qa/2026-09-08-full-functionality-audit/index.md` — audit entry point,
+- `docs/qa/2026-09-08-full-functionality-audit/README.md` — audit entry point,
   evidence contract, feature ledger, and definition of done. Read for all work.
 - `agent_docs/manual-cross-check.md` — read the manual before and after each
   interface feature and settle its claims against the trace. Read for UI work.
@@ -113,5 +117,8 @@ green until their dedicated findings close.
 - `agent_docs/save-load.md` — save schema and migration notes. Read for persistence.
 - `agent_docs/assets.md` — bitmap and HD pipeline. Read for visual asset work.
 - `agent_docs/dat-formats.md` — binary formats and codec rules. Read for DAT work.
+- `agent_docs/dev-commands.md` — the developer commands and live channel that
+  drive a native build (capture, scripted input, battles, messages). Read
+  before any native acceptance run.
 - `agent_docs/agent-tooling.md` — Codex, Fable, Ghidra, QA, asset, and deployment
   skill routing. Read before delegating or selecting a specialized workflow.

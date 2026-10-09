@@ -10,8 +10,8 @@
 //! to where it is dropped (`0x201`, `ghidra/notes/regiment-unload.md`).
 
 use egui_macroquad::egui;
-use rebellion_core::dat::{ExplorationStatus, Faction};
 use rebellion_core::carriage;
+use rebellion_core::dat::{ExplorationStatus, Faction};
 use rebellion_core::fleet_join;
 use rebellion_core::fog::FogState;
 use rebellion_core::ids::{DatId, FleetKey, SystemKey, TroopKey};
@@ -224,7 +224,10 @@ enum ItemObject {
         roster: u64,
     },
     /// A squadron, by its entry's index in the fleet's `fighters`.
-    Fighter { fleet: FleetKey, index: usize },
+    Fighter {
+        fleet: FleetKey,
+        index: usize,
+    },
 }
 
 impl ItemObject {
@@ -265,6 +268,12 @@ impl Default for FleetWindowState {
 }
 
 impl FleetWindowState {
+    /// Whether any window of this kind is open.
+    #[must_use]
+    pub fn any_open(&self) -> bool {
+        !self.windows.is_empty()
+    }
+
     /// Open `system`'s Fleet window at a logical point, clamped into the
     /// galaxy view, or bring its open window to the front: one per system
     /// (`FUN_0045aac0`, id `(system & 0x3ff) << 6 | 4`).
@@ -930,7 +939,11 @@ fn fleet_indicators(
     let mut flags = (0..value.capital_ships.len())
         .map(|index| carriage::ship_flags(world, transport, fleet, index))
         .fold(0, |all, flags| all | flags);
-    if value.fighters.iter().any(|entry| entry.carrier == 0 && entry.count > 0) {
+    if value
+        .fighters
+        .iter()
+        .any(|entry| entry.carrier == 0 && entry.count > 0)
+    {
         flags |= 1;
     }
     if transport.regiments_aboard(fleet, 0) > 0 {
@@ -1003,9 +1016,7 @@ fn tab_enabled(
             .cargo(scope.fleet)
             .iter()
             .any(|&troop| scope.carries(transport.carrier(troop))),
-        FleetWindowTab::Personnel => {
-            !value.characters.is_empty() && scope.has_characters(value)
-        }
+        FleetWindowTab::Personnel => !value.characters.is_empty() && scope.has_characters(value),
     }
 }
 
@@ -1110,6 +1121,27 @@ fn right_items(
             })
             .collect(),
     }
+}
+
+/// The GOKRES mini and name of each object `entry` lists on `tab`, as the
+/// Fleet window's right panel shows them: a fleet's ships, or what a fleet
+/// or one ship carries (the Battle Alert's force lists, `FUN_00450770`).
+pub(crate) fn listed_units(
+    world: &GameWorld,
+    transport: &TroopTransportState,
+    entry: FleetWindowEntry,
+    tab: FleetWindowTab,
+) -> Vec<(Option<u32>, String, Option<usize>)> {
+    right_items(world, transport, Some(entry), tab)
+        .into_iter()
+        .map(|item| {
+            let ship = match item.object {
+                Some(ItemObject::Ship { index, .. }) => Some(index),
+                _ => None,
+            };
+            (item.mini, item.label, ship)
+        })
+        .collect()
 }
 
 /// The two numbers tabs `0x67` and `0x68` print into the picture panel: the
@@ -3965,11 +3997,13 @@ pub(crate) mod tests {
         let mut transport = TroopTransportState::default();
         assert!(fleet_indicators(&world, &transport, fleet).is_empty());
         let fighters = world.fighter_classes.insert(Default::default());
-        world.fleets[fleet].fighters.push(rebellion_core::world::FighterEntry {
-            class: fighters,
-            count: 1,
-            carrier: 0,
-        });
+        world.fleets[fleet]
+            .fighters
+            .push(rebellion_core::world::FighterEntry {
+                class: fighters,
+                count: 1,
+                carrier: 0,
+            });
         let character = world.characters.insert(Default::default());
         world.fleets[fleet].characters.push(character);
         let class = world.fleets[fleet].capital_ships[0].class;
@@ -4006,11 +4040,36 @@ pub(crate) mod tests {
         assert_eq!(carriage::ship_flags(&world, &transport, fleet, 0), 1 | 4);
         assert_eq!(carriage::ship_flags(&world, &transport, fleet, 1), 0);
         let ship = |index| Some(FleetWindowEntry::Ship { fleet, index });
-        assert!(tab_enabled(&world, &transport, ship(0), FleetWindowTab::Fighters));
-        assert!(tab_enabled(&world, &transport, ship(0), FleetWindowTab::Personnel));
-        assert!(!tab_enabled(&world, &transport, ship(0), FleetWindowTab::CapitalShips));
-        assert!(!tab_enabled(&world, &transport, ship(1), FleetWindowTab::Fighters));
-        assert!(!tab_enabled(&world, &transport, ship(1), FleetWindowTab::Personnel));
+        assert!(tab_enabled(
+            &world,
+            &transport,
+            ship(0),
+            FleetWindowTab::Fighters
+        ));
+        assert!(tab_enabled(
+            &world,
+            &transport,
+            ship(0),
+            FleetWindowTab::Personnel
+        ));
+        assert!(!tab_enabled(
+            &world,
+            &transport,
+            ship(0),
+            FleetWindowTab::CapitalShips
+        ));
+        assert!(!tab_enabled(
+            &world,
+            &transport,
+            ship(1),
+            FleetWindowTab::Fighters
+        ));
+        assert!(!tab_enabled(
+            &world,
+            &transport,
+            ship(1),
+            FleetWindowTab::Personnel
+        ));
         assert_eq!(
             right_items(&world, &transport, ship(0), FleetWindowTab::Fighters).len(),
             1

@@ -1,5 +1,6 @@
 //! Galaxy map rendering and egui UI panels.
 
+pub mod advice_topics;
 pub mod advisor;
 pub mod advisor_script;
 pub mod agent_menu;
@@ -35,6 +36,7 @@ pub mod object_menu;
 pub mod panels;
 pub mod personnel_finder;
 pub mod quadrant_icons;
+mod scroll_bar;
 pub mod sector_hover;
 pub mod sector_window;
 pub mod status_rows;
@@ -63,7 +65,9 @@ use rebellion_core::world::{ControlKind, GameWorld, System};
 
 #[cfg(target_arch = "wasm32")]
 pub use advisor::set_advisor_asset_cache;
-pub use advisor::{draw_advisor, AdvisorFaction, AdvisorState, AdvisorVoice, CockpitStep};
+pub use advisor::{
+    draw_advisor, staged_wave, AdvisorFaction, AdvisorState, AdvisorVoice, CockpitStep,
+};
 pub use audio::{draw_audio_controls, AudioVolumeState, MusicContext, MusicTrack, SfxKind};
 #[cfg(target_arch = "wasm32")]
 pub use bmp_cache::set_bmp_cache;
@@ -125,8 +129,8 @@ pub use main_menu_destinations::{
 pub use message_index::draw_message_index_fixture;
 pub use message_index::draw_message_index_shell;
 pub use message_log::{
-    draw_message_log, GameMessage, MessageCategory, MessageLog, MessageLogState, MessageRail,
-    RailAudience,
+    draw_message_log, GameMessage, MessageCategory, MessageDisplay, MessageLog, MessageLogState,
+    MessageRail, MessageTarget, RailAudience,
 };
 pub use missions_window::{
     draw_missions_windows, MissionsTab, MissionsWindowAction, MissionsWindowState,

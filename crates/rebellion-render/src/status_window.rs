@@ -201,7 +201,10 @@ impl StatusWindowState {
     /// `FUN_0042a440` → the `0x468` handler: open on an object the player
     /// knows (`FUN_004f2d10`).
     pub fn open(&mut self, object: StatusObject) {
-        self.window = Some(OpenStatusWindow { object, scroll: 0.0 });
+        self.window = Some(OpenStatusWindow {
+            object,
+            scroll: 0.0,
+        });
     }
 
     /// Open on a character.
@@ -358,17 +361,7 @@ pub fn draw_status_window(
             if let Some((source, picture)) = view.picture {
                 if let Some([width, height]) = cache.original_resource_size(source, picture) {
                     let (x, y) = picture_origin(width, height);
-                    paint_native(
-                        &painter,
-                        ctx,
-                        cache,
-                        source,
-                        picture,
-                        frame,
-                        scale,
-                        x,
-                        y,
-                    );
+                    paint_native(&painter, ctx, cache, source, picture, frame, scale, x, y);
                 }
             }
 
@@ -679,7 +672,9 @@ mod tests {
         // FUN_0042c3b0(.., 1, 1): class +0x30 & 0xfff. Luke's TEXTSTRA id
         // is 0x2842, so his mini is 18498 and his portrait 2114.
         let (world, key, _, _) = world_with_luke();
-        let view = Empty::new().view(&world, StatusObject::Character(key)).unwrap();
+        let view = Empty::new()
+            .view(&world, StatusObject::Character(key))
+            .unwrap();
         assert_eq!(view.picture, Some((DllSource::Gokres, 2_114)));
         assert_eq!(view.title, "Character Status");
     }

@@ -476,6 +476,14 @@ fn list_advisor_waves(_root: &Path, dll: &str) -> Vec<u16> {
         .collect()
 }
 
+/// A staged WAVE resource of any DLL: `root/<dll>/WAVE/<id>.wav` natively,
+/// `<dll>/wave/<id>` from the browser runtime pack. The Message Index's
+/// sounds are STRATEGY's (`strategy-dll`).
+#[must_use]
+pub fn staged_wave(root: &Path, dll: &str, id: u16) -> Option<Vec<u8>> {
+    read_advisor_asset(root, dll, AdvisorAsset::Wave(id))
+}
+
 /// A droid sound for the app's audio engine: a cache key unique across both
 /// sides, and the WAVE resource of its module.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -671,7 +679,9 @@ impl AdvisorState {
         }
     }
 
-    fn now(&self) -> u32 {
+    /// The scheduler's step count (`DAT_006b28cc`).
+    #[must_use]
+    pub fn now(&self) -> u32 {
         #[expect(
             clippy::cast_possible_truncation,
             clippy::cast_sign_loss,
@@ -740,11 +750,26 @@ impl AdvisorState {
         std::mem::take(&mut self.steps_run)
     }
 
+    /// The player's order was refused: the agent schedules its reaction
+    /// (`FUN_00487c90` → agent slot `+0xc`).
+    pub fn refuse(&mut self, status: crate::advisor_script::RefusalStatus) {
+        let now = self.now();
+        macroquad::logging::info!(
+            "[advisor] refusal {:#x}/{:#x} at step {}",
+            status.0,
+            status.1,
+            now
+        );
+        self.agent
+            .refuse(status, now, || macroquad::rand::gen_range(0_u32, 2));
+    }
+
     /// File a game message's advice code (`FUN_0048a060` → agent `VT[5]`).
     pub fn post_code(&mut self, code: u8) {
         let now = self.now();
         macroquad::logging::info!("[advisor] code {:#x} posted at step {}", code, now);
-        self.agent.post(code, now);
+        self.agent
+            .post(code, now, |n| macroquad::rand::gen_range(0_u32, n));
     }
 
     /// Step the droids by `dt` seconds. The step count advances at the

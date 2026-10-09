@@ -16,8 +16,8 @@ tags: [seeding, initialization, GNPRTB, SDPRTB, seeds]
 
 | System | Role | Fixed Assets |
 |--------|------|-------------|
-| **Coruscant** | Empire HQ | Empire fleets (CMUNEFTB), facilities (FACLHQTB), Vader + Palpatine |
-| **Yavin** | Alliance base | Alliance troops (CMUNAFTB group 1), garrison (YAVNGRTB), Luke/Leia/Han/Wedge/Chewie/Dodonna |
+| **Coruscant** | Empire HQ | Empire fleets (CMUNEFTB), facilities (FACLCRTB), Vader + Palpatine |
+| **Yavin** | Alliance base | Alliance troops (CMUNAFTB group 1), garrison (CMUNYVTB), Luke/Leia/Han/Wedge/Chewie/Dodonna |
 | **Random Rim** | Rebel HQ | Alliance HQ fleet (CMUNHQTB), HQ facilities (FACLHQTB), Mon Mothma |
 
 Rebel HQ is selected via `select_special_systems()` — deterministic with RNG seed, always a rim system (SectorGroup::RimOuter).
@@ -66,19 +66,38 @@ class cannot serve that side (`GameWorld::hand_over_facilities`). Source:
 
 **Confirmed complete.** Rim systems excluded from maintenance-budget seeding — verified against TheArchitect2018 `seed.js` Section 10: `fetch_galaxy(session, side, ...)` only returns faction-controlled systems. Uncontrolled rim systems are excluded from the seed pool in the original game.
 
+**Starting forces (2026-10-09).** The budget pass spends a side's spare
+maintenance, `max(capacity − load, 0) × SDPRTB 5168..5170 / 100`, on
+CMUNALTB/CMUNEMTB groups picked by a 1–100 roll against each group's key,
+costs every item by its class maintenance, and stops at the first group it
+cannot afford; so it never takes a side below zero. The garrisons run before
+it, and the classes load before seeding so it can price them. CMUNALTB and
+CMUNEMTB feed nothing else: the old step that placed every group at the
+capitals had no original. A side holding few systems (Easy, or Hard as the
+Empire: 3) can still start overdrawn, from its fixed seeds and rolled yards
+alone. Source: `ghidra/notes/starting-forces-seeding.md`.
+
 ExecPlan: `docs/plans/2026-03-24-003-game-seeding-parity-execplan.md`
 Audit: `.subdaimon-output/seeding-parity-audit.md`
 
-## 9 Seed Tables
+## Seed Tables
 
-| Table | Content | Target System |
-|-------|---------|---------------|
-| CMUNEFTB | Empire fleet composition | Coruscant |
-| CMUNHQTB | Alliance HQ fleet | Rebel HQ |
-| CMUNAFTB | Alliance troops (2 groups) | Yavin + Rebel HQ |
-| FACLHQTB | HQ facilities | Coruscant + Rebel HQ |
-| YAVNGRTB | Yavin garrison | Yavin |
-| CMUNEMTB | Empire army distribution | Budget-based (M7) |
-| CMUNALTB | Alliance army distribution | Budget-based (M7) |
-| SYFCCRTB | Core facility generation | Per-system (M6) |
-| SYFCRMTB | Rim facility generation | Per-system (M6) |
+Names from REBEXE RCDATA, read by the unit seeding `FUN_0051aa50` in this
+order (`ghidra/notes/starting-forces-seeding.md`):
+
+| Table | Content | Target |
+|-------|---------|--------|
+| — | Low-support garrisons (`FUN_0051ab20`) | Every held system, first |
+| CMUNYVTB | Yavin forces | Yavin |
+| CMUNHQTB | HQ forces | Rebel HQ |
+| CMUNCRTB | Coruscant forces | Coruscant |
+| CMUNAFTB | Alliance fleets | Yavin + Rebel HQ |
+| CMUNEFTB | Empire fleet | Coruscant |
+| CMUNALTB / CMUNEMTB | Budget bundles (`FUN_0051b1f0`) | Random held systems, last |
+
+Facilities come from other tables, outside `FUN_0051aa50`:
+
+| Table | Content | Target |
+|-------|---------|--------|
+| FACLHQTB / FACLCRTB | HQ and Coruscant facilities (registry ids `0x55`/`0x56`) | Rebel HQ, Coruscant |
+| SYFCCRTB / SYFCRMTB | Facility per energy slot (`FUN_00566de0`, a system method) | Per system (M6) |

@@ -81,7 +81,10 @@ pub enum MenuObject {
     },
     /// A Fleet window squadron item (`0x1c..0x1f`): the fleet and its
     /// squadron entry's index. port: squadrons are counts per class.
-    Fighter { fleet: FleetKey, index: usize },
+    Fighter {
+        fleet: FleetKey,
+        index: usize,
+    },
     /// A Defenses window facility (`0x20..0x27`).
     DefenseFacility(DefenseFacilityKey),
 }

@@ -1195,13 +1195,6 @@ fn gid_arrow_resource(faction: CockpitFaction) -> u32 {
     }
 }
 
-fn gid_check_resource(faction: CockpitFaction) -> u32 {
-    match faction {
-        CockpitFaction::Alliance => resources::strategy::GID_CHECK_ALLIANCE,
-        CockpitFaction::Empire => resources::strategy::GID_CHECK_EMPIRE,
-    }
-}
-
 #[expect(
     clippy::too_many_lines,
     reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
@@ -1468,17 +1461,12 @@ fn gid_highlight_color(faction: CockpitFaction) -> egui::Color32 {
 /// `+0x46` item) in the highlight color (`FUN_004aba60(item, hdc, 1)`); a
 /// category whose submenu is open keeps it (`held`), since the cursor in
 /// the child popup sends the parent no `WM_MOUSEMOVE`.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "A row takes its art, its state and its layout scale together."
-)]
 fn gid_menu_row(
     ui: &mut egui::Ui,
     cache: &mut BmpCache,
     label: &str,
     icon_resource: Option<u32>,
     arrow_resource: Option<u32>,
-    checked_resource: Option<u32>,
     highlight: (egui::Color32, bool),
     scale: f32,
 ) -> egui::Response {
@@ -1498,17 +1486,6 @@ fn gid_menu_row(
                     rect.min.y + scale,
                 ),
                 egui::vec2(20.0 * scale, 20.0 * scale),
-            ),
-        );
-    }
-    if let Some(resource_id) = checked_resource {
-        paint_gid_icon(
-            ui,
-            cache,
-            resource_id,
-            egui::Rect::from_min_size(
-                egui::pos2(rect.min.x + 22.0 * scale, rect.min.y + 4.0 * scale),
-                egui::vec2(14.0 * scale, 14.0 * scale),
             ),
         );
     }
@@ -1580,7 +1557,6 @@ fn draw_gid_menu(
                         category.label(),
                         Some(gid_category_resource(category, state.faction)),
                         Some(gid_arrow_resource(state.faction)),
-                        None,
                         (highlight, state.gid_ui.category == Some(category)),
                         scale,
                     );
@@ -1588,15 +1564,12 @@ fn draw_gid_menu(
                         state.gid_ui.category = Some(category);
                     }
                 }
-                let checked = (state.gid_mode == GidMode::DisplayOff)
-                    .then_some(gid_check_resource(state.faction));
                 gid_menu_row(
                     ui,
                     cache,
                     GidMode::DisplayOff.label(),
                     None,
                     None,
-                    checked,
                     (highlight, false),
                     scale,
                 )
@@ -1633,15 +1606,12 @@ fn draw_gid_menu(
                     ui.spacing_mut().item_spacing.y = 0.0;
                     let mut chosen = None;
                     for item in items {
-                        let checked = (state.gid_mode == item.mode)
-                            .then_some(gid_check_resource(state.faction));
                         if gid_menu_row(
                             ui,
                             cache,
                             item.mode.label(),
                             Some(item.resource_id),
                             None,
-                            checked,
                             (highlight, false),
                             scale,
                         )

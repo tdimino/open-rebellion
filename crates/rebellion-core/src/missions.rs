@@ -559,12 +559,29 @@ pub enum MissionRefusal {
     MemberUnavailable(MissionMember),
     /// Sabotage names no object or the Death Star (`FUN_0056a110`, `0x40`/
     /// `0x28`), or DS Sabotage names no Death Star (`FUN_005744c0`,
-    /// `0x40`/`0x29`).
-    TargetUnavailable,
+    /// `0x40`/`0x29`). `death_star` names which mission refused.
+    TargetUnavailable { death_star: bool },
     /// The record does not admit these members: a special force or
     /// character the record does not take, or a side it does not run for
     /// (`FUN_00583320`, `0x40`/`0x01`).
     MembersNotAllowed,
+}
+
+impl MissionRefusal {
+    /// The validator's two-word status that `FUN_00487c90` hands the side's
+    /// advisor (`ghidra/notes/mission-dialog.md`, "Refusal").
+    #[must_use]
+    pub const fn status(&self) -> (u32, u32) {
+        match self {
+            Self::EmptyTeam => (0x40, 0x91),
+            // hyp: FUN_00522b30 adds no unavailable member, so the team the
+            // validator sees is empty, as for EmptyTeam.
+            Self::MemberUnavailable(_) => (0x40, 0x91),
+            Self::TargetUnavailable { death_star: false } => (0x40, 0x28),
+            Self::TargetUnavailable { death_star: true } => (0x40, 0x29),
+            Self::MembersNotAllowed => (0x40, 0x01),
+        }
+    }
 }
 
 /// What the member checks read about one member.
@@ -1103,7 +1120,9 @@ impl MissionState {
             _ => true,
         };
         if !target_ok {
-            return Err(MissionRefusal::TargetUnavailable);
+            return Err(MissionRefusal::TargetUnavailable {
+                death_star: request.kind == MissionKind::DeathStarSabotage,
+            });
         }
         // FUN_0054bb90 moves every prisoner out of the team and decoy lists
         // into the captured list first. FUN_0054c200 then adds the team, the
@@ -4925,7 +4944,12 @@ mod tests {
                 "{kind:?} naming {target:?}: {outcome:?}"
             );
             if !allowed {
-                assert_eq!(outcome, Err(MissionRefusal::TargetUnavailable));
+                assert_eq!(
+                    outcome,
+                    Err(MissionRefusal::TargetUnavailable {
+                        death_star: kind == MissionKind::DeathStarSabotage,
+                    })
+                );
             }
         }
     }

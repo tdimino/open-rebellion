@@ -77,6 +77,20 @@ fn main() -> anyhow::Result<()> {
                     out_path.display(),
                     strings.len()
                 );
+                // RCDATA as Latin-1 text, one char per byte, so the
+                // templates' marker bytes survive JSON.
+                let rcdata: std::collections::BTreeMap<u16, String> =
+                    types::textstra::load_rcdata(&dll_path)?
+                        .into_iter()
+                        .map(|(id, bytes)| (id, bytes.into_iter().map(char::from).collect()))
+                        .collect();
+                let rcdata_path = out_dir.join("textstra-rcdata.json");
+                std::fs::write(&rcdata_path, serde_json::to_string(&rcdata)?)?;
+                eprintln!(
+                    "OK   TEXTSTRA.DLL -> {} ({} RCDATA entries)",
+                    rcdata_path.display(),
+                    rcdata.len()
+                );
             }
             None => {
                 println!("{json}");
