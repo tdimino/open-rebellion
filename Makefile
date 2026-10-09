@@ -76,7 +76,7 @@ extract-assets: stage-assets
 verify-assets:
 	go run ./tools/stage-ui-assets --verify
 
-# Browser harness synchronization and launch-policy regressions (no browser).
+# Browser-loader and interface-harness regressions (no browser required).
 .PHONY: test-interface-harness
 test-interface-harness:
-	node --test tools/interface-parity/command-events.test.mjs tools/interface-parity/browser-launch.test.mjs
+	node --test tools/interface-parity/command-events.test.mjs tools/interface-parity/browser-launch.test.mjs tools/interface-parity/web-loader-focus.test.mjs
