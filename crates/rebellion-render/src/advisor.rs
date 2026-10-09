@@ -461,7 +461,7 @@ fn read_advisor_asset(_root: &Path, dll: &str, asset: AdvisorAsset) -> Option<Ve
         AdvisorAsset::Delta(id) => web.frames.get(&format!("{dll}/{id}")),
         AdvisorAsset::Script(id) => web.frames.get(&format!("{dll}/rcdata/{id}")),
         AdvisorAsset::Wave(id) => web.frames.get(&format!("{dll}/wave/{id}")),
-        AdvisorAsset::Table(_) => web.frames.get(&format!("{dll}/spt")),
+        AdvisorAsset::Table(_table_name) => web.frames.get(&format!("{dll}/spt")),
     }
     .cloned()
 }
@@ -664,10 +664,12 @@ impl AdvisorState {
                 self.agent_droid = DroidPlayer::new(agent, true);
                 self.partner_droid = DroidPlayer::new(partner, false);
             }
-            _ => macroquad::logging::warn!(
-                "[advisor] missing rest scripts in {}; restage UI assets",
-                self.faction.dll_dir(SPRITE_MODULE)
-            ),
+            _ => {
+                macroquad::logging::warn!(
+                    "[advisor] missing rest scripts in {}; restage UI assets",
+                    self.faction.dll_dir(SPRITE_MODULE)
+                );
+            }
         }
     }
 

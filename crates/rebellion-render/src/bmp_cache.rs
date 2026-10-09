@@ -36,7 +36,9 @@
 //! the runtime asset bytes, before the game loop starts.
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+#[cfg(not(target_arch = "wasm32"))]
+use std::path::Path;
+use std::path::PathBuf;
 
 use egui_macroquad::egui::{self, TextureHandle, TextureOptions};
 use macroquad::prelude::{FilterMode, Texture2D};
@@ -45,13 +47,9 @@ use serde::Deserialize;
 #[cfg(not(target_arch = "wasm32"))]
 use sha2::{Digest, Sha256};
 
-#[cfg(target_arch = "wasm32")]
-const DATA_PREFIX: &str = "web/data/base";
 #[cfg(not(target_arch = "wasm32"))]
 const DATA_PREFIX: &str = "data/base";
 
-#[cfg(target_arch = "wasm32")]
-const HD_PREFIX: &str = "web/data/hd";
 #[cfg(not(target_arch = "wasm32"))]
 const HD_PREFIX: &str = "data/hd";
 
@@ -1839,6 +1837,7 @@ impl Default for BmpCache {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn rebase_path_prefix(path: &Path, from_prefix: &str, to_prefix: &str) -> PathBuf {
     path.strip_prefix(from_prefix).map_or_else(
         |_| path.to_path_buf(),

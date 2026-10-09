@@ -130,14 +130,15 @@ use rebellion_render::{
     GameOptionsOrigin, GameOptionsState, GameSetupAction, GameSetupState, GroundAction,
     GroundCombatState, MainMenuAction, MainMenuState, MenuDestinationAction, MessageCategory,
     MessageLog, MessageLogState, MessageRail, MultiplayerSetupAction, MultiplayerSetupState,
-    MusicContext, OfficersState, OriginalEncyclopediaCatalog, OriginalEncyclopediaEntry,
-    PanelAction, RailAudience, SectorWindowAction, SectorWindowState, SfxKind, SystemWindowAction,
-    SystemWindowState, TacticalAction, TacticalState, TacticalTrenchRunOutcome, VideoError,
-    VideoPlayer,
+    OfficersState, OriginalEncyclopediaCatalog, OriginalEncyclopediaEntry, PanelAction,
+    RailAudience, SectorWindowAction, SectorWindowState, SystemWindowAction, SystemWindowState,
+    TacticalAction, TacticalState, TacticalTrenchRunOutcome, VideoError, VideoPlayer,
 };
 use rebellion_render::{draw_defenses_windows, DefensesWindowAction, DefensesWindowState};
 use rebellion_render::{draw_fleet_windows, FleetWindowAction, FleetWindowState};
 use rebellion_render::{draw_missions_windows, MissionsWindowAction, MissionsWindowState};
+#[cfg(not(target_arch = "wasm32"))]
+use rebellion_render::{MusicContext, SfxKind};
 
 /// Top-level game mode state machine.
 ///
@@ -237,6 +238,7 @@ fn common_edata_sibling(gdata_path: &Path) -> Option<PathBuf> {
         .map(|root| root.join("EData"))
 }
 
+#[cfg(any(not(target_arch = "wasm32"), feature = "interface-test-fixtures"))]
 fn configured_edata_path(gdata_path: &Path) -> PathBuf {
     #[cfg(not(target_arch = "wasm32"))]
     {
@@ -1391,13 +1393,17 @@ async fn main() {
                 .join("runtime");
             if tactical_runtime.is_dir() {
                 match rebellion_render::install_native_tactical_assets(&tactical_runtime) {
-                    Ok(()) => macroquad::logging::info!(
-                        "[tactical_3d] installed complete native tactical corpus"
-                    ),
-                    Err(error) => macroquad::logging::warn!(
-                        "[tactical_3d] native tactical assets rejected: {}",
-                        error
-                    ),
+                    Ok(()) => {
+                        macroquad::logging::info!(
+                            "[tactical_3d] installed complete native tactical corpus"
+                        );
+                    }
+                    Err(error) => {
+                        macroquad::logging::warn!(
+                            "[tactical_3d] native tactical assets rejected: {}",
+                            error
+                        );
+                    }
                 }
             }
         }
@@ -1434,6 +1440,7 @@ async fn main() {
     }
     let mut game_options_state = GameOptionsState::default();
     let mut quit_requested = false;
+    #[cfg(not(target_arch = "wasm32"))]
     let sounds_dir = PathBuf::from("data/sounds");
 
     #[cfg(not(target_arch = "wasm32"))]

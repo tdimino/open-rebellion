@@ -14,8 +14,10 @@ use rebellion_data::encyclopedia_catalog::EncyclopediaCatalog;
 use rebellion_data::encyclopedia_session::MAX_ENCYCLOPEDIA_IMAGE_BYTES;
 use rebellion_data::encyclopedia_session::{EncyclopediaResourceBytes, EncyclopediaSessionInput};
 use rebellion_data::encyclopedia_topics::parse_encyclopedia_source_with_manifest;
+#[cfg(any(test, target_arch = "wasm32"))]
 use serde::Deserialize;
 
+#[cfg(any(test, target_arch = "wasm32"))]
 pub(crate) const ENCYCLOPEDIA_NAMESPACE: &str = "encyclopedia/";
 const CATALOG_KEY: &str = "catalog.json";
 const MANIFEST_KEY: &str = "manifest.json";
@@ -28,12 +30,14 @@ const MANIFEST_BYTES_LIMIT: usize = 32 * 1024 * 1024;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[cfg(any(test, target_arch = "wasm32"))]
 struct LooseEncyclopediaPointer {
     schema_version: u32,
     available: bool,
     generation: Option<String>,
 }
 
+#[cfg(any(test, target_arch = "wasm32"))]
 pub(crate) fn parse_loose_pointer(bytes: &[u8]) -> Result<Option<String>> {
     let pointer: LooseEncyclopediaPointer =
         serde_json::from_slice(bytes).context("parsing loose Encyclopedia pointer")?;
@@ -91,6 +95,7 @@ impl EncyclopediaContentPayload {
     ///
     /// A wholly absent namespace is compatible with older user-provided packs.
     /// Any present namespace must be complete and valid.
+    #[cfg(any(test, target_arch = "wasm32"))]
     pub(crate) fn take_from_runtime_pack(
         entries: &mut HashMap<String, Vec<u8>>,
     ) -> Result<Option<Self>> {
@@ -118,6 +123,7 @@ impl EncyclopediaContentPayload {
     }
 
     /// Validate a development-loose entry set using the same content boundary.
+    #[cfg(any(test, target_arch = "wasm32"))]
     pub(crate) fn from_loose_entries(mut entries: HashMap<String, Vec<u8>>) -> Result<Self> {
         Self::take_from_runtime_pack(&mut entries)?
             .context("development-loose Encyclopedia namespace is absent")
