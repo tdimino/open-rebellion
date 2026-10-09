@@ -349,8 +349,9 @@ mod native {
         let state_fingerprint = compute_state_fingerprint(state)?;
 
         let path = slot_path(saves_dir, slot);
-        let mut file = std::fs::File::create(&path)
-            .with_context(|| format!("creating save file {}", path.display()))?;
+        let mut pending = tempfile::NamedTempFile::new_in(saves_dir)
+            .with_context(|| format!("creating temporary save beside {}", path.display()))?;
+        let file = pending.as_file_mut();
 
         // ── Header ──────────────────────────────────────────────────────────
         file.write_all(SAVE_MAGIC).context("writing save magic")?;
@@ -395,6 +396,13 @@ mod native {
 
         // ── Body ────────────────────────────────────────────────────────────
         file.write_all(&encoded).context("writing save body")?;
+        file.sync_all()
+            .with_context(|| format!("synchronizing temporary save for {}", path.display()))?;
+
+        pending
+            .persist(&path)
+            .map_err(|error| error.error)
+            .with_context(|| format!("replacing save file {}", path.display()))?;
 
         Ok(state_fingerprint)
     }
@@ -1019,6 +1027,27 @@ mod tests {
             meta.state_fingerprint,
             compute_state_fingerprint(&loaded).expect("fingerprint loaded state")
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn overwriting_a_save_atomically_replaces_the_slot_file() {
+        use std::os::unix::fs::MetadataExt;
+
+        let saves_dir = tmp_dir("atomic_overwrite");
+        let path = slot_path(&saves_dir, 0);
+        let mut state = minimal_save_state();
+
+        save_slot(&saves_dir, 0, "Before", &state, &[]).unwrap();
+        let original_inode = std::fs::metadata(&path).unwrap().ino();
+
+        state.clock.tick = 42;
+        save_slot(&saves_dir, 0, "After", &state, &[]).unwrap();
+
+        assert_ne!(std::fs::metadata(&path).unwrap().ino(), original_inode);
+        let (meta, loaded) = load_slot(&saves_dir, 0).unwrap();
+        assert_eq!(meta.name, "After");
+        assert_eq!(loaded.clock.tick, 42);
     }
 
     #[test]
