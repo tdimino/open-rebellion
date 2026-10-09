@@ -63,6 +63,10 @@ enabled = ["better-star-destroyers", "rebel-rebalance"]
 ```
 
 Loaded with `ModConfig::load(mods_dir)`, saved with `config.save(mods_dir)`.
+Missing configuration starts with an empty enabled set. Existing unreadable or
+malformed configuration is retained as a runtime diagnostic instead of being
+silently treated as empty. Updates synchronize a same-directory temporary file
+before atomically replacing `config.toml`.
 
 ## ModError
 
@@ -136,6 +140,5 @@ native/browser parity claim is made.
 - `enabled_sorted()` returns empty on dependency resolution failure; structured
   dependency errors are retained in `ModRuntime::errors` and surfaced by the
   native Encyclopedia installer
-- `ModConfig::load()` silently drops corrupted config.toml — no diagnostic
 - Filesystem watcher recovery for burst writes and editor rename patterns is
   deferred to the optional W8 authoring-loop checkpoint

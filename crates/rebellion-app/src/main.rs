@@ -1072,6 +1072,9 @@ async fn main() {
         .unwrap_or(std::path::Path::new("."))
         .join("mods");
     let mut mod_runtime = rebellion_data::mods::ModRuntime::discover(&mods_dir);
+    for error in &mod_runtime.errors {
+        eprintln!("[mod-runtime] {error}");
+    }
     let resolved_mod_order = mod_runtime.enabled_sorted();
 
     // The Galactic Encyclopedia is immutable reference data, not campaign
