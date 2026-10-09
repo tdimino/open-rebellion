@@ -258,10 +258,16 @@ cursor while targeting. Tests: `uv run -q scripts/test_extract_dll_resources.py`
 The same extractor also preserves the full type-302 droid corpus from an owned
 installation:
 
-| DLL | Standard BMP anchors | Type-302 frames | Path |
-|-----|---------------------:|----------------:|------|
-| ALSPRITE | 38 | 1,640 | `data/base/ui/alsprite-dll/` |
-| EMSPRITE | 34 | 2,348 | `data/base/ui/emsprite-dll/` |
+| DLL | Standard BMP anchors | Type-302 frames | Voices | Path |
+|-----|---------------------:|----------------:|-------:|------|
+| ALSPRITE | 38 | 1,640 | 213 | `data/base/ui/alsprite-dll/` |
+| EMSPRITE | 34 | 2,348 | 216 | `data/base/ui/emsprite-dll/` |
+| ALBRIEF | 20 | 2,684 | 17 | `data/base/ui/albrief-dll/` |
+| EMBRIEF | 18 | 2,738 | 22 | `data/base/ui/embrief-dll/` |
+
+Voices are the DLLs' WAVE resources, staged as `WAVE/<id>.wav` and packed as
+advisor entries `<dir>/wave/<id>`. The briefing DLLs carry the opening tour
+(`ghidra/notes/droid-advisor-triggers.md`).
 
 Native builds read these ignored files directly. Browser builds place the same
 bytes in `runtime.orpk`; the checked-in repository contains the decoder and

@@ -98,7 +98,9 @@ crates/rebellion-render/src/
 ├── tactical_view.rs    — 2D tactical combat: BattleSession, ship placement, phased combat, targeting, retreat
 ├── ground_combat.rs    — Ground combat: regiment engagement, animated bars, win/loss results
 ├── event_screen.rs     — Full-screen event overlays for story events. event_id_to_resource() maps story IDs to STRATEGY.DLL BMP offsets with heritage_known branching for Final Battle variants.
-├── advisor.rs          — Animated droid advisors (C-3PO/R2-D2 or Imperial), priority message queue, BIN-driven frame sequencing with BMP modulo fallback
+├── advisor.rs          — Droid advisors: the advice agent's slot table, both droids' players, voices and cockpit steps (`ghidra/notes/droid-advisor-triggers.md`)
+├── advisor_script.rs   — Action records → droid commands (play, hold, turn), the agent's pass, skip and chatter
+├── briefing_tour.rs    — Opening briefing tour: each cockpit step's galaxy display or highlight, per faction
 └── panels/
     ├── mod.rs           — PanelAction enum: panel, mission, save, and combat actions
     ├── game_setup.rs    — Galaxy size, difficulty, faction selection (replaces faction_select)

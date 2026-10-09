@@ -47,7 +47,6 @@ use rebellion_core::combat::{CombatSide, CombatSystem};
 use rebellion_core::dat::Faction;
 use rebellion_core::death_star::{DeathStarState, DeathStarSystem};
 use rebellion_core::delivery::DeliveryState;
-use rebellion_core::stockpiles::{StockpileEvent, StockpileState, StockpileSystem};
 use rebellion_core::economy::{EconomyEvent, EconomyState, EconomySystem};
 use rebellion_core::events::{EventAction, EventState, EventSystem};
 use rebellion_core::fleet_join::FleetMover;
@@ -66,6 +65,7 @@ use rebellion_core::movement::{
 };
 use rebellion_core::repair::{RepairEvent, RepairState, RepairSystem};
 use rebellion_core::research::{ResearchState, ResearchSystem};
+use rebellion_core::stockpiles::{StockpileEvent, StockpileState, StockpileSystem};
 use rebellion_core::tick::{GameClock, GameSpeed};
 use rebellion_core::troop_transport::{RegimentLeg, RegimentTarget, TroopTransportState};
 use rebellion_core::uprising::{UprisingState, UprisingSystem};
@@ -119,22 +119,21 @@ use rebellion_render::troop_finder::{draw_troop_finder, TroopFinderAction, Troop
 #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
 use rebellion_render::EncyclopediaState;
 use rebellion_render::{
-    advisor_combat_result, advisor_death_star, advisor_greet, advisor_manufacturing_complete,
-    advisor_mission_result, advisor_uprising, draw_advisor, draw_audio_controls,
-    draw_cockpit_background, draw_cockpit_chrome, draw_cockpit_egui_layer, draw_credits,
-    draw_event_screen, draw_fleets, draw_galaxy_backdrop, draw_galaxy_map, draw_game_options,
-    draw_game_setup, draw_ground_combat, draw_main_menu, draw_missions, draw_multiplayer_setup,
-    draw_officers, draw_save_load, draw_sector_windows, draw_system_windows, draw_tactical_view,
-    handle_cockpit_egui_input, set_cockpit_viewport_clip, show_event_screen, update_event_screen,
-    AdvisorFaction, AdvisorState, AssetRenderProfile, AudioVolumeState, BmpCache, CockpitButton,
-    CockpitFaction, CockpitState, CreditsState, EventScreenState, FleetsState, GalaxyMapState,
-    GameMessage, GameOptionsAction, GameOptionsOrigin, GameOptionsState, GameSetupAction,
-    GameSetupState, GroundAction, GroundCombatState, MainMenuAction, MainMenuState,
-    MenuDestinationAction, MessageCategory, MessageLog, MessageLogState, MessageRail,
-    MultiplayerSetupAction, MultiplayerSetupState, MusicContext, OfficersState,
-    OriginalEncyclopediaCatalog, OriginalEncyclopediaEntry, PanelAction, RailAudience,
-    SectorWindowAction, SectorWindowState, SfxKind, SystemWindowAction, SystemWindowState,
-    TacticalAction, TacticalState, TacticalTrenchRunOutcome, VideoError, VideoPlayer,
+    draw_advisor, draw_audio_controls, draw_cockpit_background, draw_cockpit_chrome,
+    draw_cockpit_egui_layer, draw_credits, draw_event_screen, draw_fleets, draw_galaxy_backdrop,
+    draw_galaxy_map, draw_game_options, draw_game_setup, draw_ground_combat, draw_main_menu,
+    draw_missions, draw_multiplayer_setup, draw_officers, draw_save_load, draw_sector_windows,
+    draw_system_windows, draw_tactical_view, handle_cockpit_egui_input, set_cockpit_viewport_clip,
+    show_event_screen, update_event_screen, AdvisorFaction, AdvisorState, AssetRenderProfile,
+    AudioVolumeState, BmpCache, CockpitButton, CockpitFaction, CockpitState, CreditsState,
+    EventScreenState, FleetsState, GalaxyMapState, GameMessage, GameOptionsAction,
+    GameOptionsOrigin, GameOptionsState, GameSetupAction, GameSetupState, GroundAction,
+    GroundCombatState, MainMenuAction, MainMenuState, MenuDestinationAction, MessageCategory,
+    MessageLog, MessageLogState, MessageRail, MultiplayerSetupAction, MultiplayerSetupState,
+    MusicContext, OfficersState, OriginalEncyclopediaCatalog, OriginalEncyclopediaEntry,
+    PanelAction, RailAudience, SectorWindowAction, SectorWindowState, SfxKind, SystemWindowAction,
+    SystemWindowState, TacticalAction, TacticalState, TacticalTrenchRunOutcome, VideoError,
+    VideoPlayer,
 };
 use rebellion_render::{draw_defenses_windows, DefensesWindowAction, DefensesWindowState};
 use rebellion_render::{draw_fleet_windows, FleetWindowAction, FleetWindowState};
@@ -616,7 +615,16 @@ fn install_runtime_pack(bytes: &[u8]) -> Result<WasmRuntimeAssets, String> {
     let advisor_bitmaps = pack
         .bitmaps
         .iter()
-        .filter(|(key, _)| key.starts_with("alsprite-dll/") || key.starts_with("emsprite-dll/"))
+        .filter(|(key, _)| {
+            [
+                "alsprite-dll/",
+                "emsprite-dll/",
+                "albrief-dll/",
+                "embrief-dll/",
+            ]
+            .iter()
+            .any(|dll| key.starts_with(dll))
+        })
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect();
 
@@ -1404,6 +1412,11 @@ async fn main() {
 
     // ── Droid advisor ──────────────────────────────────────────────────────
     let mut advisor_state = AdvisorState::new(AdvisorFaction::Alliance);
+    // The side whose droid sounds the audio engine holds.
+    let mut advisor_voice_side: Option<AdvisorFaction> = None;
+    // A cockpit command the briefing's last step issues: the Message Index
+    // on Advice (FUN_0041d770(1, 0x82)).
+    let mut pending_index_command: Option<u16> = None;
     {
         let sprite_dir = gdata_path.join("ui");
         advisor_state.set_sprite_dir(&sprite_dir);
@@ -1668,9 +1681,56 @@ async fn main() {
             theme_applied = true;
         }
 
-        // ── Advisor animation timer ────────────────────────────────────────
+        // ── Cockpit droids ──────────────────────────────────────────────────
+        // The agent's step count runs with the game clock; the droids'
+        // players tick on wall time (ghidra/notes/droid-advisor-triggers.md).
         if !interface_fixture_active {
-            advisor_state.update(dt);
+            let player_is_alliance = cockpit_state.faction == CockpitFaction::Alliance;
+            for (code, audience) in msg_log.take_advice() {
+                if audience.includes(player_is_alliance) {
+                    advisor_state.post_code(code);
+                }
+            }
+        }
+        cockpit_state.briefing = !interface_fixture_active && advisor_state.holds_clock();
+        // The droids act on the galaxy view only, so the briefing waits for
+        // the opening movie.
+        if !interface_fixture_active && game_mode == GameMode::Galaxy {
+            advisor_state.update(
+                dt,
+                clock
+                    .is_running()
+                    .then(|| clock.speed.steps_per_second())
+                    .flatten()
+                    .filter(|_| !advisor_state.holds_clock()),
+            );
+            for step in advisor_state.take_cockpit_steps() {
+                if step.kind == 2 {
+                    apply_briefing_step(
+                        step.step,
+                        &world,
+                        &mut cockpit_state,
+                        &mut pending_index_command,
+                    );
+                }
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            play_advisor_voices(
+                &mut audio_engine,
+                &mut advisor_state,
+                &mut advisor_voice_side,
+                &audio_vol,
+            );
+            #[cfg(target_arch = "wasm32")]
+            match browser_menu_audio.as_mut() {
+                Some(engine) => play_advisor_voices(
+                    engine,
+                    &mut advisor_state,
+                    &mut advisor_voice_side,
+                    &audio_vol,
+                ),
+                None => drop(advisor_state.take_voices()),
+            }
         }
 
         // ── Event screen overlay timer ────────────────────────────────────
@@ -1698,7 +1758,10 @@ async fn main() {
             } else if matches!(game_mode, GameMode::Credits | GameMode::MultiplayerSetup) {
                 game_mode = GameMode::MainMenu;
             } else if game_mode == GameMode::Galaxy {
-                if encyclopedia_surface.is_open() {
+                if advisor_state.tour_active() {
+                    // The tour's hook (lpfn_0041d8f0) takes Escape; it skips
+                    // the briefing below rather than leaving the campaign.
+                } else if encyclopedia_surface.is_open() {
                     if let Some(session) = encyclopedia_session_store.current() {
                         match encyclopedia_surface.apply_action(
                             &session,
@@ -1777,12 +1840,24 @@ async fn main() {
                 quit_requested = true;
             }
         }
+        // The briefing tour holds the cockpit's input (FUN_0041d9d0's hooks).
+        // Escape on release, or a left or right press, skips it once
+        // (lpfn_0041d8f0, lpfn_0041d950 → FUN_0043a200).
+        let briefing_lock = game_mode == GameMode::Galaxy && advisor_state.tour_active();
+        if briefing_lock
+            && (is_key_released(KeyCode::Escape)
+                || is_mouse_button_pressed(MouseButton::Left)
+                || is_mouse_button_pressed(MouseButton::Right))
+        {
+            advisor_state.skip_tour();
+        }
         let mut message_index_key = false;
         // ── Galaxy-mode keyboard shortcuts (blocked during event screen) ────
         // The open Fleet Finder takes the keys for its name box, and a
         // rename edit for the name it holds.
         if game_mode == GameMode::Galaxy
             && !event_screen_state.is_active()
+            && !briefing_lock
             && frame_keyboard_owner.allows_galaxy_shortcuts()
             && !fleet_finder_state.is_open()
             && !troop_finder_state.is_open()
@@ -1924,7 +1999,10 @@ async fn main() {
         }
 
         // ── Tick the clock (Galaxy mode only) ────────────────────────────────
-        let tick_events = if game_mode == GameMode::Galaxy {
+        // A new game's clock holds through the briefing until its step 11.
+        let tick_events = if game_mode == GameMode::Galaxy
+            && (interface_fixture_active || !advisor_state.holds_clock())
+        {
             clock.advance(dt)
         } else {
             vec![]
@@ -2006,7 +2084,9 @@ GameMessage::new(
                                 "{faction_str} reports maintenance shortfall across {deficit_system_count} systems"
                             ),
                             MessageCategory::Event,
-                        ),
+                        )
+                        // FUN_00498970: a maintenance shortfall carries code 0xc.
+                        .with_advice(0xc),
 MessageRail::Manufacturing,
 Some(RailAudience::side(*faction_is_alliance)),
 ));
@@ -2016,8 +2096,9 @@ Some(RailAudience::side(*faction_is_alliance)),
             }
 
             // ── Stockpiles: facility cycles, yard work, overdraft scraps ─────
-            let stockpile_rolls: Vec<f64> =
-                (0..tick_events.len()).map(|_| sim_rng.gen::<f64>()).collect();
+            let stockpile_rolls: Vec<f64> = (0..tick_events.len())
+                .map(|_| sim_rng.gen::<f64>())
+                .collect();
             let stockpile_events = StockpileSystem::advance(
                 &mut stockpile_state,
                 &world,
@@ -2059,11 +2140,12 @@ Some(RailAudience::side(*faction_is_alliance)),
                         format!("Construction complete at {sys_name}"),
                         MessageCategory::Manufacturing,
                         completion.system,
-                    ),
+                    )
+                    // FUN_00497940: a deployed unit carries code 3.
+                    .with_advice(3),
                     MessageRail::Manufacturing,
                     system_audience(&world, completion.system),
                 ));
-                advisor_manufacturing_complete(&mut advisor_state, &sys_name);
                 #[cfg(not(target_arch = "wasm32"))]
                 audio_engine.play_sfx(SfxKind::BuildComplete, &audio_vol);
             }
@@ -2085,11 +2167,11 @@ Some(RailAudience::side(*faction_is_alliance)),
                         format!("Construction complete at {origin}, en route to {destination}"),
                         MessageCategory::Manufacturing,
                         departure.origin,
-                    ),
+                    )
+                    .with_advice(3),
                     MessageRail::Manufacturing,
                     system_audience(&world, departure.origin),
                 ));
-                advisor_manufacturing_complete(&mut advisor_state, &origin);
                 #[cfg(not(target_arch = "wasm32"))]
                 audio_engine.play_sfx(SfxKind::BuildComplete, &audio_vol);
             }
@@ -2104,7 +2186,9 @@ Some(RailAudience::side(*faction_is_alliance)),
                         format!("Unit arrived at {}", system_name(&world, completion.system)),
                         MessageCategory::Manufacturing,
                         completion.system,
-                    ),
+                    )
+                    // FUN_004981c0: arriving units carry code 6.
+                    .with_advice(6),
                     MessageRail::Manufacturing,
                     system_audience(&world, completion.system),
                 ));
@@ -2128,12 +2212,18 @@ Some(RailAudience::side(*faction_is_alliance)),
                     .systems
                     .get(system)
                     .map_or_else(|| "unknown".into(), |s| s.name.clone());
-                msg_log.push(GameMessage::at_system(
+                // FUN_0048be60: an idle facility carries code 3, for the
+                // side that holds it.
+                let message = GameMessage::at_system(
                     economy_tick,
                     format!("Manufacturing queue idle at {sys_name_str}"),
                     MessageCategory::Manufacturing,
                     system,
-                ));
+                );
+                msg_log.push(match system_audience(&world, system) {
+                    Some(audience) => message.with_advice_to(3, audience),
+                    None => message,
+                });
             }
 
             // ── Movement ────────────────────────────────────────────────────
@@ -2158,7 +2248,8 @@ Some(RailAudience::side(*faction_is_alliance)),
                         format!("Fleet arrived at {sys_name}"),
                         MessageCategory::Mission,
                         arrival.system,
-                    ),
+                    )
+                    .with_advice(6),
                     MessageRail::Fleet,
                     Some(RailAudience::side(applied.is_alliance)),
                 ));
@@ -2189,7 +2280,8 @@ Some(RailAudience::side(*faction_is_alliance)),
                         format!("Regiment arrived at {name}"),
                         MessageCategory::Mission,
                         system,
-                    ),
+                    )
+                    .with_advice(6),
                     MessageRail::Fleet,
                     audience,
                 ));
@@ -2551,24 +2643,18 @@ Some(RailAudience::side(*faction_is_alliance)),
                             .map_or_else(|| "unknown".into(), |s| s.name.clone());
                         // Notification 3, Uprising Message.
                         msg_log.push(filed(
+                            // FUN_00499460: an ending uprising carries code 2.
                             GameMessage::at_system(
                                 tick,
                                 format!("Uprising subdued at {name}"),
                                 MessageCategory::Diplomacy,
                                 system,
-                            ),
+                            )
+                            .with_advice(2),
                             MessageRail::PopularSupport,
                             system_audience(&world, system),
                         ));
                     }
-                }
-
-                // Advisor trigger for player faction missions.
-                if result.faction == player_faction {
-                    let kind_name = format!("{:?}", result.kind);
-                    let success =
-                        result.outcome == rebellion_core::missions::MissionOutcome::Success;
-                    advisor_mission_result(&mut advisor_state, &kind_name, success);
                 }
             }
 
@@ -2597,11 +2683,19 @@ Some(RailAudience::side(*faction_is_alliance)),
                         .characters
                         .get(*character)
                         .map_or_else(|| "Unknown".into(), |c| c.name.clone());
-                    msg_log.push(GameMessage::new(
-                        current_tick,
-                        format!("{name} has escaped captivity!"),
-                        MessageCategory::Event,
-                    ));
+                    // FUN_00490340: the escape carries the character's code,
+                    // for the side it escapes to.
+                    msg_log.push(
+                        GameMessage::new(
+                            current_tick,
+                            format!("{name} has escaped captivity!"),
+                            MessageCategory::Event,
+                        )
+                        .with_advice_to(
+                            escape_advice(&world, *character),
+                            RailAudience::side(*escaped_to_alliance),
+                        ),
+                    );
                 }
             }
 
@@ -2861,14 +2955,20 @@ Some(RailAudience::side(*faction_is_alliance)),
                             .systems
                             .get(*system)
                             .map_or_else(|| "unknown".into(), |s| s.name.clone());
-                        // Notification 7, Blockade Message.
+                        // Notification 7, Blockade Message. FUN_004960f0: the
+                        // blockaded side's message carries code 0xe. port: the
+                        // blockading side's (code 0xd) is not posted.
+                        let message = GameMessage::at_system(
+                            *tick,
+                            format!("Blockade established at {name}"),
+                            MessageCategory::Combat,
+                            *system,
+                        );
                         msg_log.push(filed(
-                            GameMessage::at_system(
-                                *tick,
-                                format!("Blockade established at {name}"),
-                                MessageCategory::Combat,
-                                *system,
-                            ),
+                            match system_audience(&world, *system) {
+                                Some(holder) => message.with_advice_to(0xe, holder),
+                                None => message,
+                            },
                             MessageRail::Conflict,
                             Some(RailAudience::Both),
                         ));
@@ -2960,24 +3060,21 @@ Some(RailAudience::side(*faction_is_alliance)),
                     .systems
                     .get(system)
                     .map_or_else(|| "unknown".into(), |s| s.name.clone());
+                // FUN_00499460: the uprising message carries advice code 1
+                // when it begins and 2 when it ends.
+                let mut advice = None;
                 let (text, category) = match evt {
                     UprisingEvent::UprisingBegan { .. } => {
-                        // A revolt helps the player when the enemy holds the system.
-                        let player_gains = world
-                            .systems
-                            .get(system)
-                            .and_then(|s| s.control.faction())
-                            .is_some_and(|holder| {
-                                (holder == Faction::Alliance)
-                                    != (player_faction == MissionFaction::Alliance)
-                            });
-                        advisor_uprising(&mut advisor_state, &name, player_gains);
+                        advice = Some(1);
                         (format!("Uprising at {name}!"), MessageCategory::Diplomacy)
                     }
-                    UprisingEvent::UprisingEnded { .. } => (
-                        format!("The uprising at {name} has ended"),
-                        MessageCategory::Diplomacy,
-                    ),
+                    UprisingEvent::UprisingEnded { .. } => {
+                        advice = Some(2);
+                        (
+                            format!("The uprising at {name} has ended"),
+                            MessageCategory::Diplomacy,
+                        )
+                    }
                     UprisingEvent::UprisingIncident { .. } => (
                         format!("Uprising incident at {name}"),
                         MessageCategory::Diplomacy,
@@ -2988,8 +3085,12 @@ Some(RailAudience::side(*faction_is_alliance)),
                     ),
                 };
                 // Notification 3, Uprising Message.
+                let message = GameMessage::at_system(tick, text, category, system);
                 msg_log.push(filed(
-                    GameMessage::at_system(tick, text, category, system),
+                    match advice {
+                        Some(code) => message.with_advice(code),
+                        None => message,
+                    },
                     MessageRail::PopularSupport,
                     system_audience(&world, system),
                 ));
@@ -3060,7 +3161,8 @@ Some(RailAudience::side(*faction_is_alliance)),
                                 format!("Death Star construction complete at {name}"),
                                 MessageCategory::Event,
                                 *system,
-                            ),
+                            )
+                            .with_advice(3),
                             MessageRail::Manufacturing,
                             Some(RailAudience::Empire),
                         ));
@@ -3100,10 +3202,6 @@ Some(RailAudience::side(*faction_is_alliance)),
                             MessageCategory::Event,
                             *system,
                         ));
-                        advisor_death_star(
-                            &mut advisor_state,
-                            &format!("Warning! Death Star detected near {name}!"),
-                        );
                     }
                 }
             }
@@ -3133,7 +3231,9 @@ Some(RailAudience::side(*faction_is_alliance)),
                         current_tick,
                         format!("{faction_name} {tech_name} tech advanced to level {new_level}"),
                         MessageCategory::Event,
-                    ),
+                    )
+                    // FUN_00499aa0: research carries code 4.
+                    .with_advice(4),
                     MessageRail::Manufacturing,
                     Some(RailAudience::side(*faction_is_alliance)),
                 ));
@@ -3194,7 +3294,9 @@ Some(RailAudience::side(*faction_is_alliance)),
                                 current_tick,
                                 format!("{name} has reached {tier_str} tier"),
                                 MessageCategory::Event,
-                            ),
+                            )
+                            // FUN_0048ed80: Force growth carries the character's code.
+                            .with_advice(personnel_advice(&world, *character)),
                             MessageRail::Mission,
                             character_audience(&world, *character),
                         ));
@@ -3845,7 +3947,6 @@ Some(RailAudience::side(*faction_is_alliance)),
                                     AdvisorState::new(AdvisorFaction::from(cockpit_state.faction));
                                 let sprite_dir = gdata_path.join("ui");
                                 advisor_state.set_sprite_dir(&sprite_dir);
-                                advisor_greet(&mut advisor_state);
 
                                 game_mode = GameMode::Galaxy;
                             } else {
@@ -3930,7 +4031,8 @@ Some(RailAudience::side(*faction_is_alliance)),
                     || game_speed_ui.menu_anchor.is_some()
                     || object_menu.is_some()
                     || pause_alert_contains_screen_point(&clock, cockpit_layout, pointer)
-                    || event_screen_state.is_active();
+                    || event_screen_state.is_active()
+                    || briefing_lock;
                 map_state.targeting = targeting.is_some();
 
                 // The whole 607x437 starfield lies behind the shell at its
@@ -3966,6 +4068,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                         economy: &economy_state,
                         missions: &mission_state,
                         uprisings: &uprising_state,
+                        highlight: &cockpit_state.gid_highlight.systems,
                     },
                 );
                 #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
@@ -3987,6 +4090,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                 // 4. All egui panels in a single ui() + draw() pass
                 egui_macroquad::ui(|ctx| {
                     let strategic_input_enabled = !event_screen_state.is_active()
+                        && !briefing_lock
                         && !original_modal_fixture_open
                         && !encyclopedia_surface.is_open();
                     // Register the cockpit background before panels so the
@@ -4016,6 +4120,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                         cockpit_layout,
                         cockpit_state.faction,
                         cockpit_state.gid_mode,
+                        &cockpit_state.gid_highlight,
                     );
                     rebellion_render::sector_hover::draw_sector_hover_label(
                         ctx,
@@ -4024,15 +4129,19 @@ Some(RailAudience::side(*faction_is_alliance)),
                         cockpit_state.faction,
                     );
                     // The day readout is the Game Speed control; a right
-                    // click on it opens the original speed menu.
-                    draw_day_readout(
-                        ctx,
-                        &mut bmp_cache,
-                        cockpit_layout,
-                        cockpit_state.faction,
-                        clock.tick,
-                        clock.speed,
-                    );
+                    // click on it opens the original speed menu. The
+                    // briefing leaves it blank until its step 11; the
+                    // resource counters show throughout (A0 Wine capture).
+                    if !cockpit_state.briefing {
+                        draw_day_readout(
+                            ctx,
+                            &mut bmp_cache,
+                            cockpit_layout,
+                            cockpit_state.faction,
+                            clock.tick,
+                            clock.speed,
+                        );
+                    }
                     // Raw, refined and maintenance: side `+0x78`, `+0x7c`
                     // and `+0x58 − +0x74` (`FUN_00422620`).
                     let side = match cockpit_state.faction {
@@ -4105,28 +4214,32 @@ Some(RailAudience::side(*faction_is_alliance)),
                     // A rail light's click (0x136..0x13e) or F6 (0x75) opens
                     // the Message Index on its category; FUN_0042a240 does
                     // nothing while one is open.
-                    let index_command = speed_input
-                        .then(|| {
-                            if message_index_key {
-                                return Some(0x75);
-                            }
-                            let (released, pointer) = ctx.input(|input| {
-                                (
-                                    input.pointer.primary_released(),
-                                    input.pointer.interact_pos(),
+                    let index_command = pending_index_command.take().or_else(|| {
+                        speed_input
+                            .then(|| {
+                                if message_index_key {
+                                    return Some(0x75);
+                                }
+                                let (released, pointer) = ctx.input(|input| {
+                                    (
+                                        input.pointer.primary_released(),
+                                        input.pointer.interact_pos(),
+                                    )
+                                });
+                                let pointer =
+                                    pointer.filter(|_| released && !ctx.is_pointer_over_area())?;
+                                rebellion_render::cockpit::message_index_command_at(
+                                    cockpit_state.faction,
+                                    (
+                                        (pointer.x - cockpit_layout.canvas.x)
+                                            / cockpit_layout.scale,
+                                        (pointer.y - cockpit_layout.canvas.y)
+                                            / cockpit_layout.scale,
+                                    ),
                                 )
-                            });
-                            let pointer =
-                                pointer.filter(|_| released && !ctx.is_pointer_over_area())?;
-                            rebellion_render::cockpit::message_index_command_at(
-                                cockpit_state.faction,
-                                (
-                                    (pointer.x - cockpit_layout.canvas.x) / cockpit_layout.scale,
-                                    (pointer.y - cockpit_layout.canvas.y) / cockpit_layout.scale,
-                                ),
-                            )
-                        })
-                        .flatten();
+                            })
+                            .flatten()
+                    });
                     if let Some(command) = index_command {
                         if message_index.is_none() {
                             if let Some(category) =
@@ -4271,7 +4384,6 @@ Some(RailAudience::side(*faction_is_alliance)),
                             panel_actions.push(action);
                         }
                     }
-
 
                     #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
                     if interface_fixture_request.is_some_and(|request| {
@@ -5717,8 +5829,11 @@ Some(RailAudience::side(*faction_is_alliance)),
                     let event_screen_was_active = event_screen_state.is_active();
                     draw_event_screen(ctx, &mut event_screen_state, &mut bmp_cache);
 
-                    // The galaxy view holds the capture while targeting.
+                    // The galaxy view holds the capture while targeting, and
+                    // the briefing tour's hooks hold it while they are in
+                    // (FUN_0041d9d0: a press skips the tour instead).
                     let cockpit_command = (!original_modal_fixture_open
+                        && !briefing_lock
                         && !encyclopedia_surface.is_open()
                         && targeting.is_none()
                         && !event_screen_was_active
@@ -5921,17 +6036,6 @@ Some(RailAudience::side(*faction_is_alliance)),
                                 session.system,
                             ));
 
-                            // Advisor: combat result
-                            let player_won = match space_result.winner {
-                                CombatSide::Attacker => session.player_is_attacker,
-                                CombatSide::Defender => !session.player_is_attacker,
-                                CombatSide::Draw => false,
-                            };
-                            advisor_combat_result(
-                                &mut advisor_state,
-                                &session.system_name,
-                                player_won,
-                            );
                             result_presented =
                                 tactical_state.present_auto_resolve_result(&space_result);
                         }
@@ -6002,12 +6106,6 @@ Some(RailAudience::side(*faction_is_alliance)),
                                     MessageCategory::Combat,
                                     session.system,
                                 ));
-
-                                advisor_combat_result(
-                                    &mut advisor_state,
-                                    &session.system_name,
-                                    battle_return.player_won,
-                                );
                             }
 
                             // Auto-resolve already completed bombardment and
@@ -6417,7 +6515,8 @@ Some(RailAudience::side(*faction_is_alliance)),
                             } else {
                                 CockpitFaction::Empire
                             };
-                            advisor_state.set_faction(AdvisorFaction::from(cockpit_state.faction));
+                            advisor_state
+                                .resume_saved_game(AdvisorFaction::from(cockpit_state.faction));
                             map_state = GalaxyMapState::default();
                             sector_window_state.clear();
                             system_window_state.clear();
@@ -8279,7 +8378,10 @@ fn apply_mission_result(
             format!("{faction_name} {kind_name} mission at {sys_name} {outcome_str}"),
             category,
             result.target_system,
-        ),
+        )
+        // FUN_004927c0, FUN_00491500: a mission report carries its agent's
+        // code.
+        .with_advice(result.character.map_or(0x15, |agent| personnel_advice(world, agent))),
         MessageRail::Mission,
         Some(RailAudience::side(
             result.faction == MissionFaction::Alliance,
@@ -8424,11 +8526,18 @@ fn apply_mission_result(
                     .characters
                     .get(*character)
                     .map_or_else(|| "Unknown".into(), |c| c.name.clone());
-                log.push(GameMessage::new(
-                    result.tick,
-                    format!("{name} has escaped captivity!"),
-                    MessageCategory::Event,
-                ));
+                // FUN_00490340: the escape carries the character's code.
+                log.push(
+                    GameMessage::new(
+                        result.tick,
+                        format!("{name} has escaped captivity!"),
+                        MessageCategory::Event,
+                    )
+                    .with_advice_to(
+                        escape_advice(world, *character),
+                        RailAudience::side(*escaped_to_alliance),
+                    ),
+                );
             }
             MissionEffect::UprisingSubdued {
                 system,
@@ -8656,7 +8765,93 @@ fn system_audience(world: &GameWorld, system: SystemKey) -> Option<RailAudience>
     }
 }
 
+/// The six major characters by MJCHARSD id (`& 0xffffff`): Mon Mothma,
+/// Leia, Luke, Han, the Emperor, Vader.
+const MAJOR_CHARACTER_IDS: [u32; 6] = [0x240, 0x241, 0x242, 0x243, 0x280, 0x281];
+
+fn major_character_slot(world: &GameWorld, character: CharacterKey) -> Option<usize> {
+    let id = world.characters.get(character)?.dat_id.raw() & 0xff_ffff;
+    MAJOR_CHARACTER_IDS.iter().position(|&major| major == id)
+}
+
+/// The advice code of a message about `character`'s doings: its own for a
+/// major character, else `0x15` (`FUN_00491500`, `FUN_004955b0`).
+fn personnel_advice(world: &GameWorld, character: CharacterKey) -> u8 {
+    major_character_slot(world, character)
+        .map_or(0x15, |slot| [0x17, 0x18, 0x16, 0x19, 0x1a, 0x1b][slot])
+}
+
+/// The advice code of `character`'s escape (`FUN_00490340`).
+fn escape_advice(world: &GameWorld, character: CharacterKey) -> u8 {
+    major_character_slot(world, character)
+        .map_or(0x24, |slot| [0x26, 0x18, 0x25, 0x19, 0x27, 0x28][slot])
+}
+
 /// The side a character serves, whose Message Index receives its reports.
+/// Load the side's droid sounds when the side changes, then play the ones the
+/// droids started (command 4, `FUN_00403f70`). Loading ahead lets the
+/// browser finish its asynchronous decode before the first play.
+fn play_advisor_voices(
+    engine: &mut audio::AudioEngine,
+    advisor: &mut AdvisorState,
+    loaded_side: &mut Option<AdvisorFaction>,
+    vol: &AudioVolumeState,
+) {
+    if *loaded_side != Some(advisor.faction) {
+        *loaded_side = Some(advisor.faction);
+        for clip in advisor.voice_clips() {
+            if !engine.has_advisor_voice(&clip.key) {
+                if let Some(bytes) = advisor.voice_bytes(&clip) {
+                    engine.load_advisor_voice_bytes(&clip.key, &bytes);
+                }
+            }
+        }
+    }
+    for voice in advisor.take_voices() {
+        if engine.play_advisor_voice(&voice.key, vol) {
+            macroquad::logging::info!("[advisor] sound {} played", voice.key);
+        } else {
+            macroquad::logging::warn!("[advisor] sound {} is not staged", voice.key);
+        }
+    }
+}
+
+/// Carry out briefing step `step` on the cockpit (`FUN_004c30c0`,
+/// `FUN_004c0fc0`).
+fn apply_briefing_step(
+    step: u32,
+    world: &GameWorld,
+    cockpit: &mut CockpitState,
+    pending_index_command: &mut Option<u16>,
+) {
+    use rebellion_render::briefing_tour::{resolve_highlight, tour_step, TourStep};
+    let Some(action) = tour_step(cockpit.faction, step) else {
+        return;
+    };
+    match action {
+        TourStep::Display(mode) => {
+            cockpit.gid_mode = mode;
+            cockpit.gid_highlight = rebellion_render::GidHighlight::default();
+        }
+        TourStep::Highlight {
+            mode,
+            target,
+            caption,
+        } => {
+            cockpit.gid_mode = mode;
+            cockpit.gid_highlight = resolve_highlight(world, cockpit.faction, target, caption);
+        }
+        TourStep::ReleaseClock => {
+            cockpit.gid_mode = rebellion_render::GidMode::PopularSupport;
+            cockpit.gid_highlight = rebellion_render::GidHighlight::default();
+        }
+        TourStep::LockInput => {}
+        // FUN_0041d770(1, 0x82): the Message Index on Advice, as the rail's
+        // command 0x13d opens it.
+        TourStep::Finish => *pending_index_command = Some(0x13d),
+    }
+}
+
 fn character_audience(world: &GameWorld, character: CharacterKey) -> Option<RailAudience> {
     let character = world.characters.get(character)?;
     if character.is_alliance {

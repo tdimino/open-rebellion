@@ -111,6 +111,28 @@ def collect_entries(
                     Entry(KIND_ADVISOR_FRAME, f"{dll_dir.name}/{path.stem}", path)
                 )
 
+        # Droid action scripts and the side's advice table (FUN_0042b1d0,
+        # FUN_004c2c70) travel with the frames they drive.
+        script_dir = dll_dir / "RCDATA"
+        if script_dir.is_dir():
+            for path in sorted(script_dir.glob("*.bin"), key=lambda item: int(item.stem)):
+                int(path.stem)
+                entries.append(
+                    Entry(KIND_ADVISOR_FRAME, f"{dll_dir.name}/rcdata/{path.stem}", path)
+                )
+        table_dir = dll_dir / "SPT"
+        if table_dir.is_dir():
+            for path in sorted(table_dir.glob("*.SPT")):
+                entries.append(Entry(KIND_ADVISOR_FRAME, f"{dll_dir.name}/spt", path))
+        # The droids' voices and sounds, played by command 4 (FUN_00403f70).
+        wave_dir = dll_dir / "WAVE"
+        if wave_dir.is_dir():
+            for path in sorted(wave_dir.glob("*.wav"), key=lambda item: int(item.stem)):
+                int(path.stem)
+                entries.append(
+                    Entry(KIND_ADVISOR_FRAME, f"{dll_dir.name}/wave/{path.stem}", path)
+                )
+
     if audio_dir is not None and audio_dir.is_dir():
         for path in sorted(audio_dir.rglob("*.wav")):
             entries.append(Entry(KIND_AUDIO, path.relative_to(audio_dir).as_posix(), path))

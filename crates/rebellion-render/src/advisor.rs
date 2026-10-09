@@ -1,33 +1,23 @@
-//! Droid advisor system for animated faction advisors that react to game events.
+//! The cockpit droids: C-3PO and R2-D2 for the Alliance, IMP-22 and SD-7 for
+//! the Empire, drawn into the apertures `FUN_0042adb0` gives them.
 //!
-//! Alliance: C-3PO (67×116) + R2-D2 (47×69) animated sprites from ALSPRITE.DLL.
-//! Empire: IMP-22 (106×133) + SD-7 (101×79) animated sprites from EMSPRITE.DLL.
-//!
-//! The dependency-free asset tool preserves the DLLs' standard BMP anchors and
-//! all custom PE type-302 frames. `decode_type302_frame` reproduces the original
-//! 17-byte header, scanline offsets, unchanged skips, and additive pixel runs
-//! recovered from `FUN_0041c6c0`, `FUN_0041c7a0`, and `FUN_0041c930`. Native and WASM use
-//! the same decoded bytes and the exact apertures recovered from
-//! `FUN_0042adb0`.
-//!
-//! The current visible idle runs are authoritative resources. Exact SPT/BIN/FDT
-//! action selection, cadence, preemption, and sound mapping remain a separate
-//! parity task. The legacy cascading BIN parser below is retained only as a
-//! development fallback and must not be treated as authored action proof.
-//!
-//! # Advisor triggers
-//!
-//! The advisor is activated by `AdvisorTrigger` events pushed from main.rs
-//! whenever notable things happen (mission results, combat outcomes, game start,
-//! Death Star events, uprisings).  Each trigger includes a message and priority;
-//! higher-priority messages preempt lower ones.
+//! Each droid rests on one still frame and moves only when its side's
+//! advice agent fires a reaction, or idle chatter comes due
+//! ([`crate::advisor_script`], `ghidra/notes/droid-advisor-triggers.md`).
+//! A frame is an anchor bitmap of the side's sprite DLL, or a type-302
+//! delta applied to the frame before it: `decode_type302_frame` reproduces
+//! the original's 17-byte header, scanline offsets, skips and additive runs
+//! (`FUN_0041c6c0`, `FUN_0041c7a0`, `FUN_0041c930`).
 
-use std::collections::{HashMap, VecDeque};
-use std::ops::Range;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use egui_macroquad::egui::{self, TextureHandle, TextureOptions};
 
+use crate::advisor_script::{
+    script_words, ActionTable, AdviceAgent, DroidEvent, DroidFrame, DroidPlayer, PassOutcome,
+    ResolvedAction, TICK_SECONDS,
+};
 use crate::cockpit::{CockpitFaction, CockpitState};
 
 // ---------------------------------------------------------------------------
@@ -50,80 +40,6 @@ impl From<CockpitFaction> for AdvisorFaction {
             CockpitFaction::Empire => AdvisorFaction::Empire,
         }
     }
-}
-
-// ---------------------------------------------------------------------------
-// Advisor trigger / message
-// ---------------------------------------------------------------------------
-
-/// Priority tier — higher values preempt lower.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum AdvisorPriority {
-    /// Ambient idle chatter (lowest).
-    Low = 0,
-    /// Standard game event (mission complete, manufacturing done).
-    Normal = 1,
-    /// Combat outcome, uprising, betrayal.
-    High = 2,
-    /// Death Star event, victory/defeat (highest).
-    Critical = 3,
-}
-
-/// A message the advisor should deliver.
-#[derive(Debug, Clone)]
-pub struct AdvisorMessage {
-    /// Text displayed in the advisor window.
-    pub text: String,
-    /// How important this message is (preemption).
-    pub priority: AdvisorPriority,
-    /// How long (seconds) the message stays visible.
-    pub display_time: f32,
-}
-
-impl AdvisorMessage {
-    pub fn new(text: impl Into<String>, priority: AdvisorPriority) -> Self {
-        let display_time = match priority {
-            AdvisorPriority::Low => 4.0,
-            AdvisorPriority::Normal => 5.0,
-            AdvisorPriority::High => 6.0,
-            AdvisorPriority::Critical => 8.0,
-        };
-        Self {
-            text: text.into(),
-            priority,
-            display_time,
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Animation frames
-// ---------------------------------------------------------------------------
-
-const DEFAULT_FRAME_INTERVAL: f32 = 0.15;
-const TYPE302_HEADER_LEN: usize = 17;
-const MAX_TYPE302_WIDTH: usize = 640;
-const MAX_TYPE302_HEIGHT: usize = 480;
-const MAX_TYPE302_PIXELS: usize = MAX_TYPE302_WIDTH * MAX_TYPE302_HEIGHT;
-
-#[cfg(target_arch = "wasm32")]
-#[derive(Default)]
-struct WasmAdvisorAssets {
-    frames: HashMap<String, Vec<u8>>,
-    bitmaps: HashMap<String, Vec<u8>>,
-}
-
-#[cfg(target_arch = "wasm32")]
-static WASM_ADVISOR_ASSETS: std::sync::LazyLock<std::sync::Mutex<WasmAdvisorAssets>> =
-    std::sync::LazyLock::new(|| std::sync::Mutex::new(WasmAdvisorAssets::default()));
-
-/// Install the custom advisor resources unpacked by the browser runtime pack.
-#[cfg(target_arch = "wasm32")]
-pub fn set_advisor_asset_cache(
-    frames: HashMap<String, Vec<u8>>,
-    bitmaps: HashMap<String, Vec<u8>>,
-) {
-    *WASM_ADVISOR_ASSETS.lock().unwrap() = WasmAdvisorAssets { frames, bitmaps };
 }
 
 /// Exact decoded pixels from one original PE type-302 sparse frame.
@@ -438,1014 +354,585 @@ fn decode_anchor_bitmap(bytes: &[u8]) -> Result<AdvisorFrameBase, AdvisorFrameEr
     })
 }
 
-/// Which BIN format variant was used to parse a sequence.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BinFormat {
-    /// v1: `u16 count + count * u16 frame_ids` — explicit list.
-    V1Explicit,
-    /// v2: `u16 count + u16 base + u16 0 + u16 0` — sequential range (8 bytes).
-    V2Range,
-    /// v3: `u16 0 + u16 ref_id + u16 9 + u16 count + u16 base` — BMP-mapped range (10 bytes).
-    V3BmpRange,
-    /// v4: `u16 0 + u16 ref_id + u16 bmp_id` — single BMP frame (6 bytes).
-    V4BmpSingle,
+// ---------------------------------------------------------------------------
+// Assets
+// ---------------------------------------------------------------------------
+
+const TYPE302_HEADER_LEN: usize = 17;
+const MAX_TYPE302_WIDTH: usize = 640;
+const MAX_TYPE302_HEIGHT: usize = 480;
+const MAX_TYPE302_PIXELS: usize = MAX_TYPE302_WIDTH * MAX_TYPE302_HEIGHT;
+
+/// The agent droid's rest script (`FUN_0042adb0`: `9:0x193`, both sides).
+const AGENT_REST_SCRIPT: u16 = 0x193;
+
+pub(crate) use crate::advisor_script::{BRIEF_MODULE, SPRITE_MODULE};
+
+#[cfg(target_arch = "wasm32")]
+#[derive(Default)]
+struct WasmAdvisorAssets {
+    frames: HashMap<String, Vec<u8>>,
+    bitmaps: HashMap<String, Vec<u8>>,
 }
 
-/// Parsed animation control data from an advisor BIN file.
-#[derive(Debug, Clone, PartialEq)]
-pub struct BinSequence {
-    /// Best-effort ordered frame IDs from the authored BIN.
-    pub frame_ids: Vec<u16>,
-    /// Fallback interval used when replaying this sequence.
-    pub default_interval: f32,
-    /// Which format variant produced this sequence.
-    pub format: BinFormat,
-    /// Whether `frame_ids` are literal BMP resource IDs (v3/v4) rather than
-    /// DLL-internal indices (v1/v2). When true, the frame IDs can be looked
-    /// up directly in the `bmp_resource_id_map` instead of using modulo.
-    pub bmp_mapped: bool,
+#[cfg(target_arch = "wasm32")]
+static WASM_ADVISOR_ASSETS: std::sync::LazyLock<std::sync::Mutex<WasmAdvisorAssets>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(WasmAdvisorAssets::default()));
+
+/// Install the advisor resources unpacked by the browser runtime pack:
+/// type-302 frames as `dll/id`, action scripts as `dll/rcdata/id`, sounds as
+/// `dll/wave/id` and the side's advice table as `dll/spt`, beside the anchor
+/// bitmaps.
+#[cfg(target_arch = "wasm32")]
+pub fn set_advisor_asset_cache(
+    frames: HashMap<String, Vec<u8>>,
+    bitmaps: HashMap<String, Vec<u8>>,
+) {
+    *WASM_ADVISOR_ASSETS.lock().unwrap() = WasmAdvisorAssets { frames, bitmaps };
 }
 
-/// Reasons an advisor BIN file could not be parsed as a frame sequence.
+/// A staged advisor resource of one of the side's DLLs.
+#[derive(Debug, Clone, Copy)]
+enum AdvisorAsset {
+    Anchor(u16),
+    Delta(u16),
+    Script(u16),
+    Wave(u16),
+    Table(&'static str),
+}
+
+impl AdvisorFaction {
+    /// The staged directory of `FUN_005fefd0` module `module`: the side's
+    /// briefing DLL for module 13, its sprite DLL otherwise.
+    const fn dll_dir(self, module: u16) -> &'static str {
+        match (self, module) {
+            (Self::Alliance, BRIEF_MODULE) => "albrief-dll",
+            (Self::Empire, BRIEF_MODULE) => "embrief-dll",
+            (Self::Alliance, _) => "alsprite-dll",
+            (Self::Empire, _) => "emsprite-dll",
+        }
+    }
+
+    /// The side's advice table (`FUN_004c2c70`, `FUN_004c0ba0`).
+    const fn table_name(self) -> &'static str {
+        match self {
+            Self::Alliance => "C3POACT.SPT",
+            Self::Empire => "IMP22ACT.SPT",
+        }
+    }
+
+    /// The partner droid's rest script (`FUN_0042adb0`: `9:0x192` for the
+    /// Alliance, `9:0x191` for the Empire).
+    const fn partner_rest_script(self) -> u16 {
+        match self {
+            Self::Alliance => 0x192,
+            Self::Empire => 0x191,
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn read_advisor_asset(root: &Path, dll: &str, asset: AdvisorAsset) -> Option<Vec<u8>> {
+    let dir = root.join(dll);
+    let path = match asset {
+        AdvisorAsset::Anchor(id) => dir.join("BMP").join(format!("{id}.bmp")),
+        AdvisorAsset::Delta(id) => dir.join("TYPE302").join(format!("{id}.bin")),
+        AdvisorAsset::Script(id) => dir.join("RCDATA").join(format!("{id}.bin")),
+        AdvisorAsset::Wave(id) => dir.join("WAVE").join(format!("{id}.wav")),
+        AdvisorAsset::Table(name) => dir.join("SPT").join(name),
+    };
+    std::fs::read(path).ok()
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn list_advisor_waves(root: &Path, dll: &str) -> Vec<u16> {
+    std::fs::read_dir(root.join(dll).join("WAVE"))
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| entry.ok()?.path().file_stem()?.to_str()?.parse().ok())
+        .collect()
+}
+
+#[cfg(target_arch = "wasm32")]
+fn read_advisor_asset(_root: &Path, dll: &str, asset: AdvisorAsset) -> Option<Vec<u8>> {
+    let web = WASM_ADVISOR_ASSETS.lock().unwrap();
+    match asset {
+        AdvisorAsset::Anchor(id) => web.bitmaps.get(&format!("{dll}/{id}")),
+        AdvisorAsset::Delta(id) => web.frames.get(&format!("{dll}/{id}")),
+        AdvisorAsset::Script(id) => web.frames.get(&format!("{dll}/rcdata/{id}")),
+        AdvisorAsset::Wave(id) => web.frames.get(&format!("{dll}/wave/{id}")),
+        AdvisorAsset::Table(_) => web.frames.get(&format!("{dll}/spt")),
+    }
+    .cloned()
+}
+
+#[cfg(target_arch = "wasm32")]
+fn list_advisor_waves(_root: &Path, dll: &str) -> Vec<u16> {
+    let prefix = format!("{dll}/wave/");
+    let web = WASM_ADVISOR_ASSETS.lock().unwrap();
+    web.frames
+        .keys()
+        .filter_map(|key| key.strip_prefix(&prefix)?.parse().ok())
+        .collect()
+}
+
+/// A droid sound for the app's audio engine: a cache key unique across both
+/// sides, and the WAVE resource of its module.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum BinError {
-    /// File is too small to carry useful animation data (e.g. 2-byte stubs).
-    TooSmall { actual_len: usize },
-    /// No format variant matched the file's structure.
-    NoFormatMatch { actual_len: usize },
+pub struct AdvisorVoice {
+    pub key: String,
+    pub module: u16,
+    pub wave: u16,
 }
 
-/// Cascading decoder that tries all four BIN format variants in order.
-///
-/// Returns `(BinSequence, BinFormat)` on success. The priority order is:
-/// 1. **v3** (10 bytes, `0 | ref | 9 | count | base`) — BMP-mapped range
-/// 2. **v4** (6 bytes, `0 | ref | bmp_id`) — BMP-mapped single frame
-/// 3. **v2** (8 bytes, `count | base | 0 | 0`) — sequential range
-/// 4. **v1** (variable, `count | ids…`) — explicit frame list
-///
-/// v3 and v4 are tried before v2/v1 because the zero-prefix discriminator
-/// (`w0 == 0`) prevents ambiguity with v1/v2 (which require `w0 > 0`).
-///
-/// # Errors
-/// Returns an error if the bytes do not encode a supported, valid BIN sequence.
-#[expect(
-    clippy::cast_possible_truncation,
-    reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
-)]
-pub fn parse_advisor_bin_cascade(bytes: &[u8]) -> Result<BinSequence, BinError> {
-    let len = bytes.len();
+/// A cockpit step the agent's pass runs (`FUN_004c3060`): kind 2 runs
+/// briefing step `step` (`FUN_004c30c0`), kind 3 selects an object
+/// (`FUN_0041d830`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CockpitStep {
+    pub kind: u32,
+    pub step: u32,
+}
 
-    // Reject stubs that cannot carry useful data.
-    if len < 4 {
-        return Err(BinError::TooSmall { actual_len: len });
-    }
-
-    let w0 = u16::from_le_bytes([bytes[0], bytes[1]]);
-
-    // --- Zero-prefix formats (v3, v4) ---
-    if w0 == 0 {
-        // v3: 10 bytes = (0, ref_id, 9, count, base_bmp_id)
-        if len == 10 {
-            let w2 = u16::from_le_bytes([bytes[4], bytes[5]]);
-            if w2 == 9 {
-                let count = u16::from_le_bytes([bytes[6], bytes[7]]) as usize;
-                let base = u16::from_le_bytes([bytes[8], bytes[9]]);
-                let frame_ids: Vec<u16> = (0..count).map(|i| base + i as u16).collect();
-                return Ok(BinSequence {
-                    frame_ids,
-                    default_interval: DEFAULT_FRAME_INTERVAL,
-                    format: BinFormat::V3BmpRange,
-                    bmp_mapped: true,
-                });
-            }
-        }
-
-        // v4: 6 bytes = (0, ref_id, bmp_id)
-        if len == 6 {
-            let bmp_id = u16::from_le_bytes([bytes[4], bytes[5]]);
-            return Ok(BinSequence {
-                frame_ids: vec![bmp_id],
-                default_interval: DEFAULT_FRAME_INTERVAL,
-                format: BinFormat::V4BmpSingle,
-                bmp_mapped: true,
-            });
-        }
-
-        // 4-byte zero-prefix stubs (0, some_id) — too small for useful animation.
-        return Err(BinError::TooSmall { actual_len: len });
-    }
-
-    // --- Nonzero-prefix formats (v2, v1) ---
-    let count = w0 as usize;
-
-    // v2: exactly 8 bytes = (count, base, 0, 0) where count > 0.
-    // Discriminator: the last two u16 words are both zero.
-    if len == 8 && count > 0 {
-        let w2 = u16::from_le_bytes([bytes[4], bytes[5]]);
-        let w3 = u16::from_le_bytes([bytes[6], bytes[7]]);
-        if w2 == 0 && w3 == 0 {
-            let base = u16::from_le_bytes([bytes[2], bytes[3]]);
-            let frame_ids: Vec<u16> = (0..count).map(|i| base + i as u16).collect();
-            return Ok(BinSequence {
-                frame_ids,
-                default_interval: DEFAULT_FRAME_INTERVAL,
-                format: BinFormat::V2Range,
-                bmp_mapped: false,
-            });
-        }
-    }
-
-    // v1: variable length = 2 + count * 2, explicit frame ID list.
-    let expected_len = 2 + count * 2;
-    if len == expected_len && count > 0 {
-        let mut frame_ids = Vec::with_capacity(count);
-        for chunk in bytes[2..].as_chunks::<2>().0 {
-            frame_ids.push(u16::from_le_bytes([chunk[0], chunk[1]]));
-        }
-        return Ok(BinSequence {
-            frame_ids,
-            default_interval: DEFAULT_FRAME_INTERVAL,
-            format: BinFormat::V1Explicit,
-            bmp_mapped: false,
-        });
-    }
-
-    Err(BinError::NoFormatMatch { actual_len: len })
+/// One anchor's run of frames, decoded as far as the droids have needed:
+/// the anchor bitmap, then each type-302 delta applied to the frame before.
+struct AnchorRun {
+    base: Option<AdvisorFrameBase>,
+    textures: Vec<TextureHandle>,
+    broken: bool,
 }
 
 // ---------------------------------------------------------------------------
 // AdvisorState
 // ---------------------------------------------------------------------------
 
-/// Mutable state for the droid advisor system.
+/// The cockpit droids: the side's advice agent and its two players
+/// (`ghidra/notes/droid-advisor-triggers.md`).
 pub struct AdvisorState {
     /// Which faction's droid set is active.
     pub faction: AdvisorFaction,
-    /// Whether the advisor window is visible.
+    /// Whether the droids are drawn.
     pub visible: bool,
-    /// Queued messages waiting to display.
-    queue: VecDeque<AdvisorMessage>,
-    /// Currently displaying message (if any).
-    current_message: Option<AdvisorMessage>,
-    /// Time remaining on current message (seconds).
-    message_timer: f32,
-
-    // Animation state
-    /// Current primary frame index.
-    primary_frame: usize,
-    /// Current secondary frame index (R2-D2).
-    secondary_frame: usize,
-    /// Frame advance timer (seconds since last frame change).
-    frame_timer: f32,
-    /// Seconds per animation frame.
-    frame_interval: f32,
-    /// Parsed authored BIN sequences, sorted by filename.
-    bin_sequences: Vec<BinSequence>,
-    /// Current active BIN sequence.
-    current_sequence: usize,
-    /// Current cursor within the active BIN sequence.
-    frame_cursor: usize,
-    /// Number of frames in the primary BMP pool.
-    primary_frame_pool_len: usize,
-    /// Number of frames in the secondary BMP pool.
-    secondary_frame_pool_len: usize,
-    /// Maps BMP resource ID → index in `primary_textures` for direct lookup.
-    /// Populated from BMP filenames (e.g. `02001-alsprite.bmp` → resource ID 2001).
-    /// Used by v3/v4 BIN sequences whose `bmp_mapped` flag is true.
-    bmp_resource_id_map: HashMap<u16, usize>,
-
-    // Loaded textures (lazy-initialized)
-    frames_loaded: bool,
-    primary_textures: Vec<TextureHandle>,
-    secondary_textures: Vec<TextureHandle>,
-
-    /// Path to the staged UI root containing `alsprite-dll` and `emsprite-dll`.
+    /// Staged UI root holding `alsprite-dll` and `emsprite-dll`.
     sprite_dir: PathBuf,
+    loaded: bool,
+    table: ActionTable,
+    scripts: HashMap<(u16, u16), Option<Vec<u16>>>,
+    agent: AdviceAgent,
+    agent_droid: DroidPlayer,
+    partner_droid: DroidPlayer,
+    /// The scheduler's step count (`FUN_004fcee0`), fractional.
+    steps: f64,
+    /// Seconds toward the droids' next 67 ms tick.
+    tick_clock: f32,
+    runs: HashMap<(u16, u16), AnchorRun>,
+    /// Sounds started since the app last took them, as (module, wave).
+    voices: Vec<(u16, u16)>,
+    /// `DAT_006b28c4`, `DAT_006b28c8`: the step command `0x11` left for the
+    /// next pass.
+    pending_step: Option<CockpitStep>,
+    /// Steps the passes ran since the app last took them.
+    steps_run: Vec<CockpitStep>,
+    /// `DAT_006b14bc`: the briefing tour holds the cockpit's input, from
+    /// step 12 (`FUN_0041d9d0`) to step 13 (`FUN_0041da80`).
+    tour_active: bool,
+    /// `DAT_006b14b4`: the tour was skipped, which it can be once.
+    tour_skipped: bool,
+    /// A new game's clock holds through the tour until its step 11
+    /// (`FUN_0041dbe0` → `FUN_0041e320`).
+    holds_clock: bool,
 }
 
 impl AdvisorState {
-    /// Create a new advisor state.
+    /// Create the droids for `faction`, resting until their assets load.
     #[must_use]
     pub fn new(faction: AdvisorFaction) -> Self {
         Self {
             faction,
             visible: true,
-            queue: VecDeque::new(),
-            current_message: None,
-            message_timer: 0.0,
-            primary_frame: 0,
-            secondary_frame: 0,
-            frame_timer: 0.0,
-            frame_interval: DEFAULT_FRAME_INTERVAL,
-            bin_sequences: Vec::new(),
-            current_sequence: 0,
-            frame_cursor: 0,
-            primary_frame_pool_len: 0,
-            secondary_frame_pool_len: 0,
-            bmp_resource_id_map: HashMap::new(),
-            frames_loaded: false,
-            primary_textures: Vec::new(),
-            secondary_textures: Vec::new(),
-            // WASM resolves this logical root through the installed runtime
-            // cache. Native builds replace it with the staged UI directory.
+            // WASM resolves assets through the runtime pack; native builds
+            // replace this with the staged UI directory.
             sprite_dir: PathBuf::new(),
+            loaded: false,
+            table: ActionTable::default(),
+            scripts: HashMap::new(),
+            agent: AdviceAgent::new(faction),
+            agent_droid: DroidPlayer::new(0, true),
+            partner_droid: DroidPlayer::new(0, false),
+            // hyp: the scheduler has counted a step by the time the agent
+            // first passes; at 0 no slot could fire (`+0x16c` < now) while
+            // the briefing holds the clock.
+            steps: 1.0,
+            tick_clock: 0.0,
+            runs: HashMap::new(),
+            voices: Vec::new(),
+            pending_step: None,
+            steps_run: Vec::new(),
+            tour_active: false,
+            tour_skipped: false,
+            holds_clock: true,
         }
     }
 
-    /// Set the staged UI root used for native advisor assets.
+    /// Set the staged UI root, and start the droids over.
     pub fn set_sprite_dir(&mut self, path: impl Into<PathBuf>) {
+        let faction = self.faction;
+        *self = Self::new(faction);
         self.sprite_dir = path.into();
-        self.primary_textures.clear();
-        self.secondary_textures.clear();
-        self.bin_sequences.clear();
-        self.bmp_resource_id_map.clear();
-        self.primary_frame_pool_len = 0;
-        self.secondary_frame_pool_len = 0;
-        self.current_sequence = 0;
-        self.frame_cursor = 0;
-        self.primary_frame = 0;
-        self.secondary_frame = 0;
-        self.frame_timer = 0.0;
-        self.frames_loaded = false; // force reload on next draw
     }
 
+    /// Start `faction`'s droids for a loaded game: the briefing has run, so
+    /// the opening slot is dropped and the clock is not held
+    /// (`FUN_00439320` sets `0x8000` unless the session is a new game).
+    pub fn resume_saved_game(&mut self, faction: AdvisorFaction) {
+        let sprite_dir = std::mem::take(&mut self.sprite_dir);
+        *self = Self::new(faction);
+        self.sprite_dir = sprite_dir;
+        self.agent.clear_opening();
+        self.holds_clock = false;
+    }
+
+    /// Whether the briefing tour holds the game clock.
+    #[must_use]
+    pub const fn holds_clock(&self) -> bool {
+        self.holds_clock
+    }
+
+    /// Switch to `faction`'s droids, starting them over.
     pub fn set_faction(&mut self, faction: AdvisorFaction) {
         if self.faction == faction {
             return;
         }
-        self.faction = faction;
-        self.primary_textures.clear();
-        self.secondary_textures.clear();
-        self.bin_sequences.clear();
-        self.bmp_resource_id_map.clear();
-        self.primary_frame_pool_len = 0;
-        self.secondary_frame_pool_len = 0;
-        self.primary_frame = 0;
-        self.secondary_frame = 0;
-        self.current_sequence = 0;
-        self.frame_cursor = 0;
-        self.frame_timer = 0.0;
-        self.frames_loaded = false;
+        let sprite_dir = std::mem::take(&mut self.sprite_dir);
+        *self = Self::new(faction);
+        self.sprite_dir = sprite_dir;
     }
 
-    /// Push a message into the advisor queue.
-    ///
-    /// If the new message has higher priority than the current one, it
-    /// preempts immediately.
-    pub fn push_message(&mut self, msg: AdvisorMessage) {
-        // If nothing is showing, display immediately.
-        if self.current_message.is_none() {
-            self.activate_sequence_for_priority(msg.priority);
-            self.message_timer = msg.display_time;
-            self.current_message = Some(msg);
-            self.visible = true;
+    fn asset(&self, module: u16, asset: AdvisorAsset) -> Option<Vec<u8>> {
+        read_advisor_asset(&self.sprite_dir, self.faction.dll_dir(module), asset)
+    }
+
+    fn script(&mut self, module: u16, id: u16) -> Option<Vec<u16>> {
+        if !self.scripts.contains_key(&(module, id)) {
+            let words = self
+                .asset(module, AdvisorAsset::Script(id))
+                .map(|bytes| script_words(&bytes));
+            self.scripts.insert((module, id), words);
+        }
+        self.scripts.get(&(module, id)).cloned().flatten()
+    }
+
+    /// Load the advice table and the rest frames once.
+    fn ensure_loaded(&mut self) {
+        if self.loaded {
             return;
         }
-
-        // Preempt if higher priority.
-        if let Some(ref current) = self.current_message {
-            if msg.priority > current.priority {
-                // Demote current back to front of queue.
-                if let Some(demoted) = self.current_message.take() {
-                    self.queue.push_front(demoted);
-                }
-                self.activate_sequence_for_priority(msg.priority);
-                self.message_timer = msg.display_time;
-                self.current_message = Some(msg);
-                return;
-            }
-        }
-
-        // Otherwise queue it.
-        self.queue.push_back(msg);
-    }
-
-    /// Advance animation and message timers by `dt` seconds.
-    pub fn update(&mut self, dt: f32) {
-        self.update_animation(dt);
-
-        // Advance message timer.
-        if self.current_message.is_some() {
-            self.message_timer -= dt;
-            if self.message_timer <= 0.0 {
-                self.current_message = None;
-                // Pop next from queue.
-                if let Some(next) = self.queue.pop_front() {
-                    self.activate_sequence_for_priority(next.priority);
-                    self.message_timer = next.display_time;
-                    self.current_message = Some(next);
-                } else {
-                    self.activate_idle_sequence();
-                }
-            }
-        }
-    }
-
-    /// Whether the advisor has a message to show.
-    #[must_use]
-    pub fn has_message(&self) -> bool {
-        self.current_message.is_some()
-    }
-
-    fn update_animation(&mut self, dt: f32) {
-        self.frame_timer += dt;
-
-        if self.bin_sequences.is_empty() {
-            while self.frame_timer >= self.frame_interval {
-                self.frame_timer -= self.frame_interval;
-                self.advance_legacy_frames();
-            }
-            return;
-        }
-
-        loop {
-            let interval = self.current_frame_interval();
-            if self.frame_timer < interval {
-                break;
-            }
-
-            self.frame_timer -= interval;
-            self.advance_bin_frames();
-        }
-    }
-
-    fn advance_legacy_frames(&mut self) {
-        if self.primary_frame_pool_len > 0 {
-            self.primary_frame = (self.primary_frame + 1) % self.primary_frame_pool_len;
-        }
-        if self.secondary_frame_pool_len > 0 {
-            self.secondary_frame = (self.secondary_frame + 1) % self.secondary_frame_pool_len;
-        }
-    }
-
-    fn advance_bin_frames(&mut self) {
-        let priority = self.active_animation_priority();
-        let sequence_len = self
-            .bin_sequences
-            .get(self.current_sequence)
-            .map_or(0, |sequence| sequence.frame_ids.len());
-
-        if sequence_len == 0 {
-            if priority == AdvisorPriority::Low {
-                self.frame_cursor = 0;
-            } else {
-                let next = self.next_sequence_for_priority(priority);
-                self.set_sequence(next, false);
-                return;
-            }
-        } else if self.frame_cursor + 1 < sequence_len {
-            self.frame_cursor += 1;
-        } else if priority == AdvisorPriority::Low {
-            self.frame_cursor = 0;
-        } else {
-            let next = self.next_sequence_for_priority(priority);
-            self.set_sequence(next, false);
-            return;
-        }
-
-        self.sync_frames_from_sequence();
-    }
-
-    fn active_animation_priority(&self) -> AdvisorPriority {
-        self.current_message
-            .as_ref()
-            .map_or(AdvisorPriority::Low, |message| message.priority)
-    }
-
-    fn current_frame_interval(&self) -> f32 {
-        self.bin_sequences
-            .get(self.current_sequence)
-            .map_or(self.frame_interval, |sequence| sequence.default_interval)
-    }
-
-    fn activate_idle_sequence(&mut self) {
-        if self.bin_sequences.is_empty() {
-            return;
-        }
-
-        let idle_band = self.sequence_band_for_priority(AdvisorPriority::Low);
-        if !idle_band.contains(&self.current_sequence) {
-            self.set_sequence(idle_band.start, true);
-        }
-    }
-
-    fn activate_sequence_for_priority(&mut self, priority: AdvisorPriority) {
-        if self.bin_sequences.is_empty() {
-            return;
-        }
-
-        let next = self.next_sequence_for_priority(priority);
-        self.set_sequence(next, true);
-    }
-
-    fn next_sequence_for_priority(&self, priority: AdvisorPriority) -> usize {
-        let band = self.sequence_band_for_priority(priority);
-        if band.contains(&self.current_sequence) {
-            let next = self.current_sequence + 1;
-            if next < band.end {
-                next
-            } else {
-                band.start
-            }
-        } else {
-            band.start
-        }
-    }
-
-    fn sequence_band_for_priority(&self, priority: AdvisorPriority) -> Range<usize> {
-        let len = self.bin_sequences.len();
-        if len == 0 {
-            return 0..0;
-        }
-
-        // Without the original DLL metadata there is no semantic tag for each
-        // BIN, so we bucket the valid sequences by sorted filename into
-        // contiguous thirds: early = idle, middle = normal, late = high/critical.
-        let idle_end = (len / 3).max(1);
-        let normal_end = ((len * 2) / 3).max(idle_end + 1).min(len);
-
-        let band = match priority {
-            AdvisorPriority::Low => 0..idle_end,
-            AdvisorPriority::Normal => idle_end..normal_end,
-            AdvisorPriority::High | AdvisorPriority::Critical => normal_end..len,
-        };
-
-        if band.is_empty() {
-            0..len
-        } else {
-            band
-        }
-    }
-
-    fn set_sequence(&mut self, sequence_index: usize, reset_timer: bool) {
-        if self.bin_sequences.is_empty() {
-            return;
-        }
-
-        self.current_sequence = sequence_index.min(self.bin_sequences.len() - 1);
-        self.frame_cursor = 0;
-        if reset_timer {
-            self.frame_timer = 0.0;
-        }
-        self.sync_frames_from_sequence();
-    }
-
-    fn sync_frames_from_sequence(&mut self) {
-        let Some(sequence) = self.bin_sequences.get(self.current_sequence) else {
-            return;
-        };
-        if sequence.frame_ids.is_empty() {
-            return;
-        }
-
-        let frame_id = sequence.frame_ids[self.frame_cursor.min(sequence.frame_ids.len() - 1)];
-
-        if sequence.bmp_mapped {
-            // v3/v4: frame IDs are literal BMP resource IDs — use the direct
-            // lookup map built during load. Falls back to modulo if the exact
-            // resource ID is not found (which can happen when the BMP set is
-            // incomplete or the BIN references frames beyond the extracted set).
-            if let Some(&idx) = self.bmp_resource_id_map.get(&frame_id) {
-                self.primary_frame = idx;
-            } else if self.primary_frame_pool_len > 0 {
-                self.primary_frame = frame_id as usize % self.primary_frame_pool_len;
-            }
-            // v3/v4 sequences do not drive R2-D2 independently; keep secondary
-            // on its existing frame.
-        } else {
-            // v1/v2: frame IDs target an internal DLL resource index.
-            // Best-effort modulo into the sorted BMP pools.
-            if self.primary_frame_pool_len > 0 {
-                self.primary_frame = frame_id as usize % self.primary_frame_pool_len;
-            }
-            if self.secondary_frame_pool_len > 0 {
-                self.secondary_frame = frame_id as usize % self.secondary_frame_pool_len;
-            }
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Frame loading
-// ---------------------------------------------------------------------------
-
-/// Result of loading a faction's sprite directory.
-struct FactionFrames {
-    primary: Vec<TextureHandle>,
-    secondary: Vec<TextureHandle>,
-    bin_sequences: Vec<BinSequence>,
-    /// Maps BMP resource ID (from filename) → index in `primary`.
-    bmp_resource_id_map: HashMap<u16, usize>,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct AuthoredFrameSpec {
-    dll_dir: &'static str,
-    primary_anchor: u32,
-    primary_first: u32,
-    primary_last: u32,
-    secondary_anchor: u32,
-    secondary_first: u32,
-    secondary_last: u32,
-}
-
-impl AuthoredFrameSpec {
-    fn for_faction(faction: AdvisorFaction) -> Self {
-        match faction {
-            AdvisorFaction::Alliance => Self {
-                dll_dir: "alsprite-dll",
-                primary_anchor: 2001,
-                primary_first: 2002,
-                primary_last: 2024,
-                secondary_anchor: 3331,
-                secondary_first: 3332,
-                secondary_last: 3346,
-            },
-            AdvisorFaction::Empire => Self {
-                dll_dir: "emsprite-dll",
-                primary_anchor: 2001,
-                primary_first: 2002,
-                primary_last: 2016,
-                secondary_anchor: 3001,
-                secondary_first: 3002,
-                secondary_last: 3016,
-            },
-        }
-    }
-}
-
-#[derive(Default)]
-struct FactionAssetBytes {
-    bitmaps: HashMap<u32, Vec<u8>>,
-    frames: HashMap<u32, Vec<u8>>,
-}
-
-#[expect(
-    clippy::too_many_lines,
-    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
-)]
-#[expect(
-    clippy::cast_possible_truncation,
-    reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
-)]
-fn load_authored_faction_frames(
-    ctx: &egui::Context,
-    faction: AdvisorFaction,
-    assets: &FactionAssetBytes,
-) -> FactionFrames {
-    let spec = AuthoredFrameSpec::for_faction(faction);
-    let Some(palette_bitmap) = assets.bitmaps.get(&spec.primary_anchor) else {
-        macroquad::logging::warn!(
-            "[advisor] missing palette anchor source={} resource_id={}",
-            spec.dll_dir,
-            spec.primary_anchor
-        );
-        return FactionFrames {
-            primary: Vec::new(),
-            secondary: Vec::new(),
-            bin_sequences: Vec::new(),
-            bmp_resource_id_map: HashMap::new(),
-        };
-    };
-    let mut primary_base = match decode_anchor_bitmap(palette_bitmap) {
-        Ok(base) => base,
-        Err(error) => {
-            macroquad::logging::warn!(
-                "[advisor] anchor decode failed source={} resource_id={} error={error:?}",
-                spec.dll_dir,
-                spec.primary_anchor
-            );
-            return FactionFrames {
-                primary: Vec::new(),
-                secondary: Vec::new(),
-                bin_sequences: Vec::new(),
-                bmp_resource_id_map: HashMap::new(),
-            };
-        }
-    };
-
-    let mut primary = Vec::new();
-    let mut secondary = Vec::new();
-    let mut bmp_resource_id_map = HashMap::new();
-
-    let primary_anchor = match indexed_frame(
-        primary_base.width,
-        primary_base.height,
-        &primary_base.indices,
-        &primary_base.palette,
-    ) {
-        Ok(frame) => frame,
-        Err(error) => {
-            macroquad::logging::warn!(
-                "[advisor] anchor conversion failed source={} resource_id={} error={error:?}",
-                spec.dll_dir,
-                spec.primary_anchor
-            );
-            return FactionFrames {
-                primary: Vec::new(),
-                secondary: Vec::new(),
-                bin_sequences: Vec::new(),
-                bmp_resource_id_map: HashMap::new(),
-            };
-        }
-    };
-    bmp_resource_id_map.insert(spec.primary_anchor as u16, primary.len());
-    primary.push(ctx.load_texture(
-        format!("advisor_{}_{}", spec.dll_dir, spec.primary_anchor),
-        egui::ColorImage::from_rgba_unmultiplied(
-            [primary_anchor.width, primary_anchor.height],
-            &primary_anchor.rgba,
-        ),
-        TextureOptions::NEAREST,
-    ));
-    for resource_id in spec.primary_first..=spec.primary_last {
-        let Some(bytes) = assets.frames.get(&resource_id) else {
-            macroquad::logging::warn!(
-                "[advisor] missing type-302 frame source={} resource_id={resource_id}",
-                spec.dll_dir
-            );
-            break;
-        };
-        match decode_type302_frame(bytes, &primary_base) {
-            Ok(frame) => {
-                primary_base.indices.clone_from(&frame.indices);
-                let image = egui::ColorImage::from_rgba_unmultiplied(
-                    [frame.width, frame.height],
-                    &frame.rgba,
-                );
-                bmp_resource_id_map.insert(resource_id as u16, primary.len());
-                primary.push(ctx.load_texture(
-                    format!("advisor_{}_{}", spec.dll_dir, resource_id),
-                    image,
-                    TextureOptions::NEAREST,
-                ));
-            }
-            Err(error) => {
-                macroquad::logging::warn!(
-                    "[advisor] type-302 decode failed source={} resource_id={} error={error:?}",
-                    spec.dll_dir,
-                    resource_id
-                );
-                break;
-            }
-        }
-    }
-
-    let secondary_base = if let Some(bytes) = assets.bitmaps.get(&spec.secondary_anchor) {
-        match decode_anchor_bitmap(bytes) {
-            Ok(base) => Some(base),
-            Err(error) => {
-                macroquad::logging::warn!(
-                "[advisor] secondary anchor decode failed source={} resource_id={} error={error:?}",
-                spec.dll_dir, spec.secondary_anchor
-            );
-                None
-            }
-        }
-    } else {
-        macroquad::logging::warn!(
-            "[advisor] missing secondary anchor source={} resource_id={}",
-            spec.dll_dir,
-            spec.secondary_anchor
-        );
-        None
-    };
-    if let Some(mut secondary_base) = secondary_base {
-        let secondary_anchor = match indexed_frame(
-            secondary_base.width,
-            secondary_base.height,
-            &secondary_base.indices,
-            &secondary_base.palette,
-        ) {
-            Ok(frame) => frame,
-            Err(error) => {
-                macroquad::logging::warn!(
-                    "[advisor] secondary anchor conversion failed source={} resource_id={} error={error:?}",
-                    spec.dll_dir,
-                    spec.secondary_anchor
-                );
-                return FactionFrames {
-                    primary,
-                    secondary,
-                    bin_sequences: Vec::new(),
-                    bmp_resource_id_map,
-                };
-            }
-        };
-        secondary.push(ctx.load_texture(
-            format!("advisor_{}_{}", spec.dll_dir, spec.secondary_anchor),
-            egui::ColorImage::from_rgba_unmultiplied(
-                [secondary_anchor.width, secondary_anchor.height],
-                &secondary_anchor.rgba,
-            ),
-            TextureOptions::NEAREST,
-        ));
-        for resource_id in spec.secondary_first..=spec.secondary_last {
-            let Some(bytes) = assets.frames.get(&resource_id) else {
-                macroquad::logging::warn!(
-                    "[advisor] missing secondary type-302 frame source={} resource_id={resource_id}",
-                    spec.dll_dir
-                );
-                break;
-            };
-            match decode_type302_frame(bytes, &secondary_base) {
-                Ok(frame) => {
-                    secondary_base.indices.clone_from(&frame.indices);
-                    let image = egui::ColorImage::from_rgba_unmultiplied(
-                        [frame.width, frame.height],
-                        &frame.rgba,
-                    );
-                    secondary.push(ctx.load_texture(
-                        format!("advisor_{}_{}", spec.dll_dir, resource_id),
-                        image,
-                        TextureOptions::NEAREST,
-                    ));
-                }
-                Err(error) => {
-                    macroquad::logging::warn!(
-                        "[advisor] secondary type-302 decode failed source={} resource_id={} error={error:?}",
-                        spec.dll_dir,
-                        resource_id
-                    );
-                    break;
-                }
-            }
-        }
-    }
-
-    let primary_last_loaded = spec.primary_anchor + primary.len().saturating_sub(1) as u32;
-    if secondary.is_empty() {
-        macroquad::logging::info!(
-            "[advisor] loaded authentic source={} primary_resources={}..{} primary_frames={} secondary_anchor={} secondary_frames=0",
-            spec.dll_dir,
-            spec.primary_anchor,
-            primary_last_loaded,
-            primary.len(),
-            spec.secondary_anchor
-        );
-    } else {
-        let secondary_last_loaded =
-            spec.secondary_anchor + secondary.len().saturating_sub(1) as u32;
-        macroquad::logging::info!(
-            "[advisor] loaded authentic source={} primary_resources={}..{} primary_frames={} secondary_resources={}..{} secondary_frames={}",
-            spec.dll_dir,
-            spec.primary_anchor,
-            primary_last_loaded,
-            primary.len(),
-            spec.secondary_anchor,
-            secondary_last_loaded,
-            secondary.len()
-        );
-    }
-    FactionFrames {
-        primary,
-        secondary,
-        bin_sequences: Vec::new(),
-        bmp_resource_id_map,
-    }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn load_authored_asset_bytes(asset_root: &Path, faction: AdvisorFaction) -> FactionAssetBytes {
-    let spec = AuthoredFrameSpec::for_faction(faction);
-    let source = asset_root.join(spec.dll_dir);
-    let mut assets = FactionAssetBytes::default();
-    for resource_id in [spec.primary_anchor, spec.secondary_anchor] {
-        let path = source.join("BMP").join(format!("{resource_id}.bmp"));
-        if let Ok(bytes) = std::fs::read(path) {
-            assets.bitmaps.insert(resource_id, bytes);
-        }
-    }
-    for resource_id in
-        (spec.primary_first..=spec.primary_last).chain(spec.secondary_first..=spec.secondary_last)
-    {
-        let path = source.join("TYPE302").join(format!("{resource_id}.bin"));
-        if let Ok(bytes) = std::fs::read(path) {
-            assets.frames.insert(resource_id, bytes);
-        }
-    }
-    assets
-}
-
-#[cfg(target_arch = "wasm32")]
-fn load_authored_asset_bytes(_asset_root: &Path, faction: AdvisorFaction) -> FactionAssetBytes {
-    let spec = AuthoredFrameSpec::for_faction(faction);
-    let web = WASM_ADVISOR_ASSETS.lock().unwrap();
-    let mut assets = FactionAssetBytes::default();
-    for resource_id in [spec.primary_anchor, spec.secondary_anchor] {
-        if let Some(bytes) = web
-            .bitmaps
-            .get(&format!("{}/{}", spec.dll_dir, resource_id))
+        self.loaded = true;
+        match self
+            .asset(
+                SPRITE_MODULE,
+                AdvisorAsset::Table(self.faction.table_name()),
+            )
+            .and_then(|bytes| ActionTable::parse(&bytes))
         {
-            assets.bitmaps.insert(resource_id, bytes.clone());
-        }
-    }
-    for resource_id in
-        (spec.primary_first..=spec.primary_last).chain(spec.secondary_first..=spec.secondary_last)
-    {
-        if let Some(bytes) = web.frames.get(&format!("{}/{}", spec.dll_dir, resource_id)) {
-            assets.frames.insert(resource_id, bytes.clone());
-        }
-    }
-    assets
-}
-
-/// Load BMP frames from a faction's sprite directory.
-///
-/// Returns primary frames, secondary frames (R2-D2 for Alliance), parsed BIN
-/// sequences from the cascading decoder, and a BMP resource ID lookup map.
-#[cfg(not(target_arch = "wasm32"))]
-#[expect(
-    clippy::too_many_lines,
-    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
-)]
-fn load_legacy_faction_frames(
-    ctx: &egui::Context,
-    sprite_dir: &Path,
-    faction: AdvisorFaction,
-) -> FactionFrames {
-    let subdir = match faction {
-        AdvisorFaction::Alliance => "alliance",
-        AdvisorFaction::Empire => "empire",
-    };
-    let faction_dir = sprite_dir.join(subdir);
-
-    if !faction_dir.exists() {
-        return FactionFrames {
-            primary: Vec::new(),
-            secondary: Vec::new(),
-            bin_sequences: Vec::new(),
-            bmp_resource_id_map: HashMap::new(),
-        };
-    }
-
-    // Collect all BMP files, sorted by name (ascending resource ID).
-    let mut bmp_files: Vec<PathBuf> = std::fs::read_dir(&faction_dir)
-        .into_iter()
-        .flatten()
-        .filter_map(std::result::Result::ok)
-        .map(|e| e.path())
-        .filter(|p| {
-            p.extension()
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("bmp"))
-        })
-        .collect();
-    bmp_files.sort();
-
-    let mut primary = Vec::new();
-    let mut secondary = Vec::new();
-    let mut bmp_resource_id_map: HashMap<u16, usize> = HashMap::new();
-    let mut bin_files: Vec<PathBuf> = std::fs::read_dir(&faction_dir)
-        .into_iter()
-        .flatten()
-        .filter_map(std::result::Result::ok)
-        .map(|e| e.path())
-        .filter(|p| {
-            p.extension()
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("bin"))
-        })
-        .collect();
-    bin_files.sort();
-
-    for bmp_path in &bmp_files {
-        let Ok(bytes) = std::fs::read(bmp_path) else {
-            continue;
-        };
-        let Ok(img) = image::load_from_memory(&bytes) else {
-            continue;
-        };
-        let rgba = img.to_rgba8();
-        let (w, h) = rgba.dimensions();
-
-        let color_image =
-            egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], rgba.as_raw());
-
-        // Extract resource ID from filename (e.g. "02001-alsprite.bmp" → 2001).
-        let resource_id: Option<u16> = bmp_path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .and_then(|s| s.split('-').next())
-            .and_then(|s| s.parse::<u16>().ok());
-
-        let idx = primary.len(); // index BEFORE pushing (secondary frames don't count)
-        let label = format!("advisor_{subdir}_{idx}");
-        let handle = ctx.load_texture(&label, color_image, TextureOptions::default());
-
-        // Alliance: R2-D2 frames are 47×69, C-3PO are 67×116.
-        // Empire: all frames are 106×133 (primary only).
-        if faction == AdvisorFaction::Alliance && w == 47 && h == 69 {
-            secondary.push(handle);
-        } else {
-            if let Some(rid) = resource_id {
-                bmp_resource_id_map.insert(rid, primary.len());
+            Some(table) => {
+                // Without the tour's records nothing would release the clock.
+                if table
+                    .records(AdviceAgent::opening_slot(self.faction))
+                    .is_empty()
+                {
+                    self.holds_clock = false;
+                }
+                self.table = table;
             }
-            primary.push(handle);
-        }
-    }
-
-    // Walk every BIN file through the cascading decoder. Track per-format
-    // counts for the load-time summary.
-    let total_bins = bin_files.len();
-    let mut bin_sequences: Vec<BinSequence> = Vec::new();
-    let mut valid_v1 = 0usize;
-    let mut valid_v2 = 0usize;
-    let mut valid_v3 = 0usize;
-    let mut valid_v4 = 0usize;
-    let mut empty = 0usize;
-    let mut io_failures = 0usize;
-    let mut parse_failures = 0usize;
-    let mut bmp_mapped_count = 0usize;
-
-    for bin_path in bin_files {
-        let Ok(bytes) = std::fs::read(&bin_path) else {
-            io_failures += 1;
-            continue;
-        };
-        match parse_advisor_bin_cascade(&bytes) {
-            Ok(sequence) if !sequence.frame_ids.is_empty() => {
-                match sequence.format {
-                    BinFormat::V1Explicit => valid_v1 += 1,
-                    BinFormat::V2Range => valid_v2 += 1,
-                    BinFormat::V3BmpRange => valid_v3 += 1,
-                    BinFormat::V4BmpSingle => valid_v4 += 1,
-                }
-                if sequence.bmp_mapped {
-                    bmp_mapped_count += 1;
-                }
-                bin_sequences.push(sequence);
-            }
-            Ok(_) => empty += 1,
-            Err(e) => {
-                parse_failures += 1;
-                // Log first few failures with error details for diagnostic purposes.
-                // The ~1% that fail are typically 2-4 byte stubs with no decodable
-                // frame data — they fall back to legacy sorted-frame cycling.
-                if parse_failures <= 3 {
-                    eprintln!(
-                        "[advisor] {}: parse failed: {:?} (first {} bytes: {:02x?})",
-                        bin_path.file_name().unwrap_or_default().to_string_lossy(),
-                        e,
-                        bytes.len().min(8),
-                        &bytes[..bytes.len().min(8)],
-                    );
-                }
+            None => {
+                self.holds_clock = false;
+                macroquad::logging::warn!(
+                    "[advisor] missing advice table {}; restage UI assets",
+                    self.faction.table_name()
+                );
             }
         }
+        let agent_rest = self
+            .script(SPRITE_MODULE, AGENT_REST_SCRIPT)
+            .and_then(|words| words.get(1).copied());
+        let partner_rest = self
+            .script(SPRITE_MODULE, self.faction.partner_rest_script())
+            .and_then(|words| words.get(1).copied());
+        match (agent_rest, partner_rest) {
+            (Some(agent), Some(partner)) => {
+                self.agent_droid = DroidPlayer::new(agent, true);
+                self.partner_droid = DroidPlayer::new(partner, false);
+            }
+            _ => macroquad::logging::warn!(
+                "[advisor] missing rest scripts in {}; restage UI assets",
+                self.faction.dll_dir(SPRITE_MODULE)
+            ),
+        }
     }
-    let valid_total = valid_v1 + valid_v2 + valid_v3 + valid_v4;
-    if let Some(pct) = (100 * valid_total).checked_div(total_bins) {
-        if parse_failures > 3 {
-            eprintln!(
-                "[advisor] ... and {} more parse failures suppressed",
-                parse_failures - 3
+
+    fn now(&self) -> u32 {
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "the step count is a non-negative whole number of steps"
+        )]
+        let now = self.steps as u32;
+        now
+    }
+
+    fn voice(&self, module: u16, wave: u16) -> AdvisorVoice {
+        AdvisorVoice {
+            key: format!("{}/{wave}", self.faction.dll_dir(module)),
+            module,
+            wave,
+        }
+    }
+
+    /// The sounds the droids started since the last call.
+    pub fn take_voices(&mut self) -> Vec<AdvisorVoice> {
+        let started = std::mem::take(&mut self.voices);
+        started
+            .into_iter()
+            .map(|(module, wave)| self.voice(module, wave))
+            .collect()
+    }
+
+    /// Every sound of the side's sprite and briefing DLLs, for loading ahead
+    /// of play: the browser decodes audio asynchronously.
+    #[must_use]
+    pub fn voice_clips(&self) -> Vec<AdvisorVoice> {
+        [SPRITE_MODULE, BRIEF_MODULE]
+            .into_iter()
+            .flat_map(|module| {
+                let mut waves = list_advisor_waves(&self.sprite_dir, self.faction.dll_dir(module));
+                waves.sort_unstable();
+                waves.into_iter().map(move |wave| (module, wave))
+            })
+            .map(|(module, wave)| self.voice(module, wave))
+            .collect()
+    }
+
+    /// The bytes of `voice`'s WAVE resource.
+    #[must_use]
+    pub fn voice_bytes(&self, voice: &AdvisorVoice) -> Option<Vec<u8>> {
+        self.asset(voice.module, AdvisorAsset::Wave(voice.wave))
+    }
+
+    /// Whether the briefing tour holds the cockpit's input.
+    #[must_use]
+    pub const fn tour_active(&self) -> bool {
+        self.tour_active
+    }
+
+    /// The player pressed Escape or a mouse button during the tour
+    /// (`lpfn_0041d8f0`, `lpfn_0041d950` → `FUN_0043a200`). Only the first
+    /// press counts (`FUN_0041da30`: `DAT_006b14b4`).
+    pub fn skip_tour(&mut self) {
+        if self.tour_active && !self.tour_skipped {
+            self.tour_skipped = true;
+            self.agent.request_skip();
+        }
+    }
+
+    /// The cockpit steps the agent ran since the last call.
+    pub fn take_cockpit_steps(&mut self) -> Vec<CockpitStep> {
+        std::mem::take(&mut self.steps_run)
+    }
+
+    /// File a game message's advice code (`FUN_0048a060` → agent `VT[5]`).
+    pub fn post_code(&mut self, code: u8) {
+        let now = self.now();
+        macroquad::logging::info!("[advisor] code {:#x} posted at step {}", code, now);
+        self.agent.post(code, now);
+    }
+
+    /// Step the droids by `dt` seconds. The step count advances at the
+    /// scheduler's rate, `steps_per_second`, while the game clock runs.
+    pub fn update(&mut self, dt: f32, steps_per_second: Option<f32>) {
+        self.ensure_loaded();
+        if let Some(rate) = steps_per_second {
+            self.steps += f64::from(dt * rate);
+        }
+        let now = self.now();
+        // FUN_004c2b20 / FUN_004c0a60: a stored cockpit step takes the whole
+        // pass (FUN_004c3060).
+        if let Some(step) = self.pending_step.take() {
+            macroquad::logging::info!(
+                "[advisor] cockpit step {} {} at step {}",
+                step.kind,
+                step.step,
+                now
             );
+            if step.kind == 2 {
+                match step.step {
+                    11 => self.holds_clock = false,
+                    12 => self.tour_active = true,
+                    13 => self.tour_active = false,
+                    _ => {}
+                }
+            }
+            self.steps_run.push(step);
+        } else {
+            match self
+                .agent
+                .pass(now, || macroquad::rand::gen_range(0_u32, 12))
+            {
+                PassOutcome::Fired(slot) => self.queue_slot(slot),
+                PassOutcome::FlushDroids => {
+                    macroquad::logging::info!("[advisor] briefing skipped at step {}", now);
+                    self.agent_droid.flush();
+                    self.partner_droid.flush();
+                }
+                PassOutcome::Idle => {}
+            }
         }
-        eprintln!(
-            "[advisor] {subdir} BIN files: {valid_total}/{total_bins} valid ({pct}%) \
-             [v1={valid_v1}, v2={valid_v2}, v3={valid_v3}, v4={valid_v4}], \
-             {bmp_mapped_count} bmp-mapped, {parse_failures} parse-failed, {empty} empty, {io_failures} io-failed",
+        self.tick_clock += dt;
+        let mut events = Vec::new();
+        while self.tick_clock >= TICK_SECONDS {
+            self.tick_clock -= TICK_SECONDS;
+            self.agent_droid.tick(&mut events);
+            self.partner_droid.tick(&mut events);
+            for event in events.drain(..) {
+                self.route(event, now);
+            }
+        }
+    }
+
+    fn route(&mut self, event: DroidEvent, now: u32) {
+        match event {
+            DroidEvent::ArmChatter => self.agent.arm(now),
+            // FUN_0042b290 loads the partner's actions from module 9.
+            DroidEvent::PartnerAction(action) => {
+                if let Some(action) = self.resolve(SPRITE_MODULE, action, 0, 0) {
+                    self.partner_droid.enqueue(&action);
+                }
+            }
+            DroidEvent::PartnerSignedOff => self.agent_droid.partner_signed_off(),
+            DroidEvent::Sound { wave, module } => self.voices.push((module, wave)),
+            DroidEvent::CockpitStep { kind, step } => {
+                self.pending_step = Some(CockpitStep { kind, step });
+            }
+        }
+    }
+
+    /// An action script resolved to its command (`FUN_0042b1d0`): the words
+    /// `(command, script, p2, p3)` of `module`, with the record's `p2` and
+    /// `p3` when it has them.
+    fn resolve(&mut self, module: u16, action: u16, p2: u32, p3: u32) -> Option<ResolvedAction> {
+        let header = self.script(module, action)?;
+        let command = *header.first()?;
+        let script = *header.get(1)?;
+        let words = self.script(module, script)?;
+        let or_default = |given: u32, index: usize| {
+            if given == 0 {
+                u32::from(header.get(index).copied().unwrap_or(0))
+            } else {
+                given
+            }
+        };
+        Some(ResolvedAction {
+            module,
+            command,
+            p2: or_default(p2, 2),
+            p3: or_default(p3, 3),
+            words,
+        })
+    }
+
+    /// Queue a fired slot's records on the agent droid (`FUN_004c2b20`).
+    /// Spoken advice plays: the original sets `0x1000` when the agent is
+    /// made and nothing in the port sets `0x4000`.
+    fn queue_slot(&mut self, slot: u32) {
+        let records = self.table.records(slot).to_vec();
+        macroquad::logging::info!(
+            "[advisor] slot {slot} fired at step {} ({} records)",
+            self.now(),
+            records.len()
         );
+        for record in records {
+            let module = if record.from_briefing() {
+                BRIEF_MODULE
+            } else {
+                SPRITE_MODULE
+            };
+            if let Some(action) = self.resolve(module, record.action, record.p2, record.p3) {
+                self.agent_droid.enqueue(&action);
+            }
+        }
     }
 
-    FactionFrames {
-        primary,
-        secondary,
-        bin_sequences,
-        bmp_resource_id_map,
+    /// The texture of `frame`, decoding its anchor's run up to it.
+    fn texture(&mut self, ctx: &egui::Context, frame: DroidFrame) -> Option<TextureHandle> {
+        let key = (frame.module, frame.anchor);
+        if !self.runs.contains_key(&key) {
+            let base = self
+                .asset(frame.module, AdvisorAsset::Anchor(frame.anchor))
+                .and_then(|bytes| decode_anchor_bitmap(&bytes).ok());
+            let mut run = AnchorRun {
+                base,
+                textures: Vec::new(),
+                broken: false,
+            };
+            match run
+                .base
+                .as_ref()
+                .map(|base| indexed_frame(base.width, base.height, &base.indices, &base.palette))
+            {
+                Some(Ok(image)) => {
+                    run.textures
+                        .push(self.load_texture(ctx, frame.module, frame.anchor, &image))
+                }
+                _ => run.broken = true,
+            }
+            self.runs.insert(key, run);
+        }
+        while self.runs[&key].textures.len() <= usize::from(frame.index) && !self.runs[&key].broken
+        {
+            let next =
+                frame.anchor + u16::try_from(self.runs[&key].textures.len()).unwrap_or(u16::MAX);
+            let bytes = self.asset(frame.module, AdvisorAsset::Delta(next));
+            let run = self.runs.get_mut(&key)?;
+            let decoded = bytes
+                .zip(run.base.as_ref())
+                .map(|(bytes, base)| decode_type302_frame(&bytes, base));
+            match decoded {
+                Some(Ok(image)) => {
+                    if let Some(base) = run.base.as_mut() {
+                        base.indices.clone_from(&image.indices);
+                    }
+                    let texture = self.load_texture(ctx, frame.module, next, &image);
+                    self.runs.get_mut(&key)?.textures.push(texture);
+                }
+                _ => {
+                    macroquad::logging::warn!(
+                        "[advisor] frame {next} of run {} did not decode",
+                        frame.anchor
+                    );
+                    run.broken = true;
+                }
+            }
+        }
+        let run = &self.runs[&key];
+        run.textures
+            .get(usize::from(frame.index))
+            .or_else(|| run.textures.last())
+            .cloned()
     }
-}
 
-#[cfg(not(target_arch = "wasm32"))]
-fn load_faction_frames(
-    ctx: &egui::Context,
-    asset_root: &Path,
-    faction: AdvisorFaction,
-) -> FactionFrames {
-    let authored = load_authored_faction_frames(
-        ctx,
-        faction,
-        &load_authored_asset_bytes(asset_root, faction),
-    );
-    if !authored.primary.is_empty() {
-        return authored;
+    fn load_texture(
+        &self,
+        ctx: &egui::Context,
+        module: u16,
+        id: u16,
+        image: &DecodedAdvisorFrame,
+    ) -> TextureHandle {
+        ctx.load_texture(
+            format!("advisor_{}_{id}", self.faction.dll_dir(module)),
+            egui::ColorImage::from_rgba_unmultiplied([image.width, image.height], &image.rgba),
+            TextureOptions::NEAREST,
+        )
     }
-
-    // Retain the old curated reference path as a development fallback. It is
-    // not used by packaged builds and does not satisfy the parity gate.
-    load_legacy_faction_frames(ctx, asset_root, faction)
-}
-
-#[cfg(target_arch = "wasm32")]
-fn load_faction_frames(
-    ctx: &egui::Context,
-    asset_root: &Path,
-    faction: AdvisorFaction,
-) -> FactionFrames {
-    load_authored_faction_frames(
-        ctx,
-        faction,
-        &load_authored_asset_bytes(asset_root, faction),
-    )
 }
 
 // ---------------------------------------------------------------------------
@@ -1488,181 +975,39 @@ fn scaled_advisor_apertures(
         )
     })
 }
-
-/// Draw both faction droids directly into the original command-center
-/// apertures recovered from `FUN_0042adb0`.
+/// Draw both droids into their apertures (`FUN_0042adb0`), each frame at
+/// its own size from the aperture's corner and clipped to the aperture.
 pub fn draw_advisor(ctx: &egui::Context, state: &mut AdvisorState) {
-    // Lazy-load frames on first draw (needs egui context for texture registration).
-    if !state.frames_loaded {
-        let frames = load_faction_frames(ctx, &state.sprite_dir, state.faction);
-        state.primary_frame_pool_len = frames.primary.len();
-        state.secondary_frame_pool_len = frames.secondary.len();
-        state.primary_textures = frames.primary;
-        state.secondary_textures = frames.secondary;
-        state.bin_sequences = frames.bin_sequences;
-        state.bmp_resource_id_map = frames.bmp_resource_id_map;
-        if state.bin_sequences.is_empty() {
-            state.primary_frame = 0;
-            state.secondary_frame = 0;
-        } else {
-            state.set_sequence(
-                state.next_sequence_for_priority(state.active_animation_priority()),
-                true,
-            );
-        }
-        state.frames_loaded = true;
-    }
-
+    state.ensure_loaded();
     if !state.visible {
         return;
     }
-
-    if state.primary_textures.is_empty() && state.secondary_textures.is_empty() {
-        return;
-    }
-
     let screen = ctx.screen_rect();
     let apertures = scaled_advisor_apertures(state.faction, screen.width(), screen.height());
+    let native = advisor_apertures(state.faction);
     let painter = ctx.layer_painter(egui::LayerId::new(
         egui::Order::Middle,
         egui::Id::new("authentic_droid_advisors"),
     ));
-
-    if !state.primary_textures.is_empty() {
-        let texture = &state.primary_textures[state.primary_frame % state.primary_textures.len()];
-        let (x, y, width, height) = apertures[0];
-        painter.image(
-            texture.id(),
-            egui::Rect::from_min_size(
-                egui::pos2(screen.min.x + x, screen.min.y + y),
-                egui::vec2(width, height),
-            ),
-            egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
-            egui::Color32::WHITE,
-        );
+    let frames = [state.agent_droid.frame(), state.partner_droid.frame()];
+    for (index, frame) in frames.into_iter().enumerate() {
+        let Some(texture) = state.texture(ctx, frame) else {
+            continue;
+        };
+        let (x, y, width, height) = apertures[index];
+        let scale = width / native[index].2;
+        let corner = egui::pos2(screen.min.x + x, screen.min.y + y);
+        #[expect(clippy::cast_precision_loss, reason = "frame sizes are under 640")]
+        let size = texture.size().map(|side| side as f32 * scale);
+        painter
+            .with_clip_rect(egui::Rect::from_min_size(corner, egui::vec2(width, height)))
+            .image(
+                texture.id(),
+                egui::Rect::from_min_size(corner, egui::vec2(size[0], size[1])),
+                egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+                egui::Color32::WHITE,
+            );
     }
-
-    if !state.secondary_textures.is_empty() {
-        let texture =
-            &state.secondary_textures[state.secondary_frame % state.secondary_textures.len()];
-        let (x, y, width, height) = apertures[1];
-        painter.image(
-            texture.id(),
-            egui::Rect::from_min_size(
-                egui::pos2(screen.min.x + x, screen.min.y + y),
-                egui::vec2(width, height),
-            ),
-            egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
-            egui::Color32::WHITE,
-        );
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Convenience triggers
-// ---------------------------------------------------------------------------
-
-/// Push a game-start greeting.
-pub fn advisor_greet(state: &mut AdvisorState) {
-    let text = match state.faction {
-        AdvisorFaction::Alliance => {
-            "Greetings, Commander! I am C-3PO, human-cyborg relations. \
-             R2-D2 and I are at your service."
-        }
-        AdvisorFaction::Empire => {
-            "My Lord, your Imperial advisors stand ready. \
-             The galaxy awaits your command."
-        }
-    };
-    state.push_message(AdvisorMessage::new(text, AdvisorPriority::Normal));
-}
-
-/// Notify the advisor of a mission result.
-pub fn advisor_mission_result(state: &mut AdvisorState, mission_name: &str, success: bool) {
-    let text = if success {
-        match state.faction {
-            AdvisorFaction::Alliance => {
-                format!("Wonderful news! The {mission_name} mission was a success, sir!")
-            }
-            AdvisorFaction::Empire => {
-                format!("The {mission_name} operation has succeeded, my Lord.")
-            }
-        }
-    } else {
-        match state.faction {
-            AdvisorFaction::Alliance => {
-                format!("Oh dear! I'm afraid the {mission_name} mission has failed.")
-            }
-            AdvisorFaction::Empire => {
-                format!("The {mission_name} operation has failed. Most unfortunate, my Lord.")
-            }
-        }
-    };
-    state.push_message(AdvisorMessage::new(text, AdvisorPriority::Normal));
-}
-
-/// Notify the advisor of a combat outcome.
-pub fn advisor_combat_result(state: &mut AdvisorState, system_name: &str, player_won: bool) {
-    let text = if player_won {
-        match state.faction {
-            AdvisorFaction::Alliance => {
-                format!("A great victory at {system_name}! The Force is with us!")
-            }
-            AdvisorFaction::Empire => {
-                format!("Victory at {system_name}, my Lord. The enemy has been crushed.")
-            }
-        }
-    } else {
-        match state.faction {
-            AdvisorFaction::Alliance => {
-                format!("We've suffered a defeat at {system_name}. We must regroup.")
-            }
-            AdvisorFaction::Empire => format!(
-                "Our forces at {system_name} have been repelled. Reinforcements are advised."
-            ),
-        }
-    };
-    state.push_message(AdvisorMessage::new(text, AdvisorPriority::High));
-}
-
-/// Notify the advisor that `system_name` has risen in revolt. `gained` is
-/// true when the enemy holds it. A revolt does not change who holds the
-/// system.
-pub fn advisor_uprising(state: &mut AdvisorState, system_name: &str, gained: bool) {
-    let text = if gained {
-        match state.faction {
-            AdvisorFaction::Alliance => {
-                format!("Excellent! The people of {system_name} have risen against the Empire!")
-            }
-            AdvisorFaction::Empire => {
-                format!("{system_name} has risen against the Rebels, my Lord.")
-            }
-        }
-    } else {
-        match state.faction {
-            AdvisorFaction::Alliance => format!("Oh no! {system_name} has risen against us!"),
-            AdvisorFaction::Empire => {
-                format!("Unacceptable. {system_name} is in open revolt against the Empire.")
-            }
-        }
-    };
-    state.push_message(AdvisorMessage::new(text, AdvisorPriority::High));
-}
-
-/// Notify the advisor of a Death Star event.
-pub fn advisor_death_star(state: &mut AdvisorState, event_text: &str) {
-    state.push_message(AdvisorMessage::new(event_text, AdvisorPriority::Critical));
-}
-
-/// Notify the advisor of manufacturing completion.
-pub fn advisor_manufacturing_complete(state: &mut AdvisorState, item_name: &str) {
-    let text = match state.faction {
-        AdvisorFaction::Alliance => {
-            format!("Construction of {item_name} is complete, Commander.")
-        }
-        AdvisorFaction::Empire => format!("{item_name} construction complete, my Lord."),
-    };
-    state.push_message(AdvisorMessage::new(text, AdvisorPriority::Low));
 }
 
 // ---------------------------------------------------------------------------
@@ -1798,52 +1143,6 @@ mod tests {
             })
         );
     }
-
-    #[test]
-    #[expect(
-        clippy::cast_possible_truncation,
-        reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
-    )]
-    fn authored_loader_stops_each_cumulative_run_at_first_gap_or_error() {
-        let spec = AuthoredFrameSpec::for_faction(AdvisorFaction::Alliance);
-        let mut assets = FactionAssetBytes::default();
-        assets
-            .bitmaps
-            .insert(spec.primary_anchor, indexed_bmp_fixture());
-        assets
-            .bitmaps
-            .insert(spec.secondary_anchor, indexed_bmp_fixture());
-
-        assets.frames.insert(spec.primary_first, type302_fixture());
-        assets
-            .frames
-            .insert(spec.primary_first + 2, type302_fixture());
-
-        assets
-            .frames
-            .insert(spec.secondary_first, type302_fixture());
-        assets.frames.insert(spec.secondary_first + 1, vec![0; 3]);
-        assets
-            .frames
-            .insert(spec.secondary_first + 2, type302_fixture());
-
-        let loaded = load_authored_faction_frames(
-            &egui::Context::default(),
-            AdvisorFaction::Alliance,
-            &assets,
-        );
-
-        assert_eq!(loaded.primary.len(), 2, "later frame after gap was loaded");
-        assert_eq!(
-            loaded.secondary.len(),
-            2,
-            "later frame after corrupt delta was loaded"
-        );
-        assert!(!loaded
-            .bmp_resource_id_map
-            .contains_key(&((spec.primary_first + 2) as u16)));
-    }
-
     #[test]
     fn type302_decoder_rejects_corrupt_payloads() {
         let base = frame_base();
@@ -1895,326 +1194,6 @@ mod tests {
             [(0.0, 347.0, 107.0, 133.0), (302.0, 401.0, 101.0, 79.0)]
         );
     }
-
-    /// Helper to build a v1-style (non-BMP-mapped) sequence for state tests.
-    fn sequence(frame_ids: &[u16], default_interval: f32) -> BinSequence {
-        BinSequence {
-            frame_ids: frame_ids.to_vec(),
-            default_interval,
-            format: BinFormat::V1Explicit,
-            bmp_mapped: false,
-        }
-    }
-
-    // -----------------------------------------------------------------------
-    // Message queue tests
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn advisor_message_queue_fifo() {
-        let mut state = AdvisorState::new(AdvisorFaction::Alliance);
-
-        state.push_message(AdvisorMessage::new("First", AdvisorPriority::Normal));
-        state.push_message(AdvisorMessage::new("Second", AdvisorPriority::Normal));
-        state.push_message(AdvisorMessage::new("Third", AdvisorPriority::Normal));
-
-        assert!(state.has_message());
-        assert_eq!(state.current_message.as_ref().unwrap().text, "First");
-
-        // Expire current message.
-        state.message_timer = 0.0;
-        state.update(0.01);
-
-        assert_eq!(state.current_message.as_ref().unwrap().text, "Second");
-    }
-
-    #[test]
-    fn high_priority_preempts() {
-        let mut state = AdvisorState::new(AdvisorFaction::Empire);
-
-        state.push_message(AdvisorMessage::new("Low", AdvisorPriority::Low));
-        assert_eq!(state.current_message.as_ref().unwrap().text, "Low");
-
-        state.push_message(AdvisorMessage::new("Critical", AdvisorPriority::Critical));
-        assert_eq!(state.current_message.as_ref().unwrap().text, "Critical");
-
-        // After critical expires, demoted message returns.
-        state.message_timer = 0.0;
-        state.update(0.01);
-        assert_eq!(state.current_message.as_ref().unwrap().text, "Low");
-    }
-
-    #[test]
-    fn legacy_frame_cycling_fallback_without_bins() {
-        let mut state = AdvisorState::new(AdvisorFaction::Alliance);
-        state.primary_frame_pool_len = 3;
-        state.secondary_frame_pool_len = 2;
-        state.frame_interval = 0.1;
-
-        state.update(0.1);
-        assert_eq!(state.primary_frame, 1);
-        assert_eq!(state.secondary_frame, 1);
-
-        state.update(0.2);
-        assert_eq!(state.primary_frame, 0);
-        assert_eq!(state.secondary_frame, 1);
-    }
-
-    // -----------------------------------------------------------------------
-    // Cascading decoder tests
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn cascade_v1_explicit_frame_list() {
-        // (count=3, 1301, 1302, 1303) — classic v1 with non-zero trailing words.
-        let bytes = [0x03, 0x00, 0x15, 0x05, 0x16, 0x05, 0x17, 0x05];
-        let seq = parse_advisor_bin_cascade(&bytes).unwrap();
-
-        assert_eq!(seq.format, BinFormat::V1Explicit);
-        assert_eq!(seq.frame_ids, vec![1301, 1302, 1303]);
-        assert!(!seq.bmp_mapped);
-    }
-
-    #[test]
-    fn cascade_v2_sequential_range() {
-        // (count=4, base=4001, 0, 0) — dominant 8-byte pattern.
-        let bytes: [u8; 8] = [0x04, 0x00, 0xA1, 0x0F, 0x00, 0x00, 0x00, 0x00];
-        let seq = parse_advisor_bin_cascade(&bytes).unwrap();
-
-        assert_eq!(seq.format, BinFormat::V2Range);
-        assert_eq!(seq.frame_ids, vec![4001, 4002, 4003, 4004]);
-        assert!(!seq.bmp_mapped);
-    }
-
-    #[test]
-    fn cascade_v2_distinguishes_from_v1_with_trailing_zeros() {
-        // 8 bytes: (3, 951, 0, 0) — v1 would say [951, 0, 0] but v2 says [951, 952, 953].
-        // The cascading decoder should pick v2 because w2==0 && w3==0.
-        let bytes: [u8; 8] = [0x03, 0x00, 0xB7, 0x03, 0x00, 0x00, 0x00, 0x00];
-        let seq = parse_advisor_bin_cascade(&bytes).unwrap();
-
-        assert_eq!(seq.format, BinFormat::V2Range);
-        assert_eq!(seq.frame_ids, vec![951, 952, 953]);
-        assert!(!seq.bmp_mapped);
-    }
-
-    #[test]
-    fn cascade_v3_bmp_range() {
-        // (0, ref=1291, 9, count=16, base=19610) — 10-byte BMP-mapped range.
-        let bytes: [u8; 10] = [
-            0x00, 0x00, // w0 = 0
-            0x0B, 0x05, // w1 = 1291 (ref_id)
-            0x09, 0x00, // w2 = 9
-            0x10, 0x00, // w3 = 16 (count)
-            0x9A, 0x4C, // w4 = 19610 (base)
-        ];
-        let seq = parse_advisor_bin_cascade(&bytes).unwrap();
-
-        assert_eq!(seq.format, BinFormat::V3BmpRange);
-        assert!(seq.bmp_mapped);
-        assert_eq!(seq.frame_ids.len(), 16);
-        assert_eq!(seq.frame_ids[0], 19610);
-        assert_eq!(seq.frame_ids[15], 19625);
-    }
-
-    #[test]
-    fn cascade_v4_bmp_single() {
-        // (0, ref=2001, bmp_id=10501) — 6-byte single-frame BMP reference.
-        let bytes: [u8; 6] = [
-            0x00, 0x00, // w0 = 0
-            0xD1, 0x07, // w1 = 2001 (ref_id)
-            0x05, 0x29, // w2 = 10501 (bmp_id)
-        ];
-        let seq = parse_advisor_bin_cascade(&bytes).unwrap();
-
-        assert_eq!(seq.format, BinFormat::V4BmpSingle);
-        assert!(seq.bmp_mapped);
-        assert_eq!(seq.frame_ids, vec![10501]);
-    }
-
-    #[test]
-    fn cascade_rejects_2_byte_stubs() {
-        let bytes = [0x03, 0x0D];
-        let err = parse_advisor_bin_cascade(&bytes).unwrap_err();
-        assert_eq!(err, BinError::TooSmall { actual_len: 2 });
-    }
-
-    #[test]
-    fn cascade_rejects_4_byte_zero_prefix_stubs() {
-        // (0, 3331) — 4-byte zero-prefix stub, too small for v3/v4.
-        let bytes: [u8; 4] = [0x00, 0x00, 0x03, 0x0D];
-        let err = parse_advisor_bin_cascade(&bytes).unwrap_err();
-        assert_eq!(err, BinError::TooSmall { actual_len: 4 });
-    }
-
-    #[test]
-    fn cascade_rejects_a_v1_list_shorter_than_its_count() {
-        // (count=2, 1311, then one stray byte): 5 bytes, but v1 needs 6.
-        let bytes = [0x02, 0x00, 0x1f, 0x05, 0x20];
-        let err = parse_advisor_bin_cascade(&bytes).unwrap_err();
-        assert_eq!(err, BinError::NoFormatMatch { actual_len: 5 });
-    }
-
-    #[test]
-    fn cascade_v1_single_frame() {
-        // (count=1, frame=1306) — 4-byte v1 with count=1.
-        let bytes: [u8; 4] = [0x01, 0x00, 0x1A, 0x05];
-        let seq = parse_advisor_bin_cascade(&bytes).unwrap();
-
-        assert_eq!(seq.format, BinFormat::V1Explicit);
-        assert_eq!(seq.frame_ids, vec![1306]);
-        assert!(!seq.bmp_mapped);
-    }
-
-    // -----------------------------------------------------------------------
-    // BMP-mapped frame sync tests
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn bmp_mapped_sequence_uses_direct_lookup() {
-        let mut state = AdvisorState::new(AdvisorFaction::Alliance);
-        state.primary_frame_pool_len = 10;
-        state.secondary_frame_pool_len = 0;
-
-        // Simulate a BMP resource ID map: 2001->0, 2002->1, 2003->2.
-        state.bmp_resource_id_map.insert(2001, 0);
-        state.bmp_resource_id_map.insert(2002, 1);
-        state.bmp_resource_id_map.insert(2003, 2);
-
-        state.bin_sequences = vec![BinSequence {
-            frame_ids: vec![2001, 2002, 2003],
-            default_interval: 0.1,
-            format: BinFormat::V3BmpRange,
-            bmp_mapped: true,
-        }];
-        state.set_sequence(0, true);
-
-        // Initial frame should resolve to index 0 (resource 2001).
-        assert_eq!(state.primary_frame, 0);
-
-        // Advance one frame -> resource 2002 -> index 1.
-        state.update(0.1);
-        assert_eq!(state.primary_frame, 1);
-
-        // Advance again -> resource 2003 -> index 2.
-        state.update(0.1);
-        assert_eq!(state.primary_frame, 2);
-    }
-
-    #[test]
-    fn bmp_mapped_falls_back_to_modulo_on_missing_id() {
-        let mut state = AdvisorState::new(AdvisorFaction::Empire);
-        state.primary_frame_pool_len = 5;
-        state.secondary_frame_pool_len = 0;
-        // Map is empty — no BMP resource IDs registered.
-
-        state.bin_sequences = vec![BinSequence {
-            frame_ids: vec![9999],
-            default_interval: 0.1,
-            format: BinFormat::V3BmpRange,
-            bmp_mapped: true,
-        }];
-        state.set_sequence(0, true);
-
-        // 9999 not in map -> falls back to 9999 % 5 = 4.
-        assert_eq!(state.primary_frame, 4);
-    }
-
-    // -----------------------------------------------------------------------
-    // BIN state animation tests
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn bin_state_advances_and_wraps_for_normal_priority() {
-        let mut state = AdvisorState::new(AdvisorFaction::Alliance);
-        state.primary_frame_pool_len = 4;
-        state.secondary_frame_pool_len = 2;
-        state.bin_sequences = vec![
-            sequence(&[1], 0.1),
-            sequence(&[2], 0.1),
-            sequence(&[10, 11], 0.1),
-            sequence(&[20, 21], 0.1),
-            sequence(&[30], 0.1),
-            sequence(&[40], 0.1),
-        ];
-        state.current_message = Some(AdvisorMessage::new("Normal", AdvisorPriority::Normal));
-        state.message_timer = 5.0;
-        state.set_sequence(2, true);
-
-        assert_eq!(state.primary_frame, 2);
-        assert_eq!(state.secondary_frame, 0);
-
-        state.update(0.1);
-        assert_eq!(state.current_sequence, 2);
-        assert_eq!(state.frame_cursor, 1);
-        assert_eq!(state.primary_frame, 3);
-        assert_eq!(state.secondary_frame, 1);
-
-        state.update(0.1);
-        assert_eq!(state.current_sequence, 3);
-        assert_eq!(state.frame_cursor, 0);
-        assert_eq!(state.primary_frame, 0);
-        assert_eq!(state.secondary_frame, 0);
-
-        state.update(0.2);
-        assert_eq!(state.current_sequence, 2);
-        assert_eq!(state.frame_cursor, 0);
-        assert_eq!(state.primary_frame, 2);
-        assert_eq!(state.secondary_frame, 0);
-    }
-
-    #[test]
-    fn idle_sequence_loops_in_place() {
-        let mut state = AdvisorState::new(AdvisorFaction::Empire);
-        state.primary_frame_pool_len = 5;
-        state.bin_sequences = vec![
-            sequence(&[5, 6], 0.1),
-            sequence(&[10, 11], 0.1),
-            sequence(&[20, 21], 0.1),
-        ];
-        state.set_sequence(0, true);
-
-        state.update(0.1);
-        assert_eq!(state.current_sequence, 0);
-        assert_eq!(state.frame_cursor, 1);
-        assert_eq!(state.primary_frame, 1);
-
-        state.update(0.1);
-        assert_eq!(state.current_sequence, 0);
-        assert_eq!(state.frame_cursor, 0);
-        assert_eq!(state.primary_frame, 0);
-    }
-
-    // -----------------------------------------------------------------------
-    // Convenience trigger tests
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn advisor_greet_alliance() {
-        let mut state = AdvisorState::new(AdvisorFaction::Alliance);
-        advisor_greet(&mut state);
-        assert!(state.has_message());
-        assert!(state
-            .current_message
-            .as_ref()
-            .unwrap()
-            .text
-            .contains("C-3PO"));
-    }
-
-    #[test]
-    fn advisor_greet_empire() {
-        let mut state = AdvisorState::new(AdvisorFaction::Empire);
-        advisor_greet(&mut state);
-        assert!(state.has_message());
-        assert!(state
-            .current_message
-            .as_ref()
-            .unwrap()
-            .text
-            .contains("Imperial"));
-    }
-
     #[test]
     fn advisor_faction_converts_from_cockpit_faction() {
         assert_eq!(

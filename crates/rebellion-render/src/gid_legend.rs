@@ -91,7 +91,16 @@ pub const fn legend(mode: GidMode, faction: CockpitFaction) -> Option<&'static L
         GidMode::DeathStarShields => &DEATH_STAR_SHIELDS,
         GidMode::PlanetaryShieldGenerators => &PLANETARY_SHIELD_GENERATORS,
         GidMode::PlanetaryDefenseBatteries => &PLANETARY_DEFENSE_BATTERIES,
-        GidMode::DisplayOff => return None,
+        // FUN_004522f0 has no script for the tour's displays.
+        GidMode::DisplayOff
+        | GidMode::LoyalToPlayer
+        | GidMode::PlayerMilitaryControl
+        | GidMode::LoyalToEnemy
+        | GidMode::EnemyMilitaryControl
+        | GidMode::UnexploredSystems
+        | GidMode::AllDefenses
+        | GidMode::HighlightEmpire
+        | GidMode::HighlightAlliance => return None,
     })
 }
 

@@ -83,6 +83,9 @@ func stageSourcePaths(config stageCacheConfig, targets []dllTarget, movieIDs []s
 	add := func(path string) { paths[filepath.Clean(path)] = struct{}{} }
 	for _, target := range targets {
 		add(filepath.Join(config.SourceDir, target.Filename))
+		if target.ActionTable != "" {
+			add(filepath.Join(config.SourceDir, "GData", target.ActionTable))
+		}
 	}
 	for _, voice := range voiceAudio {
 		add(filepath.Join(config.SourceDir, voice.DLL))
@@ -189,6 +192,29 @@ func collectStageOutputs(config stageCacheConfig, targets []dllTarget, movieIDs 
 			}
 			if found := len(outputs) - before; found != target.ExpectedType302 {
 				return nil, fmt.Errorf("%s: found %d staged type-302 outputs, expected %d", target.Directory, found, target.ExpectedType302)
+			}
+		}
+		if target.ExpectedRCData > 0 {
+			before = len(outputs)
+			if err := addStageOutputTree(outputs, filepath.Join(config.OutputDir, target.Directory, "RCDATA")); err != nil {
+				return nil, err
+			}
+			if found := len(outputs) - before; found != target.ExpectedRCData {
+				return nil, fmt.Errorf("%s: found %d staged RCDATA outputs, expected %d", target.Directory, found, target.ExpectedRCData)
+			}
+		}
+		if target.ActionTable != "" {
+			if err := addStageOutput(outputs, filepath.Join(config.OutputDir, target.Directory, "SPT", target.ActionTable)); err != nil {
+				return nil, err
+			}
+		}
+		if target.ExpectedWaves > 0 {
+			before = len(outputs)
+			if err := addStageOutputTree(outputs, filepath.Join(config.OutputDir, target.Directory, "WAVE")); err != nil {
+				return nil, err
+			}
+			if found := len(outputs) - before; found != target.ExpectedWaves {
+				return nil, fmt.Errorf("%s: found %d staged WAVE outputs, expected %d", target.Directory, found, target.ExpectedWaves)
 			}
 		}
 	}

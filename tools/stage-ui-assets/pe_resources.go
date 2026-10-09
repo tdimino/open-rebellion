@@ -11,6 +11,7 @@ import (
 const (
 	rtBitmap             = uint32(2)
 	rtAdvisorFrame       = uint32(302)
+	rtRCData             = uint32(10)
 	resourceSubdirectory = uint32(0x80000000)
 )
 

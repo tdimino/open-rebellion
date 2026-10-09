@@ -200,6 +200,15 @@ pub struct GameMessage {
     /// The unread bit (`0x10` at `+0x24`), set when the message is posted.
     #[serde(skip)]
     pub unread: bool,
+    /// The advice code the original message carries at `+0x28`; filing it
+    /// stamps a droid reaction (`FUN_0048a060`,
+    /// `ghidra/notes/droid-advisor-triggers.md`).
+    #[serde(skip)]
+    pub advice: Option<u8>,
+    /// The side whose agent receives the advice, when it differs from the
+    /// message's audience (a message the port does not file).
+    #[serde(skip)]
+    pub advice_audience: Option<RailAudience>,
 }
 
 impl GameMessage {
@@ -215,6 +224,8 @@ impl GameMessage {
             rail: None,
             audience: RailAudience::Both,
             unread: false,
+            advice: None,
+            advice_audience: None,
         }
     }
 
@@ -235,6 +246,8 @@ impl GameMessage {
             rail: None,
             audience: RailAudience::Both,
             unread: false,
+            advice: None,
+            advice_audience: None,
         }
     }
 
@@ -245,6 +258,21 @@ impl GameMessage {
         self.rail = Some(rail);
         self.audience = audience;
         self.unread = true;
+        self
+    }
+
+    /// Give the message the advice code its original message class sets.
+    #[must_use]
+    pub const fn with_advice(mut self, code: u8) -> Self {
+        self.advice = Some(code);
+        self
+    }
+
+    /// Give the message an advice code for `audience`'s agent only.
+    #[must_use]
+    pub const fn with_advice_to(mut self, code: u8, audience: RailAudience) -> Self {
+        self.advice = Some(code);
+        self.advice_audience = Some(audience);
         self
     }
 }
@@ -262,6 +290,8 @@ pub struct MessageLog {
     messages: Vec<GameMessage>,
     capacity: usize,
     next_id: MessageId,
+    /// Advice codes of messages filed since the last [`MessageLog::take_advice`].
+    advice: Vec<(u8, RailAudience)>,
 }
 
 impl Default for MessageLog {
@@ -278,6 +308,7 @@ impl MessageLog {
             messages: Vec::with_capacity(capacity.min(512)),
             capacity,
             next_id: 1,
+            advice: Vec::new(),
         }
     }
 
@@ -289,11 +320,21 @@ impl MessageLog {
         let id = self.next_id;
         self.next_id += 1;
         msg.id = id;
+        if let Some(code) = msg.advice {
+            self.advice
+                .push((code, msg.advice_audience.unwrap_or(msg.audience)));
+        }
         if self.messages.len() >= self.capacity {
             self.messages.remove(0);
         }
         self.messages.push(msg);
         id
+    }
+
+    /// The advice codes filed since the last call, with each message's
+    /// audience; the side's agent reacts to its own (`FUN_0048a060`).
+    pub fn take_advice(&mut self) -> Vec<(u8, RailAudience)> {
+        std::mem::take(&mut self.advice)
     }
 
     /// Remove all messages.

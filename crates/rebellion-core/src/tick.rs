@@ -61,7 +61,16 @@ impl GameSpeed {
     #[must_use]
     pub fn seconds_per_day(self) -> Option<f32> {
         self.original_rate()
-            .map(|rate| f32::from(rate) * ORIGINAL_RATE_UNIT_SECONDS)
+            .map(|rate| f32::from(rate) * ORIGINAL_RATE_UNIT_SECONDS + DAY_OVERHEAD_SECONDS)
+    }
+
+    /// The scheduler steps a second at this speed: `FUN_004fcee0`'s count
+    /// advances by the rate each day. `None` while paused.
+    #[must_use]
+    pub fn steps_per_second(self) -> Option<f32> {
+        self.original_rate()
+            .zip(self.seconds_per_day())
+            .map(|(rate, seconds)| f32::from(rate) / seconds)
     }
 
     /// Next faster running speed; Fast and Paused are unchanged.
@@ -89,10 +98,16 @@ impl GameSpeed {
 
 /// Real seconds represented by one unit of [`GameSpeed::original_rate`].
 ///
-/// Inferred, not yet recovered: 0.1 s makes Very Slow one day per minute,
-/// matching reported play of one to two hours per 100 days. An A0 timing
-/// capture replaces this inference.
-pub const ORIGINAL_RATE_UNIT_SECONDS: f32 = 0.1;
+/// src: measured in the original under Wine (2026-10-08, A0 capture VM): a day
+/// took 1.19-1.21 s at Fast, 3.24 s at Medium, 15.1 s at Slow and 150.6 s at
+/// Very Slow, which is 0.25 s per rate unit plus [`DAY_OVERHEAD_SECONDS`].
+/// The reader that turns the rate into days is still untraced.
+pub const ORIGINAL_RATE_UNIT_SECONDS: f32 = 0.25;
+
+/// The measured remainder of each day beyond its rate units (see
+/// [`ORIGINAL_RATE_UNIT_SECONDS`]); hyp: one 200 ms poll of the strategic
+/// timer before the day boundary is seen.
+pub const DAY_OVERHEAD_SECONDS: f32 = 0.2;
 
 /// A single completed game-day tick.
 ///
@@ -172,6 +187,12 @@ impl GameClock {
         self.stop_day.is_some()
     }
 
+    /// Whether the clock is running: a speed is set and no pause holds it.
+    #[must_use]
+    pub fn is_running(&self) -> bool {
+        self.speed != GameSpeed::Paused && !self.stop_day.is_some_and(|day| self.tick >= day)
+    }
+
     /// Advance the clock by `dt` real seconds.
     ///
     /// Returns a `Vec<TickEvent>` — one entry per game-day that completed
@@ -248,17 +269,17 @@ mod tests {
     fn pause_finishes_the_current_day_then_holds() {
         let mut clock = GameClock::new();
         clock.set_speed(GameSpeed::Medium);
-        assert!(clock.advance(0.6).is_empty());
+        assert!(clock.advance(1.6).is_empty());
         assert!(clock.pause());
         // The half-finished day completes; the next never starts.
-        assert_eq!(clock.advance(0.6), vec![TickEvent { tick: 1 }]);
+        assert_eq!(clock.advance(1.6), vec![TickEvent { tick: 1 }]);
         assert!(clock.advance(10.0).is_empty());
         assert_eq!(clock.tick, 1);
         assert_eq!(clock.speed, GameSpeed::Medium);
 
         clock.resume();
         assert!(!clock.pause_requested());
-        assert!(clock.advance(1.1).is_empty());
+        assert!(clock.advance(3.1).is_empty());
         assert_eq!(clock.advance(0.2), vec![TickEvent { tick: 2 }]);
     }
 
@@ -267,7 +288,7 @@ mod tests {
         let mut clock = GameClock::new();
         clock.set_speed(GameSpeed::Fast);
         clock.pause();
-        assert_eq!(clock.advance(4.0), vec![TickEvent { tick: 1 }]);
+        assert_eq!(clock.advance(12.0), vec![TickEvent { tick: 1 }]);
         assert_eq!(clock.tick, 1);
     }
 
@@ -280,7 +301,7 @@ mod tests {
         // A speed change keeps the stop, as `FUN_00487eb0` does.
         clock.set_speed(GameSpeed::Fast);
         assert!(clock.pause_requested());
-        clock.advance(10.0);
+        clock.advance(30.0);
         assert_eq!(clock.tick, 1);
     }
 
@@ -288,10 +309,10 @@ mod tests {
     fn a_pause_later_in_the_game_stops_one_day_ahead() {
         let mut clock = GameClock::new();
         clock.set_speed(GameSpeed::Fast);
-        clock.advance(1.3);
+        clock.advance(3.9);
         assert_eq!(clock.tick, 3);
         clock.pause();
-        assert_eq!(clock.advance(4.0), vec![TickEvent { tick: 4 }]);
+        assert_eq!(clock.advance(12.0), vec![TickEvent { tick: 4 }]);
         assert_eq!(clock.tick, 4);
     }
 
@@ -301,7 +322,7 @@ mod tests {
         clock.set_speed(GameSpeed::Medium);
         assert!(clock.advance(-5.0).is_empty());
         assert!(clock.advance(0.0).is_empty());
-        assert_eq!(clock.advance(1.3), vec![TickEvent { tick: 1 }]);
+        assert_eq!(clock.advance(3.3), vec![TickEvent { tick: 1 }]);
     }
 
     #[test]
@@ -328,7 +349,8 @@ mod tests {
         );
         let seconds = GameSpeed::ALL.map(GameSpeed::seconds_per_day);
         assert!(seconds[0].is_none());
-        for (actual, expected) in seconds[1..].iter().zip([60.0, 6.0, 1.2, 0.4]) {
+        // Measured under Wine on 2026-10-08: 150.6, 15.1, 3.24 and 1.2 s.
+        for (actual, expected) in seconds[1..].iter().zip([150.2, 15.2, 3.2, 1.2]) {
             assert!(close(actual.unwrap(), expected));
         }
     }
@@ -339,7 +361,7 @@ mod tests {
         clock.set_speed(GameSpeed::Medium);
 
         // Just under a full day — no event yet.
-        let events = clock.advance(1.19);
+        let events = clock.advance(3.19);
         assert!(events.is_empty());
         assert_eq!(clock.tick, 0);
 
@@ -351,21 +373,21 @@ mod tests {
     }
 
     #[test]
-    fn fast_speed_completes_five_days_in_two_seconds() {
+    fn fast_speed_completes_five_days_in_six_seconds() {
         let mut clock = GameClock::new();
         clock.set_speed(GameSpeed::Fast);
 
-        let events = clock.advance(2.01);
+        let events = clock.advance(6.01);
         assert_eq!(events.len(), 5);
         assert_eq!(clock.tick, 5);
     }
 
     #[test]
-    fn very_slow_speed_needs_a_minute_per_day() {
+    fn very_slow_speed_needs_two_and_a_half_minutes_per_day() {
         let mut clock = GameClock::new();
         clock.set_speed(GameSpeed::VerySlow);
 
-        assert!(clock.advance(59.9).is_empty());
+        assert!(clock.advance(150.1).is_empty());
         assert_eq!(clock.advance(0.2).len(), 1);
     }
 
@@ -374,8 +396,8 @@ mod tests {
         let mut clock = GameClock::new();
         clock.set_speed(GameSpeed::Fast);
 
-        // 2.41 s at 0.4 s/day = 6 days.
-        let events = clock.advance(2.41);
+        // 7.21 s at 1.2 s/day = 6 days.
+        let events = clock.advance(7.21);
         assert_eq!(events.len(), 6);
         for (i, event) in events.iter().enumerate() {
             assert_eq!(event.tick, (i + 1) as u64);
@@ -387,15 +409,15 @@ mod tests {
         let mut clock = GameClock::new();
         clock.set_speed(GameSpeed::Slow);
 
-        // 3.6 s of a 6 s day — no tick yet.
-        assert!(clock.advance(3.6).is_empty());
+        // 9 s of a 15.2 s day — no tick yet.
+        assert!(clock.advance(9.0).is_empty());
 
-        // 7.2 s total — one tick fires, 1.2 s remains.
-        assert_eq!(clock.advance(3.6).len(), 1);
+        // 18 s total — one tick fires, 2.8 s remains.
+        assert_eq!(clock.advance(9.0).len(), 1);
         assert_eq!(clock.tick, 1);
 
-        // 4.8 s of the next day — no tick yet.
-        assert!(clock.advance(3.6).is_empty());
+        // 11.8 s of the next day — no tick yet.
+        assert!(clock.advance(9.0).is_empty());
         assert_eq!(clock.tick, 1);
     }
 
@@ -403,11 +425,11 @@ mod tests {
     fn speed_change_keeps_partial_day() {
         let mut clock = GameClock::new();
         clock.set_speed(GameSpeed::Slow);
-        clock.advance(3.0); // half of a 6 s day
+        clock.advance(7.6); // half of a 15.2 s day
 
         clock.set_speed(GameSpeed::Fast);
-        // 0.21 s at 0.4 s/day adds just over half a day.
-        let events = clock.advance(0.21);
+        // 0.61 s at 1.2 s/day adds just over half a day.
+        let events = clock.advance(0.61);
         assert_eq!(events.len(), 1);
     }
 

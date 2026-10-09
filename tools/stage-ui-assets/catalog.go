@@ -5,6 +5,15 @@ type dllTarget struct {
 	Directory       string
 	Expected        int
 	ExpectedType302 int
+	// ExpectedRCData counts the droid action scripts (RT_RCDATA) that
+	// FUN_0042b1d0 and the command classes read from a sprite DLL.
+	ExpectedRCData int
+	// ActionTable is the side's GData advice table (FUN_004c2c70,
+	// FUN_004c0ba0), staged beside its droid's resources.
+	ActionTable string
+	// ExpectedWaves counts the droid voices and sounds (WAVE) that command
+	// 4 plays through FUN_00403f70.
+	ExpectedWaves int
 }
 
 var uiDLLTargets = []dllTarget{
@@ -12,8 +21,11 @@ var uiDLLTargets = []dllTarget{
 	{Filename: "GOKRES.DLL", Directory: "gokres-dll", Expected: 580},
 	{Filename: "STRATEGY.DLL", Directory: "strategy-dll", Expected: 1042},
 	{Filename: "TACTICAL.DLL", Directory: "tactical-dll", Expected: 288},
-	{Filename: "ALSPRITE.DLL", Directory: "alsprite-dll", Expected: 38, ExpectedType302: 1640},
-	{Filename: "EMSPRITE.DLL", Directory: "emsprite-dll", Expected: 34, ExpectedType302: 2348},
+	{Filename: "ALSPRITE.DLL", Directory: "alsprite-dll", Expected: 38, ExpectedType302: 1640, ExpectedRCData: 752, ActionTable: "C3POACT.SPT", ExpectedWaves: 213},
+	{Filename: "EMSPRITE.DLL", Directory: "emsprite-dll", Expected: 34, ExpectedType302: 2348, ExpectedRCData: 753, ActionTable: "IMP22ACT.SPT", ExpectedWaves: 216},
+	// The opening briefing tour's clips (FUN_005fefd0 module 13).
+	{Filename: "ALBRIEF.DLL", Directory: "albrief-dll", Expected: 20, ExpectedType302: 2684, ExpectedRCData: 366, ExpectedWaves: 17},
+	{Filename: "EMBRIEF.DLL", Directory: "embrief-dll", Expected: 18, ExpectedType302: 2738, ExpectedRCData: 471, ExpectedWaves: 22},
 	{Filename: "REBDLOG.DLL", Directory: "rebdlog-dll", Expected: 23},
 }
 

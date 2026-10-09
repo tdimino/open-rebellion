@@ -1151,6 +1151,9 @@ would tune around known simulation feedback defects.
 - [ ] Execute `RE-ADV-02` for authored SPT/BIN/FDT action, cadence, preemption,
   and voice mappings; extend the decoder/pack to briefings and every other
   required resource kind; then consume the proven shell/control/window mappings.
+  Done: triggered droid actions, voices, and the opening briefing tour with
+  its skip, both factions, native and packed (`droid-advisor-triggers.md`).
+  Open: the Advice topics the tour leaves, droids during the battle dialog.
 - [ ] Add Brotli compression plus bounded raw-byte and decoded-texture caches to the verified runtime-pack foundation.
 - [ ] Complete P45 faithful-HD modernization. P45A is complete: original parity
   is separate from opt-in HD, manifests are source-bound, and deterministic
@@ -1159,7 +1162,8 @@ would tune around known simulation feedback defects.
 - [ ] Enable high DPI; use one egui pass; cache sector geometry.
 - [ ] Move saves from synchronous base64 `localStorage` to compressed asynchronous IndexedDB.
 - [ ] Add authored advisor voice and preemption after user gesture; advisor idle
-  assets are now staged from a contributor-owned installation.
+  assets are now staged from a contributor-owned installation. Voices play
+  natively and are packed for the browser; browser playback is unverified.
 - [ ] Exercise real mouse/keyboard input and bitmap screenshots in Chrome, Firefox, and Safari.
 - [ ] Meet budgets: ≤3 s cold start at 50 Mbps/30 ms, ≤4 pre-menu requests, ≤8 ms frame, ≤12 ms WASM tick at 1,000 fleets, ≤5 MB optimized WASM, and ≤256 MB combined memory after 10 minutes.
 

@@ -1,9 +1,11 @@
 //! Galaxy map rendering and egui UI panels.
 
 pub mod advisor;
+pub mod advisor_script;
 pub mod agent_menu;
 pub mod audio;
 pub mod bmp_cache;
+pub mod briefing_tour;
 pub mod build_selection;
 pub mod cockpit;
 pub mod defenses_window;
@@ -33,6 +35,7 @@ pub mod object_menu;
 pub mod panels;
 pub mod personnel_finder;
 pub mod quadrant_icons;
+pub mod sector_hover;
 pub mod sector_window;
 pub mod status_rows;
 pub mod status_window;
@@ -42,7 +45,6 @@ mod tactical_assets;
 mod tactical_resources;
 pub mod tactical_view;
 pub mod targeting;
-pub mod sector_hover;
 pub mod theme;
 pub mod tooltip;
 pub mod troop_finder;
@@ -61,11 +63,7 @@ use rebellion_core::world::{ControlKind, GameWorld, System};
 
 #[cfg(target_arch = "wasm32")]
 pub use advisor::set_advisor_asset_cache;
-pub use advisor::{
-    advisor_combat_result, advisor_death_star, advisor_greet, advisor_manufacturing_complete,
-    advisor_mission_result, advisor_uprising, draw_advisor, AdvisorFaction, AdvisorMessage,
-    AdvisorPriority, AdvisorState,
-};
+pub use advisor::{draw_advisor, AdvisorFaction, AdvisorState, AdvisorVoice, CockpitStep};
 pub use audio::{draw_audio_controls, AudioVolumeState, MusicContext, MusicTrack, SfxKind};
 #[cfg(target_arch = "wasm32")]
 pub use bmp_cache::set_bmp_cache;
@@ -76,7 +74,7 @@ pub use cockpit::{
     draw_cockpit_background, draw_cockpit_chrome, draw_cockpit_egui_layer,
     handle_cockpit_egui_input, set_cockpit_viewport_clip, strategic_gid_control,
     strategic_primary_controls, CockpitButton, CockpitFaction, CockpitLayout, CockpitState,
-    CockpitViewport, GidMode, StrategicControlSpec, STRATEGIC_LOGICAL_HEIGHT,
+    CockpitViewport, GidHighlight, GidMode, StrategicControlSpec, STRATEGIC_LOGICAL_HEIGHT,
     STRATEGIC_LOGICAL_WIDTH,
 };
 pub use defenses_window::{
@@ -300,6 +298,8 @@ pub struct GidOverlayContext<'a> {
     pub missions: &'a MissionState,
     /// Systems in revolt (system `+0x88` bit 2).
     pub uprisings: &'a rebellion_core::uprising::UprisingState,
+    /// The systems a highlight display marks (modes 0x92, 0x93).
+    pub highlight: &'a [SystemKey],
 }
 
 impl Default for GalaxyMapState {
@@ -483,9 +483,17 @@ pub fn draw_gid_caption(
     layout: CockpitLayout,
     faction: CockpitFaction,
     mode: GidMode,
+    highlight: &cockpit::GidHighlight,
 ) {
     use egui_macroquad::egui;
-    if !mode.is_active() || layout.scale <= 0.0 {
+    let caption = match mode {
+        GidMode::HighlightEmpire | GidMode::HighlightAlliance => Some(highlight.caption),
+        _ => mode.caption(faction),
+    };
+    let Some(caption) = caption.filter(|text| !text.is_empty()) else {
+        return;
+    };
+    if layout.scale <= 0.0 {
         return;
     }
     let (x, _, width, _) = cockpit::galaxy_aperture(faction);
@@ -495,7 +503,7 @@ pub fn draw_gid_caption(
             layout.canvas.y + GID_CAPTION_TOP * layout.scale,
         ),
         egui::Align2::CENTER_TOP,
-        mode.label(),
+        caption,
         theme::game_font(10, layout.scale),
         game_menu::faction_text_color(faction),
     );
@@ -552,11 +560,33 @@ fn gid_marker_for_system(
     mode: GidMode,
     gid: &GidOverlayContext<'_>,
 ) -> u32 {
-    if mode == GidMode::PopularSupport {
-        return popular_support_marker_resource(system, faction);
+    use bmp_cache::resources::strategy;
+
+    let explored = system.exploration_status == ExplorationStatus::Explored;
+    match mode {
+        GidMode::PopularSupport => return popular_support_marker_resource(system, faction),
+        // FUN_0042b330 0x17: value 0x52 while the explored bit is clear, in
+        // the neutral set.
+        GidMode::UnexploredSystems => {
+            return if explored {
+                strategy::GID_NEUTRAL_SMALLEST
+            } else {
+                strategy::GID_NEUTRAL_LARGEST
+            };
+        }
+        // 0x92 / 0x93: a listed system gets value 7, the largest Imperial
+        // or Alliance marker; the rest are flagged 0x80 and show 10158.
+        GidMode::HighlightEmpire | GidMode::HighlightAlliance => {
+            return match (gid.highlight.contains(&system_key), mode) {
+                (false, _) => strategy::GID_UNEXPLORED,
+                (true, GidMode::HighlightEmpire) => strategy::GID_EMPIRE_LARGEST,
+                (true, _) => strategy::GID_ALLIANCE_LARGEST,
+            };
+        }
+        _ => {}
     }
-    if system.exploration_status != ExplorationStatus::Explored || !system.is_populated {
-        return bmp_cache::resources::strategy::GID_UNEXPLORED;
+    if !explored || !system.is_populated {
+        return strategy::GID_UNEXPLORED;
     }
 
     let player_is_alliance = faction == CockpitFaction::Alliance;
@@ -592,7 +622,50 @@ fn gid_metric(
             .is_none_or(rebellion_core::manufacturing::ProductionQueue::is_empty)
     };
     match mode {
-        GidMode::PopularSupport | GidMode::DisplayOff => 0,
+        GidMode::PopularSupport
+        | GidMode::DisplayOff
+        | GidMode::UnexploredSystems
+        | GidMode::HighlightEmpire
+        | GidMode::HighlightAlliance => 0,
+        // FUN_0042b330 0x13..0x16: value 0x52 when the system's side
+        // (+0x24 bits 6..7) is the player's (0x13, 0x14) or the enemy's
+        // (0x15, 0x16), and its loyalty (+0x84 bits 2..3) matches that side
+        // (0x13, 0x15) or does not (0x14, 0x16).
+        GidMode::LoyalToPlayer
+        | GidMode::PlayerMilitaryControl
+        | GidMode::LoyalToEnemy
+        | GidMode::EnemyMilitaryControl => {
+            let side_is_player = matches!(
+                mode,
+                GidMode::LoyalToPlayer | GidMode::PlayerMilitaryControl
+            );
+            let side = if side_is_player == player_is_alliance {
+                rebellion_core::dat::Faction::Alliance
+            } else {
+                rebellion_core::dat::Faction::Empire
+            };
+            // hyp: no recovered function writes +0x84 bits 2..3; the port
+            // reads it as the side with the larger popular support.
+            let loyal = if system.popularity_alliance > system.popularity_empire {
+                Some(rebellion_core::dat::Faction::Alliance)
+            } else if system.popularity_empire > system.popularity_alliance {
+                Some(rebellion_core::dat::Faction::Empire)
+            } else {
+                None
+            };
+            let wants_loyal = matches!(mode, GidMode::LoyalToPlayer | GidMode::LoyalToEnemy);
+            let held = system.control.faction() == Some(side);
+            u32::from(held && (loyal == Some(side)) == wants_loyal) * 0x52
+        }
+        // FUN_0042b330 0x91: troops, shields and fighters together.
+        GidMode::AllDefenses => [
+            GidMode::Troopers,
+            GidMode::FighterSquadrons,
+            GidMode::PlanetaryShieldGenerators,
+        ]
+        .into_iter()
+        .map(|part| gid_metric(world, system_key, system, player_is_alliance, part, gid))
+        .sum(),
         GidMode::Uprisings => u32::from(system_in_revolt(system_key, system, gid.uprisings)),
         GidMode::IdleFleets => system
             .fleets
@@ -772,6 +845,16 @@ fn gid_metric(
 
 fn gid_metric_size(mode: GidMode, value: u32) -> usize {
     match mode {
+        // The popular-support thresholds (0x51, 0x50, 0x3c, 0x3b, 0x32).
+        GidMode::LoyalToPlayer
+        | GidMode::PlayerMilitaryControl
+        | GidMode::LoyalToEnemy
+        | GidMode::EnemyMilitaryControl => match value {
+            0x51.. => 3,
+            0x3c..=0x50 => 2,
+            0x32..=0x3b => 1,
+            _ => 0,
+        },
         GidMode::Uprisings | GidMode::DeathStarShields => usize::from(value > 0) * 3,
         GidMode::IdleFleets | GidMode::FleetsEnRoute => match value {
             0 => 0,
@@ -1523,7 +1606,10 @@ mod interaction_tests {
         };
 
         // FUN_00425d00: 1024 galaxy units span the 607x437 starfield.
-        assert_eq!(camera.to_screen(1024.0, 1024.0), (60.0 + 1214.0, 30.0 + 874.0));
+        assert_eq!(
+            camera.to_screen(1024.0, 1024.0),
+            (60.0 + 1214.0, 30.0 + 874.0)
+        );
         assert!(camera.contains(100.0, 40.0));
         assert!(camera.contains(579.999, 394.999));
         assert!(!camera.contains(99.0, 40.0));
@@ -1601,7 +1687,13 @@ mod interaction_tests {
         let ctx = egui::Context::default();
         let shapes = |mode| {
             ctx.run(egui::RawInput::default(), |ctx| {
-                draw_gid_caption(ctx, layout, CockpitFaction::Empire, mode);
+                draw_gid_caption(
+                    ctx,
+                    layout,
+                    CockpitFaction::Empire,
+                    mode,
+                    &cockpit::GidHighlight::default(),
+                );
             })
             .shapes
         };
@@ -1616,10 +1708,7 @@ mod interaction_tests {
         assert_eq!(text.galley.text(), "Popular Support");
         assert!((text.pos.x + text.galley.size().x / 2.0 - 720.0).abs() < 0.01);
         assert_eq!(text.pos.y, 82.0);
-        assert_eq!(
-            text.fallback_color,
-            egui::Color32::from_rgb(0, 255, 0)
-        );
+        assert_eq!(text.fallback_color, egui::Color32::from_rgb(0, 255, 0));
         assert!(shapes(GidMode::DisplayOff).is_empty());
     }
 
@@ -1693,6 +1782,7 @@ mod interaction_tests {
                 economy: &economy,
                 missions: &missions,
                 uprisings,
+                highlight: &[],
             };
             gid_metric(
                 world,
@@ -1777,6 +1867,7 @@ mod interaction_tests {
             economy: &economy,
             missions: &missions,
             uprisings: &uprisings,
+            highlight: &[],
         };
         let metric = |mode| gid_metric(&world, key, &world.systems[key], true, mode, &gid);
 

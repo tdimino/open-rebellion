@@ -142,7 +142,7 @@ hold the linked animation control data.
 | Content | Count | Dimensions | Notes |
 |---------|-----------|-----------|-------|
 | Standard anchor BMPs | 38 | 67×116, 47×69 | Native loader's current visual subset |
-| Custom animation frames | 1,640 | 1,617 at 67×116; 23 at 47×69 | Type 302; currently ignored |
+| Custom animation frames | 1,640 | 1,617 at 67×116; 23 at 47×69 | Type 302; staged and packed |
 | Animation control data | 752 | — | RCDATA/BIN |
 | Embedded audio | 213 | — | RIFF/WAVE |
 
@@ -154,20 +154,22 @@ audio structure as ALSPRITE.
 | Content | Count | Dimensions | Notes |
 |---------|-----------|-----------|-------|
 | Standard anchor BMPs | 34 | 106×133, 101×79 | Native loader's current visual subset |
-| Custom animation frames | 2,348 | 2,333 at 106×133; 15 at 101×79 | Type 302; currently ignored |
+| Custom animation frames | 2,348 | 2,333 at 106×133; 15 at 101×79 | Type 302; staged and packed |
 | Animation control data | 753 | — | RCDATA/BIN |
 | Embedded audio | 216 | — | RIFF/WAVE |
 
 ## ALBRIEF.DLL (7.9MB) — 20 BMPs + 366 BIN + 2,684 type-302 frames + 17 WAV
 
-Alliance briefing screen resources. The BMP sprites are advisor frames shown during the briefing. The BIN data is likely audio + animation control for the briefing sequences.
+Alliance briefing resources: the droids' clips and voices for the opening
+tour, played as module 13 (`FUN_005fefd0`, `FUN_0042b1d0`) by the advice
+agent's slots 41 (tour) and 40 (skip).
 
 | Content | Count | Dimensions | Notes |
 |---------|-------|-----------|-------|
 | C-3PO briefing sprites | 15 | 67x116 | Subset of ALSPRITE frames |
 | R2-D2 briefing sprites | 5 | 47x69 | Subset of ALSPRITE frames |
 | Briefing sequence data | 366 BIN | — | Animation control data |
-| Custom animation frames | 2,684 | 67×116, 47×69 | Type 302; currently ignored |
+| Custom animation frames | 2,684 | 67×116, 47×69 | Type 302; staged and packed |
 | Embedded audio | 17 | — | RIFF/WAVE |
 
 **Note:** The cockpit/shuttle background is NOT a single BMP. It is either composited at runtime from layered elements, or rendered as part of the Smacker video sequences (MDATA.003-005).
@@ -175,7 +177,8 @@ Alliance briefing screen resources. The BMP sprites are advisor frames shown dur
 ## EMBRIEF.DLL (8.2MB) — 18 BMPs + 471 BIN + 2,738 type-302 frames + 22 WAV
 
 Empire briefing screen resources. Same structure as ALBRIEF but for the
-Imperial bridge environment. All are currently absent from the browser pack.
+Imperial bridge, played by slots 74 (tour) and 73 (skip). Staged and packed
+with the advisor frames.
 
 ## REBDLOG.DLL (290KB) — 24 BMPs + 5 string bundles
 

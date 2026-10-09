@@ -111,6 +111,33 @@ pub enum GidMode {
     PlanetaryDefenseBatteries,
     /// Native Display Off item, which removes markers and uses bright resource 902.
     DisplayOff,
+    /// The briefing tour's displays (`FUN_004c30c0`), which the GID menu
+    /// does not offer. Markers come from `FUN_0042b330`.
+    /// Mode 0x13: systems the player controls that are loyal to it.
+    LoyalToPlayer,
+    /// Mode 0x14: systems the player controls that are not loyal to it.
+    PlayerMilitaryControl,
+    /// Mode 0x15: systems the enemy controls that are loyal to it.
+    LoyalToEnemy,
+    /// Mode 0x16: systems the enemy controls that are not loyal to it.
+    EnemyMilitaryControl,
+    /// Mode 0x17: unexplored systems, in the largest neutral marker.
+    UnexploredSystems,
+    /// Mode 0x91: troops, shields and fighters together.
+    AllDefenses,
+    /// Mode 0x92: the systems in [`GidHighlight`], in Imperial markers.
+    HighlightEmpire,
+    /// Mode 0x93: the systems in [`GidHighlight`], in Alliance markers.
+    HighlightAlliance,
+}
+
+/// The systems and caption of a highlight display (modes 0x92 and 0x93):
+/// `FUN_00425d00` copies the list to `+0x2cc`, and `FUN_0041d890` stores the
+/// caption at `+0x494`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct GidHighlight {
+    pub systems: Vec<rebellion_core::ids::SystemKey>,
+    pub caption: &'static str,
 }
 
 impl GidMode {
@@ -140,6 +167,14 @@ impl GidMode {
             Self::PlanetaryShieldGenerators => 0x74,
             Self::PlanetaryDefenseBatteries => 0x75,
             Self::DisplayOff => 0x80,
+            Self::LoyalToPlayer => 0x13,
+            Self::PlayerMilitaryControl => 0x14,
+            Self::LoyalToEnemy => 0x15,
+            Self::EnemyMilitaryControl => 0x16,
+            Self::UnexploredSystems => 0x17,
+            Self::AllDefenses => 0x91,
+            Self::HighlightEmpire => 0x92,
+            Self::HighlightAlliance => 0x93,
         }
     }
 
@@ -169,12 +204,64 @@ impl GidMode {
             Self::PlanetaryShieldGenerators => "Planetary Shield Generators",
             Self::PlanetaryDefenseBatteries => "Planetary Defense Batteries",
             Self::DisplayOff => "Display Off",
+            Self::LoyalToPlayer | Self::LoyalToEnemy => "Systems Loyal",
+            Self::PlayerMilitaryControl | Self::EnemyMilitaryControl => {
+                "Systems Under Military Control"
+            }
+            Self::UnexploredSystems => "Unexplored Systems",
+            Self::AllDefenses => "All Defenses",
+            Self::HighlightEmpire | Self::HighlightAlliance => "",
         }
+    }
+
+    /// The title `FUN_00425d00` paints for `faction`'s player, or `None`
+    /// when it paints none. Highlight displays carry their own caption.
+    #[must_use]
+    pub const fn caption(self, faction: CockpitFaction) -> Option<&'static str> {
+        let alliance = matches!(faction, CockpitFaction::Alliance);
+        Some(match self {
+            Self::DisplayOff | Self::HighlightEmpire | Self::HighlightAlliance => return None,
+            // 0x13 names the player's side, 0x15 the enemy's (0x161f, 0x1620).
+            Self::LoyalToPlayer | Self::LoyalToEnemy => {
+                if alliance == matches!(self, Self::LoyalToPlayer) {
+                    "Systems Loyal to the Alliance"
+                } else {
+                    "Systems Loyal to the Empire"
+                }
+            }
+            // 0x1621 shows only for 0x16 on the Alliance side and 0x14 on
+            // the Empire's: `(mode == 0x14) != (side == 2)` skips it.
+            Self::PlayerMilitaryControl | Self::EnemyMilitaryControl => {
+                if alliance == matches!(self, Self::PlayerMilitaryControl) {
+                    return None;
+                }
+                "Systems Under Military Control"
+            }
+            _ => self.label(),
+        })
     }
 
     #[must_use]
     pub const fn is_active(self) -> bool {
         !matches!(self, Self::DisplayOff)
+    }
+
+    /// Whether the GID menu offers this display; the tour's are reached
+    /// only through `FUN_004c30c0`, and `FUN_004522f0` has no legend script
+    /// for them.
+    #[must_use]
+    pub const fn in_menu(self) -> bool {
+        !matches!(
+            self,
+            Self::LoyalToPlayer
+                | Self::PlayerMilitaryControl
+                | Self::LoyalToEnemy
+                | Self::EnemyMilitaryControl
+                | Self::UnexploredSystems
+                | Self::AllDefenses
+                | Self::HighlightEmpire
+                | Self::HighlightAlliance
+        )
     }
 
     /// The display Alt+`digit` selects. TEXTCOMM.DLL accelerator table 11
@@ -636,6 +723,12 @@ pub struct CockpitState {
     pub side_gutter_w: f32,
     /// Active Galactic Information Display overlay.
     pub gid_mode: GidMode,
+    /// The systems and caption of a highlight display.
+    pub gid_highlight: GidHighlight,
+    /// The briefing tour runs before the game starts: the original shows no
+    /// Message Index rail or day readout until its step 11; the resource
+    /// counters show throughout (2026-10-08 Wine capture).
+    pub briefing: bool,
     /// Original GID popup and detailed-legend state.
     pub gid_ui: GidUiState,
     /// Message Index categories with unread messages, one bit per
@@ -653,6 +746,8 @@ impl Default for CockpitState {
             bottom_bar_h: 40.0,
             side_gutter_w: 0.0, // no side gutters for now — full width
             gid_mode: GidMode::PopularSupport,
+            gid_highlight: GidHighlight::default(),
+            briefing: false,
             gid_ui: GidUiState::default(),
             message_unread_mask: 0,
             pressed_control: None,
@@ -864,14 +959,16 @@ pub fn draw_cockpit_egui_layer(
         strategic_side_control(state.faction),
         primary_down,
     );
-    draw_message_index_rail(
-        ctx,
-        cache,
-        &painter,
-        layout,
-        state.faction,
-        state.message_unread_mask,
-    );
+    if !state.briefing {
+        draw_message_index_rail(
+            ctx,
+            cache,
+            &painter,
+            layout,
+            state.faction,
+            state.message_unread_mask,
+        );
+    }
 
     // FUN_00426d00: Display Off (0x80) closes the detailed legend and shows
     // the compact one; any other display rebuilds an open legend for it.

@@ -272,6 +272,9 @@ pub struct AudioEngine {
     /// Source-mapped tactical voices keyed by faction and WAVE ID.
     tactical_voice: HashMap<(TacticalVoiceFaction, u32), Sound>,
 
+    /// The cockpit droids' sounds, keyed by sprite DLL and WAVE ID.
+    advisor_voice: HashMap<String, Sound>,
+
     /// Currently loaded music track + which track it is.
     music: Option<(Sound, MusicTrack)>,
 
@@ -290,6 +293,7 @@ impl AudioEngine {
             sfx: HashMap::new(),
             tactical_sfx: HashMap::new(),
             tactical_voice: HashMap::new(),
+            advisor_voice: HashMap::new(),
             music: None,
             music_playing: false,
             missing_music_logged: HashSet::new(),
@@ -493,6 +497,17 @@ impl AudioEngine {
         self.tactical_voice.insert((faction, resource_id), sound);
     }
 
+    /// Whether the droid sound `key` is loaded.
+    pub fn has_advisor_voice(&self, key: &str) -> bool {
+        self.advisor_voice.contains_key(key)
+    }
+
+    /// Load a droid sound from its sprite DLL's WAVE bytes.
+    pub fn load_advisor_voice_bytes(&mut self, key: &str, bytes: &[u8]) {
+        let sound = Sound::load(&self.ctx, bytes);
+        self.advisor_voice.insert(key.to_owned(), sound);
+    }
+
     /// Begin decoding a music track supplied by the browser runtime pack.
     ///
     /// WebAudio decoding is asynchronous. Call `try_play_loaded_music` on
@@ -566,6 +581,29 @@ impl AudioEngine {
     pub fn play_tactical_sfx(&mut self, resource_id: u32, vol_state: &AudioVolumeState) -> bool {
         let vol = vol_state.effective_sfx_volume() as f32;
         if let Some(sound) = self.tactical_sfx.get(&resource_id) {
+            if vol > 0.0 {
+                sound.play(
+                    &self.ctx,
+                    quad_snd::PlaySoundParams {
+                        looped: false,
+                        volume: vol,
+                    },
+                );
+            }
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Play a loaded droid sound at the current SFX volume.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Audio gains are bounded values; the playback API takes f32."
+    )]
+    pub fn play_advisor_voice(&mut self, key: &str, vol_state: &AudioVolumeState) -> bool {
+        let vol = vol_state.effective_sfx_volume() as f32;
+        if let Some(sound) = self.advisor_voice.get(key) {
             if vol > 0.0 {
                 sound.play(
                     &self.ctx,
