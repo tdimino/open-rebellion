@@ -10,3 +10,6 @@ slotmap = { workspace = true }
 
 [dev-dependencies]
 strum = { version = "0.26", features = ["derive"] }
+
+[lints]
+workspace = true

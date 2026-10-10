@@ -10,3 +10,6 @@ proc-macro2 = { version = "1", features = ["span-locations"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 syn = { version = "2", features = ["full", "visit"] }
+
+[lints]
+workspace = true

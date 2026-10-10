@@ -16,6 +16,7 @@
 use std::collections::VecDeque;
 
 /// The original game's logical screen, which every coordinate names.
+#[cfg(target_os = "macos")]
 const LOGICAL: (f32, f32) = (640.0, 480.0);
 /// Frames a drag spends moving between its press and its release.
 const DRAG_FRAMES: u16 = 8;
@@ -102,6 +103,7 @@ impl DevInput {
 /// A logical point as a point in a content view of `width`×`height` points,
 /// with AppKit's origin at the bottom left. The game letterboxes its 640×480
 /// canvas, uniformly scaled and centred, as `TacticalCanvas` does.
+#[cfg(target_os = "macos")]
 fn view_point(x: f32, y: f32, width: f32, height: f32) -> (f64, f64) {
     let scale = (width / LOGICAL.0).min(height / LOGICAL.1);
     let left = (width - LOGICAL.0 * scale) * 0.5;

@@ -30,3 +30,6 @@ anyhow = { workspace = true }
 image = { version = "0.25", default-features = false, features = ["png"] }
 sha2 = "0.10"
 tempfile = "3"
+
+[lints]
+workspace = true

@@ -98,19 +98,23 @@
 //! }
 //! ```
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
+#[cfg(any(test, not(target_arch = "wasm32")))]
+use std::collections::HashSet;
+#[cfg(not(target_arch = "wasm32"))]
 use std::path::{Path, PathBuf};
 
 use quad_snd::{AudioContext, Sound};
 
-pub use rebellion_render::audio::{AudioVolumeState, MusicContext, MusicTrack, SfxKind};
+#[cfg(not(target_arch = "wasm32"))]
+pub use rebellion_render::audio::MusicContext;
+pub use rebellion_render::audio::{AudioVolumeState, MusicTrack, SfxKind};
 use rebellion_render::tactical_view::TacticalVoiceFaction;
 
-#[cfg(target_arch = "wasm32")]
-const AUDIO_PREFIX: &str = "web/data";
 #[cfg(not(target_arch = "wasm32"))]
 const AUDIO_PREFIX: &str = "data";
 
+#[cfg(not(target_arch = "wasm32"))]
 fn audio_base_path(path: &Path) -> PathBuf {
     let prefix = Path::new(AUDIO_PREFIX);
 
@@ -129,6 +133,7 @@ fn audio_base_path(path: &Path) -> PathBuf {
 // File name conventions
 // ---------------------------------------------------------------------------
 
+#[cfg(not(target_arch = "wasm32"))]
 fn sfx_file(kind: SfxKind) -> &'static str {
     match kind {
         SfxKind::MissionSuccess => "mission_success.wav",
@@ -181,6 +186,7 @@ pub const TACTICAL_SFX_ASSETS: &[(u8, u8, &str, u32)] = &[
     (0x14, 0, "sfx/tactical_event_14_0.wav", 13_054),
 ];
 
+#[cfg(not(target_arch = "wasm32"))]
 fn music_file(track: MusicTrack) -> &'static str {
     match track {
         MusicTrack::MainTheme => "main_theme.wav",
@@ -194,6 +200,7 @@ fn music_file(track: MusicTrack) -> &'static str {
 }
 
 /// Select a `MusicTrack` for a given `MusicContext`.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn track_for_context(ctx: MusicContext) -> MusicTrack {
     match ctx {
         MusicContext::MainMenu | MusicContext::GalaxyMap => MusicTrack::MainTheme,
@@ -296,6 +303,7 @@ pub struct AudioEngine {
     music_playing: bool,
 
     /// Missing tracks already reported, keeping diagnostics bounded.
+    #[cfg(not(target_arch = "wasm32"))]
     missing_music_logged: HashSet<MusicTrack>,
 }
 
@@ -312,6 +320,7 @@ impl AudioEngine {
             message_playing: None,
             music: None,
             music_playing: false,
+            #[cfg(not(target_arch = "wasm32"))]
             missing_music_logged: HashSet::new(),
         }
     }
@@ -321,6 +330,7 @@ impl AudioEngine {
     // -----------------------------------------------------------------------
 
     /// Pre-load all SFX from `sounds_dir/sfx/`.  Missing files are silently skipped.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn load_sfx(&mut self, sounds_dir: &Path) {
         let sfx_dir = audio_base_path(sounds_dir).join("sfx");
         let kinds = [
@@ -370,6 +380,7 @@ impl AudioEngine {
 
     /// Pre-load the complete source-proven tactical voice bank. Missing files
     /// remain silent so an installation without the original DLLs still runs.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn load_tactical_voice(&mut self, sounds_dir: &Path) {
         let audio_root = audio_base_path(sounds_dir);
         for (faction, relative_path, resource_id) in tactical_voice_assets() {
@@ -391,6 +402,7 @@ impl AudioEngine {
     ///
     /// SFX and voice lines are pre-loaded.  Music is loaded on demand in
     /// `play_music`.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn load_all(&mut self, sounds_dir: &Path) {
         self.load_sfx(sounds_dir);
         self.load_tactical_voice(sounds_dir);
@@ -728,6 +740,7 @@ impl AudioEngine {
         clippy::cast_possible_truncation,
         reason = "Audio gains are bounded values; the playback API takes f32."
     )]
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn play_music(
         &mut self,
         track: MusicTrack,
@@ -794,6 +807,7 @@ impl AudioEngine {
     ///
     /// Delegates to `play_music` after mapping context → track.  If the
     /// correct track is already playing, this is a no-op.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn play_music_for_context(
         &mut self,
         context: MusicContext,
@@ -837,6 +851,7 @@ impl AudioEngine {
         clippy::unused_self,
         reason = "Keep the same instance API as the audio backend on other platforms."
     )]
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn is_available(&self) -> bool {
         true
     }
