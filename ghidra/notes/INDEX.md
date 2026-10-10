@@ -1,14 +1,14 @@
 ---
 title: "Ghidra RE Notes — Index"
-description: "Master index of 5,408 decompiled C files (5,207 by address, 201 named copies), Ghidra scripts, and recovered subsystem notes"
+description: "Master index of 5,977 function-note C files (5,773 by address, 204 named/support copies), Ghidra scripts, and recovered subsystem notes"
 category: "ghidra"
 created: 2026-03-13
-updated: 2026-10-06
+updated: 2026-10-10
 ---
 
 # Ghidra RE Notes — Index
 
-**5,408 decompiled C files (5,207 `FUN_<address>.c` plus 201 named copies), Ghidra scripts, and indexed recovery notes**
+**5,977 function-note C files (5,773 `FUN_<address>.c` plus 204 named/support copies), Ghidra scripts, and indexed recovery notes**
 
 Provenance: until 2026-09-26, 2,752 `FUN_<address>.c` files were empty placeholders from commit aa2b333. They were filled, and 188 functions cited elsewhere in the repo were added, with Ghidra 12.1.3 headless `CreateAndDecompileTargets.java` against the read-only project. 29 of those files explain instead of decompiling: 27 addresses lie inside another function and name it, 1 (`0x005587d0`) is a jump stub outside any function, and 1 records the only decompiler failure (`FUN_006197d2`, "Overlapping input varnodes"). No note is empty.
 
@@ -61,6 +61,7 @@ Provenance: until 2026-09-26, 2,752 `FUN_<address>.c` files were empty placehold
 | [fleet-join-split.md](fleet-join-split.md) | Joining and splitting fleets: a move onto a fleet hands over its capital ships, an emptied fleet disbands, Create Fleet (0x270) fills a system's hidden spare fleet, a fleet holds only capital ships | FUN_004feca0, FUN_004ffc90, FUN_004fe630, FUN_0050be00, FUN_00512d00, FUN_00580b00, FUN_00509b40 |
 | [fleet-finder.md](fleet-finder.md) | The Fleet Finder (window type 0x15, 470x330): cockpit command 0x12e or F3, side tabs, name box with prefix match, a name-sorted list of the side's known fleets or ships, Display and double click open the Sector and Fleet windows | FUN_0042a0c0, FUN_00461750, FUN_00461960, FUN_00462be0, FUN_00462770, FUN_00462a50, FUN_00429440 |
 | [sector-window-placement.md](sector-window-placement.md) | Sector windows: two at most, one per column; the first takes its sector's galaxy half (width 1023), a second the free column, a third replaces the window on its half | FUN_00429ce0 |
+| [strategic-windowing-toolkit.md](strategic-windowing-toolkit.md) | Shared strategic-window contract: keyed identity registry, separate presentation MRU, modeless stacking, modal boundary, child focus, temporary capture, asynchronous close, and restoration | FUN_00422ce0, FUN_00600310, FUN_006007b0, FUN_00601340, FUN_00606960 |
 | [troop-finder.md](troop-finder.md) | The Troop Finder (window type 0x16, 470x330): command 0x130 or F4, Alliance and Imperial tabs, a name-sorted list of systems and fleets holding the tab's regiments with five count columns, opening the Defenses or Fleet window | FUN_0042a4d0, FUN_0046ce40, FUN_0046ea10, FUN_0046d8d0, FUN_0046df90, FUN_00429440 |
 | [personnel-finder.md](personnel-finder.md) | The Personnel Finder (window type 0x17): command 0x12f or F5, side tabs, Characters and SpecForces views, the "Name - Location ( State ) " row text, open targets by object family | FUN_0042a180, FUN_00463500, FUN_00465bb0, FUN_00465540, FUN_00429440 |
 | [production-destination.md](production-destination.md) | Per-area production managers (families 0xa0..0xaf), the Destination order 0x214 and where finished builds go | FUN_0052c170, FUN_00512700, FUN_0052b960, FUN_0052bee0, FUN_0055d8c0 |
@@ -76,7 +77,7 @@ Provenance: until 2026-09-26, 2,752 `FUN_<address>.c` files were empty placehold
 | [timer-scheduler.md](timer-scheduler.md) | Frame loop and setup sequence, the day scheduler, timers 0x380 to 0x394 with their handlers; refutes the 0x1f0 master-tick claim | FUN_0040a050, FUN_005136d0, FUN_0041dff0, FUN_0051df30, FUN_00586130, FUN_005862a0 |
 | [community-address-remap.md](community-address-remap.md) | The community disassembly is a different REBEXE build; region shifts and 43 remapped functions | FUN_00508250, FUN_0050b310, FUN_00559fe0, FUN_0055e410 |
 
-## Decompiled Functions (5,408 files)
+## Function Notes (5,977 C files)
 
 ### By Game System
 
