@@ -297,6 +297,7 @@ mod tests {
             config: ModConfig {
                 enabled: discovered.iter().map(|mod_| mod_.name.clone()).collect(),
             },
+            config_error: None,
             discovered,
             errors: Vec::new(),
             mods_dir: root.to_path_buf(),

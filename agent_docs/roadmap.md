@@ -1270,7 +1270,6 @@ secrets and signed sessions.
   entries, and bounded caches remain open.
 - Save v3 files rejected (bincode layout incompatible) -- no migration possible without SaveStateV3
 - `enabled_sorted()` silently returns empty on dependency resolution errors
-- `ModConfig::load()` silently drops corrupted config.toml
 - No additive entity creation in mods -- patches only modify existing entities (until Addon 1 Phase 5)
 - 27 LOC dead code identified by simplicity reviewer (2026-03-21)
 - 5 stale doc comments referencing old `controlling_faction` field

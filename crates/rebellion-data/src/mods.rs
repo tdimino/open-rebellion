@@ -50,7 +50,7 @@
 
 use std::collections::{BTreeSet, HashMap};
 #[cfg(not(target_arch = "wasm32"))]
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context};
@@ -128,24 +128,77 @@ pub struct ModConfig {
     pub enabled: Vec<String>,
 }
 
-impl ModConfig {
-    #[must_use]
-    pub fn load(mods_dir: &Path) -> Self {
-        let path = mods_dir.join("config.toml");
-        std::fs::read_to_string(&path)
-            .ok()
-            .and_then(|s| toml::from_str(&s).ok())
-            .unwrap_or_default()
-    }
+#[cfg(all(not(target_arch = "wasm32"), unix))]
+fn sync_mod_directory(mods_dir: &Path) -> anyhow::Result<()> {
+    std::fs::File::open(mods_dir)
+        .with_context(|| format!("opening mod directory {}", mods_dir.display()))?
+        .sync_all()
+        .with_context(|| format!("synchronizing mod directory {}", mods_dir.display()))
+}
 
+#[cfg(all(not(target_arch = "wasm32"), not(unix)))]
+fn sync_mod_directory(_mods_dir: &Path) -> anyhow::Result<()> {
+    // Windows does not expose portable directory fsync semantics through std.
+    // The temporary file itself is still synced before replacement.
+    Ok(())
+}
+
+impl ModConfig {
+    /// Load persisted mod state. A missing file means no mods have been enabled
+    /// yet; unreadable or malformed files remain errors.
     ///
     /// # Errors
-    /// Returns an error if the mod directory or load-order file cannot be written.
-    pub fn save(&self, mods_dir: &Path) -> anyhow::Result<()> {
+    /// Returns an error if an existing configuration cannot be read or parsed.
+    pub fn load(mods_dir: &Path) -> anyhow::Result<Self> {
         let path = mods_dir.join("config.toml");
-        let content = toml::to_string_pretty(self)?;
-        std::fs::write(&path, content)?;
+        let content = match std::fs::read_to_string(&path) {
+            Ok(content) => content,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(Self::default());
+            }
+            Err(error) => {
+                return Err(error)
+                    .with_context(|| format!("reading mod configuration {}", path.display()));
+            }
+        };
+        toml::from_str(&content)
+            .with_context(|| format!("parsing mod configuration {}", path.display()))
+    }
+
+    /// # Errors
+    /// Returns an error if the mod directory or configuration cannot be written.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn save(&self, mods_dir: &Path) -> anyhow::Result<()> {
+        std::fs::create_dir_all(mods_dir)
+            .with_context(|| format!("creating mod directory {}", mods_dir.display()))?;
+        let path = mods_dir.join("config.toml");
+        let content = toml::to_string_pretty(self).context("serializing mod configuration")?;
+        let mut pending = tempfile::NamedTempFile::new_in(mods_dir).with_context(|| {
+            format!(
+                "creating temporary mod configuration beside {}",
+                path.display()
+            )
+        })?;
+        pending.write_all(content.as_bytes()).with_context(|| {
+            format!("writing temporary mod configuration for {}", path.display())
+        })?;
+        pending.as_file().sync_all().with_context(|| {
+            format!(
+                "synchronizing temporary mod configuration for {}",
+                path.display()
+            )
+        })?;
+        pending
+            .persist(&path)
+            .map_err(|error| error.error)
+            .with_context(|| format!("replacing mod configuration {}", path.display()))?;
+        sync_mod_directory(mods_dir)?;
         Ok(())
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn save(&self, _mods_dir: &Path) -> anyhow::Result<()> {
+        bail!("mod configuration persistence is not supported on WASM")
     }
 
     #[must_use]
@@ -778,6 +831,8 @@ pub struct ModRuntime {
     pub discovered: Vec<ModManifest>,
     /// Persisted enable/disable config.
     pub config: ModConfig,
+    /// Load failure that blocks changes until a successful refresh.
+    pub config_error: Option<String>,
     /// Structured errors from last validation pass.
     pub errors: Vec<ModError>,
     /// The mods directory path.
@@ -789,8 +844,18 @@ impl ModRuntime {
     #[cfg(not(target_arch = "wasm32"))]
     #[must_use]
     pub fn discover(mods_dir: &Path) -> Self {
-        let config = ModConfig::load(mods_dir);
         let mut errors = Vec::new();
+        let (config, config_error) = match ModConfig::load(mods_dir) {
+            Ok(config) => (config, None),
+            Err(error) => {
+                let message = error.to_string();
+                errors.push(ModError::ParseError {
+                    mod_name: String::new(),
+                    message: message.clone(),
+                });
+                (ModConfig::default(), Some(message))
+            }
+        };
         let mut discovered = match ModLoader::discover(mods_dir) {
             Ok(manifests) => manifests,
             Err(e) => {
@@ -811,6 +876,7 @@ impl ModRuntime {
         Self {
             discovered,
             config,
+            config_error,
             errors,
             mods_dir: mods_dir.to_path_buf(),
         }
@@ -822,6 +888,7 @@ impl ModRuntime {
         Self {
             discovered: Vec::new(),
             config: ModConfig::default(),
+            config_error: None,
             errors: Vec::new(),
             mods_dir: mods_dir.to_path_buf(),
         }
@@ -926,18 +993,28 @@ impl ModRuntime {
         self.errors.extend(dependency_errors(&self.discovered));
     }
 
-    /// Toggle a mod's enabled state and persist config.
-    pub fn toggle_mod(&mut self, name: &str) {
-        self.config.toggle(name);
+    /// Toggle a mod's enabled state after its configuration is durably saved.
+    ///
+    /// # Errors
+    /// Returns an error without changing live state when configuration was not
+    /// loaded successfully or the replacement cannot be persisted.
+    pub fn toggle_mod(&mut self, name: &str) -> anyhow::Result<()> {
+        if let Some(error) = &self.config_error {
+            bail!("cannot update mod configuration until it reloads successfully: {error}");
+        }
+
+        let mut candidate = self.config.clone();
+        candidate.toggle(name);
+        candidate.save(&self.mods_dir)?;
+
+        self.config = candidate;
         for m in &mut self.discovered {
             if m.name == name {
                 m.enabled = self.config.is_enabled(name);
             }
         }
         self.refresh_dependency_errors();
-        if let Err(e) = self.config.save(&self.mods_dir) {
-            eprintln!("[mod-runtime] failed to save config: {e}");
-        }
+        Ok(())
     }
 
     /// Check for filesystem changes and return true if mods need reloading.
@@ -952,7 +1029,12 @@ impl ModRuntime {
         let refreshed = Self::discover(&self.mods_dir);
         self.discovered = refreshed.discovered;
         self.errors = refreshed.errors;
-        // Preserve the live config (it may have been toggled since last discover).
+        if refreshed.config_error.is_none() {
+            self.config = refreshed.config;
+        }
+        self.config_error = refreshed.config_error;
+        // A failed refresh retains the last known-good config. A successful
+        // refresh adopts the repaired or externally edited file from disk.
         for m in &mut self.discovered {
             m.enabled = self.config.is_enabled(&m.name);
         }
@@ -1288,7 +1370,7 @@ version = "0.1.0"
         config.save(tmp.path()).unwrap();
 
         // Reload and verify
-        let reloaded = ModConfig::load(tmp.path());
+        let reloaded = ModConfig::load(tmp.path()).unwrap();
         assert!(reloaded.is_enabled("test-mod"));
 
         // Toggle off
@@ -1297,8 +1379,118 @@ version = "0.1.0"
         assert!(!config2.is_enabled("test-mod"));
         config2.save(tmp.path()).unwrap();
 
-        let reloaded2 = ModConfig::load(tmp.path());
+        let reloaded2 = ModConfig::load(tmp.path()).unwrap();
         assert!(!reloaded2.is_enabled("test-mod"));
+    }
+
+    #[test]
+    fn corrupt_config_is_reported_instead_of_silently_disabling_mods() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("config.toml");
+        std::fs::write(&path, "enabled = [").unwrap();
+
+        let mut runtime = ModRuntime::discover(tmp.path());
+
+        assert_eq!(runtime.errors.len(), 1);
+        assert!(runtime.config_error.is_some());
+        assert_eq!(runtime.errors[0].mod_name(), "");
+        assert!(runtime.errors[0]
+            .to_string()
+            .contains("parsing mod configuration"));
+        assert!(runtime.toggle_mod("test-mod").is_err());
+        assert_eq!(std::fs::read_to_string(path).unwrap(), "enabled = [");
+    }
+
+    #[test]
+    fn non_file_config_is_distinct_from_a_missing_config() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir(tmp.path().join("config.toml")).unwrap();
+
+        let runtime = ModRuntime::discover(tmp.path());
+
+        assert!(runtime.config_error.is_some());
+        assert!(runtime.errors[0]
+            .to_string()
+            .contains("reading mod configuration"));
+    }
+
+    #[test]
+    fn refresh_adopts_a_repaired_configuration() {
+        let tmp = tempfile::tempdir().unwrap();
+        write_manifest(tmp.path(), "mod-a", "version = \"1.0.0\"\n");
+        let path = tmp.path().join("config.toml");
+        std::fs::write(&path, "enabled = [").unwrap();
+        let mut runtime = ModRuntime::discover(tmp.path());
+        assert!(runtime.config_error.is_some());
+        assert!(!runtime.discovered[0].enabled);
+
+        std::fs::write(&path, "enabled = [\"mod-a\"]\n").unwrap();
+        runtime.refresh();
+
+        assert!(runtime.config_error.is_none());
+        assert!(runtime.errors.is_empty());
+        assert!(runtime.config.is_enabled("mod-a"));
+        assert!(runtime.discovered[0].enabled);
+    }
+
+    #[test]
+    fn failed_toggle_preserves_runtime_state() {
+        let tmp = tempfile::tempdir().unwrap();
+        write_manifest(tmp.path(), "mod-a", "version = \"1.0.0\"\n");
+        let mut runtime = ModRuntime::discover(tmp.path());
+        std::fs::create_dir(tmp.path().join("config.toml")).unwrap();
+
+        let error = runtime.toggle_mod("mod-a").unwrap_err();
+
+        assert!(error.to_string().contains("replacing mod configuration"));
+        assert!(!runtime.config.is_enabled("mod-a"));
+        assert!(!runtime.discovered[0].enabled);
+        assert!(runtime.errors.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn saving_mod_config_atomically_replaces_the_file() {
+        use std::os::unix::fs::MetadataExt;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("config.toml");
+        let mut config = ModConfig::default();
+        config.toggle("first");
+        config.save(tmp.path()).unwrap();
+        let original_inode = std::fs::metadata(&path).unwrap().ino();
+
+        config.toggle("second");
+        config.save(tmp.path()).unwrap();
+
+        assert_ne!(std::fs::metadata(path).unwrap().ino(), original_inode);
+        let reloaded = ModConfig::load(tmp.path()).unwrap();
+        assert!(reloaded.is_enabled("first"));
+        assert!(reloaded.is_enabled("second"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn failed_config_write_preserves_the_previous_file() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("config.toml");
+        let mut config = ModConfig::default();
+        config.toggle("first");
+        config.save(tmp.path()).unwrap();
+        let original = std::fs::read(&path).unwrap();
+
+        let original_permissions = std::fs::metadata(tmp.path()).unwrap().permissions();
+        let mut read_only = original_permissions.clone();
+        read_only.set_mode(0o555);
+        std::fs::set_permissions(tmp.path(), read_only).unwrap();
+        config.toggle("second");
+        let result = config.save(tmp.path());
+        std::fs::set_permissions(tmp.path(), original_permissions).unwrap();
+
+        assert!(result.is_err());
+        assert_eq!(std::fs::read(path).unwrap(), original);
     }
 
     #[test]
@@ -1467,7 +1659,7 @@ version = "1.0.0"
         named.sort_unstable();
         assert_eq!(named, ["mod-a", "mod-b"]);
 
-        runtime.toggle_mod("mod-b");
+        runtime.toggle_mod("mod-b").unwrap();
         assert!(
             runtime.errors.iter().all(|e| e.mod_name() == "mod-a"
                 && matches!(e, ModError::MissingDependency { .. })),
@@ -1492,7 +1684,7 @@ version = "1.0.0"
         assert_eq!(runtime.errors.len(), 1);
         assert_eq!(runtime.errors[0].mod_name(), "mod-top");
 
-        runtime.toggle_mod("mod-base");
+        runtime.toggle_mod("mod-base").unwrap();
 
         assert!(runtime.errors.is_empty());
         assert_eq!(runtime.enabled_sorted().len(), 2);

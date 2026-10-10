@@ -1104,6 +1104,9 @@ async fn main() {
         .unwrap_or(std::path::Path::new("."))
         .join("mods");
     let mut mod_runtime = rebellion_data::mods::ModRuntime::discover(&mods_dir);
+    for error in &mod_runtime.errors {
+        eprintln!("[mod-runtime] {error}");
+    }
     let resolved_mod_order = mod_runtime.enabled_sorted();
 
     // The Galactic Encyclopedia is immutable reference data, not campaign
@@ -4895,8 +4898,18 @@ Some(RailAudience::side(*faction_is_alliance)),
                             }
                         })
                         .collect();
-                    let mod_actions =
-                        rebellion_render::draw_mod_manager(ctx, &mod_infos, &mut mod_manager_state);
+                    let mod_global_errors: Vec<String> = mod_runtime
+                        .errors
+                        .iter()
+                        .filter(|error| error.mod_name().is_empty())
+                        .map(ToString::to_string)
+                        .collect();
+                    let mod_actions = rebellion_render::draw_mod_manager(
+                        ctx,
+                        &mod_infos,
+                        &mod_global_errors,
+                        &mut mod_manager_state,
+                    );
                     for action in mod_actions {
                         match action {
                             rebellion_render::ModManagerAction::ToggleMod(name) => {
@@ -8365,25 +8378,34 @@ fn apply_panel_action(
         | PanelAction::OpenModManager => {
             // Handled by UI state toggle (not a world mutation)
         }
-        PanelAction::ToggleMod { ref name } => {
-            mod_runtime.toggle_mod(name);
-            #[cfg(not(target_arch = "wasm32"))]
-            if let Some(base) = encyclopedia_base_input {
-                let resolved_mod_order = mod_runtime.enabled_sorted();
-                let report = encyclopedia_mods::install_native_encyclopedia_mods(
-                    base,
-                    encyclopedia_session_store,
-                    mod_runtime,
-                    &resolved_mod_order,
-                );
-                encyclopedia_mods::log_native_encyclopedia_mod_report(&report);
+        PanelAction::ToggleMod { ref name } => match mod_runtime.toggle_mod(name) {
+            Ok(()) => {
+                #[cfg(not(target_arch = "wasm32"))]
+                if let Some(base) = encyclopedia_base_input {
+                    let resolved_mod_order = mod_runtime.enabled_sorted();
+                    let report = encyclopedia_mods::install_native_encyclopedia_mods(
+                        base,
+                        encyclopedia_session_store,
+                        mod_runtime,
+                        &resolved_mod_order,
+                    );
+                    encyclopedia_mods::log_native_encyclopedia_mod_report(&report);
+                }
+                msg_log.push(GameMessage::new(
+                    clock.tick,
+                    format!("Toggled mod: {name}"),
+                    MessageCategory::Event,
+                ));
             }
-            msg_log.push(GameMessage::new(
-                clock.tick,
-                format!("Toggled mod: {name}"),
-                MessageCategory::Event,
-            ));
-        }
+            Err(error) => {
+                eprintln!("[mod-runtime] failed to toggle {name}: {error}");
+                msg_log.push(GameMessage::new(
+                    clock.tick,
+                    format!("Failed to toggle mod {name}: {error}"),
+                    MessageCategory::Event,
+                ));
+            }
+        },
         PanelAction::ReloadMods => {
             mod_runtime.refresh();
             let resolved_mod_order = mod_runtime.enabled_sorted();
