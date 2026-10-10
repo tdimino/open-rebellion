@@ -19,14 +19,14 @@ class BrowserEvents {
   }
 }
 
-function focusRuntime() {
+function focusRuntime({ focused = true, visibilityState = "visible" } = {}) {
   const canvas = new BrowserEvents();
   canvas.focus = () => {};
   canvas.style = {};
 
   const document = new BrowserEvents();
-  document.focused = true;
-  document.visibilityState = "visible";
+  document.focused = focused;
+  document.visibilityState = visibilityState;
   document.hasFocus = () => document.focused;
   document.querySelector = () => canvas;
   document.exitPointerLock = () => {};
@@ -53,7 +53,7 @@ test("browser blur and refocus notify the WASM runtime once per transition", () 
   runtime.document.focused = true;
   runtime.window.dispatch("focus");
 
-  assert.deepEqual(runtime.notifications, [false, true]);
+  assert.deepEqual(runtime.notifications, [true, false, true]);
 });
 
 test("a hidden focused tab is blurred until it becomes visible again", () => {
@@ -64,5 +64,15 @@ test("a hidden focused tab is blurred until it becomes visible again", () => {
   runtime.document.visibilityState = "visible";
   runtime.document.dispatch("visibilitychange");
 
-  assert.deepEqual(runtime.notifications, [false, true]);
+  assert.deepEqual(runtime.notifications, [true, false, true]);
+});
+
+test("the initial effective focus state is forwarded before the first transition", () => {
+  const visible = focusRuntime();
+  const hidden = focusRuntime({ visibilityState: "hidden" });
+  const unfocused = focusRuntime({ focused: false });
+
+  assert.deepEqual(visible.notifications, [true]);
+  assert.deepEqual(hidden.notifications, [false]);
+  assert.deepEqual(unfocused.notifications, [false]);
 });

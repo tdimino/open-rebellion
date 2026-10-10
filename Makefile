@@ -16,6 +16,7 @@ check:
 test:
 	cargo test --workspace
 	$(MAKE) test-assets
+	$(MAKE) test-interface-harness
 
 # These tests require original DATs: the rebellion-data unit tests marked
 # ignored plus the integration suites below. Ignored doc examples
