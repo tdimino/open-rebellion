@@ -1414,10 +1414,13 @@ var importObject = {
                 wasm_exports.on_files_dropped_finish();
             };
 
-            let lastFocus = document.hasFocus();
+            let lastFocus = document.hasFocus() && document.visibilityState == "visible";
+            wasm_exports.focus(lastFocus);
             var checkFocus = function () {
-                let hasFocus = document.hasFocus();
-                if (lastFocus == hasFocus) {
+                // Switching tabs does not blur the focused element, but it
+                // does hide the document from the user.
+                let hasFocus = document.hasFocus() && document.visibilityState == "visible";
+                if (lastFocus != hasFocus) {
                     wasm_exports.focus(hasFocus);
                     lastFocus = hasFocus;
                 }
