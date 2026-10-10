@@ -4,7 +4,7 @@
 //!
 //! ```ignore
 //! egui_macroquad::ui(|ctx| {
-//!     let actions = panels::draw_mod_manager(ctx, &mod_infos, &mut mod_state);
+//!     let actions = panels::draw_mod_manager(ctx, &mod_infos, &global_errors, &mut mod_state);
 //!     for action in actions {
 //!         match action {
 //!             ModManagerAction::ToggleMod(name) => { mod_runtime.toggle_mod(&name); }
@@ -72,11 +72,13 @@ pub enum ModManagerAction {
 /// Render the Mod Manager panel.
 ///
 /// `mods` is the current list of discovered mods, obtained by converting
-/// `ModRuntime::discovered` into `ModInfo` slices. Returns a list of actions
-/// for the caller to apply to `ModRuntime`.
+/// `ModRuntime::discovered` into `ModInfo` slices. `global_errors` contains
+/// configuration and discovery failures that do not belong to one mod.
+/// Returns a list of actions for the caller to apply to `ModRuntime`.
 pub fn draw_mod_manager(
     ctx: &egui::Context,
     mods: &[ModInfo],
+    global_errors: &[String],
     state: &mut ModManagerState,
 ) -> Vec<ModManagerAction> {
     let mut actions = Vec::new();
@@ -92,6 +94,13 @@ pub fn draw_mod_manager(
         .show(ctx, |ui| {
             ui.heading("Installed Mods");
             ui.separator();
+
+            for error in global_errors {
+                ui.colored_label(Color32::RED, format!("Error: {error}"));
+            }
+            if !global_errors.is_empty() {
+                ui.separator();
+            }
 
             if mods.is_empty() {
                 ui.label("No mods found. Place mod folders in the mods/ directory.");

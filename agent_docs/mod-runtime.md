@@ -27,6 +27,7 @@ The mod system has three cooperating layers:
 pub struct ModRuntime {
     pub discovered: Vec<ModManifest>,  // all mods found in mods_dir
     pub config: ModConfig,             // which mods are enabled
+    pub config_error: Option<String>,  // blocks writes until a valid reload
     pub errors: Vec<ModError>,         // validation errors
     pub mods_dir: PathBuf,
 }
@@ -45,7 +46,7 @@ let sorted = runtime.enabled_sorted();
 let errors = runtime.apply_ordered(&mut world, &sorted);
 
 // Toggle a mod on/off and persist
-runtime.toggle_mod("better-star-destroyers");
+runtime.toggle_mod("better-star-destroyers")?;
 
 // Check for file changes (native only)
 if runtime.check_reload(&watcher) { runtime.refresh(); }
@@ -65,8 +66,11 @@ enabled = ["better-star-destroyers", "rebel-rebalance"]
 Loaded with `ModConfig::load(mods_dir)`, saved with `config.save(mods_dir)`.
 Missing configuration starts with an empty enabled set. Existing unreadable or
 malformed configuration is retained as a runtime diagnostic instead of being
-silently treated as empty. Updates synchronize a same-directory temporary file
-before atomically replacing `config.toml`.
+silently treated as empty. A toggle is committed to live state only after its
+candidate configuration is synchronized and atomically persisted. On Unix the
+containing directory is synchronized after replacement. Failed writes leave the
+previous file and live enablement unchanged. Configuration writes remain blocked
+after a load failure until Reload Mods successfully adopts a repaired file.
 
 ## ModError
 
