@@ -321,6 +321,21 @@ mod native {
         saves_dir.join(format!("{slot}.reb"))
     }
 
+    #[cfg(unix)]
+    fn sync_save_directory(saves_dir: &Path) -> anyhow::Result<()> {
+        std::fs::File::open(saves_dir)
+            .with_context(|| format!("opening saves directory {}", saves_dir.display()))?
+            .sync_all()
+            .with_context(|| format!("synchronizing saves directory {}", saves_dir.display()))
+    }
+
+    #[cfg(not(unix))]
+    fn sync_save_directory(_saves_dir: &Path) -> anyhow::Result<()> {
+        // Windows does not expose portable directory fsync semantics through
+        // std. The temporary file itself is still synced before replacement.
+        Ok(())
+    }
+
     /// Write `state` to slot `slot` in `saves_dir`.
     ///
     /// `active_mods` is a list of `(name, version)` pairs for currently loaded
@@ -349,8 +364,9 @@ mod native {
         let state_fingerprint = compute_state_fingerprint(state)?;
 
         let path = slot_path(saves_dir, slot);
-        let mut file = std::fs::File::create(&path)
-            .with_context(|| format!("creating save file {}", path.display()))?;
+        let mut pending = tempfile::NamedTempFile::new_in(saves_dir)
+            .with_context(|| format!("creating temporary save beside {}", path.display()))?;
+        let file = pending.as_file_mut();
 
         // ── Header ──────────────────────────────────────────────────────────
         file.write_all(SAVE_MAGIC).context("writing save magic")?;
@@ -395,6 +411,18 @@ mod native {
 
         // ── Body ────────────────────────────────────────────────────────────
         file.write_all(&encoded).context("writing save body")?;
+        file.sync_all()
+            .with_context(|| format!("synchronizing temporary save for {}", path.display()))?;
+
+        pending
+            .persist(&path)
+            .map_err(|error| error.error)
+            .with_context(|| format!("replacing save file {}", path.display()))?;
+
+        // The file contents are durable above, but the atomic rename is a
+        // directory entry update. Sync the containing directory as well on
+        // platforms that expose portable directory-sync semantics.
+        sync_save_directory(saves_dir)?;
 
         Ok(state_fingerprint)
     }
@@ -1020,6 +1048,27 @@ mod tests {
             meta.state_fingerprint,
             compute_state_fingerprint(&loaded).expect("fingerprint loaded state")
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn overwriting_a_save_atomically_replaces_the_slot_file() {
+        use std::os::unix::fs::MetadataExt;
+
+        let saves_dir = tmp_dir("atomic_overwrite");
+        let path = slot_path(&saves_dir, 0);
+        let mut state = minimal_save_state();
+
+        save_slot(&saves_dir, 0, "Before", &state, &[]).unwrap();
+        let original_inode = std::fs::metadata(&path).unwrap().ino();
+
+        state.clock.tick = 42;
+        save_slot(&saves_dir, 0, "After", &state, &[]).unwrap();
+
+        assert_ne!(std::fs::metadata(&path).unwrap().ino(), original_inode);
+        let (meta, loaded) = load_slot(&saves_dir, 0).unwrap();
+        assert_eq!(meta.name, "After");
+        assert_eq!(loaded.clock.tick, 42);
     }
 
     #[test]
