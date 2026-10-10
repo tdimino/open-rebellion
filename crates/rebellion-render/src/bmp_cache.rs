@@ -595,11 +595,9 @@ pub mod resources {
         /// Imperial Game Options globe, pressed.
         pub const EMPIRE_GAME_OPTIONS_PRESSED: u32 = 10028;
 
-        /// Code-built GID menu frame tiles, checkmarks, category icons, and arrows.
+        /// Code-built GID menu frame tiles, category icons, and arrows.
         pub const GID_FRAME_FIRST: u32 = 10100;
         pub const GID_FRAME_LAST: u32 = 10107;
-        pub const GID_CHECK_ALLIANCE: u32 = 10108;
-        pub const GID_CHECK_EMPIRE: u32 = 10109;
         pub const GID_ALLIANCE_CATEGORY_FIRST: u32 = 10110;
         pub const GID_ALLIANCE_CATEGORY_LAST: u32 = 10115;
         pub const GID_ALLIANCE_ARROW: u32 = 10117;
@@ -794,7 +792,8 @@ pub mod resources {
         /// Faction-authored Battle Alert summary scenes.
         pub const BATTLE_ALERT_SCENE_ALLIANCE: u32 = 10712;
         pub const BATTLE_ALERT_SCENE_EMPIRE: u32 = 10713;
-        /// Disabled Battle Alert summary scenes.
+        /// The Battle Alert's list pages' picture (layer 0x33,
+        /// `FUN_0044f860`).
         pub const BATTLE_ALERT_SCENE_ALLIANCE_DISABLED: u32 = 10714;
         pub const BATTLE_ALERT_SCENE_EMPIRE_DISABLED: u32 = 10715;
         /// Simulate Battle controls: normal, pressed, and disabled.
@@ -1887,6 +1886,22 @@ fn uses_blue_screen_transparency(source: DllSource, resource_id: u32) -> bool {
                 | 10262..=10264
                 | 10290..=10296
                 | 10298
+                // The Message Index's category icons 0x2a9a..0x2a9e, 15 by 16
+                // with a blue key row under the art, and its message arrows
+                // (0x96 down, 0x9a up) with their disabled frames 0x2aa9
+                // and 0x2ac6, buttons on the title bar that blit keyed
+                // (`FUN_00602d30`).
+                | 10906..=10910
+                // Its selected-row bars 0x2aa2/0x2aa3, blue at the corners.
+                | 10914..=10915
+                | 10919..=10921
+                | 10948..=10950
+                // The Battle Alert's window frames, whose blue aperture
+                // holds the scene, and its tabs and buttons, blue at the
+                // corners (Wine capture of "Battle at Coruscant").
+                | 10710..=10711
+                | 10716..=10745
+                | 10971..=10976
                 // The Fleet window's frames, pictures and indicators, the
                 // Defenses window's tabs and row frames, the Missions
                 // window's row frames and tabs (buttons blit keyed,

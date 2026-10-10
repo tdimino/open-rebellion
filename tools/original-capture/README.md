@@ -10,7 +10,7 @@ SHA-256, metadata, and the accepted-original registration enter the repo.
 
 ## Host
 
-The guest runs in UTM 4.7.5 on the Mac Mini (`mac-mini-ts`, Apple M4, macOS
+The guest runs in UTM 4.7.5 on a Mac Mini (Apple M4, macOS
 15.6) under `~/VMs/rebellion/`:
 
 | File | Purpose |
@@ -47,7 +47,7 @@ osascript vm/create-vm.applescript \
   ~/VMs/rebellion/Win11_25H2_English_Arm64.iso \
   ~/VMs/rebellion/unattend.iso \
   ~/VMs/rebellion/payload.img \
-  100.125.235.4:1
+  <host-ip>:1
 ```
 
 The last argument binds a QEMU VNC display to the host's Tailscale address so
@@ -160,4 +160,32 @@ registered or credited toward coverage.
 
 Strategic captures continue through their surface-specific host checks and
 `tools/interface-parity/baselines/accepted-original.json`. No original-game
-capture, save, executable, audio, or extracted asset may be committed.
+capture, executable, audio, or extracted asset may be committed. Saves are the
+one exception, by the owner's decision: the games we played and saved on this
+VM are kept in [`saves/`](saves/INDEX.md). Saves downloaded from elsewhere are
+not.
+
+## Saves
+
+[`saves/INDEX.md`](saves/INDEX.md) lists each save, its side, day and state,
+how to load one, how to copy files off the transfer disk, and the header
+format. To make a new one, play to the state in the VM, press F1, click an
+empty slot's name field, type a lowercase name and press Enter.
+
+Driving the game over VNC:
+
+- The game reads relative mouse motion, so `vncdo move` does not reach it.
+  Drive the pointer through the QEMU monitor (`mouse_set 2`, `mouse_move`,
+  `mouse_button`): push it to the top left with large negative moves, then
+  step toward the target. Steps of 8 overshoot by about 6.5% and steps of 4
+  fall about 12% short, so capture and correct before clicking. The Windows
+  desktop needs the absolute tablet (`mouse_set 1`) and `vncdo`.
+- The VNC link drops Shift on letters; type lowercase. `vnc-type.py` sends
+  symbols as shift chords.
+- A double-click on a planet opens its manufacturing window; a double-click on
+  the star under it opens its units window. Fleets move by dragging the fleet
+  from a system's orbit view onto the destination; dragging the sector-map
+  icon does nothing.
+- Escape steps through the opening briefing; the game opens the Message Index
+  when it ends. On the Game Options screen (F1) the left button returns to the
+  main menu and the middle one to the game.

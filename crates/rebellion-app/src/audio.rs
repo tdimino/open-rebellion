@@ -259,6 +259,14 @@ pub fn tactical_voice_assets() -> Vec<(TacticalVoiceFaction, String, u32)> {
         .collect()
 }
 
+/// The STRATEGY WAVEs messages play when shown (`message-display.md`):
+/// loyalty joins and neutrality (`0x450`, `0x451`), uprising begins and
+/// ends (`0x454`, `0x455`), maintenance (`0x456`), fleet arrival (`0x45a`),
+/// blockade (`0x45e`) and Advice (`0x461` Alliance, `0x462` Empire).
+pub const MESSAGE_SOUNDS: [u32; 9] = [
+    0x450, 0x451, 0x454, 0x455, 0x456, 0x45a, 0x45e, 0x461, 0x462,
+];
+
 // ---------------------------------------------------------------------------
 // AudioEngine
 // ---------------------------------------------------------------------------
@@ -282,6 +290,12 @@ pub struct AudioEngine {
     /// The cockpit droids' sounds, keyed by sprite DLL and WAVE ID.
     advisor_voice: HashMap<String, Sound>,
 
+    /// The Message Index's message sounds, STRATEGY WAVEs by ID.
+    message_sounds: HashMap<u32, Sound>,
+
+    /// The message sound last started, which the next one stops.
+    message_playing: Option<u32>,
+
     /// Currently loaded music track + which track it is.
     music: Option<(Sound, MusicTrack)>,
 
@@ -302,6 +316,8 @@ impl AudioEngine {
             tactical_sfx: HashMap::new(),
             tactical_voice: HashMap::new(),
             advisor_voice: HashMap::new(),
+            message_sounds: HashMap::new(),
+            message_playing: None,
             music: None,
             music_playing: false,
             #[cfg(not(target_arch = "wasm32"))]
@@ -446,6 +462,27 @@ impl AudioEngine {
         }
     }
 
+    /// Load the message sounds from an owned STRATEGY.DLL.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn load_original_message_sounds(&mut self, strategy_dll: &Path) {
+        match rebellion_data::load_wave_resources(strategy_dll, &MESSAGE_SOUNDS) {
+            Ok(waves) => {
+                for (&resource_id, bytes) in &waves {
+                    self.load_message_sound_bytes(resource_id, bytes);
+                }
+                eprintln!(
+                    "[audio] loaded {} message sounds from {}",
+                    waves.len(),
+                    strategy_dll.display()
+                );
+            }
+            Err(error) => eprintln!(
+                "[audio] message sounds unavailable path={} error={error}",
+                strategy_dll.display()
+            ),
+        }
+    }
+
     /// Load the complete source-proven tactical voice banks from owned DLLs.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn load_original_tactical_voice(&mut self, alliance_dll: &Path, empire_dll: &Path) {
@@ -507,6 +544,12 @@ impl AudioEngine {
     ) {
         let sound = Sound::load(&self.ctx, bytes);
         self.tactical_voice.insert((faction, resource_id), sound);
+    }
+
+    /// Load one message sound, a STRATEGY WAVE, from raw bytes.
+    pub fn load_message_sound_bytes(&mut self, resource_id: u32, bytes: &[u8]) {
+        let sound = Sound::load(&self.ctx, bytes);
+        self.message_sounds.insert(resource_id, sound);
     }
 
     /// Whether the droid sound `key` is loaded.
@@ -606,6 +649,36 @@ impl AudioEngine {
         } else {
             false
         }
+    }
+
+    /// Play the sound of the message the Message Index now shows, stopping
+    /// the last one first (`FUN_0046a6e0`, then `FUN_00610c30`). False when
+    /// the sound is not loaded.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Audio gains are bounded values; the playback API takes f32."
+    )]
+    pub fn play_message_sound(&mut self, resource_id: u32, vol_state: &AudioVolumeState) -> bool {
+        if let Some(previous) = self.message_playing.take() {
+            if let Some(sound) = self.message_sounds.get(&previous) {
+                sound.stop(&self.ctx);
+            }
+        }
+        let vol = vol_state.effective_sfx_volume() as f32;
+        let Some(sound) = self.message_sounds.get(&resource_id) else {
+            return false;
+        };
+        if vol > 0.0 {
+            sound.play(
+                &self.ctx,
+                quad_snd::PlaySoundParams {
+                    looped: false,
+                    volume: vol,
+                },
+            );
+            self.message_playing = Some(resource_id);
+        }
+        true
     }
 
     /// Play a loaded droid sound at the current SFX volume.

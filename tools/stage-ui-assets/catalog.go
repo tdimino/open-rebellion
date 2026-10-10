@@ -11,15 +11,16 @@ type dllTarget struct {
 	// ActionTable is the side's GData advice table (FUN_004c2c70,
 	// FUN_004c0ba0), staged beside its droid's resources.
 	ActionTable string
-	// ExpectedWaves counts the droid voices and sounds (WAVE) that command
-	// 4 plays through FUN_00403f70.
+	// ExpectedWaves counts the WAVE resources: the droid voices and sounds
+	// that command 4 plays through FUN_00403f70, and STRATEGY's message
+	// sounds that FUN_00469de0 starts when a message is shown.
 	ExpectedWaves int
 }
 
 var uiDLLTargets = []dllTarget{
 	{Filename: "COMMON.DLL", Directory: "common-dll", Expected: 321},
 	{Filename: "GOKRES.DLL", Directory: "gokres-dll", Expected: 580},
-	{Filename: "STRATEGY.DLL", Directory: "strategy-dll", Expected: 1042},
+	{Filename: "STRATEGY.DLL", Directory: "strategy-dll", Expected: 1042, ExpectedWaves: 66},
 	{Filename: "TACTICAL.DLL", Directory: "tactical-dll", Expected: 288},
 	{Filename: "ALSPRITE.DLL", Directory: "alsprite-dll", Expected: 38, ExpectedType302: 1640, ExpectedRCData: 752, ActionTable: "C3POACT.SPT", ExpectedWaves: 213},
 	{Filename: "EMSPRITE.DLL", Directory: "emsprite-dll", Expected: 34, ExpectedType302: 2348, ExpectedRCData: 753, ActionTable: "IMP22ACT.SPT", ExpectedWaves: 216},

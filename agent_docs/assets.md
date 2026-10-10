@@ -220,7 +220,7 @@ digests, then decodes those verified bytes. Otherwise it uses original BMPs.
 |-----|------------|------|
 | COMMON | 321 | `data/base/ui/common-dll/BMP/` |
 | GOKRES | 580 | `data/base/ui/gokres-dll/BMP/` |
-| STRATEGY | 1,042 | `data/base/ui/strategy-dll/BMP/` |
+| STRATEGY | 1,042 | `data/base/ui/strategy-dll/BMP/`; its 66 WAVEs, the message sounds, in `WAVE/` |
 | TACTICAL | 288 | `data/base/ui/tactical-dll/BMP/` |
 
 Stage these assets directly from the original game DLLs in `data/base/` using the

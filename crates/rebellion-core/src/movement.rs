@@ -918,10 +918,6 @@ mod tests {
     // --- MovementOrder ---
 
     #[test]
-    #[expect(
-        clippy::float_cmp,
-        reason = "Transit endpoints are exactly zero and one."
-    )]
     fn progress_starts_at_zero() {
         let (fleet, origin, dest) = mock_fleet_and_systems();
         let order = MovementOrder::new(fleet, origin, dest, 10);
@@ -940,10 +936,6 @@ mod tests {
     }
 
     #[test]
-    #[expect(
-        clippy::float_cmp,
-        reason = "Transit endpoints are exactly zero and one."
-    )]
     fn progress_clamps_at_one() {
         let (fleet, origin, dest) = mock_fleet_and_systems();
         let mut order = MovementOrder::new(fleet, origin, dest, 5);

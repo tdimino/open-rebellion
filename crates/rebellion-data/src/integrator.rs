@@ -24,14 +24,15 @@ use rebellion_core::game_events::{
     GameEventRecord, EVT_AI_ACTION, EVT_BETRAYAL_CHECK, EVT_BLOCKADE_ENDED, EVT_BLOCKADE_STARTED,
     EVT_BLOCKADE_TROOP_DESTROYED, EVT_BOMBARDMENT, EVT_BUILD_COMPLETE, EVT_CAMPAIGN_SNAPSHOT,
     EVT_CAPTURE, EVT_CHARACTER_HEALTH, EVT_CHARACTER_KILLED, EVT_COLLECTION_RATE,
-    EVT_COMBAT_GROUND, EVT_COMBAT_SPACE, EVT_CONTROL_CHANGED, EVT_DS_CONSTRUCTION, EVT_DS_FIRED,
-    EVT_DS_STATUS, EVT_ECONOMY_TICK, EVT_ESCAPE, EVT_EVENT_FIRED, EVT_FLEET_ARRIVED,
-    EVT_FOG_REVEALED, EVT_GARRISON_REQUIRED, EVT_HQ_CAPTURED, EVT_INFORMANT_INTEL, EVT_JEDI_CHECK,
-    EVT_JEDI_DISCOVERED, EVT_JEDI_TIER, EVT_MAINTENANCE_SHORTFALL, EVT_MANUFACTURING_IDLE,
-    EVT_MISSION_DISPATCHED, EVT_MISSION_RESOLVED, EVT_NATURAL_DISASTER, EVT_RESEARCH_UNLOCKED, EVT_RESOURCE_DISCOVERY,
+    EVT_COMBAT_GROUND, EVT_COMBAT_SPACE, EVT_CONTROL_CHANGED, EVT_DESTROYED_ON_ARRIVAL,
+    EVT_DS_CONSTRUCTION, EVT_DS_FIRED, EVT_DS_STATUS, EVT_ECONOMY_TICK, EVT_ESCAPE,
+    EVT_EVENT_FIRED, EVT_FLEET_ARRIVED, EVT_FOG_REVEALED, EVT_GARRISON_REQUIRED, EVT_HQ_CAPTURED,
+    EVT_INFORMANT_INTEL, EVT_JEDI_CHECK, EVT_JEDI_DISCOVERED, EVT_JEDI_TIER,
+    EVT_MAINTENANCE_SHORTFALL, EVT_MANUFACTURING_IDLE, EVT_MISSION_DISPATCHED,
+    EVT_MISSION_RESOLVED, EVT_NATURAL_DISASTER, EVT_RESEARCH_UNLOCKED, EVT_RESOURCE_DISCOVERY,
     EVT_SABOTEUR_DETECTED, EVT_SHIP_REPAIRED, EVT_SHIP_REPAIR_STARTED, EVT_SIDE_CHANGE,
     EVT_SUPPORT_CHANGE, EVT_SUPPORT_DRIFT, EVT_TRAITOR_REVEALED, EVT_TROOP_MOVED,
-    EVT_DESTROYED_ON_ARRIVAL, EVT_UNITS_DEPLOYED, EVT_UPRISING_BEGAN, EVT_UPRISING_CHECK, EVT_UPRISING_ENDED,
+    EVT_UNITS_DEPLOYED, EVT_UPRISING_BEGAN, EVT_UPRISING_CHECK, EVT_UPRISING_ENDED,
     EVT_UPRISING_INCIDENT, EVT_VICTORY, EVT_VICTORY_CHECK, SYS_AI, SYS_BETRAYAL, SYS_BLOCKADE,
     SYS_COMBAT, SYS_DEATH_STAR, SYS_ECONOMY, SYS_EVENTS, SYS_FOG, SYS_JEDI, SYS_MANUFACTURING,
     SYS_MISSIONS, SYS_MOVEMENT, SYS_REPAIR, SYS_RESEARCH, SYS_STORY, SYS_UPRISING, SYS_VICTORY,
@@ -788,7 +789,12 @@ impl PerceptionIntegrator {
             .arrived
             .iter()
             .map(|transit| (transit, "arrived"))
-            .chain(ended.lost.iter().map(|transit| (transit, "lost_on_arrival")));
+            .chain(
+                ended
+                    .lost
+                    .iter()
+                    .map(|transit| (transit, "lost_on_arrival")),
+            );
         for (transit, status) in records {
             let destination = match transit.leg {
                 RegimentLeg::Surface(system) => sys_name(world, system),
@@ -2361,15 +2367,20 @@ mod tests {
                 },
             );
         }
-        let yard = world.manufacturing_facilities.insert(ManufacturingFacilityInstance {
-            class_dat_id: DatId(0x2900_0001),
-            side: Faction::Empire,
-            is_shipyard: false,
-        });
-        let defense = world.defense_facilities.insert(rebellion_core::world::DefenseFacilityInstance {
-            class_dat_id: DatId(0x2200_0001),
-            side: Faction::Empire,
-        });
+        let yard = world
+            .manufacturing_facilities
+            .insert(ManufacturingFacilityInstance {
+                class_dat_id: DatId(0x2900_0001),
+                side: Faction::Empire,
+                is_shipyard: false,
+            });
+        let defense =
+            world
+                .defense_facilities
+                .insert(rebellion_core::world::DefenseFacilityInstance {
+                    class_dat_id: DatId(0x2200_0001),
+                    side: Faction::Empire,
+                });
         world.systems[system].manufacturing_facilities.push(yard);
         world.systems[system].defense_facilities.push(defense);
         system
@@ -2377,7 +2388,10 @@ mod tests {
 
     fn assert_alliance_took_over(world: &GameWorld, system: SystemKey) {
         let held = &world.systems[system];
-        assert!(held.defense_facilities.is_empty(), "the Empire-only defense is removed");
+        assert!(
+            held.defense_facilities.is_empty(),
+            "the Empire-only defense is removed"
+        );
         let sides: Vec<Faction> = held
             .manufacturing_facilities
             .iter()
@@ -2563,14 +2577,13 @@ mod tests {
     fn a_refused_ai_mission_reports_nothing() {
         let mut world = GameWorld::default();
         let target = add_system(&mut world, "Target");
-        let rebel = MissionMember::Character(world.characters.insert(
-            rebellion_core::world::Character {
+        let rebel =
+            MissionMember::Character(world.characters.insert(rebellion_core::world::Character {
                 name: "Rebel".into(),
                 is_alliance: true,
                 current_system: Some(target),
                 ..Default::default()
-            },
-        ));
+            }));
 
         let events = empire_ai_events(
             &mut world,

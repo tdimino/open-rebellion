@@ -113,6 +113,12 @@ impl Default for SectorWindowState {
 }
 
 impl SectorWindowState {
+    /// Whether any window of this kind is open.
+    #[must_use]
+    pub fn any_open(&self) -> bool {
+        !self.windows.is_empty()
+    }
+
     /// Open the selected system's parent sector (`FUN_00429ce0`;
     /// `ghidra/notes/sector-window-placement.md`). An open window raises
     /// rather than duplicate. At most two are open, one per column: a sector
@@ -1075,7 +1081,11 @@ fn sector_planet_position(
     };
     (
         place(system_x.saturating_sub(sector_x), 13.0, SECTOR_WINDOW_WIDTH),
-        place(system_y.saturating_sub(sector_y), 10.0, SECTOR_WINDOW_HEIGHT),
+        place(
+            system_y.saturating_sub(sector_y),
+            10.0,
+            SECTOR_WINDOW_HEIGHT,
+        ),
     )
 }
 
@@ -2697,7 +2707,13 @@ mod tests {
                 world.fleets[fleet].is_alliance = owner == Faction::Alliance;
             }
             // Last in the sector, with no icon to lapse the selection.
-            let quiet = add_neighbour(&mut world, system, 271, (330, 330), ControlKind::Uncontrolled);
+            let quiet = add_neighbour(
+                &mut world,
+                system,
+                271,
+                (330, 330),
+                ControlKind::Uncontrolled,
+            );
             let mut state = SectorWindowState::default();
             state.open_for_system(&world, system, cockpit(owner));
             let layout = layout(1.0);
@@ -2861,11 +2877,12 @@ mod tests {
         let named = |label: &str| {
             palette
                 .command_named(label)
-                .map(|item| match item.action {
+                .and_then(|item| match item.action {
                     crate::PaletteAction::Interface(command) => Some(command),
                     crate::PaletteAction::Panel(_) => None,
+                    #[cfg(not(target_arch = "wasm32"))]
+                    crate::PaletteAction::Script(_) => None,
                 })
-                .flatten()
         };
         assert_eq!(
             named("  open fleet WINDOW: chandrila "),
@@ -2913,16 +2930,20 @@ mod tests {
         palette.refresh_script(&world);
         assert_eq!(interface(&palette), 2 + 9 * world.systems.len());
         assert!(matches!(
-            palette.command_named("start game: empire").map(|item| &item.action),
-            Some(crate::PaletteAction::Interface(InterfaceCommand::StartGame(
-                rebellion_core::missions::MissionFaction::Empire
-            )))
+            palette
+                .command_named("start game: empire")
+                .map(|item| &item.action),
+            Some(crate::PaletteAction::Interface(
+                InterfaceCommand::StartGame(rebellion_core::missions::MissionFaction::Empire)
+            ))
         ));
         assert!(matches!(
-            palette.command_named("Game Speed: Pause").map(|item| &item.action),
-            Some(crate::PaletteAction::Panel(crate::PanelAction::SetGameSpeed(
-                rebellion_core::tick::GameSpeed::Paused
-            )))
+            palette
+                .command_named("Game Speed: Pause")
+                .map(|item| &item.action),
+            Some(crate::PaletteAction::Panel(
+                crate::PanelAction::SetGameSpeed(rebellion_core::tick::GameSpeed::Paused)
+            ))
         ));
     }
 
@@ -2942,8 +2963,12 @@ mod tests {
                 Ok(Vec::new()),
                 "{owner:?}"
             );
-            assert!(state.planet_screen_rect(&world, layout(1.0), other).is_some());
-            assert!(state.planet_screen_rect(&world, layout(1.0), system).is_none());
+            assert!(state
+                .planet_screen_rect(&world, layout(1.0), other)
+                .is_some());
+            assert!(state
+                .planet_screen_rect(&world, layout(1.0), system)
+                .is_none());
         }
     }
 

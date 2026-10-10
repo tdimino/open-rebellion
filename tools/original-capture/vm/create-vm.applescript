@@ -4,7 +4,7 @@
 --   osascript create-vm.applescript <windows.iso> <unattend.iso> <payload.img> <vnc-bind>
 -- Example:
 --   osascript create-vm.applescript ~/VMs/rebellion/Win11_25H2_English_Arm64.iso \
---     ~/VMs/rebellion/unattend.iso ~/VMs/rebellion/payload.img 100.125.235.4:1
+--     ~/VMs/rebellion/unattend.iso ~/VMs/rebellion/payload.img <host-ip>:1
 --
 -- The VNC bind exposes the guest framebuffer on the given address:display so the
 -- install and the captures can be driven remotely (vncdotool) without the UTM

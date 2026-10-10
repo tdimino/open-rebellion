@@ -26,9 +26,21 @@ Claude Code Minoan skills link to their canonical definitions in
 
 ## Native GUI Acceptance
 
-Drive the native build with [`cua-driver`](https://github.com/trycua/cua/tree/main/libs/cua-driver)
-(trycua, MIT). Native builds have no fixture bridge, so a native check plays
-a real campaign through the window and the screenshots are the evidence.
+Native builds have no fixture bridge, so a native check plays a real
+campaign through the window and the screenshots are the evidence.
+
+Drive it first with the game's own developer commands
+([dev-commands.md](dev-commands.md)). `scripts/launch-native.sh --live`
+opens a command channel, and `scripts/dev-send.sh` sends one command and
+prints its JSON result. `Capture` saves the frame itself (no window id, no
+Screen Recording, works while covered). `Click`, `Drag` and `Press` hand real
+`NSEvent`s to the game's view, so they test the input path without moving
+anyone's pointer or changing the front app. `Battle at`, `Post message` and
+`Open Message Index` reach states the simulation is slow to produce.
+
+Fall back to [`cua-driver`](https://github.com/trycua/cua/tree/main/libs/cua-driver)
+(trycua, MIT) for what the game cannot do itself, such as an OS dialog or a
+check of the window from outside.
 
 Why cua-driver and not the earlier harnesses:
 
@@ -141,9 +153,21 @@ cua-driver's `press_key` cannot send the backtick (it takes letters, digits
 and named keys; "`" arrives as another key), so drive the palette itself by
 hand or through a script.
 
-Commands reach a state. They do not test the input that leads to it, so
-drive the step under test with `cua-driver`. Then say in the evidence
-summary which steps a command took.
+State commands (`Start game`, `Open … window`, `Battle at`, `Post message`)
+reach a state; they do not test the input that leads to it. Drive the step
+under test with the input commands (`Click`, `Drag`, `Press`), which do, or
+with `cua-driver`. Say in the evidence summary which steps a command took.
+For the live channel, the full command list and how to add one, see
+[dev-commands.md](dev-commands.md).
+
+### Compare against the original
+
+The original game runs on the capture VM
+([tools/original-capture/README.md](../tools/original-capture/README.md)),
+which also covers driving it over VNC. Start from a save in the library
+([saves/INDEX.md](../tools/original-capture/saves/INDEX.md)) rather than
+replaying a campaign to reach a state, and add a save when you reach a new
+one worth keeping.
 
 ## Reverse Engineering
 

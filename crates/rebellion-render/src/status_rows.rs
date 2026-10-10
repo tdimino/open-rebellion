@@ -20,8 +20,8 @@ use rebellion_core::world::{CapitalShipClass, GameWorld, ShipInstance};
 
 use crate::bmp_cache::DllSource;
 use crate::mission_dialog::{kind_icon, kind_name};
-use crate::status_window::{character_rows, StatusRow};
 use crate::panels::fleets::{capital_ship_mini_id, fighter_mini_id};
+use crate::status_window::{character_rows, StatusRow};
 use crate::system_window::{
     character_mini_resource_id, defense_facility_mini, fleet_label, manufacturing_facility_mini,
     production_facility_mini, special_force_mini, troop_mini,
@@ -358,7 +358,10 @@ pub fn ship_rows(
             "Shield Recharge Rate:",
             ratio(class.shield_recharge_rate, class.shield_recharge_rate),
         ),
-        row("Maximum Shield Strength:", class.shield_strength.to_string()),
+        row(
+            "Maximum Shield Strength:",
+            class.shield_strength.to_string(),
+        ),
         row(
             "Tractor Beam Power:",
             ratio(class.tractor_beam_power, class.tractor_beam_power),
@@ -373,18 +376,29 @@ pub fn ship_rows(
             "Weapon Recharge Rate:",
             ratio(class.weapon_recharge_rate, class.weapon_recharge_rate),
         ),
-        row("Bombardment Modifier:", class.bombardment_modifier.to_string()),
+        row(
+            "Bombardment Modifier:",
+            class.bombardment_modifier.to_string(),
+        ),
     ]);
     // Fore 0, aft 1, then starboard (arc 3) before port (arc 2), read from
     // the pushes at 0x447f2c..0x448650.
     for (heading_label, [turbo, ion, laser]) in [
         (
             "Forward Weapons Arc Rating:",
-            [class.turbolaser_fore, class.ion_cannon_fore, class.laser_cannon_fore],
+            [
+                class.turbolaser_fore,
+                class.ion_cannon_fore,
+                class.laser_cannon_fore,
+            ],
         ),
         (
             "Aft Weapons Arc Rating:",
-            [class.turbolaser_aft, class.ion_cannon_aft, class.laser_cannon_aft],
+            [
+                class.turbolaser_aft,
+                class.ion_cannon_aft,
+                class.laser_cannon_aft,
+            ],
         ),
         (
             "Starboard Weapons Arc Rating:",
@@ -396,7 +410,11 @@ pub fn ship_rows(
         ),
         (
             "Port Weapons Arc Rating:",
-            [class.turbolaser_port, class.ion_cannon_port, class.laser_cannon_port],
+            [
+                class.turbolaser_port,
+                class.ion_cannon_port,
+                class.laser_cannon_port,
+            ],
         ),
     ] {
         rows.extend([
@@ -436,7 +454,10 @@ pub fn fighter_rows(
         row("Squadron Size:", ratio(size, size)),
         row("Hyperdrive Rating:", class.hyperdrive.to_string()),
         row("Maximum Shield Strength:", full(class.shield_strength)),
-        row("Sub-Light Engine Rating:", class.sub_light_engine.to_string()),
+        row(
+            "Sub-Light Engine Rating:",
+            class.sub_light_engine.to_string(),
+        ),
         row("Maneuverability:", class.maneuverability.to_string()),
         row("Detection Rating:", class.detection.to_string()),
         row(
@@ -753,10 +774,7 @@ pub fn producer_rows(
         (_, None) => "Idle",
         (_, Some(_)) => busy,
     };
-    let mut rows = vec![
-        row("Location:", value.name.clone()),
-        row("Status:", status),
-    ];
+    let mut rows = vec![row("Location:", value.name.clone()), row("Status:", status)];
     if let (true, Some(queue)) = (yards > 0, queue) {
         rows.push(row("Items to Build:", queue.len().to_string()));
         // The best case (manual p. 84): the holder's yards with materials
@@ -843,7 +861,9 @@ pub fn status_view(sources: StatusSources<'_>, object: StatusObject) -> Option<S
         }
         StatusObject::Fighter { fleet, index } => {
             let value = world.fleets.get(fleet)?;
-            let class = world.fighter_classes.get(value.fighters.get(index)?.class)?;
+            let class = world
+                .fighter_classes
+                .get(value.fighters.get(index)?.class)?;
             view(
                 "Fighter Squadron Status",
                 side_index(value.is_alliance),
@@ -1069,7 +1089,9 @@ mod tests {
         });
         let mut damaged = ShipInstance::new(large, 100, true);
         damaged.hull_current = 60;
-        let character = world.characters.insert(rebellion_core::world::Character::default());
+        let character = world
+            .characters
+            .insert(rebellion_core::world::Character::default());
         let fleet = world.insert_fleet(Fleet {
             location: at,
             capital_ships: vec![ShipInstance::new(small, 100, true), damaged],
@@ -1091,7 +1113,11 @@ mod tests {
         // FUN_00449200: Status, the three command ranks, ship count, the
         // capacity and embarked blocks, personnel, damage and hyperdrive.
         let mut world = GameWorld::default();
-        let here = system(&mut world, "Yavin", ControlKind::Controlled(Faction::Alliance));
+        let here = system(
+            &mut world,
+            "Yavin",
+            ControlKind::Controlled(Faction::Alliance),
+        );
         let fleet = carrier_fleet(&mut world, here);
         let states = States::new();
 
@@ -1122,7 +1148,11 @@ mod tests {
     fn a_moving_fleet_is_enroute_with_its_arrival_day() {
         // FUN_00449200 34628 "Enroute"; FUN_004fd2b0 "ETA Destination:".
         let mut world = GameWorld::default();
-        let here = system(&mut world, "Yavin", ControlKind::Controlled(Faction::Alliance));
+        let here = system(
+            &mut world,
+            "Yavin",
+            ControlKind::Controlled(Faction::Alliance),
+        );
         let there = system(&mut world, "Hoth", ControlKind::Uncontrolled);
         let fleet = carrier_fleet(&mut world, here);
         let mut states = States::new();
@@ -1141,7 +1171,11 @@ mod tests {
         // FUN_00446fd0 reads each ship's own embarked counts (+0x23c);
         // port: the fleet's 4 squadrons fill the first ship's 2 bays first.
         let mut world = GameWorld::default();
-        let here = system(&mut world, "Yavin", ControlKind::Controlled(Faction::Alliance));
+        let here = system(
+            &mut world,
+            "Yavin",
+            ControlKind::Controlled(Faction::Alliance),
+        );
         let fleet = carrier_fleet(&mut world, here);
         let states = States::new();
         let sources = states.sources(&world);
@@ -1171,7 +1205,11 @@ mod tests {
     fn a_fleet_without_a_hyperdrive_ship_reads_no() {
         // FUN_00449200 34645 "No" when no ship can jump.
         let mut world = GameWorld::default();
-        let here = system(&mut world, "Yavin", ControlKind::Controlled(Faction::Alliance));
+        let here = system(
+            &mut world,
+            "Yavin",
+            ControlKind::Controlled(Faction::Alliance),
+        );
         let fleet = carrier_fleet(&mut world, here);
         world.fleets[fleet].capital_ships[1].alive = false;
         let states = States::new();
@@ -1188,7 +1226,11 @@ mod tests {
     fn a_ships_weapon_arcs_read_fore_aft_starboard_then_port() {
         // FUN_00446fd0 pushes arc 3 before arc 2 (0x447f2c..0x448650).
         let mut world = GameWorld::default();
-        let here = system(&mut world, "Yavin", ControlKind::Controlled(Faction::Alliance));
+        let here = system(
+            &mut world,
+            "Yavin",
+            ControlKind::Controlled(Faction::Alliance),
+        );
         let fleet = carrier_fleet(&mut world, here);
         let states = States::new();
 
@@ -1218,7 +1260,11 @@ mod tests {
         // FUN_004444c0: Attached, then the ratings; shield strength is per
         // craft times the squadron size.
         let mut world = GameWorld::default();
-        let here = system(&mut world, "Yavin", ControlKind::Controlled(Faction::Alliance));
+        let here = system(
+            &mut world,
+            "Yavin",
+            ControlKind::Controlled(Faction::Alliance),
+        );
         let fleet = carrier_fleet(&mut world, here);
         let states = States::new();
 
@@ -1241,7 +1287,11 @@ mod tests {
         // FUN_00445280: Attached, Status, maintenance, attack, defense,
         // bombardment, detection.
         let mut world = GameWorld::default();
-        let here = system(&mut world, "Hoth", ControlKind::Controlled(Faction::Alliance));
+        let here = system(
+            &mut world,
+            "Hoth",
+            ControlKind::Controlled(Faction::Alliance),
+        );
         let class = catalog(
             &mut world,
             0x1000_0002,
@@ -1291,7 +1341,11 @@ mod tests {
     fn a_special_force_reads_skills_zero_one_five_and_six() {
         // FUN_00445780: slots +0x1dc, +0x1e0, +0x1f0, +0x1f4.
         let mut world = GameWorld::default();
-        let here = system(&mut world, "Hoth", ControlKind::Controlled(Faction::Alliance));
+        let here = system(
+            &mut world,
+            "Hoth",
+            ControlKind::Controlled(Faction::Alliance),
+        );
         let unit = world.special_forces.insert(SpecialForceUnit {
             class_dat_id: DatId::new(0x3c00_0001),
             is_alliance: true,
@@ -1322,7 +1376,11 @@ mod tests {
         // FUN_00444e20 writes Weapons Rating and Shield Strength for
         // families 0x22..0x27 only.
         let mut world = GameWorld::default();
-        let here = system(&mut world, "Hoth", ControlKind::Controlled(Faction::Alliance));
+        let here = system(
+            &mut world,
+            "Hoth",
+            ControlKind::Controlled(Faction::Alliance),
+        );
         let armed_stats = ClassStats {
             bombardment: 2,
             attack_strength: 30,
@@ -1385,14 +1443,22 @@ mod tests {
         // FUN_0044acd0: 34671 "No Facilities", 34670 "Idle", 34673
         // "Training" with the items left and the completion day.
         let mut world = GameWorld::default();
-        let here = system(&mut world, "Hoth", ControlKind::Controlled(Faction::Alliance));
+        let here = system(
+            &mut world,
+            "Hoth",
+            ControlKind::Controlled(Faction::Alliance),
+        );
         let mut states = States::new();
         let status = |world: &GameWorld, states: &States| -> Vec<(String, String)> {
-            producer_rows(states.sources(world), here, ProductionArea::TrainingFacility)
-                .unwrap()
-                .into_iter()
-                .map(|row| (row.label, row.value))
-                .collect()
+            producer_rows(
+                states.sources(world),
+                here,
+                ProductionArea::TrainingFacility,
+            )
+            .unwrap()
+            .into_iter()
+            .map(|row| (row.label, row.value))
+            .collect()
         };
         let pair = |label: &str, value: &str| (label.to_owned(), value.to_owned());
 
@@ -1438,11 +1504,22 @@ mod tests {
         let mut world = GameWorld::default();
         let here = system(&mut world, "Bespin", ControlKind::Uncontrolled);
         let mut states = States::new();
-        let a = world.characters.insert(rebellion_core::world::Character::default());
-        let b = world.characters.insert(rebellion_core::world::Character::default());
+        let a = world
+            .characters
+            .insert(rebellion_core::world::Character::default());
+        let b = world
+            .characters
+            .insert(rebellion_core::world::Character::default());
         let id = states.missions.dispatch(MissionRequest {
             decoys: vec![MissionMember::Character(b)],
-            ..MissionRequest::single(MissionKind::Diplomacy, MissionFaction::Empire, a, here, None, 0)
+            ..MissionRequest::single(
+                MissionKind::Diplomacy,
+                MissionFaction::Empire,
+                a,
+                here,
+                None,
+                0,
+            )
         });
 
         let rows = mission_rows(states.sources(&world), id).unwrap();
@@ -1459,7 +1536,11 @@ mod tests {
         // side-1 fleet, a class's +0x30 resource & 0xfff (its list mini less
         // 0x4000), the producer's GOKRES 264 with the manager font.
         let mut world = GameWorld::default();
-        let here = system(&mut world, "Yavin", ControlKind::Controlled(Faction::Alliance));
+        let here = system(
+            &mut world,
+            "Yavin",
+            ControlKind::Controlled(Faction::Alliance),
+        );
         let fleet = carrier_fleet(&mut world, here);
         let states = States::new();
         let sources = states.sources(&world);
@@ -1494,7 +1575,11 @@ mod tests {
     fn an_empire_fleet_shows_the_other_fleet_picture() {
         // FUN_0042c3b0: STRATEGY 10475 for any side but 1.
         let mut world = GameWorld::default();
-        let here = system(&mut world, "Coruscant", ControlKind::Controlled(Faction::Empire));
+        let here = system(
+            &mut world,
+            "Coruscant",
+            ControlKind::Controlled(Faction::Empire),
+        );
         let fleet = carrier_fleet(&mut world, here);
         world.fleets[fleet].is_alliance = false;
         let states = States::new();
@@ -1537,7 +1622,11 @@ mod tests {
         // FUN_00445280 with FUN_00556390: an object in hyperspace is
         // attached to its destination; 34628 "Enroute" and the ETA.
         let mut world = GameWorld::default();
-        let here = system(&mut world, "Hoth", ControlKind::Controlled(Faction::Alliance));
+        let here = system(
+            &mut world,
+            "Hoth",
+            ControlKind::Controlled(Faction::Alliance),
+        );
         let there = system(&mut world, "Bespin", ControlKind::Uncontrolled);
         let troop = world.troops.insert(TroopUnit {
             class_dat_id: DatId::new(0x1000_0002),
@@ -1573,7 +1662,11 @@ mod tests {
         // FUN_00445780: Attached names the transit's destination, then
         // "Enroute" and the ETA.
         let mut world = GameWorld::default();
-        let here = system(&mut world, "Hoth", ControlKind::Controlled(Faction::Alliance));
+        let here = system(
+            &mut world,
+            "Hoth",
+            ControlKind::Controlled(Faction::Alliance),
+        );
         let there = system(&mut world, "Bespin", ControlKind::Uncontrolled);
         let unit = world.special_forces.insert(SpecialForceUnit {
             class_dat_id: DatId::new(0x3c00_0001),
@@ -1612,7 +1705,9 @@ mod tests {
         let mut world = GameWorld::default();
         let here = system(&mut world, "Bespin", ControlKind::Uncontrolled);
         let mut states = States::new();
-        let a = world.characters.insert(rebellion_core::world::Character::default());
+        let a = world
+            .characters
+            .insert(rebellion_core::world::Character::default());
         let id = states.missions.dispatch(MissionRequest::single(
             MissionKind::Diplomacy,
             MissionFaction::Alliance,
@@ -1640,15 +1735,23 @@ mod tests {
         // FUN_0044acd0 writes the items and day only for a manager with
         // facilities.
         let mut world = GameWorld::default();
-        let here = system(&mut world, "Hoth", ControlKind::Controlled(Faction::Alliance));
+        let here = system(
+            &mut world,
+            "Hoth",
+            ControlKind::Controlled(Faction::Alliance),
+        );
         let mut states = States::new();
         states.manufacturing.enqueue(
             here,
             QueueItem::new(BuildableKind::Troop(DatId::new(0x1000_0002)), 9),
         );
 
-        let rows =
-            producer_rows(states.sources(&world), here, ProductionArea::TrainingFacility).unwrap();
+        let rows = producer_rows(
+            states.sources(&world),
+            here,
+            ProductionArea::TrainingFacility,
+        )
+        .unwrap();
 
         assert_eq!(
             super::tests::rows(&rows),
@@ -1676,13 +1779,14 @@ mod tests {
                 ..BuildableClass::default()
             },
         );
-        let mine = world
-            .production_facilities
-            .insert(rebellion_core::world::ProductionFacilityInstance {
-                class_dat_id: class,
-                side: Faction::Neutral,
-                is_mine: true,
-            });
+        let mine =
+            world
+                .production_facilities
+                .insert(rebellion_core::world::ProductionFacilityInstance {
+                    class_dat_id: class,
+                    side: Faction::Neutral,
+                    is_mine: true,
+                });
         world.systems[here].production_facilities.push(mine);
         let states = States::new();
 
@@ -1710,8 +1814,17 @@ mod tests {
     fn an_alliance_defense_takes_the_side_one_background_and_its_class_name() {
         // FUN_00443130 background by side; FUN_0044a210 the class's name.
         let mut world = GameWorld::default();
-        let here = system(&mut world, "Hoth", ControlKind::Controlled(Faction::Alliance));
-        let class = catalog(&mut world, 0x2200_0001, "Planetary Shield", BuildableClass::default());
+        let here = system(
+            &mut world,
+            "Hoth",
+            ControlKind::Controlled(Faction::Alliance),
+        );
+        let class = catalog(
+            &mut world,
+            0x2200_0001,
+            "Planetary Shield",
+            BuildableClass::default(),
+        );
         let shield = world.defense_facilities.insert(DefenseFacilityInstance {
             class_dat_id: class,
             side: Faction::Alliance,
@@ -1719,8 +1832,11 @@ mod tests {
         world.systems[here].defense_facilities.push(shield);
         let states = States::new();
 
-        let view =
-            status_view(states.sources(&world), StatusObject::DefenseFacility(shield)).unwrap();
+        let view = status_view(
+            states.sources(&world),
+            StatusObject::DefenseFacility(shield),
+        )
+        .unwrap();
 
         assert_eq!(view.title, "Defense Facility Status");
         assert_eq!(view.name, "Planetary Shield");
@@ -1758,10 +1874,11 @@ mod tests {
         let mut world = GameWorld::default();
         let here = system(&mut world, "Bespin", ControlKind::Uncontrolled);
         let mut states = States::new();
-        let a = world.characters.insert(rebellion_core::world::Character::default());
-        let request = |faction| {
-            MissionRequest::single(MissionKind::Diplomacy, faction, a, here, None, 0)
-        };
+        let a = world
+            .characters
+            .insert(rebellion_core::world::Character::default());
+        let request =
+            |faction| MissionRequest::single(MissionKind::Diplomacy, faction, a, here, None, 0);
         let alliance = states.missions.dispatch(request(MissionFaction::Alliance));
         let empire = states.missions.dispatch(request(MissionFaction::Empire));
         let sources = states.sources(&world);

@@ -128,8 +128,12 @@ against Wine captures.
 in the highlight color.
 
 While the pointer is in a submenu, the parent popup gets no `WM_MOUSEMOVE`,
-so its category stays highlighted. The chosen mode is shown only by its check
-mark.
+so its category stays highlighted. Nothing marks the chosen mode:
+`FUN_004511e0` builds every item through `FUN_004ab1f0` with no check
+bitmap (the last two arguments 0, which `FUN_004ab560` keeps as `+0x1c`
+and `+0x5c`), so `FUN_004aba60` never draws one, and the reference frame
+`0450-imperial-gid-menu.png` shows none. (The port once drew `0x277c`, the
+windows' Close button, as a check; removed 2026-10-09.)
 
 Each category passes the same bitmap for its highlighted and normal states,
 so the icon does not change. The port colors the hovered row and the open

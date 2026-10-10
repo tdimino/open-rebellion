@@ -750,8 +750,7 @@ mod tests {
         let mut manufacturing = ManufacturingState::new();
         manufacturing.enqueue(
             elsewhere,
-            QueueItem::new(BuildableKind::ManufacturingFacility(template), 5)
-                .delivered_to(system),
+            QueueItem::new(BuildableKind::ManufacturingFacility(template), 5).delivered_to(system),
         );
         // Built for its own system, this one is not listed here.
         manufacturing.enqueue(
@@ -878,10 +877,7 @@ mod tests {
         let mut manufacturing = ManufacturingState::new();
         manufacturing.enqueue(
             system,
-            QueueItem::new(
-                BuildableKind::ProductionFacility(alliance(0x2c00_0001)),
-                5,
-            ),
+            QueueItem::new(BuildableKind::ProductionFacility(alliance(0x2c00_0001)), 5),
         );
 
         let mines = page_cells(

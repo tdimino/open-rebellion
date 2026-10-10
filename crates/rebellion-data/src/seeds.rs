@@ -383,23 +383,7 @@ pub fn apply_seeds_with_rng<R: Rng + ?Sized>(
         world,
     );
 
-    // ── Empire army (CMUNEMTB) → Coruscant only ─────────────────────────────
-    apply_army_seed(
-        load_seed(gdata_path, "CMUNEMTB.DAT")?.as_ref(),
-        system_key_map,
-        &[CORUSCANT_SEQ_ID],
-        false,
-        world,
-    );
 
-    // ── Alliance army (CMUNALTB) → Yavin + Rebel HQ ────────────────────────
-    apply_army_seed(
-        load_seed(gdata_path, "CMUNALTB.DAT")?.as_ref(),
-        system_key_map,
-        &[YAVIN_SEQ_ID, special.rebel_hq_seq_id],
-        true,
-        world,
-    );
 
     // ── Empire Coruscant garrison (CMUNCRTB) → Coruscant ────────────────────
     apply_garrison_seed(
@@ -464,8 +448,11 @@ pub fn apply_seeds_with_rng<R: Rng + ?Sized>(
     // ── M7: Maintenance-budget common unit seeding ───────────────────────
     let cmunem = load_seed(gdata_path, "CMUNEMTB.DAT")?;
     let cmunal = load_seed(gdata_path, "CMUNALTB.DAT")?;
-    seed_maintenance_budget_units(world, seed_options, cmunem.as_ref(), cmunal.as_ref(), rng);
+    // FUN_0051aa50: the low-support garrisons come first and the budget
+    // last, measured against the facilities' sides.
     seed_low_support_garrisons(world, seed_options, rng);
+    assign_facility_sides(world);
+    seed_maintenance_budget_units(world, seed_options, cmunem.as_ref(), cmunal.as_ref(), rng);
 
     board_seeded_squadrons(world);
 
@@ -500,20 +487,6 @@ fn apply_seeds_legacy(
         system_key_map,
         capship_index,
         fighter_index,
-        &alliance_systems,
-        true,
-        world,
-    );
-    apply_army_seed(
-        load_seed(gdata_path, "CMUNEMTB.DAT")?.as_ref(),
-        system_key_map,
-        &empire_systems,
-        false,
-        world,
-    );
-    apply_army_seed(
-        load_seed(gdata_path, "CMUNALTB.DAT")?.as_ref(),
-        system_key_map,
         &alliance_systems,
         true,
         world,
@@ -631,20 +604,6 @@ pub fn apply_seeds_from_files_with_rng<R: Rng + ?Sized>(
             true,
             world,
         );
-        apply_army_seed(
-            load_seed_from_files(files, "CMUNEMTB.DAT")?.as_ref(),
-            system_key_map,
-            &empire_systems,
-            false,
-            world,
-        );
-        apply_army_seed(
-            load_seed_from_files(files, "CMUNALTB.DAT")?.as_ref(),
-            system_key_map,
-            &alliance_systems,
-            true,
-            world,
-        );
         apply_garrison_seed(
             load_seed_from_files(files, "CMUNCRTB.DAT")?.as_ref(),
             system_key_map,
@@ -704,20 +663,6 @@ pub fn apply_seeds_from_files_with_rng<R: Rng + ?Sized>(
         true,
         world,
     );
-    apply_army_seed(
-        load_seed_from_files(files, "CMUNEMTB.DAT")?.as_ref(),
-        system_key_map,
-        &[CORUSCANT_SEQ_ID],
-        false,
-        world,
-    );
-    apply_army_seed(
-        load_seed_from_files(files, "CMUNALTB.DAT")?.as_ref(),
-        system_key_map,
-        &[YAVIN_SEQ_ID, special.rebel_hq_seq_id],
-        true,
-        world,
-    );
     apply_garrison_seed(
         load_seed_from_files(files, "CMUNCRTB.DAT")?.as_ref(),
         system_key_map,
@@ -771,8 +716,11 @@ pub fn apply_seeds_from_files_with_rng<R: Rng + ?Sized>(
     // M7: Maintenance-budget common unit seeding
     let cmunem = load_seed_from_files(files, "CMUNEMTB.DAT")?;
     let cmunal = load_seed_from_files(files, "CMUNALTB.DAT")?;
-    seed_maintenance_budget_units(world, seed_options, cmunem.as_ref(), cmunal.as_ref(), rng);
+    // FUN_0051aa50: the low-support garrisons come first and the budget
+    // last, measured against the facilities' sides.
     seed_low_support_garrisons(world, seed_options, rng);
+    assign_facility_sides(world);
+    seed_maintenance_budget_units(world, seed_options, cmunem.as_ref(), cmunal.as_ref(), rng);
 
     board_seeded_squadrons(world);
 
@@ -892,37 +840,6 @@ fn apply_fleet_seed(
     }
 }
 
-/// Apply an army seed table (CMUNEMTB / CMUNALTB).
-/// Items can mix capital ships (fleet component) and ground units.
-/// All groups are placed at the given system rotation.
-fn apply_army_seed(
-    seed: Option<&SeedTableFile>,
-    system_key_map: &HashMap<u32, SystemKey>,
-    system_rotation: &[u32],
-    is_alliance: bool,
-    world: &mut GameWorld,
-) {
-    let Some(seed) = seed else { return };
-
-    for (group_idx, group) in seed.groups.iter().enumerate() {
-        let system_dat_id = system_rotation
-            .get(group_idx)
-            .copied()
-            .unwrap_or_else(|| *system_rotation.last().unwrap_or(&CORUSCANT_SEQ_ID));
-
-        let Some(&system_key) = system_key_map.get(&system_dat_id) else {
-            continue;
-        };
-
-        for item in &group.items {
-            if item.item_id == 0 {
-                continue;
-            }
-            dispatch_ground_item(item.item_id, system_key, is_alliance, world);
-        }
-    }
-}
-
 /// Apply a single-system garrison seed (CMUNCRTB / CMUNHQTB / CMUNYVTB).
 /// The first item in each group is always `0x00000000` (skip it).
 fn apply_garrison_seed(
@@ -1006,7 +923,11 @@ fn dispatch_fleet_item(
                 if let Some(entry) = fighters.iter_mut().find(|e| e.class == class) {
                     entry.count += 1;
                 } else {
-                    fighters.push(FighterEntry { class, count: 1, carrier: 0 });
+                    fighters.push(FighterEntry {
+                        class,
+                        count: 1,
+                        carrier: 0,
+                    });
                 }
             }
         }
@@ -1048,8 +969,7 @@ fn dispatch_ground_item(
             world.systems[system_key].special_forces.push(key);
         }
         _ => {
-            // Capital ships / facilities in army tables — skip here.
-            // Fleet ships in army tables are handled by apply_army_seed if desired.
+            // Capital ships and facilities are placed by their own paths.
         }
     }
 }
@@ -1712,40 +1632,14 @@ pub(crate) fn assign_facility_sides(world: &mut GameWorld) {
     }
 }
 
-/// Compute total maintenance cost of all units belonging to a faction.
-fn compute_faction_maintenance(world: &GameWorld, is_alliance: bool) -> u32 {
-    let mut total = 0u32;
-    for (_, fleet) in &world.fleets {
-        if fleet.is_alliance != is_alliance {
-            continue;
-        }
-        for ship in &fleet.capital_ships {
-            if ship.alive {
-                if let Some(class) = world.capital_ship_classes.get(ship.class) {
-                    total += class.maintenance_cost;
-                }
-            }
-        }
-        for entry in &fleet.fighters {
-            if let Some(class) = world.fighter_classes.get(entry.class) {
-                total += class.maintenance_cost * entry.count;
-            }
-        }
-    }
-    // Troops have a flat maintenance cost of 1 each in the original.
-    for (_, troop) in &world.troops {
-        if troop.is_alliance == is_alliance {
-            total += 1;
-        }
-    }
-    total
-}
-
-/// Compute maintenance cost of a single seed bundle group.
+/// A bundle's maintenance (`FUN_0051be20`): the sum of its items' class
+/// maintenance (`FUN_0051cab0` class lookup, `FUN_0053b870` = class `+0x4c`),
+/// ships, squadrons, regiments and special forces alike. hyp: the group's
+/// multiplier (`+0x24`) is 1, as every CMUNALTB and CMUNEMTB group reads.
 fn compute_bundle_maintenance(
     group: &dat_dumper::types::seed_table::SeedGroup,
     world: &GameWorld,
-) -> u32 {
+) -> i64 {
     let capship_index: HashMap<u32, CapitalShipKey> = world
         .capital_ship_classes
         .iter()
@@ -1757,44 +1651,41 @@ fn compute_bundle_maintenance(
         .map(|(k, v)| (v.dat_id.raw(), k))
         .collect();
 
-    let mut cost = 0u32;
+    let mut cost = 0_i64;
     for item in &group.items {
         if item.item_id == 0 {
             continue;
         }
         let family = (item.item_id >> 24) as u8;
         let seq_id = item.item_id & 0x00FF_FFFF;
-        match family {
-            FAM_CAPITAL_SHIP => {
-                if let Some(&class_key) = capship_index.get(&seq_id) {
-                    if let Some(class) = world.capital_ship_classes.get(class_key) {
-                        cost += class.maintenance_cost;
-                    }
-                }
-            }
-            FAM_FIGHTER => {
-                if let Some(&class_key) = fighter_index.get(&seq_id) {
-                    if let Some(class) = world.fighter_classes.get(class_key) {
-                        cost += class.maintenance_cost;
-                    }
-                }
-            }
-            FAM_TROOP | FAM_SPECIAL => {
-                cost += 1; // Flat troop maintenance
-            }
-            _ => {}
-        }
+        cost += i64::from(match family {
+            FAM_CAPITAL_SHIP => capship_index
+                .get(&seq_id)
+                .and_then(|&class| world.capital_ship_classes.get(class))
+                .map_or(0, |class| class.maintenance_cost),
+            FAM_FIGHTER => fighter_index
+                .get(&seq_id)
+                .and_then(|&class| world.fighter_classes.get(class))
+                .map_or(0, |class| class.maintenance_cost),
+            FAM_TROOP | FAM_SPECIAL => world
+                .buildable_classes
+                .get(&DatId::new(item.item_id))
+                .map_or(0, |class| class.maintenance_cost),
+            _ => 0,
+        });
     }
     cost
 }
 
-/// Deploy a bundle group to a system: ships go into a new fleet, troops go to ground.
-fn deploy_bundle_to_system<R: Rng + ?Sized>(
+/// Place a bundle at a system (`FUN_0051b1f0`, then `FUN_0051bf30`): ground
+/// units land on the surface; ships join the side's first fleet there, or a
+/// new fleet (`FUN_004f7d50`) when it has none. hyp: `FUN_005131b0`, the
+/// test a fleet must pass to take them, is untraced; any own fleet does.
+fn deploy_bundle_to_system(
     group: &dat_dumper::types::seed_table::SeedGroup,
     system_key: SystemKey,
     is_alliance: bool,
     world: &mut GameWorld,
-    _rng: &mut R,
 ) {
     let capship_index: HashMap<u32, CapitalShipKey> = world
         .capital_ship_classes
@@ -1832,7 +1723,11 @@ fn deploy_bundle_to_system<R: Rng + ?Sized>(
                     if let Some(entry) = fleet_fighters.iter_mut().find(|e| e.class == class) {
                         entry.count += 1;
                     } else {
-                        fleet_fighters.push(FighterEntry { class, count: 1, carrier: 0 });
+                        fleet_fighters.push(FighterEntry {
+                            class,
+                            count: 1,
+                            carrier: 0,
+                        });
                     }
                 }
             }
@@ -1843,25 +1738,41 @@ fn deploy_bundle_to_system<R: Rng + ?Sized>(
         }
     }
 
-    // Create fleet if we have ships.
-    if !fleet_capital_ships.is_empty() || !fleet_fighters.is_empty() {
-        let fleet = Fleet {
-            location: system_key,
-            capital_ships: fleet_capital_ships,
-            fighters: fleet_fighters,
-            characters: Vec::new(),
-            is_alliance,
-            has_death_star: false,
-        };
-        let fleet_key = world.insert_fleet(fleet);
-        if let Some(sys) = world.systems.get_mut(system_key) {
-            sys.fleets.push(fleet_key);
+    if fleet_capital_ships.is_empty() && fleet_fighters.is_empty() {
+        return;
+    }
+    let existing = world.systems.get(system_key).and_then(|sys| {
+        sys.fleets
+            .iter()
+            .copied()
+            .find(|&fleet| world.fleets.get(fleet).is_some_and(|f| f.is_alliance == is_alliance))
+    });
+    if let Some(fleet) = existing.and_then(|fleet| world.fleets.get_mut(fleet)) {
+        fleet.capital_ships.extend(fleet_capital_ships);
+        for added in fleet_fighters {
+            match fleet.fighters.iter_mut().find(|entry| entry.class == added.class) {
+                Some(entry) => entry.count += added.count,
+                None => fleet.fighters.push(added),
+            }
         }
+        return;
+    }
+    let fleet = Fleet {
+        location: system_key,
+        capital_ships: fleet_capital_ships,
+        fighters: fleet_fighters,
+        characters: Vec::new(),
+        is_alliance,
+        has_death_star: false,
+    };
+    let fleet_key = world.insert_fleet(fleet);
+    if let Some(sys) = world.systems.get_mut(system_key) {
+        sys.fleets.push(fleet_key);
     }
 }
 
 /// SDPRTB row holding each faction's starting maintenance-budget percentage
-/// for a galaxy size.
+/// for a galaxy size (`FUN_0055d670` / `FUN_0055d6d0`: `0x1430..0x1432`).
 const fn maintenance_budget_param(size: rebellion_core::dat::GalaxySize) -> u16 {
     match size {
         rebellion_core::dat::GalaxySize::Standard => 5168,
@@ -1870,20 +1781,26 @@ const fn maintenance_budget_param(size: rebellion_core::dat::GalaxySize) -> u16 
     }
 }
 
-/// Maintenance-budget unit seeding: spend starting budget on random unit bundles.
-///
-/// The original algorithm:
-/// 1. Compute total maintenance from all existing placed assets per faction.
-/// 2. Look up available budget percentage from SDPRTB 5168 (standard), 5169 (large),
-///    or 5170 (huge) — side-aware and difficulty-aware.
-/// 3. Available = `floor(total_maintenance` * `budget_pct` / 100).
-/// 4. Repeatedly pick a random owned system, roll a random bundle from CMUNEMTB
-///    (Empire) or CMUNALTB (Alliance), deploy if affordable, repeat until exhausted.
-#[expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
-)]
+/// The group a roll of 1..=100 picks (`FUN_00595090`): the last whose key
+/// (`entry_bis`, the in-memory `+0x20`) is at most the roll, or the first
+/// when the roll is below every key.
+fn rolled_group(table: &SeedTableFile, roll: u32) -> Option<&dat_dumper::types::seed_table::SeedGroup> {
+    table
+        .groups
+        .iter()
+        .take_while(|group| group.entry_bis <= roll)
+        .last()
+        .or_else(|| table.groups.first())
+}
+
+/// The last seeding step (`FUN_0051b1f0`, `ghidra/notes/starting-forces-seeding.md`),
+/// for the Alliance (CMUNALTB) and then the Empire (CMUNEMTB). The budget is
+/// the side's spare maintenance, capacity less its allocated load
+/// (`+0x58 − +0x5c`, at most the capacity), times SDPRTB 5168..5170 for the
+/// galaxy size, side and difficulty, over 100. Each round rolls a group,
+/// takes its maintenance from the budget, and stops before placing it if the
+/// budget goes below zero; otherwise it lands at a random system the side
+/// holds (systems in `DatId` order stand for the object walk).
 fn seed_maintenance_budget_units<R: Rng + ?Sized>(
     world: &mut GameWorld,
     seed_options: &SeedOptions,
@@ -1891,65 +1808,43 @@ fn seed_maintenance_budget_units<R: Rng + ?Sized>(
     cmunal: Option<&SeedTableFile>,
     rng: &mut R,
 ) {
+    use rebellion_core::manufacturing::ManufacturingState;
+    use rebellion_core::resources::{maintenance_capacity, maintenance_used};
+    // port: a table whose groups all cost nothing would never end the loop.
+    const MAX_ROUNDS: u32 = 10_000;
     let diff = seed_options.gnprtb_index();
     let budget_param = maintenance_budget_param(seed_options.galaxy_size);
 
-    // Seed each faction independently.
-    for (is_alliance, seed_table) in [(true, cmunal), (false, cmunem)] {
+    for (faction, seed_table) in [(Faction::Alliance, cmunal), (Faction::Empire, cmunem)] {
         let Some(table) = seed_table else { continue };
-        if table.groups.is_empty() {
-            continue;
-        }
+        let is_alliance = faction == Faction::Alliance;
+        let capacity = maintenance_capacity(world, faction);
+        let load = maintenance_used(world, &ManufacturingState::default(), faction);
+        let pct = i64::from(world.sdprtb.value(budget_param, diff, faction));
+        let mut budget = (capacity - load.min(capacity)) * pct / 100;
 
-        let faction = if is_alliance {
-            Faction::Alliance
-        } else {
-            Faction::Empire
-        };
-        let budget_pct = world.sdprtb.value(budget_param, diff, faction);
-        if budget_pct <= 0 {
-            continue;
-        }
-
-        let existing_maint = compute_faction_maintenance(world, is_alliance);
-        let mut budget = (i64::from(existing_maint) * i64::from(budget_pct) / 100).max(0) as u32;
-
-        // Collect eligible owned systems for this faction.
-        let mut owned_systems: Vec<SystemKey> = world
+        let mut held: Vec<SystemKey> = world
             .systems
             .iter()
-            .filter(|(_, sys)| sys.control.is_controlled_by(faction) && sys.is_populated)
+            .filter(|(_, sys)| sys.control.is_controlled_by(faction))
             .map(|(k, _)| k)
             .collect();
-        owned_systems.sort_by_key(|&k| world.systems.get(k).map_or(0, |s| s.dat_id.raw()));
-
-        if owned_systems.is_empty() {
+        held.sort_by_key(|&k| world.systems.get(k).map_or(0, |s| s.dat_id.raw()));
+        // port: the original walks to no system and places nothing.
+        if held.is_empty() {
             continue;
         }
 
-        // Spend budget by rolling random bundles.
-        let mut attempts = 0;
-        let max_attempts = 500; // Safety limit
-        while budget > 0 && attempts < max_attempts {
-            attempts += 1;
-
-            // Pick random bundle.
-            let group_idx = rng.gen_range(0..table.groups.len());
-            let group = &table.groups[group_idx];
-
-            // Compute bundle cost.
-            let cost = compute_bundle_maintenance(group, world);
-            if cost == 0 || cost > budget {
-                continue;
+        for _ in 0..MAX_ROUNDS {
+            let Some(group) = rolled_group(table, rng.gen_range(1..=100)) else {
+                break;
+            };
+            budget -= compute_bundle_maintenance(group, world);
+            if budget < 0 {
+                break;
             }
-
-            // Pick random owned system.
-            let sys_idx = rng.gen_range(0..owned_systems.len());
-            let system_key = owned_systems[sys_idx];
-
-            // Deploy.
-            deploy_bundle_to_system(group, system_key, is_alliance, world, rng);
-            budget = budget.saturating_sub(cost);
+            let system_key = held[rng.gen_range(0..held.len())];
+            deploy_bundle_to_system(group, system_key, is_alliance, world);
         }
     }
 }
@@ -2344,7 +2239,13 @@ mod tests {
         // manufacture, 0x22..0x25 defend, an unknown family is skipped.
         let mut world = GameWorld::default();
         let system = bare_system(&mut world, ControlKind::Uncontrolled);
-        for item in [0x2000_0001, 0x2800_0001, 0x2900_0001, 0x2200_0001, 0x3000_0001] {
+        for item in [
+            0x2000_0001,
+            0x2800_0001,
+            0x2900_0001,
+            0x2200_0001,
+            0x3000_0001,
+        ] {
             dispatch_facility_item(item, system, false, &mut world);
         }
 
@@ -2359,7 +2260,11 @@ mod tests {
             .collect();
         assert_eq!(
             yards,
-            vec![(0x2000_0001, false), (0x2800_0001, true), (0x2900_0001, false)]
+            vec![
+                (0x2000_0001, false),
+                (0x2800_0001, true),
+                (0x2900_0001, false)
+            ]
         );
         assert_eq!(here.defense_facilities.len(), 1);
         assert!(here.production_facilities.is_empty());
@@ -2506,20 +2411,20 @@ mod tests {
             "Coruscant should have fleet(s)"
         );
 
-        // Empire fleets should NOT be at more than ~3 systems (was 10 in old proximity model)
-        let empire_fleet_system_count = world
-            .systems
-            .iter()
-            .filter(|(_, s)| {
-                s.fleets
-                    .iter()
-                    .any(|&fk| world.fleets.get(fk).is_some_and(|f| !f.is_alliance))
-            })
-            .count();
-        assert!(
-            empire_fleet_system_count <= 3,
-            "Empire fleets should be at <= 3 systems (3-system model), found {empire_fleet_system_count}"
-        );
+        // Beyond the fixed tables, only the budget pass places ships, and it
+        // places them at a system the side holds (FUN_0051b1f0; the old
+        // proximity model scattered them).
+        for (_, system) in &world.systems {
+            let empire_fleet_here = system
+                .fleets
+                .iter()
+                .any(|&fk| world.fleets.get(fk).is_some_and(|f| !f.is_alliance));
+            assert!(
+                !empire_fleet_here || system.control.is_controlled_by(Faction::Empire),
+                "an Empire fleet sits at {}, which the Empire does not hold",
+                system.name
+            );
+        }
     }
 
     #[test]

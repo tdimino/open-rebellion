@@ -566,7 +566,10 @@ mod tests {
         let elsewhere = LogicalRect::new(10.0, 10.0, 4.0, 4.0);
         assert_eq!(run(&mut naming, click(elsewhere)), RegistryOutcome::Open);
         // Enter answers only the focused control; nothing has focus here.
-        assert_eq!(run(&mut naming, key(egui::Key::Enter)), RegistryOutcome::Open);
+        assert_eq!(
+            run(&mut naming, key(egui::Key::Enter)),
+            RegistryOutcome::Open
+        );
     }
 
     #[test]

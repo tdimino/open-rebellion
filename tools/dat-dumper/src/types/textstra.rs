@@ -86,6 +86,54 @@ pub fn load_strings(path: &Path) -> anyhow::Result<HashMap<u16, String>> {
     Ok(strings)
 }
 
+/// `RT_RCDATA` resource type ID.
+const RT_RCDATA_ID: u32 = 10;
+
+/// Load every `RT_RCDATA` entry of TEXTSTRA.DLL: the message templates the
+/// original formats with `FUN_0060b9d0`, and the advice topic tables
+/// (`FUN_0048b460`). Bytes are kept as they are; templates carry argument
+/// markers and a `0x01` end mark.
+///
+/// # Errors
+/// Returns an error if the DLL cannot be read or its resource tree is invalid.
+pub fn load_rcdata(path: &Path) -> anyhow::Result<HashMap<u16, Vec<u8>>> {
+    let map = FileMap::open(path).with_context(|| format!("opening {}", path.display()))?;
+    let pe =
+        PeFile::from_bytes(&map).with_context(|| format!("parsing {} as PE", path.display()))?;
+    let resources = pe
+        .resources()
+        .with_context(|| format!("no resource section in {}", path.display()))?;
+
+    let mut entries = HashMap::new();
+    for type_entry in resources.root()?.entries() {
+        if type_entry.name()? != Name::Id(RT_RCDATA_ID) {
+            continue;
+        }
+        let Entry::Directory(type_dir) = type_entry.entry()? else {
+            continue;
+        };
+        for item in type_dir.entries() {
+            let Name::Id(id) = item.name()? else {
+                continue;
+            };
+            let Ok(id) = u16::try_from(id) else {
+                continue;
+            };
+            let Entry::Directory(lang_dir) = item.entry()? else {
+                continue;
+            };
+            let Some(lang_entry) = lang_dir.entries().next() else {
+                continue;
+            };
+            let Entry::DataEntry(data) = lang_entry.entry()? else {
+                continue;
+            };
+            entries.insert(id, data.bytes()?.to_vec());
+        }
+    }
+    Ok(entries)
+}
+
 /// Parse one `RT_STRING` bundle (raw bytes) and insert decoded strings into `out`.
 #[expect(
     clippy::cast_possible_truncation,

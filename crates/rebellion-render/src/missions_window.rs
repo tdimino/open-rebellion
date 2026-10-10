@@ -179,6 +179,12 @@ impl Default for MissionsWindowState {
 }
 
 impl MissionsWindowState {
+    /// Whether any window of this kind is open.
+    #[must_use]
+    pub fn any_open(&self) -> bool {
+        !self.windows.is_empty()
+    }
+
     /// Open `system`'s Missions window at a logical point, clamped into the
     /// galaxy view, with its first mission selected (`FUN_0049f540`,
     /// `FUN_00609500`), or bring its open window to the front: one per

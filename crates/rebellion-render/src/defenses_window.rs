@@ -202,6 +202,12 @@ impl Default for DefensesWindowState {
 }
 
 impl DefensesWindowState {
+    /// Whether any window of this kind is open.
+    #[must_use]
+    pub fn any_open(&self) -> bool {
+        !self.windows.is_empty()
+    }
+
     /// Open `system`'s Defenses window at a logical point, clamped into the
     /// galaxy view, on the personnel page (`FUN_004a8790` selects tab 1), or
     /// bring its open window to the front: one per system (`FUN_0045aac0`).

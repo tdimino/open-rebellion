@@ -240,6 +240,12 @@ impl Default for SystemWindowState {
 }
 
 impl SystemWindowState {
+    /// Whether any window of this kind is open.
+    #[must_use]
+    pub fn any_open(&self) -> bool {
+        !self.windows.is_empty()
+    }
+
     /// Open at the original logical double-click point, clamped so the client
     /// surface remains inside the recovered galaxy aperture, on the overview
     /// (`FUN_00452fc0` starts on page `0x67`). Existing visible or minimized

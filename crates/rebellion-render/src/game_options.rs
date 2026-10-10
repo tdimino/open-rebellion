@@ -1092,11 +1092,19 @@ mod tests {
             ]
         );
         assert_eq!(
-            (0..5).map(|row| tactical_label(row).rect.y).collect::<Vec<_>>(),
+            (0..5)
+                .map(|row| tactical_label(row).rect.y)
+                .collect::<Vec<_>>(),
             [313.0, 340.0, 367.0, 394.0, 421.0]
         );
-        assert_eq!(tactical_label(2).rect, NativeRect::new(394.0, 367.0, 183.0, 16.0));
-        assert_eq!(tactical_state(4).rect, NativeRect::new(577.0, 421.0, 31.0, 16.0));
+        assert_eq!(
+            tactical_label(2).rect,
+            NativeRect::new(394.0, 367.0, 183.0, 16.0)
+        );
+        assert_eq!(
+            tactical_state(4).rect,
+            NativeRect::new(577.0, 421.0, 31.0, 16.0)
+        );
         assert_eq!(tactical_label(0).font, 7);
         assert_eq!(VERSION_TEXT.font, 10);
         assert_eq!(option_rgb(false), [0, 128, 0]);

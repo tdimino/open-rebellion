@@ -11,7 +11,12 @@ use egui_macroquad::egui::{self, Color32};
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{CockpitFaction, CockpitLayout};
-use crate::message_log::{GameMessage, MessageId, MessageLog, MessageRail};
+use crate::message_log::{
+    GameMessage, MessageId, MessageLog, MessageRail, MessageTarget, POST_SILENTLY,
+};
+use crate::scroll_bar::{
+    ScrollBar, ScrollBlit, ScrollDrag, ScrollPointer, ScrollRange, TEXT_BAR_299D,
+};
 
 // ---------------------------------------------------------------------------
 // Shell constants (unchanged)
@@ -49,12 +54,104 @@ const ROW_WIDTH: f32 = 346.0;
 const ROW_HEIGHT: f32 = 21.0;
 /// Text offset within a row (`FUN_00468ab0`: `+0x30 = 0x20`).
 const TEXT_INSET: f32 = 32.0;
+/// The row's category icon is 15 by 15 (STRATEGY `0x2a9a`..`0x2ad9`).
+const ROW_ICON_SIZE: f32 = 15.0;
+/// It sits at (1, 1) in its pictures (`FUN_00468ab0`).
+const ROW_ICON_X: f32 = 1.0;
+const ROW_ICON_Y: f32 = 1.0;
+/// A selected row's bar (`FUN_00468ab0`), 356 by 21.
+const SELECTED_ROW_ALLIANCE: u32 = 0x2aa2;
+const SELECTED_ROW_EMPIRE: u32 = 0x2aa3;
+const SELECTED_ROW_WIDTH: f32 = 356.0;
+
+/// An icon's own size: `0x2a9a..0x2a9e` are 15 by 16, their last row the
+/// blue key, and the rest 15 by 15.
+fn icon_size(cache: &mut BmpCache, icon: u32) -> egui::Vec2 {
+    cache
+        .original_resource_size(DllSource::Strategy, icon)
+        .map_or(
+            egui::vec2(ROW_ICON_SIZE, ROW_ICON_SIZE),
+            |[width, height]| egui::vec2(width as f32, height as f32),
+        )
+}
+
+/// `FUN_00468ab0`: the row's category icon from STRATEGY, by the message's
+/// category mask (`+0x34`) and side.
+const fn row_icon(rail: MessageRail, faction: CockpitFaction) -> u32 {
+    let alliance = matches!(faction, CockpitFaction::Alliance);
+    match rail {
+        MessageRail::PopularSupport => {
+            if alliance {
+                0x2a9a
+            } else {
+                0x2a9b
+            }
+        }
+        MessageRail::Manufacturing => {
+            if alliance {
+                0x2a9c
+            } else {
+                0x2a9d
+            }
+        }
+        MessageRail::Mission => {
+            if alliance {
+                0x2a9e
+            } else {
+                0x2a9f
+            }
+        }
+        MessageRail::Chat => 0x2aa4,
+        MessageRail::Defense => 0x2ad3,
+        MessageRail::Fleet => {
+            if alliance {
+                0x2ad4
+            } else {
+                0x2ad5
+            }
+        }
+        MessageRail::Resource => 0x2ad6,
+        MessageRail::Conflict => 0x2ad7,
+        MessageRail::Advice => {
+            if alliance {
+                0x2ad8
+            } else {
+                0x2ad9
+            }
+        }
+    }
+}
+/// The picture `FUN_0046a320` blits at (12, 33): 400 by 200.
+const PICTURE_X: f32 = 12.0;
+const PICTURE_Y: f32 = 33.0;
+const PICTURE_HEIGHT: f32 = 200.0;
+/// The title strip (`0x2ab5`, 400 by 18 at (12, 14)) and the bottom text
+/// frame (`0x2ab4`, 400 by 87 at (12, 232)), from `FUN_004665f0`.
+const TITLE_STRIP: u32 = 0x2ab5;
+const TITLE_STRIP_Y: f32 = 14.0;
+const TITLE_STRIP_HEIGHT: f32 = 18.0;
+const TEXT_FRAME: u32 = 0x2ab4;
+const TEXT_FRAME_Y: f32 = 232.0;
+const TEXT_FRAME_HEIGHT: f32 = 87.0;
+/// hyp: the title bar's icon and title, measured from the Wine capture.
+const TITLE_ICON_X: f32 = 17.0;
+const TITLE_ICON_Y: f32 = 16.0;
+const TITLE_TEXT_X: f32 = 39.0;
+/// The arrows `0x9a` (up, `0x2ac4`) and `0x96` (down, `0x2aa7`), 19 by 15
+/// at (367, 15) and (390, 15) (`FUN_004665f0`).
+const ARROW_UP_X: f32 = 367.0;
+const ARROW_DOWN_X: f32 = 390.0;
+const ARROW_Y: f32 = 15.0;
+const ARROW_WIDTH: f32 = 19.0;
+const ARROW_HEIGHT: f32 = 15.0;
 /// Text area for single-message display (`FUN_00469de0`).
 const TEXT_AREA_X: f32 = 17.0;
 const TEXT_AREA_Y: f32 = 234.0;
 /// Default width for non-encyclopedia messages (`0x18b`).
 const TEXT_AREA_WIDTH: f32 = 395.0;
 const TEXT_AREA_HEIGHT: f32 = 80.0;
+/// The body's line pitch, font 4's 16-pixel cell (`FUN_0060eed0`).
+const BODY_LINE_HEIGHT: f32 = 16.0;
 
 /// Visible rows the list shows at once: `194 / 21 = 9`.
 #[expect(
@@ -207,39 +304,117 @@ pub struct WindowButtonSpec {
     pub height: u16,
     pub normal_resource: u32,
     pub pressed_resource: u32,
+    /// The disabled frame (`FUN_00603150(.., 2, ..)`), shown while the
+    /// button is off; `None` for a button always on.
+    pub disabled_resource: Option<u32>,
+    pub enabled: bool,
 }
 
-/// Close (`0x28`, `0x2882`/`0x2888`) and Display Message (`0x65`,
-/// `0x2884`/`0x288a`) on the right rail, and Delete (`0x91`, `0x2a96`) under
-/// the category row, as `FUN_004665f0` builds them. Delete shows in mode 1
-/// only (`FUN_00468fb0`). port: Navigate (`0x90`) and the mode-2 scroll,
-/// Encyclopedia and Detail buttons are not drawn.
+/// The rail's state-dependent looks: the active category's Post Messages
+/// Silently flag (`FUN_004697b0`) and whether Display is lit.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RailLook {
+    pub silent: bool,
+    pub display_lit: bool,
+}
+
+/// The window's buttons as `FUN_004665f0` builds them. On the right rail,
+/// by side: Close (`0x28`), Display Message (`0x65`), Post Messages
+/// Silently (`0x66`), Display (`0x67`) and Compose Chat Message (`0x68`).
+/// Under the category row in mode 1 only (`FUN_00468fb0`): Select All
+/// (`0x90`) and Delete (`0x91`). port: the mode-2 Encyclopedia and Detail
+/// buttons of encyclopedia messages are not drawn.
 #[must_use]
-pub fn window_button_specs(faction: CockpitFaction, mode: IndexMode) -> Vec<WindowButtonSpec> {
-    let (x, size, close, display) = match faction {
-        CockpitFaction::Alliance => (0x1a7, (0x20, 0x1f), (0x19, 0x2882), (0x5d, 0x2884)),
-        CockpitFaction::Empire => (0x1aa, (0x2c, 0x29), (0x15, 0x2888), (0x59, 0x288a)),
+pub fn window_button_specs(
+    faction: CockpitFaction,
+    mode: IndexMode,
+    look: RailLook,
+) -> Vec<WindowButtonSpec> {
+    let alliance = faction == CockpitFaction::Alliance;
+    let (x, (width, height)) = if alliance {
+        (0x1a7, (0x20, 0x1f))
+    } else {
+        (0x1aa, (0x2c, 0x29))
     };
-    let rail = |command_id, (y, normal): (u16, u32)| WindowButtonSpec {
+    let pick = |alliance_value: u32, empire_value: u32| {
+        if alliance {
+            alliance_value
+        } else {
+            empire_value
+        }
+    };
+    let row_y = |alliance_y: u16, empire_y: u16| if alliance { alliance_y } else { empire_y };
+    let rail = |command_id, y, normal: u32, pressed: u32| WindowButtonSpec {
         command_id,
         x,
         y,
-        width: size.0,
-        height: size.1,
+        width,
+        height,
         normal_resource: normal,
-        pressed_resource: normal + 1,
+        pressed_resource: pressed,
+        disabled_resource: None,
+        enabled: true,
     };
-    let mut buttons = vec![rail(0x28, close), rail(0x65, display)];
+    let close = pick(0x2882, 0x2888);
+    let display_message = pick(0x2884, 0x288a);
+    // FUN_00467f10 case 0x66 / FUN_004697b0: the waves while messages post
+    // aloud (label 0x8005), the silent picture once set (0x8006).
+    let silent_normal = match (alliance, look.silent) {
+        (true, false) => 0x2a78,
+        (true, true) => 0x2ac7,
+        (false, false) => 0x2a7a,
+        (false, true) => 0x2ac9,
+    };
+    // FUN_00469de0: a kind-3 message lights Display with the go-to
+    // picture; until then the disabled frame shows.
+    let display = WindowButtonSpec {
+        disabled_resource: Some(pick(0x2acf, 0x2ad0)),
+        enabled: look.display_lit,
+        ..rail(
+            0x67,
+            row_y(0xc9, 0xcf),
+            pick(0x2916, 0x2918),
+            pick(0x2917, 0x2919),
+        )
+    };
+    // FUN_004665f0: Compose Chat is disabled when FUN_00401080 reports a
+    // game without other players; the port has no multiplayer.
+    let chat = WindowButtonSpec {
+        disabled_resource: Some(pick(0x2a7e, 0x2a81)),
+        enabled: false,
+        ..rail(
+            0x68,
+            row_y(0xff, 0x10a),
+            pick(0x2a7c, 0x2a7f),
+            pick(0x2a7d, 0x2a80),
+        )
+    };
+    let mut buttons = vec![
+        rail(0x28, row_y(0x19, 0x15), close, close + 1),
+        rail(
+            0x65,
+            row_y(0x5d, 0x59),
+            display_message,
+            display_message + 1,
+        ),
+        rail(0x66, row_y(0x93, 0x94), silent_normal, pick(0x2a79, 0x2a7b)),
+        display,
+        chat,
+    ];
     if mode == IndexMode::List {
-        buttons.push(WindowButtonSpec {
-            command_id: 0x91,
-            x: 0x154,
+        let row = |command_id, x, normal: u32| WindowButtonSpec {
+            command_id,
+            x,
             y: 0x57,
             width: 0x38,
             height: 0x14,
-            normal_resource: 0x2a96,
-            pressed_resource: 0x2a97,
-        });
+            normal_resource: normal,
+            pressed_resource: normal + 1,
+            disabled_resource: None,
+            enabled: true,
+        };
+        buttons.push(row(0x90, 0x11a, 0x2a94));
+        buttons.push(row(0x91, 0x154, 0x2a96));
     }
     buttons
 }
@@ -252,6 +427,7 @@ fn draw_window_buttons(
     origin: egui::Pos2,
     scale: f32,
     mode: IndexMode,
+    look: RailLook,
 ) -> Option<u16> {
     let mut clicked = None;
     egui::Area::new(egui::Id::new("original-message-index-buttons"))
@@ -268,7 +444,7 @@ fn draw_window_buttons(
                     input.pointer.button_down(egui::PointerButton::Primary),
                 )
             });
-            for button in window_button_specs(faction, mode) {
+            for button in window_button_specs(faction, mode, look) {
                 let rect = message_index_rect(
                     window_rect,
                     scale,
@@ -282,20 +458,16 @@ fn draw_window_buttons(
                     ui.id().with(("message-index-button", button.command_id)),
                     egui::Sense::click(),
                 );
-                let pressed = primary_down
+                let pressed = button.enabled
+                    && primary_down
                     && pointer.is_some_and(|point| message_index_rect_contains(rect, point));
-                paint_strategy_resource(
-                    ui.painter(),
-                    ctx,
-                    cache,
-                    if pressed {
-                        button.pressed_resource
-                    } else {
-                        button.normal_resource
-                    },
-                    rect,
-                );
-                if response.clicked() {
+                let resource = match (button.enabled, button.disabled_resource) {
+                    (false, Some(disabled)) => disabled,
+                    _ if pressed => button.pressed_resource,
+                    _ => button.normal_resource,
+                };
+                paint_strategy_resource(ui.painter(), ctx, cache, resource, rect);
+                if button.enabled && response.clicked() {
                     clicked = Some(button.command_id);
                 }
             }
@@ -319,6 +491,7 @@ pub fn draw_message_index_shell(
     faction: CockpitFaction,
     origin: egui::Pos2,
     scale: f32,
+    categories: bool,
 ) -> Option<u16> {
     if scale <= 0.0 {
         return None;
@@ -363,7 +536,13 @@ pub fn draw_message_index_shell(
                     input.pointer.button_down(egui::PointerButton::Primary),
                 )
             });
-            for control in message_category_control_specs(faction) {
+            // Mode 2's picture covers the category controls.
+            let controls = if categories {
+                message_category_control_specs(faction).to_vec()
+            } else {
+                Vec::new()
+            };
+            for control in controls {
                 let rect = message_index_rect(
                     window_rect,
                     scale,
@@ -442,6 +621,64 @@ fn paint_strategy_resource(
     );
 }
 
+/// This frame's pointer in the window's logical coordinates, for a
+/// [`ScrollBar`].
+fn scroll_pointer(ctx: &egui::Context, window_rect: egui::Rect, scale: f32) -> ScrollPointer {
+    ctx.input(|input| ScrollPointer {
+        at: input.pointer.interact_pos().map(|point| {
+            (
+                (point.x - window_rect.min.x) / scale,
+                (point.y - window_rect.min.y) / scale,
+            )
+        }),
+        pressed: input.pointer.primary_pressed(),
+        down: input.pointer.primary_down(),
+        released: input.pointer.primary_released(),
+    })
+}
+
+/// Paint a scroll bar's bitmaps at their own size, each clipped to its
+/// blit's height.
+fn paint_scroll_bar(
+    painter: &egui::Painter,
+    ctx: &egui::Context,
+    cache: &mut BmpCache,
+    window_rect: egui::Rect,
+    scale: f32,
+    blits: &[ScrollBlit],
+) {
+    for blit in blits {
+        let Some([width, height]) =
+            cache.original_resource_size(DllSource::Strategy, blit.resource)
+        else {
+            continue;
+        };
+        let full = message_index_rect(
+            window_rect,
+            scale,
+            blit.x,
+            blit.y,
+            width as f32,
+            height as f32,
+        );
+        let clip = message_index_rect(
+            window_rect,
+            scale,
+            blit.x,
+            blit.y,
+            width as f32,
+            blit.height,
+        );
+        paint_strategy_resource(
+            &painter.with_clip_rect(clip),
+            ctx,
+            cache,
+            blit.resource,
+            full,
+        );
+    }
+}
+
 // ---------------------------------------------------------------------------
 // IndexMode, Actions, State
 // ---------------------------------------------------------------------------
@@ -477,6 +714,12 @@ pub enum MessageIndexAction {
     /// The Close button (`0x28`): the app applies
     /// [`MessageIndexState::close`] and drops the window.
     Close,
+    /// Post Messages Silently (`0x66`, `FUN_00467f10`): set the category's
+    /// posting flags, the silent bit flipped. Mask 0 is All.
+    SetPostFlags { mask: u16, flags: u32 },
+    /// Display (`0x67`): go to the message's object (`FUN_00429440`); a
+    /// [`MessageIndexAction::Close`] follows, as the original posts `0x28`.
+    GoTo(MessageTarget),
 }
 
 /// Mutable state for the Message Index window.
@@ -498,6 +741,18 @@ pub struct MessageIndexState {
     /// port: egui counts double clicks across widgets; the list keeps its own
     /// (same approach as `fleet_finder.rs`).
     last_clicked: Option<(usize, f64)>,
+    /// Whether Display (`0x67`) is lit. It starts disabled; showing a
+    /// kind-3 message (`FUN_00469de0`) or selecting one alone
+    /// (`FUN_00467f10` cases `0x6e`, `0x90`) lights it, and nothing turns
+    /// it off while the window lives.
+    display_lit: bool,
+    /// The list's scroll bar press (RCDATA `0x299d`, `FUN_004665f0`).
+    list_drag: ScrollDrag,
+    /// The shown message's text field: its first line and the message it
+    /// belongs to. Showing a message resets it (`FUN_0041fc30`).
+    body_scroll: (Option<MessageId>, usize),
+    /// The text field's scroll bar press.
+    body_drag: ScrollDrag,
 }
 
 impl Default for MessageIndexState {
@@ -510,6 +765,10 @@ impl Default for MessageIndexState {
             scroll_offset: 0,
             viewing: None,
             last_clicked: None,
+            display_lit: false,
+            list_drag: ScrollDrag::default(),
+            body_scroll: (None, 0),
+            body_drag: ScrollDrag::default(),
         }
     }
 }
@@ -588,6 +847,14 @@ impl MessageIndexState {
         ]
     }
 
+    /// Select All (`0x90`, `FUN_00467f10`): select every row the category
+    /// shows.
+    pub fn select_all(&mut self, rows: &[&GameMessage]) {
+        self.selected = rows.iter().map(|msg| msg.id).collect();
+        self.anchor = None;
+        self.last_clicked = None;
+    }
+
     /// Delete the currently selected messages. Returns a
     /// [`MessageIndexAction::DeleteSelected`] the app must apply.
     pub fn delete_selected(&mut self) -> Option<MessageIndexAction> {
@@ -618,6 +885,37 @@ impl MessageIndexState {
                 None
             }
         }
+    }
+
+    /// The arrows in mode 2 (`0x9a` up, `0x96` down): show the previous or
+    /// next message of the category. hyp: the handler is untraced; the
+    /// arrows step through the list in its order and stop at either end.
+    pub fn step_message(
+        &mut self,
+        rows: &[&GameMessage],
+        down: bool,
+    ) -> Option<MessageIndexAction> {
+        let at = rows.iter().position(|msg| Some(msg.id) == self.viewing)?;
+        let next = if down { at + 1 } else { at.checked_sub(1)? };
+        let id = rows.get(next)?.id;
+        self.viewing = Some(id);
+        self.selected = BTreeSet::from([id]);
+        self.anchor = Some(next);
+        Some(MessageIndexAction::MessageDisplayed(id))
+    }
+
+    /// Show the `row`th message of `rows` (1-based) in mode 2, as a double
+    /// click on its row does: for the developer command `Open Message Index`.
+    /// `None` when there is no such row.
+    pub fn view_row(&mut self, rows: &[&GameMessage], row: usize) -> Option<MessageIndexAction> {
+        let at = row.checked_sub(1)?;
+        let id = rows.get(at)?.id;
+        self.selected = BTreeSet::from([id]);
+        self.anchor = Some(at);
+        self.mode = IndexMode::SingleMessage;
+        self.viewing = Some(id);
+        self.last_clicked = None;
+        Some(MessageIndexAction::MessageDisplayed(id))
     }
 
     /// Return to mode 1 (list) from mode 2 (single message).
@@ -785,7 +1083,14 @@ pub fn draw_message_index(
     }
 
     // Paint the shell and handle category clicks.
-    if let Some(command) = draw_message_index_shell(ctx, cache, faction, origin, scale) {
+    if let Some(command) = draw_message_index_shell(
+        ctx,
+        cache,
+        faction,
+        origin,
+        scale,
+        state.mode == IndexMode::List,
+    ) {
         actions.extend(state.set_category(command));
     }
 
@@ -813,13 +1118,52 @@ pub fn draw_message_index(
             actions.extend(list_actions);
         }
         IndexMode::SingleMessage => {
-            draw_single_message(ctx, origin, scale, &rows, state);
+            match draw_single_message(ctx, cache, faction, origin, scale, &rows, state) {
+                Some(0x9a) => actions.extend(state.step_message(&rows, false)),
+                Some(0x96) => actions.extend(state.step_message(&rows, true)),
+                _ => {}
+            }
         }
     }
 
-    match draw_window_buttons(ctx, cache, faction, origin, scale, state.mode) {
+    // The message Display acts on: the one shown in mode 2, else the first
+    // selected row (FUN_00467f10 case 0x67).
+    let current = match state.mode {
+        IndexMode::SingleMessage => state.viewing,
+        IndexMode::List => rows
+            .iter()
+            .find(|msg| state.selected.contains(&msg.id))
+            .map(|msg| msg.id),
+    }
+    .and_then(|id| rows.iter().find(|msg| msg.id == id));
+    // FUN_00469de0 lights Display for a shown kind-3 message; in mode 1 a
+    // selection of exactly one does (cases 0x6e and 0x90). hyp: the
+    // first-row selection on opening counts as one, untraced.
+    let one_selected = state.mode == IndexMode::SingleMessage || state.selected.len() == 1;
+    if one_selected && current.is_some_and(|msg| msg.target.is_some()) {
+        state.display_lit = true;
+    }
+    let mask = category_filter_mask(state.category);
+    let flags = log.post_flags(mask);
+    let look = RailLook {
+        silent: flags & POST_SILENTLY != 0,
+        display_lit: state.display_lit,
+    };
+
+    match draw_window_buttons(ctx, cache, faction, origin, scale, state.mode, look) {
         Some(0x28) => actions.push(MessageIndexAction::Close),
         Some(0x65) => actions.extend(state.toggle_display()),
+        Some(0x66) => actions.push(MessageIndexAction::SetPostFlags {
+            mask,
+            flags: flags ^ POST_SILENTLY,
+        }),
+        Some(0x67) => {
+            if let Some(target) = current.and_then(|msg| msg.target) {
+                actions.push(MessageIndexAction::GoTo(target));
+                actions.push(MessageIndexAction::Close);
+            }
+        }
+        Some(0x90) => state.select_all(&rows),
         Some(0x91) => actions.extend(state.delete_selected()),
         _ => {}
     }
@@ -830,8 +1174,8 @@ pub fn draw_message_index(
 /// Draw the list rows in mode 1 and handle interaction.
 fn draw_list_rows(
     ctx: &egui::Context,
-    _cache: &mut BmpCache,
-    _faction: CockpitFaction,
+    cache: &mut BmpCache,
+    faction: CockpitFaction,
     origin: egui::Pos2,
     scale: f32,
     rows: &[&GameMessage],
@@ -854,10 +1198,10 @@ fn draw_list_rows(
             let (list_rect, _) = ui.allocate_exact_size(list_size, egui::Sense::hover());
             let painter = ui.painter().with_clip_rect(list_rect);
 
-            // hyp: font 13 (unread, bolder) and font 10 (read) are not mapped
-            // to specific typefaces; the port uses proportional at two sizes.
-            let font_unread = egui::FontId::proportional((11.0 * scale).max(7.0));
-            let font_read = egui::FontId::proportional((9.0 * scale).max(6.0));
+            // hyp: font 13 (unread) is font 10 (read) in bold; neither is
+            // mapped to a typeface, so the port draws one size and thickens
+            // unread rows by drawing them twice, a pixel apart.
+            let font = egui::FontId::proportional((11.0 * scale).max(7.0));
 
             for line in 0..VISIBLE_ROWS {
                 let row_index = state.scroll_offset + line;
@@ -875,30 +1219,50 @@ fn draw_list_rows(
 
                 let is_selected = state.selected.contains(&msg.id);
 
-                // hyp: selected rows use a highlight colour; the original
-                // paints a selected-row background bitmap.
+                // FUN_00468ab0: a row's pictures are its category icon
+                // copied in at (1, 1), alone (normal) or over the side's
+                // selected bar, 0x2aa2 (Alliance) or 0x2aa3 (Empire), 356
+                // by 21 (selected).
                 if is_selected {
-                    painter.rect_filled(
-                        row_rect,
-                        0.0,
-                        Color32::from_rgba_premultiplied(60, 60, 120, 180),
+                    let bar = match faction {
+                        CockpitFaction::Alliance => SELECTED_ROW_ALLIANCE,
+                        CockpitFaction::Empire => SELECTED_ROW_EMPIRE,
+                    };
+                    paint_strategy_resource(
+                        &painter,
+                        ctx,
+                        cache,
+                        bar,
+                        egui::Rect::from_min_size(
+                            row_rect.min,
+                            egui::vec2(SELECTED_ROW_WIDTH, ROW_HEIGHT) * scale,
+                        ),
                     );
                 }
 
+                // The category icon; a message on no rail draws none.
+                if let Some(rail) = msg.rail {
+                    let icon = row_icon(rail, faction);
+                    let size = icon_size(cache, icon) * scale;
+                    let icon_rect = egui::Rect::from_min_size(
+                        row_rect.min + egui::vec2(ROW_ICON_X, ROW_ICON_Y) * scale,
+                        size,
+                    );
+                    paint_strategy_resource(&painter, ctx, cache, icon, icon_rect);
+                }
+
                 // Row text.
-                let font = if msg.unread {
-                    font_unread.clone()
-                } else {
-                    font_read.clone()
-                };
                 let text_pos = egui::pos2(row_rect.min.x + TEXT_INSET * scale, row_rect.center().y);
-                painter.text(
-                    text_pos,
-                    egui::Align2::LEFT_CENTER,
-                    &msg.text,
-                    font,
-                    Color32::WHITE,
-                );
+                let passes: &[f32] = if msg.unread { &[0.0, 1.0] } else { &[0.0] };
+                for &dx in passes {
+                    painter.text(
+                        text_pos + egui::vec2(dx * scale.max(1.0) * 0.5, 0.0),
+                        egui::Align2::LEFT_CENTER,
+                        &msg.text,
+                        font.clone(),
+                        Color32::WHITE,
+                    );
+                }
 
                 // Click interaction.
                 let response = ui.interact(
@@ -921,6 +1285,32 @@ fn draw_list_rows(
                     }
                 }
             }
+
+            // FUN_004665f0 gives the list the bar of RCDATA 0x299d.
+            let window_rect = egui::Rect::from_min_size(
+                origin,
+                egui::vec2(MESSAGE_INDEX_WIDTH * scale, MESSAGE_INDEX_HEIGHT * scale),
+            );
+            let bar = ScrollBar::new(TEXT_BAR_299D, LIST_X, LIST_Y, LIST_WIDTH, LIST_HEIGHT);
+            let range = ScrollRange {
+                first: state.scroll_offset,
+                visible: LIST_HEIGHT / ROW_HEIGHT,
+                total: rows.len(),
+            };
+            let pointer = scroll_pointer(ctx, window_rect, scale);
+            state.scroll_offset = bar.update(&mut state.list_drag, range, VISIBLE_ROWS, pointer);
+            let range = ScrollRange {
+                first: state.scroll_offset,
+                ..range
+            };
+            paint_scroll_bar(
+                ui.painter(),
+                ctx,
+                cache,
+                window_rect,
+                scale,
+                &bar.blits(range, &state.list_drag, pointer),
+            );
 
             // Scroll wheel over the list.
             let pointer = ui.input(|input| input.pointer.hover_pos());
@@ -1002,42 +1392,244 @@ fn apply_click(
     }
 }
 
-/// Draw the single-message text in mode 2.
+/// Draw mode 2 (`FUN_00469de0`): the title bar, the message's picture, its
+/// body text, and the arrows that step through the category. Returns the
+/// arrow clicked: `0x9a` (up) or `0x96` (down).
 fn draw_single_message(
     ctx: &egui::Context,
+    cache: &mut BmpCache,
+    faction: CockpitFaction,
     origin: egui::Pos2,
     scale: f32,
     rows: &[&GameMessage],
-    state: &MessageIndexState,
-) {
-    let Some(id) = state.viewing else {
-        return;
-    };
-    let Some(msg) = rows.iter().find(|m| m.id == id) else {
-        return;
-    };
+    state: &mut MessageIndexState,
+) -> Option<u16> {
+    let id = state.viewing?;
+    let msg = rows.iter().find(|m| m.id == id)?;
+    let (title, body) = msg
+        .display
+        .as_ref()
+        .map_or((msg.text.as_str(), msg.text.as_str()), |display| {
+            (display.title.as_str(), display.body.as_str())
+        });
 
-    let text_id = egui::Id::new("message-index-single-text");
-    egui::Area::new(text_id)
-        .fixed_pos(egui::pos2(
-            origin.x + TEXT_AREA_X * scale,
-            origin.y + TEXT_AREA_Y * scale,
-        ))
+    let mut clicked = None;
+    egui::Area::new(egui::Id::new("message-index-single-text"))
+        .fixed_pos(origin)
         .order(egui::Order::Tooltip)
         .show(ctx, |ui| {
-            let area_size = egui::vec2(TEXT_AREA_WIDTH * scale, TEXT_AREA_HEIGHT * scale);
-            let (area_rect, _) = ui.allocate_exact_size(area_size, egui::Sense::hover());
+            let window_rect = egui::Rect::from_min_size(
+                origin,
+                egui::vec2(MESSAGE_INDEX_WIDTH * scale, MESSAGE_INDEX_HEIGHT * scale),
+            );
+            let at = |x: f32, y: f32, width: f32, height: f32| {
+                message_index_rect(window_rect, scale, x, y, width, height)
+            };
+            let painter = ui.painter();
 
-            // hyp: font 10 (read) for the display; unmapped.
-            let font = egui::FontId::proportional((9.0 * scale).max(6.0));
-            ui.painter().with_clip_rect(area_rect).text(
-                area_rect.left_top() + egui::vec2(2.0 * scale, 2.0 * scale),
-                egui::Align2::LEFT_TOP,
-                &msg.text,
-                font,
+            // FUN_0046a320: the background with the overlay keyed over its
+            // centre, blitted at (12, 33). port: a message without an
+            // original class shows the black field.
+            let picture = at(PICTURE_X, PICTURE_Y, INDEX_CONTENT_WIDTH, PICTURE_HEIGHT);
+            painter.rect_filled(picture, 0.0, Color32::BLACK);
+            if let Some(display) = &msg.display {
+                if display.background != 0 {
+                    paint_strategy_resource(
+                        painter,
+                        ctx,
+                        cache,
+                        u32::from(display.background),
+                        picture,
+                    );
+                }
+                let overlay = u32::from(display.overlay);
+                if let Some([width, height]) = (overlay != 0)
+                    .then(|| cache.original_resource_size(DllSource::Strategy, overlay))
+                    .flatten()
+                {
+                    let size = egui::vec2(width as f32, height as f32) * scale;
+                    paint_strategy_resource(
+                        painter,
+                        ctx,
+                        cache,
+                        overlay,
+                        egui::Rect::from_center_size(picture.center(), size),
+                    );
+                }
+            }
+
+            // FUN_004665f0: the title strip and the bottom text frame.
+            paint_strategy_resource(
+                painter,
+                ctx,
+                cache,
+                TITLE_STRIP,
+                at(
+                    INDEX_CONTENT_X,
+                    TITLE_STRIP_Y,
+                    INDEX_CONTENT_WIDTH,
+                    TITLE_STRIP_HEIGHT,
+                ),
+            );
+            paint_strategy_resource(
+                painter,
+                ctx,
+                cache,
+                TEXT_FRAME,
+                at(
+                    INDEX_CONTENT_X,
+                    TEXT_FRAME_Y,
+                    INDEX_CONTENT_WIDTH,
+                    TEXT_FRAME_HEIGHT,
+                ),
+            );
+
+            // hyp: the title bar carries the category icon and the title
+            // (Wine capture of "Drall Joins Enemy"); positions measured from
+            // that capture.
+            if let Some(rail) = msg.rail {
+                let icon = row_icon(rail, faction);
+                let size = icon_size(cache, icon);
+                paint_strategy_resource(
+                    painter,
+                    ctx,
+                    cache,
+                    icon,
+                    at(TITLE_ICON_X, TITLE_ICON_Y, size.x, size.y),
+                );
+            }
+            // hyp: measured, not traced. The text widget is built with font
+            // 4 (a 16-pixel cell), but the Wine captures' body line "An
+            // uprising has begun on the Imperial controlled system
+            // Bothawui." spans 385 logical pixels and its title 165, which
+            // Arial's metrics give at a 14-pixel cell (entry 10's) and not
+            // at 16 (422).
+            let font = crate::theme::game_font_on(ctx, 10, scale);
+            let title_rect = at(
+                TITLE_TEXT_X,
+                TITLE_STRIP_Y,
+                ARROW_UP_X - TITLE_TEXT_X,
+                TITLE_STRIP_HEIGHT,
+            );
+            painter.with_clip_rect(title_rect).text(
+                egui::pos2(title_rect.min.x, title_rect.center().y),
+                egui::Align2::LEFT_CENTER,
+                title,
+                font.clone(),
                 Color32::WHITE,
             );
+
+            // The body, a TextScrollField (FUN_0041ecf0) at (17, 234), 395
+            // by 80, font 4. FUN_0041fd00 wraps the text to the field; when
+            // it overflows, it shows the bar (RCDATA 0x299d) at the field's
+            // right and wraps again, narrower by the bar's width. The bar
+            // steps a line (FUN_00420a90) and pages the field's height
+            // (FUN_00420a10).
+            let text_rect = at(TEXT_AREA_X, TEXT_AREA_Y, TEXT_AREA_WIDTH, TEXT_AREA_HEIGHT);
+            let bar = ScrollBar::new(
+                TEXT_BAR_299D,
+                TEXT_AREA_X,
+                TEXT_AREA_Y,
+                TEXT_AREA_WIDTH,
+                TEXT_AREA_HEIGHT,
+            );
+            // hyp: measured, not traced. The Wine capture of "Maintenance
+            // Points" sets its lines 16 pixels apart, font 4's cell, though
+            // the glyphs measure at entry 10's size (above).
+            let layout = |width: f32| {
+                let mut job = egui::text::LayoutJob::simple(
+                    body.to_owned(),
+                    font.clone(),
+                    Color32::WHITE,
+                    width - 4.0 * scale,
+                );
+                for section in &mut job.sections {
+                    section.format.line_height = Some(BODY_LINE_HEIGHT * scale);
+                }
+                painter.layout_job(job)
+            };
+            let mut galley = layout(text_rect.width());
+            let overflows = galley.size().y > text_rect.height();
+            if overflows {
+                galley = layout(text_rect.width() - bar.width() * scale);
+            }
+            let lines = galley.rows.len().max(1);
+            let line_height = BODY_LINE_HEIGHT;
+            if state.body_scroll.0 != Some(id) {
+                state.body_scroll = (Some(id), 0);
+                state.body_drag = ScrollDrag::default();
+            }
+            let range = ScrollRange {
+                first: state.body_scroll.1,
+                visible: TEXT_AREA_HEIGHT / line_height,
+                total: if overflows { lines } else { 0 },
+            };
+            let pointer = scroll_pointer(ctx, window_rect, scale);
+            let first = bar.update(
+                &mut state.body_drag,
+                range,
+                range.visible.floor() as usize,
+                pointer,
+            );
+            state.body_scroll.1 = first;
+            painter.with_clip_rect(text_rect).galley(
+                text_rect.min
+                    + egui::vec2(
+                        2.0 * scale,
+                        2.0 * scale - first as f32 * line_height * scale,
+                    ),
+                galley,
+                Color32::WHITE,
+            );
+            paint_scroll_bar(
+                painter,
+                ctx,
+                cache,
+                window_rect,
+                scale,
+                &bar.blits(ScrollRange { first, ..range }, &state.body_drag, pointer),
+            );
+
+            // The arrows FUN_00468fb0 shows in mode 2.
+            let (pointer, primary_down) = ctx.input(|input| {
+                (
+                    input.pointer.interact_pos(),
+                    input.pointer.button_down(egui::PointerButton::Primary),
+                )
+            });
+            // FUN_0046a200: each arrow is enabled while the list holds a
+            // message that way; FUN_004665f0 gives each a disabled frame,
+            // 0x2ac6 (up) and 0x2aa9 (down).
+            let at_row = rows.iter().position(|row| row.id == id);
+            let has_previous = at_row.is_some_and(|at| at > 0);
+            let has_next = at_row.is_some_and(|at| at + 1 < rows.len());
+            for (command, x, normal, disabled, enabled) in [
+                (0x9a_u16, ARROW_UP_X, 0x2ac4_u32, 0x2ac6_u32, has_previous),
+                (0x96, ARROW_DOWN_X, 0x2aa7, 0x2aa9, has_next),
+            ] {
+                let rect = at(x, ARROW_Y, ARROW_WIDTH, ARROW_HEIGHT);
+                let response = ui.interact(
+                    rect,
+                    ui.id().with(("message-index-arrow", command)),
+                    egui::Sense::click(),
+                );
+                let pressed = enabled
+                    && primary_down
+                    && pointer.is_some_and(|point| message_index_rect_contains(rect, point));
+                let resource = if !enabled {
+                    disabled
+                } else if pressed {
+                    normal + 1
+                } else {
+                    normal
+                };
+                paint_strategy_resource(ui.painter(), ctx, cache, resource, rect);
+                if enabled && response.clicked() {
+                    clicked = Some(command);
+                }
+            }
         });
+    clicked
 }
 
 // ---------------------------------------------------------------------------
@@ -1051,7 +1643,7 @@ pub fn draw_message_index_fixture(
     cache: &mut BmpCache,
     faction: CockpitFaction,
 ) {
-    let _ = draw_message_index_shell(ctx, cache, faction, egui::pos2(85.0, 55.0), 1.0);
+    let _ = draw_message_index_shell(ctx, cache, faction, egui::pos2(85.0, 55.0), 1.0, true);
 }
 
 // ---------------------------------------------------------------------------
@@ -1528,10 +2120,15 @@ mod tests {
     }
 
     #[test]
-    fn close_and_display_sit_on_the_rail_and_delete_shows_in_the_list_only() {
-        // FUN_004665f0: 0x28 and 0x65 at x 0x1a7 (Alliance) / 0x1aa (Empire);
-        // 0x91 at (0x154, 0x57), shown in mode 1 (FUN_00468fb0).
-        let list = window_button_specs(CockpitFaction::Alliance, IndexMode::List);
+    fn five_buttons_sit_on_the_rail_and_select_and_delete_show_in_the_list_only() {
+        // FUN_004665f0: 0x28, 0x65, 0x66, 0x67 and 0x68 at x 0x1a7
+        // (Alliance) / 0x1aa (Empire); 0x90 and 0x91 at (0x11a, 0x57) and
+        // (0x154, 0x57), shown in mode 1 (FUN_00468fb0).
+        let list = window_button_specs(
+            CockpitFaction::Alliance,
+            IndexMode::List,
+            RailLook::default(),
+        );
         assert_eq!(
             list.iter()
                 .map(|button| (
@@ -1544,10 +2141,18 @@ mod tests {
             [
                 (0x28, 0x1a7, 0x19, 0x2882),
                 (0x65, 0x1a7, 0x5d, 0x2884),
+                (0x66, 0x1a7, 0x93, 0x2a78),
+                (0x67, 0x1a7, 0xc9, 0x2916),
+                (0x68, 0x1a7, 0xff, 0x2a7c),
+                (0x90, 0x11a, 0x57, 0x2a94),
                 (0x91, 0x154, 0x57, 0x2a96)
             ]
         );
-        let empire = window_button_specs(CockpitFaction::Empire, IndexMode::SingleMessage);
+        let empire = window_button_specs(
+            CockpitFaction::Empire,
+            IndexMode::SingleMessage,
+            RailLook::default(),
+        );
         assert_eq!(
             empire
                 .iter()
@@ -1558,7 +2163,13 @@ mod tests {
                     button.pressed_resource
                 ))
                 .collect::<Vec<_>>(),
-            [(0x28, 0x1aa, 0x2c, 0x2889), (0x65, 0x1aa, 0x2c, 0x288b)]
+            [
+                (0x28, 0x1aa, 0x2c, 0x2889),
+                (0x65, 0x1aa, 0x2c, 0x288b),
+                (0x66, 0x1aa, 0x2c, 0x2a7b),
+                (0x67, 0x1aa, 0x2c, 0x2919),
+                (0x68, 0x1aa, 0x2c, 0x2a80)
+            ]
         );
     }
 

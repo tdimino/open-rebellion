@@ -125,6 +125,22 @@ pub fn script_words(bytes: &[u8]) -> Vec<u16> {
         .collect()
 }
 
+/// The advice messages' codes (`FUN_0048b2e0`) pick one of a run of slots
+/// at random, `now + 10`: `(first slot, count, only when none is pending)`.
+/// Code `0x2a`: `FUN_004c4430` (Alliance, `+0x114`) and `FUN_004c2270`
+/// (Empire, `+0x108`) stamp one of four unless one is already stamped.
+/// Code `0x2b`: `FUN_004c4480` (`+0x124`) and `FUN_004c22c0` (`+0x118`)
+/// stamp one of two.
+const fn advice_code_slots(faction: AdvisorFaction, code: u8) -> Option<(u32, u32, bool)> {
+    match (faction, code) {
+        (AdvisorFaction::Alliance, 0x2a) => Some((0x114 / 4, 4, true)),
+        (AdvisorFaction::Empire, 0x2a) => Some((0x108 / 4, 4, true)),
+        (AdvisorFaction::Alliance, 0x2b) => Some((0x124 / 4, 2, false)),
+        (AdvisorFaction::Empire, 0x2b) => Some((0x118 / 4, 2, false)),
+        _ => None,
+    }
+}
+
 /// Where a game message's advice code lands: `FUN_004c44b0` (Alliance) and
 /// `FUN_004c22f0` (Empire) stamp `(slot, window)`.
 #[must_use]
@@ -223,7 +239,19 @@ pub struct AdviceAgent {
     /// `DAT_006b28b0` bit `0x2000`: the player skipped the briefing tour
     /// (`FUN_0043a200`).
     skip: bool,
+    /// `+0x174`: the last refused order's status.
+    last_refusal: Option<RefusalStatus>,
+    /// `+0x17c`: the agent has already answered that status once more.
+    refusal_repeated: bool,
 }
+
+/// A refused order's two-word status, as the validator returns it to
+/// `FUN_00487c90` (`ghidra/notes/mission-dialog.md`, "Refusal").
+pub type RefusalStatus = (u32, u32);
+
+/// The steps after a refusal or advice message its reaction fires by
+/// (`DAT_006b28cc + 10`).
+const REACTION_WINDOW: u32 = 10;
 
 /// What one pass of the agent did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -256,6 +284,8 @@ impl AdviceAgent {
             scanning: false,
             chatter: false,
             skip: false,
+            last_refusal: None,
+            refusal_repeated: false,
         }
     }
 
@@ -281,8 +311,65 @@ impl AdviceAgent {
         self.skip = true;
     }
 
+    /// Answer a refused order (agent slot `+0xc`: `FUN_004c2940` for the
+    /// Alliance, `FUN_004c0870` for the Empire). The same status twice in a
+    /// row stamps the first repeat slot, a third time the second and forgets
+    /// it (`FUN_004c43d0`, `FUN_004c21d0`). Any other status is remembered;
+    /// a `0x40` status takes the generic reaction, one of two slots by
+    /// `FUN_0041cd80(2)` (`FUN_004c4390`, `FUN_004c2230`). `roll` draws that.
+    ///
+    /// port: the decoy reaction (`0x40`/`0x91` for a Mission with a decoy
+    /// list, slot `+0x50` / `+0x54`) is not told apart; it takes the generic
+    /// one.
+    pub fn refuse(&mut self, status: RefusalStatus, now: u32, roll: impl FnOnce() -> u32) {
+        let (first_repeat, generic) = match self.faction {
+            AdvisorFaction::Alliance => (0x3c / 4, 0x44 / 4),
+            AdvisorFaction::Empire => (0x40 / 4, 0x48 / 4),
+        };
+        let slot = if self.last_refusal == Some(status) {
+            if self.refusal_repeated {
+                self.refusal_repeated = false;
+                self.last_refusal = None;
+                first_repeat + 1
+            } else {
+                self.refusal_repeated = true;
+                first_repeat
+            }
+        } else {
+            self.last_refusal = Some(status);
+            self.refusal_repeated = false;
+            let pick = roll();
+            if pick >= 2 {
+                return;
+            }
+            generic + pick
+        };
+        if let Some(stamp) = self.fire_by.get_mut(slot as usize) {
+            *stamp = now.saturating_add(REACTION_WINDOW);
+        }
+    }
+
     /// File a message's advice code at step `now` (agent `VT[5]`).
-    pub fn post(&mut self, code: u8, now: u32) {
+    /// `roll(n)` draws `FUN_0041cd80(n)` for the advice codes.
+    pub fn post(&mut self, code: u8, now: u32, roll: impl FnOnce(u32) -> u32) {
+        if let Some((first, count, unless_pending)) = advice_code_slots(self.faction, code) {
+            let slots = first as usize..(first + count) as usize;
+            if unless_pending
+                && self
+                    .fire_by
+                    .get(slots.clone())
+                    .is_some_and(|stamps| stamps.iter().any(|&stamp| stamp != 0))
+            {
+                return;
+            }
+            let pick = roll(count);
+            if pick < count {
+                if let Some(stamp) = self.fire_by.get_mut((first + pick) as usize) {
+                    *stamp = now.saturating_add(REACTION_WINDOW);
+                }
+            }
+            return;
+        }
         if let Some((slot, window)) = code_slot(self.faction, code) {
             if let Some(stamp) = self.fire_by.get_mut(slot as usize) {
                 *stamp = now.saturating_add(window);

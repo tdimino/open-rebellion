@@ -20,7 +20,9 @@
 //! ```
 
 use egui_macroquad::egui::{self, Color32, RichText, ScrollArea};
-use rebellion_core::ids::SystemKey;
+use std::collections::BTreeMap;
+
+use rebellion_core::ids::{FleetKey, SystemKey};
 use serde::Serialize;
 
 // ---------------------------------------------------------------------------
@@ -209,6 +211,38 @@ pub struct GameMessage {
     /// message's audience (a message the port does not file).
     #[serde(skip)]
     pub advice_audience: Option<RailAudience>,
+    /// What the Message Index shows when the message is displayed: the
+    /// original class's title, body and pictures (`FUN_00469de0`).
+    #[serde(skip)]
+    pub display: Option<MessageDisplay>,
+    /// The object a kind-3 message points at (`+0x5c`), which the Message
+    /// Index's Display button goes to (`FUN_00467f10` → `FUN_00429440`).
+    /// `None` leaves Display unlit.
+    #[serde(skip)]
+    pub target: Option<MessageTarget>,
+}
+
+/// What a message's Display button opens: the uprising, loyalty and
+/// blockade classes point at their system, fleet arrival at the fleet
+/// (`FUN_00499460`, `FUN_00499760`, `FUN_004960f0`, `FUN_004981c0` set
+/// `+0x5c`; each class's kind, vtable slot `+0x10`, is 3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MessageTarget {
+    System(SystemKey),
+    Fleet(FleetKey),
+}
+
+/// A message's display (`FUN_00469de0`, `FUN_0046a320`): its title (`+0x44`)
+/// and body (`+0x50`), the STRATEGY background (`+0x2e`) with an overlay
+/// (`+0x2c`) keyed over its centre, and the sound it plays (`+0x30`, a
+/// STRATEGY WAVE that `FUN_00610c30` loads from module 7).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct MessageDisplay {
+    pub title: String,
+    pub body: String,
+    pub background: u16,
+    pub overlay: u16,
+    pub sound: u16,
 }
 
 impl GameMessage {
@@ -226,6 +260,8 @@ impl GameMessage {
             unread: false,
             advice: None,
             advice_audience: None,
+            display: None,
+            target: None,
         }
     }
 
@@ -248,6 +284,8 @@ impl GameMessage {
             unread: false,
             advice: None,
             advice_audience: None,
+            display: None,
+            target: None,
         }
     }
 
@@ -258,6 +296,20 @@ impl GameMessage {
         self.rail = Some(rail);
         self.audience = audience;
         self.unread = true;
+        self
+    }
+
+    /// Give the message its original class's display.
+    #[must_use]
+    pub fn with_display(mut self, display: MessageDisplay) -> Self {
+        self.display = Some(display);
+        self
+    }
+
+    /// Give the message the object its Display button goes to.
+    #[must_use]
+    pub const fn with_target(mut self, target: MessageTarget) -> Self {
+        self.target = Some(target);
         self
     }
 
@@ -292,7 +344,17 @@ pub struct MessageLog {
     next_id: MessageId,
     /// Advice codes of messages filed since the last [`MessageLog::take_advice`].
     advice: Vec<(u8, RailAudience)>,
+    /// The player's posting flags: one word for every category (`+0xc`) and
+    /// per-category overrides keyed by mask (`+0x44`), read by
+    /// `FUN_0048a1c0`. Bit 4 is Post Messages Silently.
+    post_flags: u32,
+    post_flag_overrides: BTreeMap<u16, u32>,
 }
+
+/// The posting flag that withholds a filed message's advice code from the
+/// droids (`FUN_0048a060`), which the Message Index's Post Messages
+/// Silently button (`0x66`, `FUN_00467f10`) toggles.
+pub const POST_SILENTLY: u32 = 4;
 
 impl Default for MessageLog {
     fn default() -> Self {
@@ -309,6 +371,8 @@ impl MessageLog {
             capacity,
             next_id: 1,
             advice: Vec::new(),
+            post_flags: 0,
+            post_flag_overrides: BTreeMap::new(),
         }
     }
 
@@ -320,7 +384,19 @@ impl MessageLog {
         let id = self.next_id;
         self.next_id += 1;
         msg.id = id;
-        if let Some(code) = msg.advice {
+        if let (Some(display), Some(rail)) = (&msg.display, msg.rail) {
+            eprintln!(
+                "[message] filed {rail:?} for {:?}: {} (picture {}, advice {:?})",
+                msg.audience, display.title, display.background, msg.advice
+            );
+        }
+        // FUN_0048a060: a silent category files the message without
+        // passing its code on. The flags are the player's; the port drives
+        // only the player's droids.
+        let silent = msg
+            .rail
+            .is_some_and(|rail| self.post_flags(rail.mask()) & POST_SILENTLY != 0);
+        if let Some(code) = msg.advice.filter(|_| !silent) {
             self.advice
                 .push((code, msg.advice_audience.unwrap_or(msg.audience)));
         }
@@ -335,6 +411,28 @@ impl MessageLog {
     /// audience; the side's agent reacts to its own (`FUN_0048a060`).
     pub fn take_advice(&mut self) -> Vec<(u8, RailAudience)> {
         std::mem::take(&mut self.advice)
+    }
+
+    /// A category's posting flags (`FUN_0048a1c0`): its override, else the
+    /// word every category shares. Mask 0 (All) reads the shared word
+    /// (`FUN_0041d270`).
+    #[must_use]
+    pub fn post_flags(&self, mask: u16) -> u32 {
+        self.post_flag_overrides
+            .get(&mask)
+            .copied()
+            .unwrap_or(self.post_flags)
+    }
+
+    /// Set a category's posting flags (`FUN_0048a210`). Mask 0 (All) sets
+    /// the shared word and drops every override (`FUN_0048a1f0`).
+    pub fn set_post_flags(&mut self, mask: u16, flags: u32) {
+        if mask == 0 {
+            self.post_flag_overrides.clear();
+            self.post_flags = flags;
+        } else {
+            self.post_flag_overrides.insert(mask, flags);
+        }
     }
 
     /// Remove all messages.
