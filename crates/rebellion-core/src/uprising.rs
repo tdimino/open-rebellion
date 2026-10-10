@@ -1048,37 +1048,39 @@ mod tests {
     /// One system held by `side` at `support` percent, with the shipped
     /// GNPRTB values and the shipped UPRIS1TB/UPRIS2TB rows.
     fn world_with(side: Faction, support: f32) -> (GameWorld, SystemKey) {
-        let mut world = GameWorld::default();
-        world.gnprtb = GnprtbParams::new(
-            [
-                (GNPRTB_UPRISING_INCIDENT_MIN, 30),
-                (GNPRTB_UPRISING_INCIDENT_SPREAD, 70),
-                (GNPRTB_INCIDENT_DRAW_BASE, 1),
-                (GNPRTB_INCIDENT_DRAW_SPREAD, 9),
-                (GNPRTB_STRONG_EMPIRE_TROOP_WEIGHT, 2),
-                (GNPRTB_STRONG_SUPPORT_DIVISOR, 2),
-                (GNPRTB_UPRISING_MISSION_DIVISOR, 10),
-                (GNPRTB_INCITE_SUPPORT_DELTA, -2),
-                (GNPRTB_INJURY_MIN_CHANCE, 1),
-                (GNPRTB_INJURY_BASE, 1),
-                (GNPRTB_INJURY_SPREAD, 29),
-                (GNPRTB_DISASTER_EROSION, 5),
-                (GNPRTB_DISASTER_FACILITY_CHANCE, 10),
-                (GNPRTB_DISASTER_MIN, 1),
-                (GNPRTB_DISASTER_SPREAD, 399),
-                (GNPRTB_SUBDUE_OWN_BASE, 1),
-                (GNPRTB_SUBDUE_OWN_SPREAD, 19),
-                (GNPRTB_SUBDUE_NEUTRAL_BASE, 1),
-                (GNPRTB_SUBDUE_NEUTRAL_SPREAD, 9),
-                (7682, 2),
-                (7732, 40),
-                (7761, 60),
-                (7762, -10),
-            ]
-            .into_iter()
-            .map(|(id, value)| gnprtb_entry(id, value))
-            .collect(),
-        );
+        let mut world = GameWorld {
+            gnprtb: GnprtbParams::new(
+                [
+                    (GNPRTB_UPRISING_INCIDENT_MIN, 30),
+                    (GNPRTB_UPRISING_INCIDENT_SPREAD, 70),
+                    (GNPRTB_INCIDENT_DRAW_BASE, 1),
+                    (GNPRTB_INCIDENT_DRAW_SPREAD, 9),
+                    (GNPRTB_STRONG_EMPIRE_TROOP_WEIGHT, 2),
+                    (GNPRTB_STRONG_SUPPORT_DIVISOR, 2),
+                    (GNPRTB_UPRISING_MISSION_DIVISOR, 10),
+                    (GNPRTB_INCITE_SUPPORT_DELTA, -2),
+                    (GNPRTB_INJURY_MIN_CHANCE, 1),
+                    (GNPRTB_INJURY_BASE, 1),
+                    (GNPRTB_INJURY_SPREAD, 29),
+                    (GNPRTB_DISASTER_EROSION, 5),
+                    (GNPRTB_DISASTER_FACILITY_CHANCE, 10),
+                    (GNPRTB_DISASTER_MIN, 1),
+                    (GNPRTB_DISASTER_SPREAD, 399),
+                    (GNPRTB_SUBDUE_OWN_BASE, 1),
+                    (GNPRTB_SUBDUE_OWN_SPREAD, 19),
+                    (GNPRTB_SUBDUE_NEUTRAL_BASE, 1),
+                    (GNPRTB_SUBDUE_NEUTRAL_SPREAD, 9),
+                    (7682, 2),
+                    (7732, 40),
+                    (7761, 60),
+                    (7762, -10),
+                ]
+                .into_iter()
+                .map(|(id, value)| gnprtb_entry(id, value))
+                .collect(),
+            ),
+            ..GameWorld::default()
+        };
         world
             .mission_tables
             .insert("UPRIS1TB".into(), table(&[(1, 0), (6, 1), (10, 2)]));

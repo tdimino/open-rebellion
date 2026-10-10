@@ -1978,10 +1978,8 @@ impl MissionSystem {
                 }
             }
             // FUN_00522a10: timer 0x38b fired.
-            PHASE_TIMER => {
-                if mission.timer_due.is_some_and(|due| due <= now) {
-                    mission.ready = true;
-                }
+            PHASE_TIMER if mission.timer_due.is_some_and(|due| due <= now) => {
+                mission.ready = true;
             }
             _ => {}
         }

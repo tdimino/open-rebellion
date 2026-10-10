@@ -190,7 +190,7 @@ impl GameClock {
     /// Whether the clock is running: a speed is set and no pause holds it.
     #[must_use]
     pub fn is_running(&self) -> bool {
-        self.speed != GameSpeed::Paused && !self.stop_day.is_some_and(|day| self.tick >= day)
+        self.speed != GameSpeed::Paused && self.stop_day.is_none_or(|day| self.tick < day)
     }
 
     /// Advance the clock by `dt` real seconds.
