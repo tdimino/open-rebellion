@@ -321,6 +321,21 @@ mod native {
         saves_dir.join(format!("{slot}.reb"))
     }
 
+    #[cfg(unix)]
+    fn sync_save_directory(saves_dir: &Path) -> anyhow::Result<()> {
+        std::fs::File::open(saves_dir)
+            .with_context(|| format!("opening saves directory {}", saves_dir.display()))?
+            .sync_all()
+            .with_context(|| format!("synchronizing saves directory {}", saves_dir.display()))
+    }
+
+    #[cfg(not(unix))]
+    fn sync_save_directory(_saves_dir: &Path) -> anyhow::Result<()> {
+        // Windows does not expose portable directory fsync semantics through
+        // std. The temporary file itself is still synced before replacement.
+        Ok(())
+    }
+
     /// Write `state` to slot `slot` in `saves_dir`.
     ///
     /// `active_mods` is a list of `(name, version)` pairs for currently loaded
@@ -403,6 +418,11 @@ mod native {
             .persist(&path)
             .map_err(|error| error.error)
             .with_context(|| format!("replacing save file {}", path.display()))?;
+
+        // The file contents are durable above, but the atomic rename is a
+        // directory entry update. Sync the containing directory as well on
+        // platforms that expose portable directory-sync semantics.
+        sync_save_directory(saves_dir)?;
 
         Ok(state_fingerprint)
     }
