@@ -11,7 +11,7 @@ The preserved [manual, pp. 139–150](../../../reference/campaign-history/archiv
 | Full tactical shell | 1000 | (0, 0), 640×480 | Fixed original composition |
 | Alliance/Imperial task-force header | 1001 / 1004 | (10, 1) | Display only; assignment is pending |
 | Alliance/Imperial fighter header | 1008 / 1010 | (275, 1) | Display only; assignment is pending |
-| Selected/empty ship panel | 1302 / 1301 | (481, 27) | Partial data; native model and gauges pending |
+| Selected/empty ship panel | 1302 / 1301 (superseded: the empty panel is 1303/1304, see [2026-10-11](2026-10-11-tactical-idle-panel.md)) | (481, 27) | Partial data; native model and gauges pending |
 | Empire highlight/dim | 1037 / 1036 | (482, 304) | Toggle green Imperial wireframes |
 | Alliance highlight/dim | 1035 / 1034 | (517, 304) | Toggle red Alliance wireframes |
 | Pause/resume | 1061 / 1060 | (560, 307) | Toggle combat pause |

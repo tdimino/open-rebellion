@@ -3585,7 +3585,12 @@ Some(RailAudience::side(*faction_is_alliance)),
                 let met = match *condition {
                     WaitCondition::Day(day) => clock.tick >= day,
                     WaitCondition::BattleAlert => tactical_state.battle_alert_open(),
-                    WaitCondition::Battle => game_mode == GameMode::TacticalCombat,
+                    // The battlefield itself, not the Battle Alert or the
+                    // Results, which show in the same mode.
+                    WaitCondition::Battle => {
+                        game_mode == GameMode::TacticalCombat
+                            && !tactical_state.over_command_center()
+                    }
                     WaitCondition::Galaxy => game_mode == GameMode::Galaxy,
                 };
                 if met {

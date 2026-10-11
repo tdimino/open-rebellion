@@ -108,6 +108,7 @@ the source of truth for scope, acceptance, and current work.
 | P58-B20 | [Recovery and withdrawal feedback](2026-09-26-tactical-recovery-withdrawal-feedback.md) | [`p58-b20-tactical-recovery-withdrawal-feedback/`](p58-b20-tactical-recovery-withdrawal-feedback/) |
 | P58-B21 | [Shared post-battle orchestration](2026-09-27-tactical-post-battle-orchestration.md) | [`p58-b21-tactical-post-battle-orchestration/`](p58-b21-tactical-post-battle-orchestration/) |
 | P58-B22 | [Tactical source completion](2026-09-28-tactical-source-completion.md) | [`p58-b22-tactical-source-completion/`](p58-b22-tactical-source-completion/) |
+| 2026-10-11 | [Idle seal panel, Battle Options, Game Options from battle](2026-10-11-tactical-idle-panel.md) | ignored `.artifacts/` captures (hashes in the report) |
 
 ## Current strategic correction
 

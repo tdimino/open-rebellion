@@ -28,6 +28,25 @@ impl GameOptionsOrigin {
     const fn tactical_toggles_enabled(self) -> bool {
         !matches!(self, Self::TacticalBattle)
     }
+
+    /// The return button's normal, pressed and disabled art. `FUN_00407180`
+    /// picks the galaxy set (0x2724) by default and the battle set (0x272a)
+    /// for case 9, the space battle.
+    const fn return_resources(self) -> [u32; 3] {
+        use resources::common as art;
+        match self {
+            Self::TacticalBattle => [
+                art::BTN_RETURN_BATTLE_NORMAL,
+                art::BTN_RETURN_BATTLE_PRESSED,
+                art::BTN_RETURN_BATTLE_DISABLED,
+            ],
+            Self::ShuttleCockpit | Self::CommandCenter => [
+                art::BTN_RETURN_COMMAND_CENTER_NORMAL,
+                art::BTN_RETURN_COMMAND_CENTER_PRESSED,
+                art::BTN_RETURN_COMMAND_CENTER_DISABLED,
+            ],
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -446,10 +465,7 @@ fn masked_control_at(
             TACTICAL_TOGGLE_RECTS[index],
         ),
         GameOptionsControl::Restart => (resources::common::BTN_RESTART_GAME_NORMAL, RESTART_RECT),
-        GameOptionsControl::Return => (
-            resources::common::BTN_RETURN_COMMAND_CENTER_NORMAL,
-            RETURN_RECT,
-        ),
+        GameOptionsControl::Return => (origin.return_resources()[0], RETURN_RECT),
         GameOptionsControl::Exit => (resources::common::BTN_EXIT_GAME_NORMAL, EXIT_RECT),
     };
     cache
@@ -688,11 +704,11 @@ pub fn draw_game_options(
         cache,
         canvas,
         if !state.origin.has_live_campaign() {
-            resources::common::BTN_RETURN_COMMAND_CENTER_DISABLED
+            state.origin.return_resources()[2]
         } else if held == Some(GameOptionsControl::Return) {
-            resources::common::BTN_RETURN_COMMAND_CENTER_PRESSED
+            state.origin.return_resources()[1]
         } else {
-            resources::common::BTN_RETURN_COMMAND_CENTER_NORMAL
+            state.origin.return_resources()[0]
         },
         RETURN_RECT.x,
         RETURN_RECT.y,
@@ -777,10 +793,14 @@ pub fn draw_game_options_overlay(
         }
         label(ui, "Play Music", MUSIC_LABEL, option_rgb(state.music_on));
         label(ui, on_off(state.music_on), MUSIC_STATE, option_rgb(state.music_on));
+        // In a battle the switches are disabled and their labels grey
+        // (128, 128, 128 in the original capture, 2026-10-11).
+        let enabled = state.origin.tactical_toggles_enabled();
         for (row, text) in TACTICAL_LABELS.into_iter().enumerate() {
             let on = state.tactical_flags()[row];
-            label(ui, text, tactical_label(row), option_rgb(on));
-            label(ui, on_off(on), tactical_state(row), option_rgb(on));
+            let rgb = if enabled { option_rgb(on) } else { [128, 128, 128] };
+            label(ui, text, tactical_label(row), rgb);
+            label(ui, on_off(on), tactical_state(row), rgb);
         }
         label(ui, &version_line(), VERSION_TEXT, [0, 0, 0]);
         // A row's name field: white text (`FUN_00407180` sets +0xe4 to

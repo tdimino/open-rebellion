@@ -1310,6 +1310,10 @@ pub struct TacticalDeathStar {
 
 /// One committed superlaser shot. The original keeps the Death Star action
 /// committed until its retained beam presentation reaches the target.
+/// `FUN_005ba520` builds it as an ordinary laser projectile,
+/// `FUN_005c12d0(target, source, 0, 1.0, 1)`: weapon type 0, longitudinal
+/// scale 1.0 and shape variant 1, which lives one second; `FUN_005d3de0`
+/// colours it by the firing side.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TacticalDeathStarBeam {
     pub target: usize,
@@ -1317,6 +1321,8 @@ pub struct TacticalDeathStarBeam {
     pub target_position: TacticalWorldPosition,
     pub elapsed: f32,
     pub duration: f32,
+    /// Direct3DRM material selector: 0 red (Alliance), 1 green (Empire).
+    pub color_selector: u8,
 }
 
 impl TacticalDeathStar {
@@ -1529,11 +1535,16 @@ impl WeaponEffect {
     }
 
     fn color(&self) -> Color {
-        match self.color_selector {
-            1 => Color::new(0.0, 1.0, 0.0, 1.0),
-            2 => Color::new(0.0, 0.0, 1.0, 1.0),
-            _ => Color::new(1.0, 0.0, 0.0, 1.0),
-        }
+        projectile_selector_color(self.color_selector)
+    }
+}
+
+/// The flat Direct3DRM material each projectile selector names.
+fn projectile_selector_color(selector: u8) -> Color {
+    match selector {
+        1 => Color::new(0.0, 1.0, 0.0, 1.0),
+        2 => Color::new(0.0, 0.0, 1.0, 1.0),
+        _ => Color::new(1.0, 0.0, 0.0, 1.0),
     }
 }
 
@@ -3385,15 +3396,12 @@ impl BattleSession {
                 })
             });
 
-        // The original Tactical Display opens with the battle paused. The
-        // Battle Alert's Take Command choice is the entry action, not a second
-        // invented placement phase inside the battle viewport.
-        let selected_ship = ships
-            .iter()
-            .position(|ship| ship.is_attacker == player_is_attacker);
-        if let Some(index) = selected_ship {
-            ships[index].selected = true;
-        }
+        // The original Tactical Display opens with the battle paused and
+        // nothing selected: the right-hand housing shows the idle seal panel,
+        // the child `FUN_005c5800` places at (0, 0) (original capture
+        // 2026-10-11). The Battle Alert's Take Command choice is the entry
+        // action, not a second invented placement phase.
+        let selected_ship = None;
 
         BattleSession {
             system,
@@ -3788,7 +3796,10 @@ impl BattleSession {
                 hyperdrive: u8::from(class.hyperdrive > 0)
                     + u8::from(class.hyperdrive_if_damaged > 0),
             };
-            let subsystem_damage = TacticalSubsystemDamage::default();
+            let subsystem_damage = TacticalSubsystemDamage {
+                hyperdrive: ship.hyperdrive_damage_hits(class),
+                ..TacticalSubsystemDamage::default()
+            };
             ships.push(TacticalShip {
                 class_key: ship.class,
                 identity: TacticalObjectIdentity {
@@ -4476,7 +4487,8 @@ impl BattleSession {
             source_position: death_star.source_position,
             target_position,
             elapsed: 0.0,
-            duration: ORIGINAL_PROJECTILE_DURATION_LONG,
+            duration: ORIGINAL_PROJECTILE_DURATION_SHORT,
+            color_selector: u8::from(!death_star.is_alliance),
         });
         self.pending_voice_cues
             .push(TacticalVoiceCue::death_star_firing());
@@ -7621,34 +7633,36 @@ struct TacticalBattleOptionsSpec {
     pressed_resource: u32,
 }
 
+// REBEXE FUN_005dab90 places these at panel-local (18, 19), (14, 93),
+// (87, 93), (23, 184) and (97, 184) on panel 1306 at (481, 27).
 const TACTICAL_BATTLE_OPTIONS_CONTROLS: [TacticalBattleOptionsSpec; 5] = [
     TacticalBattleOptionsSpec {
         control: TacticalBattleOptionsControl::Withdraw,
-        rect: NativeRect::new(497.0, 47.0, 48.0, 34.0),
+        rect: NativeRect::new(499.0, 46.0, 48.0, 34.0),
         normal_resource: resources::tactical::BTN_WITHDRAW_FROM_BATTLE_NORMAL,
         pressed_resource: resources::tactical::BTN_WITHDRAW_FROM_BATTLE_PRESSED,
     },
     TacticalBattleOptionsSpec {
         control: TacticalBattleOptionsControl::SimulateRemainder,
-        rect: NativeRect::new(497.0, 114.0, 44.0, 25.0),
+        rect: NativeRect::new(495.0, 120.0, 44.0, 25.0),
         normal_resource: resources::tactical::BTN_SIMULATE_REMAINDER_NORMAL,
         pressed_resource: resources::tactical::BTN_SIMULATE_REMAINDER_PRESSED,
     },
     TacticalBattleOptionsSpec {
         control: TacticalBattleOptionsControl::ObserveToggle,
-        rect: NativeRect::new(561.0, 114.0, 45.0, 25.0),
+        rect: NativeRect::new(568.0, 120.0, 45.0, 25.0),
         normal_resource: resources::tactical::BTN_OBSERVE_TOGGLE_NORMAL,
         pressed_resource: resources::tactical::BTN_OBSERVE_TOGGLE_PRESSED,
     },
     TacticalBattleOptionsSpec {
         control: TacticalBattleOptionsControl::GameOptions,
-        rect: NativeRect::new(494.0, 203.0, 52.0, 33.0),
+        rect: NativeRect::new(504.0, 211.0, 52.0, 33.0),
         normal_resource: resources::tactical::BTN_GAME_OPTIONS_NORMAL,
         pressed_resource: resources::tactical::BTN_GAME_OPTIONS_PRESSED,
     },
     TacticalBattleOptionsSpec {
         control: TacticalBattleOptionsControl::Close,
-        rect: NativeRect::new(565.0, 203.0, 29.0, 33.0),
+        rect: NativeRect::new(578.0, 211.0, 29.0, 33.0),
         normal_resource: resources::tactical::BTN_BATTLE_OPTIONS_CLOSE_NORMAL,
         pressed_resource: resources::tactical::BTN_BATTLE_OPTIONS_CLOSE_PRESSED,
     },
@@ -10547,17 +10561,7 @@ fn draw_original_tactical_hud(
     if withdraw_confirmation_open {
         draw_tactical_withdraw_confirmation(cache, canvas, pressed_withdraw_confirmation);
     } else if battle_options_open {
-        draw_tactical_bitmap(
-            cache,
-            if player_is_alliance {
-                art::BATTLE_OPTIONS_ALLIANCE_PANEL
-            } else {
-                art::BATTLE_OPTIONS_EMPIRE_PANEL
-            },
-            canvas,
-            481.0,
-            27.0,
-        );
+        draw_tactical_bitmap(cache, art::BATTLE_OPTIONS_PANEL, canvas, 481.0, 27.0);
         for spec in TACTICAL_BATTLE_OPTIONS_CONTROLS {
             if spec.control == TacticalBattleOptionsControl::Withdraw && !withdraw_enabled {
                 continue;
@@ -10587,8 +10591,10 @@ fn draw_original_tactical_hud(
             1307
         } else if groups.selected_ship_name.is_some() {
             TACTICAL_SELECTED_SHIP_PANEL
+        } else if player_is_alliance {
+            art::IDLE_PANEL_ALLIANCE
         } else {
-            1301
+            art::IDLE_PANEL_EMPIRE
         };
         draw_tactical_bitmap(cache, panel_resource, canvas, 481.0, 27.0);
     }
@@ -13425,13 +13431,10 @@ pub fn draw_tactical_view(
                         origin: beam.source_position.rendered(),
                         target: beam.target_position.rendered(),
                         progress: (beam.elapsed / beam.duration).clamp(0.0, 1.0),
-                        // The source projectile mesh collapses below one device pixel
-                        // at the Death Star's tactical scale. Retain a visible authored-
-                        // color beam segment while native dimensions remain unproven.
-                        longitudinal_scale: 12.0,
-                        shape_variant: 3,
-                        color_selector: 1,
-                        color: Color::new(0.25, 1.0, 0.25, 1.0),
+                        longitudinal_scale: 1.0,
+                        shape_variant: 1,
+                        color_selector: beam.color_selector,
+                        color: projectile_selector_color(beam.color_selector),
                     });
                 }
                 (ships, fighters, fields, projectiles, effects)
@@ -18130,9 +18133,10 @@ mod tests {
         assert!(!session.commit_death_star_shot(0));
     }
 
-    // Source: FUN_005ba7f0 Death Star superlaser resolution timing.
+    // Source: FUN_005ba520 fires the superlaser as FUN_005c12d0(.., 0, 1.0, 1),
+    // a variant-1 projectile, which lives one second (tactical-projectile-field-path.md).
     #[test]
-    fn death_star_superlaser_resolves_after_the_source_long_projectile_duration() {
+    fn death_star_superlaser_resolves_after_the_source_short_projectile_duration() {
         let mut target = test_ship(64, 0, true, true);
         target.source_position.z = -24.0;
         let mut session = test_session(vec![target], Vec::new(), false);
@@ -18159,7 +18163,8 @@ mod tests {
         assert_eq!(session.death_star.unwrap().laser_charge, 0.0);
         assert!(session.death_star.unwrap().action_committed);
         assert!(session.death_star_beam.is_some());
-        session.advance_presentational_effects(1.999);
+        assert_eq!(session.death_star_beam.unwrap().color_selector, 1);
+        session.advance_presentational_effects(0.999);
         assert!(session.ships[0].alive);
         session.advance_presentational_effects(0.002);
         assert!(!session.ships[0].alive);

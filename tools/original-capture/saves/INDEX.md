@@ -12,8 +12,8 @@ The owner authorized committing them; saves downloaded from elsewhere stay
 out. The game keeps ten slots,
 `C:\Rebellion\SaveGame\SAVEGAME.001`..`.010` (the folder beside `REBEXE.EXE`;
 the `app\SaveGame` folder the GOG installer makes is not the one it uses).
-To load one, copy it into a slot under that name and pick it from Game
-Options (F1), Saved Games.
+To load one, copy it into a slot (`vm-game.sh save-in FILE SLOT`) and pick it
+from Game Options (F1), Saved Games.
 
 | File | Side | Day | Settings | State |
 |---|---|---|---|---|
@@ -21,38 +21,39 @@ Options (F1), Saved Games.
 | `empire-day2-start.sav` | Empire | 2 | Standard game; difficulty and galaxy size as the menu left them (unchecked) | Briefing just ended; nothing ordered. Fleet 1 (an Imperial Star Destroyer, a Carrack and six TIE squadrons) at Coruscant |
 | `empire-day28-coruscant-fighters.sav` | Empire | 28–30 | As above | One TIE squadron dragged from Fleet 1 onto Coruscant; the planet's Fighter Squadrons tab lists TIE Fighters (nine or more, with a scroll bar). Which of them are based at the planet and which belong to Fleet 1 is not yet counted |
 | `empire-fleet-to-yaga-minor.sav` | Empire | about 37 | As above | Fleet 1 in transit from Coruscant to Yaga Minor (held by the Alliance, Sesswenna sector). It arrives about day 43: "Fleet Arrives at Yaga Minor", then "Fleet Initiates Blockade of Yaga Minor". No battle; no Alliance fleet came by day 83 |
+| `empire-day30-yaga-alert-control.sav` | Empire | 30 | As above | `empire-day2-start.sav` with Fleet 1 ordered to Yaga Minor, saved in transit on day 5, played on unedited to day 30 (slot name "transit3 day30", SHA-256 `8a7a9923…975636`). The Battle at Yaga Minor alert ("The Alliance fleet is attempting to break the Imperial blockade") opens within 12 s of the load |
+| `empire-day30-yaga-alert-isd-hyperdrive.sav` | Empire | 30 | As above | The same day-5 transit save with the ISD's hyperdrive edited out (`agent_docs/original-save-editing.md`), played on to day 30 (slot name "transit3-hd day30", SHA-256 `ac7022d0…9ebd23`). The same alert opens within 12 s of the load |
 
 ## Moving files to and from the VM
 
-The guest has no network. Its transfer disk (drive `E:`, a FAT32 image)
-carries files. The VM uses the copy inside its UTM bundle,
-`~/Library/Containers/com.utmapp.UTM/Data/Documents/Rebellion A0 Capture.utm/Data/payload.img`
-on the mini; `~/VMs/rebellion/payload.img` is only the original that was
-imported, and does not see guest writes.
+The guest has no network. From this Mac, `vm-game.sh` moves saves through
+the QEMU guest agent, which runs in the background and leaves the game
+focused, and prints both SHA-256 values:
 
-1. In the guest, copy the slot to `E:\saves-out\`.
-2. Take disk 1 offline from an elevated PowerShell
-   (`set-disk 1 -isoffline 1`), so Windows holds no cached view of it.
-3. On the mini, attach the image read-only
-   (`hdiutil attach -readonly -imagekey diskimage-class=CRawDiskImage`),
-   copy the file out and detach.
-4. Bring the disk back online (`set-disk 1 -isoffline 0`).
+```sh
+tools/original-capture/vm-game.sh save-out 6 transit3     # slot 6 -> ./transit3.sav
+tools/original-capture/vm-game.sh save-in transit3.sav 6  # ./transit3.sav -> slot 6
+```
 
-Reading with mtools (step 3's alternative) works too. To copy **into** the
-guest, `hdiutil` is no use: it attaches the image read-only while QEMU holds
-it open. Use mtools on the mini (`brew install mtools`; the FAT32 partition
-starts 1 MiB in) while the disk is offline in the guest, and take an APFS
-clone of the image first (`cp -c payload.img ~/VMs/rebellion/payload-backup-DATE.img`):
+Saved Games lists the filled slots and one empty row, so a slot after a gap
+does not appear. Files pass through `~/VMs/rebellion/exchange/` on the
+mini, which the guest also sees as `Z:` (the SPICE WebDAV shared folder);
+`VM_XFER=webdav` copies through `Z:` with a command typed into Win+R
+instead of the agent. Both are described in [`../README.md`](../README.md).
+
+The transfer disk (drive `E:`, a FAT32 image) is still attached and still
+works, but nothing needs it any more. The VM uses the copy inside its UTM
+bundle, `~/Library/Containers/com.utmapp.UTM/Data/Documents/Rebellion A0 Capture.utm/Data/payload.img`
+on the mini. To use it: copy the file to `E:\saves-out\`, take disk 1
+offline from an elevated PowerShell (`set-disk 1 -isoffline 1`), read it on
+the mini with mtools (the FAT32 partition starts 1 MiB in), and bring the
+disk back online (`set-disk 1 -isoffline 0`):
 
 ```sh
 I="$HOME/Library/Containers/com.utmapp.UTM/Data/Documents/Rebellion A0 Capture.utm/Data/payload.img@@1048576"
 MTOOLS_SKIP_CHECK=1 mcopy -i "$I" SAVEGAME.006 ::/saves-in/   # in
 MTOOLS_SKIP_CHECK=1 mtype -i "$I" ::/saves-out/x.sav > x.sav  # out
 ```
-
-Read the file back and compare hashes, bring the disk online, and copy it
-into the first empty slot: Saved Games lists the filled slots and one empty
-row, so a slot after a gap does not appear.
 
 ## Format
 

@@ -17,9 +17,11 @@ there by editing a copy of one of **our own** saves
 (`tools/original-capture/README.md`, `vm-game.sh`), and accepting the edit
 only after the original loads, plays and re-saves it.
 
-Status (2026-10-11): both recipes load in the original. Recipe 1 is
-verified up to its battle gate. Recipe 2's in-place conversion passes
-every gate but the battle. Neither is accepted until it passes them all.
+Status (2026-10-11): both recipes load in the original. Recipe 1 has run
+its Withdraw check against an unedited control (below): the ship with no
+drive did not withdraw and was lost. One run per side, so not accepted yet.
+Recipe 2's in-place conversion crashes the original when its fleet moves,
+so it fails; a Death Star that moves needs route 1.
 
 ## Rules
 
@@ -117,8 +119,40 @@ an Alliance fleet came to break the blockade. Retreat at the Battle Alert gave
 "The Imperial fleet is victorious … The Alliance fleet has withdrawn" with
 both Imperial ships kept, and so did the unedited control, so that alert
 cannot test the Withdraw rule. The rule needs Take Command, then Withdraw
-inside the battle. `vm-game.sh wait center` stops at the alert (about 350 s
-from the load).
+inside the battle. `vm-game.sh wait center` stops at the alert, 336.5 s from the
+load before the 2026-10-11 guest-tools install and 360–363 s in three runs
+after it (one with the WebDAV service stopped; the cause is open). Give the
+wait a 420 s timeout, or skip it: `saves/` holds both states re-saved on day
+30 (`empire-day30-yaga-alert-control.sav`,
+`empire-day30-yaga-alert-isd-hyperdrive.sav`), and either reaches the alert
+within 12 s of the load.
+
+**Withdraw inside the battle (2026-10-11).** Both runs loaded the day-5
+transit save, waited for the day-31 alert, then Take Command, Battle Options
+(the 640×480 button at (616,318)), Withdraw, the check mark, and unpause.
+The unedited control ended "The Imperial fleet is defeated … The Imperial
+fleet has withdrawn to Ghorman", and Fleet 1 left for Ghorman. With the
+ISD's drive out, the battle ended "The Imperial fleet is victorious … The
+Alliance fleet has withdrawn". Fleet 1 stayed at Yaga Minor holding only
+Carrack Light Cruiser 2 (Hyperdrive Rating 60:60, hull 1000:1000), and the
+re-saved file has no record of the ISD (instance `0x77f`) in any graph: the
+ISD was destroyed, not moved. So the stranded ship did not leave, as
+`FUN_005a0240` says. The fleet stayed rather than leaving, and the Alliance
+withdrew in this run while it won in the control. Each side ran once, so it
+is not settled whether the stranded ship's loss and the fleet staying follow
+from the rule or from that battle's course. Evidence:
+`.artifacts/original-checks/2026-10-11-save-edits/hd-withdraw-*` and
+`control-withdraw-*` (ignored).
+
+Three more runs of the edited state, from
+`empire-day30-yaga-alert-isd-hyperdrive.sav` with the same steps
+(2026-10-11): one ended "The Imperial fleet is defeated … withdrawn to
+Ghorman", as the control did, and two ended "The Imperial fleet is
+victorious … The Alliance fleet has withdrawn". The result of a Withdraw
+varies from run to run with the stranded ship aboard, so no single run
+settles the rule; compare several. Evidence:
+`.artifacts/original-checks/2026-10-11-tactical-panel/10-*`, `11-*` and
+`2026-10-11-vm-verbs/05-results.png` (ignored).
 
 Accept: load the copy, open the ISD's Status at once (Very Slow, not Pause:
 see "Driving the original" below) and read Hyperdrive Rating below 80. Then
@@ -163,6 +197,18 @@ format. Still open: a battle against it (no Alliance fleet comes to
 Coruscant on demand) and whether anything else that keys on the Death Star
 (the construction manager, the planet-destruction order) treats a converted
 one as real.
+
+**Route 2 fails the move gate (2026-10-11).** Ordered to move (Fleet 1
+dragged from Coruscant to Yaga Minor on the day-6 reload), the converted
+fleet crashes the original on Windows: the game closes to the desktop. A
+Worker saw the same crash under Wine for both a drag and the Move context
+menu, so this is the conversion, not Wine. The converted object still
+loads, simulates a battle (under Wine, from a save converted after Fleet 1
+had already reached Yaga Minor: the Alliance fleet destroyed), saves and
+reloads as Class: Death Star, so whatever movement reads from a Death Star
+is missing from a converted ISD. Use route 1 for anything that moves the
+fleet. Under Wine, Take Command leaves a black tactical screen, so tactical
+checks need the VM.
 
 Never insert or clone a record: that needs every container count, every
 later object key and every reference updated in both graphs.

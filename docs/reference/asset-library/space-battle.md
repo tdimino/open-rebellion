@@ -24,7 +24,7 @@ headers `1001`/`1004`; fighter headers `1008`/`1010`; task-force states
 `1005`–`1007`; squadron states `1012`–`1020`; camera/navigation art
 `1026`–`1033` and `1044`–`1059`; Alliance dim/highlight `1034`/`1035`; Imperial
 dim/highlight `1036`/`1037`; battle options `1038`/`1039`; pause `1060`/`1061`;
-and empty/selected capital-ship panels `1301`/`1302`. Pause, highlight, zoom,
+the idle seal panels `1303` (Alliance) and `1304` (Empire), selected-capital panel `1302` and Battle Options panel `1306`; `1301`, the blank cylinder, is only the housing behind them (REBEXE `0x5e9c60`, `FUN_005c56b0`; original capture 2026-10-11). Pause, highlight, zoom,
 and the left/right/up/down camera directions have source-shaped hit masks. Zoom
 renders held resources `1045`/`1047`; the D-pad renders `1049`, `1051`, `1053`,
 and `1056` while held. P57B2A binds those inputs to the recovered field, yaw,

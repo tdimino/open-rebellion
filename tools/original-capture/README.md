@@ -19,6 +19,11 @@ The guest runs in UTM 4.7.5 on a Mac Mini (Apple M4, macOS
 | `unattend.iso` | ISO 9660 image of `vm/autounattend.xml` and `vm/go.cmd` (built with `hdiutil makehybrid -iso -joliet`) |
 | `payload.img` | 2 GiB raw FAT32 volume **with an MBR partition table** (`hdiutil create -layout MBRSPUD -fs "MS-DOS FAT32"`) holding the owned GOG game folder, `vm/install.cmd`, and `vm/capture.ps1`; captures are written back to it |
 | `utm-guest-tools-0.1.273.iso` | kept on disk but **not attached** (see below) |
+| `webdav-tools.iso` | the pieces taken from the guest tools for the shared folder and guest agent: the Arm64 virtio-serial driver, the Arm64 VC++ runtime, `spice-webdavd-arm64-latest.msi`, `qemu-ga-x86_64.msi` and `webdav.cmd`, which installs the first three |
+| `exchange/` | the SPICE WebDAV shared folder (`saves-in/`, `saves-out/`, `captures/`); the guest sees it as `Z:` |
+| `vm-ctl.scpt`, `vmctl-run.sh` | [`vm/vm-ctl.applescript`](vm/vm-ctl.applescript) compiled, and [`vm/vmctl-run.sh`](vm/vmctl-run.sh), which runs one of its commands through the GUI launch agent |
+| `qemu-img` | a stub that runs UTM's bundled qemu-img, which ships as a library (`clang -o qemu-img stub.c -Wl,-rpath,/Applications/UTM.app/Contents/Frameworks`, the stub `dlopen`s the framework and calls its `main`) |
+| `backup-20261011/` | APFS clone of the whole VM bundle taken cold before the 2026-10-11 changes, with `SHA256SUMS` |
 
 Two facts about Windows Setup shape this layout, both established on
 2026-09-14 by watching Setup fall through to its interactive pages:
@@ -28,8 +33,9 @@ Two facts about Windows Setup shape this layout, both established on
   file on a FAT image is never found. A CD is removable read-only media and
   is searched, hence `unattend.iso`.
 - The UTM guest tools ISO ships its own `autounattend.xml`; when attached it
-  is found first. Attach it only after the install, if SPICE tools are ever
-  needed (they are not for the VNC capture path).
+  is found first. Attach it only after the install. Its full installer also
+  brings vdagent, the network driver and the GPU drivers; we install only
+  the pieces in `webdav-tools.iso` (2026-10-11, below).
 - A FAT volume without a partition table (an `hdiutil` "superfloppy") is
   invisible to Windows on a fixed disk. `payload.img` therefore carries an
   MBR.
@@ -57,6 +63,43 @@ Arm64 ships an NVMe driver, so setup needs no virtio storage driver), and the
 raw FAT USB volume. UTM copies `payload.img` into the VM bundle
 (`~/Library/Containers/com.utmapp.UTM/Data/Documents/Rebellion A0 Capture.utm/Data/`);
 captures land in that copy, not in `~/VMs/rebellion/`.
+
+Changes on 2026-10-11, with the bundle cold-copied to `backup-20261011/`
+first (restore by copying it back with the VM stopped):
+
+- No network device (`Network` is `[]` in `config.plist`) and clipboard
+  sharing off. The guest had no network driver; removing the device keeps
+  it that way now that guest software is installed.
+- A loopback-only QMP socket for `vm-qmp.py`, which walks the pointer
+  (`QEMU.AdditionalArguments`: `-qmp tcp:127.0.0.1:4446,server=on,wait=off`).
+  Never bind it to the Tailscale address or `0.0.0.0`: QMP is an
+  unauthenticated control channel.
+- The SPICE WebDAV shared folder: UTM's `update registry` AppleScript sets
+  `~/VMs/rebellion/exchange` (`share PATH` in `vm-ctl.applescript`), and
+  `spice-webdavd` in the guest maps it to `Z:`. UTM stops serving the
+  folder after the VM restarts although its registry still names it;
+  setting it again while the VM runs brings it back, and `vm-game.sh up`
+  does so. Its install needed the
+  virtio-serial driver and the VC++ runtime; `webdav.cmd` runs all three.
+  UTM's QEMU sandbox refuses to open a new image (`change` on a fresh path
+  fails with "Operation not permitted"), so the tools ISO was written over
+  `unattend.iso` in place, loaded with `change`, and the original image put
+  back afterwards.
+- The QEMU guest agent: the x64 `qemu-ga` runs under Windows' x64 emulation
+  (UTM has no Arm64 build, UTM issue 5134). Through UTM's `execute`, `pull`
+  and `push` it passed 11 command runs with the right exit code, stdout and
+  stderr, 10 MiB and three 2 MiB round trips with matching SHA-256, and a
+  reboot. It runs as a service in session 0, so it cannot see or drive the
+  desktop. When it connects, UTM sets the guest clock to the host's.
+- For fast retries, save in the game a day or two before the event and
+  load that save (`saves/INDEX.md`).
+
+After these changes the menu renders the same (outside the animated
+monitors the frames differ only under the cursor), and the day-31 alert from
+the day-5 transit save arrives 360-362 s after the load against 336.5 s on
+2026-10-11 before them. Stopping `spice-webdavd` did not change that
+(362.0 s), and the Mini was busy with Spotlight and media analysis at the
+time; the cause is not settled.
 
 The VM must carry a sound card. `REBEXE.exe` calls `DirectSoundCreate` during
 startup (`FUN_00610d00`), and with no audio device the returned interface is
@@ -150,7 +193,9 @@ server does not synthesise on its own.
 
 ## Registration
 
-On the development Mac, copy the PNG and JSON out of `payload.img`. Tactical
+On the development Mac, copy the PNG and JSON out of `payload.img`, or have
+`capture.ps1` write to `Z:\captures` (the shared folder; not yet tried for
+captures). Tactical
 captures are registered with `tools/interface-parity/ingest-tactical-a0.mjs` as
 documented by the [interface harness](../interface-parity/README.md). The host
 ingester independently decodes the PNG, verifies its hash and dimensions,
@@ -177,23 +222,52 @@ Driving the game over VNC:
 - `vm-game.sh` wraps the steps below from this Mac. `up` starts the VM if
   needed, waits for the desktop, launches `REBEXE.EXE`, accepts UAC, skips
   the intros and selects the tablet; `recover` first kills a wedged QEMU and
-  restarts UTM. `click`/`rclick`/`dclick X Y [FILE]` hit a point in the
-  captured 800x600 frame and optionally capture after; `cap`, `key`, `mon`
-  and `status` cover the rest. Saved Games (the main menu's disc, 535,315):
-  each slot's right-hand button loads it.
+  restarts UTM. `point`/`click`/`rclick`/`dclick X Y [FILE]` hit a point in
+  the captured 800x600 frame and optionally capture after; `desk X Y`
+  clicks on the Windows desktop (the taskbar, a console), where the cursor
+  is Windows' own; `save-out`, `save-in` and `gexec` use the guest agent;
+  `cap`, `key`, `mon` and `status` cover the rest. Saved Games (the main
+  menu's disc, 535,315): each slot's right-hand button loads it.
+- In-game verbs wrap the clicks you would otherwise script: `load SLOT`,
+  `save SLOT NAME` (over a filled row; it clears the old name first),
+  `resolve` (auto-resolve a Battle Alert and close the result),
+  `take-command` and `withdraw`. Saved Games shows six rows, so only slots
+  1-6 can be picked in the game; slots 7-10 take `save-in` and `save-out`
+  only. The Battle Alert's buttons are Retreat, auto-resolve and Take
+  Command, left to right.
+- Start a tactical run from a fresh `up`. Take Command crashed the game
+  (`rebexe.exe` access violation) after about ten saves had been loaded in
+  one run, and worked from a fresh launch (2026-10-11).
+- `vm-game.sh run FILE [OUTDIR]` replays a command file: one `vm-game.sh`
+  command per line, `#` comments, `$OUT` for the output folder (FILE's own
+  by default). It stops at the first failure. Every call, from a file or
+  not, appends a line to `.artifacts/vm/log.jsonl` (`VM_LOG` overrides):
+  time, command, arguments, exit code, seconds and the SHA-256 of each PNG
+  it wrote, so a run can be audited and replayed.
 - Wait on the game rather than polling it: `vm-game.sh wait REGION [N]
   [TIMEOUT] FILE` (`vm-wait.py`) holds one VNC connection, polls a region
   twice a second and returns after N changes, saving the frame and the
   region's crop (`FILE-region`); it exits 1 on the timeout (default 120 s).
   `day` is the galaxy's day readout and `center` the middle of the screen,
   where the Battle Alert and message dialogs open; `X,Y,W,H` names any other
-  box. An open alert freezes the day readout, so wait on `center` for one.
+  box. An open alert freezes the day readout. `alert` waits for a state, not
+  a change: it returns as soon as a Battle Alert is open, including one
+  already open when the wait starts, which `center` misses. A day digit
+  flip can score as little as 1.86 against the usual 2.0 threshold, so the
+  day box counts any change over 0.5 (the box is otherwise exactly 0).
 - Click through the absolute tablet: `mouse_set 1` on the QEMU monitor. The
-  game's cursor follows the tablet's motion at about 1.28x and clamps at the
+  game's cursor follows the tablet's motion at about 1.25x and clamps at the
   screen edge, so an absolute jump lands off target by an amount that depends
   on where the cursor was. Walking the tablet to (0,0) in 4-pixel steps pins
-  the cursor to the corner, and walking out to the target divided by 1.28
-  lands on it; `vm-game.sh` clicks this way (2026-10-10). Clicks sent with the relative mouse
+  the cursor to the corner, and walking out to the target divided by 1.25
+  lands on it. On a 5x5 grid the arrow's tip landed within 1 px walking over
+  QMP and within 2 px over VNC; the earlier 1.28 fell up to 20 px short at
+  the right and bottom (2026-10-11). `vm-game.sh` walks over QMP, about
+  three times faster than over VNC (3-4 s against 9-12 s for a long walk);
+  `VM_INPUT=vnc` walks over VNC. Double-clicks press over VNC after the
+  walk: two clicks sent over QMP never read as a double-click (0 of 30), two
+  over VNC did 20 of 20. UTM's AppleScript `input mouse click` jumps the
+  tablet and misses by tens of pixels, so it is not used. Clicks sent with the relative mouse
   (`mouse_set 2`, `mouse_button`) leave the game acting as if the button is
   still held: list selections follow the pointer and prompts confirm
   themselves as the pointer crosses their buttons (2026-10-09). The relative
@@ -202,9 +276,14 @@ Driving the game over VNC:
 - Hold a modifier through the QEMU monitor (`sendkey ctrl 4000` holds Control
   for 4 s) while `vncdo` clicks. A key `vncdo` holds is released when its
   connection closes, before the next call's click.
+- If the guest agent answers "Timed out waiting for RPC", restarting the
+  guest does not help; `vm-game.sh recover` (it restarts UTM) does. It
+  started after the shared folder was set again on a running VM, so `up`
+  now sets it only after starting the VM (2026-10-11).
 - If clicks and keys do nothing, the game may have lost focus to a guest
-  window (after a transfer-disk copy, PowerShell): Alt+Tab shows it; click
-  the game's taskbar icon with the tablet.
+  window (after Win+R, PowerShell): `vm-game.sh desk 510 577` clicks the
+  game's taskbar icon. The guest agent works without the desktop and does
+  not take focus.
 - The VNC link drops Shift on letters; type lowercase. `vnc-type.py` sends
   symbols as shift chords.
 - A double-click on a planet opens its manufacturing window; a double-click on

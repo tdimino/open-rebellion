@@ -43,7 +43,7 @@ pub(crate) struct BattleReturn {
     pub winner: Option<CombatWinner>,
     pub winner_fleet: Option<FleetKey>,
     pub player_won: bool,
-    /// Where a fleet that withdrew from the battle was sent.
+    /// Where the player's fleet that withdrew from the battle was sent.
     pub withdrawal: Option<SystemKey>,
 }
 
@@ -285,6 +285,14 @@ pub(crate) fn apply_results(
                     if !ship_inst.alive {
                         ship_inst.hull_current = 0;
                     }
+                    if ship_inst.alive {
+                        if let Some(class) = world.capital_ship_classes.get(ship_inst.class) {
+                            ship_inst.set_hyperdrive_damage_hits(
+                                class,
+                                result.subsystem_damage.hyperdrive,
+                            );
+                        }
+                    }
                 }
             }
             for (survivor_index, withdrew) in fleet
@@ -384,15 +392,42 @@ pub(crate) fn apply_results(
                 Some(fleet_key)
             };
             if let Some(leaving) = leaving {
-                withdrawal = withdraw_fleet(world, movement, leaving, session.system).or(withdrawal);
+                let destination = withdraw_fleet(world, movement, leaving, session.system);
+                // The results name where the player's fleet went; an equal
+                // stalemate withdraws both sides, and the enemy's
+                // destination must not take its place.
+                if is_attacker == session.player_is_attacker {
+                    withdrawal = destination.or(withdrawal);
+                }
             }
         }
     }
     troop_transport.destroy_untransportable_cargo(world);
-    BattleReturn {
+    let mut result = BattleReturn {
         withdrawal,
         ..summarize_results(session)
+    };
+    // Every fleet a side has at the system fights, so the lead may be
+    // destroyed while another of the winner's fleets holds the system; the
+    // post-battle steps (bombardment, landing, occupation) follow that one.
+    if result.winner_fleet.is_none_or(|fleet| !world.fleets.contains_key(fleet)) {
+        let winner_is_alliance = match session.winner {
+            Some(CombatWinner::Attacker) => Some(session.attacker_is_alliance),
+            Some(CombatWinner::Defender) => Some(!session.attacker_is_alliance),
+            Some(CombatWinner::Draw) | None => None,
+        };
+        if let Some(winner_is_alliance) = winner_is_alliance {
+            result.winner_fleet = world.systems.get(session.system).and_then(|system| {
+                system.fleets.iter().copied().find(|&fleet| {
+                    world
+                        .fleets
+                        .get(fleet)
+                        .is_some_and(|fleet| fleet.is_alliance == winner_is_alliance)
+                })
+            });
+        }
     }
+    result
 }
 
 /// Send a fleet that withdrew from a battle to the nearest friendly or

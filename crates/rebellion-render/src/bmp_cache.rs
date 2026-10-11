@@ -506,6 +506,11 @@ pub mod resources {
         pub const BTN_RETURN_COMMAND_CENTER_NORMAL: u32 = 10020;
         pub const BTN_RETURN_COMMAND_CENTER_PRESSED: u32 = 10021;
         pub const BTN_RETURN_COMMAND_CENTER_DISABLED: u32 = 10022;
+        /// Return to the space battle: normal, pressed, and disabled
+        /// (`FUN_00407180` case 9).
+        pub const BTN_RETURN_BATTLE_NORMAL: u32 = 10026;
+        pub const BTN_RETURN_BATTLE_PRESSED: u32 = 10027;
+        pub const BTN_RETURN_BATTLE_DISABLED: u32 = 10028;
 
         /// First animated shuttle-cockpit control frame.
         pub const MAIN_MENU_ANIMATION_FIRST: u32 = 11001;
@@ -1124,10 +1129,14 @@ pub mod resources {
 
         /// Right-side hull integrity and shield strength panel.
         pub const RIGHT_PANEL_HULL_AND_SHIELD: u32 = 1302;
-        /// Alliance Battle Options panel.
-        pub const BATTLE_OPTIONS_ALLIANCE_PANEL: u32 = 1303;
-        /// Empire Battle Options panel.
-        pub const BATTLE_OPTIONS_EMPIRE_PANEL: u32 = 1304;
+        /// Idle right-hand panel with the Alliance seal, shown while nothing
+        /// is selected (REBEXE `0x5e9c60` loads 0x517 or 0x518 by side).
+        pub const IDLE_PANEL_ALLIANCE: u32 = 1303;
+        /// Idle right-hand panel with the Imperial seal.
+        pub const IDLE_PANEL_EMPIRE: u32 = 1304;
+        /// Battle Options panel, the same for both sides (original capture,
+        /// 2026-10-11).
+        pub const BATTLE_OPTIONS_PANEL: u32 = 1306;
         /// Tactical missions assignment panel.
         pub const MISSIONS_PANEL: u32 = 1308;
         /// Tactical maneuvers and tactics assignment panel.

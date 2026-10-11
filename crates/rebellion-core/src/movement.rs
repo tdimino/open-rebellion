@@ -43,7 +43,7 @@ use crate::dat::Faction;
 use crate::ids::{FleetKey, SystemKey};
 use crate::tick::TickEvent;
 use crate::troop_transport::TroopTransportState;
-use crate::world::{CapitalShipClass, FighterClass, Fleet, GameWorld};
+use crate::world::{CapitalShipClass, FighterClass, Fleet, GameWorld, ShipInstance};
 
 // ---------------------------------------------------------------------------
 // Transit time
@@ -129,12 +129,44 @@ pub fn transit_ticks_between(world: &GameWorld, from: (u16, u16), to: (u16, u16)
 /// Speed of one capital ship (`FUN_00500820`): the class `hyperdrive`, else
 /// `hyperdrive_if_damaged`, else the GNPRTB 1 default.
 ///
-/// The original subtracts `hyperdrive` when a per-ship damage nibble (ship
-/// `+0x64` bits 16..19, `FUN_005011f0`) is set; the port does not model that
-/// nibble, so every ship reads as undamaged.
 #[must_use]
 pub fn capital_ship_speed(world: &GameWorld, class: &CapitalShipClass) -> i64 {
     rated_speed(world, class.hyperdrive, class.hyperdrive_if_damaged)
+}
+
+/// Speed of one strategic capital-ship instance (`FUN_00500820`): primary
+/// rating minus `FUN_005011f0`'s damage, then backup rating minus
+/// `FUN_00501230`'s damage. A deployed ship with both installed drives out
+/// returns zero and holds its fleet in port (`FUN_004fd900`).
+#[must_use]
+pub fn capital_ship_instance_speed(
+    world: &GameWorld,
+    ship: &ShipInstance,
+    class: &CapitalShipClass,
+) -> i64 {
+    let primary = if ship.primary_hyperdrive_damage() > 0 {
+        0
+    } else {
+        class.hyperdrive
+    };
+    if primary > 0 {
+        return i64::from(primary);
+    }
+    let backup = if ship.backup_hyperdrive_damage() > 0 {
+        0
+    } else {
+        class.hyperdrive_if_damaged
+    };
+    if backup > 0 {
+        return i64::from(backup);
+    }
+    // port: preserve the existing default for class records with no drive;
+    // VM evidence from 2026-10-11 governs installed drives knocked out.
+    if class.hyperdrive == 0 && class.hyperdrive_if_damaged == 0 {
+        default_speed(world)
+    } else {
+        0
+    }
 }
 
 /// Speed of one fighter squadron (`FUN_00502f80`): the same rule as a
@@ -172,8 +204,12 @@ pub fn fleet_speed(fleet: &Fleet, world: &GameWorld) -> Option<i64> {
         .capital_ships
         .iter()
         .filter(|ship| ship.alive)
-        .filter_map(|ship| world.capital_ship_classes.get(ship.class))
-        .map(|class| capital_ship_speed(world, class));
+        .filter_map(|ship| {
+            world
+                .capital_ship_classes
+                .get(ship.class)
+                .map(|class| capital_ship_instance_speed(world, ship, class))
+        });
     let first = speeds.next()?;
     Some(speeds.fold(first, |slowest, speed| if slowest == 0 || speed == 0 { 0 } else { slowest.max(speed) }))
 }
@@ -183,6 +219,9 @@ pub fn fleet_speed(fleet: &Fleet, world: &GameWorld) -> Option<i64> {
 #[must_use]
 pub fn fleet_transit_ticks(fleet: &Fleet, world: &GameWorld, origin: SystemKey, dest: SystemKey) -> Option<u32> {
     let speed = fleet_speed(fleet, world)?;
+    if speed == 0 {
+        return None;
+    }
     let position = |key: SystemKey| world.systems.get(key).map_or((0, 0), |s| (s.x, s.y));
     Some(transit_ticks_between(world, position(origin), position(dest), speed))
 }
@@ -535,7 +574,7 @@ pub fn validate_fleet_dispatch(
     if value.location == destination {
         return Err(FleetDispatchError::AlreadyAtDestination);
     }
-    if fleet_speed(value, world).is_none() {
+    if fleet_speed(value, world).is_none_or(|speed| speed == 0) {
         return Err(FleetDispatchError::NoHyperdrive);
     }
     Ok(())

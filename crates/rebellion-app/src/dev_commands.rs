@@ -320,8 +320,8 @@ pub fn parse_line(line: &str) -> Result<Option<DevCommand>, String> {
     if lower.starts_with("capture ") {
         return Err("capture takes `Capture` or `Capture: <name>`".into());
     }
-    if lower.starts_with("wait until ") {
-        let what = lower["wait until ".len()..].trim();
+    if let Some(what) = lower.strip_prefix("wait until ") {
+        let what = what.trim();
         return match what.split_whitespace().collect::<Vec<_>>().as_slice() {
             ["day", n] => n
                 .parse()
