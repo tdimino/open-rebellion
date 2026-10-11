@@ -3788,7 +3788,10 @@ impl BattleSession {
                 hyperdrive: u8::from(class.hyperdrive > 0)
                     + u8::from(class.hyperdrive_if_damaged > 0),
             };
-            let subsystem_damage = TacticalSubsystemDamage::default();
+            let subsystem_damage = TacticalSubsystemDamage {
+                hyperdrive: ship.hyperdrive_damage_hits(class),
+                ..TacticalSubsystemDamage::default()
+            };
             ships.push(TacticalShip {
                 class_key: ship.class,
                 identity: TacticalObjectIdentity {

@@ -29,15 +29,24 @@ VNC=${VNC_HOST}::5901
 MONITOR_PORT=4445
 VMDIR='~/VMs/rebellion'
 
+# vncdo runs in-process with the password from the environment, so it never
+# reaches a process's argv.
 vnc() {
-  local pass
-  pass=$(security find-internet-password -s "$VNC_HOST" -w 2>/dev/null || true)
-  timeout "${VNC_TIMEOUT:-60}" uvx --quiet --from vncdotool vncdo -s "$VNC" ${pass:+-p "$pass"} "$@"
+  VNC_PASSWORD=$(security find-internet-password -s "$VNC_HOST" -w 2>/dev/null || true) \
+    timeout "${VNC_TIMEOUT:-60}" uvx --quiet --with vncdotool python -c '
+import os, sys
+from vncdotool.command import vncdo
+password = os.environ.pop("VNC_PASSWORD", "")
+vncdo(["-s", sys.argv[1]] + (["-p", password] if password else []) + sys.argv[2:])
+' "$VNC" "$@"
 }
 
+# A failed ssh or monitor connection fails the call; only the filtering of
+# the monitor's banner may come up empty.
 mon() {
-  ssh "$MINI" "(echo '$1'; sleep 1) | nc 127.0.0.1 $MONITOR_PORT" \
-    | tr -d '\033' | grep -v -e '^QEMU' -e '\[K' || true
+  local out
+  out=$(ssh "$MINI" "(echo '$1'; sleep 1) | nc 127.0.0.1 $MONITOR_PORT") || return
+  printf '%s\n' "$out" | tr -d '\033' | grep -v -e '^QEMU' -e '\[K' || true
 }
 
 qemu_running() {
@@ -114,7 +123,7 @@ wait_change() {
     "$VNC" "$region" "$n" "$limit" "$file"
 }
 
-cap_after() { [[ -n ${1:-} ]] && vnc pause 1 capture "$1" || true; }
+cap_after() { [[ -z ${1:-} ]] || vnc pause 1 capture "$1"; }
 
 # The game's cursor follows the tablet's relative motion at about 1.28x
 # (1024/800), clamped at the screen edge, so an absolute `move` jump lands

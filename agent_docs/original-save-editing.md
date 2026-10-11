@@ -18,8 +18,10 @@ there by editing a copy of one of **our own** saves
 only after the original loads, plays and re-saves it.
 
 Status (2026-10-11): both recipes load in the original. Recipe 1 is
-verified up to its battle gate. Recipe 2's in-place conversion passes
-every gate but the battle. Neither is accepted until it passes them all.
+verified up to its battle gate; its Withdraw check still needs Take Command
+in the VM. Recipe 2's in-place conversion crashes the original when its
+fleet moves, so it fails; a Death Star that moves needs route 1. Neither is
+accepted.
 
 ## Rules
 
@@ -163,6 +165,18 @@ format. Still open: a battle against it (no Alliance fleet comes to
 Coruscant on demand) and whether anything else that keys on the Death Star
 (the construction manager, the planet-destruction order) treats a converted
 one as real.
+
+**Route 2 fails the move gate (2026-10-11).** Ordered to move (Fleet 1
+dragged from Coruscant to Yaga Minor on the day-6 reload), the converted
+fleet crashes the original on Windows: the game closes to the desktop. A
+Worker saw the same crash under Wine for both a drag and the Move context
+menu, so this is the conversion, not Wine. The converted object still
+loads, simulates a battle (under Wine, from a save converted after Fleet 1
+had already reached Yaga Minor: the Alliance fleet destroyed), saves and
+reloads as Class: Death Star, so whatever movement reads from a Death Star
+is missing from a converted ISD. Use route 1 for anything that moves the
+fleet. Under Wine, Take Command leaves a black tactical screen, so tactical
+checks need the VM.
 
 Never insert or clone a record: that needs every container count, every
 later object key and every reference updated in both graphs.

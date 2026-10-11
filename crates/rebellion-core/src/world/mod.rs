@@ -968,7 +968,8 @@ impl System {
 ///
 /// Mirrors the C++ entity object fields confirmed by Ghidra:
 /// - `hull_current` → offset +0x60 (int)
-/// - `shield_weapon_packed` → offset +0x64 (bits 0-3 = shield, 4-7 = weapon)
+/// - `shield_weapon_packed` → offset +0x64 (bits 0-3 = shield, 4-7 = weapon,
+///   16-19 = primary hyperdrive damage, 20-23 = backup hyperdrive damage)
 /// - `alive` → offset +0xac bit0
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShipInstance {
@@ -976,9 +977,11 @@ pub struct ShipInstance {
     pub class: CapitalShipKey,
     /// Current hull. Starts at `CapitalShipClass::hull`, reduced by combat.
     pub hull_current: i32,
-    /// Packed nibbles: bits 0-3 = `shield_recharge_allocated`, bits 4-7 = `weapon_recharge_allocated`.
+    /// Packed nibbles: bits 0-3 = `shield_recharge_allocated`, bits 4-7 =
+    /// `weapon_recharge_allocated`, bits 16-19 = primary hyperdrive damage,
+    /// and bits 20-23 = backup hyperdrive damage.
     /// The C++ binary uses XOR-mask writes `(new ^ old) & 0xf ^ old` — functionally a nibble store.
-    pub shield_weapon_packed: u8,
+    pub shield_weapon_packed: u32,
     /// True while `hull_current` > 0 and the ship has not been destroyed.
     pub alive: bool,
     /// The name the player gave it (`+0x34`, order 0x203); `None` shows the
@@ -1017,13 +1020,13 @@ impl ShipInstance {
     /// Shield recharge allocation nibble (bits 0-3).
     #[must_use]
     pub fn shield_nibble(&self) -> u8 {
-        self.shield_weapon_packed & 0x0f
+        (self.shield_weapon_packed & 0x0f) as u8
     }
 
     /// Weapon recharge allocation nibble (bits 4-7).
     #[must_use]
     pub fn weapon_nibble(&self) -> u8 {
-        (self.shield_weapon_packed >> 4) & 0x0f
+        ((self.shield_weapon_packed >> 4) & 0x0f) as u8
     }
 
     /// Replace the shield allocation nibble while preserving weapon power.
@@ -1031,7 +1034,8 @@ impl ShipInstance {
     /// `FUN_00501510` accepts only the low four bits and performs the same
     /// masked read-modify-write against source offset `+0x64`.
     pub fn set_shield_nibble(&mut self, value: u8) {
-        self.shield_weapon_packed = (self.shield_weapon_packed & 0xf0) | value.min(0x0f);
+        self.shield_weapon_packed =
+            (self.shield_weapon_packed & !0x0f) | u32::from(value.min(0x0f));
     }
 
     /// Replace the weapon allocation nibble while preserving shield power.
@@ -1039,7 +1043,46 @@ impl ShipInstance {
     /// `FUN_005015a0` stores the bounded value in bits 4 through 7 of source
     /// offset `+0x64`.
     pub fn set_weapon_nibble(&mut self, value: u8) {
-        self.shield_weapon_packed = (self.shield_weapon_packed & 0x0f) | (value.min(0x0f) << 4);
+        self.shield_weapon_packed =
+            (self.shield_weapon_packed & !0xf0) | (u32::from(value.min(0x0f)) << 4);
+    }
+
+    /// Primary-drive damage nibble from ship `+0x64` bits 16-19
+    /// (`FUN_005011f0`, written by `FUN_00501780`).
+    #[must_use]
+    pub fn primary_hyperdrive_damage(&self) -> u8 {
+        ((self.shield_weapon_packed >> 16) & 0x0f) as u8
+    }
+
+    /// Backup-drive damage nibble from ship `+0x64` bits 20-23
+    /// (`FUN_00501230`).
+    #[must_use]
+    pub fn backup_hyperdrive_damage(&self) -> u8 {
+        ((self.shield_weapon_packed >> 20) & 0x0f) as u8
+    }
+
+    /// Tactical hyperdrive hits represented by the two original strategic
+    /// damage nibbles. Only installed drives contribute a hit.
+    #[must_use]
+    pub fn hyperdrive_damage_hits(&self, class: &CapitalShipClass) -> u8 {
+        u8::from(class.hyperdrive > 0 && self.primary_hyperdrive_damage() > 0)
+            + u8::from(
+                class.hyperdrive_if_damaged > 0 && self.backup_hyperdrive_damage() > 0,
+            )
+    }
+
+    /// Persist tactical hyperdrive hits into the original ship damage
+    /// nibbles (`FUN_00501780`, `FUN_00501820`). The first hit disables the
+    /// primary drive when installed; the next disables the backup.
+    pub fn set_hyperdrive_damage_hits(&mut self, class: &CapitalShipClass, hits: u8) {
+        let primary = u32::from(class.hyperdrive > 0 && hits > 0);
+        let backup_threshold = u8::from(class.hyperdrive > 0);
+        let backup = u32::from(
+            class.hyperdrive_if_damaged > 0 && hits > backup_threshold,
+        );
+        self.shield_weapon_packed = (self.shield_weapon_packed & !0x00ff_0000)
+            | (primary << 16)
+            | (backup << 20);
     }
 }
 

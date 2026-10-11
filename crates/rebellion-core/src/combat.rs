@@ -558,12 +558,12 @@ impl CombatSystem {
                     // a player allocation is stored. Source combat entry uses
                     // the class shield default and full weapon power in that
                     // case; any non-zero packed word is consumed verbatim.
-                    shield_nibble: if ship.shield_weapon_packed == 0 {
+                    shield_nibble: if ship.shield_nibble() == 0 && ship.weapon_nibble() == 0 {
                         class.shield_recharge_rate.min(15) as u8
                     } else {
                         ship.shield_nibble()
                     },
-                    weapon_nibble: if ship.shield_weapon_packed == 0 {
+                    weapon_nibble: if ship.shield_nibble() == 0 && ship.weapon_nibble() == 0 {
                         0x0f
                     } else {
                         ship.weapon_nibble()

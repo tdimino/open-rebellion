@@ -115,10 +115,9 @@ The ignored fixture test requires the locally supplied original `.DAT` files.
 It records a nine-command, 25-tick, 200-system campaign, reloads its initial
 state through the current save format, and checks every command-prefix
 fingerprint against a cross-process golden, which currently runs
-`v1:2f069084cee3cfb6` -> `v1:8832577295ea4680` (regenerated 2026-10-10 for
-save v36: squadrons in transit saved, the combat cooldown dropped; and the
-strategic combat fixes: weapon strength not multiplied by arcs, results applied
-to every fleet in the battle). Any save layout or
+`v1:326b0d70b7bfc2af` -> `v1:5c0d7e91f12f3327` (regenerated 2026-10-11 for
+save v37: each capital ship now persists the original primary and backup
+hyperdrive damage nibbles after tactical combat). Any save layout or
 simulation change moves every fingerprint; regenerate the golden only for a
 named cause and name it in the commit. The v13 goldens did not reproduce
 even at their own commit `e8d4945`; that cause remains open. The unit tests use
