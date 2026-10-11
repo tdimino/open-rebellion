@@ -120,6 +120,17 @@ ingester fails closed on dimensions, hashes, source identity, ledger drift,
 unsafe destinations, or replacement bytes. The owned capture host was offline
 on 2026-09-22, so capture coverage remains 0/106 and this phase is not complete.
 
+2026-10-11: the owner chose Wine on the development Mac as the A0 capture
+route. The capture VM shows the 640×480 tactical display scaled into an
+800×600 frame, which the no-resize rule above cannot accept as A0. Wine has
+not yet drawn the tactical view (its Direct3D Retained Mode path is
+unqualified), so the first step is one battle in a separate, named prefix,
+compared against the VM's capture of the same save
+(`tools/original-capture/saves/empire-day30-yaga-alert-isd-hyperdrive.sav`).
+If Wine cannot render it, the VM remains the fallback and the scaling
+question goes back to the owner. The Wine window takes the desktop's focus,
+so runs are scheduled when the owner is away from the Mac.
+
 - Automate the owned original English installation in the existing Windows VM.
 - Use original saves, normal inputs, and, where necessary, editor-assisted save
   setup only to reach states. The displayed frame must always come from the
