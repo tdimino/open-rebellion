@@ -47,9 +47,11 @@ Fresh bounded Ghidra decompiles of the small shared helpers are committed as
 `FUN_006044d0.c`, and `FUN_00606960.c`. The three short tail-entry helpers at
 `0x00606940`, `0x00607d00`, and `0x00607d30` were not recognized as function
 entries by the clean import; their complete bytes are preserved in the
-instruction appendix instead of fabricating decompiler boundaries. Larger
-constructors and dispatchers were inspected in the existing corpus and with
-targeted `objdump` ranges rather than copied into this note.
+instruction appendix instead of fabricating decompiler boundaries. That
+appendix also retains the complete `FUN_005ffe40`, `FUN_005ffe60`, and
+`FUN_005ffe80` display and enable-state wrappers cited by the shared vtable.
+Larger constructors and dispatchers were inspected in the existing corpus and
+with targeted `objdump` ranges rather than copied into this note.
 
 The detail-owner adjudication below additionally cites the committed
 `FUN_00429ce0.c`, `FUN_004591d0.c`, `FUN_0045aac0.c`, `FUN_00441190.c`, four

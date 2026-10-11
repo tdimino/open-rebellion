@@ -25,6 +25,49 @@ presentation state, +0x0c/+0x10 enable/disable, +0x14 native message
 dispatcher, +0x18 common helper, +0x2c presentation show/restore, and +0x30
 asynchronous close request.
 
+FUN_005ffe40: show this object's HWND
+------------------------------------------------------------
+005ffe40  8b 41 18              mov eax,DWORD PTR [ecx+0x18]
+005ffe43  85 c0                 test eax,eax
+005ffe45  74 0c                 je 0x5ffe53
+005ffe47  8b 4c 24 04           mov ecx,DWORD PTR [esp+0x4]
+005ffe4b  51                    push ecx [show command]
+005ffe4c  50                    push eax [this+0x18 HWND]
+005ffe4d  ff 15 d8 82 65 00     call DWORD PTR ds:0x6582d8 [ShowWindow]
+005ffe53  c2 04 00              ret 0x4
+
+FUN_005ffe60: enable this object's HWND when disabled
+------------------------------------------------------------
+005ffe60  56                    push esi
+005ffe61  8b f1                 mov esi,ecx
+005ffe63  8b 46 18              mov eax,DWORD PTR [esi+0x18]
+005ffe66  50                    push eax
+005ffe67  ff 15 94 83 65 00     call DWORD PTR ds:0x658394 [IsWindowEnabled]
+005ffe6d  85 c0                 test eax,eax
+005ffe6f  75 0c                 jne 0x5ffe7d
+005ffe71  8b 4e 18              mov ecx,DWORD PTR [esi+0x18]
+005ffe74  6a 01                 push 0x1 [enable]
+005ffe76  51                    push ecx
+005ffe77  ff 15 98 83 65 00     call DWORD PTR ds:0x658398 [EnableWindow]
+005ffe7d  5e                    pop esi
+005ffe7e  c3                    ret
+
+FUN_005ffe80: disable this object's HWND when enabled
+------------------------------------------------------------
+005ffe80  56                    push esi
+005ffe81  8b f1                 mov esi,ecx
+005ffe83  8b 46 18              mov eax,DWORD PTR [esi+0x18]
+005ffe86  50                    push eax
+005ffe87  ff 15 94 83 65 00     call DWORD PTR ds:0x658394 [IsWindowEnabled]
+005ffe8d  85 c0                 test eax,eax
+005ffe8f  74 0c                 je 0x5ffe9d
+005ffe91  8b 4e 18              mov ecx,DWORD PTR [esi+0x18]
+005ffe94  6a 00                 push 0x0 [disable]
+005ffe96  51                    push ecx
+005ffe97  ff 15 98 83 65 00     call DWORD PTR ds:0x658398 [EnableWindow]
+005ffe9d  5e                    pop esi
+005ffe9e  c3                    ret
+
 FUN_00600280: destroy this object's HWND
 ------------------------------------------------------------
 00600280  8b 41 18              mov eax,DWORD PTR [ecx+0x18]
