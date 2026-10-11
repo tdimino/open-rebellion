@@ -14,9 +14,7 @@ use crate::cockpit::{CockpitFaction, CockpitLayout};
 use crate::message_log::{
     GameMessage, MessageId, MessageLog, MessageRail, MessageTarget, POST_SILENTLY,
 };
-use crate::scroll_bar::{
-    ScrollBar, ScrollBlit, ScrollDrag, ScrollPointer, ScrollRange, TEXT_BAR_299D,
-};
+use crate::scroll_bar::{ScrollBar, ScrollDrag, ScrollRange, TEXT_BAR_299D};
 
 // ---------------------------------------------------------------------------
 // Shell constants (unchanged)
@@ -621,64 +619,6 @@ fn paint_strategy_resource(
     );
 }
 
-/// This frame's pointer in the window's logical coordinates, for a
-/// [`ScrollBar`].
-fn scroll_pointer(ctx: &egui::Context, window_rect: egui::Rect, scale: f32) -> ScrollPointer {
-    ctx.input(|input| ScrollPointer {
-        at: input.pointer.interact_pos().map(|point| {
-            (
-                (point.x - window_rect.min.x) / scale,
-                (point.y - window_rect.min.y) / scale,
-            )
-        }),
-        pressed: input.pointer.primary_pressed(),
-        down: input.pointer.primary_down(),
-        released: input.pointer.primary_released(),
-    })
-}
-
-/// Paint a scroll bar's bitmaps at their own size, each clipped to its
-/// blit's height.
-fn paint_scroll_bar(
-    painter: &egui::Painter,
-    ctx: &egui::Context,
-    cache: &mut BmpCache,
-    window_rect: egui::Rect,
-    scale: f32,
-    blits: &[ScrollBlit],
-) {
-    for blit in blits {
-        let Some([width, height]) =
-            cache.original_resource_size(DllSource::Strategy, blit.resource)
-        else {
-            continue;
-        };
-        let full = message_index_rect(
-            window_rect,
-            scale,
-            blit.x,
-            blit.y,
-            width as f32,
-            height as f32,
-        );
-        let clip = message_index_rect(
-            window_rect,
-            scale,
-            blit.x,
-            blit.y,
-            width as f32,
-            blit.height,
-        );
-        paint_strategy_resource(
-            &painter.with_clip_rect(clip),
-            ctx,
-            cache,
-            blit.resource,
-            full,
-        );
-    }
-}
-
 // ---------------------------------------------------------------------------
 // IndexMode, Actions, State
 // ---------------------------------------------------------------------------
@@ -753,6 +693,9 @@ pub struct MessageIndexState {
     body_scroll: (Option<MessageId>, usize),
     /// The text field's scroll bar press.
     body_drag: ScrollDrag,
+    /// The rows the list last filled with; `None` until the first fill.
+    /// A change of rows is a re-fill (`FUN_00468f20`).
+    filled: Option<Vec<MessageId>>,
 }
 
 impl Default for MessageIndexState {
@@ -769,6 +712,7 @@ impl Default for MessageIndexState {
             list_drag: ScrollDrag::default(),
             body_scroll: (None, 0),
             body_drag: ScrollDrag::default(),
+            filled: None,
         }
     }
 }
@@ -827,6 +771,7 @@ impl MessageIndexState {
         self.anchor = None;
         self.scroll_offset = 0;
         self.last_clicked = None;
+        self.filled = None;
 
         if self.mode != IndexMode::List {
             self.mode = IndexMode::List;
@@ -1100,12 +1045,19 @@ pub fn draw_message_index(
 
     let rows = filtered_messages(log, state.category, player_is_alliance);
 
-    // FUN_00468f20: if no visible row is selected, select the first.
-    let any_visible_selected = rows.iter().any(|msg| state.selected.contains(&msg.id));
-    if !any_visible_selected && !rows.is_empty() && state.mode == IndexMode::List {
-        state.selected.clear();
-        state.selected.insert(rows[0].id);
-        state.anchor = Some(0);
+    // FUN_00468f20: when the list fills (opening, a category, a message
+    // added or deleted) and no visible row is selected, select the first.
+    // Between fills an empty selection stays empty, as a Ctrl-click on the
+    // only selected row leaves it in the original (2026-10-09 VM capture).
+    let ids: Vec<MessageId> = rows.iter().map(|msg| msg.id).collect();
+    if state.mode == IndexMode::List && state.filled.as_ref() != Some(&ids) {
+        let any_visible_selected = ids.iter().any(|id| state.selected.contains(id));
+        if !any_visible_selected && !ids.is_empty() {
+            state.selected.clear();
+            state.selected.insert(ids[0]);
+            state.anchor = Some(0);
+        }
+        state.filled = Some(ids);
     }
 
     // Clamp scroll.
@@ -1297,13 +1249,13 @@ fn draw_list_rows(
                 visible: LIST_HEIGHT / ROW_HEIGHT,
                 total: rows.len(),
             };
-            let pointer = scroll_pointer(ctx, window_rect, scale);
+            let pointer = crate::scroll_bar::egui_pointer(ctx, window_rect, scale);
             state.scroll_offset = bar.update(&mut state.list_drag, range, VISIBLE_ROWS, pointer);
             let range = ScrollRange {
                 first: state.scroll_offset,
                 ..range
             };
-            paint_scroll_bar(
+            crate::scroll_bar::paint_egui(
                 ui.painter(),
                 ctx,
                 cache,
@@ -1564,7 +1516,7 @@ fn draw_single_message(
                 visible: TEXT_AREA_HEIGHT / line_height,
                 total: if overflows { lines } else { 0 },
             };
-            let pointer = scroll_pointer(ctx, window_rect, scale);
+            let pointer = crate::scroll_bar::egui_pointer(ctx, window_rect, scale);
             let first = bar.update(
                 &mut state.body_drag,
                 range,
@@ -1581,7 +1533,7 @@ fn draw_single_message(
                 galley,
                 Color32::WHITE,
             );
-            paint_scroll_bar(
+            crate::scroll_bar::paint_egui(
                 painter,
                 ctx,
                 cache,

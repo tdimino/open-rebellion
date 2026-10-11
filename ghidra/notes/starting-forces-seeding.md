@@ -78,6 +78,18 @@ loop:
   first fleet at the system that `FUN_005131b0` accepts, else a new fleet
   (`FUN_004f7d50`, `0x8000004`); hyp: `FUN_005131b0` is untraced. Then
   `FUN_0051bf30` places the items.
+- `FUN_0051bf30` (read in full): a group's first item is its lead. A lead
+  that `FUN_004f26e0` resolves is created as a child of the parent
+  (`FUN_004f7d50`), and every following item is created aboard it
+  (`FUN_004f7cf0`); with a null lead (item 0) they are created on the
+  parent itself. So CMUNCRTB (null lead) gives Coruscant 10 TIE squadrons of
+  its own, CMUNYVTB Yavin an X-wing and a Y-wing, CMUNHQTB the HQ four
+  X-wings and two Y-wings, while CMUNEFTB's six TIEs board its Star
+  Destroyer. A CMUNEMTB/CMUNALTB group that is a lone squadron
+  (`[0x1c000005]`, `[0x1c000003]`, `[0x1c000004]`) lands on the system.
+  The running original showed 12 TIE squadrons of Coruscant's own on day 5
+  (`.artifacts/native-checks/2026-10-10-original-coruscant-fighters/`):
+  10 from CMUNCRTB and, hyp, two lone-squadron rolls.
 
 ## Difficulty
 
@@ -136,3 +148,10 @@ before seeding (`rebellion-data/src/lib.rs`), so the budget prices
 regiments, special forces and facilities. `apply_army_seed` is gone. Seed
 42, Easy: Alliance 550 − 279 = +271, Empire 350 − 331 = +19, on day 0 in
 the native build (`.artifacts/native-checks/2026-10-09-starting-forces/`).
+
+2026-10-10: squadrons follow `FUN_0051bf30`. `dispatch_ground_item` puts a
+null-lead group's squadrons on the system (`System::fighters`), and a
+budget group without a capital-ship lead does the same; before, the
+garrison tables' 18 squadrons were dropped and lone budget squadrons made
+fighter-only fleets. Seed 42, Easy, day 0 now reads Empire 350 − 352 = −2:
+Coruscant's ten TIEs are fixed seeds that the budget cannot refuse.

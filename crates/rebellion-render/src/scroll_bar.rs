@@ -11,8 +11,9 @@
 //! (`FUN_0060fb80`) is as long as the visible share of the track, raised to
 //! 12 pixels when under 13.
 //!
-//! The module is only geometry and input; each window paints the
-//! [`ScrollBlit`]s with its own painter.
+//! The bar itself is only geometry and input. [`egui_pointer`] and
+//! [`paint_egui`] serve the egui windows that own one (the Message Index,
+//! the Defenses window); the Battle Alert paints its own blits.
 
 /// One RCDATA's art: the bar's width, then the track tile, the arrows
 /// (normal, pressed) and the thumb's top, tiled middle and bottom.
@@ -32,6 +33,15 @@ pub(crate) const LIST_BAR_29FC: ScrollBarArt = ScrollBarArt {
     up: [0x29fe, 0x29ff],
     down: [0x2a00, 0x2a01],
     thumb: [0x2a02, 0x2a03, 0x2a04],
+};
+
+/// RCDATA `0x29cc`: the System Defenses window's list (`FUN_004a8790`).
+pub(crate) const LIST_BAR_29CC: ScrollBarArt = ScrollBarArt {
+    width: 0x0a,
+    track: 0x29cd,
+    up: [0x29ce, 0x29cf],
+    down: [0x29d0, 0x29d1],
+    thumb: [0x29d2, 0x29d3, 0x29d4],
 };
 
 /// RCDATA `0x299d`: the Message Index's list and its message text field
@@ -309,5 +319,63 @@ impl ScrollBar {
             height: ARROW_HEIGHT,
         });
         blits
+    }
+}
+
+/// This frame's pointer in an egui window's logical coordinates.
+pub(crate) fn egui_pointer(
+    ctx: &egui_macroquad::egui::Context,
+    window_rect: egui_macroquad::egui::Rect,
+    scale: f32,
+) -> ScrollPointer {
+    ctx.input(|input| ScrollPointer {
+        at: input.pointer.interact_pos().map(|point| {
+            (
+                (point.x - window_rect.min.x) / scale,
+                (point.y - window_rect.min.y) / scale,
+            )
+        }),
+        pressed: input.pointer.primary_pressed(),
+        down: input.pointer.primary_down(),
+        released: input.pointer.primary_released(),
+    })
+}
+
+/// Paint a bar's STRATEGY bitmaps in an egui window at their own size,
+/// each clipped to its blit's height.
+pub(crate) fn paint_egui(
+    painter: &egui_macroquad::egui::Painter,
+    ctx: &egui_macroquad::egui::Context,
+    cache: &mut crate::bmp_cache::BmpCache,
+    window_rect: egui_macroquad::egui::Rect,
+    scale: f32,
+    blits: &[ScrollBlit],
+) {
+    use crate::bmp_cache::DllSource;
+    use egui_macroquad::egui;
+    for blit in blits {
+        let Some([width, height]) =
+            cache.original_resource_size(DllSource::Strategy, blit.resource)
+        else {
+            continue;
+        };
+        let at = |h: f32| {
+            egui::Rect::from_min_size(
+                egui::pos2(
+                    window_rect.min.x + blit.x * scale,
+                    window_rect.min.y + blit.y * scale,
+                ),
+                egui::vec2(width as f32 * scale, h * scale),
+            )
+        };
+        let Some(texture) = cache.get(ctx, DllSource::Strategy, blit.resource) else {
+            continue;
+        };
+        painter.with_clip_rect(at(blit.height)).image(
+            texture.id(),
+            at(height as f32),
+            egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+            egui::Color32::WHITE,
+        );
     }
 }

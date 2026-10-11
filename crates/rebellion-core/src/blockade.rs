@@ -301,7 +301,8 @@ impl BlockadeSystem {
     ///
     /// 100 unless the system is blockaded and has no KDY-150. Otherwise
     /// `max(0, 100 - ships * GNPRTB[7684] - fighters * GNPRTB[7685])` over every
-    /// fleet at the system, both sides (`FUN_0055a020`, clamped by
+    /// fleet at the system and the squadrons it holds, both sides
+    /// (`FUN_0055a020`, clamped by
     /// `FUN_0053e120`).
     #[must_use]
     pub fn withdraw_percent(world: &GameWorld, system: SystemKey) -> u8 {
@@ -328,6 +329,14 @@ impl BlockadeSystem {
                 let squadrons: i64 = fleet.fighters.iter().map(|f| i64::from(f.count)).sum();
                 (ships + i64::from(fleet.ship_count()), fighters + squadrons)
             });
+        // And the squadrons the system holds, both sides
+        // (`blockade-troop-withdrawal.md`).
+        let fighters = fighters
+            + sys
+                .fighters
+                .iter()
+                .map(|entry| i64::from(entry.count))
+                .sum::<i64>();
         let param = |id| i64::from(world.gnprtb.value(id, world.difficulty_index));
         let penalty = ships * param(GNPRTB_WITHDRAW_PENALTY_PER_CAPSHIP)
             + fighters * param(GNPRTB_WITHDRAW_PENALTY_PER_FIGHTER);
@@ -426,9 +435,10 @@ impl BlockadeSystem {
     /// contested one, when populated, by either side's fleets. A neutral
     /// system never is.
     ///
-    /// port: presence counts fleets only, because fighter squadrons exist
-    /// only inside fleets, and every fleet is active. hyp: `Contested` is the
-    /// original's side 3, and an `Uprising` system keeps its holder's side.
+    /// Presence is a side's fleets (`FUN_004ffef0`) or the squadrons the
+    /// system holds for it (`FUN_00503a50`). port: every fleet is active.
+    /// hyp: `Contested` is the original's side 3, and an `Uprising` system
+    /// keeps its holder's side.
     fn system_is_blockaded(world: &GameWorld, sys: &crate::world::System) -> bool {
         use crate::dat::Faction;
 
@@ -436,9 +446,12 @@ impl BlockadeSystem {
             .fleets
             .iter()
             .filter_map(|&fk| world.fleets.get(fk))
-            .fold((false, false), |(alliance, empire), fleet| {
-                (alliance || fleet.is_alliance, empire || !fleet.is_alliance)
-            });
+            .fold(
+                (sys.squadron_count(true) > 0, sys.squadron_count(false) > 0),
+                |(alliance, empire), fleet| {
+                    (alliance || fleet.is_alliance, empire || !fleet.is_alliance)
+                },
+            );
         if alliance && empire {
             return false;
         }
@@ -495,6 +508,7 @@ mod tests {
             fleets: vec![],
             ground_units: vec![],
             special_forces: vec![],
+            fighters: Vec::new(),
             defense_facilities: vec![],
             manufacturing_facilities: vec![],
             production_facilities: vec![],
@@ -556,6 +570,7 @@ mod tests {
             fleets: vec![],
             ground_units: vec![],
             special_forces: vec![],
+            fighters: Vec::new(),
             defense_facilities: vec![],
             manufacturing_facilities: vec![],
             production_facilities: vec![],

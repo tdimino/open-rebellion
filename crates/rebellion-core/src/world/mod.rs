@@ -278,6 +278,11 @@ pub struct System {
     pub ground_units: Vec<TroopKey>,
     /// Special forces units assigned to this system.
     pub special_forces: Vec<SpecialForceKey>,
+    /// Fighter squadrons held by the system itself, not aboard a ship: the
+    /// system's direct children of families `0x1c..0x20` (`FUN_00503550`,
+    /// listed by `FUN_00503a50` on the Defenses window's third page).
+    #[serde(default)]
+    pub fighters: Vec<SystemSquadrons>,
     /// Planetary shields, turbolaser batteries, and similar fixed defenses.
     pub defense_facilities: Vec<DefenseFacilityKey>,
     /// Shipyards and troop training centers.
@@ -897,6 +902,62 @@ pub struct FighterEntry {
     /// ship, `FUN_005039d0`). 0 holds them on the fleet itself. port: a
     /// fleet with no capital ship, or more squadrons than its ships hold.
     pub carrier: u32,
+}
+
+/// Squadrons of one class and side held by a system (`System::fighters`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SystemSquadrons {
+    pub class: FighterKey,
+    pub count: u32,
+    pub is_alliance: bool,
+}
+
+impl System {
+    /// Add `count` squadrons of `class` for a side to the system's own.
+    pub fn add_squadrons(&mut self, class: FighterKey, count: u32, is_alliance: bool) {
+        if count == 0 {
+            return;
+        }
+        match self
+            .fighters
+            .iter_mut()
+            .find(|entry| entry.class == class && entry.is_alliance == is_alliance)
+        {
+            Some(entry) => entry.count += count,
+            None => self.fighters.push(SystemSquadrons {
+                class,
+                count,
+                is_alliance,
+            }),
+        }
+    }
+
+    /// Take one squadron of `class` for a side from the system's own.
+    /// Returns whether it held one.
+    pub fn take_squadron(&mut self, class: FighterKey, is_alliance: bool) -> bool {
+        let Some(index) = self
+            .fighters
+            .iter()
+            .position(|entry| entry.class == class && entry.is_alliance == is_alliance)
+        else {
+            return false;
+        };
+        self.fighters[index].count -= 1;
+        if self.fighters[index].count == 0 {
+            self.fighters.remove(index);
+        }
+        true
+    }
+
+    /// The squadrons a side holds at the system itself.
+    #[must_use]
+    pub fn squadron_count(&self, is_alliance: bool) -> u32 {
+        self.fighters
+            .iter()
+            .filter(|entry| entry.is_alliance == is_alliance)
+            .map(|entry| entry.count)
+            .sum()
+    }
 }
 
 /// A single hull of a capital ship — the primary ship record in Fleet.
@@ -1579,6 +1640,13 @@ pub struct GameWorld {
     /// The last tag given to a capital ship that took a squadron or a
     /// regiment aboard (`ShipInstance::tag`).
     pub last_ship_tag: u32,
+    /// Squadrons travelling on their own, in departure order. The original
+    /// reparents the object to its destination at once and marks it en
+    /// route (`FUN_00556390`, `+0x50` bit 4), so it stays in the world: it
+    /// costs maintenance (`FUN_0052fff0`) but counts as presence at neither
+    /// end (`FUN_00509710` mode 1). `ghidra/notes/squadron-menu-and-transit.md`.
+    #[serde(default)]
+    pub squadron_transits: Vec<crate::troop_transport::SquadronTransit>,
 }
 
 /// The fleet record's name (`+0x34`, TEXTSTRA 11523): a fleet's name until
@@ -1973,6 +2041,7 @@ mod facility_ownership_tests {
             fleets: Vec::new(),
             ground_units: Vec::new(),
             special_forces: Vec::new(),
+            fighters: Vec::new(),
             defense_facilities: Vec::new(),
             manufacturing_facilities: Vec::new(),
             production_facilities: Vec::new(),
@@ -2583,6 +2652,7 @@ mod tests {
             fleets: vec![],
             ground_units: vec![],
             special_forces: vec![],
+            fighters: Vec::new(),
             defense_facilities: vec![],
             manufacturing_facilities: vec![],
             production_facilities: vec![],

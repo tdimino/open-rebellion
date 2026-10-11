@@ -1,6 +1,7 @@
-//! The world-changing developer commands: `Post message`, `Battle at` and
-//! `Blockade`. Each one goes through the production code that the event it
-//! stands for would run (the message builders, `apply_fleet_arrival` as the
+//! The world-changing developer commands: `Post message`, `Battle at`,
+//! `Blockade` and `Give Death Star`. Each one goes through the production
+//! code that the event it stands for would run (the message builders,
+//! `apply_fleet_arrival` as the
 //! app's own arrival step calls it, the tick's own combat and blockade
 //! checks), so what it shows is the game's
 //! behaviour. A command whose precondition fails is refused with the reason
@@ -28,7 +29,8 @@ pub fn find_system(world: &GameWorld, name: &str) -> Result<SystemKey, String> {
 
 /// Every system by name: its holder (`A`, `E`, `-` for neither) and, after
 /// a slash, the sides with fleets there; for choosing a `Battle at` or
-/// `Blockade` target.
+/// `Blockade` target. A system with squadrons adds the counts the system
+/// holds and its fleets carry, Alliance then Empire.
 pub fn list_systems(world: &GameWorld) -> String {
     let mut rows: Vec<String> = world
         .systems
@@ -39,13 +41,45 @@ pub fn list_systems(world: &GameWorld) -> String {
                 Some(false) => "E",
                 None => "-",
             };
-            let fleets = match (side_present(world, key, true), side_present(world, key, false)) {
+            let fleets = match (side_has_fleet(world, key, true), side_has_fleet(world, key, false)) {
                 (true, true) => "AE",
                 (true, false) => "A",
                 (false, true) => "E",
                 (false, false) => "",
             };
-            format!("{} {holder}/{fleets}", system.name)
+            let aboard = |is_alliance: bool| -> u32 {
+                system
+                    .fleets
+                    .iter()
+                    .filter_map(|&fleet| world.fleets.get(fleet))
+                    .filter(|fleet| fleet.is_alliance == is_alliance)
+                    .flat_map(|fleet| &fleet.fighters)
+                    .map(|entry| entry.count)
+                    .sum()
+            };
+            let counts = [
+                system.squadron_count(true),
+                system.squadron_count(false),
+                aboard(true),
+                aboard(false),
+            ];
+            let mut row = format!("{} {holder}/{fleets}", system.name);
+            if counts.iter().any(|&count| count > 0) {
+                row.push_str(&format!(
+                    " squadrons {}/{} fleets {}/{}",
+                    counts[0], counts[1], counts[2], counts[3]
+                ));
+            }
+            let yards = system
+                .manufacturing_facilities
+                .iter()
+                .filter_map(|&facility| world.manufacturing_facilities.get(facility))
+                .filter(|facility| facility.is_shipyard)
+                .count();
+            if yards > 0 {
+                row.push_str(&format!(" yards {yards}"));
+            }
+            row
         })
         .collect();
     rows.sort();
@@ -183,14 +217,14 @@ pub fn blockade(
     let name = world.systems[system].name.clone();
     let holder = holder_is_alliance(world, system)
         .ok_or_else(|| format!("{name} has no holder to blockade"))?;
-    if side_present(world, system, holder) {
+    if side_has_fleet(world, system, holder) {
         return Err(format!("the holder has a fleet at {name}; that is a battle"));
     }
     Ok(bring_side(world, movement, troop_transport, system, !holder, tick)?
         .unwrap_or_else(|| "the blockader already orbits it".into()))
 }
 
-fn side_present(world: &GameWorld, system: SystemKey, alliance: bool) -> bool {
+fn side_has_fleet(world: &GameWorld, system: SystemKey, alliance: bool) -> bool {
     world.systems[system]
         .fleets
         .iter()
@@ -208,7 +242,7 @@ fn bring_side(
     alliance: bool,
     tick: u64,
 ) -> Result<Option<String>, String> {
-    if side_present(world, system, alliance) {
+    if side_has_fleet(world, system, alliance) {
         return Ok(None);
     }
     let side = if alliance { "Alliance" } else { "Imperial" };
@@ -252,4 +286,36 @@ fn bring_side(
         world.systems[system].name
     );
     Ok(Some(format!("moved {side} {fleet_name} from {origin_name}")))
+}
+
+/// Mark the named Imperial fleet as carrying the Death Star, as a completed
+/// construction leaves it (`DeathStarState::death_star_fleet`). Refused for
+/// a name no Imperial fleet has, or while another fleet carries it.
+pub fn give_death_star(
+    world: &mut GameWorld,
+    death_star: &mut rebellion_core::death_star::DeathStarState,
+    name: &str,
+) -> Result<String, String> {
+    if let Some(holder) = world.fleets.iter().find(|(_, fleet)| fleet.has_death_star).map(|(key, _)| key) {
+        return Err(format!(
+            "{} already carries the Death Star",
+            world.fleet_name(holder).unwrap_or_default()
+        ));
+    }
+    // Both sides number their fleets, so only Imperial names are searched.
+    let fleet = world
+        .fleets
+        .iter()
+        .filter(|(_, fleet)| !fleet.is_alliance)
+        .map(|(key, _)| key)
+        .find(|&key| {
+            world
+                .fleet_name(key)
+                .is_some_and(|fleet_name| fleet_name.eq_ignore_ascii_case(name.trim()))
+        })
+        .ok_or_else(|| format!("no Imperial fleet named {name:?}"))?;
+    world.fleets[fleet].has_death_star = true;
+    death_star.death_star_fleet = Some(fleet);
+    let system = world.systems.get(world.fleets[fleet].location).map_or("", |s| s.name.as_str());
+    Ok(format!("{} at {system} carries the Death Star", world.fleet_name(fleet).unwrap_or_default()))
 }

@@ -17,7 +17,7 @@ none of them. The code lives in `crates/rebellion-app/src/`:
 | `dev_commands.rs` | the dev gate, the script queue, the `DevCommand` grammar |
 | `dev_channel.rs` | the live inbox, the results file, `Capture` |
 | `dev_input.rs` | scripted clicks, drags and keys |
-| `dev_actions.rs` | `Post message`, `Battle at`, `Blockade` |
+| `dev_actions.rs` | `Post message`, `Battle at`, `Blockade`, `Give Death Star` |
 
 ## The loop
 
@@ -51,10 +51,11 @@ scaled to 640×480.
 
 | Command | Runs | Does |
 |---|---|---|
-| `Capture` / `Capture: <name>` | anywhere | Saves the frame being drawn as `<evidence>/<name>.png` (unnamed: `capture-N`). The name takes letters, digits, `-`, `_` and `.`, and may not start with `.`. The result carries `path` and the pixel size. |
+| `Capture` / `Capture: <name>` | anywhere | Saves the frame being drawn as `<evidence>/<name>.png` (unnamed: `capture-N`). The name takes letters, digits, `-`, `_` and `.`, and may not start with `.`. The result carries `path` and the pixel size. `Capture <anything>` without the colon is refused. |
 | `Status` | anywhere | Reports `mode`, `day`, `speed`, `pause_alert` (the "Resume Game Play?" alert is up), `battle_alert`, `message_index` (category/view or `closed`), `briefing`, `side`, and each side's top strip as `alliance=`/`empire=` raw/refined/capacity-load. |
 | `Wait <n> ms` / `Wait <n> frames` | anywhere | Holds the queue; the result arrives when the wait ends. |
-| `Click <x>,<y>` / `Right click <x>,<y>` | anywhere | Move, press and release at the point, one per frame. |
+| `Wait until day <n>` / `Wait until battle alert` / `Wait until battle` / `Wait until galaxy` | anywhere | Holds the queue until the galaxy clock reaches the day, the Battle Alert opens, a tactical battle shows, or the galaxy view shows; the result notes `day=… after N frames`. After 36,000 frames it is refused with the day and mode, and the queue moves on. Give `dev-send.sh` a `--timeout` long enough for the wait. At Very Slow a day can take about 8,000 frames (2026-10-11), so raise the speed before waiting several days. |
+| `Click <x>,<y>` / `Right click <x>,<y>` / `Ctrl click <x>,<y>` | anywhere | Move, press and release at the point, one per frame; `Ctrl click` holds Control around them. |
 | `Drag <x>,<y> to <x>,<y>` | anywhere | Press, move over 8 frames, release. |
 | `Press <key>` | anywhere | Press and release: a letter, a digit, `f1`–`f12`, `escape`, `return`, `space`, `tab`, `delete`, the arrows, `home`, `end`, `pageup`, `pagedown`. |
 | `Start game: Alliance` / `Start game: Empire` | main menu | Starts through the menu's faction control. |
@@ -62,15 +63,20 @@ scaled to 640×480.
 | `Open Message Index: <category> [<row>\|last]` | galaxy | Opens the window on All, Popular Support, Fleet, Mission, Resource, Manufacturing, Defense, Conflict, Chat or Advice. A row (1-based in list order, oldest first) or `last` shows that message in mode 2; the result names it, and the log records its sound (`[message] sound 0x… started volume=…`; 0 under `launch-native.sh`'s mute). Advice drops the speed to Very Slow, as the original does. |
 | `Post message: <class> at <system>` | galaxy | Files `uprising began`, `uprising ended`, `blockade`, `fleet arrival`, `loyalty joins` or `loyalty neutral` through the class's builder, to both sides where the original files both. Refused where the original files nothing (a neutral system, no blockading fleet, no fleet). |
 | `Battle at <system>` | galaxy | Moves an idle fleet of each side missing there, through `apply_fleet_arrival`. The next tick's combat check opens the Battle Alert, so the game must not be paused. The result names the holder and the fleets moved. |
+| `Give Death Star: <fleet>` | galaxy | Marks the named Imperial fleet as carrying the Death Star (`Fleet::has_death_star`, `DeathStarState::death_star_fleet`), as a finished construction leaves it. Send it after `Battle at`, which brings only fleets without one. Only Imperial fleets are searched. Refused for an unknown name, or while another fleet carries it. |
+| `Knock out hyperdrive: <n>` | anywhere | In a battle (the Battle Alert included), puts the player's nth living ship (1-based, roster order) out of hyperspace through the battle's own subsystem hits. Refused with no battle, past the last ship, or when that hyperdrive is already out. |
 | `Blockade <system>` | galaxy | Moves an idle fleet of the side not holding the system; the simulation forms the blockade. Refused for a neutral system or where the holder has a fleet. |
 | `Advisor: post code <n>` | galaxy | Posts advice code `n` (decimal or `0x` hex, up to `0xff`) to the droids, as a game event does. |
 | `Release advice topic <n>` | galaxy | Releases held topic `n` now and files it under Advice. Refused before the opening topics are filed, or for a topic already filed. |
-| `List systems` | galaxy | Reports every system as `<name> <holder>/<fleets>`: `A`, `E` or `-`, then the sides with fleets there. Use it to choose a `Battle at` or `Blockade` target. |
+| `List systems` | galaxy | Reports every system as `<name> <holder>/<fleets>`: `A`, `E` or `-`, then the sides with fleets there; a system with squadrons adds `squadrons <a>/<e> fleets <a>/<e>`, those the system holds and those its fleets carry, and a system with a shipyard adds `yards <n>`. Use it to choose a `Battle at` or `Blockade` target. |
 | `List advice topics` | galaxy | Reports `held: [n, …]`, the held topics in release order (empty before the opening topics are filed). |
 | any palette label | galaxy | `Open sector window: <system>`, `Open <quadrant> window: <system>`, `Open <quadrant> icon menu: <system>`, the speed and time commands. |
 
 "Galaxy" commands wait until the galaxy shows and the previous command's
-interface work has finished. "Anywhere" commands run in the main menu,
+interface work has finished. A galaxy command still waiting after 600 frames
+(about 10 s; for example behind a Battle Alert or in a battle) is refused with
+`waited 600 frames for the galaxy view; the game is in <mode>`, and the queue
+moves on. "Anywhere" commands run in the main menu,
 battles and modal screens too. The palette lists the argument-free ones
 (`Capture`, `Skip briefing`, each `Open Message Index` category).
 

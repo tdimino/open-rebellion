@@ -195,6 +195,37 @@ no source in this trace.
   window covers that planet in the sector window) and `travel`, on both
   sides.
 
+## A squadron's Move
+
+A fighter squadron (`0x1c`) takes the same order (2026-10-10, read from the
+decompiles above). The regiment exceptions do not cover it:
+
+- `FUN_0053d430`'s unpopulated-system exception is for an all-regiment
+  group, so a squadron sent to another side's system, populated or not, is
+  refused (`1`/`0x28`).
+- `FUN_005073d0`'s `0x204` lifts test the member's type against `8..0x10`
+  and `0x10..0x14`; `0x1c` is in neither, so a destroyed planet (`1`/`0x22`),
+  another side's (`FUN_00553410`) and a blockaded one (`0x90`/4) refuse it,
+  and the leg builder then tries the side's fleets there.
+- `FUN_00555920`'s cross-system side check covers regiments
+  (`0x10..0x13`) only. Its zero-speed check never refuses a squadron:
+  `FUN_00502f80` returns the class hyperdrive, else the damaged rating, else
+  the GNPRTB 1 default (`build-delivery.md`).
+- A planet's room is unlimited (`FUN_00507750`); a ship's is its class
+  `+0x26c` less the squadrons aboard (`FUN_00500b40`), and the leg builder
+  keeps the ship with the most room (`FUN_00552b10`), else `1`/`0x27`.
+
+Port: `TroopTransportState::move_squadron`, from the Fleet window's Fighters
+tab or the Defenses window's Squadrons page. A cross-system squadron is held
+in `TroopTransportState`'s squadron transits and placed on arrival, as a
+regiment is; one bound for a fleet follows a merge and dies with the fleet.
+port: a fleet's room is its whole hangar space less the squadrons bound for
+it. port: a travelling squadron, like a travelling regiment, is out of the
+world until it arrives, so upkeep and presence do not count it; the
+original's object sits in its new container with the en route bit.
+Checked e2e 2026-10-10 on both sides
+(`.artifacts/native-checks/2026-10-10-squadron-moves-*`).
+
 ## Still open
 
 - Who sets fleet `+0x58` bits 1 and 2, which steer the leg builder.

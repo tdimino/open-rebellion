@@ -29,6 +29,8 @@ enum Step {
     Drag(f32, f32),
     Up { x: f32, y: f32, right: bool },
     Key { code: u16, down: bool },
+    /// Control pressed or released, as AppKit reports a modifier key.
+    Ctrl(bool),
 }
 
 /// Input waiting to be posted, one step a frame.
@@ -44,13 +46,20 @@ impl DevInput {
         !self.steps.is_empty()
     }
 
-    /// Queue a click at a logical point.
-    pub fn click(&mut self, x: f32, y: f32, right: bool) {
+    /// Queue a click at a logical point, with Control held around it when
+    /// `ctrl`.
+    pub fn click(&mut self, x: f32, y: f32, right: bool, ctrl: bool) {
+        if ctrl {
+            self.steps.push_back(Step::Ctrl(true));
+        }
         self.steps.extend([
             Step::Move(x, y),
             Step::Down { x, y, right },
             Step::Up { x, y, right },
         ]);
+        if ctrl {
+            self.steps.push_back(Step::Ctrl(false));
+        }
     }
 
     /// Queue a press at `from`, a move in even steps, and a release at `to`.
@@ -94,7 +103,12 @@ impl DevInput {
         let result = platform::post(step);
         if result.is_err() {
             self.steps
-                .retain(|step| matches!(step, Step::Up { .. } | Step::Key { down: false, .. }));
+                .retain(|step| {
+                    matches!(
+                        step,
+                        Step::Up { .. } | Step::Key { down: false, .. } | Step::Ctrl(false)
+                    )
+                });
         }
         result
     }
@@ -170,6 +184,12 @@ mod platform {
     const LEFT_DRAGGED: u64 = 6;
     const KEY_DOWN: u64 = 10;
     const KEY_UP: u64 = 11;
+    const FLAGS_CHANGED: u64 = 12;
+    /// `NSEventModifierFlagControl` with the left-Control device bit, the
+    /// mask miniquad's `flagsChanged:` reads as left Control.
+    const LEFT_CONTROL: u64 = 0x04_0001;
+    /// `kVK_Control`.
+    const CONTROL_KEY: u16 = 59;
 
     /// The game window and its content view (miniquad's view): the
     /// application's largest window (it also owns a small menu-bar strip).
@@ -239,6 +259,21 @@ mod platform {
                         isARepeat: NO
                         keyCode: code];
                     (event, if down { sel!(keyDown:) } else { sel!(keyUp:) })
+                }
+                Step::Ctrl(down) => {
+                    let empty: ObjcId = msg_send![class!(NSString), string];
+                    let event: ObjcId = msg_send![class!(NSEvent),
+                        keyEventWithType: FLAGS_CHANGED
+                        location: NSPoint { x: 0.0, y: 0.0 }
+                        modifierFlags: if down { LEFT_CONTROL } else { 0u64 }
+                        timestamp: time
+                        windowNumber: number
+                        context: nil
+                        characters: empty
+                        charactersIgnoringModifiers: empty
+                        isARepeat: NO
+                        keyCode: CONTROL_KEY];
+                    (event, sel!(flagsChanged:))
                 }
             };
             if event.is_null() {

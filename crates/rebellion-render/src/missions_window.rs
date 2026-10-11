@@ -166,6 +166,8 @@ struct OpenMissionsWindow {
 #[derive(Debug)]
 pub struct MissionsWindowState {
     faction: CockpitFaction,
+    /// When one of these windows last took focus (`window_focus`).
+    focus_serial: u64,
     windows: Vec<OpenMissionsWindow>,
 }
 
@@ -173,6 +175,7 @@ impl Default for MissionsWindowState {
     fn default() -> Self {
         Self {
             faction: CockpitFaction::Alliance,
+            focus_serial: 0,
             windows: Vec::new(),
         }
     }
@@ -214,6 +217,7 @@ impl MissionsWindowState {
         let selected = mission_rows(world, fog, missions, player, system)
             .first()
             .map(|row| row.mission);
+        self.focus_serial = crate::window_focus::next_serial();
         self.windows.push(OpenMissionsWindow {
             system,
             logical_position: clamp_window_to_galaxy(
@@ -391,6 +395,13 @@ impl MissionsWindowState {
         true
     }
 
+    /// When one of this kind's windows last took focus; the newest kind
+    /// is in front (`window_focus`).
+    #[must_use]
+    pub fn focus_serial(&self) -> u64 {
+        self.focus_serial
+    }
+
     fn focus(&mut self, system: SystemKey) -> bool {
         let Some(index) = self
             .windows
@@ -400,6 +411,7 @@ impl MissionsWindowState {
             return false;
         };
         let window = self.windows.remove(index);
+        self.focus_serial = crate::window_focus::next_serial();
         self.windows.push(window);
         true
     }
@@ -863,6 +875,7 @@ pub fn draw_missions_windows(
     faction: CockpitFaction,
     layout: CockpitLayout,
     cache: &mut BmpCache,
+    front: bool,
 ) -> Vec<MissionsWindowAction> {
     state.prepare_faction(faction);
     let player = cockpit_faction(faction);
@@ -887,7 +900,7 @@ pub fn draw_missions_windows(
             fog,
             missions,
             window,
-            focused_system == Some(window.system),
+            front && focused_system == Some(window.system),
             faction,
             layout,
             cache,
@@ -1316,6 +1329,7 @@ mod tests {
             fleets: Vec::new(),
             ground_units: Vec::new(),
             special_forces: Vec::new(),
+            fighters: Vec::new(),
             defense_facilities: Vec::new(),
             manufacturing_facilities: Vec::new(),
             production_facilities: Vec::new(),
@@ -1985,6 +1999,7 @@ mod tests {
                     CockpitFaction::Alliance,
                     scaled(),
                     &mut cache,
+                    true,
                 ));
             });
             result.painted = PAINTED.with(|painted| painted.take());

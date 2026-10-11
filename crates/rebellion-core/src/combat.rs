@@ -12,7 +12,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::ids::{FleetKey, SystemKey, TroopKey};
+use crate::ids::{CapitalShipKey, FighterKey, FleetKey, SystemKey, TroopKey};
 use crate::world::GameWorld;
 
 /// GNPRTB parameter 0x1400 for combat difficulty scaling.
@@ -64,16 +64,59 @@ impl CombatPhaseFlags {
 // Public result types
 // ---------------------------------------------------------------------------
 
-/// Outcome of space combat auto-resolve between two fleets.
+/// Outcome of space combat auto-resolve between two sides.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpaceCombatResult {
-    pub attacker_fleet: FleetKey,
-    pub defender_fleet: FleetKey,
+    /// The attacking side's fleet; `None` when it fights with the squadrons
+    /// it holds at the system alone.
+    pub attacker_fleet: Option<FleetKey>,
+    pub defender_fleet: Option<FleetKey>,
     pub system: SystemKey,
     pub winner: CombatSide,
     pub ship_damage: Vec<ShipDamageEvent>,
     pub fighter_losses: Vec<FighterLossEvent>,
+    /// Losses among the squadrons the system holds (`System::fighters`).
+    #[serde(default)]
+    pub system_fighter_losses: Vec<SystemFighterLossEvent>,
     pub tick: u64,
+}
+
+/// Whether a side is present at `system` for battle (`FUN_00509710`): it has
+/// a fleet there, or squadrons the system holds for it. Defense facilities
+/// do not count. `FUN_0050b8e0` starts a battle when both sides are present
+/// (`ghidra/notes/system-squadrons-combat.md`).
+#[must_use]
+pub fn side_present(world: &GameWorld, system: SystemKey, is_alliance: bool) -> bool {
+    world.systems.get(system).is_some_and(|value| {
+        value.squadron_count(is_alliance) > 0
+            || value.fleets.iter().any(|&fleet| {
+                world
+                    .fleets
+                    .get(fleet)
+                    .is_some_and(|fleet| fleet.is_alliance == is_alliance)
+            })
+    })
+}
+
+/// One side of a space battle: its fleet, if any, and the squadrons the
+/// side holds at the battle system. `FUN_00516ef0` adds every system squadron
+/// to the combat (`FUN_00556710`), and they fight without a carrier
+/// (`ghidra/notes/system-squadrons-combat.md`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CombatForce {
+    pub fleet: Option<FleetKey>,
+    pub is_alliance: bool,
+}
+
+impl CombatForce {
+    /// `fleet` and its side's squadrons at the battle system.
+    #[must_use]
+    pub fn of_fleet(world: &GameWorld, fleet: FleetKey) -> Self {
+        Self {
+            fleet: Some(fleet),
+            is_alliance: world.fleets[fleet].is_alliance,
+        }
+    }
 }
 
 /// Which side won a combat engagement.
@@ -92,6 +135,34 @@ pub struct ShipDamageEvent {
     pub ship_index: usize,
     pub hull_before: i32,
     pub hull_after: i32,
+}
+
+/// Squadrons a system holds took losses during combat (`FUN_005032c0`
+/// applies squad damage alike to held and carried squadrons).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SystemFighterLossEvent {
+    pub is_alliance: bool,
+    pub class: FighterKey,
+    pub squads_before: u32,
+    pub squads_after: u32,
+}
+
+/// A side's combatants at the start of a battle: every fleet of the side at
+/// the system (`FUN_00516ef0` marks each through `FUN_004f78e0`), the lead
+/// fleet first, then the squadrons the system holds for it.
+struct ForceSnap {
+    /// The lead fleet, reported as the result's attacker or defender.
+    fleet: Option<FleetKey>,
+    is_alliance: bool,
+    ships: Vec<ShipSnap>,
+    /// Squadron counts: each fleet's `fighters` entries, then the system's.
+    fighters: Vec<u32>,
+    /// Each count's class, in the same order.
+    classes: Vec<FighterKey>,
+    /// Each carried count's fleet and its index in that fleet's `fighters`.
+    carried: Vec<(FleetKey, usize)>,
+    /// How many leading counts are carried (`carried.len()`).
+    fleet_slots: usize,
 }
 
 /// A fighter squadron took losses during combat.
@@ -128,8 +199,12 @@ pub struct TroopDamageEvent {
 // ---------------------------------------------------------------------------
 
 /// Mutable snapshot of one hull for the duration of a single space battle.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 struct ShipSnap {
+    /// The hull's fleet, class, and index among that fleet's living ships.
+    fleet: FleetKey,
+    class: CapitalShipKey,
+    fleet_index: usize,
     hull_current: i32,
     hull_max: i32,
     /// Current shield HP pool — absorbs damage before hull.
@@ -177,10 +252,6 @@ impl CombatSystem {
         reason = "Keep the existing explicit simulation inputs; grouping them changes the API."
     )]
     #[must_use]
-    #[expect(
-        clippy::cast_possible_truncation,
-        reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
-    )]
     pub fn resolve_space(
         world: &GameWorld,
         attacker: FleetKey,
@@ -191,11 +262,46 @@ impl CombatSystem {
         tick: u64,
         death_star_shield_active: bool,
     ) -> SpaceCombatResult {
+        Self::resolve_space_forces(
+            world,
+            CombatForce::of_fleet(world, attacker),
+            CombatForce::of_fleet(world, defender),
+            system,
+            difficulty,
+            rng_rolls,
+            tick,
+            death_star_shield_active,
+        )
+    }
+
+    /// Auto-resolve space combat between two sides at a system, each its
+    /// fleet (if any) and the squadrons it holds there ([`CombatForce`]).
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Keep the existing explicit simulation inputs; grouping them changes the API."
+    )]
+    #[must_use]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
+    )]
+    pub fn resolve_space_forces(
+        world: &GameWorld,
+        attacker: CombatForce,
+        defender: CombatForce,
+        system: SystemKey,
+        difficulty: u8,
+        rng_rolls: &[f64],
+        tick: u64,
+        death_star_shield_active: bool,
+    ) -> SpaceCombatResult {
         let mut rng = rng_rolls.iter().copied();
 
         // Phase 1: Initialize — build mutable hull snapshots (FUN_005442f0).
-        let (mut atk_ships, mut atk_fighters) = Self::snapshot_fleet(world, attacker);
-        let (mut def_ships, mut def_fighters) = Self::snapshot_fleet(world, defender);
+        let atk = Self::snapshot_force(world, attacker, system);
+        let def = Self::snapshot_force(world, defender, system);
+        let (mut atk_ships, mut atk_fighters) = (atk.ships.clone(), atk.fighters.clone());
+        let (mut def_ships, mut def_fighters) = (def.ships.clone(), def.fighters.clone());
         let atk_initial_hulls: Vec<i32> = atk_ships.iter().map(|ship| ship.hull_current).collect();
         let def_initial_hulls: Vec<i32> = def_ships.iter().map(|ship| ship.hull_current).collect();
         let atk_initial_fighters = atk_fighters.clone();
@@ -230,8 +336,8 @@ impl CombatSystem {
             && !flags.contains(CombatPhaseFlags::PHASES_ENABLED)
             && any_armed
         {
-            Self::phase_weapon_fire(world, attacker, &atk_ships, &mut def_ships, &mut rng);
-            Self::phase_weapon_fire(world, defender, &def_ships, &mut atk_ships, &mut rng);
+            Self::phase_weapon_fire(world, &atk_ships, &mut def_ships, &mut rng);
+            Self::phase_weapon_fire(world, &def_ships, &mut atk_ships, &mut rng);
         }
 
         // R12: Emperor Palpatine combat modifier.
@@ -239,22 +345,24 @@ impl CombatSystem {
         // FUN_00542050 compares against Luke Skywalker in both builds; neither
         // shows an Emperor combat modifier. The code is retained as a
         // gameplay augmentation.
-        let emperor_in_fleet = |fk: FleetKey| -> bool {
-            let fleet = &world.fleets[fk];
-            fleet.characters.iter().any(|&ck| {
-                world.characters.get(ck).is_some_and(|c| {
-                    !c.is_alliance && (c.name.contains("Palpatine") || c.name.contains("Emperor"))
+        let emperor_in_fleet = |force: &ForceSnap| -> bool {
+            Self::side_fleets(world, force).iter().any(|&key| {
+                world.fleets[key].characters.iter().any(|&ck| {
+                    world.characters.get(ck).is_some_and(|c| {
+                        !c.is_alliance
+                            && (c.name.contains("Palpatine") || c.name.contains("Emperor"))
+                    })
                 })
             })
         };
-        if emperor_in_fleet(attacker) {
+        if emperor_in_fleet(&atk) {
             // Emperor is attacking — scale damage dealt to defenders.
             for snap in &mut def_ships {
                 snap.pending_damage = (f64::from(snap.pending_damage) * 1.5) as i32;
                 snap.pending_ion_damage = (f64::from(snap.pending_ion_damage) * 1.5) as i32;
             }
         }
-        if emperor_in_fleet(defender) {
+        if emperor_in_fleet(&def) {
             // Emperor is defending — scale damage dealt to attackers.
             for snap in &mut atk_ships {
                 snap.pending_damage = (f64::from(snap.pending_damage) * 1.5) as i32;
@@ -285,8 +393,8 @@ impl CombatSystem {
             // Family 0x71 exactly uses alt_shield_path (C++ +0x78 bit7).
             Self::phase_fighter_engage(
                 world,
-                attacker,
-                defender,
+                &atk,
+                &def,
                 &mut atk_fighters,
                 &mut def_fighters,
                 &mut atk_ships,
@@ -299,8 +407,8 @@ impl CombatSystem {
         // 1. Checks alive_flag at +0xac bit0 for each unit.
         // 2. Fighter exception: +0x50 & 0x08 → still combat-ready even if hull=0.
         // 3. Family 0x73/0x74 → FUN_00534640 special path (Death Star / special entity).
-        let atk_alive = atk_ships.iter().any(|s| s.alive) || atk_fighters.iter().any(|&c| c > 0);
-        let def_alive = def_ships.iter().any(|s| s.alive) || def_fighters.iter().any(|&c| c > 0);
+        let atk_alive = Self::side_survives(world, &atk, &atk_ships, &atk_fighters);
+        let def_alive = Self::side_survives(world, &def, &def_ships, &def_fighters);
 
         let winner = match (atk_alive, def_alive) {
             (true, false) => CombatSide::Attacker,
@@ -311,8 +419,8 @@ impl CombatSystem {
         // Phase 8: Post-combat cleanup (FUN_00544a20, 86 lines) — handled by caller.
 
         Self::build_space_result(
-            attacker,
-            defender,
+            &atk,
+            &def,
             system,
             &atk_ships,
             &def_ships,
@@ -327,6 +435,96 @@ impl CombatSystem {
         )
     }
 
+    /// Whether a side keeps a combatant after the pass: a living ship, a
+    /// squadron the system holds, or a carried squadron whose ship lives.
+    /// Squadrons aboard a lost ship are lost with it
+    /// (`carriage::drop_lost_squadrons`), so a fleet whose ships all died
+    /// keeps only the squadrons held on the fleet itself (carrier 0).
+    fn side_survives(world: &GameWorld, snap: &ForceSnap, ships: &[ShipSnap], fighters: &[u32]) -> bool {
+        if ships.iter().any(|ship| ship.alive)
+            || fighters[snap.fleet_slots..].iter().any(|&count| count > 0)
+        {
+            return true;
+        }
+        snap.carried
+            .iter()
+            .zip(fighters)
+            .any(|(&(fleet, index), &count)| {
+                count > 0 && world.fleets[fleet].fighters[index].carrier == 0
+            })
+    }
+
+    /// Every fleet of `force`'s side in the battle, the lead fleet first.
+    fn side_fleets(world: &GameWorld, force: &ForceSnap) -> Vec<FleetKey> {
+        let mut fleets: Vec<FleetKey> = force.fleet.into_iter().collect();
+        for &(fleet, _) in &force.carried {
+            if !fleets.contains(&fleet) {
+                fleets.push(fleet);
+            }
+        }
+        for ship in &force.ships {
+            if !fleets.contains(&ship.fleet) {
+                fleets.push(ship.fleet);
+            }
+        }
+        fleets.retain(|key| world.fleets.contains_key(*key));
+        fleets
+    }
+
+    /// A side's combatants: the living hulls and squadrons of each of its
+    /// fleets at `system` (`force.fleet` first), then the squadrons its side
+    /// holds there.
+    fn snapshot_force(world: &GameWorld, force: CombatForce, system: SystemKey) -> ForceSnap {
+        let mut fleets: Vec<FleetKey> = force.fleet.into_iter().collect();
+        if let Some(value) = world.systems.get(system) {
+            for &key in &value.fleets {
+                if !fleets.contains(&key)
+                    && world
+                        .fleets
+                        .get(key)
+                        .is_some_and(|fleet| fleet.is_alliance == force.is_alliance)
+                {
+                    fleets.push(key);
+                }
+            }
+        }
+        let (mut ships, mut fighters, mut classes, mut carried) =
+            (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        for fleet in fleets {
+            let (fleet_ships, fleet_fighters) = Self::snapshot_fleet(world, fleet);
+            ships.extend(fleet_ships);
+            for (index, (count, entry)) in fleet_fighters
+                .into_iter()
+                .zip(&world.fleets[fleet].fighters)
+                .enumerate()
+            {
+                fighters.push(count);
+                classes.push(entry.class);
+                carried.push((fleet, index));
+            }
+        }
+        let fleet_slots = fighters.len();
+        if let Some(value) = world.systems.get(system) {
+            for entry in value
+                .fighters
+                .iter()
+                .filter(|entry| entry.is_alliance == force.is_alliance)
+            {
+                fighters.push(entry.count);
+                classes.push(entry.class);
+            }
+        }
+        ForceSnap {
+            fleet: force.fleet,
+            is_alliance: force.is_alliance,
+            ships,
+            fighters,
+            classes,
+            carried,
+            fleet_slots,
+        }
+    }
+
     /// Build mutable hull snapshots for one fleet.
     ///
     /// Each `ShipInstance` maps 1:1 to a `ShipSnap` record.
@@ -338,7 +536,8 @@ impl CombatSystem {
             .capital_ships
             .iter()
             .filter(|ship| ship.alive)
-            .map(|ship| {
+            .enumerate()
+            .map(|(fleet_index, ship)| {
                 let class = &world.capital_ship_classes[ship.class];
                 // Only family-0x34 ids get shield absorption; 0x34 is the Empire major
                 // character family, so no shipped class matches (F-025). The seeded Death
@@ -346,6 +545,9 @@ impl CombatSystem {
                 // destroys the shield generator, which would make it unkillable.
                 let is_ds_ship = is_ds_fleet && class.dat_id.family() == 0x34;
                 ShipSnap {
+                    fleet,
+                    class: ship.class,
+                    fleet_index,
                     hull_current: ship.hull_current,
                     hull_max: class.hull.cast_signed(),
                     shield_current: class.shield_strength.cast_signed(),
@@ -378,9 +580,8 @@ impl CombatSystem {
     /// Phase 3 helper: one side fires at the other.
     ///
     /// Mirrors `FUN_00543b60` (per-side weapon fire, vtable +0x1c4 dispatch).
-    /// Per-weapon-type damage: each arc sum is multiplied by its class's
-    /// `*_attack_strength` scalar. If `attack_strength` is 0, raw arc count is used
-    /// (backwards compatible with unpopulated DAT data).
+    /// A ship fires its class's turbolaser, laser and ion attack strengths
+    /// (each the total over its arcs), scaled by its weapon allocation.
     ///
     /// All arithmetic uses i64 to avoid overflow and double-rounding (P0 fix from
     /// Knesset Ma'at: shield absorption had a double-rounding bug via f64).
@@ -395,53 +596,62 @@ impl CombatSystem {
     )]
     fn phase_weapon_fire(
         world: &GameWorld,
-        firing_fleet: FleetKey,
         firing: &[ShipSnap],
         targets: &mut [ShipSnap],
         rng: &mut impl Iterator<Item = f64>,
     ) {
-        let fleet = &world.fleets[firing_fleet];
         // Compute total fire split by weapon type: ion cannons tracked separately.
-        // Each weapon type is scaled by its class-specific attack_strength.
-        // Each ShipInstance maps 1:1 to a ShipSnap, so zip directly.
-        let alive_ships = fleet.capital_ships.iter().filter(|s| s.alive);
         let (total_fire, total_ion): (i64, i64) = firing
             .iter()
-            .zip(alive_ships)
-            .filter(|(snap, _)| snap.alive)
-            .fold((0i64, 0i64), |(acc_fire, acc_ion), (snap, ship)| {
-                let class_key = ship.class;
-                let class = &world.capital_ship_classes[class_key];
+            .filter(|snap| snap.alive)
+            .fold((0i64, 0i64), |(acc_fire, acc_ion), snap| {
+                let class = &world.capital_ship_classes[snap.class];
 
-                // Per-weapon-type: sum arcs, multiply by attack_strength.
-                // If attack_strength == 0, use raw arc count (fallback).
-                let turbo_arcs = i64::from(
-                    class.turbolaser_fore
-                        + class.turbolaser_aft
-                        + class.turbolaser_port
-                        + class.turbolaser_starboard,
+                // CAPSHPSD's `*_attack_strength` is each weapon's total over
+                // its four arcs (true of all 30 classes), and the original
+                // rates a ship's weapons from that field alone (class
+                // `+0xb8`/`+0xb4`, `FUN_0053bbd0`; status-window.md), so it
+                // is not multiplied by the arcs again.
+                // port: a class with no strength recorded (test fixtures; never
+                // in CAPSHPSD) fires its arc count.
+                let weapon = |strength: u32, arcs: [u32; 4]| {
+                    i64::from(if strength > 0 {
+                        strength
+                    } else {
+                        arcs.iter().sum()
+                    })
+                };
+                let turbo = weapon(
+                    class.turbolaser_attack_strength,
+                    [
+                        class.turbolaser_fore,
+                        class.turbolaser_aft,
+                        class.turbolaser_port,
+                        class.turbolaser_starboard,
+                    ],
                 );
-                let turbo_str = i64::from(class.turbolaser_attack_strength.max(1));
-
-                let laser_arcs = i64::from(
-                    class.laser_cannon_fore
-                        + class.laser_cannon_aft
-                        + class.laser_cannon_port
-                        + class.laser_cannon_starboard,
+                let laser = weapon(
+                    class.laser_cannon_attack_strength,
+                    [
+                        class.laser_cannon_fore,
+                        class.laser_cannon_aft,
+                        class.laser_cannon_port,
+                        class.laser_cannon_starboard,
+                    ],
                 );
-                let laser_str = i64::from(class.laser_cannon_attack_strength.max(1));
-
-                let ion_arcs = i64::from(
-                    class.ion_cannon_fore
-                        + class.ion_cannon_aft
-                        + class.ion_cannon_port
-                        + class.ion_cannon_starboard,
+                let ion_fire = weapon(
+                    class.ion_cannon_attack_strength,
+                    [
+                        class.ion_cannon_fore,
+                        class.ion_cannon_aft,
+                        class.ion_cannon_port,
+                        class.ion_cannon_starboard,
+                    ],
                 );
-                let ion_str = i64::from(class.ion_cannon_attack_strength.max(1));
 
                 let scale = i64::from(snap.weapon_nibble);
-                let non_ion = (turbo_arcs * turbo_str + laser_arcs * laser_str) * scale / 15;
-                let ion = (ion_arcs * ion_str) * scale / 15;
+                let non_ion = (turbo + laser) * scale / 15;
+                let ion = ion_fire * scale / 15;
                 (acc_fire + non_ion, acc_ion + ion)
             });
 
@@ -588,23 +798,20 @@ impl CombatSystem {
     /// cannot gain that fallback while the engagement is in progress.
     fn compute_carrier_capacity(
         world: &GameWorld,
-        fleet_key: FleetKey,
+        force: &ForceSnap,
         ship_snaps: &[ShipSnap],
         system_based_fighters: bool,
     ) -> u32 {
-        let fleet = &world.fleets[fleet_key];
         if system_based_fighters {
-            return fleet.fighters.iter().map(|entry| entry.count).sum();
+            return force.fighters[..force.fleet_slots].iter().sum();
         }
-        // ShipSnap array is 1:1 with alive ships in capital_ships.
-        let alive_ships = fleet.capital_ships.iter().filter(|s| s.alive);
-        alive_ships
-            .zip(ship_snaps.iter())
-            .filter(|(_, snap)| snap.alive)
-            .map(|(ship, _)| {
+        ship_snaps
+            .iter()
+            .filter(|snap| snap.alive)
+            .map(|snap| {
                 world
                     .capital_ship_classes
-                    .get(ship.class)
+                    .get(snap.class)
                     .map_or(0, |c| c.fighter_capacity)
             })
             .sum()
@@ -613,10 +820,16 @@ impl CombatSystem {
     /// Launch fighters from carrier ships, capping deployed squadrons to
     /// available carrier capacity. Returns a vec of deployed squadron counts
     /// (same length as the fleet's fighter roster, but each capped).
-    fn launch_fighters(fleet_fighters: &[u32], carrier_capacity: u32) -> Vec<u32> {
+    /// The squadrons after the first `fleet_slots` are the system's own and
+    /// all launch, needing no carrier.
+    fn launch_fighters(fleet_fighters: &[u32], carrier_capacity: u32, fleet_slots: usize) -> Vec<u32> {
         let mut remaining_capacity = carrier_capacity;
         let mut launched = Vec::with_capacity(fleet_fighters.len());
-        for &count in fleet_fighters {
+        for (index, &count) in fleet_fighters.iter().enumerate() {
+            if index >= fleet_slots {
+                launched.push(count);
+                continue;
+            }
             let deploy = count.min(remaining_capacity);
             launched.push(deploy);
             remaining_capacity = remaining_capacity.saturating_sub(deploy);
@@ -639,8 +852,8 @@ impl CombatSystem {
     )]
     fn phase_fighter_engage(
         world: &GameWorld,
-        attacker: FleetKey,
-        defender: FleetKey,
+        atk: &ForceSnap,
+        def: &ForceSnap,
         atk_fighters: &mut [u32],
         def_fighters: &mut [u32],
         atk_ships: &mut [ShipSnap],
@@ -652,37 +865,34 @@ impl CombatSystem {
 
         // Step 1: Launch — cap deployed squadrons to carrier capacity.
         let atk_capacity =
-            Self::compute_carrier_capacity(world, attacker, atk_ships, atk_system_based_fighters);
+            Self::compute_carrier_capacity(world, atk, atk_ships, atk_system_based_fighters);
         let def_capacity =
-            Self::compute_carrier_capacity(world, defender, def_ships, def_system_based_fighters);
+            Self::compute_carrier_capacity(world, def, def_ships, def_system_based_fighters);
 
-        let mut atk_launched = Self::launch_fighters(atk_fighters, atk_capacity);
-        let mut def_launched = Self::launch_fighters(def_fighters, def_capacity);
+        let mut atk_launched = Self::launch_fighters(atk_fighters, atk_capacity, atk.fleet_slots);
+        let mut def_launched = Self::launch_fighters(def_fighters, def_capacity, def.fleet_slots);
 
         // Snapshot original launched counts before combat modifies them —
         // needed by recall_fighters to distinguish grounded squads from wiped ones.
         let atk_originally_launched = atk_launched.clone();
         let def_originally_launched = def_launched.clone();
 
-        let atk_fleet = &world.fleets[attacker];
-        let def_fleet = &world.fleets[defender];
-
         // Step 2: Fighters attack enemy capital ships.
-        Self::fighters_attack_ships(&atk_launched, atk_fleet, def_ships, world, rng);
-        Self::fighters_attack_ships(&def_launched, def_fleet, atk_ships, world, rng);
+        Self::fighters_attack_ships(&atk_launched, &atk.classes, def_ships, world, rng);
+        Self::fighters_attack_ships(&def_launched, &def.classes, atk_ships, world, rng);
 
         // Step 3: Capital-ship laser cannons screen against enemy fighters.
         // The original tactical rules identify laser cannons as the anti-fighter
         // armament. Resolve that fire before the surviving squadrons dogfight.
-        Self::capital_ships_attack_fighters(world, attacker, atk_ships, &mut def_launched, rng);
-        Self::capital_ships_attack_fighters(world, defender, def_ships, &mut atk_launched, rng);
+        Self::capital_ships_attack_fighters(world, atk_ships, &mut def_launched, rng);
+        Self::capital_ships_attack_fighters(world, def_ships, &mut atk_launched, rng);
 
         // Step 4: Fighter-vs-fighter dogfight using attack_strength and maneuverability.
         Self::fighter_dogfight(
             &mut atk_launched,
-            atk_fleet,
+            &atk.classes,
             &mut def_launched,
-            def_fleet,
+            &def.classes,
             world,
             rng,
         );
@@ -690,21 +900,23 @@ impl CombatSystem {
         // Step 5: Recall — surviving fighters return to carriers.
         // Re-check capacity (carriers may have been destroyed during this phase).
         let atk_capacity_post =
-            Self::compute_carrier_capacity(world, attacker, atk_ships, atk_system_based_fighters);
+            Self::compute_carrier_capacity(world, atk, atk_ships, atk_system_based_fighters);
         let def_capacity_post =
-            Self::compute_carrier_capacity(world, defender, def_ships, def_system_based_fighters);
+            Self::compute_carrier_capacity(world, def, def_ships, def_system_based_fighters);
 
         Self::recall_fighters(
             atk_fighters,
             &atk_launched,
             &atk_originally_launched,
             atk_capacity_post,
+            atk.fleet_slots,
         );
         Self::recall_fighters(
             def_fighters,
             &def_launched,
             &def_originally_launched,
             def_capacity_post,
+            def.fleet_slots,
         );
     }
 
@@ -721,7 +933,7 @@ impl CombatSystem {
     )]
     fn fighters_attack_ships(
         squadrons: &[u32],
-        fleet: &crate::world::Fleet,
+        classes: &[FighterKey],
         enemy_ships: &mut [ShipSnap],
         world: &GameWorld,
         rng: &mut impl Iterator<Item = f64>,
@@ -740,9 +952,8 @@ impl CombatSystem {
             if sq_count == 0 {
                 continue;
             }
-            let class_key = match fleet.fighters.get(sq_idx) {
-                Some(e) => e.class,
-                None => continue,
+            let Some(&class_key) = classes.get(sq_idx) else {
+                continue;
             };
             let class = &world.fighter_classes[class_key];
 
@@ -792,7 +1003,6 @@ impl CombatSystem {
     /// fractional chance from the caller-provided roll stream.
     fn capital_ships_attack_fighters(
         world: &GameWorld,
-        fleet_key: FleetKey,
         ship_snaps: &[ShipSnap],
         enemy_fighters: &mut [u32],
         rng: &mut impl Iterator<Item = f64>,
@@ -801,13 +1011,11 @@ impl CombatSystem {
             return;
         }
 
-        let fleet = &world.fleets[fleet_key];
         let laser_power: u32 = ship_snaps
             .iter()
-            .zip(fleet.capital_ships.iter().filter(|ship| ship.alive))
-            .filter(|(snapshot, _)| snapshot.alive)
-            .map(|(_, ship)| {
-                let class = &world.capital_ship_classes[ship.class];
+            .filter(|snapshot| snapshot.alive)
+            .map(|snapshot| {
+                let class = &world.capital_ship_classes[snapshot.class];
                 let arc_total = class.laser_cannon_fore
                     + class.laser_cannon_aft
                     + class.laser_cannon_port
@@ -844,9 +1052,9 @@ impl CombatSystem {
     )]
     fn fighter_dogfight(
         atk_launched: &mut [u32],
-        atk_fleet: &crate::world::Fleet,
+        atk_classes: &[FighterKey],
         def_launched: &mut [u32],
-        def_fleet: &crate::world::Fleet,
+        def_classes: &[FighterKey],
         world: &GameWorld,
         rng: &mut impl Iterator<Item = f64>,
     ) {
@@ -862,10 +1070,7 @@ impl CombatSystem {
             .enumerate()
             .filter(|(_, &c)| c > 0)
             .map(|(i, &c)| {
-                let class = atk_fleet
-                    .fighters
-                    .get(i)
-                    .map(|e| &world.fighter_classes[e.class]);
+                let class = atk_classes.get(i).map(|&key| &world.fighter_classes[key]);
                 let (atk_str, maneuver) = class.map_or((1.0, 0.0), |c| {
                     (
                         f64::from(c.overall_attack_strength),
@@ -881,10 +1086,7 @@ impl CombatSystem {
             .enumerate()
             .filter(|(_, &c)| c > 0)
             .map(|(i, &c)| {
-                let class = def_fleet
-                    .fighters
-                    .get(i)
-                    .map(|e| &world.fighter_classes[e.class]);
+                let class = def_classes.get(i).map(|&key| &world.fighter_classes[key]);
                 let (atk_str, maneuver) = class.map_or((1.0, 0.0), |c| {
                     (
                         f64::from(c.overall_attack_strength),
@@ -934,14 +1136,21 @@ impl CombatSystem {
     ///
     /// `originally_launched`: per-squadron counts that were actually deployed (from
     /// `launch_fighters`). Squads with 0 launched were grounded and are preserved.
+    /// The squadrons after the first `fleet_slots` are the system's own:
+    /// every survivor returns, needing no carrier.
     fn recall_fighters(
         fleet_fighters: &mut [u32],
         launched_survivors: &[u32],
         originally_launched: &[u32],
         carrier_capacity: u32,
+        fleet_slots: usize,
     ) {
         let mut remaining_capacity = carrier_capacity;
         for (i, count) in fleet_fighters.iter_mut().enumerate() {
+            if i >= fleet_slots {
+                *count = launched_survivors.get(i).copied().unwrap_or(0);
+                continue;
+            }
             let was_launched = originally_launched.get(i).copied().unwrap_or(0);
             if was_launched == 0 {
                 // Squadron was grounded (never launched) — preserve its count.
@@ -971,8 +1180,8 @@ impl CombatSystem {
         reason = "Keep the existing explicit simulation inputs; grouping them changes the API."
     )]
     fn build_space_result(
-        attacker: FleetKey,
-        defender: FleetKey,
+        atk: &ForceSnap,
+        def: &ForceSnap,
         system: SystemKey,
         atk_ships: &[ShipSnap],
         def_ships: &[ShipSnap],
@@ -986,61 +1195,57 @@ impl CombatSystem {
         tick: u64,
     ) -> SpaceCombatResult {
         let mut ship_damage = Vec::new();
-        for (i, snap) in atk_ships.iter().enumerate() {
-            let hull_before = atk_initial_hulls.get(i).copied().unwrap_or(snap.hull_max);
-            if snap.hull_current < hull_before {
-                ship_damage.push(ShipDamageEvent {
-                    fleet: attacker,
-                    ship_index: i,
-                    hull_before,
-                    hull_after: snap.hull_current,
-                });
-            }
-        }
-        for (i, snap) in def_ships.iter().enumerate() {
-            let hull_before = def_initial_hulls.get(i).copied().unwrap_or(snap.hull_max);
-            if snap.hull_current < hull_before {
-                ship_damage.push(ShipDamageEvent {
-                    fleet: defender,
-                    ship_index: i,
-                    hull_before,
-                    hull_after: snap.hull_current,
-                });
+        for (ships, initial) in [(atk_ships, atk_initial_hulls), (def_ships, def_initial_hulls)] {
+            for (i, snap) in ships.iter().enumerate() {
+                let hull_before = initial.get(i).copied().unwrap_or(snap.hull_max);
+                if snap.hull_current < hull_before {
+                    ship_damage.push(ShipDamageEvent {
+                        fleet: snap.fleet,
+                        ship_index: snap.fleet_index,
+                        hull_before,
+                        hull_after: snap.hull_current,
+                    });
+                }
             }
         }
 
         // Compute fighter losses: initial counts captured before combat vs surviving counts.
         let mut fighter_losses = Vec::new();
-        for (i, &init) in atk_initial_fighters.iter().enumerate() {
-            let survived = atk_fighters.get(i).copied().unwrap_or(0);
-            if init > survived {
-                fighter_losses.push(FighterLossEvent {
-                    fleet: attacker,
-                    fighter_index: i,
-                    squads_before: init,
-                    squads_after: survived,
-                });
-            }
-        }
-        for (i, &init) in def_initial_fighters.iter().enumerate() {
-            let survived = def_fighters.get(i).copied().unwrap_or(0);
-            if init > survived {
-                fighter_losses.push(FighterLossEvent {
-                    fleet: defender,
-                    fighter_index: i,
-                    squads_before: init,
-                    squads_after: survived,
-                });
+        let mut system_fighter_losses = Vec::new();
+        for (force, initial, now) in [
+            (atk, atk_initial_fighters, atk_fighters),
+            (def, def_initial_fighters, def_fighters),
+        ] {
+            for (i, &init) in initial.iter().enumerate() {
+                let survived = now.get(i).copied().unwrap_or(0);
+                if init <= survived {
+                    continue;
+                }
+                match force.carried.get(i) {
+                    Some(&(fleet, fighter_index)) => fighter_losses.push(FighterLossEvent {
+                        fleet,
+                        fighter_index,
+                        squads_before: init,
+                        squads_after: survived,
+                    }),
+                    None => system_fighter_losses.push(SystemFighterLossEvent {
+                        is_alliance: force.is_alliance,
+                        class: force.classes[i],
+                        squads_before: init,
+                        squads_after: survived,
+                    }),
+                }
             }
         }
 
         SpaceCombatResult {
-            attacker_fleet: attacker,
-            defender_fleet: defender,
+            attacker_fleet: atk.fleet,
+            defender_fleet: def.fleet,
             system,
             winner,
             ship_damage,
             fighter_losses,
+            system_fighter_losses,
             tick,
         }
     }
@@ -1398,6 +1603,7 @@ mod tests {
             recruit_pool_empty: [false; 2],
             fleet_names: crate::world::FleetNames::default(),
             last_ship_tag: 0,
+            squadron_transits: Vec::new(),
         }
     }
 
@@ -1429,6 +1635,7 @@ mod tests {
             fleets: vec![],
             ground_units: vec![],
             special_forces: vec![],
+            fighters: Vec::new(),
             defense_facilities: vec![],
             manufacturing_facilities: vec![],
             production_facilities: vec![],
@@ -2304,6 +2511,7 @@ mod tests {
             weapon_nibble: 15,
             alive: true,
             is_death_star: false,
+            ..ShipSnap::default()
         }];
         CombatSystem::phase_shield_absorb(&mut ships);
         CombatSystem::phase_hull_damage(&mut ships, 1.0, false);
@@ -2325,6 +2533,7 @@ mod tests {
             weapon_nibble: 15,
             alive: true,
             is_death_star: false,
+            ..ShipSnap::default()
         }];
         CombatSystem::phase_shield_absorb(&mut ships);
         assert_eq!(ships[0].shield_current, 0);
@@ -2347,6 +2556,7 @@ mod tests {
             weapon_nibble: 15,
             alive: true,
             is_death_star: false,
+            ..ShipSnap::default()
         }];
         let mut turbo_vec = vec![ShipSnap {
             hull_current: 200,
@@ -2359,6 +2569,7 @@ mod tests {
             weapon_nibble: 15,
             alive: true,
             is_death_star: false,
+            ..ShipSnap::default()
         }];
         CombatSystem::phase_shield_absorb(&mut ion_vec);
         CombatSystem::phase_shield_absorb(&mut turbo_vec);
@@ -2383,6 +2594,7 @@ mod tests {
             weapon_nibble: 15,
             alive: true,
             is_death_star: false,
+            ..ShipSnap::default()
         }];
         CombatSystem::phase_shield_absorb(&mut ships);
         assert_eq!(ships[0].shield_current, 145);
@@ -2403,6 +2615,7 @@ mod tests {
             weapon_nibble: 15,
             alive: true,
             is_death_star: false,
+            ..ShipSnap::default()
         }];
         CombatSystem::phase_shield_absorb(&mut ships);
         assert_eq!(ships[0].pending_damage, 60);
@@ -2423,6 +2636,7 @@ mod tests {
             weapon_nibble: 15,
             alive: true,
             is_death_star: false,
+            ..ShipSnap::default()
         }];
         CombatSystem::phase_shield_absorb(&mut ships);
         CombatSystem::phase_hull_damage(&mut ships, 1.0, false);
@@ -2792,6 +3006,21 @@ mod tests {
             "Officer (combat=80, 1.4x multiplier) should strictly increase damage: with={with_officer_damage}, without={no_officer_damage}");
     }
 
+    /// `snaps` as `fleet`'s living ships, in order.
+    fn fleet_snaps(world: &GameWorld, fleet: FleetKey, snaps: &[ShipSnap]) -> Vec<ShipSnap> {
+        snaps
+            .iter()
+            .zip(world.fleets[fleet].capital_ships.iter().filter(|ship| ship.alive))
+            .enumerate()
+            .map(|(fleet_index, (snap, ship))| ShipSnap {
+                fleet,
+                class: ship.class,
+                fleet_index,
+                ..snap.clone()
+            })
+            .collect()
+    }
+
     fn make_weapon_snap(weapon_nibble: u8) -> ShipSnap {
         ShipSnap {
             hull_current: 100,
@@ -2804,6 +3033,7 @@ mod tests {
             weapon_nibble,
             alive: true,
             is_death_star: false,
+            ..ShipSnap::default()
         }
     }
 
@@ -2819,6 +3049,7 @@ mod tests {
             weapon_nibble: 15,
             alive: true,
             is_death_star: false,
+            ..ShipSnap::default()
         }
     }
 
@@ -2856,8 +3087,7 @@ mod tests {
         let rolls_a: Vec<f64> = vec![0.5; 10];
         CombatSystem::phase_weapon_fire(
             &world,
-            strong_fleet,
-            &strong_snap,
+            &fleet_snaps(&world, strong_fleet, &strong_snap),
             &mut target_snap_a,
             &mut rolls_a.into_iter(),
         );
@@ -2870,8 +3100,7 @@ mod tests {
         let rolls_b: Vec<f64> = vec![0.5; 10];
         CombatSystem::phase_weapon_fire(
             &world,
-            weak_fleet,
-            &weak_snap,
+            &fleet_snaps(&world, weak_fleet, &weak_snap),
             &mut target_snap_b,
             &mut rolls_b.into_iter(),
         );
@@ -2911,8 +3140,7 @@ mod tests {
         let rolls: Vec<f64> = vec![0.5; 10];
         CombatSystem::phase_weapon_fire(
             &world,
-            attacker,
-            &snap,
+            &fleet_snaps(&world, attacker, &snap),
             &mut target_snap,
             &mut rolls.into_iter(),
         );
@@ -2925,7 +3153,7 @@ mod tests {
             target_snap[0].pending_ion_damage > 0,
             "Ion cannons should contribute ion damage"
         );
-        // Ion fraction: 3*8=24 ion vs 3*5+3*2=21 non-ion. Ion > 50%.
+        // Ion fraction: 8 ion vs 5 + 2 = 7 non-ion. Ion > 50%.
         assert!(
             target_snap[0].pending_ion_damage > target_snap[0].pending_damage / 3,
             "Ion damage should be substantial with high ion_cannon_attack_strength"
@@ -2956,8 +3184,7 @@ mod tests {
         let rolls: Vec<f64> = vec![0.5; 10];
         CombatSystem::phase_weapon_fire(
             &world,
-            attacker,
-            &snap,
+            &fleet_snaps(&world, attacker, &snap),
             &mut target_snap,
             &mut rolls.into_iter(),
         );

@@ -6,8 +6,9 @@
 //! It opens from the fleet icon a sector window shows at the top right of a
 //! planet (`FUN_0045ccc0`, `FUN_0045aac0`), and a move released over it
 //! targets the fleet under the point (`+0x70`, `FUN_004a3130`), which is how
-//! a regiment boards a fleet. A regiment dragged out of the Troops tab moves
-//! to where it is dropped (`0x201`, `ghidra/notes/regiment-unload.md`).
+//! a regiment boards a fleet. A regiment dragged out of the Troops tab, or a
+//! squadron out of the Fighters tab, moves to where it is dropped (`0x201`,
+//! `ghidra/notes/regiment-unload.md`).
 
 use egui_macroquad::egui;
 use rebellion_core::carriage;
@@ -198,7 +199,7 @@ enum RenameOutcome {
 
 /// `CoolDragList` posts `0x29a` only when the release lies more than this
 /// squared distance, in list pixels, from the press (`FUN_006083c0`).
-const DRAG_DISTANCE_SQUARED: f32 = 24.0;
+pub(crate) const DRAG_DISTANCE_SQUARED: f32 = 24.0;
 
 /// A left press held on a list item until its release (`CoolDragList`,
 /// `FUN_006083c0`).
@@ -253,6 +254,8 @@ impl ItemObject {
 #[derive(Debug)]
 pub struct FleetWindowState {
     faction: CockpitFaction,
+    /// When one of these windows last took focus (`window_focus`).
+    focus_serial: u64,
     windows: Vec<OpenFleetWindow>,
     drag: Option<ItemDrag>,
 }
@@ -261,6 +264,7 @@ impl Default for FleetWindowState {
     fn default() -> Self {
         Self {
             faction: CockpitFaction::Alliance,
+            focus_serial: 0,
             windows: Vec::new(),
             drag: None,
         }
@@ -292,6 +296,7 @@ impl FleetWindowState {
         if self.focus(system) {
             return true;
         }
+        self.focus_serial = crate::window_focus::next_serial();
         self.windows.push(OpenFleetWindow {
             system,
             logical_position: clamp_window_to_galaxy(
@@ -525,7 +530,7 @@ impl FleetWindowState {
         self.drag = None;
     }
 
-    /// Whether a left press on a Troops tab regiment is held: the list has
+    /// Whether a left press on a list item is held: the list has
     /// captured the mouse (`FUN_006083c0`), so nothing under the pointer
     /// answers it.
     #[must_use]
@@ -560,8 +565,9 @@ impl FleetWindowState {
             return None;
         }
         Some(match drag.object {
-            // port: a squadron cannot move apart from its fleet.
-            ItemObject::Fighter { .. } => return None,
+            ItemObject::Fighter { fleet, index } => {
+                FleetWindowAction::DragSquadron { fleet, index, point }
+            }
             ItemObject::Fleet(fleet) => FleetWindowAction::DragFleet { fleet, point },
             ItemObject::Regiment(troop) => FleetWindowAction::DragRegiment { troop, point },
             ItemObject::Ship {
@@ -584,6 +590,13 @@ impl FleetWindowState {
         }
     }
 
+    /// When one of this kind's windows last took focus; the newest kind
+    /// is in front (`window_focus`).
+    #[must_use]
+    pub fn focus_serial(&self) -> u64 {
+        self.focus_serial
+    }
+
     fn focus(&mut self, system: SystemKey) -> bool {
         let Some(index) = self
             .windows
@@ -593,6 +606,7 @@ impl FleetWindowState {
             return false;
         };
         let window = self.windows.remove(index);
+        self.focus_serial = crate::window_focus::next_serial();
         self.windows.push(window);
         true
     }
@@ -649,6 +663,13 @@ pub enum FleetWindowAction {
     /// view hit-tests the screen point and issues `0x201` (`FUN_00422ce0`).
     DragRegiment {
         troop: TroopKey,
+        point: egui::Pos2,
+    },
+    /// A Fighters tab squadron dragged out of its list: the same `0x201`
+    /// (`TroopTransportState::move_squadron`).
+    DragSquadron {
+        fleet: FleetKey,
+        index: usize,
         point: egui::Pos2,
     },
     /// A Capital Ships tab item dragged out of its list: the same `0x201`
@@ -1313,6 +1334,7 @@ pub fn draw_fleet_windows(
     faction: CockpitFaction,
     layout: CockpitLayout,
     cache: &mut BmpCache,
+    front: bool,
 ) -> Vec<FleetWindowAction> {
     state.prepare_faction(faction);
     let windows = state.windows.clone();
@@ -1326,7 +1348,7 @@ pub fn draw_fleet_windows(
             fog,
             transport,
             window,
-            focused_system == Some(window.system),
+            front && focused_system == Some(window.system),
             faction,
             layout,
             cache,
@@ -1967,8 +1989,8 @@ fn draw_fleet_window(
                             result.object_menu = Some((object.menu_object(), point));
                         }
                     }
-                    // A left press on a regiment or ship captures the mouse
-                    // for a drag (FUN_006083c0).
+                    // A left press on a regiment, ship or squadron captures
+                    // the mouse for a drag (FUN_006083c0).
                     if let (Some(object), Some(press)) = (
                         item.object,
                         ui.ctx().input(|input| {
@@ -2189,6 +2211,7 @@ pub(crate) mod tests {
             fleets: Vec::new(),
             ground_units: Vec::new(),
             special_forces: Vec::new(),
+            fighters: Vec::new(),
             defense_facilities: Vec::new(),
             manufacturing_facilities: Vec::new(),
             production_facilities: Vec::new(),
@@ -2793,6 +2816,7 @@ pub(crate) mod tests {
                     faction,
                     scaled(),
                     &mut cache,
+                    true,
                 ));
             });
             result.painted = PAINTED.with(|painted| painted.take());

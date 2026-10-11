@@ -239,6 +239,7 @@ mod tests {
                 fleets: Vec::new(),
                 ground_units: Vec::new(),
                 special_forces: Vec::new(),
+                fighters: Vec::new(),
                 defense_facilities: Vec::new(),
                 manufacturing_facilities: Vec::new(),
                 production_facilities: Vec::new(),

@@ -22,6 +22,12 @@ pub enum ScrapTarget {
     CapitalShip { fleet: FleetKey, index: usize },
     /// One fighter squadron: its fleet and its fighter entry.
     Fighter { fleet: FleetKey, entry: usize },
+    /// One squadron a system holds, of a class and side (`FUN_00503a50`).
+    SystemFighter {
+        system: crate::ids::SystemKey,
+        class: crate::ids::FighterKey,
+        is_alliance: bool,
+    },
     /// A planetary defense (DEFFACSD).
     Defense(DefenseFacilityKey),
     /// A shipyard, training facility or construction yard (MANFACSD).
@@ -87,6 +93,21 @@ pub fn overdraft_candidates(world: &GameWorld, side: Faction) -> Vec<ScrapTarget
                 candidates.extend(
                     (0..fighters.count).map(|_| ScrapTarget::Fighter { fleet: key, entry }),
                 );
+            }
+        }
+    }
+    for (system, value) in &world.systems {
+        for fighters in value.fighters.iter().filter(|entry| entry.is_alliance == is_alliance) {
+            let costs = world
+                .fighter_classes
+                .get(fighters.class)
+                .is_some_and(|class| class.maintenance_cost > 0);
+            if costs {
+                candidates.extend((0..fighters.count).map(|_| ScrapTarget::SystemFighter {
+                    system,
+                    class: fighters.class,
+                    is_alliance,
+                }));
             }
         }
     }
@@ -160,6 +181,23 @@ fn owner_and_cost(world: &GameWorld, target: ScrapTarget) -> Option<(Faction, u3
                 .map_or(0, |class| class.refined_material_cost);
             Some((Faction::of_alliance(value.is_alliance), cost))
         }
+        ScrapTarget::SystemFighter {
+            system,
+            class,
+            is_alliance,
+        } => {
+            let held = world.systems.get(system)?.fighters.iter().any(|entry| {
+                entry.class == class && entry.is_alliance == is_alliance && entry.count > 0
+            });
+            if !held {
+                return None;
+            }
+            let cost = world
+                .fighter_classes
+                .get(class)
+                .map_or(0, |value| value.refined_material_cost);
+            Some((Faction::of_alliance(is_alliance), cost))
+        }
         ScrapTarget::Defense(key) => world
             .defense_facilities
             .get(key)
@@ -222,6 +260,15 @@ pub fn scrap(
                 fighters.count -= 1;
             }
             remove_if_empty(world, fleet);
+        }
+        ScrapTarget::SystemFighter {
+            system,
+            class,
+            is_alliance,
+        } => {
+            if let Some(value) = world.systems.get_mut(system) {
+                value.take_squadron(class, is_alliance);
+            }
         }
         ScrapTarget::Defense(key) => {
             crate::missions::destroy_target(
@@ -308,10 +355,20 @@ pub enum ScrapOrder {
         index: usize,
     },
     Troop(TroopKey),
+    /// One squadron of a fleet, from its own menu.
+    Fighter { fleet: FleetKey, entry: usize },
+    /// One squadron a system holds, from its own menu.
+    SystemFighter {
+        system: crate::ids::SystemKey,
+        class: crate::ids::FighterKey,
+        is_alliance: bool,
+    },
+    /// One planetary defense, from its own menu.
+    Defense(crate::ids::DefenseFacilityKey),
     /// A system's yards, mines and refineries of the side.
     Facilities(crate::ids::SystemKey),
-    /// A system's regiments and defenses of the side. port: fighter
-    /// squadrons live in fleets, so the icon's squadrons are not listed.
+    /// A system's regiments, squadrons and defenses of the side: the
+    /// Defenses icon's team (`FUN_00512700` kind 8).
     Defenses(crate::ids::SystemKey),
     /// A system's fleets of the side.
     Fleets(crate::ids::SystemKey),
@@ -368,6 +425,17 @@ pub fn order_targets(world: &GameWorld, order: ScrapOrder, side: Faction) -> Vec
         ScrapOrder::Fleet(fleet) => fleet_members(world, fleet),
         ScrapOrder::Ship { fleet, index } => vec![ScrapTarget::CapitalShip { fleet, index }],
         ScrapOrder::Troop(troop) => vec![ScrapTarget::Troop(troop)],
+        ScrapOrder::Fighter { fleet, entry } => vec![ScrapTarget::Fighter { fleet, entry }],
+        ScrapOrder::Defense(key) => vec![ScrapTarget::Defense(key)],
+        ScrapOrder::SystemFighter {
+            system,
+            class,
+            is_alliance,
+        } => vec![ScrapTarget::SystemFighter {
+            system,
+            class,
+            is_alliance,
+        }],
         ScrapOrder::Facilities(system) => {
             world.systems.get(system).map_or_else(Vec::new, |value| {
                 value
@@ -388,6 +456,13 @@ pub fn order_targets(world: &GameWorld, order: ScrapOrder, side: Faction) -> Vec
                 .ground_units
                 .iter()
                 .map(|&key| ScrapTarget::Troop(key))
+                .chain(value.fighters.iter().flat_map(|fighters| {
+                    (0..fighters.count).map(move |_| ScrapTarget::SystemFighter {
+                        system,
+                        class: fighters.class,
+                        is_alliance: fighters.is_alliance,
+                    })
+                }))
                 .chain(
                     value
                         .defense_facilities
@@ -443,6 +518,10 @@ pub fn order_names(world: &GameWorld, order: ScrapOrder, side: Faction) -> Vec<S
                     .and_then(|value| value.fighters.get(entry))
                     .and_then(|fighters| world.fighter_classes.get(fighters.class))
                     .map_or_else(String::new, |class| class.name.clone()),
+                ScrapTarget::SystemFighter { class, .. } => world
+                    .fighter_classes
+                    .get(class)
+                    .map_or_else(String::new, |value| value.name.clone()),
                 ScrapTarget::Defense(key) => world
                     .defense_facilities
                     .get(key)
@@ -523,6 +602,7 @@ mod tests {
             fleets: vec![],
             ground_units: vec![],
             special_forces: vec![],
+            fighters: Vec::new(),
             defense_facilities: vec![],
             manufacturing_facilities: vec![],
             production_facilities: vec![],

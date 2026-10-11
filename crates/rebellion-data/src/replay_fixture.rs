@@ -35,8 +35,8 @@ pub const SEED42_FIXTURE_ID: &str = "seed42-v1";
 pub const SEED42_ARTIFACT_BYTES: &[u8] = include_bytes!("../tests/fixtures/replay_seed42_v1.json");
 pub const SEED42_ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const SEED42_SEED: u64 = 42;
-pub const SEED42_INITIAL_FINGERPRINT: &str = "v1:f2d904795793ccb5";
-pub const SEED42_FINAL_FINGERPRINT: &str = "v1:38755a7fde9ba213";
+pub const SEED42_INITIAL_FINGERPRINT: &str = "v1:2f069084cee3cfb6";
+pub const SEED42_FINAL_FINGERPRINT: &str = "v1:8832577295ea4680";
 pub const SEED42_FINAL_TICK: u64 = 25;
 pub const SEED42_DATA_INPUTS: usize = 51;
 pub const SEED42_DATA_BYTES: u64 = 50_597;
@@ -54,15 +54,15 @@ pub fn seed42_seed_options() -> SeedOptions {
 }
 
 pub const SEED42_CHECKPOINTS: &[(u64, u64, &str)] = &[
-    (1, 0, "v1:71581e22880a15e1"),
-    (2, 0, "v1:975a446ba9f4351f"),
-    (3, 5, "v1:fd36e0adb2fa4238"),
-    (4, 10, "v1:91d953fa67f7b1d3"),
-    (5, 15, "v1:51ba920b80fe0a03"),
-    (6, 20, "v1:43279bb281e6ca1b"),
-    (7, 25, "v1:52f3eb3f333b4602"),
-    (8, 25, "v1:38755a7fde9ba213"),
-    (9, 25, "v1:38755a7fde9ba213"),
+    (1, 0, "v1:6a6f4f92414ac91e"),
+    (2, 0, "v1:cadf8b20b2ff997c"),
+    (3, 5, "v1:68f8cc7ba25d6822"),
+    (4, 10, "v1:ee56f5ec031dac9c"),
+    (5, 15, "v1:e046ffeae51dabf6"),
+    (6, 20, "v1:ba2dce6dbdf2a8ed"),
+    (7, 25, "v1:958782ef72e9b983"),
+    (8, 25, "v1:8832577295ea4680"),
+    (9, 25, "v1:8832577295ea4680"),
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -196,7 +196,6 @@ pub fn seed42_initial_state(world: GameWorld) -> anyhow::Result<SaveState> {
         sim_rng: Xoshiro256PlusPlus::seed_from_u64(SEED42_SEED),
         ai2: None,
         repair: RepairState::default(),
-        combat_cooldowns: std::collections::HashMap::new(),
         game_config: GameConfig::default(),
         campaign_config: CampaignConfig::from_seed_options(options, VictoryConditions::Standard),
         troop_transport: rebellion_core::troop_transport::TroopTransportState::default(),

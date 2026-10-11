@@ -55,7 +55,6 @@ use rebellion_core::delivery::DeliveryState;
 use rebellion_core::economy::EconomyState;
 use rebellion_core::events::EventState;
 use rebellion_core::fog::FogState;
-use rebellion_core::ids::SystemKey;
 use rebellion_core::jedi::JediState;
 use rebellion_core::manufacturing::ManufacturingState;
 use rebellion_core::missions::MissionState;
@@ -79,7 +78,7 @@ pub const SAVE_MAGIC: &[u8; 8] = b"OPENREB\0";
 
 /// Current save format version. Increment when `SaveState` layout changes;
 /// saves of any other version are rejected.
-pub const SAVE_VERSION: u32 = 34;
+pub const SAVE_VERSION: u32 = 36;
 
 /// Current state-fingerprint algorithm version.
 ///
@@ -235,12 +234,6 @@ pub struct SaveState {
     /// Optional AI controlling the player's nominal faction in dual-AI mode.
     pub ai2: Option<AIState>,
     pub repair: RepairState,
-    /// Last automatic-combat tick per system.
-    #[serde(
-        serialize_with = "rebellion_core::serde_ordered::serialize_hash_map",
-        deserialize_with = "rebellion_core::serde_ordered::deserialize_hash_map"
-    )]
-    pub combat_cooldowns: std::collections::HashMap<SystemKey, u64>,
     /// Tuning parameters used by the simulation that produced this state.
     pub game_config: GameConfig,
     /// Original difficulty, galaxy-size, faction, and victory-condition choices.
@@ -260,6 +253,9 @@ pub struct SaveState {
     // v34 changes no field here: ships carry tags, squadrons and regiments
     // name their ship (`rebellion_core::carriage`), and each side's fog
     // keeps the facilities it knows (`FogState::known_facilities`).
+    // v35 changes no field here: a system holds squadrons of its own
+    // (`System::fighters`), and `TroopTransportState` carries squadrons
+    // travelling on their own.
 }
 
 // ---------------------------------------------------------------------------
@@ -923,6 +919,7 @@ pub use wasm_impl::{
 mod tests {
     use super::*;
     use rand::{RngCore, SeedableRng};
+    use rebellion_core::ids::SystemKey;
     use rebellion_core::ai::{AIState, AiFaction};
     use rebellion_core::dat::Faction;
     use rebellion_core::world::ControlKind;
@@ -953,6 +950,7 @@ mod tests {
             fleets: vec![],
             ground_units: vec![],
             special_forces: vec![],
+            fighters: Vec::new(),
             defense_facilities: vec![],
             manufacturing_facilities: vec![],
             production_facilities: vec![],
@@ -976,6 +974,7 @@ mod tests {
             fleets: vec![],
             ground_units: vec![],
             special_forces: vec![],
+            fighters: Vec::new(),
             defense_facilities: vec![],
             manufacturing_facilities: vec![],
             production_facilities: vec![],
@@ -1006,7 +1005,6 @@ mod tests {
             sim_rng: Xoshiro256PlusPlus::seed_from_u64(42),
             ai2: None,
             repair: RepairState::default(),
-            combat_cooldowns: std::collections::HashMap::new(),
             game_config: GameConfig::default(),
             campaign_config: CampaignConfig::default(),
             troop_transport: TroopTransportState::default(),
@@ -1079,7 +1077,6 @@ mod tests {
         state.ai2 = Some(AIState::new(AiFaction::Alliance));
         state.ai2.as_mut().unwrap().last_eval_tick = 77;
         let system = state.world.systems.keys().next().unwrap();
-        state.combat_cooldowns.insert(system, 61);
         state.game_config.ai.tick_interval = 13;
         state.campaign_config.galaxy_size = rebellion_core::dat::GalaxySize::Huge;
         state.campaign_config.difficulty = rebellion_core::world::SeedDifficulty::Hard;
@@ -1149,7 +1146,6 @@ mod tests {
 
         assert_eq!(loaded_rolls, expected_rolls);
         assert_eq!(loaded.ai2.as_ref().unwrap().last_eval_tick, 77);
-        assert_eq!(loaded.combat_cooldowns.get(&system), Some(&61));
         assert_eq!(loaded.game_config.ai.tick_interval, 13);
         assert_eq!(loaded.campaign_config, state.campaign_config);
         assert!(loaded.repair.is_repairing(fleet));
@@ -1192,10 +1188,10 @@ mod tests {
         let mut reverse = forward.clone();
         let system_keys = forward.world.systems.keys().collect::<Vec<_>>();
 
-        forward.combat_cooldowns.insert(system_keys[0], 10);
-        forward.combat_cooldowns.insert(system_keys[1], 20);
-        reverse.combat_cooldowns.insert(system_keys[1], 20);
-        reverse.combat_cooldowns.insert(system_keys[0], 10);
+        forward.ai.battle_cooldowns.insert(system_keys[0], 10);
+        forward.ai.battle_cooldowns.insert(system_keys[1], 20);
+        reverse.ai.battle_cooldowns.insert(system_keys[1], 20);
+        reverse.ai.battle_cooldowns.insert(system_keys[0], 10);
 
         assert_eq!(
             compute_state_fingerprint(&forward).unwrap(),

@@ -49,7 +49,7 @@ use rebellion_core::ai::{AIAction, AIState, AISystem, AiFaction, FleetMoveReason
 use rebellion_core::betrayal::{BetrayalState, BetrayalSystem};
 use rebellion_core::blockade::{BlockadeState, BlockadeSystem};
 use rebellion_core::bombardment::BombardmentSystem;
-use rebellion_core::combat::{CombatSide, CombatSystem};
+use rebellion_core::combat::{side_present, CombatForce, CombatSide, CombatSystem};
 use rebellion_core::dat::Faction;
 use rebellion_core::death_star::{DeathStarState, DeathStarSystem};
 use rebellion_core::delivery::DeliveryState;
@@ -73,7 +73,9 @@ use rebellion_core::repair::{RepairEvent, RepairState, RepairSystem};
 use rebellion_core::research::{ResearchState, ResearchSystem};
 use rebellion_core::stockpiles::{StockpileEvent, StockpileState, StockpileSystem};
 use rebellion_core::tick::{GameClock, GameSpeed};
-use rebellion_core::troop_transport::{RegimentLeg, RegimentTarget, TroopTransportState};
+use rebellion_core::troop_transport::{
+    RegimentLeg, RegimentTarget, SquadronSource, TroopTransportState,
+};
 use rebellion_core::uprising::{UprisingState, UprisingSystem};
 use rebellion_core::victory::{VictoryState, VictorySystem};
 use rebellion_core::world::{
@@ -191,6 +193,12 @@ enum CutsceneKind {
 const INTRO_CUTSCENE: &str = "assets/references/ref-videos/000.webm";
 const TRENCH_RUN_SUCCESS_CUTSCENE: &str = "assets/references/ref-videos/201.webm";
 const TRENCH_RUN_FAILURE_CUTSCENE: &str = "assets/references/ref-videos/202.webm";
+/// How many frames a developer command waits for the galaxy view before it
+/// is refused (about 10 s at 60 fps). Frames rather than wall time, so a
+/// covered window that macOS throttles does not use up the wait between two
+/// frames.
+#[cfg(not(target_arch = "wasm32"))]
+const DEV_GALAXY_WAIT_FRAMES: u32 = 600;
 
 /// Map a story event ID to its cutscene file number (101–108), if any.
 /// Returns `None` for events that don't trigger a cutscene.
@@ -398,7 +406,6 @@ struct LiveCampaign<'a> {
     deliveries: &'a mut DeliveryState,
     player_agent: &'a mut PlayerAgent,
     stockpiles: &'a mut StockpileState,
-    combat_cooldowns: &'a mut std::collections::HashMap<rebellion_core::ids::SystemKey, u64>,
     game_config: &'a mut rebellion_core::tuning::GameConfig,
     campaign_config: &'a mut CampaignConfig,
 }
@@ -427,7 +434,6 @@ impl LiveCampaign<'_> {
             sim_rng: self.sim_rng.clone(),
             ai2: self.ai2.clone(),
             repair: self.repair.clone(),
-            combat_cooldowns: self.combat_cooldowns.clone(),
             game_config: self.game_config.clone(),
             campaign_config: *self.campaign_config,
             troop_transport: self.troop_transport.clone(),
@@ -463,7 +469,6 @@ impl LiveCampaign<'_> {
         *self.sim_rng = state.sim_rng;
         *self.ai2 = state.ai2;
         *self.repair = state.repair;
-        *self.combat_cooldowns = state.combat_cooldowns;
         *self.game_config = state.game_config;
         *self.campaign_config = state.campaign_config;
         *self.troop_transport = state.troop_transport;
@@ -1283,8 +1288,6 @@ async fn main() {
     let mut fog_empire_state = FogState::new(Faction::Empire);
     FogSystem::seed(&mut fog_alliance_state, &world);
     FogSystem::seed(&mut fog_empire_state, &world);
-    let mut combat_cooldowns: std::collections::HashMap<rebellion_core::ids::SystemKey, u64> =
-        std::collections::HashMap::new();
     let mut blockade_state = BlockadeState::new();
     let mut uprising_state = UprisingState::new();
     let mut death_star_state = DeathStarState::default();
@@ -1377,6 +1380,13 @@ async fn main() {
     // `Capture` saves the frame being drawn.
     #[cfg(not(target_arch = "wasm32"))]
     let (mut dev_hold_until, mut dev_hold_frames) = (0.0_f64, 0_u32);
+    // A `Wait until` holds the queue while its condition is false, with the
+    // frames it has waited.
+    #[cfg(not(target_arch = "wasm32"))]
+    let mut dev_wait_until: Option<(dev_commands::WaitCondition, u32)> = None;
+    // Frames the next line has waited for the galaxy view.
+    #[cfg(not(target_arch = "wasm32"))]
+    let mut dev_galaxy_wait_frames: u32 = 0;
     #[cfg(not(target_arch = "wasm32"))]
     let mut dev_capture: Option<String> = None;
     #[cfg(not(target_arch = "wasm32"))]
@@ -1681,7 +1691,6 @@ async fn main() {
             request,
             &mut world,
             &mut tactical_state,
-            &mut combat_cooldowns,
             &mut msg_log,
             &mut player_faction,
             &mut cockpit_state,
@@ -2180,6 +2189,9 @@ async fn main() {
                         if let Some(sys) = world.systems.get_mut(*system) {
                             sys.control = *new_control;
                         }
+                        // FUN_00510d70 → FUN_004f6f40: the system's facilities
+                        // follow its new holder.
+                        world.hand_over_facilities(*system);
                         // Only a change of side is a loyalty change; a
                         // contested system has not declared neutrality.
                         let new = side(new_control.faction());
@@ -2450,6 +2462,38 @@ Some(RailAudience::side(*faction_is_alliance)),
                     transit.origin,
                 ));
             }
+            for transit in &regiments.squadrons_arrived {
+                let system = match transit.leg {
+                    RegimentLeg::Surface(system) => Some(system),
+                    RegimentLeg::Fleet(fleet) => world.fleets.get(fleet).map(|f| f.location),
+                };
+                let Some(system) = system else { continue };
+                let name = world
+                    .systems
+                    .get(system)
+                    .map_or_else(|| "unknown".into(), |s| s.name.clone());
+                // Notification 0xd, Unit Arrival.
+                msg_log.push(filed(
+                    GameMessage::at_system(
+                        transit.arrival_tick,
+                        format!("Squadron arrived at {name}"),
+                        MessageCategory::Mission,
+                        system,
+                    )
+                    .with_advice(6),
+                    MessageRail::Fleet,
+                    Some(RailAudience::side(transit.is_alliance)),
+                ));
+            }
+            for transit in &regiments.squadrons_lost {
+                // Event 0x303, GameObjDestroyedOnArrivalNotif.
+                msg_log.push(GameMessage::at_system(
+                    transit.arrival_tick,
+                    "Squadron lost on arrival: its destination no longer exists".to_string(),
+                    MessageCategory::Mission,
+                    transit.origin,
+                ));
+            }
 
             // Unopposed troop transports can land immediately. Contested
             // orbits retain cargo until space combat produces a winner.
@@ -2525,12 +2569,10 @@ Some(RailAudience::side(*faction_is_alliance)),
                 .systems
                 .keys()
                 .filter_map(|sys_key| {
-                    // Combat cooldown: skip systems that had combat within last 5 ticks.
-                    if let Some(&last_battle) = combat_cooldowns.get(&sys_key) {
-                        if current_tick < last_battle.saturating_add(5) {
-                            return None;
-                        }
-                    }
+                    // FUN_0051ddf0 -> FUN_00516ef0 / FUN_00517270: a system
+                    // fights on every pass that finds both sides present;
+                    // when both remain the battle fires again next pass.
+                    // There is no cooldown.
                     let sys = &world.systems[sys_key];
                     let alliance_fleets: Vec<_> = sys
                         .fleets
@@ -2544,15 +2586,20 @@ Some(RailAudience::side(*faction_is_alliance)),
                         .copied()
                         .filter(|&k| world.fleets.get(k).is_some_and(|f| !f.is_alliance))
                         .collect();
-                    if !alliance_fleets.is_empty() && !empire_fleets.is_empty() {
-                        Some((sys_key, alliance_fleets[0], empire_fleets[0]))
-                    } else {
-                        None
-                    }
+                    // FUN_00509710 / FUN_0050b8e0: both sides present, each
+                    // with a fleet or squadrons the system holds for it.
+                    (side_present(&world, sys_key, true) && side_present(&world, sys_key, false))
+                        .then(|| {
+                            (
+                                sys_key,
+                                alliance_fleets.first().copied(),
+                                empire_fleets.first().copied(),
+                            )
+                        })
                 })
                 .collect();
 
-            for (sys_key, atk_fleet, def_fleet) in combat_triggers {
+            for (sys_key, atk_force, def_force) in combat_triggers {
                 let sys_name = world
                     .systems
                     .get(sys_key)
@@ -2560,12 +2607,11 @@ Some(RailAudience::side(*faction_is_alliance)),
 
                 // Check if the player is involved in this battle.
                 let player_is_alliance = player_faction == MissionFaction::Alliance;
-                let atk_is_alliance = world.fleets.get(atk_fleet).is_some_and(|f| f.is_alliance);
-                let def_is_alliance = world.fleets.get(def_fleet).is_some_and(|f| f.is_alliance);
-                // Player is involved if either fleet belongs to the player's faction.
+                let atk_is_alliance = true;
+                let def_is_alliance = false;
+                // Player is involved if either side is the player's faction.
                 let player_involved = (player_is_alliance == atk_is_alliance)
                     || (player_is_alliance == def_is_alliance);
-
                 if player_involved && game_mode == GameMode::Galaxy {
                     // Transition to tactical combat view for player-involved battles.
                     let player_is_attacker = if player_is_alliance {
@@ -2577,14 +2623,19 @@ Some(RailAudience::side(*faction_is_alliance)),
                         &world,
                         tactical_flow::BattleEntry {
                             system: sys_key,
-                            attacker: atk_fleet,
-                            defender: def_fleet,
+                            attacker: CombatForce {
+                                fleet: atk_force,
+                                is_alliance: true,
+                            },
+                            defender: CombatForce {
+                                fleet: def_force,
+                                is_alliance: false,
+                            },
                             player_is_attacker,
                             tick: current_tick,
                             rng_seed: sim_rng.gen::<u32>(),
                         },
                         &mut tactical_state,
-                        &mut combat_cooldowns,
                         &mut msg_log,
                         &mut game_mode,
                     ) {
@@ -2608,10 +2659,16 @@ Some(RailAudience::side(*faction_is_alliance)),
 
                 // AI vs AI: auto-resolve as before.
                 let combat_rolls: Vec<f64> = (0..256).map(|_| sim_rng.gen::<f64>()).collect();
-                let space_result = CombatSystem::resolve_space(
+                let space_result = CombatSystem::resolve_space_forces(
                     &world,
-                    atk_fleet,
-                    def_fleet,
+                    CombatForce {
+                        fleet: atk_force,
+                        is_alliance: true,
+                    },
+                    CombatForce {
+                        fleet: def_force,
+                        is_alliance: false,
+                    },
                     sys_key,
                     world.difficulty_index,
                     &combat_rolls,
@@ -2622,8 +2679,6 @@ Some(RailAudience::side(*faction_is_alliance)),
                 // Apply ship damage: reduce counts proportional to destroyed hulls.
                 apply_space_combat_result(&space_result, &mut world);
                 troop_transport_state.destroy_untransportable_cargo(&mut world);
-                // Record combat cooldown to prevent infinite re-trigger on draws.
-                combat_cooldowns.insert(sys_key, current_tick);
 
                 let winner_str = match space_result.winner {
                     CombatSide::Attacker => "Alliance victory",
@@ -2640,11 +2695,17 @@ Some(RailAudience::side(*faction_is_alliance)),
                 audio_engine.play_sfx(SfxKind::CombatStart, &audio_vol);
 
                 // Surviving transports land only after a decisive space result.
-                let winner = match space_result.winner {
-                    CombatSide::Attacker => Some((true, atk_fleet)),
-                    CombatSide::Defender => Some((false, def_fleet)),
-                    CombatSide::Draw => None,
-                };
+                // FUN_00517270: a side left with only its system squadrons
+                // is still present, so the system stays contested.
+                let winner = match (
+                    side_present(&world, sys_key, true),
+                    side_present(&world, sys_key, false),
+                ) {
+                    (true, false) => atk_force.map(|fleet| (true, fleet)),
+                    (false, true) => def_force.map(|fleet| (false, fleet)),
+                    _ => None,
+                }
+                .filter(|&(_, fleet)| world.fleets.contains_key(fleet));
                 if let Some((winner_is_alliance, winner_fleet)) = winner {
                     tactical_flow::apply_automatic_bombardment(
                         &mut world,
@@ -3519,7 +3580,31 @@ Some(RailAudience::side(*faction_is_alliance)),
             for (seq, line) in dev_channel.poll(get_time()) {
                 script.push_live(seq, line);
             }
-            let held = dev_hold_frames > 0 || get_time() < dev_hold_until || dev_input.busy();
+            if let Some((condition, frames)) = dev_wait_until.as_mut() {
+                use dev_commands::WaitCondition;
+                let met = match *condition {
+                    WaitCondition::Day(day) => clock.tick >= day,
+                    WaitCondition::BattleAlert => tactical_state.battle_alert_open(),
+                    WaitCondition::Battle => game_mode == GameMode::TacticalCombat,
+                    WaitCondition::Galaxy => game_mode == GameMode::Galaxy,
+                };
+                if met {
+                    dev_channel.note(&format!("day={} after {frames} frames", clock.tick));
+                    dev_wait_until = None;
+                } else if *frames >= dev_commands::WAIT_UNTIL_FRAMES {
+                    dev_channel.refuse(&format!(
+                        "waited {frames} frames for {condition:?}; day={} mode={game_mode:?}",
+                        clock.tick
+                    ));
+                    dev_wait_until = None;
+                } else {
+                    *frames += 1;
+                }
+            }
+            let held = dev_hold_frames > 0
+                || get_time() < dev_hold_until
+                || dev_wait_until.is_some()
+                || dev_input.busy();
             dev_hold_frames = dev_hold_frames.saturating_sub(1);
             let galaxy_ready = matches!(game_mode, GameMode::MainMenu | GameMode::Galaxy)
                 && pending_interface.is_empty();
@@ -3533,6 +3618,25 @@ Some(RailAudience::side(*faction_is_alliance)),
                     Some(Err(_)) => true,
                     _ => galaxy_ready,
                 };
+            // A line that has waited too long for the galaxy view is refused
+            // rather than holding back every line behind it (a Battle Alert
+            // keeps the game out of the galaxy until something closes it).
+            let waiting = !held && !ready && script.peek().is_some();
+            dev_galaxy_wait_frames = if waiting {
+                dev_galaxy_wait_frames.saturating_add(1)
+            } else {
+                0
+            };
+            if dev_galaxy_wait_frames >= DEV_GALAXY_WAIT_FRAMES {
+                dev_galaxy_wait_frames = 0;
+                if let dev_commands::ScriptStep::Run(line) = script.step(true) {
+                    eprintln!("[dev-command] run #{}: {line}", script.last_seq().map_or_else(|| "-".to_owned(), |seq| seq.to_string()));
+                    dev_channel.begin(script.last_seq(), &line);
+                    dev_channel.refuse(&format!(
+                        "waited {DEV_GALAXY_WAIT_FRAMES} frames for the galaxy view; the game is in {game_mode:?}"
+                    ));
+                }
+            } else {
             match script.step(ready) {
                 dev_commands::ScriptStep::Wait => {}
                 dev_commands::ScriptStep::Run(line) => {
@@ -3585,6 +3689,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                     }
                 }
             }
+            }
         }
         #[cfg(not(target_arch = "wasm32"))]
         for command in std::mem::take(&mut dev_commands_ready) {
@@ -3597,9 +3702,10 @@ Some(RailAudience::side(*faction_is_alliance)),
                 }
                 DevCommand::WaitMs(ms) => dev_hold_until = get_time() + f64::from(ms) / 1000.0,
                 DevCommand::WaitFrames(frames) => dev_hold_frames = frames,
+                DevCommand::WaitUntil(condition) => dev_wait_until = Some((condition, 0)),
                 // Two frames after the last step let the game read it.
-                DevCommand::Click { x, y, right } => {
-                    dev_input.click(x, y, right);
+                DevCommand::Click { x, y, right, ctrl } => {
+                    dev_input.click(x, y, right, ctrl);
                     dev_hold_frames = 2;
                 }
                 DevCommand::Drag { from, to } => {
@@ -3690,6 +3796,23 @@ Some(RailAudience::side(*faction_is_alliance)),
                         }
                     });
                     match result {
+                        Ok(detail) => dev_channel.note(&detail),
+                        Err(why) => dev_channel.refuse(&why),
+                    }
+                }
+                DevCommand::KnockOutHyperdrive(n) => {
+                    let result = tactical_state
+                        .session
+                        .as_mut()
+                        .ok_or_else(|| "no battle is running".to_owned())
+                        .and_then(|session| session.knock_out_player_hyperdrive(n));
+                    match result {
+                        Ok(detail) => dev_channel.note(&detail),
+                        Err(why) => dev_channel.refuse(&why),
+                    }
+                }
+                DevCommand::GiveDeathStar(ref fleet) => {
+                    match dev_actions::give_death_star(&mut world, &mut death_star_state, fleet) {
                         Ok(detail) => dev_channel.note(&detail),
                         Err(why) => dev_channel.refuse(&why),
                     }
@@ -4182,7 +4305,6 @@ Some(RailAudience::side(*faction_is_alliance)),
                                         &world,
                                     );
                                     movement_state = MovementState::new();
-                                    combat_cooldowns.clear();
                                     blockade_state = BlockadeState::new();
                                     uprising_state = UprisingState::new();
                                     death_star_state = DeathStarState::default();
@@ -4321,12 +4443,11 @@ Some(RailAudience::side(*faction_is_alliance)),
                                     campaign_summary
                                 );
                                 macroquad::logging::info!(
-                                "[campaign] reset generation={} tick={} missions={} movements={} cooldowns={} dual_ai={} second_ai={} event_definitions={}",
+                                "[campaign] reset generation={} tick={} missions={} movements={} dual_ai={} second_ai={} event_definitions={}",
                                 campaign_generation,
                                 clock.tick,
                                 mission_state.len(),
                                 movement_state.len(),
-                                combat_cooldowns.len(),
                                 dual_ai_mode,
                                 secondary_ai_state.is_some(),
                                 event_state.events().len()
@@ -4423,6 +4544,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                     || defenses_window_state.contains_screen_point(cockpit_layout, pointer)
                     || missions_window_state.contains_screen_point(cockpit_layout, pointer)
                     || fleet_window_state.is_dragging()
+                    || defenses_window_state.is_dragging()
                     || mission_dialog_state.contains_screen_point(cockpit_layout, pointer)
                     || build_selection_state.contains_screen_point(cockpit_layout, pointer)
                     || move_confirmation_state.contains_screen_point(cockpit_layout, pointer)
@@ -5113,6 +5235,14 @@ Some(RailAudience::side(*faction_is_alliance)),
                         }
                     }
 
+                    // One focus across the galaxy's child windows (window_focus): the
+                    // kind that took focus last paints in front.
+                    let galaxy_front = galaxy_front(
+                        &system_window_state,
+                        &fleet_window_state,
+                        &defenses_window_state,
+                        &missions_window_state,
+                    );
                     for action in draw_system_windows(
                         ctx,
                         &world,
@@ -5125,6 +5255,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                         cockpit_state.faction,
                         cockpit_layout,
                         &mut bmp_cache,
+                        galaxy_front == GalaxyFront::System,
                     ) {
                         match action {
                             SystemWindowAction::FocusSector(system) => {
@@ -5204,6 +5335,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                         cockpit_state.faction,
                         cockpit_layout,
                         &mut bmp_cache,
+                        galaxy_front == GalaxyFront::Fleet,
                     ) {
                         match action {
                             FleetWindowAction::OpenSector(system) => {
@@ -5360,6 +5492,40 @@ Some(RailAudience::side(*faction_is_alliance)),
                                 };
                                 panel_actions.push(PanelAction::MoveRegiment { troop, target });
                             }
+                            FleetWindowAction::DragSquadron {
+                                fleet,
+                                index,
+                                point,
+                            } => {
+                                let windows = ReleaseWindows {
+                                    sector: &sector_window_state,
+                                    system: &system_window_state,
+                                    fleet: &fleet_window_state,
+                                    defenses: &defenses_window_state,
+                                    missions: &missions_window_state,
+                                };
+                                let target = match release_destination(
+                                    ctx,
+                                    &world,
+                                    &movement_state,
+                                    fog_state,
+                                    cockpit_layout,
+                                    windows,
+                                    point,
+                                ) {
+                                    Some(ReleaseTarget::System(system)) => {
+                                        RegimentTarget::System(system)
+                                    }
+                                    Some(ReleaseTarget::Fleet { fleet, .. }) => {
+                                        RegimentTarget::Fleet(fleet)
+                                    }
+                                    None => continue,
+                                };
+                                panel_actions.push(PanelAction::MoveSquadron {
+                                    source: SquadronSource::Fleet { fleet, index },
+                                    target,
+                                });
+                            }
                         }
                     }
 
@@ -5373,6 +5539,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                         cockpit_state.faction,
                         cockpit_layout,
                         &mut bmp_cache,
+                        galaxy_front == GalaxyFront::Defenses,
                     ) {
                         match action {
                             DefensesWindowAction::OpenSector(system) => {
@@ -5406,6 +5573,45 @@ Some(RailAudience::side(*faction_is_alliance)),
                                 );
                                 object_menu = Some(ObjectMenuState::new(selection, gates, point));
                             }
+                            DefensesWindowAction::DragSquadron {
+                                system,
+                                class,
+                                is_alliance,
+                                point,
+                            } => {
+                                let windows = ReleaseWindows {
+                                    sector: &sector_window_state,
+                                    system: &system_window_state,
+                                    fleet: &fleet_window_state,
+                                    defenses: &defenses_window_state,
+                                    missions: &missions_window_state,
+                                };
+                                let target = match release_destination(
+                                    ctx,
+                                    &world,
+                                    &movement_state,
+                                    fog_state,
+                                    cockpit_layout,
+                                    windows,
+                                    point,
+                                ) {
+                                    Some(ReleaseTarget::System(system)) => {
+                                        RegimentTarget::System(system)
+                                    }
+                                    Some(ReleaseTarget::Fleet { fleet, .. }) => {
+                                        RegimentTarget::Fleet(fleet)
+                                    }
+                                    None => continue,
+                                };
+                                panel_actions.push(PanelAction::MoveSquadron {
+                                    source: SquadronSource::System {
+                                        system,
+                                        class,
+                                        is_alliance,
+                                    },
+                                    target,
+                                });
+                            }
                         }
                     }
 
@@ -5418,6 +5624,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                         cockpit_state.faction,
                         cockpit_layout,
                         &mut bmp_cache,
+                        galaxy_front == GalaxyFront::Missions,
                     ) {
                         match action {
                             MissionsWindowAction::OpenSector(system) => {
@@ -5544,6 +5751,27 @@ Some(RailAudience::side(*faction_is_alliance)),
                         }
                         Some((ObjectMenuCommand::Move, Some(MenuObject::Troop(troop)))) => {
                             targeting = Some(Targeting::new(TargetOrder::TroopMove { troop }));
+                        }
+                        Some((ObjectMenuCommand::Move, Some(MenuObject::Fighter { fleet, index }))) => {
+                            targeting = Some(Targeting::new(TargetOrder::SquadronMove {
+                                source: SquadronSource::Fleet { fleet, index },
+                            }));
+                        }
+                        Some((
+                            ObjectMenuCommand::Move,
+                            Some(MenuObject::SystemFighter {
+                                system,
+                                class,
+                                is_alliance,
+                            }),
+                        )) => {
+                            targeting = Some(Targeting::new(TargetOrder::SquadronMove {
+                                source: SquadronSource::System {
+                                    system,
+                                    class,
+                                    is_alliance,
+                                },
+                            }));
                         }
                         // FUN_00487cc0 always confirms kind 0x200; the
                         // window lists the order's team (FUN_0049a350).
@@ -6221,6 +6449,20 @@ Some(RailAudience::side(*faction_is_alliance)),
                                     troop,
                                     target: RegimentTarget::System(system),
                                 }),
+                                Some(TargetingEnd::Target {
+                                    order: TargetOrder::SquadronMove { source },
+                                    target: ReleaseTarget::Fleet { fleet, .. },
+                                }) => panel_actions.push(PanelAction::MoveSquadron {
+                                    source,
+                                    target: RegimentTarget::Fleet(fleet),
+                                }),
+                                Some(TargetingEnd::Target {
+                                    order: TargetOrder::SquadronMove { source },
+                                    target: ReleaseTarget::System(system),
+                                }) => panel_actions.push(PanelAction::MoveSquadron {
+                                    source,
+                                    target: RegimentTarget::System(system),
+                                }),
                                 // FUN_00512700 kind 4: the order's team is
                                 // every production area of the system, or
                                 // a band's own area.
@@ -6560,35 +6802,36 @@ Some(RailAudience::side(*faction_is_alliance)),
                     }
                 }
                 TacticalAction::AutoResolve => {
-                    // Auto-resolve the battle, then show the same original
-                    // Battle Results window used by a played engagement.
+                    // Simulate runs the tactical engine to its end without its
+                    // window (FUN_0040a050 state 8), then shows the same
+                    // Battle Results window as a played engagement.
                     let mut result_presented = false;
-                    if let Some(session) = tactical_state.session.clone() {
-                        let combat_rolls: Vec<f64> =
-                            (0..256).map(|_| sim_rng.gen::<f64>()).collect();
-                        let space_result = CombatSystem::resolve_space(
-                            &world,
-                            session.attacker_fleet,
-                            session.defender_fleet,
-                            session.system,
-                            world.difficulty_index,
-                            &combat_rolls,
-                            session.start_tick,
-                            death_star_state.shield_generator_active,
+                    if tactical_state.simulate_battle() {
+                        let session = tactical_state
+                            .session
+                            .clone()
+                            .expect("simulate_battle keeps the session");
+                        let battle_return = tactical_flow::apply_results(
+                            &session,
+                            &mut world,
+                            &mut troop_transport_state,
+                            &mut movement_state,
                         );
-                        apply_space_combat_result(&space_result, &mut world);
+                        if let (Some(destination), Some(shown)) =
+                            (battle_return.withdrawal, tactical_state.session.as_mut())
+                        {
+                            shown.withdrawal_destination =
+                                world.systems.get(destination).map(|system| system.name.clone());
+                        }
                         tactical_flow::reconcile_death_star_result(
                             &world,
                             &mut death_star_state,
                             &mut victory_state,
                         );
-                        troop_transport_state.destroy_untransportable_cargo(&mut world);
 
-                        let ground_attacker = match space_result.winner {
-                            CombatSide::Attacker => Some(session.attacker_fleet),
-                            CombatSide::Defender => Some(session.defender_fleet),
-                            CombatSide::Draw => None,
-                        };
+                        let ground_attacker = battle_return
+                            .winner_fleet
+                            .filter(|&fleet| world.fleets.contains_key(fleet));
                         if let Some(winner_fleet) = ground_attacker {
                             let ground_rolls: Vec<f64> =
                                 (0..256).map(|_| sim_rng.gen::<f64>()).collect();
@@ -6612,29 +6855,44 @@ Some(RailAudience::side(*faction_is_alliance)),
                             );
                         }
 
-                        let winner_str = match space_result.winner {
-                            CombatSide::Attacker if session.attacker_is_alliance => {
-                                "Alliance victory"
+                        let alliance_won = match battle_return.winner {
+                            Some(rebellion_render::CombatWinner::Attacker) => {
+                                Some(session.attacker_is_alliance)
                             }
-                            CombatSide::Attacker => "Empire victory",
-                            CombatSide::Defender if session.attacker_is_alliance => {
-                                "Empire victory"
+                            Some(rebellion_render::CombatWinner::Defender) => {
+                                Some(!session.attacker_is_alliance)
                             }
-                            CombatSide::Defender => "Alliance victory",
-                            CombatSide::Draw => "Draw",
+                            Some(rebellion_render::CombatWinner::Draw) | None => None,
+                        };
+                        let winner_str = match alliance_won {
+                            Some(true) => "Alliance victory",
+                            Some(false) => "Empire victory",
+                            None => "Draw",
                         };
                         msg_log.push(GameMessage::at_system(
                             session.start_tick,
                             format!(
-                                "Space battle at {} — {} (auto-resolved)",
+                                "Space battle at {} — {} (simulated)",
                                 session.system_name, winner_str
                             ),
                             MessageCategory::Combat,
                             session.system,
                         ));
 
-                        result_presented =
-                            tactical_state.present_auto_resolve_result(&space_result);
+                        // FUN_00517270: while both sides remain there is no
+                        // result; the battle fires again on the next pass.
+                        let both_remain = alliance_won.is_none()
+                            && side_present(&world, session.system, true)
+                            && side_present(&world, session.system, false);
+                        if both_remain {
+                            tactical_state.end_battle();
+                            macroquad::logging::info!(
+                                "[battle] both sides remain at {}; no result, fights again next pass",
+                                session.system_name
+                            );
+                        } else {
+                            result_presented = true;
+                        }
                     }
                     if !result_presented {
                         game_mode = GameMode::Galaxy;
@@ -6654,6 +6912,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                                 &session,
                                 &mut world,
                                 &mut troop_transport_state,
+                                &mut movement_state,
                             );
                             let after = tactical_flow::persistence_snapshot(&session, &world);
                             macroquad::logging::info!(
@@ -6901,7 +7160,6 @@ Some(RailAudience::side(*faction_is_alliance)),
                         deliveries: &mut delivery_state,
                         player_agent: &mut player_agent,
                         stockpiles: &mut stockpile_state,
-                        combat_cooldowns: &mut combat_cooldowns,
                         game_config: &mut game_config,
                         campaign_config: &mut campaign_config,
                     }
@@ -6972,7 +7230,6 @@ Some(RailAudience::side(*faction_is_alliance)),
                                 deliveries: &mut delivery_state,
                                 player_agent: &mut player_agent,
                                 stockpiles: &mut stockpile_state,
-                                combat_cooldowns: &mut combat_cooldowns,
                                 game_config: &mut game_config,
                                 campaign_config: &mut campaign_config,
                             };
@@ -7398,7 +7655,11 @@ Some(RailAudience::side(*faction_is_alliance)),
                     Err(why) => dev_channel.refuse(&why),
                 }
             }
-            if dev_hold_frames == 0 && get_time() >= dev_hold_until && !dev_input.busy() {
+            if dev_hold_frames == 0
+                && get_time() >= dev_hold_until
+                && dev_wait_until.is_none()
+                && !dev_input.busy()
+            {
                 dev_channel.finish();
             }
         }
@@ -7574,6 +7835,10 @@ fn menu_object_encyclopedia_id(
         }
         MenuObject::Fighter { fleet, index } => {
             let class = world.fleets.get(fleet)?.fighters.get(index)?.class;
+            let value = world.fighter_classes.get(class)?;
+            catalog_object_id(catalog, value.dat_id.raw(), 0x1c..0x20, Some(&value.name))
+        }
+        MenuObject::SystemFighter { class, .. } => {
             let value = world.fighter_classes.get(class)?;
             catalog_object_id(catalog, value.dat_id.raw(), 0x1c..0x20, Some(&value.name))
         }
@@ -7802,6 +8067,30 @@ fn order_gates(
             }
             _ => false,
         },
+        // A squadron's own (FUN_00503930): the player's, held where it is.
+        squadron_move: match selection {
+            Some(MenuObject::SystemFighter {
+                system,
+                class,
+                is_alliance: side,
+            }) => {
+                side == is_alliance
+                    && world.systems.get(system).is_some_and(|value| {
+                        value.fighters.iter().any(|entry| {
+                            entry.class == class && entry.is_alliance == side && entry.count > 0
+                        })
+                    })
+            }
+            Some(MenuObject::Fighter { fleet, index }) => {
+                fleet_move_enabled(movement_state, world, fleet, is_alliance)
+                    && world
+                        .fleets
+                        .get(fleet)
+                        .and_then(|value| value.fighters.get(index))
+                        .is_some_and(|entry| entry.count > 0)
+            }
+            _ => false,
+        },
         // FUN_004f9860: the ship's fleet is the player's and in orbit.
         ship_move: match selection {
             Some(MenuObject::Ship { fleet, index, .. }) => {
@@ -7897,6 +8186,20 @@ fn scrap_order(selection: Option<MenuObject>) -> Option<rebellion_core::scrap::S
         MenuObject::Fleet(fleet) => Some(ScrapOrder::Fleet(fleet)),
         MenuObject::Ship { fleet, index, .. } => Some(ScrapOrder::Ship { fleet, index }),
         MenuObject::Troop(troop) => Some(ScrapOrder::Troop(troop)),
+        MenuObject::DefenseFacility(key) => Some(ScrapOrder::Defense(key)),
+        MenuObject::Fighter { fleet, index } => Some(ScrapOrder::Fighter {
+            fleet,
+            entry: index,
+        }),
+        MenuObject::SystemFighter {
+            system,
+            class,
+            is_alliance,
+        } => Some(ScrapOrder::SystemFighter {
+            system,
+            class,
+            is_alliance,
+        }),
         MenuObject::SystemIcon { system, quadrant } => match quadrant {
             Quadrant::System => Some(ScrapOrder::Facilities(system)),
             Quadrant::Defenses => Some(ScrapOrder::Defenses(system)),
@@ -8064,6 +8367,37 @@ fn apply_panel_action(
                 msg_log.push(GameMessage::new(
                     clock.tick,
                     format!("Regiment move rejected: {error}"),
+                    MessageCategory::Event,
+                ));
+            }
+        }
+        // FUN_00556390 for a squadron (TroopTransportState::move_squadron).
+        PanelAction::MoveSquadron { source, target } => {
+            let expected_is_alliance = *player_faction == MissionFaction::Alliance;
+            let is_alliance = match source {
+                SquadronSource::Fleet { fleet, .. } => {
+                    world.fleets.get(fleet).map(|value| value.is_alliance)
+                }
+                SquadronSource::System { is_alliance, .. } => Some(is_alliance),
+            };
+            let result = if is_alliance == Some(expected_is_alliance) {
+                troop_transport_state.move_squadron(
+                    world,
+                    movement_state,
+                    blockade_state.blockaded_systems(),
+                    source,
+                    target,
+                    clock.tick,
+                )
+            } else {
+                Err(rebellion_core::troop_transport::TroopTransportError::WrongFaction)
+            };
+            eprintln!("[order] squadron move {source:?} to {target:?}: {result:?}");
+            // port: FUN_00487c90's advisor reaction; this line stands in.
+            if let Err(error) = result {
+                msg_log.push(GameMessage::new(
+                    clock.tick,
+                    format!("Squadron move rejected: {error}"),
                     MessageCategory::Event,
                 ));
             }
@@ -9265,6 +9599,33 @@ fn draw_fullscreen_texture(texture: &Texture2D) {
 }
 
 /// File a report on the Message Index rail when some side receives it.
+/// Which kind of galaxy child window is in front: the one whose window took
+/// focus last (`rebellion_render::window_focus`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GalaxyFront {
+    System,
+    Fleet,
+    Defenses,
+    Missions,
+}
+
+fn galaxy_front(
+    system: &SystemWindowState,
+    fleet: &FleetWindowState,
+    defenses: &DefensesWindowState,
+    missions: &MissionsWindowState,
+) -> GalaxyFront {
+    [
+        (system.focus_serial(), GalaxyFront::System),
+        (fleet.focus_serial(), GalaxyFront::Fleet),
+        (defenses.focus_serial(), GalaxyFront::Defenses),
+        (missions.focus_serial(), GalaxyFront::Missions),
+    ]
+    .into_iter()
+    .max_by_key(|&(serial, _)| serial)
+    .map_or(GalaxyFront::System, |(_, front)| front)
+}
+
 fn filed(message: GameMessage, rail: MessageRail, audience: Option<RailAudience>) -> GameMessage {
     match audience {
         Some(audience) => message.on_rail(rail, audience),
@@ -9886,6 +10247,7 @@ mod tactical_ground_tests {
             fleets: vec![],
             ground_units: vec![],
             special_forces: vec![],
+            fighters: Vec::new(),
             defense_facilities: vec![],
             manufacturing_facilities: vec![],
             production_facilities: vec![],
@@ -9947,6 +10309,7 @@ mod tactical_ground_tests {
             fleets: vec![],
             ground_units: vec![],
             special_forces: vec![],
+            fighters: Vec::new(),
             defense_facilities: vec![],
             manufacturing_facilities: vec![],
             production_facilities: vec![],
@@ -9995,18 +10358,19 @@ mod tactical_ground_tests {
             system,
             system_name: "Test System".into(),
             system_picture_id: 1,
-            attacker_fleet: attacker,
-            defender_fleet: defender,
+            attacker_fleet: Some(attacker),
+            defender_fleet: Some(defender),
             attacker_is_alliance: true,
             player_is_attacker: true,
             phase: rebellion_render::BattlePhase::Results,
             ships: vec![
-                test_tactical_ship(ship_class, true, 1, 43, true),
-                test_tactical_ship(ship_class, true, 2, 0, false),
-                test_tactical_ship(ship_class, false, 0, 91, true),
+                test_tactical_ship(ship_class, attacker, true, 1, 43, true),
+                test_tactical_ship(ship_class, attacker, true, 2, 0, false),
+                test_tactical_ship(ship_class, defender, false, 0, 91, true),
             ],
             fighters: vec![
                 rebellion_render::tactical_view::TacticalFighter {
+                    held_by_system: false,
                     class_key: fighter_class,
                     identity: rebellion_render::tactical_view::TacticalObjectIdentity {
                         class_dat_id: DatId::new(3),
@@ -10020,6 +10384,7 @@ mod tactical_ground_tests {
                         z: 0.0,
                     },
                     sublight_engine_power: 0.0,
+                    fleet: Some(attacker),
                     fleet_fighter_index: 0,
                     fleet_squadron_index: 0,
                     name: "Fighter".into(),
@@ -10048,6 +10413,7 @@ mod tactical_ground_tests {
                     recovery_target: None,
                 },
                 rebellion_render::tactical_view::TacticalFighter {
+                    held_by_system: false,
                     class_key: fighter_class,
                     identity: rebellion_render::tactical_view::TacticalObjectIdentity {
                         class_dat_id: DatId::new(3),
@@ -10061,6 +10427,7 @@ mod tactical_ground_tests {
                         z: 0.0,
                     },
                     sublight_engine_power: 0.0,
+                    fleet: Some(attacker),
                     fleet_fighter_index: 1,
                     fleet_squadron_index: 0,
                     name: "Fighter".into(),
@@ -10131,10 +10498,20 @@ mod tactical_ground_tests {
             combat_speed: 1,
             step_accumulator: 0.0,
             winner: Some(rebellion_render::CombatWinner::Attacker),
+            stalemate: rebellion_render::tactical_view::TacticalStalemateWatch::default(),
+            engagement: rebellion_render::tactical_view::TacticalEngagementState::default(),
+            holder_is_alliance: None,
+            blockaded_at_start: false,
+            withdrawal_destination: None,
         };
 
         let battle_return =
-            tactical_flow::apply_results(&session, &mut world, &mut TroopTransportState::default());
+            tactical_flow::apply_results(
+                &session,
+                &mut world,
+                &mut TroopTransportState::default(),
+                &mut MovementState::new(),
+            );
 
         assert_eq!(world.fleets[attacker].capital_ships.len(), 1);
         assert_eq!(world.fleets[attacker].capital_ships[0].hull_current, 43);
@@ -10152,6 +10529,7 @@ mod tactical_ground_tests {
 
     fn test_tactical_ship(
         class_key: CapitalShipKey,
+        fleet: FleetKey,
         is_attacker: bool,
         fleet_ship_index: usize,
         hull_current: i32,
@@ -10223,6 +10601,7 @@ mod tactical_ground_tests {
             order: rebellion_render::tactical_view::TacticalOrder::None,
             tactic: rebellion_render::tactical_view::TacticalTactic::StandOff,
             task_force: u8::try_from(fleet_ship_index.min(7)).unwrap_or(7),
+            fleet: Some(fleet),
             fleet_ship_index,
             sprite_id: None,
             weapon_arcs: [rebellion_render::tactical_view::TacticalWeaponArc::default(); 4],
@@ -10286,6 +10665,7 @@ mod fleet_move_tests {
             fleets: vec![],
             ground_units: vec![],
             special_forces: vec![],
+            fighters: Vec::new(),
             defense_facilities: vec![],
             manufacturing_facilities: vec![],
             production_facilities: vec![],
@@ -10491,6 +10871,7 @@ mod fleet_move_tests {
                 fleets: vec![],
                 ground_units: vec![],
                 special_forces: vec![],
+                fighters: Vec::new(),
                 defense_facilities: vec![],
                 manufacturing_facilities: vec![],
                 production_facilities: vec![],

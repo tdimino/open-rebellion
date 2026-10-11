@@ -1,9 +1,9 @@
 ---
 title: "Save/Load System"
-description: "Native and browser save v30, canonical fingerprints, campaign setup, continuation state, troop cargo, embarked tracking, deliveries, and the no-migration rule"
+description: "Native and browser save v36, canonical fingerprints, campaign setup, continuation state, troop cargo, embarked tracking, deliveries, and the no-migration rule"
 category: "agent-docs"
 created: 2026-03-15
-updated: 2026-10-06
+updated: 2026-10-10
 tags: [save-load, bincode, migration, serialization, wasm, determinism]
 ---
 
@@ -11,14 +11,14 @@ tags: [save-load, bincode, migration, serialization, wasm, determinism]
 
 `crates/rebellion-data/src/save.rs` owns native files and browser storage.
 `crates/rebellion-app/src/main.rs` converts between a live campaign and the
-serializable snapshot. The current format is v30, and it is the only one
+serializable snapshot. The current format is v36, and it is the only one
 that loads.
 
-## Native format (v30)
+## Native format (v36)
 
 ```text
 [magic: 8 bytes "OPENREB\0"]
-[version: u32 LE]             — SAVE_VERSION = 34
+[version: u32 LE]             — SAVE_VERSION = 36
 [save_name: u32 len + UTF-8]
 [timestamp_secs: u64 LE]
 [mod_count: u32 LE]
@@ -61,20 +61,22 @@ Every mutable campaign subsystem required by the app is serialized:
 | `sim_rng` | `Xoshiro256PlusPlus` |
 | `ai2` | `Option<AIState>` |
 | `repair` | `RepairState` |
-| `combat_cooldowns` | `HashMap<SystemKey, u64>` |
 | `game_config` | `GameConfig` |
 | `campaign_config` | `CampaignConfig` |
 | `troop_transport` | `TroopTransportState` |
 | `deliveries` | `DeliveryState` |
 | `player_agent` | `PlayerAgent` |
 
-Loading restores the RNG, dual-AI state, repair episodes, and combat memory
-instead of reseeding or clearing them. `campaign_config` keeps the selected
+Loading restores the RNG, dual-AI state and repair episodes instead of
+reseeding or clearing them. v36 drops the per-system combat cooldowns: the
+original re-fights a system every pass while both sides remain
+(`FUN_00517270`). `campaign_config` keeps the selected
 difficulty, galaxy-size label, player faction, and victory mode. The clock
 keeps its original Game Speed and partial day, so a game saved while paused
 reloads paused. The save also holds blockade embarked-regiment tracking,
 the fleets holding regiments loaded through the Fleet window (v24),
-regiments travelling on their own (v25), the fleet a moving fleet joins on
+regiments travelling on their own (v25) and squadrons travelling on their
+own (v35), the fleet a moving fleet joins on
 arrival (v26), the fleet naming mode (v28), and the player's Manage
 Garrisons and Manage Production automation, the Agent Advice setting, renamed
 fleets and ships, and each production area's destination (v29),

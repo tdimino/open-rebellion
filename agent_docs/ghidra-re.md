@@ -48,9 +48,11 @@ for the active UI evidence queue.
 | pyghidra-mcp | Config fixed: `--project-path`, `--force-analysis`, `--wait-for-analysis` |
 
 **Note**: the GhidraMCP rows above are historical. Current work runs Ghidra
-12.1.3 headless and read-only with the Java scripts in `ghidra/scripts/`
+12.1.4 (Homebrew) headless and read-only with the Java scripts in `ghidra/scripts/`
 (Workflow, below). The `.py` scripts need PyGhidra, which this install lacks,
-so headless runs refuse them.
+so headless runs refuse them. The project imports `REBEXE.EXE` as
+`x86:LE:32:default` with compiler spec `windows` (compiler `visualstudio`);
+any other tool pointed at the binary must use the same, not `borlandcpp`.
 
 ## Target Files
 

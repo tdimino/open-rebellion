@@ -1057,7 +1057,12 @@ impl AISystem {
             .filter(|f| f.is_alliance == is_alliance)
             .flat_map(|f| &f.fighters)
             .map(|e| e.count as usize)
-            .sum();
+            .sum::<usize>()
+            + world
+                .systems
+                .values()
+                .map(|system| system.squadron_count(is_alliance) as usize)
+                .sum::<usize>();
 
         let our_faction = if is_alliance {
             crate::dat::Faction::Alliance
@@ -2416,6 +2421,7 @@ mod tests {
             fleets: vec![],
             ground_units: vec![],
             special_forces: vec![],
+            fighters: Vec::new(),
             defense_facilities: vec![],
             manufacturing_facilities: vec![],
             production_facilities: vec![],
@@ -2481,6 +2487,7 @@ mod tests {
             fleets: vec![],
             ground_units: vec![],
             special_forces: vec![],
+            fighters: Vec::new(),
             defense_facilities: vec![],
             manufacturing_facilities: vec![yard],
             production_facilities: vec![],
@@ -2585,6 +2592,7 @@ mod tests {
             fleets: vec![],
             ground_units: vec![],
             special_forces: vec![],
+            fighters: Vec::new(),
             defense_facilities: vec![],
             manufacturing_facilities: vec![yard],
             production_facilities: vec![],
@@ -2863,6 +2871,7 @@ mod tests {
             fleets: vec![],
             ground_units: vec![],
             special_forces: vec![],
+            fighters: Vec::new(),
             defense_facilities: vec![],
             manufacturing_facilities: vec![mfg_key],
             production_facilities: vec![],
@@ -2957,6 +2966,7 @@ mod tests {
             fleets: vec![],
             ground_units: vec![],
             special_forces: vec![],
+            fighters: Vec::new(),
             defense_facilities: vec![],
             manufacturing_facilities: vec![mfg_key],
             production_facilities: vec![],
@@ -3613,6 +3623,7 @@ mod tests {
             fleets: vec![],
             ground_units: vec![],
             special_forces: vec![],
+            fighters: Vec::new(),
             defense_facilities: vec![],
             manufacturing_facilities: vec![mfg_key],
             production_facilities: vec![],
@@ -3700,6 +3711,7 @@ mod tests {
             fleets: vec![],
             ground_units: vec![],
             special_forces: vec![],
+            fighters: Vec::new(),
             defense_facilities: vec![],
             manufacturing_facilities: vec![mfg_key],
             production_facilities: vec![],
@@ -3768,6 +3780,7 @@ mod tests {
             fleets: vec![],
             ground_units: vec![],
             special_forces: vec![],
+            fighters: Vec::new(),
             defense_facilities: vec![],
             manufacturing_facilities: vec![],
             production_facilities: vec![],
@@ -3846,6 +3859,7 @@ mod tests {
                 fleets: vec![],
                 ground_units: vec![],
                 special_forces: vec![],
+                fighters: Vec::new(),
                 defense_facilities: vec![],
                 manufacturing_facilities: vec![mfg_key],
                 production_facilities: vec![],
@@ -4114,6 +4128,7 @@ mod tests {
             fleets: vec![],
             ground_units: vec![],
             special_forces: vec![],
+            fighters: Vec::new(),
             defense_facilities: vec![],
             manufacturing_facilities: vec![],
             production_facilities: vec![],
@@ -4160,6 +4175,7 @@ mod tests {
             fleets: vec![],
             ground_units: vec![],
             special_forces: vec![],
+            fighters: Vec::new(),
             defense_facilities: vec![],
             manufacturing_facilities: vec![],
             production_facilities: vec![],
@@ -4185,6 +4201,7 @@ mod tests {
             fleets: vec![],
             ground_units: vec![],
             special_forces: vec![],
+            fighters: Vec::new(),
             defense_facilities: vec![],
             manufacturing_facilities: vec![],
             production_facilities: vec![],
@@ -4210,6 +4227,7 @@ mod tests {
             fleets: vec![],
             ground_units: vec![],
             special_forces: vec![],
+            fighters: Vec::new(),
             defense_facilities: vec![],
             manufacturing_facilities: vec![],
             production_facilities: vec![],
@@ -4399,6 +4417,7 @@ mod tests {
             fleets: vec![],
             ground_units: vec![],
             special_forces: vec![],
+            fighters: Vec::new(),
             defense_facilities: vec![],
             manufacturing_facilities: vec![],
             production_facilities: vec![],

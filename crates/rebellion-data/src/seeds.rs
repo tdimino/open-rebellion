@@ -938,7 +938,8 @@ fn dispatch_fleet_item(
     }
 }
 
-/// Route a ground-context item (troop, special forces) to the system's lists.
+/// Route a ground-context item (troop, special forces, a squadron held by
+/// the system) to the system's lists.
 fn dispatch_ground_item(
     item_id: u32,
     system_key: SystemKey,
@@ -967,6 +968,19 @@ fn dispatch_ground_item(
             };
             let key = world.special_forces.insert(unit);
             world.systems[system_key].special_forces.push(key);
+        }
+        FAM_FIGHTER => {
+            // A group with no capital-ship lead leaves its squadrons on the
+            // system (`FUN_0051bf30`): CMUNCRTB, CMUNYVTB, CMUNHQTB.
+            let seq_id = item_id & 0x00FF_FFFF;
+            let class = world
+                .fighter_classes
+                .iter()
+                .find(|(_, class)| class.dat_id.raw() == seq_id)
+                .map(|(key, _)| key);
+            if let Some(class) = class {
+                world.systems[system_key].add_squadrons(class, 1, is_alliance);
+            }
         }
         _ => {
             // Capital ships and facilities are placed by their own paths.
@@ -1700,6 +1714,12 @@ fn deploy_bundle_to_system(
 
     let mut fleet_capital_ships: Vec<ShipInstance> = Vec::new();
     let mut fleet_fighters: Vec<FighterEntry> = Vec::new();
+    // `FUN_0051bf30`: squadrons board the group's lead when it is a capital
+    // ship; a lone squadron or a group without a ship stays on the system.
+    let ship_lead = group
+        .items
+        .first()
+        .is_some_and(|lead| (lead.item_id >> 24) as u8 == FAM_CAPITAL_SHIP);
 
     for item in &group.items {
         if item.item_id == 0 {
@@ -1717,6 +1737,9 @@ fn deploy_bundle_to_system(
                         .map_or(100, |c| c.hull.cast_signed());
                     fleet_capital_ships.push(ShipInstance::new(class, hull, is_alliance));
                 }
+            }
+            FAM_FIGHTER if !ship_lead => {
+                dispatch_ground_item(item.item_id, system_key, is_alliance, world);
             }
             FAM_FIGHTER => {
                 if let Some(&class) = fighter_index.get(&seq_id) {
@@ -2172,6 +2195,7 @@ mod tests {
             fleets: Vec::new(),
             ground_units: Vec::new(),
             special_forces: Vec::new(),
+            fighters: Vec::new(),
             defense_facilities: Vec::new(),
             manufacturing_facilities: Vec::new(),
             production_facilities: Vec::new(),

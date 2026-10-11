@@ -3,7 +3,7 @@ title: "Simulation Systems"
 description: "Seventeen stateless advance-pattern modules implementing the game simulation"
 category: "agent-docs"
 created: 2026-03-14
-updated: 2026-03-16
+updated: 2026-10-10
 tags: [simulation, advance-pattern, tick, deterministic]
 ---
 
@@ -120,7 +120,7 @@ impl PerceptionIntegrator {
 `rebellion-playtest` calls `run_simulation_tick`; the interactive
 `rebellion-app` still duplicates this sequence. That divergence is tracked as
 F-012 and must close before native/WASM replay equivalence can pass.
-`SimulationStates` bundles all 15 state types plus combat cooldowns and economy
+`SimulationStates` bundles all 15 state types plus economy
 state. `GameEventRecord` (in `rebellion-core/src/game_events.rs`) is structured
 telemetry with no IO. The `config` parameter (`&GameConfig` from `tuning.rs`)
 controls tunable AI, movement, and production behavior; the playtest binary

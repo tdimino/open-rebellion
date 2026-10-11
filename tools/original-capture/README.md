@@ -174,12 +174,37 @@ empty slot's name field, type a lowercase name and press Enter.
 
 Driving the game over VNC:
 
-- The game reads relative mouse motion, so `vncdo move` does not reach it.
-  Drive the pointer through the QEMU monitor (`mouse_set 2`, `mouse_move`,
-  `mouse_button`): push it to the top left with large negative moves, then
-  step toward the target. Steps of 8 overshoot by about 6.5% and steps of 4
-  fall about 12% short, so capture and correct before clicking. The Windows
-  desktop needs the absolute tablet (`mouse_set 1`) and `vncdo`.
+- `vm-game.sh` wraps the steps below from this Mac. `up` starts the VM if
+  needed, waits for the desktop, launches `REBEXE.EXE`, accepts UAC, skips
+  the intros and selects the tablet; `recover` first kills a wedged QEMU and
+  restarts UTM. `click`/`rclick`/`dclick X Y [FILE]` hit a point in the
+  captured 800x600 frame and optionally capture after; `cap`, `key`, `mon`
+  and `status` cover the rest. Saved Games (the main menu's disc, 535,315):
+  each slot's right-hand button loads it.
+- Wait on the game rather than polling it: `vm-game.sh wait REGION [N]
+  [TIMEOUT] FILE` (`vm-wait.py`) holds one VNC connection, polls a region
+  twice a second and returns after N changes, saving the frame and the
+  region's crop (`FILE-region`); it exits 1 on the timeout (default 120 s).
+  `day` is the galaxy's day readout and `center` the middle of the screen,
+  where the Battle Alert and message dialogs open; `X,Y,W,H` names any other
+  box. An open alert freezes the day readout, so wait on `center` for one.
+- Click through the absolute tablet: `mouse_set 1` on the QEMU monitor. The
+  game's cursor follows the tablet's motion at about 1.28x and clamps at the
+  screen edge, so an absolute jump lands off target by an amount that depends
+  on where the cursor was. Walking the tablet to (0,0) in 4-pixel steps pins
+  the cursor to the corner, and walking out to the target divided by 1.28
+  lands on it; `vm-game.sh` clicks this way (2026-10-10). Clicks sent with the relative mouse
+  (`mouse_set 2`, `mouse_button`) leave the game acting as if the button is
+  still held: list selections follow the pointer and prompts confirm
+  themselves as the pointer crosses their buttons (2026-10-09). The relative
+  `mouse_move` steps (8 overshoot about 6.5%, 4 fall about 12% short) are
+  only for pointing without clicking.
+- Hold a modifier through the QEMU monitor (`sendkey ctrl 4000` holds Control
+  for 4 s) while `vncdo` clicks. A key `vncdo` holds is released when its
+  connection closes, before the next call's click.
+- If clicks and keys do nothing, the game may have lost focus to a guest
+  window (after a transfer-disk copy, PowerShell): Alt+Tab shows it; click
+  the game's taskbar icon with the tablet.
 - The VNC link drops Shift on letters; type lowercase. `vnc-type.py` sends
   symbols as shift chords.
 - A double-click on a planet opens its manufacturing window; a double-click on

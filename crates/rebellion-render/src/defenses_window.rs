@@ -9,21 +9,29 @@
 //! window targets its system (`+0x70`, `FUN_004aa470`). A right release
 //! opens the object pop-up menu for the list's selection: the class keeps
 //! the base dialog's slots 7 and 8 (`FUN_004ac5c0`, `FUN_004ac730`), and
-//! slot 22 (`FUN_004a7a20`) gives the list's selected items.
+//! slot 22 (`FUN_004a7a20`) gives the list's selected items. A squadron
+//! dragged out of the list moves to where it is dropped (`0x201`), as one
+//! out of the Fleet window does.
 
 use egui_macroquad::egui;
 use rebellion_core::dat::{ExplorationStatus, Faction};
 use rebellion_core::economy::EconomyState;
 use rebellion_core::fog::FogState;
-use rebellion_core::ids::{CharacterKey, DefenseFacilityKey, SpecialForceKey, SystemKey, TroopKey};
+use rebellion_core::ids::{
+    CharacterKey, DefenseFacilityKey, FighterKey, SpecialForceKey, SystemKey, TroopKey,
+};
 use rebellion_core::missions::{MissionMember, MissionState};
 use rebellion_core::world::GameWorld;
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{CockpitFaction, CockpitLayout};
-use crate::fleet_window::{control_side, faction_side, fleet_side, paint_native};
+use crate::fleet_window::{
+    control_side, faction_side, fleet_side, paint_native, DRAG_DISTANCE_SQUARED,
+};
 use crate::object_menu::MenuObject;
+use crate::panels::fleets::fighter_mini_id;
 use crate::quadrant_icons::{mission_keys, system_members};
+use crate::scroll_bar::{egui_pointer, ScrollBar, ScrollDrag, ScrollRange, LIST_BAR_29CC};
 use crate::system_window::{
     canvas_point, character_mini_resource_id, clamp_window_to_galaxy, defense_facility_mini,
     exact_clicked, logical_rect, opposing_contents_visible, rect_contains, special_force_mini,
@@ -149,6 +157,11 @@ pub enum DefensesItem {
     Character(CharacterKey),
     SpecialForce(SpecialForceKey),
     Troop(TroopKey),
+    /// The `nth` squadron of a class the system holds for the shown side.
+    Squadron {
+        class: FighterKey,
+        nth: u32,
+    },
     Defense(DefenseFacilityKey),
 }
 
@@ -157,11 +170,16 @@ impl DefensesItem {
     /// a special force (`FUN_00503b50`), a regiment (`FUN_00504b30`) or a
     /// defense facility, whose menu holds Encyclopedia and Status
     /// (`FUN_0051d990`).
-    const fn menu_object(self) -> Option<MenuObject> {
+    const fn menu_object(self, system: SystemKey, side: u8) -> Option<MenuObject> {
         match self {
             Self::Character(key) => Some(MenuObject::Character(key)),
             Self::SpecialForce(key) => Some(MenuObject::SpecialForce(key)),
             Self::Troop(key) => Some(MenuObject::Troop(key)),
+            Self::Squadron { class, .. } => Some(MenuObject::SystemFighter {
+                system,
+                class,
+                is_alliance: side == 1,
+            }),
             Self::Defense(key) => Some(MenuObject::DefenseFacility(key)),
         }
     }
@@ -175,7 +193,7 @@ struct DefensesRow {
     label: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 struct OpenDefensesWindow {
     system: SystemKey,
     logical_position: (i16, i16),
@@ -183,20 +201,40 @@ struct OpenDefensesWindow {
     /// port: one selected row; the list's own selection rules
     /// (`FUN_00609410`) are untraced.
     selected: Option<DefensesItem>,
+    /// The list's first shown row of three cells, and its scroll bar's
+    /// press (`FUN_0060a490`, RCDATA `0x29cc`).
+    first_row: usize,
+    scroll: ScrollDrag,
+}
+
+/// A left press held on a squadron row until its release (`CoolDragList`,
+/// `FUN_006083c0`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct SquadronDrag {
+    system: SystemKey,
+    class: FighterKey,
+    is_alliance: bool,
+    press: egui::Pos2,
+    list: egui::Rect,
 }
 
 /// The open Defenses windows. The last is focused and paints on top.
 #[derive(Debug)]
 pub struct DefensesWindowState {
     faction: CockpitFaction,
+    /// When one of these windows last took focus (`window_focus`).
+    focus_serial: u64,
     windows: Vec<OpenDefensesWindow>,
+    drag: Option<SquadronDrag>,
 }
 
 impl Default for DefensesWindowState {
     fn default() -> Self {
         Self {
             faction: CockpitFaction::Alliance,
+            focus_serial: 0,
             windows: Vec::new(),
+            drag: None,
         }
     }
 }
@@ -226,6 +264,7 @@ impl DefensesWindowState {
         if self.focus(system) {
             return true;
         }
+        self.focus_serial = crate::window_focus::next_serial();
         self.windows.push(OpenDefensesWindow {
             system,
             logical_position: clamp_window_to_galaxy(
@@ -236,6 +275,8 @@ impl DefensesWindowState {
             ),
             page: DefensesPage::Personnel,
             selected: None,
+            first_row: 0,
+            scroll: ScrollDrag::default(),
         });
         true
     }
@@ -274,6 +315,7 @@ impl DefensesWindowState {
         if window.page != page {
             window.page = page;
             window.selected = None;
+            window.first_row = 0;
         }
         true
     }
@@ -351,6 +393,48 @@ impl DefensesWindowState {
 
     pub fn clear(&mut self) {
         self.windows.clear();
+        self.drag = None;
+    }
+
+    /// Whether a left press on a squadron row is held: the list has
+    /// captured the mouse (`FUN_006083c0`).
+    #[must_use]
+    pub fn is_dragging(&self) -> bool {
+        self.drag.is_some()
+    }
+
+    /// End a held drag on the left release: far enough from the press and
+    /// outside the list, it becomes the `0x29a` drop, as in the Fleet
+    /// window (`FUN_006083c0`).
+    ///
+    /// port: only squadrons drag; the page's other objects keep their
+    /// pop-up Move.
+    fn end_drag(&mut self, ctx: &egui::Context, scale: f32) -> Option<DefensesWindowAction> {
+        let (released, down, point) = ctx.input(|input| {
+            (
+                input.pointer.primary_released(),
+                input.pointer.primary_down(),
+                input.pointer.latest_pos(),
+            )
+        });
+        if !released {
+            if !down {
+                self.drag = None;
+            }
+            return None;
+        }
+        let drag = self.drag.take()?;
+        let point = point?;
+        let moved = (point - drag.press) / scale;
+        if moved.length_sq() <= DRAG_DISTANCE_SQUARED || rect_contains(drag.list, point) {
+            return None;
+        }
+        Some(DefensesWindowAction::DragSquadron {
+            system: drag.system,
+            class: drag.class,
+            is_alliance: drag.is_alliance,
+            point,
+        })
     }
 
     fn prepare_faction(&mut self, faction: CockpitFaction) {
@@ -358,6 +442,13 @@ impl DefensesWindowState {
             self.faction = faction;
             self.clear();
         }
+    }
+
+    /// When one of this kind's windows last took focus; the newest kind
+    /// is in front (`window_focus`).
+    #[must_use]
+    pub fn focus_serial(&self) -> u64 {
+        self.focus_serial
     }
 
     fn focus(&mut self, system: SystemKey) -> bool {
@@ -369,6 +460,7 @@ impl DefensesWindowState {
             return false;
         };
         let window = self.windows.remove(index);
+        self.focus_serial = crate::window_focus::next_serial();
         self.windows.push(window);
         true
     }
@@ -402,7 +494,7 @@ pub struct DefensesWindowReport {
 }
 
 /// Actions that leave the Defenses window manager.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DefensesWindowAction {
     /// The sector button (`0xca`) opens the subject's sector window
     /// (`FUN_00429ce0`).
@@ -420,6 +512,15 @@ pub enum DefensesWindowAction {
         system: SystemKey,
         selection: Option<MenuObject>,
         point: (i16, i16),
+    },
+    /// A Squadrons page row dragged out of the list (`0x29a`): the galaxy
+    /// view hit-tests the screen point and issues `0x201`
+    /// (`TroopTransportState::move_squadron`).
+    DragSquadron {
+        system: SystemKey,
+        class: FighterKey,
+        is_alliance: bool,
+        point: egui::Pos2,
     },
 }
 
@@ -474,8 +575,8 @@ fn selected_color(side: u8) -> egui::Color32 {
 /// port: the player sees the other side's objects only where the System
 /// window shows them (`opposing_contents_visible`). The walks follow the
 /// port's lists: characters in key order, then special forces, regiments
-/// and facilities in their system's order. Squadrons live only aboard
-/// fleets in the port, so the squadron page is always empty.
+/// and facilities in their system's order; squadrons by class in the
+/// system's order, one row each.
 fn page_rows(
     world: &GameWorld,
     fog: &FogState,
@@ -541,7 +642,25 @@ fn page_rows(
                 })
             })
             .collect(),
-        DefensesPage::Squadrons => Vec::new(),
+        // FUN_00503a50: the system's own squadrons, one item each.
+        DefensesPage::Squadrons => value
+            .fighters
+            .iter()
+            .filter(|entry| fleet_side(entry.is_alliance) == side)
+            .filter_map(|entry| {
+                let class = world.fighter_classes.get(entry.class)?;
+                let mini = fighter_mini_id(class.dat_id)?;
+                Some((0..entry.count).map(move |nth| DefensesRow {
+                    item: DefensesItem::Squadron {
+                        class: entry.class,
+                        nth,
+                    },
+                    mini,
+                    label: class.name.clone(),
+                }))
+            })
+            .flatten()
+            .collect(),
         // FUN_00527050, keeping families 0x24 and 0x25 (page 4) or 0x22 and
         // 0x23 (page 5).
         DefensesPage::Shields | DefensesPage::Batteries => value
@@ -653,6 +772,9 @@ struct WindowDrawResult {
     deselect: bool,
     /// The selection and canvas point of a right release on the list.
     object_menu: Option<(Option<MenuObject>, (i16, i16))>,
+    drag: Option<SquadronDrag>,
+    /// The list's first row and bar press after this frame.
+    scroll: Option<(usize, ScrollDrag)>,
 }
 
 /// Draw every open Defenses window.
@@ -674,11 +796,12 @@ pub fn draw_defenses_windows(
     faction: CockpitFaction,
     layout: CockpitLayout,
     cache: &mut BmpCache,
+    front: bool,
 ) -> Vec<DefensesWindowAction> {
     state.prepare_faction(faction);
     let windows = state.windows.clone();
     let focused_system = windows.last().map(|window| window.system);
-    let mut actions = Vec::new();
+    let mut actions: Vec<_> = state.end_drag(ctx, layout.scale).into_iter().collect();
     for window in &windows {
         let result = draw_defenses_window(
             ctx,
@@ -687,12 +810,15 @@ pub fn draw_defenses_windows(
             missions,
             economy,
             window,
-            focused_system == Some(window.system),
+            front && focused_system == Some(window.system),
             faction,
             layout,
             cache,
         );
         let system = window.system;
+        if let Some(drag) = result.drag {
+            state.drag = Some(drag);
+        }
         if result.close || !world.systems.contains_key(system) {
             state.close(system);
             continue;
@@ -711,9 +837,15 @@ pub fn draw_defenses_windows(
         }
         if let Some(open) = state.window_mut(system) {
             // FUN_004a90d0 refills only for a different page.
+            if let Some((first_row, scroll)) = result.scroll {
+                open.first_row = first_row;
+                open.scroll = scroll;
+            }
+            // hyp: a refill shows the new page from its top.
             if let Some(page) = result.page.filter(|&page| page != open.page) {
                 open.page = page;
                 open.selected = None;
+                open.first_row = 0;
             }
             if result.deselect {
                 open.selected = None;
@@ -896,9 +1028,29 @@ fn draw_defenses_window(
 
             // The list: each row's image keyed at its cell's corner, the
             // frame over the mini while selected (`FUN_0060bd00`), and its
-            // name word-wrapped from (1, 27). port: the scroll bar
-            // (`FUN_0060a490`) is not drawn, so only the first nine cells show.
+            // name word-wrapped from (1, 27). FUN_004a8790 gives it the bar
+            // of RCDATA 0x29cc (FUN_0060a490); a unit is a row of three
+            // cells. port: the list's wheel is untraced and not handled.
             let list = logical_rect(local, scale, LIST.0, LIST.1, LIST.2, LIST.3);
+            let bar = ScrollBar::new(LIST_BAR_29CC, LIST.0, LIST.1, LIST.2, LIST.3);
+            let range = ScrollRange {
+                first: window.first_row,
+                visible: VISIBLE_ROWS as f32,
+                total: rows.len().div_ceil(COLUMNS),
+            };
+            let pointer = egui_pointer(ctx, local, scale);
+            let mut scroll = window.scroll;
+            let first_row = bar.update(&mut scroll, range, VISIBLE_ROWS, pointer);
+            result.scroll = Some((first_row, scroll));
+            let range = ScrollRange {
+                first: first_row,
+                ..range
+            };
+            let bar_left = LIST.0 + LIST.2 - bar.width();
+            let on_bar = range.overflows()
+                && pointer.at.is_some_and(|(x, y)| {
+                    (bar_left..LIST.0 + LIST.2).contains(&x) && (LIST.1..LIST.1 + LIST.3).contains(&y)
+                });
             let list_painter = painter.with_clip_rect(list);
             // The list control under the rows (FUN_006083c0): a left or
             // right press on its empty space clears the selection
@@ -917,7 +1069,7 @@ fn draw_defenses_window(
                     input.pointer.interact_pos(),
                 )
             });
-            if any_pressed && list_response.is_pointer_button_down_on() {
+            if any_pressed && list_response.is_pointer_button_down_on() && !on_bar {
                 result.deselect = true;
                 result.focus = true;
             }
@@ -932,8 +1084,13 @@ fn draw_defenses_window(
             } else {
                 ROW_FRAME[1]
             };
-            for (index, row) in rows.iter().take(COLUMNS * VISIBLE_ROWS).enumerate() {
-                let cell = cell_rect(local, scale, index);
+            let shown = rows
+                .iter()
+                .enumerate()
+                .skip(first_row * COLUMNS)
+                .take(COLUMNS * VISIBLE_ROWS);
+            for (cell_index, (index, row)) in shown.enumerate() {
+                let cell = cell_rect(local, scale, cell_index);
                 let selected = window.selected == Some(row.item);
                 paint_native(
                     &list_painter,
@@ -991,9 +1148,31 @@ fn draw_defenses_window(
                     result.select = Some(row.item);
                     result.focus = true;
                 }
+                // A left press on a squadron captures the mouse for a drag
+                // (FUN_006083c0).
+                if let (DefensesItem::Squadron { class, .. }, Some(press)) = (
+                    row.item,
+                    ctx.input(|input| {
+                        input
+                            .pointer
+                            .button_pressed(egui::PointerButton::Primary)
+                            .then(|| input.pointer.press_origin())
+                            .flatten()
+                    }),
+                ) {
+                    if response.is_pointer_button_down_on() && rect_contains(cell, press) {
+                        result.drag = Some(SquadronDrag {
+                            system: window.system,
+                            class,
+                            is_alliance: side == 1,
+                            press,
+                            list,
+                        });
+                    }
+                }
                 if response.secondary_clicked() {
                     if let (Some(object), Some(point)) = (
-                        row.item.menu_object(),
+                        row.item.menu_object(window.system, side),
                         response
                             .interact_pointer_pos()
                             .filter(|point| rect_contains(cell.intersect(list), *point)),
@@ -1002,6 +1181,15 @@ fn draw_defenses_window(
                     }
                 }
             }
+
+            crate::scroll_bar::paint_egui(
+                &painter,
+                ctx,
+                cache,
+                local,
+                scale,
+                &bar.blits(range, &scroll, pointer),
+            );
 
             if window_response.clicked() || clicked.iter().any(|&value| value) {
                 result.focus = true;
@@ -1060,6 +1248,7 @@ mod tests {
             fleets: Vec::new(),
             ground_units: Vec::new(),
             special_forces: Vec::new(),
+            fighters: Vec::new(),
             defense_facilities: Vec::new(),
             manufacturing_facilities: Vec::new(),
             production_facilities: Vec::new(),
@@ -1475,6 +1664,7 @@ mod tests {
                     CockpitFaction::Alliance,
                     scaled(),
                     &mut cache,
+                    true,
                 ));
             });
             result.painted = PAINTED.with(|painted| painted.take());
@@ -1803,9 +1993,10 @@ mod tests {
     }
 
     #[test]
-    fn a_page_shows_only_its_first_nine_cells_without_the_scroll_bar() {
-        // port: FUN_0060a490's scroll bar is not drawn, so three rows of
-        // three cells show; the ninth sits at (147, 221).
+    fn a_page_shows_its_first_nine_cells_until_scrolled() {
+        // Three rows of three cells show (the list is 210 high, a row 70);
+        // FUN_0060a490's bar (RCDATA 0x29cc) scrolls the rest. The ninth
+        // sits at (147, 221).
         let (mut world, system, missions) = stocked();
         for index in 0..8 {
             add_character(&mut world, system, &format!("Extra {index}"), true);

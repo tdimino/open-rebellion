@@ -132,6 +132,8 @@ enum DefenderId {
     Ship(FleetKey, usize),
     /// A fleet's fighter entry and the squadron within its count.
     Fighter(FleetKey, usize, u32),
+    /// A system's own squadron entry and the squadron within its count.
+    SystemFighter(usize, u32),
 }
 
 /// A detector (`ghidra/notes/decoy-roll.md`, "Officer rank and detector
@@ -155,14 +157,31 @@ pub(crate) fn faction_of(is_alliance: bool) -> Faction {
 
 /// `FUN_00587640`: the defenders at `location` in walk order.
 ///
-/// port: the port keeps fighters in fleets only, so a system has no
-/// fighters of its own, and a fleet's fighters follow all of its ships
-/// where the original walks each ship's fighters and regiments after the
-/// ship; fleets carry no regiments. A fleet in hyperspace reads its last
-/// orbit.
+/// The system's own fighters come first, then its regiments. port: a
+/// fleet's fighters follow all of its ships where the original walks each
+/// ship's fighters and regiments after the ship; fleets carry no regiments.
+/// A fleet in hyperspace reads its last orbit.
 fn walk(world: &GameWorld, location: SystemKey, flags: Flags, kinds: Kinds) -> Vec<Defender> {
     let mut defenders = Vec::new();
     let as_i32 = |value: u32| i32::try_from(value).unwrap_or(i32::MAX);
+    if flags.system && kinds.fighters {
+        if let Some(system) = world.systems.get(location) {
+            for (index, entry) in system.fighters.iter().enumerate() {
+                let detection = world
+                    .fighter_classes
+                    .get(entry.class)
+                    .map_or(0, |class| class.detection);
+                for squadron in 0..entry.count {
+                    defenders.push(Defender {
+                        id: DefenderId::SystemFighter(index, squadron),
+                        in_fleet: false,
+                        detection: as_i32(detection),
+                        side: faction_of(entry.is_alliance),
+                    });
+                }
+            }
+        }
+    }
     if flags.system && kinds.regiments {
         if let Some(system) = world.systems.get(location) {
             for &key in &system.ground_units {
@@ -789,6 +808,7 @@ mod tests {
             fleets: vec![],
             ground_units: vec![],
             special_forces: vec![],
+            fighters: Vec::new(),
             defense_facilities: vec![],
             manufacturing_facilities: vec![],
             production_facilities: vec![],

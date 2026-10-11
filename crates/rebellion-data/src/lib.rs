@@ -161,6 +161,7 @@ pub fn load_game_data_with_options(
         recruit_pool_empty: [false; 2],
         fleet_names: rebellion_core::world::FleetNames::default(),
         last_ship_tag: 0,
+        squadron_transits: Vec::new(),
     };
 
     // ── 1. Sectors ───────────────────────────────────────────────────────────
@@ -245,6 +246,7 @@ pub fn load_game_data_with_options(
             fleets: Vec::new(),
             ground_units: Vec::new(),
             special_forces: Vec::new(),
+            fighters: Vec::new(),
             defense_facilities: Vec::new(),
             manufacturing_facilities: Vec::new(),
             production_facilities: Vec::new(),

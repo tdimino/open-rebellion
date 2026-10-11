@@ -162,12 +162,15 @@ For the live channel, the full command list and how to add one, see
 
 ### Compare against the original
 
-The original game runs on the capture VM
+The original game runs on the capture VM on the Mac Mini
 ([tools/original-capture/README.md](../tools/original-capture/README.md)),
-which also covers driving it over VNC. Start from a save in the library
+which also covers driving it over VNC. `tools/original-capture/vm-game.sh`
+drives it from this Mac: `status`, `up` (start the VM and the game),
+`recover`, `cap FILE`, `click X Y [FILE]`, `key KEY [FILE]`. Start from a save in the library
 ([saves/INDEX.md](../tools/original-capture/saves/INDEX.md)) rather than
 replaying a campaign to reach a state, and add a save when you reach a new
-one worth keeping.
+one worth keeping. For a state play cannot reach on demand, edit a copy of a
+save ([original-save-editing.md](original-save-editing.md)).
 
 ## Reverse Engineering
 

@@ -4,8 +4,6 @@
 //! into a reusable function that returns structured `GameEventRecord`s
 //! instead of pushing to a `MessageLog`.
 
-use std::collections::HashMap;
-
 use crate::integrator::{
     apply_ground_combat_result_inner, resolve_system_space_combat, PerceptionIntegrator,
 };
@@ -13,7 +11,7 @@ use rebellion_core::ai::{AIState, AISystem};
 use rebellion_core::betrayal::{BetrayalState, BetrayalSystem};
 use rebellion_core::blockade::{BlockadeState, BlockadeSystem};
 use rebellion_core::bombardment::BombardmentSystem;
-use rebellion_core::combat::{CombatSide, CombatSystem};
+use rebellion_core::combat::{side_present, CombatSide, CombatSystem};
 use rebellion_core::dat::Faction;
 use rebellion_core::death_star::{DeathStarState, DeathStarSystem};
 use rebellion_core::delivery::DeliveryState;
@@ -21,7 +19,6 @@ use rebellion_core::economy::{EconomyState, EconomySystem};
 use rebellion_core::events::{EventState, EventSystem};
 use rebellion_core::fog::{FogState, FogSystem};
 use rebellion_core::game_events::GameEventRecord;
-use rebellion_core::ids::SystemKey;
 use rebellion_core::jedi::{JediState, JediSystem};
 use rebellion_core::manufacturing::{ManufacturingState, ManufacturingSystem};
 use rebellion_core::missions::{MissionState, MissionSystem};
@@ -35,14 +32,7 @@ use rebellion_core::uprising::{UprisingState, UprisingSystem};
 use rebellion_core::victory::{VictoryState, VictorySystem};
 use rebellion_core::world::{CampaignConfig, GameWorld, MstbTable};
 
-const COMBAT_RETRY_TICKS: u64 = 5;
 const MAX_SYSTEM_GROUND_COMBAT_ROUNDS: u32 = 256;
-const UNCHANGED_STALEMATE_COOLDOWN: u64 = u64::MAX;
-
-fn combat_is_on_cooldown(last_battle: u64, current_tick: u64) -> bool {
-    last_battle == UNCHANGED_STALEMATE_COOLDOWN
-        || current_tick < last_battle.saturating_add(COMBAT_RETRY_TICKS)
-}
 
 /// Bundles all mutable simulation state needed for a tick.
 ///
@@ -71,7 +61,6 @@ pub struct SimulationStates {
     pub deliveries: DeliveryState,
     /// Each side's raw and refined materials and the facility cycles.
     pub stockpiles: StockpileState,
-    pub combat_cooldowns: HashMap<SystemKey, u64>,
     /// Original new-game choices that continue to govern this campaign.
     pub campaign_config: CampaignConfig,
 }
@@ -168,17 +157,11 @@ pub fn run_simulation_tick(
     );
     integrator.apply_build_completions(world, &mfg_advance.completions);
     integrator.apply_manufacturing_idle(world, &mfg_advance.newly_idle);
-    for completion in &mfg_advance.completions {
-        states.combat_cooldowns.remove(&completion.system);
-    }
     // Remote products travel, then complete at their destination (F-030).
     states.deliveries.depart(world, &mfg_advance.departures);
     let delivered = states.deliveries.advance(world, tick_events);
     integrator.apply_build_completions(world, &delivered.arrivals);
     integrator.apply_deliveries_lost(world, &delivered.lost);
-    for completion in &delivered.arrivals {
-        states.combat_cooldowns.remove(&completion.system);
-    }
 
     // ── 2. Movement ──────────────────────────────────────────────────────
     let arrivals = MovementSystem::advance(&mut states.movement, tick_events);
@@ -188,35 +171,21 @@ pub fn run_simulation_tick(
         &mut states.troop_transport,
         &arrivals,
     );
-    for arrival in &arrivals {
-        states.combat_cooldowns.remove(&arrival.system);
-    }
     // Regiments travelling on their own (FUN_00556430, event 0x387).
     let regiments = states.troop_transport.advance_transit(world, current_tick);
     integrator.apply_regiment_arrivals(world, &regiments);
 
     // ── 3. Combat ────────────────────────────────────────────────────────
+    // FUN_0051ddf0 -> FUN_00516ef0 / FUN_00517270: a system fights on every
+    // pass that finds both sides present; when both remain, no result is
+    // shown and the battle fires again next pass. There is no cooldown.
     let combat_triggers: Vec<_> = world
         .systems
         .keys()
         .filter(|&sys_key| {
-            if let Some(&last_battle) = states.combat_cooldowns.get(&sys_key) {
-                if combat_is_on_cooldown(last_battle, current_tick) {
-                    return false;
-                }
-            }
-            let sys = &world.systems[sys_key];
-            let has_alliance = sys
-                .fleets
-                .iter()
-                .copied()
-                .any(|k| world.fleets.get(k).is_some_and(|f| f.is_alliance));
-            let has_empire = sys
-                .fleets
-                .iter()
-                .copied()
-                .any(|k| world.fleets.get(k).is_some_and(|f| !f.is_alliance));
-            has_alliance && has_empire
+            // FUN_00509710 / FUN_0050b8e0: both sides present, each with a
+            // fleet or squadrons the system holds for it.
+            side_present(world, sys_key, true) && side_present(world, sys_key, false)
         })
         .collect();
 
@@ -232,14 +201,6 @@ pub fn run_simulation_tick(
         );
 
         integrator.emit_system_space_combat(world, &space_result);
-        states.combat_cooldowns.insert(
-            sys_key,
-            if space_result.stalemate {
-                UNCHANGED_STALEMATE_COOLDOWN
-            } else {
-                current_tick
-            },
-        );
         // Record battle for AI target scoring (battle repeat penalty)
         AISystem::record_battle(&mut states.ai, sys_key, current_tick);
         if let Some(ref mut ai2) = states.ai2 {
@@ -808,6 +769,7 @@ mod tests {
             fleets: vec![],
             ground_units: vec![],
             special_forces: vec![],
+            fighters: Vec::new(),
             defense_facilities: vec![],
             manufacturing_facilities: vec![],
             production_facilities: vec![],
@@ -831,6 +793,7 @@ mod tests {
             fleets: vec![],
             ground_units: vec![],
             special_forces: vec![],
+            fighters: Vec::new(),
             defense_facilities: vec![],
             manufacturing_facilities: vec![],
             production_facilities: vec![],
@@ -861,7 +824,6 @@ mod tests {
             troop_transport: TroopTransportState::default(),
             deliveries: DeliveryState::default(),
             stockpiles: StockpileState::default(),
-            combat_cooldowns: HashMap::new(),
             campaign_config: CampaignConfig::default(),
         };
         (world, states)
@@ -970,14 +932,6 @@ mod tests {
     }
 
     #[test]
-    fn unchanged_stalemate_does_not_reopen_on_five_tick_cadence() {
-        assert!(combat_is_on_cooldown(UNCHANGED_STALEMATE_COOLDOWN, 5));
-        assert!(combat_is_on_cooldown(UNCHANGED_STALEMATE_COOLDOWN, 50_000));
-        assert!(combat_is_on_cooldown(10, 14));
-        assert!(!combat_is_on_cooldown(10, 15));
-    }
-
-    #[test]
     #[expect(
         clippy::too_many_lines,
         reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
@@ -1003,6 +957,7 @@ mod tests {
             fleets: vec![],
             ground_units: vec![],
             special_forces: vec![],
+            fighters: Vec::new(),
             defense_facilities: vec![],
             manufacturing_facilities: vec![],
             production_facilities: vec![],
@@ -1074,7 +1029,6 @@ mod tests {
             troop_transport: TroopTransportState::default(),
             deliveries: DeliveryState::default(),
             stockpiles: StockpileState::default(),
-            combat_cooldowns: HashMap::new(),
             campaign_config: CampaignConfig::default(),
         };
         let config = rebellion_core::tuning::GameConfig::default();
@@ -1141,6 +1095,7 @@ mod tests {
             fleets: vec![],
             ground_units: vec![],
             special_forces: vec![],
+            fighters: Vec::new(),
             defense_facilities: vec![],
             manufacturing_facilities: vec![],
             production_facilities: vec![],
@@ -1220,7 +1175,6 @@ mod tests {
             troop_transport: TroopTransportState::default(),
             deliveries: DeliveryState::default(),
             stockpiles: StockpileState::default(),
-            combat_cooldowns: HashMap::new(),
             campaign_config: CampaignConfig {
                 victory_conditions: VictoryConditions::HeadquartersOnly,
                 ..CampaignConfig::default()
@@ -1275,6 +1229,7 @@ mod tests {
                 fleets: vec![],
                 ground_units: vec![],
                 special_forces: vec![],
+                fighters: Vec::new(),
                 defense_facilities: vec![],
                 manufacturing_facilities: vec![],
                 production_facilities: vec![],
@@ -1352,7 +1307,6 @@ mod tests {
             troop_transport: TroopTransportState::default(),
             deliveries: DeliveryState::default(),
             stockpiles: StockpileState::default(),
-            combat_cooldowns: HashMap::new(),
             campaign_config: CampaignConfig {
                 victory_conditions: VictoryConditions::HeadquartersOnly,
                 ..CampaignConfig::default()
@@ -1426,6 +1380,7 @@ mod tests {
                 fleets: vec![],
                 ground_units: vec![],
                 special_forces: vec![],
+                fighters: Vec::new(),
                 defense_facilities: vec![],
                 manufacturing_facilities: vec![],
                 production_facilities: vec![],
@@ -1502,7 +1457,6 @@ mod tests {
             troop_transport: TroopTransportState::default(),
             deliveries: DeliveryState::default(),
             stockpiles: StockpileState::default(),
-            combat_cooldowns: HashMap::new(),
             campaign_config: CampaignConfig::default(),
         };
         states

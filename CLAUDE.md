@@ -30,6 +30,15 @@ functional. Do not repeat historical parity percentages as verified results.
   (`Capture`, `Click`, `Battle at` …; `agent_docs/dev-commands.md`). Fall
   back to `cua-driver` for what the game cannot do itself
   (`agent_docs/agent-tooling.md`, "Native GUI Acceptance").
+- Settle game behaviour against the original game itself, not the trace
+  alone. The unmodified original runs in the Windows VM on the Mac Mini;
+  drive it from this Mac with `tools/original-capture/vm-game.sh` (`up`,
+  `click`, `key`, `cap`) and start from a save in
+  `tools/original-capture/saves/INDEX.md`. Setup, VNC caveats and save
+  transfer: `tools/original-capture/README.md`. VM storage stays on the Mini;
+  pull only captures and hashes. To reach a state normal play cannot stage
+  (a damaged hyperdrive, a Death Star), edit a copy of one of our saves:
+  `agent_docs/original-save-editing.md`.
 - v1.0 is the complete browser build deployed through password-protected
   Cloudflare Pages; credentials belong in encrypted secrets, never in Git.
 - GitHub Actions workflow definitions are intentionally local and untracked as

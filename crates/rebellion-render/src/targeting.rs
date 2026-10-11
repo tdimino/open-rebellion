@@ -42,6 +42,12 @@ pub enum TargetOrder {
     /// fleet (`ghidra/notes/fleet-window.md`, "Loading a regiment onto a
     /// fleet").
     TroopMove { troop: TroopKey },
+    /// A squadron's Move (`0x201`, `FUN_00503930`): it takes the regiment's
+    /// path, boarding a fleet, landing or travelling alone
+    /// (`TroopTransportState::move_squadron`).
+    SquadronMove {
+        source: rebellion_core::troop_transport::SquadronSource,
+    },
     /// A capital ship's Move (`0x201`). Released on a Fleet window it joins
     /// that fleet; on a system it forms a fleet of its own there
     /// (`ghidra/notes/fleet-join-split.md`).
@@ -499,6 +505,7 @@ mod tests {
                     fleets: vec![],
                     ground_units: vec![],
                     special_forces: vec![],
+                    fighters: Vec::new(),
                     defense_facilities: vec![],
                     manufacturing_facilities: vec![],
                     production_facilities: vec![],
@@ -602,6 +609,7 @@ mod tests {
                         faction,
                         layout,
                         &mut cache,
+                        true,
                     );
                     let _ = draw_fleet_windows(
                         ctx,
@@ -613,6 +621,7 @@ mod tests {
                         faction,
                         layout,
                         &mut cache,
+                        true,
                     );
                     let _ = draw_defenses_windows(
                         ctx,
@@ -624,6 +633,7 @@ mod tests {
                         faction,
                         layout,
                         &mut cache,
+                        true,
                     );
                     let _ = draw_missions_windows(
                         ctx,
@@ -634,6 +644,7 @@ mod tests {
                         faction,
                         layout,
                         &mut cache,
+                        true,
                     );
                     capture_pointer(ctx);
                 });

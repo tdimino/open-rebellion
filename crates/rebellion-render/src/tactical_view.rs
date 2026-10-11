@@ -25,7 +25,7 @@
 use std::collections::{HashMap, HashSet};
 
 use macroquad::prelude::*;
-use rebellion_core::combat::{CombatSide as AutoResolveSide, SpaceCombatResult};
+use rebellion_core::combat::CombatForce;
 use rebellion_core::ids::{CapitalShipKey, DatId, FighterKey, FleetKey, SystemKey};
 use rebellion_core::troop_transport::TroopTransportState;
 use rebellion_core::world::GameWorld;
@@ -140,6 +140,9 @@ const ORIGINAL_FIGHTER_HULL_PER_CRAFT: f32 = 8.0;
 const ORIGINAL_FIGHTER_WEAPON_HULL_SCALE: f32 = 3.751;
 /// `FUN_005b9c30` scales live fighter hull into shield recharge per second.
 const ORIGINAL_FIGHTER_SHIELD_HULL_SCALE: f32 = 0.025;
+/// `_DAT_0066c4cc`: `FUN_005b23a0` weighs a fighter group's torpedo rating
+/// by this against an unshielded capital ship.
+const ORIGINAL_FIGHTER_TORPEDO_FACTOR: f32 = f32::from_bits(0x3f08_8889);
 /// `FUN_005b23a0` applies this coefficient to the FIGHTSD torpedo rating.
 const ORIGINAL_FIGHTER_TORPEDO_STRENGTH: f32 = f32::from_bits(0x3f08_8889);
 /// `FUN_005d2490` and `FUN_005d24e0` target modifiers.
@@ -147,6 +150,14 @@ const ORIGINAL_ION_VS_FIGHTER: f32 = 0.0;
 const ORIGINAL_LASER_VS_FIGHTER: f32 = 1.0;
 const ORIGINAL_TURBOLASER_VS_FIGHTER: f32 = 0.5;
 const ORIGINAL_TACTICAL_STEP_SECONDS: f32 = ORIGINAL_TACTICAL_STEP_MILLISECONDS / 1000.0;
+/// `_DAT_0066c3e0`: once neither side's strength has fallen to a new low for
+/// this many seconds, `FUN_005ae9c0` withdraws the weaker side.
+const ORIGINAL_STALEMATE_SECONDS: f32 = 1200.0;
+/// port: a ceiling on a battle run without its window, far beyond the
+/// stalemate (six hours of battle time).
+const SIMULATED_BATTLE_SECOND_LIMIT: u32 = 6 * 60 * 60;
+/// `FUN_0059a530` steps the headless battle by `DAT_0066badc` = 1.0 second.
+const ORIGINAL_HEADLESS_STEP_SECONDS: f32 = 1.0;
 /// `FUN_005ba7f0` advances the tactical Death Star laser by elapsed
 /// milliseconds times one third times 0.001, capped at 100.
 const ORIGINAL_DEATH_STAR_LASER_CHARGE_PER_SECOND: f32 = 1.0 / 3.0;
@@ -725,6 +736,9 @@ pub struct TacticalShip {
     pub tactic: TacticalTactic,
     /// Zero-based task-force assignment shown in the eight source HUD slots.
     pub task_force: u8,
+    /// The strategic fleet this hull belongs to. Every fleet of a side at
+    /// the system fights (`FUN_00516ef0`), not only the lead one.
+    pub fleet: Option<FleetKey>,
     /// Index into the fleet's `capital_ships` for damage application.
     pub fleet_ship_index: usize,
     /// Sprite resource ID in TACTICAL.DLL (if known).
@@ -1168,6 +1182,9 @@ pub struct TacticalFighter {
     pub source_position: TacticalWorldPosition,
     /// Normalized maximum sublight power stored at source offset `+0x3f8`.
     pub sublight_engine_power: f32,
+    /// The strategic fleet carrying this squadron; `None` for a squadron
+    /// the system holds.
+    pub fleet: Option<FleetKey>,
     /// Index into the originating fleet's aggregate fighter roster. Classes
     /// may repeat in separate slots.
     pub fleet_fighter_index: usize,
@@ -1211,6 +1228,10 @@ pub struct TacticalFighter {
     pub recovery_state: TacticalFighterRecoveryState,
     /// Capital-ship index reserved as this squadron's recovery carrier.
     pub recovery_target: Option<usize>,
+    /// A squadron the battle system holds for its side, not carried by a
+    /// fleet (`FUN_00516ef0` adds it to the combat). Its
+    /// `fleet_fighter_index` indexes the side's entries in `System::fighters`.
+    pub held_by_system: bool,
 }
 
 impl TacticalFighter {
@@ -1326,6 +1347,43 @@ impl TacticalDeathStar {
 // BattleSession
 // ---------------------------------------------------------------------------
 
+/// `FUN_005ae9c0`'s stalemate watch: each side's lowest strength so far
+/// (`battle+0x264` / `+0x268`) and the seconds since it last fell
+/// (`+0x26c` / `+0x270`). Index 0 is the attacker.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct TacticalStalemateWatch {
+    pub lowest: [Option<f32>; 2],
+    pub quiet_seconds: [f32; 2],
+}
+
+/// Task-force slots tracked by the engagement AI: capital task forces 0–7,
+/// then fighter groups 0–4 (4 holds the unassigned squadrons).
+pub const TACTICAL_ENGAGEMENT_GROUPS: usize = 13;
+
+/// Each side's task-force targets as the tactic objects assign them
+/// (`FUN_005c9200` → `FUN_005ec740` / `FUN_005ec6d0` → `FUN_005a8fc0`), and
+/// the steering point the port last gave each leader, so a player's own
+/// waypoint is never mistaken for one. Index 0 is the attacker.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TacticalEngagementState {
+    pub targets: [[Option<TacticalAttackTarget>; TACTICAL_ENGAGEMENT_GROUPS]; 2],
+    pub steering_goals: [[Option<TacticalWorldPosition>; TACTICAL_ENGAGEMENT_GROUPS]; 2],
+    /// Fractional damage each capital ship has taken in a battle run without
+    /// its window and not yet applied (the port stores hull and shield as
+    /// whole points; the source keeps floats).
+    pub capital_damage_carry: Vec<f32>,
+}
+
+impl Default for TacticalEngagementState {
+    fn default() -> Self {
+        Self {
+            targets: [[None; TACTICAL_ENGAGEMENT_GROUPS]; 2],
+            steering_goals: [[None; TACTICAL_ENGAGEMENT_GROUPS]; 2],
+            capital_damage_carry: Vec::new(),
+        }
+    }
+}
+
 /// All state for one tactical combat encounter.
 #[derive(Debug, Clone)]
 pub struct BattleSession {
@@ -1334,10 +1392,11 @@ pub struct BattleSession {
     pub system_name: String,
     /// Original `SYSTEMSD.picture_id`; selects the active tactical palette.
     pub system_picture_id: u8,
-    /// Attacker fleet key (in `GameWorld`).
-    pub attacker_fleet: FleetKey,
-    /// Defender fleet key (in `GameWorld`).
-    pub defender_fleet: FleetKey,
+    /// Attacker fleet key (in `GameWorld`); `None` when the side fights with
+    /// the squadrons the system holds for it alone.
+    pub attacker_fleet: Option<FleetKey>,
+    /// Defender fleet key (in `GameWorld`), as the attacker's.
+    pub defender_fleet: Option<FleetKey>,
     /// Faction identity is independent of the attacking role.
     pub attacker_is_alliance: bool,
     /// True if the player controls the attacker side.
@@ -1415,6 +1474,18 @@ pub struct BattleSession {
     pub step_accumulator: f32,
     /// Winner once battle ends (None during combat).
     pub winner: Option<CombatWinner>,
+    /// The 1200-second stalemate withdrawal (`FUN_005ae9c0`).
+    pub stalemate: TacticalStalemateWatch,
+    pub engagement: TacticalEngagementState,
+    /// The side holding the battle's system (`true` Alliance), `None` when
+    /// neutral: `system[9] >> 6 & 3` in the result text builders.
+    pub holder_is_alliance: Option<bool>,
+    /// Whether the holder's system was under blockade when the battle began
+    /// (a hostile fleet and no fleet of the holder's): the result object's
+    /// `+0x5c` names the holder then.
+    pub blockaded_at_start: bool,
+    /// Where the losing fleet withdrew to, once known (`+0x48`).
+    pub withdrawal_destination: Option<String>,
 }
 
 /// A visual weapon fire effect between two ships.
@@ -2808,6 +2879,10 @@ fn attempt_original_subsystem_repair(
     })
 }
 
+/// Marks a damage event that rolls for no subsystem hit; real rolls run
+/// 0 through 100.
+const ORIGINAL_NO_SUBSYSTEM_ROLL: u8 = u8::MAX;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct OriginalTacticalDamageRolls {
     shield: u8,
@@ -2870,6 +2945,30 @@ fn original_tactical_damage_rolls(
     OriginalTacticalDamageRolls { shield, hull }
 }
 
+/// The played battle's damage receivers (`FUN_005b5100`, `FUN_005b5750`,
+/// `FUN_005b5b60`, `FUN_005b5f50`) roll for subsystem hits (events
+/// `0x1e`…`0x22`) only on the player's own ships: `FUN_005c0170` sets
+/// `+0x124` on every unit of the other side, and the receivers skip both the
+/// roll and its random draw when it is set.
+fn original_windowed_damage_rolls(
+    ships: &[TacticalShip],
+    target: usize,
+    damage: i32,
+    rng: &mut OriginalTacticalRng,
+    player_is_attacker: bool,
+) -> OriginalTacticalDamageRolls {
+    if ships
+        .get(target)
+        .is_some_and(|ship| ship.is_attacker != player_is_attacker)
+    {
+        return OriginalTacticalDamageRolls {
+            shield: ORIGINAL_NO_SUBSYSTEM_ROLL,
+            hull: ORIGINAL_NO_SUBSYSTEM_ROLL,
+        };
+    }
+    original_tactical_damage_rolls(ships, target, damage, rng)
+}
+
 fn original_hull_subsystem_kind(score: f32) -> Option<TacticalSubsystemKind> {
     if score <= 50.0 {
         None
@@ -2909,7 +3008,7 @@ fn apply_original_capital_damage(
         ship.shield = shield_after;
 
         let mut tractor_disabled = false;
-        if shield_before > 0 {
+        if shield_before > 0 && rolls.shield != ORIGINAL_NO_SUBSYSTEM_ROLL {
             let shield_loss_percent =
                 (100.0 / shield_before as f32) * (shield_before - shield_after) as f32;
             if f32::from(rolls.shield) <= shield_loss_percent.max(1.0) {
@@ -2925,7 +3024,9 @@ fn apply_original_capital_damage(
             ship.hull_current = ship.hull_current.saturating_sub(hull_damage).max(0);
             let score = f32::from(rolls.hull)
                 + (ship.hull_current - hull_before) as f32 * 100.0 / hull_before as f32;
-            if let Some(kind) = original_hull_subsystem_kind(score) {
+            if let Some(kind) = original_hull_subsystem_kind(score)
+                .filter(|_| rolls.hull != ORIGINAL_NO_SUBSYSTEM_ROLL)
+            {
                 tractor_disabled |= ship.add_subsystem_hit(kind);
             }
         }
@@ -3168,6 +3269,29 @@ impl BattleSession {
         tick: u64,
         rng_seed: u32,
     ) -> Self {
+        Self::new_with_forces(
+            world,
+            system,
+            CombatForce::of_fleet(world, attacker),
+            CombatForce::of_fleet(world, defender),
+            player_is_attacker,
+            tick,
+            rng_seed,
+        )
+    }
+
+    /// A battle between two sides, each its fleet (if any) and the squadrons
+    /// the system holds for it ([`CombatForce`]).
+    pub fn new_with_forces(
+        world: &GameWorld,
+        system: SystemKey,
+        attacker_force: CombatForce,
+        defender_force: CombatForce,
+        player_is_attacker: bool,
+        tick: u64,
+        rng_seed: u32,
+    ) -> Self {
+        let (attacker, defender) = (attacker_force.fleet, defender_force.fleet);
         let system_name = world
             .systems
             .get(system)
@@ -3176,14 +3300,55 @@ impl BattleSession {
             .systems
             .get(system)
             .map_or(1, |system| planet_picture_id(system.dat_id));
+        let holder_is_alliance = world
+            .systems
+            .get(system)
+            .and_then(|system| system.control.faction())
+            .map(|faction| faction == rebellion_core::dat::Faction::Alliance);
+        let blockaded_at_start = holder_is_alliance.is_some_and(|holder| {
+            let fleets_of = |alliance: bool| {
+                world.systems.get(system).is_some_and(|value| {
+                    value.fleets.iter().any(|fleet| {
+                        world
+                            .fleets
+                            .get(*fleet)
+                            .is_some_and(|fleet| fleet.is_alliance == alliance)
+                    })
+                })
+            };
+            fleets_of(!holder) && !fleets_of(holder)
+        });
 
         let mut ships = Vec::new();
         let mut fighters = Vec::new();
 
-        // Expand attacker fleet into individual hulls.
-        Self::expand_fleet(world, attacker, true, &mut ships, &mut fighters);
-        // Expand defender fleet.
-        Self::expand_fleet(world, defender, false, &mut ships, &mut fighters);
+        // Expand every fleet of each side at the system into individual
+        // hulls, the lead fleet first, then seat the squadrons the system
+        // holds for it (FUN_00516ef0 marks each through FUN_004f78e0).
+        let mut side_fleets: [Vec<FleetKey>; 2] = [Vec::new(), Vec::new()];
+        for (force, is_attacker) in [(attacker_force, true), (defender_force, false)] {
+            let fleets = &mut side_fleets[usize::from(!is_attacker)];
+            fleets.extend(force.fleet);
+            if let Some(value) = world.systems.get(system) {
+                fleets.extend(value.fleets.iter().copied().filter(|&key| {
+                    Some(key) != force.fleet
+                        && world
+                            .fleets
+                            .get(key)
+                            .is_some_and(|fleet| fleet.is_alliance == force.is_alliance)
+                }));
+            }
+            for &fleet in fleets.iter() {
+                Self::expand_fleet(world, fleet, is_attacker, &mut ships, &mut fighters);
+            }
+            Self::expand_system_squadrons(
+                world,
+                system,
+                force.is_alliance,
+                is_attacker,
+                &mut fighters,
+            );
+        }
 
         // Retain the working 2D fallback separately from the recovered source
         // world coordinates. P58 will replace each fallback only after its
@@ -3194,9 +3359,12 @@ impl BattleSession {
         let navigation_sets = original_navigation_point_sets(source_layout);
         Self::assign_original_task_forces(&mut ships);
         Self::assign_original_fighter_groups(&mut fighters);
-        let death_star = [(attacker, true), (defender, false)].into_iter().find_map(
-            |(fleet_key, is_attacker)| {
-                let fleet = &world.fleets[fleet_key];
+        let death_star = side_fleets
+            .iter()
+            .zip([true, false])
+            .flat_map(|(fleets, is_attacker)| fleets.iter().map(move |&key| (key, is_attacker)))
+            .find_map(|(fleet_key, is_attacker)| {
+                let fleet = world.fleets.get(fleet_key)?;
                 fleet.has_death_star.then_some(TacticalDeathStar {
                     resource: DEATH_STAR_TACTICAL_RESOURCE,
                     is_attacker,
@@ -3215,8 +3383,7 @@ impl BattleSession {
                     destroyed: false,
                     action_committed: false,
                 })
-            },
-        );
+            });
 
         // The original Tactical Display opens with the battle paused. The
         // Battle Alert's Take Command choice is the entry action, not a second
@@ -3234,7 +3401,7 @@ impl BattleSession {
             system_picture_id,
             attacker_fleet: attacker,
             defender_fleet: defender,
-            attacker_is_alliance: world.fleets[attacker].is_alliance,
+            attacker_is_alliance: attacker_force.is_alliance,
             player_is_attacker,
             phase: BattlePhase::Combat,
             ships,
@@ -3268,6 +3435,11 @@ impl BattleSession {
             combat_speed: 1,
             step_accumulator: 0.0,
             winner: None,
+            stalemate: TacticalStalemateWatch::default(),
+            engagement: TacticalEngagementState::default(),
+            holder_is_alliance,
+            blockaded_at_start,
+            withdrawal_destination: None,
         }
     }
 
@@ -3663,6 +3835,7 @@ impl BattleSession {
                 // Source initialization of the first task force is known;
                 // automatic distribution across later slots is not yet.
                 task_force: 0,
+                fleet: Some(fleet_key),
                 fleet_ship_index: ship_idx,
                 // IDs 2001 through 2130 are not a linear class sprite table.
                 // Keep the legacy selected-panel slot empty until its exact
@@ -3711,57 +3884,123 @@ impl BattleSession {
         }
 
         for (fighter_idx, entry) in fleet.fighters.iter().enumerate() {
-            let class = &world.fighter_classes[entry.class];
-            for squadron_index in 0..entry.count {
-                let squad_count = class.squadron_size;
-                let hull = squad_count as f32 * ORIGINAL_FIGHTER_HULL_PER_CRAFT;
-                fighters.push(TacticalFighter {
-                    class_key: entry.class,
-                    identity: TacticalObjectIdentity {
-                        class_dat_id: class.dat_id,
-                        fleet_roster_index: fighter_idx,
-                        is_alliance: fleet.is_alliance,
-                    },
-                    tactical_resource: fighter_tactical_resource(class.dat_id),
-                    source_position: TacticalWorldPosition::ORIGIN,
-                    sublight_engine_power: class.sub_light_engine as f32
-                        * ORIGINAL_FIGHTER_SUBLIGHT_ENGINE_SCALE,
-                    fleet_fighter_index: fighter_idx,
-                    fleet_squadron_index: squadron_index,
-                    name: class.name.clone(),
-                    x: 0.0,
-                    y: 0.0,
-                    squad_count,
-                    hull_current: hull,
-                    hull_max: hull,
-                    shield: class.shield_strength as f32,
-                    shield_max: class.shield_strength as f32,
-                    weapon_arc: TacticalWeaponArc::new(
-                        class.laser_cannon_fore,
-                        class.ion_cannon_fore,
-                        class.turbolaser_fore,
-                    ),
-                    weapon_ranges: TacticalWeaponRanges {
-                        laser_cannon: class.laser_cannon_range as f32,
-                        ion_cannon: class.ion_cannon_range as f32,
-                        turbolaser: class.turbolaser_range as f32,
-                    },
-                    torpedo_strength: class.torpedoes,
-                    torpedo_range: class.torpedoes_range as f32,
-                    maneuverability: class.maneuverability,
-                    is_attacker,
-                    alive: squad_count > 0,
-                    // FUN_005c63f0 initializes color state to 4 (white/unassigned).
-                    fighter_group: 4,
-                    selected: false,
-                    order: TacticalOrder::None,
-                    tactic: TacticalTactic::StandOff,
-                    attack_target: None,
-                    escort_target: None,
-                    recovery_state: TacticalFighterRecoveryState::AwaitingCarrier,
-                    recovery_target: None,
-                });
-            }
+            Self::push_squadrons(
+                world,
+                entry.class,
+                entry.count,
+                fighter_idx,
+                fleet.is_alliance,
+                is_attacker,
+                Some(fleet_key),
+                fighters,
+            );
+        }
+    }
+
+    /// Push `count` squadrons of `class` as fighters, each tagged with its
+    /// roster `index` and its place in that entry, carried by `fleet`, or
+    /// held by the battle system when `fleet` is `None`.
+    #[expect(
+        clippy::cast_precision_loss,
+        clippy::too_many_arguments,
+        reason = "Retain the existing tactical float conversions; each input names one squadron fact."
+    )]
+    fn push_squadrons(
+        world: &GameWorld,
+        class_key: FighterKey,
+        count: u32,
+        index: usize,
+        is_alliance: bool,
+        is_attacker: bool,
+        fleet: Option<FleetKey>,
+        fighters: &mut Vec<TacticalFighter>,
+    ) {
+        let held_by_system = fleet.is_none();
+        let class = &world.fighter_classes[class_key];
+        for squadron_index in 0..count {
+            let squad_count = class.squadron_size;
+            let hull = squad_count as f32 * ORIGINAL_FIGHTER_HULL_PER_CRAFT;
+            fighters.push(TacticalFighter {
+                class_key,
+                identity: TacticalObjectIdentity {
+                    class_dat_id: class.dat_id,
+                    fleet_roster_index: index,
+                    is_alliance,
+                },
+                tactical_resource: fighter_tactical_resource(class.dat_id),
+                source_position: TacticalWorldPosition::ORIGIN,
+                sublight_engine_power: class.sub_light_engine as f32
+                    * ORIGINAL_FIGHTER_SUBLIGHT_ENGINE_SCALE,
+                fleet,
+                fleet_fighter_index: index,
+                fleet_squadron_index: squadron_index,
+                name: class.name.clone(),
+                x: 0.0,
+                y: 0.0,
+                squad_count,
+                hull_current: hull,
+                hull_max: hull,
+                shield: class.shield_strength as f32,
+                shield_max: class.shield_strength as f32,
+                weapon_arc: TacticalWeaponArc::new(
+                    class.laser_cannon_fore,
+                    class.ion_cannon_fore,
+                    class.turbolaser_fore,
+                ),
+                weapon_ranges: TacticalWeaponRanges {
+                    laser_cannon: class.laser_cannon_range as f32,
+                    ion_cannon: class.ion_cannon_range as f32,
+                    turbolaser: class.turbolaser_range as f32,
+                },
+                torpedo_strength: class.torpedoes,
+                torpedo_range: class.torpedoes_range as f32,
+                maneuverability: class.maneuverability,
+                is_attacker,
+                alive: squad_count > 0,
+                // FUN_005c63f0 initializes color state to 4 (white/unassigned).
+                fighter_group: 4,
+                selected: false,
+                order: TacticalOrder::None,
+                tactic: TacticalTactic::StandOff,
+                attack_target: None,
+                escort_target: None,
+                recovery_state: TacticalFighterRecoveryState::AwaitingCarrier,
+                recovery_target: None,
+                held_by_system,
+            });
+        }
+    }
+
+    /// Seat the squadrons `system` holds for a side as fighters that need no
+    /// carrier (`FUN_00516ef0`, `ghidra/notes/system-squadrons-combat.md`).
+    /// hyp: they take their side's fighter line, as a fleet's squadrons do;
+    /// where the original places them is untraced.
+    fn expand_system_squadrons(
+        world: &GameWorld,
+        system: SystemKey,
+        is_alliance: bool,
+        is_attacker: bool,
+        fighters: &mut Vec<TacticalFighter>,
+    ) {
+        let Some(value) = world.systems.get(system) else {
+            return;
+        };
+        let held = value
+            .fighters
+            .iter()
+            .filter(|entry| entry.is_alliance == is_alliance)
+            .enumerate();
+        for (held_index, entry) in held {
+            Self::push_squadrons(
+                world,
+                entry.class,
+                entry.count,
+                held_index,
+                is_alliance,
+                is_attacker,
+                None,
+                fighters,
+            );
         }
     }
 
@@ -4277,6 +4516,7 @@ impl BattleSession {
         }
         refresh_original_escort_targets(self);
         advance_original_escort_movement(self, ORIGINAL_TACTICAL_STEP_MILLISECONDS);
+        advance_original_engagement(self, ORIGINAL_TACTICAL_STEP_MILLISECONDS);
         self.advance_original_tactical_movement(ORIGINAL_TACTICAL_STEP_MILLISECONDS);
         self.advance_original_fighter_recovery(ORIGINAL_TACTICAL_STEP_MILLISECONDS);
         refresh_original_attack_targets(self);
@@ -4382,23 +4622,58 @@ impl BattleSession {
         self.fighter_step();
         self.advance_original_trench_run(ORIGINAL_TACTICAL_STEP_MILLISECONDS);
 
-        // Check for battle end.
-        let atk_remaining = self.ships.iter().any(|s| s.is_attacker && s.alive)
-            || self
-                .fighters
-                .iter()
-                .any(|f| f.is_attacker && f.alive && f.squad_count > 0)
-            || self
-                .death_star
-                .is_some_and(|death_star| death_star.is_attacker && !death_star.destroyed);
-        let def_remaining = self.ships.iter().any(|s| !s.is_attacker && s.alive)
-            || self
-                .fighters
-                .iter()
-                .any(|f| !f.is_attacker && f.alive && f.squad_count > 0)
-            || self
-                .death_star
-                .is_some_and(|death_star| !death_star.is_attacker && !death_star.destroyed);
+        if self.finish_if_decided() {
+            return true;
+        }
+
+        self.advance_stalemate_watch(ORIGINAL_TACTICAL_STEP_SECONDS)
+    }
+
+    /// Developer command: put the player's `n`th living ship (1-based, in
+    /// roster order) out of hyperspace, through the same subsystem hits a
+    /// battle deals (a backup hyperdrive takes a second hit).
+    ///
+    /// # Errors
+    /// Refuses a number past the player's living ships, and a ship whose
+    /// hyperdrive is already out.
+    pub fn knock_out_player_hyperdrive(&mut self, n: usize) -> Result<String, String> {
+        let player = self.player_is_attacker;
+        let ship = self
+            .ships
+            .iter_mut()
+            .filter(|ship| ship.is_attacker == player && ship.alive)
+            .nth(n.saturating_sub(1))
+            .ok_or_else(|| format!("the player has no living ship {n}"))?;
+        if ship.subsystem_condition.hyperdrive == 0 {
+            return Err(format!("ship {n}'s hyperdrive is already out"));
+        }
+        while ship.subsystem_condition.hyperdrive > 0 {
+            ship.add_subsystem_hit(TacticalSubsystemKind::Hyperdrive);
+        }
+        Ok(format!(
+            "ship {n} (fleet roster {}) hyperdrive out",
+            ship.fleet_ship_index
+        ))
+    }
+
+    /// Whether a side still has a ship, a squadron with craft left, or its
+    /// Death Star.
+    fn side_remains(&self, is_attacker: bool) -> bool {
+        self.ships
+            .iter()
+            .any(|ship| ship.is_attacker == is_attacker && ship.alive)
+            || self.fighters.iter().any(|fighter| {
+                fighter.is_attacker == is_attacker && fighter.alive && fighter.squad_count > 0
+            })
+            || self.death_star.is_some_and(|death_star| {
+                death_star.is_attacker == is_attacker && !death_star.destroyed
+            })
+    }
+
+    /// End the battle when one side (or both) has nothing left.
+    fn finish_if_decided(&mut self) -> bool {
+        let atk_remaining = self.side_remains(true);
+        let def_remaining = self.side_remains(false);
 
         if !atk_remaining || !def_remaining {
             let winner = match (atk_remaining, def_remaining) {
@@ -4411,8 +4686,277 @@ impl BattleSession {
             self.phase = BattlePhase::Results;
             return true;
         }
-
         false
+
+    }
+
+    /// One second of a battle run without its window (`FUN_005ae9c0`). Each
+    /// side in turn assigns targets (`FUN_005c9200`), applies every force's
+    /// damage rate to its target (`FUN_005d14d0` through `FUN_005cb650` and
+    /// `FUN_005b54d0`) and recharges shields (`FUN_005b6320`); the stalemate
+    /// watch follows. Nothing moves and no battery fires.
+    /// port: the source steps `battle+0x250` before `+0x24c`, and which of
+    /// the port's sides that is is untraced; the defender goes first.
+    fn headless_step(&mut self) -> bool {
+        self.combat_tick += 4;
+        for is_attacker in [false, true] {
+            let groups = engagement_groups(self);
+            for fighters_first in [false, true] {
+                assign_engagement_targets(self, &groups, is_attacker, fighters_first);
+            }
+            let side = usize::from(!is_attacker);
+            for group in groups.iter().filter(|group| group.is_attacker == is_attacker) {
+                let Some(target) = self.engagement.targets[side][group.slot]
+                    .map(engagement_unit_of)
+                    .filter(|target| engagement_unit_live(self, *target))
+                else {
+                    continue;
+                };
+                let damage = engagement_group_damage(self, &group.members, target)
+                    * ORIGINAL_HEADLESS_STEP_SECONDS;
+                self.apply_headless_damage(target, damage);
+            }
+            for ship in self
+                .ships
+                .iter_mut()
+                .filter(|ship| ship.is_attacker == is_attacker)
+            {
+                ship.advance_original_recharge(ORIGINAL_HEADLESS_STEP_SECONDS);
+            }
+            for fighter in self
+                .fighters
+                .iter_mut()
+                .filter(|fighter| fighter.is_attacker == is_attacker)
+            {
+                fighter.advance_original_recharge(ORIGINAL_HEADLESS_STEP_SECONDS);
+            }
+        }
+        if self.finish_if_decided() {
+            return true;
+        }
+        self.advance_stalemate_watch(ORIGINAL_HEADLESS_STEP_SECONDS)
+    }
+
+    /// `FUN_005b54d0` for the headless step: shield first, the overflow
+    /// (at least one point) into hull, with the capital subsystem rolls.
+    fn apply_headless_damage(&mut self, target: EngagementUnit, damage: f32) {
+        if !damage.is_finite() || damage <= 0.0 {
+            return;
+        }
+        match target {
+            EngagementUnit::Capital(index) => {
+                let carry = &mut self.engagement.capital_damage_carry;
+                if carry.len() < self.ships.len() {
+                    carry.resize(self.ships.len(), 0.0);
+                }
+                carry[index] += damage;
+                let whole = carry[index].floor();
+                if whole < 1.0 {
+                    return;
+                }
+                carry[index] -= whole;
+                let points = whole as i32;
+                let rolls =
+                    original_tactical_damage_rolls(&self.ships, index, points, &mut self.tactical_rng);
+                apply_original_capital_damage(
+                    &mut self.ships,
+                    &mut self.field_effects,
+                    index,
+                    points,
+                    rolls,
+                );
+            }
+            EngagementUnit::Fighter(index) => {
+                let fighter = &mut self.fighters[index];
+                fighter.shield -= damage;
+                if fighter.shield < 0.0 {
+                    let overflow = -fighter.shield;
+                    fighter.shield = 0.0;
+                    fighter.hull_current = (fighter.hull_current - overflow.max(1.0)).max(0.0);
+                    fighter.refresh_craft_count();
+                }
+            }
+        }
+    }
+
+    /// A side's strength for the stalemate watch (`side+0x3c`,
+    /// `FUN_005d0ce0`): the firepower (`FUN_005b7a80`) of its squadrons and
+    /// of every capital ship whose attackers do not already out-damage its
+    /// shield recharge.
+    /// port: the Death Star's addition (`_DAT_0066d0f0`) is not modeled.
+    fn stalemate_strength(&self, is_attacker: bool) -> f32 {
+        let groups = engagement_groups(self);
+        let enemy_side = usize::from(is_attacker);
+        let capitals: f32 = (0..self.ships.len())
+            .filter(|index| self.ships[*index].is_attacker == is_attacker)
+            .map(EngagementUnit::Capital)
+            .filter(|unit| engagement_unit_live(self, *unit))
+            .filter(|unit| {
+                let EngagementUnit::Capital(index) = *unit else {
+                    return true;
+                };
+                let recovery = self.ships[index].effective_shield_recharge();
+                !groups.iter().any(|group| {
+                    group.is_attacker != is_attacker
+                        && group
+                            .ordered_target
+                            .or(self.engagement.targets[enemy_side][group.slot])
+                            .map(engagement_unit_of)
+                            == Some(*unit)
+                        && recovery <= engagement_group_damage(self, &group.members, *unit)
+                })
+            })
+            .map(|unit| original_unit_firepower(self, unit))
+            .sum();
+        let fighters: f32 = (0..self.fighters.len())
+            .filter(|index| self.fighters[*index].is_attacker == is_attacker)
+            .map(|index| original_unit_firepower(self, EngagementUnit::Fighter(index)))
+            .sum();
+        capitals + fighters
+    }
+
+    /// `FUN_005ae9c0`: once neither side's strength has fallen to a new low
+    /// for 1200 seconds, the side with the lower or equal strength (both when
+    /// equal) leaves the battle (`stalemate_resolve_side`). Returns `true`
+    /// when that ends the battle. While a Death Star is operational
+    /// (`FUN_005ba420`), the side facing it counts -1.0 at the decision, so
+    /// that side always leaves and the Death Star's side never does.
+    fn advance_stalemate_watch(&mut self, seconds: f32) -> bool {
+        let strengths = [self.stalemate_strength(true), self.stalemate_strength(false)];
+        for (side, strength) in strengths.into_iter().enumerate() {
+            let watch = &mut self.stalemate;
+            if watch.lowest[side].is_none_or(|lowest| strength < lowest) {
+                watch.lowest[side] = Some(strength);
+                watch.quiet_seconds[side] = 0.0;
+            } else {
+                watch.quiet_seconds[side] += seconds;
+            }
+        }
+        if self
+            .stalemate
+            .quiet_seconds
+            .iter()
+            .any(|&quiet| quiet < ORIGINAL_STALEMATE_SECONDS)
+        {
+            return false;
+        }
+        let [mut attacker, mut defender] = strengths;
+        if let Some(death_star) = self.death_star.filter(|death_star| death_star.operational()) {
+            if death_star.is_attacker {
+                defender = -1.0;
+            } else {
+                attacker = -1.0;
+            }
+        }
+        for (is_attacker, withdraws) in [(true, attacker <= defender), (false, defender <= attacker)] {
+            if withdraws {
+                self.stalemate_resolve_side(is_attacker);
+            }
+        }
+        let winner = match (self.side_remains(true), self.side_remains(false)) {
+            (true, false) => CombatWinner::Attacker,
+            (false, true) => CombatWinner::Defender,
+            _ => CombatWinner::Draw,
+        };
+        macroquad::logging::info!(
+            "[tactical_stalemate] attacker_strength={} defender_strength={} winner={:?}",
+            attacker,
+            defender,
+            winner
+        );
+        self.queue_battle_outcome_voice(winner);
+        self.winner = Some(winner);
+        self.phase = BattlePhase::Results;
+        true
+    }
+
+    /// The stalemate's loser. A side with a ship whose hyperdrive works
+    /// (`FUN_005d0f50` through `FUN_005b1b70`) is flagged to retreat
+    /// (`side+0xb0`), and `FUN_005d14d0`'s retreat branch then sends each
+    /// hyperdrive ship out (`FUN_005af910`, state 9), docks each squadron
+    /// with an escaping carrier (`FUN_005afe40`) and destroys the rest
+    /// (`FUN_005af7a0`: 100000 damage, state `0xb`). A side with no working
+    /// hyperdrive is destroyed outright.
+    /// port: a carrier takes as many squadrons as its fighter capacity.
+    fn stalemate_resolve_side(&mut self, is_attacker: bool) {
+        let escapes = |ship: &TacticalShip| {
+            ship.subsystem_capacity.hyperdrive > 0 && ship.subsystem_condition.hyperdrive > 0
+        };
+        let can_retreat = self
+            .ships
+            .iter()
+            .any(|ship| ship.is_attacker == is_attacker && ship.alive && escapes(ship));
+        let mut berths: u32 = self
+            .ships
+            .iter()
+            .filter(|ship| {
+                can_retreat && ship.is_attacker == is_attacker && ship.alive && escapes(ship)
+            })
+            .map(|ship| ship.fighter_capacity)
+            .sum();
+        for ship in self
+            .ships
+            .iter_mut()
+            .filter(|ship| ship.is_attacker == is_attacker && ship.alive)
+        {
+            if can_retreat && escapes(ship) {
+                ship.retreated = true;
+            } else {
+                ship.hull_current = 0;
+                ship.shield = 0;
+            }
+            ship.alive = false;
+            ship.retreating = false;
+            ship.selected = false;
+            ship.attack_target = None;
+        }
+        for fighter in self
+            .fighters
+            .iter_mut()
+            .filter(|fighter| fighter.is_attacker == is_attacker && fighter.alive)
+        {
+            if berths > 0 {
+                berths -= 1;
+            } else {
+                fighter.squad_count = 0;
+                fighter.hull_current = 0.0;
+            }
+            fighter.alive = false;
+            fighter.selected = false;
+            fighter.attack_target = None;
+        }
+    }
+
+    /// Run the battle to its end without its window, as the Battle Alert's
+    /// Simulate does: the session state machine's state 8 steps the battle
+    /// one second at a time through `FUN_005ae9c0` (`headless_step`;
+    /// `ghidra/notes/simulate-runs-tactical-engine.md`).
+    /// port: the headless Death Star (`FUN_005aefc0`) is not modeled.
+    pub fn simulate_to_end(&mut self) {
+        self.phase = BattlePhase::Combat;
+        self.paused = false;
+        self.placement_confirmed = true;
+        for _ in 0..SIMULATED_BATTLE_SECOND_LIMIT {
+            if self.headless_step() {
+                break;
+            }
+        }
+        self.pending_voice_cues.clear();
+        self.pending_audio_cues.clear();
+        if self.winner.is_none() {
+            self.winner = Some(CombatWinner::Draw);
+            self.phase = BattlePhase::Results;
+        }
+        macroquad::logging::info!(
+            "[simulate] seconds={} winner={:?}",
+            self.combat_tick / 4,
+            self.winner
+        );
+        self.weapon_effects.clear();
+        self.impact_effects.clear();
+        self.paused = true;
+        self.selected_ship = None;
+        self.selected_fighter_group = None;
     }
 
     /// One side's ships fire through the four source battery records recovered
@@ -4511,7 +5055,8 @@ impl BattleSession {
                     let target_is_attacker = ships[target_idx].is_attacker;
                     let target_group = ships[target_idx].task_force;
                     let damage = original_tactical_integer_damage(candidate.strength);
-                    let rolls = original_tactical_damage_rolls(ships, target_idx, damage, rng);
+                    let rolls =
+                        original_windowed_damage_rolls(ships, target_idx, damage, rng, player_is_attacker);
                     let impact_stage = apply_original_capital_damage(
                         ships,
                         field_effects,
@@ -4860,11 +5405,12 @@ impl BattleSession {
                     OriginalFighterTarget::Capital(index) => {
                         let target_is_attacker = self.ships[index].is_attacker;
                         let target_group = self.ships[index].task_force;
-                        let rolls = original_tactical_damage_rolls(
+                        let rolls = original_windowed_damage_rolls(
                             &self.ships,
                             index,
                             original_tactical_integer_damage(strength),
                             &mut self.tactical_rng,
+                            player_is_attacker,
                         );
                         let stage = apply_original_capital_damage(
                             &mut self.ships,
@@ -4981,11 +5527,12 @@ impl BattleSession {
                 if let OriginalFighterTarget::Capital(index) = target {
                     let target_is_attacker = self.ships[index].is_attacker;
                     let target_group = self.ships[index].task_force;
-                    let rolls = original_tactical_damage_rolls(
+                    let rolls = original_windowed_damage_rolls(
                         &self.ships,
                         index,
                         original_tactical_integer_damage(strength),
                         &mut self.tactical_rng,
+                        player_is_attacker,
                     );
                     let stage = apply_original_capital_damage(
                         &mut self.ships,
@@ -5516,7 +6063,33 @@ impl TacticalState {
         tick: u64,
         rng_seed: u32,
     ) {
-        let session = BattleSession::new(
+        self.begin_battle_forces(
+            world,
+            system,
+            CombatForce::of_fleet(world, attacker),
+            CombatForce::of_fleet(world, defender),
+            player_is_attacker,
+            tick,
+            rng_seed,
+        );
+    }
+
+    /// Begin a battle between two sides ([`BattleSession::new_with_forces`]).
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Keep explicit battle inputs at this boundary, as begin_battle does."
+    )]
+    pub fn begin_battle_forces(
+        &mut self,
+        world: &GameWorld,
+        system: SystemKey,
+        attacker: CombatForce,
+        defender: CombatForce,
+        player_is_attacker: bool,
+        tick: u64,
+        rng_seed: u32,
+    ) {
+        let session = BattleSession::new_with_forces(
             world,
             system,
             attacker,
@@ -6796,66 +7369,15 @@ impl TacticalState {
             .map_or_else(Vec::new, BattleSession::take_pending_voice_cues)
     }
 
-    /// Project a deterministic strategic auto-resolve outcome onto the live
-    /// tactical roster, then enter the same original Battle Results surface
-    /// used after a played battle.
-    pub fn present_auto_resolve_result(&mut self, result: &SpaceCombatResult) -> bool {
+    /// The Battle Alert's Simulate: run the live session to its end without
+    /// its window (`BattleSession::simulate_to_end`), then open the same
+    /// Battle Results a played battle shows. The caller applies the session
+    /// to the strategic world at once.
+    pub fn simulate_battle(&mut self) -> bool {
         let Some(session) = self.session.as_mut() else {
             return false;
         };
-        if session.attacker_fleet != result.attacker_fleet
-            || session.defender_fleet != result.defender_fleet
-            || session.system != result.system
-        {
-            return false;
-        }
-
-        for damage in &result.ship_damage {
-            let is_attacker = damage.fleet == session.attacker_fleet;
-            // Auto-resolve reports an index into its compressed alive-hull
-            // snapshot, whereas played tactical results retain original fleet
-            // roster slots. The live session was expanded from that same alive
-            // sequence, so select its nth hull for presentation only.
-            if let Some(ship) = session
-                .ships
-                .iter_mut()
-                .filter(|ship| ship.is_attacker == is_attacker)
-                .nth(damage.ship_index)
-            {
-                ship.hull_current = damage.hull_after.clamp(0, ship.hull_max);
-                ship.alive = ship.hull_current > 0;
-                if !ship.alive {
-                    ship.shield = 0;
-                }
-                ship.refresh_subsystem_condition();
-            }
-        }
-        for loss in &result.fighter_losses {
-            let is_attacker = loss.fleet == session.attacker_fleet;
-            for fighter in session.fighters.iter_mut().filter(|fighter| {
-                fighter.is_attacker == is_attacker
-                    && fighter.fleet_fighter_index == loss.fighter_index
-            }) {
-                let survives = fighter.fleet_squadron_index < loss.squads_after;
-                fighter.alive = survives;
-                if !survives {
-                    fighter.hull_current = 0.0;
-                    fighter.squad_count = 0;
-                    fighter.shield = 0.0;
-                }
-            }
-        }
-        let winner = match result.winner {
-            AutoResolveSide::Attacker => CombatWinner::Attacker,
-            AutoResolveSide::Defender => CombatWinner::Defender,
-            AutoResolveSide::Draw => CombatWinner::Draw,
-        };
-        session.queue_battle_outcome_voice(winner);
-        session.winner = Some(winner);
-        session.phase = BattlePhase::Results;
-        session.paused = true;
-        session.selected_ship = None;
-        session.selected_fighter_group = None;
+        session.simulate_to_end();
         self.battle_result_tab = BattleResultTab::Summary;
         self.battle_result_category = BattleResultCategory::CapitalShips;
         self.strategic_results_applied = true;
@@ -8325,6 +8847,829 @@ fn begin_original_attack_order(
 /// that lifecycle directly: an invalid entry is replaced by the first eligible
 /// hostile object of the same requested class, and an exhausted class clears
 /// the target instead of falling through to another class.
+/// `FUN_005c9200` hands the tactic object `DAT_0066cbac`: Stand Off assigns
+/// a target only to a force that kills it within this many seconds.
+const ORIGINAL_ENGAGEMENT_KILL_SECONDS: f32 = 180.0;
+/// `_DAT_0066da7c` and `_DAT_0066daa0`: a target's value weighs its
+/// firepower by 15 and its shield-recharge and hull ratios by 0.01.
+const ORIGINAL_TARGET_FIREPOWER_WEIGHT: f32 = 15.0;
+const ORIGINAL_TARGET_RATIO_WEIGHT: f32 = 0.01;
+/// `_DAT_0066da84`: a force keeps a target it can destroy, with the rest of
+/// its side on it, in less than this many seconds.
+const ORIGINAL_ENGAGEMENT_ABANDON_SECONDS: f32 = 300.0;
+/// `FUN_005ec740`'s key for a force that cannot make the limit
+/// (`_DAT_0066da58`); it sorts such forces last.
+const ORIGINAL_ENGAGEMENT_UNREACHABLE_KEY: f32 = 100_000.0;
+/// `FUN_005ed170`: effective hull is shield plus 0.65 of hull
+/// (`_DAT_0066da8c`), at least 1.0; travel seconds count 0.001 each
+/// (`_DAT_0066da98`).
+const ORIGINAL_ENGAGEMENT_HULL_WEIGHT: f32 = 0.65;
+const ORIGINAL_ENGAGEMENT_TRAVEL_WEIGHT: f32 = 0.001;
+/// `FUN_005cc300` tests `distance - _DAT_0066d008` (-2.0) against the band.
+const ORIGINAL_ENGAGEMENT_BAND_PAD: f32 = 2.0;
+/// `FUN_005cc300` aims this far into the band: 0.5 below three units, 0.75
+/// (`_DAT_0066d014`) below six, else 0.9 (`_DAT_0066d010`); never nearer
+/// than 2.0 (`_DAT_0066d018`).
+const ORIGINAL_ENGAGEMENT_GOAL_MIN: f32 = 2.0;
+/// `FUN_005edf80` keeps the band's near edge at `DAT_0066daa8` (5.0) or
+/// more; an unarmed force holds at 1.2 (`_DAT_0066dabc`) times the
+/// target's reach, at least 10.0 (`_DAT_0066dac0`), out to 1e6.
+const ORIGINAL_ENGAGEMENT_NEAR_MIN: f32 = 5.0;
+const ORIGINAL_ENGAGEMENT_UNARMED_REACH: f32 = 1.2;
+const ORIGINAL_ENGAGEMENT_UNARMED_MIN: f32 = 10.0;
+const ORIGINAL_ENGAGEMENT_UNARMED_FAR: f32 = 1_000_000.0;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EngagementUnit {
+    Capital(usize),
+    Fighter(usize),
+}
+
+/// One task force or fighter group, leader first.
+struct EngagementGroup {
+    is_attacker: bool,
+    slot: usize,
+    members: Vec<EngagementUnit>,
+    tactic: TacticalTactic,
+    /// `FUN_005b7ce0`: a force whose leader has laser cannons ranks
+    /// fighters first (`FUN_005c9200`'s second list).
+    fighters_first: bool,
+    /// A player attack order or focus target the force steers to instead.
+    ordered_target: Option<TacticalAttackTarget>,
+}
+
+fn engagement_unit_of(target: TacticalAttackTarget) -> EngagementUnit {
+    match target {
+        TacticalAttackTarget::CapitalShip(index) => EngagementUnit::Capital(index),
+        TacticalAttackTarget::FighterGroup(index) => EngagementUnit::Fighter(index),
+    }
+}
+
+fn engagement_target_of(unit: EngagementUnit) -> TacticalAttackTarget {
+    match unit {
+        EngagementUnit::Capital(index) => TacticalAttackTarget::CapitalShip(index),
+        EngagementUnit::Fighter(index) => TacticalAttackTarget::FighterGroup(index),
+    }
+}
+
+fn engagement_unit_live(session: &BattleSession, unit: EngagementUnit) -> bool {
+    match unit {
+        EngagementUnit::Capital(index) => session
+            .ships
+            .get(index)
+            .is_some_and(|ship| ship.alive && !ship.retreating),
+        EngagementUnit::Fighter(index) => session.fighters.get(index).is_some_and(|fighter| {
+            fighter.alive
+                && fighter.squad_count > 0
+                && fighter.recovery_state != TacticalFighterRecoveryState::Recovered
+        }),
+    }
+}
+
+fn engagement_unit_position(session: &BattleSession, unit: EngagementUnit) -> TacticalWorldPosition {
+    match unit {
+        EngagementUnit::Capital(index) => session.ships[index].source_position,
+        EngagementUnit::Fighter(index) => session.fighters[index].source_position,
+    }
+}
+
+fn engagement_unit_is_attacker(session: &BattleSession, unit: EngagementUnit) -> bool {
+    match unit {
+        EngagementUnit::Capital(index) => session.ships[index].is_attacker,
+        EngagementUnit::Fighter(index) => session.fighters[index].is_attacker,
+    }
+}
+
+fn engagement_family_modifier(kind: WeaponKind, against_fighter: bool) -> f32 {
+    if against_fighter {
+        match kind {
+            WeaponKind::IonCannon => ORIGINAL_ION_VS_FIGHTER,
+            WeaponKind::LaserCannon => ORIGINAL_LASER_VS_FIGHTER,
+            WeaponKind::Turbolaser => ORIGINAL_TURBOLASER_VS_FIGHTER,
+            WeaponKind::FighterAttack => 0.0,
+        }
+    } else {
+        match kind {
+            WeaponKind::LaserCannon => ORIGINAL_LASER_VS_CAPITAL,
+            WeaponKind::IonCannon | WeaponKind::Turbolaser => 1.0,
+            WeaponKind::FighterAttack => 0.0,
+        }
+    }
+}
+
+/// A unit's weapon recharge, its vtable `+0x60`: a capital ship's
+/// `FUN_005b0400` (the port's `effective_weapon_recharge`), a fighter
+/// group's `FUN_005b9c00` (hull × 3.751 / 8).
+fn engagement_unit_recharge(session: &BattleSession, unit: EngagementUnit) -> f32 {
+    match unit {
+        EngagementUnit::Capital(index) => session.ships[index].effective_weapon_recharge(),
+        EngagementUnit::Fighter(index) => session.fighters[index].weapon_hull_factor(),
+    }
+}
+
+/// A unit's maneuverability, its vtable `+0xbc`: `FUN_005b0be0` gives a
+/// capital ship without engine power 1.0 and otherwise one more than its
+/// rating, at most 9; a fighter uses `effective_maneuverability`.
+fn engagement_unit_maneuverability(session: &BattleSession, unit: EngagementUnit) -> f32 {
+    match unit {
+        EngagementUnit::Capital(index) => {
+            let moving = original_tactical_mobility(&session.ships, &session.field_effects, index)
+                .is_some_and(|mobility| mobility.effective_engine_power > 0.0);
+            if moving {
+                (session.ships[index].maneuverability as f32 + 1.0)
+                    .min(ORIGINAL_CAPITAL_MANEUVERABILITY_MAX)
+            } else {
+                1.0
+            }
+        }
+        EngagementUnit::Fighter(index) => session.fighters[index].effective_maneuverability(),
+    }
+}
+
+/// A unit's weapon counts per arc: a capital ship's four, a fighter group's
+/// one fore record.
+fn engagement_unit_arcs(session: &BattleSession, unit: EngagementUnit) -> Vec<TacticalWeaponArc> {
+    match unit {
+        EngagementUnit::Capital(index) => session.ships[index].weapon_arcs.to_vec(),
+        EngagementUnit::Fighter(index) => vec![session.fighters[index].weapon_arc],
+    }
+}
+
+/// `FUN_005b7780`: the damage a unit deals its target each second. Its arc
+/// is the one whose families sum strongest against the target's class
+/// (`FUN_005b4c60`, vtable `+0x84`); the rate is that arc's summed family
+/// strength times the unit's weapon recharge over the arc's weapon count.
+/// Against a fighter, lasers and turbolasers scale by the attacker's over
+/// the target's maneuverability (at least 0.1) and ions do nothing. A
+/// fighter group adds its torpedoes (`FUN_005b23a0`, rating × 0.5333)
+/// against an unshielded capital ship. Position plays no part.
+fn original_unit_damage_rate(
+    session: &BattleSession,
+    unit: EngagementUnit,
+    target: EngagementUnit,
+) -> f32 {
+    if !engagement_unit_live(session, unit) || !engagement_unit_live(session, target) {
+        return 0.0;
+    }
+    let against_fighter = matches!(target, EngagementUnit::Fighter(_));
+    let maneuver_ratio = (engagement_unit_maneuverability(session, unit)
+        / engagement_unit_maneuverability(session, target))
+    .max(0.1);
+    let torpedoes = match (unit, target) {
+        (EngagementUnit::Fighter(source), EngagementUnit::Capital(capital))
+            if session.ships[capital].shield <= 0 =>
+        {
+            session.fighters[source].torpedo_strength as f32 * ORIGINAL_FIGHTER_TORPEDO_FACTOR
+        }
+        _ => 0.0,
+    };
+    unit_rate_against(session, unit, against_fighter, maneuver_ratio, torpedoes)
+}
+
+/// `FUN_005b7a80`: a unit's firepower against capital ships, the figure
+/// `FUN_005d0ce0` sums into a side's strength.
+fn original_unit_firepower(session: &BattleSession, unit: EngagementUnit) -> f32 {
+    if !engagement_unit_live(session, unit) {
+        return 0.0;
+    }
+    unit_rate_against(session, unit, false, 1.0, 0.0)
+}
+
+fn unit_rate_against(
+    session: &BattleSession,
+    unit: EngagementUnit,
+    against_fighter: bool,
+    maneuver_ratio: f32,
+    torpedoes: f32,
+) -> f32 {
+    let kinds = [
+        WeaponKind::LaserCannon,
+        WeaponKind::IonCannon,
+        WeaponKind::Turbolaser,
+    ];
+    let family = |arc: &TacticalWeaponArc, kind: WeaponKind| {
+        original_weapon_count(*arc, kind) as f32
+            * ORIGINAL_CAPITAL_WEAPON_STRENGTH
+            * engagement_family_modifier(kind, against_fighter)
+    };
+    let arcs = engagement_unit_arcs(session, unit);
+    let mut selected = None;
+    let mut strongest = 0.0;
+    for arc in &arcs {
+        let strength: f32 = kinds.into_iter().map(|kind| family(arc, kind)).sum();
+        if strongest < strength {
+            strongest = strength;
+            selected = Some(*arc);
+        }
+    }
+    let Some(arc) = selected else {
+        return 0.0;
+    };
+    let total = (arc.laser_cannons + arc.ion_cannons + arc.turbolasers) as f32;
+    let recharge = engagement_unit_recharge(session, unit);
+    if total <= 0.0 || recharge <= 0.0 {
+        return 0.0;
+    }
+    let strength: f32 = kinds
+        .into_iter()
+        .map(|kind| {
+            let term = family(&arc, kind);
+            if against_fighter && kind != WeaponKind::IonCannon {
+                term * maneuver_ratio
+            } else {
+                term
+            }
+        })
+        .sum();
+    (strength + torpedoes) * recharge / total
+}
+
+/// Each weapon family's reach and its weight against one class of target
+/// (`FUN_005b49e0`: count × the unit's weapon recharge × the family's
+/// strength).
+fn engagement_unit_families(
+    session: &BattleSession,
+    unit: EngagementUnit,
+    against_fighter: bool,
+) -> Vec<(f32, f32)> {
+    let recharge = engagement_unit_recharge(session, unit);
+    let ranges = match unit {
+        EngagementUnit::Capital(index) => session.ships[index].weapon_ranges,
+        EngagementUnit::Fighter(index) => session.fighters[index].weapon_ranges,
+    };
+    let range_of = |kind: WeaponKind| match kind {
+        WeaponKind::LaserCannon => ranges.laser_cannon,
+        WeaponKind::IonCannon => ranges.ion_cannon,
+        WeaponKind::Turbolaser => ranges.turbolaser,
+        WeaponKind::FighterAttack => 0.0,
+    };
+    let arcs = engagement_unit_arcs(session, unit);
+    [
+        WeaponKind::LaserCannon,
+        WeaponKind::IonCannon,
+        WeaponKind::Turbolaser,
+    ]
+    .into_iter()
+    .filter_map(|kind| {
+        let count: u32 = arcs.iter().map(|arc| original_weapon_count(*arc, kind)).sum();
+        let range = range_of(kind);
+        (count > 0 && range > 0.0).then(|| {
+            (
+                range,
+                count as f32
+                    * recharge
+                    * ORIGINAL_CAPITAL_WEAPON_STRENGTH
+                    * engagement_family_modifier(kind, against_fighter),
+            )
+        })
+    })
+    .collect()
+}
+
+fn engagement_unit_reach(session: &BattleSession, unit: EngagementUnit) -> f32 {
+    // `FUN_005b18d0`: the longest range among the unit's armed families.
+    engagement_unit_families(session, unit, false)
+        .into_iter()
+        .chain(engagement_unit_families(session, unit, true))
+        .map(|(range, _)| range)
+        .fold(0.0, f32::max)
+}
+
+fn engagement_group_damage(
+    session: &BattleSession,
+    members: &[EngagementUnit],
+    target: EngagementUnit,
+) -> f32 {
+    // `FUN_005cb650` sums `FUN_005b7780` over the force's active units.
+    members
+        .iter()
+        .map(|unit| original_unit_damage_rate(session, *unit, target))
+        .sum()
+}
+
+/// `FUN_005ed170`: seconds for a force (adding its damage to `damage`) to
+/// destroy the target, plus its travel time weighted by 0.001; -1.0 when it
+/// cannot out-damage the target's shield recharge (vtable `+0x64`:
+/// `FUN_005b0460` for a capital ship, `FUN_005b9c30` for a fighter group).
+fn engagement_kill_seconds(
+    session: &BattleSession,
+    group: &EngagementGroup,
+    target: EngagementUnit,
+    damage: &mut f32,
+) -> f32 {
+    *damage += engagement_group_damage(session, &group.members, target);
+    let (hull, shield, recovery) = match target {
+        EngagementUnit::Capital(index) => {
+            let ship = &session.ships[index];
+            (
+                ship.hull_current.max(0) as f32,
+                ship.shield.max(0) as f32,
+                ship.effective_shield_recharge(),
+            )
+        }
+        EngagementUnit::Fighter(index) => {
+            let fighter = &session.fighters[index];
+            (
+                fighter.hull_current.max(0.0),
+                fighter.shield.max(0.0),
+                fighter.shield_recharge_rate(),
+            )
+        }
+    };
+    let effective_hull = (hull * ORIGINAL_ENGAGEMENT_HULL_WEIGHT + shield).max(1.0);
+    if *damage - recovery <= 0.0 {
+        return -1.0;
+    }
+    let mut seconds = effective_hull / (*damage - recovery);
+    let leader = group.members[0];
+    let delta = source_delta(
+        engagement_unit_position(session, target),
+        engagement_unit_position(session, leader),
+    );
+    if delta != TacticalWorldVector::ZERO {
+        let speed = match leader {
+            EngagementUnit::Capital(index) => session.ships[index].sublight_engine_power,
+            EngagementUnit::Fighter(index) => session.fighters[index].sublight_engine_power,
+        };
+        let distance = delta.x.hypot(delta.y).hypot(delta.z);
+        let travel = if speed > 0.0 { (distance / speed).max(1.0) } else { 1.0 };
+        seconds += travel * ORIGINAL_ENGAGEMENT_TRAVEL_WEIGHT;
+    }
+    seconds
+}
+
+/// `FUN_005edf80`: the distance band a force fights its target from. Each
+/// unit's families add `[0, range]` intervals weighted by their strength,
+/// the target's subtract theirs, and the force takes the interval with the
+/// greatest net strength that its own longest weapon reaches.
+fn engagement_band(
+    session: &BattleSession,
+    group: &EngagementGroup,
+    target: EngagementUnit,
+) -> (f32, f32) {
+    let target_is_fighter = matches!(target, EngagementUnit::Fighter(_));
+    let mut intervals: Vec<(f32, f32)> = Vec::new();
+    let mut own_reach = 0.0_f32;
+    for unit in group.members.iter().filter(|unit| engagement_unit_live(session, **unit)) {
+        own_reach = own_reach.max(engagement_unit_reach(session, *unit));
+        intervals.extend(engagement_unit_families(session, *unit, target_is_fighter));
+    }
+    let leader_is_fighter = matches!(group.members[0], EngagementUnit::Fighter(_));
+    let target_families = engagement_unit_families(session, target, leader_is_fighter);
+    let target_reach = engagement_unit_reach(session, target);
+    intervals.extend(
+        target_families
+            .into_iter()
+            .map(|(range, strength)| (range, -strength)),
+    );
+    if own_reach <= 0.0 {
+        let near = (target_reach * ORIGINAL_ENGAGEMENT_UNARMED_REACH)
+            .max(ORIGINAL_ENGAGEMENT_UNARMED_MIN);
+        return (near, ORIGINAL_ENGAGEMENT_UNARMED_FAR);
+    }
+    let mut edges = intervals.iter().map(|(range, _)| *range).collect::<Vec<_>>();
+    edges.sort_by(f32::total_cmp);
+    edges.dedup();
+    let mut best: Option<(f32, f32, f32)> = None;
+    let mut near = 0.0;
+    for far in edges {
+        let net: f32 = intervals
+            .iter()
+            .filter(|(range, _)| *range >= far)
+            .map(|(_, strength)| strength)
+            .sum();
+        if far <= own_reach && best.is_none_or(|(_, _, best_net)| best_net < net) {
+            best = Some((near, far, net));
+        }
+        near = far;
+    }
+    let (near, far) = best.map_or((0.0, own_reach), |(near, far, _)| (near, far));
+    (near.max(ORIGINAL_ENGAGEMENT_NEAR_MIN), far.max(ORIGINAL_ENGAGEMENT_NEAR_MIN))
+}
+
+/// Gather each side's task forces and fighter groups that steer themselves:
+/// none of their units follows a maneuver, route, escort, recovery or Death
+/// Star order (`FUN_005ed5f0` leaves order codes 2, 3 and 6 alone; the
+/// maneuver executors own their waypoints).
+fn engagement_groups(session: &BattleSession) -> Vec<EngagementGroup> {
+    let mut groups = Vec::new();
+    for is_attacker in [true, false] {
+        let side = usize::from(!is_attacker);
+        for task_force in 0_u8..8 {
+            let mut members = session
+                .ships
+                .iter()
+                .enumerate()
+                .filter(|(_, ship)| {
+                    ship.alive
+                        && !ship.retreating
+                        && ship.is_attacker == is_attacker
+                        && ship.task_force == task_force
+                })
+                .map(|(index, _)| index)
+                .collect::<Vec<_>>();
+            if members.is_empty() {
+                continue;
+            }
+            members.sort_by(|left, right| {
+                original_formation_capability_score(&session.ships[*right])
+                    .total_cmp(&original_formation_capability_score(&session.ships[*left]))
+            });
+            let slot = usize::from(task_force);
+            let goal = session.engagement.steering_goals[side][slot];
+            let commanded = members.iter().any(|index| {
+                let ship = &session.ships[*index];
+                !matches!(
+                    ship.order,
+                    TacticalOrder::None
+                        | TacticalOrder::AttackCapitalShips
+                        | TacticalOrder::AttackFighters
+                ) || !ship.navigation_route.is_empty()
+                    || ship.source_waypoint.is_some_and(|waypoint| Some(waypoint) != goal)
+            });
+            if commanded {
+                continue;
+            }
+            let leader = &session.ships[members[0]];
+            let ordered_target = members
+                .iter()
+                .map(|index| &session.ships[*index])
+                .find(|ship| {
+                    !ship.manual_targets.is_empty()
+                        || matches!(
+                            ship.order,
+                            TacticalOrder::AttackCapitalShips | TacticalOrder::AttackFighters
+                        )
+                })
+                .and_then(|ship| ship.attack_target);
+            groups.push(EngagementGroup {
+                is_attacker,
+                slot,
+                fighters_first: leader.weapon_arcs.iter().any(|arc| arc.laser_cannons > 0),
+                tactic: leader.tactic,
+                ordered_target,
+                members: members.into_iter().map(EngagementUnit::Capital).collect(),
+            });
+        }
+        for fighter_group in 0_u8..5 {
+            let members = session
+                .fighters
+                .iter()
+                .enumerate()
+                .filter(|(index, fighter)| {
+                    fighter.is_attacker == is_attacker
+                        && fighter.fighter_group.min(4) == fighter_group
+                        && engagement_unit_live(session, EngagementUnit::Fighter(*index))
+                })
+                .map(|(index, _)| index)
+                .collect::<Vec<_>>();
+            if members.is_empty() {
+                continue;
+            }
+            let commanded = members.iter().any(|index| {
+                let fighter = &session.fighters[*index];
+                !matches!(
+                    fighter.order,
+                    TacticalOrder::None
+                        | TacticalOrder::AttackCapitalShips
+                        | TacticalOrder::AttackFighters
+                ) || fighter.recovery_state != TacticalFighterRecoveryState::AwaitingCarrier
+            });
+            if commanded {
+                continue;
+            }
+            let leader = &session.fighters[members[0]];
+            let ordered_target = members
+                .iter()
+                .map(|index| &session.fighters[*index])
+                .find(|fighter| {
+                    matches!(
+                        fighter.order,
+                        TacticalOrder::AttackCapitalShips | TacticalOrder::AttackFighters
+                    )
+                })
+                .and_then(|fighter| fighter.attack_target);
+            groups.push(EngagementGroup {
+                is_attacker,
+                slot: 8 + usize::from(fighter_group),
+                fighters_first: leader.weapon_arc.laser_cannons > 0,
+                tactic: leader.tactic,
+                ordered_target,
+                members: members.into_iter().map(EngagementUnit::Fighter).collect(),
+            });
+        }
+    }
+    groups
+}
+
+/// `FUN_005d1a70` ranks a side's opponents into `side+0x90` by the side
+/// policy's value (`FUN_005ed8e0` / `FUN_005ed7a0`), highest first, with
+/// eligible targets (policy `+0x10`: armed, `FUN_005ed550` / `FUN_005ed300`)
+/// ahead of the rest. `FUN_005c9200` then splits it into capital ships first
+/// or, for forces with laser cannons, fighters first.
+/// port: the value's manager focus lists (`+0xe5c`, `+0xe50`) and the
+/// side's damage record (`side+0x88`) are not modeled; without them both
+/// policies give the same order.
+fn engagement_priorities(
+    session: &BattleSession,
+    is_attacker: bool,
+    fighters_first: bool,
+) -> Vec<EngagementUnit> {
+    let ranked = |units: Vec<EngagementUnit>| {
+        let mut keyed = units
+            .into_iter()
+            .filter(|unit| {
+                engagement_unit_live(session, *unit)
+                    && engagement_unit_is_attacker(session, *unit) != is_attacker
+            })
+            .map(|unit| {
+                let eligible = engagement_unit_recharge(session, unit) > 0.0;
+                (eligible, engagement_target_value(session, unit), unit)
+            })
+            .collect::<Vec<_>>();
+        keyed.sort_by(|left, right| right.0.cmp(&left.0).then(right.1.total_cmp(&left.1)));
+        keyed.into_iter().map(|(_, _, unit)| unit).collect::<Vec<_>>()
+    };
+    let capitals = ranked((0..session.ships.len()).map(EngagementUnit::Capital).collect());
+    let fighters = ranked((0..session.fighters.len()).map(EngagementUnit::Fighter).collect());
+    if fighters_first {
+        fighters.into_iter().chain(capitals).collect()
+    } else {
+        capitals.into_iter().chain(fighters).collect()
+    }
+}
+
+/// `FUN_005ed8e0`: 15 × the unit's firepower against capital ships
+/// (`_DAT_0066da7c`, `FUN_005b7a80`), less 0.01 × its shield-recharge ratio
+/// (`FUN_005b1710`) and 0.01 × its hull ratio (`FUN_005b1640`).
+fn engagement_target_value(session: &BattleSession, unit: EngagementUnit) -> f32 {
+    let (recharge_ratio, hull_ratio) = match unit {
+        EngagementUnit::Capital(index) => {
+            let ship = &session.ships[index];
+            let recharge = if ship.shield_recharge_rate > 0.0 {
+                ship.effective_shield_recharge() / ship.shield_recharge_rate
+            } else {
+                0.0
+            };
+            (recharge, ship.hull_ratio())
+        }
+        EngagementUnit::Fighter(index) => {
+            let fighter = &session.fighters[index];
+            let ratio = if fighter.hull_max > 0.0 {
+                fighter.hull_current.max(0.0) / fighter.hull_max
+            } else {
+                0.0
+            };
+            (ratio, ratio)
+        }
+    };
+    ORIGINAL_TARGET_FIREPOWER_WEIGHT * original_unit_firepower(session, unit)
+        - ORIGINAL_TARGET_RATIO_WEIGHT * recharge_ratio
+        - ORIGINAL_TARGET_RATIO_WEIGHT * hull_ratio
+}
+
+/// `FUN_005ed5f0` / `FUN_005ed370`: a force needs a new target when it has
+/// none, or when every force of its side on that target together needs 300
+/// seconds or more (`_DAT_0066da84`) to destroy it, or cannot.
+fn engagement_target_abandoned(
+    session: &BattleSession,
+    groups: &[EngagementGroup],
+    group: &EngagementGroup,
+) -> bool {
+    let side = usize::from(!group.is_attacker);
+    let Some(target) = session.engagement.targets[side][group.slot]
+        .map(engagement_unit_of)
+        .filter(|target| engagement_unit_live(session, *target))
+    else {
+        return true;
+    };
+    let mut damage = 0.0;
+    let mut seconds = -1.0;
+    for sharing in groups.iter().filter(|other| {
+        other.is_attacker == group.is_attacker
+            && session.engagement.targets[side][other.slot]
+                .is_some_and(|other_target| engagement_unit_of(other_target) == target)
+    }) {
+        seconds = engagement_kill_seconds(session, sharing, target, &mut damage);
+    }
+    !(0.0..ORIGINAL_ENGAGEMENT_ABANDON_SECONDS).contains(&seconds)
+}
+
+/// Assign targets to one side's forces that have none, through the forces'
+/// tactic (`FUN_005c9200` calls the side's tactic object at `+0x34` once per
+/// priority list).
+fn assign_engagement_targets(
+    session: &mut BattleSession,
+    groups: &[EngagementGroup],
+    is_attacker: bool,
+    fighters_first: bool,
+) {
+    let side = usize::from(!is_attacker);
+    let needing = groups
+        .iter()
+        .filter(|group| {
+            group.is_attacker == is_attacker
+                && group.fighters_first == fighters_first
+                && group.ordered_target.is_none()
+                && engagement_target_abandoned(session, groups, group)
+        })
+        .collect::<Vec<_>>();
+    if needing.is_empty() {
+        return;
+    }
+    let priorities = engagement_priorities(session, is_attacker, fighters_first);
+    let Some(&first) = priorities.first() else {
+        return;
+    };
+    let (surround, stand_off): (Vec<&EngagementGroup>, Vec<&EngagementGroup>) = needing
+        .into_iter()
+        .partition(|group| group.tactic == TacticalTactic::Surround);
+
+    // `FUN_005ec6d0` (Surround): every force takes the first target.
+    for group in surround {
+        session.engagement.targets[side][group.slot] = Some(engagement_target_of(first));
+    }
+
+    // `FUN_005ec740` (Stand Off): for each target in priority order, sort the
+    // free forces by kill time and commit the fewest weakest forces whose
+    // combined damage, added to the best force's, kills it within the limit.
+    let mut free = stand_off;
+    for &target in &priorities {
+        if free.is_empty() {
+            break;
+        }
+        let mut keyed = free
+            .iter()
+            .map(|group| {
+                let mut damage = 0.0;
+                let seconds = engagement_kill_seconds(session, group, target, &mut damage);
+                let key = if !(0.0..=ORIGINAL_ENGAGEMENT_KILL_SECONDS).contains(&seconds) {
+                    ORIGINAL_ENGAGEMENT_UNREACHABLE_KEY - damage
+                } else {
+                    seconds
+                };
+                (key, *group)
+            })
+            .collect::<Vec<_>>();
+        keyed.sort_by(|left, right| left.0.total_cmp(&right.0));
+        if keyed.len() == 1 {
+            // A lone force takes the target and the pass ends there.
+            session.engagement.targets[side][keyed[0].1.slot] = Some(engagement_target_of(target));
+            return;
+        }
+        let mut damage = engagement_group_damage(session, &keyed[0].1.members, target);
+        let mut committed = None;
+        for cut in (1..keyed.len()).rev() {
+            let seconds = engagement_kill_seconds(session, keyed[cut].1, target, &mut damage);
+            if (0.0..=ORIGINAL_ENGAGEMENT_KILL_SECONDS).contains(&seconds) {
+                committed = Some(cut);
+                break;
+            }
+        }
+        if let Some(cut) = committed {
+            for (_, group) in &keyed[cut..] {
+                session.engagement.targets[side][group.slot] = Some(engagement_target_of(target));
+            }
+            free.retain(|group| !keyed[cut..].iter().any(|(_, taken)| taken.slot == group.slot));
+        }
+    }
+    // Forces left over take the first target.
+    for group in free {
+        session.engagement.targets[side][group.slot] = Some(engagement_target_of(first));
+    }
+}
+
+/// The source moves each force toward or away from its target until the
+/// distance falls inside its band (`FUN_005cc300`'s target branch), then
+/// holds. Capital task forces steer their leader, which the retained
+/// formation follows; a fighter group moves as one at its sublight power.
+/// port: the leader stands in for the source's formation anchor
+/// (`FUN_005ea030`), and a holding force keeps its last heading.
+fn steer_engagement_group(
+    session: &mut BattleSession,
+    group: &EngagementGroup,
+    target: EngagementUnit,
+    delta_milliseconds: f32,
+) {
+    let side = usize::from(!group.is_attacker);
+    let leader = group.members[0];
+    let anchor = engagement_unit_position(session, leader);
+    let delta = source_delta(engagement_unit_position(session, target), anchor);
+    let distance = delta.x.hypot(delta.y).hypot(delta.z);
+    let (near, far) = engagement_band(session, group, target);
+    let padded = distance + ORIGINAL_ENGAGEMENT_BAND_PAD;
+    if near <= padded && padded <= far {
+        if let EngagementUnit::Capital(index) = leader {
+            if session.engagement.steering_goals[side][group.slot].take().is_some() {
+                let ship = &mut session.ships[index];
+                ship.source_waypoint = None;
+                ship.source_desired_forward = TacticalWorldVector::ZERO;
+            }
+        }
+        return;
+    }
+    let direction = if distance < near {
+        // Back off against the side's facing (`FUN_005a7490`), scaled by
+        // `_DAT_0066d00c` (-1.1) before the normalization below.
+        let own = side_mean_z(session, group.is_attacker);
+        let other = side_mean_z(session, !group.is_attacker);
+        let facing = if other >= own { 1.0 } else { -1.0 };
+        TacticalWorldVector {
+            x: 0.0,
+            y: 0.0,
+            z: -facing,
+        }
+    } else {
+        delta.normalized()
+    };
+    let fraction = match group.members.len() {
+        0..=2 => 0.5,
+        3..=5 => 0.75,
+        _ => 0.9,
+    };
+    let reach = (near + fraction * (far - near)).max(ORIGINAL_ENGAGEMENT_GOAL_MIN);
+    let goal = TacticalWorldPosition {
+        x: anchor.x + direction.x * reach,
+        y: anchor.y + direction.y * reach,
+        z: anchor.z + direction.z * reach,
+    };
+    match leader {
+        EngagementUnit::Capital(index) => {
+            let ship = &mut session.ships[index];
+            ship.source_waypoint = Some(goal);
+            ship.source_desired_forward = direction;
+            session.engagement.steering_goals[side][group.slot] = Some(goal);
+        }
+        EngagementUnit::Fighter(index) => {
+            let speed = session.fighters[index].sublight_engine_power.max(0.0);
+            let travel = (speed * delta_milliseconds * 0.001).min(reach);
+            let shift = TacticalWorldVector {
+                x: direction.x * travel,
+                y: direction.y * travel,
+                z: direction.z * travel,
+            };
+            for unit in &group.members {
+                if let EngagementUnit::Fighter(member) = unit {
+                    let fighter = &mut session.fighters[*member];
+                    fighter.source_position.x += shift.x;
+                    fighter.source_position.y += shift.y;
+                    fighter.source_position.z += shift.z;
+                }
+            }
+        }
+    }
+}
+
+fn side_mean_z(session: &BattleSession, is_attacker: bool) -> f32 {
+    let positions = session
+        .ships
+        .iter()
+        .filter(|ship| ship.is_attacker == is_attacker && ship.alive)
+        .map(|ship| ship.source_position.z)
+        .chain(
+            session
+                .fighters
+                .iter()
+                .filter(|fighter| fighter.is_attacker == is_attacker && fighter.alive)
+                .map(|fighter| fighter.source_position.z),
+        )
+        .collect::<Vec<_>>();
+    if positions.is_empty() {
+        0.0
+    } else {
+        positions.iter().sum::<f32>() / positions.len() as f32
+    }
+}
+
+/// Both sides' forces without orders pick targets by their tactic and close
+/// to fighting range: `FUN_005d14d0` calls `FUN_005c9200` for each side on
+/// every step, and each force's update (`FUN_005cc300`) steers it.
+fn advance_original_engagement(session: &mut BattleSession, delta_milliseconds: f32) {
+    let groups = engagement_groups(session);
+    for is_attacker in [true, false] {
+        for fighters_first in [false, true] {
+            assign_engagement_targets(session, &groups, is_attacker, fighters_first);
+        }
+    }
+    for group in &groups {
+        let side = usize::from(!group.is_attacker);
+        let target = group
+            .ordered_target
+            .or(session.engagement.targets[side][group.slot])
+            .map(engagement_unit_of)
+            .filter(|unit| engagement_unit_live(session, *unit));
+        if let Some(target) = target {
+            steer_engagement_group(session, group, target, delta_milliseconds);
+        } else if let (Some(_), EngagementUnit::Capital(index)) = (
+            session.engagement.steering_goals[side][group.slot].take(),
+            group.members[0],
+        ) {
+            session.ships[index].source_waypoint = None;
+            session.ships[index].source_desired_forward = TacticalWorldVector::ZERO;
+        }
+    }
+}
+
 fn refresh_original_attack_targets(session: &mut BattleSession) {
     let mut completed_player_task_forces = [false; 8];
     let mut completed_player_fighter_groups = [false; 4];
@@ -10487,13 +11832,13 @@ fn winner_is_alliance(session: &BattleSession) -> Option<bool> {
 
 fn winner_fleet(session: &BattleSession) -> Option<FleetKey> {
     match session.winner {
-        Some(CombatWinner::Attacker) => Some(session.attacker_fleet),
-        Some(CombatWinner::Defender) => Some(session.defender_fleet),
+        Some(CombatWinner::Attacker) => session.attacker_fleet,
+        Some(CombatWinner::Defender) => session.defender_fleet,
         Some(CombatWinner::Draw) | None => None,
     }
 }
 
-fn result_fleet_for_faction(session: &BattleSession, alliance: bool) -> FleetKey {
+fn result_fleet_for_faction(session: &BattleSession, alliance: bool) -> Option<FleetKey> {
     if session.attacker_is_alliance == alliance {
         session.attacker_fleet
     } else {
@@ -10568,8 +11913,8 @@ fn battle_result_entries(
                 .filter_map(|ship| world.capital_ship_classes.get(ship.class_key))
                 .map(|class| class.troop_capacity)
                 .fold(0_u32, u32::saturating_add) as usize;
-            troop_transport
-                .cargo(fleet_key)
+            fleet_key
+                .map_or(&[][..], |fleet| troop_transport.cargo(fleet))
                 .iter()
                 .enumerate()
                 .map(|(index, troop)| {
@@ -10592,9 +11937,8 @@ fn battle_result_entries(
         }
         BattleResultCategory::Personnel => {
             let fleet_key = result_fleet_for_faction(session, alliance);
-            world
-                .fleets
-                .get(fleet_key)
+            fleet_key
+                .and_then(|fleet| world.fleets.get(fleet))
                 .into_iter()
                 .flat_map(|fleet| fleet.characters.iter())
                 .filter_map(|character| world.characters.get(*character))
@@ -10723,40 +12067,104 @@ fn draw_result_wrapped_lines(
     }
 }
 
+/// The Battle Results text, as `FUN_0049b0f0`'s three builders write it:
+/// `FUN_0049b330` when the player won, `FUN_0049b4d0` when the player lost,
+/// `FUN_0049b150` for no victor (TEXTSTRA `0x7002`…`0x7016`,
+/// `ghidra/notes/battle-result-text-and-cadence.md`). The system line
+/// compares the holder with the player's side (`+0x58`) and with the
+/// holder of a blockade already in place (`+0x5c`).
+/// port: a played battle's results show before the losing fleet's
+/// withdrawal is sent, so its destination (`0x700d`) is named only after
+/// Simulate; otherwise `0x700c` stands in.
 fn battle_result_summary_lines(session: &BattleSession) -> Vec<String> {
-    let Some(winner_alliance) = winner_is_alliance(session) else {
-        return vec![
-            "Neither fleet is victorious.".into(),
-            "Both forces have been destroyed or withdrawn.".into(),
-        ];
+    let adjective = |alliance: bool| if alliance { "Alliance" } else { "Imperial" };
+    let system = session.system_name.as_str();
+    let player_alliance = session.player_is_attacker == session.attacker_is_alliance;
+    let withdrew = |alliance: bool| {
+        let side_is_attacker = session.attacker_is_alliance == alliance;
+        session
+            .ships
+            .iter()
+            .any(|ship| ship.is_attacker == side_is_attacker && ship.retreated)
     };
-    let winner = if winner_alliance {
-        "Alliance"
-    } else {
-        "Imperial"
-    };
-    let loser = if winner_alliance {
-        "Imperial"
-    } else {
-        "Alliance"
-    };
-    let losing_side_is_attacker = session.attacker_is_alliance != winner_alliance;
-    let withdrew = session
-        .ships
-        .iter()
-        .any(|ship| ship.is_attacker == losing_side_is_attacker && ship.retreated);
-    vec![
-        format!("The {winner} fleet is victorious."),
-        format!(
-            "{} is now under blockade by {winner} forces.",
-            session.system_name
-        ),
-        if withdrew {
-            format!("The {loser} fleet has withdrawn from the system.")
+    let fate = |alliance: bool| {
+        if !withdrew(alliance) {
+            format!("The {} fleet has been completely destroyed.", adjective(alliance))
+        } else if let Some(destination) = session
+            .withdrawal_destination
+            .as_ref()
+            .filter(|_| alliance == player_alliance)
+        {
+            format!("The {} fleet has withdrawn to {destination}.", adjective(alliance))
         } else {
-            format!("The {loser} fleet has been completely destroyed.")
-        },
-    ]
+            format!("The {} fleet has withdrawn.", adjective(alliance))
+        }
+    };
+    let blockaded_holder = session
+        .holder_is_alliance
+        .filter(|_| session.blockaded_at_start);
+    let Some(winner_alliance) = winner_is_alliance(session) else {
+        let (player, enemy) = (player_alliance, !player_alliance);
+        let mut lines = vec![
+            format!("The battle at {system} is indecisive."),
+            "There has been no victor.".to_owned(),
+        ];
+        if !withdrew(player) && !withdrew(enemy) {
+            lines.push(format!(
+                "All {} and {} ships have been destroyed.",
+                adjective(true),
+                adjective(false)
+            ));
+        } else {
+            lines.push(fate(player));
+            lines.push(fate(enemy));
+        }
+        return lines;
+    };
+    let loser_alliance = !winner_alliance;
+    let (winner, loser) = (adjective(winner_alliance), adjective(loser_alliance));
+    if winner_alliance == player_alliance {
+        let status = match session.holder_is_alliance {
+            None => format!("{system} has been cleared of {loser} forces."),
+            Some(holder) if blockaded_holder == Some(holder) => {
+                if holder == player_alliance {
+                    format!("{winner} forces have broken the blockade of {system}.")
+                } else {
+                    format!("{winner} forces have maintained the blockade of {system}.")
+                }
+            }
+            Some(holder) if holder == player_alliance => {
+                format!("{system} has been successfully defended from {loser} forces.")
+            }
+            Some(_) => format!("{system} is now under blockade by {winner} forces."),
+        };
+        vec![
+            format!("The {winner} fleet is victorious."),
+            status,
+            fate(loser_alliance),
+        ]
+    } else {
+        let player = adjective(player_alliance);
+        let status = match session.holder_is_alliance {
+            None => format!("The {winner} fleet was victorious at the neutral world {system}."),
+            Some(holder) if blockaded_holder == Some(holder) => {
+                if holder == player_alliance {
+                    format!("{winner} forces have maintained the blockade of {system}.")
+                } else {
+                    format!("{winner} forces have broken the blockade of {system}.")
+                }
+            }
+            Some(holder) if holder == player_alliance => {
+                format!("{system} is now under blockade by {winner} forces.")
+            }
+            Some(_) => format!("The {player} attack on {system} has failed."),
+        };
+        vec![
+            format!("The {player} fleet is defeated."),
+            status,
+            fate(player_alliance),
+        ]
+    }
 }
 
 fn draw_battle_result_summary(
@@ -11195,9 +12603,8 @@ impl BattleAlertRow {
 /// (families 0x20..0x2f, `FUN_00539d70`), regiments (`FUN_00504c40`) and
 /// personnel (`FUN_00536da0`).
 ///
-/// port: squadrons stationed at the system (`FUN_00503a50`, under the
-/// system's name) are not listed; the port keeps squadrons aboard fleets.
-/// The facilities follow the port's lists: defenses, then manufacturing,
+/// Last come the side's squadrons at the system (`FUN_00503a50`), under the
+/// system's name. port: the facilities follow the port's lists: defenses, then manufacturing,
 /// then production.
 fn battle_alert_rows(
     session: &BattleSession,
@@ -11315,6 +12722,29 @@ fn battle_alert_rows(
                 );
             }
         }
+    }
+    // Last, the side's squadrons the system holds (`FUN_00503a50`) under the
+    // system's name. hyp: they are not indented, as the guide's "A-wing"
+    // under "Deyer" reads.
+    let squadrons: Vec<BattleAlertRow> = system
+        .fighters
+        .iter()
+        .filter(|entry| entry.is_alliance == alliance)
+        .filter_map(|entry| {
+            let class = world.fighter_classes.get(entry.class)?;
+            let mini = crate::panels::fleets::fighter_mini_id(class.dat_id);
+            Some((0..entry.count).map(move |_| BattleAlertRow::unit(mini, class.name.clone(), false)))
+        })
+        .flatten()
+        .collect();
+    if !squadrons.is_empty() {
+        rows.push(BattleAlertRow {
+            label: system.name.clone(),
+            style: BattleAlertRowStyle::Fleet,
+            mini: None,
+            indented: false,
+        });
+        rows.extend(squadrons);
     }
     rows
 }
@@ -13284,6 +14714,7 @@ mod tests {
             order: TacticalOrder::None,
             tactic: TacticalTactic::StandOff,
             task_force: u8::try_from(roster.min(7)).unwrap_or(7),
+            fleet: None,
             fleet_ship_index: roster,
             sprite_id: None,
             weapon_arcs: [TacticalWeaponArc::default(); 4],
@@ -13304,6 +14735,7 @@ mod tests {
 
     fn test_fighter(dat_id: u32, is_alliance: bool) -> TacticalFighter {
         TacticalFighter {
+            held_by_system: false,
             class_key: FighterKey::default(),
             identity: TacticalObjectIdentity {
                 class_dat_id: DatId::new(dat_id),
@@ -13313,6 +14745,7 @@ mod tests {
             tactical_resource: fighter_tactical_resource(DatId::new(dat_id)),
             source_position: TacticalWorldPosition::ORIGIN,
             sublight_engine_power: 10.0,
+            fleet: None,
             fleet_fighter_index: 0,
             fleet_squadron_index: 0,
             name: format!("fighter-{dat_id}"),
@@ -13354,8 +14787,8 @@ mod tests {
             system: SystemKey::default(),
             system_name: "Test System".to_string(),
             system_picture_id: 1,
-            attacker_fleet: FleetKey::default(),
-            defender_fleet: FleetKey::default(),
+            attacker_fleet: Some(FleetKey::default()),
+            defender_fleet: Some(FleetKey::default()),
             attacker_is_alliance: true,
             player_is_attacker,
             phase: BattlePhase::Combat,
@@ -13390,63 +14823,12 @@ mod tests {
             combat_speed: 1,
             step_accumulator: 0.0,
             winner: None,
+            stalemate: TacticalStalemateWatch::default(),
+            engagement: TacticalEngagementState::default(),
+            holder_is_alliance: None,
+            blockaded_at_start: false,
+            withdrawal_destination: None,
         }
-    }
-
-    #[test]
-    fn auto_resolve_enters_results_and_projects_losses_once() {
-        let mut first_ship = test_ship(64, 1, true, true);
-        first_ship.hull_current = 100;
-        first_ship.hull_max = 100;
-        let mut second_ship = test_ship(64, 2, true, true);
-        second_ship.hull_current = 100;
-        second_ship.hull_max = 100;
-        let mut fighters = vec![test_fighter(1, true), test_fighter(1, true)];
-        fighters[1].fleet_squadron_index = 1;
-        let session = test_session(vec![first_ship, second_ship], fighters, true);
-        let attacker_fleet = session.attacker_fleet;
-        let defender_fleet = session.defender_fleet;
-        let system = session.system;
-        let mut state = TacticalState {
-            session: Some(session),
-            ..TacticalState::default()
-        };
-        let result = SpaceCombatResult {
-            attacker_fleet,
-            defender_fleet,
-            system,
-            winner: AutoResolveSide::Attacker,
-            ship_damage: vec![rebellion_core::combat::ShipDamageEvent {
-                fleet: attacker_fleet,
-                ship_index: 0,
-                hull_before: 100,
-                hull_after: 0,
-            }],
-            fighter_losses: vec![rebellion_core::combat::FighterLossEvent {
-                fleet: attacker_fleet,
-                fighter_index: 0,
-                squads_before: 2,
-                squads_after: 1,
-            }],
-            tick: 0,
-        };
-
-        assert!(state.present_auto_resolve_result(&result));
-        assert!(state.strategic_results_applied());
-        let result_session = state.session.as_mut().unwrap();
-        assert_eq!(
-            result_session.take_pending_voice_cues(),
-            vec![TacticalVoiceCue::battle_won(
-                TacticalVoiceFaction::Alliance,
-                false
-            )]
-        );
-        assert_eq!(result_session.phase, BattlePhase::Results);
-        assert_eq!(result_session.winner, Some(CombatWinner::Attacker));
-        assert!(!result_session.ships[0].alive);
-        assert!(result_session.ships[1].alive);
-        assert!(result_session.fighters[0].alive);
-        assert!(!result_session.fighters[1].alive);
     }
 
     // Source: FUN_005d3e90 effect dispatcher; FUN_005a7500 hit ordering.
@@ -14917,7 +16299,9 @@ mod tests {
         assert!(ship.weapon_recharge_queue.is_empty());
     }
 
-    // Source: FUN_005b3a40 / FUN_005b3f10 / FUN_005b54d0 fire and damage.
+    // Source: FUN_005b3a40 / FUN_005b3f10 fire; FUN_005b5100's subsystem
+    // roll, which FUN_005c0170 leaves to the player's own ships (the target
+    // here: the defender, with the player defending).
     #[test]
     fn live_ship_fire_uses_the_shared_subsystem_damage_path() {
         let mut source = test_ship(64, 0, true, true);
@@ -14948,7 +16332,7 @@ mod tests {
             &mut impacts,
             &mut audio_cues,
             &mut voice_cues,
-            true,
+            false,
             TacticalVoiceFaction::Alliance,
             &mut OriginalTacticalRng::new(1),
         );

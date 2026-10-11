@@ -42,6 +42,7 @@ pub mod sector_window;
 pub mod status_rows;
 pub mod status_window;
 pub mod system_window;
+mod window_focus;
 mod tactical_asset_cache;
 mod tactical_assets;
 mod tactical_resources;
@@ -807,14 +808,24 @@ fn gid_metric(
                     .is_some_and(|troop| same_faction(troop.is_alliance))
             })
             .count() as u32,
-        GidMode::FighterSquadrons => system
-            .fleets
-            .iter()
-            .filter_map(|key| world.fleets.get(*key))
-            .filter(|fleet| same_faction(fleet.is_alliance))
-            .flat_map(|fleet| fleet.fighters.iter())
-            .map(|fighters| fighters.count)
-            .sum(),
+        // hyp: the mode's counter is untraced; it counts the side's squadrons
+        // aboard its fleets there and those the system holds.
+        GidMode::FighterSquadrons => {
+            system
+                .fleets
+                .iter()
+                .filter_map(|key| world.fleets.get(*key))
+                .filter(|fleet| same_faction(fleet.is_alliance))
+                .flat_map(|fleet| fleet.fighters.iter())
+                .map(|fighters| fighters.count)
+                .sum::<u32>()
+                + system
+                    .fighters
+                    .iter()
+                    .filter(|entry| same_faction(entry.is_alliance))
+                    .map(|entry| entry.count)
+                    .sum::<u32>()
+        }
         GidMode::DeathStarShields => system
             .defense_facilities
             .iter()
@@ -1767,6 +1778,7 @@ mod interaction_tests {
             fleets: vec![],
             ground_units: vec![],
             special_forces: vec![],
+            fighters: Vec::new(),
             defense_facilities: vec![],
             manufacturing_facilities: vec![],
             production_facilities: vec![],
@@ -1844,6 +1856,7 @@ mod interaction_tests {
             fleets: vec![],
             ground_units: vec![],
             special_forces: vec![],
+            fighters: Vec::new(),
             defense_facilities: vec![],
             manufacturing_facilities: yards,
             production_facilities: vec![],

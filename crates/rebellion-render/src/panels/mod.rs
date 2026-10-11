@@ -45,7 +45,7 @@ use rebellion_core::ids::{CharacterKey, FleetKey, SystemKey, TroopKey};
 use rebellion_core::manufacturing::BuildableKind;
 use rebellion_core::missions::{MissionFaction, MissionKind, MissionMember};
 use rebellion_core::research::TechType;
-use rebellion_core::troop_transport::RegimentTarget;
+use rebellion_core::troop_transport::{RegimentTarget, SquadronSource};
 
 /// Player-initiated actions returned by War Room panels.
 ///
@@ -115,6 +115,12 @@ pub enum PanelAction {
     /// (`TroopTransportState::move_regiment`).
     MoveRegiment {
         troop: TroopKey,
+        target: RegimentTarget,
+    },
+    /// A squadron's Move (`0x201`) released on a system or fleet
+    /// (`TroopTransportState::move_squadron`).
+    MoveSquadron {
+        source: SquadronSource,
         target: RegimentTarget,
     },
 

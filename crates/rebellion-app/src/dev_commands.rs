@@ -164,8 +164,16 @@ pub enum DevCommand {
     WaitMs(u32),
     /// Hold the queue for this many frames.
     WaitFrames(u32),
-    /// Click at a point of the 640×480 logical screen.
-    Click { x: f32, y: f32, right: bool },
+    /// Hold the queue until a condition holds, or refuse after
+    /// `WAIT_UNTIL_FRAMES`.
+    WaitUntil(WaitCondition),
+    /// Click at a point of the 640×480 logical screen, Ctrl held when `ctrl`.
+    Click {
+        x: f32,
+        y: f32,
+        right: bool,
+        ctrl: bool,
+    },
     /// Press at one point, move, release at another.
     Drag { from: (f32, f32), to: (f32, f32) },
     /// Press and release a named key.
@@ -184,6 +192,11 @@ pub enum DevCommand {
     /// Bring an idle fleet of the side not holding a system there; the
     /// simulation then forms the blockade.
     Blockade(String),
+    /// In a battle, put the player's nth ship's hyperdrive out of action
+    /// (1-based, in roster order), as a subsystem hit does.
+    KnockOutHyperdrive(usize),
+    /// Mark the named Imperial fleet as carrying the Death Star.
+    GiveDeathStar(String),
     /// The opening briefing's own skip.
     SkipBriefing,
     /// Post an advice code to the droids, as a game event does.
@@ -197,6 +210,25 @@ pub enum DevCommand {
     /// Report the game's state: mode, day, speed, open dialogs, side.
     Status,
 }
+
+/// What `Wait until` waits for.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WaitCondition {
+    /// The galaxy clock has reached this day.
+    Day(u64),
+    /// The Battle Alert is open.
+    BattleAlert,
+    /// A tactical battle is on screen.
+    Battle,
+    /// The galaxy view shows.
+    Galaxy,
+}
+
+/// The longest a `Wait until` holds before it is refused: the
+/// `Wait <n> frames` cap, ten minutes at 60 frames a second.
+#[cfg(not(target_arch = "wasm32"))]
+pub const WAIT_UNTIL_FRAMES: u32 = 36_000;
 
 /// A Message Index row: 1-based in list order (oldest first), or the last.
 #[cfg(not(target_arch = "wasm32"))]
@@ -252,9 +284,11 @@ impl DevCommand {
             Self::Capture(_)
             | Self::WaitMs(_)
             | Self::WaitFrames(_)
+            | Self::WaitUntil(_)
             | Self::Click { .. }
             | Self::Drag { .. }
             | Self::Press(_)
+            | Self::KnockOutHyperdrive(_)
             | Self::Status => Readiness::Anywhere,
             _ => Readiness::Galaxy,
         }
@@ -283,6 +317,22 @@ pub fn parse_line(line: &str) -> Result<Option<DevCommand>, String> {
         }
         return Ok(Some(DevCommand::Capture(Some(name.to_owned()))));
     }
+    if lower.starts_with("capture ") {
+        return Err("capture takes `Capture` or `Capture: <name>`".into());
+    }
+    if lower.starts_with("wait until ") {
+        let what = lower["wait until ".len()..].trim();
+        return match what.split_whitespace().collect::<Vec<_>>().as_slice() {
+            ["day", n] => n
+                .parse()
+                .map(|day| Some(DevCommand::WaitUntil(WaitCondition::Day(day))))
+                .map_err(|_| format!("day {n:?} is not a whole number")),
+            ["battle", "alert"] => Ok(Some(DevCommand::WaitUntil(WaitCondition::BattleAlert))),
+            ["battle"] => Ok(Some(DevCommand::WaitUntil(WaitCondition::Battle))),
+            ["galaxy"] => Ok(Some(DevCommand::WaitUntil(WaitCondition::Galaxy))),
+            _ => Err("wait until takes `day <n>`, `battle alert`, `battle` or `galaxy`".into()),
+        };
+    }
     if lower.starts_with("wait ") {
         let words: Vec<&str> = rest("wait ").split_whitespace().collect();
         let count = words.first().and_then(|n| n.parse::<u32>().ok());
@@ -296,11 +346,30 @@ pub fn parse_line(line: &str) -> Result<Option<DevCommand>, String> {
     }
     if lower.starts_with("right click ") {
         let (x, y) = point(rest("right click "))?;
-        return Ok(Some(DevCommand::Click { x, y, right: true }));
+        return Ok(Some(DevCommand::Click {
+            x,
+            y,
+            right: true,
+            ctrl: false,
+        }));
+    }
+    if lower.starts_with("ctrl click ") {
+        let (x, y) = point(rest("ctrl click "))?;
+        return Ok(Some(DevCommand::Click {
+            x,
+            y,
+            right: false,
+            ctrl: true,
+        }));
     }
     if lower.starts_with("click ") {
         let (x, y) = point(rest("click "))?;
-        return Ok(Some(DevCommand::Click { x, y, right: false }));
+        return Ok(Some(DevCommand::Click {
+            x,
+            y,
+            right: false,
+            ctrl: false,
+        }));
     }
     if lower.starts_with("drag ") {
         let args = rest("drag ");
@@ -326,6 +395,19 @@ pub fn parse_line(line: &str) -> Result<Option<DevCommand>, String> {
     }
     if lower.starts_with("battle at ") {
         return Ok(Some(DevCommand::BattleAt(rest("battle at ").to_owned())));
+    }
+    if lower.starts_with("knock out hyperdrive:") {
+        return match rest("knock out hyperdrive:").parse::<usize>() {
+            Ok(n) if n > 0 => Ok(Some(DevCommand::KnockOutHyperdrive(n))),
+            _ => Err("knock out hyperdrive takes a ship number from 1".into()),
+        };
+    }
+    if lower.starts_with("give death star:") {
+        let fleet = rest("give death star:");
+        if fleet.is_empty() {
+            return Err("give death star takes a fleet name".into());
+        }
+        return Ok(Some(DevCommand::GiveDeathStar(fleet.to_owned())));
     }
     if lower.starts_with("blockade ") {
         return Ok(Some(DevCommand::Blockade(rest("blockade ").to_owned())));

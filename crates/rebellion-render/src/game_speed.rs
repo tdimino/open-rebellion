@@ -259,8 +259,10 @@ pub fn draw_pause_alert(
     };
     let full_uv = egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0));
 
+    // Above the galaxy windows, which raise themselves within Foreground
+    // every frame they hold focus and would otherwise cover the alert.
     let clicked = egui::Area::new(egui::Id::new("original_pause_alert"))
-        .order(egui::Order::Foreground)
+        .order(egui::Order::Tooltip)
         .fade_in(false)
         .fixed_pos(origin)
         .show(ctx, |ui| {

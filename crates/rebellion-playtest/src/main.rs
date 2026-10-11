@@ -9,7 +9,6 @@
 
 mod logger;
 
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -364,7 +363,6 @@ fn main() -> anyhow::Result<()> {
         troop_transport: rebellion_core::troop_transport::TroopTransportState::default(),
         deliveries: rebellion_core::delivery::DeliveryState::default(),
         stockpiles: rebellion_core::stockpiles::StockpileState::default(),
-        combat_cooldowns: HashMap::new(),
         campaign_config: rebellion_core::world::CampaignConfig::default(),
     };
 

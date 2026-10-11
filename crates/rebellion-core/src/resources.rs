@@ -66,6 +66,28 @@ pub fn maintenance_used(
             });
         }
     }
+    for entry in world
+        .systems
+        .values()
+        .flat_map(|system| &system.fighters)
+        .filter(|entry| entry.is_alliance == is_alliance)
+    {
+        used += world.fighter_classes.get(entry.class).map_or(0, |class| {
+            i64::from(class.maintenance_cost) * i64::from(entry.count)
+        });
+    }
+    // A squadron travelling alone still exists (`FUN_0052fff0` walks the
+    // existing objects; en route clears no bit it reads).
+    for transit in world
+        .squadron_transits
+        .iter()
+        .filter(|transit| transit.is_alliance == is_alliance)
+    {
+        used += world
+            .fighter_classes
+            .get(transit.class)
+            .map_or(0, |class| i64::from(class.maintenance_cost));
+    }
     used += world
         .troops
         .values()

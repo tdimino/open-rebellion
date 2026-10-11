@@ -99,8 +99,9 @@ The port's `crates/rebellion-render/src/scroll_bar.rs` draws both.
 The rows come from the Fleet window's own listing (`listed_units`, the
 right panel's ships, squadrons, regiments and personnel per fleet or
 ship) and the Defenses window's sources (facilities, regiments,
-`system_members`). port: squadrons stationed at a system are not listed,
-because the port keeps squadrons aboard fleets; the facilities follow the
+`system_members`); the side's squadrons at the system come last under the
+system's name (2026-10-10). hyp: those rows are not indented, as "A-wing"
+under "Deyer" in guide 055 reads. port: the facilities follow the
 port's lists (defenses, manufacturing, production), not the original's
 child order. Verified for both sides on 2026-10-09 (Empire at Coruscant,
 Alliance at Yavin, `.artifacts/native-checks/2026-10-09-alert-lists/`;

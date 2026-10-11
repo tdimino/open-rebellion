@@ -1,6 +1,6 @@
 //! Test-only, versioned direct entry into the production tactical battle scene.
 
-use rebellion_core::ids::{CapitalShipKey, FighterKey, SystemKey};
+use rebellion_core::ids::{CapitalShipKey, FighterKey};
 use rebellion_core::missions::MissionFaction;
 use rebellion_core::world::{FighterEntry, Fleet, GameWorld, ShipInstance};
 use rebellion_render::tactical_view::{
@@ -432,7 +432,6 @@ pub(crate) fn apply(
     request: TacticalFixtureRequest,
     world: &mut GameWorld,
     tactical: &mut TacticalState,
-    cooldowns: &mut std::collections::HashMap<SystemKey, u64>,
     messages: &mut MessageLog,
     player_faction: &mut MissionFaction,
     cockpit: &mut CockpitState,
@@ -623,14 +622,13 @@ pub(crate) fn apply(
         world,
         BattleEntry {
             system,
-            attacker,
-            defender,
+            attacker: rebellion_core::combat::CombatForce::of_fleet(world, attacker),
+            defender: rebellion_core::combat::CombatForce::of_fleet(world, defender),
             player_is_attacker,
             tick: 0,
             rng_seed: 0x5eed_ba77,
         },
         tactical,
-        cooldowns,
         messages,
         game_mode,
     )

@@ -77,6 +77,13 @@ capitals had no original. A side holding few systems (Easy, or Hard as the
 Empire: 3) can still start overdrawn, from its fixed seeds and rolled yards
 alone. Source: `ghidra/notes/starting-forces-seeding.md`.
 
+**System squadrons (2026-10-10).** A seed group's squadrons board its lead
+when the lead is a capital ship and otherwise stay on the system
+(`FUN_0051bf30`), held in `System::fighters` per class and side. CMUNCRTB
+gives Coruscant 10 TIEs, CMUNYVTB Yavin 2, CMUNHQTB the HQ 6; lone budget
+squadrons land on their system too. A finished squadron also lands on its
+system (`FUN_0052bee0`); no fighter-only fleet is made.
+
 ExecPlan: `docs/plans/2026-03-24-003-game-seeding-parity-execplan.md`
 Audit: `.subdaimon-output/seeding-parity-audit.md`
 

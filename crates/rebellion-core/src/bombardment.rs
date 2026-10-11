@@ -238,6 +238,7 @@ mod tests {
             recruit_pool_empty: [false; 2],
             fleet_names: crate::world::FleetNames::default(),
             last_ship_tag: 0,
+            squadron_transits: Vec::new(),
         }
     }
 
@@ -290,6 +291,7 @@ mod tests {
             fleets: vec![],
             ground_units: vec![],
             special_forces: vec![],
+            fighters: Vec::new(),
             defense_facilities: vec![],
             manufacturing_facilities: vec![],
             production_facilities: vec![],

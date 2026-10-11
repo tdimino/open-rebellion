@@ -38,11 +38,28 @@ imported, and does not see guest writes.
    copy the file out and detach.
 4. Bring the disk back online (`set-disk 1 -isoffline 0`).
 
+Reading with mtools (step 3's alternative) works too. To copy **into** the
+guest, `hdiutil` is no use: it attaches the image read-only while QEMU holds
+it open. Use mtools on the mini (`brew install mtools`; the FAT32 partition
+starts 1 MiB in) while the disk is offline in the guest, and take an APFS
+clone of the image first (`cp -c payload.img ~/VMs/rebellion/payload-backup-DATE.img`):
+
+```sh
+I="$HOME/Library/Containers/com.utmapp.UTM/Data/Documents/Rebellion A0 Capture.utm/Data/payload.img@@1048576"
+MTOOLS_SKIP_CHECK=1 mcopy -i "$I" SAVEGAME.006 ::/saves-in/   # in
+MTOOLS_SKIP_CHECK=1 mtype -i "$I" ::/saves-out/x.sav > x.sav  # out
+```
+
+Read the file back and compare hashes, bring the disk online, and copy it
+into the first empty slot: Saved Games lists the filled slots and one empty
+row, so a slot after a gap does not appear.
+
 ## Format
 
 `SAVEGAME.00n` starts with a u16 name length and the slot's name, then u32
-words: single player 1, the slot, and the side (1 Alliance, 2 Empire); the
-entity records follow. External notes: TheArchitect2018's
+header words (`empire-day2-start.sav`: 1, 0, 1, 2, 2, 0, then more), then
+the entity records. The record layout, and how to edit a copy safely, is in
+[`agent_docs/original-save-editing.md`](../../../agent_docs/original-save-editing.md). External notes: TheArchitect2018's
 "Deep-Dive-into-SW-Rebellion-PC-Game-Internals" wiki, SaveGame page.
 
 ## Not included

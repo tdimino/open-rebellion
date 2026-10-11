@@ -266,7 +266,7 @@ pub fn merge_fleet_into(
         }
     }
     target.has_death_star |= source.has_death_star;
-    troop_transport.transfer_fleet(from, to);
+    troop_transport.transfer_fleet(world, from, to);
     world.name_flagship_fleets();
 }
 
@@ -608,7 +608,7 @@ fn undo_split(
     let Some(value) = world.fleets.remove(split) else {
         return;
     };
-    troop_transport.transfer_fleet(split, fleet);
+    troop_transport.transfer_fleet(world, split, fleet);
     world.fleets[fleet].has_death_star |= value.has_death_star;
     if let Some(system) = world.systems.get_mut(value.location) {
         system.fleets.retain(|&key| key != split);
@@ -699,6 +699,7 @@ mod tests {
             fleets: vec![],
             ground_units: vec![],
             special_forces: vec![],
+            fighters: Vec::new(),
             defense_facilities: vec![],
             manufacturing_facilities: vec![],
             production_facilities: vec![],

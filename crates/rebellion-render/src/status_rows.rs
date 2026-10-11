@@ -9,7 +9,7 @@
 
 use rebellion_core::dat::Faction;
 use rebellion_core::ids::{
-    CharacterKey, DatId, DefenseFacilityKey, FleetKey, ManufacturingFacilityKey,
+    CharacterKey, DatId, DefenseFacilityKey, FighterKey, FleetKey, ManufacturingFacilityKey,
     ProductionFacilityKey, SpecialForceKey, SystemKey, TroopKey,
 };
 use rebellion_core::manufacturing::{ManufacturingState, ProductionArea};
@@ -54,6 +54,13 @@ pub enum StatusObject {
     /// `0x1c..0x1f`, `FUN_004444c0`: a fleet's squadron entry by its index.
     /// port: squadrons live on their fleet, not as objects.
     Fighter { fleet: FleetKey, index: usize },
+    /// `0x1c..0x1f` held by a system itself (`FUN_00503a50`): one squadron
+    /// of the side's class there. port: squadrons are counts per class.
+    SystemFighter {
+        system: SystemKey,
+        class: FighterKey,
+        is_alliance: bool,
+    },
     /// `0x10..0x13`, `FUN_00445280`.
     Troop(TroopKey),
     /// `0x20..0x27`, `FUN_00444e20`.
@@ -442,13 +449,37 @@ pub fn fighter_rows(
     let fleet = world.fleets.get(fleet_key)?;
     let entry = fleet.fighters.get(index)?;
     let class = world.fighter_classes.get(entry.class)?;
-    let size = class.squadron_size;
-    let full = |per_craft: u32| ratio(per_craft * size, per_craft * size);
     let mut rows = vec![row(
         "Attached: ",
         fleet_label(world, fleet_key).unwrap_or_default(),
     )];
     eta(&mut rows, fleet_arrival(sources, fleet_key));
+    rows.extend(fighter_class_rows(class));
+    Some(rows)
+}
+
+/// The Fighter Squadron Status rows for a squadron its system holds: it is
+/// attached to the system. hyp: the "Attached:" text names the parent, as
+/// for a fleet's squadron.
+#[must_use]
+pub fn system_fighter_rows(
+    sources: StatusSources<'_>,
+    system: SystemKey,
+    class: FighterKey,
+) -> Option<Vec<StatusRow>> {
+    let world = sources.world;
+    world.systems.get(system)?;
+    let class = world.fighter_classes.get(class)?;
+    let mut rows = vec![row("Attached: ", system_name(world, system))];
+    rows.extend(fighter_class_rows(class));
+    Some(rows)
+}
+
+/// The class rows `FUN_004444c0` adds after "Attached:".
+fn fighter_class_rows(class: &rebellion_core::world::FighterClass) -> Vec<StatusRow> {
+    let size = class.squadron_size;
+    let full = |per_craft: u32| ratio(per_craft * size, per_craft * size);
+    let mut rows = Vec::new();
     rows.extend([
         row("Maintenance Cost:", class.maintenance_cost.to_string()),
         row("Squadron Size:", ratio(size, size)),
@@ -469,7 +500,7 @@ pub fn fighter_rows(
         row(" Ion Cannon:", full(class.ion_cannon_attack_strength)),
         row(" Torpedoes:", full(class.torpedoes)),
     ]);
-    Some(rows)
+    rows
 }
 
 /// Where a regiment is, and its arrival day while it travels.
@@ -872,6 +903,20 @@ pub fn status_view(sources: StatusSources<'_>, object: StatusObject) -> Option<S
                 fighter_rows(sources, fleet, index)?,
             )
         }
+        StatusObject::SystemFighter {
+            system,
+            class,
+            is_alliance,
+        } => {
+            let value = world.fighter_classes.get(class)?;
+            view(
+                "Fighter Squadron Status",
+                side_index(is_alliance),
+                picture(fighter_mini_id(value.dat_id)),
+                value.name.clone(),
+                system_fighter_rows(sources, system, class)?,
+            )
+        }
         StatusObject::Troop(key) => {
             let troop = world.troops.get(key)?;
             view(
@@ -1030,6 +1075,7 @@ mod tests {
             fleets: Vec::new(),
             ground_units: Vec::new(),
             special_forces: Vec::new(),
+            fighters: Vec::new(),
             defense_facilities: Vec::new(),
             manufacturing_facilities: Vec::new(),
             production_facilities: Vec::new(),

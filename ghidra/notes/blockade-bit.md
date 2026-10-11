@@ -81,9 +81,10 @@ original's fresh state.
 (`Controlled` or `Uprising`) is blockaded by the other side's fleets; a
 populated `Contested` system by either side's fleets; a neutral one never.
 
-- port: the port has no fighter squadrons outside fleets
-  (`blockade-troop-withdrawal.md`, "Port"), so presence is fleets only, and
-  every fleet counts as active;
+- presence is a side's fleets or the squadrons the system holds for it
+  (`System::fighters`, 2026-10-10); port: every fleet counts as active.
+  The withdraw percent counts those squadrons too
+  (`blockade-troop-withdrawal.md`);
 - hyp: `ControlKind::Contested` is side 3, and an `Uprising` system keeps its
   holder's side bits;
 - port: the rule reruns every tick (`BlockadeSystem::advance`), where the

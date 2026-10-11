@@ -8,6 +8,10 @@ updated: 2026-03-16
 
 # Space Combat Auto-Resolve
 
+> **Corrected 2026-10-10:** this pipeline sets the `+0x58` flags and notifies
+> observers; it applies no damage. Simulate runs the tactical engine
+> headless. See [simulate-runs-tactical-engine.md](simulate-runs-tactical-engine.md).
+
 ## Entry Point
 
 `FUN_005457f0` → `FUN_00549910` (77 lines)
