@@ -51,6 +51,12 @@ instruction appendix instead of fabricating decompiler boundaries. Larger
 constructors and dispatchers were inspected in the existing corpus and with
 targeted `objdump` ranges rather than copied into this note.
 
+The detail-owner adjudication below additionally cites the committed
+`FUN_00429ce0.c`, `FUN_004591d0.c`, `FUN_0045aac0.c`, `FUN_00441190.c`, four
+receiving detail constructors (`FUN_00452fc0.c`, `FUN_004a7790.c`,
+`FUN_004a2630.c`, and `FUN_0049f130.c`), and their common `FUN_004ac120.c`,
+`FUN_00606380.c`, and `FUN_005ff910.c` base-constructor chain.
+
 ## Conclusions that constrain the port
 
 1. **Identity is semantic, not HWND identity.** A strategic top-level object
@@ -72,7 +78,7 @@ targeted `objdump` ranges rather than copied into this note.
    Encyclopedia singleton openers return without raising. Existing detail
    windows are restored/raised. A duplicate Sector opener returns its object
    without itself raising it; a caller may subsequently raise/select a detail
-   child. The port must declare this policy per window kind.
+   presentation. The port must declare this policy per window kind.
 5. **Closing is asynchronous at the shared boundary.** The child posts message
    `0x405` to its owner. The owner removes and destroys the keyed child, then
    posts `0x467` to choose, expose, and focus the next eligible surface. Input
@@ -192,12 +198,13 @@ holds capture for the modal's lifetime.
 
 ### Close sequence
 
-`FUN_00606960` posts `(message=0x405, wParam=this+0x24, lParam=this)` to the
-parent HWND. `FUN_006007b0` and the strategic `FUN_00422ce0` handler remove the
-appropriate presentation entry, call `FUN_00600f90`, and post `0x467`.
-Destruction and replacement focus therefore occur on subsequent native
-message dispatches, not by synchronously returning a new input target from
-the close callback.
+`FUN_00606960` posts `(message=0x405, wParam=*(this+0x24), lParam=this)` to the
+HWND at `(*(this+0x20)+0x18)`. The generic `FUN_006007b0` `0x405` case calls
+`FUN_00600f90` to remove and destroy the keyed child. The strategic
+`FUN_00422ce0` path additionally removes the corresponding presentation entry
+and posts `0x467` for later restoration. Destruction and replacement focus
+therefore occur on subsequent native message dispatches, not by synchronously
+returning a new input target from the close callback.
 
 Parent destruction is a cascade, not independent orphan cleanup.
 `FUN_005ffb60` tears down the parent's `+0x6c` registry through
@@ -214,6 +221,51 @@ closed the surface remains consumed by the old owner. A later independent
 event, even when batched into the same render frame, receives a new snapshot.
 This reproduces the recovered no-fallthrough outcome without reproducing the
 Win32 post queue.
+
+### Detail lifetime owner
+
+The strategic view is the registry/destruction owner of all four
+Sector-launched detail families; the Sector that opened them is not their
+lifecycle owner. The complete stored-owner trace is:
+
+1. `FUN_00429ce0` runs on the strategic view and passes its `this` pointer as
+   constructor parameter 6 to `FUN_004591d0`.
+2. `FUN_004591d0` forwards that pointer through `FUN_004ac120` and also stores
+   it at Sector `+0x194`.
+3. `FUN_0045aac0` runs on the Sector, but uses `*(this + 0x194)` for detail
+   lookup in `+0x6c`, creation, presentation registration, keyed insertion,
+   MRU restoration, and raising. It passes the same pointer into each receiving
+   System/Manufacturing, Defenses, Fleet, or Missions constructor.
+4. The strategic pointer arrives as constructor parameter 6 in
+   `FUN_00452fc0` and `FUN_004a7790`, and as parameter 4 in the shorter
+   `FUN_004a2630` and `FUN_0049f130` signatures. Each normalizes it to
+   `FUN_004ac120` parameter 6, then forwards it through
+   `FUN_00606380` parameter 6 to `FUN_005ff910` parameter 8.
+   `FUN_005ff910` performs the final assignment, storing that parameter at the
+   detail object's common owner field `+0x20`.
+5. `FUN_00606960` closes a child by dereferencing `+0x20`, taking that object's
+   `+0x18` HWND, and posting `0x405` with the child's semantic key and object.
+   A detail therefore posts close to the strategic view, not to its opening
+   Sector.
+
+**counter-evidence:** `FUN_0045aac0` is a Sector method and uses the Sector
+HWND as the source for `MapWindowPoints`; the Sector therefore supplies the
+opening gesture and coordinate/navigation context. It does not insert the
+detail into Sector `+0x6c`, pass the Sector as the common owner, or receive the
+detail's close message. `FUN_00441190` independently constructs the same four
+detail families directly from the strategic view, passes that view into the
+same constructor slots, and inserts the result into strategic-view `+0x6c`.
+The root registry, direct construction path, and stored `+0x20` recipient
+outweigh the incidental Sector opener context.
+
+**fact (high static confidence):** a detail is registered under and posts close
+to the strategic root; it is absent from the opening Sector's child registry.
+The generic Sector-owner cascade therefore cannot reach that detail.
+
+**port:** closing a Sector must not close details opened from its context.
+Those details remain independently managed until an explicit detail close,
+content reconciliation, or strategic-root teardown. No original-runtime
+capture or port-side acceptance is claimed by this constructor trace.
 
 ### Existing-window policy
 
@@ -306,10 +358,10 @@ than an independent persistent stack entry.
 | Surface | Identity / cardinality | Owner / stack / input | Focus / capture | Open, close, and restoration | Side / evidence |
 |---|---|---|---|---|---|
 | Sector | Key `(system_low16 << 6) \| 1`; max two | Strategic view; modeless lower/detail band; created at `HWND_BOTTOM`, with toolbar placed above | Top-level and owned controls can focus; no family-lifetime capture or movable-title bit recovered | Duplicate returns existing without an opener-side raise; following detail selection may raise; third replaces the sector on the requested galaxy half; generic keyed close restores through `0x467` | Shared class; Alliance two-window runtime; `FUN_00429ce0`; high |
-| System / Manufacturing | Detail kind `9`, subject-keyed, many | Strategic-view child launched and positioned from Sector context; normal modeless detail/presentation band; presentation-rail capable | Top-level/controls focus; movable bit 4 uses temporary title-drag capture | Reopen restores from MRU if needed and raises; async keyed close restores through the strategic owner and `0x467` | Shared class; `FUN_0045aac0`, `FUN_00441190`; high |
-| Fleet | Detail kind `4`, subject-keyed, many | Strategic-view child launched and positioned from Sector context; modeless detail/presentation band | Top-level/controls focus; bit-4 title drag temporarily captures | Reopen restores/raises; async keyed close restores through the strategic owner | Shared class; same static path; high |
-| Defenses | Detail kind `10`, subject-keyed, many | Strategic-view child launched and positioned from Sector context; modeless detail/presentation band | Top-level/controls focus; bit-4 title drag temporarily captures | Reopen restores/raises; async keyed close restores through the strategic owner | Shared class; same static path; high |
-| Missions detail | Detail kind `11`, subject-keyed, many | Strategic-view child launched and positioned from Sector context; modeless detail/presentation band | Top-level/controls focus; bit-4 title drag temporarily captures | Reopen restores/raises; async keyed close restores through the strategic owner | Shared class; same static path; high |
+| System / Manufacturing | Detail kind `9`, subject-keyed, many | Strategic-view registry/destruction owner; launched and positioned from Sector context; normal modeless detail/presentation band; presentation-rail capable | Top-level/controls focus; movable bit 4 uses temporary title-drag capture | Reopen restores from MRU if needed and raises; Sector close does not cascade it; async keyed close restores through the strategic owner and `0x467` | Shared class; `FUN_00429ce0`, `FUN_004591d0`, `FUN_0045aac0`, `FUN_00441190`, `FUN_00452fc0`, common base/close chain; high |
+| Fleet | Detail kind `4`, subject-keyed, many | Strategic-view registry/destruction owner; launched and positioned from Sector context; modeless detail/presentation band | Top-level/controls focus; bit-4 title drag temporarily captures | Reopen restores/raises; Sector close does not cascade it; async keyed close restores through the strategic owner | Shared class; same chain through `FUN_004a2630`; high |
+| Defenses | Detail kind `10`, subject-keyed, many | Strategic-view registry/destruction owner; launched and positioned from Sector context; modeless detail/presentation band | Top-level/controls focus; bit-4 title drag temporarily captures | Reopen restores/raises; Sector close does not cascade it; async keyed close restores through the strategic owner | Shared class; same chain through `FUN_004a7790`; high |
+| Missions detail | Detail kind `11`, subject-keyed, many | Strategic-view registry/destruction owner; launched and positioned from Sector context; modeless detail/presentation band | Top-level/controls focus; bit-4 title drag temporarily captures | Reopen restores/raises; Sector close does not cascade it; async keyed close restores through the strategic owner | Shared class; same chain through `FUN_0049f130`; high |
 | System Finder | Type `0x14`, singleton | Strategic view; strategic modal, bit 0 | Edit/list/top-level focus; handled keys stay in child; no lifetime capture | Existing request no-ops; Escape/Close posts keyed close, then `0x467` restoration | Shared class; Alliance/Empire route reachable; `FUN_0042a000`, `FUN_00460090`; high |
 | Fleet Finder | Type `0x15`, singleton | Strategic view; strategic modal, bit 0 | Edit/list/top-level focus; no lifetime capture | Existing request no-ops; shared async close/restoration | Shared class; `FUN_0042a0c0`, `FUN_00461750`; high |
 | Troop Finder | Type `0x16`, singleton | Strategic view; strategic modal, bit 0 | Edit/list/top-level focus; no lifetime capture | Existing request no-ops; shared async close/restoration | Shared class; `FUN_0042a4d0`, `FUN_0046cbc0`; high |
@@ -342,9 +394,10 @@ call contexts are named.
 2. Existing singleton Finders, Message, and Encyclopedia merely return;
    details restore/raise; duplicate Sector returns without an opener-side
    raise, though a following detail-selection caller may raise its child.
-3. Sector is created low, detail windows are normal modeless top-levels,
-   transient children/menus sit above owners, and strategic modals form an
-   input boundary. The reference rail is presentation history, not z-order.
+3. Sector is created low; detail windows are independent strategic-root-owned
+   modeless top-levels opened from Sector context. Transient children/menus sit
+   above their actual owners, and strategic modals form an input boundary. The
+   reference rail is presentation history, not z-order.
 4. Strategic modality is not a nested loop, owner disable, or lifetime
    capture. Bit 0 supplies dialog/function-key policy; a still-unidentified
    pre-command native gate blocked normal underlay pointer input in the
