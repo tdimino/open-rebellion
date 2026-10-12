@@ -3,10 +3,17 @@
 
     save_edit.py hyperdrive SOURCE.sav OUTPUT.sav
     save_edit.py deathstar  SOURCE.sav OUTPUT.sav
+    save_edit.py damage     SOURCE.sav OUTPUT.sav
+    save_edit.py subsystems SOURCE.sav OUTPUT.sav
+    save_edit.py engines    SOURCE.sav OUTPUT.sav
+    save_edit.py fragile    SOURCE.sav OUTPUT.sav
+    save_edit.py stranded   SOURCE.sav OUTPUT.sav
+    save_edit.py doomed     SOURCE.sav OUTPUT.sav
 
-Both recipes are pinned to `saves/empire-day2-start.sav` and edit Fleet 1's
-Imperial Star Destroyer. They change bytes in place, refuse any other source,
-never overwrite, and prove that only the intended bytes changed. The layout
+hyperdrive and deathstar are pinned to `saves/empire-day2-start.sav`; damage,
+subsystems, engines, fragile, stranded and doomed to
+`saves/empire-day30-yaga-alert-control.sav`, where they edit the ships at the
+battle. They change bytes in place, refuse any other source, never overwrite, and prove that only the intended bytes changed. The layout
 and the acceptance gates are in `agent_docs/original-save-editing.md`; an
 edit is a hypothesis until the original loads, re-saves and reloads it.
 """
@@ -16,26 +23,31 @@ import struct
 import sys
 from pathlib import Path
 
-SOURCE_SHA256 = "d9da6a3bff71a70130ccd7aecb9ab4a98becf7bfef5e3fc7918c0970ea7cbc79"
-SOURCE_SIZE = 410_763
+DAY2 = ("d9da6a3bff71a70130ccd7aecb9ab4a98becf7bfef5e3fc7918c0970ea7cbc79", 410_763)
+DAY30 = ("8a7a992327c8af5aa6f2580a0220084741da1e37664d15e218c476c36a975636", 421_096)
 ISD_NAME = b"Imperial Star Destroyer 1"
 ISD_ID = 0x77F
 # The two copies of the ISD's record: the full graph and the shorter one.
 ISD_FULL, ISD_SHORT = 0x1778E, 0x48EE5
 
 
+def require(condition, detail="layout check failed"):
+    """An assert that `python3 -O` cannot remove: every check here guards
+    a write into an original save."""
+    if not condition:
+        raise SystemExit(f"refusing: {detail}")
+
+
 def u32(data, offset):
     return struct.unpack_from("<I", data, offset)[0]
 
 
-def check_record(data, start, graph):
-    """Assert the named record at `start` is the ISD in the given graph."""
-    family, ident, key, cls, named = struct.unpack_from("<5I", data, start + 4)
+def check_record(data, start, graph, ident=ISD_ID, cls=0x85, name=ISD_NAME):
+    """Assert the named record at `start` is the ship in the given graph."""
+    found = struct.unpack_from("<5I", data, start + 4)
     length = struct.unpack_from("<H", data, start + 0x18)[0]
-    name = data[start + 0x1A : start + 0x1A + length]
-    assert (family, ident, key, cls, named, name) == (
-        0x14, ISD_ID, graph, 0x85, 1, ISD_NAME,
-    ), (hex(start), family, ident, hex(key), cls, named, name)
+    found += (data[start + 0x1A : start + 0x1A + length],)
+    require(found == (0x14, ident, graph, cls, 1, name), (hex(start), found))
     return start + 0x1A + length  # payload
 
 
@@ -48,10 +60,10 @@ def hyperdrive(data):
     changed = set()
     for start, graph, word in ((ISD_FULL, 0x80000081, 20), (ISD_SHORT, 0x800000A1, 10)):
         payload = check_record(data, start, graph)
-        assert u32(data, payload) == 0x00030047  # +0x50 flags, the same in both
+        require(u32(data, payload) == 0x00030047)  # +0x50 flags, the same in both
         damage = payload + word * 4
-        assert u32(data, damage - 4) == 0  # +0x60 hull damage
-        assert u32(data, damage) == 0
+        require(u32(data, damage - 4) == 0)  # +0x60 hull damage
+        require(u32(data, damage) == 0)
         struct.pack_into("<I", data, damage, 0x0011_0000)
         changed.add(damage + 2)
     return changed
@@ -69,26 +81,106 @@ def deathstar(data):
     return changed
 
 
-RECIPES = {"hyperdrive": hyperdrive, "deathstar": deathstar}
+# In the day-30 save each ship has a third graph copy (0x80000091), short
+# like the 0xa1 one. (record start, graph, payload word of +0x60).
+DAY30_SHIPS = (
+    (0x77F, 0x85, ISD_NAME, ((0x1AE28, 0x80000081, 19), (0x32C96, 0x80000091, 9),
+                             (0x4BBED, 0x800000A1, 9))),
+    (0x7AA, 0x83, b"Carrack Light Cruiser 2", ((0x1B29F, 0x80000081, 19),
+        (0x32F41, 0x80000091, 9), (0x4BF24, 0x800000A1, 9))),
+)
+
+
+# The Alliance's one ship at Yaga Minor: Bulk Cruiser (CAPSHPSD 0x41, hull
+# 1200), in the Alliance graphs 0x80000041 (full) and 0x80000051 (short).
+BULK_CRUISER = (0x796, 0x41, b"Bulk Cruiser 3", ((0x1B385, 0x80000041, 19),
+                                                  (0x32FEB, 0x80000051, 9)))
+FLAGS = {0x77F: 0x000301C7, 0x7AA: 0x000301C7, 0x796: 0x00030056}  # +0x50
+
+
+def stage(data, staged, ships=DAY30_SHIPS):
+    """Write (hull damage, packed counters) to every copy of each ship."""
+    changed = set()
+    for (ident, cls, name, copies), (hull, packed) in zip(ships, staged, strict=True):
+        for start, graph, word in copies:
+            payload = check_record(data, start, graph, ident, cls, name)
+            require(u32(data, payload) == FLAGS[ident])
+            at = payload + word * 4
+            require(u32(data, at) == 0 and u32(data, at + 4) == 0)
+            struct.pack_into("<2I", data, at, hull, packed)
+            changed |= {i for i in range(at, at + 8) if data[i]}
+    return changed
+
+
+def damage(data):
+    """Stage a critical and a damaged ship for the tactical status panel.
+    The ISD (hull 2750, CAPSHPSD 0x85) takes 2200 hull damage, leaving 20%,
+    and one shield, two weapons, one tractor and one engine hit: `+0x64`
+    nibbles 0-3, 4-7, 8-11 and 12-15 (FUN_00501510, FUN_005015a0,
+    FUN_00501640, FUN_005016e0, called in that order by FUN_0040cfc0). The
+    Carrack (hull 1000) takes 400, leaving 60%."""
+    return stage(data, ((2200, 0x0000_1121), (400, 0)))
+
+
+def subsystems(data):
+    """Two hits on each of the ISD's shield generator, weapons, tractor and
+    engines at full hull, so each icon shows its own damage rather than the
+    hull scaling (FUN_005b1770) that dims the first three in `damage`."""
+    return stage(data, ((0, 0x0000_2222), (0, 0)))
+
+
+def engines(data):
+    """Four engine hits on the ISD (the limit, FUN_005b1970) and nothing
+    else: two hits left the engine icon unchanged in `subsystems`."""
+    return stage(data, ((0, 0x0000_4000), (0, 0)))
+
+
+def fragile(data):
+    """Leave the Alliance's Bulk Cruiser 10 of 1200 hull, so the first hits
+    destroy it: a target lost, a destruction and a Destroyed result. Both
+    of its hyperdrives (CAPSHPSD 80 and 120) are out too: with them, the
+    first such copy withdrew instead of dying (2026-10-12)."""
+    return stage(data, ((1190, 0x0011_0000),), (BULK_CRUISER,))
+
+
+def stranded(data):
+    """Both of the Bulk Cruiser's hyperdrives out at full hull: it cannot
+    withdraw, so the battle runs long enough to capture it running."""
+    return stage(data, ((0, 0x0011_0000),), (BULK_CRUISER,))
+
+
+def doomed(data):
+    """Leave the ISD 10 of 2750 hull, so the first Alliance hits destroy the
+    selected ship while the Carrack keeps the battle going. The Bulk
+    Cruiser's hyperdrives are out as in `stranded`: with them, the first
+    such copy's Alliance withdrew before a hit landed (2026-10-12)."""
+    return stage(data, ((2740, 0), (0, 0), (0, 0x0011_0000)),
+                 DAY30_SHIPS + (BULK_CRUISER,))
+
+
+RECIPES = {"hyperdrive": (hyperdrive, DAY2), "deathstar": (deathstar, DAY2),
+           "damage": (damage, DAY30), "subsystems": (subsystems, DAY30),
+           "engines": (engines, DAY30), "fragile": (fragile, DAY30),
+           "stranded": (stranded, DAY30), "doomed": (doomed, DAY30)}
 
 
 def main():
     if len(sys.argv) != 4 or sys.argv[1] not in RECIPES:
         sys.exit(__doc__)
-    recipe, source, output = RECIPES[sys.argv[1]], Path(sys.argv[2]), Path(sys.argv[3])
+    (recipe, (sha256, size)), source, output = RECIPES[sys.argv[1]], Path(sys.argv[2]), Path(sys.argv[3])
     if output.exists() or output.resolve() == source.resolve():
         sys.exit(f"refusing to write {output}: it exists or is the source")
     original = source.read_bytes()
     digest = hashlib.sha256(original).hexdigest()
-    if digest != SOURCE_SHA256 or len(original) != SOURCE_SIZE:
-        sys.exit(f"{source} is not empire-day2-start.sav ({digest})")
+    if digest != sha256 or len(original) != size:
+        sys.exit(f"{source} is not the save {sys.argv[1]} is pinned to ({digest})")
     edited = bytearray(original)
     expected = recipe(edited)
     actual = {i for i, (a, b) in enumerate(zip(original, edited)) if a != b}
-    assert len(edited) == len(original) and actual == expected, (actual, expected)
+    require(len(edited) == len(original) and actual == expected, (actual, expected))
     with output.open("xb") as handle:
         handle.write(edited)
-    assert output.read_bytes() == edited
+    require(output.read_bytes() == edited)
     print(f"{sys.argv[1]}: changed {', '.join(hex(i) for i in sorted(actual))}")
     print(f"output sha256 {hashlib.sha256(edited).hexdigest()}")
 

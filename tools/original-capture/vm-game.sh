@@ -5,13 +5,37 @@
 #   vm-game.sh up                start the VM if needed, wait for the desktop,
 #                                launch REBEXE, accept UAC, skip the intros and
 #                                switch to the absolute tablet
-#   vm-game.sh recover           kill a wedged QEMU, restart UTM, then `up`
+#   vm-game.sh recover [a0]      kill a wedged QEMU, restart UTM, then `up`
+#                                (`up-a0` with a0)
+#   vm-game.sh up-a0             the A0 route: start the capture watcher and
+#                                the game as scheduled tasks on the desktop
+#   vm-game.sh a0-push           copy vm/capture.ps1 and a0-tasks.ps1 to C:\a0
+#   vm-game.sh a0-setup          a0-push, then register the A0 tasks and set
+#                                DisplayFilter=point (vm/a0-tasks.ps1)
+#   vm-game.sh a0-watch          restart the watcher task
+#   vm-game.sh a0-game           end the game task and start it again, to the
+#                                main menu
+#   vm-game.sh a0-run FILE       run a PowerShell FILE on the guest desktop
+#                                (A0Run task) and print its output
+#   vm-game.sh a0 NAME [OUTDIR] [Key=Value ...]
+#                                the game's exact 640x480 frame, rebuilt in the
+#                                guest from the full screen; Keys are capture.ps1
+#                                parameters
+#                                (CellId, Requirement, StateSetupKind, ...;
+#                                InputTrace='a|b|c'; FullClient=1 probes)
+#   vm-game.sh a0-cell CELL KIND SETUP 'a|b|c' [NOTES]
+#                                capture a ledger cell (requirement from the
+#                                ledger) and register it with the ingester;
+#                                A0_BEFORE=NAME adds an earlier `a0` frame
 #   vm-game.sh cap FILE          capture the screen to FILE
 #   vm-game.sh point X Y [FILE]  move the game cursor to X,Y
 #   vm-game.sh click X Y [FILE]  left-click, optionally capture after
 #   vm-game.sh rclick X Y [FILE] right-click, optionally capture after
 #   vm-game.sh dclick X Y [FILE] double-click
 #   vm-game.sh drag X1 Y1 X2 Y2 [FILE]  left-drag between two points
+#   vm-game.sh press X Y [right] [FILE]  hold a button down on X,Y (a
+#                                pressed state; capture with A0_PARK=none)
+#   vm-game.sh release [right]   let it go
 #   vm-game.sh desk X Y [FILE]   click on the Windows desktop (taskbar, a
 #                                console), where the cursor is not the game's
 #   vm-game.sh key KEY [FILE]    send a vncdo key (esc, f1, alt-y, ...)
@@ -65,6 +89,20 @@ VMDIR='~/VMs/rebellion'
 EXCHANGE=/Users/tamarru/VMs/rebellion/exchange
 HERE=$(cd "$(dirname "$0")" && pwd)
 INPUT=${VM_INPUT:-qmp}
+A0_DIR='C:\a0'
+# Where `a0` parks the game's cursor (it is drawn into the frame).
+A0_PARK=${A0_PARK:-799 599}
+# The game's taskbar button on the 800x600 desktop (2026-10-11).
+A0_TASKBAR=${A0_TASKBAR:-510 576}
+
+# A Tailscale drop left an ssh to the Mini waiting forever mid-transfer
+# (2026-10-11); fail within ~40 s instead, so the caller can retry.
+SSH_OPTS=(-o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3)
+# A Tailscale connection that stops answering held calls for 15 and 33
+# minutes (2026-10-11) without ServerAlive ending it, so every call is also
+# bounded (124 on expiry); SSH_TIMEOUT raises it for a longer call.
+ssh() { timeout "${SSH_TIMEOUT:-180}" ssh "${SSH_OPTS[@]}" "$@"; }
+scp() { timeout "${SSH_TIMEOUT:-180}" scp "${SSH_OPTS[@]}" "$@"; }
 
 # vm-qmp.py runs on the Mini, where QMP listens on loopback only.
 qmp() {
@@ -94,7 +132,19 @@ mon() {
 }
 
 # Run a vm-ctl.applescript command through the GUI-domain launch agent.
-vmctl() { ssh "$MINI" "$VMDIR/vmctl-run.sh $(printf '%q' "$1") ${2:-60}"; }
+# The Mini's wrapper gives up after TIMEOUT; this side allows a minute more.
+# A dropped or expired connection is retried once; every vm-ctl command we
+# send is safe to repeat.
+vmctl() {
+  local rc=0 try
+  for try in 1 2; do
+    rc=0
+    SSH_TIMEOUT=$(( ${2:-60} + 60 )) ssh "$MINI" "$VMDIR/vmctl-run.sh $(printf '%q' "$1") ${2:-60}" || rc=$?
+    [[ $rc -eq 255 || $rc -eq 124 ]] || return "$rc"
+    echo "vmctl: connection lost (rc $rc), retrying" >&2
+  done
+  return "$rc"
+}
 
 qemu_running() {
   ssh "$MINI" 'pgrep -f qemu-aarch64-softmmu >/dev/null'
@@ -155,6 +205,15 @@ vnc_answers() { VNC_TIMEOUT=20 vnc capture "$SHOT" >/dev/null 2>&1; }
 desktop_ready() { vnc_answers && taskbar_up "$SHOT"; }
 
 up() {
+  desktop_up
+  # Win+R C:\rebellion\rebexe.exe; the VNC link drops Shift, so ':' is a chord.
+  vnc key super-r pause 2 type c key 'shift-;' type '\rebellion\rebexe.exe' key enter pause 5 key alt-y pause 15 \
+    key esc pause 3 key esc pause 3 key esc pause 5
+  mon 'mouse_set 1' >/dev/null
+  echo "game launched; tablet absolute"
+}
+
+desktop_up() {
   local started=
   if ! qemu_running; then
     echo "starting the VM"
@@ -173,17 +232,55 @@ up() {
     wait_for "desktop" 48 desktop_ready
     sleep 10  # let auto-login settle before Win+R
   fi
-  # Win+R C:\rebellion\rebexe.exe; the VNC link drops Shift, so ':' is a chord.
-  vnc key super-r pause 2 type c key 'shift-;' type '\rebellion\rebexe.exe' key enter pause 5 key alt-y pause 15 \
-    key esc pause 3 key esc pause 3 key esc pause 5
+}
+
+# vmexec "CMDLINE" [TIMEOUT]: run in the guest and return the guest
+# command's own exit code (vmctl itself succeeds whenever the agent answers),
+# printing the output, or sending it to stderr when the command failed.
+vmexec() {
+  local out rc
+  out=$(vmctl "exec $1" "${2:-60}") || true
+  rc=$(sed -n '1s/^exit \([0-9][0-9]*\).*/\1/p' <<<"$out")
+  if [[ ${rc:-1} != 0 ]]; then
+    printf '%s\n' "$out" >&2
+    return "${rc:-1}"
+  fi
+  printf '%s\n' "$out"
+}
+
+# The A0 route. The guest agent runs in session 0, which has no desktop, so
+# the watcher and the full-screen game start as scheduled tasks on the
+# logged-on user's desktop (vm/a0-tasks.ps1, registered by `a0-setup`, which
+# also sets DDrawCompat's DisplayFilter=point); nothing is typed.
+up_a0() {
+  desktop_up
+  a0_setup
+  vmexec "schtasks /Run /TN A0Watcher" >/dev/null || { echo "A0Watcher did not start" >&2; exit 1; }
+  a0_game
+}
+
+# Start the game task, or end the running game and start it again
+# (take-command needs a fresh launch). The game runs one copy at a time, and
+# one started some other way is not the task's, so it is ended by pid.
+a0_game() {
+  local pid
+  for pid in $(vmctl "exec cmd /c tasklist /fo csv /nh | findstr /i REBEXE.EXE" 2>/dev/null | awk -F'","' '/REBEXE/ {print $2}'); do
+    vmctl "exec taskkill /pid $pid /f" >/dev/null
+  done
+  vmexec "schtasks /Run /TN A0Game" >/dev/null || { echo "A0Game did not start" >&2; exit 1; }
+  # A task's window does not get the focus: click the cockpit's ceiling,
+  # which on the main menu is no control.
+  vnc pause 10
+  qmp desk 400 20 >/dev/null
+  vnc pause 2 key esc pause 3 key esc pause 3 key esc pause 5
   mon 'mouse_set 1' >/dev/null
-  echo "game launched; tablet absolute"
+  echo "game launched full screen; watcher on $A0_DIR"
 }
 
 recover() {
   echo "killing QEMU and restarting UTM"
   ssh "$MINI" 'pkill -9 -f qemu-aarch64-softmmu; pkill -x UTM; sleep 3; open -a UTM; sleep 8'
-  up
+  if [[ ${1:-} == a0 ]]; then up_a0; else up; fi
 }
 
 # One connection polls a region until it changes (vm-wait.py); the password
@@ -336,6 +433,194 @@ save_in() {
   vmctl "exec certutil -hashfile $(slot_path "$slot") SHA256" | sed -n 3p
 }
 
+# Copy the scripts in and register the tasks (safe to repeat).
+a0_setup() {
+  a0_push
+  vmexec "powershell -noprofile -executionpolicy bypass -file $A0_DIR\\a0-tasks.ps1" ||
+    { echo "a0-tasks.ps1 failed" >&2; exit 1; }
+}
+
+# Run a PowerShell FILE on the guest's desktop (the A0Run task) and print its
+# output: the guest agent's own session 0 has no display.
+a0_run() {
+  local n
+  scp -q "$1" "$MINI:$EXCHANGE/a0/run.ps1"
+  vmctl "exec cmd /c del /q $A0_DIR\\run.out $A0_DIR\\run.done" >/dev/null || true
+  vmctl "push $EXCHANGE/a0/run.ps1 $A0_DIR\\run.ps1" >/dev/null
+  vmexec "schtasks /Run /TN A0Run" >/dev/null || { echo "A0Run did not start" >&2; exit 1; }
+  # run.done appears once run.out is complete; the listing names it.
+  for ((n = 0; n < 12; n++)); do
+    [[ $(vmctl "exec cmd /c dir /b $A0_DIR\\run.done" || true) == *run.done* ]] && break
+    sleep 3
+  done
+  ((n < 12)) || { echo "A0Run did not finish in about 60 s" >&2; exit 1; }
+  vmexec "cmd /c type $A0_DIR\\run.out"
+}
+
+# Restart the watcher loop (each capture already runs the current script).
+a0_watch() {
+  a0_push
+  vmctl "exec powershell -noprofile -executionpolicy bypass -file $A0_DIR\\capture.ps1 -StopWatch" || true
+  vmexec "schtasks /Run /TN A0Watcher" || { echo "A0Watcher did not start" >&2; exit 1; }
+}
+
+
+# A0 captures go through capture.ps1's watch mode (`up-a0`): a request JSON
+# pushed into C:\a0\req is captured in the logged-on session while the game
+# keeps the focus, and answered with C:\a0\out\NAME.done or NAME.err. The
+# request is pushed beside the folder and moved in, so the watcher never
+# reads half a file.
+a0_push() {
+  ssh "$MINI" "mkdir -p $EXCHANGE/a0"
+  scp -q "$HERE/vm/capture.ps1" "$MINI:$EXCHANGE/a0/capture.ps1"
+  vmctl "exec cmd /c mkdir $A0_DIR\\req $A0_DIR\\out" >/dev/null || true
+  vmctl "push $EXCHANGE/a0/capture.ps1 $A0_DIR\\capture.ps1"
+  scp -q "$HERE/vm/a0-tasks.ps1" "$MINI:$EXCHANGE/a0/a0-tasks.ps1"
+  vmctl "push $EXCHANGE/a0/a0-tasks.ps1 $A0_DIR\\a0-tasks.ps1"
+}
+
+# pull_one FILE OUT [TIMEOUT]: copy C:\a0\out\FILE into OUT through the
+# Mini; an empty copy means the agent's pull failed.
+pull_one() {
+  ssh "$MINI" ": > $EXCHANGE/a0/$1"
+  vmctl "pull $A0_DIR\\out\\$1 $EXCHANGE/a0/$1" "${3:-60}" >/dev/null
+  scp -q "$MINI:$EXCHANGE/a0/$1" "$2/$1"
+  [[ -s $2/$1 ]] || { echo "pull of $1 came back empty" >&2; exit 1; }
+}
+
+# Fetch C:\a0\out\NAME.json, .png and what the JSON names into OUT.
+a0_pull() {
+  local name=$1 out=$2 ext extra
+  rm -rf "$out/$name.png" "$out/$name.json" "$out/$name.screen.png" "$out/$name.burst.zip" "$out/$name.burst"
+  pull_one "$name.json" "$out"
+  # PowerShell 5 writes UTF-8 with a BOM, which JSON.parse (the ingester) rejects.
+  python3 -c "import sys,pathlib; p=pathlib.Path(sys.argv[1]); p.write_text(p.read_text(encoding='utf-8-sig'), encoding='utf-8')" "$out/$name.json"
+  # The metadata names what else to pull: a cell frame's 800x600 source, so
+  # the rebuild can be rechecked, and a burst's frames in one zip.
+  extra=$(python3 -c "import json,sys; m=json.load(open(sys.argv[1])); print(*(['screen.png'] if m.get('screen_sha256') else []) + (['burst.zip'] if m.get('burst') else []))" "$out/$name.json")
+  for ext in png $extra; do pull_one "$name.$ext" "$out" 180; done
+  shasum -a 256 "$out/$name.png"
+  # Every still the guest hashed is held to that hash, not only cell frames.
+  python3 -c "import hashlib,json,sys; m=json.load(open(sys.argv[1])); h=hashlib.sha256(open(sys.argv[2],'rb').read()).hexdigest(); sys.exit(0 if h==m['sha256'] else 'frame '+h+' is not the one the metadata names')" "$out/$name.json" "$out/$name.png"
+  [[ -f $out/$name.burst.zip ]] || return 0
+  # Unpack to NAME.burst/ and hold every frame to the hashes the guest wrote.
+  python3 - "$out/$name.json" "$out/$name.burst.zip" "$out/$name.burst" <<'EOF'
+import hashlib, json, sys, zipfile
+meta, archive, folder = json.load(open(sys.argv[1])), sys.argv[2], sys.argv[3]
+frames = meta["burst"]["frames"]
+zipfile.ZipFile(archive).extractall(folder)
+sha = lambda p: hashlib.sha256(open(p, "rb").read()).hexdigest()
+for f in frames:
+    stem = f"{folder}/f{f['index']:02d}"
+    if sha(f"{stem}.png") != f["sha256"] or sha(f"{stem}.screen.png") != f["screen_sha256"]:
+        sys.exit(f"burst frame {f['index']} does not match its metadata")
+if frames[-1]["sha256"] != meta["sha256"]:
+    sys.exit("the burst's last frame is not the capture's frame")
+print(f"burst: {len(frames)} frames over {frames[-1]['t_ms']} ms")
+EOF
+}
+
+# a0 NAME [OUTDIR] [Key=Value ...]: Keys are capture.ps1 parameters;
+# InputTrace takes '|'-separated steps, FullClient=1 the uncropped probe.
+a0_capture() {
+  local name=$1 out=.artifacts/original-checks/a0 n listing
+  shift
+  if [[ $# -gt 0 && $1 != *=* ]]; then out=$1; shift; fi
+  [[ $name =~ ^[A-Za-z0-9._-]+$ ]] || { echo "name: A-Za-z0-9._-" >&2; exit 2; }
+  mkdir -p "$out"
+  local rid
+  rid=$(uuidgen)
+  python3 - "$name" "$rid" "$@" > "$out/$name.request.json" <<'EOF'
+import json, sys
+name, rid, pairs = sys.argv[1], sys.argv[2], sys.argv[3:]
+req = {"Name": name, "RequestId": rid}
+for pair in pairs:
+    key, _, value = pair.partition("=")
+    req[key] = value.split("|") if key == "InputTrace" else value
+if req.pop("FullClient", "") in ("1", "true"):
+    req["FullClient"] = True
+print(json.dumps(req))
+EOF
+  # The game draws its own cursor into the frame: park it in the corner, or
+  # on a control for a hover (A0_PARK="X Y"). A0_PARK=none leaves it where
+  # it is, as a held button (`press`) needs: a park walk would drag.
+  [[ $A0_PARK == none ]] || qmp point "${A0_PARK% *}" "${A0_PARK#* }" >/dev/null
+  scp -q "$out/$name.request.json" "$MINI:$EXCHANGE/a0/$name.request.json"
+  vmctl "push $EXCHANGE/a0/$name.request.json $A0_DIR\\$name.tmp" >/dev/null
+  # A stale answer from an earlier request of the same name would end the wait.
+  vmctl "exec cmd /c del /q $A0_DIR\\out\\$name.*" >/dev/null || true
+  vmexec "cmd /c move /y $A0_DIR\\$name.tmp $A0_DIR\\req\\$name.json" >/dev/null ||
+    { echo "request $name did not reach the watcher" >&2; exit 1; }
+  # Wait in the guest, in short calls: one agent call held for 30 s made UTM
+  # report "Timed out waiting for RPC" (2026-10-11).
+  # Ten rounds (about 80 s), plus a burst's own length and its encoding
+  # (two PNGs a frame and the zip) at about a second a frame.
+  local rounds
+  rounds=$(python3 -c "import json,sys; r=json.load(open(sys.argv[1])); b=int(r.get('Burst') or 0); print(10 + (b * int(r.get('IntervalMs') or 250) + b * 1000) // 8000 + 1 if b > 0 else 10)" "$out/$name.request.json")
+  for ((n = 0; n < rounds; n++)); do
+    vmctl "exec powershell -noprofile -command for(\$i=0;\$i -lt 40 -and -not (Test-Path $A0_DIR\\out\\$name.done) -and -not (Test-Path $A0_DIR\\out\\$name.err);\$i++){Start-Sleep -Milliseconds 200}" 20 >/dev/null || true
+    listing=$(vmctl "exec cmd /c dir /b $A0_DIR\\out\\$name.*" || true)
+    [[ $listing == *"$name.done"* || $listing == *"$name.err"* ]] && break
+  done
+  if [[ $listing == *"$name.err"* ]]; then
+    vmctl "exec cmd /c type $A0_DIR\\out\\$name.err" >&2
+    exit 1
+  fi
+  [[ $listing == *"$name.done"* ]] || { echo "no answer from the watcher in $((rounds * 8)) s" >&2; exit 1; }
+  a0_pull "$name" "$out"
+  # A late answer to an earlier request of the same name carries another id.
+  python3 -c "import json,sys; m=json.load(open(sys.argv[1])); sys.exit(0 if m.get('request_id')==sys.argv[2] else 'answer is for request '+str(m.get('request_id'))+', not '+sys.argv[2])" "$out/$name.json" "$rid"
+  python3 -c "import json,sys; m=json.load(open(sys.argv[1], encoding='utf-8-sig')); print(m['width'], m['height'], 'client', m.get('client_size'), 'guest sha', m['sha256'])" "$out/$name.json"
+  if [[ -f $out/$name.screen.png ]]; then
+    python3 -c "import hashlib,json,sys; m=json.load(open(sys.argv[1])); h=hashlib.sha256(open(sys.argv[2],'rb').read()).hexdigest(); sys.exit(0 if h==m.get('screen_sha256') else 'screen frame '+h+' is not the one the metadata names')" "$out/$name.json" "$out/$name.screen.png"
+  fi
+}
+
+# a0-cell CELL KIND SETUP 'step|step|...' [NOTES]: capture a ledger cell and
+# register it. The requirement comes from the surface ledger, so it always
+# matches; the ingester then checks the PNG, hashes and provenance and writes
+# only to .artifacts/interface-parity/a0/. A0_BEFORE=NAME pairs the cell with
+# an earlier capture (`a0 NAME`) of the same setup, for a cell about a
+# transition.
+a0_cell() {
+  local cell=$1 kind=$2 setup=$3 trace=$4 notes=${5:-} req root out
+  local -a before=()
+  root=$(cd "$HERE/../.." && pwd)
+  out=$root/.artifacts/original-checks/a0
+  req=$(python3 - "$root" "$cell" <<'EOF'
+import json, sys
+ledger = json.load(open(f"{sys.argv[1]}/docs/qa/2026-09-10-interface-parity-audit/2026-10-06-surface-ledger.json"))
+found = {c["id"]: c["requirement"] for s in ledger["surfaces"] for c in s.get("acceptance_cells", [])}
+if sys.argv[2] not in found:
+    sys.exit(f"{sys.argv[2]}: not in the surface ledger")
+try:
+    manifest = json.load(open(f"{sys.argv[1]}/.artifacts/interface-parity/a0/manifest.json"))
+except FileNotFoundError:
+    manifest = {"captures": []}
+# Capturing first would overwrite the registered cell's working files.
+if any(c.get("cell_id") == sys.argv[2] for c in manifest.get("captures", [])):
+    sys.exit(f"{sys.argv[2]}: already registered in the A0 manifest")
+print(found[sys.argv[2]])
+EOF
+)
+  # A0_BURST="N MS": N frames MS apart instead of one stable frame, for a
+  # cell about motion.
+  local -a burst=()
+  [[ -n ${A0_BURST:-} ]] && burst=(Burst="${A0_BURST% *}" IntervalMs="${A0_BURST#* }")
+  a0_capture "$cell" "$out" CellId="$cell" Requirement="$req" StateSetupKind="$kind" \
+    StateSetupIdentifier="$setup" StateSetupNotes="$notes" InputTrace="$trace" \
+    ${burst[@]+"${burst[@]}"}
+  [[ -n ${A0_BEFORE:-} ]] && before=(--before=".artifacts/original-checks/a0/$A0_BEFORE.png"
+    --before-metadata=".artifacts/original-checks/a0/$A0_BEFORE.json")
+  [[ -n ${A0_BURST:-} ]] && before+=(--burst=".artifacts/original-checks/a0/$cell.burst")
+  (cd "$root" && node tools/interface-parity/ingest-tactical-a0.mjs \
+    --manifest=.artifacts/interface-parity/a0/manifest.json \
+    --png=".artifacts/original-checks/a0/$cell.png" --metadata=".artifacts/original-checks/a0/$cell.json" \
+    ${before[@]+"${before[@]}"}) |
+    python3 -c "import json,sys; r=json.load(sys.stdin); print(r['status'], r['cell_id'], r['sha256'][:12], 'a0', r.get('a0_coverage'))"
+}
+
+
 # Game Options (F1), Saved Games: the six rows' centre y, each row's name
 # field and load button x, and the two dialogs' buttons (2026-10-11).
 ROWS=(113 166 218 270 323 376)
@@ -431,7 +716,15 @@ case $cmd in
     mon 'info mice' | grep Mouse || true
     ;;
   up) up ;;
-  recover) recover ;;
+  up-a0) up_a0 ;;
+  a0-game) a0_game ;;
+  a0-push) a0_push ;;
+  a0-setup) a0_setup ;;
+  a0-watch) a0_watch ;;
+  a0-run) a0_run "$1" ;;
+  a0) a0_capture "$@" ;;
+  a0-cell) a0_cell "$@" ;;
+  recover) recover "${1:-}" ;;
   cap) vnc capture "$1" ;;
   point|click|rclick|dclick) pointer "$cmd" "$1" "$2"; cap_after "${3:-}" ;;
   drag)
@@ -439,6 +732,11 @@ case $cmd in
     cap_after "${5:-}"
     ;;
   desk) qmp desk "$1" "$2"; cap_after "${3:-}" ;;
+  press)
+    if [[ ${3:-} == right ]]; then qmp press "$1" "$2" right; cap_after "${4:-}"
+    else qmp press "$1" "$2"; cap_after "${3:-}"; fi
+    ;;
+  release) qmp release ${1:+"$1"} ;;
   key) vnc key "$1"; cap_after "${2:-}" ;;
   vnc) vnc "$@" ;;
   wait) wait_change "$@" ;;
@@ -458,5 +756,5 @@ case $cmd in
   take-command) take_command "${1:-}" ;;
   withdraw) withdraw "${1:-}" ;;
   run) run_file "$1" "${2:-}" ;;
-  *) sed -n '2,57p' "$0"; exit 2 ;;
+  *) sed -n '2,81p' "$0"; exit 2 ;;
 esac

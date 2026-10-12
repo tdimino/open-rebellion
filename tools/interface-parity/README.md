@@ -154,6 +154,18 @@ unmodified source manifest, 640×480 sidecar and decoded PNG dimensions, capture
 provenance, input trace, and SHA-256. It copies accepted bytes only to the
 cell's ignored A0 directory and refuses a different replacement for an already
 registered cell. It does not resize or otherwise transform original output.
+The schema check runs on the updated manifest before any file is written,
+every destination is checked before the first write, and each file is
+written then renamed, so a refused or killed run leaves nothing behind.
+
+A transition cell adds `--before=<png> --before-metadata=<json>` (both or
+neither): the frame from the same setup taken earlier, stored as
+`before.png`. A motion cell adds `--burst=<dir>`, the folder `vm-game.sh a0`
+unpacks with `f00.png`, `f01.png`, …; its sidecar's `burst` block must list
+2–60 frames whose hashes match, with rising offsets, and the cell's PNG must
+be the last. The frames are stored as `frame-NN.png` and their timing as
+`burst.json` (`tools/original-capture/README.md`, "A0 captures").
+
 GID actions register a fresh expected command event before input, then wait
 through the following paint; the combined wait has a two-second deadline.
 This prevents a stale log or an early screenshot from satisfying a new action.

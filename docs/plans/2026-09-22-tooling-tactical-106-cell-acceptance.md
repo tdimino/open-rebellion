@@ -120,16 +120,92 @@ ingester fails closed on dimensions, hashes, source identity, ledger drift,
 unsafe destinations, or replacement bytes. The owned capture host was offline
 on 2026-09-22, so capture coverage remains 0/106 and this phase is not complete.
 
-2026-10-11: the owner chose Wine on the development Mac as the A0 capture
-route. The capture VM shows the 640×480 tactical display scaled into an
-800×600 frame, which the no-resize rule above cannot accept as A0. Wine has
-not yet drawn the tactical view (its Direct3D Retained Mode path is
-unqualified), so the first step is one battle in a separate, named prefix,
-compared against the VM's capture of the same save
-(`tools/original-capture/saves/empire-day30-yaga-alert-isd-hyperdrive.sav`).
-If Wine cannot render it, the VM remains the fallback and the scaling
-question goes back to the owner. The Wine window takes the desktop's focus,
-so runs are scheduled when the owner is away from the Mac.
+2026-10-11: the capture VM is the A0 route, with the game full screen.
+GOG's DDrawCompat ini leaves `DisplayResolution` at its default, `desktop`,
+which scales the 640×480 mode to the guest's 800×600 desktop (DDrawCompat
+wiki, Configuration), the only mode its `virtio-ramfb` display lists. `-w`
+gives an unscaled window, but it renders differently (32-bit colour,
+anti-aliased text, other 3D shading), so windowed frames are not A0 and the
+three registered that way were withdrawn. The owner chose to keep 800×600.
+With `DisplayFilter=point` the scaling only repeats whole pixels in a fixed
+pattern (160 columns, 120 rows), so `capture.ps1` checks every repeated line
+equals its neighbour and drops it, recovering the game's 640×480 frame
+bit for bit, and keeps the 800×600 source beside it. `vm-game.sh up-a0`
+starts the game with the capture watcher, and `vm-game.sh a0` takes each
+capture (`tools/original-capture/README.md`, "A0 captures"). A Wine prefix
+on the development Mac was set up and dropped the same day.
+
+2026-10-12: 75 of the 106 cells have an A0 frame in the ignored manifest
+(`.artifacts/interface-parity/a0/manifest.json`); none is compared or
+accepted yet. Damage, subsystem and results states come from edited copies
+of our day-30 save (`agent_docs/original-save-editing.md`, recipe 3). A
+cell about motion (running, observing) takes a burst of frames at a fixed
+cadence instead of one hash-stable frame; the ingester stores the frames and
+their offsets beside the cell's frame, which is the burst's last. Three
+captures of TAC-01-C004 that showed the results screen were withdrawn. The
+31 left. Plan for them (2026-10-12), cheapest first, with what the first
+75 taught:
+
+- A ship at 10 hull has dark weapon icons and neither fires nor manoeuvres,
+  and the day-30 Alliance has one weak Bulk Cruiser, so it hurts nothing:
+  our own ship cannot be made to die there. Deaths and shield damage come
+  from the enemy taking the ISD's fire.
+- With its hyperdrives intact a hurt cruiser withdraws; with them out the
+  battle runs until it dies (`stranded`). The battle ends the moment the
+  last enemy dies, so a still of a death is taken by pausing as soon as a
+  watched region changes (`vm-game.sh wait X,Y,W,H`), and a burst must end
+  before the results screen.
+- `FUN_005ae460` fills an empty fighter colour with half of the largest
+  group, and only when that group holds more than seven squadrons. Fleet 1's
+  six TIE squadrons therefore stay Red: Blue needs eight or more squadrons
+  on one side and Gold about sixteen.
+
+Session 1, the unedited day-30 save (`empire-day30-yaga-alert-control`):
+
+| Cell | Route | Capture |
+|---|---|---|
+| TAC-02-C011 selected | click task force 1 | still |
+| TAC-03-C014, C015 previous, next | Ctrl-select the ISD and the Carrack, click the blank task-force slot to make one two-ship task force (manual p. 144), then the status panel's arrows | still each, with before |
+| TAC-04-C014 chase camera | unpause, F1 follows task force 1 (manual p. 148) | burst |
+| TAC-05-C004 hold | Maneuvers and Tactics, Hold Position (game 556,171), commit (`ghidra/notes/tactical-command-assignment.md`) | still |
+| TAC-05-C008 attack fighters | Missions, Attack Fighters, commit | still |
+| TAC-07-C013 go to system | Battle Results, Go Directly To…, System (manual p. 152); TAC-07-C012 took the Fleet branch | still |
+| TAC-07-C014 strategic persistence | finish the `damage` battle, open Fleet 1's ISD Status, save, reload, read it again | still |
+| TAC-01-C007 empty space | find the Show Planet control (manual pp. 141–146), turn the planet off | still |
+
+Session 2, edited saves, the enemy as the casualty:
+
+| Cell | Route | Capture |
+|---|---|---|
+| TAC-03-C006 shield | `stranded`: left-click the Bulk Cruiser, order the ISD to attack it, pause when its shield bar changes | still |
+| TAC-03-C017 target lost | `fragile`: ISD attacking the cruiser; pause as its portrait or orders line changes | still, else a short burst |
+| TAC-03-C004 destroyed | the same battle, the cruiser selected | still, else a short burst |
+| TAC-04-C003 multiple targets | Ctrl-right-click a second enemy (manual p. 145); the day-30 Alliance has one capital, so its fighters or session 3 | still |
+
+Session 3, an Alliance battle: play `alliance-day54-advice.sav` forward,
+send a fleet against an Imperial system, and save at the alert as a new
+library save (`saves/INDEX.md`). It gives TAC-01-C001, TAC-02-C013,
+TAC-05-C016 and the Alliance side of every both-factions gate, and with
+two or more capitals a side TAC-01-C009 (multi-ship) and TAC-04-C003. The
+audio cell TAC-01-C012 records the guest's sound through the QEMU monitor
+(`wavcapture`, `vm-game.sh mon`) during an engagement in this or session 1.
+
+Session 4, long play, one save each side: a battle with eight capitals in
+one fleet (TAC-02-C001, task forces 1–8) and sixteen or more fighter
+squadrons on one side, fleet and system garrison together (TAC-02-C003–C005
+blue, green, gold). Records cannot be inserted, so these are built in play
+and saved before the alert. TAC-02-C007 (unassigned) is settled from
+`FUN_005ae460` and the manual before it is staged; it may be a ship outside
+every task force or a garrison squadron joining late.
+
+Session 5, the Death Star: route 1 of recipe 2. Order a Death Star in an
+Empire save, diff saves a cycle apart for the manager's progress, set it one
+short of cost, and let the original finish it; then bring it to a battle
+the Alliance can attack with fighters (laser ready, loading, fired, the
+charge gauge, Attack Death Star enabled and the trench-run launch:
+TAC-03-C020, TAC-05-C009, C017–C021, C023; `ghidra/notes/tactical-death-star-path.md`).
+Route 2's converted ISD crashes when its fleet moves, so it serves only a
+battle where the Death Star already sits.
 
 - Automate the owned original English installation in the existing Windows VM.
 - Use original saves, normal inputs, and, where necessary, editor-assisted save
@@ -138,8 +214,10 @@ so runs are scheduled when the owner is away from the Mac.
 - Capture held, selected, disabled, keyboard, edge-probe, camera, damage,
   command, Death Star, options, results, return, audio, and media states named by
   the 106 ledger cells.
-- Normalize only by lossless client-area crop. Never resize, sharpen, recolor,
-  interpolate, or reconstruct an A0 image.
+- Normalize only by lossless client-area crop, or by dropping the verified
+  repeated lines of the point-filtered 800×600 frame (owner's decision,
+  2026-10-11, confirmed 2026-10-12; above). Never resize, sharpen, recolor, interpolate, or
+  otherwise reconstruct an A0 image.
 - Hash every artifact and validate complete provenance before comparison.
 
 Gate: all 106 rows have an authoritative source. Any state that cannot be

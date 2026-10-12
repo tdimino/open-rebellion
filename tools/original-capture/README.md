@@ -143,8 +143,12 @@ This mirrors `goggame-1421404828.script`: the game goes to `C:\Rebellion`,
 GOG's `d3drm.dll`, DDrawCompat `ddraw.dll`, and its ini are applied, the six
 LucasArts registry values are written, the GOG compatibility layer flags are
 set on the executable, and DirectPlay is enabled. The DDrawCompat ini GOG ships
-contains only `CpuAffinity=all` and `LogLevel=none`, so it does not change
-rendering.
+contains only `CpuAffinity=all` and `LogLevel=none`, so DDrawCompat's defaults
+apply. One of them, `DisplayResolution=desktop`, scales the full-screen game's
+640×480 mode to the 800×600 desktop, the only mode Windows lists for the
+virtio-ramfb display. `a0-setup` adds `DisplayFilter=point` so that scaling
+can be undone exactly (see "A0 captures"); GOG's ini is kept as
+`C:\a0\DDrawCompat-REBEXE.ini.orig`.
 
 `REBEXE.exe` is 32-bit, so on 64-bit Windows it reads its data locations from
 the `WOW6432Node` view of `HKLM\Software`. `install.cmd` writes the six values
@@ -154,7 +158,7 @@ with `/reg:32`; a plain `reg add` lands in the 64-bit view and the game reports
 ## Capture
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File D:\capture.ps1 -Name alliance-shell -Out D:\captures -Launch C:\Rebellion\REBEXE.exe -LaunchArgs:-w
+powershell -ExecutionPolicy Bypass -File D:\capture.ps1 -Name alliance-shell -Out D:\captures -Launch C:\Rebellion\REBEXE.exe
 ```
 
 `capture.ps1` locates the game window (by the `REBEXE` process first, so a
@@ -190,6 +194,80 @@ focus even while hidden, so commands can be typed into it blind, and
 `capture.ps1` brings the game forward itself before each frame. `vnc-type.py`
 sends shifted symbols as explicit `shift-<key>` chords, which the QEMU VNC
 server does not synthesise on its own.
+
+## A0 captures
+
+VNC frames and `cap` are navigation aids, never A0. The A0 route runs the
+game full screen and captures inside the guest:
+
+```bash
+tools/original-capture/vm-game.sh up-a0     # tasks: watcher, then REBEXE full screen
+tools/original-capture/vm-game.sh click 535 315          # main menu: Saved Games
+tools/original-capture/vm-game.sh click 384 376          # load slot 6
+tools/original-capture/vm-game.sh wait alert 1 60 /tmp/alert.png
+tools/original-capture/vm-game.sh take-command
+tools/original-capture/vm-game.sh a0-cell TAC-01-C003 original-save \
+  empire-day30-yaga-alert-control 'load slot 6|Battle Alert|Take Command|no further input'
+```
+
+- With `DisplayFilter=point`, DDrawCompat scales 640×480 to 800×600 by
+  repeating whole pixels: every column with `x % 5 == 3` and 120 fixed rows
+  (`DupRows` in `capture.ps1`) copy their neighbour. The pattern was
+  calibrated on two different frames on 2026-10-11. `capture.ps1` copies the
+  whole screen, checks every repeated column and row equals its neighbour
+  (any difference refuses the frame), and drops them, which gives the game's
+  640×480 frame exactly. It writes that as `NAME.png` and the source as
+  `NAME.screen.png`, records both hashes and the ini's hash, and refuses a
+  cell frame unless the screen is 800×600 and the ini has
+  `DisplayFilter=point`. Two captures of one paused frame hash-equal.
+- Do not use `-w`. Windowed, the game renders differently (32-bit colour,
+  anti-aliased text, other 3D shading; full screen is an 8-bit palette), so
+  its frames are not the original's. `capture.ps1` refuses a windowed cell
+  frame; `FullClient=1` probes are still allowed.
+- Full screen, the game draws its own cursor into the frame. `a0` parks it
+  at the screen's bottom-right corner (`A0_PARK`, default `799 599`), where
+  it covers the frame's bottom-right 9×9 pixels.
+- The guest agent runs as SYSTEM in session 0, which has no desktop, so
+  nothing it starts directly can show a window or capture one. `a0-setup`
+  registers three tasks for the logged-on `capture` user with an
+  interactive, elevated logon (`vm/a0-tasks.ps1`): `A0Watcher` runs
+  `capture.ps1 -Watch C:\a0` under `conhost --headless`, so no console covers
+  the game, `A0Game` runs `REBEXE.EXE`, and `A0Run` runs `C:\a0\run.ps1` on
+  the desktop for checks that need the session (`a0-run FILE`). `up-a0`
+  starts the first two with `schtasks /Run`, gives the game the focus, which
+  a task's window does not get, with a click on the cockpit ceiling, and
+  skips the intros. `a0-watch` restarts the watcher. Nothing is typed into
+  the guest, because typing goes to whichever window has the focus.
+- `a0` pushes a request through the guest agent and waits for the watcher's
+  `.done` or `.err` in calls of about 8 s (one call held for 30 s made UTM
+  report "Timed out waiting for RPC"), then pulls the PNG, JSON and screen
+  frame, checks the request id, and checks the screen frame's hash. The
+  watcher runs each request in a fresh PowerShell process, so an edited
+  `capture.ps1` applies to the next capture.
+- `capture.ps1` refuses a frame unless the game has the focus, since GDI
+  copies whatever is on screen, and keeps one only after two consecutive
+  identical frames (`FullClient=1` probes keep the first).
+- One capture per cell. A cell about a transition (entry from the Battle
+  Alert, a click's effect) pairs its frame with the frame before it:
+  capture that first with `a0 NAME`, then `A0_BEFORE=NAME a0-cell ...`; the
+  ingester stores it as `before.png` and checks it shares the setup and came
+  earlier.
+- A cell about motion (a running or observed battle) never holds two equal
+  frames, so the stable capture refuses it ("Frame never stabilised"). Take
+  a burst instead: `A0_BURST="12 250" a0-cell ...` (or `a0 NAME Burst=12
+  IntervalMs=250`) copies the screen 12 times 250 ms apart on a stopwatch,
+  keeps the copies in memory so encoding does not skew the cadence, and
+  checks and rebuilds each one exactly. The guest zips the frames with
+  their sources; `a0` unpacks `NAME.burst/` and checks every hash. The cell's
+  frame is the burst's last; the ingester stores the frames as
+  `frame-NN.png` and their offsets as `burst.json`. Burst takes 2–60
+  frames at 100 ms or more, full screen only. Measured 2026-10-12: 12 frames
+  over 2752 ms, every offset within 15 ms of its slot.
+- `a0-cell` refuses a cell already in the manifest before capturing, since
+  the capture would overwrite that cell's working files. When the guest
+  refuses a frame, read `C:\a0\out\NAME.err` with `gexec` rather than
+  rerunning `a0-cell` to see the message; a rerun that succeeds registers
+  whatever is on screen.
 
 ## Registration
 

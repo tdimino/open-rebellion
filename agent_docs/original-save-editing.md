@@ -219,6 +219,48 @@ reload that one; bring an enemy fleet in, and the battle shows the Death
 Star as its own object and returns to the galaxy; save and reload once
 more.
 
+## Recipe 3: battle states at the day-30 alert
+
+The tactical A0 cells for damage, subsystems and results need ships that
+enter the battle already hurt. `save_edit.py` stages them from
+`empire-day30-yaga-alert-control.sav` (SHA-256 `8a7a9923…975636`, 421,096
+bytes), which reaches the Yaga Minor alert within seconds of the load.
+Each Imperial ship there has three graph copies (`0x80000081` full,
+`0x80000091` and `0x800000a1` short); the Alliance Bulk Cruiser has two
+(`0x80000041` full, `0x80000051` short). Hull damage and the packed word are
+words 19–20 of a full copy and 9–10 of a short one, as in recipe 1:
+
+| Ship | id | class | records | flags (word 0) | hull (CAPSHPSD) |
+|---|---|---|---|---|---|
+| Imperial Star Destroyer 1 | `0x77f` | `0x85` | `0x1ae28`, `0x32c96`, `0x4bbed` | `0x000301c7` | 2750 |
+| Carrack Light Cruiser 2 | `0x7aa` | `0x83` | `0x1b29f`, `0x32f41`, `0x4bf24` | `0x000301c7` | 1000 |
+| Bulk Cruiser 3 | `0x796` | `0x41` | `0x1b385`, `0x32feb` | `0x00030056` | 1200 |
+
+The packed word's nibbles, low first: shield, weapons, tractor, engines,
+primary hyperdrive, backup hyperdrive (`FUN_0040cfc0` through
+`FUN_00501510`…`FUN_00501820`). The script asserts each record's family,
+id, class, name and flags, and zero hull and packed words, before writing.
+
+| Recipe | Writes (hull, packed) | Output SHA-256 | Seen in the original (2026-10-12) |
+|---|---|---|---|
+| `damage` | ISD (2200, `0x1121`), Carrack (400, 0) | `db514c7f…cf2032` | ISD hull bar about a fifth, Carrack about three-fifths; Battle Results lists both as Operational |
+| `subsystems` | ISD (0, `0x2222`) | `75f52eac…364bde` | shield, weapons and tractor icons show two hits; two engine hits leave its icon unchanged |
+| `engines` | ISD (0, `0x4000`) | `ebe9dd3b…cf18c5` | four engine hits (the limit) change the engine icon |
+| `fragile` | Bulk Cruiser (1190, `0x00110000`) | `66dea9a8…0e0d80` | destroyed in the battle; without the drive hits (v1, `79003906…`) it withdrew |
+| `stranded` | Bulk Cruiser (0, `0x00110000`) | `2a22dda9…abf476` | cannot withdraw, so the battle runs until it is destroyed |
+
+`doomed` (ISD 2740 hull damage, Bulk Cruiser stranded; output
+`afeedd3c…342bd0`) does not give a destroyed ISD: at 10 hull its weapon
+icons are dark, and even ordered to attack ("Attacking Bulk Cruiser 3")
+neither ship moved or fired in over five minutes. Its first copy, with the
+cruiser's drives intact, ended with the Alliance withdrawn. A ship lost in
+battle needs an enemy that can fight, so the Alliance battle.
+
+Low hull also dims the shield, weapons and tractor icons, so isolate a
+subsystem at full hull. Battle Results has only Operational and Destroyed
+columns. None of these copies has passed the re-save and reload gates; they
+are staging for captures, not library saves.
+
 ## Checksums
 
 None found in the decompiled serializer (`FUN_004f9450` / `FUN_004f9340`,

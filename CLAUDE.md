@@ -35,7 +35,10 @@ functional. Do not repeat historical parity percentages as verified results.
   drive it from this Mac with `tools/original-capture/vm-game.sh` (`up`,
   `click`, `key`, `cap`) and start from a save in
   `tools/original-capture/saves/INDEX.md`. Setup, VNC caveats and save
-  transfer: `tools/original-capture/README.md`. VM storage stays on the Mini;
+  transfer: `tools/original-capture/README.md`. The game is scaled to
+  800×600, so A0 frames come only from `up-a0` and `a0`, which capture in the
+  guest and drop the point filter's repeated lines exactly; never `-w`, which
+  renders differently (README, "A0 captures"). VM storage stays on the Mini;
   pull only captures and hashes. To reach a state normal play cannot stage
   (a damaged hyperdrive, a Death Star), edit a copy of one of our saves:
   `agent_docs/original-save-editing.md`.

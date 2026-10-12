@@ -6,6 +6,8 @@ Runs on the Mac Mini, where QMP listens on loopback only
     ssh mini python3 - point X Y          < vm-qmp.py
     ssh mini python3 - click X Y [right]
     ssh mini python3 - drag X1 Y1 X2 Y2
+    ssh mini python3 - press X Y [right]   (button held down: a pressed state)
+    ssh mini python3 - release [right]
     ssh mini python3 - desk X Y            (Windows desktop: jump and click)
     ssh mini python3 - screendump FILE.ppm
     ssh mini python3 - hmp "COMMAND"      (any QEMU monitor command)
@@ -116,6 +118,12 @@ def main(argv):
     elif command == "click":
         point(qmp, argv[1], argv[2])
         click(qmp, "right" if "right" in argv[3:] else "left")
+    elif command == "press":
+        point(qmp, argv[1], argv[2])
+        time.sleep(0.3)
+        qmp.button("right" if "right" in argv[3:] else "left", True)
+    elif command == "release":
+        qmp.button("right" if "right" in argv[1:] else "left", False)
     elif command == "desk":
         # Outside the game, Windows' own cursor follows the tablet exactly.
         qmp.move(int(argv[1]), int(argv[2]))

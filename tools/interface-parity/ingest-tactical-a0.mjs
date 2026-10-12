@@ -44,10 +44,19 @@ const validate = new Ajv2020({
 if (!validate(manifest)) {
   throw new Error(`input A0 manifest is invalid:\n${JSON.stringify(validate.errors, null, 2)}`);
 }
-const result = ingestCapture({ root, surfaceLedger, manifest, metadata, pngPath });
-if (!validate(result.manifest)) {
-  throw new Error(`updated A0 manifest is invalid:\n${JSON.stringify(validate.errors, null, 2)}`);
-}
+const beforePath = argumentsByName.has("--before") ? requiredPath("--before") : null;
+const beforeMetadata = argumentsByName.has("--before-metadata")
+  ? readJson(requiredPath("--before-metadata"))
+  : null;
+const burstDir = argumentsByName.has("--burst") ? requiredPath("--burst") : null;
+const result = ingestCapture({
+  root, surfaceLedger, manifest, metadata, pngPath, beforePath, beforeMetadata, burstDir,
+  validateManifest: (next) => {
+    if (!validate(next)) {
+      throw new Error(`updated A0 manifest is invalid:\n${JSON.stringify(validate.errors, null, 2)}`);
+    }
+  },
+});
 const cells = collectTacticalCells(surfaceLedger);
 const coverage = a0Coverage(result.manifest, cells);
 const temporary = `${manifestPath}.tmp-${process.pid}`;
