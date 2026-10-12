@@ -135,6 +135,7 @@ struct RealizedWindow {
     id: ProbeWindow,
     child_id: egui::Id,
     text_id: egui::Id,
+    button_id: egui::Id,
     text_rect: egui::Rect,
     scroll_rect: egui::Rect,
     clip_rect: egui::Rect,
@@ -195,133 +196,146 @@ fn prepare_adapter_frame(
 }
 
 /// Frozen candidate bridge step 2: realize all children in one stable layer.
-/// Window identity, not rank, salts widget IDs. Call order is paint order.
+/// Each window owns a top-level identity namespace, while call order remains
+/// paint order.
 fn realize_adapter_frame(
     ctx: &egui::Context,
     frame: &PreparedFrame,
     state: &mut ProbeState,
 ) -> RealizedFrame {
     let layer = egui::LayerId::new(egui::Order::Middle, egui::Id::new(HOST_ID));
-    let mut host = egui::Ui::new(
-        ctx.clone(),
-        egui::Id::new(HOST_ID),
-        egui::UiBuilder::new()
-            .layer_id(layer)
-            .max_rect(frame.canvas)
-            .sense(egui::Sense::empty()),
-    );
-    let mut realized = Vec::with_capacity(frame.bottom_to_top.len());
-
-    for window in &frame.bottom_to_top {
-        // Paint the window chrome from the host so an input-disabled child is
-        // inert without visually fading the window beneath the active one.
-        host.painter().with_clip_rect(window.clip_rect).rect_filled(
-            window.rect,
-            0.0,
-            window.id.marker(),
-        );
-        let mut builder = egui::UiBuilder::new()
-            .id_salt(window.id)
-            .max_rect(window.rect)
-            .layout(egui::Layout::top_down(egui::Align::Min))
-            .sense(egui::Sense::hover());
-        if !window.permit.interactive() {
-            builder = builder.disabled();
-        }
-        let mut child = host.new_child(builder);
-        child.set_clip_rect(window.clip_rect);
-
-        let text_id = child.id().with("text-edit");
-        let text_rect = egui::Rect::from_min_size(
-            window.rect.min + egui::vec2(12.0, 12.0),
-            egui::vec2(112.0, 24.0),
-        );
-        let text = state
-            .text
-            .get_mut(&window.id)
-            .expect("all probe windows have text state");
-        let _ = child.put(
-            text_rect,
-            egui::TextEdit::singleline(text)
-                .id(text_id)
-                .desired_width(112.0),
+    let host_rect = frame
+        .input_recipient
+        .and_then(|recipient| {
+            frame
+                .bottom_to_top
+                .iter()
+                .find(|window| window.id == recipient)
+        })
+        .map_or_else(
+            || egui::Rect::from_min_size(frame.canvas.min, egui::Vec2::ZERO),
+            |window| window.clip_rect,
         );
 
-        let scroll_rect = egui::Rect::from_min_size(
-            window.rect.min + egui::vec2(12.0, 42.0),
-            egui::vec2(112.0, 32.0),
-        );
-        let _ = child.scope_builder(
-            egui::UiBuilder::new()
-                .id_salt("scroll-scope")
-                .max_rect(scroll_rect),
-            |ui| {
-                egui::ScrollArea::vertical()
-                    .id_salt((window.id, "scroll"))
-                    .max_height(scroll_rect.height())
-                    .show(ui, |ui| {
-                        ui.label("row 1");
-                        ui.label("row 2");
-                        ui.label("row 3");
+    egui::Area::new(egui::Id::new(HOST_ID))
+        .order(egui::Order::Middle)
+        .fixed_pos(host_rect.min)
+        .default_size(host_rect.size())
+        .sense(egui::Sense::hover())
+        .constrain(false)
+        .fade_in(false)
+        .show(ctx, |host| {
+            host.set_min_size(host_rect.size());
+            host.set_clip_rect(frame.canvas);
+            let mut realized = Vec::with_capacity(frame.bottom_to_top.len());
+
+            for window in &frame.bottom_to_top {
+                // Paint the window chrome from the host so an input-disabled child is
+                // inert without visually fading the window beneath the active one.
+                host.painter().with_clip_rect(window.clip_rect).rect_filled(
+                    window.rect,
+                    0.0,
+                    window.id.marker(),
+                );
+                let mut builder = egui::UiBuilder::new()
+                    .layer_id(layer)
+                    .max_rect(window.rect)
+                    .layout(egui::Layout::top_down(egui::Align::Min))
+                    .sense(egui::Sense::hover());
+                if !window.permit.interactive() {
+                    builder = builder.disabled();
+                }
+                let mut child = egui::Ui::new(
+                    ctx.clone(),
+                    egui::Id::new((HOST_ID, "window", window.id)),
+                    builder,
+                );
+                child.set_clip_rect(window.clip_rect);
+
+                let text_id = child.id().with("text-edit");
+                let text_rect = egui::Rect::from_min_size(
+                    window.rect.min + egui::vec2(12.0, 12.0),
+                    egui::vec2(112.0, 24.0),
+                );
+                let text = state
+                    .text
+                    .get_mut(&window.id)
+                    .expect("all probe windows have text state");
+                let _ = child.put(
+                    text_rect,
+                    egui::TextEdit::singleline(text)
+                        .id(text_id)
+                        .desired_width(112.0),
+                );
+
+                let scroll_rect = egui::Rect::from_min_size(
+                    window.rect.min + egui::vec2(12.0, 42.0),
+                    egui::vec2(112.0, 32.0),
+                );
+                let _ = child.scope_builder(
+                    egui::UiBuilder::new()
+                        .id_salt("scroll-scope")
+                        .max_rect(scroll_rect),
+                    |ui| {
+                        egui::ScrollArea::vertical()
+                            .id_salt((window.id, "scroll"))
+                            .max_height(scroll_rect.height())
+                            .show(ui, |ui| {
+                                ui.label("row 1");
+                                ui.label("row 2");
+                                ui.label("row 3");
+                            });
+                    },
+                );
+
+                let button_rect = egui::Rect::from_min_size(
+                    window.rect.min + egui::vec2(12.0, 82.0),
+                    egui::vec2(112.0, 24.0),
+                );
+                let button = child.put(
+                    button_rect,
+                    egui::Button::new(format!("{} cockpit", window.id.name())),
+                );
+                if button.clicked() {
+                    state.button_hits.push(window.id);
+                }
+
+                let raw_row = egui::Rect::from_min_size(
+                    window.rect.min + egui::vec2(12.0, 112.0),
+                    egui::vec2(112.0, 18.0),
+                );
+                child
+                    .painter()
+                    .rect_filled(raw_row, 0.0, egui::Color32::from_gray(24));
+                let raw_clicked = window.permit.pointer
+                    && child.input(|input| {
+                        input.pointer.primary_clicked()
+                            && input
+                                .pointer
+                                .interact_pos()
+                                .is_some_and(|point| raw_row.contains(point))
                     });
-            },
-        );
+                if raw_clicked {
+                    state.raw_row_hits.push(window.id);
+                }
 
-        let button_rect = egui::Rect::from_min_size(
-            window.rect.min + egui::vec2(12.0, 82.0),
-            egui::vec2(112.0, 24.0),
-        );
-        if child
-            .put(
-                button_rect,
-                egui::Button::new(format!("{} cockpit", window.id.name())),
-            )
-            .clicked()
-        {
-            state.button_hits.push(window.id);
-        }
+                realized.push(RealizedWindow {
+                    id: window.id,
+                    child_id: child.id(),
+                    text_id,
+                    button_id: button.id,
+                    text_rect,
+                    scroll_rect,
+                    clip_rect: child.clip_rect(),
+                });
+            }
 
-        let raw_row = egui::Rect::from_min_size(
-            window.rect.min + egui::vec2(12.0, 112.0),
-            egui::vec2(112.0, 18.0),
-        );
-        child
-            .painter()
-            .rect_filled(raw_row, 0.0, egui::Color32::from_gray(24));
-        let raw_clicked = window.permit.pointer
-            && child.input(|input| {
-                input.pointer.primary_clicked()
-                    && input
-                        .pointer
-                        .interact_pos()
-                        .is_some_and(|point| raw_row.contains(point))
-            });
-        if raw_clicked {
-            state.raw_row_hits.push(window.id);
-        }
-
-        realized.push(RealizedWindow {
-            id: window.id,
-            child_id: child.id(),
-            text_id,
-            text_rect,
-            scroll_rect,
-            clip_rect: child.clip_rect(),
-        });
-    }
-
-    RealizedFrame {
-        bottom_to_top: realized,
-        input_recipient: frame.input_recipient,
-    }
-}
-
-fn input(events: Vec<egui::Event>) -> egui::RawInput {
-    egui::RawInput {
-        screen_rect: Some(CANVAS),
-        events,
-        ..Default::default()
-    }
+            RealizedFrame {
+                bottom_to_top: realized,
+                input_recipient: frame.input_recipient,
+            }
+        })
+        .inner
 }
 
 fn pointer_button(point: egui::Pos2, pressed: bool) -> egui::Event {
@@ -350,10 +364,35 @@ fn run_candidate(
 ) -> (egui::FullOutput, RealizedFrame) {
     let frame = prepare_adapter_frame(BridgeStrategy::ManagedHost, CANVAS, windows, pointer)
         .expect("managed host is the supported probe strategy");
+    run_prepared_candidate(ctx, state, &frame, pointer, events)
+}
+
+fn run_prepared_candidate(
+    ctx: &egui::Context,
+    state: &mut ProbeState,
+    frame: &PreparedFrame,
+    pointer: Option<egui::Pos2>,
+    events: Vec<egui::Event>,
+) -> (egui::FullOutput, RealizedFrame) {
+    // egui resolves hit ownership at begin-pass from the previous pass's
+    // widgets. Prime that snapshot with the current order, geometry, and
+    // permits before delivering this frame's mutating input.
+    let preview_events = pointer
+        .map(|point| vec![egui::Event::PointerMoved(point)])
+        .unwrap_or_default();
+    let frame_input = |events| egui::RawInput {
+        screen_rect: Some(frame.canvas),
+        events,
+        ..Default::default()
+    };
+    let mut output = ctx.run(frame_input(preview_events), |ctx| {
+        let _ = realize_adapter_frame(ctx, &frame, state);
+    });
     let mut realized = None;
-    let output = ctx.run(input(events), |ctx| {
+    let interactive_output = ctx.run(frame_input(events), |ctx| {
         realized = Some(realize_adapter_frame(ctx, &frame, state));
     });
+    output.append(interactive_output);
     (output, realized.expect("the egui pass ran"))
 }
 
@@ -388,7 +427,7 @@ fn marker_clips(output: &egui::FullOutput) -> Vec<(ProbeWindow, egui::Rect)> {
 }
 
 fn render_repeated_raise(ctx: &egui::Context, requested_bottom_to_top: &[ProbeWindow]) {
-    let _ = ctx.run(input(Vec::new()), |ctx| {
+    let _ = ctx.run(egui::RawInput::default(), |ctx| {
         for window in requested_bottom_to_top {
             ctx.move_to_top(egui::LayerId::new(egui::Order::Middle, window.area_id()));
             egui::Area::new(window.area_id())
@@ -611,6 +650,36 @@ fn windowing_adapter_keeps_widget_ids_and_text_state_across_raise() {
 }
 
 #[test]
+fn windowing_adapter_keeps_automatic_button_ids_across_rank_and_membership_changes() {
+    let ctx = egui::Context::default();
+    let mut state = ProbeState::default();
+    let (_, first) = run_candidate(
+        &ctx,
+        &mut state,
+        &specs(&ProbeWindow::ALL),
+        Some(OVERLAP.center()),
+        Vec::new(),
+    );
+    let first_ids: HashMap<_, _> = first
+        .bottom_to_top
+        .iter()
+        .map(|window| (window.id, window.button_id))
+        .collect();
+
+    let (_, raised) = run_candidate(
+        &ctx,
+        &mut state,
+        &specs(&[ProbeWindow::C, ProbeWindow::A]),
+        Some(OVERLAP.center()),
+        Vec::new(),
+    );
+
+    for window in &raised.bottom_to_top {
+        assert_eq!(window.button_id, first_ids[&window.id]);
+    }
+}
+
+#[test]
 fn windowing_adapter_blocks_lower_text_edit_before_mutation() {
     let ctx = egui::Context::default();
     let mut state = ProbeState::default();
@@ -644,9 +713,15 @@ fn windowing_adapter_blocks_lower_text_edit_before_mutation() {
     }
     .interactive());
     let mut realized = None;
-    let _ = ctx.run(input(vec![egui::Event::Text("!".to_owned())]), |ctx| {
-        realized = Some(realize_adapter_frame(ctx, &frame, &mut state));
-    });
+    let _ = ctx.run(
+        egui::RawInput {
+            events: vec![egui::Event::Text("!".to_owned())],
+            ..Default::default()
+        },
+        |ctx| {
+            realized = Some(realize_adapter_frame(ctx, &frame, &mut state));
+        },
+    );
 
     assert!(realized.is_some());
     assert_eq!(state.text[&ProbeWindow::A], "A");
@@ -679,6 +754,77 @@ fn windowing_adapter_routes_overlap_to_exactly_one_button() {
     }
     assert_eq!(state.button_hits, vec![ProbeWindow::B]);
     assert_eq!(state.raw_row_hits, vec![ProbeWindow::B]);
+}
+
+#[test]
+fn windowing_adapter_routes_press_immediately_after_blank_map() {
+    let ctx = egui::Context::default();
+    let mut state = ProbeState::default();
+    let blank = egui::pos2(300.0, 220.0);
+    let button = OVERLAP.min + egui::vec2(30.0, 94.0);
+    let windows = specs(&[ProbeWindow::C, ProbeWindow::A, ProbeWindow::B]);
+
+    let _ = run_candidate(
+        &ctx,
+        &mut state,
+        &windows,
+        Some(blank),
+        vec![egui::Event::PointerMoved(blank)],
+    );
+    let _ = run_candidate(
+        &ctx,
+        &mut state,
+        &windows,
+        Some(button),
+        vec![
+            egui::Event::PointerMoved(button),
+            pointer_button(button, true),
+        ],
+    );
+    let _ = run_candidate(
+        &ctx,
+        &mut state,
+        &windows,
+        Some(button),
+        vec![pointer_button(button, false)],
+    );
+
+    assert_eq!(state.button_hits, vec![ProbeWindow::B]);
+}
+
+#[test]
+fn windowing_adapter_routes_press_during_order_and_geometry_change() {
+    let ctx = egui::Context::default();
+    let mut state = ProbeState::default();
+    let old_windows = specs(&[ProbeWindow::A, ProbeWindow::B, ProbeWindow::C]);
+    let moved = OVERLAP.translate(egui::vec2(40.0, 20.0));
+    let new_windows = vec![
+        ProbeWindowSpec::new(ProbeWindow::C, OVERLAP),
+        ProbeWindowSpec::new(ProbeWindow::B, OVERLAP),
+        ProbeWindowSpec::new(ProbeWindow::A, moved),
+    ];
+    let button = moved.min + egui::vec2(30.0, 94.0);
+
+    let _ = run_candidate(&ctx, &mut state, &old_windows, None, Vec::new());
+    let _ = run_candidate(
+        &ctx,
+        &mut state,
+        &new_windows,
+        Some(button),
+        vec![
+            egui::Event::PointerMoved(button),
+            pointer_button(button, true),
+        ],
+    );
+    let _ = run_candidate(
+        &ctx,
+        &mut state,
+        &new_windows,
+        Some(button),
+        vec![pointer_button(button, false)],
+    );
+
+    assert_eq!(state.button_hits, vec![ProbeWindow::A]);
 }
 
 #[test]
@@ -746,15 +892,7 @@ fn windowing_adapter_cold_frame_matches_warm_frame_after_resize() {
             None,
         )
         .unwrap();
-        let mut realized = None;
-        let output = ctx.run(
-            egui::RawInput {
-                screen_rect: Some(resized_canvas),
-                ..Default::default()
-            },
-            |ctx| realized = Some(realize_adapter_frame(ctx, &frame, state)),
-        );
-        (output, realized.unwrap())
+        run_prepared_candidate(ctx, state, &frame, None, Vec::new())
     };
 
     let cold_ctx = egui::Context::default();
