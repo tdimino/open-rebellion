@@ -3,9 +3,10 @@ use std::fmt::Debug;
 use std::hash::Hash;
 
 use rebellion_windowing::{
-    Cardinality, ExistingEffect, ExistingOpenPolicy, FocusOnOpen, FocusRestoration, InputPolicy,
-    OpenPlacement, PresentationPolicy, StackBand, SubjectId, WindowCommand, WindowError, WindowId,
-    WindowKey, WindowKind, WindowManager, WindowOwner, WindowPolicy, WindowSpec, WindowTransition,
+    CaptureCancelReason, Cardinality, CloseReason, ControlId, ExistingEffect, ExistingOpenPolicy,
+    FocusOnOpen, FocusRestoration, FocusTarget, InputPolicy, OpenPlacement, PresentationPolicy,
+    StackBand, SubjectId, WindowCommand, WindowError, WindowEvent, WindowId, WindowKey, WindowKind,
+    WindowManager, WindowOwner, WindowPolicy, WindowSpec, WindowTransition,
 };
 
 fn assert_opaque_id_traits<T: Copy + Debug + Eq + Hash + Ord>() {}
@@ -83,6 +84,519 @@ fn opened_id(transition: WindowTransition) -> WindowId {
         WindowTransition::Opened { id } => id,
         other => panic!("expected a new window, got {other:?}"),
     }
+}
+
+fn open_window(manager: &mut WindowManager, spec: WindowSpec) -> WindowId {
+    opened_id(manager.apply(WindowCommand::Open(spec)).unwrap().transition)
+}
+
+fn replaced_id(transition: WindowTransition, expected_old: WindowId) -> WindowId {
+    match transition {
+        WindowTransition::Replaced { old, new } => {
+            assert_eq!(old, expected_old);
+            assert!(new.get() > old.get());
+            new
+        }
+        other => panic!("expected atomic replacement, got {other:?}"),
+    }
+}
+
+#[test]
+fn replacement_cleans_history_capture_and_focus_atomically() {
+    // port: SW-02R atomic publication; lifecycle sources FUN_00600f90,
+    // FUN_005ffb60 (owner cascade), FUN_00428b40 (history), FUN_00422ce0 (focus).
+    // Break caught: bypassing close cleanup or exposing intermediate focus receipts.
+    let mut manager = WindowManager::new();
+    let old_spec = modeless_subject_spec(WindowKind::System, 1);
+    let old = open_window(&mut manager, old_spec);
+    let survivor = open_window(&mut manager, modeless_subject_spec(WindowKind::Fleet, 2));
+    let history_spec = modeless_subject_spec(WindowKind::Defenses, 3);
+    let history_survivor = open_window(&mut manager, history_spec);
+    manager
+        .apply(WindowCommand::Minimize(history_survivor))
+        .unwrap();
+    let hidden_spec = WindowSpec {
+        owner: WindowOwner::Window(old),
+        ..modeless_subject_spec(WindowKind::Defenses, 4)
+    };
+    let hidden = open_window(&mut manager, hidden_spec);
+    manager.apply(WindowCommand::Minimize(hidden)).unwrap();
+    let child_spec = WindowSpec {
+        owner: WindowOwner::Window(old),
+        ..modeless_subject_spec(WindowKind::Missions, 5)
+    };
+    let child = open_window(&mut manager, child_spec);
+    let menu_spec = transient_menu_spec(child);
+    let menu = open_window(&mut manager, menu_spec);
+    manager.apply(WindowCommand::CapturePointer(menu)).unwrap();
+    let focus_before = manager.focused();
+    assert_eq!(
+        focus_before,
+        Some(FocusTarget {
+            window: menu,
+            control: None
+        })
+    );
+
+    let new_spec = modeless_subject_spec(WindowKind::System, 99);
+    let commit = manager
+        .apply(WindowCommand::Replace { old, new: new_spec })
+        .unwrap();
+    let new = replaced_id(commit.transition, old);
+    assert_eq!(new.get(), 7);
+    assert_eq!(
+        commit.events,
+        vec![
+            WindowEvent::CaptureCancelled {
+                window: menu,
+                reason: CaptureCancelReason::OwnerClosed
+            },
+            WindowEvent::Closed {
+                window: menu,
+                key: menu_spec.key,
+                reason: CloseReason::OwnerClosed
+            },
+            WindowEvent::Closed {
+                window: child,
+                key: child_spec.key,
+                reason: CloseReason::OwnerClosed
+            },
+            WindowEvent::Closed {
+                window: hidden,
+                key: hidden_spec.key,
+                reason: CloseReason::OwnerClosed
+            },
+            WindowEvent::Closed {
+                window: old,
+                key: old_spec.key,
+                reason: CloseReason::Replaced
+            },
+            WindowEvent::FocusChanged {
+                previous: focus_before,
+                current: Some(FocusTarget {
+                    window: new,
+                    control: None
+                })
+            },
+        ]
+    );
+    for key in [old_spec.key, hidden_spec.key, child_spec.key, menu_spec.key] {
+        assert_eq!(manager.id_for(key), None);
+    }
+    assert_eq!(manager.id_for(new_spec.key), Some(new));
+    assert_eq!(manager.id_for(history_spec.key), Some(history_survivor));
+    assert_eq!(manager.visible_order(), &[survivor, new]);
+    assert_eq!(manager.presentation_history(), &[history_survivor]);
+    assert_eq!(manager.capture_owner(), None);
+    assert_eq!(
+        manager.focused(),
+        Some(FocusTarget {
+            window: new,
+            control: None
+        })
+    );
+    assert_eq!(manager.validate(), Ok(()));
+}
+
+#[test]
+fn replacement_checks_capacity_after_removing_the_old_subtree() {
+    // Source: FUN_00429ce0, max two Sectors; port: SW-02R post-removal validation.
+    // Break caught: validating capacity against the original registry or keeping a third Sector.
+    let mut manager = WindowManager::new();
+    let old_spec = sector_spec(1);
+    let old = open_window(&mut manager, old_spec);
+    let survivor = open_window(&mut manager, sector_spec(2));
+    let new_spec = sector_spec(3);
+    let commit = manager
+        .apply(WindowCommand::Replace { old, new: new_spec })
+        .unwrap();
+    let new = replaced_id(commit.transition, old);
+    assert_eq!(new.get(), 3);
+    assert_eq!(manager.id_for(old_spec.key), None);
+    assert_eq!(manager.id_for(new_spec.key), Some(new));
+    assert_eq!(manager.visible_order(), &[new, survivor]);
+    let before = format!("{manager:?}");
+    assert_eq!(
+        manager.apply(WindowCommand::Open(sector_spec(4))),
+        Err(WindowError::CardinalityExceeded(WindowKind::Sector))
+    );
+    assert_eq!(format!("{manager:?}"), before);
+    assert_eq!(manager.validate(), Ok(()));
+
+    // Capacity released by descendants also counts, even when the root is another family.
+    let mut manager = WindowManager::new();
+    let root = open_window(&mut manager, modeless_subject_spec(WindowKind::System, 1));
+    let bounded = WindowPolicy {
+        cardinality: Cardinality::Subject { max_open: Some(2) },
+        ..modeless_subject_spec(WindowKind::Fleet, 2).policy
+    };
+    for subject in [2, 3] {
+        open_window(
+            &mut manager,
+            WindowSpec {
+                owner: WindowOwner::Window(root),
+                policy: bounded,
+                ..modeless_subject_spec(WindowKind::Fleet, subject)
+            },
+        );
+    }
+    let new_spec = WindowSpec {
+        policy: bounded,
+        ..modeless_subject_spec(WindowKind::Fleet, 4)
+    };
+    let commit = manager
+        .apply(WindowCommand::Replace {
+            old: root,
+            new: new_spec,
+        })
+        .unwrap();
+    let new = replaced_id(commit.transition, root);
+    assert_eq!(new.get(), 4);
+    assert_eq!(manager.visible_order(), &[new]);
+    assert_eq!(
+        commit
+            .events
+            .iter()
+            .filter(|event| matches!(event, WindowEvent::Closed { .. }))
+            .count(),
+        3
+    );
+    assert_eq!(manager.validate(), Ok(()));
+}
+
+#[test]
+fn invalid_replacement_preserves_old_id_content_links_and_allocator() {
+    // port: SW-02R complete rollback; no failed preparation can discard feature content.
+    // Break caught: mutating cleanup/index/order/focus/capture or allocating before validation.
+    let mut manager = WindowManager::new();
+    let old_spec = modeless_subject_spec(WindowKind::System, 1);
+    let old = open_window(&mut manager, old_spec);
+    let child_spec = WindowSpec {
+        owner: WindowOwner::Window(old),
+        ..modeless_subject_spec(WindowKind::Fleet, 2)
+    };
+    let child = open_window(&mut manager, child_spec);
+    manager.apply(WindowCommand::Minimize(child)).unwrap();
+    let menu_spec = transient_menu_spec(old);
+    let menu = open_window(&mut manager, menu_spec);
+    manager.apply(WindowCommand::CapturePointer(menu)).unwrap();
+    let stale = open_window(&mut manager, sector_spec(4));
+    manager.apply(WindowCommand::Close(stale)).unwrap();
+    let before = format!("{manager:?}");
+    let invalid = WindowSpec {
+        owner: WindowOwner::Window(stale),
+        ..modeless_subject_spec(WindowKind::Missions, 5)
+    };
+    assert_eq!(
+        manager.apply(WindowCommand::Replace { old, new: invalid }),
+        Err(WindowError::UnknownOwner(stale))
+    );
+    assert_eq!(format!("{manager:?}"), before);
+    assert_eq!(manager.id_for(old_spec.key), Some(old));
+    assert_eq!(manager.id_for(child_spec.key), Some(child));
+    assert_eq!(manager.presentation_history(), &[child]);
+    assert_eq!(manager.capture_owner(), Some(menu));
+    assert_eq!(manager.validate(), Ok(()));
+    let fresh = open_window(&mut manager, modeless_subject_spec(WindowKind::Defenses, 6));
+    assert_eq!(fresh.get(), 5);
+    let close = manager.apply(WindowCommand::Close(old)).unwrap();
+    assert_eq!(
+        close.transition,
+        WindowTransition::Closed {
+            root: old,
+            closed: vec![menu, child, old],
+            restored_focus: Some(FocusTarget {
+                window: fresh,
+                control: None
+            }),
+        }
+    );
+}
+
+#[test]
+fn replacement_rejects_an_owner_inside_the_replaced_subtree() {
+    // port: SW-02R rejects new ownership into any removed record, including hidden descendants.
+    // Break caught: leaving an orphan or accepting the root as the replacement's owner.
+    let mut manager = WindowManager::new();
+    let old = open_window(&mut manager, modeless_subject_spec(WindowKind::System, 1));
+    let child = open_window(
+        &mut manager,
+        WindowSpec {
+            owner: WindowOwner::Window(old),
+            ..modeless_subject_spec(WindowKind::Fleet, 2)
+        },
+    );
+    let hidden = open_window(
+        &mut manager,
+        WindowSpec {
+            owner: WindowOwner::Window(child),
+            ..modeless_subject_spec(WindowKind::Defenses, 3)
+        },
+    );
+    manager.apply(WindowCommand::Minimize(hidden)).unwrap();
+    manager.apply(WindowCommand::CapturePointer(child)).unwrap();
+    let before = format!("{manager:?}");
+    for owner in [old, child, hidden] {
+        let new = WindowSpec {
+            owner: WindowOwner::Window(owner),
+            ..modeless_subject_spec(WindowKind::System, 4)
+        };
+        assert_eq!(
+            manager.apply(WindowCommand::Replace { old, new }),
+            Err(WindowError::InvalidReplacement(old))
+        );
+        assert_eq!(format!("{manager:?}"), before);
+    }
+    assert_eq!(manager.validate(), Ok(()));
+    assert_eq!(
+        open_window(&mut manager, modeless_subject_spec(WindowKind::Missions, 4)).get(),
+        4
+    );
+}
+
+#[test]
+fn replacement_rejects_surviving_keys_and_invalid_specs_without_mutation() {
+    // port: SW-02R rejects instead of turning replacement into an existing-key reopen.
+    // Break caught: committing teardown before key, shape, capacity, policy or placement checks.
+    let mut manager = WindowManager::new();
+    let old = open_window(&mut manager, modeless_subject_spec(WindowKind::System, 1));
+    let fleet_spec = modeless_subject_spec(WindowKind::Fleet, 2);
+    let fleet = open_window(&mut manager, fleet_spec);
+    open_window(&mut manager, sector_spec(1));
+    open_window(&mut manager, sector_spec(2));
+    manager.apply(WindowCommand::CapturePointer(fleet)).unwrap();
+    let before = format!("{manager:?}");
+    let invalid_shape = WindowSpec {
+        key: WindowKey::singleton(WindowKind::Missions),
+        ..modeless_subject_spec(WindowKind::Missions, 5)
+    };
+    let wrong_policy = WindowSpec {
+        policy: WindowPolicy {
+            focus_on_open: FocusOnOpen::Preserve,
+            ..fleet_spec.policy
+        },
+        ..modeless_subject_spec(WindowKind::Fleet, 5)
+    };
+    let wrong_placement = WindowSpec {
+        policy: WindowPolicy {
+            placement: OpenPlacement::AboveOwner,
+            ..fleet_spec.policy
+        },
+        ..modeless_subject_spec(WindowKind::Missions, 5)
+    };
+    for (new, error) in [
+        (fleet_spec, WindowError::InvalidReplacement(old)),
+        (
+            invalid_shape,
+            WindowError::SubjectMismatch(invalid_shape.key),
+        ),
+        (
+            sector_spec(3),
+            WindowError::CardinalityExceeded(WindowKind::Sector),
+        ),
+        (
+            wrong_policy,
+            WindowError::KindPolicyMismatch(WindowKind::Fleet),
+        ),
+        (wrong_placement, WindowError::InvalidPlacement),
+    ] {
+        assert_eq!(
+            manager.apply(WindowCommand::Replace { old, new }),
+            Err(error)
+        );
+        assert_eq!(format!("{manager:?}"), before);
+    }
+    assert_eq!(manager.validate(), Ok(()));
+    assert_eq!(
+        open_window(&mut manager, modeless_subject_spec(WindowKind::Missions, 5)).get(),
+        5
+    );
+}
+
+#[test]
+fn replacement_cancels_newly_blocked_surviving_capture_before_teardown() {
+    // Source: FUN_00601340 and strategic FUN_00422ce0 capture draining;
+    // port: one SW-02R commit orders cancellation before content teardown and final focus.
+    // Break caught: concatenating close/open receipts exposes late cancellation or intermediate focus.
+    let mut manager = WindowManager::new();
+    let old_spec = modeless_subject_spec(WindowKind::System, 1);
+    let old = open_window(&mut manager, old_spec);
+    let survivor = open_window(&mut manager, modeless_subject_spec(WindowKind::Fleet, 2));
+    manager
+        .apply(WindowCommand::CapturePointer(survivor))
+        .unwrap();
+    let focus_before = manager.focused();
+    let commit = manager
+        .apply(WindowCommand::Replace {
+            old,
+            new: singleton_spec(WindowKind::SystemFinder),
+        })
+        .unwrap();
+    let new = replaced_id(commit.transition, old);
+    assert_eq!(
+        commit.events,
+        vec![
+            WindowEvent::CaptureCancelled {
+                window: survivor,
+                reason: CaptureCancelReason::ModalOpened
+            },
+            WindowEvent::Closed {
+                window: old,
+                key: old_spec.key,
+                reason: CloseReason::Replaced
+            },
+            WindowEvent::FocusChanged {
+                previous: focus_before,
+                current: Some(FocusTarget {
+                    window: new,
+                    control: None
+                })
+            },
+        ]
+    );
+    assert_eq!(manager.visible_order(), &[survivor, new]);
+    assert_eq!(manager.capture_owner(), None);
+    assert_eq!(manager.validate(), Ok(()));
+}
+
+#[test]
+fn replacement_preserves_eligible_surviving_control_focus_and_capture() {
+    // port: lifecycle removal must preserve unaffected input state.
+    // Break caught: clearing global focus/control or capture while replacing an unrelated window.
+    let mut manager = WindowManager::new();
+    let old_spec = modeless_subject_spec(WindowKind::System, 1);
+    let old = open_window(&mut manager, old_spec);
+    let survivor = open_window(&mut manager, modeless_subject_spec(WindowKind::Fleet, 2));
+    let focus = FocusTarget {
+        window: survivor,
+        control: Some(ControlId(17)),
+    };
+    manager.apply(WindowCommand::Focus(focus)).unwrap();
+    manager
+        .apply(WindowCommand::CapturePointer(survivor))
+        .unwrap();
+    let new_spec = WindowSpec {
+        policy: WindowPolicy {
+            focus_on_open: FocusOnOpen::Preserve,
+            ..sector_spec(3).policy
+        },
+        ..sector_spec(3)
+    };
+    let commit = manager
+        .apply(WindowCommand::Replace { old, new: new_spec })
+        .unwrap();
+    let new = replaced_id(commit.transition, old);
+    assert_eq!(
+        commit.events,
+        vec![WindowEvent::Closed {
+            window: old,
+            key: old_spec.key,
+            reason: CloseReason::Replaced
+        }]
+    );
+    assert_eq!(manager.visible_order(), &[new, survivor]);
+    assert_eq!(manager.focused(), Some(focus));
+    assert_eq!(manager.capture_owner(), Some(survivor));
+    assert_eq!(manager.validate(), Ok(()));
+}
+
+#[test]
+fn menu_replacement_retains_saved_control_focus_and_fresh_identity() {
+    // Source: FUN_00442380/FUN_00442430 saved menu focus; port: atomic same-key replacement.
+    // Break caught: reopening the old ID, losing saved control focus or retaining removed-menu state.
+    let mut manager = WindowManager::new();
+    let owner = open_window(&mut manager, modeless_subject_spec(WindowKind::System, 1));
+    let focus = FocusTarget {
+        window: owner,
+        control: Some(ControlId(7)),
+    };
+    manager.apply(WindowCommand::Focus(focus)).unwrap();
+    let spec = transient_menu_spec(owner);
+    let old = open_window(&mut manager, spec);
+    manager.apply(WindowCommand::CapturePointer(old)).unwrap();
+    let commit = manager
+        .apply(WindowCommand::Replace { old, new: spec })
+        .unwrap();
+    let new = replaced_id(commit.transition, old);
+    assert_eq!(new.get(), 3);
+    assert_eq!(manager.id_for(spec.key), Some(new));
+    assert_eq!(manager.visible_order(), &[owner, new]);
+    assert_eq!(manager.capture_owner(), None);
+    assert_eq!(
+        manager.apply(WindowCommand::Close(old)),
+        Err(WindowError::UnknownWindow(old))
+    );
+    let close = manager.apply(WindowCommand::Close(new)).unwrap();
+    assert_eq!(
+        close.transition,
+        WindowTransition::Closed {
+            root: new,
+            closed: vec![new],
+            restored_focus: Some(focus)
+        }
+    );
+    assert_eq!(manager.focused(), Some(focus));
+    assert_eq!(manager.validate(), Ok(()));
+}
+
+#[test]
+fn replacement_validates_modal_placement_against_the_post_removal_state() {
+    // port: SW-02R consumes ordinary modal placement validation after old descendants are gone.
+    // Break caught: checking the pre-removal menu, or skipping placement checks on surviving menus.
+    let mut manager = WindowManager::new();
+    let owner = open_window(&mut manager, modeless_subject_spec(WindowKind::System, 1));
+    let old_menu = open_window(&mut manager, transient_menu_spec(owner));
+    let commit = manager
+        .apply(WindowCommand::Replace {
+            old: old_menu,
+            new: singleton_spec(WindowKind::SystemFinder),
+        })
+        .unwrap();
+    let modal = replaced_id(commit.transition, old_menu);
+    assert_eq!(manager.visible_order(), &[owner, modal]);
+    assert_eq!(manager.validate(), Ok(()));
+    manager.apply(WindowCommand::Close(modal)).unwrap();
+    let menu = open_window(&mut manager, transient_menu_spec(owner));
+    let old = open_window(&mut manager, modeless_subject_spec(WindowKind::Fleet, 4));
+    let before = format!("{manager:?}");
+    assert_eq!(
+        manager.apply(WindowCommand::Replace {
+            old,
+            new: singleton_spec(WindowKind::SystemFinder)
+        }),
+        Err(WindowError::InvalidPlacement)
+    );
+    assert_eq!(format!("{manager:?}"), before);
+    assert!(manager.visible_order().contains(&menu));
+    assert_eq!(manager.validate(), Ok(()));
+}
+
+#[test]
+fn replacement_of_a_hidden_root_is_fresh_and_stale_roots_are_rejected() {
+    // port: minimized identity is lifecycle state, not absence; replacement is fresh even at the same key.
+    // Break caught: restricting Replace to visible IDs or silently accepting stale roots.
+    let mut manager = WindowManager::new();
+    let spec = modeless_subject_spec(WindowKind::System, 1);
+    let old = open_window(&mut manager, spec);
+    manager.apply(WindowCommand::Minimize(old)).unwrap();
+    let commit = manager
+        .apply(WindowCommand::Replace { old, new: spec })
+        .unwrap();
+    let new = replaced_id(commit.transition, old);
+    assert_eq!(new.get(), 2);
+    assert_eq!(manager.visible_order(), &[new]);
+    assert!(manager.presentation_history().is_empty());
+    assert_eq!(manager.id_for(spec.key), Some(new));
+    let before = format!("{manager:?}");
+    assert_eq!(
+        manager.apply(WindowCommand::Replace {
+            old,
+            new: sector_spec(3)
+        }),
+        Err(WindowError::UnknownWindow(old))
+    );
+    assert_eq!(format!("{manager:?}"), before);
+    assert_eq!(manager.validate(), Ok(()));
 }
 
 #[test]

@@ -11,6 +11,13 @@ use crate::{
 pub enum WindowCommand {
     /// Register or reopen a semantic window.
     Open(WindowSpec),
+    /// Atomically tear down an old subtree and register a fresh replacement.
+    Replace {
+        /// Root of the lifecycle subtree to remove.
+        old: WindowId,
+        /// Complete specification to validate against the post-removal state.
+        new: WindowSpec,
+    },
     /// Raise and focus an eligible window after pointer activation.
     Activate(WindowId),
     /// Raise and focus an eligible window explicitly.
@@ -49,6 +56,13 @@ pub enum ExistingEffect {
 pub enum WindowTransition {
     /// A new window identity was allocated.
     Opened { id: WindowId },
+    /// An old subtree was removed and a fresh identity registered in one commit.
+    Replaced {
+        /// Root of the removed subtree; cleanup IDs are reported in events.
+        old: WindowId,
+        /// Fresh replacement identity.
+        new: WindowId,
+    },
     /// A compatible existing identity handled the open request.
     Existing {
         /// Preserved identity.
@@ -155,7 +169,7 @@ pub enum CloseReason {
     Requested,
     /// An actual lifecycle owner closed.
     OwnerClosed,
-    /// A later lifecycle slice atomically replaced the record.
+    /// An atomic replacement removed the record.
     Replaced,
     /// The fixed-capacity history evicted the oldest record.
     Evicted,
@@ -577,6 +591,7 @@ impl WindowManager {
     pub fn apply(&mut self, command: WindowCommand) -> Result<WindowCommit, WindowError> {
         match command {
             WindowCommand::Open(spec) => self.open(spec),
+            WindowCommand::Replace { old, new } => self.replace(old, new),
             WindowCommand::Activate(id) | WindowCommand::Raise(id) => self.raise_and_focus(id),
             WindowCommand::Minimize(id) => self.minimize(id),
             WindowCommand::Restore(id) => self.restore(id),
@@ -678,6 +693,65 @@ impl WindowManager {
             transition: WindowTransition::Opened { id },
             events,
         })
+    }
+
+    fn replace(&mut self, old: WindowId, new: WindowSpec) -> Result<WindowCommit, WindowError> {
+        // port: SW-02R preflights the complete lifecycle transaction privately.
+        // Ordinary close/open remain the authorities for cleanup, placement and allocation.
+        let mut proposed = Self {
+            registry: self.registry.clone(),
+            key_index: self.key_index.clone(),
+            visible_order: self.visible_order.clone(),
+            presentation_history: self.presentation_history.clone(),
+            focused: self.focused,
+            previous_eligible: self.previous_eligible,
+            saved_menu_focus: self.saved_menu_focus.clone(),
+            capture_owner: self.capture_owner,
+            next_id: self.next_id,
+        };
+        let teardown = proposed.close_with_reason(old, CloseReason::Replaced)?;
+        if let WindowOwner::Window(owner) = new.owner {
+            if self.registry.contains_key(&owner) && !proposed.registry.contains_key(&owner) {
+                return Err(WindowError::InvalidReplacement(old));
+            }
+        }
+        // Replace must allocate fresh content; it cannot reopen a surviving semantic key.
+        if proposed.id_for(new.key).is_some() {
+            return Err(WindowError::InvalidReplacement(old));
+        }
+        let opened = proposed.open(new)?;
+        let id = match opened.transition {
+            WindowTransition::Opened { id } => id,
+            _ => return Err(WindowError::InvalidReplacement(old)),
+        };
+
+        // Capture on a survivor may become blocked by the new modal. Deliver that
+        // cancellation before teardown too, and expose only the final focus target.
+        let mut events: Vec<_> = teardown
+            .events
+            .iter()
+            .chain(&opened.events)
+            .copied()
+            .filter(|event| matches!(event, WindowEvent::CaptureCancelled { .. }))
+            .collect();
+        events.extend(
+            teardown
+                .events
+                .into_iter()
+                .filter(|event| matches!(event, WindowEvent::Closed { .. })),
+        );
+        if self.focused != proposed.focused {
+            events.push(WindowEvent::FocusChanged {
+                previous: self.focused,
+                current: proposed.focused,
+            });
+        }
+        let commit = WindowCommit {
+            transition: WindowTransition::Replaced { old, new: id },
+            events,
+        };
+        *self = proposed;
+        Ok(commit)
     }
 
     fn focus(&mut self, target: crate::FocusTarget) -> Result<WindowCommit, WindowError> {
@@ -1378,6 +1452,8 @@ pub enum WindowError {
     UnknownWindow(WindowId),
     /// A window-owned spec names an identity outside the current registry.
     UnknownOwner(WindowId),
+    /// A replacement names a removed owner or a semantic key that survives teardown.
+    InvalidReplacement(WindowId),
     /// Only history-capable modeless detail families can minimize.
     NotMinimizable(WindowId),
     /// Minimization would hide an owned strategic modal.
@@ -1489,6 +1565,50 @@ mod tests {
                 "history corruption case {case}"
             );
         }
+    }
+
+    #[test]
+    fn replacement_exhaustion_preserves_all_lifecycle_state_and_the_final_id_is_fresh() {
+        // port: SW-02R must preflight the impractical u64 allocator boundary before publication.
+        // Break caught: committed teardown on exhaustion or reuse of an old identity.
+        let mut manager = WindowManager::new();
+        let spec = modeless_spec(WindowKind::System, 1);
+        let old = match manager.apply(WindowCommand::Open(spec)).unwrap().transition {
+            WindowTransition::Opened { id } => id,
+            other => panic!("expected open, got {other:?}"),
+        };
+        manager.apply(WindowCommand::CapturePointer(old)).unwrap();
+        manager.next_id = None;
+        let before = format!("{manager:?}");
+        assert_eq!(
+            manager.apply(WindowCommand::Replace { old, new: spec }),
+            Err(WindowError::IdExhausted)
+        );
+        assert_eq!(format!("{manager:?}"), before);
+        manager.next_id = NonZeroU64::new(u64::MAX);
+        let commit = manager
+            .apply(WindowCommand::Replace { old, new: spec })
+            .unwrap();
+        let new = match commit.transition {
+            WindowTransition::Replaced { old: removed, new } => {
+                assert_eq!(removed, old);
+                new
+            }
+            other => panic!("expected replacement, got {other:?}"),
+        };
+        assert_eq!(new.get(), u64::MAX);
+        assert_eq!(manager.next_id, None);
+        assert_eq!(manager.id_for(spec.key), Some(new));
+        let before = format!("{manager:?}");
+        assert_eq!(
+            manager.apply(WindowCommand::Replace {
+                old: new,
+                new: spec
+            }),
+            Err(WindowError::IdExhausted)
+        );
+        assert_eq!(format!("{manager:?}"), before);
+        assert_eq!(manager.validate(), Ok(()));
     }
 
     #[test]
