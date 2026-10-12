@@ -15,6 +15,10 @@ pub enum WindowCommand {
     Activate(WindowId),
     /// Raise and focus an eligible window explicitly.
     Raise(WindowId),
+    /// Hide a history-capable detail while retaining its semantic identity/content.
+    Minimize(WindowId),
+    /// Restore a minimized detail to the top of its eligible band.
+    Restore(WindowId),
     /// Move keyboard focus without changing visible order.
     Focus(crate::FocusTarget),
     /// Move keyboard focus to the persistent strategic root.
@@ -36,6 +40,8 @@ pub enum ExistingEffect {
     NoOp,
     /// The existing visible identity moved to the top of its eligible order.
     Raised,
+    /// The minimized identity left history and returned to visible order.
+    RestoredAndRaised,
 }
 
 /// Observable result of a successful manager command.
@@ -53,6 +59,18 @@ pub enum WindowTransition {
     /// An eligible visible window was raised and focused.
     Raised {
         /// Preserved window identity.
+        id: WindowId,
+    },
+    /// A detail entered history after cleanup and any oldest-entry eviction.
+    Minimized {
+        /// Retained detail identity.
+        id: WindowId,
+        /// Child-first identities removed by ordinary eviction teardown.
+        evicted: Vec<WindowId>,
+    },
+    /// A minimized detail returned to visible order without allocation.
+    Restored {
+        /// Retained detail identity.
         id: WindowId,
     },
     /// Keyboard focus changed without changing visible order.
@@ -118,7 +136,7 @@ pub enum CaptureCancelReason {
     ModalOpened,
     /// The capture owner or one of its lifecycle owners closed.
     OwnerClosed,
-    /// A later lifecycle slice minimized the capture owner.
+    /// The capture owner or its lifecycle owner was minimized.
     Minimized,
     /// A coordinator moved the active input scene elsewhere.
     SceneChanged,
@@ -139,7 +157,7 @@ pub enum CloseReason {
     OwnerClosed,
     /// A later lifecycle slice atomically replaced the record.
     Replaced,
-    /// A later history slice evicted the record.
+    /// The fixed-capacity history evicted the oldest record.
     Evicted,
     /// Reconciliation confirmed the content was removed.
     ContentRemoved,
@@ -205,6 +223,16 @@ pub enum InvariantKind {
     IneligibleFocus,
     /// The pointer capture owner is absent, hidden, or blocked by a modal.
     IneligibleCapture,
+    /// More than twelve minimized detail identities are retained.
+    HistoryOverflow,
+    /// A minimized identity occurs more than once in history.
+    DuplicateHistory,
+    /// A history entry is also visible.
+    VisibleInHistory,
+    /// A registered hidden identity has no history entry.
+    MinimizedWithoutHistory,
+    /// A history entry is absent from the registry or cannot minimize.
+    InvalidHistoryEntry,
 }
 
 /// Diagnostic result from validating manager-owned open/order state.
@@ -222,6 +250,7 @@ pub struct WindowManager {
     registry: BTreeMap<WindowId, WindowRecord>,
     key_index: BTreeMap<WindowKey, WindowId>,
     visible_order: Vec<WindowId>,
+    presentation_history: Vec<WindowId>,
     focused: Option<crate::FocusTarget>,
     previous_eligible: Option<WindowId>,
     saved_menu_focus: BTreeMap<WindowId, Option<crate::FocusTarget>>,
@@ -241,6 +270,9 @@ impl Default for WindowManager {
 }
 
 impl WindowManager {
+    /// Fixed original rail bound, recovered from FUN_00428b40.
+    pub const PRESENTATION_HISTORY_CAPACITY: usize = 12;
+
     /// Creates an empty manager for one UI session.
     #[must_use]
     pub fn new() -> Self {
@@ -248,6 +280,7 @@ impl WindowManager {
             registry: BTreeMap::new(),
             key_index: BTreeMap::new(),
             visible_order: Vec::new(),
+            presentation_history: Vec::new(),
             focused: None,
             previous_eligible: None,
             saved_menu_focus: BTreeMap::new(),
@@ -266,6 +299,12 @@ impl WindowManager {
     #[must_use]
     pub fn visible_order(&self) -> &[WindowId] {
         &self.visible_order
+    }
+
+    /// Returns minimized detail identities from oldest to newest; content stays external.
+    #[must_use]
+    pub fn presentation_history(&self) -> &[WindowId] {
+        &self.presentation_history
     }
 
     /// Returns the current semantic keyboard-focus target, or the root.
@@ -290,17 +329,31 @@ impl WindowManager {
                 reason: CaptureCancelReason::SessionReset,
             });
         }
-        for window in self.visible_order.iter().rev().copied() {
-            events.push(WindowEvent::Closed {
-                window,
-                key: self.registry[&window].spec.key,
-                reason: CloseReason::SessionReset,
-            });
+        let mut closed = BTreeSet::new();
+        for window in self
+            .visible_order
+            .iter()
+            .rev()
+            .chain(self.presentation_history.iter().rev())
+            .copied()
+        {
+            // A hidden owned detail must be torn down before its visible owner.
+            for member in self.close_order(window) {
+                if !closed.insert(member) {
+                    continue;
+                }
+                events.push(WindowEvent::Closed {
+                    window: member,
+                    key: self.registry[&member].spec.key,
+                    reason: CloseReason::SessionReset,
+                });
+            }
         }
 
         self.registry.clear();
         self.key_index.clear();
         self.visible_order.clear();
+        self.presentation_history.clear();
         self.focused = None;
         self.previous_eligible = None;
         self.saved_menu_focus.clear();
@@ -347,9 +400,44 @@ impl WindowManager {
                 });
             }
         }
-        if let Some(id) = self.registry.keys().find(|id| !seen.contains(id)) {
+        if self.presentation_history.len() > Self::PRESENTATION_HISTORY_CAPACITY {
             return Err(InvariantViolation {
-                kind: InvariantKind::MissingVisibleOrder,
+                kind: InvariantKind::HistoryOverflow,
+                windows: self.presentation_history.clone(),
+            });
+        }
+        let mut history_seen = BTreeSet::new();
+        for id in &self.presentation_history {
+            if !history_seen.insert(*id) {
+                return Err(InvariantViolation {
+                    kind: InvariantKind::DuplicateHistory,
+                    windows: vec![*id],
+                });
+            }
+            if seen.contains(id) {
+                return Err(InvariantViolation {
+                    kind: InvariantKind::VisibleInHistory,
+                    windows: vec![*id],
+                });
+            }
+            if !self
+                .registry
+                .get(id)
+                .is_some_and(|record| Self::can_minimize(record.spec))
+            {
+                return Err(InvariantViolation {
+                    kind: InvariantKind::InvalidHistoryEntry,
+                    windows: vec![*id],
+                });
+            }
+        }
+        if let Some(id) = self
+            .registry
+            .keys()
+            .find(|id| !seen.contains(id) && !history_seen.contains(id))
+        {
+            return Err(InvariantViolation {
+                kind: InvariantKind::MinimizedWithoutHistory,
                 windows: vec![*id],
             });
         }
@@ -404,17 +492,22 @@ impl WindowManager {
             .collect();
         for (id, record) in &self.registry {
             if let WindowOwner::Window(owner) = record.spec.owner {
-                let Some(owner_position) = positions.get(&owner) else {
+                if !self.registry.contains_key(&owner) {
                     return Err(InvariantViolation {
                         kind: InvariantKind::OwnerMissing,
                         windows: vec![*id, owner],
                     });
-                };
-                if positions[id] <= *owner_position {
-                    return Err(InvariantViolation {
-                        kind: InvariantKind::ChildBelowOwner,
-                        windows: vec![*id, owner],
-                    });
+                }
+                if let Some(position) = positions.get(id) {
+                    if positions
+                        .get(&owner)
+                        .is_none_or(|owner_position| position <= owner_position)
+                    {
+                        return Err(InvariantViolation {
+                            kind: InvariantKind::ChildBelowOwner,
+                            windows: vec![*id, owner],
+                        });
+                    }
                 }
             }
         }
@@ -485,6 +578,8 @@ impl WindowManager {
         match command {
             WindowCommand::Open(spec) => self.open(spec),
             WindowCommand::Activate(id) | WindowCommand::Raise(id) => self.raise_and_focus(id),
+            WindowCommand::Minimize(id) => self.minimize(id),
+            WindowCommand::Restore(id) => self.restore(id),
             WindowCommand::Focus(target) => self.focus(target),
             WindowCommand::FocusRoot => self.focus_root(),
             WindowCommand::CapturePointer(id) => self.capture_pointer(id),
@@ -508,6 +603,14 @@ impl WindowManager {
             let effect = match existing.policy.existing {
                 crate::ExistingOpenPolicy::NoOp => ExistingEffect::NoOp,
                 crate::ExistingOpenPolicy::RaiseRestore => {
+                    if self.presentation_history.contains(&id) {
+                        let mut commit = self.restore(id)?;
+                        commit.transition = WindowTransition::Existing {
+                            id,
+                            effect: ExistingEffect::RestoredAndRaised,
+                        };
+                        return Ok(commit);
+                    }
                     self.raise_visible(id);
                     if self.is_focus_eligible(id) {
                         self.set_focus(Some(crate::FocusTarget {
@@ -723,6 +826,14 @@ impl WindowManager {
     }
 
     fn close(&mut self, root: WindowId) -> Result<WindowCommit, WindowError> {
+        self.close_with_reason(root, CloseReason::Requested)
+    }
+
+    fn close_with_reason(
+        &mut self,
+        root: WindowId,
+        reason: CloseReason,
+    ) -> Result<WindowCommit, WindowError> {
         if !self.registry.contains_key(&root) {
             return Err(WindowError::UnknownWindow(root));
         }
@@ -732,13 +843,7 @@ impl WindowManager {
             .copied()
             .filter(|candidate| *candidate == root || self.is_descendant_of(*candidate, root))
             .collect();
-        let closed: Vec<_> = self
-            .visible_order
-            .iter()
-            .rev()
-            .copied()
-            .filter(|id| closing.contains(id))
-            .collect();
+        let closed = self.close_order(root);
         let focused_before = self.focused;
         let saved_menu_target = self.saved_menu_focus.get(&root).copied();
         let mut events = Vec::new();
@@ -754,6 +859,7 @@ impl WindowManager {
         }
 
         self.visible_order.retain(|id| !closing.contains(id));
+        self.presentation_history.retain(|id| !closing.contains(id));
         for id in &closed {
             let record = self
                 .registry
@@ -765,7 +871,7 @@ impl WindowManager {
                 window: *id,
                 key: record.spec.key,
                 reason: if *id == root {
-                    CloseReason::Requested
+                    reason
                 } else {
                     CloseReason::OwnerClosed
                 },
@@ -814,6 +920,193 @@ impl WindowManager {
                 restored_focus,
             },
             events,
+        })
+    }
+
+    fn close_order(&self, root: WindowId) -> Vec<WindowId> {
+        let mut ids: Vec<_> = self
+            .visible_order
+            .iter()
+            .rev()
+            .chain(self.presentation_history.iter().rev())
+            .copied()
+            .filter(|id| *id == root || self.is_descendant_of(*id, root))
+            .collect();
+        // Stable reverse-presentation order among equal-depth siblings; descendants first.
+        ids.sort_by_key(|id| {
+            let mut depth = 0;
+            let mut current = *id;
+            while current != root {
+                let WindowOwner::Window(owner) = self.registry[&current].spec.owner else {
+                    break;
+                };
+                depth += 1;
+                current = owner;
+            }
+            std::cmp::Reverse(depth)
+        });
+        ids
+    }
+
+    fn can_minimize(spec: WindowSpec) -> bool {
+        spec.policy.presentation == crate::PresentationPolicy::History
+            && spec.policy.input == InputPolicy::Modeless
+            && matches!(
+                spec.key.kind,
+                WindowKind::System
+                    | WindowKind::Fleet
+                    | WindowKind::Defenses
+                    | WindowKind::Missions
+            )
+    }
+
+    fn minimize(&mut self, id: WindowId) -> Result<WindowCommit, WindowError> {
+        let record = self
+            .registry
+            .get(&id)
+            .ok_or(WindowError::UnknownWindow(id))?;
+        if !Self::can_minimize(record.spec) {
+            return Err(WindowError::NotMinimizable(id));
+        }
+        if self.presentation_history.contains(&id) {
+            return Ok(WindowCommit {
+                transition: WindowTransition::Unchanged {
+                    subject: TransitionSubject::Window(id),
+                    reason: UnchangedReason::AlreadyMinimized,
+                },
+                events: Vec::new(),
+            });
+        }
+        let descendants: Vec<_> = self
+            .close_order(id)
+            .into_iter()
+            .filter(|child| *child != id)
+            .collect();
+        if descendants
+            .iter()
+            .any(|child| self.registry[child].spec.policy.input == InputPolicy::StrategicModal)
+        {
+            return Err(WindowError::OwnerHasModalChild(id));
+        }
+        // Non-transient child content is not implicitly discarded by minimizing its owner.
+        // A child already in history may remain registered, but cannot restore beneath a hidden owner.
+        if descendants.iter().any(|child| {
+            self.visible_order.contains(child)
+                && self.registry[child].spec.policy.band != StackBand::Transient
+        }) {
+            return Err(WindowError::InvalidPlacement);
+        }
+        let focused_before = self.focused;
+        let mut events = Vec::new();
+        if self
+            .capture_owner
+            .is_some_and(|owner| owner == id || descendants.contains(&owner))
+        {
+            events.extend(self.cancel_capture(CaptureCancelReason::Minimized)?.events);
+        }
+        for child in descendants {
+            if self
+                .registry
+                .get(&child)
+                .is_some_and(|record| record.spec.policy.band == StackBand::Transient)
+            {
+                events.extend(
+                    self.close_with_reason(child, CloseReason::OwnerClosed)?
+                        .events
+                        .into_iter()
+                        .filter(|event| !matches!(event, WindowEvent::FocusChanged { .. })),
+                );
+            }
+        }
+        self.visible_order.retain(|visible| *visible != id);
+        self.presentation_history.push(id);
+        let mut evicted = Vec::new();
+        if self.presentation_history.len() > Self::PRESENTATION_HISTORY_CAPACITY {
+            let oldest = self.presentation_history[0];
+            let commit = self.close_with_reason(oldest, CloseReason::Evicted)?;
+            if let WindowTransition::Closed { closed, .. } = commit.transition {
+                evicted = closed;
+            }
+            events.extend(
+                commit
+                    .events
+                    .into_iter()
+                    .filter(|event| !matches!(event, WindowEvent::FocusChanged { .. })),
+            );
+        }
+        if self
+            .focused
+            .is_some_and(|target| !self.is_focus_eligible(target.window))
+        {
+            self.focused = self
+                .previous_eligible
+                .filter(|previous| self.is_focus_eligible(*previous))
+                .map(|window| crate::FocusTarget {
+                    window,
+                    control: None,
+                })
+                .or_else(|| self.topmost_eligible_focus());
+        }
+        if self
+            .previous_eligible
+            .is_some_and(|previous| !self.visible_order.contains(&previous))
+        {
+            self.previous_eligible = None;
+        }
+        if focused_before != self.focused {
+            events.push(WindowEvent::FocusChanged {
+                previous: focused_before,
+                current: self.focused,
+            });
+        }
+        Ok(WindowCommit {
+            transition: WindowTransition::Minimized { id, evicted },
+            events,
+        })
+    }
+
+    fn restore(&mut self, id: WindowId) -> Result<WindowCommit, WindowError> {
+        let spec = self
+            .registry
+            .get(&id)
+            .ok_or(WindowError::UnknownWindow(id))?
+            .spec;
+        if !self.presentation_history.contains(&id) {
+            return Ok(WindowCommit {
+                transition: WindowTransition::Unchanged {
+                    subject: TransitionSubject::Window(id),
+                    reason: UnchangedReason::AlreadyVisible,
+                },
+                events: Vec::new(),
+            });
+        }
+        if let WindowOwner::Window(owner) = spec.owner {
+            if !self.visible_order.contains(&owner)
+                || (spec.policy.band == StackBand::Transient && !self.is_focus_eligible(owner))
+            {
+                return Err(WindowError::InvalidPlacement);
+            }
+        }
+        let focused_before = self.focused;
+        self.presentation_history.retain(|entry| *entry != id);
+        let insertion = self.proposed_insertion_index(spec);
+        self.visible_order.insert(insertion, id);
+        self.raise_visible(id);
+        if self.is_focus_eligible(id) {
+            self.set_focus(Some(crate::FocusTarget {
+                window: id,
+                control: None,
+            }));
+        }
+        Ok(WindowCommit {
+            transition: WindowTransition::Restored { id },
+            events: (focused_before != self.focused)
+                .then_some(WindowEvent::FocusChanged {
+                    previous: focused_before,
+                    current: self.focused,
+                })
+                .into_iter()
+                .collect(),
         })
     }
 
@@ -1085,6 +1378,10 @@ pub enum WindowError {
     UnknownWindow(WindowId),
     /// A window-owned spec names an identity outside the current registry.
     UnknownOwner(WindowId),
+    /// Only history-capable modeless detail families can minimize.
+    NotMinimizable(WindowId),
+    /// Minimization would hide an owned strategic modal.
+    OwnerHasModalChild(WindowId),
     /// The placement declaration does not agree with the owner or stack band.
     InvalidPlacement,
     /// The key shape disagrees with the family's declared cardinality.
@@ -1136,6 +1433,61 @@ mod tests {
                 focus_on_open: FocusOnOpen::Window,
                 restoration: FocusRestoration::PreviousEligible,
             },
+        }
+    }
+
+    #[test]
+    fn validate_reports_each_private_history_corruption() {
+        // Port invariants: bounded, unique, registered hidden details, disjoint from order.
+        for case in 0..6 {
+            let mut manager = WindowManager::new();
+            let id = match manager
+                .apply(WindowCommand::Open(modeless_spec(WindowKind::System, 1)))
+                .unwrap()
+                .transition
+            {
+                WindowTransition::Opened { id } => id,
+                other => panic!("expected open, got {other:?}"),
+            };
+            manager.apply(WindowCommand::Minimize(id)).unwrap();
+            let kind = match case {
+                0 => {
+                    manager.presentation_history.push(id);
+                    InvariantKind::DuplicateHistory
+                }
+                1 => {
+                    manager.visible_order.push(id);
+                    InvariantKind::VisibleInHistory
+                }
+                2 => {
+                    manager.presentation_history = vec![id; 13];
+                    InvariantKind::HistoryOverflow
+                }
+                3 => {
+                    manager.presentation_history.clear();
+                    InvariantKind::MinimizedWithoutHistory
+                }
+                4 => {
+                    manager
+                        .registry
+                        .get_mut(&id)
+                        .unwrap()
+                        .spec
+                        .policy
+                        .presentation = PresentationPolicy::None;
+                    InvariantKind::InvalidHistoryEntry
+                }
+                _ => {
+                    manager.registry.remove(&id);
+                    manager.key_index.clear();
+                    InvariantKind::InvalidHistoryEntry
+                }
+            };
+            assert_eq!(
+                manager.validate().unwrap_err().kind,
+                kind,
+                "history corruption case {case}"
+            );
         }
     }
 
