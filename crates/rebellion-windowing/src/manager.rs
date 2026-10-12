@@ -11,6 +11,16 @@ use crate::{
 pub enum WindowCommand {
     /// Register or reopen a semantic window.
     Open(WindowSpec),
+    /// Raise and focus an eligible window after pointer activation.
+    Activate(WindowId),
+    /// Raise and focus an eligible window explicitly.
+    Raise(WindowId),
+    /// Move keyboard focus without changing visible order.
+    Focus(crate::FocusTarget),
+    /// Move keyboard focus to the persistent strategic root.
+    FocusRoot,
+    /// Close a window and every actual lifecycle descendant.
+    Close(WindowId),
 }
 
 /// Effect of reopening an existing compatible semantic key.
@@ -23,7 +33,7 @@ pub enum ExistingEffect {
 }
 
 /// Observable result of a successful manager command.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WindowTransition {
     /// A new window identity was allocated.
     Opened { id: WindowId },
@@ -34,10 +44,31 @@ pub enum WindowTransition {
         /// Family-declared duplicate behavior.
         effect: ExistingEffect,
     },
+    /// An eligible visible window was raised and focused.
+    Raised {
+        /// Preserved window identity.
+        id: WindowId,
+    },
+    /// Keyboard focus changed without changing visible order.
+    Focused {
+        /// Focus target before the command.
+        previous: Option<crate::FocusTarget>,
+        /// Focus target after the command.
+        current: Option<crate::FocusTarget>,
+    },
+    /// A requested root and all of its actual descendants were removed.
+    Closed {
+        /// Identity named by the close command.
+        root: WindowId,
+        /// Deterministic child-first teardown receipt.
+        closed: Vec<WindowId>,
+        /// Eligible focus retained or selected after teardown.
+        restored_focus: Option<crate::FocusTarget>,
+    },
 }
 
 /// Successful atomic manager commit.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WindowCommit {
     /// State transition produced by the command.
     pub transition: WindowTransition,
@@ -60,6 +91,8 @@ pub enum InvariantKind {
     BandOrder,
     /// A child is not above its registered owner.
     ChildBelowOwner,
+    /// The current focus target is absent, hidden, or blocked by a modal.
+    IneligibleFocus,
 }
 
 /// Diagnostic result from validating manager-owned open/order state.
@@ -77,6 +110,9 @@ pub struct WindowManager {
     registry: BTreeMap<WindowId, WindowRecord>,
     key_index: BTreeMap<WindowKey, WindowId>,
     visible_order: Vec<WindowId>,
+    focused: Option<crate::FocusTarget>,
+    previous_eligible: Option<WindowId>,
+    saved_menu_focus: BTreeMap<WindowId, Option<crate::FocusTarget>>,
     next_id: Option<NonZeroU64>,
 }
 
@@ -99,6 +135,9 @@ impl WindowManager {
             registry: BTreeMap::new(),
             key_index: BTreeMap::new(),
             visible_order: Vec::new(),
+            focused: None,
+            previous_eligible: None,
+            saved_menu_focus: BTreeMap::new(),
             next_id: Some(NonZeroU64::MIN),
         }
     }
@@ -113,6 +152,12 @@ impl WindowManager {
     #[must_use]
     pub fn visible_order(&self) -> &[WindowId] {
         &self.visible_order
+    }
+
+    /// Returns the current semantic keyboard-focus target, or the root.
+    #[must_use]
+    pub fn focused(&self) -> Option<crate::FocusTarget> {
+        self.focused
     }
 
     /// Validates the registry, semantic-key index, ownership, and visible order.
@@ -262,12 +307,30 @@ impl WindowManager {
             }
         }
 
+        if let Some(focused) = self.focused {
+            if !self.is_focus_eligible(focused.window) {
+                return Err(InvariantViolation {
+                    kind: InvariantKind::IneligibleFocus,
+                    windows: vec![focused.window],
+                });
+            }
+        }
+
         Ok(())
     }
 
     /// Applies one command atomically.
     pub fn apply(&mut self, command: WindowCommand) -> Result<WindowCommit, WindowError> {
-        let WindowCommand::Open(spec) = command;
+        match command {
+            WindowCommand::Open(spec) => self.open(spec),
+            WindowCommand::Activate(id) | WindowCommand::Raise(id) => self.raise_and_focus(id),
+            WindowCommand::Focus(target) => self.focus(target),
+            WindowCommand::FocusRoot => self.focus_root(),
+            WindowCommand::Close(id) => self.close(id),
+        }
+    }
+
+    fn open(&mut self, spec: WindowSpec) -> Result<WindowCommit, WindowError> {
         if let Some(id) = self.id_for(spec.key) {
             let existing = self.registry[&id].spec;
             if existing.owner != spec.owner {
@@ -281,6 +344,12 @@ impl WindowManager {
                 crate::ExistingOpenPolicy::NoOp => ExistingEffect::NoOp,
                 crate::ExistingOpenPolicy::RaiseRestore => {
                     self.raise_visible(id);
+                    if self.is_focus_eligible(id) {
+                        self.set_focus(Some(crate::FocusTarget {
+                            window: id,
+                            control: None,
+                        }));
+                    }
                     ExistingEffect::Raised
                 }
             };
@@ -291,6 +360,7 @@ impl WindowManager {
 
         self.validate_new_spec(spec)?;
         let insertion = self.proposed_insertion_index(spec);
+        let focus_before = self.focused;
 
         let raw_id = self.next_id.ok_or(WindowError::IdExhausted)?;
         let id = WindowId(raw_id);
@@ -299,10 +369,193 @@ impl WindowManager {
         self.registry.insert(id, WindowRecord { spec });
         self.key_index.insert(spec.key, id);
         self.visible_order.insert(insertion, id);
+        if spec.key.kind == WindowKind::Menu {
+            self.saved_menu_focus.insert(id, focus_before);
+        }
+        if spec.policy.focus_on_open == crate::FocusOnOpen::Window && self.is_focus_eligible(id) {
+            self.set_focus(Some(crate::FocusTarget {
+                window: id,
+                control: None,
+            }));
+        } else if self.focused.map_or_else(
+            || self.active_modal().is_some(),
+            |target| !self.is_focus_eligible(target.window),
+        ) {
+            let fallback = self.topmost_eligible_focus();
+            self.set_focus(fallback);
+        }
 
         Ok(WindowCommit {
             transition: WindowTransition::Opened { id },
         })
+    }
+
+    fn focus(&mut self, target: crate::FocusTarget) -> Result<WindowCommit, WindowError> {
+        self.validate_focus_target(target)?;
+        let previous = self.focused;
+        self.set_focus(Some(target));
+        Ok(WindowCommit {
+            transition: WindowTransition::Focused {
+                previous,
+                current: Some(target),
+            },
+        })
+    }
+
+    fn focus_root(&mut self) -> Result<WindowCommit, WindowError> {
+        if let Some(modal) = self.active_modal() {
+            return Err(WindowError::RootBlockedBy(modal));
+        }
+        let previous = self.focused;
+        self.set_focus(None);
+        Ok(WindowCommit {
+            transition: WindowTransition::Focused {
+                previous,
+                current: None,
+            },
+        })
+    }
+
+    fn raise_and_focus(&mut self, id: WindowId) -> Result<WindowCommit, WindowError> {
+        let target = crate::FocusTarget {
+            window: id,
+            control: None,
+        };
+        self.validate_focus_target(target)?;
+        self.raise_visible(id);
+        self.set_focus(Some(target));
+        Ok(WindowCommit {
+            transition: WindowTransition::Raised { id },
+        })
+    }
+
+    fn close(&mut self, root: WindowId) -> Result<WindowCommit, WindowError> {
+        if !self.registry.contains_key(&root) {
+            return Err(WindowError::UnknownWindow(root));
+        }
+        let closing: BTreeSet<_> = self
+            .registry
+            .keys()
+            .copied()
+            .filter(|candidate| *candidate == root || self.is_descendant_of(*candidate, root))
+            .collect();
+        let closed: Vec<_> = self
+            .visible_order
+            .iter()
+            .rev()
+            .copied()
+            .filter(|id| closing.contains(id))
+            .collect();
+        let focused_before = self.focused;
+        let saved_menu_target = self.saved_menu_focus.get(&root).copied();
+
+        self.visible_order.retain(|id| !closing.contains(id));
+        for id in &closed {
+            let record = self
+                .registry
+                .remove(id)
+                .expect("close receipt IDs come from the registry");
+            self.key_index.remove(&record.spec.key);
+            self.saved_menu_focus.remove(id);
+        }
+
+        let current_focus_survives = focused_before.map_or_else(
+            || self.active_modal().is_none(),
+            |target| self.is_focus_eligible(target.window),
+        );
+        let eligible_saved_menu_target = saved_menu_target.filter(|target| match target {
+            Some(target) => self.is_focus_eligible(target.window),
+            None => self.active_modal().is_none(),
+        });
+        let restored_focus = if current_focus_survives {
+            focused_before
+        } else if let Some(saved) = eligible_saved_menu_target {
+            saved
+        } else {
+            self.previous_eligible
+                .filter(|id| self.is_focus_eligible(*id))
+                .map(|window| crate::FocusTarget {
+                    window,
+                    control: None,
+                })
+                .or_else(|| self.topmost_eligible_focus())
+        };
+        self.focused = restored_focus;
+        if self
+            .previous_eligible
+            .is_some_and(|id| !self.registry.contains_key(&id) || !self.visible_order.contains(&id))
+        {
+            self.previous_eligible = None;
+        }
+
+        Ok(WindowCommit {
+            transition: WindowTransition::Closed {
+                root,
+                closed,
+                restored_focus,
+            },
+        })
+    }
+
+    fn validate_focus_target(&self, target: crate::FocusTarget) -> Result<(), WindowError> {
+        if !self.registry.contains_key(&target.window) {
+            return Err(WindowError::UnknownWindow(target.window));
+        }
+        if !self.visible_order.contains(&target.window) {
+            return Err(WindowError::IneligibleFocus(target));
+        }
+        if let Some(modal) = self.active_modal() {
+            if target.window != modal && !self.is_descendant_of(target.window, modal) {
+                return Err(WindowError::BlockedByModal {
+                    window: target.window,
+                    modal,
+                });
+            }
+        }
+        Ok(())
+    }
+
+    fn set_focus(&mut self, target: Option<crate::FocusTarget>) {
+        if self.focused == target {
+            return;
+        }
+        if let Some(previous) = self.focused {
+            if target.is_none_or(|next| next.window != previous.window) {
+                self.previous_eligible = Some(previous.window);
+            }
+        }
+        self.focused = target;
+    }
+
+    fn active_modal(&self) -> Option<WindowId> {
+        self.visible_order
+            .iter()
+            .rev()
+            .copied()
+            .find(|id| self.registry[id].spec.policy.input == InputPolicy::StrategicModal)
+    }
+
+    fn is_focus_eligible(&self, id: WindowId) -> bool {
+        if !self.registry.contains_key(&id) {
+            return false;
+        }
+        if !self.visible_order.contains(&id) {
+            return false;
+        }
+        self.active_modal()
+            .is_none_or(|modal| id == modal || self.is_descendant_of(id, modal))
+    }
+
+    fn topmost_eligible_focus(&self) -> Option<crate::FocusTarget> {
+        self.visible_order
+            .iter()
+            .rev()
+            .copied()
+            .find(|id| self.is_focus_eligible(*id))
+            .map(|window| crate::FocusTarget {
+                window,
+                control: None,
+            })
     }
 
     fn validate_new_spec(&self, spec: WindowSpec) -> Result<(), WindowError> {
@@ -314,6 +567,12 @@ impl WindowManager {
                 return Err(WindowError::SubjectMismatch(spec.key));
             }
             Cardinality::Singleton | Cardinality::Subject { .. } => {}
+        }
+
+        let uses_saved_menu_target =
+            spec.policy.restoration == crate::FocusRestoration::SavedMenuTarget;
+        if uses_saved_menu_target != (spec.key.kind == WindowKind::Menu) {
+            return Err(WindowError::KindPolicyMismatch(spec.key.kind));
         }
 
         if self.registry.values().any(|record| {
@@ -502,6 +761,8 @@ impl WindowManager {
 pub enum WindowError {
     /// The session-local nonzero identity space is exhausted.
     IdExhausted,
+    /// A command names an identity outside the current registry.
+    UnknownWindow(WindowId),
     /// A window-owned spec names an identity outside the current registry.
     UnknownOwner(WindowId),
     /// The placement declaration does not agree with the owner or stack band.
@@ -516,6 +777,17 @@ pub enum WindowError {
     DuplicateKeyWithDifferentPolicy(WindowKey),
     /// A registered family was requested with a different policy declaration.
     KindPolicyMismatch(WindowKind),
+    /// A registered target is not currently visible and focusable.
+    IneligibleFocus(crate::FocusTarget),
+    /// A higher strategic modal blocks the requested window operation.
+    BlockedByModal {
+        /// Requested target.
+        window: WindowId,
+        /// Active modal boundary.
+        modal: WindowId,
+    },
+    /// The strategic root cannot receive focus through an active modal.
+    RootBlockedBy(WindowId),
 }
 
 #[cfg(test)]
@@ -564,6 +836,108 @@ mod tests {
         assert_eq!(manager.key_index, key_index_before);
         assert_eq!(manager.visible_order, order_before);
         assert_eq!(manager.next_id, None);
+    }
+
+    #[test]
+    fn close_clears_a_dead_global_previous_focus_candidate() {
+        // Private-state assertion covers the contract that no dead focus reference
+        // survives even when the current focus belongs to an unrelated window.
+        let mut manager = WindowManager::new();
+        let first = match manager
+            .apply(WindowCommand::Open(modeless_spec(WindowKind::System, 1)))
+            .expect("first window opens")
+            .transition
+        {
+            WindowTransition::Opened { id } => id,
+            other => panic!("expected first open, got {other:?}"),
+        };
+        let previous = match manager
+            .apply(WindowCommand::Open(modeless_spec(WindowKind::Fleet, 2)))
+            .expect("second window opens")
+            .transition
+        {
+            WindowTransition::Opened { id } => id,
+            other => panic!("expected second open, got {other:?}"),
+        };
+        manager
+            .apply(WindowCommand::Focus(crate::FocusTarget {
+                window: first,
+                control: None,
+            }))
+            .expect("first window regains focus");
+        assert_eq!(manager.previous_eligible, Some(previous));
+
+        manager
+            .apply(WindowCommand::Close(previous))
+            .expect("unrelated previous candidate closes");
+
+        assert_eq!(manager.focused.map(|target| target.window), Some(first));
+        assert_eq!(manager.previous_eligible, None);
+        assert_eq!(manager.validate(), Ok(()));
+    }
+
+    #[test]
+    fn close_clears_a_hidden_global_previous_focus_candidate() {
+        // Private-state setup represents the later hidden/minimized state. A
+        // registered identity outside visible order is not a viable restore target.
+        let mut manager = WindowManager::new();
+        let current = match manager
+            .apply(WindowCommand::Open(modeless_spec(WindowKind::System, 1)))
+            .expect("first window opens")
+            .transition
+        {
+            WindowTransition::Opened { id } => id,
+            other => panic!("expected first open, got {other:?}"),
+        };
+        let hidden_previous = match manager
+            .apply(WindowCommand::Open(modeless_spec(WindowKind::Fleet, 2)))
+            .expect("second window opens")
+            .transition
+        {
+            WindowTransition::Opened { id } => id,
+            other => panic!("expected second open, got {other:?}"),
+        };
+        manager
+            .apply(WindowCommand::Focus(crate::FocusTarget {
+                window: current,
+                control: None,
+            }))
+            .expect("first window regains focus");
+        assert_eq!(manager.previous_eligible, Some(hidden_previous));
+        manager.visible_order.retain(|id| *id != hidden_previous);
+
+        manager
+            .apply(WindowCommand::Close(current))
+            .expect("visible current window closes");
+
+        assert_eq!(manager.previous_eligible, None);
+        assert_eq!(manager.focused, None);
+    }
+
+    #[test]
+    fn focus_rejects_a_registered_but_hidden_private_state_target() {
+        // Private-state setup represents the future minimized/hidden state without
+        // implementing that later bead's public command.
+        let mut manager = WindowManager::new();
+        let hidden = match manager
+            .apply(WindowCommand::Open(modeless_spec(WindowKind::System, 1)))
+            .expect("window opens")
+            .transition
+        {
+            WindowTransition::Opened { id } => id,
+            other => panic!("expected open, got {other:?}"),
+        };
+        manager.visible_order.clear();
+        let target = crate::FocusTarget {
+            window: hidden,
+            control: Some(crate::ControlId(1)),
+        };
+
+        assert_eq!(
+            manager.focus(target),
+            Err(WindowError::IneligibleFocus(target))
+        );
+        assert_eq!(manager.focused.map(|focus| focus.window), Some(hidden));
     }
 
     #[test]
