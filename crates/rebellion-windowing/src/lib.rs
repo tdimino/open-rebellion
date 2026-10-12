@@ -8,10 +8,15 @@
 //! later implementation slices.
 
 mod identity;
+mod manager;
 mod policy;
 
 pub use identity::{
     ControlId, FocusTarget, SubjectId, WindowId, WindowKey, WindowKind, WindowOwner,
+};
+pub use manager::{
+    ExistingEffect, InvariantKind, InvariantViolation, WindowCommand, WindowCommit, WindowError,
+    WindowManager, WindowTransition,
 };
 pub use policy::{
     Cardinality, ExistingOpenPolicy, FocusOnOpen, FocusRestoration, InputPolicy, OpenPlacement,
