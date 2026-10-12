@@ -1,0 +1,19 @@
+#![forbid(unsafe_code)]
+
+//! Renderer-independent vocabulary for strategic window lifecycle and routing.
+//!
+//! This crate begins with semantic identities and independent policy axes. It
+//! deliberately has no renderer, simulation, serialization, operating-system,
+//! or asset dependencies. Lifecycle and routing behavior are introduced by
+//! later implementation slices.
+
+mod identity;
+mod policy;
+
+pub use identity::{
+    ControlId, FocusTarget, SubjectId, WindowId, WindowKey, WindowKind, WindowOwner,
+};
+pub use policy::{
+    Cardinality, ExistingOpenPolicy, FocusOnOpen, FocusRestoration, InputPolicy, OpenPlacement,
+    PresentationPolicy, StackBand, WindowPolicy, WindowSpec,
+};
