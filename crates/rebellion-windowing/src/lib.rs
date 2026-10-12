@@ -15,7 +15,8 @@ pub use identity::{
     ControlId, FocusTarget, SubjectId, WindowId, WindowKey, WindowKind, WindowOwner,
 };
 pub use manager::{
-    ExistingEffect, InvariantKind, InvariantViolation, WindowCommand, WindowCommit, WindowError,
+    CaptureCancelReason, CloseReason, ExistingEffect, InvariantKind, InvariantViolation,
+    TransitionSubject, UnchangedReason, WindowCommand, WindowCommit, WindowError, WindowEvent,
     WindowManager, WindowTransition,
 };
 pub use policy::{
