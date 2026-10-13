@@ -54,6 +54,9 @@ pub mod troop_finder;
 pub mod video_player;
 pub mod windowing_policy;
 
+#[cfg(all(test, feature = "interface-test-fixtures"))]
+mod windowing_adapter_probe;
+
 use egui_macroquad::egui;
 use macroquad::prelude::*;
 use rebellion_core::blockade::BlockadeState;
