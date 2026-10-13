@@ -22,6 +22,11 @@ mod encyclopedia_surface;
 mod interface_test_fixture;
 #[cfg(any(target_arch = "wasm32", test))]
 mod runtime_pack;
+#[allow(
+    dead_code,
+    reason = "SW-05B prepares the coordinator; SW-05G owns production cutover."
+)]
+mod strategic_windowing;
 mod tactical_flow;
 #[cfg(any(test, all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
 #[cfg_attr(

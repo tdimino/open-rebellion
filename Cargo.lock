@@ -1423,6 +1423,7 @@ dependencies = [
  "rebellion-core",
  "rebellion-data",
  "rebellion-render",
+ "rebellion-windowing",
  "serde",
  "serde_json",
  "sha2",
