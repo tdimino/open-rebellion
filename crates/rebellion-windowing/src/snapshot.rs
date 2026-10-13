@@ -104,6 +104,34 @@ impl RoutingSnapshot {
         self.capture_owner
     }
 
+    /// Returns a further restricted scene view without changing this lease or the manager.
+    ///
+    /// Metadata is retained for lifecycle ancestry; dormant records contribute no paint,
+    /// history, focus, capture or input boundary. Repeated restrictions cannot re-admit IDs.
+    #[must_use]
+    pub fn restrict_to(&self, active: &BTreeSet<WindowId>) -> Self {
+        let mut view = self.clone();
+        view.paint_order.retain(|id| active.contains(id));
+        view.presentation_history.retain(|id| active.contains(id));
+        view.capture_owner = view.capture_owner.filter(|id| view.allows_input(*id));
+        if view.focused.map_or_else(
+            || view.active_modal().is_some(),
+            |target| !view.allows_input(target.window),
+        ) {
+            view.focused = view
+                .paint_order
+                .iter()
+                .rev()
+                .copied()
+                .find(|id| view.allows_input(*id))
+                .map(|window| FocusTarget {
+                    window,
+                    control: None,
+                });
+        }
+        view
+    }
+
     /// Returns the topmost visible strategic modal independently of hit or paint success.
     #[must_use]
     pub fn active_modal(&self) -> Option<WindowId> {
@@ -174,7 +202,8 @@ impl RoutingSnapshot {
                 let Some(record) = self.records.get(&window) else {
                     break;
                 };
-                stop |= record.policy.input == InputPolicy::DismissOnOutsidePress;
+                stop |= self.is_visible(window)
+                    && record.policy.input == InputPolicy::DismissOnOutsidePress;
                 let WindowOwner::Window(owner) = record.owner else {
                     break;
                 };

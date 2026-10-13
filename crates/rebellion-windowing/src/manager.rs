@@ -265,6 +265,7 @@ pub struct WindowManager {
     key_index: BTreeMap<WindowKey, WindowId>,
     visible_order: Vec<WindowId>,
     presentation_history: Vec<WindowId>,
+    active_windows: BTreeSet<WindowId>,
     focused: Option<crate::FocusTarget>,
     previous_eligible: Option<WindowId>,
     saved_menu_focus: BTreeMap<WindowId, Option<crate::FocusTarget>>,
@@ -295,6 +296,7 @@ impl WindowManager {
             key_index: BTreeMap::new(),
             visible_order: Vec::new(),
             presentation_history: Vec::new(),
+            active_windows: BTreeSet::new(),
             focused: None,
             previous_eligible: None,
             saved_menu_focus: BTreeMap::new(),
@@ -346,6 +348,44 @@ impl WindowManager {
             self.focused,
             self.capture_owner,
         )
+        .restrict_to(&self.active_windows)
+    }
+
+    /// Selects registered scene members atomically, retaining dormant records and order.
+    ///
+    /// Port: scene membership governs commands and the next frozen input lease together.
+    /// Cancellation precedes focus repair so adapters clear outgoing gesture payloads first.
+    /// Unknown IDs or incompatible active modal placement reject without mutation.
+    pub fn set_active_windows(
+        &mut self,
+        active: &BTreeSet<WindowId>,
+    ) -> Result<Vec<WindowEvent>, WindowError> {
+        for id in active {
+            if !self.registry.contains_key(id) {
+                return Err(WindowError::UnknownWindow(*id));
+            }
+        }
+        // Scene selection must not admit an incompatible modal/transient arrangement.
+        // Preflight against the proposed membership before touching focus or capture.
+        self.validate_modal_order(&self.visible_order, active)
+            .map_err(|_| WindowError::InvalidPlacement)?;
+        self.active_windows = active.clone();
+        let mut events = Vec::new();
+        events.extend(self.cancel_capture_if_ineligible(CaptureCancelReason::SceneChanged));
+        let previous = self.focused;
+        if previous.map_or_else(
+            || self.active_modal().is_some(),
+            |target| !self.is_focus_eligible(target.window),
+        ) {
+            self.set_focus(self.topmost_eligible_focus());
+        }
+        if previous != self.focused {
+            events.push(WindowEvent::FocusChanged {
+                previous,
+                current: self.focused,
+            });
+        }
+        Ok(events)
     }
 
     /// Discards the current UI session while retaining allocator progression.
@@ -383,6 +423,7 @@ impl WindowManager {
         self.key_index.clear();
         self.visible_order.clear();
         self.presentation_history.clear();
+        self.active_windows.clear();
         self.focused = None;
         self.previous_eligible = None;
         self.saved_menu_focus.clear();
@@ -550,37 +591,7 @@ impl WindowManager {
             }
         }
 
-        if let (Some(lowest_modal), Some(active_modal)) = (
-            self.visible_order
-                .iter()
-                .position(|id| self.registry[id].spec.policy.input == InputPolicy::StrategicModal),
-            self.visible_order
-                .iter()
-                .rposition(|id| self.registry[id].spec.policy.input == InputPolicy::StrategicModal),
-        ) {
-            for id in &self.visible_order {
-                let record = self.registry[id];
-                if record.spec.policy.input == InputPolicy::StrategicModal {
-                    continue;
-                }
-                let boundary = match record.spec.owner {
-                    WindowOwner::StrategicRoot => lowest_modal,
-                    WindowOwner::Window(owner) => {
-                        if positions[&owner] >= active_modal {
-                            continue;
-                        }
-                        active_modal
-                    }
-                };
-                // `boundary` itself is a modal, while `id` is known non-modal.
-                if self.visible_order[boundary..].contains(id) {
-                    return Err(InvariantViolation {
-                        kind: InvariantKind::BandOrder,
-                        windows: vec![self.visible_order[boundary], *id],
-                    });
-                }
-            }
-        }
+        self.validate_modal_order(&self.visible_order, &self.active_windows)?;
 
         if let Some(focused) = self.focused {
             if !self.is_focus_eligible(focused.window) {
@@ -596,6 +607,55 @@ impl WindowManager {
                     kind: InvariantKind::IneligibleCapture,
                     windows: vec![capture_owner],
                 });
+            }
+        }
+
+        Ok(())
+    }
+
+    fn validate_modal_order(
+        &self,
+        order: &[WindowId],
+        active: &BTreeSet<WindowId>,
+    ) -> Result<(), InvariantViolation> {
+        let positions: BTreeMap<_, _> = order
+            .iter()
+            .enumerate()
+            .map(|(position, id)| (*id, position))
+            .collect();
+        if let (Some(lowest_modal), Some(active_modal)) = (
+            order.iter().position(|id| {
+                active.contains(id)
+                    && self.registry[id].spec.policy.input == InputPolicy::StrategicModal
+            }),
+            order.iter().rposition(|id| {
+                active.contains(id)
+                    && self.registry[id].spec.policy.input == InputPolicy::StrategicModal
+            }),
+        ) {
+            for id in order.iter().filter(|id| active.contains(id)) {
+                let record = self.registry[id];
+                if record.spec.policy.input == InputPolicy::StrategicModal {
+                    continue;
+                }
+                let boundary = match record.spec.owner {
+                    WindowOwner::StrategicRoot => lowest_modal,
+                    WindowOwner::Window(owner) => {
+                        if positions[&owner] >= active_modal
+                            && self.is_descendant_of(*id, order[active_modal])
+                        {
+                            continue;
+                        }
+                        active_modal
+                    }
+                };
+                // `boundary` itself is a modal, while `id` is known non-modal.
+                if order[boundary..].contains(id) {
+                    return Err(InvariantViolation {
+                        kind: InvariantKind::BandOrder,
+                        windows: vec![order[boundary], *id],
+                    });
+                }
             }
         }
 
@@ -641,7 +701,7 @@ impl WindowManager {
                         };
                         return Ok(commit);
                     }
-                    self.raise_visible(id);
+                    self.raise_visible(id)?;
                     if self.is_focus_eligible(id) {
                         self.set_focus(Some(crate::FocusTarget {
                             window: id,
@@ -678,6 +738,7 @@ impl WindowManager {
         self.registry.insert(id, WindowRecord { spec });
         self.key_index.insert(spec.key, id);
         self.visible_order.insert(insertion, id);
+        self.active_windows.insert(id);
         let mut events = Vec::new();
         if spec.key.kind == WindowKind::Menu {
             self.saved_menu_focus.insert(id, focus_before);
@@ -718,6 +779,7 @@ impl WindowManager {
             key_index: self.key_index.clone(),
             visible_order: self.visible_order.clone(),
             presentation_history: self.presentation_history.clone(),
+            active_windows: self.active_windows.clone(),
             focused: self.focused,
             previous_eligible: self.previous_eligible,
             saved_menu_focus: self.saved_menu_focus.clone(),
@@ -816,7 +878,7 @@ impl WindowManager {
         };
         self.validate_focus_target(target)?;
         let previous = self.focused;
-        self.raise_visible(id);
+        self.raise_visible(id)?;
         self.set_focus(Some(target));
         Ok(WindowCommit {
             transition: WindowTransition::Raised { id },
@@ -949,6 +1011,7 @@ impl WindowManager {
 
         self.visible_order.retain(|id| !closing.contains(id));
         self.presentation_history.retain(|id| !closing.contains(id));
+        self.active_windows.retain(|id| !closing.contains(id));
         for id in &closed {
             let record = self
                 .registry
@@ -1177,10 +1240,12 @@ impl WindowManager {
             }
         }
         let focused_before = self.focused;
-        self.presentation_history.retain(|entry| *entry != id);
         let insertion = self.proposed_insertion_index(spec);
-        self.visible_order.insert(insertion, id);
-        self.raise_visible(id);
+        let mut proposed_order = self.visible_order.clone();
+        proposed_order.insert(insertion, id);
+        let proposed_order = self.raised_order(id, proposed_order)?;
+        self.presentation_history.retain(|entry| *entry != id);
+        self.visible_order = proposed_order;
         if self.is_focus_eligible(id) {
             self.set_focus(Some(crate::FocusTarget {
                 window: id,
@@ -1203,7 +1268,9 @@ impl WindowManager {
         if !self.registry.contains_key(&target.window) {
             return Err(WindowError::UnknownWindow(target.window));
         }
-        if !self.visible_order.contains(&target.window) {
+        if !self.visible_order.contains(&target.window)
+            || !self.active_windows.contains(&target.window)
+        {
             return Err(WindowError::IneligibleFocus(target));
         }
         if let Some(modal) = self.active_modal() {
@@ -1230,18 +1297,21 @@ impl WindowManager {
     }
 
     fn active_modal(&self) -> Option<WindowId> {
-        self.visible_order
-            .iter()
-            .rev()
-            .copied()
-            .find(|id| self.registry[id].spec.policy.input == InputPolicy::StrategicModal)
+        self.active_modal_in(&self.visible_order)
+    }
+
+    fn active_modal_in(&self, order: &[WindowId]) -> Option<WindowId> {
+        order.iter().rev().copied().find(|id| {
+            self.active_windows.contains(id)
+                && self.registry[id].spec.policy.input == InputPolicy::StrategicModal
+        })
     }
 
     fn is_focus_eligible(&self, id: WindowId) -> bool {
         if !self.registry.contains_key(&id) {
             return false;
         }
-        if !self.visible_order.contains(&id) {
+        if !self.visible_order.contains(&id) || !self.active_windows.contains(&id) {
             return false;
         }
         self.active_modal()
@@ -1298,9 +1368,8 @@ impl WindowManager {
         }
         if is_transient {
             let active_modal = self
-                .visible_order
-                .iter()
-                .rposition(|id| self.registry[id].spec.policy.input == InputPolicy::StrategicModal);
+                .active_modal()
+                .and_then(|modal| self.visible_order.iter().position(|id| *id == modal));
             let owner_position = match spec.owner {
                 WindowOwner::Window(owner) => self
                     .visible_order
@@ -1308,25 +1377,37 @@ impl WindowManager {
                     .position(|candidate| *candidate == owner),
                 WindowOwner::StrategicRoot => None,
             };
-            if active_modal.is_some_and(|modal| owner_position.is_none_or(|owner| owner < modal)) {
-                return Err(WindowError::InvalidPlacement);
+            if let Some(modal) = active_modal {
+                let owner_is_eligible = match spec.owner {
+                    WindowOwner::Window(owner) => {
+                        owner == self.visible_order[modal]
+                            || self.is_descendant_of(owner, self.visible_order[modal])
+                    }
+                    WindowOwner::StrategicRoot => false,
+                };
+                if !owner_is_eligible || owner_position.is_none_or(|owner| owner < modal) {
+                    return Err(WindowError::InvalidPlacement);
+                }
             }
         }
         if spec.policy.input == InputPolicy::StrategicModal {
             let modal_position = self.band_insertion_index(spec);
-            for id in &self.visible_order[modal_position..] {
+            for id in self.visible_order[modal_position..]
+                .iter()
+                .filter(|id| self.active_windows.contains(id))
+            {
                 let record = self.registry[id];
                 if record.spec.policy.input == InputPolicy::StrategicModal {
                     continue;
                 }
-                let owner_is_eligible = match record.spec.owner {
-                    WindowOwner::StrategicRoot => false,
-                    WindowOwner::Window(owner) => self
-                        .visible_order
-                        .iter()
-                        .position(|candidate| *candidate == owner)
-                        .is_some_and(|owner_position| owner_position >= modal_position),
-                };
+                let owner_is_eligible = self.active_modal().is_some_and(|modal| {
+                    self.is_descendant_of(*id, modal)
+                        && self
+                            .visible_order
+                            .iter()
+                            .position(|candidate| *candidate == modal)
+                            .is_some_and(|position| position >= modal_position)
+                });
                 if !owner_is_eligible {
                     return Err(WindowError::InvalidPlacement);
                 }
@@ -1382,27 +1463,65 @@ impl WindowManager {
         self.constrain_to_modal_boundary(spec, self.band_insertion_index(spec))
     }
 
-    fn raise_visible(&mut self, id: WindowId) {
-        let subtree: Vec<_> = self
-            .visible_order
+    fn raise_visible(&mut self, id: WindowId) -> Result<(), WindowError> {
+        self.visible_order = self.raised_order(id, self.visible_order.clone())?;
+        Ok(())
+    }
+
+    fn raised_order(
+        &self,
+        id: WindowId,
+        mut order: Vec<WindowId>,
+    ) -> Result<Vec<WindowId>, WindowError> {
+        let subtree: Vec<_> = order
             .iter()
             .copied()
             .filter(|candidate| *candidate == id || self.is_descendant_of(*candidate, id))
             .collect();
         let subtree_ids: BTreeSet<_> = subtree.iter().copied().collect();
-        self.visible_order
-            .retain(|candidate| !subtree_ids.contains(candidate));
+        order.retain(|candidate| !subtree_ids.contains(candidate));
 
         for member in subtree {
             let spec = self.registry[&member].spec;
-            let band_top = self
-                .visible_order
+            let band_top = order
                 .iter()
                 .position(|candidate| self.registry[candidate].spec.policy.band > spec.policy.band)
-                .unwrap_or(self.visible_order.len());
-            let insertion = self.constrain_to_modal_boundary(spec, band_top);
-            self.visible_order.insert(insertion, member);
+                .unwrap_or(order.len());
+            let insertion = if self.active_windows.contains(&member) {
+                self.constrain_to_modal_boundary_in(spec, band_top, &order)
+            } else {
+                // Dormant descendants still obey global bands and owner order, but
+                // cannot be pulled below another scene's active modal boundary.
+                band_top
+            };
+            order.insert(insertion, member);
         }
+        // All retained records obey global bands and actual owner order, including
+        // dormant members. Reject the proposed reorder before touching live state.
+        let positions: BTreeMap<_, _> = order
+            .iter()
+            .enumerate()
+            .map(|(position, id)| (*id, position))
+            .collect();
+        for (position, member) in order.iter().enumerate() {
+            let spec = self.registry[member].spec;
+            if position > 0
+                && self.registry[&order[position - 1]].spec.policy.band > spec.policy.band
+            {
+                return Err(WindowError::InvalidPlacement);
+            }
+            if let WindowOwner::Window(owner) = spec.owner {
+                if positions
+                    .get(&owner)
+                    .is_none_or(|owner_position| *owner_position >= position)
+                {
+                    return Err(WindowError::InvalidPlacement);
+                }
+            }
+        }
+        self.validate_modal_order(&order, &self.active_windows)
+            .map_err(|_| WindowError::InvalidPlacement)?;
+        Ok(order)
     }
 
     fn is_descendant_of(&self, candidate: WindowId, ancestor: WindowId) -> bool {
@@ -1423,32 +1542,41 @@ impl WindowManager {
     }
 
     fn constrain_to_modal_boundary(&self, spec: WindowSpec, insertion: usize) -> usize {
+        self.constrain_to_modal_boundary_in(spec, insertion, &self.visible_order)
+    }
+
+    fn constrain_to_modal_boundary_in(
+        &self,
+        spec: WindowSpec,
+        insertion: usize,
+        order: &[WindowId],
+    ) -> usize {
         if spec.policy.input == InputPolicy::StrategicModal {
             return insertion;
         }
 
-        let Some(lowest_modal) = self.visible_order.iter().position(|candidate| {
-            self.registry[candidate].spec.policy.input == InputPolicy::StrategicModal
+        let Some(lowest_modal) = order.iter().position(|candidate| {
+            self.active_windows.contains(candidate)
+                && self.registry[candidate].spec.policy.input == InputPolicy::StrategicModal
         }) else {
             return insertion;
         };
         let active_modal = self
-            .visible_order
-            .iter()
-            .rposition(|candidate| {
-                self.registry[candidate].spec.policy.input == InputPolicy::StrategicModal
-            })
+            .active_modal_in(order)
+            .and_then(|modal| order.iter().position(|id| *id == modal))
             .unwrap_or(lowest_modal);
 
         let boundary = match spec.owner {
             WindowOwner::StrategicRoot => lowest_modal,
             WindowOwner::Window(owner) => {
-                let owner_position = self
-                    .visible_order
+                let owner_position = order
                     .iter()
                     .position(|candidate| *candidate == owner)
                     .unwrap_or(lowest_modal);
-                if owner_position >= active_modal {
+                if owner_position >= active_modal
+                    && (owner == order[active_modal]
+                        || self.is_descendant_of(owner, order[active_modal]))
+                {
                     return insertion;
                 }
                 active_modal
