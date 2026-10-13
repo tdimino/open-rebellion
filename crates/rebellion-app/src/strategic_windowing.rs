@@ -2,10 +2,13 @@
 
 use std::collections::BTreeSet;
 
-use rebellion_render::windowing_policy::SUBJECT_COMMAND_CONTEXT;
+use rebellion_core::ids::SystemKey;
+use rebellion_render::{
+    fleet_window::PreparedFleetWindow, windowing_policy::SUBJECT_COMMAND_CONTEXT,
+};
 use rebellion_windowing::{
-    BubblePolicy, ContentReport, ReconcileReport, RouteTarget, RoutingSnapshot, SubjectId,
-    WindowCommand, WindowCommit, WindowError, WindowEvent, WindowId, WindowTransition,
+    BubblePolicy, ContentReport, ExistingEffect, ReconcileReport, RouteTarget, RoutingSnapshot,
+    SubjectId, WindowCommand, WindowCommit, WindowError, WindowEvent, WindowId, WindowTransition,
 };
 
 /// Result of applying one queued command at the dispatch commit boundary.
@@ -17,6 +20,23 @@ pub struct AppliedWindowCommand {
     pub result: Result<WindowCommit, WindowError>,
     /// Matching attached content identities released by teardown receipts.
     pub removed_content: Vec<WindowId>,
+    /// Fleet content prepared alongside this command, never published before
+    /// the manager accepts the semantic identity.
+    pub prepared_fleet: Option<PreparedFleetWindow>,
+    /// Identity whose attachment is valid for `prepared_fleet` after commit.
+    pub fleet_content_id: Option<WindowId>,
+    /// Temporary rail-adapter payload committed only with Fleet minimize.
+    pub minimized_fleet: Option<(SystemKey, (i16, i16))>,
+    /// Exact temporary rail projection retired only after the caller also
+    /// commits the returned Fleet content restore.
+    pub restored_fleet: Option<SystemKey>,
+}
+
+#[derive(Debug)]
+struct QueuedWindowCommand {
+    command: WindowCommand,
+    prepared_fleet: Option<PreparedFleetWindow>,
+    minimized_fleet: Option<(SystemKey, (i16, i16))>,
 }
 
 /// Application scene whose registered windows currently participate in routing.
@@ -208,7 +228,7 @@ impl StrategicFrameBoundary {
 #[derive(Debug)]
 pub struct StrategicWindowing {
     manager: rebellion_windowing::WindowManager,
-    pending: Vec<WindowCommand>,
+    pending: Vec<QueuedWindowCommand>,
     scene: WindowScene,
     galaxy: BTreeSet<WindowId>,
     tactical: BTreeSet<WindowId>,
@@ -270,7 +290,36 @@ impl StrategicWindowing {
         reason = "feature-family migrations enqueue the first commands"
     )]
     pub fn enqueue(&mut self, command: WindowCommand) {
-        self.pending.push(command);
+        self.pending.push(QueuedWindowCommand {
+            command,
+            prepared_fleet: None,
+            minimized_fleet: None,
+        });
+    }
+
+    /// Queues a validated Fleet content candidate beside its semantic open.
+    /// The candidate returns to the app only after the manager applies it.
+    pub fn enqueue_fleet_open(&mut self, prepared: PreparedFleetWindow) {
+        self.pending.push(QueuedWindowCommand {
+            command: WindowCommand::Open(prepared.spec()),
+            prepared_fleet: Some(prepared),
+            minimized_fleet: None,
+        });
+    }
+
+    /// Queues manager-owned Fleet minimization and its legacy rail projection
+    /// as one commit unit. A rejected command never mutates the rail.
+    pub fn enqueue_fleet_minimize(
+        &mut self,
+        window: WindowId,
+        system: SystemKey,
+        logical_position: (i16, i16),
+    ) {
+        self.pending.push(QueuedWindowCommand {
+            command: WindowCommand::Minimize(window),
+            prepared_fleet: None,
+            minimized_fleet: Some((system, logical_position)),
+        });
     }
 
     /// Applies queued commands in insertion order after input and painting finish.
@@ -281,17 +330,55 @@ impl StrategicWindowing {
         let pending = std::mem::take(&mut self.pending);
         pending
             .into_iter()
-            .map(|command| {
+            .map(|queued| {
+                let QueuedWindowCommand {
+                    command,
+                    prepared_fleet,
+                    minimized_fleet,
+                } = queued;
                 let result = self.manager.apply(command);
                 let mut removed_content = Vec::new();
+                let mut fleet_content_id = None;
+                let mut committed_minimized_fleet = None;
+                let mut restored_fleet = None;
                 if let Ok(commit) = &result {
                     self.record_transition(&commit.transition, &commit.events);
                     removed_content = self.release_matching_content(&commit.events);
+                    if matches!(commit.transition, WindowTransition::Minimized { .. }) {
+                        committed_minimized_fleet = minimized_fleet;
+                    }
+                    if prepared_fleet.is_some() {
+                        fleet_content_id = match &commit.transition {
+                            WindowTransition::Opened { id } => {
+                                self.attached_content.insert(*id).then_some(*id)
+                            }
+                            WindowTransition::Existing { id, .. } => {
+                                self.attached_content.contains(id).then_some(*id)
+                            }
+                            _ => None,
+                        };
+                        if fleet_content_id.is_some()
+                            && matches!(
+                                commit.transition,
+                                WindowTransition::Existing {
+                                    effect: ExistingEffect::RestoredAndRaised,
+                                    ..
+                                }
+                            )
+                        {
+                            restored_fleet =
+                                prepared_fleet.as_ref().map(PreparedFleetWindow::system);
+                        }
+                    }
                 }
                 AppliedWindowCommand {
                     command,
                     result,
                     removed_content,
+                    prepared_fleet,
+                    fleet_content_id,
+                    minimized_fleet: committed_minimized_fleet,
+                    restored_fleet,
                 }
             })
             .collect()
@@ -422,7 +509,13 @@ impl StrategicWindowing {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rebellion_core::dat::{ExplorationStatus, SectorGroup};
+    use rebellion_core::ids::DatId;
+    use rebellion_core::world::{ControlKind, GameWorld, Sector, System};
     use rebellion_render::windowing_policy::{contextual_spec, singleton_spec};
+    use rebellion_render::{
+        CockpitFaction, CockpitLayout, CockpitViewport, FleetWindowState, SystemWindowState,
+    };
     use rebellion_windowing::{
         ControlId, FocusTarget, SubjectId, WindowKey, WindowKind, WindowOwner,
     };
@@ -435,6 +528,145 @@ mod tests {
             }) => *id,
             other => panic!("expected successful open, got {other:?}"),
         }
+    }
+
+    fn fleet_world() -> (GameWorld, SystemKey) {
+        let mut world = GameWorld::default();
+        let sector = world.sectors.insert(Sector {
+            dat_id: DatId::new(36),
+            name: "Sesswenna".into(),
+            group: SectorGroup::Core,
+            x: 317,
+            y: 248,
+            systems: Vec::new(),
+        });
+        let system = world.systems.insert(System {
+            dat_id: DatId::new(100),
+            name: "Sluis Van".into(),
+            sector,
+            x: 320,
+            y: 250,
+            exploration_status: ExplorationStatus::Explored,
+            popularity_alliance: 0.5,
+            popularity_empire: 0.5,
+            is_populated: true,
+            total_energy: 0,
+            raw_materials: 0,
+            espionage_rating: 0.0,
+            fleets: Vec::new(),
+            ground_units: Vec::new(),
+            special_forces: Vec::new(),
+            fighters: Vec::new(),
+            defense_facilities: Vec::new(),
+            manufacturing_facilities: Vec::new(),
+            production_facilities: Vec::new(),
+            is_headquarters: false,
+            is_destroyed: false,
+            control: ControlKind::Uncontrolled,
+        });
+        (world, system)
+    }
+
+    fn fleet_layout() -> CockpitLayout {
+        let viewport = CockpitViewport {
+            x: 0.0,
+            y: 0.0,
+            width: 640.0,
+            height: 480.0,
+        };
+        CockpitLayout {
+            canvas: viewport,
+            galaxy: viewport,
+            scale: 1.0,
+        }
+    }
+
+    #[test]
+    fn fleet_commit_publishes_content_and_rail_only_after_manager_transition() {
+        let (world, system) = fleet_world();
+        let mut state = FleetWindowState::default();
+        let mut coordinator = StrategicWindowing::new();
+        let prepared = state
+            .prepare_open(
+                &world,
+                system,
+                (40, 50),
+                CockpitFaction::Alliance,
+                fleet_layout(),
+                None,
+            )
+            .unwrap();
+
+        coordinator.enqueue_fleet_open(prepared);
+        assert!(coordinator.begin_frame().paint_order().is_empty());
+        let mut opened = coordinator.apply_pending().remove(0);
+        let id = opened.fleet_content_id.unwrap();
+        let commit = opened.result.as_ref().unwrap();
+        assert_eq!(
+            state.commit_open(opened.prepared_fleet.take().unwrap(), &commit.transition),
+            Some(id)
+        );
+        assert_eq!(opened.restored_fleet, None);
+        assert!(coordinator.has_content(id));
+        assert_eq!(state.window_id(system), Some(id));
+
+        coordinator.enqueue_fleet_minimize(id, system, (40, 50));
+        let minimized = coordinator.apply_pending().remove(0);
+        assert!(matches!(
+            minimized.result.as_ref().unwrap().transition,
+            WindowTransition::Minimized {
+                id: minimized_id, ..
+            } if minimized_id == id
+        ));
+        assert_eq!(minimized.minimized_fleet, Some((system, (40, 50))));
+        assert_eq!(minimized.restored_fleet, None);
+        assert!(coordinator.has_content(id));
+        assert!(!coordinator.begin_frame().is_visible(id));
+        let mut rail = SystemWindowState::default();
+        if let Some((system, logical_position)) = minimized.minimized_fleet {
+            rail.minimize_fleet_window(system, logical_position);
+        }
+        assert_eq!(rail.rail_entries().collect::<Vec<_>>(), [(system, "fleet")]);
+
+        let prepared = state
+            .prepare_open(
+                &world,
+                system,
+                (90, 100),
+                CockpitFaction::Alliance,
+                fleet_layout(),
+                None,
+            )
+            .unwrap();
+        coordinator.enqueue_fleet_open(prepared);
+        let mut restored = coordinator.apply_pending().remove(0);
+        assert_eq!(restored.fleet_content_id, Some(id));
+        assert_eq!(restored.restored_fleet, Some(system));
+        assert_eq!(rail.rail_count(), 1);
+        let committed = state.commit_open(
+            restored.prepared_fleet.take().unwrap(),
+            &restored.result.as_ref().unwrap().transition,
+        ) == Some(id);
+        assert!(committed);
+        if committed {
+            assert!(rail.restore_fleet_window(restored.restored_fleet.unwrap()));
+        }
+        assert_eq!(rail.rail_count(), 0);
+        assert!(coordinator.begin_frame().is_visible(id));
+
+        coordinator.enqueue(WindowCommand::Close(id));
+        let closed = coordinator.apply_pending().remove(0);
+        assert_eq!(closed.removed_content, [id]);
+        assert_eq!(closed.restored_fleet, None);
+        state.remove_content(&closed.removed_content);
+        assert!(!coordinator.has_content(id));
+        assert_eq!(state.window_count(), 0);
+
+        coordinator.enqueue_fleet_minimize(id, system, (40, 50));
+        let rejected = coordinator.apply_pending().remove(0);
+        assert!(rejected.result.is_err());
+        assert_eq!(rejected.minimized_fleet, None);
+        assert_eq!(rejected.restored_fleet, None);
     }
 
     #[test]

@@ -479,6 +479,18 @@ impl SystemWindowState {
         });
     }
 
+    /// Retire the exact temporary Fleet rail projection after the shared
+    /// manager and Fleet content have both committed a restore.
+    pub fn restore_fleet_window(&mut self, system: SystemKey) -> bool {
+        let Some(index) = self.rail.iter().position(
+            |entry| matches!(entry, RailEntry::Fleet { system: held, .. } if *held == system),
+        ) else {
+            return false;
+        };
+        self.rail.remove(index);
+        true
+    }
+
     /// Put a minimized Defenses window on the rail (`0x466`).
     pub fn minimize_defenses_window(&mut self, system: SystemKey, logical_position: (i16, i16)) {
         self.push_rail(RailEntry::Defenses {
@@ -784,16 +796,13 @@ fn draw_reference_rail(
             state.restore(window.system);
             None
         }
-        entry @ RailEntry::Fleet {
+        RailEntry::Fleet {
             system,
             logical_position,
-        } => {
-            state.rail.retain(|held| !held.same_window(&entry));
-            Some(SystemWindowAction::RestoreFleetWindow {
-                system,
-                logical_position,
-            })
-        }
+        } => Some(SystemWindowAction::RestoreFleetWindow {
+            system,
+            logical_position,
+        }),
         entry @ RailEntry::Defenses {
             system,
             logical_position,
@@ -2333,11 +2342,32 @@ mod tests {
             system: systems[0],
             logical_position: (100, 80),
         }));
-        assert_eq!(state.rail_count(), 2);
-        assert!(state.rail[0].is_system_window());
+        // Emitting the request is not a restore commit. If validation or the
+        // shared manager later rejects it, every projection stays intact.
+        assert_eq!(state.rail_count(), 3);
+        assert!(matches!(state.rail[0], RailEntry::Fleet { .. }));
         assert_eq!(state.rail[0].system(), systems[0]);
-        assert_eq!(state.rail[1].system(), systems[1]);
+        assert!(state.rail[1].is_system_window());
+        assert_eq!(state.rail[1].system(), systems[0]);
+        assert_eq!(state.rail[2].system(), systems[1]);
     }
+
+    #[test]
+    fn a_committed_fleet_restore_retires_only_its_exact_rail_projection() {
+        let (_, systems) = fixture_world(2);
+        let mut state = SystemWindowState::default();
+        state.minimize_defenses_window(systems[0], (90, 70));
+        state.minimize_fleet_window(systems[0], (100, 80));
+        state.minimize_fleet_window(systems[1], (120, 90));
+
+        assert!(state.restore_fleet_window(systems[0]));
+        assert_eq!(
+            state.rail_entries().collect::<Vec<_>>(),
+            [(systems[0], "defenses"), (systems[1], "fleet")]
+        );
+        assert!(!state.restore_fleet_window(systems[0]));
+    }
+
     #[test]
     fn reference_rail_rectangles_differ_by_faction() {
         // No recovered source: rail slot Y coordinates per faction, kept as a regression pin.

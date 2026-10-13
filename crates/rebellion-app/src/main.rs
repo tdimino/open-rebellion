@@ -149,7 +149,8 @@ use rebellion_render::{
     VideoError, VideoPlayer,
 };
 use rebellion_render::{draw_defenses_windows, DefensesWindowAction, DefensesWindowState};
-use rebellion_render::{draw_fleet_windows, FleetWindowAction, FleetWindowState};
+use rebellion_render::fleet_window::{draw_managed_fleet_windows, FleetWindowEntry};
+use rebellion_render::{FleetWindowAction, FleetWindowState};
 use rebellion_render::{draw_missions_windows, MissionsWindowAction, MissionsWindowState};
 #[cfg(not(target_arch = "wasm32"))]
 use rebellion_render::{MusicContext, SfxKind};
@@ -1027,19 +1028,23 @@ impl StrategicRootKeyBatch {
         &self,
         router: &mut FrameInputRouter,
         handles_keyboard: bool,
+        fleet: Option<(rebellion_windowing::WindowId, InputDisposition)>,
     ) {
         for event in &self.events {
             let recipient = router.keyboard_recipient(event.id);
-            if recipient == InputRecipient::Root {
-                router.report_key(
-                    event.id,
-                    recipient,
-                    if handles_keyboard {
-                        InputDisposition::Handled
-                    } else {
-                        InputDisposition::Unhandled
-                    },
-                );
+            let disposition = match recipient {
+                InputRecipient::Root => Some(if handles_keyboard {
+                    InputDisposition::Handled
+                } else {
+                    InputDisposition::Unhandled
+                }),
+                InputRecipient::Window(window) => fleet
+                    .filter(|(fleet_window, _)| *fleet_window == window)
+                    .map(|(_, disposition)| disposition),
+                InputRecipient::Blocked => None,
+            };
+            if let Some(disposition) = disposition {
+                router.report_key(event.id, recipient, disposition);
             }
         }
     }
@@ -1140,7 +1145,7 @@ mod panel_toggle_tests {
             repeat: false,
         }];
         let batch = StrategicRootKeyBatch::collect_from_raw(1, &mut router, &events);
-        batch.report_legacy_children(&mut router, false);
+        batch.report_legacy_children(&mut router, false, None);
 
         assert!(router.claim_root(batch.events[0].id));
         assert!(!router.claim_root(batch.events[0].id));
@@ -1165,7 +1170,7 @@ mod panel_toggle_tests {
             },
         ];
         let batch = StrategicRootKeyBatch::collect_from_raw(9, &mut router, &events);
-        batch.report_legacy_children(&mut router, false);
+        batch.report_legacy_children(&mut router, false, None);
 
         assert_eq!(batch.events.len(), 2);
         assert!(batch.events[0].alt);
@@ -1188,9 +1193,60 @@ mod panel_toggle_tests {
             repeat: false,
         }];
         let batch = StrategicRootKeyBatch::collect_from_raw(2, &mut router, &events);
-        batch.report_legacy_children(&mut router, true);
+        batch.report_legacy_children(&mut router, true, None);
 
         assert!(!router.claim_root(batch.events[0].id));
+    }
+
+    #[test]
+    fn focused_fleet_reports_disposition_before_root_shortcut_bubbling() {
+        use rebellion_render::windowing_input::{InputDisposition, InputRecipient};
+        use rebellion_render::windowing_policy::contextual_spec;
+        use rebellion_windowing::{
+            SubjectId, WindowCommand, WindowKind, WindowOwner, WindowTransition,
+        };
+
+        let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
+        coordinator.enqueue(WindowCommand::Open(contextual_spec(
+            WindowKind::Fleet,
+            SubjectId::new(2, 100),
+            WindowOwner::StrategicRoot,
+        )));
+        let applied = coordinator.apply_pending();
+        let fleet = match applied[0].result.as_ref().unwrap().transition {
+            WindowTransition::Opened { id } => id,
+            ref transition => panic!("expected Fleet open, got {transition:?}"),
+        };
+        let frame = coordinator.begin_frame();
+        let events = [StrategicRawKeyEvent {
+            key: KeyCode::P,
+            alt: true,
+            repeat: false,
+        }];
+
+        let mut unhandled_router = FrameInputRouter::default();
+        unhandled_router.begin_frame(3, &frame);
+        let unhandled = StrategicRootKeyBatch::collect_from_raw(3, &mut unhandled_router, &events);
+        assert_eq!(
+            unhandled_router.keyboard_recipient(unhandled.events[0].id),
+            InputRecipient::Window(fleet)
+        );
+        unhandled.report_legacy_children(
+            &mut unhandled_router,
+            false,
+            Some((fleet, InputDisposition::Unhandled)),
+        );
+        assert!(unhandled_router.claim_root(unhandled.events[0].id));
+
+        let mut handled_router = FrameInputRouter::default();
+        handled_router.begin_frame(4, &frame);
+        let handled = StrategicRootKeyBatch::collect_from_raw(4, &mut handled_router, &events);
+        handled.report_legacy_children(
+            &mut handled_router,
+            false,
+            Some((fleet, InputDisposition::Handled)),
+        );
+        assert!(!handled_router.claim_root(handled.events[0].id));
     }
 
     #[test]
@@ -2001,6 +2057,9 @@ async fn main() {
     // Must happen inside the macroquad async context, after first frame init.
     let mut theme_applied = false;
     let mut strategic_windowing = strategic_windowing::StrategicWindowing::new();
+    // Temporary projection from manager commits into the three detail
+    // families that still use the legacy cross-family focus serial.
+    let mut fleet_legacy_bridge_serial = 0_u64;
     let mut strategic_input_router = rebellion_render::windowing_input::FrameInputRouter::default();
     let mut strategic_frame_number = 0_u64;
     let strategic_input_subscriber = macroquad::input::utils::register_input_subscriber();
@@ -4045,7 +4104,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                 || message_index.is_some()
                 || encyclopedia_surface.is_open()
                 || original_modal_fixture_open,
-            focused_control: fleet_window_state.renaming() || command_palette_open,
+            focused_control: command_palette_open,
             transient_menu: object_menu.is_some()
                 || game_speed_ui.menu_anchor.is_some()
                 || agent_menu_state.anchor.is_some()
@@ -4054,6 +4113,18 @@ Some(RailAudience::side(*faction_is_alliance)),
         };
         let strategic_frame_boundary =
             strategic_windowing.begin_production_frame(strategic_locks, legacy_blockers);
+        let fleet_keyboard_disposition = fleet_window_state
+            .keyboard_owner(strategic_frame_boundary.snapshot())
+            .map(|(window, handles_keyboard)| {
+                (
+                    window,
+                    if handles_keyboard {
+                        InputDisposition::Handled
+                    } else {
+                        InputDisposition::Unhandled
+                    },
+                )
+            });
         let mut legacy_restriction_latch = LegacyInputRestrictionLatch::new(legacy_blockers);
         let strategic_frame_sequence_valid =
             if let Some(next_frame) = strategic_frame_number.checked_add(1) {
@@ -4674,7 +4745,11 @@ Some(RailAudience::side(*faction_is_alliance)),
                     .contains_screen_point(cockpit_layout, pointer)
                     || cockpit_state.gid_legend_contains(cockpit_layout, pointer)
                     || system_window_state.contains_screen_point(cockpit_layout, pointer)
-                    || fleet_window_state.contains_screen_point(cockpit_layout, pointer)
+                    || fleet_window_state.contains_visible_screen_point(
+                        strategic_frame_boundary.snapshot(),
+                        cockpit_layout,
+                        pointer,
+                    )
                     || defenses_window_state.contains_screen_point(cockpit_layout, pointer)
                     || missions_window_state.contains_screen_point(cockpit_layout, pointer)
                     || fleet_window_state.is_dragging()
@@ -5257,12 +5332,15 @@ Some(RailAudience::side(*faction_is_alliance)),
                                 logical_position,
                             } => {
                                 map_state.selected_system = Some(system);
-                                fleet_window_state.open(
+                                enqueue_fleet_window(
+                                    &mut strategic_windowing,
+                                    &fleet_window_state,
                                     &world,
                                     system,
                                     logical_position,
                                     cockpit_state.faction,
                                     cockpit_layout,
+                                    None,
                                 );
                             }
                             SectorWindowAction::OpenDefensesWindow {
@@ -5369,7 +5447,12 @@ Some(RailAudience::side(*faction_is_alliance)),
                     // kind that took focus last paints in front.
                     let galaxy_front = galaxy_front(
                         &system_window_state,
-                        &fleet_window_state,
+                        {
+                            let serial = fleet_legacy_bridge_serial;
+                            #[cfg(feature = "interface-test-fixtures")]
+                            let serial = serial.max(fleet_window_state.fixture_focus_serial());
+                            serial
+                        },
                         &defenses_window_state,
                         &missions_window_state,
                     );
@@ -5403,12 +5486,15 @@ Some(RailAudience::side(*faction_is_alliance)),
                                 system,
                                 logical_position,
                             } => {
-                                fleet_window_state.open(
+                                enqueue_fleet_window(
+                                    &mut strategic_windowing,
+                                    &fleet_window_state,
                                     &world,
                                     system,
                                     logical_position,
                                     cockpit_state.faction,
                                     cockpit_layout,
+                                    None,
                                 );
                             }
                             SystemWindowAction::RestoreDefensesWindow {
@@ -5456,7 +5542,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                         }
                     }
 
-                    for action in draw_fleet_windows(
+                    for action in draw_managed_fleet_windows(
                         ctx,
                         &world,
                         &movement_state,
@@ -5466,6 +5552,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                         cockpit_state.faction,
                         cockpit_layout,
                         &mut bmp_cache,
+                        strategic_frame_boundary.snapshot(),
                         galaxy_front == GalaxyFront::Fleet,
                     ) {
                         match action {
@@ -5480,12 +5567,25 @@ Some(RailAudience::side(*faction_is_alliance)),
                             FleetWindowAction::SelectSystem(system) => {
                                 map_state.selected_system = Some(system);
                             }
+                            FleetWindowAction::Activate(window) => strategic_windowing
+                                .enqueue(rebellion_windowing::WindowCommand::Activate(window)),
+                            FleetWindowAction::Close(window) => strategic_windowing
+                                .enqueue(rebellion_windowing::WindowCommand::Close(window)),
                             FleetWindowAction::Minimize {
                                 system,
                                 logical_position,
                             } => {
                                 system_window_state.minimize_fleet_window(system, logical_position)
                             }
+                            FleetWindowAction::MinimizeManaged {
+                                window,
+                                system,
+                                logical_position,
+                            } => strategic_windowing.enqueue_fleet_minimize(
+                                window,
+                                system,
+                                logical_position,
+                            ),
                             // FUN_00422ce0: a drop from the Fleet window
                             // (type 4) moves the selection against the
                             // window under the point with 0x201.
@@ -6051,27 +6151,44 @@ Some(RailAudience::side(*faction_is_alliance)),
                                 )
                                 .map(|system| (entry, system))
                             }) {
-                                if fleet_window_state.selection(system).is_none() {
-                                    sector_window_state.open_for_system(
-                                        &world,
-                                        system,
-                                        cockpit_state.faction,
-                                    );
-                                    if let Some(point) = sector_window_state.fleet_window_point(
-                                        &world,
-                                        cockpit_layout,
-                                        system,
-                                    ) {
-                                        fleet_window_state.open(
+                                let visible = fleet_window_state.window_is_visible(
+                                    strategic_frame_boundary.snapshot(),
+                                    system,
+                                );
+                                if fleet_window_state.window_id(system).is_some() || !visible {
+                                    let point = if visible {
+                                        fleet_window_state.window_logical_position(system)
+                                    } else {
+                                        sector_window_state.open_for_system(
                                             &world,
                                             system,
-                                            point,
                                             cockpit_state.faction,
-                                            cockpit_layout,
                                         );
+                                        sector_window_state.fleet_window_point(
+                                            &world,
+                                            cockpit_layout,
+                                            system,
+                                        )
+                                    };
+                                    if let Some(point) = point {
+                                        if let Some(prepared) = fleet_window_state
+                                            .prepare_open(
+                                                &world,
+                                                system,
+                                                point,
+                                                cockpit_state.faction,
+                                                cockpit_layout,
+                                                Some(entry),
+                                            )
+                                            .and_then(|prepared| {
+                                                prepared.with_rename(&world, entry)
+                                            })
+                                        {
+                                            strategic_windowing.enqueue_fleet_open(prepared);
+                                            legacy_restriction_latch.note_start();
+                                        }
                                     }
-                                }
-                                if fleet_window_state.begin_rename(&world, system, entry) {
+                                } else if fleet_window_state.begin_rename(&world, system, entry) {
                                     legacy_restriction_latch.note_start();
                                 }
                             }
@@ -6242,14 +6359,16 @@ Some(RailAudience::side(*faction_is_alliance)),
                                 system,
                             ) {
                                 map_state.selected_system = Some(system);
-                                fleet_window_state.open(
+                                enqueue_fleet_window(
+                                    &mut strategic_windowing,
+                                    &fleet_window_state,
                                     &world,
                                     system,
                                     point,
                                     cockpit_state.faction,
                                     cockpit_layout,
+                                    Some(entry),
                                 );
-                                fleet_window_state.select(system, entry);
                             }
                         }
                     }
@@ -6372,18 +6491,15 @@ Some(RailAudience::side(*faction_is_alliance)),
                                     cockpit_layout,
                                     system,
                                 ) {
-                                    fleet_window_state.open(
+                                    enqueue_fleet_window(
+                                        &mut strategic_windowing,
+                                        &fleet_window_state,
                                         &world,
                                         system,
                                         point,
                                         cockpit_state.faction,
                                         cockpit_layout,
-                                    );
-                                    fleet_window_state.select(
-                                        system,
-                                        rebellion_render::fleet_window::FleetWindowEntry::Fleet(
-                                            fleet,
-                                        ),
+                                        Some(FleetWindowEntry::Fleet(fleet)),
                                     );
                                 }
                             }
@@ -6753,6 +6869,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                 strategic_root_keys.report_legacy_children(
                     &mut strategic_input_router,
                     egui_claims_keyboard || legacy_keyboard_handled,
+                    fleet_keyboard_disposition,
                 );
 
                 // Child surfaces have now handled their input. Keep every
@@ -6774,7 +6891,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                         || message_index.is_some()
                         || encyclopedia_surface.is_open()
                         || original_modal_fixture_open,
-                    focused_control: fleet_window_state.renaming() || command_palette_now_open,
+                    focused_control: command_palette_now_open,
                     transient_menu: object_menu.is_some()
                         || game_speed_ui.menu_anchor.is_some()
                         || agent_menu_state.anchor.is_some()
@@ -7533,20 +7650,16 @@ Some(RailAudience::side(*faction_is_alliance)),
                                 let system = value.location;
                                 map_state.selected_system = Some(system);
                                 let layout = cockpit_state.layout();
-                                if fleet_window_state.open(
+                                enqueue_fleet_window(
+                                    &mut strategic_windowing,
+                                    &fleet_window_state,
                                     &world,
                                     system,
                                     (85, 55),
                                     cockpit_state.faction,
                                     layout,
-                                ) {
-                                    fleet_window_state.select(
-                                        system,
-                                        rebellion_render::fleet_window::FleetWindowEntry::Fleet(
-                                            fleet,
-                                        ),
-                                    );
-                                }
+                                    Some(FleetWindowEntry::Fleet(fleet)),
+                                );
                             }
                         }
                     }
@@ -8178,11 +8291,58 @@ Some(RailAudience::side(*faction_is_alliance)),
             }
         }
 
+        let fleet_content_reports = fleet_window_state
+            .content_reports(strategic_frame_boundary.snapshot(), &world);
+
         // Window intents commit only after input and painting have completed.
-        // Migrated families enqueue here; their effects become visible at the
-        // next immutable frame boundary.
+        // Fleet content is published only after the matching manager commit;
+        // close and eviction receipts remove only their exact identities.
         for applied in strategic_windowing.apply_pending() {
-            match &applied.result {
+            let strategic_windowing::AppliedWindowCommand {
+                command,
+                result,
+                removed_content,
+                prepared_fleet,
+                fleet_content_id,
+                minimized_fleet,
+                restored_fleet,
+            } = applied;
+            let activated_fleet = matches!(
+                command,
+                rebellion_windowing::WindowCommand::Activate(id)
+                    if fleet_window_state.contains_window(id)
+            );
+            let mut committed_fleet_open = false;
+            if let (Some(prepared), Some(id), Ok(commit)) =
+                (prepared_fleet, fleet_content_id, &result)
+            {
+                if fleet_window_state.commit_open(prepared, &commit.transition) == Some(id) {
+                    committed_fleet_open = true;
+                } else {
+                    macroquad::logging::error!(
+                        "[windowing] Fleet content commit did not match identity={id:?}"
+                    );
+                }
+            }
+            if (activated_fleet && result.is_ok()) || committed_fleet_open {
+                fleet_legacy_bridge_serial = FleetWindowState::next_legacy_bridge_serial();
+            }
+            if committed_fleet_open {
+                if let Some(system) = restored_fleet {
+                    system_window_state.restore_fleet_window(system);
+                }
+            }
+            if let (Some((system, logical_position)), Ok(commit)) = (minimized_fleet, &result) {
+                if matches!(
+                    &commit.transition,
+                    rebellion_windowing::WindowTransition::Minimized { .. }
+                ) {
+                    system_window_state.minimize_fleet_window(system, logical_position);
+                }
+            }
+            fleet_window_state.remove_content(&removed_content);
+
+            match &result {
                 Ok(commit) => {
                     for event in &commit.events {
                         if let rebellion_windowing::WindowEvent::CaptureCancelled {
@@ -8192,27 +8352,29 @@ Some(RailAudience::side(*faction_is_alliance)),
                             strategic_input_router.cancel_window(*window);
                         }
                     }
-                    if !applied.removed_content.is_empty() {
+                    if !removed_content.is_empty() {
                         macroquad::logging::info!(
                             "[windowing] released_content={:?}",
-                            applied.removed_content
+                            removed_content
                         );
                     }
                 }
                 Err(error) => {
                     macroquad::logging::warn!(
                         "[windowing] rejected command={:?} error={error:?}",
-                        applied.command
+                        command
                     );
                 }
             }
         }
 
-        // Content reports reconcile after command commit, but still against
-        // the immutable snapshot that routed and painted this frame. No family
-        // is migrated yet, so the production report set is intentionally empty.
-        let reconciliation =
-            strategic_windowing.reconcile(strategic_frame_boundary.snapshot(), &[]);
+        // Reports reconcile after command commit against the immutable frame
+        // that actually routed and painted this content.
+        let reconciliation = strategic_windowing.reconcile(
+            strategic_frame_boundary.snapshot(),
+            &fleet_content_reports,
+        );
+        fleet_window_state.remove_content(&reconciliation.removed);
         for event in &reconciliation.events {
             if let rebellion_windowing::WindowEvent::CaptureCancelled { window, .. } = event {
                 strategic_input_router.cancel_window(*window);
@@ -10173,15 +10335,43 @@ enum GalaxyFront {
     Missions,
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The lifecycle adapter carries the existing Fleet opener's complete content context."
+)]
+fn enqueue_fleet_window(
+    strategic_windowing: &mut strategic_windowing::StrategicWindowing,
+    state: &FleetWindowState,
+    world: &GameWorld,
+    system: SystemKey,
+    logical_position: (i16, i16),
+    faction: CockpitFaction,
+    layout: rebellion_render::CockpitLayout,
+    selected: Option<FleetWindowEntry>,
+) -> bool {
+    let Some(prepared) = state.prepare_open(
+        world,
+        system,
+        logical_position,
+        faction,
+        layout,
+        selected,
+    ) else {
+        return false;
+    };
+    strategic_windowing.enqueue_fleet_open(prepared);
+    true
+}
+
 fn galaxy_front(
     system: &SystemWindowState,
-    fleet: &FleetWindowState,
+    fleet_serial: u64,
     defenses: &DefensesWindowState,
     missions: &MissionsWindowState,
 ) -> GalaxyFront {
     [
         (system.focus_serial(), GalaxyFront::System),
-        (fleet.focus_serial(), GalaxyFront::Fleet),
+        (fleet_serial, GalaxyFront::Fleet),
         (defenses.focus_serial(), GalaxyFront::Defenses),
         (missions.focus_serial(), GalaxyFront::Missions),
     ]
