@@ -333,6 +333,21 @@ impl WindowManager {
         self.capture_owner
     }
 
+    /// Freezes an owned lease for one input dispatch, unaffected by later commits.
+    #[must_use]
+    pub fn begin_frame(&self) -> crate::snapshot::RoutingSnapshot {
+        crate::snapshot::RoutingSnapshot::new(
+            self.registry
+                .iter()
+                .map(|(id, record)| (*id, record.spec))
+                .collect(),
+            self.visible_order.clone(),
+            self.presentation_history.clone(),
+            self.focused,
+            self.capture_owner,
+        )
+    }
+
     /// Discards the current UI session while retaining allocator progression.
     pub fn reset_session(&mut self) -> Vec<WindowEvent> {
         let focused_before = self.focused;
