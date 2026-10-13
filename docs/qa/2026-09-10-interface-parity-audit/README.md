@@ -452,4 +452,7 @@ comparisons remain open.
 `CMD-01`, `CMD-03`, `CMD-04`, `CMD-10`, and `UIP-T01` remain open because the
 full control matrix, remaining GID modes and map art, nested object
 compositions and commands, exact rail thumbnails, original destination
-windows, and replacement surfaces are not complete.
+windows, and replacement surfaces are not complete. The 2026-10-12
+[routing/coordinator checkpoint](evidence/2026-10-12-strategic-window-routing-coordinator.md)
+establishes their shared immutable input and lifecycle boundary, but promotes
+no visual cell before the feature families migrate.

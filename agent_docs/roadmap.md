@@ -683,6 +683,12 @@ would tune around known simulation feedback defects.
   plus both factions' 12-slot minimize/restore rail geometry. Nested tab
   compositions, commands, exact rail thumbnails, uncommon states, and the
   complete `CMD-03` and `CMD-04` acceptance matrices remain open.
+- [x] Establish the shared strategic-window routing boundary: immutable
+  frame snapshots, active-scene command eligibility, fail-closed content
+  reconciliation, stable managed-host identities, event-local ownership, and
+  one production app coordinator now pass their scoped tests. This is
+  infrastructure only. Task 6 onward must migrate each existing family before
+  the exact rail, modal, and multiwindow acceptance cells can close.
 - [x] Complete P46D / the detailed-system item checkpoint: populate all six
   core tabs with source-mapped GOKRES miniatures and displayed entity labels;
   restore selection, foreground focus, and the three-column scrolled viewport

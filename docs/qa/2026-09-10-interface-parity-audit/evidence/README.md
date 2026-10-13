@@ -114,6 +114,7 @@ the source of truth for scope, acceptance, and current work.
 
 | Checkpoint | Report | Artifact bundle |
 |---|---|---|
+| 2026-10-12 | [Immutable routing and production coordinator](2026-10-12-strategic-window-routing-coordinator.md) | Source-level kernel, render, app, and WASM gates; no visual cell promoted |
 | PR #14 / P31 | [Game Options review checkpoint](2026-09-26-game-options-review.md) | [Durable verification summary](2026-09-26-game-options-review.json) |
 | PR #11 | [Cockpit routing correction](2026-09-14-cockpit-routing-correction.md) | [`pr11-cockpit-routing/`](pr11-cockpit-routing/) |
 | P60 | [Game Speed recovery](2026-09-24-game-speed-recovery.md) and [Message Index recovery](2026-09-24-message-index-recovery.md) | [`p60-game-speed/`](p60-game-speed/) |

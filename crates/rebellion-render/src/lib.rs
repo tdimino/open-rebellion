@@ -42,7 +42,6 @@ pub mod sector_window;
 pub mod status_rows;
 pub mod status_window;
 pub mod system_window;
-mod window_focus;
 mod tactical_asset_cache;
 mod tactical_assets;
 mod tactical_resources;
@@ -52,6 +51,9 @@ pub mod theme;
 pub mod tooltip;
 pub mod troop_finder;
 pub mod video_player;
+mod window_focus;
+pub mod windowing;
+pub mod windowing_input;
 pub mod windowing_policy;
 
 #[cfg(all(test, feature = "interface-test-fixtures"))]
