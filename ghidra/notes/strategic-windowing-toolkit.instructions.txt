@@ -1,0 +1,201 @@
+Strategic windowing toolkit: compact instruction evidence
+=========================================================
+
+Source binary:
+  data/base/REBEXE.EXE
+  SHA-256 b3fe3997cab9a6e96403d638875dcba25484e4d8601751afec748471ac0ed6ab
+
+Generated with:
+  objdump -Mintel -d data/base/REBEXE.EXE --start-address=START --stop-address=END
+
+The imported Win32 names were resolved from the PE import table. Comments in
+brackets are analysis; instruction text is objdump output.
+
+Shared game-window vtable 0x0066e060
+------------------------------------------------------------
+objdump -s --start-address=0x66e060 --stop-address=0x66e0a0:
+
+0066e060  00606560 005ffe40 00607d30 005ffe60
+0066e070  005ffe80 00606650 00600290 005cd6b0
+0066e080  0048b3d0 005ae1e0 005ae1e0 00607d00
+0066e090  00606960 006068f0 00619730 00619730
+
+Relevant slots are therefore +0x04 ShowWindow wrapper, +0x08 hide/clear
+presentation state, +0x0c/+0x10 enable/disable, +0x14 native message
+dispatcher, +0x18 common helper, +0x2c presentation show/restore, and +0x30
+asynchronous close request.
+
+FUN_00600280: destroy this object's HWND
+------------------------------------------------------------
+00600280  8b 41 18              mov eax,DWORD PTR [ecx+0x18]
+00600283  85 c0                 test eax,eax
+00600285  74 07                 je 0x60028e
+00600287  50                    push eax
+00600288  ff 15 dc 82 65 00     call DWORD PTR ds:0x6582dc [DestroyWindow]
+0060028e  c3                    ret
+
+FUN_005ffb60 -> FUN_006044d0 -> 0x005f50a0: parent registry teardown
+------------------------------------------------------------
+005ffc4e  8d 4b 6c              lea ecx,[ebx+0x6c] [child registry]
+005ffc56  e8 75 48 00 00        call 0x6044d0
+
+006044d0  c7 01 00 e0 66 00     mov DWORD PTR [ecx],0x66e000
+006044d6  e9 25 0a ff ff        jmp 0x5f4f00
+
+005f4f00  c7 01 c0 dc 66 00     mov DWORD PTR [ecx],0x66dcc0
+005f4f06  e9 95 01 00 00        jmp 0x5f50a0
+
+005f50a4  e8 b7 ff ff ff        call 0x5f5060 [first child]
+005f50a9  8b f0                 mov esi,eax
+005f50ab  85 f6                 test esi,esi
+005f50ad  74 21                 je 0x5f50d0
+005f50af  56                    push esi
+005f50b0  8b cf                 mov ecx,edi
+005f50b2  e8 e9 fe ff ff        call 0x5f4fa0 [remove child]
+005f50b7  85 f6                 test esi,esi
+005f50b9  74 08                 je 0x5f50c3
+005f50bb  8b 06                 mov eax,DWORD PTR [esi]
+005f50bd  6a 01                 push 0x1
+005f50bf  8b ce                 mov ecx,esi
+005f50c1  ff 10                 call DWORD PTR [eax] [virtual destructor]
+005f50c3  8b cf                 mov ecx,edi
+005f50c5  e8 96 ff ff ff        call 0x5f5060 [next first child]
+005f50cc  85 f6                 test esi,esi
+005f50ce  75 df                 jne 0x5f50af
+005f50d2  c3                    ret
+
+FUN_00601080 / FUN_00601090: capture wrappers
+------------------------------------------------------------
+00601080  8b 44 24 04           mov eax,DWORD PTR [esp+0x4]
+00601084  50                    push eax
+00601085  ff 15 a8 83 65 00     call DWORD PTR ds:0x6583a8 [SetCapture]
+0060108b  c2 04 00              ret 0x4
+00601090  ff 25 7c 83 65 00     jmp DWORD PTR ds:0x65837c [ReleaseCapture]
+
+FUN_006011f0: remove this HWND from the global registry (selected)
+------------------------------------------------------------
+006011f3  8b f9                 mov edi,ecx
+006011f7  8b 47 18              mov eax,DWORD PTR [edi+0x18]
+006011fa  50                    push eax
+006011fb  e8 f0 00 00 00        call 0x6012f0 [lookup HWND]
+00601200  8b f0                 mov esi,eax
+00601202  3b f3                 cmp esi,ebx
+00601204  74 48                 je 0x60124e
+00601223  56                    push esi
+00601224  b9 e0 e4 6b 00        mov ecx,0x6be4e0 [global registry]
+00601229  e8 62 55 ff ff        call 0x5f6790 [remove]
+
+FUN_00601320 / FUN_00601340: active-HWND fallback and capture drain
+------------------------------------------------------------
+00601320  8b 0d e4 e4 6b 00     mov ecx,DWORD PTR ds:0x6be4e4
+00601326  33 c0                 xor eax,eax
+00601328  85 c9                 test ecx,ecx
+0060132a  74 0a                 je 0x601336
+0060132c  8b 49 0c              mov ecx,DWORD PTR [ecx+0xc]
+0060132f  85 c9                 test ecx,ecx
+00601331  74 03                 je 0x601336
+00601333  8b 41 18              mov eax,DWORD PTR [ecx+0x18]
+00601336  c3                    ret
+
+00601340  56                    push esi
+00601341  57                    push edi
+00601342  8b f9                 mov edi,ecx
+00601344  ff 15 e4 83 65 00     call DWORD PTR ds:0x6583e4 [GetCapture]
+0060134a  8b f0                 mov esi,eax
+0060134c  85 f6                 test esi,esi
+0060134e  75 0d                 jne 0x60135d
+00601350  8b cf                 mov ecx,edi
+00601352  e8 c9 ff ff ff        call 0x601320
+00601357  8b f0                 mov esi,eax
+00601359  85 f6                 test esi,esi
+0060135b  74 10                 je 0x60136d
+0060135d  6a 00                 push 0x0
+0060135f  6a 00                 push 0x0
+00601361  68 0d 04 00 00        push 0x40d
+00601366  56                    push esi
+00601367  ff 15 38 83 65 00     call DWORD PTR ds:0x658338 [SendMessageA]
+0060136d  33 c0                 xor eax,eax
+00601370  85 f6                 test esi,esi
+00601372  0f 94 c0              sete al
+00601376  c3                    ret
+
+FUN_004fcee0: scheduler/readiness value, not modal state
+------------------------------------------------------------
+004fcee0  56                    push esi
+004fcee1  33 f6                 xor esi,esi
+004fcee3  e8 18 ff 01 00        call 0x51ce00
+004fcee8  85 c0                 test eax,eax
+004fceea  74 03                 je 0x4fceef
+004fceec  8b 70 0c              mov esi,DWORD PTR [eax+0xc]
+004fceef  8b c6                 mov eax,esi
+004fcef1  5e                    pop esi
+004fcef2  c3                    ret
+
+FUN_006068f0: shared game-window setup (selected)
+------------------------------------------------------------
+006068f0  56                    push esi
+006068f1  8b f1                 mov esi,ecx
+006068f3  6a 01                 push 0x1
+006068f5  e8 96 0a 00 00        call 0x607390
+006068fa  85 c0                 test eax,eax
+006068fc  74 07                 je 0x606905
+006068fe  8b ce                 mov ecx,esi
+00606900  e8 db a7 ff ff        call 0x6010e0
+00606920  8b 16                 mov edx,DWORD PTR [esi]
+00606922  8b ce                 mov ecx,esi
+00606924  ff 52 38              call DWORD PTR [edx+0x38]
+00606927  8b 06                 mov eax,DWORD PTR [esi]
+00606929  8b ce                 mov ecx,esi
+0060692b  ff 50 3c              call DWORD PTR [eax+0x3c]
+0060692e  8b 16                 mov edx,DWORD PTR [esi]
+00606930  8b ce                 mov ecx,esi
+00606932  ff 52 40              call DWORD PTR [edx+0x40]
+00606936  c3                    ret
+
+FUN_00606940: unhandled key forwarding to parent dispatcher
+------------------------------------------------------------
+00606940  8b 41 20              mov eax,DWORD PTR [ecx+0x20]
+00606943  85 c0                 test eax,eax
+00606945  74 15                 je 0x60695c
+00606947  8b 54 24 08           mov edx,DWORD PTR [esp+0x8]
+0060694b  8b 08                 mov ecx,DWORD PTR [eax]
+0060694d  52                    push edx
+0060694e  8b 54 24 08           mov edx,DWORD PTR [esp+0x8]
+00606952  52                    push edx
+00606953  68 00 01 00 00        push 0x100 [WM_KEYDOWN]
+00606958  50                    push eax
+00606959  ff 51 14              call DWORD PTR [ecx+0x14]
+0060695c  c2 08 00              ret 0x8
+
+FUN_00606960: asynchronous keyed close request
+------------------------------------------------------------
+00606960  8b 41 24              mov eax,DWORD PTR [ecx+0x24] [type key]
+00606963  51                    push ecx [lParam = child object]
+00606964  8b 49 20              mov ecx,DWORD PTR [ecx+0x20] [parent object]
+00606967  50                    push eax [wParam = type key]
+00606968  68 05 04 00 00        push 0x405
+0060696d  8b 51 18              mov edx,DWORD PTR [ecx+0x18] [parent HWND]
+00606970  52                    push edx
+00606971  ff 15 40 83 65 00     call DWORD PTR ds:0x658340 [PostMessageA]
+00606977  c3                    ret
+
+FUN_00607d00 / FUN_00607d30: presentation visibility state
+------------------------------------------------------------
+00607d00  8b 44 24 04           mov eax,DWORD PTR [esp+0x4]
+00607d04  83 f8 05              cmp eax,0x5
+00607d07  75 13                 jne 0x607d1c
+00607d09  50                    push eax
+00607d0a  c7 81 10 01 00 00 01  mov DWORD PTR [ecx+0x110],0x1
+00607d14  e8 27 81 ff ff        call 0x5ffe40 [ShowWindow wrapper]
+00607d1c  85 c0                 test eax,eax
+00607d1e  75 06                 jne 0x607d26
+00607d20  89 81 10 01 00 00     mov DWORD PTR [ecx+0x110],eax
+00607d26  50                    push eax
+00607d27  e8 14 81 ff ff        call 0x5ffe40 [ShowWindow wrapper]
+00607d2c  c2 04 00              ret 0x4
+
+00607d30  8b 01                 mov eax,DWORD PTR [ecx]
+00607d32  6a 00                 push 0x0
+00607d34  c7 81 10 01 00 00 00  mov DWORD PTR [ecx+0x110],0x0
+00607d3e  ff 50 04              call DWORD PTR [eax+0x4] [show/hide virtual]
+00607d41  c3                    ret
