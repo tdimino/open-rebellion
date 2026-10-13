@@ -42,7 +42,7 @@ const FIXTURE_ABSENT: u32 = 0;
 /// How far right of the galaxy view's centre the targeting scenario puts its
 /// target system, clear of the system window it opens on the left.
 #[cfg(test)]
-const SCENARIO_COUNT: u8 = 65;
+const SCENARIO_COUNT: u8 = 66;
 
 extern "C" {
     fn open_rebellion_interface_fixture_code() -> u32;
@@ -124,6 +124,7 @@ pub enum Scenario {
     EncyclopediaCanonicalLongest = 62,
     EncyclopediaCanonicalUnavailable = 63,
     EncyclopediaCanonicalContextual = 64,
+    WindowingContract = 65,
 }
 
 impl Scenario {
@@ -194,6 +195,7 @@ impl Scenario {
             62 => Self::EncyclopediaCanonicalLongest,
             63 => Self::EncyclopediaCanonicalUnavailable,
             64 => Self::EncyclopediaCanonicalContextual,
+            65 => Self::WindowingContract,
             _ => return None,
         })
     }
@@ -277,8 +279,7 @@ impl Scenario {
     }
 }
 
-pub fn requested() -> Option<FixtureRequest> {
-    let code = unsafe { open_rebellion_interface_fixture_code() };
+fn decode_request(code: u32) -> Option<FixtureRequest> {
     if code == FIXTURE_ABSENT || code >> 16 != 0 {
         return None;
     }
@@ -293,6 +294,10 @@ pub fn requested() -> Option<FixtureRequest> {
         faction,
         code,
     })
+}
+
+pub fn requested() -> Option<FixtureRequest> {
+    decode_request(unsafe { open_rebellion_interface_fixture_code() })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2396,6 +2401,32 @@ mod tests {
             assert_eq!(Scenario::decode(value).unwrap() as u8, value);
         }
         assert!(Scenario::decode(SCENARIO_COUNT).is_none());
+    }
+
+    #[test]
+    fn windowing_fixture_codes_round_trip_without_changing_existing_requests() {
+        assert_eq!(Scenario::WindowingContract as u8, 65);
+        assert_eq!(SCENARIO_COUNT, 66);
+
+        for scenario_value in 0..SCENARIO_COUNT {
+            let scenario = Scenario::decode(scenario_value).expect("known fixture scenario");
+            for (faction_byte, faction) in
+                [(1, CockpitFaction::Alliance), (2, CockpitFaction::Empire)]
+            {
+                let external_code = u32::from(scenario_value) + 1 | (faction_byte << 8);
+                let decoded = decode_request(external_code).expect("valid fixture request");
+                assert_eq!(decoded.scenario, scenario);
+                assert_eq!(decoded.faction, faction);
+                assert_eq!(decoded.code, external_code);
+            }
+        }
+
+        assert_eq!(
+            decode_request(66 | (1 << 8)).map(|request| request.scenario),
+            Some(Scenario::WindowingContract)
+        );
+        assert!(decode_request(66 | (3 << 8)).is_none());
+        assert!(decode_request(66 | (1 << 8) | (1 << 16)).is_none());
     }
 
     /// One system held by `side` with one recruited character of that side
