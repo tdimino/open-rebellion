@@ -940,7 +940,8 @@ pub fn draw_cockpit_egui_layer(
     ctx: &egui::Context,
     state: &mut CockpitState,
     cache: &mut BmpCache,
-    input_enabled: bool,
+    root_input_enabled: bool,
+    gid_menu_input_enabled: bool,
 ) -> Option<GidMode> {
     let layout = state.layout();
     let controls = strategic_primary_controls(state.faction);
@@ -982,7 +983,7 @@ pub fn draw_cockpit_egui_layer(
             state.faction,
             state.gid_mode,
             &mut state.gid_ui.legend,
-            input_enabled,
+            root_input_enabled,
         ) {
             state.gid_ui.legend_open = false;
         }
@@ -992,13 +993,13 @@ pub fn draw_cockpit_egui_layer(
         layout,
         state.faction,
         &mut state.gid_ui.compact_legend,
-        input_enabled,
+        root_input_enabled,
     ) {
         crate::gid_legend::clamp_on_open(&mut state.gid_ui.legend, state.faction);
         state.gid_ui.legend_open = true;
     }
 
-    let selected = draw_gid_menu(ctx, state, cache, layout, input_enabled);
+    let selected = draw_gid_menu(ctx, state, cache, layout, gid_menu_input_enabled);
     if let Some(mode) = selected {
         state.gid_mode = mode;
         state.gid_ui.menu_open = false;
@@ -1693,11 +1694,7 @@ pub fn handle_cockpit_egui_input(
         pointer_hit,
     );
 
-    clicked.or_else(|| {
-        (!ctx.wants_keyboard_input())
-            .then(|| keyboard_control(ctx))
-            .flatten()
-    })
+    clicked
 }
 
 fn should_dismiss_gid_menu(
@@ -1789,42 +1786,11 @@ fn control_at_pointer(
     })
 }
 
-fn keyboard_control(ctx: &egui::Context) -> Option<CockpitButton> {
-    keyboard_control_from_inputs(ctx, is_key_pressed)
-}
-
-fn keyboard_control_from_inputs(
-    ctx: &egui::Context,
-    mut macroquad_key_pressed: impl FnMut(KeyCode) -> bool,
-) -> Option<CockpitButton> {
-    let egui_key = ctx.input(|input| {
-        [
-            (egui::Key::F1, CockpitButton::GameOptions),
-            (egui::Key::F2, CockpitButton::SystemFinder),
-            (egui::Key::F3, CockpitButton::FleetFinder),
-            (egui::Key::F4, CockpitButton::TroopFinder),
-            (egui::Key::F5, CockpitButton::PersonnelFinder),
-            (egui::Key::F7, CockpitButton::Encyclopedia),
-        ]
-        .into_iter()
-        .find_map(|(key, button)| input.key_pressed(key).then_some(button))
-    });
-    egui_key.or_else(|| {
-        [
-            KeyCode::F1,
-            KeyCode::F2,
-            KeyCode::F3,
-            KeyCode::F4,
-            KeyCode::F5,
-            KeyCode::F7,
-        ]
-        .into_iter()
-        .find(|key| macroquad_key_pressed(*key))
-        .and_then(macroquad_accelerator)
-    })
-}
-
-fn macroquad_accelerator(key: KeyCode) -> Option<CockpitButton> {
+/// Map the original command-center function-key accelerators. Dispatch and
+/// ownership live in the app's normalized frame router; this renderer only
+/// supplies the recovered command mapping.
+#[must_use]
+pub const fn cockpit_accelerator(key: KeyCode) -> Option<CockpitButton> {
     match key {
         KeyCode::F1 => Some(CockpitButton::GameOptions),
         KeyCode::F2 => Some(CockpitButton::SystemFinder),
@@ -2397,35 +2363,7 @@ mod tests {
     }
 
     #[test]
-    fn egui_function_keys_route_options_and_encyclopedia() {
-        for (key, expected) in [
-            (egui::Key::F1, Some(CockpitButton::GameOptions)),
-            (egui::Key::F7, Some(CockpitButton::Encyclopedia)),
-            (egui::Key::F2, Some(CockpitButton::SystemFinder)),
-            (egui::Key::F3, Some(CockpitButton::FleetFinder)),
-            (egui::Key::F4, Some(CockpitButton::TroopFinder)),
-            (egui::Key::F5, Some(CockpitButton::PersonnelFinder)),
-            (egui::Key::F6, None),
-        ] {
-            let ctx = egui::Context::default();
-            let input = egui::RawInput {
-                events: vec![egui::Event::Key {
-                    key,
-                    physical_key: None,
-                    pressed: true,
-                    repeat: false,
-                    modifiers: egui::Modifiers::default(),
-                }],
-                ..Default::default()
-            };
-            let _ = ctx.run(input, |ctx| {
-                assert_eq!(keyboard_control_from_inputs(ctx, |_| false), expected);
-            });
-        }
-    }
-
-    #[test]
-    fn macroquad_fallback_polls_options_and_encyclopedia_keys() {
+    fn function_key_accelerators_map_without_polling_the_backend() {
         for (key, expected) in [
             (KeyCode::F1, Some(CockpitButton::GameOptions)),
             (KeyCode::F7, Some(CockpitButton::Encyclopedia)),
@@ -2435,13 +2373,7 @@ mod tests {
             (KeyCode::F5, Some(CockpitButton::PersonnelFinder)),
             (KeyCode::F6, None),
         ] {
-            let ctx = egui::Context::default();
-            let _ = ctx.run(egui::RawInput::default(), |ctx| {
-                assert_eq!(
-                    keyboard_control_from_inputs(ctx, |polled| polled == key),
-                    expected,
-                );
-            });
+            assert_eq!(cockpit_accelerator(key), expected);
         }
     }
 
