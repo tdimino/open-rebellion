@@ -13,7 +13,7 @@ matrix; TAC-08, the ground assault (`UIP-F-010`), is an A0-only family outside
 that denominator (`A0_ONLY_FAMILY_COUNTS` in
 `tools/interface-parity/tactical-matrix.mjs`). A frame here is a reference,
 not an acceptance: comparison against the port and the strict gate have not
-run.
+run. Regenerate this file with `node tools/interface-parity/a0-capture-index.mjs`.
 
 Open: TAC-03-C020 (Death Star selection), TAC-05-C009 (attack Death Star), TAC-05-C021 (attack Death Star enabled), TAC-05-C023 (trench-run launch). All four need
 a battle the Alliance owns against an Imperial Death Star; the side-swap save

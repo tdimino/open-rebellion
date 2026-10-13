@@ -3,7 +3,7 @@ title: "Editing original-game saves"
 description: "How to edit our own original-game saves safely to stage a state the original cannot reach on demand (a damaged hyperdrive, a Death Star), and how to accept the edit in the original"
 category: "agent-docs"
 created: 2026-10-10
-updated: 2026-10-11
+updated: 2026-10-13
 tags: [original-game, saves, parity, death-star, hyperdrive]
 ---
 
@@ -17,11 +17,16 @@ there by editing a copy of one of **our own** saves
 (`tools/original-capture/README.md`, `vm-game.sh`), and accepting the edit
 only after the original loads, plays and re-saves it.
 
-Status (2026-10-11): both recipes load in the original. Recipe 1 has run
-its Withdraw check against an unedited control (below): the ship with no
-drive did not withdraw and was lost. One run per side, so not accepted yet.
-Recipe 2's in-place conversion crashes the original when its fleet moves,
-so it fails; a Death Star that moves needs route 1.
+Status:
+- **Hyperdrive (recipe 1):** loads and plays. The Withdraw result varies from
+  run to run, so the rule is not settled.
+- **Death Star (recipe 2):** works for both sides through a real
+  manufacturing order (route 1). Converting a ship in place (route 2) crashes
+  the game when its fleet moves.
+- **Battle staging (recipe 3):** the copies load and show their damage.
+- **Player side:** cannot be changed by editing.
+
+"Edits that worked" lists each successful edit byte for byte.
 
 ## Rules
 
@@ -39,6 +44,27 @@ so it fails; a Death Star that moves needs route 1.
   SHA-256 (our own saves are the one game-data exception in `CLAUDE.md`).
 - Scripts are stdlib Python. Keep any that worked under
   `tools/original-capture/`, never in `/tmp`.
+
+## Edits that worked
+
+Each edit changes u32 words in place in a copy. The edited copies stay
+local (`.artifacts/`, ignored). The library saves named here are the
+original's own re-saves after it loaded and played the edit.
+
+| Edit | Source → copy (SHA-256) | Exactly what changed | Result in the original | Library save |
+|---|---|---|---|---|
+| Hyperdrive out (`save_edit.py hyperdrive`) | `empire-day2-start.sav` `d9da6a3b…` → `7a4c4f1a…` | The ISD's packed damage word (payload word 20 of the `0x81` copy, word 10 of the `0xa1` copy) set to `0x00110000`, one primary and one backup hyperdrive hit. Two bytes: `0x17813`, `0x48f42` | Status reads Hyperdrive Rating 0:80. The fleet will not jump, but a fleet already in hyperspace arrives | `empire-day30-yaga-alert-isd-hyperdrive.sav` |
+| Empire Death Star (route 1) | `ds-b.sav` `1e6db63f…` → `ds-b583.sav` `43977b84…` | The Death Star order's progress word, 2 → 583 (cost 584), in both graph copies. Found as the u32 8 bytes before `88000018 48020000 48020000` | Finished "Death Star 1" into Fleet 6 at Coruscant within 11 days. It moves, and it fights | `empire-huge-deathstar-built.sav`, `empire-day660-deathstar-pre-alert.sav` |
+| Imperial Death Star in an Alliance game (route 1, converted order) | `fwd1.sav` (Alliance, late game) → `fwd1-ds.sav` `7ecf1706…` | Turned the Empire AI's Star Destroyer order into a Death Star order: 21 words (see "Route 1 in an Alliance game") | Completed as "Devastator" at Coruscant. The Alliance can Take Command at Coruscant, but the Death Star's fleet did not join the battle | `alliance-day731-imperial-deathstar-built.sav` |
+| Battle staging at the day-30 alert (`save_edit.py damage`, `subsystems`, `engines`, `fragile`, `stranded`) | `empire-day30-yaga-alert-control.sav` `8a7a9923…` → recipe 3 table | Hull damage and the packed word on the named ships, in every graph copy | Each loads and shows the staged damage; used for tactical A0 captures | none (staging only) |
+
+What failed, so it is not repeated:
+- **Recipe 1, first try:** wrote the wrong word, word 15. It loaded but
+  changed nothing visible.
+- **Route 2:** converting the ISD in place (family and class, four bytes)
+  crashes the game when the fleet moves.
+- **Side swap:** header word 5 switches only the strategic shell. Changing
+  either controller's side word crashes on load.
 
 ## File layout
 
@@ -237,7 +263,35 @@ Coruscant. Unlike route 2, it moves: it flew to Yavin and back to Coruscant
 (about 80 days a hop on a Huge map, hyperdrive 80), and fought a battle
 there. The edited copy and the saves after it are in
 `.artifacts/original-checks/s4/` (`ds-b583.sav`, `ds-built.sav`,
-`ds-pre-alert.sav`).
+`ds-pre-alert.sav`). The last two are in the library as
+`empire-huge-deathstar-built.sav` and `empire-day660-deathstar-pre-alert.sav`.
+
+**Route 1 in an Alliance game.** The Alliance player cannot order a Death
+Star, so an order the Empire AI already has was converted instead.
+- **Source.** `fwd1.sav`, a late-game Alliance save (the Death Star was finished by day 731), holds an Imperial order
+  for an Imperial Star Destroyer (DatId `0x14000085`, ship key `0x14000d36`)
+  at Coruscant.
+- **Template.** The words were copied from the Empire's real Death Star
+  order in `ds-a.sav`.
+- **The edit.** In `fwd1-ds.sav` (`7ecf1706…`), 21 u32 words changed and the
+  length did not:
+  - in the order record, the DatId became `0x18000088`, the ship key
+    `0x18000d36`, the cost 584 and the progress 583;
+  - every other reference to the key was updated the same way, including two
+    AI planning records;
+  - the placeholder ship record's family went from `0x14` to `0x18`, and its
+    class from `0x85` to `0x88`.
+- **Offsets.** `0x27534`, `0x27540`, `0x27f10`, `0x27f18`, `0x27f20`,
+  `0x27f24`, `0x27f28`, `0x27f34`, `0x4d71c`, `0x4d728`, `0x69c28`,
+  `0x69c34`, `0x6a2f4`, `0x6a2fc`, `0x6a300`, `0x6a304`, `0x6a310`,
+  `0x87604`, `0x8760c`, `0x87610`, `0x878ec`.
+- **Names.** Left as they were; a different length would shift every later
+  key.
+- **Result.** The original finished the order as the Death Star
+  "Devastator" in Imperial Fleet 325 at Coruscant (library:
+  `alliance-day731-imperial-deathstar-built.sav`).
+- **Still open.** An Alliance attack on Coruscant drew only Fleet 302 into the
+  battle, so getting the Death Star onto the field is unsolved.
 
 Never insert or clone a record: that needs every container count, every
 later object key and every reference updated in both graphs.
@@ -299,8 +353,10 @@ restart and reload in the original is part of every acceptance.
 ## Moving a save to and from the VM
 
 `tools/original-capture/saves/INDEX.md`, "Moving files to and from the VM".
-Copying into the guest goes through mtools on the mini, because `hdiutil`
-can only attach the image read-only while QEMU holds it.
+`vm-game.sh save-in FILE SLOT` and `save-out SLOT NAME` do it through the
+guest agent. Every library save is also on the guest in
+`C:\Rebellion\SaveLibrary\`, with an `INDEX.txt`: copy one over a slot to
+swap it in. Slot 5 holds `empire-day488-late`; leave it.
 
 ## Driving the original for an acceptance run
 

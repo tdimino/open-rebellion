@@ -352,7 +352,9 @@ Driving the game over VNC:
   the captured 800x600 frame and optionally capture after; `desk X Y`
   clicks on the Windows desktop (the taskbar, a console), where the cursor
   is Windows' own; `save-out`, `save-in` and `gexec` use the guest agent;
-  `cap`, `key`, `mon` and `status` cover the rest. Saved Games (the main
+  `cap`, `key`, `mon` and `status` cover the rest. `key` takes vncdotool's
+  lowercase names (`esc`, `enter`, `f1`, `left`) or a single character;
+  `Escape` and other names fail with "ord() expected a character". Saved Games (the main
   menu's disc, 535,315): each slot's right-hand button loads it.
 - In-game verbs wrap the clicks you would otherwise script: `load SLOT`,
   `save SLOT NAME` (over a filled row; it clears the old name first),

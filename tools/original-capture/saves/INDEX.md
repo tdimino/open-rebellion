@@ -43,6 +43,12 @@ description). To swap one in on the guest, copy it over a slot
 and load it from Saved Games. From this Mac, `vm-game.sh save-in FILE SLOT`
 does the same with the repo copy. Slot 5 stays on `empire-day488-late`.
 
+`tools/original-capture/save-library/push.sh` rebuilds the library from
+`manifest.tsv` (repo path, library name, description). It copies each save
+through spare slot 10, checks its SHA-256 on the guest, and rewrites
+`INDEX.txt`. When you add a save here, add a manifest row and rerun it. It
+uses the guest agent, so never run it alongside an `a0` capture.
+
 ## Moving files to and from the VM
 
 The guest has no network. From this Mac, `vm-game.sh` moves saves through
