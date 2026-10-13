@@ -95,6 +95,697 @@ fn open(manager: &mut WindowManager, spec: WindowSpec) -> WindowId {
 }
 
 #[test]
+fn minimize_removes_visible_order_and_adds_history_once() {
+    // Source: FUN_00428b40 presentation rail; port history contains hidden details only.
+    let mut manager = WindowManager::new();
+    let first = open(
+        &mut manager,
+        modeless_spec(WindowKind::System, 1, WindowOwner::StrategicRoot),
+    );
+    let second = open(
+        &mut manager,
+        modeless_spec(WindowKind::Fleet, 2, WindowOwner::StrategicRoot),
+    );
+    let commit = manager.apply(WindowCommand::Minimize(second)).unwrap();
+    assert_eq!(
+        commit.transition,
+        WindowTransition::Minimized {
+            id: second,
+            evicted: vec![]
+        }
+    );
+    assert_eq!(manager.visible_order(), &[first]);
+    assert_eq!(manager.presentation_history(), &[second]);
+    assert_eq!(
+        manager.focused(),
+        Some(FocusTarget {
+            window: first,
+            control: None
+        })
+    );
+    assert_eq!(
+        manager.apply(WindowCommand::Minimize(second)).unwrap(),
+        rebellion_windowing::WindowCommit {
+            transition: WindowTransition::Unchanged {
+                subject: TransitionSubject::Window(second),
+                reason: UnchangedReason::AlreadyMinimized
+            },
+            events: vec![],
+        }
+    );
+    assert_eq!(manager.presentation_history(), &[second]);
+    assert_eq!(
+        manager.apply(WindowCommand::CapturePointer(second)),
+        Err(WindowError::IneligibleCapture(second))
+    );
+    assert_eq!(
+        manager.apply(WindowCommand::Focus(FocusTarget {
+            window: second,
+            control: None
+        })),
+        Err(WindowError::IneligibleFocus(FocusTarget {
+            window: second,
+            control: None
+        }))
+    );
+    assert_eq!(manager.validate(), Ok(()));
+}
+
+#[test]
+fn thirteenth_minimized_detail_evicts_oldest_with_teardown_events() {
+    // Source: FUN_00428b40 fixes capacity at 12; closing evicted content is a port decision.
+    let mut manager = WindowManager::new();
+    let mut ids = Vec::new();
+    let kinds = [
+        WindowKind::System,
+        WindowKind::Fleet,
+        WindowKind::Defenses,
+        WindowKind::Missions,
+    ];
+    for subject in 0..12 {
+        let id = open(
+            &mut manager,
+            modeless_spec(
+                kinds[subject as usize % kinds.len()],
+                subject,
+                WindowOwner::StrategicRoot,
+            ),
+        );
+        let commit = manager.apply(WindowCommand::Minimize(id)).unwrap();
+        assert_eq!(
+            commit.transition,
+            WindowTransition::Minimized {
+                id,
+                evicted: vec![]
+            }
+        );
+        ids.push(id);
+        assert_eq!(manager.presentation_history(), ids);
+        assert_eq!(manager.validate(), Ok(()));
+    }
+    let newest = open(
+        &mut manager,
+        modeless_spec(WindowKind::System, 12, WindowOwner::StrategicRoot),
+    );
+    let commit = manager.apply(WindowCommand::Minimize(newest)).unwrap();
+    assert_eq!(
+        commit.transition,
+        WindowTransition::Minimized {
+            id: newest,
+            evicted: vec![ids[0]]
+        }
+    );
+    assert_eq!(
+        commit.events,
+        vec![
+            WindowEvent::Closed {
+                window: ids[0],
+                key: modeless_spec(WindowKind::System, 0, WindowOwner::StrategicRoot).key,
+                reason: CloseReason::Evicted
+            },
+            WindowEvent::FocusChanged {
+                previous: Some(FocusTarget {
+                    window: newest,
+                    control: None
+                }),
+                current: None
+            },
+        ]
+    );
+    let oldest = ids.remove(0);
+    ids.push(newest);
+    assert_eq!(manager.presentation_history(), ids);
+    assert!(manager.visible_order().is_empty());
+    assert_eq!(
+        manager.id_for(modeless_spec(WindowKind::System, 0, WindowOwner::StrategicRoot).key),
+        None
+    );
+    assert_eq!(
+        manager.apply(WindowCommand::Restore(oldest)),
+        Err(WindowError::UnknownWindow(oldest))
+    );
+    assert_eq!(manager.validate(), Ok(()));
+}
+
+#[test]
+fn restore_removes_history_and_raises_without_reallocating_identity() {
+    // Source: FUN_00429020 removes the selected rail entry and restores its presentation.
+    let mut manager = WindowManager::new();
+    let spec = modeless_spec(WindowKind::System, 1, WindowOwner::StrategicRoot);
+    let id = open(&mut manager, spec);
+    manager.apply(WindowCommand::Minimize(id)).unwrap();
+    let other = open(
+        &mut manager,
+        modeless_spec(WindowKind::Fleet, 2, WindowOwner::StrategicRoot),
+    );
+    assert_eq!(
+        manager
+            .apply(WindowCommand::Restore(id))
+            .unwrap()
+            .transition,
+        WindowTransition::Restored { id }
+    );
+    assert_eq!(manager.id_for(spec.key), Some(id));
+    assert_eq!(manager.visible_order(), &[other, id]);
+    assert!(manager.presentation_history().is_empty());
+    assert_eq!(
+        manager.focused(),
+        Some(FocusTarget {
+            window: id,
+            control: None
+        })
+    );
+    manager.apply(WindowCommand::FocusRoot).unwrap();
+    assert_eq!(
+        manager
+            .apply(WindowCommand::Restore(id))
+            .unwrap()
+            .transition,
+        WindowTransition::Unchanged {
+            subject: TransitionSubject::Window(id),
+            reason: UnchangedReason::AlreadyVisible,
+        }
+    );
+    assert_eq!(manager.focused(), None);
+    let next = open(
+        &mut manager,
+        modeless_spec(WindowKind::Missions, 3, WindowOwner::StrategicRoot),
+    );
+    assert_eq!(next.get(), other.get() + 1);
+    assert_eq!(manager.validate(), Ok(()));
+}
+
+#[test]
+fn reopening_minimized_detail_restores_and_raises() {
+    // Source: FUN_0045aac0 restores and raises an existing subject/kind detail.
+    let mut manager = WindowManager::new();
+    let spec = modeless_spec(WindowKind::System, 1, WindowOwner::StrategicRoot);
+    let id = open(&mut manager, spec);
+    manager.apply(WindowCommand::Minimize(id)).unwrap();
+    let modal = open(&mut manager, modal_spec(WindowKind::Encyclopedia));
+    let commit = manager.apply(WindowCommand::Open(spec)).unwrap();
+    assert_eq!(
+        commit.transition,
+        WindowTransition::Existing {
+            id,
+            effect: rebellion_windowing::ExistingEffect::RestoredAndRaised
+        }
+    );
+    assert!(commit.events.is_empty());
+    assert_eq!(manager.visible_order(), &[id, modal]);
+    assert!(manager.presentation_history().is_empty());
+    assert_eq!(
+        manager.focused(),
+        Some(FocusTarget {
+            window: modal,
+            control: None
+        })
+    );
+    assert_eq!(manager.validate(), Ok(()));
+}
+
+#[test]
+fn non_history_kind_cannot_minimize() {
+    // Port: only the four history-capable modeless detail families can minimize.
+    for kind in WindowKind::ALL {
+        let mut manager = WindowManager::new();
+        let spec = modeless_spec(kind, 1, WindowOwner::StrategicRoot);
+        if kind == WindowKind::Menu {
+            continue;
+        }
+        let id = open(&mut manager, spec);
+        if !matches!(
+            kind,
+            WindowKind::System | WindowKind::Fleet | WindowKind::Defenses | WindowKind::Missions
+        ) {
+            assert_eq!(
+                manager.apply(WindowCommand::Minimize(id)),
+                Err(WindowError::NotMinimizable(id))
+            );
+            assert_eq!(manager.visible_order(), &[id]);
+            assert!(manager.presentation_history().is_empty());
+        }
+        assert_eq!(manager.validate(), Ok(()));
+    }
+    let mut manager = WindowManager::new();
+    let mut spec = modeless_spec(WindowKind::System, 1, WindowOwner::StrategicRoot);
+    spec.policy.presentation = PresentationPolicy::None;
+    let id = open(&mut manager, spec);
+    assert_eq!(
+        manager.apply(WindowCommand::Minimize(id)),
+        Err(WindowError::NotMinimizable(id))
+    );
+}
+
+#[test]
+fn minimizing_owner_with_modal_child_is_rejected_atomically() {
+    // Port: an owned modal must never become an invisible input blocker.
+    let mut manager = WindowManager::new();
+    let owner = open(
+        &mut manager,
+        modeless_spec(WindowKind::System, 1, WindowOwner::StrategicRoot),
+    );
+    let mut spec = modal_spec(WindowKind::Status);
+    spec.owner = WindowOwner::Window(owner);
+    let child = open(&mut manager, spec);
+    manager.apply(WindowCommand::CapturePointer(child)).unwrap();
+    let order = manager.visible_order().to_vec();
+    let focus = manager.focused();
+    assert_eq!(
+        manager.apply(WindowCommand::Minimize(owner)),
+        Err(WindowError::OwnerHasModalChild(owner))
+    );
+    assert_eq!(manager.visible_order(), order);
+    assert!(manager.presentation_history().is_empty());
+    assert_eq!(manager.focused(), focus);
+    assert_eq!(manager.capture_owner(), Some(child));
+    assert_eq!(manager.id_for(spec.key), Some(child));
+    assert_eq!(manager.validate(), Ok(()));
+}
+
+#[test]
+fn minimize_close_and_reset_cancel_capture_once() {
+    // Port: cancellation precedes hiding/teardown; reset includes minimized content.
+    let mut manager = WindowManager::new();
+    let spec = modeless_spec(WindowKind::System, 1, WindowOwner::StrategicRoot);
+    let id = open(&mut manager, spec);
+    manager.apply(WindowCommand::CapturePointer(id)).unwrap();
+    assert_eq!(
+        manager.apply(WindowCommand::Minimize(id)).unwrap().events,
+        vec![
+            WindowEvent::CaptureCancelled {
+                window: id,
+                reason: CaptureCancelReason::Minimized
+            },
+            WindowEvent::FocusChanged {
+                previous: Some(FocusTarget {
+                    window: id,
+                    control: None
+                }),
+                current: None
+            },
+        ]
+    );
+    let closed = manager.apply(WindowCommand::Close(id)).unwrap();
+    assert_eq!(
+        closed.events,
+        vec![WindowEvent::Closed {
+            window: id,
+            key: spec.key,
+            reason: CloseReason::Requested
+        }]
+    );
+    assert_eq!(
+        closed.transition,
+        WindowTransition::Closed {
+            root: id,
+            closed: vec![id],
+            restored_focus: None
+        }
+    );
+    assert!(manager.presentation_history().is_empty());
+    let hidden = open(&mut manager, spec);
+    manager.apply(WindowCommand::Minimize(hidden)).unwrap();
+    let visible_spec = modeless_spec(WindowKind::Fleet, 2, WindowOwner::StrategicRoot);
+    let visible = open(&mut manager, visible_spec);
+    manager
+        .apply(WindowCommand::CapturePointer(visible))
+        .unwrap();
+    assert_eq!(
+        manager.reset_session(),
+        vec![
+            WindowEvent::CaptureCancelled {
+                window: visible,
+                reason: CaptureCancelReason::SessionReset
+            },
+            WindowEvent::Closed {
+                window: visible,
+                key: visible_spec.key,
+                reason: CloseReason::SessionReset
+            },
+            WindowEvent::Closed {
+                window: hidden,
+                key: spec.key,
+                reason: CloseReason::SessionReset
+            },
+            WindowEvent::FocusChanged {
+                previous: Some(FocusTarget {
+                    window: visible,
+                    control: None
+                }),
+                current: None
+            },
+        ]
+    );
+    assert!(manager.reset_session().is_empty());
+    assert!(manager.presentation_history().is_empty());
+    assert_eq!(manager.id_for(spec.key), None);
+    assert_eq!(manager.capture_owner(), None);
+    assert_eq!(manager.validate(), Ok(()));
+    let next = open(&mut manager, spec);
+    assert_eq!(next.get(), visible.get() + 1);
+}
+
+#[test]
+fn history_eviction_delivers_capture_close_and_focus_receipts() {
+    // FUN_00428b40 bound + port cleanup: cancellation, child teardown, eviction, final focus.
+    let mut manager = WindowManager::new();
+    let first_spec = modeless_spec(WindowKind::System, 0, WindowOwner::StrategicRoot);
+    let oldest = open(&mut manager, first_spec);
+    manager.apply(WindowCommand::Minimize(oldest)).unwrap();
+    for subject in 1..12 {
+        let id = open(
+            &mut manager,
+            modeless_spec(WindowKind::System, subject, WindowOwner::StrategicRoot),
+        );
+        manager.apply(WindowCommand::Minimize(id)).unwrap();
+    }
+    let owner = open(
+        &mut manager,
+        modeless_spec(WindowKind::Fleet, 12, WindowOwner::StrategicRoot),
+    );
+    let transient = menu_spec(owner);
+    let child = open(&mut manager, transient);
+    manager.apply(WindowCommand::CapturePointer(child)).unwrap();
+    let commit = manager.apply(WindowCommand::Minimize(owner)).unwrap();
+    assert_eq!(
+        commit.events,
+        vec![
+            WindowEvent::CaptureCancelled {
+                window: child,
+                reason: CaptureCancelReason::Minimized
+            },
+            WindowEvent::Closed {
+                window: child,
+                key: transient.key,
+                reason: CloseReason::OwnerClosed
+            },
+            WindowEvent::Closed {
+                window: oldest,
+                key: first_spec.key,
+                reason: CloseReason::Evicted
+            },
+            WindowEvent::FocusChanged {
+                previous: Some(FocusTarget {
+                    window: child,
+                    control: None
+                }),
+                current: None
+            },
+        ]
+    );
+    assert_eq!(
+        commit.transition,
+        WindowTransition::Minimized {
+            id: owner,
+            evicted: vec![oldest]
+        }
+    );
+    assert_eq!(manager.capture_owner(), None);
+    assert_eq!(manager.id_for(transient.key), None);
+    assert_eq!(manager.presentation_history().len(), 12);
+    assert_eq!(manager.validate(), Ok(()));
+}
+
+#[test]
+fn hidden_owned_details_close_child_first_and_cannot_restore_under_a_hidden_owner() {
+    // Port lifecycle ownership applies to retained history, not just visible order.
+    let mut manager = WindowManager::new();
+    let owner_spec = modeless_spec(WindowKind::System, 1, WindowOwner::StrategicRoot);
+    let owner = open(&mut manager, owner_spec);
+    let child_spec = modeless_spec(WindowKind::Fleet, 2, WindowOwner::Window(owner));
+    let child = open(&mut manager, child_spec);
+    manager.apply(WindowCommand::Minimize(child)).unwrap();
+    manager.apply(WindowCommand::Minimize(owner)).unwrap();
+    assert_eq!(manager.presentation_history(), &[child, owner]);
+    assert_eq!(manager.validate(), Ok(()));
+    assert_eq!(
+        manager.apply(WindowCommand::Restore(child)),
+        Err(WindowError::InvalidPlacement)
+    );
+    assert_eq!(
+        manager.apply(WindowCommand::Open(child_spec)),
+        Err(WindowError::InvalidPlacement)
+    );
+    assert_eq!(manager.presentation_history(), &[child, owner]);
+    assert!(manager.visible_order().is_empty());
+    let events = manager.reset_session();
+    assert_eq!(
+        events,
+        vec![
+            WindowEvent::Closed {
+                window: child,
+                key: child_spec.key,
+                reason: CloseReason::SessionReset
+            },
+            WindowEvent::Closed {
+                window: owner,
+                key: owner_spec.key,
+                reason: CloseReason::SessionReset
+            },
+        ]
+    );
+    assert_eq!(manager.validate(), Ok(()));
+}
+
+#[test]
+fn minimizing_a_visible_nontransient_child_owner_is_rejected_without_losing_content() {
+    // Port: minimizing closes transient children, not persistent child content.
+    let mut manager = WindowManager::new();
+    let owner = open(
+        &mut manager,
+        modeless_spec(WindowKind::System, 1, WindowOwner::StrategicRoot),
+    );
+    let child = open(
+        &mut manager,
+        modeless_spec(WindowKind::Fleet, 2, WindowOwner::Window(owner)),
+    );
+    manager.apply(WindowCommand::CapturePointer(child)).unwrap();
+    assert_eq!(
+        manager.apply(WindowCommand::Minimize(owner)),
+        Err(WindowError::InvalidPlacement)
+    );
+    assert_eq!(manager.visible_order(), &[owner, child]);
+    assert!(manager.presentation_history().is_empty());
+    assert_eq!(manager.capture_owner(), Some(child));
+    assert_eq!(manager.focused().map(|target| target.window), Some(child));
+    assert_eq!(manager.validate(), Ok(()));
+}
+
+#[test]
+fn minimized_noop_duplicate_preserves_history_and_rejected_duplicates_are_atomic() {
+    // Port: NoOp preserves all state, including hidden content and rail position.
+    let mut manager = WindowManager::new();
+    let mut spec = modeless_spec(WindowKind::System, 1, WindowOwner::StrategicRoot);
+    spec.policy.existing = ExistingOpenPolicy::NoOp;
+    let id = open(&mut manager, spec);
+    manager.apply(WindowCommand::Minimize(id)).unwrap();
+    let other = open(
+        &mut manager,
+        modeless_spec(WindowKind::Fleet, 2, WindowOwner::StrategicRoot),
+    );
+    manager.apply(WindowCommand::CapturePointer(other)).unwrap();
+    assert_eq!(
+        manager.apply(WindowCommand::Open(spec)).unwrap().transition,
+        WindowTransition::Existing {
+            id,
+            effect: rebellion_windowing::ExistingEffect::NoOp
+        }
+    );
+    let mut wrong_owner = spec;
+    wrong_owner.owner = WindowOwner::Window(other);
+    assert_eq!(
+        manager.apply(WindowCommand::Open(wrong_owner)),
+        Err(WindowError::DuplicateKeyWithDifferentOwner(spec.key))
+    );
+    let mut wrong_policy = spec;
+    wrong_policy.policy.existing = ExistingOpenPolicy::RaiseRestore;
+    assert_eq!(
+        manager.apply(WindowCommand::Open(wrong_policy)),
+        Err(WindowError::DuplicateKeyWithDifferentPolicy(spec.key))
+    );
+    assert_eq!(manager.presentation_history(), &[id]);
+    assert_eq!(manager.visible_order(), &[other]);
+    assert_eq!(manager.capture_owner(), Some(other));
+    assert_eq!(manager.focused().map(|target| target.window), Some(other));
+    assert_eq!(manager.validate(), Ok(()));
+}
+
+#[test]
+fn restoring_and_reminimizing_a_middle_entry_updates_only_its_age() {
+    // FUN_00429020 removes a chosen entry; FUN_00428b40 appends a fresh minimization.
+    let mut manager = WindowManager::new();
+    let mut ids = Vec::new();
+    for subject in 0..3 {
+        let id = open(
+            &mut manager,
+            modeless_spec(WindowKind::System, subject, WindowOwner::StrategicRoot),
+        );
+        manager.apply(WindowCommand::Minimize(id)).unwrap();
+        ids.push(id);
+    }
+    let commit = manager.apply(WindowCommand::Restore(ids[1])).unwrap();
+    assert_eq!(
+        commit.events,
+        vec![WindowEvent::FocusChanged {
+            previous: None,
+            current: Some(FocusTarget {
+                window: ids[1],
+                control: None
+            })
+        }]
+    );
+    assert_eq!(manager.presentation_history(), &[ids[0], ids[2]]);
+    manager.apply(WindowCommand::Minimize(ids[1])).unwrap();
+    assert_eq!(manager.presentation_history(), &[ids[0], ids[2], ids[1]]);
+    manager.apply(WindowCommand::Close(ids[2])).unwrap();
+    assert_eq!(manager.presentation_history(), &[ids[0], ids[1]]);
+    assert_eq!(manager.validate(), Ok(()));
+}
+
+#[test]
+fn minimize_preserves_unrelated_focus_capture_and_rejects_stale_ids() {
+    // Port: background minimization does not interrupt an unrelated gesture/control.
+    let mut manager = WindowManager::new();
+    let id = open(
+        &mut manager,
+        modeless_spec(WindowKind::System, 1, WindowOwner::StrategicRoot),
+    );
+    let other = open(
+        &mut manager,
+        modeless_spec(WindowKind::Fleet, 2, WindowOwner::StrategicRoot),
+    );
+    let target = FocusTarget {
+        window: other,
+        control: Some(ControlId(17)),
+    };
+    manager.apply(WindowCommand::Focus(target)).unwrap();
+    manager.apply(WindowCommand::CapturePointer(other)).unwrap();
+    assert!(manager
+        .apply(WindowCommand::Minimize(id))
+        .unwrap()
+        .events
+        .is_empty());
+    assert_eq!(manager.focused(), Some(target));
+    assert_eq!(manager.capture_owner(), Some(other));
+    assert_eq!(manager.validate(), Ok(()));
+    manager.apply(WindowCommand::Close(id)).unwrap();
+    assert_eq!(
+        manager.apply(WindowCommand::Minimize(id)),
+        Err(WindowError::UnknownWindow(id))
+    );
+    assert_eq!(
+        manager.apply(WindowCommand::Restore(id)),
+        Err(WindowError::UnknownWindow(id))
+    );
+    assert_eq!(manager.capture_owner(), Some(other));
+}
+
+fn restore_rejects_now_ineligible_transient_placement(reopen: bool) {
+    // Port: restoring must revalidate placement against the current modal boundary.
+    // Independent Sol reproducer: a hidden transient can no longer be above its
+    // blocked owner without violating the stack bands after another modal opens.
+    let mut manager = WindowManager::new();
+    let owner = open(
+        &mut manager,
+        modeless_spec(WindowKind::System, 1, WindowOwner::StrategicRoot),
+    );
+    let mut spec = modeless_spec(WindowKind::Fleet, 2, WindowOwner::Window(owner));
+    spec.policy.band = StackBand::Transient;
+    spec.policy.placement = OpenPlacement::AboveOwner;
+    let child = open(&mut manager, spec);
+    manager.apply(WindowCommand::Minimize(child)).unwrap();
+    let modal = open(&mut manager, modal_spec(WindowKind::Status));
+    manager.apply(WindowCommand::CapturePointer(modal)).unwrap();
+    assert_eq!(manager.validate(), Ok(()));
+    let before = format!("{manager:?}");
+    let command = if reopen {
+        WindowCommand::Open(spec)
+    } else {
+        WindowCommand::Restore(child)
+    };
+    assert_eq!(manager.apply(command), Err(WindowError::InvalidPlacement));
+    assert_eq!(
+        format!("{manager:?}"),
+        before,
+        "rejection preserves allocator, registry, order, history, focus and capture"
+    );
+    assert_eq!(manager.validate(), Ok(()));
+    manager.apply(WindowCommand::Close(modal)).unwrap();
+    manager.apply(command).unwrap();
+    assert_eq!(manager.visible_order(), &[owner, child]);
+    assert!(manager.presentation_history().is_empty());
+    assert_eq!(manager.validate(), Ok(()));
+}
+
+#[test]
+fn direct_restore_rejects_now_ineligible_transient_placement_atomically() {
+    restore_rejects_now_ineligible_transient_placement(false);
+}
+
+#[test]
+fn raise_restore_reopen_rejects_now_ineligible_transient_placement_atomically() {
+    restore_rejects_now_ineligible_transient_placement(true);
+}
+
+#[test]
+fn background_minimize_preserves_the_previous_focus_candidate_ahead_of_topmost_fallback() {
+    // Port shared focus contract: hiding an unrelated detail preserves the eligible
+    // previous window, so a later close restores it before the topmost fallback.
+    // Break caught: clearing an eligible previous candidate during minimization.
+    let mut manager = WindowManager::new();
+    let previous = open(
+        &mut manager,
+        modeless_spec(WindowKind::System, 1, WindowOwner::StrategicRoot),
+    );
+    let current_spec = modeless_spec(WindowKind::Fleet, 2, WindowOwner::StrategicRoot);
+    let current = open(&mut manager, current_spec);
+    let mut top_spec = modeless_spec(WindowKind::Defenses, 3, WindowOwner::StrategicRoot);
+    top_spec.policy.focus_on_open = FocusOnOpen::Preserve;
+    let top = open(&mut manager, top_spec);
+    let mut hidden_spec = modeless_spec(WindowKind::Missions, 4, WindowOwner::StrategicRoot);
+    hidden_spec.policy.focus_on_open = FocusOnOpen::Preserve;
+    let hidden = open(&mut manager, hidden_spec);
+    manager
+        .apply(WindowCommand::CapturePointer(current))
+        .unwrap();
+    assert!(manager
+        .apply(WindowCommand::Minimize(hidden))
+        .unwrap()
+        .events
+        .is_empty());
+    let target = Some(FocusTarget {
+        window: previous,
+        control: None,
+    });
+    assert_eq!(
+        manager.apply(WindowCommand::Close(current)).unwrap().events,
+        vec![
+            WindowEvent::CaptureCancelled {
+                window: current,
+                reason: CaptureCancelReason::OwnerClosed
+            },
+            WindowEvent::Closed {
+                window: current,
+                key: current_spec.key,
+                reason: CloseReason::Requested
+            },
+            WindowEvent::FocusChanged {
+                previous: Some(FocusTarget {
+                    window: current,
+                    control: None
+                }),
+                current: target
+            },
+        ]
+    );
+    assert_eq!(manager.focused(), target);
+    assert_eq!(manager.visible_order(), &[previous, top]);
+    assert_eq!(manager.presentation_history(), &[hidden]);
+    assert_eq!(manager.validate(), Ok(()));
+}
+
+#[test]
 fn lifecycle_close_is_child_first_and_preserves_unrelated_focus() {
     // Source: strategic-windowing-toolkit.md, "Close sequence"; port contract says
     // actual lifecycle descendants close before focus is selected outside the subtree.
