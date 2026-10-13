@@ -1482,6 +1482,7 @@ dependencies = [
  "nucleo-matcher",
  "quad-snd",
  "rebellion-core",
+ "rebellion-windowing",
  "serde",
  "serde_json",
  "sha2",
