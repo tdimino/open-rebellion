@@ -63,7 +63,9 @@ The implementation is complete only when all of the following are true:
 - A parent close removes actual owned children; close-triggering keyboard/pointer input never reaches the newly exposed surface in the same frame or through a later orphan release; missing modal rendering fails closed. A Sector close must not cascade details solely because a Sector opened them.
 - Alliance and Empire pass the same unit, integration, and browser journeys.
 - The workspace compiles, scoped tests and mutation gates pass, WASM packages, ledger validation passes, and both native and packaged-browser journeys pass on both factions with inspected artifacts. A missing native run is an outstanding delivery gate, not a browser pass. The early adapter proof must pass first-frame and warm-frame behavior.
-- Audit records distinguish automated port proof, Wine observations, and still-missing native-Windows/original-runtime evidence. No audit cell is accepted solely because this architecture landed.
+- Audit records distinguish automated port proof, retained Wine observations,
+  bounded original-runtime gaps, and still-missing native-Windows evidence. No
+  audit cell is accepted solely because this architecture landed.
 
 ## Scope
 
@@ -84,7 +86,8 @@ The implementation is complete only when all of the following are true:
 - Persisting window state in saves/replays or stabilizing `WindowId` across sessions.
 - Solving non-strategic main-menu, setup, credits, multiplayer, or save/load panel navigation.
 - Rewriting the full-screen `GameMode::GameOptions` surface; the snapshot gates the strategic F1 command that enters it, while its separate mode/input implementation remains unchanged.
-- Claiming native-Windows parity or claiming fresh original-runtime behavior for Status, Build Selection, Mission creation, Move confirmation, cross-family modeless ordering, or Battle Results without those captures.
+- Claiming native-Windows parity or claiming original-runtime behavior for
+  Battle Alert or Battle Results beyond their retained provisional evidence.
 - Publishing a general-purpose crate outside this workspace.
 
 ## Specification and Evidence References
@@ -93,7 +96,9 @@ Executors must read these before changing code:
 
 - `ghidra/notes/strategic-windowing-toolkit.md` — normative behavior and confidence labels.
 - `ghidra/notes/strategic-windowing-toolkit.instructions.txt` plus its ten cited bounded decompiles — exact static evidence.
-- `/data/tmp/open-rebellion-window-capture/runtime-evidence.md` — local Wine observations and limitations; never commit this path or its assets.
+- `ghidra/notes/strategic-windowing-runtime-evidence.md` — sanitized retained
+  Wine observations, artifact hashes, and limitations. The proprietary local
+  captures and complete manifest remain uncommitted.
 - `docs/plans/2026-10-10-feat-strategic-window-modality-and-focus.md` — architectural scope and migration intent.
 - `docs/qa/2026-09-10-interface-parity-audit/2026-10-06-manual-window-checklists.md` — audit cells `CMD-04-C005`, `C016` through `C020`.
 - `docs/qa/2026-09-10-interface-parity-audit/known-deviations.md` — temporary differences that must not be silently retired.
@@ -2623,11 +2628,12 @@ Maintain separate statuses for implementation complete, browser accepted,
 native-port accepted, and original/parity evidence still open. A bounded
 checkpoint is useful but must not be described as final delivery acceptance.
 
-The current local Wine manifest supports specific Encyclopedia outside-input/
-search/Escape observations on both factions and bounded Sector/Message cases.
-It does not freshly prove every Status, Build, Mission, Move, cross-family, or
-Results interaction. Its isolated display is `:92`; do not confuse it with the
-workspace's shared `:91` capture service. Inspect ownership before either use.
+The retained both-faction Wine ledger covers Encyclopedia input behavior,
+cross-family modeless raising, Sector-close/detail survival, Status, Build
+Selection, Create Mission, and Move Confirmation with selected artifact hashes.
+Battle Alert did not trigger and Battle Results remained unreachable, so both
+families retain provisional policy and open parity cells. The isolated display
+was `:92`; do not confuse it with the workspace's shared `:91` capture service.
 
 Retain evidence summaries and safe links in Git. Keep proprietary source assets,
 screenshots where policy requires local storage, original saves, generated
@@ -2669,22 +2675,23 @@ reviewed separately from convenience-driven deviation.
 
 | Item | Current position | Required next action | Blocks |
 |---|---|---|---|
-| Detail lifetime owner | Source chain strongly suggests strategic root; spec says Sector | T0 inspect final assignment and reconcile spec | Detail lifecycle migration |
+| Detail lifetime owner | Final common assignment establishes strategic-root ownership | Preserve the recovered contract in implementation and tests | None |
 | Exact egui realization hook | Repeated move-to-top rejected; managed host preferred candidate | T5A measured prototype and frozen signatures | All production migrations |
 | Original pre-command pointer hook | Unknown implementation detail | Preserve observable boundary; no HWND imitation | Native-mechanism claim only |
 | Menu outside dismissal | Narrow port policy; no generalized OwnerModal | Test bounded behavior and retain label | No blocker for explicit port policy |
 | GID native family identity | Not fully recovered | Keep one port Menu presentation, note evidence gap | Native family attribution |
 | System Finder content | Missing in port | Future feature work outside this plan | Full Finder content acceptance |
-| Fresh original cross-family order | Static and bounded runtime support only | Separate original capture when feasible | Strict runtime parity claim |
-| Status/Build/Mission/Move original captures | Not freshly captured in current evidence | Retain gap; future capture | Their runtime-specific audit gates |
+| Original cross-family order | Both factions reproduced modeless raising and Sector-close/detail survival under Wine | Retain native-Windows and port-side acceptance separately | Strict native-Windows parity claim |
+| Status/Build/Mission/Move original captures | Both factions reproduced the API-shaping input boundary under Wine | Retain native-Windows and port-side acceptance separately | Strict native-Windows parity claim |
 | Battle Results original capture | Unreachable in available saves | Future reachable original scenario | Original Results acceptance |
 | Native Windows | Not established by current Wine evidence | Run required Windows checks separately | Windows parity claim |
 | Native port environment | Execution-time observation | T13 actual backend/input method | Delivery native-port gate |
 | Unknown native type 7/bit-0 classes | Semantics unresolved | No public kinds until evidence exists | Their implementation only |
 
-The first two rows are deliberate pre-implementation engineering gates, not
-claims that experimentation has already succeeded. Other rows constrain scope
-and evidence claims without inventing speculative infrastructure.
+The egui realization row remains a deliberate pre-implementation engineering
+gate, not a claim that experimentation has already succeeded. Other rows
+constrain scope and evidence claims without inventing speculative
+infrastructure.
 
 ## Proposed Beads and Review Gates — Do Not Create Yet
 
