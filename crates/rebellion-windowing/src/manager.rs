@@ -1,5 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU64;
+use std::sync::Arc;
+
+use crate::snapshot::{ContentReport, ContentStatus, ReconcileReport, RoutingSnapshot};
 
 use crate::{
     Cardinality, InputPolicy, OpenPlacement, StackBand, WindowId, WindowKey, WindowKind,
@@ -261,6 +264,8 @@ pub struct InvariantViolation {
 /// Renderer-independent strategic-window registry and visible order.
 #[derive(Debug)]
 pub struct WindowManager {
+    // Private lineage distinguishes snapshots from managers with equal session-local ordinals.
+    snapshot_origin: Arc<()>,
     registry: BTreeMap<WindowId, WindowRecord>,
     key_index: BTreeMap<WindowKey, WindowId>,
     visible_order: Vec<WindowId>,
@@ -291,6 +296,7 @@ impl WindowManager {
     #[must_use]
     pub fn new() -> Self {
         Self {
+            snapshot_origin: Arc::new(()),
             registry: BTreeMap::new(),
             key_index: BTreeMap::new(),
             visible_order: Vec::new(),
@@ -345,7 +351,140 @@ impl WindowManager {
             self.presentation_history.clone(),
             self.focused,
             self.capture_owner,
+            Arc::clone(&self.snapshot_origin),
         )
+    }
+
+    /// Reconciles explicit content reports against a frozen snapshot from this manager.
+    ///
+    /// Port: absent paint is never absent content. Only unambiguous modeless
+    /// absence can close a complete snapshot-owned subtree. Retained/new children
+    /// or input boundaries make that owner's removal unsafe and diagnostic.
+    /// Unpaintable/absent boundaries retain their explicit recovery close route.
+    #[must_use]
+    pub fn reconcile(
+        &mut self,
+        frame: &RoutingSnapshot,
+        reports: &[ContentReport],
+    ) -> ReconcileReport {
+        let (statuses, mut invalid) = self.classify_content_reports(frame, reports);
+        let roots = self.reconciliation_roots(frame, &statuses, &mut invalid);
+        let focused_before = self.focused;
+        let mut removed = Vec::new();
+        let mut events = Vec::new();
+        let mut teardown = Vec::new();
+        for root in roots {
+            let commit = self
+                .close_with_reason(root, CloseReason::ContentRemoved)
+                .expect("preflight roots are registered, distinct lifecycle subtrees");
+            for event in commit.events {
+                match event {
+                    WindowEvent::CaptureCancelled { .. } => events.push(event),
+                    WindowEvent::Closed { window, .. } => {
+                        removed.push(window);
+                        teardown.push(event);
+                    }
+                    WindowEvent::FocusChanged { .. } => {}
+                }
+            }
+        }
+        events.extend(teardown);
+        if focused_before != self.focused {
+            events.push(WindowEvent::FocusChanged {
+                previous: focused_before,
+                current: self.focused,
+            });
+        }
+        let blocking_unpainted = frame
+            .members()
+            .filter(|id| {
+                frame.belongs_to(&self.snapshot_origin)
+                    && frame.is_visible(*id)
+                    && self
+                        .registry
+                        .get(id)
+                        .is_some_and(|record| record.spec.policy.input != InputPolicy::Modeless)
+                    && (invalid.contains(id)
+                        || !matches!(
+                            statuses.get(id),
+                            Some(ContentStatus::Ready | ContentStatus::Suspended)
+                        ))
+            })
+            .collect();
+        ReconcileReport {
+            removed,
+            blocking_unpainted,
+            invalid_reports: invalid.into_iter().collect(),
+            events,
+        }
+    }
+
+    fn classify_content_reports(
+        &self,
+        frame: &RoutingSnapshot,
+        reports: &[ContentReport],
+    ) -> (BTreeMap<WindowId, ContentStatus>, BTreeSet<WindowId>) {
+        let belongs_here = frame.belongs_to(&self.snapshot_origin);
+        let mut statuses = BTreeMap::new();
+        let mut invalid = BTreeSet::new();
+        for report in reports {
+            if !belongs_here
+                || !frame.spec(report.window).is_some_and(|spec| {
+                    self.registry
+                        .get(&report.window)
+                        .is_some_and(|record| record.spec == spec)
+                })
+            {
+                invalid.insert(report.window);
+            } else if statuses.insert(report.window, report.status).is_some() {
+                // Even identical duplicate reports have ambiguous producer ownership.
+                invalid.insert(report.window);
+            }
+        }
+        for id in frame.members() {
+            if !belongs_here || (self.registry.contains_key(&id) && !statuses.contains_key(&id)) {
+                invalid.insert(id);
+            }
+        }
+        (statuses, invalid)
+    }
+
+    fn reconciliation_roots(
+        &self,
+        frame: &RoutingSnapshot,
+        statuses: &BTreeMap<WindowId, ContentStatus>,
+        invalid: &mut BTreeSet<WindowId>,
+    ) -> Vec<WindowId> {
+        let absent: BTreeSet<_> = statuses
+            .iter()
+            .filter(|(id, status)| {
+                **status == ContentStatus::Absent
+                    && !invalid.contains(id)
+                    && self.registry[id].spec.policy.input == InputPolicy::Modeless
+            })
+            .map(|(id, _)| *id)
+            .collect();
+        for id in &absent {
+            if self
+                .close_order(*id)
+                .iter()
+                .any(|member| !absent.contains(member))
+            {
+                // Ordinary close must not cascade into retained, modal, or post-snapshot content.
+                invalid.insert(*id);
+            }
+        }
+        let safe: BTreeSet<_> = absent.difference(invalid).copied().collect();
+        frame
+            .paint_order()
+            .iter()
+            .rev()
+            .chain(frame.presentation_history().iter().rev())
+            .copied()
+            .filter(|id| {
+                safe.contains(id) && !safe.iter().any(|owner| self.is_descendant_of(*id, *owner))
+            })
+            .collect()
     }
 
     /// Discards the current UI session while retaining allocator progression.
@@ -714,6 +853,7 @@ impl WindowManager {
         // port: SW-02R preflights the complete lifecycle transaction privately.
         // Ordinary close/open remain the authorities for cleanup, placement and allocation.
         let mut proposed = Self {
+            snapshot_origin: Arc::clone(&self.snapshot_origin),
             registry: self.registry.clone(),
             key_index: self.key_index.clone(),
             visible_order: self.visible_order.clone(),

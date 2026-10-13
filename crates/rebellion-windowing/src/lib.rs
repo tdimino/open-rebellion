@@ -25,4 +25,7 @@ pub use policy::{
     PresentationPolicy, StackBand, WindowPolicy, WindowSpec,
 };
 
-pub use snapshot::{BubblePolicy, KeyboardRoute, PointerRoute, RouteTarget, RoutingSnapshot};
+pub use snapshot::{
+    BubblePolicy, ContentReport, ContentStatus, KeyboardRoute, PointerRoute, ReconcileReport,
+    RouteTarget, RoutingSnapshot,
+};

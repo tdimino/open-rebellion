@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use crate::{FocusTarget, InputPolicy, WindowId, WindowKey, WindowOwner, WindowSpec};
 
@@ -38,12 +39,48 @@ pub struct PointerRoute {
     pub target: RouteTarget,
 }
 
+/// Feature-owned content availability, independent of paint success and scene membership.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContentStatus {
+    /// Content exists and can be presented when active and visible.
+    Ready,
+    /// Content exists but its presentation or assets are unavailable.
+    Unpaintable,
+    /// The feature explicitly confirms that its content has been removed.
+    Absent,
+    /// Content is intentionally retained outside the current presentation scene.
+    Suspended,
+}
+
+/// Explicit content accounting for one identity in a frozen routing snapshot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ContentReport {
+    /// Snapshot identity; semantic keys never rebind a report to a fresh window.
+    pub window: WindowId,
+    /// Feature-supplied availability, never inferred from a missing paint receipt.
+    pub status: ContentStatus,
+}
+
+/// Reconciliation results with deterministic diagnostics and ordered lifecycle receipts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReconcileReport {
+    /// Removed identities in child-first teardown order, each appearing once.
+    pub removed: Vec<WindowId>,
+    /// Visible input boundaries lacking usable content; explicit close remains available.
+    pub blocking_unpainted: Vec<WindowId>,
+    /// Sorted unique missing, duplicate, stale, foreign, or unsafe-removal report identities.
+    pub invalid_reports: Vec<WindowId>,
+    /// Capture cancellation, content teardown, then at most one final focus change.
+    pub events: Vec<crate::WindowEvent>,
+}
+
 /// Owned immutable input lease independent of later manager commits or teardown.
 ///
 /// Source: FUN_00606960/FUN_00422ce0 defer close/restoration to later dispatches.
 /// Port: copy identities and policies instead of reproducing the native message queue.
 #[derive(Debug, Clone)]
 pub struct RoutingSnapshot {
+    origin: Arc<()>,
     records: BTreeMap<WindowId, WindowSpec>,
     paint_order: Vec<WindowId>,
     presentation_history: Vec<WindowId>,
@@ -58,14 +95,28 @@ impl RoutingSnapshot {
         presentation_history: Vec<WindowId>,
         focused: Option<FocusTarget>,
         capture_owner: Option<WindowId>,
+        origin: Arc<()>,
     ) -> Self {
         Self {
+            origin,
             records,
             paint_order,
             presentation_history,
             focused,
             capture_owner,
         }
+    }
+
+    pub(crate) fn belongs_to(&self, origin: &Arc<()>) -> bool {
+        Arc::ptr_eq(&self.origin, origin)
+    }
+
+    pub(crate) fn members(&self) -> impl Iterator<Item = WindowId> + '_ {
+        self.records.keys().copied()
+    }
+
+    pub(crate) fn spec(&self, id: WindowId) -> Option<WindowSpec> {
+        self.records.get(&id).copied()
     }
 
     /// Returns visible identities in frozen bottom-to-top paint order.
