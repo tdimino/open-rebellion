@@ -22,6 +22,7 @@ mod encyclopedia_surface;
 mod interface_test_fixture;
 #[cfg(any(target_arch = "wasm32", test))]
 mod runtime_pack;
+mod strategic_windowing;
 mod tactical_flow;
 #[cfg(any(test, all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
 #[cfg_attr(
@@ -943,12 +944,15 @@ fn panel_letters_open_panels(debug_build: bool, alt_down: bool) -> bool {
 enum FrameKeyboardOwner {
     Cockpit,
     Encyclopedia,
+    ManagedBoundary,
 }
 
 impl FrameKeyboardOwner {
-    fn at_frame_start(encyclopedia_open: bool) -> Self {
+    fn at_frame_start(encyclopedia_open: bool, managed_root_allowed: bool) -> Self {
         if encyclopedia_open {
             Self::Encyclopedia
+        } else if !managed_root_allowed {
+            Self::ManagedBoundary
         } else {
             Self::Cockpit
         }
@@ -965,13 +969,14 @@ mod panel_toggle_tests {
 
     #[test]
     fn an_encyclopedia_open_at_frame_start_owns_the_whole_frames_keyboard() {
-        let owner = FrameKeyboardOwner::at_frame_start(true);
+        let owner = FrameKeyboardOwner::at_frame_start(true, true);
 
         // The owner is retained even when Escape closes the surface later in
         // this frame, so that key cannot also reach a cockpit shortcut.
         assert_eq!(owner, FrameKeyboardOwner::Encyclopedia);
         assert!(!owner.allows_galaxy_shortcuts());
-        assert!(FrameKeyboardOwner::at_frame_start(false).allows_galaxy_shortcuts());
+        assert!(FrameKeyboardOwner::at_frame_start(false, true).allows_galaxy_shortcuts());
+        assert!(!FrameKeyboardOwner::at_frame_start(false, false).allows_galaxy_shortcuts());
     }
 
     #[test]
@@ -1728,6 +1733,9 @@ async fn main() {
     // ── Apply Star Wars theme ────────────────────────────────────────────
     // Must happen inside the macroquad async context, after first frame init.
     let mut theme_applied = false;
+    let mut strategic_windowing = strategic_windowing::StrategicWindowing::new();
+    let mut strategic_input_router = rebellion_render::windowing_input::FrameInputRouter::default();
+    let mut strategic_frame_number = 0_u64;
 
     loop {
         let dt = get_frame_time();
@@ -1739,8 +1747,48 @@ async fn main() {
             dev_channel.refuse(&format!("input not posted: {why}"));
         }
         let mut targeting_cursor_drawn = false;
-        let frame_keyboard_owner =
-            FrameKeyboardOwner::at_frame_start(encyclopedia_surface.is_open());
+        let desired_window_scene = match game_mode {
+            GameMode::Galaxy | GameMode::VictoryModal { .. } => {
+                strategic_windowing::WindowScene::Galaxy
+            }
+            GameMode::TacticalCombat | GameMode::GroundCombat => {
+                strategic_windowing::WindowScene::Tactical
+            }
+            GameMode::Cutscene { .. }
+            | GameMode::MainMenu
+            | GameMode::LoadGame
+            | GameMode::Credits
+            | GameMode::MultiplayerSetup
+            | GameMode::GameSetup
+            | GameMode::GameOptions { .. } => strategic_windowing::WindowScene::Suspended,
+        };
+        if strategic_windowing.scene() != desired_window_scene {
+            for event in strategic_windowing.enter_scene(desired_window_scene) {
+                if let rebellion_windowing::WindowEvent::CaptureCancelled { window, .. } = event {
+                    strategic_input_router.cancel_window(window);
+                }
+            }
+        }
+        let strategic_routing_snapshot = strategic_windowing.begin_frame();
+        let strategic_locks = strategic_windowing::ApplicationInputLocks {
+            event_screen: event_screen_state.is_active(),
+            briefing: !interface_fixture_active && advisor_state.holds_clock(),
+            scene_transition: desired_window_scene
+                == strategic_windowing::WindowScene::Suspended,
+            ..Default::default()
+        };
+        let legacy_input_bridge = rebellion_render::windowing_input::LegacyInputBridge::new(
+            &strategic_routing_snapshot,
+            strategic_locks.blocks_strategic_input()
+                || desired_window_scene != strategic_windowing::WindowScene::Galaxy,
+        );
+        strategic_frame_number = strategic_frame_number.wrapping_add(1);
+        strategic_input_router.begin_frame(strategic_frame_number, &strategic_routing_snapshot);
+        strategic_input_router.set_application_hold(strategic_locks.blocks_strategic_input());
+        let frame_keyboard_owner = FrameKeyboardOwner::at_frame_start(
+            encyclopedia_surface.is_open(),
+            legacy_input_bridge.allows_root(),
+        );
 
         #[cfg(target_arch = "wasm32")]
         if !browser_menu_audio_requested
@@ -1875,7 +1923,10 @@ async fn main() {
                     player.stop();
                 }
             }
-        } else if is_key_pressed(KeyCode::Escape) && !event_screen_state.is_active() {
+        } else if is_key_pressed(KeyCode::Escape)
+            && !event_screen_state.is_active()
+            && (game_mode != GameMode::Galaxy || legacy_input_bridge.allows_root())
+        {
             if let GameMode::GameOptions { origin } = game_mode.clone() {
                 if game_options_state.escape() == GameOptionsAction::Return {
                     game_mode = match origin {
@@ -4405,6 +4456,8 @@ Some(RailAudience::side(*faction_is_alliance)),
                             };
 
                             if campaign_loaded {
+                                drop(strategic_windowing.reset_session());
+                                strategic_input_router.reset_session();
                                 // Sync cockpit chrome to player faction
                                 cockpit_state =
                                     CockpitState::new(if faction == MissionFaction::Alliance {
@@ -4569,7 +4622,8 @@ Some(RailAudience::side(*faction_is_alliance)),
                     || pause_alert_contains_screen_point(&clock, cockpit_layout, pointer)
                     || event_screen_state.is_active()
                     || briefing_lock
-                    || battle_window_underlay;
+                    || battle_window_underlay
+                    || !legacy_input_bridge.allows_root();
                 map_state.targeting = targeting.is_some();
 
                 // The whole 607x437 starfield lies behind the shell at its
@@ -4630,7 +4684,8 @@ Some(RailAudience::side(*faction_is_alliance)),
                         && !briefing_lock
                         && !battle_window_underlay
                         && !original_modal_fixture_open
-                        && !encyclopedia_surface.is_open();
+                        && !encyclopedia_surface.is_open()
+                        && legacy_input_bridge.allows_root();
                     // Register the cockpit background before panels so the
                     // opaque chrome never covers their content or artwork.
                     draw_cockpit_background(ctx, &cockpit_state, &mut bmp_cache);
@@ -6356,7 +6411,10 @@ Some(RailAudience::side(*faction_is_alliance)),
                         // the window under the point answers, then
                         // FUN_0042a320 opens the dialog with the kinds the
                         // team may undertake; with none, nothing opens.
-                        if targeting_held && is_mouse_button_released(MouseButton::Left) {
+                        if legacy_input_bridge.allows_root()
+                            && targeting_held
+                            && is_mouse_button_released(MouseButton::Left)
+                        {
                             let windows = ReleaseWindows {
                                 sector: &sector_window_state,
                                 system: &system_window_state,
@@ -6556,7 +6614,8 @@ Some(RailAudience::side(*faction_is_alliance)),
                         && !encyclopedia_surface.is_open()
                         && targeting.is_none()
                         && !event_screen_was_active
-                        && !event_screen_state.is_active())
+                        && !event_screen_state.is_active()
+                        && legacy_input_bridge.allows_root())
                     .then(|| handle_cockpit_egui_input(ctx, &mut cockpit_state, &mut bmp_cache));
                     if let Some(btn) = cockpit_command.flatten() {
                         let (command, destination) = match btn {
@@ -7239,6 +7298,8 @@ Some(RailAudience::side(*faction_is_alliance)),
                                 campaign_config: &mut campaign_config,
                             };
                             campaign.restore(state);
+                            drop(strategic_windowing.reset_session());
+                            strategic_input_router.reset_session();
                             let restored_fingerprint =
                                 rebellion_data::save::compute_state_fingerprint(
                                     &campaign.snapshot(),
@@ -7669,6 +7730,32 @@ Some(RailAudience::side(*faction_is_alliance)),
             }
         }
 
+        // Window intents are committed only after this frame's immutable input
+        // lease and paint pass have completed. Migrated families enqueue here.
+        for applied in strategic_windowing.apply_pending() {
+            match &applied.result {
+                Ok(commit) => {
+                    for event in &commit.events {
+                        if let rebellion_windowing::WindowEvent::CaptureCancelled {
+                            window, ..
+                        } = event
+                        {
+                            strategic_input_router.cancel_window(*window);
+                        }
+                    }
+                    if !applied.removed_content.is_empty() {
+                        macroquad::logging::info!(
+                            "[windowing] released_content={:?}",
+                            applied.removed_content
+                        );
+                    }
+                }
+                Err(error) => macroquad::logging::warn!(
+                    "[windowing] rejected command={:?} error={error:?}",
+                    applied.command
+                ),
+            }
+        }
         next_frame().await;
     }
 }

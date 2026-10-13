@@ -264,10 +264,11 @@
       "id": "UIP-F-011",
       "severity": "P1",
       "status": "partial",
-      "title": "Modeless focus, close, minimize, restore, and 12-slot rail routing work; exact active and inactive rail thumbnails and the complete multiwindow matrix remain open",
+      "title": "The shared lifecycle kernel now adds immutable frame routing, fail-closed reconciliation, scene membership, and a production coordinator; feature-family migration, exact rail thumbnails, and the complete multiwindow matrix remain open",
       "evidence": [
         "crates/rebellion-render/src/system_window.rs",
-        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-11-strategic-window-navigation.md"
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-11-strategic-window-navigation.md",
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-12-strategic-window-routing-coordinator.md"
       ],
       "affected_surfaces": ["CMD-04"]
     },

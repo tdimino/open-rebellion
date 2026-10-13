@@ -1285,7 +1285,7 @@
         61,
         66
       ],
-      "current_implementation": "UIP-B01 implements modeless focus and close plus faction-specific 12-slot minimize and restore routing with preserved tab, selected item, scroll row, and window position. Detailed-system windows retain foreground ownership over sector windows. Commit 8fc9d983 enforces the native two-sector-window cap and replaces a third request on its own galaxy half. Exact active and inactive rail thumbnails, modal placement and key ownership, and the complete A0 multiwindow/browser matrix remain open.",
+      "current_implementation": "UIP-B01 implements modeless focus and close plus faction-specific 12-slot minimize and restore routing with preserved tab, selected item, scroll row, and window position. Detailed-system windows retain foreground ownership over sector windows. Commit 8fc9d983 enforces the native two-sector-window cap and replaces a third request on its own galaxy half. The 2026-10-12 shared-kernel checkpoint adds immutable frame routing, scene-consistent command eligibility, fail-closed reconciliation, one-event ownership, stable render identities, and the production coordinator/legacy bridge. Feature families are not yet migrated to that shared authority. Exact active and inactive rail thumbnails, visual modal placement, and the complete A0 multiwindow/browser matrix remain open.",
       "finding_ids": [
         "UIP-F-001",
         "UIP-F-011"

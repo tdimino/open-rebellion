@@ -10,6 +10,7 @@
 mod identity;
 mod manager;
 mod policy;
+mod snapshot;
 
 pub use identity::{
     ControlId, FocusTarget, SubjectId, WindowId, WindowKey, WindowKind, WindowOwner,
@@ -22,4 +23,8 @@ pub use manager::{
 pub use policy::{
     Cardinality, ExistingOpenPolicy, FocusOnOpen, FocusRestoration, InputPolicy, OpenPlacement,
     PresentationPolicy, StackBand, WindowPolicy, WindowSpec,
+};
+pub use snapshot::{
+    BubblePolicy, ContentReport, ContentStatus, KeyboardRoute, PointerRoute, ReconcileReport,
+    RouteTarget, RoutingSnapshot,
 };

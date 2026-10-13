@@ -1137,7 +1137,7 @@ fn close_chooses_previous_eligible_survivor_outside_removed_subtree() {
 
     let restored = FocusTarget {
         window: previous,
-        control: None,
+        control: Some(ControlId(12)),
     };
     assert_eq!(
         commit.transition,
@@ -1222,7 +1222,7 @@ fn close_retains_a_previous_candidate_while_a_modal_temporarily_blocks_it() {
 
     let restored = FocusTarget {
         window: previous,
-        control: None,
+        control: Some(ControlId(23)),
     };
     assert_eq!(
         commit.transition,
@@ -1384,6 +1384,53 @@ fn preserve_focus_modal_repairs_blocked_underlay_focus_to_the_modal() {
             control: None,
         })
     );
+    assert_eq!(manager.validate(), Ok(()));
+}
+
+#[test]
+fn removed_control_is_downgraded_before_modal_restores_its_owner() {
+    // Source: implementation plan, "Keyboard Dispatch and Egui Focus".
+    // Break caught: Escape or text routing to a child control removed while a
+    // higher modal temporarily owns focus.
+    let mut manager = WindowManager::new();
+    let owner = open(
+        &mut manager,
+        modeless_spec(WindowKind::System, 1, WindowOwner::StrategicRoot),
+    );
+    let removed = FocusTarget {
+        window: owner,
+        control: Some(ControlId(24)),
+    };
+    manager
+        .apply(WindowCommand::Focus(removed))
+        .expect("child control can focus while present");
+    let modal = open(&mut manager, modal_spec(WindowKind::SystemFinder));
+
+    let invalidated = manager
+        .apply(WindowCommand::InvalidateControl(removed))
+        .expect("content owner can invalidate its removed child");
+    assert_eq!(
+        invalidated.transition,
+        WindowTransition::ControlInvalidated { target: removed }
+    );
+    assert!(invalidated.events.is_empty());
+
+    let closed = manager
+        .apply(WindowCommand::Close(modal))
+        .expect("modal closes after child removal");
+    let owner_focus = FocusTarget {
+        window: owner,
+        control: None,
+    };
+    assert_eq!(
+        closed.transition,
+        WindowTransition::Closed {
+            root: modal,
+            closed: vec![modal],
+            restored_focus: Some(owner_focus),
+        }
+    );
+    assert_eq!(manager.focused(), Some(owner_focus));
     assert_eq!(manager.validate(), Ok(()));
 }
 

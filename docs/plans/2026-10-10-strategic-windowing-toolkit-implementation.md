@@ -2,7 +2,11 @@
 
 > **For future implementers:** Execute the reviewed plan task-by-task using the applicable implementation workflow. This document does not authorize implementation or delegation. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Revised planning draft; implementation, bead creation, commits, pushes, and PR submission are outside this planning task.
+**Status:** Active implementation. Tasks 0 through 5A are merged. The
+2026-10-12 combined routing/coordinator slice implements Task 4 and the shared
+coordinator, router, holds, and legacy gate from Task 5B in one review unit.
+Backend event normalization finishes alongside feature-family migration,
+beginning with Task 6 after that gate lands.
 
 **Baseline:** Inspected worktree `/data/tmp/open-rebellion-strategic-window-modality-focus`, commit `f0648ef0e6b1f832a9f7643ccd6321e9f7ea5b52`. Revalidate before execution.
 
@@ -13,6 +17,11 @@
 **Tech Stack:** Rust 2021 workspace, standard-library collections, egui through `egui-macroquad`, macroquad, existing Rust unit/integration tests, cargo-mutants, the existing WASM package path, and Playwright-based interface-parity scripts.
 
 **Spec:** `ghidra/notes/strategic-windowing-toolkit.md` (behavioral authority), governed in scope by `docs/plans/2026-10-10-feat-strategic-window-modality-and-focus.md`, with acceptance recorded by `docs/qa/2026-09-10-interface-parity-audit/2026-10-06-manual-window-checklists.md`.
+
+**Latest evidence:**
+[`2026-10-12-strategic-window-routing-coordinator.md`](../qa/2026-09-10-interface-parity-audit/evidence/2026-10-12-strategic-window-routing-coordinator.md)
+records immutable route/reconciliation behavior and the production
+coordinator boundary. It does not promote visual acceptance cells.
 
 ## Global Constraints
 
@@ -2101,8 +2110,9 @@ sends unknown keys directly to root before the focused control can process them.
   cannot explain per-event ownership or a modal stop for unhandled F-keys.
 - Requesting focus after paint cannot retroactively change who owned the old
   event; apply it through the next-frame semantic focus boundary.
-- Removing a focused child falls back to its eligible owner, then an eligible
-  surviving top-level/root. It never focuses a stale widget in another window.
+- Removing a focused child submits `WindowCommand::InvalidateControl`; the
+  manager downgrades current and saved references to the eligible owner before
+  later restoration. It never focuses a stale widget in another window.
 - A menu restores a saved child only if its owner/control still exists and is
   eligible. Otherwise use the normal eligible fallback.
 - No generic hidden per-window focus stack is introduced for ordinary details.
