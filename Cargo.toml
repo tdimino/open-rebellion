@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/rebellion-windowing",
     "crates/rebellion-core",
     "crates/rebellion-data",
     "crates/rebellion-render",
