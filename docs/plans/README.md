@@ -27,7 +27,10 @@ same-class target replacement when a target becomes invalid. P58-B06 passes
 the 120-case implementation gate, P58-B21 shares the post-battle campaign path,
 P58-B22 closes the bounded practical launcher implementation, and the
 deterministic A1 crosswalk maps all 106 cells through 87 journeys and 19
-snapshots. Strict acceptance remains 0 of 106. The final
+snapshots. A0 references from the original cover 102 of the 106 cells, plus
+all eight ground-assault (TAC-08) cells
+([capture index](../qa/2026-09-10-interface-parity-audit/evidence/2026-10-13-tactical-a0-capture-index.md));
+strict acceptance remains 0 of 106. The final
 acceptance train captures and compares all 106 strict cells. Missing
 lossless original baselines remain explicit A0 blockers and cannot be accepted
 by browser evidence alone.

@@ -82,6 +82,16 @@ not been traced. Edit every graph copy that a recipe touches.
 The ISD's payload starts at `0x177c1`. Word 9 is `0x0800077e`, its parent
 (family `0x08`, Fleet 1).
 
+The player's side cannot be changed by editing. The controller section
+(`FUN_00435db0`) holds two slots, each a class tag (1 player, 2 or 3 AI) and
+then a payload whose first u32 is the side; the tag-1 slot becomes the
+player on load (`FUN_00436690`). In `empire-day2-start.sav` the player is
+slot 1 at `0x64132` (tag 1, side 2), the AI slot 0 at `0x5564D`. Header
+word 5 switches only the strategic shell. Setting the player's side word
+to 1 crashes the game on load, and so does swapping both sides, because each
+payload carries its own faction's state. To play a state as the other side,
+start from that side's save.
+
 ## Recipe 1: a ship with its hyperdrive out
 
 The strategic capital ship keeps hull damage at runtime `+0x60` and packed
@@ -176,8 +186,8 @@ Two routes, safest first:
    cost (`+0x68`). Prove the progress field over several more saves (rising
    by one cycle at a time, stopping at the cost). Then set progress to
    cost − 1 in a copy of A and let the original complete it. This keeps
-   every relationship the original builds. It needs a save where the Empire
-   can order a Death Star, which the library does not have yet.
+   every relationship the original builds. It works; see "Route 1 in the
+   original" below.
 2. **Convert Fleet 1's ISD in place.** In both copies, change the family
    at `+0x04` from `0x14` to `0x18` and the class at `+0x10` from `0x85` to
    `0x88` (`0x17792`, `0x1779e`, `0x48ee9`, `0x48ef5`; four bytes). Leave the
@@ -209,6 +219,25 @@ reloads as Class: Death Star, so whatever movement reads from a Death Star
 is missing from a converted ISD. Use route 1 for anything that moves the
 fleet. Under Wine, Take Command leaves a black tactical screen, so tactical
 checks need the VM.
+
+**Route 1 in the original.** A new Empire game (Huge, Easy)
+ordered a Death Star at Coruscant on day 115 and saved (A), then saved again
+8 days later (B). The ship records themselves (family `0x18`, class `0x88`,
+named "Death Star 1", three graph copies) did not change. The progress lives
+in the manufacturing order. Each of its two graph copies holds, in order,
+`1`, progress, `0`, `0x18000088`, `584`, `584`, `0`, `0x18000df5` (the
+ship's key), then the name "Death Star". Progress went from 0 in A to 2 in B
+(one refined unit per yard cycle, with one Orbital Shipyard). Find it in B
+by searching for the bytes `88000018 48020000 48020000`; progress is the u32
+8 bytes before. Setting it to 583 in both copies (equal length, nothing else
+changed) and loading the copy finished the Death Star within 11 days. The
+order record was gone, and the ship's status word after its name went from
+`0x42` to `0x30147`. "Death Star 1" then sits in a new fleet (Fleet 6) at
+Coruscant. Unlike route 2, it moves: it flew to Yavin and back to Coruscant
+(about 80 days a hop on a Huge map, hyperdrive 80), and fought a battle
+there. The edited copy and the saves after it are in
+`.artifacts/original-checks/s4/` (`ds-b583.sav`, `ds-built.sav`,
+`ds-pre-alert.sav`).
 
 Never insert or clone a record: that needs every container count, every
 later object key and every reference updated in both graphs.

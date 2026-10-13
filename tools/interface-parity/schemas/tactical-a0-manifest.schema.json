@@ -49,13 +49,13 @@
     },
     "captures": {
       "type": "array",
-      "maxItems": 106,
+      "maxItems": 114,
       "items": {
         "type": "object",
         "additionalProperties": false,
         "required": ["cell_id", "requirement", "captured_at", "state_setup", "input_trace", "artifacts"],
         "properties": {
-          "cell_id": { "type": "string", "pattern": "^TAC-0[1-7]-C\\d{3}$" },
+          "cell_id": { "type": "string", "pattern": "^TAC-0[1-8]-C\\d{3}$" },
           "requirement": { "type": "string", "minLength": 1 },
           "captured_at": { "type": "string", "format": "date-time" },
           "state_setup": {
@@ -82,7 +82,7 @@
               "required": ["kind", "path", "sha256", "mime_type"],
               "properties": {
                 "kind": { "enum": ["visual_png", "audio_capture", "video_capture", "interaction_trace"] },
-                "path": { "type": "string", "pattern": "^\\.artifacts/interface-parity/a0/TAC-0[1-7]-C\\d{3}/[^/]+$" },
+                "path": { "type": "string", "pattern": "^\\.artifacts/interface-parity/a0/TAC-0[1-8]-C\\d{3}/[^/]+$" },
                 "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
                 "mime_type": { "type": "string", "minLength": 1 },
                 "width": { "type": "integer", "minimum": 1 },

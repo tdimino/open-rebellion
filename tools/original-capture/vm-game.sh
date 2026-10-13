@@ -14,7 +14,8 @@
 #                                DisplayFilter=point (vm/a0-tasks.ps1)
 #   vm-game.sh a0-watch          restart the watcher task
 #   vm-game.sh a0-game           end the game task and start it again, to the
-#                                main menu
+#                                main menu, relaunching until the scaling
+#                                phase is the calibrated one (A0_PHASE_TRIES)
 #   vm-game.sh a0-run FILE       run a PowerShell FILE on the guest desktop
 #                                (A0Run task) and print its output
 #   vm-game.sh a0 NAME [OUTDIR] [Key=Value ...]
@@ -22,11 +23,21 @@
 #                                guest from the full screen; Keys are capture.ps1
 #                                parameters
 #                                (CellId, Requirement, StateSetupKind, ...;
-#                                InputTrace='a|b|c'; FullClient=1 probes)
+#                                InputTrace='a|b|c'; FullClient=1 probes;
+#                                A0_ON_START="click X Y" sends that command
+#                                once a burst has taken its first frame, over
+#                                10 s late; ClickOnStart=1 with A0_PARK="X Y"
+#                                clicks in the guest right after frame 0)
 #   vm-game.sh a0-cell CELL KIND SETUP 'a|b|c' [NOTES]
 #                                capture a ledger cell (requirement from the
 #                                ledger) and register it with the ingester;
 #                                A0_BEFORE=NAME adds an earlier `a0` frame
+#   vm-game.sh a0-register CELL [FRAME]
+#                                register a pulled capture; FRAME names the
+#                                burst frame that stands for the cell
+#   vm-game.sh a0-audio start|stop CELL
+#                                record the guest's sound around a cell's
+#                                frame; a0-register then ingests it too
 #   vm-game.sh cap FILE          capture the screen to FILE
 #   vm-game.sh point X Y [FILE]  move the game cursor to X,Y
 #   vm-game.sh click X Y [FILE]  left-click, optionally capture after
@@ -46,6 +57,10 @@
 #                                1, timeout 120 s), then capture to FILE;
 #                                REGION alert waits until a Battle Alert is
 #                                open, including one already open
+#   vm-game.sh run-to-alert TITLE.png TIMEOUT FILE
+#                                run until the alert whose title matches
+#                                TITLE.png (an 800x600 frame of it) opens,
+#                                auto-resolving every other alert
 #   vm-game.sh save-out SLOT NAME  copy save slot SLOT (1-10) to NAME.sav
 #                                here; prints both SHA-256 values
 #   vm-game.sh save-in FILE SLOT copy FILE into save slot SLOT
@@ -262,7 +277,39 @@ up_a0() {
 # Start the game task, or end the running game and start it again
 # (take-command needs a fresh launch). The game runs one copy at a time, and
 # one started some other way is not the task's, so it is ended by pid.
+#
+# Each launch picks DDrawCompat's scaling phase, and some come up with the
+# repeated columns at 2 and 7 instead of 3 and 8, which A0 refuses (README,
+# "A0 captures"). So after each launch a full-screen probe of the main menu
+# is checked, and the game relaunched until the phase is the calibrated one,
+# up to A0_PHASE_TRIES launches (default 5); A0_PHASE_TRIES=0 skips the check.
 a0_game() {
+  local try tries=${A0_PHASE_TRIES:-5} dir cols
+  if (( tries == 0 )); then a0_launch; return; fi
+  dir=$(mktemp -d)
+  for ((try = 1; try <= tries; try++)); do
+    a0_launch
+    "$0" a0 phase-probe "$dir" FullClient=1 >/dev/null 2>&1 || { echo "phase probe failed" >&2; continue; }
+    cols=$(python3 - "$dir/phase-probe.png" <<'EOF'
+import sys
+from PIL import Image
+im = Image.open(sys.argv[1]).convert("RGB"); w, h = im.size; px = im.load()
+print(*[x for x in range(1, 40) if all(px[x, y] == px[x - 1, y] for y in range(h))][:3])
+EOF
+)
+    if [[ $cols == "3 8 13" ]]; then
+      echo "scaling phase calibrated (repeated columns $cols) on launch $try"
+      rm -rf "$dir"
+      return 0
+    fi
+    echo "launch $try: repeated columns $cols, not 3 8 13; relaunching" >&2
+  done
+  rm -rf "$dir"
+  echo "no calibrated launch in $tries tries" >&2
+  return 1
+}
+
+a0_launch() {
   local pid
   for pid in $(vmctl "exec cmd /c tasklist /fo csv /nh | findstr /i REBEXE.EXE" 2>/dev/null | awk -F'","' '/REBEXE/ {print $2}'); do
     vmctl "exec taskkill /pid $pid /f" >/dev/null
@@ -297,6 +344,26 @@ wait_change() {
 }
 
 cap_after() { [[ -z ${1:-} ]] || vnc pause 1 capture "$1"; }
+
+# run-to-alert TITLE.png TIMEOUT FILE: let the game run until the Battle
+# Alert whose title band matches TITLE.png opens, auto-resolving every other
+# alert on the way (vm-wait.py alert-title). TITLE.png is any 800x600 frame
+# of that alert; chrome.png beside it is any alert frame of the same side.
+run_to_alert() {
+  local title=$1 limit=$2 file=$3 start rc left
+  start=$(date +%s)
+  while :; do
+    left=$(( limit - ($(date +%s) - start) ))
+    (( left > 0 )) || { echo "run-to-alert: no matching alert in $limit s" >&2; return 1; }
+    rc=0
+    wait_change alert-title "$title" "$left" "$file" || rc=$?
+    case $rc in
+      0) return 0 ;;
+      3) resolve ;;
+      *) return "$rc" ;;
+    esac
+  done
+}
 
 # The game's cursor follows the tablet's relative motion at about 1.25x,
 # clamped at the screen edge, so an absolute `move` jump lands off target by
@@ -496,8 +563,9 @@ a0_pull() {
   # PowerShell 5 writes UTF-8 with a BOM, which JSON.parse (the ingester) rejects.
   python3 -c "import sys,pathlib; p=pathlib.Path(sys.argv[1]); p.write_text(p.read_text(encoding='utf-8-sig'), encoding='utf-8')" "$out/$name.json"
   # The metadata names what else to pull: a cell frame's 800x600 source, so
-  # the rebuild can be rechecked, and a burst's frames in one zip.
-  extra=$(python3 -c "import json,sys; m=json.load(open(sys.argv[1])); print(*(['screen.png'] if m.get('screen_sha256') else []) + (['burst.zip'] if m.get('burst') else []))" "$out/$name.json")
+  # the rebuild can be rechecked, and a burst's frames in one zip. A probe's
+  # frame is the screen itself (same hash), so it writes no separate source.
+  extra=$(python3 -c "import json,sys; m=json.load(open(sys.argv[1])); print(*(['screen.png'] if m.get('screen_sha256') not in (None, m['sha256']) else []) + (['burst.zip'] if m.get('burst') else []))" "$out/$name.json")
   for ext in png $extra; do pull_one "$name.$ext" "$out" 180; done
   shasum -a 256 "$out/$name.png"
   # Every still the guest hashed is held to that hash, not only cell frames.
@@ -551,6 +619,25 @@ EOF
   vmctl "exec cmd /c del /q $A0_DIR\\out\\$name.*" >/dev/null || true
   vmexec "cmd /c move /y $A0_DIR\\$name.tmp $A0_DIR\\req\\$name.json" >/dev/null ||
     { echo "request $name did not reach the watcher" >&2; exit 1; }
+  # A0_ON_START="click 717 397": once a burst has taken its first frame
+  # (capture.ps1 writes NAME.started), send that vm-game.sh command, so an
+  # input such as an unpause falls inside the burst instead of before it.
+  if [[ -n ${A0_ON_START:-} ]]; then
+    local started=
+    for ((n = 0; n < 6; n++)); do
+      vmctl "exec powershell -noprofile -command for(\$i=0;\$i -lt 40 -and -not (Test-Path $A0_DIR\\out\\$name.started) -and -not (Test-Path $A0_DIR\\out\\$name.err);\$i++){Start-Sleep -Milliseconds 100}" 20 >/dev/null || true
+      listing=$(vmctl "exec cmd /c dir /b $A0_DIR\\out\\$name.*" || true)
+      [[ $listing == *"$name.started"* ]] && { started=1; break; }
+      [[ $listing == *"$name.err"* ]] && break
+    done
+    if [[ -n $started ]]; then
+      # shellcheck disable=SC2086
+      "$0" $A0_ON_START
+      echo "A0_ON_START sent after the burst's first frame: $A0_ON_START"
+    else
+      echo "A0_ON_START not sent: the burst did not start" >&2
+    fi
+  fi
   # Wait in the guest, in short calls: one agent call held for 30 s made UTM
   # report "Timed out waiting for RPC" (2026-10-11).
   # Ten rounds (about 80 s), plus a burst's own length and its encoding
@@ -584,7 +671,6 @@ EOF
 # transition.
 a0_cell() {
   local cell=$1 kind=$2 setup=$3 trace=$4 notes=${5:-} req root out
-  local -a before=()
   root=$(cd "$HERE/../.." && pwd)
   out=$root/.artifacts/original-checks/a0
   req=$(python3 - "$root" "$cell" <<'EOF'
@@ -610,16 +696,65 @@ EOF
   a0_capture "$cell" "$out" CellId="$cell" Requirement="$req" StateSetupKind="$kind" \
     StateSetupIdentifier="$setup" StateSetupNotes="$notes" InputTrace="$trace" \
     ${burst[@]+"${burst[@]}"}
-  [[ -n ${A0_BEFORE:-} ]] && before=(--before=".artifacts/original-checks/a0/$A0_BEFORE.png"
-    --before-metadata=".artifacts/original-checks/a0/$A0_BEFORE.json")
-  [[ -n ${A0_BURST:-} ]] && before+=(--burst=".artifacts/original-checks/a0/$cell.burst")
+  a0_register "$cell"
+}
+
+# a0-register CELL [FRAME]: register a pulled capture
+# (.artifacts/original-checks/a0/CELL.*) with the ingester, as a0-cell does.
+# FRAME names the burst frame that stands for the cell, when the event is
+# not the burst's last frame (a kill the original holds for 3 s before the
+# results screen). A0_BEFORE=NAME pairs it with an earlier `a0` frame.
+a0_register() {
+  local cell=$1 frame=${2:-} root a0=.artifacts/original-checks/a0
+  local -a extra=()
+  root=$(cd "$HERE/../.." && pwd)
+  [[ -n ${A0_BEFORE:-} ]] && extra=(--before="$a0/$A0_BEFORE.png" --before-metadata="$a0/$A0_BEFORE.json")
+  [[ -d $root/$a0/$cell.burst ]] && extra+=(--burst="$a0/$cell.burst")
+  [[ -n $frame ]] && extra+=(--cell-frame="$frame")
+  [[ -f $root/$a0/$cell.wav ]] && extra+=(--audio="$a0/$cell.wav" --audio-metadata="$a0/$cell.wav.json")
   (cd "$root" && node tools/interface-parity/ingest-tactical-a0.mjs \
     --manifest=.artifacts/interface-parity/a0/manifest.json \
-    --png=".artifacts/original-checks/a0/$cell.png" --metadata=".artifacts/original-checks/a0/$cell.json" \
-    ${before[@]+"${before[@]}"}) |
+    --png="$a0/$cell.png" --metadata="$a0/$cell.json" \
+    ${extra[@]+"${extra[@]}"}) |
     python3 -c "import json,sys; r=json.load(sys.stdin); print(r['status'], r['cell_id'], r['sha256'][:12], 'a0', r.get('a0_coverage'))"
 }
 
+# a0-audio start|stop CELL: record the guest's sound for a cell. QEMU's
+# wavcapture taps UTM's audiodev (spice, id audio0) on the Mini; `stop`
+# ends it, pulls CELL.wav beside the cell's capture, checks both hashes and
+# writes CELL.wav.json (hash, start and stop times, source), which a0-register then
+# passes to the ingester. Start before the cell's frame, stop after it.
+a0_audio() {
+  local action=$1 cell=$2 a0 remote index started stopped local_sha remote_sha
+  a0=$(cd "$HERE/../.." && pwd)/.artifacts/original-checks/a0
+  remote=$EXCHANGE/a0/$cell.wav
+  [[ $cell =~ ^TAC-0[1-8]-C[0-9]{3}$ ]] || { echo "a0-audio: $cell is not a cell id" >&2; exit 2; }
+  case $action in
+    start)
+      started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+      mon "wavcapture $remote audio0 44100 16 2" >/dev/null
+      mon "info capture" | grep -q -- "$remote" || { echo "a0-audio: capture did not start" >&2; exit 1; }
+      printf '%s\n' "$started" >"$a0/$cell.wav.started"
+      echo "recording $cell from $started"
+      ;;
+    stop)
+      index=$(mon "info capture" | grep -- "$remote" | sed -n 's/^\[\([0-9]*\)\].*/\1/p' | head -1)
+      [[ -n $index ]] || { echo "a0-audio: no capture of $cell is running" >&2; exit 1; }
+      [[ -f $a0/$cell.wav.started ]] || { echo "a0-audio: no start time for $cell" >&2; exit 1; }
+      stopped=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+      mon "stopcapture $index" >/dev/null
+      scp -q "$MINI:$remote" "$a0/$cell.wav"
+      local_sha=$(shasum -a 256 "$a0/$cell.wav" | cut -d' ' -f1)
+      remote_sha=$(ssh "$MINI" "shasum -a 256 $remote" | cut -d' ' -f1)
+      [[ $local_sha == "$remote_sha" ]] || { echo "a0-audio: $cell.wav changed in transfer" >&2; exit 1; }
+      python3 -c 'import json,sys; json.dump({"sha256": sys.argv[1], "started_at_utc": sys.argv[2], "stopped_at_utc": sys.argv[3], "source": "QEMU wavcapture of audiodev audio0 (spice), 44100 Hz 16-bit stereo, on the capture VM host"}, open(sys.argv[4], "w"), indent=2)' \
+        "$local_sha" "$(cat "$a0/$cell.wav.started")" "$stopped" "$a0/$cell.wav.json"
+      rm "$a0/$cell.wav.started"
+      echo "$local_sha  $a0/$cell.wav"
+      ;;
+    *) echo "a0-audio start|stop CELL" >&2; exit 2 ;;
+  esac
+}
 
 # Game Options (F1), Saved Games: the six rows' centre y, each row's name
 # field and load button x, and the two dialogs' buttons (2026-10-11).
@@ -724,6 +859,8 @@ case $cmd in
   a0-run) a0_run "$1" ;;
   a0) a0_capture "$@" ;;
   a0-cell) a0_cell "$@" ;;
+  a0-register) a0_register "$@" ;;
+  a0-audio) a0_audio "$@" ;;
   recover) recover "${1:-}" ;;
   cap) vnc capture "$1" ;;
   point|click|rclick|dclick) pointer "$cmd" "$1" "$2"; cap_after "${3:-}" ;;
@@ -740,6 +877,7 @@ case $cmd in
   key) vnc key "$1"; cap_after "${2:-}" ;;
   vnc) vnc "$@" ;;
   wait) wait_change "$@" ;;
+  run-to-alert) run_to_alert "$1" "$2" "$3" ;;
   save-out) save_out "$1" "$2" ;;
   save-in) save_in "$1" "$2" ;;
   gexec)
@@ -756,5 +894,5 @@ case $cmd in
   take-command) take_command "${1:-}" ;;
   withdraw) withdraw "${1:-}" ;;
   run) run_file "$1" "${2:-}" ;;
-  *) sed -n '2,81p' "$0"; exit 2 ;;
+  *) sed -n '2,/^set -euo/p' "$0" | sed '$d'; exit 2 ;;
 esac

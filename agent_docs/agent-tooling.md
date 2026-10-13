@@ -278,12 +278,28 @@ Cargo never prunes `target/`. Each change to a crate's code, flags or
 features writes a new hashed copy of its outputs and test binaries, and the
 old copies stay. Mutants runs leave
 `cargo-mutants-*` scratch copies in `$TMPDIR` when interrupted.
-`scripts/check-build-cache.sh` reports `target/`, `.artifacts/` and those
-copies, and warns once `target/` passes `OPEN_REBELLION_TARGET_LIMIT_GB`
-(default 20). A local Claude Code SessionStart hook (`.claude/settings.json`,
-untracked) runs it. On a warning, run it with `--prune` once no build, test or
-mutants run is in flight: it runs `cargo clean` and removes the copies. Remove
-scratch worktrees and their target directories when a split or check ends.
+Each browser or parity run writes a new timestamped folder (about 400 MB)
+under `.artifacts/interface-parity/`.
+
+`scripts/check-build-cache.sh` keeps this from piling up. A local Claude Code
+SessionStart hook (`.claude/settings.json`, untracked) runs it with `--auto`,
+which prunes unless a cargo, rustc or cargo-mutants process is running:
+
+- `cargo clean` once `target/` passes `OPEN_REBELLION_TARGET_LIMIT_GB`
+  (default 20);
+- delete stale cargo-mutants copies, and scratch target directories (a
+  worktree's `CARGO_TARGET_DIR`) older than two days;
+- delete stale run folders: a timestamped run that no tracked file,
+  `progress.json` or A0 record names, older than 14 days, and not one of
+  the two newest of its kind;
+- move evidence untouched for 14 days to the Mac Mini,
+  `mac-mini-ts:open-rebellion-archive/.artifacts/<same path>`, deleting the
+  local copy only after rsync succeeds. A cited `.artifacts/…` path that is
+  missing here is in the archive. `interface-parity/a0` and `site` stay.
+
+Run it without arguments to report, or with `--prune` to prune now. Keep
+bulky outputs on the Mini rather than this Mac, and remove scratch worktrees
+when a split or check ends.
 
 ## Voice Resource Identification
 

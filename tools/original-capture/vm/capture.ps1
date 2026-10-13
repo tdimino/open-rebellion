@@ -53,6 +53,10 @@ param(
   [int]$MaxAttempts = 8,
   [int]$Burst = 0,
   [int]$IntervalMs = 250,
+  # 1: once a burst has its first frame, press and release the left button
+  # where the cursor is (park it first, vm-game.sh A0_PARK). Sent in the
+  # guest, it lands within milliseconds; A0_ON_START takes over 10 s.
+  [int]$ClickOnStart = 0,
   [string]$CellId = "",
   [string]$Requirement = "",
   [ValidateSet("new-game", "original-save", "editor-assisted-save", "live-journey")]
@@ -136,6 +140,7 @@ public static class Win32 {
   [DllImport("user32.dll")] public static extern int GetSystemMetrics(int index);
   [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT pt);
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
+  [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extra);
 }
 "@
 
@@ -162,7 +167,7 @@ if ($Launch -ne "") {
 }
 if (-not $proc) { throw "No window matching '$WindowTitleMatch' (and no REBEXE process with a window)." }
 if ($CellId -ne "") {
-  if ($CellId -notmatch '^TAC-0[1-7]-C\d{3}$') { throw "Invalid tactical cell ID '$CellId'." }
+  if ($CellId -notmatch '^TAC-0[1-8]-C\d{3}$') { throw "Invalid tactical cell ID '$CellId'." }
   if ($Requirement -eq "") { throw "-Requirement is required with -CellId." }
   if ($StateSetupIdentifier -eq "") { throw "-StateSetupIdentifier is required with -CellId." }
   if ($InputTrace.Count -eq 0) { throw "-InputTrace is required with -CellId." }
@@ -316,6 +321,16 @@ if ($Burst -ne 0) {
     while ($clock.ElapsedMilliseconds -lt $i * $IntervalMs) { Start-Sleep -Milliseconds 1 }
     $t = $clock.ElapsedMilliseconds
     [void]$shots.Add(@($t, (Capture-Bitmap)))
+    # Tell the host the burst is running, so an input it sends now (an
+    # unpause, say) falls inside the frames (vm-game.sh A0_ON_START).
+    if ($i -eq 0) { Set-Content -Path (Join-Path $Out "$Name.started") -Value $t -Encoding ASCII }
+    # MOUSEEVENTF_LEFTDOWN, then LEFTUP: no motion, so the game's own cursor
+    # stays where the host parked it.
+    if ($i -eq 0 -and $ClickOnStart -eq 1) {
+      [Win32]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
+      Start-Sleep -Milliseconds 50
+      [Win32]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
+    }
   }
   Assert-Visible
   $dir = Join-Path $Out "$Name.burst"

@@ -220,6 +220,44 @@ tools/original-capture/vm-game.sh a0-cell TAC-01-C003 original-save \
   `NAME.screen.png`, records both hashes and the ini's hash, and refuses a
   cell frame unless the screen is 800×600 and the ini has
   `DisplayFilter=point`. Two captures of one paused frame hash-equal.
+- The scaling phase is chosen when the game launches, apparently at
+  random. Some launches repeat columns 2 and 7 instead of 3 and 8 (and 20
+  columns and 21 rows in all sit one pixel off), so A0 refuses every frame:
+  "column 3 differs from column 2 … not the calibrated point scaling". Of
+  four launches in one session, two came up shifted on the main menu. A
+  launch keeps its phase through loads and play. `a0-game` therefore probes
+  the main menu after each launch (`a0 phase-probe DIR FullClient=1`; the
+  probe PNG keeps the full screen) and relaunches until the repeated
+  columns are 3, 8, 13, up to `A0_PHASE_TRIES` launches (default 5; 0 skips
+  the check). Never rebuild a shifted frame. Every dropped line would still
+  verify, but the 640×480 bytes would differ from the calibrated phase's
+  for the same game frame.
+- A burst cannot be timed against an input sent separately: the request
+  takes several seconds to reach the watcher, so an unpause sent "4 s after
+  starting the burst" landed before its first frame, and the superlaser's
+  hit was missed twice. `capture.ps1` writes `out\NAME.started` once it has
+  taken frame 0, and `A0_ON_START="click 717 397"` makes `a0` (and
+  `a0-cell`) wait for that file and only then send the command. That round
+  trip still takes over 10 s, which put the unpause after a 12 s burst. For
+  a click, use `ClickOnStart=1` instead. The guest then presses and releases
+  the left button right after frame 0, with no cursor motion, so first park
+  the cursor on the control with `A0_PARK="717 397"`. On a running battle,
+  a 2-frame, 500 ms test showed it paused by frame 1. A burst is 2–60
+  frames and at most 30 s.
+- `run-to-alert TITLE.png TIMEOUT FILE` lets the game run until one
+  particular Battle Alert opens and auto-resolves every other one on the
+  way. It recognises an alert by its three-button bar, compared with
+  `chrome.png` beside TITLE.png, then compares the title band with
+  TITLE.png. Both files are full 800×600 frames of an alert, kept in
+  `.artifacts/vm/alerts/`. On stored frames, the bar differs by at most 2.1
+  between alerts and at least 66 on other screens. The title differs by at
+  most 0.5 for the same battle and at least 14.9 for another. A VNC refresh
+  that times out reconnects instead of ending the wait (`vm-wait.py`).
+- QEMU snapshots (`savevm`) are not possible on this VM. The Windows disk
+  is on QEMU's NVMe controller, which cannot save its state ("State blocked
+  by non-migratable device '0000:00:05.0/nvme'"). A state that cannot be
+  saved in the game, such as a Battle Alert, has to be replayed from the
+  nearest save.
 - Do not use `-w`. Windowed, the game renders differently (32-bit colour,
   anti-aliased text, other 3D shading; full screen is an 8-bit palette), so
   its frames are not the original's. `capture.ps1` refuses a windowed cell
@@ -249,9 +287,11 @@ tools/original-capture/vm-game.sh a0-cell TAC-01-C003 original-save \
   identical frames (`FullClient=1` probes keep the first).
 - One capture per cell. A cell about a transition (entry from the Battle
   Alert, a click's effect) pairs its frame with the frame before it:
-  capture that first with `a0 NAME`, then `A0_BEFORE=NAME a0-cell ...`; the
-  ingester stores it as `before.png` and checks it shares the setup and came
-  earlier.
+  capture that first with `a0 NAME .artifacts/original-checks/a0
+  StateSetupKind=original-save StateSetupIdentifier=SETUP`, then
+  `A0_BEFORE=NAME a0-cell ...`; the ingester stores it as `before.png` and
+  checks it shares the setup and came earlier, so a plain `a0 NAME`, which
+  records no setup, is refused.
 - A cell about motion (a running or observed battle) never holds two equal
   frames, so the stable capture refuses it ("Frame never stabilised"). Take
   a burst instead: `A0_BURST="12 250" a0-cell ...` (or `a0 NAME Burst=12
@@ -263,6 +303,14 @@ tools/original-capture/vm-game.sh a0-cell TAC-01-C003 original-save \
   `frame-NN.png` and their offsets as `burst.json`. Burst takes 2–60
   frames at 100 ms or more, full screen only. Measured 2026-10-12: 12 frames
   over 2752 ms, every offset within 15 ms of its slot.
+- An event the original holds only briefly lands at a frame you learn from
+  the burst: a kill is held about 3 s before the results screen, and
+  `a0-cell` takes about 27 s to start. Name that frame at registration:
+  `a0-register CELL N` ingests the pulled capture with burst frame N as the
+  cell's `original.png` (the guest hashed every frame) and records
+  `cell_frame` in `burst.json`. `a0-cell` itself calls `a0-register` with no
+  frame. To move a registered cell, take it out of the manifest and its
+  folder to `.artifacts/original-checks/withdrawn/`, then register again.
 - `a0-cell` refuses a cell already in the manifest before capturing, since
   the capture would overwrite that cell's working files. When the guest
   refuses a frame, read `C:\a0\out\NAME.err` with `gexec` rather than
@@ -315,7 +363,23 @@ Driving the game over VNC:
   Command, left to right.
 - Start a tactical run from a fresh `up`. Take Command crashed the game
   (`rebexe.exe` access violation) after about ten saves had been loaded in
-  one run, and worked from a fresh launch (2026-10-11).
+  one run, and worked from a fresh launch (2026-10-11). Loading a save from
+  the Game Options screen opened inside a battle closed the game outright;
+  load from the galaxy map or the main menu (2026-10-12). Every load resets
+  the five Tactical Display Options to On; they are in neither the save (two
+  saves either side of the Show Planet toggle are byte-identical) nor the
+  registry's `DisplayOpts` (set to 0, the toggles still read On), and the
+  battle greys them out. To change one for a battle, toggle it on the galaxy
+  map after the load and play on into the battle; a save that opens its
+  Battle Alert during the load (the day-30 Yaga saves) leaves no window.
+- Ctrl and Shift chords with a click: Ctrl must stay held in the VNC
+  connection that clicks, so `point X Y`, then `vnc keydown ctrl click 1
+  keyup ctrl` (the same QMP-walk-then-VNC-press pattern as `dclick`).
+  Separate `vnc keydown` and `click` calls drop the modifier. A
+  Ctrl-right-click target (manual p. 145) also needs Ctrl held across a
+  frame: `vnc keydown ctrl pause 0.5 mousedown 3 pause 0.3 mouseup 3 pause
+  0.5 keyup ctrl`. Without the pauses the click replaced the target three
+  times out of three (2026-10-12, TAC-04-C003).
 - `vm-game.sh run FILE [OUTDIR]` replays a command file: one `vm-game.sh`
   command per line, `#` comments, `$OUT` for the output folder (FILE's own
   by default). It stops at the first failure. Every call, from a file or
@@ -333,6 +397,23 @@ Driving the game over VNC:
   already open when the wait starts, which `center` misses. A day digit
   flip can score as little as 1.86 against the usual 2.0 threshold, so the
   day box counts any change over 0.5 (the box is otherwise exactly 0).
+  Each VNC call is bounded at 20 s: vncdotool's default is an hour, and one
+  refresh stalled 43 minutes past a 45 s wait while the battle it was
+  timing ran to its end (2026-10-12).
+- Record the guest's sound with `vm-game.sh a0-audio start CELL` and
+  `a0-audio stop CELL`: QEMU's `wavcapture` on UTM's audiodev
+  (`spice,id=audio0`), pulled beside the cell's capture as `CELL.wav` with
+  both SHA-256 values compared and a `CELL.wav.json` sidecar (hash, start
+  and stop times, source). `a0-register CELL` then ingests it as the cell's
+  `original.wav` (`audio_capture`) with `audio.json`; the ingester refuses a
+  file that is not 16-bit PCM, under 10 s, silent, longer than its start to
+  stop, or not recording when the frame was taken. QEMU writes samples only
+  while the guest plays, so a WAV can be much shorter than its wall-clock
+  span (117 s over 204 s for TAC-01-C012) and `frame_wall_offset_s` is not a
+  position in the file. `a0-cell` registers before the sound is pulled, so take
+  the frame with `a0 CELL ... CellId=CELL Requirement=...` instead. A
+  running battle never gives a still: pause inside the recording for the
+  frame, then resume. Never commit a WAV.
 - Click through the absolute tablet: `mouse_set 1` on the QEMU monitor. The
   game's cursor follows the tablet's motion at about 1.25x and clamps at the
   screen edge, so an absolute jump lands off target by an amount that depends

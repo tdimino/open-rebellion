@@ -662,6 +662,30 @@ would tune around known simulation feedback defects.
   object-window, report, and tactical surfaces with the original bitmap-driven
   compositions for both factions. No invented visible control may satisfy a
   parity cell.
+- [ ] Bring the ground assault to parity (`UIP-F-010`, `TAC-08`,
+  `RE-GND-01`).
+  - Remove the invented live ground-combat screen
+    (`rebellion-render/src/ground_combat.rs`). The original has no ground
+    battle.
+  - Port the original report-only flow (manual pp. 119-121, figs. 2.58,
+    3.66 and 3.67).
+    - The fleet's Planetary Assault order: enabled when troops are aboard,
+      greyed out against two planetary shields.
+    - Immediate resolution.
+    - The Assault Summary window: Summary, Imperial Forces, Alliance Forces,
+      Go to System.
+    - Its damage summary tabs: troopers, capital ships, fighters, facilities
+      and personnel.
+    - The same window delivered as a message when the opponent assaults the
+      player.
+  - Recover the window's resources and the resolution rules from the
+    executable first.
+  - Cover both factions, win and loss, casualties, occupation and the return
+    to the map.
+  - Close the eight `TAC-08` cells against A0 captures of the original.
+    All eight references are captured (an A0-only family outside the
+    106-cell tactical denominator; saves `empire-day53-yaga-orbit` and
+    `empire-day128-assault-fails-selonia`).
 - [x] Complete P44 / `RE-ADV-01` for the advisor idle-frame tranche: recover
   type-302 decoding, stage all 3,988 ALSPRITE/EMSPRITE frames, render both
   faction pairs in native/WASM, and fail closed with browser-visible diagnostics.
