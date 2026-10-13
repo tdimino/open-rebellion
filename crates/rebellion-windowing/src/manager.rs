@@ -2210,6 +2210,130 @@ mod tests {
         );
     }
 
+    fn composed_private_fixture() -> (WindowManager, WindowId, WindowId) {
+        let mut manager = WindowManager::new();
+        let root = match manager
+            .apply(WindowCommand::Open(modeless_spec(WindowKind::System, 1)))
+            .unwrap()
+            .transition
+        {
+            WindowTransition::Opened { id } => id,
+            other => panic!("expected root: {other:?}"),
+        };
+        let mut spec = modeless_spec(WindowKind::Fleet, 2);
+        spec.owner = WindowOwner::Window(root);
+        let child = match manager.apply(WindowCommand::Open(spec)).unwrap().transition {
+            WindowTransition::Opened { id } => id,
+            other => panic!("expected child: {other:?}"),
+        };
+        assert_eq!(manager.validate(), Ok(()));
+        (manager, root, child)
+    }
+
+    #[test]
+    fn validate_rejects_corrupted_composed_registry_and_scene_authorities() {
+        // Port: each named invariant must diagnose corruption independently of public preflight.
+        for case in 0..10 {
+            let (mut manager, root, child) = composed_private_fixture();
+            let unknown = WindowId(NonZeroU64::MAX);
+            let (kind, windows) = match case {
+                0 => {
+                    manager.registry.remove(&root);
+                    (InvariantKind::RegistryKeyMismatch, vec![root])
+                }
+                1 => {
+                    manager.key_index.remove(&manager.registry[&root].spec.key);
+                    (InvariantKind::RegistryKeyMismatch, vec![root])
+                }
+                2 => {
+                    manager.key_index.insert(
+                        WindowKey::contextual(WindowKind::Status, SubjectId::new(2, 99)),
+                        child,
+                    );
+                    (InvariantKind::RegistryKeyMismatch, vec![child])
+                }
+                3 => {
+                    manager.registry.get_mut(&child).unwrap().spec.owner =
+                        WindowOwner::Window(unknown);
+                    (InvariantKind::OwnerMissing, vec![child, unknown])
+                }
+                4 => {
+                    manager.visible_order.swap(0, 1);
+                    (InvariantKind::ChildBelowOwner, vec![child, root])
+                }
+                5 => {
+                    manager.active_windows.remove(&root);
+                    manager.focused = Some(crate::FocusTarget {
+                        window: root,
+                        control: None,
+                    });
+                    (InvariantKind::IneligibleFocus, vec![root])
+                }
+                6 => {
+                    manager.active_windows.remove(&root);
+                    manager.capture_owner = Some(root);
+                    (InvariantKind::IneligibleCapture, vec![root])
+                }
+                7 => {
+                    let record = manager.registry.get_mut(&root).unwrap();
+                    manager.key_index.remove(&record.spec.key);
+                    record.spec.key = WindowKey::singleton(WindowKind::System);
+                    manager.key_index.insert(record.spec.key, root);
+                    (InvariantKind::Cardinality, vec![root])
+                }
+                8 => {
+                    manager
+                        .registry
+                        .get_mut(&root)
+                        .unwrap()
+                        .spec
+                        .policy
+                        .cardinality = Cardinality::Singleton;
+                    (InvariantKind::Cardinality, vec![root])
+                }
+                _ => {
+                    manager.visible_order.push(unknown);
+                    (InvariantKind::MissingVisibleOrder, vec![unknown])
+                }
+            };
+            assert_eq!(
+                manager.validate(),
+                Err(InvariantViolation { kind, windows }),
+                "corruption {case}"
+            );
+        }
+    }
+
+    #[test]
+    fn private_rejections_preserve_snapshot_lineage_and_complete_lifecycle_state() {
+        // Port: lineage is an authority not exposed by the public Debug state fingerprint.
+        let (mut manager, root, child) = composed_private_fixture();
+        manager.apply(WindowCommand::CapturePointer(child)).unwrap();
+        let origin = Arc::clone(&manager.snapshot_origin);
+        let before = format!("{manager:?}");
+        let next_id = manager.next_id;
+        let mut spec = modeless_spec(WindowKind::System, 99);
+        spec.owner = WindowOwner::Window(child);
+        assert_eq!(
+            manager.apply(WindowCommand::Replace {
+                old: root,
+                new: spec
+            }),
+            Err(WindowError::InvalidReplacement(root))
+        );
+        assert_eq!(format!("{manager:?}"), before);
+        assert_eq!(manager.next_id, next_id);
+        assert!(Arc::ptr_eq(&origin, &manager.snapshot_origin));
+        assert_eq!(
+            manager.set_active_windows(&BTreeSet::from([child, WindowId(NonZeroU64::MAX)])),
+            Err(WindowError::UnknownWindow(WindowId(NonZeroU64::MAX)))
+        );
+        assert_eq!(format!("{manager:?}"), before);
+        assert_eq!(manager.next_id, next_id);
+        assert!(Arc::ptr_eq(&origin, &manager.snapshot_origin));
+        assert_eq!(manager.validate(), Ok(()));
+    }
+
     #[test]
     fn validate_reports_private_ineligible_capture_corruption() {
         let mut manager = WindowManager::new();
