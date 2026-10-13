@@ -1,8 +1,9 @@
 use rebellion_windowing::{
-    Cardinality, ControlId, ExistingOpenPolicy, FocusOnOpen, FocusRestoration, FocusTarget,
-    InputPolicy, OpenPlacement, PresentationPolicy, StackBand, SubjectId, WindowCommand,
-    WindowError, WindowId, WindowKey, WindowKind, WindowManager, WindowOwner, WindowPolicy,
-    WindowSpec, WindowTransition,
+    CaptureCancelReason, Cardinality, CloseReason, ControlId, ExistingOpenPolicy, FocusOnOpen,
+    FocusRestoration, FocusTarget, InputPolicy, OpenPlacement, PresentationPolicy, StackBand,
+    SubjectId, TransitionSubject, UnchangedReason, WindowCommand, WindowError, WindowEvent,
+    WindowId, WindowKey, WindowKind, WindowManager, WindowOwner, WindowPolicy, WindowSpec,
+    WindowTransition,
 };
 
 fn modeless_spec(kind: WindowKind, subject: u64, owner: WindowOwner) -> WindowSpec {
@@ -381,6 +382,19 @@ fn duplicate_raise_restore_repairs_focus_without_reallocating() {
             effect: rebellion_windowing::ExistingEffect::Raised,
         }
     );
+    assert_eq!(
+        commit.events,
+        vec![WindowEvent::FocusChanged {
+            previous: Some(FocusTarget {
+                window: other,
+                control: None,
+            }),
+            current: Some(FocusTarget {
+                window: detail,
+                control: None,
+            }),
+        }]
+    );
     assert_eq!(manager.visible_order(), &[other, detail]);
     assert_eq!(
         manager.focused(),
@@ -719,5 +733,547 @@ fn focus_root_is_rejected_while_an_active_modal_blocks_it() {
     );
     assert_eq!(manager.visible_order(), order_before);
     assert_eq!(manager.focused(), Some(modal_focus));
+    assert_eq!(manager.validate(), Ok(()));
+}
+
+#[test]
+fn capture_is_exclusive_and_release_by_another_window_fails() {
+    // Source: strategic-windowing-toolkit.md, `FUN_00606ee0` requires no
+    // foreign capture before a temporary title drag can claim the pointer.
+    // Break caught: a second window stealing or releasing the active gesture.
+    let mut manager = WindowManager::new();
+    let owner = open(
+        &mut manager,
+        modeless_spec(WindowKind::System, 1, WindowOwner::StrategicRoot),
+    );
+    let other = open(
+        &mut manager,
+        modeless_spec(WindowKind::Fleet, 2, WindowOwner::StrategicRoot),
+    );
+
+    let captured = manager
+        .apply(WindowCommand::CapturePointer(owner))
+        .expect("eligible owner captures");
+    assert_eq!(
+        captured.transition,
+        WindowTransition::CaptureChanged {
+            previous: None,
+            current: Some(owner),
+        }
+    );
+    assert!(captured.events.is_empty());
+    assert_eq!(manager.capture_owner(), Some(owner));
+
+    assert_eq!(
+        manager.apply(WindowCommand::CapturePointer(other)),
+        Err(WindowError::CaptureOwnedBy(owner))
+    );
+    assert_eq!(
+        manager.apply(WindowCommand::ReleasePointer(other)),
+        Err(WindowError::CaptureOwnedBy(owner))
+    );
+    assert_eq!(manager.capture_owner(), Some(owner));
+
+    let released = manager
+        .apply(WindowCommand::ReleasePointer(owner))
+        .expect("capture owner releases on physical completion");
+    assert_eq!(
+        released.transition,
+        WindowTransition::CaptureChanged {
+            previous: Some(owner),
+            current: None,
+        }
+    );
+    assert!(released.events.is_empty());
+    assert_eq!(manager.capture_owner(), None);
+    assert_eq!(manager.validate(), Ok(()));
+}
+
+#[test]
+fn explicit_capture_cancellation_returns_reasoned_receipts() {
+    // Source: approved port boundary in the implementation plan; hold and
+    // application-focus loss share the lifecycle cancellation primitive.
+    // Break caught: clearing capture without telling the feature why its
+    // in-progress gesture must discard its payload.
+    let mut manager = WindowManager::new();
+    let owner = open(
+        &mut manager,
+        modeless_spec(WindowKind::Fleet, 1, WindowOwner::StrategicRoot),
+    );
+
+    for reason in [
+        CaptureCancelReason::HoldStarted,
+        CaptureCancelReason::FocusLost,
+    ] {
+        manager
+            .apply(WindowCommand::CapturePointer(owner))
+            .expect("eligible gesture acquires capture");
+        let cancelled = manager
+            .apply(WindowCommand::CancelCapture(reason))
+            .expect("coordinator cancellation succeeds");
+
+        assert_eq!(
+            cancelled.transition,
+            WindowTransition::CaptureChanged {
+                previous: Some(owner),
+                current: None,
+            }
+        );
+        assert_eq!(
+            cancelled.events,
+            vec![WindowEvent::CaptureCancelled {
+                window: owner,
+                reason,
+            }]
+        );
+        assert_eq!(manager.capture_owner(), None);
+    }
+    assert_eq!(manager.validate(), Ok(()));
+}
+
+#[test]
+fn capture_close_cancels_before_child_content_teardown() {
+    // Source: strategic-windowing-toolkit.md, "Close sequence"; native child
+    // destruction unregisters capture before parent teardown and restoration.
+    // Break caught: dropping feature content before its drag payload receives
+    // cancellation, or emitting the owner before its child.
+    let mut manager = WindowManager::new();
+    let owner_spec = modeless_spec(WindowKind::Fleet, 1, WindowOwner::StrategicRoot);
+    let owner = open(&mut manager, owner_spec);
+    let child_spec = menu_spec(owner);
+    let child = open(&mut manager, child_spec);
+    manager
+        .apply(WindowCommand::CapturePointer(child))
+        .expect("eligible child owns the gesture");
+
+    let commit = manager
+        .apply(WindowCommand::Close(owner))
+        .expect("owner subtree closes");
+
+    assert_eq!(
+        commit.events,
+        vec![
+            WindowEvent::CaptureCancelled {
+                window: child,
+                reason: CaptureCancelReason::OwnerClosed,
+            },
+            WindowEvent::Closed {
+                window: child,
+                key: child_spec.key,
+                reason: CloseReason::OwnerClosed,
+            },
+            WindowEvent::Closed {
+                window: owner,
+                key: owner_spec.key,
+                reason: CloseReason::Requested,
+            },
+            WindowEvent::FocusChanged {
+                previous: Some(FocusTarget {
+                    window: child,
+                    control: None,
+                }),
+                current: None,
+            },
+        ]
+    );
+    assert_eq!(manager.capture_owner(), None);
+    assert_eq!(manager.focused(), None);
+    assert_eq!(manager.validate(), Ok(()));
+}
+
+#[test]
+fn strategic_modal_open_cancels_incompatible_capture_before_focus_changes() {
+    // Source: strategic-windowing-toolkit.md, `FUN_00601340` drains temporary
+    // capture before the strategic dialog-opening path completes.
+    // Break caught: leaving a blocked underlay gesture live beneath a modal,
+    // or asking the renderer to focus the modal before clearing that payload.
+    let mut manager = WindowManager::new();
+    let background = open(
+        &mut manager,
+        modeless_spec(WindowKind::Fleet, 1, WindowOwner::StrategicRoot),
+    );
+    manager
+        .apply(WindowCommand::CapturePointer(background))
+        .expect("background gesture captures before modal open");
+
+    let commit = manager
+        .apply(WindowCommand::Open(modal_spec(WindowKind::Encyclopedia)))
+        .expect("modal opens atomically");
+    let modal = opened_id(commit.transition.clone());
+    let modal_focus = FocusTarget {
+        window: modal,
+        control: None,
+    };
+
+    assert_eq!(
+        commit.events,
+        vec![
+            WindowEvent::CaptureCancelled {
+                window: background,
+                reason: CaptureCancelReason::ModalOpened,
+            },
+            WindowEvent::FocusChanged {
+                previous: Some(FocusTarget {
+                    window: background,
+                    control: None,
+                }),
+                current: Some(modal_focus),
+            },
+        ]
+    );
+    assert_eq!(manager.capture_owner(), None);
+    assert_eq!(manager.focused(), Some(modal_focus));
+    assert_eq!(manager.validate(), Ok(()));
+}
+
+#[test]
+fn strategic_modal_reopen_cancels_newly_blocked_capture_before_focus_changes() {
+    let mut manager = WindowManager::new();
+    let mut lower_spec = modal_spec(WindowKind::SystemFinder);
+    lower_spec.policy.existing = ExistingOpenPolicy::RaiseRestore;
+    let lower = open(&mut manager, lower_spec);
+    let mut upper_spec = modal_spec(WindowKind::FleetFinder);
+    upper_spec.policy.existing = ExistingOpenPolicy::RaiseRestore;
+    let upper = open(&mut manager, upper_spec);
+    manager
+        .apply(WindowCommand::CapturePointer(upper))
+        .expect("active modal captures");
+
+    let reopened = manager
+        .apply(WindowCommand::Open(lower_spec))
+        .expect("compatible lower modal reopens");
+
+    assert_eq!(
+        reopened.events,
+        vec![
+            WindowEvent::CaptureCancelled {
+                window: upper,
+                reason: CaptureCancelReason::ModalOpened,
+            },
+            WindowEvent::FocusChanged {
+                previous: Some(FocusTarget {
+                    window: upper,
+                    control: None,
+                }),
+                current: Some(FocusTarget {
+                    window: lower,
+                    control: None,
+                }),
+            },
+        ]
+    );
+    assert_eq!(manager.capture_owner(), None);
+    assert_eq!(manager.focused().map(|target| target.window), Some(lower));
+    assert_eq!(manager.validate(), Ok(()));
+}
+
+#[test]
+fn capture_reset_preserves_monotonic_allocator() {
+    // Source: approved port boundary in the implementation plan; a discarded
+    // campaign clears every gesture/content reference without recycling IDs.
+    // Break caught: orphaning a drag payload during reset or letting a stale
+    // callback address a fresh campaign window.
+    let mut manager = WindowManager::new();
+    let owner_spec = modeless_spec(WindowKind::Fleet, 1, WindowOwner::StrategicRoot);
+    let owner = open(&mut manager, owner_spec);
+    let child_spec = menu_spec(owner);
+    let child = open(&mut manager, child_spec);
+    manager
+        .apply(WindowCommand::CapturePointer(child))
+        .expect("child gesture captures before reset");
+
+    let events = manager.reset_session();
+
+    assert_eq!(
+        events,
+        vec![
+            WindowEvent::CaptureCancelled {
+                window: child,
+                reason: CaptureCancelReason::SessionReset,
+            },
+            WindowEvent::Closed {
+                window: child,
+                key: child_spec.key,
+                reason: CloseReason::SessionReset,
+            },
+            WindowEvent::Closed {
+                window: owner,
+                key: owner_spec.key,
+                reason: CloseReason::SessionReset,
+            },
+            WindowEvent::FocusChanged {
+                previous: Some(FocusTarget {
+                    window: child,
+                    control: None,
+                }),
+                current: None,
+            },
+        ]
+    );
+    assert_eq!(manager.visible_order(), &[]);
+    assert_eq!(manager.focused(), None);
+    assert_eq!(manager.capture_owner(), None);
+    assert_eq!(manager.validate(), Ok(()));
+
+    let fresh = open(
+        &mut manager,
+        modeless_spec(WindowKind::Fleet, 1, WindowOwner::StrategicRoot),
+    );
+    assert!(fresh.get() > child.get());
+}
+
+#[test]
+fn closing_an_owner_removes_descendants_and_clears_focus_and_capture_before_restoration() {
+    // Source: strategic-windowing-toolkit.md, "Close sequence" port contract.
+    // Break caught: retaining a descendant gesture/focus target or restoring
+    // focus before child-first feature content has been removed.
+    let mut manager = WindowManager::new();
+    let survivor = open(
+        &mut manager,
+        modeless_spec(WindowKind::System, 1, WindowOwner::StrategicRoot),
+    );
+    let owner_spec = modeless_spec(WindowKind::Fleet, 2, WindowOwner::StrategicRoot);
+    let owner = open(&mut manager, owner_spec);
+    let child_spec = menu_spec(owner);
+    let child = open(&mut manager, child_spec);
+    manager
+        .apply(WindowCommand::CapturePointer(child))
+        .expect("child captures before its owner closes");
+
+    let commit = manager
+        .apply(WindowCommand::Close(owner))
+        .expect("owner subtree closes");
+    let survivor_focus = FocusTarget {
+        window: survivor,
+        control: None,
+    };
+
+    assert_eq!(
+        commit.transition,
+        WindowTransition::Closed {
+            root: owner,
+            closed: vec![child, owner],
+            restored_focus: Some(survivor_focus),
+        }
+    );
+    assert_eq!(
+        commit.events,
+        vec![
+            WindowEvent::CaptureCancelled {
+                window: child,
+                reason: CaptureCancelReason::OwnerClosed,
+            },
+            WindowEvent::Closed {
+                window: child,
+                key: child_spec.key,
+                reason: CloseReason::OwnerClosed,
+            },
+            WindowEvent::Closed {
+                window: owner,
+                key: owner_spec.key,
+                reason: CloseReason::Requested,
+            },
+            WindowEvent::FocusChanged {
+                previous: Some(FocusTarget {
+                    window: child,
+                    control: None,
+                }),
+                current: Some(survivor_focus),
+            },
+        ]
+    );
+    assert_eq!(manager.visible_order(), &[survivor]);
+    assert_eq!(manager.focused(), Some(survivor_focus));
+    assert_eq!(manager.capture_owner(), None);
+    assert_eq!(manager.validate(), Ok(()));
+}
+
+#[test]
+fn reset_clears_records_but_never_reuses_old_ids() {
+    // Source: implementation plan, session-reset identity boundary.
+    // Break caught: retaining a discarded semantic key or recycling an ID
+    // that a deferred callback from the old campaign can still name.
+    let mut manager = WindowManager::new();
+    let first_spec = modeless_spec(WindowKind::System, 1, WindowOwner::StrategicRoot);
+    let first = open(&mut manager, first_spec);
+    let second_spec = modeless_spec(WindowKind::Fleet, 2, WindowOwner::StrategicRoot);
+    let second = open(&mut manager, second_spec);
+
+    let events = manager.reset_session();
+
+    assert_eq!(
+        events,
+        vec![
+            WindowEvent::Closed {
+                window: second,
+                key: second_spec.key,
+                reason: CloseReason::SessionReset,
+            },
+            WindowEvent::Closed {
+                window: first,
+                key: first_spec.key,
+                reason: CloseReason::SessionReset,
+            },
+            WindowEvent::FocusChanged {
+                previous: Some(FocusTarget {
+                    window: second,
+                    control: None,
+                }),
+                current: None,
+            },
+        ]
+    );
+    assert_eq!(manager.id_for(first_spec.key), None);
+    assert_eq!(manager.id_for(second_spec.key), None);
+    assert_eq!(
+        manager.apply(WindowCommand::Close(first)),
+        Err(WindowError::UnknownWindow(first))
+    );
+
+    let fresh = open(&mut manager, first_spec);
+    assert!(fresh.get() > second.get());
+    assert_eq!(manager.validate(), Ok(()));
+}
+
+#[test]
+fn capture_cancellation_is_exactly_once_when_nothing_is_captured() {
+    // Source: implementation plan, cancellation clears payload and suppresses
+    // orphan release; only the transition that owned a gesture emits a receipt.
+    // Break caught: duplicate payload teardown after a later release/cancel.
+    let mut manager = WindowManager::new();
+    let owner = open(
+        &mut manager,
+        modeless_spec(WindowKind::Fleet, 1, WindowOwner::StrategicRoot),
+    );
+
+    let release = manager
+        .apply(WindowCommand::ReleasePointer(owner))
+        .expect("release without capture is an explicit no-op");
+    assert_eq!(
+        release.transition,
+        WindowTransition::Unchanged {
+            subject: TransitionSubject::Window(owner),
+            reason: UnchangedReason::NotCaptured,
+        }
+    );
+    assert!(release.events.is_empty());
+
+    let cancel = manager
+        .apply(WindowCommand::CancelCapture(CaptureCancelReason::FocusLost))
+        .expect("repeated coordinator cancellation is an explicit no-op");
+    assert_eq!(
+        cancel.transition,
+        WindowTransition::Unchanged {
+            subject: TransitionSubject::StrategicRoot,
+            reason: UnchangedReason::NotCaptured,
+        }
+    );
+    assert!(cancel.events.is_empty());
+    assert_eq!(manager.capture_owner(), None);
+    assert_eq!(manager.validate(), Ok(()));
+}
+
+#[test]
+fn focus_commands_return_ordered_focus_receipts() {
+    let mut manager = WindowManager::new();
+    let first = open(
+        &mut manager,
+        modeless_spec(WindowKind::System, 1, WindowOwner::StrategicRoot),
+    );
+    let second = open(
+        &mut manager,
+        modeless_spec(WindowKind::Fleet, 2, WindowOwner::StrategicRoot),
+    );
+    let first_control = FocusTarget {
+        window: first,
+        control: Some(ControlId(7)),
+    };
+
+    let focused = manager
+        .apply(WindowCommand::Focus(first_control))
+        .expect("eligible control receives focus");
+    assert_eq!(
+        focused.events,
+        vec![WindowEvent::FocusChanged {
+            previous: Some(FocusTarget {
+                window: second,
+                control: None,
+            }),
+            current: Some(first_control),
+        }]
+    );
+
+    let activated = manager
+        .apply(WindowCommand::Activate(second))
+        .expect("eligible window activates");
+    assert_eq!(
+        activated.events,
+        vec![WindowEvent::FocusChanged {
+            previous: Some(first_control),
+            current: Some(FocusTarget {
+                window: second,
+                control: None,
+            }),
+        }]
+    );
+
+    let rooted = manager
+        .apply(WindowCommand::FocusRoot)
+        .expect("strategic root receives focus");
+    assert_eq!(
+        rooted.events,
+        vec![WindowEvent::FocusChanged {
+            previous: Some(FocusTarget {
+                window: second,
+                control: None,
+            }),
+            current: None,
+        }]
+    );
+    assert_eq!(manager.validate(), Ok(()));
+}
+
+#[test]
+fn capture_rejects_ineligible_targets_and_failed_modal_open_is_atomic() {
+    let mut manager = WindowManager::new();
+    let background = open(
+        &mut manager,
+        modeless_spec(WindowKind::System, 1, WindowOwner::StrategicRoot),
+    );
+    let stale = open(
+        &mut manager,
+        modeless_spec(WindowKind::Fleet, 2, WindowOwner::StrategicRoot),
+    );
+    manager
+        .apply(WindowCommand::Close(stale))
+        .expect("fixture identity becomes stale");
+    manager
+        .apply(WindowCommand::CapturePointer(background))
+        .expect("eligible background window captures");
+    let order_before = manager.visible_order().to_vec();
+    let focus_before = manager.focused();
+    let mut invalid_modal = modal_spec(WindowKind::SystemFinder);
+    invalid_modal.policy.restoration = FocusRestoration::SavedMenuTarget;
+
+    assert_eq!(
+        manager.apply(WindowCommand::Open(invalid_modal)),
+        Err(WindowError::KindPolicyMismatch(WindowKind::SystemFinder))
+    );
+    assert_eq!(manager.capture_owner(), Some(background));
+    assert_eq!(manager.visible_order(), order_before);
+    assert_eq!(manager.focused(), focus_before);
+
+    let modal = open(&mut manager, modal_spec(WindowKind::SystemFinder));
+    assert_eq!(manager.capture_owner(), None);
+    assert_eq!(
+        manager.apply(WindowCommand::CapturePointer(background)),
+        Err(WindowError::IneligibleCapture(background))
+    );
+    assert_eq!(
+        manager.apply(WindowCommand::CapturePointer(stale)),
+        Err(WindowError::UnknownWindow(stale))
+    );
+    assert_eq!(manager.focused().map(|target| target.window), Some(modal));
+    assert_eq!(manager.capture_owner(), None);
     assert_eq!(manager.validate(), Ok(()));
 }

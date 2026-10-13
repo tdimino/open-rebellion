@@ -19,6 +19,12 @@ pub enum WindowCommand {
     Focus(crate::FocusTarget),
     /// Move keyboard focus to the persistent strategic root.
     FocusRoot,
+    /// Give one eligible visible window temporary pointer ownership.
+    CapturePointer(WindowId),
+    /// Release temporary pointer ownership after physical completion.
+    ReleasePointer(WindowId),
+    /// Interrupt the active gesture for a typed coordinator/lifecycle reason.
+    CancelCapture(CaptureCancelReason),
     /// Close a window and every actual lifecycle descendant.
     Close(WindowId),
 }
@@ -56,6 +62,20 @@ pub enum WindowTransition {
         /// Focus target after the command.
         current: Option<crate::FocusTarget>,
     },
+    /// Temporary pointer ownership changed.
+    CaptureChanged {
+        /// Capture owner before the command.
+        previous: Option<WindowId>,
+        /// Capture owner after the command.
+        current: Option<WindowId>,
+    },
+    /// The command was valid but had no state change to commit.
+    Unchanged {
+        /// Identity whose state was already in the requested condition.
+        subject: TransitionSubject,
+        /// Typed explanation for the absent state change.
+        reason: UnchangedReason,
+    },
     /// A requested root and all of its actual descendants were removed.
     Closed {
         /// Identity named by the close command.
@@ -67,11 +87,101 @@ pub enum WindowTransition {
     },
 }
 
+/// Identity associated with a successful no-op transition.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransitionSubject {
+    /// The persistent strategic scene rather than an allocated window.
+    StrategicRoot,
+    /// One allocated window identity.
+    Window(WindowId),
+}
+
+/// Why a valid command committed no state change.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnchangedReason {
+    /// The window was already the highest eligible peer.
+    AlreadyTop,
+    /// The window was already visible.
+    AlreadyVisible,
+    /// The window was already minimized.
+    AlreadyMinimized,
+    /// No pointer capture existed to release or cancel.
+    NotCaptured,
+    /// Focus already matched the requested target.
+    FocusAlreadySet,
+}
+
+/// Why an in-progress pointer gesture was interrupted before physical release.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CaptureCancelReason {
+    /// A newly opened strategic modal made the prior owner ineligible.
+    ModalOpened,
+    /// The capture owner or one of its lifecycle owners closed.
+    OwnerClosed,
+    /// A later lifecycle slice minimized the capture owner.
+    Minimized,
+    /// A coordinator moved the active input scene elsewhere.
+    SceneChanged,
+    /// An application-wide hold began.
+    HoldStarted,
+    /// The application lost operating-system focus.
+    FocusLost,
+    /// The current UI session was discarded.
+    SessionReset,
+}
+
+/// Why registered content was removed from the manager.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CloseReason {
+    /// The named window was closed explicitly.
+    Requested,
+    /// An actual lifecycle owner closed.
+    OwnerClosed,
+    /// A later lifecycle slice atomically replaced the record.
+    Replaced,
+    /// A later history slice evicted the record.
+    Evicted,
+    /// Reconciliation confirmed the content was removed.
+    ContentRemoved,
+    /// The complete UI session was discarded.
+    SessionReset,
+}
+
+/// Ordered renderer-facing cleanup receipt emitted by a manager commit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WindowEvent {
+    /// Clear the named window's gesture payload before any later teardown.
+    CaptureCancelled {
+        /// Former capture owner.
+        window: WindowId,
+        /// Cause of the interruption.
+        reason: CaptureCancelReason,
+    },
+    /// Drop the matching feature content after any capture cancellation.
+    Closed {
+        /// Removed session identity.
+        window: WindowId,
+        /// Semantic identity needed by content adapters.
+        key: WindowKey,
+        /// Cause of removal.
+        reason: CloseReason,
+    },
+    /// Realize semantic focus only after teardown receipts are processed.
+    FocusChanged {
+        /// Focus before the transition.
+        previous: Option<crate::FocusTarget>,
+        /// Focus after the transition.
+        current: Option<crate::FocusTarget>,
+    },
+}
+
 /// Successful atomic manager commit.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WindowCommit {
     /// State transition produced by the command.
     pub transition: WindowTransition,
+    /// Ordered cleanup receipts to apply around the transition.
+    pub events: Vec<WindowEvent>,
 }
 
 /// Classifies a broken registry or visible-order invariant.
@@ -93,6 +203,8 @@ pub enum InvariantKind {
     ChildBelowOwner,
     /// The current focus target is absent, hidden, or blocked by a modal.
     IneligibleFocus,
+    /// The pointer capture owner is absent, hidden, or blocked by a modal.
+    IneligibleCapture,
 }
 
 /// Diagnostic result from validating manager-owned open/order state.
@@ -113,6 +225,7 @@ pub struct WindowManager {
     focused: Option<crate::FocusTarget>,
     previous_eligible: Option<WindowId>,
     saved_menu_focus: BTreeMap<WindowId, Option<crate::FocusTarget>>,
+    capture_owner: Option<WindowId>,
     next_id: Option<NonZeroU64>,
 }
 
@@ -138,6 +251,7 @@ impl WindowManager {
             focused: None,
             previous_eligible: None,
             saved_menu_focus: BTreeMap::new(),
+            capture_owner: None,
             next_id: Some(NonZeroU64::MIN),
         }
     }
@@ -158,6 +272,45 @@ impl WindowManager {
     #[must_use]
     pub fn focused(&self) -> Option<crate::FocusTarget> {
         self.focused
+    }
+
+    /// Returns the window that temporarily owns pointer motion and release.
+    #[must_use]
+    pub fn capture_owner(&self) -> Option<WindowId> {
+        self.capture_owner
+    }
+
+    /// Discards the current UI session while retaining allocator progression.
+    pub fn reset_session(&mut self) -> Vec<WindowEvent> {
+        let focused_before = self.focused;
+        let mut events = Vec::new();
+        if let Some(window) = self.capture_owner.take() {
+            events.push(WindowEvent::CaptureCancelled {
+                window,
+                reason: CaptureCancelReason::SessionReset,
+            });
+        }
+        for window in self.visible_order.iter().rev().copied() {
+            events.push(WindowEvent::Closed {
+                window,
+                key: self.registry[&window].spec.key,
+                reason: CloseReason::SessionReset,
+            });
+        }
+
+        self.registry.clear();
+        self.key_index.clear();
+        self.visible_order.clear();
+        self.focused = None;
+        self.previous_eligible = None;
+        self.saved_menu_focus.clear();
+        if focused_before.is_some() {
+            events.push(WindowEvent::FocusChanged {
+                previous: focused_before,
+                current: None,
+            });
+        }
+        events
     }
 
     /// Validates the registry, semantic-key index, ownership, and visible order.
@@ -315,6 +468,14 @@ impl WindowManager {
                 });
             }
         }
+        if let Some(capture_owner) = self.capture_owner {
+            if !self.is_focus_eligible(capture_owner) {
+                return Err(InvariantViolation {
+                    kind: InvariantKind::IneligibleCapture,
+                    windows: vec![capture_owner],
+                });
+            }
+        }
 
         Ok(())
     }
@@ -326,6 +487,9 @@ impl WindowManager {
             WindowCommand::Activate(id) | WindowCommand::Raise(id) => self.raise_and_focus(id),
             WindowCommand::Focus(target) => self.focus(target),
             WindowCommand::FocusRoot => self.focus_root(),
+            WindowCommand::CapturePointer(id) => self.capture_pointer(id),
+            WindowCommand::ReleasePointer(id) => self.release_pointer(id),
+            WindowCommand::CancelCapture(reason) => self.cancel_capture(reason),
             WindowCommand::Close(id) => self.close(id),
         }
     }
@@ -340,6 +504,7 @@ impl WindowManager {
                 return Err(WindowError::DuplicateKeyWithDifferentPolicy(spec.key));
             }
 
+            let focus_before = self.focused;
             let effect = match existing.policy.existing {
                 crate::ExistingOpenPolicy::NoOp => ExistingEffect::NoOp,
                 crate::ExistingOpenPolicy::RaiseRestore => {
@@ -353,8 +518,19 @@ impl WindowManager {
                     ExistingEffect::Raised
                 }
             };
+            let mut events = Vec::new();
+            if existing.policy.input == InputPolicy::StrategicModal {
+                events.extend(self.cancel_capture_if_ineligible(CaptureCancelReason::ModalOpened));
+            }
+            if focus_before != self.focused {
+                events.push(WindowEvent::FocusChanged {
+                    previous: focus_before,
+                    current: self.focused,
+                });
+            }
             return Ok(WindowCommit {
                 transition: WindowTransition::Existing { id, effect },
+                events,
             });
         }
 
@@ -369,8 +545,12 @@ impl WindowManager {
         self.registry.insert(id, WindowRecord { spec });
         self.key_index.insert(spec.key, id);
         self.visible_order.insert(insertion, id);
+        let mut events = Vec::new();
         if spec.key.kind == WindowKind::Menu {
             self.saved_menu_focus.insert(id, focus_before);
+        }
+        if spec.policy.input == InputPolicy::StrategicModal {
+            events.extend(self.cancel_capture_if_ineligible(CaptureCancelReason::ModalOpened));
         }
         if spec.policy.focus_on_open == crate::FocusOnOpen::Window && self.is_focus_eligible(id) {
             self.set_focus(Some(crate::FocusTarget {
@@ -384,9 +564,16 @@ impl WindowManager {
             let fallback = self.topmost_eligible_focus();
             self.set_focus(fallback);
         }
+        if focus_before != self.focused {
+            events.push(WindowEvent::FocusChanged {
+                previous: focus_before,
+                current: self.focused,
+            });
+        }
 
         Ok(WindowCommit {
             transition: WindowTransition::Opened { id },
+            events,
         })
     }
 
@@ -399,6 +586,13 @@ impl WindowManager {
                 previous,
                 current: Some(target),
             },
+            events: (previous != Some(target))
+                .then_some(WindowEvent::FocusChanged {
+                    previous,
+                    current: Some(target),
+                })
+                .into_iter()
+                .collect(),
         })
     }
 
@@ -413,6 +607,13 @@ impl WindowManager {
                 previous,
                 current: None,
             },
+            events: previous
+                .map(|previous| WindowEvent::FocusChanged {
+                    previous: Some(previous),
+                    current: None,
+                })
+                .into_iter()
+                .collect(),
         })
     }
 
@@ -422,11 +623,103 @@ impl WindowManager {
             control: None,
         };
         self.validate_focus_target(target)?;
+        let previous = self.focused;
         self.raise_visible(id);
         self.set_focus(Some(target));
         Ok(WindowCommit {
             transition: WindowTransition::Raised { id },
+            events: (previous != Some(target))
+                .then_some(WindowEvent::FocusChanged {
+                    previous,
+                    current: Some(target),
+                })
+                .into_iter()
+                .collect(),
         })
+    }
+
+    fn capture_pointer(&mut self, id: WindowId) -> Result<WindowCommit, WindowError> {
+        if !self.registry.contains_key(&id) {
+            return Err(WindowError::UnknownWindow(id));
+        }
+        if !self.is_focus_eligible(id) {
+            return Err(WindowError::IneligibleCapture(id));
+        }
+        if let Some(owner) = self.capture_owner {
+            if owner != id {
+                return Err(WindowError::CaptureOwnedBy(owner));
+            }
+        }
+
+        let previous = self.capture_owner;
+        self.capture_owner = Some(id);
+        Ok(WindowCommit {
+            transition: WindowTransition::CaptureChanged {
+                previous,
+                current: Some(id),
+            },
+            events: Vec::new(),
+        })
+    }
+
+    fn release_pointer(&mut self, id: WindowId) -> Result<WindowCommit, WindowError> {
+        if !self.registry.contains_key(&id) {
+            return Err(WindowError::UnknownWindow(id));
+        }
+        if let Some(owner) = self.capture_owner {
+            if owner != id {
+                return Err(WindowError::CaptureOwnedBy(owner));
+            }
+        } else {
+            return Ok(WindowCommit {
+                transition: WindowTransition::Unchanged {
+                    subject: TransitionSubject::Window(id),
+                    reason: UnchangedReason::NotCaptured,
+                },
+                events: Vec::new(),
+            });
+        }
+
+        let previous = self.capture_owner;
+        self.capture_owner = None;
+        Ok(WindowCommit {
+            transition: WindowTransition::CaptureChanged {
+                previous,
+                current: None,
+            },
+            events: Vec::new(),
+        })
+    }
+
+    fn cancel_capture(&mut self, reason: CaptureCancelReason) -> Result<WindowCommit, WindowError> {
+        let Some(previous) = self.capture_owner.take() else {
+            return Ok(WindowCommit {
+                transition: WindowTransition::Unchanged {
+                    subject: TransitionSubject::StrategicRoot,
+                    reason: UnchangedReason::NotCaptured,
+                },
+                events: Vec::new(),
+            });
+        };
+        Ok(WindowCommit {
+            transition: WindowTransition::CaptureChanged {
+                previous: Some(previous),
+                current: None,
+            },
+            events: vec![WindowEvent::CaptureCancelled {
+                window: previous,
+                reason,
+            }],
+        })
+    }
+
+    fn cancel_capture_if_ineligible(&mut self, reason: CaptureCancelReason) -> Option<WindowEvent> {
+        let window = self.capture_owner?;
+        if self.is_focus_eligible(window) {
+            return None;
+        }
+        self.capture_owner = None;
+        Some(WindowEvent::CaptureCancelled { window, reason })
     }
 
     fn close(&mut self, root: WindowId) -> Result<WindowCommit, WindowError> {
@@ -448,6 +741,17 @@ impl WindowManager {
             .collect();
         let focused_before = self.focused;
         let saved_menu_target = self.saved_menu_focus.get(&root).copied();
+        let mut events = Vec::new();
+        if self.capture_owner.is_some_and(|id| closing.contains(&id)) {
+            let window = self
+                .capture_owner
+                .take()
+                .expect("checked capture owner is present");
+            events.push(WindowEvent::CaptureCancelled {
+                window,
+                reason: CaptureCancelReason::OwnerClosed,
+            });
+        }
 
         self.visible_order.retain(|id| !closing.contains(id));
         for id in &closed {
@@ -457,6 +761,15 @@ impl WindowManager {
                 .expect("close receipt IDs come from the registry");
             self.key_index.remove(&record.spec.key);
             self.saved_menu_focus.remove(id);
+            events.push(WindowEvent::Closed {
+                window: *id,
+                key: record.spec.key,
+                reason: if *id == root {
+                    CloseReason::Requested
+                } else {
+                    CloseReason::OwnerClosed
+                },
+            });
         }
 
         let current_focus_survives = focused_before.map_or_else(
@@ -481,6 +794,12 @@ impl WindowManager {
                 .or_else(|| self.topmost_eligible_focus())
         };
         self.focused = restored_focus;
+        if focused_before != restored_focus {
+            events.push(WindowEvent::FocusChanged {
+                previous: focused_before,
+                current: restored_focus,
+            });
+        }
         if self
             .previous_eligible
             .is_some_and(|id| !self.registry.contains_key(&id) || !self.visible_order.contains(&id))
@@ -494,6 +813,7 @@ impl WindowManager {
                 closed,
                 restored_focus,
             },
+            events,
         })
     }
 
@@ -779,6 +1099,10 @@ pub enum WindowError {
     KindPolicyMismatch(WindowKind),
     /// A registered target is not currently visible and focusable.
     IneligibleFocus(crate::FocusTarget),
+    /// A registered target is not currently visible and pointer-eligible.
+    IneligibleCapture(WindowId),
+    /// Another window currently owns the temporary pointer capture.
+    CaptureOwnedBy(WindowId),
     /// A higher strategic modal blocks the requested window operation.
     BlockedByModal {
         /// Requested target.
@@ -1127,6 +1451,33 @@ mod tests {
             Err(InvariantViolation {
                 kind: InvariantKind::BandOrder,
                 windows: vec![active_id, child_id],
+            })
+        );
+    }
+
+    #[test]
+    fn validate_reports_private_ineligible_capture_corruption() {
+        let mut manager = WindowManager::new();
+        let background = match manager
+            .apply(WindowCommand::Open(modeless_spec(WindowKind::System, 1)))
+            .expect("background window opens")
+            .transition
+        {
+            WindowTransition::Opened { id } => id,
+            other => panic!("expected background window, got {other:?}"),
+        };
+        let mut modal = modeless_spec(WindowKind::SystemFinder, 2);
+        modal.policy.input = InputPolicy::StrategicModal;
+        manager
+            .apply(WindowCommand::Open(modal))
+            .expect("modal opens");
+        manager.capture_owner = Some(background);
+
+        assert_eq!(
+            manager.validate(),
+            Err(InvariantViolation {
+                kind: InvariantKind::IneligibleCapture,
+                windows: vec![background],
             })
         );
     }
