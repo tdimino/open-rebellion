@@ -53,6 +53,7 @@ pub mod tooltip;
 pub mod troop_finder;
 pub mod video_player;
 pub mod windowing;
+pub mod windowing_input;
 pub mod windowing_policy;
 
 #[cfg(all(test, feature = "interface-test-fixtures"))]
