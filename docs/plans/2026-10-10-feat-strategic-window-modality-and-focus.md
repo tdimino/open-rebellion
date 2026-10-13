@@ -188,9 +188,12 @@ focus restoration.
 
 The sanitized
 [`strategic-windowing-runtime-evidence.md`](../../ghidra/notes/strategic-windowing-runtime-evidence.md)
-ledger records the observations retained in the repository and the missing
-capture queue. Workstream 1 remains open until every API-shaping scenario has
-a reproducible action sequence and artifact hashes.
+ledger records the observations retained in the repository, their local
+artifact hashes, and the bounded cases that remained unreachable. On
+2026-10-12 both faction saves reproduced every reachable API-shaping scenario;
+Battle Alert did not trigger and Battle Results was consequently unreachable.
+Those two families retain explicit conservative port policy and open audit
+cells, but they no longer block the shared toolkit API.
 
 Reproducible Wine evidence may satisfy this local implementation gate once its
 actions and hashes are retained. It is not represented as native-Windows
@@ -388,10 +391,11 @@ plan is approved.
 ### Workstream 1: recover the contract
 
 Produce the Ghidra note, cited decompiles, runtime scenarios, and an explicit
-window classification matrix. The static trace is substantial, but the
-repository-visible runtime ledger remains incomplete. This workstream stays
-open and blocks final per-family policy and every parity claim until the
-API-shaping capture queue is reproducible and hashed.
+window classification matrix. **Complete for the implementation research
+gate on 2026-10-12:** the reachable both-faction queue, cross-family ordering,
+Sector/detail lifetime transition, action logs, object dumps, and artifact
+hashes are retained. Battle Alert and Battle Results remain explicitly
+inconclusive and cannot support parity claims.
 
 ### Workstream 2: build the pure kernel
 
@@ -416,10 +420,11 @@ the outside-modal input barrier and preserve focused child-control behavior.
 
 Integrate object and game menus, in-place Rename, Battle Summary, Battle Alert,
 Build Selection, Mission creation, and Move confirmation. Resolve duplicate
-and pointer-scope questions for each reachable dialog. Until then, any
-whole-view blocker outside the manual's proven minimum set is an explicit
-conservative port policy with its audit cell left open. Do not classify a
-dialog by resemblance; use the research matrix.
+and pointer-scope questions for each reachable dialog. Both-faction runtime
+now establishes a whole-view boundary for Build Selection, Mission creation,
+and Move confirmation. Battle Alert and Battle Summary retain an explicit
+conservative whole-view port policy with their audit cells open. Do not
+classify a dialog by resemblance; use the research matrix.
 
 ### Workstream 6: remove duplicate authorities and accept the feature
 

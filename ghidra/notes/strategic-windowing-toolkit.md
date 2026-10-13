@@ -3,24 +3,26 @@ title: "Strategic Windowing Toolkit Contract"
 description: "Original strategic-window identity, registry, stacking, modality, focus, capture, keyboard routing, close, and restoration behavior"
 category: "ghidra"
 created: 2026-10-10
-updated: 2026-10-10
+updated: 2026-10-12
 ---
 
 # Strategic Windowing Toolkit Contract
 
-This note records the provisional behavioral contract needed by the planned
+This note records the behavioral contract needed by the planned
 `rebellion-windowing` crate. It distinguishes the original game's shared
 window machinery from its feature-specific painting and contents. The result
 is sufficient to shape a narrow, reversible identity, ordering, focus,
 capture, and per-dispatch routing API without copying the Win32 implementation.
-Per-family input policy remains provisional where the runtime queue is open.
+The API-shaping Wine queue is complete; Battle Alert and Battle Results retain
+explicitly provisional visible policy because neither occurred in the
+available saves.
 
 The executable studied is the owned `REBEXE.EXE` with SHA-256
 `b3fe3997cab9a6e96403d638875dcba25484e4d8601751afec748471ac0ed6ab`.
 Addresses below are for that build. Proprietary assets and original-runtime
 captures are not committed. The repository-visible
 [`strategic-windowing-runtime-evidence.md`](strategic-windowing-runtime-evidence.md)
-records the retained observations, their limits, and the open capture queue.
+records the retained observations, artifact hashes, and bounded runtime limits.
 
 The original manual's windowing discussion on printed pages 63--64 supplies
 the terms *modeless* and *modal* and names Status, Finder, Battle Summary,
@@ -47,9 +49,17 @@ Fresh bounded Ghidra decompiles of the small shared helpers are committed as
 `FUN_006044d0.c`, and `FUN_00606960.c`. The three short tail-entry helpers at
 `0x00606940`, `0x00607d00`, and `0x00607d30` were not recognized as function
 entries by the clean import; their complete bytes are preserved in the
-instruction appendix instead of fabricating decompiler boundaries. Larger
-constructors and dispatchers were inspected in the existing corpus and with
-targeted `objdump` ranges rather than copied into this note.
+instruction appendix instead of fabricating decompiler boundaries. That
+appendix also retains the complete `FUN_005ffe40`, `FUN_005ffe60`, and
+`FUN_005ffe80` display and enable-state wrappers cited by the shared vtable.
+Larger constructors and dispatchers were inspected in the existing corpus and
+with targeted `objdump` ranges rather than copied into this note.
+
+The detail-owner adjudication below additionally cites the committed
+`FUN_00429ce0.c`, `FUN_004591d0.c`, `FUN_0045aac0.c`, `FUN_00441190.c`, four
+receiving detail constructors (`FUN_00452fc0.c`, `FUN_004a7790.c`,
+`FUN_004a2630.c`, and `FUN_0049f130.c`), and their common `FUN_004ac120.c`,
+`FUN_00606380.c`, and `FUN_005ff910.c` base-constructor chain.
 
 ## Conclusions that constrain the port
 
@@ -66,13 +76,15 @@ targeted `objdump` ranges rather than copied into this note.
    families carry policy bit 0 at object `+0xb8`, and that bit suppresses the
    strategic F1--F7 path. Live Encyclopedia checks show that its enabled
    underlay does not receive normal pointer input, while no modal holds
-   permanent capture. Bit 0 alone does not prove the same pointer scope for
-   every other dialog that carries it.
+   permanent capture. Live Status, Build Selection, Create Mission, and Move
+   Confirmation checks establish the same whole-strategic-view boundary for
+   those four bit-0 families. Bit 0 alone still does not prove the pointer
+   scope of an unobserved family.
 4. **Opening an existing window is family-specific.** Finder, Message, and
    Encyclopedia singleton openers return without raising. Existing detail
    windows are restored/raised. A duplicate Sector opener returns its object
    without itself raising it; a caller may subsequently raise/select a detail
-   child. The port must declare this policy per window kind.
+   presentation. The port must declare this policy per window kind.
 5. **Closing is asynchronous at the shared boundary.** The child posts message
    `0x405` to its owner. The owner removes and destroys the keyed child, then
    posts `0x467` to choose, expose, and focus the next eligible surface. Input
@@ -192,12 +204,13 @@ holds capture for the modal's lifetime.
 
 ### Close sequence
 
-`FUN_00606960` posts `(message=0x405, wParam=this+0x24, lParam=this)` to the
-parent HWND. `FUN_006007b0` and the strategic `FUN_00422ce0` handler remove the
-appropriate presentation entry, call `FUN_00600f90`, and post `0x467`.
-Destruction and replacement focus therefore occur on subsequent native
-message dispatches, not by synchronously returning a new input target from
-the close callback.
+`FUN_00606960` posts `(message=0x405, wParam=*(this+0x24), lParam=this)` to the
+HWND at `(*(this+0x20)+0x18)`. The generic `FUN_006007b0` `0x405` case calls
+`FUN_00600f90` to remove and destroy the keyed child. The strategic
+`FUN_00422ce0` path additionally removes the corresponding presentation entry
+and posts `0x467` for later restoration. Destruction and replacement focus
+therefore occur on subsequent native message dispatches, not by synchronously
+returning a new input target from the close callback.
 
 Parent destruction is a cascade, not independent orphan cleanup.
 `FUN_005ffb60` tears down the parent's `+0x6c` registry through
@@ -215,6 +228,53 @@ event, even when batched into the same render frame, receives a new snapshot.
 This reproduces the recovered no-fallthrough outcome without reproducing the
 Win32 post queue.
 
+### Detail lifetime owner
+
+The strategic view is the registry/destruction owner of all four
+Sector-launched detail families; the Sector that opened them is not their
+lifecycle owner. The complete stored-owner trace is:
+
+1. `FUN_00429ce0` runs on the strategic view and passes its `this` pointer as
+   constructor parameter 6 to `FUN_004591d0`.
+2. `FUN_004591d0` forwards that pointer through `FUN_004ac120` and also stores
+   it at Sector `+0x194`.
+3. `FUN_0045aac0` runs on the Sector, but uses `*(this + 0x194)` for detail
+   lookup in `+0x6c`, creation, presentation registration, keyed insertion,
+   MRU restoration, and raising. It passes the same pointer into each receiving
+   System/Manufacturing, Defenses, Fleet, or Missions constructor.
+4. The strategic pointer arrives as constructor parameter 6 in
+   `FUN_00452fc0` and `FUN_004a7790`, and as parameter 4 in the shorter
+   `FUN_004a2630` and `FUN_0049f130` signatures. Each normalizes it to
+   `FUN_004ac120` parameter 6, then forwards it through
+   `FUN_00606380` parameter 6 to `FUN_005ff910` parameter 8.
+   `FUN_005ff910` performs the final assignment, storing that parameter at the
+   detail object's common owner field `+0x20`.
+5. `FUN_00606960` closes a child by dereferencing `+0x20`, taking that object's
+   `+0x18` HWND, and posting `0x405` with the child's semantic key and object.
+   A detail therefore posts close to the strategic view, not to its opening
+   Sector.
+
+**counter-evidence:** `FUN_0045aac0` is a Sector method and uses the Sector
+HWND as the source for `MapWindowPoints`; the Sector therefore supplies the
+opening gesture and coordinate/navigation context. It does not insert the
+detail into Sector `+0x6c`, pass the Sector as the common owner, or receive the
+detail's close message. `FUN_00441190` independently constructs the same four
+detail families directly from the strategic view, passes that view into the
+same constructor slots, and inserts the result into strategic-view `+0x6c`.
+The root registry, direct construction path, and stored `+0x20` recipient
+outweigh the incidental Sector opener context.
+
+**fact (high static confidence):** a detail is registered under and posts close
+to the strategic root; it is absent from the opening Sector's child registry.
+The generic Sector-owner cascade therefore cannot reach that detail.
+
+**port:** closing a Sector must not close details opened from its context.
+Those details remain independently managed until an explicit detail close,
+content reconciliation, or strategic-root teardown. Both faction saves
+corroborated this behavior under Wine: closing Sseswenna left open
+Manufacturing, Defenses, and Fleet details alive. This remains research
+evidence, not port-side or native-Windows acceptance.
+
 ### Existing-window policy
 
 | Family | Existing-instance behavior |
@@ -224,7 +284,8 @@ Win32 post queue.
 | Encyclopedia | Singleton opener returns/no-ops |
 | Sector | Same subject key returns the existing object without an explicit raise in the opener; a caller that opens/selects a detail child can then raise that presentation; at most two sectors are retained |
 | System/Manufacturing, Fleet, Defenses, Missions detail | Existing subject+kind is restored from MRU when minimized and moved to `HWND_TOP` |
-| Status and command dialogs | Contextual creation; no general duplicate-raise rule established |
+| Status and contextual command dialogs | Contextual creation; no general duplicate-raise rule established |
+| Build Selection | Normal strategic input cannot re-enter its opener while it owns the boundary; the direct programmatic opener has no recovered duplicate guard, so the public port API rejects re-entrant open rather than promising native duplicate semantics |
 
 The singleton conclusions come from `FUN_0042a000`, `FUN_0042a0c0`,
 `FUN_0042a4d0`, `FUN_0042a180`, `FUN_0042a240`, and `FUN_00429f30`. Sector
@@ -261,14 +322,20 @@ The modal implementation is **not** any of the following in isolation:
 known-good underlying System Finder controls for either faction. F2 was also
 suppressed. Focused Encyclopedia title input accepted `tallon` and selected
 Talon Karrde without firing cockpit hotkeys. Escape closed Encyclopedia; the
-next F2/cockpit click then worked.
+next F2/cockpit click then worked. The same outside-click and F2 probes were
+repeated for Status (`0x1a`, policy `1`), Build Selection (`0x62`, policy `5`),
+Create Mission (`0x0c`, policy `1`), and Move Confirmation (`0x10`, policy
+`1`) in both faction saves. In every case the active surface retained the
+boundary, Escape dismissed it, and the prior details were exposed only on the
+later dispatch.
 
 **unknown:** the exact native pre-command pointer gate was not identified. It
 occurs before an enabled underlay control's command reaches `FUN_00422ce0` in
-the observed Encyclopedia scenario. The manual's minimum modal set plus that
-runtime observation justify a shared strategic boundary for those documented
-families. For other bit-0 dialogs, full pointer blocking remains a `hyp:` or a
-conservative `port:` policy until runtime evidence establishes its scope.
+the observed scenarios. The manual, static policy words, and repeated runtime
+checks justify a shared strategic boundary for Encyclopedia, Status, Build
+Selection, Create Mission, and Move Confirmation. Battle Alert, Battle
+Results, the two unnamed bit-0 classes, and any rare owner-local dialog retain
+an explicit conservative `port:` whole-view policy until runtime narrows it.
 Reproducing an HWND-specific interception hook would be an implementation
 accident, not a useful port contract.
 
@@ -305,35 +372,35 @@ than an independent persistent stack entry.
 
 | Surface | Identity / cardinality | Owner / stack / input | Focus / capture | Open, close, and restoration | Side / evidence |
 |---|---|---|---|---|---|
-| Sector | Key `(system_low16 << 6) \| 1`; max two | Strategic view; modeless lower/detail band; created at `HWND_BOTTOM`, with toolbar placed above | Top-level and owned controls can focus; no family-lifetime capture or movable-title bit recovered | Duplicate returns existing without an opener-side raise; following detail selection may raise; third replaces the sector on the requested galaxy half; generic keyed close restores through `0x467` | Shared class; Alliance two-window runtime; `FUN_00429ce0`; high |
-| System / Manufacturing | Detail kind `9`, subject-keyed, many | Strategic-view child launched and positioned from Sector context; normal modeless detail/presentation band; presentation-rail capable | Top-level/controls focus; movable bit 4 uses temporary title-drag capture | Reopen restores from MRU if needed and raises; async keyed close restores through the strategic owner and `0x467` | Shared class; `FUN_0045aac0`, `FUN_00441190`; high |
-| Fleet | Detail kind `4`, subject-keyed, many | Strategic-view child launched and positioned from Sector context; modeless detail/presentation band | Top-level/controls focus; bit-4 title drag temporarily captures | Reopen restores/raises; async keyed close restores through the strategic owner | Shared class; same static path; high |
-| Defenses | Detail kind `10`, subject-keyed, many | Strategic-view child launched and positioned from Sector context; modeless detail/presentation band | Top-level/controls focus; bit-4 title drag temporarily captures | Reopen restores/raises; async keyed close restores through the strategic owner | Shared class; same static path; high |
-| Missions detail | Detail kind `11`, subject-keyed, many | Strategic-view child launched and positioned from Sector context; modeless detail/presentation band | Top-level/controls focus; bit-4 title drag temporarily captures | Reopen restores/raises; async keyed close restores through the strategic owner | Shared class; same static path; high |
+| Sector | Key `(system_low16 << 6) \| 1`; max two | Strategic view; modeless lower/detail band; created at `HWND_BOTTOM`, with toolbar placed above | Top-level and owned controls can focus; no family-lifetime capture or movable-title bit recovered | Duplicate returns existing without an opener-side raise; following detail selection may raise; third replaces the sector on the requested galaxy half; generic keyed close restores through `0x467` | Shared class; Alliance two-window runtime and both-faction parent-close runtime; `FUN_00429ce0`; high |
+| System / Manufacturing | Detail kind `9`, subject-keyed, many | Strategic-view registry/destruction owner; launched and positioned from Sector context; normal modeless detail/presentation band; presentation-rail capable | Top-level/controls focus; movable bit 4 uses temporary title-drag capture | Reopen restores from MRU if needed and raises; Sector close does not cascade it; async keyed close restores through the strategic owner and `0x467` | Shared class; both-faction cross-family raise and Sector-close survival; `FUN_00429ce0`, `FUN_004591d0`, `FUN_0045aac0`, `FUN_00441190`, `FUN_00452fc0`, common base/close chain; high |
+| Fleet | Detail kind `4`, subject-keyed, many | Strategic-view registry/destruction owner; launched and positioned from Sector context; modeless detail/presentation band | Top-level/controls focus; bit-4 title drag temporarily captures | Reopen restores/raises; Sector close does not cascade it; async keyed close restores through the strategic owner | Shared class; same chain through `FUN_004a2630`; high |
+| Defenses | Detail kind `10`, subject-keyed, many | Strategic-view registry/destruction owner; launched and positioned from Sector context; modeless detail/presentation band | Top-level/controls focus; bit-4 title drag temporarily captures | Reopen restores/raises; Sector close does not cascade it; async keyed close restores through the strategic owner | Shared class; same chain through `FUN_004a7790`; high |
+| Missions detail | Detail kind `11`, subject-keyed, many | Strategic-view registry/destruction owner; launched and positioned from Sector context; modeless detail/presentation band | Top-level/controls focus; bit-4 title drag temporarily captures | Reopen restores/raises; Sector close does not cascade it; async keyed close restores through the strategic owner | Shared class; same chain through `FUN_0049f130`; high |
 | System Finder | Type `0x14`, singleton | Strategic view; strategic modal, bit 0 | Edit/list/top-level focus; handled keys stay in child; no lifetime capture | Existing request no-ops; Escape/Close posts keyed close, then `0x467` restoration | Shared class; Alliance/Empire route reachable; `FUN_0042a000`, `FUN_00460090`; high |
 | Fleet Finder | Type `0x15`, singleton | Strategic view; strategic modal, bit 0 | Edit/list/top-level focus; no lifetime capture | Existing request no-ops; shared async close/restoration | Shared class; `FUN_0042a0c0`, `FUN_00461750`; high |
 | Troop Finder | Type `0x16`, singleton | Strategic view; strategic modal, bit 0 | Edit/list/top-level focus; no lifetime capture | Existing request no-ops; shared async close/restoration | Shared class; `FUN_0042a4d0`, `FUN_0046cbc0`; high |
 | Personnel Finder | Type `0x17`, singleton | Strategic view; strategic modal, bit 0 | Edit/list/top-level focus; no lifetime capture | Existing request no-ops; shared async close/restoration | Shared class; `FUN_0042a180`, `FUN_00463500`; high |
 | Message Index | Type `0x0d`, singleton | Strategic view; strategic modal, bit 0 | List/buttons/top-level focus; no lifetime capture | Existing request no-ops; close exposes and refocuses retained modeless windows | Shared class; Alliance runtime close; `FUN_0042a240`, `FUN_00466350`; high |
 | Encyclopedia | Type `0x19`, singleton | Strategic view; strategic modal, bit 0 | Edit/list/top-level focus; edit owns typed prefix search; no lifetime capture | Existing request no-ops; Escape/Close restores strategic target on later dispatch | Shared class and behavior corroborated for both factions; `FUN_00429f30`, `FUN_0045d400`; high |
-| Status | Type `0x1a`, contextual | Strategic view; strategic modal, bit 0 | Controls/top-level focus; no lifetime capture | Opened through strategic `0x468`; async close/`0x467` restoration | Shared class; manual + `FUN_00442d70`; high static, no fresh runtime |
+| Status | Type `0x1a`, contextual | Strategic view; whole-view strategic modal, policy `1` | Controls/top-level focus; no lifetime capture | Opened through strategic `0x468`; outside click and F2 blocked; Escape async close restores prior details on a later dispatch | Shared class; both-faction runtime + manual + `FUN_00442d70`; high |
 | Battle Alert | Type `0x06`, contextual dialog | Strategic view; bit-0 dialog policy; whole-view pointer scope remains a hypothesis and conservative port default | Dialog controls focus; construction drains old capture; no lifetime capture | Created through `0x468/0x482`; async keyed close/restoration | Shared class; `FUN_0044f670`, `FUN_0044f860`; high static, no fresh runtime |
 | Battle Results / Summary | Type `0x1c`, contextual | Strategic view; strategic modal, bit 0 | Tabs/controls/top-level focus; no lifetime capture | Created through `0x468/0x482`; keyed close/`0x467` restoration | Shared class; manual + `FUN_0044c410`, `FUN_0044c630`; high static, unreachable in capture saves |
-| Build Selection | Type/key `0x62`, de facto singleton global `DAT_006b28ac`; duplicate behavior unresolved | Strategic-view registry, opened with Manufacturing context; bit-0 dialog policy plus movable bit (`+0xb8 = 5`); whole-view pointer scope remains a hypothesis and conservative port default | List/edit/buttons focus; temporary title-drag capture only | The recovered opener overwrites the global and contains no duplicate guard; shared keyed close removes the registered instance and restores through the strategic owner | Shared class; `FUN_00437df0`, `FUN_00437880`; high static except duplicate and pointer policy |
-| Mission creation | Type `0x0c`, contextual | Strategic view/context; bit-0 dialog policy; whole-view pointer scope remains a hypothesis and conservative port default | Lists/buttons/top-level focus; no lifetime capture | Context-created; shared keyed close/restoration | Shared class; `FUN_0046a750`; high static, no fresh runtime |
-| Move confirmation | Type `0x10`, contextual | Strategic view; bit-0 dialog policy; whole-view pointer scope remains a hypothesis and conservative port default | Dialog controls focus; construction drains old capture; no lifetime capture | Strategic dispatcher creates it; shared keyed close/restoration | Shared class; `FUN_0044f060`; high static, no fresh runtime |
+| Build Selection | Type/key `0x62`, user-level singleton boundary; global `DAT_006b28ac` | Strategic-view registry, opened with Manufacturing context; whole-view strategic modal, policy `5` (bit 0 plus movable bit) | List/edit/buttons focus; temporary title-drag capture only | Normal input cannot re-enter its opener; direct native programmatic duplicate semantics remain unknown and are excluded from the port API; outside click/F2 blocked; Escape restores prior details | Shared class; both-faction runtime + `FUN_00437df0`, `FUN_00437880`; high visible policy, bounded direct-opener unknown |
+| Mission creation | Type `0x0c`, contextual | Strategic view/context; whole-view strategic modal, policy `1` | Lists/buttons/top-level focus; no lifetime capture | Context-created; outside click/F2 blocked; Escape shared keyed close/restoration | Shared class; both-faction runtime + `FUN_0046a750`; high |
+| Move confirmation | Type `0x10`, contextual | Strategic view; whole-view strategic modal, policy `1` | Dialog controls focus; construction drains old capture; no lifetime capture | Strategic dispatcher creates it; outside click/F2 blocked; Escape cancels and restores prior details | Shared class; both-faction runtime + `FUN_0044f060`; high |
 | Object / Agent / game menus | One global active menu family | Invoking strategic top-level/control; transient above owner, not persistent registry authority | Menu/submenu focus; prior HWND saved; no persistent capture established | Dismiss destroys menu and restores saved focus only if focus stayed within menu family | Shared machinery; `FUN_00442380`, `FUN_00442430`, `FUN_004424c0`; high |
 | In-place Rename | Child string field, one per active editor | Owning detail window; transient child, no independent stack identity | Edit owns text/Enter; any selection capture is control-bounded | Commit/cancel within owner; destroyed with parent; parent remains restoration target | Shared control; `FUN_004ac7a0`, `FUN_004ac950`, `FUN_004aca40`; high |
 | Cockpit / toolbar / reference rail | Persistent strategic owner and children; rail has 12 presentations | Base of strategic stack; modeless controls; rail is MRU/presentation, not window registry | Owner/control focus; interaction capture only where a control requests it | `0x467` focuses owner when no eligible child; rail restores chosen presentation | Side art/targets differ, machinery shared; `FUN_00422ce0`, `FUN_00428b40`, `FUN_00429020`; high |
 | Unknown transient class | Type `7` in generic creation switch | Context owner unknown; exact stack/input policy unresolved | Unknown; no public semantic kind or capture rule justified | Generic keyed lifetime only | `FUN_00441190`; low semantic confidence; not API-shaping |
 
 The manual's modal list is a minimum, not an exhaustive classifier. Build
-Selection, Mission creation, Move confirmation, and Battle Alert must enter the
-shared dialog-policy representation. A conservative whole-view blocker may be
-used as an explicit `hyp:` or `port:` default, with the related audit cells and
-runtime queue left open until its scope is observed. The unidentified type 7
-and the two extra bit-0 constructors are not API-shaping evidence until their
-call contexts are named.
+Selection, Mission creation, and Move confirmation now have both-faction
+whole-view runtime evidence and must enter the shared strategic-modal policy.
+Battle Alert and Battle Results use an explicit conservative whole-view
+`port:` default, with their audit cells left open until runtime observes them.
+The unidentified type 7 and the two extra bit-0 constructors are not
+API-shaping evidence until their call contexts are named.
 
 ## Research-gate answers
 
@@ -342,13 +409,15 @@ call contexts are named.
 2. Existing singleton Finders, Message, and Encyclopedia merely return;
    details restore/raise; duplicate Sector returns without an opener-side
    raise, though a following detail-selection caller may raise its child.
-3. Sector is created low, detail windows are normal modeless top-levels,
-   transient children/menus sit above owners, and strategic modals form an
-   input boundary. The reference rail is presentation history, not z-order.
+3. Sector is created low; detail windows are independent strategic-root-owned
+   modeless top-levels opened from Sector context. Transient children/menus sit
+   above their actual owners, and strategic modals form an input boundary. The
+   reference rail is presentation history, not z-order.
 4. Strategic modality is not a nested loop, owner disable, or lifetime
    capture. Bit 0 supplies dialog/function-key policy; a still-unidentified
-   pre-command native gate blocked normal underlay pointer input in the
-   observed Encyclopedia scenario.
+   pre-command native gate blocked normal underlay pointer input for
+   Encyclopedia, Status, Build Selection, Create Mission, and Move
+   Confirmation in both faction saves.
 5. The focused edit/list child owns handled keyboard input; otherwise its
    top-level is the owner.
 6. Unhandled keys can forward to the parent/top-level and reach the strategic
@@ -359,15 +428,17 @@ call contexts are named.
 8. Posted close plus per-dispatch native routing prevents the dismissing event
    from activating the exposed surface. The port must make this invariant
    explicit with a routing snapshot.
-9. Build Selection, Mission creation, Move confirmation, and Battle Alert are
-   additional bit-0 dialog-policy families. Their full pointer scope remains
-   unresolved. Two bit-0 classes remain semantically unnamed and therefore
-   excluded from the public kind set.
+9. Build Selection, Mission creation, and Move Confirmation are additional
+   bit-0 whole-strategic-view dialog families. Battle Alert shares the static
+   machinery but was not triggered. Two bit-0 classes remain semantically
+   unnamed and are excluded from the public kind set.
 10. Battle Results/Summary uses the same bit-0 and shared strategic dialog
-    machinery. Its visible runtime was unreachable in the available saves.
+    machinery. Battle Alert did not appear during retained day 60--79 Alliance
+    and day 3--23 Empire intervals, so Battle Results was unreachable. Both
+    retain explicit conservative port policy and no visible parity claim.
 11. No faction-specific behavioral branch was recovered. Both factions use
-    the same classes/routing and corroborated Encyclopedia blocking/search/
-    dismissal.
+    the same classes/routing and corroborated cross-family raise, Sector-close
+    survival, and Status/Build/Mission/Move blocking and dismissal.
 
 ## Current Rust seams to replace
 
@@ -404,26 +475,26 @@ Those are adapters/evidence, not domain API.
 
 ## Unresolved and deliberately non-load-bearing details
 
-- Exact native code that rejects a normal pointer hit below Encyclopedia, and
-  whether every other bit-0 dialog uses the same whole-view pointer scope.
+- Exact native code that rejects a normal pointer hit below the observed
+  strategic-modal families.
 - Semantic names for type 7 and the bit-0 classes constructed by
   `FUN_0046f140` and `FUN_0049ee20`.
 - Whether any rare command dialog blocks only its immediate owner rather than
   the whole strategic view. A whole-view blocker is a conservative port
   default, not a recovered parity claim, until runtime narrows it.
-- Fresh runtime behavior for Battle Results, Status, Battle Alert, Build
-  Selection, Mission creation, and Move confirmation. Static/manual evidence
-  establishes dialog policy, but their pointer scope and individual audit
-  cells remain open.
-- Fresh cross-family modeless raise corroboration. Two Sector windows and a
-  modal above them were observed; cross-family detail ordering remains backed
-  by the explicit native `SetWindowPos`, presentation, and MRU paths.
+- Direct programmatic duplicate behavior for Build Selection. Normal input
+  cannot re-enter its opener while it owns the strategic boundary, and the
+  port intentionally rejects re-entrant open rather than exposing this native
+  uncertainty.
+- Fresh runtime behavior for Battle Alert and Battle Results. Battle Alert did
+  not trigger in either retained interval, so Battle Results was unreachable;
+  neither receives a parity claim.
 - Native Windows corroboration. Wine was approved for this implementation
   research gate and is not represented as final platform acceptance.
 
 These gaps do not require competing focus stacks or feature-local modal
 exceptions. They remain explicit data and policy refinements inside the
-provisional shared contract.
+shared contract.
 
 ## Reproduction commands
 
@@ -441,9 +512,11 @@ objdump -Mintel -d data/base/REBEXE.EXE \
 ```
 
 The clean bounded decompile was regenerated outside the repository with
-Ghidra 12.1.4 headless and `ghidra/scripts/DecompileTargets.java`. The exact
-headless invocation and tool hashes are not retained in a repository-visible
-record, so that regeneration provenance remains incomplete. Runtime limits
-and the remaining capture queue are recorded in
+Ghidra 12.1.4 headless and `ghidra/scripts/DecompileTargets.java`. The local
+manifest retains the exact headless invocation, Ghidra archive SHA-256
+`ddac49f903da9d5bac833e5cc79395098b9c33cfd3279be5f31bd00387d2d4db`,
+and JDK archive SHA-256
+`dbb698396d478e7fa2b1e50f4103324b2a99b90569ee27c33f2261f9215cf41e`.
+Runtime commands, hashes, observations, and limits are recorded in
 [`strategic-windowing-runtime-evidence.md`](strategic-windowing-runtime-evidence.md).
 No shared Ghidra project was mutated.
