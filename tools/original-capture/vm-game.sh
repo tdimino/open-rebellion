@@ -230,6 +230,9 @@ up() {
 
 desktop_up() {
   local started=
+  # A Mini reboot clears the mute. wavcapture taps QEMU's audiodev ahead of
+  # the host output, so a0-audio still records.
+  ssh "$MINI" 'osascript -e "set volume with output muted"' || true
   if ! qemu_running; then
     echo "starting the VM"
     vmctl start

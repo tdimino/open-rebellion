@@ -9,7 +9,10 @@ created: 2026-10-09
 Saves we made in the original game on the capture VM
 ([`../README.md`](../README.md)), each at a state worth a reference capture.
 The owner authorized committing them; saves downloaded from elsewhere stay
-out. The game keeps ten slots,
+out. The one exception is `alliance-deathstar-at-coruscant.sav`, which
+David Adams ([@davidadas](https://github.com/davidadas), author of
+[rebellion2](https://github.com/davidadas/rebellion2)) made and gave us;
+the owner authorized committing it with that credit. The game keeps ten slots,
 `C:\Rebellion\SaveGame\SAVEGAME.001`..`.010` (the folder beside `REBEXE.EXE`;
 the `app\SaveGame` folder the GOG installer makes is not the one it uses).
 To load one, copy it into a slot (`vm-game.sh save-in FILE SLOT`) and pick it
@@ -33,6 +36,8 @@ from Game Options (F1), Saved Games.
 | `empire-day660-deathstar-pre-alert.sav` | Empire | 660 | Huge galaxy | The same Death Star game; Fleet 6 heading back to Coruscant. The Battle at Coruscant alert opens on day 676, after a Carida alert on day 669 (slot name "ds pre alert", SHA-256 `5973cf91…78de1`) |
 | `alliance-day731-imperial-deathstar-built.sav` | Alliance | about 731 | As `alliance-day54-advice.sav` | An Alliance game whose Imperial ISD order was edited into a Death Star (21 words; plan doc, session 5); the original completed it as "Devastator" at Coruscant (SHA-256 `502ac1cb…d67904`) |
 | `alliance-day830-after-coruscant-battle.sav` | Alliance | about 830 | As above | The same game after the Alliance withdrew from a second Battle at Coruscant. The Death Star sits at Coruscant but has not joined Alliance-initiated battles there; only Fleet 302 fights (SHA-256 `abe0dc2d…6dce32`) |
+| `alliance-deathstar-at-coruscant.sav` | Alliance | 1119 | Not recorded | Made and given by David Adams ([@davidadas](https://github.com/davidadas)); header name "Death Star at Coruscant", SHA-256 `5825d980…a4c5`. Alliance Fleet 1 (transports and corvettes, no fighters) is bound for Imperial Coruscant, and the Battle at Coruscant alert opens on day 1123 against Fleet 16 (Judicator, Punisher, Death Star 1), Fleet 190 (Dictator, Oppressor, Bear) and Fleet 192 (Despot): 22 TIE squadrons in all. Fleet 2 at Delaya carries 30 X-wing squadrons, enough for Attack Death Star, which needs more Alliance fighter groups than Imperial ones |
+| `alliance-day1169-deathstar-trench-run.sav` | Alliance | 1169 | As `alliance-deathstar-at-coruscant.sav` | David's save played on, unedited (slot name "ds trench run", SHA-256 `ad68f6f4…dd9a0`). Fleets 2 (30 X-wing squadrons) and 7 (29 squadrons, from Pantolomin) were sent to Averam on day 1119 and merged there into Fleet 2: 26 ships, 59 fighter squadrons. Fleet 1's own Battle at Coruscant on day 1123 was auto-resolved. Fleet 2 is in transit to Coruscant; the Battle at Coruscant alert opens on day 1173 against Fleet 16 (Punisher, Death Star 1) and Fleet 193 (Dictator, Despot, Ruler, Oppressor, Bear, Cronos, Lord), 23–24 TIE squadrons, so Attack Death Star's fighter majority holds. Take Command needs a fresh launch |
 
 ## The library on the VM
 

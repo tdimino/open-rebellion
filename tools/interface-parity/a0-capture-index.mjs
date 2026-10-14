@@ -18,6 +18,12 @@ const surfaces = [];
 surfaces.sort((a, b) => a.id.localeCompare(b.id));
 
 const byCell = new Map(manifest.captures.map((c) => [c.cell_id, c]));
+// Cells the original has no state for, settled against the running game
+// rather than captured (plan doc, session 7).
+const SETTLED = {
+  "TAC-03-C020":
+    "the original draws no selectable Death Star: none in the 3D view at any zoom, rotation or highlight, none among the eight capitals the panel arrows cycle, and clicking it in the Missions display does nothing. Its only selected form is the target bracket in TAC-05-C009's frame",
+};
 const esc = (s) => String(s ?? "").replace(/\|/g, "\\|").replace(/\s+/g, " ").trim();
 
 const total = surfaces.reduce((n, s) => n + s.acceptance_cells.length, 0);
@@ -29,6 +35,10 @@ for (const s of surfaces) {
   body += "| Cell | Requirement | Setup | What the frame shows | SHA-256 |\n|---|---|---|---|---|\n";
   for (const cell of s.acceptance_cells) {
     const c = byCell.get(cell.id);
+    if (!c && SETTLED[cell.id]) {
+      body += `| ${cell.id} | ${esc(cell.requirement)} | — | **No separate original state**: ${esc(SETTLED[cell.id])} | — |\n`;
+      continue;
+    }
     if (!c) {
       open.push(cell);
       body += `| ${cell.id} | ${esc(cell.requirement)} | — | **Open**: no A0 frame yet | — |\n`;
@@ -60,10 +70,9 @@ that denominator (\`A0_ONLY_FAMILY_COUNTS\` in
 not an acceptance: comparison against the port and the strict gate have not
 run. Regenerate this file with \`node tools/interface-parity/a0-capture-index.mjs\`.
 
-Open: ${open.map((c) => `${c.id} (${c.requirement})`).join(", ")}. All four need
-a battle the Alliance owns against an Imperial Death Star; the side-swap save
-edits crash the original, so they wait on a native Alliance game that reaches
-one (\`docs/plans/2026-09-22-tooling-tactical-106-cell-acceptance.md\`, session 5).
+Open: ${open.length ? open.map((c) => `${c.id} (${c.requirement})`).join(", ") : "none"}.
+Settled without a frame: ${Object.keys(SETTLED).join(", ")} (the reason is in its row;
+\`docs/plans/2026-09-22-tooling-tactical-106-cell-acceptance.md\`, session 7).
 `;
 
 writeFileSync(OUT, head + body);

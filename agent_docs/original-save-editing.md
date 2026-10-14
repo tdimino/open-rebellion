@@ -12,7 +12,7 @@ tags: [original-game, saves, parity, death-star, hyperdrive]
 Some behaviour can only be checked in the original once the game reaches a
 state that normal play does not produce on demand: a ship whose hyperdrive
 is out before a Withdraw, or a finished Death Star with an escort. We get
-there by editing a copy of one of **our own** saves
+there by editing a copy of one of **our own** saves (or the one David Adams gave us)
 (`tools/original-capture/saves/`), loading it on the Mac Mini capture VM
 (`tools/original-capture/README.md`, `vm-game.sh`), and accepting the edit
 only after the original loads, plays and re-saves it.
@@ -24,6 +24,8 @@ Status:
   manufacturing order (route 1). Converting a ship in place (route 2) crashes
   the game when its fleet moves.
 - **Battle staging (recipe 3):** the copies load and show their damage.
+- **Squadron size (recipe 4):** loads, re-saves and reloads with the edited
+  size.
 - **Player side:** cannot be changed by editing.
 
 "Edits that worked" lists each successful edit byte for byte.
@@ -57,6 +59,7 @@ original's own re-saves after it loaded and played the edit.
 | Empire Death Star (route 1) | `ds-b.sav` `1e6db63f…` → `ds-b583.sav` `43977b84…` | The Death Star order's progress word, 2 → 583 (cost 584), in both graph copies. Found as the u32 8 bytes before `88000018 48020000 48020000` | Finished "Death Star 1" into Fleet 6 at Coruscant within 11 days. It moves, and it fights | `empire-huge-deathstar-built.sav`, `empire-day660-deathstar-pre-alert.sav` |
 | Imperial Death Star in an Alliance game (route 1, converted order) | `fwd1.sav` (Alliance, late game) → `fwd1-ds.sav` `7ecf1706…` | Turned the Empire AI's Star Destroyer order into a Death Star order: 21 words (see "Route 1 in an Alliance game") | Completed as "Devastator" at Coruscant. The Alliance can Take Command at Coruscant, but the Death Star's fleet did not join the battle | `alliance-day731-imperial-deathstar-built.sav` |
 | Battle staging at the day-30 alert (`save_edit.py damage`, `subsystems`, `engines`, `fragile`, `stranded`) | `empire-day30-yaga-alert-control.sav` `8a7a9923…` → recipe 3 table | Hull damage and the packed word on the named ships, in every graph copy | Each loads and shows the staged damage; used for tactical A0 captures | none (staging only) |
+| Squadron size (`save_edit.py squadron`) | `alliance-deathstar-at-coruscant.sav` `5825d980…` → `e0953abc…` | Fleet 2's first X-wing squadron (id `0x17b8`): its `+0x60` damage word 0 → 7 in the `0x41` and `0x51` copies. Two bytes: `0x3a128`, `0x9e22f` | Status reads Squadron Size 5:12; shield and laser scale with it (25:60, 40:96). The original's re-save keeps 7 in both copies, and a restart and reload still read 5:12 | none (experiment) |
 
 What failed, so it is not repeated:
 - **Recipe 1, first try:** wrote the wrong word, word 15. It loaded but
@@ -343,6 +346,29 @@ Low hull also dims the shield, weapons and tractor icons, so isolate a
 subsystem at full hull. Battle Results has only Operational and Destroyed
 columns. None of these copies has passed the re-save and reload gates; they
 are staging for captures, not library saves.
+
+## Recipe 4: a squadron's size
+
+A fighter squadron is an unnamed `0x1c` record (header word 5 is 0, so no
+name), class `1`–`4` for the Alliance's fighters and `5`–`8` for the
+Empire's. Every full squadron reads 12 (`FIGHTSD.DAT` `squadron_size`).
+Like a ship's hull, runtime `+0x60` holds damage, not the size left
+(`FUN_005032c0`), and Status shows `12 − damage`.
+
+| Copy | Graph (Alliance / Empire) | Length | `+0x60` damage |
+|---|---|---|---|
+| Full | `0x41` / `0x81` | 23 words | word 22; word 15 is the carrier's key (`0x14` family, its id) |
+| Short | `0x51` / `0xa1` | 16 words | word 15 |
+| The other side's sighting | `0x62` or `0xe2` / `0x92` or `0xd2` | 16 words | word 15; may lag the other two |
+
+Words count from the record start (word 6 is the `+0x50` flags). The full
+and short copies always agree; the third does not always, so treat it as
+the other side's last sighting and leave it. In the Coruscant save, six
+squadrons already differ there (one reads 11, a 1:12 squadron). Edit the
+full and short copies together.
+
+Damage 12 should empty a squadron, which `FUN_005032c0` treats as
+destroyed. Removing squadrons that way is untested.
 
 ## Checksums
 

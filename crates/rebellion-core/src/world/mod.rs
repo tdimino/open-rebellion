@@ -984,8 +984,9 @@ pub struct ShipInstance {
     pub shield_weapon_packed: u32,
     /// True while `hull_current` > 0 and the ship has not been destroyed.
     pub alive: bool,
-    /// The name the player gave it (`+0x34`, order 0x203); `None` shows the
-    /// class's (`FUN_004f6270`).
+    /// Its own name (`+0x34`): "<class name> N" once numbered
+    /// (`GameWorld::number_capital_ships`), or the one the player gave it
+    /// (order 0x203); `None` shows the class's (`FUN_004f6270`).
     pub name: Option<String>,
     /// The world-unique tag its squadrons and regiments name as their
     /// carrier (`GameWorld::last_ship_tag`); 0 until something boards it.
@@ -1718,6 +1719,10 @@ pub struct FleetNames {
     mode: FleetNaming,
     /// Fleets the player renamed (order 0x203).
     renamed: slotmap::SecondaryMap<FleetKey, ()>,
+    /// Per side (Alliance, Empire), keyed by capital ship class `DatId`:
+    /// the last number given. The same side counter list as fleets, whose
+    /// key is the object's record (`FUN_005302c0`, `FUN_00402d80`).
+    ship_numbers: [std::collections::BTreeMap<u32, u32>; 2],
 }
 
 fn default_difficulty_index() -> u8 {
@@ -1946,6 +1951,35 @@ impl GameWorld {
                 .get(ship.class)
                 .map(|class| class.name.as_str())
         })
+    }
+
+    /// `FUN_00517760` for capital ships: each living ship still bearing its
+    /// class's name takes "<class name> N", N being its side's counter for
+    /// that class plus one (`FUN_005302c0`). The counter never goes down,
+    /// so no number is given twice. Fighters, troops and characters are
+    /// never numbered (`empire-day30-yaga-alert-control.sav`).
+    ///
+    /// hyp: the original numbers in a pass over every object
+    /// (`FUN_0051b7f0`) and at an object's load (`FUN_005140c0`); the port
+    /// runs this pass after seeding and after a ship completes, in fleet
+    /// slot order, then roster order.
+    pub fn number_capital_ships(&mut self) {
+        let classes = &self.capital_ship_classes;
+        let counters = &mut self.fleet_names.ship_numbers;
+        for fleet in self.fleets.values_mut() {
+            let side = usize::from(!fleet.is_alliance);
+            for ship in &mut fleet.capital_ships {
+                if !ship.alive || ship.name.is_some() {
+                    continue;
+                }
+                let Some(class) = classes.get(ship.class) else {
+                    continue;
+                };
+                let number = counters[side].entry(class.dat_id.0).or_insert(0);
+                *number += 1;
+                ship.name = Some(format!("{} {number}", class.name));
+            }
+        }
     }
 
     /// How this game names its fleets.

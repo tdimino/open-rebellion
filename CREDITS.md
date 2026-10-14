@@ -38,7 +38,7 @@ Thank you to the original developers and production team whose work made this pr
 - **Star Wars: Rebellion** (1998) — Coolhand Interactive / LucasArts. The original game this project reimplements.
 - **swrebellion.net** — The fan community that kept the game alive for 25+ years with patches, mods, and documentation.
 - **MetasharpNet / StarWarsRebellionEditor.NET** — Metasharp's open-source C# editor ([GitHub](https://github.com/MetasharpNet/StarWarsRebellionEditor.NET)). Source of DAT field semantics, asset organization knowledge, and DLL resource extraction (2,441+ BMPs + 3,223 data files from 11 game DLLs; see agent_docs/dll-resource-catalog.md).
-- **rebellion2** — C# Unity port reference. Source of mission probability formulas (Mission.cs).
+- **rebellion2** — David Adams ([@davidadas](https://github.com/davidadas/rebellion2)). C# Unity port reference. Source of mission probability formulas (Mission.cs). David also made and gave us the Alliance save "Death Star at Coruscant" (`tools/original-capture/saves/alliance-deathstar-at-coruscant.sav`), our reference for the Alliance's Death Star battle cells.
 
 ## AI Image Generation & Upscaling
 

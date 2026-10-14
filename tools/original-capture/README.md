@@ -253,6 +253,14 @@ tools/original-capture/vm-game.sh a0-cell TAC-01-C003 original-save \
   between alerts and at least 66 on other screens. The title differs by at
   most 0.5 for the same battle and at least 14.9 for another. A VNC refresh
   that times out reconnects instead of ending the wait (`vm-wait.py`).
+- Game speed is the day readout's right-click menu (game coordinates on
+  the 800×600 screen: readout 165,30; Pause 208,45, Very Slow 230,70,
+  Medium 220,120, Fast 208,145). Fast runs about 0.8 days a second, faster
+  than `wait day` can sample: a 33-day wait ran 340 days. To cover a set
+  number of days at Fast, sleep for the time and then pause. Pause opens
+  "Resume Game Play?", whose check mark (398,373) resumes at the kept
+  speed. The `save` verb can leave Game Options open, which holds the
+  clock; its galaxy icon (228,495) returns to the game.
 - QEMU snapshots (`savevm`) are not possible on this VM. The Windows disk
   is on QEMU's NVMe controller, which cannot save its state ("State blocked
   by non-migratable device '0000:00:05.0/nvme'"). A state that cannot be
@@ -348,7 +356,10 @@ Driving the game over VNC:
 - `vm-game.sh` wraps the steps below from this Mac. `up` starts the VM if
   needed, waits for the desktop, launches `REBEXE.EXE`, accepts UAC, skips
   the intros and selects the tablet; `recover` first kills a wedged QEMU and
-  restarts UTM. `point`/`click`/`rclick`/`dclick X Y [FILE]` hit a point in
+  restarts UTM. `up`, `up-a0` and `recover` mute the Mini's output first,
+  since a reboot clears the mute (`a0-audio` records from QEMU, not the
+  speakers). After a Mini reboot, load the control agent once:
+  `launchctl bootstrap gui/501 ~/VMs/rebellion/com.openrebellion.vmctl.plist`. `point`/`click`/`rclick`/`dclick X Y [FILE]` hit a point in
   the captured 800x600 frame and optionally capture after; `desk X Y`
   clicks on the Windows desktop (the taskbar, a console), where the cursor
   is Windows' own; `save-out`, `save-in` and `gexec` use the guest agent;

@@ -7,7 +7,9 @@ const MAGIC: &[u8; 4] = b"ORPK";
 const VERSION: u16 = 3;
 const HEADER_LEN: usize = 12;
 const ENTRY_HEADER_LEN: usize = 7;
-const MAX_ENTRIES: usize = 10_000;
+// The staged pack holds about 15,700 entries; the cap only bounds the
+// up-front allocation a corrupt header could request.
+const MAX_ENTRIES: usize = 65_536;
 const MAX_KEY_LEN: usize = 512;
 
 const KIND_GAME_DATA: u8 = 0;

@@ -3732,6 +3732,8 @@ pub fn apply_build_completion_inner(completion: &CompletionEvent, world: &mut Ga
                     sys.fleets.push(fk);
                 }
             }
+            // The new ship takes its class's next number (FUN_00517760).
+            world.number_capital_ships();
         }
         BuildableKind::Fighter(class_key) => {
             let is_alliance = world

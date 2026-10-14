@@ -3,7 +3,7 @@ title: "Plans Index"
 description: "All feature plans, ExecPlans, and design proposals for Open Rebellion"
 category: plan
 created: 2026-03-22
-updated: 2026-10-10
+updated: 2026-10-14
 tags: [index, plans]
 ---
 
@@ -39,7 +39,7 @@ defines the deterministic harness and one-gate family cadence.
 | [Resource Stockpiles and Top-Bar Counters](2026-10-08-feat-resource-stockpiles.md) | feat | active; Phase 1 (Maintenance Monitor) done, Phases 2–4 model the raw and refined stockpiles, facility cycles and yards' refined draw | 2026-10-08 |
 | [Will Forster Encyclopedia Handoff Adaptation](2026-10-02-feat-will-forster-encyclopedia-handoff-adaptation.md) | feat | active companion to P66; selectively adapts PR #16 conformance, immutable-session, presentation, publication, HD, and native-overlay patterns into the canonical upstream pipeline | 2026-10-02 |
 | [Encyclopedia Data Extraction, Modding, and Display](2026-09-27-design-encyclopedia-data-pipeline.md) | design | draft for review; source extraction, schema, staging, mod overlays, and native/browser display | 2026-09-27 |
-| [Tactical 106-Cell Acceptance Train](2026-09-22-tooling-tactical-106-cell-acceptance.md) | tooling | active; A0 references 110 of 114 (tactical 102/106 plus ground-assault TAC-08 8/8, [capture index](../qa/2026-09-10-interface-parity-audit/evidence/2026-10-13-tactical-a0-capture-index.md)); the four Alliance Death Star cells, comparison, and strict 106/106 acceptance remain | 2026-09-22 |
+| [Tactical 106-Cell Acceptance Train](2026-09-22-tooling-tactical-106-cell-acceptance.md) | tooling | active; A0 references 113 of 114 with TAC-03-C020 settled ([capture index](../qa/2026-09-10-interface-parity-audit/evidence/2026-10-13-tactical-a0-capture-index.md)); first C6 verdict pass 11, fail 66, not-run 28, settled 1 (negative controls 6/6); the remaining work is a [task graph](../../agent_docs/task-graph.md) of one acceptance node per failing region; strict 106/106 acceptance remains | 2026-09-22 |
 | [P59 Parallel Strategic Lane](2026-09-14-feat-p59-parallel-gid-message-index-lane.md) | feat | active, A0 Windows VM built on the Mac Mini and the original REBEXE.exe reaches its main menu (ladder L0-L1); GID root menu, Message Index, and shell captures (L2-L6) next; GID contract and Message Index RE after the P58E commit | 2026-09-14 |
 | [Batched Interface Parity](2026-09-11-feat-batched-interface-parity-plan.md) | feat | active, P57B1 live LOD journey complete; P57B2 original view rules next | 2026-09-11 |
 | [Interface Parity Acceleration Sidecar](2026-09-11-tooling-interface-parity-acceleration-sidecar.md) | tooling | active, GID pilot next | 2026-09-11 |

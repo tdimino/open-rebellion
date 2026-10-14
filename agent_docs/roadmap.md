@@ -1162,6 +1162,15 @@ would tune around known simulation feedback defects.
   Whole-process RNG continuity, strategic commander-slot binding, native beam
   and playback comparison, rare audio routes, and all 106 strict A0 cells stay
   open.
+  The A0 evidence now exists: 113 of 114 references captured from the
+  original in the capture VM, with TAC-03-C020 settled without a frame. The
+  first strict C6 verdict is pass 11, fail 66, not-run 28, settled 1, with
+  the negative controls failing their rows (6 of 6). The selected-ship panel
+  was brought to A0 and Ghidra: container origin, meters, labels, ship art,
+  Recover art, button wiring and numbered ship names (save v38). The
+  remaining work is the task graph (`agent_docs/task-graph.md`): one
+  acceptance node per failing region, fed by Ghidra questions, diagnoses and
+  the fixtures that let the 28 not-run cells run.
 - [ ] After original parity, use a separate Fable and `/ce:plan` design pass for
   an optional X-Wing Alliance-style skirmish setup menu. It may select ship
   distribution, planet, and space background, but it must reuse the production

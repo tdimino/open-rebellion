@@ -455,6 +455,8 @@ pub fn apply_seeds_with_rng<R: Rng + ?Sized>(
     seed_maintenance_budget_units(world, seed_options, cmunem.as_ref(), cmunal.as_ref(), rng);
 
     board_seeded_squadrons(world);
+    // Every seeded capital ship now exists; number them (FUN_00517760).
+    world.number_capital_ships();
 
     // Every seeded special force now exists; roll their skills.
     roll_special_force_skills(world, rng);
@@ -723,6 +725,8 @@ pub fn apply_seeds_from_files_with_rng<R: Rng + ?Sized>(
     seed_maintenance_budget_units(world, seed_options, cmunem.as_ref(), cmunal.as_ref(), rng);
 
     board_seeded_squadrons(world);
+    // Every seeded capital ship now exists; number them (FUN_00517760).
+    world.number_capital_ships();
 
     // Every seeded special force now exists; roll their skills.
     roll_special_force_skills(world, rng);

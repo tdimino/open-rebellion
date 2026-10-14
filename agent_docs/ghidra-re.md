@@ -153,9 +153,13 @@ The Java scripts run headless (Workflow, below): `DecompileTargets.java`
 (functions with callers and callees), `DecompileVtable.java` (a vtable's
 slots), `FindOperandText.java` (instructions whose text matches, such as a
 field write `+ 0xc0],`), `DumpReferences.java`, `DumpInstructions.java`,
-`DumpPointerTable.java`, `DumpMemory.java`, `FindScalarUses.java`, and
-`CreateAndDecompileTargets.java`. The historical Jython scripts below need
-PyGhidra:
+`DumpPointerTable.java`, `DumpMemory.java`, `FindScalarUses.java`,
+`DecompileCallersOf.java` (every function calling an import, such as
+`DrawTextA`), `FindIndirectCalls.java`, `FindScalarReferences.java`,
+`DumpFloatsAt.java`, and `CreateAndDecompileTargets.java` (a function
+Ghidra never defined, by address). `ghidra/` is ignored, so add a new
+script with `git add -f`, as a cited `.c` file is. The historical Jython
+scripts below need PyGhidra:
 
 | Script | Purpose |
 |--------|---------|

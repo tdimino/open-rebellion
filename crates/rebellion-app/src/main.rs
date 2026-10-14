@@ -1700,6 +1700,7 @@ async fn main() {
             &mut player_faction,
             &mut cockpit_state,
             &mut game_mode,
+            &mut troop_transport_state,
         ) {
             Ok(()) => false,
             Err(error) => {

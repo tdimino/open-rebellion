@@ -4,7 +4,7 @@ description: "Project-specific routing for the Claude Code Minoan and Codex skil
 category: "agent-docs"
 created: 2026-09-08
 updated: 2026-10-06
-tags: [agents, skills, codex, fable, ghidra, qa, research, gemini, audio, native, cua-driver]
+tags: [agents, skills, codex, fable, ghidra, qa, research, gemini, audio, native, cua-driver, task-graph]
 ---
 
 # Agent Tooling for Open Rebellion
@@ -181,6 +181,10 @@ Open Rebellion's Ghidra workflow is project-native rather than a general skill:
   corpus, and `ghidra/notes/` sources described there.
 - Record addresses, call chains, field offsets, and confidence, then connect the
   finding to a Rust test or acceptance fixture.
+- Take reverse-engineering work as `question` nodes of the task graph
+  (`agent_docs/task-graph.md`): one question per agent, its review, then its
+  port. A delegated agent answers questions only; review and porting stay
+  with the lead session.
 - Do not use [`bg3se-macos-ghidra`](https://github.com/tdimino/bg3se-macos/tree/main/tools/skills/bg3se-macos-ghidra); that skill encodes Baldur's Gate 3-specific
   binaries, layouts, launch flows, and terminology.
 

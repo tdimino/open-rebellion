@@ -20,6 +20,7 @@ Reference documentation for AI agents working on the Open Rebellion codebase. Re
 | [simulation.md](simulation.md) | 15 simulation systems, advance() contract, integration order |
 | [deterministic-replay.md](deterministic-replay.md) | Replay format, exact native/WASM artifact gate, DAT/config identity, checkpoints, and open engine-convergence work |
 | [agent-tooling.md](agent-tooling.md) | Claude Code Minoan and Codex skill routing, including browser acceptance, Fable, and Ghidra |
+| [task-graph.md](task-graph.md) | br/bv task graph in `.beads/`: node kinds, the question-review-port-acceptance chain, commands |
 
 ## Game Knowledge
 

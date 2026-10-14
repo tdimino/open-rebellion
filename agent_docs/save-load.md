@@ -1,6 +1,6 @@
 ---
 title: "Save/Load System"
-description: "Native and browser save v36, canonical fingerprints, campaign setup, continuation state, troop cargo, embarked tracking, deliveries, and the no-migration rule"
+description: "Native and browser save v38, canonical fingerprints, campaign setup, continuation state, troop cargo, embarked tracking, deliveries, and the no-migration rule"
 category: "agent-docs"
 created: 2026-03-15
 updated: 2026-10-10
@@ -11,14 +11,14 @@ tags: [save-load, bincode, migration, serialization, wasm, determinism]
 
 `crates/rebellion-data/src/save.rs` owns native files and browser storage.
 `crates/rebellion-app/src/main.rs` converts between a live campaign and the
-serializable snapshot. The current format is v36, and it is the only one
+serializable snapshot. The current format is v38, and it is the only one
 that loads.
 
-## Native format (v36)
+## Native format (v38)
 
 ```text
 [magic: 8 bytes "OPENREB\0"]
-[version: u32 LE]             — SAVE_VERSION = 36
+[version: u32 LE]             — SAVE_VERSION = 38
 [save_name: u32 len + UTF-8]
 [timestamp_secs: u64 LE]
 [mod_count: u32 LE]
@@ -79,7 +79,8 @@ regiments travelling on their own (v25) and squadrons travelling on their
 own (v35), the fleet a moving fleet joins on
 arrival (v26), the fleet naming mode (v28), and the player's Manage
 Garrisons and Manage Production automation, the Agent Advice setting, renamed
-fleets and ships, and each production area's destination (v29),
+fleets and ships, and each production area's destination (v29), each side's
+last number per capital ship class (v38; `ghidra/notes/fleet-names.md`),
 `UprisingState`, queue destinations and en-route deliveries, missions with
 their member lists, phase, and timer, members travelling to a mission
 target, and the MISSNSD and SPECFCSD records.

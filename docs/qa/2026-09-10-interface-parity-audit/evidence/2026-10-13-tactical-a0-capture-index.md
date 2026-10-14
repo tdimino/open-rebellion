@@ -8,17 +8,16 @@ guest-side capture of the unmodified `REBEXE.EXE` (README of
 `tools/original-capture/saves/INDEX.md` or the journey that reached the state;
 the full input trace stays in the manifest.
 
-Coverage: 110 of 114. TAC-01 to TAC-07 are the 106-cell tactical
+Coverage: 113 of 114. TAC-01 to TAC-07 are the 106-cell tactical
 matrix; TAC-08, the ground assault (`UIP-F-010`), is an A0-only family outside
 that denominator (`A0_ONLY_FAMILY_COUNTS` in
 `tools/interface-parity/tactical-matrix.mjs`). A frame here is a reference,
 not an acceptance: comparison against the port and the strict gate have not
 run. Regenerate this file with `node tools/interface-parity/a0-capture-index.mjs`.
 
-Open: TAC-03-C020 (Death Star selection), TAC-05-C009 (attack Death Star), TAC-05-C021 (attack Death Star enabled), TAC-05-C023 (trench-run launch). All four need
-a battle the Alliance owns against an Imperial Death Star; the side-swap save
-edits crash the original, so they wait on a native Alliance game that reaches
-one (`docs/plans/2026-09-22-tooling-tactical-106-cell-acceptance.md`, session 5).
+Open: none.
+Settled without a frame: TAC-03-C020 (the reason is in its row;
+`docs/plans/2026-09-22-tooling-tactical-106-cell-acceptance.md`, session 7).
 
 ## TAC-01: Main space-battle viewport and faction HUD (13 of 13)
 
@@ -79,7 +78,7 @@ one (`docs/plans/2026-09-22-tooling-tactical-106-cell-acceptance.md`, session 5)
 | TAC-03-C017 | target lost | original-save `empire-day30-yaga-alert-ed-fragile` | The ISD selected, attacking the 10-hull Bulk Cruiser, while it dies. Burst frames 00-43 run the attack (Attacking Bulk Cruiser 3); frame 44 is the change; frames 45-50 (t 22.5-25.0 s) are one held frame of target lost: the cruiser gone, the orders line No Orders, Missions and Maneuvers blank. Frame 45 is the cell frame (registered with a0-register TAC-03-C017 45); from frame 51 the results screen. The burst started paused; Resume Battle (718,397) was clicked about 6 s in and the cursor walked back to the park point. (also interaction trace) | `ea760f672b64…` |
 | TAC-03-C018 | capital ship selection | original-save `empire-day30-yaga-alert-control` | left-click the Imperial Star Destroyer in the viewport (game 29,429) (last input step) | `c364b4c3cfdf…` |
 | TAC-03-C019 | fighter selection | original-save `empire-day30-yaga-alert-control` | click the Red fighter-group slot (game 360,10): Red Group selected (last input step) | `0b6043e5bd2d…` |
-| TAC-03-C020 | Death Star selection | — | **Open**: no A0 frame yet | — |
+| TAC-03-C020 | Death Star selection | — | **No separate original state**: the original draws no selectable Death Star: none in the 3D view at any zoom, rotation or highlight, none among the eight capitals the panel arrows cycle, and clicking it in the Missions display does nothing. Its only selected form is the target bracket in TAC-05-C009's frame | — |
 
 ## TAC-04: Navigation, camera, routes, and highlights (14 of 14)
 
@@ -100,7 +99,7 @@ one (`docs/plans/2026-09-22-tooling-tactical-106-cell-acceptance.md`, session 5)
 | TAC-04-C013 | recall | original-save `empire-day30-yaga-alert-control` | before: E0-moved2, the view rotated away. The right red button (game 616,458) is Memorize and the left (game 502,458) Recall; tooltips fall off-screen, so the roles were settled by hashes: Memorize pressed at view 7ff7144f (E0-recalled); rotated away to 85ce01f2 (E0-moved2); Recall restored exactly 7ff7144f. The earlier left-button press labelled Memorize in this trace was a Recall. | `7ff7144f1723…` |
 | TAC-04-C014 | chase camera | original-save `empire-day30-yaga-alert-ed-stranded` | Chase camera on task force 1 (the ISD) attacking the stranded Bulk Cruiser: no holocube, the view moves with the task force. The control save cannot stage this: its Alliance withdraws seconds after the unpause (withdrawn capture kept in .artifacts/original-checks/withdrawn). Before: CH2-before, the paused chase view. (also interaction trace) | `d39be0525a37…` |
 
-## TAC-05: Tactical maneuvers, tactics, and missions (20 of 23)
+## TAC-05: Tactical maneuvers, tactics, and missions (23 of 23)
 
 | Cell | Requirement | Setup | What the frame shows | SHA-256 |
 |---|---|---|---|---|
@@ -112,7 +111,7 @@ one (`docs/plans/2026-09-22-tooling-tactical-106-cell-acceptance.md`, session 5)
 | TAC-05-C006 | standoff | original-save `empire-day30-yaga-alert-control` | click the left-hand detail button (game 522,248): Maneuvers and Tactics panel opens with the default tactic, Stand Off (last input step) | `0a4d270b8d45…` |
 | TAC-05-C007 | attack capital ships | original-save `empire-day30-yaga-alert-control` | click Attack Capital (game 522,169): chosen, not committed (last input step) | `0f16d4a78335…` |
 | TAC-05-C008 | attack fighters | original-save `empire-day30-yaga-alert-control` | Attack Fighters chosen, not committed, on the Carrack (Empire player); the confirmation graphic shows an X-wing in the target frame. | `443c0b0a887e…` |
-| TAC-05-C009 | attack Death Star | — | **Open**: no A0 frame yet | — |
+| TAC-05-C009 | attack Death Star | original-save `alliance-day1169-deathstar-trench-run` | Alliance player, Red Group selected; before: TAC-05-C021 | `06a30297bf38…` |
 | TAC-05-C010 | recover | original-save `empire-day30-yaga-alert-control` | click Recover (game 590,169): chosen, not committed; display shows the TIEs returning to the Star Destroyer (last input step) | `ad9e271df5e5…` |
 | TAC-05-C011 | escort | original-save `empire-day30-yaga-alert-control` | before: E0-carrack, the Carrack selected with No Orders | `023eac198d38…` |
 | TAC-05-C012 | rest | original-save `empire-day30-yaga-alert-control` | click the right-hand detail button (game 590,248): Missions panel opens, nothing chosen (last input step) | `a085fba70f0e…` |
@@ -124,9 +123,9 @@ one (`docs/plans/2026-09-22-tooling-tactical-106-cell-acceptance.md`, session 5)
 | TAC-05-C018 | Death Star laser loading | original-save `empire-death-star-pre-alert` | Battle paused; shot committed on an Alliance capital: charge reset (gauge empty) and the fire control in its loading state; README errata a) Death Star Tactical Controls | `799ea931653c…` |
 | TAC-05-C019 | Death Star laser fired | original-save `empire-death-star-pre-alert` | Battle unpaused with a superlaser shot committed on an Alliance capital; the frame shows the shot striking its target (also interaction trace) | `0e5ae202c0bc…` |
 | TAC-05-C020 | Death Star charge gauge | original-save `empire-death-star-pre-alert` | Battle paused about two minutes after the superlaser shot: the owner-only charge gauge partly refilled (green over blue) and the fire control still loading | `483d35d28622…` |
-| TAC-05-C021 | attack Death Star enabled | — | **Open**: no A0 frame yet | — |
+| TAC-05-C021 | attack Death Star enabled | original-save `alliance-day1169-deathstar-trench-run` | Alliance player, 59 squadrons against 23-24 TIE squadrons, Death Star 1 in Imperial Fleet 16 | `cfadb0871160…` |
 | TAC-05-C022 | attack Death Star disabled | original-save `empire-day30-yaga-alert-control` | Empire player, capital ship selected, no hostile Death Star; before: TAC-05-C015 | `a085fba70f0e…` |
-| TAC-05-C023 | trench-run launch | — | **Open**: no A0 frame yet | — |
+| TAC-05-C023 | trench-run launch | original-save `alliance-day1169-deathstar-trench-run` | Alliance player; Red Group committed to Attack Death Star; burst of 60 frames 500 ms apart across the launch, which the original marks only by voice 15161 and the 120 s timer (no visible change); before: TAC-05-C023-before (also interaction trace, audio capture, interaction trace) | `829ce9db16f4…` |
 
 ## TAC-06: Battle Options, withdraw, simulate, and observe (9 of 9)
 

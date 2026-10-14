@@ -77,18 +77,33 @@ const DEPLOY_ZONE_FRACTION: f32 = 0.3;
 /// Selected-capital-ship display panel.
 const TACTICAL_SELECTED_SHIP_PANEL: u32 = 1302;
 
-/// Native meter apertures inside TACTICAL 1302. The left meter is shield
-/// strength; the right meter is hull integrity in the selected ship's faction
-/// colour, as shown by both faction reference captures.
-const TACTICAL_SELECTED_SHIELD_METER: NativeRect = NativeRect::new(514.0, 107.0, 40.0, 8.0);
-const TACTICAL_SELECTED_HULL_METER: NativeRect = NativeRect::new(585.0, 107.0, 39.0, 8.0);
-const TACTICAL_SELECTED_SHIP_ART_X: f32 = 507.0;
-const TACTICAL_SELECTED_SHIP_ART_Y: f32 = 37.0;
+/// `FUN_005e4110` builds two `CoolwinStatusBar` meters (`FUN_0060e150`) at
+/// panel-local (34, 81) and (103, 81), 37 by 10, each a blue fill
+/// (0x02ff0000) over a red background (0x020000ff). The refresh at
+/// 0x005e50ce sets the left one to hull (`FUN_005b1640`, +0x3cc / +0x3c8)
+/// and the right one to shields (`FUN_005b1650`, +0x3c0 / +0x3bc, 0 for a
+/// ship without shields), as truncated percentages.
+const TACTICAL_SELECTED_HULL_METER: NativeRect = NativeRect::new(516.0, 109.0, 37.0, 10.0);
+const TACTICAL_SELECTED_SHIELD_METER: NativeRect = NativeRect::new(585.0, 109.0, 37.0, 10.0);
+/// `FUN_005e4b40` draws the selected ship's 96 by 39 art at panel-local
+/// (0x1a, 0x11).
+const TACTICAL_SELECTED_SHIP_ART_X: f32 = 508.0;
+const TACTICAL_SELECTED_SHIP_ART_Y: f32 = 45.0;
+/// `FUN_005e4880` labels the panel in font 8, white, left-aligned from the
+/// top-left of each box: name (26, 7), task force (26, 52), order (15, 182)
+/// and tactic (15, 193), panel-local.
+/// hyp: measured, not traced. A0 TAC-03-C001's glyphs measure at a 9-pixel
+/// em (cap height 7, "No Orders" 41 wide), each baseline 9 below its box top.
+const TACTICAL_SELECTED_NAME_POINT: (f32, f32) = (508.0, 44.0);
+const TACTICAL_SELECTED_TASK_FORCE_POINT: (f32, f32) = (508.0, 89.0);
+const TACTICAL_SELECTED_ORDER_POINT: (f32, f32) = (497.0, 219.0);
+const TACTICAL_SELECTED_TACTIC_POINT: (f32, f32) = (497.0, 230.0);
+const TACTICAL_SELECTED_TEXT_EM: f32 = 9.0;
 /// `FUN_005e45f0` and `FUN_005e7540` place the five condition indicators at
 /// panel-local x positions 10, 37, 64, 91, and 118 with y 103.
 const TACTICAL_SUBSYSTEM_RESOURCE_BASES: [u32; 5] = [1201, 1206, 1211, 1216, 1221];
-const TACTICAL_SUBSYSTEM_X: [f32; 5] = [491.0, 518.0, 545.0, 572.0, 599.0];
-const TACTICAL_SUBSYSTEM_Y: f32 = 130.0;
+const TACTICAL_SUBSYSTEM_X: [f32; 5] = [492.0, 519.0, 546.0, 573.0, 600.0];
+const TACTICAL_SUBSYSTEM_Y: f32 = 131.0;
 
 /// Default ship icon size when no sprite is available.
 const DEFAULT_SHIP_SIZE: f32 = 40.0;
@@ -3816,7 +3831,8 @@ impl BattleSession {
                 source_waypoint: None,
                 navigation_route: Vec::new(),
                 source_collision_envelope: None,
-                name: class.name.clone(),
+                // FUN_004f62d0: the ship's own name, else its class's.
+                name: ship.name.clone().unwrap_or_else(|| class.name.clone()),
                 x: 0.0,
                 y: 0.0,
                 hull_current: ship.hull_current,
@@ -7101,6 +7117,25 @@ impl TacticalState {
         }
     }
 
+    /// Select the player's first ship, undamaged. Battles open with nothing
+    /// selected (`FUN_005c5800`); the participant and camera gates read the
+    /// selected panel and the Center control from this staged selection.
+    #[cfg(feature = "interface-test-fixtures")]
+    pub fn select_first_player_ship_for_fixture(&mut self) {
+        let Some(session) = self.session.as_mut() else {
+            return;
+        };
+        let Some(index) = session
+            .ships
+            .iter()
+            .position(|ship| ship.is_attacker == session.player_is_attacker)
+        else {
+            return;
+        };
+        session.ships[index].selected = true;
+        session.selected_ship = Some(index);
+    }
+
     /// Select one production capital ship and install stable live damage for
     /// the selected-HUD browser gate. This bridge never enters production.
     #[cfg(feature = "interface-test-fixtures")]
@@ -7634,35 +7669,36 @@ struct TacticalBattleOptionsSpec {
 }
 
 // REBEXE FUN_005dab90 places these at panel-local (18, 19), (14, 93),
-// (87, 93), (23, 184) and (97, 184) on panel 1306 at (481, 27).
+// (87, 93), (23, 184) and (97, 184) on panel 1306, whose container
+// `FUN_0059cac0` places at (482, 28) (0x1e2, 0x1c).
 const TACTICAL_BATTLE_OPTIONS_CONTROLS: [TacticalBattleOptionsSpec; 5] = [
     TacticalBattleOptionsSpec {
         control: TacticalBattleOptionsControl::Withdraw,
-        rect: NativeRect::new(499.0, 46.0, 48.0, 34.0),
+        rect: NativeRect::new(500.0, 47.0, 48.0, 34.0),
         normal_resource: resources::tactical::BTN_WITHDRAW_FROM_BATTLE_NORMAL,
         pressed_resource: resources::tactical::BTN_WITHDRAW_FROM_BATTLE_PRESSED,
     },
     TacticalBattleOptionsSpec {
         control: TacticalBattleOptionsControl::SimulateRemainder,
-        rect: NativeRect::new(495.0, 120.0, 44.0, 25.0),
+        rect: NativeRect::new(496.0, 121.0, 44.0, 25.0),
         normal_resource: resources::tactical::BTN_SIMULATE_REMAINDER_NORMAL,
         pressed_resource: resources::tactical::BTN_SIMULATE_REMAINDER_PRESSED,
     },
     TacticalBattleOptionsSpec {
         control: TacticalBattleOptionsControl::ObserveToggle,
-        rect: NativeRect::new(568.0, 120.0, 45.0, 25.0),
+        rect: NativeRect::new(569.0, 121.0, 45.0, 25.0),
         normal_resource: resources::tactical::BTN_OBSERVE_TOGGLE_NORMAL,
         pressed_resource: resources::tactical::BTN_OBSERVE_TOGGLE_PRESSED,
     },
     TacticalBattleOptionsSpec {
         control: TacticalBattleOptionsControl::GameOptions,
-        rect: NativeRect::new(504.0, 211.0, 52.0, 33.0),
+        rect: NativeRect::new(505.0, 212.0, 52.0, 33.0),
         normal_resource: resources::tactical::BTN_GAME_OPTIONS_NORMAL,
         pressed_resource: resources::tactical::BTN_GAME_OPTIONS_PRESSED,
     },
     TacticalBattleOptionsSpec {
         control: TacticalBattleOptionsControl::Close,
-        rect: NativeRect::new(578.0, 211.0, 29.0, 33.0),
+        rect: NativeRect::new(579.0, 212.0, 29.0, 33.0),
         normal_resource: resources::tactical::BTN_BATTLE_OPTIONS_CLOSE_NORMAL,
         pressed_resource: resources::tactical::BTN_BATTLE_OPTIONS_CLOSE_PRESSED,
     },
@@ -7681,13 +7717,13 @@ struct TacticalWithdrawConfirmationSpec {
 const TACTICAL_WITHDRAW_CONFIRMATION_CONTROLS: [TacticalWithdrawConfirmationSpec; 2] = [
     TacticalWithdrawConfirmationSpec {
         control: TacticalWithdrawConfirmationControl::Confirm,
-        rect: NativeRect::new(547.0, 229.0, 27.0, 25.0),
+        rect: NativeRect::new(548.0, 230.0, 27.0, 25.0),
         normal_resource: resources::tactical::BTN_ASSIGN_CONFIRM_NORMAL,
         pressed_resource: resources::tactical::BTN_ASSIGN_CONFIRM_PRESSED,
     },
     TacticalWithdrawConfirmationSpec {
         control: TacticalWithdrawConfirmationControl::Cancel,
-        rect: NativeRect::new(587.0, 229.0, 27.0, 25.0),
+        rect: NativeRect::new(588.0, 230.0, 27.0, 25.0),
         normal_resource: resources::tactical::BTN_ASSIGN_CANCEL_NORMAL,
         pressed_resource: resources::tactical::BTN_ASSIGN_CANCEL_PRESSED,
     },
@@ -7763,47 +7799,50 @@ fn tactical_command_spec(
     use resources::tactical as art;
     match control {
         TacticalCommandControl::PreviousCapital => (
-            NativeRect::new(488.0, 37.0, 11.0, 53.0),
+            NativeRect::new(489.0, 38.0, 11.0, 53.0),
             art::BTN_PREVIOUS_CAPITAL_NORMAL,
         ),
         TacticalCommandControl::NextCapital => (
-            NativeRect::new(613.0, 37.0, 11.0, 53.0),
+            NativeRect::new(614.0, 38.0, 11.0, 53.0),
             art::BTN_NEXT_CAPITAL_NORMAL,
         ),
+        // FUN_005e4110: 1107 at panel x 12 and 1105 at x 80. The original
+        // opens Maneuvers and Tactics from the left and Missions from the
+        // right (A0 TAC-05-C006, TAC-05-C012).
         TacticalCommandControl::OpenMissions => (
-            NativeRect::new(493.0, 237.0, 58.0, 22.0),
+            NativeRect::new(562.0, 238.0, 58.0, 22.0),
             art::BTN_MISSIONS_NORMAL,
         ),
         TacticalCommandControl::OpenManeuvers => (
-            NativeRect::new(561.0, 237.0, 58.0, 22.0),
+            NativeRect::new(494.0, 238.0, 58.0, 22.0),
             art::BTN_MANEUVERS_TACTICS_NORMAL,
         ),
         TacticalCommandControl::LeftHook => (
-            NativeRect::new(494.0, 186.0, 28.0, 28.0),
+            NativeRect::new(495.0, 187.0, 28.0, 28.0),
             art::BTN_LEFT_HOOK_NORMAL,
         ),
         TacticalCommandControl::RightHook => (
-            NativeRect::new(524.0, 186.0, 28.0, 28.0),
+            NativeRect::new(525.0, 187.0, 28.0, 28.0),
             art::BTN_RIGHT_HOOK_NORMAL,
         ),
         TacticalCommandControl::Hammer => (
-            NativeRect::new(494.0, 156.0, 28.0, 28.0),
+            NativeRect::new(495.0, 157.0, 28.0, 28.0),
             art::BTN_HAMMER_NORMAL,
         ),
         TacticalCommandControl::Anvil => (
-            NativeRect::new(524.0, 156.0, 28.0, 28.0),
+            NativeRect::new(525.0, 157.0, 28.0, 28.0),
             art::BTN_ANVIL_NORMAL,
         ),
         TacticalCommandControl::HoldPosition => (
-            NativeRect::new(556.0, 171.0, 28.0, 28.0),
+            NativeRect::new(557.0, 172.0, 28.0, 28.0),
             art::BTN_HOLD_POSITION_NORMAL,
         ),
         TacticalCommandControl::ToggleTactic => (
-            NativeRect::new(592.0, 159.0, 24.0, 52.0),
+            NativeRect::new(593.0, 160.0, 24.0, 52.0),
             art::BTN_TACTIC_STAND_OFF,
         ),
         TacticalCommandControl::AttackCapitalShips => (
-            NativeRect::new(499.0, 156.0, 46.0, 26.0),
+            NativeRect::new(500.0, 157.0, 46.0, 26.0),
             if player_is_alliance {
                 art::BTN_ATTACK_CAPITAL_SHIPS_ALLIANCE_NORMAL
             } else {
@@ -7811,7 +7850,7 @@ fn tactical_command_spec(
             },
         ),
         TacticalCommandControl::AttackFighters => (
-            NativeRect::new(499.0, 186.0, 46.0, 26.0),
+            NativeRect::new(500.0, 187.0, 46.0, 26.0),
             if player_is_alliance {
                 art::BTN_ATTACK_FIGHTERS_ALLIANCE_NORMAL
             } else {
@@ -7819,7 +7858,7 @@ fn tactical_command_spec(
             },
         ),
         TacticalCommandControl::Recover => (
-            NativeRect::new(567.0, 156.0, 46.0, 26.0),
+            NativeRect::new(568.0, 157.0, 46.0, 26.0),
             if player_is_alliance {
                 art::BTN_RECOVER_ALLIANCE_NORMAL
             } else {
@@ -7827,15 +7866,15 @@ fn tactical_command_spec(
             },
         ),
         TacticalCommandControl::AttackDeathStar => (
-            NativeRect::new(567.0, 186.0, 46.0, 26.0),
+            NativeRect::new(568.0, 187.0, 46.0, 26.0),
             art::BTN_ATTACK_DEATH_STAR_NORMAL,
         ),
         TacticalCommandControl::Confirm => (
-            NativeRect::new(547.0, 229.0, 27.0, 25.0),
+            NativeRect::new(548.0, 230.0, 27.0, 25.0),
             art::BTN_ASSIGN_CONFIRM_NORMAL,
         ),
         TacticalCommandControl::Cancel => (
-            NativeRect::new(587.0, 229.0, 27.0, 25.0),
+            NativeRect::new(588.0, 230.0, 27.0, 25.0),
             art::BTN_ASSIGN_CANCEL_NORMAL,
         ),
     }
@@ -8144,28 +8183,36 @@ impl<'a> TacticalGroupHud<'a> {
     }
 }
 
-fn tactical_meter_fraction(current: i32, maximum: i32) -> f32 {
+fn tactical_meter_percent(current: i32, maximum: i32) -> u32 {
     if maximum <= 0 {
-        0.0
+        0
     } else {
-        (current as f32 / maximum as f32).clamp(0.0, 1.0)
+        ((current as f32 / maximum as f32).clamp(0.0, 1.0) * 100.0) as u32
     }
 }
 
-fn draw_tactical_selected_meter(
-    canvas: TacticalCanvas,
-    rect: NativeRect,
-    fraction: f32,
-    color: Color,
-) {
+/// `FUN_0060e460` paints the red background, then `width * percent / 100`
+/// whole pixels of blue fill.
+fn draw_tactical_selected_meter(canvas: TacticalCanvas, rect: NativeRect, percent: u32) {
     let (x, y) = canvas.point(rect.x, rect.y);
+    let height = rect.height * canvas.scale;
     draw_rectangle(
         x,
         y,
-        rect.width * canvas.scale * fraction.clamp(0.0, 1.0),
-        rect.height * canvas.scale,
-        color,
+        rect.width * canvas.scale,
+        height,
+        Color::new(1.0, 0.0, 0.0, 1.0),
     );
+    let fill = (rect.width as u32 * percent.min(100) / 100) as f32;
+    if fill > 0.0 {
+        draw_rectangle(
+            x,
+            y,
+            fill * canvas.scale,
+            height,
+            Color::new(0.0, 0.0, 1.0, 1.0),
+        );
+    }
 }
 
 fn selected_player_task_force(session: &BattleSession) -> Option<u8> {
@@ -10108,7 +10155,11 @@ fn prewarm_tactical_font_atlas(
         (18.0 * canvas.scale) as u16,
     ]);
     sizes.sort_unstable();
-    if sizes.iter().all(|size| warmed_sizes.contains(size)) {
+    // The selected panel's labels draw in the result face; its sizes are
+    // keyed apart from the default face's.
+    let result_size = (TACTICAL_SELECTED_TEXT_EM * canvas.scale).max(1.0) as u16;
+    let result_key = result_size | 0x8000;
+    if sizes.iter().all(|size| warmed_sizes.contains(size)) && warmed_sizes.contains(&result_key) {
         return;
     }
 
@@ -10139,6 +10190,9 @@ fn prewarm_tactical_font_atlas(
             measure_text(&sample, None, size, 1.0);
             previous = Some(size);
         }
+    }
+    if warmed_sizes.insert(result_key) {
+        measure_text(&sample, result_font().as_ref(), result_size, 1.0);
     }
 }
 
@@ -10188,9 +10242,9 @@ fn draw_tactical_assignment_panel(
             pending_order,
             pending_tactic,
         } => {
-            draw_tactical_bitmap(cache, art::MANEUVERS_PANEL, canvas, 481.0, 27.0);
+            draw_tactical_bitmap(cache, art::MANEUVERS_PANEL, canvas, 482.0, 28.0);
             if let Some(graphic) = pending_order.maneuver_graphic() {
-                draw_tactical_bitmap(cache, graphic, canvas, 495.0, 41.0);
+                draw_tactical_bitmap(cache, graphic, canvas, 496.0, 42.0);
             }
             for (control, normal, selected) in [
                 (
@@ -10262,15 +10316,15 @@ fn draw_tactical_assignment_panel(
             }
         }
         TacticalCommandPanel::Missions { pending_order } => {
-            draw_tactical_bitmap(cache, art::MISSIONS_PANEL, canvas, 481.0, 27.0);
+            draw_tactical_bitmap(cache, art::MISSIONS_PANEL, canvas, 482.0, 28.0);
             draw_tactical_bitmap(
                 cache,
                 pending_order
                     .mission_graphic(player_is_alliance)
                     .unwrap_or(art::MISSIONS_HUD_EMPTY),
                 canvas,
-                495.0,
-                41.0,
+                496.0,
+                42.0,
             );
             for (control, normal, pressed_art, selected) in [
                 (
@@ -10377,7 +10431,7 @@ fn draw_tactical_withdraw_confirmation(
 ) {
     use resources::tactical as art;
 
-    draw_tactical_bitmap(cache, art::WITHDRAW_CONFIRMATION_PANEL, canvas, 481.0, 27.0);
+    draw_tactical_bitmap(cache, art::WITHDRAW_CONFIRMATION_PANEL, canvas, 482.0, 28.0);
     for spec in TACTICAL_WITHDRAW_CONFIRMATION_CONTROLS {
         draw_tactical_bitmap(
             cache,
@@ -10398,9 +10452,9 @@ fn draw_tactical_withdraw_confirmation(
     let font_size = 10.0 * canvas.scale;
     let text_color = Color::new(0.84, 0.92, 0.84, 1.0);
     for (text, x, top) in [
-        ("Withdraw Confirmation", 501.0, 55.0),
-        ("Are you sure you wish to", 495.0, 119.0),
-        ("order a fleet withdraw?", 495.0, 131.0),
+        ("Withdraw Confirmation", 502.0, 56.0),
+        ("Are you sure you wish to", 496.0, 120.0),
+        ("order a fleet withdraw?", 496.0, 132.0),
     ] {
         let (screen_x, screen_y) = canvas.point(x, top + 10.0);
         draw_text(text, screen_x, screen_y, font_size, text_color);
@@ -10561,7 +10615,7 @@ fn draw_original_tactical_hud(
     if withdraw_confirmation_open {
         draw_tactical_withdraw_confirmation(cache, canvas, pressed_withdraw_confirmation);
     } else if battle_options_open {
-        draw_tactical_bitmap(cache, art::BATTLE_OPTIONS_PANEL, canvas, 481.0, 27.0);
+        draw_tactical_bitmap(cache, art::BATTLE_OPTIONS_PANEL, canvas, 482.0, 28.0);
         for spec in TACTICAL_BATTLE_OPTIONS_CONTROLS {
             if spec.control == TacticalBattleOptionsControl::Withdraw && !withdraw_enabled {
                 continue;
@@ -10596,7 +10650,7 @@ fn draw_original_tactical_hud(
         } else {
             art::IDLE_PANEL_EMPIRE
         };
-        draw_tactical_bitmap(cache, panel_resource, canvas, 481.0, 27.0);
+        draw_tactical_bitmap(cache, panel_resource, canvas, 482.0, 28.0);
     }
     if !withdraw_confirmation_open
         && !battle_options_open
@@ -10612,24 +10666,18 @@ fn draw_original_tactical_hud(
                     TACTICAL_SELECTED_SHIP_ART_Y,
                 );
             }
-            if let Some((shield, maximum)) = groups.selected_ship_shield {
-                draw_tactical_selected_meter(
-                    canvas,
-                    TACTICAL_SELECTED_SHIELD_METER,
-                    tactical_meter_fraction(shield, maximum),
-                    Color::new(0.0, 0.0, 1.0, 1.0),
-                );
-            }
             if let Some((hull, maximum)) = groups.selected_ship_hull {
                 draw_tactical_selected_meter(
                     canvas,
                     TACTICAL_SELECTED_HULL_METER,
-                    tactical_meter_fraction(hull, maximum),
-                    if player_is_alliance {
-                        Color::new(0.0, 0.2, 1.0, 1.0)
-                    } else {
-                        Color::new(1.0, 0.0, 0.0, 1.0)
-                    },
+                    tactical_meter_percent(hull, maximum),
+                );
+            }
+            if let Some((shield, maximum)) = groups.selected_ship_shield {
+                draw_tactical_selected_meter(
+                    canvas,
+                    TACTICAL_SELECTED_SHIELD_METER,
+                    tactical_meter_percent(shield, maximum),
                 );
             }
             if let Some(subsystems) = groups.selected_ship_subsystems {
@@ -10652,47 +10700,38 @@ fn draw_original_tactical_hud(
                     DllSource::Gokres,
                     content.resource_id,
                     canvas,
-                    491.0 + index as f32 * 63.0,
-                    155.0,
+                    492.0 + index as f32 * 63.0,
+                    156.0,
                     None,
                 );
             }
-            let (x, y) = canvas.point(497.0, 48.0);
-            draw_text(name, x, y, 11.0 * canvas.scale, WHITE);
-            let (x, y) = canvas.point(497.0, 69.0);
-            draw_text(
-                &format!("Task Force #{}", group + 1),
-                x,
-                y,
-                11.0 * canvas.scale,
-                WHITE,
-            );
-            let (x, y) = canvas.point(497.0, 218.0);
-            draw_text(
-                groups.selected_order.label(),
-                x,
-                y,
-                10.0 * canvas.scale,
-                WHITE,
-            );
-            let (x, y) = canvas.point(497.0, 230.0);
-            draw_text(
-                &format!("Tactics: {}", groups.selected_tactic.label()),
-                x,
-                y,
-                9.0 * canvas.scale,
-                WHITE,
-            );
+            for ((x, y), text) in [
+                (TACTICAL_SELECTED_NAME_POINT, name.to_owned()),
+                (
+                    TACTICAL_SELECTED_TASK_FORCE_POINT,
+                    format!("Task Force # {}", group + 1),
+                ),
+                (
+                    TACTICAL_SELECTED_ORDER_POINT,
+                    groups.selected_order.label().to_owned(),
+                ),
+                (
+                    TACTICAL_SELECTED_TACTIC_POINT,
+                    format!("Tactics: {}", groups.selected_tactic.label()),
+                ),
+            ] {
+                draw_result_text(canvas, &text, x, y, TACTICAL_SELECTED_TEXT_EM, WHITE);
+            }
         } else if let (Some(name), Some(group), Some(hud_resource)) = (
             groups.selected_fighter_name,
             groups.selected_fighter_group,
             groups.selected_fighter_hud,
         ) {
-            draw_tactical_bitmap(cache, hud_resource, canvas, 505.0, 76.0);
-            let (x, y) = canvas.point(490.0, 45.0);
+            draw_tactical_bitmap(cache, hud_resource, canvas, 506.0, 77.0);
+            let (x, y) = canvas.point(491.0, 46.0);
             draw_text(name, x, y, 10.0 * canvas.scale, WHITE);
             let labels = ["Red Group", "Blue Group", "Green Group", "Gold Group"];
-            let (x, y) = canvas.point(490.0, 58.0);
+            let (x, y) = canvas.point(491.0, 59.0);
             draw_text(
                 labels[usize::from(group.min(3))],
                 x,
@@ -10700,7 +10739,7 @@ fn draw_original_tactical_hud(
                 10.0 * canvas.scale,
                 WHITE,
             );
-            let (x, y) = canvas.point(490.0, 69.0);
+            let (x, y) = canvas.point(491.0, 70.0);
             draw_text(
                 groups.selected_order.label(),
                 x,
@@ -18476,7 +18515,9 @@ mod tests {
                 500.0,
                 245.0,
             ),
-            Some(TacticalCommandControl::OpenMissions)
+            // The left button opens Maneuvers and Tactics, the right one
+            // Missions (A0 TAC-05-C006, TAC-05-C012; FUN_005e4110).
+            Some(TacticalCommandControl::OpenManeuvers)
         );
         assert_eq!(
             tactical_command_rect_control_at(
@@ -18487,7 +18528,7 @@ mod tests {
                 570.0,
                 245.0,
             ),
-            Some(TacticalCommandControl::OpenManeuvers)
+            Some(TacticalCommandControl::OpenMissions)
         );
         let maneuvers = TacticalCommandPanel::Maneuvers {
             pending_order: TacticalOrder::None,

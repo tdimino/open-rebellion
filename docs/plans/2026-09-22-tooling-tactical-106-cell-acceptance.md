@@ -3,7 +3,7 @@ title: "Tactical 106-Cell Acceptance Train"
 description: "Final local commit train for a runnable and honestly accepted TAC-01 through TAC-07 parity matrix"
 category: plan
 created: 2026-09-22
-updated: 2026-09-28
+updated: 2026-10-14
 tags: [interface, parity, tactical, browser, evidence, testing]
 status: in_progress
 ---
@@ -45,9 +45,12 @@ allows 114 captures.
 - The strict matrix contains exactly 106 pending cells: 13 in `TAC-01`, 13 in
   `TAC-02`, 20 in `TAC-03`, 14 in `TAC-04`, 23 in `TAC-05`, nine in `TAC-06`,
   and 14 in `TAC-07`.
-- The original English executable reaches its main menu in the existing A0
-  Windows VM, but the 106-cell lossless tactical capture set does not yet
-  exist.
+- A0: 113 of 114 references are captured from the original in the A0
+  Windows VM, and TAC-03-C020 is settled without a frame (sessions 5 to 7).
+- C6: the first strict verdict over all 106 cells is pass 11, fail 66,
+  not-run 28, settled 1, with the negative controls failing their rows
+  (6 of 6). The remaining work is triaged into the task graph
+  (`agent_docs/task-graph.md`), one acceptance node per failing region.
 - Original binaries, extracted resources, saves, screenshots, audio, and video
   remain local and ignored. Only metadata, tooling, hashes, and permissible
   evidence summaries enter Git.
@@ -496,6 +499,107 @@ each frame shows, is listed in the
   (`tools/original-capture/saves/INDEX.md`, "The library on the VM").
 - **Still open:** TAC-03-C020, TAC-05-C009, C021 and C023.
 
+### Session 7 (2026-10-13): an Alliance battle against the Death Star
+
+- **Source.** David Adams (author of rebellion2) gave us an Alliance save,
+  "Death Star at Coruscant", on day 1119
+  (`alliance-deathstar-at-coruscant.sav`). Death Star 1 sits in Imperial
+  Fleet 16 at Coruscant.
+- **Staged in play, unedited:**
+  - Fleets 2 (30 X-wing squadrons) and 7 (29 squadrons) met at Averam and
+    were merged into Fleet 2: 26 ships, 59 squadrons.
+  - Fleet 2 was then sent to Coruscant.
+  - The saved result is `alliance-day1169-deathstar-trench-run.sav`.
+- **The alert.** On day 1173, Battle at Coruscant opens against Fleets 16
+  and 193, with 23–24 TIE squadrons. 59 against 23–24 satisfies Attack Death
+  Star's fighter majority (`FUN_005ad930`).
+- **Squadron size can be edited** (recipe 4 in
+  `agent_docs/original-save-editing.md`). This route did not need it.
+
+**Result: 113 of 114 captured, and C020 settled without a frame.** Every
+cell is in the
+[capture index](../qa/2026-09-10-interface-parity-audit/evidence/2026-10-13-tactical-a0-capture-index.md).
+
+- **Route.** On a fresh launch, Take Command is enabled. Click the Red
+  fighter-group slot (game 360,10), giving Red Group with 23 X-wings. Open the
+  right-hand detail button (590,248) to show the Missions panel.
+  - The fighter Missions panel holds four buttons: Attack Capital (top left),
+    Attack Fighters (top right), Escort (bottom left) and Attack Death Star
+    (bottom right, game 590,199).
+- **C021, enabled.** Attack Death Star is drawn solid. The disabled
+  capital-ship panel in TAC-05-C022 draws it hollow.
+- **C009, chosen.** The display shows the Death Star in a yellow target
+  bracket, with an X-wing on a red attack line. The button turns magenta.
+- **C023, the trench-run launch.** The check mark (game 562,242) commits the
+  order. Attack Death Star then greys and the Red slot greys. Three runs agree
+  on the timing:
+  - At the commit, the original plays only Red Group's fighter-mission
+    acknowledgement: voice 14097, Alliance event 0x80, matched at 0.98.
+  - At the unpause it plays 15160 (matched at 0.63 over the battle sound).
+  - About 61 s after the unpause, 15161 marks the launch (0.96–0.98).
+  - Chatter (15133, 15138 …) follows about every 12 s, which is 10% of the
+    120 s timer.
+  - About 120 s after 15161, the trench-run film plays (about 40 s), and then
+    play returns to the tactical view.
+  - Nothing changes on screen at the launch. Red Group's X-wings never appear
+    in the 3D view.
+  - The cell is a 60-frame, 500 ms burst across the launch, with the committed
+    paused frame as `before`. Frame 40 is the cell frame. It falls within
+    about 3 s of 15161: the guest and host clocks agree to a few seconds. The
+    recording is attached as `original.wav`.
+  - Runs 1 and 2, which missed the launch, are kept in
+    `.artifacts/original-checks/withdrawn/TAC-05-C023-run{1,2}/`.
+- **C020 has no separate original state.** The original draws no selectable
+  Death Star in this Alliance battle or in the Empire's (session 5):
+  - none in the 3D view at any zoom, rotation or highlight;
+  - none among the eight capitals that the panel arrows cycle;
+  - clicking the Death Star in the Missions display does nothing.
+  - Its only selected form is the C009 target bracket. The index and the C6
+    compare spec mark it `settled` (Tom's decision).
+- **A1 defects found.** The port treats commit as launch:
+  - It starts the trench-run timer at the commit and queues 0x139 and 0x13a
+    there (`queue_selected_command_voice` returns early for Attack Death Star).
+    The original plays the ordinary fighter-mission acknowledgement at the
+    commit and launches about 61 s later.
+  - The port also renders a selectable 5010 Death Star at the far face's
+    centre, which neither side's battle in the original shows.
+  - Both belong to the C6 backlog, not to this capture.
+- **VM note.** "Timed out waiting for RPC" from the guest agent ended one
+  run's `a0-game` partway. `vm-game.sh recover a0` fixed it.
+
+### Session 8 (2026-10-14): the first C6 verdict, and the panel against A0
+
+- **Compare tool.** `tools/interface-parity/tactical-a0-compare.mjs` and its
+  spec `scenarios/tactical-a0-compare.json` compare each mapped A1 frame with
+  its A0 cell by region (SSIM, normalized MAE, changed-pixel ratio, edge IoU,
+  displacement). A region whose A1 scenario does not reproduce the A0 save
+  is `not-run`, never a pass. The `settled` status carries TAC-03-C020.
+- **Yaga fixture (step B).** Fixture scenario 37 rebuilds the day-30 Battle
+  at Yaga Minor unit for unit; four journeys replay the A0 traces, and 67
+  cells map onto them with `state_matches`.
+- **Fixed against A0 and Ghidra** (each verified in the running game and
+  the battle runner):
+  - The right-hand container sits at `(482,28)`, not `(481,27)`
+    (`FUN_0059cac0`); every panel coordinate moved by one pixel.
+  - Hull and shield meters: blue fill over red, hull on the left
+    (`FUN_005e4110`, `FUN_005e4b40`); a red meter is empty.
+  - The four panel labels, their font size and the ship art position
+    (`FUN_005e4880`, `FUN_005e4b40`).
+  - Recover art was swapped between the sides (`FUN_005df110`).
+  - Maneuvers and Missions were wired to the wrong buttons (`FUN_005e4110`).
+  - Capital ships carry their numbered names, "Imperial Star Destroyer 1"
+    (`FUN_00517760`; save v38).
+  - Ghidra notes: `ghidra/notes/tactical-selected-ship-panel.md`,
+    `fleet-names.md`, `tactical-command-assignment.md`.
+- **Result.** Battle runner 80 of 80 (run
+  `2026-10-14T15-49-45-646Z-8570`). C6 on that run: pass 11, fail 66,
+  not-run 28, settled 1; negative controls 6 of 6.
+- **Where the failures are.** The Results window is the only failing
+  region in 10 cells; the control cluster fails in 19, the space view in 23,
+  the status panel in 16, Battle Options in 9. 28 cells cannot run until an
+  A1 fixture reproduces their A0 save (step D). Each is a node in
+  `.beads/issues.jsonl`, with its cells.
+
 - Automate the owned original English installation in the existing Windows VM.
 - Use original saves, normal inputs, and, where necessary, editor-assisted save
   setup only to reach states. The displayed frame must always come from the
@@ -606,6 +710,10 @@ purpose is explicit audio verification.
 
 Gate: deliberate one-pixel geometry, wrong-bitmap, wrong-action, missing-audio,
 and stale-state negative controls all fail the correct row.
+
+Status (session 8): built and run. The negative controls fail their rows,
+6 of 6; the verdict is pass 11, fail 66, not-run 28, settled 1. The fixes
+are tracked in the task graph, not by tuning thresholds.
 
 ### C7. Final acceptance and documentation
 

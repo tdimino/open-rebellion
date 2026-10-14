@@ -1,0 +1,189 @@
+{
+  "schema_version": 1,
+  "family": "TAC-01..TAC-07",
+  "canvas": { "width": 640, "height": 480 },
+  "region_classes": {
+    "chrome": "Content depends only on interaction state the journey reproduces (pressed, chosen, paused, open). Compared on every run.",
+    "state": "Content depends on the battle itself: ships, selection, damage, camera, results. Compared only when the A1 scenario's state_match names the A0 capture's save."
+  },
+  "regions": {
+    "aperture": { "rect": [16, 28, 444, 439], "class": "state", "source": "tactical_view.rs BATTLE_APERTURE" },
+    "pause-label": { "rect": [16, 28, 120, 24], "class": "chrome", "source": "A0 TAC-01-C003: the Battle Paused label at the aperture's top left" },
+    "task-force-strip": { "rect": [60, 2, 207, 17], "class": "state", "source": "tactical_view.rs TASK_FORCE_BUTTONS" },
+    "task-force-1": { "rect": [60, 2, 25, 17], "class": "chrome", "source": "tactical_view.rs TASK_FORCE_BUTTONS[0]" },
+    "fighter-group-strip": { "rect": [330, 2, 103, 17], "class": "state", "source": "tactical_view.rs FIGHTER_GROUP_BUTTONS" },
+    "laser-control": { "rect": [613, 2, 21, 20], "class": "chrome", "source": "tactical_view.rs DEATH_STAR_LASER_BUTTON_RECT" },
+    "laser-gauge": { "rect": [508, 9, 95, 6], "class": "state", "source": "tactical_view.rs DEATH_STAR_LASER_FILL_RECT" },
+    "status-panel": { "rect": [474, 28, 166, 236], "class": "state", "source": "tactical_view.rs panel 1306 at (482, 28), FUN_0059cac0, and selected panel 1302" },
+    "ship-meters": { "rect": [514, 107, 110, 8], "class": "state", "source": "tactical_view.rs TACTICAL_SELECTED_SHIELD_METER, TACTICAL_SELECTED_HULL_METER" },
+    "subsystem-icons": { "rect": [488, 128, 140, 26], "class": "state", "source": "tactical_view.rs TACTICAL_SUBSYSTEM_X, TACTICAL_SUBSYSTEM_Y (FUN_005e45f0, FUN_005e7540)" },
+    "orders-display": { "rect": [488, 32, 140, 120], "class": "state", "source": "tactical_view.rs orders panel above the command controls" },
+    "maneuver-hammer": { "rect": [494, 156, 28, 28], "class": "chrome", "source": "tactical_view.rs TacticalCommandControl::Hammer" },
+    "maneuver-anvil": { "rect": [524, 156, 28, 28], "class": "chrome", "source": "tactical_view.rs TacticalCommandControl::Anvil" },
+    "maneuver-left-hook": { "rect": [494, 186, 28, 28], "class": "chrome", "source": "tactical_view.rs TacticalCommandControl::LeftHook" },
+    "maneuver-right-hook": { "rect": [524, 186, 28, 28], "class": "chrome", "source": "tactical_view.rs TacticalCommandControl::RightHook" },
+    "maneuver-hold": { "rect": [556, 171, 28, 28], "class": "chrome", "source": "tactical_view.rs TacticalCommandControl::HoldPosition" },
+    "tactic-toggle": { "rect": [592, 159, 24, 52], "class": "chrome", "source": "tactical_view.rs TacticalCommandControl::ToggleTactic" },
+    "mission-attack-capital": { "rect": [499, 156, 46, 26], "class": "chrome", "source": "tactical_view.rs TacticalCommandControl::AttackCapitalShips" },
+    "mission-attack-fighters": { "rect": [499, 186, 46, 26], "class": "chrome", "source": "tactical_view.rs TacticalCommandControl::AttackFighters" },
+    "mission-recover": { "rect": [567, 156, 46, 26], "class": "chrome", "source": "tactical_view.rs TacticalCommandControl::Recover" },
+    "mission-attack-death-star": { "rect": [567, 186, 46, 26], "class": "chrome", "source": "tactical_view.rs TacticalCommandControl::AttackDeathStar" },
+    "orders-commit": { "rect": [547, 229, 67, 25], "class": "chrome", "source": "tactical_view.rs TacticalCommandControl::Confirm, Cancel (FUN_005f0f40)" },
+    "options-panel": { "rect": [474, 28, 166, 236], "class": "chrome", "source": "tactical_view.rs Battle Options controls (FUN_005dab90, panel 1306 at (482, 28), FUN_0059cac0)" },
+    "control-cluster": { "rect": [474, 264, 166, 216], "class": "chrome", "source": "tactical_view.rs camera, zoom, highlight, pause, options and memory controls (482..628, 272..455)" },
+    "alert-window": { "rect": [65, 54, 470, 331], "class": "state", "search_radius": 64, "source": "tactical_view.rs BATTLE_ALERT_WINDOW_X/Y; the original window is draggable, so its offset is searched" },
+    "results-window": { "rect": [85, 74, 470, 331], "class": "state", "search_radius": 64, "source": "tactical_view.rs BATTLE_RESULTS_WINDOW_X/Y; the original window is draggable, so its offset is searched" },
+    "game-options-screen": { "rect": [0, 0, 640, 480], "class": "chrome", "masks": ["saved-game-names"], "source": "A0 TAC-06-C007: Game Options fills the canvas" },
+    "strategy-screen": { "rect": [0, 0, 640, 480], "class": "state", "source": "the command-center canvas after Battle Results" }
+  },
+  "masks": {
+    "saved-game-names": {
+      "rect": [115, 70, 165, 225],
+      "justification": "The Saved Games names are the capture VM's own slot labels (transit3 day30, empire day488 late), not interface state; the slot buttons beside them stay compared."
+    }
+  },
+  "cells": {
+    "TAC-01-C001": { "pairs": [{ "a1": "battle-entry/actual", "regions": ["control-cluster", "task-force-strip", "status-panel", "aperture"] }] },
+    "TAC-01-C002": { "pairs": [{ "a1": "yaga-day30/initial", "regions": ["control-cluster", "task-force-strip", "status-panel", "aperture"] }] },
+    "TAC-01-C003": { "pairs": [{ "a1": "yaga-day30/initial", "regions": ["pause-label", "control-cluster", "aperture"] }] },
+    "TAC-01-C004": { "pairs": [{ "a1": "battle-entry/resumed", "regions": ["pause-label", "control-cluster", "aperture"] }] },
+    "TAC-01-C005": { "pairs": [{ "a1": "production-battle-options-presentation/battle-options-observing", "regions": ["options-panel", "control-cluster", "aperture"] }] },
+    "TAC-01-C006": { "pairs": [{ "a1": "yaga-day30-options/results-immediate", "regions": ["results-window"] }] },
+    "TAC-01-C007": { "pairs": [{ "a1": "production-empty-space-presentation/actual", "regions": ["aperture"] }] },
+    "TAC-01-C008": { "pairs": [{ "a1": "yaga-day30/planet-backdrop", "regions": ["aperture"] }] },
+    "TAC-01-C009": { "pairs": [{ "a1": "battle-entry/actual", "regions": ["aperture"] }] },
+    "TAC-01-C010": { "pairs": [
+      { "a1": "yaga-day30/initial", "regions": ["control-cluster", "aperture"] },
+      { "a0": "before", "a1": "production-battle-alert-entry/battle-alert-tab-1", "regions": ["alert-window"] }
+    ] },
+    "TAC-01-C011": { "pairs": [
+      { "a1": "yaga-day30/initial", "regions": ["control-cluster", "task-force-strip", "fighter-group-strip", "status-panel", "aperture"] },
+      { "a0": "before", "a1": "production-battle-alert-entry/battle-alert-tab-1", "regions": ["alert-window"] }
+    ] },
+    "TAC-01-C012": { "pairs": [], "audio": true, "not_run_reason": "The cell is its sound; the A1 runs are muted and no audio comparison exists yet." },
+    "TAC-01-C013": { "pairs": [], "not_run_reason": "No A1 frame shows the strategy screen after the battle closes." },
+
+    "TAC-02-C001": { "pairs": [{ "a1": "production-group-presentation/task-force-8-selected", "regions": ["task-force-strip"] }] },
+    "TAC-02-C002": { "pairs": [{ "a1": "yaga-day30/red-group-selected", "regions": ["fighter-group-strip", "status-panel"] }] },
+    "TAC-02-C003": { "pairs": [{ "a1": "production-group-presentation/actual", "regions": ["fighter-group-strip"] }] },
+    "TAC-02-C004": { "pairs": [{ "a1": "production-group-presentation/actual", "regions": ["fighter-group-strip"] }] },
+    "TAC-02-C005": { "pairs": [{ "a1": "production-group-presentation/actual", "regions": ["fighter-group-strip"] }] },
+    "TAC-02-C006": { "pairs": [{ "a1": "yaga-day30/nothing-selected", "regions": ["task-force-strip"] }] },
+    "TAC-02-C007": { "pairs": [{ "a1": "production-participants/task-force-unassigned-released", "regions": ["task-force-strip"] }] },
+    "TAC-02-C008": { "pairs": [{ "a1": "yaga-day30/nothing-selected", "regions": ["task-force-1"] }] },
+    "TAC-02-C009": { "pairs": [{ "a1": "yaga-day30-pointer/tf1-hover", "regions": ["task-force-1"] }] },
+    "TAC-02-C010": { "pairs": [{ "a1": "yaga-day30-pointer/tf1-held", "regions": ["task-force-1"] }] },
+    "TAC-02-C011": { "pairs": [{ "a1": "yaga-day30/tf1-selected", "regions": ["task-force-1", "status-panel", "aperture"] }] },
+    "TAC-02-C012": { "pairs": [{ "a1": "yaga-day30/blank-task-force-3", "regions": ["task-force-strip"] }] },
+    "TAC-02-C013": { "pairs": [{ "a1": "production-group-presentation/actual", "regions": ["task-force-strip", "fighter-group-strip"] }] },
+
+    "TAC-03-C001": { "pairs": [{ "a1": "yaga-day30/tf1-selected", "regions": ["status-panel", "ship-meters", "subsystem-icons"] }] },
+    "TAC-03-C002": { "pairs": [{ "a1": "production-selected-damage-presentation/selected-damage", "regions": ["status-panel", "ship-meters"] }] },
+    "TAC-03-C003": { "pairs": [{ "a1": "production-live-subsystem-damage-presentation/live-subsystem-damage", "regions": ["status-panel", "ship-meters", "subsystem-icons"] }] },
+    "TAC-03-C004": { "pairs": [{ "a1": "production-detail-escort-presentation/destroyed-and-contents", "regions": ["status-panel", "aperture"] }] },
+    "TAC-03-C005": { "pairs": [{ "a1": "yaga-day30/tf1-selected", "regions": ["ship-meters"] }] },
+    "TAC-03-C006": { "pairs": [{ "a1": "production-selected-damage-presentation/selected-damage", "regions": ["ship-meters", "subsystem-icons"] }] },
+    "TAC-03-C007": { "pairs": [{ "a1": "production-subsystem-field-command-presentation/subsystem-field-command", "regions": ["subsystem-icons"] }] },
+    "TAC-03-C008": { "pairs": [{ "a1": "production-subsystem-field-command-presentation/subsystem-field-command", "regions": ["subsystem-icons"] }] },
+    "TAC-03-C009": { "pairs": [{ "a1": "production-subsystem-field-command-presentation/subsystem-field-command", "regions": ["subsystem-icons"] }] },
+    "TAC-03-C010": { "pairs": [{ "a1": "production-subsystem-field-command-presentation/subsystem-field-command", "regions": ["subsystem-icons"] }] },
+    "TAC-03-C011": { "pairs": [{ "a1": "production-subsystem-field-command-presentation/subsystem-field-command", "regions": ["subsystem-icons"] }] },
+    "TAC-03-C012": { "pairs": [{ "a1": "yaga-day30/tf1-selected", "regions": ["status-panel"] }] },
+    "TAC-03-C013": { "pairs": [{ "a1": "yaga-day30/attack-capital-committed", "regions": ["orders-display"] }] },
+    "TAC-03-C014": { "pairs": [{ "a1": "yaga-day30-task-force-2/previous-carrack", "regions": ["status-panel", "aperture"] }] },
+    "TAC-03-C015": { "pairs": [{ "a1": "yaga-day30-task-force-2/next-isd", "regions": ["status-panel", "aperture"] }] },
+    "TAC-03-C016": { "pairs": [{ "a1": "yaga-day30/target-bulk-cruiser", "regions": ["status-panel", "aperture"] }] },
+    "TAC-03-C017": { "pairs": [{ "a1": "production-attack-target-lifecycle-presentation/attack-target-lifecycle", "regions": ["status-panel"] }] },
+    "TAC-03-C018": { "pairs": [{ "a1": "yaga-day30/isd-clicked", "regions": ["status-panel", "aperture"] }] },
+    "TAC-03-C019": { "pairs": [{ "a1": "yaga-day30/red-group-selected", "regions": ["fighter-group-strip", "status-panel"] }] },
+    "TAC-03-C020": { "pairs": [], "settled": "The original draws no selectable Death Star in either side's battle; its only selected form is the Attack Death Star target bracket, which TAC-05-C009 covers." },
+
+    "TAC-04-C001": { "pairs": [{ "a1": "yaga-day30/nav-set-4", "regions": ["control-cluster", "aperture"] }] },
+    "TAC-04-C002": { "pairs": [{ "a1": "yaga-day30/route-ordered", "regions": ["status-panel", "aperture"] }] },
+    "TAC-04-C003": { "pairs": [{ "a1": "production-navigation-camera-presentation/multiple-targets", "regions": ["aperture"] }] },
+    "TAC-04-C004": { "pairs": [{ "a1": "yaga-day30/tf1-selected", "regions": ["status-panel", "aperture"] }] },
+    "TAC-04-C005": { "pairs": [{ "a1": "yaga-day30/deselected", "regions": ["status-panel", "aperture"] }] },
+    "TAC-04-C006": { "pairs": [{ "a1": "yaga-day30/alliance-highlight", "regions": ["control-cluster", "aperture"] }] },
+    "TAC-04-C007": { "pairs": [{ "a1": "yaga-day30/empire-highlight", "regions": ["control-cluster", "aperture"] }] },
+    "TAC-04-C008": { "pairs": [{ "a1": "yaga-day30/tilt-up", "regions": ["control-cluster", "aperture"] }] },
+    "TAC-04-C009": { "pairs": [{ "a1": "yaga-day30/rotate-left", "regions": ["control-cluster", "aperture"] }] },
+    "TAC-04-C010": { "pairs": [{ "a1": "yaga-day30/zoom-in", "regions": ["control-cluster", "aperture"] }] },
+    "TAC-04-C011": { "pairs": [{ "a1": "yaga-day30/center", "regions": ["control-cluster", "aperture"] }] },
+    "TAC-04-C012": { "pairs": [{ "a1": "yaga-day30/recalled", "regions": ["control-cluster", "aperture"] }] },
+    "TAC-04-C013": { "pairs": [{ "a1": "yaga-day30/recalled", "regions": ["control-cluster", "aperture"] }] },
+    "TAC-04-C014": { "pairs": [{ "a1": "production-navigation-camera-presentation/camera-chase-task-force-1", "regions": ["control-cluster", "aperture"] }] },
+
+    "TAC-05-C001": { "pairs": [{ "a1": "yaga-day30/right-hook-chosen", "regions": ["maneuver-hammer", "maneuver-anvil", "maneuver-left-hook", "maneuver-right-hook"] }] },
+    "TAC-05-C002": { "pairs": [{ "a1": "yaga-day30/hammer-chosen", "regions": ["maneuver-hammer", "maneuver-anvil", "maneuver-left-hook", "maneuver-right-hook"] }] },
+    "TAC-05-C003": { "pairs": [{ "a1": "yaga-day30/anvil-chosen", "regions": ["maneuver-hammer", "maneuver-anvil", "maneuver-left-hook", "maneuver-right-hook", "tactic-toggle"] }] },
+    "TAC-05-C004": { "pairs": [{ "a1": "yaga-day30-task-force-2/hold-chosen", "regions": ["maneuver-hammer", "maneuver-anvil", "maneuver-left-hook", "maneuver-right-hook", "maneuver-hold"] }] },
+    "TAC-05-C005": { "pairs": [
+      { "a1": "yaga-day30/surround-committed", "regions": ["orders-display"] },
+      { "a0": "before", "a1": "yaga-day30/surround-chosen", "regions": ["tactic-toggle"] }
+    ] },
+    "TAC-05-C006": { "pairs": [{ "a1": "yaga-day30/maneuvers-open", "regions": ["maneuver-hammer", "maneuver-anvil", "maneuver-left-hook", "maneuver-right-hook", "maneuver-hold", "tactic-toggle"] }] },
+    "TAC-05-C007": { "pairs": [{ "a1": "yaga-day30/attack-capital-chosen", "regions": ["mission-attack-capital", "mission-attack-fighters", "mission-recover", "mission-attack-death-star"] }] },
+    "TAC-05-C008": { "pairs": [{ "a1": "yaga-day30-task-force-2/attack-fighters-chosen", "regions": ["mission-attack-capital", "mission-attack-fighters", "mission-recover", "mission-attack-death-star"] }] },
+    "TAC-05-C009": { "pairs": [{ "a1": "production-death-star-presentation/death-star-mission-selected", "regions": ["mission-attack-death-star", "orders-display"] }] },
+    "TAC-05-C010": { "pairs": [{ "a1": "yaga-day30/recover-chosen", "regions": ["mission-recover", "orders-display"] }] },
+    "TAC-05-C011": { "pairs": [{ "a1": "yaga-day30/escort-isd", "regions": ["status-panel"] }] },
+    "TAC-05-C012": { "pairs": [{ "a1": "yaga-day30/missions-open-capital", "regions": ["mission-attack-capital", "mission-attack-fighters", "mission-recover", "mission-attack-death-star"] }] },
+    "TAC-05-C013": { "pairs": [{ "a1": "yaga-day30-pointer/attack-capital-held", "regions": ["mission-attack-capital"] }] },
+    "TAC-05-C014": { "pairs": [{ "a1": "yaga-day30/attack-capital-chosen", "regions": ["mission-attack-capital"] }] },
+    "TAC-05-C015": { "pairs": [{ "a1": "yaga-day30/recover-disabled-clicked", "regions": ["mission-recover", "mission-attack-death-star"] }] },
+    "TAC-05-C016": { "pairs": [{ "a1": "production-command-assignment-presentation/missions-open-capital", "regions": ["mission-attack-capital", "mission-attack-fighters", "mission-recover", "mission-attack-death-star"] }] },
+    "TAC-05-C017": { "pairs": [{ "a1": "production-death-star-laser-journey/death-star-laser-armed", "regions": ["laser-control", "laser-gauge"] }] },
+    "TAC-05-C018": { "pairs": [{ "a1": "production-death-star-laser-journey/death-star-laser-committed", "regions": ["laser-control", "laser-gauge"] }] },
+    "TAC-05-C019": { "pairs": [{ "a1": "production-death-star-laser-journey/death-star-superlaser-beam", "regions": ["laser-control", "aperture"] }] },
+    "TAC-05-C020": { "pairs": [{ "a1": "production-death-star-laser-journey/death-star-superlaser-resolved", "regions": ["laser-gauge"] }] },
+    "TAC-05-C021": { "pairs": [{ "a1": "production-death-star-presentation/death-star-missions-open", "regions": ["mission-attack-death-star"] }] },
+    "TAC-05-C022": { "pairs": [{ "a1": "yaga-day30/death-star-disabled-clicked", "regions": ["mission-attack-death-star"] }] },
+    "TAC-05-C023": { "pairs": [], "not_run_reason": "No A1 frame holds the committed order before the launch: A1 launches the trench run at the commit, the original about 61 s later (plan doc, session 7)." },
+
+    "TAC-06-C001": { "pairs": [{ "a1": "yaga-day30/options-open", "regions": ["options-panel"] }] },
+    "TAC-06-C002": { "pairs": [
+      { "a1": "yaga-day30/withdraw-confirmed", "regions": ["control-cluster", "aperture"] },
+      { "a0": "before", "a1": "yaga-day30/withdraw-confirmation", "regions": ["options-panel"] }
+    ] },
+    "TAC-06-C003": { "pairs": [{ "a1": "yaga-day30/withdraw-confirmation", "regions": ["options-panel"] }] },
+    "TAC-06-C004": { "pairs": [
+      { "a1": "yaga-day30-options/results-immediate", "regions": ["results-window"] },
+      { "a0": "before", "a1": "yaga-day30-options/take-command", "regions": ["options-panel"] }
+    ] },
+    "TAC-06-C005": { "pairs": [
+      { "a1": "yaga-day30-options/observe", "regions": ["options-panel"] },
+      { "a0": "before", "a1": "yaga-day30/options-open", "regions": ["options-panel"] }
+    ] },
+    "TAC-06-C006": { "pairs": [
+      { "a1": "yaga-day30-options/take-command", "regions": ["options-panel"] },
+      { "a0": "before", "a1": "yaga-day30-options/observe", "regions": ["options-panel"] }
+    ] },
+    "TAC-06-C007": { "pairs": [{ "a1": "yaga-day30/game-options", "regions": ["game-options-screen"] }] },
+    "TAC-06-C008": { "pairs": [
+      { "a1": "yaga-day30/options-closed", "regions": ["control-cluster", "status-panel"] },
+      { "a0": "before", "a1": "yaga-day30/options-open", "regions": ["options-panel"] }
+    ] },
+    "TAC-06-C009": { "pairs": [{ "a1": "yaga-day30/options-after-withdraw", "regions": ["options-panel"] }] },
+
+    "TAC-07-C001": { "pairs": [{ "a1": "yaga-day30/results-withdrawn", "regions": ["results-window"] }] },
+    "TAC-07-C002": { "pairs": [{ "a1": "yaga-day30/results-withdrawn", "regions": ["results-window"] }] },
+    "TAC-07-C003": { "pairs": [{ "a1": "yaga-day30-options/results-immediate", "regions": ["results-window"] }] },
+    "TAC-07-C004": { "pairs": [{ "a1": "yaga-day30/results-withdrawn", "regions": ["results-window"] }] },
+    "TAC-07-C005": { "pairs": [{ "a1": "yaga-day30/results-imperial-capital", "regions": ["results-window"] }] },
+    "TAC-07-C006": { "pairs": [{ "a1": "yaga-day30/results-imperial-fighters", "regions": ["results-window"] }] },
+    "TAC-07-C007": { "pairs": [{ "a1": "yaga-day30/results-imperial-troops", "regions": ["results-window"] }] },
+    "TAC-07-C008": { "pairs": [{ "a1": "yaga-day30/results-imperial-personnel", "regions": ["results-window"] }] },
+    "TAC-07-C009": { "pairs": [{ "a1": "production-battle-results-presentation/results-alliance-forces", "regions": ["results-window"] }] },
+    "TAC-07-C010": { "pairs": [{ "a1": "production-battle-results-presentation/results-imperial-forces", "regions": ["results-window"] }] },
+    "TAC-07-C011": { "pairs": [{ "a1": "yaga-day30/results-imperial-capital", "regions": ["results-window"] }] },
+    "TAC-07-C012": { "pairs": [{ "a1": "production-battle-results-presentation/results-route-fleet", "regions": ["strategy-screen"] }] },
+    "TAC-07-C013": { "pairs": [{ "a1": "production-battle-results-presentation/results-go-directly-to", "regions": ["strategy-screen"] }] },
+    "TAC-07-C014": { "pairs": [], "not_run_reason": "Strategic state persistence is a state-trace check, not a frame comparison." }
+  },
+  "state_matches": {
+    "yaga-day30": ["empire-day30-yaga-alert-control"],
+    "yaga-day30-options": ["empire-day30-yaga-alert-control"],
+    "yaga-day30-pointer": ["empire-day30-yaga-alert-control"],
+    "yaga-day30-task-force-2": ["empire-day30-yaga-alert-control"]
+  }
+}

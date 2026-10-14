@@ -112,8 +112,8 @@ green until their dedicated findings close.
 - Ask before adding production dependencies, changing architecture, or breaking
   save/data/network formats.
 - Never commit original game data, generated bitmap packs, secrets, or tokens.
-  The one exception is the saves we made on the capture VM
-  (`tools/original-capture/saves/`).
+  The one exception is the saves in `tools/original-capture/saves/`: ours
+  from the capture VM, plus the one David Adams gave us (credited there).
 
 ## Detailed Guides
 
@@ -123,6 +123,9 @@ green until their dedicated findings close.
   interface feature and settle its claims against the trace. Read for UI work.
 - `agent_docs/roadmap.md` — active milestones and v1.0 release sequence. Read when
   choosing or checking off work.
+- `agent_docs/task-graph.md` — the br/bv task graph in `.beads/`: question,
+  review, port and acceptance nodes. Read before choosing, delegating or
+  closing tactical, ground-assault or Ghidra work.
 - `agent_docs/architecture.md` — crate graph and data flow. Read before structural
   changes.
 - `agent_docs/simulation.md` — tick order and system patterns. Read for game logic.
