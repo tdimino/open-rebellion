@@ -30,7 +30,7 @@ coverage is incomplete and tracked in the
 |----------|-------|----------------|
 | `notes/annotated-functions.md` | 1,662 | Struct field layouts (+0x60 hull, +0x64 shield nibbles, +0x96 regiment strength, +0xac alive flag), renamed variables, 50 event IDs (0x127–0x370), game rules |
 | `notes/modders-taxonomy.md` | 805 | 10 game systems mapped for total conversion mods (Yuuzhan Vong, Thrawn's Revenge, KOTOR). Per-system function addresses, GNPRTB parameters, mod guidance |
-| `notes/rust-implementation-guide.md` | 1,267 | Maps decompiled C to Open Rebellion's stateless `advance()` pattern. `CombatSystem::resolve_space()`, `GnprtbParams`, `MstbTable`, 15 missing CapitalShipClass fields |
+| `notes/rust-implementation-guide.md` | 647 | Maps decompiled C to Open Rebellion's stateless `advance()` pattern: space battles through the tactical engine, ground combat, bombardment pointers, `MstbTable`, 15 missing CapitalShipClass fields |
 | `notes/cpp-class-hierarchy.md` | 445 | CRebObject → CNotifyObject → CCombatUnit hierarchy. 19 vtable slots, 6 vtable pointer constants, field layouts, setter-notify-event pattern |
 | `notes/entity-system.md` | 668 | Characters (8 enhanced skills, Force/Jedi 6-tier, betrayal), game objects (5 destruction variants), fleets (4 events), factions (Alliance/Empire/Neutral bit encoding) |
 | `notes/mission-event-cookbook.md` | 724 | 9+ mission types (FUN_0050d5a0 13-case switch), 4 story event chains (Dagobah, Vader's Palace, Bounty Hunters, Jabba), event ID registry |
@@ -40,9 +40,9 @@ coverage is incomplete and tracked in the
 
 | Document | Subsystem | Key Functions |
 |----------|-----------|---------------|
-| `notes/space-combat.md` | Space combat — 7-phase auto-resolve pipeline | FUN_00549910, FUN_00544030, FUN_005443f0 |
+| `notes/space-combat.md` | The MissionMgr story-flag word `+0x58`; it applies no damage | FUN_00549910, FUN_00544030, FUN_005443f0 |
 | `notes/ground-combat.md` | Ground combat — troop iteration + per-unit resolution | FUN_00560d50, FUN_004ee350, FUN_005617b0 |
-| `notes/bombardment.md` | Orbital bombardment — Euclidean distance formula | FUN_00556430, FUN_0055d8c0, FUN_0055d860 |
+| `notes/bombardment.md` | Bombardment orders 0x220-0x223: gate, Death Star, defence fire, hit rolls, support shifts | FUN_00582440, FUN_005637c0, FUN_0058d800, FUN_0058d990, FUN_0058dc10, FUN_0058df60, FUN_0058e320 |
 
 ## AI Pipeline (6 core functions fully traced)
 
@@ -112,7 +112,7 @@ position integration. See
 | Characters | 0x4ee000–0x4f4000 | ~80 | Enhanced skills, Force system, loyalty |
 | Missions | 0x4f4000–0x515000 | ~120 | FUN_0050d5a0 (13-case switch) |
 | AI system | 0x515000–0x540000 | ~150 | 6-function pipeline (see table above) |
-| Space combat | 0x540000–0x560000 | ~100 | 7-phase pipeline, CombatPhaseFlags |
+| MissionMgr story checks | 0x540000–0x560000 | ~100 | The `+0x58` flag word (story-missions.md); battles run the tactical engine |
 | Ground combat | 0x560000–0x570000 | ~40 | Troop iteration, regiment damage |
 | Economy | 0x570000–0x590000 | ~60 | Manufacturing, resources, blockade |
 | Events | 0x590000–0x5a0000 | ~40 | Scripted chains, condition/action eval |

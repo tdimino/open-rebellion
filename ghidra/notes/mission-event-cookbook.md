@@ -16,31 +16,39 @@ updated: 2026-03-16
 
 ## 1. Mission Type Registry
 
-### The Nine Mission Types
+### Mission Types
 
-REBEXE.EXE recognizes 9 active mission type codes, dispatched via a 13-case switch in `FUN_0050d5a0`. Cases 0 and default are no-ops or guard rails. Each mission type has:
+A mission type is a MISSNSD.DAT record; its DatId family (`id >> 24`,
+`0x40`-`0x7f`) is what the executable checks. Names are the records' TEXTSTRA
+strings.
 
-1. An integer type code (`param_1` to FUN_0050d5a0)
-2. A matching `*MSTB.DAT` probability table file
-3. A set of entity family filters defining the valid target pool
-4. Boolean flags controlling decoy eligibility, special forces eligibility, and mandatory status
+| Family | Record id | Mission | Success table by name (table id) |
+|--------|-----------|---------|--------------------|
+| `0x41` | `0x01` | Move | — |
+| `0x42` | `0x02` | Return | — |
+| `0x43` | `0x03` | Autorouting | — |
+| `0x44` | `0x04` | Adrift | — |
+| `0x51` | `0x10` | Diplomacy | DIPLMSTB (`0x14`) |
+| `0x52` | `0x13` | Espionage | ESPIMSTB (`0x17`) |
+| `0x53` | `0x20`-`0x22` | Ship Design, Facility Design, Troop Training Research | — |
+| `0x54` | `0x15` | Reconnaissance | — |
+| `0x55` | `0x16` | Recruitment | RCRTMSTB (`0x18`) |
+| `0x56` | `0x40` | Incite Uprising | INCTMSTB (`0x1a`) |
+| `0x57` | `0x80` | Subdue Uprising | SUBDMSTB (`0x1c`) |
+| `0x58` | `0x42` | Jedi Training | — |
+| `0x61` | `0x11` | Rescue | RESCMSTB (`0x15`) |
+| `0x62` | `0x17` | Abduction | ABDCMSTB (`0x19`) |
+| `0x63` | `0x81` | Assassination | ASSNMSTB (`0x1d`) |
+| `0x64` | `0x44` | Palace | — |
+| `0x65` | `0x83` | Bounty | — |
+| `0x69` | `0x12` | Sabotage | SBTGMSTB (`0x16`) |
+| `0x6a` | `0x41` | Death Star Sabotage | DSSBMSTB (`0x1b`) |
+| `0x71` | `0x43` | Dagobah | — |
+| `0x72` | `0x45`, `0x46` | Vacation, Sabbatical | — |
+| `0x73` | `0x82` | Pickup | — |
 
-| Type Code | Mission | MSTB File | Notes |
-|-----------|---------|-----------|-------|
-| 1 | Diplomacy | DIPLMSTB.DAT | Fleet filter only (no troop/side filters) |
-| 2 | Recruitment | RCRTMSTB.DAT | Target filter via `local_14c[2]` |
-| 3 | Sabotage | SBTGMSTB.DAT | Two entity family ranges: 0x10/0x20 and 0x22/0x28 |
-| 4 | Abduction | ABDCMSTB.DAT | Two ranges: 0xa0/0xb0 and 0x28/0x30 |
-| 5 | Incite Uprising | INCTMSTB.DAT | Two ranges: 0x08/0x10 and 0x01/0xff; fleet enabled |
-| 6 | Assassination | ASSNMSTB.DAT | Fleet + side filter + `special_flag=true`; two ranges |
-| 7 | Rescue | RESCMSTB.DAT | Three ranges (0x08-0x10, 0x01-0xff, 0x01-0xff); special flag; `bVar3=true` decoy enable |
-| 8 | Subdue Uprising | SUBDMSTB.DAT | Six ranges; `local_150=1`; `bVar1=true` (vtable path) |
-| 9 | Espionage | ESPIMSTB.DAT | Single range 0x30/0x40 |
-| 10 | (Death Star Sabotage) | DSSBMSTB.DAT | `bVar1=true`; three ranges; no fleet filter |
-| 11 | (unknown) | — | `bVar1=true`; two ranges 0x10-0x40, 0xa0-0xb0 |
-| 12 | (unknown) | — | `bVar2=true`; single range 0x20-0x30 |
-
-**Note on case 8 (Subdue Uprising)**: This is the only mission that routes to the vtable dispatch path (`bVar1=true`). Cases 8, 10, and 11 take the `(**(code **)(*local_174 + 0x24))(local_14c + 5)` path instead of the standard `FUN_0050fc80` / `FUN_0050fbf0` dual-check.
+Table ids and their consumers (`FUN_0055c680` and neighbours, each feeding
+`FUN_0053e240`) are listed in `uprising-incident.md`.
 
 #### Mission Probability Table Format (`*MSTB.DAT`)
 
@@ -78,75 +86,20 @@ Additional tables consulted during mission resolution:
 - `TDECOYTB.DAT` (14 entries) — troop decoy success
 - `RLEVADTB.DAT` (14 entries) — rebel evasion
 
-### Mission Dispatch Flow (`FUN_0050d5a0`, 503 lines)
-
-```
-FUN_0050d5a0(this, mission_type, side_id, target_entity_id)
-│
-├── FUN_00539fd0(this, side_id)       → resolve mission manager for faction
-│   └── Returns local_174 (mission context object)
-│
-├── switch(mission_type):             → set entity family filter arrays
-│   └── cases 1-12 set:
-│       local_11c[2]  — primary family range (lo, hi)
-│       local_114[8]  — secondary family range
-│       local_10c[8]  — tertiary family range
-│       local_104[8]  — quaternary family range
-│       local_16c[4]  — fleet filter flag
-│       local_14c[2]  — target type flag
-│       local_154     — side filter flag
-│       bVar1/bVar2   — vtable vs standard dispatch
-│       bVar3         — decoy eligibility
-│
-├── if bVar1:
-│   └── (**(code **)(*local_174 + 0x24))(target)   → vtable dispatch (Subdue/DS Sab)
-│
-├── if bVar2:
-│   ├── FUN_0050fc80(local_174, target)             → validate target
-│   ├── FUN_0050fbf0(local_174, target)             → validate mission can proceed
-│   ├── FUN_004f9ca0(local_174, target)             → check side affiliation
-│   │
-│   ├── if fleet flag:
-│   │   ├── FUN_005103a0(local_174, target)         → fleet presence check
-│   │   └── FUN_0050f390(local_174, target)         → fleet validation
-│   │
-│   ├── if side flag:
-│   │   └── FUN_0050fd10 / FUN_0050f840             → side filter checks
-│   │
-│   └── if target type flag:
-│       └── FUN_0050f410 / FUN_0050f490             → target type validation
-│
-├── iterate entity family ranges (up to 4):
-│   └── FUN_004f7e30(mission_ctx, range, target)   → per-entity validation pass
-│
-├── if bVar3 (decoy eligible):
-│   └── FUN_0050eea0(mission_ctx, target)           → decoy check
-│
-└── if all checks pass:
-    ├── FUN_004ffe70(auStack_2c, local_174, 4)      → build team candidate list
-    ├── FUN_00513120(auStack_2c)                    → iterate candidates (outer loop)
-    │   └── FUN_00502db0(auStack_4c, candidate, 4) → build sub-candidate list
-    │       └── FUN_00513120(auStack_4c)            → iterate sub-candidates (inner loop)
-    │           └── FUN_004f7e30(sub, range, target) → sub-candidate validation
-    └── return bVar9 (true = mission launched)
-```
-
 ### How to Add a New Mission Type (REBEXE.EXE Patch Path)
 
-1. **Assign a new type code**: choose the next available integer after case 12. Set `bVar2 = true` for the standard dispatch path.
-
-2. **Set entity family filters**: in the new switch case, populate `local_11c[2]` with `{lo, hi}` family range byte pair. Add additional ranges to `local_114`, `local_10c`, `local_104` if needed. Each pair is `{min_family_byte, max_family_byte}`.
-
-3. **Create a new `*MSTB.DAT`-format table**: copy any existing MSTB file and edit threshold/value pairs to set the skill curve for your mission's success probability.
-
-4. **Add a MISSNSD.DAT entry**: MISSNSD.DAT has 25 entries (112 bytes each). Add one with:
+1. **Add a MISSNSD.DAT record** in an unused family between `0x40` and
+   `0x7f`, with:
    - `special_force_eligibility` bitmask matching your `SPECFCSD.DAT` entry
    - `max_officers` — max assignable
    - `base_duration` — base turns
    - `target_flags` — `0x10000` if can target enemy systems
-   - Set `flag_col6..flag_col21` based on nearest analogous mission
-
-5. **Register the MSTB table**: the mission outcome code reads MSTB tables keyed by mission type code. The binding is in the dispatch chain downstream of `FUN_0050d5a0`. The table must be registered under the new type code at the lookup site.
+   - `flag_col6..flag_col21` copied from the nearest analogous mission
+2. **Create a `*MSTB.DAT`-format table**: copy an existing MSTB file and edit
+   its threshold/value pairs.
+3. **Bind the table**: the success roll reads its table by id through one
+   consumer per table (`uprising-incident.md`). Where the executable maps a
+   mission family to that consumer is open.
 
 ### How to Add a New Mission Type (open-rebellion Path)
 
@@ -617,7 +570,7 @@ The `is_repeatable: false` flag combined with `enabled: false` ensures the event
 
 | Address | Size | Function |
 |---------|------|---------|
-| FUN_0050d5a0 | 3050 | Mission dispatch — 13-case switch on type, entity family filter setup, team candidate loop |
+| FUN_0050d5a0 | 3050 | Observation level 0-12: copies a system's state into one side's view (`observation-levels.md`) |
 | FUN_004fc080 | 439 | Mission destruction outcomes (DestroyedSabotage, DestroyedAssassination, DestroyedAutoscrap) |
 | FUN_00536800 | 120 | RoleMissionKeyNotif / Mission |
 

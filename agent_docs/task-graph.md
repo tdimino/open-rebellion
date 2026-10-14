@@ -53,9 +53,10 @@ edit to this table.
 ## Nodes
 
 IDs read `or-<slug>-<hash>`, such as `or-q-results-window-yln`. Priority runs
-P0 (now) to P4 (someday). Three epics group the nodes through `parent-child`
-dependencies: tactical parity, the ground assault (TAC-08), and Ghidra
-coverage.
+P0 (now) to P4 (someday). Four epics group the nodes through `parent-child`
+dependencies: tactical parity, the ground assault (TAC-08), Ghidra coverage,
+and the mod surface (what the original fixes in code that mods would need as
+data).
 
 The label says what kind of work a node is:
 

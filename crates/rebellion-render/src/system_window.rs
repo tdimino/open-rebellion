@@ -1220,14 +1220,7 @@ pub fn fleet_label(world: &GameWorld, fleet: FleetKey) -> Option<String> {
     world.fleet_name(fleet).map(str::to_owned)
 }
 
-pub(crate) fn character_mini_resource_id(dat_id: DatId, is_major: bool) -> Option<u32> {
-    let index = dat_id.index();
-    if is_major {
-        matches!(index, 576..=579 | 592 | 640..=641).then_some(index + 17_920)
-    } else {
-        matches!(index, 832..=857 | 896..=923).then_some(index + 18_176)
-    }
-}
+pub(crate) use rebellion_core::tactical::character_mini_resource_id;
 
 pub(crate) fn manufacturing_facility_mini(dat_id: DatId) -> Option<(u32, &'static str)> {
     let label = match dat_id.index() {

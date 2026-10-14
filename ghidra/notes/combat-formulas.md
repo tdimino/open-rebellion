@@ -93,7 +93,7 @@ Two combat paths: `CONVERT_TO_TACT` (tactical 2D view) and `CONVERT_TO_TACT_ABST
 | Address | String | Purpose | Size |
 |---------|--------|---------|------|
 | FUN_0040a700 | STRAT_BATTLE_START | Battle state machine entry (switch on 18 states) | 182 |
-| FUN_00532e00 | (near VictoryConditions at 0x533019) | Victory condition check | — |
+| FUN_005180e0 | SideVictoryConditionsNotif (sent by FUN_00532f90) | Victory flags (`victory-conditions.md`) | 891 |
 | FUN_0054ba00 | FinalBattle | Luke vs Vader final battle | 16 |
 | FUN_00536740 | BaseCombat | Base combat skill reference | 15 |
 
@@ -112,7 +112,7 @@ This is the **tactical ship object constructor** — registers message handlers 
 
 | Address | Size | Likely Purpose |
 |---------|------|---------------|
-| FUN_0050d5a0 | 3050B | Mission dispatch (switch on 8+ mission types) |
+| FUN_0050d5a0 | 3050B | Observation level 0-12 for one side (`observation-levels.md`) |
 | FUN_0052d920 | 2894B | Unit description/display (TEXTSTRA string IDs) |
 | FUN_00537180 | 2591B | TBD — high priority to decompile |
 | FUN_004f4b60 | 1689B | TBD |
@@ -178,9 +178,8 @@ Run via Jython: `exec(open("...path...").read())`
 2. **Decompile FUN_00537180** (2591 bytes) — third-largest, purpose unknown
 3. **Decompile FUN_00502020** further — appears to iterate entities by DatId family_id byte (0x10-0x14=troops, 0x1c-0x20=facilities, 0x30-0x40=ships)
 4. **Find GNPRTB table access** — search for constants 213, 0xD5, or stride-32 array indexing patterns
-5. **Decompile FUN_00532e00** — near VictoryConditions reference, likely victory logic
-6. **Trace the bombardment path** — FUN_004ff840 → what function calculates bombardment damage?
-7. **Import COMMON.DLL** analysis — may contain shared combat utilities
+5. **Trace the bombardment path** — FUN_004ff840 → what function calculates bombardment damage?
+6. **Import COMMON.DLL** analysis — may contain shared combat utilities
 
 ## Data Addresses
 

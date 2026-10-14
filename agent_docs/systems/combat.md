@@ -1,69 +1,64 @@
 ---
 title: "Combat System"
-description: "Space and ground combat resolution via combat.rs and bombardment.rs"
+description: "Space battles through the tactical engine (played, simulated or headless), ground combat in combat.rs, and bombardment.rs"
 category: "agent-docs"
 created: 2026-03-14
-updated: 2026-10-10
+updated: 2026-10-14
 tags: [combat, space-combat, ground-combat, simulation]
 ---
 
 # Combat System
 
-`combat.rs` + `bombardment.rs` — Space and ground combat resolution.
+Every space battle runs the tactical engine, `rebellion-core::tactical`:
+played in the battle window, simulated from the Battle Alert, or headless
+when nobody watches (`FUN_0040a050` state 8,
+`ghidra/notes/simulate-runs-tactical-engine.md`). `combat.rs` keeps ground
+combat and the types both share; `bombardment.rs` is the port's bombardment.
 
 ## Trigger
 
-Both sides present at a system (checked each tick in `main.rs` and `simulation.rs`). There is no cooldown: when both sides remain after a battle, no result is shown and the battle fires again the next tick (`FUN_0051ddf0` → `FUN_00517270`, `ghidra/notes/battle-result-text-and-cadence.md`).
+Both sides present at a system (`side_present`, `FUN_00509710`; checked each tick in `main.rs` and `simulation.rs`). There is no cooldown: when both sides remain after a battle, no result is shown and the battle fires again the next tick (`FUN_0051ddf0` → `FUN_00517270`, `ghidra/notes/battle-result-text-and-cadence.md`).
 
 ## Types
 
-| Type | Purpose |
-|------|---------|
-| `CombatSystem` | Stateless resolver — `resolve_space()` and `resolve_ground()` |
-| `SpaceCombatResult` | `{ winner, attacker_fleet, defender_fleet, ship_damage, fighter_losses }` |
-| `GroundCombatResult` | `{ winner, system, troop_damage }` |
-| `ShipDamageEvent` | `{ fleet, ship_index, hull_after }` — hull=0 means destroyed |
-| `FighterLossEvent` | `{ fleet, fighter_index, squads_before, squads_after }` |
-| `TroopDamageEvent` | `{ troop, strength_after }` — strength ≤ 0 means destroyed |
-| `CombatPhaseFlags` | Custom bitfield (NOT `bitflags!`) — uses `.set()` not `.insert()` |
-| `CombatSide` | Attacker / Defender / Draw |
-| `BombardmentSystem` | `resolve_bombardment(world, fleet, system, difficulty, tick)` |
+| Type | Where | Purpose |
+|------|-------|---------|
+| `BattleSession` | `core::tactical` | One battle: ships, fighter groups, engagement state, the original's tactical rng |
+| `BattleReturn` | `core::tactical::apply` | `summarize_results`: winner, survivors, withdrawals |
+| `SystemSpaceCombatResult` | `data::integrator` | One headless battle: winner, winning fleet, `seconds`, both sides' forces before and after |
+| `CombatForce` / `CombatSide` | `core::combat` | The lead fleet a side fights under; Attacker / Defender / Draw |
+| `GroundCombatResult` / `TroopDamageEvent` | `core::combat` | Ground result; strength ≤ 0 means destroyed |
+| `BombardmentSystem` | `core::bombardment` | `resolve_bombardment(world, fleet, system, difficulty, tick)` |
 
 ## API
 
 ```rust
-let result = CombatSystem::resolve_space(&world, atk, def, sys, difficulty, &rolls, tick);
+// A battle nobody watches (simulation.rs, and main.rs when no window opens):
+let result = resolve_system_space_combat(world, troop_transport, movement, system, rng_seed, tick);
+// The Battle Alert's Simulate, or a played battle's end:
+session.simulate_to_end();
+let returned = apply_results(&session, world, troop_transport, movement, &mut log);
+reconcile_death_star_result(world, death_star, victory);
+// Ground and bombardment:
 let ground = CombatSystem::resolve_ground(&world, sys, alliance_attacks, &rolls, tick);
 let brd = BombardmentSystem::resolve_bombardment(&world, fleet, sys, difficulty, tick);
 ```
 
-## Space Combat: 7-Phase Pipeline
+## Headless battles
 
-From Ghidra RE of REBEXE.EXE:
-
-1. **Weapon fire** — each ship fires its class's turbolaser, laser and ion attack strengths (each already the total over the four arcs in CAPSHPSD), damage rolls
-2. **Shield absorption** — shield_strength absorbs damage
-3. **Hull damage** — remaining damage reduces hull_current
-4. **Fighter engagement** — squadron vs squadron, torpedo bombing
-5. **Result** — winner determined by surviving fleet strength
-
-Each side fights with every fleet it has at the system plus the squadrons
-the system holds for it (`FUN_00516ef0` marks all of them); `CombatForce`
-names the lead fleet the result and Battle Results show. A side survives a
-pass on a living ship, a held squadron, or a carried squadron whose ship
-lives. `apply_space_combat_result_inner` resolves every event to its roster
-slot before applying any. The strategic pass fights pass after pass until
-a side is gone or a pass changes nothing.
-
-> **Corrected 2026-10-10:** the original's seven "phases" only set flags and
-> notify observers; damage comes from the tactical engine
-> (`ghidra/notes/simulate-runs-tactical-engine.md`).
+`resolve_system_space_combat` builds one `BattleSession::new_with_forces`
+per contested system, the Alliance as attacker, every fleet each side has
+there plus the squadrons the system holds for it (`FUN_00516ef0`), seeded
+from one roll of the tick's stream. It runs `simulate_to_end`, writes the
+result back with `apply_results`, and reports `seconds` (the battle's
+simulated length). The caller reconciles a destroyed Death Star. A result is
+a `stalemate` only when it is a Draw with both sides still present.
 
 ## Simulate runs the tactical battle
 
 The Battle Alert's Simulate (and Simulate Remainder) runs the tactical
 session without its window (`BattleSession::simulate_to_end`, `FUN_0040a050`
-state 8), then shows the normal Battle Results. `tactical_flow::apply_results`
+state 8), then shows the normal Battle Results. `tactical::apply::apply_results`
 writes hulls and squadrons back by `TacticalShip::fleet` /
 `TacticalFighter::fleet`. Every fleet a side has at the system takes part. A
 withdrawn ship survives and hyperspaces to the nearest friendly or neutral
@@ -111,25 +106,26 @@ The result lines follow `FUN_0049b330` (won), `FUN_0049b4d0` (lost) and
 held a blockade there before the battle: cleared, broke the blockade,
 maintained it, defended, or now under blockade by the winner.
 
-Key gotchas from RE:
-- Phase gate: `ACTIVE && !PHASES_ENABLED` (inverted from initial expectation)
-- Alt-shield path: exact `== 0x71` family byte (not range `0x71..=0x72`)
-- Fighter losses must be computed from initial vs surviving counts
-
 ## Bombardment
 
-The bombardment formula is in FUN_0055d8c0 (damage formula) and FUN_0055d860 (Euclidean distance): `damage = sqrt((atk-def)²) / GNPRTB[0x1400]` with difficulty modifier, minimum 1 damage (only after division, not on zero raw_power). FUN_005617b0 is the CharacterMgr SeatOfPower check, not a bombardment function.
+The original's bombardment (orders `0x220`-`0x223`, `FUN_00582440`,
+`FUN_0058d800`) fires defence batteries at the bombarding ships, rolls each
+hit against a target's value, destroys facilities, regiments and the HQ, and
+shifts support (`ghidra/notes/bombardment.md`). The port's `bombardment.rs`
+instead computes one number from the transit-distance formula
+(`FUN_0055d8c0`, `ghidra/notes/build-delivery.md`), and `main.rs` turns it
+into a popularity cut with no source. Task-graph node
+`or-port-bombardment-8usw` replaces it.
 
-## Effect Application (main.rs)
+## Effect Application
 
-- `apply_space_combat_result`: Maps destroyed hulls (hull_after == 0) to fleet `capital_ships` count decrements. Removes empty fleets from system fleet lists.
-- `apply_ground_combat_result`: Updates `TroopUnit.regiment_strength`. Removes destroyed troops from system and arena.
+- Space: `core::tactical::apply::apply_results` writes hulls and squadrons back by `TacticalShip::fleet` / `TacticalFighter::fleet`, moves withdrawn ships, and removes destroyed units and empty fleets.
+- Ground: `apply_ground_combat_result_inner` (integrator) updates `TroopUnit.regiment_strength` and removes destroyed troops.
 
 ## Source
 
-- `ghidra/notes/space-combat.md` — the flag pipeline (see its correction)
 - `ghidra/notes/simulate-runs-tactical-engine.md` — Simulate and the stalemate
 - `ghidra/notes/tactical-engagement-ai.md` — targets, steering, the band
 - `ghidra/notes/ground-combat.md` — troop iteration
-- `ghidra/notes/bombardment.md` — Euclidean distance formula
+- `ghidra/notes/bombardment.md` — orders, defence fire, hit rolls, support shifts
 - `ghidra/notes/combat-formulas.md` — GNPRTB parameter mapping

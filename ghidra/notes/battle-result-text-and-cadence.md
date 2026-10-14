@@ -10,7 +10,7 @@ no analysis). Companion to `system-squadrons-combat.md`,
 `battle-alert-lists.md`, `message-display.md`. The port's side is
 `crates/rebellion-render/src/tactical_view.rs` (`battle_result_summary_lines`,
 `draw_battle_result_summary`) and `crates/rebellion-data/src/simulation.rs`
-(`combat_is_on_cooldown`, `COMBAT_RETRY_TICKS`).
+(the strategic re-fight each tick while both sides remain).
 
 ## 1. Battle Result Text
 
@@ -214,56 +214,19 @@ every frame-loop pass that finds both sides present.  The frame loop
 cycles through locations; `system-squadrons-combat.md` describes this
 as "the battle continues next tick".
 
-### Port behavior (differences)
+### Port
 
-Resolved 2026-10-10: the cooldown below is gone from `simulation.rs`,
-`main.rs` and `tactical_flow.rs`, and saves (v36) no longer carry it. The
-table records what was removed.
+`simulation.rs` and `main.rs` start a battle on every tick that finds both
+sides present (`side_present`), with no cooldown, as the original does.
 
-The port used a 5-tick cooldown (`COMBAT_RETRY_TICKS = 5` at
-`crates/rebellion-data/src/simulation.rs:38`) and a permanent stalemate
-cooldown (`UNCHANGED_STALEMATE_COOLDOWN = u64::MAX` at `:40`).
+## Port differences
 
-| Code | Location | What |
-|---|---|---|
-| `COMBAT_RETRY_TICKS = 5` | `simulation.rs:38` | 5-tick delay between battles |
-| `UNCHANGED_STALEMATE_COOLDOWN` | `simulation.rs:40` | Stalemate blocks re-battle until a change event |
-| `combat_is_on_cooldown()` | `simulation.rs:42-45` | Returns true for stalemate OR within 5 ticks |
-| `combat_cooldowns.insert(sys_key, ...)` | `simulation.rs:226-233` | Stores current tick (normal) or MAX (stalemate) |
-| `combat_cooldowns.remove()` | `simulation.rs:172,180,192` | Clears on fleet arrival, unit deployment, manufacturing completion |
-| Same 5-tick check | `main.rs:2551-2555` | Duplicated in the interactive path |
+`battle_result_summary_lines` (`tactical_view.rs`) builds the won, lost and
+draw texts and the five system-status lines above, and names the withdrawal
+destination for the player's fleet after Simulate. Still open:
 
-The original has none of this.  The only gate is `FUN_00509ad0`'s return
-value: when the system's battle state is still set, the next pass
-re-triggers.  The 5-tick cooldown and the permanent stalemate cooldown
-are port inventions.
-
-## Differences from our code
-
-### Battle result text (`tactical_view.rs:10870-10903`)
-
-> **Resolved 2026-10-10** except the last row: `battle_result_summary_lines`
-> now builds the won / lost / draw texts and the five system-status lines,
-> and names the withdrawal destination for the player's fleet after Simulate.
-> The table records the old behaviour. Still open: the separate Message Index
-> text (`0x7010`–`0x7012`), and the destination after a played battle.
-
-| Our code | Original |
-|---|---|
-| Draw: "Neither fleet is victorious." / "Both forces have been destroyed or withdrawn." | Draw never shown when both sides survive; when both destroyed: `0x7004` "...is indecisive." + `0x700e` "There has been no victor." + `0x700f` "All ... ships have been destroyed." |
-| Win: always "The {winner} fleet is victorious." + "{system} is now under blockade by {winner} forces." + loser fate | Win: `0x7002` + one of 5 system-status templates based on holder/blockade state + `0x700b`/`0x700c` |
-| No "player lost" perspective | Original shows `0x7003` "defeated" + different system-status and message text for the losing player |
-| Loser: "withdrawn from the system" | Original: `0x700c` "has withdrawn" (no destination in winner view); `0x700d` "withdrawn to |retreat_sys|" (in loser view) |
-| Always says "blockade" on victory | Original says "cleared of forces" (neutral), "defended" (own system), "maintained/broken blockade" (blockade context), "under blockade" (only when establishing new blockade) |
-| No separate message-index text | Original generates a separate message for the Message Index (`0x7010`/`0x7011`/`0x7012`) |
-
-### Re-battle cadence (`simulation.rs:38-45`, `main.rs:2551-2555`)
-
-| Our code | Original |
-|---|---|
-| 5-tick cooldown between battles | No cooldown; re-fires on next frame-loop pass |
-| Permanent stalemate cooldown (`u64::MAX`) | No permanent cooldown; battle repeats every pass |
-| Cooldown cleared by fleet arrival / manufacturing | No cooldown system to clear |
+- the separate Message Index text (`0x7010`–`0x7012`);
+- the withdrawal destination after a played battle.
 
 ## Confidence
 

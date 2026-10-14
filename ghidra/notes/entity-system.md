@@ -453,15 +453,15 @@ name string. The notification payload is assembled via `FUN_00616110` (string ap
 | `FUN_00532f40` | Recruitment done | `SideRecruitmentDoneNotif` / `RecruitmentDone` | `0x12c` (300) |
 | `FUN_0054ba00` | Final battle trigger | `MissionMgrFinalBattleNotif` / `FinalBattle` | — |
 | `FUN_0054b9c0` | Final battle ready | `FinalBattleReadyNotif` | — |
-| (string at `0x006aa764`) | Victory condition check | `SideVictoryConditionsNotif` / `VictoryConditions` | — |
+| `FUN_00532f90` | Victory flags changed | `SideVictoryConditionsNotif` / `VictoryConditions` | `0x128` (296) |
 
 **RecruitmentDone** fires when a side has completed all available character recruitment. It uses
 `FUN_0053fdd0(300, this, param_2, param_3)` — this is event `0x12c`, the canonical
 "recruitment phase complete" trigger.
 
-The `SideVictoryConditionsNotif` string confirms a dedicated victory-check function exists.
-Its exact address has not been isolated in the annotated corpus — it is called from the turn
-end cycle and evaluates: HQ capture, Death Star status, and Rebel base detection.
+`FUN_00532f90` is a side view's slot `+0x260`: it posts `0x128` when the view's copy of the
+win flags (`+0xbc`) changes. The flags themselves come from `FUN_005180e0`, which tests the four
+leaders, Coruscant and the Alliance HQ (`victory-conditions.md`).
 
 **Victory audio**: `VICTORY` at `0x006ab5f8`, `VICTORY_II` at `0x006ab5b0` — two fanfares,
 likely Alliance vs Empire.

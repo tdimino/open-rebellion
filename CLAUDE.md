@@ -49,15 +49,22 @@ functional. Do not repeat historical parity percentages as verified results.
 
 ## Commands
 
-`~/.local/bin/cc` is not a C compiler. Use the sanitized PATH for Cargo:
+Cargo runs on the Mac Mini, never on this Mac: `scripts/mini-cargo.sh`
+syncs the tree there, runs Cargo with the sanitized PATH, and cuts the Mini's
+`target/` back to what that build used (`agent_docs/agent-tooling.md`,
+"Builds and the Build Cache"):
 
 ```bash
-env PATH=/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/Users/tomdimino/.cargo/bin cargo check --workspace
-env PATH=/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/Users/tomdimino/.cargo/bin cargo test --workspace
-env PATH=/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/Users/tomdimino/.cargo/bin cargo run -p rebellion-app -- data/base
-./scripts/build-wasm.sh
+scripts/mini-cargo.sh -- check --workspace
+scripts/mini-cargo.sh -- test --workspace
+scripts/mini-cargo.sh -- build --release -p rebellion-app   # native runs use it on the Mini
+scripts/mini-cargo.sh --run ./scripts/build-wasm.sh --pull web/open-rebellion.wasm
 ./scripts/package-web.sh dev
 ```
+
+A local build leaves a `target/` here that the SessionStart hook deletes.
+If one is unavoidable, `~/.local/bin/cc` is not a C compiler: use
+`env PATH=/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/Users/tomdimino/.cargo/bin cargo …`.
 
 Formatting and strict Clippy currently have audited baseline failures. Run
 scoped checks for touched code and do not describe those workspace gates as
@@ -100,8 +107,9 @@ green until their dedicated findings close.
   the change before calling it done.
 - Before committing, run `cargo mutants` on the touched files and close or
   explain each surviving mutant. See `agent_docs/agent-tooling.md`.
-- Before committing simulation code, run `cargo run -q -p provenance-scan --
-  check`. New rules carry a source (`FUN_`, GNPRTB, DAT) or a `port:`/`hyp:`
+- Before committing simulation code, run
+  `scripts/mini-cargo.sh -- run -q -p provenance-scan -- check`. New rules
+  carry a source (`FUN_`, `DAT_`/`_DAT_`, GNPRTB, DAT) or a `port:`/`hyp:`
   tag; the baseline of uncited items may only shrink.
 
 ## Git and Dependencies

@@ -95,8 +95,15 @@ if own and area(max(own, key=area)) > 100 * 100:
 fi
 
 sha="$(shasum -a 256 "$binary" | cut -d' ' -f1)"
-commit="$(git -C "$repo" rev-parse --short HEAD)"
-dirty="$(git -C "$repo" status --porcelain --untracked-files=no | head -c1)"
+if git -C "$repo" rev-parse --git-dir >/dev/null 2>&1; then
+  commit="$(git -C "$repo" rev-parse --short HEAD)"
+  dirty="$(git -C "$repo" status --porcelain --untracked-files=no | head -c1)"
+else
+  # The Mini's copy has no .git; scripts/mini-cargo.sh records its source.
+  commit="$(sed -n 's/^source=\([^ ]*\).*/\1/p' "$repo/.build-source" 2>/dev/null)"
+  dirty="$(sed -n 's/.*dirty_files=\([1-9][0-9]*\).*/\1/p' "$repo/.build-source" 2>/dev/null)"
+  commit="${commit:-unknown}"
+fi
 summary="binary_sha256=$sha source=$commit${dirty:+ (dirty tree)} pid=$pid window_id=${window:-unknown} muted=1${commands:+ commands=$commands}${seed:+ seed=$seed}"
 [ "$live" -eq 1 ] && summary="$summary inbox=$evidence/commands.in"
 echo "$summary"

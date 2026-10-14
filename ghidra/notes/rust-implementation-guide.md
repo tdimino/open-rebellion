@@ -3,7 +3,7 @@ title: "Rust Implementation Guide: Combat & Mission Systems"
 description: "Maps decompiled C++ from REBEXE.EXE to rebellion-core Rust implementation"
 category: "ghidra"
 created: 2026-03-15
-updated: 2026-03-16
+updated: 2026-10-14
 ---
 
 # Rust Implementation Guide: Combat & Mission Systems
@@ -18,7 +18,7 @@ updated: 2026-03-16
 ## Index
 
 1. [Game Object Layout → Rust Structs](#1-game-object-layout--rust-structs)
-2. [Space Combat Auto-Resolve](#2-space-combat-auto-resolve)
+2. [Space Battles](#2-space-battles)
 3. [Ground Combat](#3-ground-combat)
 4. [Bombardment](#4-bombardment)
 5. [Mission System Expansion](#5-mission-system-expansion)
@@ -142,446 +142,32 @@ Add `pub gnprtb: GnprtbParams` to `GameWorld`. Populated by `rebellion-data` dur
 
 ---
 
-## 2. Space Combat Auto-Resolve
+## 2. Space Battles
 
-### 2.1 The 7-Phase C++ Pipeline → Rust Enum + Match
+Every space battle runs the tactical engine, `crates/rebellion-core/src/tactical.rs`:
+played in its window, simulated from the Battle Alert, or headless when no
+one watches (`FUN_0040a050` state 8). The headless step (`FUN_005ae9c0`)
+ranks opponents, assigns targets and applies each group's damage rate once a
+second; the 1200 s stalemate rule ends every battle. See
+`simulate-runs-tactical-engine.md`, `tactical-engagement-ai.md` and
+`tactical-weapon-loop.md`.
 
-The original orchestrator (`FUN_00549910`, 77 lines, called from `FUN_005457f0`) drives combat through 7 phases using a state machine on `combat_phase_flags` at `this+0x58`. Each phase:
+`FUN_00549910` and the flag word at `+0x58` are the MissionMgr story checks
+(`story-missions.md`), not a combat pipeline; no combat damage passes through
+them.
 
-1. Checks a gate bit on the flags register
-2. Retrieves per-side stat objects via a getter
-3. Dispatches the actual resolver via vtable
+| Step | Port |
+|---|---|
+| Both sides present (`FUN_00509710`, `FUN_0050b8e0`) | `combat::side_present` |
+| One session per contested system (`FUN_00516ef0` seats every fleet and the system's squadrons) | `BattleSession::new_with_forces` |
+| Headless run | `BattleSession::simulate_to_end` |
+| Write-back (`FUN_0040cfc0`, `FUN_005032c0`) | `tactical::apply::apply_results` |
+| A battle nobody watches | `rebellion-data` `integrator::resolve_system_space_combat` |
 
-In Rust, we replace the vtable dispatch with an enum + match pattern. The flags register becomes `CombatPhaseFlags`.
+### 2.1 Entity Kind Enum
 
-### 2.2 `CombatPhaseFlags` Bitfield
-
-Direct translation of `this+0x58` (confirmed from space-combat.md):
-
-```rust
-use bitflags::bitflags;
-
-bitflags! {
-    /// Mirrors the C++ combat_phase_flags at object offset +0x58.
-    /// Controls which phases are active and which type codes are set.
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-    pub struct CombatPhaseFlags: u32 {
-        /// Space combat active (outer wrapper gate, checked by FUN_00544030).
-        const ACTIVE           = 0x0001;
-        /// Weapon fire is in progress (attacker side).
-        const WEAPON_FIRE      = 0x0002;
-        /// Inner gate mask for weapon fire phase (0x04, checked by FUN_0053a640).
-        /// Note: outer wrapper gates on ACTIVE & !PHASES_ENABLED; inner vtable dispatch uses this mask.
-        const WEAPON_TYPE      = 0x0004;
-        /// Type code: shield absorb phase (0x20).
-        const SHIELD_TYPE      = 0x0020;
-        /// All subsequent phases enabled (shields, hull, fighters).
-        const PHASES_ENABLED   = 0x0040;
-        /// Type code: hull damage phase (0x80).
-        const HULL_TYPE        = 0x0080;
-        /// Type code: fighter engagement phase (0x100).
-        const FIGHTER_TYPE     = 0x0100;
-    }
-}
-```
-
-Gate logic (straight from the phase table in space-combat.md):
-
-- Weapon fire runs when: `flags.contains(ACTIVE) && !flags.contains(PHASES_ENABLED)` → i.e., `0x58 & 0x01` is set AND `0x58 & 0x40` is clear
-- Shield absorb, hull damage, fighter engagement all run when: `flags.contains(PHASES_ENABLED)`
-
-### 2.3 `CombatSystem::resolve_space()` — Full Signature and Skeleton
-
-```rust
-// crates/rebellion-core/src/combat.rs
-
-use crate::ids::{FleetKey, SystemKey};
-use crate::world::GameWorld;
-use crate::tick::TickEvent;
-
-// ---------------------------------------------------------------------------
-// Public result types
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone)]
-pub struct SpaceCombatResult {
-    pub attacker_fleet: FleetKey,
-    pub defender_fleet: FleetKey,
-    pub system: SystemKey,
-    pub winner: CombatSide,
-    pub ship_damage: Vec<ShipDamageEvent>,
-    pub fighter_losses: Vec<FighterLossEvent>,
-    pub tick: u64,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CombatSide { Attacker, Defender, Draw }
-
-#[derive(Debug, Clone)]
-pub struct ShipDamageEvent {
-    pub fleet: FleetKey,
-    /// Index into fleet.capital_ships (not a slotmap key — instances are transient).
-    pub ship_index: usize,
-    pub hull_before: i32,
-    pub hull_after: i32,
-}
-
-#[derive(Debug, Clone)]
-pub struct FighterLossEvent {
-    pub fleet: FleetKey,
-    pub fighter_index: usize,
-    pub squads_before: u32,
-    pub squads_after: u32,
-}
-
-// ---------------------------------------------------------------------------
-// State
-// ---------------------------------------------------------------------------
-
-/// Transient per-battle combat state — alive for one resolve_space() call.
-/// Never stored in GameWorld; emitted as result events.
-struct SpaceCombatState {
-    /// Mutable copies of the attacker's ship hulls for this resolution.
-    attacker_ships: Vec<ShipInstanceSnapshot>,
-    /// Mutable copies of the defender's ship hulls.
-    defender_ships: Vec<ShipInstanceSnapshot>,
-    /// Attacker fighter squadron counts (mutable for the engagement phase).
-    attacker_fighters: Vec<u32>,
-    defender_fighters: Vec<u32>,
-    flags: CombatPhaseFlags,
-    difficulty: u8,  // 0-3, extracted from C++ +0x24 bits 4-5
-}
-
-struct ShipInstanceSnapshot {
-    class: CapitalShipKey,
-    hull_current: i32,
-    hull_max: i32,
-    shield_nibble: u8,
-    weapon_nibble: u8,
-    alive: bool,
-}
-
-// ---------------------------------------------------------------------------
-// System
-// ---------------------------------------------------------------------------
-
-pub struct CombatSystem;
-
-impl CombatSystem {
-    /// Auto-resolve space combat between two fleets at a system.
-    ///
-    /// Follows the 7-phase C++ pipeline from FUN_005457f0 → FUN_00549910.
-    ///
-    /// # Advance contract
-    /// - Does NOT mutate `world`. All fleet state changes are returned as events.
-    /// - `rng_rolls`: caller-provided uniform [0,1) values. Consumed in order.
-    ///   Current budget: 4 rolls per ship per phase (weapon + shield + hull + fighter).
-    ///   Pass a slice of at least `fleet_size * 4 * max_rounds` rolls.
-    pub fn resolve_space(
-        world: &GameWorld,
-        attacker: FleetKey,
-        defender: FleetKey,
-        system: SystemKey,
-        difficulty: u8,
-        rng_rolls: &[f64],
-        tick: u64,
-    ) -> SpaceCombatResult {
-        let mut rng = rng_rolls.iter().copied();
-
-        // Phase 1: Initialize (FUN_005442f0)
-        let mut state = Self::phase_init(world, attacker, defender, difficulty);
-
-        // Phase 2: Fleet composition evaluation (FUN_00544da0, 96 lines)
-        // Sets PHASES_ENABLED flag if either side has active weapons.
-        Self::phase_fleet_eval(world, &mut state);
-
-        // Phase 3: Weapon fire — gate: ACTIVE && !PHASES_ENABLED
-        // Calls FUN_00543b60 for each side (attacker fires first).
-        if state.flags.contains(CombatPhaseFlags::ACTIVE)
-            && !state.flags.contains(CombatPhaseFlags::PHASES_ENABLED)
-        {
-            Self::phase_weapon_fire(world, &mut state, &mut rng);
-        }
-
-        // Phases 4-6 all gate on PHASES_ENABLED.
-        if state.flags.contains(CombatPhaseFlags::PHASES_ENABLED) {
-            // Phase 4: Shield absorption (FUN_00544130, 83 lines)
-            Self::phase_shield_absorb(world, &mut state, &mut rng);
-
-            // Phase 5: Hull damage application (FUN_005443f0, 54 lines)
-            Self::phase_hull_damage(world, &mut state, &mut rng);
-
-            // Phase 6: Fighter engagement (FUN_005444e0, 53 lines)
-            Self::phase_fighter_engage(world, &mut state, &mut rng);
-        }
-
-        // Phase 7: Result determination (FUN_005445d0, 175 lines)
-        // Counts survivors, checks alive_flag at +0xac bit0.
-        // Exception: fighters with +0x50 & 0x08 count as ready even if hull=0.
-        // Family 0x73/0x74 take a special path (FUN_00534640).
-        let winner = Self::phase_determine_result(world, &state);
-
-        // Phase 8: Post-combat cleanup (FUN_00544a20, 86 lines) — handled by caller
-        // (apply damage events to GameWorld).
-
-        Self::build_result(attacker, defender, system, &state, winner, tick)
-    }
-
-    // ------------------------------------------------------------------
-    // Phase implementations
-    // ------------------------------------------------------------------
-
-    fn phase_init(
-        world: &GameWorld,
-        attacker: FleetKey,
-        defender: FleetKey,
-        difficulty: u8,
-    ) -> SpaceCombatState {
-        let a_fleet = &world.fleets[attacker];
-        let d_fleet = &world.fleets[defender];
-
-        let attacker_ships = a_fleet.capital_ships.iter().map(|entry| {
-            let class = &world.capital_ship_classes[entry.class];
-            ShipInstanceSnapshot {
-                class: entry.class,
-                hull_current: class.hull as i32,
-                hull_max: class.hull as i32,
-                // Initial nibbles: max recharge allocated to each
-                shield_nibble: (class.shield_recharge.min(15)) as u8,
-                weapon_nibble: 0x0f, // full weapon allocation at start
-                alive: true,
-            }
-        }).collect();
-
-        // Mirror for defender.
-        let defender_ships = d_fleet.capital_ships.iter().map(|entry| {
-            let class = &world.capital_ship_classes[entry.class];
-            ShipInstanceSnapshot {
-                class: entry.class,
-                hull_current: class.hull as i32,
-                hull_max: class.hull as i32,
-                shield_nibble: (class.shield_recharge.min(15)) as u8,
-                weapon_nibble: 0x0f,
-                alive: true,
-            }
-        }).collect();
-
-        let attacker_fighters = a_fleet.fighters.iter().map(|e| e.count).collect();
-        let defender_fighters = d_fleet.fighters.iter().map(|e| e.count).collect();
-
-        SpaceCombatState {
-            attacker_ships,
-            defender_ships,
-            attacker_fighters,
-            defender_fighters,
-            // Start with ACTIVE; PHASES_ENABLED is set by fleet_eval.
-            flags: CombatPhaseFlags::ACTIVE,
-            difficulty,
-        }
-    }
-
-    fn phase_fleet_eval(world: &GameWorld, state: &mut SpaceCombatState) {
-        // FUN_00544da0 (96 lines): checks fleet composition.
-        // Sets PHASES_ENABLED if either side has active weapons (weapon_nibble > 0).
-        // In practice this is almost always true — guard kept for correctness.
-        let any_attacker_armed = state.attacker_ships.iter()
-            .any(|s| s.alive && s.weapon_nibble > 0);
-        let any_defender_armed = state.defender_ships.iter()
-            .any(|s| s.alive && s.weapon_nibble > 0);
-
-        if any_attacker_armed || any_defender_armed {
-            state.flags |= CombatPhaseFlags::PHASES_ENABLED;
-        }
-    }
-
-    fn phase_weapon_fire(
-        world: &GameWorld,
-        state: &mut SpaceCombatState,
-        rng: &mut impl Iterator<Item = f64>,
-    ) {
-        // FUN_00543b60 — per-side weapon fire, vtable +0x1c4 dispatch.
-        // Attacker fires first (side=1), then defender (side=0).
-        // Weapon damage is aggregated per side, then distributed.
-        //
-        // Approximation (full formula behind vtable +0x1c4, not yet decompiled):
-        // total_fire = sum of weapon_nibble * class.weapons_* for alive ships.
-        // Pending: decompile vtable +0x1c4 handler for exact per-arc formula.
-        Self::fire_side(world, &state.attacker_ships, &mut state.defender_ships, rng);
-        Self::fire_side(world, &state.defender_ships, &mut state.attacker_ships, rng);
-    }
-
-    fn fire_side(
-        world: &GameWorld,
-        firing: &[ShipInstanceSnapshot],
-        targets: &mut Vec<ShipInstanceSnapshot>,
-        rng: &mut impl Iterator<Item = f64>,
-    ) {
-        // Aggregate weapon power across all alive firing ships.
-        let total_fire: u32 = firing.iter()
-            .filter(|s| s.alive)
-            .map(|s| {
-                let class = &world.capital_ship_classes[s.class];
-                // Sum across all 4 arcs, all 3 weapon types, scaled by allocation nibble.
-                let raw_weapons = class.weapons_fore_turbolaser
-                    + class.weapons_fore_ion
-                    + class.weapons_fore_laser
-                    + class.weapons_aft_turbolaser
-                    + class.weapons_aft_ion
-                    + class.weapons_aft_laser
-                    + class.weapons_port_turbolaser
-                    + class.weapons_port_ion
-                    + class.weapons_port_laser
-                    + class.weapons_starboard_turbolaser
-                    + class.weapons_starboard_ion
-                    + class.weapons_starboard_laser;
-                // weapon_nibble (0-15) scales output: 0=no fire, 15=full
-                (raw_weapons * s.weapon_nibble as u32) / 15
-            })
-            .sum();
-
-        if total_fire == 0 { return; }
-
-        // Distribute fire across alive targets (round-robin weighted by hull fraction).
-        // TODO: replace with exact formula from vtable +0x1c4 once decompiled.
-        let alive_targets: Vec<usize> = targets.iter().enumerate()
-            .filter(|(_, t)| t.alive)
-            .map(|(i, _)| i)
-            .collect();
-        if alive_targets.is_empty() { return; }
-
-        let fire_per_target = total_fire / alive_targets.len() as u32;
-        for idx in alive_targets {
-            let roll = rng.next().unwrap_or(0.5);
-            // Apply variance: ±20% around mean fire_per_target.
-            let variance = (fire_per_target as f64 * 0.2 * (roll * 2.0 - 1.0)) as i32;
-            let damage = (fire_per_target as i32 + variance).max(0);
-            let target = &mut targets[idx];
-            // Raw fire goes into the shield/hull pipeline in phases 4-5.
-            // Store as pending damage on hull_current for now; shield phase will absorb.
-            target.hull_current = (target.hull_current - damage).max(0);
-            if target.hull_current == 0 {
-                target.alive = false; // alive_flag +0xac bit0 cleared
-            }
-        }
-    }
-
-    fn phase_shield_absorb(
-        world: &GameWorld,
-        state: &mut SpaceCombatState,
-        rng: &mut impl Iterator<Item = f64>,
-    ) {
-        // FUN_00544130 (83 lines) — vtable +0x1c8 dispatch.
-        // Shields absorb a portion of incoming weapon damage before hull is hit.
-        //
-        // Known: shield_nibble (bits 0-3 of +0x64) = allocated shield recharge.
-        // Full formula not yet decompiled (pending Ghidra session).
-        //
-        // Approximation: shields absorb (shield_nibble / 15) fraction of damage.
-        // This function modifies ship state in-place; no separate events returned.
-        //
-        // TODO: Replace with exact formula from FUN_00544130 decompile.
-        let _ = (world, rng); // suppress unused until decompiled
-    }
-
-    fn phase_hull_damage(
-        world: &GameWorld,
-        state: &mut SpaceCombatState,
-        rng: &mut impl Iterator<Item = f64>,
-    ) {
-        // FUN_005443f0 (54 lines) — vtable +0x1d0 dispatch.
-        // Remaining damage after shield absorption is applied to hull_current.
-        // Hull setter (FUN_00501490): range-checked [0, max_hull], notifies both sides.
-        //
-        // No-op guard: only fires if new_hull != current_hull (from FUN_00501490).
-        //
-        // TODO: Replace with exact formula once FUN_005443f0 is decompiled.
-        let _ = (world, rng);
-    }
-
-    fn phase_fighter_engage(
-        world: &GameWorld,
-        state: &mut SpaceCombatState,
-        rng: &mut impl Iterator<Item = f64>,
-    ) {
-        // FUN_005444e0 (53 lines) — vtable +0x1d4 dispatch.
-        // Fighter engagement: squadrons attack each other and enemy capital ships.
-        //
-        // Entity path: family 0x71-0x72 triggers the alt_shield_path (+0x78 bit7).
-        // Dead fighters with +0x50 & 0x08 still count for fleet eval in phase 7.
-        //
-        // TODO: Replace with exact formula once FUN_005444e0 is decompiled.
-        let _ = (world, rng);
-    }
-
-    fn phase_determine_result(
-        world: &GameWorld,
-        state: &SpaceCombatState,
-    ) -> CombatSide {
-        // FUN_005445d0 (175 lines):
-        // 1. Iterates all units, checks alive_flag at +0xac bit0.
-        // 2. Fighter exception: +0x50 & 0x08 → still combat-ready even if hull=0.
-        // 3. Family 0x73/0x74 (special entity, likely Death Star) → FUN_00534640 path.
-        // 4. Calls FUN_00543d90 per side to determine winner.
-        let attacker_alive = state.attacker_ships.iter().any(|s| s.alive)
-            || state.attacker_fighters.iter().any(|&c| c > 0);
-        let defender_alive = state.defender_ships.iter().any(|s| s.alive)
-            || state.defender_fighters.iter().any(|&c| c > 0);
-
-        match (attacker_alive, defender_alive) {
-            (true, false)  => CombatSide::Attacker,
-            (false, true)  => CombatSide::Defender,
-            (true, true)   => CombatSide::Draw,
-            (false, false) => CombatSide::Draw, // mutual annihilation
-        }
-    }
-
-    fn build_result(
-        attacker: FleetKey,
-        defender: FleetKey,
-        system: SystemKey,
-        state: &SpaceCombatState,
-        winner: CombatSide,
-        tick: u64,
-    ) -> SpaceCombatResult {
-        let mut ship_damage = Vec::new();
-
-        for (i, snap) in state.attacker_ships.iter().enumerate() {
-            if snap.hull_current < snap.hull_max {
-                ship_damage.push(ShipDamageEvent {
-                    fleet: attacker,
-                    ship_index: i,
-                    hull_before: snap.hull_max,
-                    hull_after: snap.hull_current,
-                });
-            }
-        }
-        for (i, snap) in state.defender_ships.iter().enumerate() {
-            if snap.hull_current < snap.hull_max {
-                ship_damage.push(ShipDamageEvent {
-                    fleet: defender,
-                    ship_index: i,
-                    hull_before: snap.hull_max,
-                    hull_after: snap.hull_current,
-                });
-            }
-        }
-
-        SpaceCombatResult {
-            attacker_fleet: attacker,
-            defender_fleet: defender,
-            system,
-            winner,
-            ship_damage,
-            fighter_losses: Vec::new(), // populated once phase_fighter_engage is complete
-            tick,
-        }
-    }
-}
-```
-
-### 2.4 Vtable Dispatch → Rust Entity Kind Enum
-
-The C++ vtable at `+0x1c4`, `+0x1c8`, `+0x1d0`, `+0x1d4` dispatches different behaviors depending on entity class (capital ship vs fighter vs Death Star). In Rust, use an enum instead:
+`combat.rs` keeps a family-byte classification (`CombatEntityKind`) and the
+packed-difficulty helper:
 
 ```rust
 /// Mirrors the C++ family-byte classification for combat dispatch.
@@ -819,170 +405,16 @@ impl CombatSystem {
 
 ## 4. Bombardment
 
-### 4.1 Direct Formula Translation
+### 4.1 The Original's Bombardment
 
-The full C++ call chain:
-
-```
-FUN_00556430 → FUN_00555d30 → FUN_00555b30
-  → FUN_00509620 (get combat stats as short[2])
-  → FUN_0055d8c0 (damage formula)
-    → FUN_0055d860: raw_power = sqrt((atk[0]-def[0])² + (atk[1]-def[1])²)
-    → / DAT_006bb6e8 (GNPRTB bombardment divisor)
-    → FUN_0053e190 (apply difficulty modifier)
-  → minimum 1 damage
-```
-
-The `short[2]` stats from `FUN_00509620`:
-- `[0]` = bombardment attack strength (attacker) / bombardment defense rating (defender)
-- `[1]` = secondary stat (likely detection or maneuverability modifier — confirm via Ghidra)
-
-```rust
-// crates/rebellion-core/src/combat.rs (continued)
-
-#[derive(Debug, Clone)]
-pub struct BombardmentResult {
-    pub system: SystemKey,
-    pub damage: i32,
-    pub tick: u64,
-}
-
-impl CombatSystem {
-    /// Orbital bombardment damage formula.
-    ///
-    /// Direct translation of FUN_0055d8c0 → FUN_0055d860 from REBEXE.EXE.
-    ///
-    /// # Formula
-    /// ```text
-    /// raw_power = sqrt((atk_bombardment - def_bombardment)² + (atk_secondary - def_secondary)²)
-    /// damage = apply_modifier(raw_power / gnprtb_divisor, difficulty)
-    /// if damage == 0: damage = 1  // minimum 1 (confirmed from C++)
-    /// ```
-    ///
-    /// # Advance contract
-    /// - Does NOT mutate world.
-    /// - `gnprtb_divisor`: `world.gnprtb.bombardment_divisor[difficulty as usize]`
-    /// - `difficulty_modifier`: `world.gnprtb.difficulty_modifier[difficulty as usize]`
-    pub fn resolve_bombardment(
-        world: &GameWorld,
-        attacker_fleet: FleetKey,
-        system: SystemKey,
-        difficulty: u8,
-        tick: u64,
-    ) -> BombardmentResult {
-        // Guard: bombardment disabled if system flag this[0x14] & 0x800 is set.
-        // In Rust: check a future system.bombardment_blocked flag.
-        // (Not yet in world model — add when implementing blockade mechanics.)
-
-        // Guard: no self-bombardment (uVar1 == uVar2 check in FUN_00556430).
-        let attacker_fleet_data = &world.fleets[attacker_fleet];
-        let system_data = &world.systems[system];
-        if attacker_fleet_data.is_alliance == system_data.is_alliance_controlled() {
-            return BombardmentResult { system, damage: 0, tick };
-        }
-
-        // FUN_00509620: get combat stats as (attack, secondary) pair.
-        // Attacker: aggregate bombardment stat across fleet.
-        let atk = Self::fleet_bombardment_stats(world, attacker_fleet);
-
-        // Defender: aggregate defense from defense facilities + troop bombardment_defense.
-        let def = Self::system_bombardment_defense(world, system);
-
-        // FUN_0055d860: power_ratio = Euclidean distance.
-        // C++: sqrt((atk[0]-def[0])² + (atk[1]-def[1])²)
-        let dx = (atk.0 - def.0) as f64;
-        let dy = (atk.1 - def.1) as f64;
-        let raw_power = (dx * dx + dy * dy).sqrt();
-
-        if raw_power == 0.0 {
-            return BombardmentResult { system, damage: 0, tick };
-        }
-
-        // DAT_006bb6e8: GNPRTB bombardment divisor (difficulty-indexed).
-        let gnprtb_divisor = world.gnprtb.bombardment_divisor[difficulty as usize];
-        let divisor = gnprtb_divisor.max(1) as f64; // guard against divide-by-zero
-
-        // FUN_0053e190: apply difficulty modifier.
-        let pre_mod = raw_power / divisor;
-        let modifier = world.gnprtb.difficulty_modifier[difficulty as usize];
-        let damage_f = pre_mod * (modifier as f64 / 100.0);
-
-        // Minimum 1 damage (confirmed from C++ `result == 0 ? 1 : result`).
-        let damage = (damage_f.floor() as i32).max(1);
-
-        BombardmentResult { system, damage, tick }
-    }
-
-    /// Aggregate bombardment attack stats (short[2]) for a fleet.
-    /// Returns (bombardment_strength, secondary_stat).
-    /// Maps to FUN_00509620 attacker call.
-    fn fleet_bombardment_stats(world: &GameWorld, fleet: FleetKey) -> (i32, i32) {
-        let fleet_data = &world.fleets[fleet];
-        let mut brd: i32 = 0;
-        let mut sec: i32 = 0;
-
-        for entry in &fleet_data.capital_ships {
-            let class = &world.capital_ship_classes[entry.class];
-            brd += class.bombardment as i32 * entry.count as i32;
-            // Secondary: use maneuverability as proxy until FUN_00509620 is decompiled.
-            sec += class.maneuverability as i32 * entry.count as i32;
-        }
-        for entry in &fleet_data.fighters {
-            let class = &world.fighter_classes[entry.class];
-            brd += class.bombardment as i32 * entry.count as i32;
-        }
-
-        (brd, sec)
-    }
-
-    /// Aggregate bombardment defense stats (short[2]) for a system.
-    /// Returns (defense_rating, secondary_stat).
-    /// Maps to FUN_00509620 defender call.
-    fn system_bombardment_defense(world: &GameWorld, system: SystemKey) -> (i32, i32) {
-        let system_data = &world.systems[system];
-        let mut def: i32 = 0;
-        let mut sec: i32 = 0;
-
-        // Defense facilities contribute bombardment_defense.
-        // (DefenseFacilityClass needs bombardment_defense field — add to world model.)
-        for &key in &system_data.defense_facilities {
-            // TODO: look up DefenseFacilityClass by class_dat_id and sum bombardment_defense.
-            // Placeholder: each facility contributes 10 defense.
-            let _ = key;
-            def += 10;
-        }
-
-        // Troop regiment strength contributes secondary defense.
-        for &key in &system_data.ground_units {
-            let unit = &world.troops[key];
-            sec += unit.regiment_strength as i32;
-        }
-
-        (def, sec)
-    }
-}
-```
-
-### 4.2 `world.gnprtb` Lookup Pattern
-
-At every combat call site in `main.rs`, the difficulty-indexed lookup looks like:
-
-```rust
-// main.rs — before calling resolve_bombardment:
-let difficulty = game_state.difficulty as u8; // 0=easy, 1=medium, 2=hard, 3=impossible
-let result = CombatSystem::resolve_bombardment(&world, attacker, system, difficulty, tick);
-```
-
-Inside the function:
-```rust
-// The two confirmed global addresses from COMBAT-SUMMARY.md:
-// DAT_006bb6e8 → world.gnprtb.bombardment_divisor[difficulty]
-// DAT_00661a88 → world.gnprtb.difficulty_modifier[difficulty]
-let divisor = world.gnprtb.bombardment_divisor[difficulty as usize];
-let modifier = world.gnprtb.difficulty_modifier[difficulty as usize];
-```
-
----
+Orders `0x220`-`0x223` pass the gate `FUN_00582440` and run
+`FUN_0058d800`: a Death Star phase for Destroy System, KDY/LNR defence fire
+at the bombarding ships, per-hit target rolls against each target's value,
+and support shifts (`bombardment.md`). The chain
+`FUN_00556430` → `FUN_00555d30` → `FUN_00555b30` → `FUN_0055d8c0` is the
+transit-time distance (`build-delivery.md`), and `FUN_00509620` returns a
+system's coordinates. The port's `bombardment.rs` still uses that distance;
+task-graph node `or-port-bombardment-8usw` replaces it.
 
 ## 5. Mission System Expansion
 
@@ -1180,86 +612,23 @@ UprisingStarted {
 
 ## 6. Integration Order
 
-### 6.1 New Module Registration
+`rebellion-data/src/simulation.rs` runs combat after movement each tick
+(`agent_docs/simulation.md`), and `rebellion-app` `main.rs` does the same for
+battles no window opens:
 
-1. Create `crates/rebellion-core/src/combat.rs` with all types from §2-4
-2. Add to `crates/rebellion-core/src/lib.rs`:
-   ```rust
-   pub mod combat;
-   ```
-3. Add `GnprtbParams` to `world/mod.rs` and `GameWorld`
-4. Add `MstbTable` / `MstbEntry` to `missions.rs` (or a new `mstb.rs` if preferred)
-5. Add `campaign combat` loading step to `rebellion-data/src/lib.rs`
+1. Space: for each system where both sides are present,
+   `integrator::resolve_system_space_combat(world, troop_transport,
+   movement, system, rng_seed, tick)` runs one headless tactical session
+   seeded from one roll, then the caller reconciles a destroyed Death Star
+   (`tactical::apply::reconcile_death_star_result`).
+2. Ground: `CombatSystem::resolve_ground(&world, system, alliance_attacks,
+   &rolls, tick)`, applied by `apply_ground_combat_result_inner`.
+3. Bombardment: `BombardmentSystem::resolve_bombardment`, the port formula
+   (§4).
 
-### 6.2 Wire into `main.rs`
-
-Combat fires on `ArrivalEvent` — when a fleet arrives at a system occupied by an enemy fleet. Ground combat fires after space combat resolves. Bombardment fires each tick if a blocking fleet has orbital bombardment capability:
-
-```rust
-// In main.rs, add after movement step:
-
-// 1. Space combat: check each arrival for hostile fleet presence.
-for arrival in &arrivals {
-    if let Some(enemy_fleet) = find_hostile_fleet_at(arrival.system, &world) {
-        let rolls = draw_rng_rolls(&mut rng, SPACE_COMBAT_RNG_BUDGET);
-        let result = CombatSystem::resolve_space(
-            &world,
-            arrival.fleet,
-            enemy_fleet,
-            arrival.system,
-            game_state.difficulty,
-            &rolls,
-            tick,
-        );
-        apply_space_combat_result(&mut world, result, &mut message_log);
-    }
-}
-
-// 2. Ground combat: check systems where both factions have troops.
-for system_key in systems_with_ground_conflict(&world) {
-    let rolls = draw_rng_rolls(&mut rng, GROUND_COMBAT_RNG_BUDGET);
-    let result = CombatSystem::resolve_ground(
-        &world, system_key, attacker_is_alliance, &rolls, tick,
-    );
-    apply_ground_combat_result(&mut world, result, &mut message_log);
-}
-
-// 3. Bombardment: check systems under blockade.
-for (fleet_key, system_key) in blockading_fleets(&world) {
-    let result = CombatSystem::resolve_bombardment(
-        &world, fleet_key, system_key, game_state.difficulty, tick,
-    );
-    apply_bombardment_result(&mut world, result, &mut message_log);
-}
-```
-
-### 6.3 RNG Budget Constants
-
-Define at the top of `combat.rs` for test harness use:
-
-```rust
-/// RNG rolls consumed per ship per space combat call.
-/// Budget: weapon_fire + shield_absorb + hull_damage + fighter_engage = 4 phases.
-/// Times max ships per side (30 classes × 4 phases = 120 minimum).
-pub const SPACE_COMBAT_RNG_PER_SHIP: usize = 4;
-
-/// RNG rolls consumed per troop pair in ground combat.
-pub const GROUND_COMBAT_RNG_PER_PAIR: usize = 1;
-```
-
-### 6.4 What Remains Pending Decompile
-
-These phases have confirmed C++ addresses but the exact formulas are behind vtable calls not yet decompiled. The stubs above are reasonable approximations for playable behavior. Priority order for next Ghidra session:
-
-| Function | Address | Phase | Blocker |
-|----------|---------|-------|---------|
-| `FUN_00544130` | shield absorb | Phase 4 | 83 lines, vtable +0x1c8 |
-| `FUN_005443f0` | hull damage apply | Phase 5 | 54 lines, vtable +0x1d0 |
-| `FUN_005444e0` | fighter engagement | Phase 6 | 53 lines, vtable +0x1d4 |
-| vtable `+0x1c4` handler | weapon fire calc | Phase 3 | dispatch target unknown |
-| `FUN_004ee350` | per-unit ground resolve | Ground | 30 lines, vtable +0x330 |
-| `FUN_005617b0` | Death Star handler | Ground | 68 lines |
-| `FUN_00509620` | combat stat getter | Bombardment | secondary stat identity |
+Pending decompile for ground combat: the per-unit resolve `FUN_004ee350`
+(vtable `+0x330`). `FUN_005617b0` is the Palpatine-at-Coruscant flag, not a
+Death Star handler (`or-ch-combat-family-notes-yfx`).
 
 ---
 

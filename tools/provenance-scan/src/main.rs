@@ -74,7 +74,9 @@ fn classify(comments: &str) -> Provenance {
     let cited = comments
         .split(|c: char| !c.is_ascii_alphanumeric() && c != '_' && c != '.')
         .any(|word| {
-            (word.starts_with("FUN_") || word.starts_with("DAT_")) && word.len() >= 10
+            // Ghidra spells data globals read as floats `_DAT_…`.
+            let address = word.trim_start_matches('_');
+            (address.starts_with("FUN_") || address.starts_with("DAT_")) && address.len() >= 10
                 || word.starts_with("GNPRTB")
                 || word.ends_with(".DAT")
                 || (word.len() >= 5

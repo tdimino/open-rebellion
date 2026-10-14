@@ -287,27 +287,10 @@ Each `*MSTB.DAT` file defines a skill-threshold → probability curve for one mi
 
 | Address | Size | Purpose |
 |---------|------|---------|
-| FUN_0050d5a0 | 3050 | **Mission dispatch** — 13-case switch on mission type. Sets entity family filters for each mission type's valid target pool. The largest function in the 0x4f0000-0x540000 combat region. |
+| FUN_0050d5a0 | 3050 | **Observation level** — copies a system's state into one side's view at level 0-12 (`observation-levels.md`); espionage and mission ends call it |
 | FUN_00536800 | 120 | **Mission role notification** — `RoleMissionKeyNotif` / `Mission` |
 | FUN_004fc080 | 89 | **Mission destruction outcome** — handles `DestroyedSabotage` (type 6), `DestroyedAssassination` (type 7), `Autoscrap` (type 0x15 = 21) |
 | FUN_004fc3a0 | 16 | **Damage application** — `GameObjDamagedNotif` / `Damaged` |
-
-**Mission dispatch filter ranges** (from FUN_0050d5a0 case analysis):
-
-| Case | Type | Entity Family Ranges Used |
-|------|------|--------------------------|
-| 1 | Diplomacy / Recruitment | Fleet filter |
-| 2 | Special Forces | Unit filter |
-| 3 | Type 3 | 0x10-0x28, two filters |
-| 4 | Type 4 | 0xa0-0xb0, 0x28-0x30 |
-| 5 | Type 5 | 0x08-0x10, fleet 1-255 |
-| 6 | **Sabotage** | 0x08-0x10, fleet 1-255, side filter, `special_flag=true` |
-| 7 | **Assassination** | 0x08-0x10, fleet 1-255, side + troop filters |
-| 8 | Type 8 | 4 filters: 0x20-0x30, 0x10-0x20, 0xa0-0xb0, 0x08-0x10 |
-| 9 | Type 9 | 0x30-0x40 |
-| 10 | Type 10 | Three fleet ranges (1-255) |
-| 11 | Type 11 | 0x10-0x40 + 0xa0-0xb0 |
-| 12 | Type 12 | 0x20-0x30 |
 
 ### Mission Lifecycle Notifications
 
@@ -351,7 +334,7 @@ Unconfirmed indexes, but GNPRTB likely controls: mission duration multipliers, s
 
 ### What to Change for a Total Conversion
 
-- **New mission type** (e.g., Yuuzhan Vong "Voxyn strike team"): add a new case to FUN_0050d5a0, create a new `*MSTB.DAT`-style table for its probability curve, assign a new MISSNSD.DAT entry with appropriate `special_force_eligibility` bitmask.
+- **New mission type** (e.g., Yuuzhan Vong "Voxyn strike team"): add a MISSNSD.DAT record in an unused family (`0x40`-`0x7f`), create a new `*MSTB.DAT`-style table for its probability curve, and give the record with appropriate `special_force_eligibility` bitmask.
 - **Change success rates without code changes**: edit the threshold/value pairs in the relevant `*MSTB.DAT` file. The probability formula reads these at runtime.
 - **New story mission**: add a new `GameEvent` in the `EventState` system (`rebellion-core/src/events.rs`) with `EventCondition::TickReached` or `CharacterAtSystem` and the appropriate `EventAction`. No REBEXE.EXE patching required for open-rebellion.
 
@@ -439,7 +422,7 @@ Three conditions all required: `FUN_0055e4d0` (stat check), `FUN_0055ff60` (seco
 
 | Address | Size | Purpose | Notif |
 |---------|------|---------|-------|
-| FUN_00532e00 | — | **Construction yard research order notif** — `SideConstructionYardRdOrderNotif` (event 0x127). Note: originally mislabeled as victory; the actual victory condition function is separate. | — |
+| FUN_00532e00 | — | **Construction yard research order notif** — `SideConstructionYardRdOrderNotif` (event 0x127). The victory flags are FUN_005180e0 (`victory-conditions.md`). | — |
 | FUN_00532f40 | 65 | **Recruitment done notif** — `SideRecruitmentDoneNotif` / `RecruitmentDone` (event 0x12c) | — |
 | — | — | **Victory condition check** — referenced by `SideVictoryConditionsNotif` / `VictoryConditions` string at `0x006aa764` | — |
 | FUN_0054ba00 | 65 | **Final battle trigger** — `MissionMgrFinalBattleNotif` / `FinalBattle` | — |
@@ -709,6 +692,7 @@ In open-rebellion, the encyclopedia is implemented in `crates/rebellion-render/s
 | ID (hex) | ID (dec) | Event | Source |
 |---------|---------|-------|--------|
 | 0x127 | 295 | ConstructionYardRdOrder | FUN_00532e00 |
+| 0x128 | 296 | VictoryConditions | FUN_00532f90 |
 | 0x12c | 300 | RecruitmentDone | FUN_00532f40 |
 | 0x14d | 333 | Battle | FUN_00512280 |
 | 0x14e | 334 | Blockade | FUN_005122d0 |
@@ -790,7 +774,7 @@ The three notification dispatchers differ by parameter count:
 | Space combat pipeline | FUN_005457f0, FUN_00549910, FUN_005442f0-FUN_00544a20 |
 | Loyalty | FUN_005341a0, FUN_004ee030 |
 | Force/Jedi | FUN_0058a3f0, FUN_004f1e00, FUN_004f1ea0, FUN_004f20e0 |
-| Mission dispatch | FUN_0050d5a0, FUN_004fc080, FUN_004fc3a0 |
+| Mission outcomes | FUN_004fc080, FUN_004fc3a0 |
 | Mission scripted events | FUN_0054b770–FUN_0054ba50, FUN_00572b40 |
 | Fleet movement | FUN_004ff7a0–FUN_004ff890, FUN_00504a00 |
 | Economy | FUN_0050e820, FUN_00509cc0–FUN_00509f40, FUN_00511c90–FUN_00511dd0 |
@@ -807,7 +791,7 @@ The three notification dispatchers differ by parameter count:
 |----------|---------|
 | CAPSHPSD.DAT | FUN_00501490 (hull max via vtable) |
 | GNPRTB.DAT | FUN_0055d8c0 (bombardment divisor via DAT_006bb6e8) |
-| `*MSTB.DAT` files | Mission probability lookup (traced via FUN_0050d5a0 dispatch chain) |
+| `*MSTB.DAT` files | Mission probability lookup (`FUN_0053e240`; per-table consumers in `uprising-incident.md`) |
 | UPRIS1TB.DAT / UPRIS2TB.DAT | FUN_00559ce0 (uprising incident outcome codes, called by FUN_0050d030) |
-| MISSNSD.DAT | FUN_0050d5a0, FUN_004fc080 (mission type switch) |
+| MISSNSD.DAT | FUN_004fc080 (mission type switch) |
 | MJCHARSD / MNCHARSD | FUN_005341a0 (loyalty), FUN_004ee030 (enhanced loyalty), FUN_004ee470 (hyperdrive), FUN_0058a3f0 (Force) |

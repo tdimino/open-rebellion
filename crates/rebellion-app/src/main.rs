@@ -50,7 +50,7 @@ use rebellion_core::ai::{AIAction, AIState, AISystem, AiFaction, FleetMoveReason
 use rebellion_core::betrayal::{BetrayalState, BetrayalSystem};
 use rebellion_core::blockade::{BlockadeState, BlockadeSystem};
 use rebellion_core::bombardment::BombardmentSystem;
-use rebellion_core::combat::{side_present, CombatForce, CombatSide, CombatSystem};
+use rebellion_core::combat::{side_present, CombatForce, CombatSide};
 use rebellion_core::dat::Faction;
 use rebellion_core::death_star::{DeathStarState, DeathStarSystem};
 use rebellion_core::delivery::DeliveryState;
@@ -2709,28 +2709,21 @@ Some(RailAudience::side(*faction_is_alliance)),
                     break; // Handle one player battle at a time.
                 }
 
-                // AI vs AI: auto-resolve as before.
-                let combat_rolls: Vec<f64> = (0..256).map(|_| sim_rng.gen::<f64>()).collect();
-                let space_result = CombatSystem::resolve_space_forces(
-                    &world,
-                    CombatForce {
-                        fleet: atk_force,
-                        is_alliance: true,
-                    },
-                    CombatForce {
-                        fleet: def_force,
-                        is_alliance: false,
-                    },
+                // Nobody watches this battle: it runs headless (FUN_0040a050
+                // state 8), as the shared simulation's battles do.
+                let space_result = rebellion_data::integrator::resolve_system_space_combat(
+                    &mut world,
+                    &mut troop_transport_state,
+                    &mut movement_state,
                     sys_key,
-                    world.difficulty_index,
-                    &combat_rolls,
+                    sim_rng.gen::<u32>(),
                     current_tick,
-                    death_star_state.shield_generator_active,
                 );
-
-                // Apply ship damage: reduce counts proportional to destroyed hulls.
-                apply_space_combat_result(&space_result, &mut world);
-                troop_transport_state.destroy_untransportable_cargo(&mut world);
+                tactical_flow::reconcile_death_star_result(
+                    &world,
+                    &mut death_star_state,
+                    &mut victory_state,
+                );
 
                 let winner_str = match space_result.winner {
                     CombatSide::Attacker => "Alliance victory",
@@ -6162,9 +6155,10 @@ Some(RailAudience::side(*faction_is_alliance)),
                         }
                     }
 
-                    // FUN_0046d8d0 / FUN_00465d80: a Finder's choice goes
-                    // through FUN_00429440, which opens the target's sector
-                    // window and then the window for its kind.
+                    // FUN_0046df90 (Troop Finder) / FUN_00464c20 (Personnel
+                    // Finder) command slots: a Finder's choice goes through
+                    // FUN_00429440, which opens the target's sector window
+                    // and then the window for its kind.
                     let troop_choice = draw_troop_finder(
                         ctx,
                         &world,
@@ -9509,18 +9503,6 @@ fn apply_mission_result(
 // SetHeritageKnown (Dabora 3 #R4) is handled in the canonical function.
 // ---------------------------------------------------------------------------
 
-// ---------------------------------------------------------------------------
-// Combat effect application helpers
-// ---------------------------------------------------------------------------
-
-/// Delegate to integrator's shared implementation.
-fn apply_space_combat_result(
-    result: &rebellion_core::combat::SpaceCombatResult,
-    world: &mut GameWorld,
-) {
-    rebellion_data::integrator::apply_space_combat_result_inner(result, world);
-}
-
 #[expect(
     clippy::too_many_arguments,
     reason = "Keep explicit state and UI inputs at this existing integration boundary."
@@ -10585,6 +10567,7 @@ mod tactical_ground_tests {
             impact_effects: vec![],
             pending_audio_cues: vec![],
             pending_voice_cues: vec![],
+            pending_log_lines: vec![],
             field_effects: vec![],
             subsystem_repairs: vec![],
             paused: false,

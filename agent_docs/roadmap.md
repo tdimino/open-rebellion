@@ -1294,11 +1294,15 @@ secrets and signed sessions.
 - New sectors (Unknown Regions, Corporate Sector)
 - Hyperspace lane network (optional overlay on Euclidean model)
 
-### Addon 3: Tactical Combat Convergence (Future)
-- Bring the existing 2D tactical view onto the authoritative combat path.
-- Complete ship placement, formation selection, manual targeting, and parity
-  with automatic result application.
-- 3D model sprite sheets from Hunyuan3D Pro pipeline
+### Mod surface (Ghidra groundwork)
+The tactical engine resolves every space battle, played or not; its parity
+is tracked under `or-ep-tac-x15`. Before addons open content to mods, the
+`or-ep-mod-surface-vdch` questions map what the original fixes in code
+rather than data: Force users and training, the story encounters, mission
+families, ship-type assets, the 200-system galaxy, and the movies. Each
+answer names the constants, family checks and hard-coded ids the port must
+turn into data for new Jedi, encounters, missions, ships, systems and
+movies.
 
 ---
 

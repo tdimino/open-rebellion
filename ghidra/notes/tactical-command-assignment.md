@@ -10,12 +10,14 @@ frames put panels `1302`, `1304`, `1306` and `1309` at `(482,28)`.
 
 ## Selected-unit entry controls
 
-`FUN_005e4110` constructs the capital-ship panel and `FUN_005e7030`
-constructs the fighter panel. Both create the same entry controls.
+`FUN_005e4110` constructs the capital-ship panel and `FUN_005e1170` the
+fighter-group panel (id `0x17`, `tactical-fighter-group-panel.md`), whose
+`FUN_005e1550` creates the same two entry controls. `FUN_005e7030` builds a
+third panel, id `0x16`, whose left button sends `0xdd07`.
 
 | Command | Rectangle | Message | Normal / pressed BMP |
 |---|---:|---:|---:|
-| Maneuvers and Tactics | `(494,238) 58x22` | `0xdd02` capital, `0xdd07` fighter | `1107 / 1108` |
+| Maneuvers and Tactics | `(494,238) 58x22` | `0xdd02` (`0xdd07` on panel `0x16`) | `1107 / 1108` |
 | Missions | `(562,238) 58x22` | `0xdd01` | `1105 / 1106` |
 
 The decompile names neither message. The original settles them: the left
@@ -26,7 +28,7 @@ art agrees: 1107 draws a ship on a curved arrow, 1105 a fighter on a target.
 ## Maneuvers and Tactics
 
 `FUN_005dcc70` builds panel `1309`. `FUN_005dd3a0` maps the five buttons to
-the shared order field at offset `+0x68`. `FUN_005dd290` restores the selected
+order codes, applied through `FUN_00595c00` to the shared order at `+0x68`. `FUN_005dd290` restores the selected
 order. `FUN_005dd080` commits on the check button and closes without mutation
 on cancel. `FUN_005dd140` enforces mutual selection and draws the matching
 confirmation graphic at `(496,42)`.
@@ -40,15 +42,15 @@ confirmation graphic at `(496,42)`.
 | Hold Position | 11 | `(557,172) 28x28` | `1141 / 1142` | `2105` |
 
 The tactic toggle is `(593,160) 24x52`. Bitmap `1117` selects Stand Off and
-bitmap `1118` selects Surround. `FUN_005dd3a0` writes code 1 for Surround and
-code 2 for Stand Off to offset `+0x38`. Stand Off is the documented default.
+bitmap `1118` selects Surround. `FUN_005dd3a0` maps Surround to code 1 and
+Stand Off to code 2, applied through `FUN_00595c20` to the tactic at `+0x38`. Stand Off is the documented default.
 Check uses `1113 / 1114` at `(548,230) 27x25`; cancel uses `1115 / 1116` at
 `(588,230) 27x25`.
 
 ## Missions
 
 `FUN_005def00` creates panel `1308`. `FUN_005df110` constructs its controls,
-`FUN_005df5f0` maps them to the shared order field, `FUN_005df660` restores a
+`FUN_005df5f0` keeps the selected code at the panel's `+0xc4`, `FUN_005df660` restores a
 selected order, and `FUN_005df4f0` commits through `FUN_00595c00` or cancels
 without mutation. `FUN_005df6b0` selects the faction-specific confirmation
 graphic at `(496,42)`.

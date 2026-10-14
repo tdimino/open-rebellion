@@ -44,7 +44,6 @@ pub mod status_window;
 pub mod system_window;
 mod tactical_asset_cache;
 mod tactical_assets;
-mod tactical_resources;
 pub mod tactical_view;
 pub mod targeting;
 pub mod theme;
@@ -148,6 +147,11 @@ pub use panels::{
     ModInfo, ModManagerAction, ModManagerState, OfficersState, PanelAction, SaveLoadPanelState,
     SaveSlotInfo,
 };
+pub use rebellion_core::tactical::resource_ids::{
+    capital_ship_tactical_resource, death_star_tactical_resource, fighter_tactical_resource,
+    TacticalCapitalShipResource, TacticalDeathStarResource, TacticalFighterResource,
+    DEATH_STAR_DAT_ID, DEATH_STAR_TACTICAL_RESOURCE,
+};
 pub use sector_window::{
     draw_sector_windows, SectorWindowAction, SectorWindowState, SECTOR_WINDOW_HEIGHT,
     SECTOR_WINDOW_WIDTH,
@@ -163,11 +167,6 @@ pub use tactical_assets::install_native_tactical_assets;
 pub use tactical_assets::install_native_tactical_lod_family;
 #[cfg(feature = "interface-test-fixtures")]
 pub use tactical_assets::TacticalLodView;
-pub use tactical_resources::{
-    capital_ship_tactical_resource, death_star_tactical_resource, fighter_tactical_resource,
-    TacticalCapitalShipResource, TacticalDeathStarResource, TacticalFighterResource,
-    DEATH_STAR_DAT_ID, DEATH_STAR_TACTICAL_RESOURCE,
-};
 pub use tactical_view::{
     draw_tactical_view, BattlePhase, BattleSession, CombatWinner, OriginalTacticalRng,
     TacticalAction, TacticalState, TacticalTrenchRunOutcome,

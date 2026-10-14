@@ -33,6 +33,7 @@ pub mod scrap;
 pub mod serde_ordered;
 pub mod stockpiles;
 pub mod story_events;
+pub mod tactical;
 pub mod tick;
 pub mod troop_transport;
 pub mod tuning;

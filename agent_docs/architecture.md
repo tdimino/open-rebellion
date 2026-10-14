@@ -51,8 +51,10 @@ crates/rebellion-core/src/
 ├── mission_detection.rs — The mission detection manager (FUN_00547f60): decoys, detection, betrayal, exposure
 ├── mission_planning.rs — The AI mission planners' team and decoy selectors
 ├── fog.rs            — FogState, visibility sets, dim rendering tiers (373 LOC, 9 tests)
-├── combat.rs         — Space combat 7-phase pipeline, ground combat, CombatPhaseFlags
-├── bombardment.rs    — Orbital bombardment: Euclidean distance / GNPRTB[0x1400]
+├── combat.rs         — Ground combat; side_present, CombatForce and CombatSide shared with the tactical engine
+├── tactical.rs       — The tactical battle engine: BattleSession, placement, engagement AI, weapons, fighters, Death Star, stalemate; played, simulated or headless (FUN_0040a050)
+├── tactical/         — apply.rs (write-back: apply_results, withdraw_fleet, reconcile_death_star_result), resource_ids.rs (TACTICAL.DLL resource joins), test_support.rs, tests.rs
+├── bombardment.rs    — Port bombardment: the transit-distance formula, not the original's (ghidra/notes/bombardment.md)
 ├── blockade.rs       — Fleet-presence blockade, manufacturing halt, troop destruction
 ├── uprising.rs       — Recovered revolt lifecycle, uprising incident (UPRIS1TB/UPRIS2TB codes), Subdue gain, disaster
 ├── death_star.rs     — Construction countdown, planet destruction, nearby-warning scan. `cleanup_destroyed_system()` removes all entities (fleets, troops, facilities) and cancels in-transit orders to the destroyed system.
@@ -95,7 +97,7 @@ crates/rebellion-render/src/
 ├── encyclopedia.rs     — 4-tab entity browser with BMP texture cache from EData/
 ├── bmp_cache.rs        — DllSource enum, BMP/PNG texture cache with HD fallback, WASM path rebasing, named DLL resource ID catalog
 ├── cockpit.rs          — Faction cockpit chrome (top/bottom bars), 9 control buttons, CockpitViewport
-├── tactical_view.rs    — 2D tactical combat: BattleSession, ship placement, phased combat, targeting, retreat
+├── tactical_view.rs    — The battle window: drawing, input, HUD and panels over rebellion_core::tactical (re-exported)
 ├── ground_combat.rs    — Ground combat: regiment engagement, animated bars, win/loss results
 ├── event_screen.rs     — Full-screen event overlays for story events. event_id_to_resource() maps story IDs to STRATEGY.DLL BMP offsets with heritage_known branching for Final Battle variants.
 ├── advisor.rs          — Droid advisors: the advice agent's slot table, both droids' players, voices and cockpit steps (`ghidra/notes/droid-advisor-triggers.md`)
@@ -196,7 +198,7 @@ run_simulation_tick():
   0. EconomySystem::advance       → integrator.apply_economy_events()
   1. ManufacturingSystem::advance  → integrator.apply_build_completions()
   2. MovementSystem::advance       → integrator.apply_arrivals()
-  3. CombatSystem::resolve_*       → integrator.apply_space_combat() / apply_ground_combat()
+  3. resolve_system_space_combat (headless tactical battle) / CombatSystem::resolve_ground → apply_ground_combat()
   4. FogSystem::advance            → integrator.emit_fog_reveals()
   5. MissionSystem::advance        → integrator.apply_mission_result()
   5b. check_escapes()              → integrator.apply_escape_effects()

@@ -1,15 +1,15 @@
 ---
 title: "Orbital Bombardment"
-description: "Euclidean distance damage formula with GNPRTB scaling"
+description: "Bombardment orders 0x220-0x223: defence fire, per-hit target rolls, support shifts"
 category: "mechanics"
 created: 2026-03-16
-updated: 2026-03-16
+updated: 2026-10-14
 game_system: "bombardment"
 sources:
   - type: "ghidra"
     file: "ghidra/notes/bombardment.md"
   - type: "ghidra"
-    file: "ghidra/notes/COMBAT-SUMMARY.md"
+    file: "ghidra/notes/support-shifts.md"
   - type: "code"
     file: "crates/rebellion-core/src/bombardment.rs"
   - type: "prima"
@@ -17,68 +17,69 @@ sources:
 related:
   - "space-combat"
   - "gnprtb"
-tags: ["combat", "bombardment", "orbital", "formula"]
+tags: ["combat", "bombardment", "orbital", "death-star"]
 ---
 
 # Orbital Bombardment
 
 ## What You See
 
-A fleet in orbit over an enemy-controlled system can bombard the planet. Bombardment damages planetary defenses and shifts control. Larger fleets with higher bombardment ratings deal more damage. Even a weak fleet deals at least 1 damage per strike. You cannot bombard your own systems.
+A fleet in orbit can bombard a system with one of four orders: Target
+Military Facilities, Target Civilian Facilities, General Bombardment, or
+Destroy System. The system's planetary batteries fire back, each hit may
+destroy a facility, a regiment or a point of energy or raw material, and the
+system's support for the bombarding side falls. Only a Death Star can
+Destroy System.
 
 ## How It Works
 
-Bombardment is handled by `FUN_00556430` (78 lines), called from the system battle orchestrator.
+### The orders
 
-### Full Call Chain
+Orders `0x220`-`0x223` share one gate (`FUN_00582440`): every bombarding
+fleet needs a nonzero bombard strength, and Destroy System also needs a
+Death Star-family ship. `FUN_0058d800` sets the target classes:
 
-```
-FUN_00556430 (bombardment handler)
-  -> FUN_00555d30 (setup)
-    -> FUN_00555b30 (calculation)
-      -> FUN_00509620 (get combat stats as short[2])
-      -> FUN_0055d8c0 (damage formula)
-        -> FUN_0055d860 (power ratio = Euclidean distance)
-        -> / DAT_006bb6e8 (GNPRTB divisor, param_id=0x1400)
-        -> FUN_0053e190 (difficulty modifier)
-```
+| Order | Military | Civilian | Energy, raw material | Collateral | Destroy System |
+|---|---|---|---|---|---|
+| Target Military Facilities | yes | | | yes | |
+| Target Civilian Facilities | | yes | | | |
+| General Bombardment | yes | yes | yes | | |
+| Destroy System | yes | yes | yes | | yes |
 
-### Damage Formula
+Military targets are the holder's regiments, defence and production
+facilities and the Alliance HQ; civilian targets are its other facilities.
 
-```
-atk = (fleet_bombardment_stat, fleet_secondary_stat)
-def = (system_defense_stat, system_secondary_stat)
+### The run
 
-raw_power = sqrt((atk[0] - def[0])^2 + (atk[1] - def[1])^2)
+1. **Death Star** (`FUN_0058d990`): with Destroy System, a Death Star in the
+   bombarding fleets destroys the system and everything in it; each
+   character there is hit with probability 50% (GNPRTB `0x606`).
+2. **Defence fire** (`FUN_0058dc10`): each KDY-150, then each LNR battery,
+   fires once at a random bombarding ship: its DEFFACSD attack × (the
+   General's leadership / 40 + 1).
+3. **Hits** (`FUN_0058df60`): per fleet, its bombard strength × (the
+   Admiral's leadership / 40 + 1), summed, minus the holder's planetary
+   shield generators. Each hit picks a random target with value v and
+   succeeds with chance (10 − v)/10.
+4. **Support** (`FUN_0058e320`): when a civilian facility, energy or raw
+   material was lost, the system's support for the bombarding side falls by
+   20 (GNPRTB 7705), with a sector-wide shift; destroying a system shifts
+   support galaxy-wide.
 
-damage = floor(raw_power / GNPRTB[0x1400])
+Nothing branches by side, so either side can bombard.
 
-if damage == 0 and raw_power > 0:
-    damage = 1    # minimum 1 damage
-```
+### The port
 
-The stat pairs from `FUN_00509620` are:
-- `[0]` = bombardment attack strength (attacker) / bombardment defense (defender)
-- `[1]` = secondary stat (maneuverability or detection modifier)
-
-### GNPRTB Divisor
-
-The bombardment divisor is GNPRTB parameter `0x1400`. In the base game data, this value is **5** across all difficulty modes. It scales raw power down to final damage — higher divisor means less damage per unit of raw power.
-
-### Guards
-
-1. **No self-bombardment**: if the attacking fleet's faction matches the system's controlling faction, damage is 0.
-2. **Bombardment disabled flag**: `this[0x14] & 0x800` blocks bombardment when the system is already under bombardment or protected.
-3. **Zero raw power**: if `raw_power == 0`, the function returns 0 (minimum-1 only applies when there was some power but it divided to zero).
-
-### Difficulty Modifier
-
-Applied via `FUN_0053e190` which computes `a * b / 100` (DAT_00661a88 is the constant 100, not a difficulty table). In practice, the base game's GNPRTB values are uniform across difficulty, so this modifier is effectively 1.0.
+`bombardment.rs` still computes one number from the transit-distance formula
+(`FUN_0055d8c0`, the reader of GNPRTB `0x1400`), and the Death Star fires
+through its own panel. Task-graph node `or-port-bombardment-8usw` replaces
+both with the run above.
 
 ## Source Material
 
-- Ghidra: [bombardment.md](../../ghidra/notes/bombardment.md) — full formula chain with pseudocode
-- Ghidra: [COMBAT-SUMMARY.md](../../ghidra/notes/COMBAT-SUMMARY.md) — confirmed formulas section
+- Ghidra: [bombardment.md](../../ghidra/notes/bombardment.md) — orders, phases, rolls, decompiles
+- Ghidra: [support-shifts.md](../../ghidra/notes/support-shifts.md) — the support changes
+- Ghidra: [build-delivery.md](../../ghidra/notes/build-delivery.md) — the distance formula `bombardment.rs` borrows
 - Rust: `crates/rebellion-core/src/bombardment.rs` — `BombardmentSystem::resolve_bombardment()`
 
 ## Related

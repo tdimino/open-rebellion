@@ -71,10 +71,12 @@ characters only; which units and in what order is an open question.
 
 ## Fighter-group panel
 
-`FUN_005e7030` builds it and `FUN_005e7800` creates the same four label
-boxes in font 8. A0 TAC-03-C019 shows "Red Group", "No Orders", "Tactics:
-Stand Off" at the top and "Fighters: 6 72/72" under the art, so its refresh
-moves them; that refresh is untraced.
+Panel id `0x17`: `FUN_005e1170` builds it, `FUN_005e1fd0` creates its
+labels and `FUN_005e16a0` refreshes it. A0 TAC-03-C019 shows "Red Group",
+"No Orders", "Tactics: Stand Off" at the top and "Fighters: 6 72/72" under
+the art. Labels, count line, art and buttons:
+`tactical-fighter-group-panel.md`. `FUN_005e7030`/`FUN_005e7800` build panel
+`0x16`, not the fighter-group panel.
 
 ## Supporting decompiles
 

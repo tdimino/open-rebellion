@@ -64,11 +64,11 @@ The remaining 102 parameters have known IDs but unconfirmed semantic names. Meta
 
 | ID (hex) | Purpose | Base Value |
 |----------|---------|------------|
-| `0x1400` | Bombardment damage divisor | 5 |
+| `0x1400` | Transit distance divisor (`FUN_0055d8c0`) | 5 |
 | `0x0305` | Repair rate modifier | varies |
 | `0x0386` | Production rate modifier | varies |
 
-The bombardment formula divides raw power by `GNPRTB[0x1400]`, so a higher value means less bombardment damage. Combat damage, shield absorption rates, and mission modifiers all reference other GNPRTB entries.
+`FUN_0055d8c0` divides the distance between two systems by `GNPRTB[0x1400]` to give a travel time in days (`ghidra/notes/build-delivery.md`). Bombardment reads `0x600`-`0x606` (leadership divisors, the hit-roll range, energy and raw-material values, the Death Star's character roll) and 7705 (the support loss); see [Bombardment](bombardment.md).
 
 ### Difficulty Asymmetry
 

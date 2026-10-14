@@ -91,7 +91,7 @@ Five distinct `ControlKind` states fire notifications. Based on notif string nam
 
 All five use the same `FUN_0053a010` validity check pattern. `BattleWon` and `BattleWithdrew` and `BattleReady` use `FUN_004f88d0` (3-param notif dispatcher with old/new values and context). `Uprising` additionally registers event `0x151`, indicating it is a scripted-event-system trigger, not just a display notification. `BattlePending` and the three that follow use `FUN_004f8880` (1-entity param notif dispatcher).
 
-**Faction control bits**: Extracted from `entity+0x24 bits 6-7` (`(byte >> 6) & 3`). This 2-bit value is the `faction_side` parameter passed to energy/resource validators. Values: 0 = neutral, 1 = Alliance, 2 = Empire, 3 = contested (inferred).
+**Faction control bits**: Extracted from `entity+0x24 bits 6-7` (`(byte >> 6) & 3`). This 2-bit value is the `faction_side` parameter passed to energy/resource validators. Values: 1 = Alliance, 2 = Empire, 3 = Neutral, 0 unset (`side-numbering.md`).
 
 **Ownership transfer**: `param_1[9]` contains faction bits. The production eligibility check in `FUN_0050e820` uses `(entity[0x24] ^ param_1[9]) & 0xc0 == 0` to match units to the controlling faction—ownership is determined by matching the high 2 bits of the control byte at `+0x24`.
 

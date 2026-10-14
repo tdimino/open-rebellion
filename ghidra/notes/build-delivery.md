@@ -87,8 +87,11 @@ FUN_00556430(obj, from, to, ctx):
     }
 
 FUN_00555d30(obj, from, to, &ticks) -> FUN_00555b30(obj->slot_34(), 1, side, from, to, &ticks)
-FUN_00555b30: ticks = 0 unless both ends are systems (types 0x90..0x98) and differ;
-              then ticks = FUN_0055d8c0(coords(from), coords(to), speed)   // FUN_00509620
+FUN_00555b30: a = container(from), b = container(to)                // FUN_00555540
+              ticks = 0 if either is missing or a == b;
+              ticks = 1 otherwise, written before the type test;
+              ticks = FUN_0055d8c0(coords(a), coords(b), speed)          // FUN_00509620
+                  when both are systems (types 0x90..0x97)
 FUN_0055d8c0(a, b, speed):
     d = isqrt((b.x - a.x)^2 + (b.y - a.y)^2);      // FUN_0055d860, FUN_0053e1d0
     if (d == 0) return 0;
@@ -101,11 +104,26 @@ shipped GNPRTB.DAT. The travelling object is represented by itself: bits 5 and
 11, the destination key at `+0x3c`, the arrival tick at `+0x44`, and a pending
 galaxy event `0x387`. There is no hidden fleet.
 
-Correction: `ghidra/notes/bombardment.md`, `COMBAT-SUMMARY.md`,
-`modders-taxonomy.md` and `crates/rebellion-core/src/bombardment.rs` read
 `FUN_00556430`, `FUN_00555d30`, `FUN_00555b30`, `FUN_0055d8c0` and
-`FUN_00509620` as bombardment. They are this transit-time chain: the "power"
-shorts are system coordinates and the "damage" is travel ticks.
+`FUN_00509620` are this transit-time chain: the shorts are system
+coordinates (SYSTEMSD `x_position`/`y_position`, DAT `0x24`/`0x26`, read
+through record `+0x2c` then `+0x4c`) and the result is travel ticks.
+`FUN_0055d8c0`'s only callers are `FUN_00555b30` and `FUN_0055d8a0`, so
+bombardment never reaches it.
+
+### Other users of the distance formula
+
+- `FUN_00516730`, the battle's retreat options: once `FUN_005545e0` has
+  chosen the retreat system, its ticks come from `FUN_0055d8a0`, which is
+  `FUN_0055d8c0` at the default speed.
+- `FUN_00555f90` -> `FUN_00555d90`: an estimate from a class record
+  (`FUN_0051cab0`), using class `+0x6c` for families `0x14`-`0x1f` and the
+  default otherwise.
+- `FUN_004f4850` -> `FUN_005425e0`: a mission's travel, at the speed from
+  `FUN_00542990` (Han), set on every member at `+0x1c`.
+- `FUN_005562e0` -> `FUN_0058b060`: a nearness table at manager `+0x68`
+  (`0x27424` bytes) holding, for each system, all 200 systems sorted by raw
+  distance (`FUN_0055d860`), at `(id - 100) * 0x324`.
 
 ## Arrival
 
@@ -260,8 +278,28 @@ Vtables were found through the shared side-key slot `+0xc` (`FUN_004f6a80`,
   arrival only ends its en-route state. Where battles are triggered on arrival
   is not traced.
 
+## Port
+
+`crates/rebellion-core/src/movement.rs`:
+
+- `transit_ticks_between` divides by GNPRTB 1 (`GNPRTB_DEFAULT_SPEED`) where
+  the original divides by the constant 100 (`DAT_00661a88`). They agree on
+  the shipped data and diverge only if GNPRTB 1 changes.
+- The port computes only system-to-system moves. It has no "same container
+  gives 0, a different container that is not a system gives 1" rule.
+- With both drives disabled the port returns 0 only when the class has a
+  drive; the original falls back to the default while `+0x40` byte 1 is 0
+  (tagged `port:`).
+- No port code uses the retreat time (`FUN_00516730`), the class estimate
+  (`FUN_00555f90`) or the nearness table (`FUN_0058b060`). Han's mission
+  speed is ported (`missions.rs`).
+
 ## Open
 
+- Whether `FUN_00555540` returns the system for an object inside a fleet,
+  which decides whether a move between two fleets in one system costs 0.
+- Who reads the nearness table at manager `+0x68`, and who uses
+  `FUN_00555f90`'s estimate.
 - The order path that creates a queued product and places it in its
   container, and the callers of object slots `+0x118` (deploy, event `0x308`)
   and `+0x148` (container change, event `0x31a`).

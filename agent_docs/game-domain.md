@@ -96,9 +96,9 @@ See `agent_docs/simulation.md` for full API reference on all 15 systems.
 
 ### War Machine (v0.4.0)
 - **9 mission types** (`missions.rs`): Diplomacy, Recruitment, Sabotage, Assassination, Espionage, Rescue, Abduction, InciteUprising, Autoscrap — MSTB probability tables with quadratic fallback
-- **Space combat** (`combat.rs`): 7-phase pipeline (weapon fire → shield absorb → hull damage → fighter engage → result), CombatPhaseFlags, re-fought every tick while both sides remain
+- **Space combat** (`tactical.rs`): every battle runs the tactical engine, played, simulated or headless (`FUN_0040a050` state 8); re-fought every tick while both sides remain
 - **Ground combat** (`combat.rs`): Troop-by-troop resolution with regiment_strength comparison
-- **Orbital bombardment** (`bombardment.rs`): `damage = sqrt(delta²) / GNPRTB[0x1400]`, minimum 1
+- **Orbital bombardment** (`bombardment.rs`): a port formula built on the transit distance; the original's orders, defence fire and hit rolls are in `ghidra/notes/bombardment.md`
 - **Blockade** (`blockade.rs`): Hostile fleet without defender halts manufacturing, destroys in-transit troops
 - **Uprising** (`uprising.rs`): revolts start on a troop shortfall and never change control; an incident every 30-100 ticks maps its score through UPRIS1TB/UPRIS2TB step lookups to losses; natural disasters erode resources and facilities
 - **Death Star** (`death_star.rs`): Construction countdown, superlaser fire (precondition checks from RE), nearby-warning scan

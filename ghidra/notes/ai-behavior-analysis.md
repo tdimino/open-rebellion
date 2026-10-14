@@ -76,7 +76,7 @@ The original Rebellion AI is **event-driven and distributed** across a 6-functio
 - Iterates systems via linked list at `this+0x40` using `FUN_0041c210`
 - **Faction ownership check**: `(*(uint*)(entity + 0x24) >> 6 & 3) != local_c8`
   - Offset +0x24 is the entity's ownership byte
-  - Bits 6-7 encode faction: 0=neutral, 1=Alliance, 2=Empire
+  - Bits 6-7 encode faction: 1=Alliance, 2=Empire, 3=Neutral, 0 unset (`side-numbering.md`)
 - Validates troops at each system (family 0x14-0x1b)
 - Calls `FUN_00553410` for faction-specific system operations
 - Checks sectors (family 0xa0-0xa2)
@@ -173,7 +173,7 @@ Calls approximately 18 validator functions before allowing entity deployment. Th
 The original encodes faction as bits 6-7 of offset +0x24 on every entity:
 ```c
 faction = (*(uint*)(entity + 0x24) >> 6) & 3;
-// 0 = neutral, 1 = Alliance, 2 = Empire
+// 1 = Alliance, 2 = Empire, 3 = Neutral, 0 = unset
 ```
 
 Same-faction check via XOR:

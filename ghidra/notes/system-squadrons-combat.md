@@ -4,7 +4,7 @@ Recovered 2026-10-09 from REBEXE.EXE with Homebrew Ghidra 12.1.3 (read-only,
 no analysis). Companion to `space-combat.md`, `blockade-bit.md`,
 `battle-alert-lists.md`. The port's side is
 `crates/rebellion-core/src/combat.rs` and
-`crates/rebellion-render/src/tactical_view.rs`.
+`crates/rebellion-core/src/tactical.rs`.
 
 A system can hold fighter squadrons (type 0x1c) as its own children, not
 aboard any ship.  This note traces how those squadrons enter, fight and
@@ -287,26 +287,23 @@ same iterator to spawn those squadrons as free units on the battlefield.
   `FUN_00544da0` checks `+0xb0` bit 1 for the retreat gate, but the
   squadron's `+0xb0` value is not traced.
 
-## Port (2026-10-10)
+## Port
 
 - `rebellion_core::combat::side_present` is `FUN_00509710`: a fleet of the
   side at the system, or squadrons the system holds for it. Both the
   headless trigger (`rebellion-data/src/simulation.rs`) and the live one
   (`main.rs`) start a battle when both sides are present (`FUN_0050b8e0`).
-- `CombatForce` is one side: its fleet, if any, and its system squadrons.
-  `CombatSystem::resolve_space_forces` seats the system squadrons after the
-  fleet's (`FUN_00516ef0`); they launch and return without a carrier, and
-  their losses come back as `SpaceCombatResult::system_fighter_losses`,
-  applied to `System::fighters` (`FUN_005032c0`). `resolve_space` keeps the
-  fleet-vs-fleet signature and also seats both sides' system squadrons.
-- `resolve_system_space_combat` fights rounds while both sides are present
-  and reports the winner by presence afterwards (`FUN_00517270`): a side
-  left with only its system squadrons keeps the system contested. A win by
-  squadrons alone has no winning fleet, so no bombardment or landing
-  follows.
-- The tactical session takes the sides (`BattleSession::new_with_forces`);
-  system squadrons are `TacticalFighter`s with `held_by_system`, and
-  `tactical_flow::apply_results` writes their survivors back.
+- `CombatForce` is one side: its lead fleet, if any, and its system
+  squadrons. The tactical session takes the sides
+  (`BattleSession::new_with_forces`) and seats the system squadrons after
+  the fleets' (`FUN_00516ef0`) as `TacticalFighter`s with `held_by_system`;
+  they launch and return without a carrier, and
+  `tactical::apply::apply_results` writes their survivors back to
+  `System::fighters` (`FUN_005032c0`).
+- `resolve_system_space_combat` runs that session headless and reports the
+  winner by presence afterwards (`FUN_00517270`): a side left with only its
+  system squadrons keeps the system contested. A win by squadrons alone has
+  no winning fleet, so no bombardment or landing follows.
   hyp: they start on their side's fighter line; the original placement is
   untraced (above).
 - port: facilities take no part, as traced; `FUN_0052ac40`'s facility path

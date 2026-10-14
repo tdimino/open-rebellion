@@ -11,14 +11,21 @@ updated: 2026-03-16
 Generated from Ghidra decompilation of REBEXE.EXE (Star Wars Rebellion 1998, LucasArts).
 Cross-referenced with: combat-formulas.md, space-combat.md, ground-combat.md, bombardment.md.
 
-Entity family byte quick reference (from `id >> 0x18`):
-- `0x08-0x0f` — Characters (major + minor)
-- `0x14-0x1b` — Troops / Special Forces
-- `0x30-0x3b` — Capital Ships + Fighters
-- `0x34` — Death Star (special ship)
-- `0x71` — Fighter squadron type (shield absorb alt-path, exact match only — NOT a range)
-- `0x73-0x74` — Special combat entity (combat result special path, see FUN_005445d0)
-- `0x90-0x98` — Star Systems
+Entity family byte quick reference (from `id >> 0x18`; the `family_id` fields of the DAT files):
+- `0x08-0x0f` — Fleets
+- `0x10-0x13` — Troops
+- `0x14-0x1f` — Ships (capital ships `0x14-0x1b`; CAPSHPSD's Death Star record is family `0x18`)
+- `0x20-0x2f` — Facilities
+- `0x30-0x3b` — Characters (Mon Mothma `0x30000240`, Han Solo `0x33000243`)
+- `0x3c-0x3f` — Special forces
+- `0x40-0x7f` — Missions (MISSNSD; `0x71` Dagobah, `0x72` Vacation and Sabbatical, `0x73` Pickup)
+- `0x80-0x8f` — Sectors
+- `0x90-0x97` — Star systems
+
+Six major characters have their own family: `0x30` Mon Mothma, `0x31` Leia
+Organa, `0x32` Luke Skywalker, `0x33` Han Solo, `0x34` Emperor Palpatine,
+`0x35` Darth Vader (MJCHARSD, TEXTSTRA 10304-10307, 10368-10369). Minor
+characters are family `0x38`.
 
 ---
 
@@ -35,9 +42,9 @@ All combat entities share a common object layout. Fields identified across multi
 | `+0x66` | `short` | loyalty_current | Character loyalty (0-100) |
 | `+0x78` | `byte` | capability_flags | Bit6+7=disabled, bit4=special_entity_flag, bit7=alt_shield_path |
 | `+0x8a` | `short` | enhanced_loyalty | EnhancedLoyalty bonus value (0-100 clamped, also 0-0x7fff raw) |
-| `+0x96` | `short` | regiment_strength | Troop/ship regiment current strength |
+| `+0x96` | `short` | (open) | On characters, cleared when they or their capital ship move (`FUN_00560d50`) |
 | `+0x9a` | `short` | hyperdrive_modifier | Mission hyperdrive speed bonus (Han Solo) |
-| `+0xac` | `byte` | alive_flag | bit0=alive/combat-eligible |
+| `+0xac` | `uint` | prisoner | On characters, bit 0 set while held prisoner (`ai-mission-planning.md`, `victory-conditions.md`) |
 | `+0xb0` | `byte` | combat_ready_flags | bit1=combat_ready_for_fleet_eval |
 
 ### Character Struct Additional Fields
@@ -467,48 +474,15 @@ int set_hyperdrive_modifier(void* character, int new_mod, void* context) {
 
 ---
 
-## FUN_004ee350 — Regiment / Unit Strength Setter (Ground Combat Core)
+## FUN_004ee350 — Setter for Short +0x96
 
-**File**: Likely `troop.cpp` or `unit.cpp`
-**Called by**: FUN_00560d50 (ground combat), direct during troop damage application
-**Calls**:
-- FUN_0053a000 (validity)
-- FUN_0053fc90 (range check: 0 to param_1 — non-negative)
-- FUN_00539fd0 (observers)
-- FUN_004f04f0 (dispatch strength change notification)
-- vtable `*this+0x330` (fire strength change — fires HullValueDamage/SquadSizeDamage per unit type)
+`FUN_004ee350(object, value, ctx)`. On a master copy (`FUN_0053a000`) whose
+new value passes the range check (`FUN_0053fc90`, `0..value`), and when the
+value differs, it stores it at `+0x96`, updates side views 1 and 2
+(`FUN_00539fd0`, `FUN_004f04f0`) and calls slot `+0x330(old, new, ctx)`.
 
-### Key Offsets
-| Offset | Type | Field Name | Notes |
-|--------|------|-----------|-------|
-| `+0x96` | `short` | regiment_strength | Current regiment strength (16-bit) |
-| vtable `+0x330` | `code*` | on_strength_changed | Dispatches damage notification |
-
-### Pseudocode (annotated)
-```c
-int set_regiment_strength(void* unit, int new_strength, void* context) {
-    if (!is_valid(unit)) return 0;
-
-    int valid = range_check(new_strength, 0, new_strength);  // non-negative only
-
-    if (valid && unit->regiment_strength != new_strength) {
-        short old_strength = unit->regiment_strength;
-        unit->regiment_strength = (short)new_strength;
-
-        notify_side(get_observer(unit, 1), context);
-        notify_side(get_observer(unit, 2), context);
-
-        vtable[unit, 0x330](old_strength, unit->regiment_strength, context);
-    }
-    return valid;
-}
-```
-
-### Game Rules Extracted
-- Regiment strength is a `short` at `+0x96`, 0 = destroyed
-- No upper bound enforced here — the caller is responsible for providing valid max values
-- vtable `+0x330` fires the unit-type-appropriate notification (troops get different notification than ships)
-- This function is the ground combat damage application primitive — every troop hit passes through here
+`FUN_00560d50` calls it with 0 on characters (families `0x30-0x3b`) when they
+or the capital ship carrying them move.
 
 ---
 
@@ -744,61 +718,17 @@ void draw_battle_in_progress(void* strategy_view) {
 
 ---
 
-## FUN_005617b0 — Death Star Planet Destruction Handler
+## FUN_005617b0 — Palpatine at Coruscant Flag
 
-**File**: Likely `deathstar.cpp` or `system.cpp`
-**Called by**: FUN_00560d50 (ground/space combat) when family_id == 0x34
-**Calls**:
-- FUN_005070d0 (get current system object)
-- FUN_004f6b50 (get system's parent / controlling faction)
-- FUN_004025b0 (get entity ID)
-- FUN_0055f650 (fire superlaser / apply Death Star effect)
-- FUN_00619730 (exception cleanup)
-
-### Key Offsets
-| Offset | Type | Field Name | Notes |
-|--------|------|-----------|-------|
-| `this_00+0xac` | `byte` | alive_flag | bit0: system target is alive |
-| `this_00+0x50` | `uint` | status_flags | bit0: active; must be 1 to fire |
-| `local_14 = 0x90000109` | `uint` | target_system_id | System DatId being targeted (family=0x90 = explored system) |
-| `local_18+0x24` bits 6-7 | bits | faction_control | 0x80 = Empire control, checked via `& 0xc0 == 0x80` |
-
-### Pseudocode (annotated)
-```c
-bool death_star_fire(void* death_star, void* context) {
-    void* system = get_current_system();
-    if (!system) return false;
-
-    void* controlling_faction = null;
-    bool has_faction = get_system_faction(system, &controlling_faction);
-    if (!has_faction || !system) return false;
-    if (!controlling_faction) return false;
-
-    // Check: target is alive and Death Star is active
-    bool ds_active = !(system->alive_flag & 1) && (system->status_flags & 1);
-
-    if (ds_active) {
-        uint target_id = 0x90000109;  // system DatId (family 0x90 = explored system, index 0x109)
-        uint* faction_id = get_entity_id(controlling_faction);
-
-        if (*faction_id == target_id &&
-            (controlling_faction->faction_control & 0xc0) == 0x80) {
-            // Empire controls this system — Death Star can fire
-            fire_superlaser = true;
-        }
-    }
-
-    int result = apply_death_star_effect(death_star, fire_superlaser, context);
-    return result && has_faction;
-}
-```
-
-### Game Rules Extracted
-- The Death Star can only fire when: (a) target system is **not** already destroyed (`!(alive_flag & 1)`), AND (b) Death Star is active (`status_flags & 1`)
-- `0x90000109` = a specific system DatId (family 0x90 = explored system, sequential index 0x109 = 265). This is likely **Alderaan** hardcoded as the canonical target, or the system currently targeted.
-- Faction control check: `(faction_control & 0xc0) == 0x80` — the 0x80 bit in the high nibble of `+0x24` indicates Empire control
-- The check `(alive_flag & 1) == 0` means target system's bit0 is clear (eligible for destruction). Note: bit0 semantics may differ between entity types — for combat units bit0=alive, but for Death Star targets bit0=0 may mean "not yet destroyed" (inverted encoding). The pseudocode `!(alive_flag & 1)` is what the C code does.
-- `FUN_0055f650` is the actual superlaser effect applicator
+`FUN_005617b0(this, ctx)`, run by `FUN_00560d50` when the moved character is
+family `0x34`. It finds Emperor Palpatine (`FUN_005070d0` looks up
+`0x34000280`) and his location (`FUN_004f6b50`). The flag is 1 when his
+`+0xac` bit 0 is clear, his `+0x50` bit 0 is set, the location is Coruscant
+(`0x90000109`) and its owner bits (`+0x24 & 0xc0`) are `0x80`; otherwise 0.
+`FUN_0055f650(this, flag, ctx)` writes it to bit 0 of `this+0x58`
+(`FUN_0053a640`), updates side views 1 and 2 (`FUN_005622e0`) and calls slot
+`+0x1d8(flag, ctx)`. The port names this flag the seat of power
+(`crates/rebellion-core/src/combat.rs`).
 
 ---
 
@@ -930,7 +860,6 @@ bool is_named_character(int* entity_id) {
 
 ### Game Rules Extracted
 - Exactly six specific character DatIds pass: Leia, Luke, Han, the Emperor, Vader, and Chewbacca
-- Correction (2026-09-26): these were earlier read as ship types and `0x34000280` as the Death Star; MJCHARSD, MNCHARSD, and TEXTSTRA show they are characters
 
 ---
 
@@ -1312,121 +1241,39 @@ int resolve_weapon_fire(void* battle_state, int side, void* context) {
 
 ---
 
-## FUN_00560d50 — Ground Combat Resolution
+## FUN_00560d50 — Moved Object: Clear Character Field +0x96
 
-**File**: Likely `groundcombat.cpp`
-**Called by**: System battle orchestrator (FUN_00514a60)
-**Calls**:
-- FUN_00505190 (resolve ship entity from ID)
-- FUN_00504f70 (get parent entity)
-- FUN_004f25c0 (iterate all units at system, type=3)
-- FUN_004ee350 (apply regiment strength change)
-- FUN_005617b0 (Death Star handler for family 0x34)
-- FUN_00504dc0 (get faction side for unit)
-- FUN_004f6b70 (get character association)
+`FUN_00560d50(this, object, from, to, ctx)`, called by `FUN_00514a60`.
+`object`, `from` and `to` are DatIds.
 
-### Key Offsets
-| Offset | Type | Field Name | Notes |
-|--------|------|-----------|-------|
-| `entity_id >> 24` | byte | family_byte | Entity class (0x30-0x3b=ship, 0x14-0x1b=troop, 0x08-0x0f=char) |
-| `entity+0x96` | `short` | regiment_strength | Zero = non-combat unit |
+- **Character** (`object` family `0x30-0x3b`, resolved with `FUN_00505190`):
+  when it is family `0x34` (Emperor Palpatine) it runs `FUN_005617b0`. When
+  its short `+0x96` is non-zero, it clears it (`FUN_004ee350(character, 0,
+  ctx)`) unless `from` and `to` are both capital ships (`0x14-0x1b`) whose
+  containers (`FUN_00504dc0`, `FUN_004f6b70`) are the same fleet
+  (`0x08-0x0f`).
+- **Capital ship** (`object` family `0x14-0x1b`, resolved with
+  `FUN_00504f70`): every member of type 3 aboard (`FUN_004f25c0`) whose
+  `+0x96` is non-zero has it cleared the same way.
+- Any other family returns true at once.
 
-### Pseudocode (annotated)
-```c
-bool ground_combat(void* battle, uint* attacker_id, uint* defender_id,
-                   uint* context_id, void* combat_ctx) {
-    uint family = *attacker_id >> 24;
+`FUN_004ee350(object, value, ctx)` is the setter of `+0x96`: on a master
+copy, with the value in range (`FUN_0053fc90`), it stores the value, updates
+both side views (`FUN_004f04f0`) and calls slot `+0x330(old, new, ctx)`.
 
-    // Path 1: Ship — delegate to space combat
-    if (family >= 0x30 && family <= 0x3b) {
-        // Validate parent is also a ship
-        int* parent = get_ship_entity(attacker_id);
-        if (!parent) return false;
-
-        uint parent_family = vtable[parent](family_getter);
-        if (parent_family < 0x30 || parent_family > 0x3b) return false;
-
-        // Death Star check
-        uint special_family = vtable[parent](family_getter_2);
-        if (special_family == 0x34) {
-            death_star_fire(battle, combat_ctx);
-        }
-
-        // Regiment strength check
-        if (parent->regiment_strength == 0) return success;  // no combat unit
-
-        // Validate both sides are troops (0x14-0x1b)
-        if (defender_family in [0x14..0x1b] && context_family in [0x14..0x1b]) {
-            // Get faction sides — skip if same faction (no friendly fire)
-            void* atk_side = get_faction(defender_id);
-            void* def_side = get_faction(context_id);
-            if (same_faction(atk_side, def_side)) skip_combat;
-            apply_strength_change(parent, 0, combat_ctx);
-        }
-        return success;
-    }
-
-    // Path 2: Troop — ground combat
-    if (family >= 0x14 && family <= 0x1b) {
-        int* parent = get_parent_entity(attacker_id);
-        if (!parent) return false;
-
-        // Iterate all units at the system
-        iterate_units(system, type=3);
-        while (has_next) {
-            void* unit = get_current();
-            if (unit->regiment_strength != 0) {
-                apply_strength_change(unit, 0, combat_ctx);  // apply damage
-            }
-            advance();
-        }
-        return success;
-    }
-
-    return true;  // unrecognized family — pass through
-}
-```
-
-### Game Rules Extracted
-- **No friendly fire**: `param_2 == param_1` (same faction ID) causes the combat call to be skipped
-- **Regiment strength 0 = skip**: units with zero strength are non-combatants even during ground combat
-- **Death Star triggers at family 0x34** — the family check is exact, not ranged
-- Ground combat calls `FUN_004ee350(unit, 0, context)` — applying strength 0 (destroy) to each unit. The actual damage calculation must happen upstream, as this appears to be the kill step.
-- Both parent validation checks confirm entity family before operating — strong type safety at runtime
+Open: what `+0x96` holds on a character.
 
 ---
 
-## FUN_0050d5a0 — Mission Dispatch (13-Case Switch)
+## FUN_0050d5a0 — Observation Level
 
-**File**: Likely `mission.cpp`
-**Called by**: Mission execution system
-**Purpose**: Dispatches mission-type-specific setup with appropriate filter criteria
-
-### Mission Type Codes (switch cases)
-| Case | Mission Type | Notes |
-|------|-------------|-------|
-| 0 | (no-op) | — |
-| 1 | Diplomacy / Recruitment | Sets fleet filter |
-| 2 | Special Forces Deployment | Sets unit filter |
-| 3 | Mission type 3 | Ranges 0x10-0x28, two filters |
-| 4 | Mission type 4 | Ranges 0xa0-0xb0, 0x28-0x30 |
-| 5 | Mission type 5 | Range 0x08-0x10, fleet range 1-255 |
-| 6 | Sabotage | Range 0x08-0x10, fleet 1-255, side filter, special_flag=true |
-| 7 | Assassination | Range 0x08-0x10, fleet 1-255, side+troop filters |
-| 8 | Mission type 8 | 4 separate range filters: 0x20-0x30, 0x10-0x20, 0xa0-0xb0, 0x08-0x10 + fleet/troop |
-| 9 | Mission type 9 | Range 0x30-0x40 |
-| 10 | Mission type 10 | Three fleet ranges: all 1-255 |
-| 11 | Mission type 11 | Range 0x10-0x40 + 0xa0-0xb0 |
-| 12 | Mission type 12 | Range 0x20-0x30 |
-| default | Invalid | Sets bVar9=false |
-
-### Game Rules Extracted
-- Mission type 6 (Sabotage) is the only case that sets `bVar3=true` (special entity flag)
-- Mission type 8 sets `bVar1=true` (uses a distinct execution path via vtable rather than FUN_0050fc80)
-- Cases with `bVar2=true` use the standard `FUN_0050fc80/FUN_0050fbf0/FUN_004f9ca0` validation chain
-- The range values (0x10, 0x20, 0x28, 0x30, 0xa0, 0xb0) are **entity type family ranges** used to filter eligible targets
-- Post-switch: iterates over fleet units and sub-units to find matching targets in the filtered ranges
-- `local_134=1, local_130=3` are constants set before the switch — likely min/max entity type specifiers
+`FUN_0050d5a0(system, level, side, ctx)` copies what `side` (1 or 2)
+may know about `system` into that side's view, and the switch picks the level
+(0-12). Each case sets DatId family ranges to copy and the system fields to
+sync. Callers pass levels: informants draw one from INFORMTB (`FUN_0050d510`),
+espionage passes 10 (`FUN_00573610`), the mission end slot 6
+(`FUN_00592c80`), event `0x319` 11 (`FUN_005650f0`). The `FUN_0050fc80` /
+`FUN_0050fbf0` / `FUN_0050f390` family are field syncs from the master copy. Full table and callers: `observation-levels.md`.
 
 ---
 
@@ -1583,9 +1430,9 @@ The three event registrars differ in parameter count:
 | `+0x66` short | base_loyalty | FUN_005341a0 |
 | `+0x78` bits | capability_flags | FUN_005442f0, FUN_00544130, FUN_005445d0, FUN_005617b0, FUN_00534640 |
 | `+0x8a` short | enhanced_loyalty | FUN_004ee030 |
-| `+0x96` short | regiment_strength | FUN_004ee350, FUN_00560d50 |
+| `+0x96` short | character field cleared on moves (meaning open) | FUN_004ee350, FUN_00560d50 |
 | `+0x9a` short | hyperdrive_modifier | FUN_004ee470 |
-| `+0xac` byte | alive_flag | FUN_005445d0, FUN_005617b0, FUN_005442f0 |
+| `+0xac` bit 0 | prisoner (characters) | FUN_005445d0, FUN_005617b0, FUN_005442f0, FUN_005180e0 |
 | `+0xb0` bit1 | combat_ready | FUN_00544da0 |
 
 ---
@@ -1618,6 +1465,7 @@ The three event registrars differ in parameter count:
 | ID (hex) | ID (dec) | Event | Source Function |
 |---------|---------|-------|----------------|
 | 0x127 | 295 | ConstructionYardRdOrder | FUN_00532e00 |
+| 0x128 | 296 | VictoryConditions | FUN_00532f90 |
 | 0x12c | 300 | RecruitmentDone | FUN_00532f40 |
 | 0x14d | 333 | Battle | FUN_00512280 |
 | 0x14e | 334 | Blockade | FUN_005122d0 |
@@ -1648,13 +1496,6 @@ The three event registrars differ in parameter count:
 4. **Difficulty modifier**: extracted from `+0x24 bits 4-5` — 2-bit value (0-3) feeding into `FUN_004fd600`
 5. **Victory detection**: iterates fleet survivors checking `alive_flag & 1` at `+0xac`, with fighter exception via `+0x50 & 8`
 
-**Key findings for ground combat:**
-
-1. No friendly fire: same-faction units do not fight
-2. Regiment strength `+0x96` (short) — zero means destroyed
-3. Troop damage = calling `FUN_004ee350(unit, 0, ctx)` — setting strength to 0
-4. Death Star (family 0x34) gets its own handler called before normal ground combat
-
 **Key findings for character system:**
 
 1. Loyalty: base at `+0x66`, enhanced bonus at `+0x8a` — both 0-100, stored as `short`
@@ -1663,6 +1504,6 @@ The three event registrars differ in parameter count:
 4. Two distinct Jedi states: `+0x1e & 1` = is_jedi_but_not_discovered (triggers discovery event)
 
 **Object identity:**
-- `0x90000109` — a specific explored system DatId (the Death Star target)
+- `0x90000109` — Coruscant
 - `0x98000481` — the space battle context DatId (used as battle type identifier)
 - `0x98` family prefix is consistent with system-related objects (0x90-0x98 range)

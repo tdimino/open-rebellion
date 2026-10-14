@@ -21,13 +21,21 @@ none of them. The code lives in `crates/rebellion-app/src/`:
 
 ## The loop
 
+The game runs on the Mac Mini, from the copy `scripts/mini-cargo.sh` builds
+there (`~/or-native/open-rebellion`). Build it from this Mac, then drive it
+over ssh and pull the evidence back:
+
 ```bash
+scripts/mini-cargo.sh -- build --release -p rebellion-app
 E=.artifacts/native-checks/<date>-<slug>
-scripts/launch-native.sh --build --live --seed 42 --evidence $E
-scripts/dev-send.sh $E "Start game: Empire"
-scripts/dev-send.sh $E "Skip briefing"
-scripts/dev-send.sh $E "Capture: 01-galaxy"
+ssh mac-mini-ts "cd or-native/open-rebellion && (scripts/launch-native.sh --live --seed 42 --evidence $E >/dev/null 2>&1 &)"
+ssh mac-mini-ts "cd or-native/open-rebellion && scripts/dev-send.sh $E 'Start game: Empire'"
+ssh mac-mini-ts "cd or-native/open-rebellion && scripts/dev-send.sh $E 'Capture: 01-galaxy'"
+rsync -a mac-mini-ts:or-native/open-rebellion/$E/ $E/
 ```
+
+The launch runs in the background so ssh returns; `$E/binary.txt` records
+the binary's hash and the source commit from `.build-source`.
 
 Read each capture, then send the next command. To see the whole run at
 once, use the report (below). `dev-send.sh` appends the

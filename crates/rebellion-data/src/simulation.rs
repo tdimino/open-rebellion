@@ -190,14 +190,20 @@ pub fn run_simulation_tick(
         .collect();
 
     for sys_key in combat_triggers {
-        let combat_rolls = take_rolls(256);
+        // One roll seeds the battle's own generator (`OriginalTacticalRng`).
+        let seed = (take_rolls(1)[0] * f64::from(u32::MAX)) as u32;
         let space_result = resolve_system_space_combat(
             world,
+            &mut states.troop_transport,
+            &mut states.movement,
             sys_key,
-            world.difficulty_index,
-            &combat_rolls,
+            seed,
             current_tick,
-            states.death_star.shield_generator_active,
+        );
+        rebellion_core::tactical::apply::reconcile_death_star_result(
+            world,
+            &mut states.death_star,
+            &mut states.victory,
         );
 
         integrator.emit_system_space_combat(world, &space_result);
@@ -1131,6 +1137,10 @@ mod tests {
             is_empire: true,
             hull: 1_000,
             turbolaser_fore: 1_000,
+            // The tactical engine fires only with a range and a recharge, as
+            // every armed shipped class has (CAPSHPSD: recharge 6-18, range 50-60).
+            turbolaser_range: 60,
+            weapon_recharge_rate: 8,
             bombardment_modifier: 100,
             ..CapitalShipClass::default()
         });

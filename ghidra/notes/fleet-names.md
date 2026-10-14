@@ -78,7 +78,8 @@ is the fleet's slot `+0x114` handler `FUN_004fc290`, reached from
   its own "<class name> N" from its side's counter for that class (saved,
   v38). hyp: it runs after seeding (`seeds.rs`) and after a ship completes
   (`integrator.rs`), in fleet slot order, then roster order.
-- The tactical battle takes the world's name (`tactical_view.rs`), so the
+- The tactical battle takes the world's name (`rebellion-core` `tactical.rs`,
+  `BattleSession::new_with_forces`), so the
   panel and the Results window show it.
 
 ## Supporting decompiles

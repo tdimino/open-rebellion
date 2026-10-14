@@ -1,0 +1,25 @@
+
+void __thiscall FUN_00600db0(void *this,undefined4 param_1)
+
+{
+  undefined4 local_2c;
+  undefined4 local_28;
+  undefined4 local_24;
+  undefined4 local_20;
+  tagRECT local_1c;
+  undefined4 uStack_c;
+  undefined4 uStack_8;
+  
+  local_24 = *(undefined4 *)((int)this + 0x18);
+  local_2c = 0x2c;
+  local_28 = 0;
+  local_20 = param_1;
+  SetRectEmpty(&local_1c);
+  uStack_c = *(undefined4 *)((int)this + 0x1c);
+  uStack_8 = 0;
+  if (DAT_006be5a4 != (HWND)0x0) {
+    SendMessageA(DAT_006be5a4,0x405,0,(LPARAM)&local_2c);
+  }
+  return;
+}
+

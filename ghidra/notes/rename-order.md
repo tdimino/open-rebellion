@@ -56,7 +56,8 @@ After construction, the order's `+0x20` is set to the player side, and
    (`FUN_005f5500 / FUN_005f5c60`).
 3. For each window, checks if the target object belongs to it via
    `FUN_004f5940(window + 0x45, &local)`.
-4. **Sector window** (type & 0x3f == 9, vtable `0x0065e600`): calls
+4. **Manufacturing window** (type & 0x3f == 9, ctor `FUN_00452fc0`, vtable
+   `0x00659e68`; `manufacturing-build-selection.md`): calls
    `FUN_00458b50(window, order)`. This stores the order at `+0x268`, sets
    `+0x164` bit 3, and calls `FUN_00458640` to enter rename mode.
 5. **Active window** (window HWND == galaxy `+0xb8`): calls `vtable+0x78`
@@ -77,7 +78,7 @@ Shared by fleet window (type 4) and other `CustomDialogBox` subclasses:
 7. Calls `vtable+0x18` with argument `10`: slot `+0x18` of the
    CoolStringField vtable (`0x0066e038`) is `0x00604f70`, which calls
    `FUN_00600290(10)` (font table `0x6be4f8` → `+0x7c`) and relays the
-   layout. So 10 is the font, as `FUN_006002b0(10)` elsewhere, not a length.
+   layout. So 10 is the font, as `FUN_006002b0(10)` elsewhere.
 8. Gets the current object name via `FUN_004f6270` (checks `+0x34`, then
    `+0x2c` class name, then default at `DAT_006b120c`).
 9. Sets the text via `FUN_00604f90`, which truncates to the max length at
@@ -128,8 +129,8 @@ Constructor creates a Win32 control with class name `CoolStringField`
 The execution path for the rename order ultimately calls `FUN_004f6e60` on the
 target `CRebObject`:
 
-1. **Alive check**: `FUN_0053a000(object)` returns true when `(+0x24 & 0x30) == 0`
-   (bits 4-5 clear). Dead or captured objects cannot be renamed.
+1. **Master check**: `FUN_0053a000(object)` returns true when `(+0x24 & 0x30) == 0`, the master copy rather than a side's view
+   (bits 4-5 clear). Only the master copy is renamed.
 2. Gets old name via `FUN_004f62d0`.
 3. Compares old and new via `FUN_005f3390`. If identical, no-op.
 4. Allocates name storage at `+0x34` via `FUN_004fc680` (if `+0x34` was null,
@@ -145,10 +146,10 @@ target `CRebObject`:
   `FUN_004ac7a0`, `FUN_004ac950`, `FUN_004aca40`. These are on the
   `CustomDialogBox` base class (vtable `0x0065bf80`), so any subclass that
   doesn't override them inherits the rename edit.
-- **Sector window** (type 9, vtable `0x0065e600`): uses its own handler
-  `FUN_00458b50`, which stores the order at `+0x268` and flags `+0x164` bit 3
-  to enter rename mode. hyp: `FUN_00458640` sets up the edit in the sector
-  window's own layout.
+- **Manufacturing window** (type 9, vtable `0x00659e68`): uses its own
+  handler `FUN_00458b50`, which stores the order at `+0x268`, sets `+0x164`
+  bit 3 and, if that bit was clear, calls `FUN_00458640` with the selected
+  band (`+0x248`) to open the edit over that band's text.
 - hyp: System window (type 7), Defenses window, and any other `CustomDialogBox`
   subclass could inherit the rename slots. The routing in `FUN_00429350` checks
   for the target object's presence in each window's inventory.
@@ -168,7 +169,7 @@ lists per object class are in `object-popup-menu.md` and the vtable notes.
 
 None is set. The constructor `FUN_00604cf0` writes `+0xa4 = 0`, and nothing
 in the rename path writes it again; `FUN_00604f90` truncates only when
-`+0xa4` is not 0. (Corrected 2026-10-06: `vtable+0x18(10)` sets the font.)
+`+0xa4` is not 0; `vtable+0x18(10)` sets the font.
 
 ## Ship name display
 
@@ -207,8 +208,8 @@ fleet-window.mjs`, case `rename` (fixture code 48), both sides.
 - `FUN_004f6e60.c` — CRebObject name setter
 - `FUN_004f6270.c` — CRebObject name getter
 - `FUN_004fc680.c` — Name storage allocator
-- `FUN_0053a000.c` — Object alive check
-- `FUN_00458b50.c` — Sector window rename handler
+- `FUN_0053a000.c` — Master-copy check
+- `FUN_00458b50.c` — Manufacturing window rename handler
 
 ## Open
 
@@ -217,7 +218,7 @@ fleet-window.mjs`, case `rename` (fixture code 48), both sides.
   list needs to be dumped.
 - What `0x215` names. It shares the rename handler. hyp: "Name Fleet" vs.
   "Rename" (unit), or the two may be identical orders from different menus.
-- The sector window's rename edit layout (`FUN_00458640`).
+- The manufacturing window's rename edit layout (`FUN_00458640`).
 - Whether the CoolStringField's window procedure also sends EM_LIMITTEXT to
   enforce the 10-character limit on keyboard input, or relies solely on the
   truncation in FUN_00604f90.

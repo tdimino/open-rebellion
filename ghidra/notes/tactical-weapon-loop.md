@@ -114,7 +114,7 @@ next arc. A full arc becomes ready and leaves the queue.
 
 ## Implementation boundary
 
-`crates/rebellion-render/src/tactical_view.rs` now implements this capital
+`crates/rebellion-core/src/tactical.rs` implements this capital
 battery and recharge contract. The source transports floating-point damage
 events, while the current Rust hull and shield stores remain integral. The
 implementation preserves the recovered float strength through projectile

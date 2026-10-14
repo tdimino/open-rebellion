@@ -121,7 +121,7 @@ and [Agent Advice reading](https://github.com/TeeJS/faction-wars/blob/626b9b2bd6
 | `OBJ-03-C019` | Typing a system name moves the SpecForces grid to that system. | Present | `FUN_00609650`; bounded prefix-search tests in `personnel_finder.rs`. |
 | `OBJ-04-C009` | F4 opens Troop Finder. | Present | Command `0x130`; both-faction `audit-batch.mjs` gate. |
 | `OBJ-04-C010` | Troop Finder searches by system name. | Present | `FUN_00609650`; bounded prefix-search tests in `troop_finder.rs`. |
-| `OBJ-04-C011` | Troop Finder has Alliance and Imperial tabs. | Present | `FUN_00462ec0`; source-backed faction tabs in `troop_finder.rs`. |
+| `OBJ-04-C011` | Troop Finder has Alliance and Imperial tabs. | Present | `FUN_0046ce40` (create slot, `ghidra/notes/troop-finder.md`); source-backed faction tabs in `troop_finder.rs`. |
 | `OBJ-04-C012` | Display opens the selected troop's System window. | Present | `FUN_00429440`; bounded navigation tests in `troop_finder.rs`. |
 | `OBJ-04-C013` | Fleet Finder navigation opens the selected fleet's Sector window. | Present | Confirmed in `ghidra/notes/fleet-finder.md` and the native journey. |
 | `OBJ-04-C014` | Fleet Finder navigation opens the matching Fleet window. | Present | Confirmed in `fleet-finder.md` and the native journey. |

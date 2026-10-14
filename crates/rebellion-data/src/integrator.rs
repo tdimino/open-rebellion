@@ -15,9 +15,7 @@ use std::collections::HashMap;
 use rebellion_core::ai::{AIAction, AIState, AiFaction};
 use rebellion_core::betrayal::BetrayalEvent;
 use rebellion_core::blockade::BlockadeEvent;
-use rebellion_core::combat::{
-    side_present, CombatForce, CombatSide, CombatSystem, GroundCombatResult, SpaceCombatResult,
-};
+use rebellion_core::combat::{side_present, CombatForce, CombatSide, GroundCombatResult};
 use rebellion_core::death_star::DeathStarEvent;
 use rebellion_core::economy::{EconomyEvent, EconomyState};
 use rebellion_core::events::{EventAction, FiredEvent, SkillField, SystemTag};
@@ -54,6 +52,8 @@ use rebellion_core::movement::{
 };
 use rebellion_core::repair::RepairEvent;
 use rebellion_core::research::{ResearchResult, ResearchState};
+use rebellion_core::tactical::apply::apply_results;
+use rebellion_core::tactical::BattleSession;
 use rebellion_core::troop_transport::{RegimentArrivals, RegimentLeg, TroopTransportState};
 use rebellion_core::uprising::{UprisingEvent, UprisingState};
 use rebellion_core::victory::VictoryOutcome;
@@ -642,29 +642,6 @@ impl PerceptionIntegrator {
 
     // ── Step 4: Combat ────────────────────────────────────────────────────
 
-    /// Apply space combat result: ship damage + fleet cleanup + telemetry.
-    pub fn apply_space_combat(
-        &mut self,
-        world: &mut GameWorld,
-        system: SystemKey,
-        result: &SpaceCombatResult,
-    ) {
-        apply_space_combat_result_inner(result, world);
-        let winner_str = match result.winner {
-            CombatSide::Attacker => "alliance",
-            CombatSide::Defender => "empire",
-            CombatSide::Draw => "draw",
-        };
-        self.emit(
-            SYS_COMBAT,
-            EVT_COMBAT_SPACE,
-            serde_json::json!({
-                "system": sys_name(world, system),
-                "winner": winner_str,
-            }),
-        );
-    }
-
     /// Emit one summary event after a complete system-level space engagement.
     pub fn emit_system_space_combat(
         &mut self,
@@ -682,7 +659,7 @@ impl PerceptionIntegrator {
             serde_json::json!({
                 "system": sys_name(world, result.system),
                 "winner": winner_str,
-                "rounds": result.rounds,
+                "seconds": result.seconds,
                 "alliance_fleets": result.alliance_fleets,
                 "empire_fleets": result.empire_fleets,
                 "alliance_before": {
@@ -3053,12 +3030,6 @@ mod tests {
 // Combat helpers (moved from simulation.rs)
 // ---------------------------------------------------------------------------
 
-/// Safety cap for a complete system-level engagement.
-///
-/// A round that changes neither hull nor fighter strength ends the engagement
-/// immediately, so this cap only protects against unexpectedly large battles.
-pub const MAX_SYSTEM_COMBAT_ROUNDS: u32 = 256;
-
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SpaceForceSummary {
     pub capital_ships: usize,
@@ -3074,14 +3045,15 @@ pub struct SystemSpaceCombatResult {
     pub winner: CombatSide,
     /// A surviving fleet belonging to the winning faction, when decisive.
     pub winner_fleet: Option<FleetKey>,
-    pub rounds: u32,
+    /// Simulated seconds the headless battle ran.
+    pub seconds: u32,
     pub alliance_fleets: usize,
     pub empire_fleets: usize,
     pub alliance_before: SpaceForceSummary,
     pub alliance_after: SpaceForceSummary,
     pub empire_before: SpaceForceSummary,
     pub empire_after: SpaceForceSummary,
-    /// True when combat could not change any remaining unit or reached the cap.
+    /// True when both sides remain, so the system fights again next pass.
     pub stalemate: bool,
 }
 
@@ -3129,88 +3101,65 @@ fn summarize_space_force(
             .map_or(0, |value| value.squadron_count(is_alliance)),
         ..SpaceForceSummary::default()
     };
-    fleets
-        .iter()
-        .fold(held, |mut summary, fleet_key| {
-            if let Some(fleet) = world.fleets.get(*fleet_key) {
-                summary.capital_ships +=
-                    fleet.capital_ships.iter().filter(|ship| ship.alive).count();
-                summary.fighter_squadrons +=
-                    fleet.fighters.iter().map(|entry| entry.count).sum::<u32>();
-                summary.hull += fleet
-                    .capital_ships
-                    .iter()
-                    .filter(|ship| ship.alive)
-                    .map(|ship| i64::from(ship.hull_current))
-                    .sum::<i64>();
-            }
-            summary
-        })
+    fleets.iter().fold(held, |mut summary, fleet_key| {
+        if let Some(fleet) = world.fleets.get(*fleet_key) {
+            summary.capital_ships += fleet.capital_ships.iter().filter(|ship| ship.alive).count();
+            summary.fighter_squadrons +=
+                fleet.fighters.iter().map(|entry| entry.count).sum::<u32>();
+            summary.hull += fleet
+                .capital_ships
+                .iter()
+                .filter(|ship| ship.alive)
+                .map(|ship| i64::from(ship.hull_current))
+                .sum::<i64>();
+        }
+        summary
+    })
 }
 
-/// Resolve all hostile task forces at a system as one uninterrupted engagement.
-///
-/// Each core combat call models one combat round. Applying every damaging round
-/// here prevents repair ticks from healing fleets between rounds and advances to
-/// the next deterministic pair when either task force is destroyed.
+/// Fight one system's battle without its window, as the original does for a
+/// battle nobody watches (`FUN_0040a050` state 8,
+/// `ghidra/notes/simulate-runs-tactical-engine.md`): every fleet of each side
+/// and the squadrons the system holds for it enter one tactical session, which
+/// runs one-second headless steps to its end (`BattleSession::simulate_to_end`)
+/// and is written back as a played battle is (`tactical::apply::apply_results`).
+/// port: the Alliance is the session's attacker, as in the player's battles.
 pub fn resolve_system_space_combat(
     world: &mut GameWorld,
+    troop_transport: &mut TroopTransportState,
+    movement: &mut MovementState,
     system: SystemKey,
-    difficulty: u8,
-    rng_rolls: &[f64],
+    rng_seed: u32,
     tick: u64,
-    death_star_shield_active: bool,
 ) -> SystemSpaceCombatResult {
     let (initial_alliance, initial_empire) = orbiting_fleets_by_faction(world, system);
     let alliance_before = summarize_space_force(world, system, true, &initial_alliance);
     let empire_before = summarize_space_force(world, system, false, &initial_empire);
-    let mut rounds = 0;
-    let mut stalemate = false;
 
-    while rounds < MAX_SYSTEM_COMBAT_ROUNDS {
-        // FUN_00509710: a side is present with a fleet or squadrons the
-        // system holds for it, and both fight (FUN_00516ef0).
-        if !side_present(world, system, true) || !side_present(world, system, false) {
-            break;
-        }
-        let (alliance, empire) = orbiting_fleets_by_faction(world, system);
-        let round = CombatSystem::resolve_space_forces(
-            world,
-            CombatForce {
-                fleet: alliance.first().copied(),
-                is_alliance: true,
-            },
-            CombatForce {
-                fleet: empire.first().copied(),
-                is_alliance: false,
-            },
-            system,
-            difficulty,
-            rng_rolls,
-            tick,
-            death_star_shield_active,
-        );
-        let made_progress = round
-            .ship_damage
-            .iter()
-            .any(|event| event.hull_after < event.hull_before)
-            || round
-                .fighter_losses
-                .iter()
-                .any(|event| event.squads_after < event.squads_before)
-            || round
-                .system_fighter_losses
-                .iter()
-                .any(|event| event.squads_after < event.squads_before);
-
-        apply_space_combat_result_inner(&round, world);
-        rounds += 1;
-
-        if !made_progress {
-            stalemate = true;
-            break;
-        }
-    }
+    let mut session = BattleSession::new_with_forces(
+        world,
+        system,
+        CombatForce {
+            fleet: initial_alliance.first().copied(),
+            is_alliance: true,
+        },
+        CombatForce {
+            fleet: initial_empire.first().copied(),
+            is_alliance: false,
+        },
+        false,
+        tick,
+        rng_seed,
+    );
+    session.simulate_to_end();
+    let mut withdrawal_log = Vec::new();
+    apply_results(
+        &session,
+        world,
+        troop_transport,
+        movement,
+        &mut withdrawal_log,
+    );
 
     let (alliance, empire) = orbiting_fleets_by_faction(world, system);
     let alliance_after = summarize_space_force(world, system, true, &alliance);
@@ -3225,179 +3174,30 @@ pub fn resolve_system_space_combat(
         (false, true) => (CombatSide::Defender, empire.first().copied()),
         _ => (CombatSide::Draw, None),
     };
-    if rounds == MAX_SYSTEM_COMBAT_ROUNDS && winner == CombatSide::Draw {
-        stalemate = true;
-    }
 
     SystemSpaceCombatResult {
         system,
         winner,
         winner_fleet,
-        rounds,
+        seconds: session.combat_tick / 4,
         alliance_fleets: initial_alliance.len(),
         empire_fleets: initial_empire.len(),
         alliance_before,
         alliance_after,
         empire_before,
         empire_after,
-        stalemate,
-    }
-}
-
-pub fn apply_space_combat_result_inner(result: &SpaceCombatResult, world: &mut GameWorld) {
-    // Apply hull damage to individual ship instances.
-    // ship_index counts the ships alive at snapshot time. Resolve every
-    // event to its roster slot before applying any, so a ship marked dead
-    // does not shift the slots of the events after it.
-    let slots: Vec<_> = result
-        .ship_damage
-        .iter()
-        .filter_map(|evt| {
-            let fleet = world.fleets.get(evt.fleet)?;
-            let slot = fleet
-                .capital_ships
-                .iter()
-                .enumerate()
-                .filter(|(_, ship)| ship.alive)
-                .nth(evt.ship_index)?
-                .0;
-            Some((evt.fleet, slot, evt.hull_after))
-        })
-        .collect();
-    for (fleet_key, slot, hull_after) in slots {
-        if let Some(ship) = world
-            .fleets
-            .get_mut(fleet_key)
-            .and_then(|fleet| fleet.capital_ships.get_mut(slot))
-        {
-            ship.hull_current = hull_after;
-            if hull_after <= 0 {
-                ship.alive = false;
-            }
-        }
-    }
-
-    // Apply fighter attrition before testing whether either fleet is empty.
-    // `fighter_index` maps directly to the roster snapshot used by combat.
-    for evt in &result.fighter_losses {
-        if let Some(fleet) = world.fleets.get_mut(evt.fleet) {
-            if let Some(entry) = fleet.fighters.get_mut(evt.fighter_index) {
-                entry.count = evt.squads_after;
-            }
-        }
-    }
-
-    // FUN_005032c0: squadrons the system holds lose craft as carried ones do.
-    if let Some(system) = world.systems.get_mut(result.system) {
-        for evt in &result.system_fighter_losses {
-            if let Some(index) = system
-                .fighters
-                .iter()
-                .position(|entry| entry.class == evt.class && entry.is_alliance == evt.is_alliance)
-            {
-                let lost = evt.squads_before.saturating_sub(evt.squads_after);
-                system.fighters[index].count = system.fighters[index].count.saturating_sub(lost);
-                if system.fighters[index].count == 0 {
-                    system.fighters.remove(index);
-                }
-            }
-        }
-    }
-
-    // Remove dead ships and empty fleets: the lead fleets and every other
-    // fleet the battle touched (each side fights with all its fleets).
-    let mut touched: Vec<FleetKey> = [result.attacker_fleet, result.defender_fleet]
-        .into_iter()
-        .flatten()
-        .collect();
-    for fleet in result
-        .ship_damage
-        .iter()
-        .map(|evt| evt.fleet)
-        .chain(result.fighter_losses.iter().map(|evt| evt.fleet))
-    {
-        if !touched.contains(&fleet) {
-            touched.push(fleet);
-        }
-    }
-    // The winning side, by the lead fleets' sides.
-    let side_of = |fleet: Option<FleetKey>| fleet.and_then(|key| world.fleets.get(key)).map(|f| f.is_alliance);
-    let attacker_is_alliance = side_of(result.attacker_fleet)
-        .or_else(|| side_of(result.defender_fleet).map(|alliance| !alliance));
-    let loser_is_alliance = match result.winner {
-        CombatSide::Attacker => attacker_is_alliance.map(|alliance| !alliance),
-        CombatSide::Defender => attacker_is_alliance,
-        CombatSide::Draw => None,
-    };
-    for fleet_key in touched {
-        let death_star_status = world.fleets.get(fleet_key).map(|fleet| {
-            fleet
-                .capital_ships
-                .iter()
-                .fold((false, false), |(present, alive), ship| {
-                    let is_death_star = world.capital_ship_classes[ship.class].is_death_star();
-                    (
-                        present || is_death_star,
-                        alive || (is_death_star && ship.alive),
-                    )
-                })
-        });
-        if let Some(fleet) = world.fleets.get_mut(fleet_key) {
-            fleet.capital_ships.retain(|s| s.alive);
-            rebellion_core::carriage::drop_lost_squadrons(fleet);
-            if let Some((true, death_star_alive)) = death_star_status {
-                fleet.has_death_star = death_star_alive;
-            }
-        }
-        let is_empty = world
-            .fleets
-            .get(fleet_key)
-            .is_none_or(rebellion_core::world::Fleet::is_empty);
-        if is_empty {
-            // Capture losing fleet's characters (parity: officers captured on fleet destruction).
-            let is_loser = world
-                .fleets
-                .get(fleet_key)
-                .is_some_and(|fleet| Some(fleet.is_alliance) == loser_is_alliance);
-            if is_loser {
-                let capture_data = world.fleets.get(fleet_key).map(|f| {
-                    let captor = if f.is_alliance {
-                        rebellion_core::dat::Faction::Empire
-                    } else {
-                        rebellion_core::dat::Faction::Alliance
-                    };
-                    (f.characters.clone(), captor, f.location)
-                });
-                if let Some((chars, captor, loc)) = capture_data {
-                    for ck in chars {
-                        if let Some(c) = world.characters.get_mut(ck) {
-                            c.is_captive = true;
-                            c.captured_by = Some(captor);
-                            c.capture_tick = Some(result.tick);
-                            c.current_system = Some(loc);
-                            c.current_fleet = None;
-                        }
-                    }
-                }
-            }
-            if let Some(fleet) = world.fleets.get(fleet_key) {
-                let loc = fleet.location;
-                if let Some(sys) = world.systems.get_mut(loc) {
-                    sys.fleets.retain(|&k| k != fleet_key);
-                }
-            }
-            world.fleets.remove(fleet_key);
-        }
+        stalemate: winner == CombatSide::Draw
+            && side_present(world, system, true)
+            && side_present(world, system, false),
     }
 }
 
 #[cfg(test)]
 mod combat_application_tests {
     use super::*;
-    use rebellion_core::combat::{FighterLossEvent, ShipDamageEvent, SpaceCombatResult};
-    use rebellion_core::dat::{ExplorationStatus, Faction};
-    use rebellion_core::ids::{FighterKey, SectorKey};
-    use rebellion_core::world::{CapitalShipClass, Character, FighterEntry, Fleet, System};
+    use rebellion_core::dat::ExplorationStatus;
+    use rebellion_core::ids::SectorKey;
+    use rebellion_core::world::{CapitalShipClass, Fleet, System};
 
     fn add_combat_system(world: &mut GameWorld) -> SystemKey {
         world.systems.insert(System {
@@ -3443,6 +3243,10 @@ mod combat_application_tests {
             is_empire: !is_alliance,
             hull,
             turbolaser_fore: attack,
+            // The tactical engine fires only with a range and a recharge, as
+            // every armed shipped class has (CAPSHPSD: recharge 6-18, range 50-60).
+            turbolaser_range: 60,
+            weapon_recharge_rate: 8,
             ..CapitalShipClass::default()
         });
         let fleet = world.fleets.insert(Fleet {
@@ -3458,148 +3262,6 @@ mod combat_application_tests {
     }
 
     #[test]
-    fn fighter_losses_update_rosters_and_remove_defeated_fleet() {
-        let mut world = GameWorld::default();
-        let attacker = world.fleets.insert(Fleet {
-            location: SystemKey::default(),
-            capital_ships: vec![],
-            fighters: vec![FighterEntry {
-                class: FighterKey::default(),
-                count: 4,
-                carrier: 0,
-            }],
-            characters: vec![],
-            is_alliance: true,
-            has_death_star: false,
-        });
-        let defender = world.fleets.insert(Fleet {
-            location: SystemKey::default(),
-            capital_ships: vec![],
-            fighters: vec![FighterEntry {
-                class: FighterKey::default(),
-                count: 3,
-                carrier: 0,
-            }],
-            characters: vec![],
-            is_alliance: false,
-            has_death_star: false,
-        });
-        let captive = world.characters.insert(Character {
-            name: "Defeated Officer".into(),
-            is_empire: true,
-            current_fleet: Some(defender),
-            ..Character::default()
-        });
-        world.fleets[defender].characters.push(captive);
-        let result = SpaceCombatResult {
-            attacker_fleet: Some(attacker),
-            defender_fleet: Some(defender),
-            system_fighter_losses: vec![],
-            system: SystemKey::default(),
-            winner: CombatSide::Attacker,
-            ship_damage: vec![],
-            fighter_losses: vec![
-                FighterLossEvent {
-                    fleet: attacker,
-                    fighter_index: 0,
-                    squads_before: 4,
-                    squads_after: 2,
-                },
-                FighterLossEvent {
-                    fleet: defender,
-                    fighter_index: 0,
-                    squads_before: 3,
-                    squads_after: 0,
-                },
-            ],
-            tick: 1,
-        };
-
-        apply_space_combat_result_inner(&result, &mut world);
-
-        assert_eq!(world.fleets[attacker].fighters[0].count, 2);
-        assert!(!world.fleets.contains_key(defender));
-        assert!(world.characters[captive].is_captive);
-        assert_eq!(
-            world.characters[captive].captured_by,
-            Some(Faction::Alliance)
-        );
-        assert_eq!(world.characters[captive].capture_tick, Some(1));
-        assert_eq!(world.characters[captive].current_fleet, None);
-    }
-
-    #[test]
-    fn destroyed_death_star_clears_fleet_flag_while_escort_survives() {
-        let mut world = GameWorld::default();
-        let system = add_combat_system(&mut world);
-        let attacker = add_ship_fleet(&mut world, system, true, 100, 10);
-        let death_star_class = world.capital_ship_classes.insert(CapitalShipClass {
-            dat_id: DatId::new(0x3400_0001),
-            name: "Death Star".into(),
-            is_empire: true,
-            hull: 1_000,
-            ..CapitalShipClass::default()
-        });
-        let escort_class = world.capital_ship_classes.insert(CapitalShipClass {
-            dat_id: DatId::new(0x3000_0002),
-            name: "Escort".into(),
-            is_empire: true,
-            hull: 100,
-            ..CapitalShipClass::default()
-        });
-        let defender = world.fleets.insert(Fleet {
-            location: system,
-            capital_ships: vec![
-                ShipInstance::new(death_star_class, 1_000, false),
-                ShipInstance::new(escort_class, 100, false),
-            ],
-            fighters: vec![],
-            characters: vec![],
-            is_alliance: false,
-            has_death_star: true,
-        });
-        world.systems[system].fleets.push(defender);
-        let result = SpaceCombatResult {
-            attacker_fleet: Some(attacker),
-            defender_fleet: Some(defender),
-            system_fighter_losses: vec![],
-            system,
-            winner: CombatSide::Attacker,
-            ship_damage: vec![ShipDamageEvent {
-                fleet: defender,
-                ship_index: 0,
-                hull_before: 1_000,
-                hull_after: 0,
-            }],
-            fighter_losses: vec![],
-            tick: 2,
-        };
-
-        apply_space_combat_result_inner(&result, &mut world);
-
-        assert!(world.fleets.contains_key(defender));
-        assert!(!world.fleets[defender].has_death_star);
-        assert_eq!(world.fleets[defender].capital_ships.len(), 1);
-        assert_eq!(world.fleets[defender].capital_ships[0].class, escort_class);
-    }
-
-    #[test]
-    fn system_engagement_resolves_multiple_rounds_before_repair() {
-        let mut world = GameWorld::default();
-        let system = add_combat_system(&mut world);
-        let attacker = add_ship_fleet(&mut world, system, true, 100, 30);
-        let defender = add_ship_fleet(&mut world, system, false, 100, 1);
-
-        let result = resolve_system_space_combat(&mut world, system, 1, &[0.5; 256], 10, false);
-
-        assert_eq!(result.winner, CombatSide::Attacker);
-        assert_eq!(result.winner_fleet, Some(attacker));
-        assert!(result.rounds > 1);
-        assert!(!result.stalemate);
-        assert!(!world.fleets.contains_key(defender));
-    }
-
-    #[test]
     fn system_engagement_includes_every_orbiting_task_force() {
         let mut world = GameWorld::default();
         let system = add_combat_system(&mut world);
@@ -3608,7 +3270,14 @@ mod combat_application_tests {
         let first_empire = add_ship_fleet(&mut world, system, false, 30, 1);
         let second_empire = add_ship_fleet(&mut world, system, false, 30, 1);
 
-        let result = resolve_system_space_combat(&mut world, system, 1, &[0.5; 256], 11, false);
+        let result = resolve_system_space_combat(
+            &mut world,
+            &mut TroopTransportState::default(),
+            &mut MovementState::default(),
+            system,
+            0x5eed,
+            11,
+        );
 
         assert_eq!(result.alliance_fleets, 2);
         assert_eq!(result.empire_fleets, 2);
@@ -3625,21 +3294,6 @@ mod combat_application_tests {
         assert_eq!(events[0].event_type, EVT_COMBAT_SPACE);
         assert_eq!(events[0].details["alliance_fleets"], 2);
         assert_eq!(events[0].details["empire_fleets"], 2);
-    }
-
-    #[test]
-    fn system_engagement_stops_on_true_no_progress_stalemate() {
-        let mut world = GameWorld::default();
-        let system = add_combat_system(&mut world);
-        add_ship_fleet(&mut world, system, true, 100, 0);
-        add_ship_fleet(&mut world, system, false, 100, 0);
-
-        let result = resolve_system_space_combat(&mut world, system, 1, &[0.5; 256], 12, false);
-
-        assert_eq!(result.winner, CombatSide::Draw);
-        assert_eq!(result.rounds, 1);
-        assert!(result.stalemate);
-        assert_eq!(world.systems[system].fleets.len(), 2);
     }
 }
 

@@ -1,6 +1,5 @@
 {
   "items": {
-    "crates/rebellion-core/src/ai.rs::AISystem::evaluate_production": 9,
     "crates/rebellion-core/src/ai.rs::AISystem::evaluate_research": 4,
     "crates/rebellion-core/src/ai.rs::AISystem::evaluate_troop_deployment": 4,
     "crates/rebellion-core/src/ai.rs::AISystem::find_incite_target": 1,
@@ -16,16 +15,6 @@
     "crates/rebellion-core/src/blockade.rs::EV_BLOCKADE": 1,
     "crates/rebellion-core/src/blockade.rs::EV_TROOP_BLOCKADE_KILL": 1,
     "crates/rebellion-core/src/combat.rs::CombatEntityKind::from_family_byte": 12,
-    "crates/rebellion-core/src/combat.rs::CombatPhaseFlags::FIGHTER_TYPE": 1,
-    "crates/rebellion-core/src/combat.rs::CombatPhaseFlags::HULL_TYPE": 1,
-    "crates/rebellion-core/src/combat.rs::CombatPhaseFlags::PHASES_ENABLED": 1,
-    "crates/rebellion-core/src/combat.rs::CombatPhaseFlags::SHIELD_TYPE": 1,
-    "crates/rebellion-core/src/combat.rs::CombatPhaseFlags::WEAPON_FIRE": 1,
-    "crates/rebellion-core/src/combat.rs::CombatPhaseFlags::WEAPON_TYPE": 1,
-    "crates/rebellion-core/src/combat.rs::CombatSystem::capital_ships_attack_fighters": 4,
-    "crates/rebellion-core/src/combat.rs::CombatSystem::fighter_dogfight": 5,
-    "crates/rebellion-core/src/combat.rs::CombatSystem::fighters_attack_ships": 1,
-    "crates/rebellion-core/src/combat.rs::CombatSystem::snapshot_fleet": 3,
     "crates/rebellion-core/src/death_star.rs::DeathStarSystem::advance": 1,
     "crates/rebellion-core/src/economy.rs::GNPRTB_COLLECTION_RATE_BASE": 1,
     "crates/rebellion-core/src/economy.rs::GNPRTB_DRIFT_BASE_LOW": 1,
@@ -108,10 +97,6 @@
     "crates/rebellion-core/src/world/mod.rs::ShipInstance::shield_nibble": 1,
     "crates/rebellion-core/src/world/mod.rs::ShipInstance::weapon_nibble": 2,
     "crates/rebellion-core/src/world/mod.rs::default_difficulty_index": 1,
-    "crates/rebellion-data/src/integrator.rs::MAX_SYSTEM_COMBAT_ROUNDS": 1,
-    "crates/rebellion-data/src/integrator.rs::apply_build_completion_inner": 3,
-    "crates/rebellion-data/src/simulation.rs::COMBAT_RETRY_TICKS": 1,
-    "crates/rebellion-data/src/simulation.rs::MAX_SYSTEM_GROUND_COMBAT_ROUNDS": 1,
-    "crates/rebellion-data/src/simulation.rs::run_simulation_tick": 5
+    "crates/rebellion-data/src/simulation.rs::MAX_SYSTEM_GROUND_COMBAT_ROUNDS": 1
   }
 }

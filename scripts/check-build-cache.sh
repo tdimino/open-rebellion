@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Report the disk the build cache and run evidence hold, and keep both from
-# piling up. Cargo never prunes target/: every change to a crate's code,
-# flags or features writes a new hashed copy of its outputs and test
-# binaries, and the old copies stay. Browser and parity runs write a new
-# timestamped folder under .artifacts/interface-parity/ each time.
+# piling up. Builds run on the Mac Mini (scripts/mini-cargo.sh), which keeps
+# only what its latest build used; this Mac keeps no target/. Browser and
+# parity runs write a new timestamped folder under .artifacts/interface-parity/
+# each time.
 #
 #   scripts/check-build-cache.sh            report; warn over the limits
 #   scripts/check-build-cache.sh --prune    prune now (run only when no
@@ -14,21 +14,22 @@
 #                                           the SessionStart hook uses this
 #
 # Pruning:
-#   - runs `cargo clean` once target/ passes its limit;
+#   - runs `cargo clean` when this Mac has a target/ (a local build ran);
 #   - removes stale cargo-mutants scratch copies, and scratch target
 #     directories (any target/ entry cargo does not make) older than 2 days;
 #   - deletes stale run folders (see stale_runs below);
 #   - moves evidence older than the age limit to the Mac Mini archive under
 #     the same relative path (see archive_old below).
 #
-# OPEN_REBELLION_TARGET_LIMIT_GB   target/ limit (default 20)
+# OPEN_REBELLION_TARGET_LIMIT_GB   local target/ allowed before cleaning
+#                                  (default 0: none)
 # OPEN_REBELLION_RUN_KEEP_DAYS     age limit for runs and evidence (default 14)
 # OPEN_REBELLION_ARCHIVE           rsync destination (default
 #                                  mac-mini-ts:open-rebellion-archive)
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-limit_gb="${OPEN_REBELLION_TARGET_LIMIT_GB:-20}"
+limit_gb="${OPEN_REBELLION_TARGET_LIMIT_GB:-0}"
 keep_days="${OPEN_REBELLION_RUN_KEEP_DAYS:-14}"
 archive="${OPEN_REBELLION_ARCHIVE:-mac-mini-ts:open-rebellion-archive}"
 mode=report
@@ -73,14 +74,17 @@ if [[ -d "$root/target" ]]; then
   done < <(find "$root/target" -mindepth 1 -maxdepth 1 -type d -mtime +2)
 fi
 
-echo "build cache: target/ ${target_gb} GB (limit ${limit_gb} GB), .artifacts/ ${artifacts_gb} GB, cargo-mutants scratch copies ${#stale_mutants[@]}, scratch target dirs ${#scratch_targets[@]}"
+echo "build cache: local target/ ${target_gb} GB (limit ${limit_gb} GB), .artifacts/ ${artifacts_gb} GB, cargo-mutants scratch copies ${#stale_mutants[@]}, scratch target dirs ${#scratch_targets[@]}"
+# The Mini's last pruned build (scripts/prune-target.py --log).
+mini="$(ssh -o ConnectTimeout=3 -o BatchMode=yes "${OPEN_REBELLION_BUILD_HOST:-mac-mini-ts}" 'tail -1 or-native/build-cache.log' 2>/dev/null || true)"
+[[ -n $mini ]] && echo "build cache (Mini, last build): $mini"
 
-if (( target_gb >= limit_gb )); then
+if [[ -d "$root/target" ]] && (( target_gb >= limit_gb )); then
   if [[ $mode == prune ]]; then
     env PATH="/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:$HOME/.cargo/bin" \
       cargo clean --manifest-path "$root/Cargo.toml"
   else
-    echo "WARNING: target/ is over ${limit_gb} GB; run scripts/check-build-cache.sh --prune when no build is running"
+    echo "WARNING: this Mac has a target/ (${target_gb} GB); build with scripts/mini-cargo.sh, and run scripts/check-build-cache.sh --prune when no build is running"
   fi
 fi
 

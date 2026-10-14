@@ -31,7 +31,7 @@ These slots appear on all combat entity objects; they are the base interface.
 ```
 +0x004  GetFamilyId()                   — entity class identifier byte (id >> 0x18)
 +0x00c  GetSideKey()                    — which combat side (1=attacker, 2=defender)
-+0x034  GetSpeed()                      — hyperspace speed for transit (FUN_0055d8c0; ship FUN_00500820, fighter FUN_00502f80, default FUN_004f63f0). Earlier read as CanBombard (F-032)
++0x034  GetSpeed()                      — hyperspace speed for transit (FUN_0055d8c0; ship FUN_00500820, fighter FUN_00502f80, default FUN_004f63f0).
 +0x038  IsActive()                      — reads status_flags bit0
 ```
 
@@ -217,8 +217,8 @@ Vtable address constants observed in decompiled code, mapped to class types.
 | Vtable Address | Class | Source |
 |---------------|-------|--------|
 | `PTR_LAB_0066c2d0` | CTacticalBattleManager (or CShipGroup root) | FUN_005a7500, line 108: `*param_1 = &PTR_LAB_0066c2d0` |
-| `PTR_FUN_0066bdd0` | CShipGroupHandler (message router) | FUN_005a7500, slots 0x262-0x274: 7× `param_1[N] = &PTR_FUN_0066bdd0` |
-| `PTR_FUN_0066bdb8` | CNavPointHandler | FUN_005a7500, slot 0x277: `param_1[0x277] = &PTR_FUN_0066bdb8` |
+| `PTR_FUN_0066bdd0` | Object list keyed by id | FUN_005a7500, slots 0x262-0x274: 7× `param_1[N] = &PTR_FUN_0066bdd0`, 12 bytes apart. Slot 2 `FUN_005f5560` orders nodes by `+0x18` id; slot 3 `FUN_005c6000` inserts only when `FUN_005ca4b0` finds no node with that id; dtor `FUN_005c5ff0` → list base `FUN_005f5300` |
+| `PTR_FUN_0066bdb8` | Object list keyed by id | FUN_005a7500, slot 0x277: `param_1[0x277] = &PTR_FUN_0066bdb8`. Slot 4 `FUN_005c5d80` inserts only when `FUN_005c61d0` finds no node with the same `+0x18` id; dtor `FUN_005c5b60` → `FUN_005c6190` |
 | `PTR_LAB_0066c390` | CShipEventHandler | FUN_005a7500, slot 0x291: `param_1[0x291] = &PTR_LAB_0066c390` |
 | `PTR_FUN_0066c380` | CShipEventHandler variant B | FUN_005a7500, slot 0x394 |
 | `PTR_FUN_0066c370` | CShipEventHandler variant C | FUN_005a7500, slot 0x397 |
@@ -302,8 +302,8 @@ This 0x3a8-word object (initialized in FUN_005a7500) is the tactical view contro
 | `param_1[0x3a5]` | `= 0` | state |
 | `param_1[0x3a6]` | `= 0x13d` (317) | timer or counter |
 | `param_1[0x3a7]` | `= 1` | active flag |
-| `param_1[0x262]–[0x274]` (7 slots) | CShipGroupHandler vtables | each set to `&PTR_FUN_0066bdd0` |
-| `param_1[0x277]` | CNavPointHandler vtable | set to `&PTR_FUN_0066bdb8` |
+| `param_1[0x262]–[0x274]` (7 slots) | seven embedded object lists | each vtable set to `&PTR_FUN_0066bdd0` |
+| `param_1[0x277]` | embedded object list | vtable set to `&PTR_FUN_0066bdb8` |
 
 Message slots registered (in constructor order):
 

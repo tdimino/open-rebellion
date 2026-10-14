@@ -3,6 +3,13 @@ name = "rebellion-core"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = []
+# Fixture-only constructors used by rebellion-render's interface-test-fixtures.
+interface-test-fixtures = []
+# Battle fixtures (`tactical::test_support`) for rebellion-render's view tests.
+test-support = []
+
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
