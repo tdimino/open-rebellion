@@ -81,7 +81,7 @@ pub use bmp_cache::set_bmp_cache;
 pub use bmp_cache::{approved_hd_assets_from_bytes, ApprovedHdAsset};
 pub use bmp_cache::{AssetRenderProfile, BmpCache, DllSource};
 pub use cockpit::{
-    draw_cockpit_background, draw_cockpit_chrome, draw_cockpit_egui_layer,
+    cockpit_accelerator, draw_cockpit_background, draw_cockpit_chrome, draw_cockpit_egui_layer,
     handle_cockpit_egui_input, set_cockpit_viewport_clip, strategic_gid_control,
     strategic_primary_controls, CockpitButton, CockpitFaction, CockpitLayout, CockpitState,
     CockpitViewport, GidHighlight, GidMode, StrategicControlSpec, STRATEGIC_LOGICAL_HEIGHT,
@@ -404,17 +404,14 @@ fn galaxy_backdrop_destination(
     }
 }
 
-/// Render the galaxy star map for one frame.
+/// Resolve one frame of root-owned galaxy-map pointer input after child UI.
 ///
-/// Handles all input and draws the recovered Popular Support GID baseline.
-/// Returns a `CameraView` so later authentic overlays can share its transform.
-pub fn draw_galaxy_map(
+/// Input and paint are separate so the app can complete child disposition and
+/// root dispatch before emitting any strategic paint for the frame.
+pub fn update_galaxy_map_input(
     world: &GameWorld,
     state: &mut GalaxyMapState,
-    cache: &mut BmpCache,
-    gid_mode: GidMode,
     faction: CockpitFaction,
-    gid: &GidOverlayContext<'_>,
 ) -> CameraView {
     state.activated_system = None;
 
@@ -452,6 +449,30 @@ pub fn draw_galaxy_map(
         }
     }
 
+    // ── Click to select ───────────────────────────────────────────────────────
+    if is_mouse_button_pressed(MouseButton::Left) && in_viewport && map_press_selects(state) {
+        state.selected_system = state.hovered_system;
+        state.activated_system = state.hovered_system;
+    }
+
+    cam
+}
+
+/// Paint the recovered Popular Support GID baseline without polling input.
+/// Returns a `CameraView` so later authentic overlays can share its transform.
+pub fn draw_galaxy_map(
+    world: &GameWorld,
+    state: &GalaxyMapState,
+    cache: &mut BmpCache,
+    gid_mode: GidMode,
+    faction: CockpitFaction,
+    gid: &GidOverlayContext<'_>,
+) -> CameraView {
+    let viewport = state
+        .viewport
+        .unwrap_or((0.0, 0.0, screen_width(), screen_height()));
+    let cam = galaxy_camera(viewport, state.display_scale, faction);
+
     // Draw the native fixed-size marker bitmaps. Selection and hover
     // remain input states, but the replacement circles, glows, and labels are
     // deliberately absent from the parity surface.
@@ -465,12 +486,6 @@ pub fn draw_galaxy_map(
                 cache, world, key, system, faction, gid_mode, gid, cam, sx, sy,
             );
         }
-    }
-
-    // ── Click to select ───────────────────────────────────────────────────────
-    if is_mouse_button_pressed(MouseButton::Left) && in_viewport && map_press_selects(state) {
-        state.selected_system = state.hovered_system;
-        state.activated_system = state.hovered_system;
     }
 
     cam

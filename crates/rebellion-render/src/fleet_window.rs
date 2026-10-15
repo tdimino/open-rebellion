@@ -19,6 +19,10 @@ use rebellion_core::ids::{CharacterKey, DatId, FleetKey, SystemKey, TroopKey};
 use rebellion_core::movement::MovementState;
 use rebellion_core::troop_transport::TroopTransportState;
 use rebellion_core::world::{ControlKind, Fleet, GameWorld};
+use rebellion_windowing::{
+    ContentReport, ContentStatus, RoutingSnapshot, SubjectId, WindowId, WindowKind, WindowOwner,
+    WindowSpec, WindowTransition,
+};
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{CockpitFaction, CockpitLayout};
@@ -30,6 +34,10 @@ use crate::system_window::{
     logical_rect, opposing_contents_visible, rect_contains, troop_mini,
 };
 use crate::targeting::ReleaseTarget;
+use crate::windowing_input::{
+    EscapeRoute, FrameInputRouter, InputEventId, InputRecipient, PointerButtonId, PointerPhase,
+};
+use crate::windowing_policy::{contextual_spec, system_subject};
 
 pub const FLEET_WINDOW_WIDTH: f32 = 235.0;
 pub const FLEET_WINDOW_HEIGHT: f32 = 304.0;
@@ -166,6 +174,10 @@ impl FleetWindowEntry {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct OpenFleetWindow {
+    /// Opaque session identity allocated by the shared window manager.
+    /// Fixture-only direct opens deliberately have no production identity.
+    id: Option<WindowId>,
+    subject: Option<SubjectId>,
     system: SystemKey,
     logical_position: (i16, i16),
     /// port: one selected entry; the list's own selection rules
@@ -176,6 +188,50 @@ struct OpenFleetWindow {
     tab: FleetWindowTab,
     /// The in-place name edit Rename (0x203) opens (`FUN_004ac7a0`).
     rename: Option<RenameEdit>,
+}
+
+/// Validated Fleet content held off to the side until the manager accepts its
+/// stable `(Fleet, system DAT ID)` identity.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PreparedFleetWindow {
+    spec: WindowSpec,
+    faction: CockpitFaction,
+    system: SystemKey,
+    logical_position: (i16, i16),
+    selected: Option<FleetWindowEntry>,
+    rename: Option<RenameEdit>,
+}
+
+impl PreparedFleetWindow {
+    /// Complete manager declaration for this content candidate.
+    #[must_use]
+    pub const fn spec(&self) -> WindowSpec {
+        self.spec
+    }
+
+    /// Runtime system identity retained beside the stable DAT subject.
+    #[must_use]
+    pub const fn system(&self) -> SystemKey {
+        self.system
+    }
+
+    /// Adds the existing Rename intent to a prepared open without publishing
+    /// either mutation before the manager commit succeeds.
+    #[must_use]
+    pub fn with_rename(mut self, world: &GameWorld, entry: FleetWindowEntry) -> Option<Self> {
+        let text = match entry {
+            FleetWindowEntry::Fleet(fleet) => world.fleet_name(fleet),
+            FleetWindowEntry::Ship { fleet, index } => world.ship_name(fleet, index),
+        }?
+        .to_owned();
+        self.selected = Some(entry);
+        self.rename = Some(RenameEdit {
+            entry,
+            text,
+            fresh: true,
+        });
+        Some(self)
+    }
 }
 
 /// A Rename's edit field (`+0x138`, a CoolStringField) over the entry it
@@ -194,7 +250,14 @@ struct RenameEdit {
 enum RenameOutcome {
     Typed(String),
     Commit(String),
-    Cancel,
+    Cancel(RenameCancelCause),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RenameCancelCause {
+    EntryRemoved,
+    Escape,
+    FocusLost,
 }
 
 /// `CoolDragList` posts `0x29a` only when the release lies more than this
@@ -253,37 +316,161 @@ impl ItemObject {
     }
 }
 
-/// The open Fleet windows. The last is focused and paints on top.
+/// Fleet content attached to manager-issued window identities.
 #[derive(Debug)]
 pub struct FleetWindowState {
     faction: CockpitFaction,
-    /// When one of these windows last took focus (`window_focus`).
-    focus_serial: u64,
     windows: Vec<OpenFleetWindow>,
     drag: Option<ItemDrag>,
+    drag_owner: Option<WindowId>,
+    /// Fixture-only compatibility for browser scenarios that intentionally
+    /// bypass production lifecycle wiring.
+    fixture_focus_serial: u64,
 }
 
 impl Default for FleetWindowState {
     fn default() -> Self {
         Self {
             faction: CockpitFaction::Alliance,
-            focus_serial: 0,
             windows: Vec::new(),
             drag: None,
+            drag_owner: None,
+            fixture_focus_serial: 0,
         }
     }
 }
 
+#[derive(Default)]
+struct EndDragResult {
+    actions: Vec<FleetWindowAction>,
+    claimed_primary_release_by: Option<WindowId>,
+}
+
 impl FleetWindowState {
+    /// Allocates a temporary cross-family serial after the shared manager has
+    /// already accepted a Fleet activation. This does not order Fleet content;
+    /// the routing snapshot remains its sole order authority.
+    #[must_use]
+    pub fn next_legacy_bridge_serial() -> u64 {
+        crate::window_focus::next_serial()
+    }
+
     /// Whether any window of this kind is open.
     #[must_use]
     pub fn any_open(&self) -> bool {
         !self.windows.is_empty()
     }
 
-    /// Open `system`'s Fleet window at a logical point, clamped into the
-    /// galaxy view, or bring its open window to the front: one per system
-    /// (`FUN_0045aac0`, id `(system & 0x3ff) << 6 | 4`).
+    /// Validates and prepares a Fleet content candidate without changing live
+    /// content. The stable subject is the system's original DAT identity;
+    /// selected fleet/ship remains content rather than window identity.
+    #[must_use]
+    pub fn prepare_open(
+        &self,
+        world: &GameWorld,
+        system: SystemKey,
+        logical_position: (i16, i16),
+        faction: CockpitFaction,
+        layout: CockpitLayout,
+        selected: Option<FleetWindowEntry>,
+    ) -> Option<PreparedFleetWindow> {
+        let subject = system_subject(world, system)?;
+        Some(PreparedFleetWindow {
+            spec: contextual_spec(WindowKind::Fleet, subject, WindowOwner::StrategicRoot),
+            faction,
+            system,
+            logical_position: clamp_window_to_galaxy(
+                logical_position,
+                layout,
+                FLEET_WINDOW_WIDTH,
+                FLEET_WINDOW_HEIGHT,
+            ),
+            selected,
+            rename: None,
+        })
+    }
+
+    /// Publishes new content or applies an explicit selection/Rename intent to
+    /// the exact preserved identity after a successful manager open commit.
+    pub fn commit_open(
+        &mut self,
+        prepared: PreparedFleetWindow,
+        transition: &WindowTransition,
+    ) -> Option<WindowId> {
+        let subject = prepared.spec.key.subject?;
+        match *transition {
+            WindowTransition::Opened { id } => {
+                if self.windows.iter().any(|window| {
+                    window.id == Some(id)
+                        || window.subject == Some(subject)
+                        || window.system == prepared.system
+                }) {
+                    return None;
+                }
+                if self.windows.is_empty() {
+                    self.faction = prepared.faction;
+                } else if self.faction != prepared.faction {
+                    return None;
+                }
+                let mut expanded = Vec::new();
+                if let Some(FleetWindowEntry::Ship { fleet, .. }) = prepared.selected {
+                    expanded.push(fleet);
+                }
+                if prepared.rename.is_some() {
+                    for content in &mut self.windows {
+                        content.rename = None;
+                    }
+                }
+                self.windows.push(OpenFleetWindow {
+                    id: Some(id),
+                    subject: Some(subject),
+                    system: prepared.system,
+                    logical_position: prepared.logical_position,
+                    selected: prepared.selected,
+                    selected_item: None,
+                    expanded,
+                    tab: FleetWindowTab::CapitalShips,
+                    rename: prepared.rename,
+                });
+                Some(id)
+            }
+            WindowTransition::Existing { id, .. } => {
+                if self.faction != prepared.faction {
+                    return None;
+                }
+                let window = self.windows.iter_mut().find(|window| {
+                    window.id == Some(id)
+                        && window.subject == Some(subject)
+                        && window.system == prepared.system
+                })?;
+                if let Some(entry) = prepared.selected {
+                    if let FleetWindowEntry::Ship { fleet, .. } = entry {
+                        if !window.expanded.contains(&fleet) {
+                            window.expanded.push(fleet);
+                        }
+                    }
+                    window.selected = Some(entry);
+                    window.selected_item = None;
+                }
+                if prepared.rename.is_some() {
+                    for content in &mut self.windows {
+                        content.rename = None;
+                    }
+                    self.windows
+                        .iter_mut()
+                        .find(|window| window.id == Some(id))?
+                        .rename = prepared.rename;
+                }
+                Some(id)
+            }
+            _ => None,
+        }
+    }
+
+    /// Compatibility helper for renderer tests and explicit interface
+    /// fixtures compiled in dependent crates. Production code must use
+    /// `prepare_open` and `commit_open`.
+    #[doc(hidden)]
     pub fn open(
         &mut self,
         world: &GameWorld,
@@ -296,11 +483,13 @@ impl FleetWindowState {
         if !world.systems.contains_key(system) {
             return false;
         }
-        if self.focus(system) {
+        if self.focus_fixture(system) {
             return true;
         }
-        self.focus_serial = crate::window_focus::next_serial();
+        self.fixture_focus_serial = crate::window_focus::next_serial();
         self.windows.push(OpenFleetWindow {
+            id: None,
+            subject: None,
             system,
             logical_position: clamp_window_to_galaxy(
                 logical_position,
@@ -315,6 +504,101 @@ impl FleetWindowState {
             rename: None,
         });
         true
+    }
+
+    /// Exact manager identity attached to `system`'s committed content.
+    #[must_use]
+    pub fn window_id(&self, system: SystemKey) -> Option<WindowId> {
+        self.windows
+            .iter()
+            .find(|window| window.system == system)
+            .and_then(|window| window.id)
+    }
+
+    /// Existing content position used when a semantic reopen carries a new
+    /// selection or Rename intent. The manager preserves this geometry.
+    #[must_use]
+    pub fn window_logical_position(&self, system: SystemKey) -> Option<(i16, i16)> {
+        self.windows
+            .iter()
+            .find(|window| window.system == system)
+            .map(|window| window.logical_position)
+    }
+
+    /// Whether `system`'s exact content identity participates in this frozen
+    /// frame. Direct fixture content has no manager identity and stays visible.
+    #[must_use]
+    pub fn window_is_visible(&self, snapshot: &RoutingSnapshot, system: SystemKey) -> bool {
+        self.windows.iter().any(|window| {
+            window.system == system && window.id.is_none_or(|id| snapshot.is_visible(id))
+        })
+    }
+
+    /// Focused Fleet identity and whether its rename control owns keyboard
+    /// input in this frozen frame. Other focused window families are omitted.
+    #[must_use]
+    pub fn keyboard_owner(&self, snapshot: &RoutingSnapshot) -> Option<(WindowId, bool)> {
+        let rebellion_windowing::RouteTarget::Window(target) = snapshot.keyboard_route().target
+        else {
+            return None;
+        };
+        self.windows
+            .iter()
+            .find(|window| window.id == Some(target.window))
+            .map(|window| (target.window, window.rename.is_some()))
+    }
+
+    /// Whether exact manager-owned Fleet content remains attached.
+    #[must_use]
+    pub fn contains_window(&self, id: WindowId) -> bool {
+        self.windows.iter().any(|window| window.id == Some(id))
+    }
+
+    /// Removes only content named by manager teardown receipts.
+    pub fn remove_content(&mut self, removed: &[WindowId]) {
+        self.windows
+            .retain(|window| window.id.is_none_or(|id| !removed.contains(&id)));
+        if self
+            .drag_owner
+            .is_some_and(|owner| removed.contains(&owner))
+        {
+            self.drag = None;
+            self.drag_owner = None;
+        }
+    }
+
+    /// Reports every active Fleet identity in the frozen snapshot, including
+    /// minimized history entries whose content remains attached.
+    #[must_use]
+    pub fn content_reports(
+        &self,
+        snapshot: &RoutingSnapshot,
+        world: &GameWorld,
+    ) -> Vec<ContentReport> {
+        snapshot
+            .paint_order()
+            .iter()
+            .chain(snapshot.presentation_history())
+            .copied()
+            .filter(|&id| {
+                snapshot
+                    .key(id)
+                    .is_some_and(|key| key.kind == WindowKind::Fleet)
+            })
+            .map(|id| {
+                let ready = self.windows.iter().any(|window| {
+                    window.id == Some(id) && world.systems.contains_key(window.system)
+                });
+                ContentReport {
+                    window: id,
+                    status: if ready {
+                        ContentStatus::Ready
+                    } else {
+                        ContentStatus::Absent
+                    },
+                }
+            })
+            .collect()
     }
 
     /// Select `entry` in `system`'s open window, expanding its fleet for a
@@ -389,6 +673,48 @@ impl FleetWindowState {
         self.windows
             .iter()
             .any(|window| rect_contains(window_screen_rect(window, layout), point))
+    }
+
+    /// Whether a visible Fleet content surface covers `point`. Minimized
+    /// manager content stays attached but cannot block the strategic root.
+    #[must_use]
+    pub fn contains_visible_screen_point(
+        &self,
+        snapshot: &RoutingSnapshot,
+        layout: CockpitLayout,
+        point: (f32, f32),
+    ) -> bool {
+        let point = egui::pos2(point.0, point.1);
+        self.windows.iter().any(|window| {
+            window.id.is_none_or(|id| snapshot.is_visible(id))
+                && rect_contains(window_screen_rect(window, layout), point)
+        })
+    }
+
+    /// Exact visible manager identity whose Fleet rectangle covers `point`
+    /// when `top_layer`, egui's topmost interactable layer there, is that
+    /// window's own area. A retained window of another family painted above
+    /// it, or no layer at all, leaves the event to the strategic root, as
+    /// egui leaves it to that other window.
+    #[must_use]
+    pub fn hit_window_ids(
+        &self,
+        snapshot: &RoutingSnapshot,
+        layout: CockpitLayout,
+        point: (f32, f32),
+        top_layer: Option<egui::LayerId>,
+    ) -> std::collections::BTreeSet<WindowId> {
+        let point = egui::pos2(point.0, point.1);
+        self.windows
+            .iter()
+            .filter(|window| top_layer.is_some_and(|layer| layer.id == area_id(window)))
+            .filter_map(|window| {
+                window.id.filter(|id| {
+                    snapshot.is_visible(*id)
+                        && rect_contains(window_screen_rect(window, layout), point)
+                })
+            })
+            .collect()
     }
 
     /// The screen rect of `system`'s window.
@@ -516,7 +842,7 @@ impl FleetWindowState {
         let window = self
             .windows
             .iter()
-            .find(|window| area_id(window.system) == layer.id)?;
+            .find(|window| area_id(window) == layer.id)?;
         let rect = window_screen_rect(window, layout);
         let scale = layout.scale.max(f32::EPSILON);
         let local = (
@@ -531,6 +857,7 @@ impl FleetWindowState {
     pub fn clear(&mut self) {
         self.windows.clear();
         self.drag = None;
+        self.drag_owner = None;
     }
 
     /// Whether a left press on a list item is held: the list has
@@ -541,6 +868,20 @@ impl FleetWindowState {
         self.drag.is_some()
     }
 
+    /// Exact manager capture owner of the active Fleet drag, if migrated.
+    #[must_use]
+    pub const fn drag_owner(&self) -> Option<WindowId> {
+        self.drag_owner
+    }
+
+    /// Applies a manager capture-cancellation receipt to renderer payload.
+    pub fn cancel_pointer_capture(&mut self, window: WindowId) {
+        if self.drag_owner == Some(window) {
+            self.drag = None;
+            self.drag_owner = None;
+        }
+    }
+
     /// End a held drag on the left release: far enough from the press and
     /// outside the list, it becomes the `0x29a` drop (`FUN_006083c0`), and
     /// the galaxy view moves the whole selection against the window under
@@ -549,7 +890,13 @@ impl FleetWindowState {
     /// Ctrl held at the drop makes a character's move a Confirmed Move
     /// (`0x202`, `GetAsyncKeyState(0x11)`). port: Ctrl's Confirmed Move is
     /// not ported for the other objects.
-    fn end_drag(&mut self, ctx: &egui::Context, scale: f32) -> Option<FleetWindowAction> {
+    fn end_drag(
+        &mut self,
+        ctx: &egui::Context,
+        scale: f32,
+        router: Option<&mut FrameInputRouter>,
+        pointer_events: &[(InputEventId, PointerPhase)],
+    ) -> EndDragResult {
         let (released, down, point, ctrl) = ctx.input(|input| {
             (
                 input.pointer.primary_released(),
@@ -559,21 +906,45 @@ impl FleetWindowState {
             )
         });
         if !released {
-            if !down {
+            if !down && self.drag_owner.is_none() {
                 self.drag = None;
             }
-            return None;
+            return EndDragResult::default();
         }
-        let drag = self.drag.take()?;
-        let point = point?;
+        let mut result = EndDragResult::default();
+        if let (Some(owner), Some(router)) = (self.drag_owner, router) {
+            if claim_fleet_pointer_event(
+                router,
+                pointer_events,
+                owner,
+                PointerPhase::Release(crate::windowing_input::PointerButtonId::Primary),
+            )
+            .is_none()
+            {
+                return result;
+            }
+            result.claimed_primary_release_by = Some(owner);
+        }
+        let Some(drag) = self.drag.take() else {
+            return result;
+        };
+        let owner = self.drag_owner.take();
+        result
+            .actions
+            .extend(owner.map(FleetWindowAction::ReleasePointer));
+        let Some(point) = point else {
+            return result;
+        };
         let moved = (point - drag.press) / scale;
         if moved.length_sq() <= DRAG_DISTANCE_SQUARED || rect_contains(drag.list, point) {
-            return None;
+            return result;
         }
-        Some(match drag.object {
-            ItemObject::Fighter { fleet, index } => {
-                FleetWindowAction::DragSquadron { fleet, index, point }
-            }
+        result.actions.push(match drag.object {
+            ItemObject::Fighter { fleet, index } => FleetWindowAction::DragSquadron {
+                fleet,
+                index,
+                point,
+            },
             ItemObject::Fleet(fleet) => FleetWindowAction::DragFleet { fleet, point },
             ItemObject::Regiment(troop) => FleetWindowAction::DragRegiment { troop, point },
             ItemObject::Character(character) => FleetWindowAction::DragCharacter {
@@ -591,7 +962,8 @@ impl FleetWindowState {
                 roster,
                 point,
             },
-        })
+        });
+        result
     }
 
     fn prepare_faction(&mut self, faction: CockpitFaction) {
@@ -601,23 +973,24 @@ impl FleetWindowState {
         }
     }
 
-    /// When one of this kind's windows last took focus; the newest kind
-    /// is in front (`window_focus`).
+    /// Fixture-only legacy focus projection. Production ordering is taken
+    /// exclusively from the shared routing snapshot.
     #[must_use]
-    pub fn focus_serial(&self) -> u64 {
-        self.focus_serial
+    #[doc(hidden)]
+    pub fn fixture_focus_serial(&self) -> u64 {
+        self.fixture_focus_serial
     }
 
-    fn focus(&mut self, system: SystemKey) -> bool {
+    fn focus_fixture(&mut self, system: SystemKey) -> bool {
         let Some(index) = self
             .windows
             .iter()
-            .position(|window| window.system == system)
+            .position(|window| window.id.is_none() && window.system == system)
         else {
             return false;
         };
         let window = self.windows.remove(index);
-        self.focus_serial = crate::window_focus::next_serial();
+        self.fixture_focus_serial = crate::window_focus::next_serial();
         self.windows.push(window);
         true
     }
@@ -658,9 +1031,24 @@ pub enum FleetWindowAction {
     /// (`FUN_00429ce0`).
     OpenSector(SystemKey),
     SelectSystem(SystemKey),
+    /// A manager-owned Fleet window took pointer activation.
+    Activate(WindowId),
+    /// A routed primary press began a drag owned by this exact window.
+    CapturePointer(WindowId),
+    /// The matching routed primary release completed that capture.
+    ReleasePointer(WindowId),
+    /// The close button or stale renderer content requests exact teardown.
+    Close(WindowId),
     /// The minimize button (`100`) posts `0x466`: the window goes to the
     /// galaxy view's rail.
     Minimize {
+        system: SystemKey,
+        logical_position: (i16, i16),
+    },
+    /// Production minimize intent for manager-owned Fleet content. The rail
+    /// adapter observes it only after the manager accepts the command.
+    MinimizeManaged {
+        window: WindowId,
         system: SystemKey,
         logical_position: (i16, i16),
     },
@@ -1294,8 +1682,11 @@ fn in_rect(rect: (f32, f32, f32, f32), point: (f32, f32)) -> bool {
     point.0 >= rect.0 && point.0 < rect.0 + rect.2 && point.1 >= rect.1 && point.1 < rect.1 + rect.3
 }
 
-fn area_id(system: SystemKey) -> egui::Id {
-    egui::Id::new(("original-fleet-window", system))
+fn area_id(window: &OpenFleetWindow) -> egui::Id {
+    match window.id {
+        Some(id) => egui::Id::new(("original-fleet-window", id)),
+        None => egui::Id::new(("original-fleet-window-fixture", window.system)),
+    }
 }
 
 fn window_screen_rect(window: &OpenFleetWindow, layout: CockpitLayout) -> egui::Rect {
@@ -1337,6 +1728,34 @@ struct WindowDrawResult {
     rename: Option<RenameOutcome>,
 }
 
+fn claim_fleet_pointer_event(
+    router: &mut FrameInputRouter,
+    events: &[(InputEventId, PointerPhase)],
+    window: WindowId,
+    phase: PointerPhase,
+) -> Option<InputEventId> {
+    events.iter().rev().find_map(|(event, candidate)| {
+        (*candidate == phase
+            && router.pointer_recipient(*event) == InputRecipient::Window(window)
+            && router.claim(*event, InputRecipient::Window(window)))
+        .then_some(*event)
+    })
+}
+
+fn rename_outcome_permitted(
+    outcome: Option<&RenameOutcome>,
+    pointer_permitted: bool,
+    keyboard_permitted: bool,
+) -> bool {
+    match outcome {
+        Some(RenameOutcome::Typed(_) | RenameOutcome::Commit(_))
+        | Some(RenameOutcome::Cancel(RenameCancelCause::Escape)) => keyboard_permitted,
+        Some(RenameOutcome::Cancel(RenameCancelCause::FocusLost)) => pointer_permitted,
+        Some(RenameOutcome::Cancel(RenameCancelCause::EntryRemoved)) => true,
+        None => false,
+    }
+}
+
 /// Draw every open Fleet window.
 #[expect(
     clippy::too_many_arguments,
@@ -1354,39 +1773,209 @@ pub fn draw_fleet_windows(
     cache: &mut BmpCache,
     front: bool,
 ) -> Vec<FleetWindowAction> {
-    state.prepare_faction(faction);
-    let windows = state.windows.clone();
-    let focused_system = windows.last().map(|window| window.system);
-    let mut actions: Vec<_> = state.end_drag(ctx, layout.scale).into_iter().collect();
+    draw_fleet_windows_with_snapshot(
+        ctx,
+        world,
+        movement,
+        fog,
+        transport,
+        state,
+        faction,
+        layout,
+        cache,
+        None,
+        &[],
+        None,
+        front,
+    )
+}
+
+/// Draw manager-owned Fleet content in the frozen bottom-to-top paint order.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Keep explicit state and rendering inputs at this UI boundary, as the system window does."
+)]
+pub fn draw_managed_fleet_windows(
+    ctx: &egui::Context,
+    world: &GameWorld,
+    movement: &MovementState,
+    fog: &FogState,
+    transport: &TroopTransportState,
+    state: &mut FleetWindowState,
+    faction: CockpitFaction,
+    layout: CockpitLayout,
+    cache: &mut BmpCache,
+    snapshot: &RoutingSnapshot,
+    pointer_events: &[(InputEventId, PointerPhase)],
+    router: &mut FrameInputRouter,
+    front: bool,
+) -> Vec<FleetWindowAction> {
+    draw_fleet_windows_with_snapshot(
+        ctx,
+        world,
+        movement,
+        fog,
+        transport,
+        state,
+        faction,
+        layout,
+        cache,
+        Some(snapshot),
+        pointer_events,
+        Some(router),
+        front,
+    )
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Shared implementation for production snapshots and fixture-only direct content."
+)]
+fn draw_fleet_windows_with_snapshot(
+    ctx: &egui::Context,
+    world: &GameWorld,
+    movement: &MovementState,
+    fog: &FogState,
+    transport: &TroopTransportState,
+    state: &mut FleetWindowState,
+    faction: CockpitFaction,
+    layout: CockpitLayout,
+    cache: &mut BmpCache,
+    snapshot: Option<&RoutingSnapshot>,
+    pointer_events: &[(InputEventId, PointerPhase)],
+    mut router: Option<&mut FrameInputRouter>,
+    front: bool,
+) -> Vec<FleetWindowAction> {
+    if state.windows.iter().all(|window| window.id.is_none()) {
+        state.prepare_faction(faction);
+    }
+    let mut windows = Vec::new();
+    if let Some(snapshot) = snapshot {
+        windows.extend(snapshot.paint_order().iter().filter_map(|id| {
+            if snapshot
+                .key(*id)
+                .is_some_and(|key| key.kind == WindowKind::Fleet)
+            {
+                state
+                    .windows
+                    .iter()
+                    .find(|window| window.id == Some(*id))
+                    .cloned()
+            } else {
+                None
+            }
+        }));
+    }
+    // Direct content exists only in renderer tests and explicit fixture builds.
+    windows.extend(
+        state
+            .windows
+            .iter()
+            .filter(|window| window.id.is_none())
+            .cloned(),
+    );
+    let focused_id = windows.last().and_then(|window| window.id);
+    let focused_fixture_system = windows
+        .last()
+        .filter(|window| window.id.is_none())
+        .map(|window| window.system);
+    let ended_drag = state.end_drag(ctx, layout.scale, router.as_deref_mut(), pointer_events);
+    let mut actions = ended_drag.actions;
     for window in &windows {
+        let focused = front
+            && match window.id {
+                Some(id) => focused_id == Some(id),
+                None => focused_fixture_system == Some(window.system),
+            };
         let result = draw_fleet_window(
-            ctx,
-            world,
-            movement,
-            fog,
-            transport,
-            window,
-            front && focused_system == Some(window.system),
-            faction,
-            layout,
-            cache,
+            ctx, world, movement, fog, transport, window, focused, faction, layout, cache,
         );
         let system = window.system;
-        if let Some(drag) = result.drag {
-            state.drag = Some(drag);
+        let pointer_mutation = result.focus
+            || result.close
+            || result.minimize
+            || result.open_sector
+            || result.select.is_some()
+            || result.toggle.is_some()
+            || result.tab.is_some()
+            || result.item.is_some()
+            || result.drag.is_some()
+            || result.object_menu.is_some()
+            || matches!(
+                result.rename.as_ref(),
+                Some(RenameOutcome::Cancel(RenameCancelCause::FocusLost))
+            );
+        let pointer_permitted = match (window.id, pointer_mutation, router.as_deref_mut()) {
+            (Some(id), true, Some(router)) => {
+                let phase = if result.drag.is_some() {
+                    PointerPhase::Press(PointerButtonId::Primary)
+                } else if result.object_menu.is_some() {
+                    PointerPhase::Release(PointerButtonId::Secondary)
+                } else {
+                    PointerPhase::Release(PointerButtonId::Primary)
+                };
+                (phase == PointerPhase::Release(PointerButtonId::Primary)
+                    && ended_drag.claimed_primary_release_by == Some(id))
+                    || claim_fleet_pointer_event(router, pointer_events, id, phase)
+                        .or_else(|| {
+                            (phase == PointerPhase::Release(PointerButtonId::Primary))
+                                .then(|| {
+                                    claim_fleet_pointer_event(
+                                        router,
+                                        pointer_events,
+                                        id,
+                                        PointerPhase::Press(PointerButtonId::Primary),
+                                    )
+                                })
+                                .flatten()
+                        })
+                        .is_some()
+            }
+            (Some(_), true, None) => false,
+            _ => true,
+        };
+        let keyboard_permitted = match (window.id, router.as_deref()) {
+            (Some(id), Some(router)) => match router.escape_route() {
+                EscapeRoute::Control(target) => target.window == id,
+                EscapeRoute::Window(window) => window == id,
+                EscapeRoute::Root | EscapeRoute::Blocked => false,
+            },
+            (Some(_), None) => false,
+            (None, _) => true,
+        };
+        if pointer_permitted {
+            if let Some(drag) = result.drag {
+                state.drag = Some(drag);
+                state.drag_owner = window.id;
+                if let Some(id) = window.id {
+                    actions.push(FleetWindowAction::CapturePointer(id));
+                }
+            }
         }
-        if let Some((selection, point)) = result.object_menu {
-            actions.push(FleetWindowAction::OpenObjectMenu {
-                selection,
-                point: canvas_point(layout, point),
-            });
+        if pointer_permitted {
+            if let Some((selection, point)) = result.object_menu {
+                actions.push(FleetWindowAction::OpenObjectMenu {
+                    selection,
+                    point: canvas_point(layout, point),
+                });
+            }
         }
-        if result.close || !world.systems.contains_key(system) {
-            state.close(system);
+        if (result.close && pointer_permitted) || !world.systems.contains_key(system) {
+            if let Some(id) = window.id {
+                actions.push(FleetWindowAction::Close(id));
+            } else {
+                state.close(system);
+            }
             continue;
         }
-        if result.minimize {
-            if let Some(closed) = state.close(system) {
+        if result.minimize && pointer_permitted {
+            if let Some(id) = window.id {
+                actions.push(FleetWindowAction::MinimizeManaged {
+                    window: id,
+                    system,
+                    logical_position: window.logical_position,
+                });
+            } else if let Some(closed) = state.close(system) {
                 actions.push(FleetWindowAction::Minimize {
                     system,
                     logical_position: closed.logical_position,
@@ -1394,49 +1983,62 @@ pub fn draw_fleet_windows(
             }
             continue;
         }
-        if result.open_sector {
+        if result.open_sector && pointer_permitted {
             actions.push(FleetWindowAction::OpenSector(system));
         }
         if let Some(open) = state.window_mut(system) {
-            if let Some(selected) = result.select {
-                open.selected = selected;
-                open.selected_item = None;
-            }
-            if let Some(fleet) = result.toggle {
-                if let Some(index) = open.expanded.iter().position(|&key| key == fleet) {
-                    open.expanded.remove(index);
-                } else {
-                    open.expanded.push(fleet);
+            if pointer_permitted {
+                if let Some(selected) = result.select {
+                    open.selected = selected;
+                    open.selected_item = None;
                 }
-            }
-            if let Some(tab) = result.tab {
-                open.tab = tab;
-                open.selected_item = None;
-            }
-            if let Some(item) = result.item {
-                open.selected_item = Some(item);
-            }
-            match result.rename {
-                Some(RenameOutcome::Typed(text)) => {
-                    if let Some(edit) = &mut open.rename {
-                        edit.text = text;
-                        edit.fresh = false;
+                if let Some(fleet) = result.toggle {
+                    if let Some(index) = open.expanded.iter().position(|&key| key == fleet) {
+                        open.expanded.remove(index);
+                    } else {
+                        open.expanded.push(fleet);
                     }
                 }
-                Some(RenameOutcome::Commit(name)) => {
-                    if let Some(edit) = open.rename.take() {
-                        actions.push(FleetWindowAction::Rename {
-                            entry: edit.entry,
-                            name,
-                        });
-                    }
+                if let Some(tab) = result.tab {
+                    open.tab = tab;
+                    open.selected_item = None;
                 }
-                Some(RenameOutcome::Cancel) => open.rename = None,
-                None => {}
+                if let Some(item) = result.item {
+                    open.selected_item = Some(item);
+                }
+            }
+            if rename_outcome_permitted(
+                result.rename.as_ref(),
+                pointer_permitted,
+                keyboard_permitted,
+            ) {
+                match result.rename {
+                    Some(RenameOutcome::Typed(text)) => {
+                        if let Some(edit) = &mut open.rename {
+                            edit.text = text;
+                            edit.fresh = false;
+                        }
+                    }
+                    Some(RenameOutcome::Commit(name)) => {
+                        if let Some(edit) = open.rename.take() {
+                            actions.push(FleetWindowAction::Rename {
+                                entry: edit.entry,
+                                name,
+                            });
+                        }
+                    }
+                    Some(RenameOutcome::Cancel(_)) => open.rename = None,
+                    None => {}
+                }
             }
         }
-        if result.focus {
-            state.focus(system);
+        if result.focus && pointer_permitted {
+            if let Some(id) = window.id {
+                actions.push(FleetWindowAction::Activate(id));
+            } else {
+                #[cfg(any(test, feature = "interface-test-fixtures"))]
+                state.focus_fixture(system);
+            }
             actions.push(FleetWindowAction::SelectSystem(system));
         }
     }
@@ -1485,7 +2087,7 @@ fn draw_fleet_window(
     });
     let scale = layout.scale;
     let screen_rect = window_screen_rect(window, layout);
-    let id = area_id(window.system);
+    let id = area_id(window);
     if focused {
         ctx.move_to_top(egui::LayerId::new(egui::Order::Foreground, id));
     }
@@ -1544,7 +2146,7 @@ fn draw_fleet_window(
                 let rect = logical_rect(local, scale, x, 3.0, 14.0, 14.0);
                 let response = ui.interact(
                     rect,
-                    ui.id().with((window.system, name)),
+                    ui.id().with((window.id, window.system, name)),
                     egui::Sense::click(),
                 );
                 let down = primary_down && pointer.is_some_and(|point| rect_contains(rect, point));
@@ -2069,7 +2671,7 @@ fn draw_rename_edit(
 ) -> Option<RenameOutcome> {
     let Some(row) = entries.iter().position(|entry| *entry == edit.entry) else {
         // The entry left the list: the edit goes with it.
-        return Some(RenameOutcome::Cancel);
+        return Some(RenameOutcome::Cancel(RenameCancelCause::EntryRemoved));
     };
     let top = LEFT_LIST.1 + LEFT_ITEM_HEIGHT * row as f32;
     let rect = logical_rect(local, scale, LEFT_LIST.0 + 4.0, top + 3.0, 85.0, 15.0).intersect(list);
@@ -2109,8 +2711,11 @@ fn draw_rename_edit(
     }
     // hyp: Escape and a click elsewhere end the edit unissued
     // (`FUN_004aca40`); what sends them is untraced.
-    if escape || response.lost_focus() {
-        return Some(RenameOutcome::Cancel);
+    if escape {
+        return Some(RenameOutcome::Cancel(RenameCancelCause::Escape));
+    }
+    if response.lost_focus() {
+        return Some(RenameOutcome::Cancel(RenameCancelCause::FocusLost));
     }
     response.changed().then_some(RenameOutcome::Typed(text))
 }
@@ -2188,6 +2793,9 @@ pub(crate) mod tests {
     use rebellion_core::dat::SectorGroup;
     use rebellion_core::ids::{DatId, TroopKey};
     use rebellion_core::world::{CapitalShipClass, Fleet, Sector, ShipInstance, System, TroopUnit};
+    use rebellion_windowing::{
+        ExistingEffect, WindowCommand, WindowId, WindowManager, WindowTransition,
+    };
 
     fn layout() -> CockpitLayout {
         let viewport = CockpitViewport {
@@ -2276,6 +2884,200 @@ pub(crate) mod tests {
         troop
     }
 
+    fn add_system(world: &mut GameWorld, source: SystemKey, dat_id: u32) -> SystemKey {
+        let mut system = world.systems[source].clone();
+        system.dat_id = DatId::new(dat_id);
+        system.name = format!("System {dat_id}");
+        system.fleets.clear();
+        world.systems.insert(system)
+    }
+
+    fn commit_prepared_fleet_window(
+        manager: &mut WindowManager,
+        state: &mut FleetWindowState,
+        prepared: PreparedFleetWindow,
+    ) -> (WindowId, WindowTransition) {
+        let commit = manager
+            .apply(WindowCommand::Open(prepared.spec()))
+            .expect("prepared Fleet window should satisfy its declared policy");
+        let id = state
+            .commit_open(prepared, &commit.transition)
+            .expect("successful Fleet open should publish or preserve content");
+        (id, commit.transition)
+    }
+
+    #[test]
+    fn fleet_window_shared_identity_preserves_content() {
+        let (mut world, system) = world(ControlKind::Controlled(Faction::Alliance));
+        let fleet = add_fleet(&mut world, system, true, 0);
+        let mut manager = WindowManager::new();
+        let mut state = FleetWindowState::default();
+
+        let first = state
+            .prepare_open(
+                &world,
+                system,
+                ORIGIN,
+                CockpitFaction::Alliance,
+                scaled(),
+                Some(FleetWindowEntry::Fleet(fleet)),
+            )
+            .expect("live system has a stable DAT subject");
+        let (id, opened) = commit_prepared_fleet_window(&mut manager, &mut state, first);
+        assert_eq!(opened, WindowTransition::Opened { id });
+        assert_eq!(
+            state.keyboard_owner(&manager.begin_frame()),
+            Some((id, false))
+        );
+        let content = state.window_mut(system).unwrap();
+        content.tab = FleetWindowTab::Troops;
+        content.selected_item = Some(2);
+        content.expanded.push(fleet);
+
+        let reopened = state
+            .prepare_open(
+                &world,
+                system,
+                (400, 300),
+                CockpitFaction::Alliance,
+                scaled(),
+                None,
+            )
+            .unwrap();
+        let (reopened_id, transition) =
+            commit_prepared_fleet_window(&mut manager, &mut state, reopened);
+        assert_eq!(reopened_id, id);
+        assert!(matches!(
+            transition,
+            WindowTransition::Existing { id: existing, .. } if existing == id
+        ));
+        assert_eq!(state.window_count(), 1);
+        let content = state.window_mut(system).unwrap();
+        assert_eq!(content.logical_position, ORIGIN);
+        assert_eq!(content.selected, Some(FleetWindowEntry::Fleet(fleet)));
+        assert_eq!(content.tab, FleetWindowTab::Troops);
+        assert_eq!(content.selected_item, Some(2));
+        assert_eq!(content.expanded, [fleet]);
+
+        manager.apply(WindowCommand::Minimize(id)).unwrap();
+        assert!(!state.window_is_visible(&manager.begin_frame(), system));
+        assert_eq!(state.keyboard_owner(&manager.begin_frame()), None);
+        let restored = state
+            .prepare_open(
+                &world,
+                system,
+                (500, 350),
+                CockpitFaction::Alliance,
+                scaled(),
+                Some(FleetWindowEntry::Fleet(fleet)),
+            )
+            .and_then(|prepared| prepared.with_rename(&world, FleetWindowEntry::Fleet(fleet)))
+            .unwrap();
+        let (restored_id, transition) =
+            commit_prepared_fleet_window(&mut manager, &mut state, restored);
+        assert_eq!(restored_id, id);
+        assert!(matches!(
+            transition,
+            WindowTransition::Existing { id: existing, .. } if existing == id
+        ));
+        assert_eq!(
+            state.selection(system),
+            Some((Some(FleetWindowEntry::Fleet(fleet)), FleetWindowTab::Troops))
+        );
+        assert!(state.window_is_visible(&manager.begin_frame(), system));
+        assert!(state.window_mut(system).unwrap().rename.is_some());
+        assert_eq!(
+            state.keyboard_owner(&manager.begin_frame()),
+            Some((id, true))
+        );
+    }
+
+    #[test]
+    fn fleet_pointer_routes_only_when_its_own_area_is_the_topmost_layer() {
+        let (world, system) = world(ControlKind::Controlled(Faction::Alliance));
+        let mut manager = WindowManager::new();
+        let mut state = FleetWindowState::default();
+        let prepared = state
+            .prepare_open(
+                &world,
+                system,
+                ORIGIN,
+                CockpitFaction::Alliance,
+                scaled(),
+                None,
+            )
+            .unwrap();
+        let (id, _) = commit_prepared_fleet_window(&mut manager, &mut state, prepared);
+        let snapshot = manager.begin_frame();
+        let rect = state.screen_rect(scaled(), system).unwrap();
+        let inside = (rect.center().x, rect.center().y);
+        let outside = (rect.max.x + 1.0, rect.max.y + 1.0);
+        let content = state.windows.iter().find(|window| window.id == Some(id));
+        let own = egui::LayerId::new(egui::Order::Foreground, area_id(content.unwrap()));
+        let system_window_above =
+            egui::LayerId::new(egui::Order::Foreground, egui::Id::new("system-window"));
+
+        assert_eq!(
+            state.hit_window_ids(&snapshot, scaled(), inside, Some(own)),
+            std::collections::BTreeSet::from([id])
+        );
+        assert!(state
+            .hit_window_ids(&snapshot, scaled(), inside, Some(system_window_above))
+            .is_empty());
+        assert!(state
+            .hit_window_ids(&snapshot, scaled(), inside, None)
+            .is_empty());
+        assert!(state
+            .hit_window_ids(&snapshot, scaled(), outside, Some(own))
+            .is_empty());
+    }
+
+    #[test]
+    fn fleet_window_stale_subject_does_not_retarget() {
+        let (mut world, stale_system) = world(ControlKind::Uncontrolled);
+        let fleet = add_fleet(&mut world, stale_system, true, 0);
+        let mut manager = WindowManager::new();
+        let mut state = FleetWindowState::default();
+        let prepared = state
+            .prepare_open(
+                &world,
+                stale_system,
+                ORIGIN,
+                CockpitFaction::Alliance,
+                scaled(),
+                Some(FleetWindowEntry::Fleet(fleet)),
+            )
+            .unwrap();
+        let (id, _) = commit_prepared_fleet_window(&mut manager, &mut state, prepared);
+
+        let mut replacement = world.systems.remove(stale_system).unwrap();
+        replacement.dat_id = DatId::new(101);
+        replacement.name = "Replacement".into();
+        replacement.fleets.clear();
+        let replacement_system = world.systems.insert(replacement);
+        assert_ne!(replacement_system, stale_system);
+
+        assert!(state
+            .prepare_open(
+                &world,
+                stale_system,
+                (400, 300),
+                CockpitFaction::Alliance,
+                scaled(),
+                None,
+            )
+            .is_none());
+        assert_eq!(state.window_id(stale_system), Some(id));
+        assert_eq!(
+            state.selection(stale_system),
+            Some((
+                Some(FleetWindowEntry::Fleet(fleet)),
+                FleetWindowTab::CapitalShips,
+            ))
+        );
+        assert_eq!(state.window_id(replacement_system), None);
+    }
+
     /// Seen by the Alliance: the system is visible.
     fn fog(system: SystemKey) -> FogState {
         let mut fog = FogState::new(Faction::Alliance);
@@ -2285,6 +3087,8 @@ pub(crate) mod tests {
 
     fn window(system: SystemKey, selected: Option<FleetWindowEntry>) -> OpenFleetWindow {
         OpenFleetWindow {
+            id: None,
+            subject: None,
             system,
             logical_position: (0, 0),
             selected,
@@ -2343,6 +3147,481 @@ pub(crate) mod tests {
                 system
             ),
             Some((10783, 10784))
+        );
+    }
+
+    #[test]
+    fn fleet_window_commit_rejects_each_identity_collision_and_faction_switch() {
+        let (world, system) = world(ControlKind::Uncontrolled);
+        let mut world = world;
+        let other_system = add_system(&mut world, system, 101);
+        let mut manager = WindowManager::new();
+        let mut state = FleetWindowState::default();
+        let first = state
+            .prepare_open(
+                &world,
+                system,
+                ORIGIN,
+                CockpitFaction::Alliance,
+                scaled(),
+                None,
+            )
+            .unwrap();
+        let (id, _) = commit_prepared_fleet_window(&mut manager, &mut state, first);
+        let other = state
+            .prepare_open(
+                &world,
+                other_system,
+                (50, 60),
+                CockpitFaction::Alliance,
+                scaled(),
+                None,
+            )
+            .unwrap();
+        let other_id = match manager
+            .apply(WindowCommand::Open(other.spec()))
+            .unwrap()
+            .transition
+        {
+            WindowTransition::Opened { id } => id,
+            transition => panic!("expected second identity, got {transition:?}"),
+        };
+
+        assert_eq!(
+            state.commit_open(other.clone(), &WindowTransition::Opened { id }),
+            None,
+            "a manager ID collision must not publish different content"
+        );
+        let mut subject_collision = other.clone();
+        subject_collision.spec.key.subject = state.windows[0].subject;
+        assert_eq!(
+            state.commit_open(
+                subject_collision,
+                &WindowTransition::Opened { id: other_id },
+            ),
+            None,
+            "a stable subject collision must not acquire a second identity"
+        );
+        let mut system_collision = other.clone();
+        system_collision.system = system;
+        assert_eq!(
+            state.commit_open(system_collision, &WindowTransition::Opened { id: other_id },),
+            None,
+            "one runtime system cannot own two Fleet content records"
+        );
+        let mut faction_switch = other;
+        faction_switch.faction = CockpitFaction::Empire;
+        assert_eq!(
+            state.commit_open(faction_switch, &WindowTransition::Opened { id: other_id },),
+            None,
+            "content from the other cockpit must not join this session"
+        );
+        assert_eq!(state.window_count(), 1);
+        assert_eq!(state.window_id(system), Some(id));
+    }
+
+    #[test]
+    fn fleet_window_existing_commit_requires_exact_identity_and_deduplicates_expansion() {
+        let (mut world, system) = world(ControlKind::Controlled(Faction::Alliance));
+        let fleet = add_fleet(&mut world, system, true, 0);
+        let other_system = add_system(&mut world, system, 101);
+        let same_dat = world.systems[system].dat_id.raw();
+        let replacement_system = add_system(&mut world, system, same_dat);
+        let mut manager = WindowManager::new();
+        let mut state = FleetWindowState::default();
+        let first = state
+            .prepare_open(
+                &world,
+                system,
+                ORIGIN,
+                CockpitFaction::Alliance,
+                scaled(),
+                None,
+            )
+            .unwrap();
+        let (id, _) = commit_prepared_fleet_window(&mut manager, &mut state, first);
+        let other = state
+            .prepare_open(
+                &world,
+                other_system,
+                (50, 60),
+                CockpitFaction::Alliance,
+                scaled(),
+                None,
+            )
+            .unwrap();
+        let other_id = match manager
+            .apply(WindowCommand::Open(other.spec()))
+            .unwrap()
+            .transition
+        {
+            WindowTransition::Opened { id } => id,
+            transition => panic!("expected second identity, got {transition:?}"),
+        };
+        let existing = |id| WindowTransition::Existing {
+            id,
+            effect: ExistingEffect::Raised,
+        };
+
+        let same_subject = state
+            .prepare_open(
+                &world,
+                system,
+                ORIGIN,
+                CockpitFaction::Alliance,
+                scaled(),
+                None,
+            )
+            .unwrap();
+        assert_eq!(state.commit_open(same_subject, &existing(other_id)), None);
+        assert_eq!(state.commit_open(other, &existing(id)), None);
+
+        let runtime_replacement = state
+            .prepare_open(
+                &world,
+                replacement_system,
+                ORIGIN,
+                CockpitFaction::Alliance,
+                scaled(),
+                None,
+            )
+            .unwrap();
+        assert_eq!(
+            runtime_replacement.spec().key.subject,
+            state.windows[0].subject
+        );
+        assert_eq!(state.commit_open(runtime_replacement, &existing(id)), None);
+
+        let cross_faction = state
+            .prepare_open(
+                &world,
+                system,
+                ORIGIN,
+                CockpitFaction::Empire,
+                scaled(),
+                None,
+            )
+            .unwrap();
+        assert_eq!(state.commit_open(cross_faction, &existing(id)), None);
+
+        for _ in 0..2 {
+            let selected_ship = state
+                .prepare_open(
+                    &world,
+                    system,
+                    ORIGIN,
+                    CockpitFaction::Alliance,
+                    scaled(),
+                    Some(FleetWindowEntry::Ship { fleet, index: 0 }),
+                )
+                .unwrap();
+            assert_eq!(state.commit_open(selected_ship, &existing(id)), Some(id));
+        }
+        assert_eq!(state.window_mut(system).unwrap().expanded, [fleet]);
+    }
+
+    #[test]
+    fn managed_fleet_pointer_mutation_claims_only_the_exact_router_owner() {
+        use crate::windowing_input::{
+            FrameInputRouter, InputEventId, PointerButtonId, PointerPhase,
+        };
+        use std::collections::BTreeSet;
+
+        let mut manager = WindowManager::new();
+        let first = manager
+            .apply(WindowCommand::Open(contextual_spec(
+                WindowKind::Fleet,
+                SubjectId::new(2, 1),
+                WindowOwner::StrategicRoot,
+            )))
+            .unwrap();
+        let second = manager
+            .apply(WindowCommand::Open(contextual_spec(
+                WindowKind::Fleet,
+                SubjectId::new(2, 2),
+                WindowOwner::StrategicRoot,
+            )))
+            .unwrap();
+        let WindowTransition::Opened { id: lower } = first.transition else {
+            panic!()
+        };
+        let WindowTransition::Opened { id: upper } = second.transition else {
+            panic!()
+        };
+        let snapshot = manager.begin_frame();
+        let event = InputEventId {
+            frame: 1,
+            ordinal: 0,
+        };
+        let phase = PointerPhase::Press(PointerButtonId::Primary);
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(1, &snapshot);
+        router.collect_pointer(event, &BTreeSet::from([lower, upper]), phase);
+        let events = [(event, phase)];
+
+        assert_eq!(
+            claim_fleet_pointer_event(&mut router, &events, lower, phase),
+            None
+        );
+        assert_eq!(
+            claim_fleet_pointer_event(&mut router, &events, upper, phase),
+            Some(event)
+        );
+        assert_eq!(
+            claim_fleet_pointer_event(&mut router, &events, upper, phase),
+            None
+        );
+
+        let blocked = InputEventId {
+            frame: 2,
+            ordinal: 0,
+        };
+        router.begin_frame(2, &snapshot);
+        router.set_application_hold(true);
+        router.collect_pointer(blocked, &BTreeSet::from([upper]), phase);
+        assert_eq!(
+            claim_fleet_pointer_event(&mut router, &[(blocked, phase)], upper, phase),
+            None,
+        );
+    }
+
+    #[test]
+    fn managed_fleet_click_reuses_its_release_for_selection_after_capture_release() {
+        use crate::windowing_input::{FrameInputRouter, InputEventId, PointerPhase};
+        use std::collections::BTreeSet;
+
+        let (mut world, system) = world(ControlKind::Controlled(Faction::Alliance));
+        let fleet = add_fleet(&mut world, system, true, 0);
+        let mut manager = WindowManager::new();
+        let mut state = FleetWindowState::default();
+        let prepared = state
+            .prepare_open(
+                &world,
+                system,
+                ORIGIN,
+                CockpitFaction::Alliance,
+                scaled(),
+                None,
+            )
+            .unwrap();
+        let (window, _) = commit_prepared_fleet_window(&mut manager, &mut state, prepared);
+        let snapshot = manager.begin_frame();
+        let ctx = egui::Context::default();
+        let mut cache = BmpCache::new();
+        let mut router = FrameInputRouter::default();
+        let mut actions = Vec::new();
+
+        for (frame, events) in click(at(40.0, 50.0)).into_iter().enumerate() {
+            let frame = frame as u64 + 1;
+            router.begin_frame(frame, &snapshot);
+            let mut pointer_events = Vec::new();
+            for (ordinal, event) in events.iter().enumerate() {
+                let egui::Event::PointerButton {
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    ..
+                } = event
+                else {
+                    continue;
+                };
+                let phase = if *pressed {
+                    PointerPhase::Press(PointerButtonId::Primary)
+                } else {
+                    PointerPhase::Release(PointerButtonId::Primary)
+                };
+                let event = InputEventId {
+                    frame,
+                    ordinal: ordinal as u32,
+                };
+                router.collect_pointer(event, &BTreeSet::from([window]), phase);
+                pointer_events.push((event, phase));
+            }
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1400.0, 1000.0),
+                )),
+                time: Some(frame as f64 * 0.05),
+                events,
+                ..Default::default()
+            };
+            let _ = ctx.run(input, |ctx| {
+                actions.extend(draw_managed_fleet_windows(
+                    ctx,
+                    &world,
+                    &MovementState::default(),
+                    &fog(system),
+                    &TroopTransportState::default(),
+                    &mut state,
+                    CockpitFaction::Alliance,
+                    scaled(),
+                    &mut cache,
+                    &snapshot,
+                    &pointer_events,
+                    &mut router,
+                    true,
+                ));
+            });
+        }
+
+        assert_eq!(
+            state.selection(system).unwrap().0,
+            Some(FleetWindowEntry::Fleet(fleet))
+        );
+        assert!(actions.contains(&FleetWindowAction::CapturePointer(window)));
+        assert!(actions.contains(&FleetWindowAction::ReleasePointer(window)));
+        assert!(actions.contains(&FleetWindowAction::Activate(window)));
+    }
+
+    #[test]
+    fn rename_cancellation_requires_the_route_for_its_actual_input_cause() {
+        assert!(!rename_outcome_permitted(
+            Some(&RenameOutcome::Cancel(RenameCancelCause::FocusLost)),
+            false,
+            true,
+        ));
+        assert!(!rename_outcome_permitted(
+            Some(&RenameOutcome::Cancel(RenameCancelCause::Escape)),
+            true,
+            false,
+        ));
+        assert!(rename_outcome_permitted(
+            Some(&RenameOutcome::Cancel(RenameCancelCause::EntryRemoved)),
+            false,
+            false,
+        ));
+    }
+
+    #[test]
+    fn capture_cancellation_receipt_clears_only_its_exact_fleet_drag() {
+        let (mut world, system) = world(ControlKind::Controlled(Faction::Alliance));
+        let fleet = add_fleet(&mut world, system, true, 0);
+        let mut manager = WindowManager::new();
+        let owner = match manager
+            .apply(WindowCommand::Open(contextual_spec(
+                WindowKind::Fleet,
+                SubjectId::new(2, 1),
+                WindowOwner::StrategicRoot,
+            )))
+            .unwrap()
+            .transition
+        {
+            WindowTransition::Opened { id } => id,
+            _ => panic!(),
+        };
+        let other = match manager
+            .apply(WindowCommand::Open(contextual_spec(
+                WindowKind::Fleet,
+                SubjectId::new(2, 2),
+                WindowOwner::StrategicRoot,
+            )))
+            .unwrap()
+            .transition
+        {
+            WindowTransition::Opened { id } => id,
+            _ => panic!(),
+        };
+        let mut state = FleetWindowState {
+            drag: Some(ItemDrag {
+                object: ItemObject::Fleet(fleet),
+                press: egui::pos2(1.0, 1.0),
+                list: egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(2.0, 2.0)),
+            }),
+            drag_owner: Some(owner),
+            ..FleetWindowState::default()
+        };
+
+        state.remove_content(&[other]);
+        assert!(state.is_dragging());
+        assert_eq!(state.drag_owner(), Some(owner));
+        state.cancel_pointer_capture(other);
+        assert!(state.is_dragging());
+        state.cancel_pointer_capture(owner);
+        assert!(!state.is_dragging());
+        assert_eq!(state.drag_owner(), None);
+    }
+
+    #[test]
+    fn fleet_window_receipts_remove_exact_content_and_reports_cover_history() {
+        let (world, system) = world(ControlKind::Uncontrolled);
+        let mut world = world;
+        let other_system = add_system(&mut world, system, 101);
+        let mut manager = WindowManager::new();
+        let mut state = FleetWindowState::default();
+        let first = state
+            .prepare_open(
+                &world,
+                system,
+                ORIGIN,
+                CockpitFaction::Alliance,
+                scaled(),
+                None,
+            )
+            .unwrap();
+        let (first_id, _) = commit_prepared_fleet_window(&mut manager, &mut state, first);
+        let second = state
+            .prepare_open(
+                &world,
+                other_system,
+                (50, 60),
+                CockpitFaction::Alliance,
+                scaled(),
+                None,
+            )
+            .unwrap();
+        let (second_id, _) = commit_prepared_fleet_window(&mut manager, &mut state, second);
+        state.drag = Some(ItemDrag {
+            object: ItemObject::Fleet(add_fleet(&mut world, system, true, 0)),
+            press: egui::pos2(1.0, 1.0),
+            list: egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(2.0, 2.0)),
+        });
+        state.drag_owner = Some(first_id);
+
+        state.remove_content(&[first_id]);
+        assert!(!state.contains_window(first_id));
+        assert!(state.contains_window(second_id));
+        assert!(state.drag.is_none());
+        manager.apply(WindowCommand::Close(first_id)).unwrap();
+
+        let defense_id = match manager
+            .apply(WindowCommand::Open(contextual_spec(
+                WindowKind::Defenses,
+                SubjectId::new(2, 999),
+                WindowOwner::StrategicRoot,
+            )))
+            .unwrap()
+            .transition
+        {
+            WindowTransition::Opened { id } => id,
+            transition => panic!("expected Defenses identity, got {transition:?}"),
+        };
+        let visible = manager.begin_frame();
+        assert!(visible.is_visible(defense_id));
+        assert_eq!(
+            state.content_reports(&visible, &world),
+            [ContentReport {
+                window: second_id,
+                status: ContentStatus::Ready,
+            }]
+        );
+
+        manager.apply(WindowCommand::Minimize(second_id)).unwrap();
+        let minimized = manager.begin_frame();
+        assert_eq!(
+            state.content_reports(&minimized, &world),
+            [ContentReport {
+                window: second_id,
+                status: ContentStatus::Ready,
+            }]
+        );
+
+        world.systems.remove(other_system);
+        assert_eq!(
+            state.content_reports(&minimized, &world),
+            [ContentReport {
+                window: second_id,
+                status: ContentStatus::Absent,
+            }]
         );
     }
 
@@ -3337,7 +4616,16 @@ pub(crate) mod tests {
         assert!(!state.contains_screen_point(scaled(), point(at(-0.5, 150.0))));
 
         let fog = fog(system);
-        let layer = egui::LayerId::new(egui::Order::Foreground, area_id(system));
+        let layer = egui::LayerId::new(
+            egui::Order::Foreground,
+            area_id(
+                state
+                    .windows
+                    .iter()
+                    .find(|window| window.system == system)
+                    .unwrap(),
+            ),
+        );
         assert_eq!(
             state.release_target(
                 &world,

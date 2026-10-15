@@ -37,4 +37,5 @@ fi
 node "$ROOT/tools/interface-parity/prepare-site.mjs"
 node "$ROOT/tools/interface-parity/validate-catalog.mjs"
 node "$ROOT/tools/interface-parity/verify-production-exclusion.mjs"
+node "$ROOT/tools/interface-parity/windowing-build-manifest.mjs"
 echo "Prepared isolated fixture site at $SITE"

@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://open-rebellion.example/schemas/windowing-contract-manifest-v1.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "schema_version", "kind", "source_plan", "cases"],
+  "properties": {
+    "$schema": { "const": "./schemas/windowing-contract-manifest.schema.json" },
+    "schema_version": { "const": 1 },
+    "kind": { "const": "open-rebellion-windowing-contract-manifest" },
+    "source_plan": { "const": "docs/plans/2026-10-10-strategic-windowing-toolkit-implementation.md" },
+    "cases": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "group", "required_steps", "applicability"],
+        "properties": {
+          "id": { "pattern": "^journey-[a-e]$" },
+          "group": { "enum": ["A", "B", "C", "D", "E"] },
+          "required_steps": {
+            "type": "array",
+            "minItems": 10,
+            "maxItems": 10,
+            "uniqueItems": true,
+            "items": { "pattern": "^[A-E][0-9]{2}$" }
+          },
+          "applicability": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["factions", "viewports"],
+            "properties": {
+              "factions": {
+                "type": "array",
+                "prefixItems": [{ "const": "alliance" }, { "const": "empire" }],
+                "minItems": 2,
+                "maxItems": 2
+              },
+              "viewports": {
+                "type": "array",
+                "prefixItems": [{ "const": "native" }, { "const": "letterboxed" }],
+                "minItems": 2,
+                "maxItems": 2
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

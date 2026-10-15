@@ -2,10 +2,13 @@
 
 use std::collections::BTreeSet;
 
-use rebellion_render::windowing_policy::SUBJECT_COMMAND_CONTEXT;
+use rebellion_core::ids::SystemKey;
+use rebellion_render::{
+    fleet_window::PreparedFleetWindow, windowing_policy::SUBJECT_COMMAND_CONTEXT,
+};
 use rebellion_windowing::{
-    ContentReport, ReconcileReport, RoutingSnapshot, SubjectId, WindowCommand, WindowCommit,
-    WindowError, WindowEvent, WindowId, WindowTransition,
+    BubblePolicy, ContentReport, ExistingEffect, ReconcileReport, RouteTarget, RoutingSnapshot,
+    SubjectId, WindowCommand, WindowCommit, WindowError, WindowEvent, WindowId, WindowTransition,
 };
 
 /// Result of applying one queued command at the dispatch commit boundary.
@@ -17,6 +20,24 @@ pub struct AppliedWindowCommand {
     pub result: Result<WindowCommit, WindowError>,
     /// Matching attached content identities released by teardown receipts.
     pub removed_content: Vec<WindowId>,
+    /// Fleet content prepared alongside this command, never published before
+    /// the manager accepts the semantic identity.
+    pub prepared_fleet: Option<PreparedFleetWindow>,
+    /// Identity whose attachment is valid for `prepared_fleet` after commit.
+    pub fleet_content_id: Option<WindowId>,
+    /// Temporary rail-adapter payload committed only with Fleet minimize.
+    pub minimized_fleet: Option<(WindowId, SystemKey, (i16, i16))>,
+    /// Exact temporary rail projection retired only after the caller also
+    /// commits the returned Fleet content restore.
+    pub restored_fleet: Option<WindowId>,
+}
+
+#[derive(Debug)]
+struct QueuedWindowCommand {
+    command: WindowCommand,
+    prepared_fleet: Option<PreparedFleetWindow>,
+    minimized_fleet: Option<(WindowId, SystemKey, (i16, i16))>,
+    restored_fleet: Option<WindowId>,
 }
 
 /// Application scene whose registered windows currently participate in routing.
@@ -51,11 +72,224 @@ impl ApplicationInputLocks {
     }
 }
 
+/// Temporary, explicitly named owners that still live outside the shared
+/// manager during family-by-family migration. They may only make a route more
+/// restrictive; they never allocate or mirror a [`WindowId`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct LegacyInputBlockers {
+    /// A legacy top-level with an application-modal input boundary.
+    pub strategic_modal: bool,
+    /// A legacy edit/list control that owns keyboard input for this frame.
+    pub focused_control: bool,
+    /// A legacy transient menu that owns dismissal and item input.
+    pub transient_menu: bool,
+    /// A legacy root gesture, such as target selection, holding the pointer.
+    pub root_gesture: bool,
+}
+
+impl LegacyInputBlockers {
+    const fn blocks_migrated_input(self) -> bool {
+        self.strategic_modal || self.focused_control || self.transient_menu || self.root_gesture
+    }
+
+    const fn blocks_root_keyboard(self) -> bool {
+        self.strategic_modal || self.focused_control || self.transient_menu
+    }
+
+    const fn blocks_root_pointer(self) -> bool {
+        self.strategic_modal || self.transient_menu || self.root_gesture
+    }
+
+    /// Whether dispatch introduced a restrictive legacy owner that was not
+    /// present in this frozen frame-start state. Releases are deliberately not
+    /// reported: they cannot make the current lease permissive.
+    #[must_use]
+    pub const fn new_restriction_started(self, current: Self) -> bool {
+        (!self.strategic_modal && current.strategic_modal)
+            || (!self.focused_control && current.focused_control)
+            || (!self.transient_menu && current.transient_menu)
+            || (!self.root_gesture && current.root_gesture)
+    }
+}
+
+/// Sticky record of legacy ownership that starts during one production frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LegacyInputRestrictionLatch {
+    frozen: LegacyInputBlockers,
+    started: bool,
+}
+
+impl LegacyInputRestrictionLatch {
+    #[must_use]
+    pub const fn new(frozen: LegacyInputBlockers) -> Self {
+        Self {
+            frozen,
+            started: false,
+        }
+    }
+
+    pub fn observe(&mut self, current: LegacyInputBlockers) {
+        self.started |= self.frozen.new_restriction_started(current);
+    }
+
+    pub fn note_start(&mut self) {
+        self.started = true;
+    }
+
+    #[must_use]
+    pub const fn started(self) -> bool {
+        self.started
+    }
+}
+
+/// Notices operating-system focus losses between frames. A loss cancels the
+/// manager's pointer capture, since the release that would end it may never
+/// arrive.
+#[derive(Debug, Default)]
+pub struct FocusLossWatch {
+    seen: Option<u32>,
+}
+
+impl FocusLossWatch {
+    /// Whether `count` records a loss since the previous observation. The
+    /// first observation only sets the baseline.
+    pub fn lost(&mut self, count: u32) -> bool {
+        let lost = self.seen.is_some_and(|seen| seen != count);
+        self.seen = Some(count);
+        lost
+    }
+}
+
+/// Running count of focus losses for a host that reports focus as a state
+/// sampled each frame (AppKit's `-[NSApplication isActive]`) rather than as
+/// an event. Each active-to-inactive change is one loss.
+#[derive(Debug, Default)]
+#[cfg_attr(
+    not(target_os = "macos"),
+    allow(dead_code, reason = "only the macOS host samples its focus state")
+)]
+pub struct FocusStateCounter {
+    was_active: bool,
+    losses: u32,
+}
+
+#[cfg_attr(
+    not(target_os = "macos"),
+    allow(dead_code, reason = "only the macOS host samples its focus state")
+)]
+impl FocusStateCounter {
+    /// Records one sample and returns the losses counted so far.
+    pub fn sample(&mut self, active: bool) -> u32 {
+        if self.was_active && !active {
+            self.losses = self.losses.wrapping_add(1);
+        }
+        self.was_active = active;
+        self.losses
+    }
+}
+
+/// Immutable production routing lease for one frame.
+///
+/// The manager snapshot and legacy restriction state are copied together before
+/// dispatch. Later closes or hold releases cannot make this lease permissive;
+/// callers must construct the next frame boundary to observe them.
+#[derive(Debug, Clone)]
+pub struct StrategicFrameBoundary {
+    snapshot: RoutingSnapshot,
+    locks: ApplicationInputLocks,
+    legacy: LegacyInputBlockers,
+}
+
+impl StrategicFrameBoundary {
+    #[must_use]
+    pub const fn snapshot(&self) -> &RoutingSnapshot {
+        &self.snapshot
+    }
+
+    /// Whether the normalized migrated router must fail closed behind a legacy
+    /// owner. This does not register that owner in the shared manager.
+    #[must_use]
+    pub const fn migrated_input_held(&self) -> bool {
+        self.locks.blocks_strategic_input() || self.legacy.blocks_migrated_input()
+    }
+
+    /// Whether a manager-owned modal excludes every retained legacy surface.
+    /// The app uses this as a temporary bridge around the single legacy egui
+    /// pass; migrated content is painted after that bridge is released.
+    #[must_use]
+    pub fn migrated_modal_active(&self) -> bool {
+        self.snapshot.active_modal().is_some()
+    }
+
+    /// Whether an active legacy surface may read input at all. Legacy blockers
+    /// do not disable their own controls; manager routes and application holds do.
+    #[must_use]
+    pub fn legacy_surface_input_allowed(&self) -> bool {
+        !self.locks.blocks_strategic_input()
+            && self.snapshot.pointer_allows_root()
+            && matches!(
+                self.snapshot.keyboard_route().target,
+                RouteTarget::StrategicRoot
+            )
+    }
+
+    /// Permit for the retained legacy detail windows (Sector, System,
+    /// Defenses, Missions) to read input. Application locks and legacy
+    /// strategic modals hold them as they hold migrated content: outside
+    /// clicks under Encyclopedia, Status, Build Selection, Create Mission and
+    /// Move Confirmation reach no underlying control in either faction
+    /// (`ghidra/notes/strategic-windowing-toolkit.md`, "Strategic
+    /// modality"). Transient menus and root gestures keep their own rules.
+    #[must_use]
+    pub fn retained_window_input_allowed(&self) -> bool {
+        !self.migrated_modal_active()
+            && !self.locks.blocks_strategic_input()
+            && !self.legacy.strategic_modal
+    }
+
+    /// Permit for a named legacy pointer owner itself. Unlike the strategic
+    /// underlay permit, this ignores legacy blockers so an active owner can close.
+    #[must_use]
+    pub fn legacy_owned_pointer_allowed(&self) -> bool {
+        !self.locks.blocks_strategic_input() && self.snapshot.pointer_allows_root()
+    }
+
+    /// Permit for legacy pointer polling at the strategic underlay/root.
+    #[must_use]
+    pub fn legacy_pointer_allowed(&self) -> bool {
+        self.legacy_owned_pointer_allowed() && !self.legacy.blocks_root_pointer()
+    }
+
+    /// Permit for legacy keyboard polling at the strategic root.
+    #[must_use]
+    #[allow(
+        dead_code,
+        reason = "family migrations consume the root-keyboard permit independently"
+    )]
+    pub fn legacy_keyboard_allowed(&self) -> bool {
+        !self.locks.blocks_strategic_input()
+            && !self.legacy.blocks_root_keyboard()
+            && matches!(
+                self.snapshot.keyboard_route().target,
+                RouteTarget::StrategicRoot
+            )
+    }
+
+    /// Root shortcuts use the frozen keyboard lease. A migrated modeless owner
+    /// may still bubble an unhandled event, so the router decides event-locally.
+    #[must_use]
+    pub fn root_shortcuts_allowed(&self) -> bool {
+        !self.locks.blocks_strategic_input()
+            && !self.legacy.blocks_root_keyboard()
+            && self.snapshot.keyboard_route().bubble == BubblePolicy::ToRoot
+    }
+}
+
 /// Sole application authority for manager commands, scenes, and content receipts.
 #[derive(Debug)]
 pub struct StrategicWindowing {
     manager: rebellion_windowing::WindowManager,
-    pending: Vec<WindowCommand>,
+    pending: Vec<QueuedWindowCommand>,
     scene: WindowScene,
     galaxy: BTreeSet<WindowId>,
     tactical: BTreeSet<WindowId>,
@@ -96,13 +330,72 @@ impl StrategicWindowing {
         self.manager.begin_frame()
     }
 
+    /// Freezes the manager, application locks, and named legacy restrictions
+    /// before production input dispatch starts.
+    #[must_use]
+    pub fn begin_production_frame(
+        &self,
+        locks: ApplicationInputLocks,
+        legacy: LegacyInputBlockers,
+    ) -> StrategicFrameBoundary {
+        StrategicFrameBoundary {
+            snapshot: self.begin_frame(),
+            locks,
+            legacy,
+        }
+    }
+
     /// Queues one command without mutating the current frame's state.
     #[allow(
         dead_code,
         reason = "feature-family migrations enqueue the first commands"
     )]
     pub fn enqueue(&mut self, command: WindowCommand) {
-        self.pending.push(command);
+        self.pending.push(QueuedWindowCommand {
+            command,
+            prepared_fleet: None,
+            minimized_fleet: None,
+            restored_fleet: None,
+        });
+    }
+
+    /// Queues a validated Fleet content candidate beside its semantic open.
+    /// The candidate returns to the app only after the manager applies it.
+    pub fn enqueue_fleet_open(&mut self, prepared: PreparedFleetWindow) {
+        self.pending.push(QueuedWindowCommand {
+            command: WindowCommand::Open(prepared.spec()),
+            prepared_fleet: Some(prepared),
+            minimized_fleet: None,
+            restored_fleet: None,
+        });
+    }
+
+    /// Queues manager-owned Fleet minimization and its legacy rail projection
+    /// as one commit unit. A rejected command never mutates the rail.
+    pub fn enqueue_fleet_minimize(
+        &mut self,
+        window: WindowId,
+        system: SystemKey,
+        logical_position: (i16, i16),
+    ) {
+        self.pending.push(QueuedWindowCommand {
+            command: WindowCommand::Minimize(window),
+            prepared_fleet: None,
+            minimized_fleet: Some((window, system, logical_position)),
+            restored_fleet: None,
+        });
+    }
+
+    /// Queues restoration of the exact manager-owned Fleet identity retained
+    /// by the shared rail. No renderer publication is needed: minimized Fleet
+    /// content remains attached while its manager record is hidden.
+    pub fn enqueue_fleet_restore(&mut self, window: WindowId) {
+        self.pending.push(QueuedWindowCommand {
+            command: WindowCommand::Restore(window),
+            prepared_fleet: None,
+            minimized_fleet: None,
+            restored_fleet: Some(window),
+        });
     }
 
     /// Applies queued commands in insertion order after input and painting finish.
@@ -113,17 +406,61 @@ impl StrategicWindowing {
         let pending = std::mem::take(&mut self.pending);
         pending
             .into_iter()
-            .map(|command| {
+            .map(|queued| {
+                let QueuedWindowCommand {
+                    command,
+                    prepared_fleet,
+                    minimized_fleet,
+                    restored_fleet: queued_restored_fleet,
+                } = queued;
                 let result = self.manager.apply(command);
                 let mut removed_content = Vec::new();
+                let mut fleet_content_id = None;
+                let mut committed_minimized_fleet = None;
+                let mut restored_fleet = None;
                 if let Ok(commit) = &result {
                     self.record_transition(&commit.transition, &commit.events);
                     removed_content = self.release_matching_content(&commit.events);
+                    if matches!(commit.transition, WindowTransition::Minimized { .. }) {
+                        committed_minimized_fleet = minimized_fleet;
+                    }
+                    if queued_restored_fleet.is_some_and(|window| {
+                        matches!(
+                            commit.transition,
+                            WindowTransition::Restored { id, .. } if id == window
+                        )
+                    }) {
+                        restored_fleet = queued_restored_fleet;
+                    }
+                    if prepared_fleet.is_some() {
+                        fleet_content_id = match &commit.transition {
+                            WindowTransition::Opened { id } => Some(*id),
+                            WindowTransition::Existing { id, .. } => {
+                                self.attached_content.contains(id).then_some(*id)
+                            }
+                            _ => None,
+                        };
+                        if fleet_content_id.is_some()
+                            && matches!(
+                                commit.transition,
+                                WindowTransition::Existing {
+                                    effect: ExistingEffect::RestoredAndRaised,
+                                    ..
+                                }
+                            )
+                        {
+                            restored_fleet = fleet_content_id;
+                        }
+                    }
                 }
                 AppliedWindowCommand {
                     command,
                     result,
                     removed_content,
+                    prepared_fleet,
+                    fleet_content_id,
+                    minimized_fleet: committed_minimized_fleet,
+                    restored_fleet,
                 }
             })
             .collect()
@@ -139,6 +476,30 @@ impl StrategicWindowing {
             return false;
         }
         self.attached_content.insert(id)
+    }
+
+    /// Acknowledges renderer publication only after the exact prepared Fleet
+    /// content has accepted the manager identity.
+    pub fn acknowledge_fleet_publication(&mut self, id: WindowId) -> bool {
+        self.manager
+            .begin_frame()
+            .key(id)
+            .is_some_and(|key| key.kind == rebellion_windowing::WindowKind::Fleet)
+            && self.attached_content.insert(id)
+    }
+
+    /// Compensates a failed renderer publication or rail eviction by closing
+    /// the exact manager identity and returning the content teardown target.
+    pub fn rollback_fleet_publication(&mut self, id: WindowId) -> Vec<WindowId> {
+        let Ok(commit) = self.manager.apply(WindowCommand::Close(id)) else {
+            return Vec::new();
+        };
+        self.record_transition(&commit.transition, &commit.events);
+        let mut removed = self.release_matching_content(&commit.events);
+        if !removed.contains(&id) {
+            removed.push(id);
+        }
+        removed
     }
 
     /// Whether feature content remains attached to an identity.
@@ -254,7 +615,13 @@ impl StrategicWindowing {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rebellion_core::dat::{ExplorationStatus, SectorGroup};
+    use rebellion_core::ids::DatId;
+    use rebellion_core::world::{ControlKind, GameWorld, Sector, System};
     use rebellion_render::windowing_policy::{contextual_spec, singleton_spec};
+    use rebellion_render::{
+        CockpitFaction, CockpitLayout, CockpitViewport, FleetWindowState, SystemWindowState,
+    };
     use rebellion_windowing::{
         ControlId, FocusTarget, SubjectId, WindowKey, WindowKind, WindowOwner,
     };
@@ -267,6 +634,174 @@ mod tests {
             }) => *id,
             other => panic!("expected successful open, got {other:?}"),
         }
+    }
+
+    fn fleet_world() -> (GameWorld, SystemKey) {
+        let mut world = GameWorld::default();
+        let sector = world.sectors.insert(Sector {
+            dat_id: DatId::new(36),
+            name: "Sesswenna".into(),
+            group: SectorGroup::Core,
+            x: 317,
+            y: 248,
+            systems: Vec::new(),
+        });
+        let system = world.systems.insert(System {
+            dat_id: DatId::new(100),
+            name: "Sluis Van".into(),
+            sector,
+            x: 320,
+            y: 250,
+            exploration_status: ExplorationStatus::Explored,
+            popularity_alliance: 0.5,
+            popularity_empire: 0.5,
+            is_populated: true,
+            total_energy: 0,
+            raw_materials: 0,
+            espionage_rating: 0.0,
+            fleets: Vec::new(),
+            ground_units: Vec::new(),
+            special_forces: Vec::new(),
+            fighters: Vec::new(),
+            defense_facilities: Vec::new(),
+            manufacturing_facilities: Vec::new(),
+            production_facilities: Vec::new(),
+            is_headquarters: false,
+            is_destroyed: false,
+            control: ControlKind::Uncontrolled,
+        });
+        (world, system)
+    }
+
+    fn fleet_layout() -> CockpitLayout {
+        let viewport = CockpitViewport {
+            x: 0.0,
+            y: 0.0,
+            width: 640.0,
+            height: 480.0,
+        };
+        CockpitLayout {
+            canvas: viewport,
+            galaxy: viewport,
+            scale: 1.0,
+        }
+    }
+
+    #[test]
+    fn fleet_commit_publishes_content_and_rail_only_after_manager_transition() {
+        let (world, system) = fleet_world();
+        let mut state = FleetWindowState::default();
+        let mut coordinator = StrategicWindowing::new();
+        let prepared = state
+            .prepare_open(
+                &world,
+                system,
+                (40, 50),
+                CockpitFaction::Alliance,
+                fleet_layout(),
+                None,
+            )
+            .unwrap();
+
+        coordinator.enqueue_fleet_open(prepared);
+        assert!(coordinator.begin_frame().paint_order().is_empty());
+        let mut opened = coordinator.apply_pending().remove(0);
+        let id = opened.fleet_content_id.unwrap();
+        let commit = opened.result.as_ref().unwrap();
+        assert_eq!(
+            state.commit_open(opened.prepared_fleet.take().unwrap(), &commit.transition),
+            Some(id)
+        );
+        assert!(!coordinator.has_content(id));
+        assert!(coordinator.acknowledge_fleet_publication(id));
+        assert_eq!(opened.restored_fleet, None);
+        assert!(coordinator.has_content(id));
+        assert_eq!(state.window_id(system), Some(id));
+
+        coordinator.enqueue_fleet_minimize(id, system, (40, 50));
+        let minimized = coordinator.apply_pending().remove(0);
+        assert!(matches!(
+            minimized.result.as_ref().unwrap().transition,
+            WindowTransition::Minimized {
+                id: minimized_id, ..
+            } if minimized_id == id
+        ));
+        assert_eq!(minimized.minimized_fleet, Some((id, system, (40, 50))));
+        assert_eq!(minimized.restored_fleet, None);
+        assert!(coordinator.has_content(id));
+        assert!(!coordinator.begin_frame().is_visible(id));
+        let mut rail = SystemWindowState::default();
+        if let Some((window, system, logical_position)) = minimized.minimized_fleet {
+            rail.minimize_fleet_window(window, system, logical_position);
+        }
+        assert_eq!(rail.rail_entries().collect::<Vec<_>>(), [(system, "fleet")]);
+
+        coordinator.enqueue_fleet_restore(id);
+        let restored = coordinator.apply_pending().remove(0);
+        assert_eq!(restored.fleet_content_id, None);
+        assert_eq!(restored.restored_fleet, Some(id));
+        assert_eq!(rail.rail_count(), 1);
+        assert!(matches!(
+            restored.result.as_ref().unwrap().transition,
+            WindowTransition::Restored { id: restored_id, .. } if restored_id == id
+        ));
+        assert!(rail.restore_fleet_window(restored.restored_fleet.unwrap()));
+        assert_eq!(rail.rail_count(), 0);
+        assert!(coordinator.begin_frame().is_visible(id));
+
+        coordinator.enqueue(WindowCommand::Close(id));
+        let closed = coordinator.apply_pending().remove(0);
+        assert_eq!(closed.removed_content, [id]);
+        assert_eq!(closed.restored_fleet, None);
+        state.remove_content(&closed.removed_content);
+        assert!(!coordinator.has_content(id));
+        assert_eq!(state.window_count(), 0);
+
+        coordinator.enqueue_fleet_minimize(id, system, (40, 50));
+        let rejected = coordinator.apply_pending().remove(0);
+        assert!(rejected.result.is_err());
+        assert_eq!(rejected.minimized_fleet, None);
+        assert_eq!(rejected.restored_fleet, None);
+    }
+
+    #[test]
+    fn rejected_renderer_publication_rolls_back_the_exact_manager_identity() {
+        let (world, system) = fleet_world();
+        let mut state = FleetWindowState::default();
+        assert!(state.open(
+            &world,
+            system,
+            (10, 20),
+            CockpitFaction::Alliance,
+            fleet_layout(),
+        ));
+        let prepared = state
+            .prepare_open(
+                &world,
+                system,
+                (40, 50),
+                CockpitFaction::Alliance,
+                fleet_layout(),
+                None,
+            )
+            .unwrap();
+        let mut coordinator = StrategicWindowing::new();
+        coordinator.enqueue_fleet_open(prepared);
+        let mut applied = coordinator.apply_pending().remove(0);
+        let id = applied.fleet_content_id.unwrap();
+        assert!(coordinator.begin_frame().is_visible(id));
+        assert!(!coordinator.has_content(id));
+        assert_eq!(
+            state.commit_open(
+                applied.prepared_fleet.take().unwrap(),
+                &applied.result.as_ref().unwrap().transition,
+            ),
+            None,
+        );
+
+        assert_eq!(coordinator.rollback_fleet_publication(id), [id]);
+        assert!(!coordinator.begin_frame().is_visible(id));
+        assert!(!coordinator.has_content(id));
     }
 
     #[test]
@@ -412,5 +947,200 @@ mod tests {
             WindowKey::contextual(WindowKind::Status, first),
             WindowKey::contextual(WindowKind::Status, second)
         );
+    }
+
+    #[test]
+    fn windowing_legacy_bridge_blocks_raw_paths_under_migrated_modal() {
+        let mut coordinator = StrategicWindowing::new();
+        coordinator.enqueue(WindowCommand::Open(singleton_spec(
+            WindowKind::Encyclopedia,
+            WindowOwner::StrategicRoot,
+        )));
+        let modal = opened_id(&coordinator.apply_pending()[0]);
+
+        let frame = coordinator.begin_production_frame(
+            ApplicationInputLocks::default(),
+            LegacyInputBlockers::default(),
+        );
+
+        assert_eq!(frame.snapshot().active_modal(), Some(modal));
+        assert!(frame.migrated_modal_active());
+        assert!(!frame.legacy_surface_input_allowed());
+        assert!(!frame.legacy_owned_pointer_allowed());
+        assert!(!frame.legacy_pointer_allowed());
+        assert!(!frame.legacy_keyboard_allowed());
+        assert!(!frame.root_shortcuts_allowed());
+    }
+
+    #[test]
+    fn windowing_frame_boundary_keeps_close_event_lease() {
+        let mut coordinator = StrategicWindowing::new();
+        coordinator.enqueue(WindowCommand::Open(singleton_spec(
+            WindowKind::Encyclopedia,
+            WindowOwner::StrategicRoot,
+        )));
+        let modal = opened_id(&coordinator.apply_pending()[0]);
+        let closing_frame = coordinator.begin_production_frame(
+            ApplicationInputLocks::default(),
+            LegacyInputBlockers::default(),
+        );
+
+        coordinator.enqueue(WindowCommand::Close(modal));
+        assert!(coordinator.apply_pending()[0].result.is_ok());
+
+        assert_eq!(closing_frame.snapshot().active_modal(), Some(modal));
+        assert!(!closing_frame.legacy_pointer_allowed());
+        assert!(!closing_frame.root_shortcuts_allowed());
+        let next_frame = coordinator.begin_production_frame(
+            ApplicationInputLocks::default(),
+            LegacyInputBlockers::default(),
+        );
+        assert!(next_frame.legacy_pointer_allowed());
+        assert!(next_frame.legacy_keyboard_allowed());
+        assert!(next_frame.root_shortcuts_allowed());
+    }
+
+    #[test]
+    fn windowing_no_family_production_frame_preserves_legacy_root() {
+        let coordinator = StrategicWindowing::new();
+        let frame = coordinator.begin_production_frame(
+            ApplicationInputLocks::default(),
+            LegacyInputBlockers::default(),
+        );
+
+        assert!(frame.snapshot().paint_order().is_empty());
+        assert!(!frame.migrated_modal_active());
+        assert!(frame.legacy_surface_input_allowed());
+        assert!(frame.legacy_owned_pointer_allowed());
+        assert!(frame.legacy_pointer_allowed());
+        assert!(frame.legacy_keyboard_allowed());
+        assert!(frame.root_shortcuts_allowed());
+        assert!(!frame.migrated_input_held());
+    }
+
+    #[test]
+    fn windowing_legacy_blocker_restricts_without_shadow_identity() {
+        let coordinator = StrategicWindowing::new();
+        let frame = coordinator.begin_production_frame(
+            ApplicationInputLocks::default(),
+            LegacyInputBlockers {
+                transient_menu: true,
+                ..LegacyInputBlockers::default()
+            },
+        );
+
+        assert!(frame.snapshot().paint_order().is_empty());
+        assert!(frame.migrated_input_held());
+        assert!(frame.legacy_surface_input_allowed());
+        assert!(frame.legacy_owned_pointer_allowed());
+        assert!(!frame.legacy_pointer_allowed());
+        assert!(!frame.legacy_keyboard_allowed());
+        assert!(!frame.root_shortcuts_allowed());
+    }
+
+    #[test]
+    fn retained_windows_hold_input_under_application_locks_and_legacy_modals() {
+        let coordinator = StrategicWindowing::new();
+        let frame = |locks, legacy| coordinator.begin_production_frame(locks, legacy);
+        let none = LegacyInputBlockers::default();
+
+        assert!(frame(ApplicationInputLocks::default(), none).retained_window_input_allowed());
+        for locks in [
+            ApplicationInputLocks {
+                event_screen: true,
+                ..ApplicationInputLocks::default()
+            },
+            ApplicationInputLocks {
+                briefing: true,
+                ..ApplicationInputLocks::default()
+            },
+            ApplicationInputLocks {
+                scene_transition: true,
+                ..ApplicationInputLocks::default()
+            },
+        ] {
+            assert!(!frame(locks, none).retained_window_input_allowed());
+        }
+        let modal = LegacyInputBlockers {
+            strategic_modal: true,
+            ..none
+        };
+        assert!(!frame(ApplicationInputLocks::default(), modal).retained_window_input_allowed());
+        for keeps_own_rules in [
+            LegacyInputBlockers {
+                transient_menu: true,
+                ..none
+            },
+            LegacyInputBlockers {
+                root_gesture: true,
+                ..none
+            },
+        ] {
+            assert!(frame(ApplicationInputLocks::default(), keeps_own_rules)
+                .retained_window_input_allowed());
+        }
+    }
+
+    #[test]
+    fn retained_windows_hold_input_under_a_migrated_modal() {
+        let mut coordinator = StrategicWindowing::new();
+        coordinator.enqueue(WindowCommand::Open(singleton_spec(
+            WindowKind::Encyclopedia,
+            WindowOwner::StrategicRoot,
+        )));
+        opened_id(&coordinator.apply_pending()[0]);
+        let frame = coordinator.begin_production_frame(
+            ApplicationInputLocks::default(),
+            LegacyInputBlockers::default(),
+        );
+
+        assert!(!frame.retained_window_input_allowed());
+    }
+
+    #[test]
+    fn a_focus_loss_is_reported_once_after_the_baseline() {
+        let mut watch = FocusLossWatch::default();
+
+        assert!(!watch.lost(3));
+        assert!(!watch.lost(3));
+        assert!(watch.lost(4));
+        assert!(!watch.lost(4));
+        assert!(watch.lost(0));
+    }
+
+    #[test]
+    fn a_sampled_focus_state_counts_each_change_to_inactive_as_one_loss() {
+        let mut focus = FocusStateCounter::default();
+        let mut watch = FocusLossWatch::default();
+        let mut cancels = Vec::new();
+
+        for active in [false, true, true, false, false, true, false] {
+            cancels.push(watch.lost(focus.sample(active)));
+        }
+
+        assert_eq!(
+            cancels,
+            [false, false, false, true, false, false, true],
+            "a host inactive from the start loses nothing; each later \
+             active-to-inactive change cancels once"
+        );
+    }
+
+    #[test]
+    fn windowing_legacy_restriction_latch_remembers_ephemeral_owner() {
+        let frozen = LegacyInputBlockers::default();
+        let mut observed_latch = LegacyInputRestrictionLatch::new(frozen);
+        observed_latch.observe(LegacyInputBlockers {
+            strategic_modal: true,
+            ..LegacyInputBlockers::default()
+        });
+        observed_latch.observe(frozen);
+
+        let mut explicit_latch = LegacyInputRestrictionLatch::new(frozen);
+        explicit_latch.note_start();
+        explicit_latch.observe(frozen);
+
+        assert!(observed_latch.started());
+        assert!(explicit_latch.started());
     }
 }

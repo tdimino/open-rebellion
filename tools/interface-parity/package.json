@@ -16,6 +16,8 @@
     "test:encyclopedia-surface:no-build": "node encyclopedia-surface.mjs",
     "test:message-index-shell": "node message-index-shell.mjs",
     "test:message-index-shell:no-build": "node message-index-shell.mjs --no-build",
+    "test:windowing": "node windowing-contract.mjs",
+    "test:windowing:no-build": "node windowing-contract.mjs --no-build",
     "check": "node validate-catalog.mjs && node validate-tactical-matrix.mjs && node verify-tactical-a0-exclusion.mjs && node verify-production-exclusion.mjs"
   },
   "dependencies": {
