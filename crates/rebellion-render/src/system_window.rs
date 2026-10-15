@@ -19,6 +19,7 @@ use rebellion_core::ids::{DatId, FleetKey, SystemKey};
 use rebellion_core::manufacturing::{ManufacturingState, ProductionArea};
 use rebellion_core::missions::MissionState;
 use rebellion_core::world::{ControlKind, GameWorld};
+use rebellion_windowing::WindowId;
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{CockpitFaction, CockpitLayout};
@@ -183,6 +184,7 @@ enum RailEntry {
     System(OpenSystemWindow),
     /// A Fleet window (type 4); its icon comes from `FUN_004a76e0`.
     Fleet {
+        id: WindowId,
         system: SystemKey,
         logical_position: (i16, i16),
     },
@@ -215,8 +217,13 @@ impl RailEntry {
 
     /// One slot per window: the window type and its system.
     fn same_window(&self, other: &Self) -> bool {
-        self.system() == other.system()
-            && std::mem::discriminant(self) == std::mem::discriminant(other)
+        match (self, other) {
+            (Self::Fleet { id: left, .. }, Self::Fleet { id: right, .. }) => left == right,
+            _ => {
+                self.system() == other.system()
+                    && std::mem::discriminant(self) == std::mem::discriminant(other)
+            }
+        }
     }
 }
 
@@ -458,33 +465,46 @@ impl SystemWindowState {
         self.windows.retain(|window| window.system != system);
     }
 
+    #[cfg(test)]
     fn minimize(&mut self, system: SystemKey) -> bool {
+        self.minimize_with_eviction(system).0
+    }
+
+    fn minimize_with_eviction(&mut self, system: SystemKey) -> (bool, Option<WindowId>) {
         let Some(index) = self
             .windows
             .iter()
             .position(|window| window.system == system)
         else {
-            return false;
+            return (false, None);
         };
         let window = self.windows.remove(index);
-        self.push_rail(RailEntry::System(window));
-        true
+        let evicted = Self::evicted_fleet(self.push_rail(RailEntry::System(window)));
+        (true, evicted)
     }
 
     /// Put a minimized Fleet window on the rail (`0x466`).
-    pub fn minimize_fleet_window(&mut self, system: SystemKey, logical_position: (i16, i16)) {
-        self.push_rail(RailEntry::Fleet {
+    pub fn minimize_fleet_window(
+        &mut self,
+        id: WindowId,
+        system: SystemKey,
+        logical_position: (i16, i16),
+    ) -> Option<WindowId> {
+        Self::evicted_fleet(self.push_rail(RailEntry::Fleet {
+            id,
             system,
             logical_position,
-        });
+        }))
     }
 
     /// Retire the exact temporary Fleet rail projection after the shared
     /// manager and Fleet content have both committed a restore.
-    pub fn restore_fleet_window(&mut self, system: SystemKey) -> bool {
-        let Some(index) = self.rail.iter().position(
-            |entry| matches!(entry, RailEntry::Fleet { system: held, .. } if *held == system),
-        ) else {
+    pub fn restore_fleet_window(&mut self, id: WindowId) -> bool {
+        let Some(index) = self
+            .rail
+            .iter()
+            .position(|entry| matches!(entry, RailEntry::Fleet { id: held, .. } if *held == id))
+        else {
             return false;
         };
         self.rail.remove(index);
@@ -492,27 +512,41 @@ impl SystemWindowState {
     }
 
     /// Put a minimized Defenses window on the rail (`0x466`).
-    pub fn minimize_defenses_window(&mut self, system: SystemKey, logical_position: (i16, i16)) {
-        self.push_rail(RailEntry::Defenses {
+    pub fn minimize_defenses_window(
+        &mut self,
+        system: SystemKey,
+        logical_position: (i16, i16),
+    ) -> Option<WindowId> {
+        Self::evicted_fleet(self.push_rail(RailEntry::Defenses {
             system,
             logical_position,
-        });
+        }))
     }
 
     /// Put a minimized Missions window on the rail (`0x466`).
-    pub fn minimize_missions_window(&mut self, system: SystemKey, logical_position: (i16, i16)) {
-        self.push_rail(RailEntry::Missions {
+    pub fn minimize_missions_window(
+        &mut self,
+        system: SystemKey,
+        logical_position: (i16, i16),
+    ) -> Option<WindowId> {
+        Self::evicted_fleet(self.push_rail(RailEntry::Missions {
             system,
             logical_position,
-        });
+        }))
     }
 
-    fn push_rail(&mut self, entry: RailEntry) {
+    fn evicted_fleet(entry: Option<RailEntry>) -> Option<WindowId> {
+        entry.and_then(|entry| match entry {
+            RailEntry::Fleet { id, .. } => Some(id),
+            RailEntry::System(_) | RailEntry::Defenses { .. } | RailEntry::Missions { .. } => None,
+        })
+    }
+
+    fn push_rail(&mut self, entry: RailEntry) -> Option<RailEntry> {
         self.rail.retain(|held| !held.same_window(&entry));
-        if self.rail.len() == REFERENCE_RAIL_SLOTS {
-            self.rail.remove(0);
-        }
+        let evicted = (self.rail.len() == REFERENCE_RAIL_SLOTS).then(|| self.rail.remove(0));
         self.rail.push(entry);
+        evicted
     }
 
     fn restore(&mut self, system: SystemKey) -> bool {
@@ -567,6 +601,9 @@ impl SystemWindowState {
 pub enum SystemWindowAction {
     FocusSector(SystemKey),
     SelectSystem(SystemKey),
+    /// A legacy System minimize displaced this exact manager-owned Fleet
+    /// projection from the shared twelve-slot rail.
+    EvictFleetWindow(WindowId),
     /// A right-button release on a band opens the object pop-up menu
     /// (`FUN_004ac5c0`) for the selection, at a 640 by 480 canvas point.
     OpenObjectMenu {
@@ -576,6 +613,7 @@ pub enum SystemWindowAction {
     },
     /// A click on a minimized Fleet window's rail slot restores it.
     RestoreFleetWindow {
+        id: WindowId,
         system: SystemKey,
         logical_position: (i16, i16),
     },
@@ -670,7 +708,8 @@ pub fn draw_system_windows(
             continue;
         }
         if result.minimize {
-            state.minimize(system);
+            let (_, evicted) = state.minimize_with_eviction(system);
+            actions.extend(evicted.map(SystemWindowAction::EvictFleetWindow));
             continue;
         }
         if result.focus_sector {
@@ -797,9 +836,11 @@ fn draw_reference_rail(
             None
         }
         RailEntry::Fleet {
+            id,
             system,
             logical_position,
         } => Some(SystemWindowAction::RestoreFleetWindow {
+            id,
             system,
             logical_position,
         }),
@@ -1457,6 +1498,35 @@ mod tests {
     use rebellion_core::world::{
         CapitalShipClass, ManufacturingFacilityInstance, ProductionFacilityInstance, Sector, System,
     };
+    use rebellion_windowing::{
+        SubjectId, WindowCommand, WindowKind, WindowManager, WindowOwner, WindowTransition,
+    };
+
+    fn fleet_window_ids(values: &[u64]) -> Vec<WindowId> {
+        let mut manager = WindowManager::new();
+        values
+            .iter()
+            .map(|value| {
+                let commit = manager
+                    .apply(WindowCommand::Open(
+                        crate::windowing_policy::contextual_spec(
+                            WindowKind::Fleet,
+                            SubjectId::new(2, *value),
+                            WindowOwner::StrategicRoot,
+                        ),
+                    ))
+                    .unwrap();
+                let WindowTransition::Opened { id } = commit.transition else {
+                    panic!("expected Fleet open");
+                };
+                id
+            })
+            .collect()
+    }
+
+    fn fleet_window_id(value: u64) -> WindowId {
+        fleet_window_ids(&[value])[0]
+    }
 
     fn layout(faction: CockpitFaction, scale: f32) -> CockpitLayout {
         let (x, width, height) = match faction {
@@ -1718,6 +1788,67 @@ mod tests {
         assert_eq!(state.rail_count(), REFERENCE_RAIL_SLOTS);
         assert_eq!(state.rail[0].system(), systems[1]);
         assert_eq!(state.rail[11].system(), systems[12]);
+    }
+
+    #[test]
+    fn mixed_rail_overflow_returns_the_exact_managed_fleet_victim() {
+        let (_, systems) = fixture_world(13);
+        let mut manager = WindowManager::new();
+        let mut fleet_ids = Vec::new();
+        for index in 0..2 {
+            let commit = manager
+                .apply(WindowCommand::Open(
+                    crate::windowing_policy::contextual_spec(
+                        WindowKind::Fleet,
+                        SubjectId::new(2, 10_000 + index),
+                        WindowOwner::StrategicRoot,
+                    ),
+                ))
+                .unwrap();
+            let WindowTransition::Opened { id } = commit.transition else {
+                panic!("expected Fleet open");
+            };
+            fleet_ids.push(id);
+        }
+
+        let mut state = SystemWindowState::default();
+        assert_eq!(
+            state.minimize_fleet_window(fleet_ids[0], systems[0], (100, 80)),
+            None
+        );
+        for system in &systems[1..12] {
+            assert_eq!(state.minimize_defenses_window(*system, (90, 70)), None);
+        }
+        assert_eq!(state.rail_count(), REFERENCE_RAIL_SLOTS);
+        assert_eq!(
+            state.minimize_fleet_window(fleet_ids[1], systems[12], (120, 90)),
+            Some(fleet_ids[0]),
+        );
+        assert_eq!(state.rail_count(), REFERENCE_RAIL_SLOTS);
+        assert!(state.restore_fleet_window(fleet_ids[1]));
+        assert!(!state.restore_fleet_window(fleet_ids[0]));
+    }
+
+    #[test]
+    fn legacy_rail_overflow_returns_the_exact_managed_fleet_victim() {
+        let (_, systems) = fixture_world(13);
+        let fleet_id = fleet_window_id(10_100);
+        let mut state = SystemWindowState::default();
+        assert_eq!(
+            state.minimize_fleet_window(fleet_id, systems[0], (100, 80)),
+            None,
+        );
+        for system in &systems[1..12] {
+            assert_eq!(state.minimize_defenses_window(*system, (90, 70)), None);
+        }
+
+        assert_eq!(state.rail_count(), REFERENCE_RAIL_SLOTS);
+        assert_eq!(
+            state.minimize_missions_window(systems[12], (60, 40)),
+            Some(fleet_id),
+        );
+        assert_eq!(state.rail_count(), REFERENCE_RAIL_SLOTS);
+        assert!(!state.restore_fleet_window(fleet_id));
     }
 
     #[test]
@@ -2162,9 +2293,9 @@ mod tests {
         let (world, systems) = fixture_world(1);
         let layout = layout(CockpitFaction::Alliance, 2.0);
         let mut state = SystemWindowState::default();
-        state.minimize_defenses_window(systems[0], (90, 70));
-        state.minimize_fleet_window(systems[0], (100, 80));
-        state.minimize_defenses_window(systems[0], (90, 70));
+        let _ = state.minimize_defenses_window(systems[0], (90, 70));
+        state.minimize_fleet_window(fleet_window_id(101), systems[0], (100, 80));
+        let _ = state.minimize_defenses_window(systems[0], (90, 70));
         assert_eq!(state.rail_count(), 2);
         assert_eq!(
             state.rail_entries().collect::<Vec<_>>(),
@@ -2218,9 +2349,9 @@ mod tests {
         let (world, systems) = fixture_world(1);
         let layout = layout(CockpitFaction::Alliance, 2.0);
         let mut state = SystemWindowState::default();
-        state.minimize_defenses_window(systems[0], (90, 70));
-        state.minimize_missions_window(systems[0], (60, 40));
-        state.minimize_missions_window(systems[0], (60, 40));
+        let _ = state.minimize_defenses_window(systems[0], (90, 70));
+        let _ = state.minimize_missions_window(systems[0], (60, 40));
+        let _ = state.minimize_missions_window(systems[0], (60, 40));
         assert_eq!(
             state.rail_entries().collect::<Vec<_>>(),
             [(systems[0], "defenses"), (systems[0], "missions")]
@@ -2264,8 +2395,13 @@ mod tests {
         let (world, systems) = fixture_world(2);
         let layout = layout(CockpitFaction::Alliance, 2.0);
         let mut state = SystemWindowState::default();
-        state.minimize_fleet_window(systems[0], (100, 80));
-        state.minimize_fleet_window(systems[0], (100, 80));
+        let fleets = fleet_window_ids(&[201, 202]);
+        let [fleet0, fleet1] = fleets.as_slice() else {
+            panic!()
+        };
+        let (fleet0, fleet1) = (*fleet0, *fleet1);
+        state.minimize_fleet_window(fleet0, systems[0], (100, 80));
+        state.minimize_fleet_window(fleet0, systems[0], (100, 80));
         assert_eq!(state.rail_count(), 1);
         state.open(
             &world,
@@ -2275,7 +2411,7 @@ mod tests {
             layout,
         );
         assert!(state.minimize(systems[0]));
-        state.minimize_fleet_window(systems[1], (120, 90));
+        state.minimize_fleet_window(fleet1, systems[1], (120, 90));
         assert_eq!(state.rail_count(), 3);
         assert_eq!(
             state
@@ -2332,6 +2468,7 @@ mod tests {
             ],
         );
         assert!(actions.contains(&SystemWindowAction::RestoreFleetWindow {
+            id: fleet0,
             system: systems[0],
             logical_position: (100, 80),
         }));
@@ -2349,16 +2486,21 @@ mod tests {
     fn a_committed_fleet_restore_retires_only_its_exact_rail_projection() {
         let (_, systems) = fixture_world(2);
         let mut state = SystemWindowState::default();
-        state.minimize_defenses_window(systems[0], (90, 70));
-        state.minimize_fleet_window(systems[0], (100, 80));
-        state.minimize_fleet_window(systems[1], (120, 90));
+        let _ = state.minimize_defenses_window(systems[0], (90, 70));
+        let fleets = fleet_window_ids(&[301, 302]);
+        let [fleet0, fleet1] = fleets.as_slice() else {
+            panic!()
+        };
+        let (fleet0, fleet1) = (*fleet0, *fleet1);
+        state.minimize_fleet_window(fleet0, systems[0], (100, 80));
+        state.minimize_fleet_window(fleet1, systems[1], (120, 90));
 
-        assert!(state.restore_fleet_window(systems[0]));
+        assert!(state.restore_fleet_window(fleet0));
         assert_eq!(
             state.rail_entries().collect::<Vec<_>>(),
             [(systems[0], "defenses"), (systems[1], "fleet")]
         );
-        assert!(!state.restore_fleet_window(systems[0]));
+        assert!(!state.restore_fleet_window(fleet0));
     }
 
     #[test]

@@ -26,17 +26,18 @@ pub struct AppliedWindowCommand {
     /// Identity whose attachment is valid for `prepared_fleet` after commit.
     pub fleet_content_id: Option<WindowId>,
     /// Temporary rail-adapter payload committed only with Fleet minimize.
-    pub minimized_fleet: Option<(SystemKey, (i16, i16))>,
+    pub minimized_fleet: Option<(WindowId, SystemKey, (i16, i16))>,
     /// Exact temporary rail projection retired only after the caller also
     /// commits the returned Fleet content restore.
-    pub restored_fleet: Option<SystemKey>,
+    pub restored_fleet: Option<WindowId>,
 }
 
 #[derive(Debug)]
 struct QueuedWindowCommand {
     command: WindowCommand,
     prepared_fleet: Option<PreparedFleetWindow>,
-    minimized_fleet: Option<(SystemKey, (i16, i16))>,
+    minimized_fleet: Option<(WindowId, SystemKey, (i16, i16))>,
+    restored_fleet: Option<WindowId>,
 }
 
 /// Application scene whose registered windows currently participate in routing.
@@ -294,6 +295,7 @@ impl StrategicWindowing {
             command,
             prepared_fleet: None,
             minimized_fleet: None,
+            restored_fleet: None,
         });
     }
 
@@ -304,6 +306,7 @@ impl StrategicWindowing {
             command: WindowCommand::Open(prepared.spec()),
             prepared_fleet: Some(prepared),
             minimized_fleet: None,
+            restored_fleet: None,
         });
     }
 
@@ -318,7 +321,20 @@ impl StrategicWindowing {
         self.pending.push(QueuedWindowCommand {
             command: WindowCommand::Minimize(window),
             prepared_fleet: None,
-            minimized_fleet: Some((system, logical_position)),
+            minimized_fleet: Some((window, system, logical_position)),
+            restored_fleet: None,
+        });
+    }
+
+    /// Queues restoration of the exact manager-owned Fleet identity retained
+    /// by the shared rail. No renderer publication is needed: minimized Fleet
+    /// content remains attached while its manager record is hidden.
+    pub fn enqueue_fleet_restore(&mut self, window: WindowId) {
+        self.pending.push(QueuedWindowCommand {
+            command: WindowCommand::Restore(window),
+            prepared_fleet: None,
+            minimized_fleet: None,
+            restored_fleet: Some(window),
         });
     }
 
@@ -335,6 +351,7 @@ impl StrategicWindowing {
                     command,
                     prepared_fleet,
                     minimized_fleet,
+                    restored_fleet: queued_restored_fleet,
                 } = queued;
                 let result = self.manager.apply(command);
                 let mut removed_content = Vec::new();
@@ -347,11 +364,17 @@ impl StrategicWindowing {
                     if matches!(commit.transition, WindowTransition::Minimized { .. }) {
                         committed_minimized_fleet = minimized_fleet;
                     }
+                    if queued_restored_fleet.is_some_and(|window| {
+                        matches!(
+                            commit.transition,
+                            WindowTransition::Restored { id, .. } if id == window
+                        )
+                    }) {
+                        restored_fleet = queued_restored_fleet;
+                    }
                     if prepared_fleet.is_some() {
                         fleet_content_id = match &commit.transition {
-                            WindowTransition::Opened { id } => {
-                                self.attached_content.insert(*id).then_some(*id)
-                            }
+                            WindowTransition::Opened { id } => Some(*id),
                             WindowTransition::Existing { id, .. } => {
                                 self.attached_content.contains(id).then_some(*id)
                             }
@@ -366,8 +389,7 @@ impl StrategicWindowing {
                                 }
                             )
                         {
-                            restored_fleet =
-                                prepared_fleet.as_ref().map(PreparedFleetWindow::system);
+                            restored_fleet = fleet_content_id;
                         }
                     }
                 }
@@ -394,6 +416,30 @@ impl StrategicWindowing {
             return false;
         }
         self.attached_content.insert(id)
+    }
+
+    /// Acknowledges renderer publication only after the exact prepared Fleet
+    /// content has accepted the manager identity.
+    pub fn acknowledge_fleet_publication(&mut self, id: WindowId) -> bool {
+        self.manager
+            .begin_frame()
+            .key(id)
+            .is_some_and(|key| key.kind == rebellion_windowing::WindowKind::Fleet)
+            && self.attached_content.insert(id)
+    }
+
+    /// Compensates a failed renderer publication or rail eviction by closing
+    /// the exact manager identity and returning the content teardown target.
+    pub fn rollback_fleet_publication(&mut self, id: WindowId) -> Vec<WindowId> {
+        let Ok(commit) = self.manager.apply(WindowCommand::Close(id)) else {
+            return Vec::new();
+        };
+        self.record_transition(&commit.transition, &commit.events);
+        let mut removed = self.release_matching_content(&commit.events);
+        if !removed.contains(&id) {
+            removed.push(id);
+        }
+        removed
     }
 
     /// Whether feature content remains attached to an identity.
@@ -606,6 +652,8 @@ mod tests {
             state.commit_open(opened.prepared_fleet.take().unwrap(), &commit.transition),
             Some(id)
         );
+        assert!(!coordinator.has_content(id));
+        assert!(coordinator.acknowledge_fleet_publication(id));
         assert_eq!(opened.restored_fleet, None);
         assert!(coordinator.has_content(id));
         assert_eq!(state.window_id(system), Some(id));
@@ -618,39 +666,26 @@ mod tests {
                 id: minimized_id, ..
             } if minimized_id == id
         ));
-        assert_eq!(minimized.minimized_fleet, Some((system, (40, 50))));
+        assert_eq!(minimized.minimized_fleet, Some((id, system, (40, 50))));
         assert_eq!(minimized.restored_fleet, None);
         assert!(coordinator.has_content(id));
         assert!(!coordinator.begin_frame().is_visible(id));
         let mut rail = SystemWindowState::default();
-        if let Some((system, logical_position)) = minimized.minimized_fleet {
-            rail.minimize_fleet_window(system, logical_position);
+        if let Some((window, system, logical_position)) = minimized.minimized_fleet {
+            rail.minimize_fleet_window(window, system, logical_position);
         }
         assert_eq!(rail.rail_entries().collect::<Vec<_>>(), [(system, "fleet")]);
 
-        let prepared = state
-            .prepare_open(
-                &world,
-                system,
-                (90, 100),
-                CockpitFaction::Alliance,
-                fleet_layout(),
-                None,
-            )
-            .unwrap();
-        coordinator.enqueue_fleet_open(prepared);
-        let mut restored = coordinator.apply_pending().remove(0);
-        assert_eq!(restored.fleet_content_id, Some(id));
-        assert_eq!(restored.restored_fleet, Some(system));
+        coordinator.enqueue_fleet_restore(id);
+        let restored = coordinator.apply_pending().remove(0);
+        assert_eq!(restored.fleet_content_id, None);
+        assert_eq!(restored.restored_fleet, Some(id));
         assert_eq!(rail.rail_count(), 1);
-        let committed = state.commit_open(
-            restored.prepared_fleet.take().unwrap(),
-            &restored.result.as_ref().unwrap().transition,
-        ) == Some(id);
-        assert!(committed);
-        if committed {
-            assert!(rail.restore_fleet_window(restored.restored_fleet.unwrap()));
-        }
+        assert!(matches!(
+            restored.result.as_ref().unwrap().transition,
+            WindowTransition::Restored { id: restored_id, .. } if restored_id == id
+        ));
+        assert!(rail.restore_fleet_window(restored.restored_fleet.unwrap()));
         assert_eq!(rail.rail_count(), 0);
         assert!(coordinator.begin_frame().is_visible(id));
 
@@ -667,6 +702,46 @@ mod tests {
         assert!(rejected.result.is_err());
         assert_eq!(rejected.minimized_fleet, None);
         assert_eq!(rejected.restored_fleet, None);
+    }
+
+    #[test]
+    fn rejected_renderer_publication_rolls_back_the_exact_manager_identity() {
+        let (world, system) = fleet_world();
+        let mut state = FleetWindowState::default();
+        assert!(state.open(
+            &world,
+            system,
+            (10, 20),
+            CockpitFaction::Alliance,
+            fleet_layout(),
+        ));
+        let prepared = state
+            .prepare_open(
+                &world,
+                system,
+                (40, 50),
+                CockpitFaction::Alliance,
+                fleet_layout(),
+                None,
+            )
+            .unwrap();
+        let mut coordinator = StrategicWindowing::new();
+        coordinator.enqueue_fleet_open(prepared);
+        let mut applied = coordinator.apply_pending().remove(0);
+        let id = applied.fleet_content_id.unwrap();
+        assert!(coordinator.begin_frame().is_visible(id));
+        assert!(!coordinator.has_content(id));
+        assert_eq!(
+            state.commit_open(
+                applied.prepared_fleet.take().unwrap(),
+                &applied.result.as_ref().unwrap().transition,
+            ),
+            None,
+        );
+
+        assert_eq!(coordinator.rollback_fleet_publication(id), [id]);
+        assert!(!coordinator.begin_frame().is_visible(id));
+        assert!(!coordinator.has_content(id));
     }
 
     #[test]

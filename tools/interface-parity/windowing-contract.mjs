@@ -12,6 +12,7 @@ import { chromium } from "playwright-core";
 
 import { launchBrowser } from "./browser-launch.mjs";
 import { performCommand } from "./command-events.mjs";
+import { verifyWindowingBuildManifest } from "./windowing-build-manifest.mjs";
 
 export const WINDOWING_CONTRACT_SCHEMA_VERSION = 1;
 export const WINDOWING_CONTRACT_SCENARIO = 65;
@@ -29,6 +30,9 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../..");
 const site = path.join(root, ".artifacts/interface-parity/site");
 const browserManifest = JSON.parse(fs.readFileSync(path.join(here, "browser.json"), "utf8"));
+export const REVIEWED_WINDOWING_CONTRACT_MANIFEST = validateWindowingContractManifest(
+  JSON.parse(fs.readFileSync(path.join(here, "windowing-contract-manifest.json"), "utf8")),
+);
 
 function fail(message) {
   throw new Error(`windowing contract: ${message}`);
@@ -108,9 +112,15 @@ export function validateObservation(value) {
   const recipients = new Set();
   for (const event of value.events) {
     if (!isPlainObject(event)
+        || typeof event.trigger_id !== "string" || event.trigger_id.length === 0
         || typeof event.event_id !== "string" || event.event_id.length === 0
         || typeof event.kind !== "string" || event.kind.length === 0
-        || typeof event.recipient !== "string" || event.recipient.length === 0) {
+        || typeof event.recipient !== "string" || event.recipient.length === 0
+        || typeof event.application_recipient !== "string" || event.application_recipient.length === 0
+        || event.underlay_action_count !== 0
+        || typeof event.observed_route !== "string" || event.observed_route.length === 0
+        || !Array.isArray(event.observed_actions) || event.observed_actions.length !== 1
+        || event.observed_actions.some((receipt) => typeof receipt !== "string" || receipt.length === 0)) {
       fail("malformed event recipient");
     }
     if (recipients.has(event.event_id)) {
@@ -137,60 +147,191 @@ export function defineWindowingContractCase(definition) {
       || definition.viewports.some((viewport) => !VIEWPORTS.includes(viewport))) {
     fail(`case ${definition.id} has invalid viewports`);
   }
+  if (definition.steps !== undefined
+      && (!Array.isArray(definition.steps)
+        || definition.steps.some((step) => typeof step !== "string" || step.length === 0))) {
+    fail(`case ${definition.id} has invalid step identities`);
+  }
   for (const hook of ["setup", "actions", "assertions", "evidence"]) {
     if (typeof definition[hook] !== "function") fail(`case ${definition.id} is missing ${hook}()`);
   }
   return Object.freeze({
     ...definition,
     groups: Object.freeze([...new Set(definition.groups)]),
+    steps: Object.freeze([...new Set(definition.steps ?? [])]),
     factions: Object.freeze([...new Set(definition.factions)]),
     viewports: Object.freeze([...new Set(definition.viewports)]),
   });
+}
+
+export function validateWindowingContractManifest(value) {
+  if (!isPlainObject(value)
+      || value.schema_version !== WINDOWING_CONTRACT_SCHEMA_VERSION
+      || value.kind !== "open-rebellion-windowing-contract-manifest"
+      || typeof value.source_plan !== "string" || value.source_plan.length === 0
+      || !Array.isArray(value.cases) || value.cases.length === 0) {
+    fail("reviewed case manifest is malformed");
+  }
+  const seenCases = new Set();
+  const seenGroups = new Set();
+  const seenSteps = new Set();
+  for (const candidate of value.cases) {
+    if (!isPlainObject(candidate)
+        || !/^[a-z][a-z0-9-]*$/.test(candidate.id ?? "")
+        || !REQUIRED_JOURNEY_GROUPS.includes(candidate.group)
+        || !Array.isArray(candidate.required_steps) || candidate.required_steps.length === 0
+        || !isPlainObject(candidate.applicability)) {
+      fail("reviewed case manifest contains a malformed case");
+    }
+    if (seenCases.has(candidate.id)) fail(`duplicate reviewed case ${candidate.id}`);
+    if (seenGroups.has(candidate.group)) fail(`duplicate reviewed group ${candidate.group}`);
+    seenCases.add(candidate.id);
+    seenGroups.add(candidate.group);
+    for (const step of candidate.required_steps) {
+      if (typeof step !== "string" || !new RegExp(`^${candidate.group}\\d{2}$`).test(step)) {
+        fail(`reviewed case ${candidate.id} has invalid step ${step}`);
+      }
+      if (seenSteps.has(step)) fail(`duplicate reviewed step ${step}`);
+      seenSteps.add(step);
+    }
+    for (const [dimension, allowed] of [["factions", FACTIONS], ["viewports", VIEWPORTS]]) {
+      const declared = candidate.applicability[dimension];
+      if (!Array.isArray(declared) || declared.length === 0
+          || declared.some((item) => !allowed.includes(item))) {
+        fail(`reviewed case ${candidate.id} has invalid ${dimension} applicability`);
+      }
+    }
+  }
+  const missingGroups = REQUIRED_JOURNEY_GROUPS.filter((group) => !seenGroups.has(group));
+  if (missingGroups.length > 0) fail(`reviewed manifest is missing groups ${missingGroups.join(", ")}`);
+  return value;
+}
+
+export function validateWindowingContractEvidence(value, evidenceRoot) {
+  if (!isPlainObject(value)
+      || value.schema_version !== WINDOWING_CONTRACT_SCHEMA_VERSION
+      || !isPlainObject(value.diagnostics)
+      || !Array.isArray(value.diagnostics.errors)
+      || !Array.isArray(value.diagnostics.requests)
+      || !Array.isArray(value.artifacts)) {
+    fail("structured evidence must contain schema_version, diagnostics, and artifacts");
+  }
+  if (value.diagnostics.errors.length > 0) {
+    fail(`evidence diagnostics contain ${value.diagnostics.errors.length} error(s)`);
+  }
+  if (value.diagnostics.requests.length === 0
+      || value.diagnostics.requests.some(({ path: requestPath, status }) =>
+        typeof requestPath !== "string" || requestPath.length === 0
+        || !Number.isInteger(status) || status < 200 || status >= 400)) {
+    fail("evidence diagnostics require successful requests");
+  }
+  if (typeof evidenceRoot !== "string" || evidenceRoot.length === 0) {
+    fail("structured evidence requires an evidence root");
+  }
+  const absoluteRoot = path.resolve(evidenceRoot);
+  const artifacts = new Map();
+  for (const artifact of value.artifacts) {
+    if (!isPlainObject(artifact)
+        || typeof artifact.kind !== "string" || artifact.kind.length === 0
+        || typeof artifact.path !== "string" || artifact.path.length === 0
+        || !/^[a-f0-9]{64}$/.test(artifact.sha256 ?? "")) {
+      fail("structured evidence contains a malformed artifact");
+    }
+    if (artifacts.has(artifact.kind)) fail(`duplicate artifact kind ${artifact.kind}`);
+    const absolutePath = path.resolve(absoluteRoot, artifact.path);
+    if (!absolutePath.startsWith(`${absoluteRoot}${path.sep}`) || !fs.statSync(absolutePath).isFile()) {
+      fail(`artifact path escapes evidence root or is not a file: ${artifact.path}`);
+    }
+    const actualHash = sha256(fs.readFileSync(absolutePath));
+    if (actualHash !== artifact.sha256) fail(`artifact hash mismatch for ${artifact.path}`);
+    artifacts.set(artifact.kind, artifact);
+  }
+  for (const kind of ["result_json", "screenshot", "fixture_wasm"]) {
+    if (!artifacts.has(kind)) fail(`missing artifact ${kind}`);
+  }
+  return value;
 }
 
 const ADAPTER_SMOKE_ROUTES = Object.freeze({
   "pointer-open": Object.freeze({
     kind: "pointer",
     recipient: "root",
+    applicationRecipient: "gid_menu",
     tokens: Object.freeze(["command=0x132", "destination=gid_menu", "status=opened_original"]),
   }),
   "pointer-select": Object.freeze({
     kind: "pointer",
-    recipient: "menu",
+    recipient: "blocked",
+    applicationRecipient: "gid",
     tokens: Object.freeze(["destination=gid", "status=selected", "label=Display Off"]),
   }),
   "key-alt-2": Object.freeze({
     kind: "key",
     recipient: "root",
+    applicationRecipient: "gid",
     tokens: Object.freeze(["destination=gid", "status=selected", "source=accelerator"]),
   }),
 });
 
-export function smokeEventFromCommand(eventId, observedCommand) {
-  const route = ADAPTER_SMOKE_ROUTES[eventId];
-  if (route === undefined) fail(`unknown adapter-smoke event ${eventId}`);
+export function smokeEventFromReceipts(triggerId, observedCommand, observedRoute, observedActions) {
+  const route = ADAPTER_SMOKE_ROUTES[triggerId];
+  if (route === undefined) fail(`unknown adapter-smoke event ${triggerId}`);
   if (typeof observedCommand !== "string"
       || !observedCommand.includes("[interface] command=")
       || route.tokens.some((token) => !observedCommand.includes(token))) {
-    fail(`adapter-smoke event ${eventId} did not observe its application command`);
+    fail(`adapter-smoke event ${triggerId} did not observe its application command`);
   }
+  if (typeof observedRoute !== "string") fail(`adapter-smoke event ${triggerId} has no route receipt`);
+  const match = observedRoute.match(
+    /^\[windowing-route\] physical=(\d+:\d+) kind=(pointer|key) router=(root|blocked|window:\d+) application=([a-z0-9_:-]+) underlay=(\d+)$/,
+  );
+  if (match === null) fail(`adapter-smoke event ${triggerId} has a malformed route receipt`);
+  const [, eventId, kind, recipient, applicationRecipient, observedUnderlay] = match;
+  if (kind !== route.kind || recipient !== route.recipient
+      || applicationRecipient !== route.applicationRecipient) {
+    fail(`adapter-smoke event ${triggerId} has the wrong observed route`);
+  }
+  if (!Array.isArray(observedActions)
+      || observedActions.some((receipt) => typeof receipt !== "string")) {
+    fail(`adapter-smoke event ${triggerId} has malformed application action receipts`);
+  }
+  const expectedIndex = observedActions.indexOf(observedCommand);
+  if (expectedIndex < 0) {
+    fail(`adapter-smoke event ${triggerId} did not retain its application action receipt`);
+  }
+  const underlayActionCount = Number(observedUnderlay) + observedActions.length - 1;
+  if (underlayActionCount !== 0) fail(`adapter-smoke event ${triggerId} underlay actions must be zero`);
   return {
+    trigger_id: triggerId,
     event_id: eventId,
-    kind: route.kind,
-    recipient: route.recipient,
+    kind,
+    recipient,
+    application_recipient: applicationRecipient,
+    underlay_action_count: underlayActionCount,
     observed_command: observedCommand,
+    observed_route: observedRoute,
+    observed_actions: observedActions,
   };
 }
 
 export function assertAdapterSmokeObservation(value) {
   const observation = validateObservation(value);
   if (observation.case_id !== "adapter-smoke") fail(`unexpected smoke case ${observation.case_id}`);
-  for (const eventId of Object.keys(ADAPTER_SMOKE_ROUTES)) {
-    const event = observation.events.find(({ event_id: candidate }) => candidate === eventId);
-    if (event === undefined) fail(`adapter-smoke observation is missing ${eventId}`);
-    const expected = smokeEventFromCommand(eventId, event.observed_command);
-    if (event.kind !== expected.kind || event.recipient !== expected.recipient) {
-      fail(`adapter-smoke event ${eventId} has the wrong route`);
+  for (const triggerId of Object.keys(ADAPTER_SMOKE_ROUTES)) {
+    const event = observation.events.find(({ trigger_id: candidate }) => candidate === triggerId);
+    if (event === undefined) fail(`adapter-smoke observation is missing ${triggerId}`);
+    const expected = smokeEventFromReceipts(
+      triggerId,
+      event.observed_command,
+      event.observed_route,
+      event.observed_actions,
+    );
+    if (event.event_id !== expected.event_id
+        || event.kind !== expected.kind
+        || event.recipient !== expected.recipient
+        || event.application_recipient !== expected.application_recipient
+        || event.underlay_action_count !== 0) {
+      fail(`adapter-smoke event ${triggerId} has the wrong route`);
     }
   }
   if (observation.events.length !== Object.keys(ADAPTER_SMOKE_ROUTES).length) {
@@ -205,6 +346,19 @@ export function assertAdapterSmokeObservation(value) {
     }
   }
   return 5;
+}
+
+function observedRouteReceipt(lines, startIndex, applicationRecipient) {
+  const token = ` application=${applicationRecipient} `;
+  const receipt = lines.slice(startIndex).find((line) =>
+    line.startsWith("[windowing-route] ") && line.includes(token));
+  if (receipt === undefined) fail(`missing route receipt for ${applicationRecipient}`);
+  return receipt;
+}
+
+function observedApplicationReceipts(lines, startIndex) {
+  return lines.slice(startIndex).filter((line) =>
+    line.startsWith("[interface] command=") || line.startsWith("[windowing-underlay] "));
 }
 
 export const ADAPTER_SMOKE_CASE = defineWindowingContractCase({
@@ -235,7 +389,7 @@ function uniqueCases(cases) {
   return byId;
 }
 
-export function selectCases(cases, requestedIds) {
+export function selectCases(cases, requestedIds, reviewedManifest = REVIEWED_WINDOWING_CONTRACT_MANIFEST) {
   const byId = uniqueCases(cases);
   if (!Array.isArray(requestedIds)) fail("requested case selection must be an array");
   if (requestedIds.length > 0) {
@@ -247,6 +401,35 @@ export function selectCases(cases, requestedIds) {
   }
 
   const defaults = [...byId.values()].filter(({ groups }) => !groups.includes("adapter"));
+  if (reviewedManifest !== null) {
+    const manifest = validateWindowingContractManifest(reviewedManifest);
+    const missingCases = manifest.cases
+      .map(({ id }) => id)
+      .filter((id) => !byId.has(id));
+    if (missingCases.length > 0) {
+      fail(`missing reviewed cases ${missingCases.join(", ")}; default A-E run is unavailable`);
+    }
+    const selected = manifest.cases.map((required) => {
+      const candidate = byId.get(required.id);
+      if (candidate.groups.length !== 1 || candidate.groups[0] !== required.group) {
+        fail(`reviewed case ${required.id} must declare only group ${required.group}`);
+      }
+      const missingSteps = required.required_steps
+        .filter((step) => !candidate.steps.includes(step));
+      if (missingSteps.length > 0) {
+        fail(`reviewed case ${required.id} is missing required steps ${missingSteps.join(", ")}`);
+      }
+      const missingFactions = required.applicability.factions
+        .filter((faction) => !candidate.factions.includes(faction));
+      const missingViewports = required.applicability.viewports
+        .filter((viewport) => !candidate.viewports.includes(viewport));
+      if (missingFactions.length > 0 || missingViewports.length > 0) {
+        fail(`reviewed case ${required.id} applicability is missing factions ${missingFactions.join(",") || "none"} and viewports ${missingViewports.join(",") || "none"}`);
+      }
+      return candidate;
+    });
+    return selected;
+  }
   const availableGroups = new Set(defaults.flatMap(({ groups }) => groups));
   const missing = REQUIRED_JOURNEY_GROUPS.filter((group) => !availableGroups.has(group));
   if (missing.length > 0) fail(`missing journey groups ${missing.join(", ")}; default A-E run is unavailable`);
@@ -257,9 +440,15 @@ export function windowingContractScope(cases, requestedIds) {
   if (!Array.isArray(cases) || cases.length === 0 || !Array.isArray(requestedIds)) {
     fail("scope requires selected cases and requested case ids");
   }
-  const groups = new Set(cases.flatMap(({ groups }) => groups));
-  const coversRequiredGroups = REQUIRED_JOURNEY_GROUPS.every((group) => groups.has(group));
-  if (requestedIds.length === 0 && coversRequiredGroups) {
+  const byId = new Map(cases.map((candidate) => [candidate.id, candidate]));
+  const coversReviewedInventory = REVIEWED_WINDOWING_CONTRACT_MANIFEST.cases.every((required) => {
+    const candidate = byId.get(required.id);
+    return candidate !== undefined
+      && candidate.groups.length === 1
+      && candidate.groups[0] === required.group
+      && required.required_steps.every((step) => candidate.steps.includes(step));
+  });
+  if (requestedIds.length === 0 && coversReviewedInventory) {
     return "complete A-E fixture journey";
   }
   if (cases.every(({ groups: caseGroups }) => caseGroups.includes("adapter"))) {
@@ -290,7 +479,10 @@ export async function runSelectedCases(cases, createContext) {
           if (!Number.isSafeInteger(assertions) || assertions <= 0) {
             fail(`case ${definition.id}/${faction}/${viewport} reported zero assertions`);
           }
-          const evidence = await definition.evidence(context, observation, setup);
+          const evidence = validateWindowingContractEvidence(
+            await definition.evidence(context, observation, setup),
+            context.evidenceRoot,
+          );
           executedCases += 1;
           assertionCount += assertions;
           executions.push({ case_id: definition.id, faction, viewport, assertions, evidence });
@@ -455,6 +647,7 @@ function assertFixtureSite() {
   for (const file of ["index.html", "gl.js", "open-rebellion-test.wasm", "data/runtime.orpk"]) {
     if (!fs.existsSync(path.join(site, file))) fail(`fixture site is missing ${file}; run npm run build`);
   }
+  verifyWindowingBuildManifest();
 }
 
 function createRunId() {
@@ -546,6 +739,7 @@ export async function createBrowserRuntime(runDirectory, dependencies = {}) {
         return {
           page,
           directory,
+          evidenceRoot: path.join(root, ".artifacts/interface-parity"),
           faction,
           viewport,
           async openFixture() {
@@ -576,6 +770,7 @@ export async function createBrowserRuntime(runDirectory, dependencies = {}) {
             const point = strategicGidPoint(faction, viewport);
             await page.mouse.move(point.x, point.y);
             await frames(page);
+            const openStart = consoleLines.length;
             await page.mouse.down();
             await frames(page);
             const opened = await performCommand(
@@ -583,19 +778,33 @@ export async function createBrowserRuntime(runDirectory, dependencies = {}) {
               "command=0x132 destination=gid_menu status=opened_original",
               () => page.mouse.up(),
             );
-            events.push(smokeEventFromCommand("pointer-open", opened));
+            await frames(page);
+            events.push(smokeEventFromReceipts(
+              "pointer-open",
+              opened,
+              observedRouteReceipt(consoleLines, openStart, "gid_menu"),
+              observedApplicationReceipts(consoleLines, openStart),
+            ));
             const displayOff = strategicGidDisplayOffPoint(viewport);
+            const selectStart = consoleLines.length;
             const selected = await performCommand(
               page,
               "destination=gid status=selected label=Display Off",
               () => page.mouse.click(displayOff.x, displayOff.y),
             );
-            events.push(smokeEventFromCommand("pointer-select", selected));
+            await frames(page);
+            events.push(smokeEventFromReceipts(
+              "pointer-select",
+              selected,
+              observedRouteReceipt(consoleLines, selectStart, "gid"),
+              observedApplicationReceipts(consoleLines, selectStart),
+            ));
           },
           async pressGidAccelerator() {
             await page.keyboard.down("Alt");
             await frames(page);
             let selected;
+            const selectStart = consoleLines.length;
             try {
               selected = await performCommand(
                 page,
@@ -608,7 +817,12 @@ export async function createBrowserRuntime(runDirectory, dependencies = {}) {
               await page.keyboard.up("Alt").catch(() => {});
               await frames(page);
             }
-            events.push(smokeEventFromCommand("key-alt-2", selected));
+            events.push(smokeEventFromReceipts(
+              "key-alt-2",
+              selected,
+              observedRouteReceipt(consoleLines, selectStart, "gid"),
+              observedApplicationReceipts(consoleLines, selectStart),
+            ));
           },
           observation() {
             if (before === null || ready === null) fail("adapter-smoke observed before fixture setup");
@@ -648,11 +862,29 @@ export async function createBrowserRuntime(runDirectory, dependencies = {}) {
             assert.ok(requests.length > 0, "adapter smoke recorded no fixture requests");
             assert.ok(requests.every(({ status }) => status === 200), JSON.stringify(requests));
             assert.deepEqual(errors, []);
-            fs.writeFileSync(path.join(directory, "result.json"), `${JSON.stringify(result, null, 2)}\n`);
+            const resultPath = path.join(directory, "result.json");
+            fs.writeFileSync(resultPath, `${JSON.stringify(result, null, 2)}\n`);
+            const evidenceRoot = path.join(root, ".artifacts/interface-parity");
             return {
-              result_json: path.relative(runDirectory, path.join(directory, "result.json")),
-              screenshot_sha256: result.screenshot_sha256,
-              wasm_sha256: result.wasm_sha256,
+              schema_version: WINDOWING_CONTRACT_SCHEMA_VERSION,
+              diagnostics: { errors, requests },
+              artifacts: [
+                {
+                  kind: "result_json",
+                  path: path.relative(evidenceRoot, resultPath),
+                  sha256: sha256(fs.readFileSync(resultPath)),
+                },
+                {
+                  kind: "screenshot",
+                  path: path.relative(evidenceRoot, screenshotPath),
+                  sha256: result.screenshot_sha256,
+                },
+                {
+                  kind: "fixture_wasm",
+                  path: path.relative(evidenceRoot, path.join(site, "open-rebellion-test.wasm")),
+                  sha256: result.wasm_sha256,
+                },
+              ],
             };
           },
           async cleanup() {

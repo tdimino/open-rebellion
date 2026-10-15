@@ -1,0 +1,53 @@
+{
+  "$schema": "./schemas/windowing-contract-manifest.schema.json",
+  "schema_version": 1,
+  "kind": "open-rebellion-windowing-contract-manifest",
+  "source_plan": "docs/plans/2026-10-10-strategic-windowing-toolkit-implementation.md",
+  "cases": [
+    {
+      "id": "journey-a",
+      "group": "A",
+      "required_steps": ["A01", "A02", "A03", "A04", "A05", "A06", "A07", "A08", "A09", "A10"],
+      "applicability": {
+        "factions": ["alliance", "empire"],
+        "viewports": ["native", "letterboxed"]
+      }
+    },
+    {
+      "id": "journey-b",
+      "group": "B",
+      "required_steps": ["B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B09", "B10"],
+      "applicability": {
+        "factions": ["alliance", "empire"],
+        "viewports": ["native", "letterboxed"]
+      }
+    },
+    {
+      "id": "journey-c",
+      "group": "C",
+      "required_steps": ["C01", "C02", "C03", "C04", "C05", "C06", "C07", "C08", "C09", "C10"],
+      "applicability": {
+        "factions": ["alliance", "empire"],
+        "viewports": ["native", "letterboxed"]
+      }
+    },
+    {
+      "id": "journey-d",
+      "group": "D",
+      "required_steps": ["D01", "D02", "D03", "D04", "D05", "D06", "D07", "D08", "D09", "D10"],
+      "applicability": {
+        "factions": ["alliance", "empire"],
+        "viewports": ["native", "letterboxed"]
+      }
+    },
+    {
+      "id": "journey-e",
+      "group": "E",
+      "required_steps": ["E01", "E02", "E03", "E04", "E05", "E06", "E07", "E08", "E09", "E10"],
+      "applicability": {
+        "factions": ["alliance", "empire"],
+        "viewports": ["native", "letterboxed"]
+      }
+    }
+  ]
+}

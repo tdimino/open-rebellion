@@ -40,13 +40,19 @@ Harness unit regressions can be run from the repository root with
 ## Strategic windowing contract runner
 
 `windowing-contract.mjs` is the fail-closed runner for the strategic windowing
-journeys. Its default selection is the complete A-E inventory and exits nonzero
-until modules providing all five groups are installed. The explicit
+journeys. Its default selection comes from the reviewed
+`windowing-contract-manifest.json` inventory (A01 through E10) and exits nonzero
+until the five named journey modules cover every required faction and viewport.
+Self-declared group labels do not establish completeness. The explicit
 `--case adapter-smoke` selection is the early SW-12H gate: it runs both factions
 at 640x480 and 1280x800, clicks the real GID control, selects the real Display
 Off child row to release the menu boundary, sends a real Alt+2 input, and
-retains the matched application command for each unique event recipient plus
-exact before/after action deltas. It is adapter evidence, not full A-E or
+retains each backend-assigned physical event ID, the recipient observed from
+`FrameInputRouter`, the single application recipient, and exact before/after
+action deltas. The interval begins before pointer-down, retains every
+application-command receipt, and records actual Galaxy-map selection or
+activation mutations as underlay receipts; any second action fails the case.
+It is adapter evidence, not full A-E or
 original-game acceptance. Explicit named journey selections are likewise
 reported as focused evidence, even when their declared groups happen to span
 A-E; only the validated default inventory reports complete A-E scope.
@@ -58,12 +64,20 @@ npm run build
 node windowing-contract.mjs --no-build --case adapter-smoke
 ```
 
+The build writes `.windowing-contract-build.json` into the isolated fixture
+site. Every `--no-build` run re-hashes all workspace Rust and Cargo inputs, the
+fixture build/staging tools, runner imports and configuration, the reviewed
+contract manifest and schemas, and the served HTML/JavaScript/WASM/runtime-pack
+artifacts. A missing manifest or any source/artifact mismatch fails closed and
+requires `npm run build`; file presence alone is not reusable-build evidence.
+
 Named journey modules use filenames matching `windowing-contract-*.mjs` and
 export `windowingContractCase` or `windowingContractCases`. The runner discovers
 them without a central registry edit. Each case is created with
 `defineWindowingContractCase` and declares:
 
-- `id`, `groups`, `factions`, and `viewports`;
+- `id`, `groups`, `steps`, `factions`, and `viewports`; a default run requires
+  the exact reviewed group and every step identity named by the manifest;
 - async `setup(context)` and `actions(context, setup)` hooks, where `actions`
   returns the schema-versioned observation for that exact case, faction, and
   viewport;
@@ -71,12 +85,17 @@ them without a central registry edit. Each case is created with
   count; and
 - async `evidence(context, observation, setup)`, returning retained evidence.
 
-Case IDs must be unique. Unknown selections, missing A-E groups, malformed
-observations, duplicate physical-event recipients, zero executed cases, and
-zero assertions are errors. Empty discovered case arrays also fail closed.
+Case IDs must be unique. Unknown selections, missing reviewed cases or
+applicability cells, malformed observations, duplicate physical-event
+recipients, zero executed cases, and zero assertions are errors. Empty
+discovered case arrays also fail closed.
 Observations use schema version 1 and record each
-event's ID/kind/recipient plus identical nonnegative `before` and `after`
-action-counter keys. Fixture request code 66 is scenario enum value 65; the
+event's trigger, physical ID, kind, router recipient, application recipient,
+zero-underlay count and raw application/router receipts, plus identical
+nonnegative `before` and `after` action-counter keys. Each execution must return
+structured evidence with clean request/browser diagnostics and verified hashes
+for its result JSON, screenshot and fixture WASM. Fixture request code 66 is
+scenario enum value 65; the
 existing faction byte remains unchanged, while viewport remains explicit
 runner metadata because it is a browser-context property rather than a WASM
 fixture-code bit.

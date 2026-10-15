@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://open-rebellion.example/schemas/windowing-contract-build-manifest-v1.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "kind", "sources", "artifacts"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "kind": { "const": "open-rebellion-windowing-contract-build" },
+    "sources": { "$ref": "#/$defs/records" },
+    "artifacts": { "$ref": "#/$defs/records" }
+  },
+  "$defs": {
+    "records": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "sha256"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+        }
+      }
+    }
+  }
+}

@@ -1,11 +1,19 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
 import {
+  WINDOWING_BUILD_SOURCE_FILES,
+  verifyWindowingBuildManifest,
+  writeWindowingBuildManifest,
+} from "./windowing-build-manifest.mjs";
+
+import {
   ADAPTER_SMOKE_CASE,
+  REVIEWED_WINDOWING_CONTRACT_MANIFEST,
   acquireBrowserPage,
   assertAdapterSmokeObservation,
   createBrowserRuntime,
@@ -17,9 +25,12 @@ import {
   parseWindowingContractArgs,
   runSelectedCases,
   selectCases,
+  smokeEventFromReceipts,
   smokeActionCounters,
   strategicGidDisplayOffPoint,
   strategicGidPoint,
+  validateWindowingContractEvidence,
+  validateWindowingContractManifest,
   validateObservation,
   windowingContractScope,
 } from "./windowing-contract.mjs";
@@ -32,22 +43,39 @@ function observation(overrides = {}) {
     viewport: "native",
     events: [
       {
-        event_id: "pointer-open",
+        trigger_id: "pointer-open",
+        event_id: "41:2",
         kind: "pointer",
         recipient: "root",
+        application_recipient: "gid_menu",
+        underlay_action_count: 0,
         observed_command: "[interface] command=0x132 destination=gid_menu status=opened_original",
+        observed_route: "[windowing-route] physical=41:2 kind=pointer router=root application=gid_menu underlay=0",
+        observed_actions: ["[interface] command=0x132 destination=gid_menu status=opened_original"],
       },
       {
-        event_id: "pointer-select",
+        trigger_id: "pointer-select",
+        event_id: "45:1",
         kind: "pointer",
-        recipient: "menu",
+        recipient: "blocked",
+        application_recipient: "gid",
+        underlay_action_count: 0,
         observed_command: "[interface] command=0x80 destination=gid status=selected label=Display Off",
+        observed_route: "[windowing-route] physical=45:1 kind=pointer router=blocked application=gid underlay=0",
+        observed_actions: ["[interface] command=0x80 destination=gid status=selected label=Display Off"],
       },
       {
-        event_id: "key-alt-2",
+        trigger_id: "key-alt-2",
+        event_id: "48:0",
         kind: "key",
         recipient: "root",
+        application_recipient: "gid",
+        underlay_action_count: 0,
         observed_command: "[interface] command=0x12 destination=gid status=selected label=Uprisings source=accelerator",
+        observed_route: "[windowing-route] physical=48:0 kind=key router=root application=gid underlay=0",
+        observed_actions: [
+          "[interface] command=0x12 destination=gid status=selected label=Uprisings source=accelerator",
+        ],
       },
     ],
     action_counters: {
@@ -55,6 +83,27 @@ function observation(overrides = {}) {
       after: { gid_menu: 1, gid_selection: 2 },
     },
     ...overrides,
+  };
+}
+
+function evidenceFixture(t) {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "windowing-run-evidence-"));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const artifacts = [
+    ["result_json", "result.json", "result"],
+    ["screenshot", "after.png", "image"],
+    ["fixture_wasm", "fixture.wasm", "wasm"],
+  ].map(([kind, relative, contents]) => {
+    fs.writeFileSync(path.join(directory, relative), contents);
+    return { kind, path: relative, sha256: createHash("sha256").update(contents).digest("hex") };
+  });
+  return {
+    evidenceRoot: directory,
+    evidence: {
+      schema_version: 1,
+      diagnostics: { errors: [], requests: [{ path: "/", status: 200 }] },
+      artifacts,
+    },
   };
 }
 
@@ -77,8 +126,8 @@ test("windowing_contract_observations_reject_duplicate_recipients", () => {
   assert.throws(
     () => validateObservation(observation({
       events: [
-        { event_id: "same-event", kind: "pointer", recipient: "root" },
-        { event_id: "same-event", kind: "pointer", recipient: "window:7" },
+        { ...observation().events[0], event_id: "same-event" },
+        { ...observation().events[1], event_id: "same-event" },
       ],
     })),
     /duplicate recipient.*same-event/i,
@@ -94,8 +143,9 @@ test("windowing_contract_observations_reject_duplicate_recipients", () => {
   );
 });
 
-test("windowing_contract_case_selection_reports_executed_cases", async () => {
+test("windowing_contract_case_selection_reports_executed_cases", async (t) => {
   const hooks = [];
+  const fixture = evidenceFixture(t);
   const selected = selectCases([defineWindowingContractCase({
     id: "case-a",
     groups: ["A"],
@@ -110,10 +160,13 @@ test("windowing_contract_case_selection_reports_executed_cases", async () => {
       hooks.push("assertions");
       return 3;
     },
-    evidence: async () => hooks.push("evidence"),
+    evidence: async () => {
+      hooks.push("evidence");
+      return fixture.evidence;
+    },
   })], ["case-a"]);
 
-  const summary = await runSelectedCases(selected, async () => ({}));
+  const summary = await runSelectedCases(selected, async () => ({ evidenceRoot: fixture.evidenceRoot }));
   assert.deepEqual(hooks, ["setup", "actions", "assertions", "evidence"]);
   assert.equal(summary.executed_cases, 1);
   assert.equal(summary.assertion_count, 3);
@@ -143,13 +196,164 @@ test("windowing_contract_runner_validates_observations_and_execution_identity", 
   );
 });
 
-test("windowing_contract_default_rejects_missing_journey_groups", () => {
-  assert.throws(() => selectCases([ADAPTER_SMOKE_CASE], []), /missing journey groups.*A.*B.*C.*D.*E/i);
+test("windowing evidence requires clean diagnostics and verified artifact hashes", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "windowing-evidence-"));
+  try {
+    const artifacts = [
+      ["result_json", "result.json", "result"],
+      ["screenshot", "after.png", "image"],
+      ["fixture_wasm", "fixture.wasm", "wasm"],
+    ].map(([kind, relative, contents]) => {
+      fs.writeFileSync(path.join(directory, relative), contents);
+      return {
+        kind,
+        path: relative,
+        sha256: createHash("sha256").update(contents).digest("hex"),
+      };
+    });
+    const evidence = {
+      schema_version: 1,
+      diagnostics: { errors: [], requests: [{ path: "/", status: 200 }] },
+      artifacts,
+    };
+    assert.deepEqual(validateWindowingContractEvidence(evidence, directory), evidence);
+    assert.throws(() => validateWindowingContractEvidence({}, directory), /structured evidence/i);
+    assert.throws(
+      () => validateWindowingContractEvidence({
+        ...evidence,
+        diagnostics: { errors: ["page:error"], requests: [] },
+      }, directory),
+      /diagnostics.*error/i,
+    );
+    assert.throws(
+      () => validateWindowingContractEvidence({
+        ...evidence,
+        artifacts: artifacts.map((artifact) => artifact.kind === "screenshot"
+          ? { ...artifact, sha256: "0".repeat(64) }
+          : artifact),
+      }, directory),
+      /hash mismatch.*after\.png/i,
+    );
+    assert.throws(
+      () => validateWindowingContractEvidence({ ...evidence, artifacts: artifacts.slice(0, 2) }, directory),
+      /missing artifact.*fixture_wasm/i,
+    );
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("case execution rejects unstructured evidence", async () => {
+  const candidate = defineWindowingContractCase({
+    id: "unstructured-evidence",
+    groups: ["A"],
+    factions: ["alliance"],
+    viewports: ["native"],
+    setup: async () => {},
+    actions: async () => observation({ case_id: "unstructured-evidence" }),
+    assertions: async () => 1,
+    evidence: async () => ({}),
+  });
+  await assert.rejects(
+    () => runSelectedCases([candidate], async () => ({ evidenceRoot: os.tmpdir() })),
+    /structured evidence/i,
+  );
+});
+
+test("windowing_contract_default_rejects_missing_reviewed_cases", () => {
+  assert.throws(
+    () => selectCases([ADAPTER_SMOKE_CASE], []),
+    /missing reviewed cases.*journey-a.*journey-b.*journey-c.*journey-d.*journey-e/i,
+  );
+});
+
+test("default selection is authorized by the reviewed case and step manifest", () => {
+  const manifest = validateWindowingContractManifest({
+    schema_version: 1,
+    kind: "open-rebellion-windowing-contract-manifest",
+    source_plan: "docs/plans/2026-10-10-strategic-windowing-toolkit-implementation.md",
+    cases: ["A", "B", "C", "D", "E"].map((group) => ({
+      id: `journey-${group.toLowerCase()}`,
+      group,
+      required_steps: [`${group}01`],
+      applicability: { factions: ["alliance", "empire"], viewports: ["native", "letterboxed"] },
+    })),
+  });
+  const candidate = (
+    id,
+    groups,
+    factions = ["alliance", "empire"],
+    viewports = ["native", "letterboxed"],
+    steps = groups.map((group) => `${group}01`),
+  ) =>
+    defineWindowingContractCase({
+      id,
+      groups,
+      steps,
+      factions,
+      viewports,
+      setup: async () => {},
+      actions: async () => observation({ case_id: id }),
+      assertions: async () => 1,
+      evidence: async () => ({}),
+    });
+
+  assert.throws(
+    () => selectCases([candidate("omnibus", ["A", "B", "C", "D", "E"])], [], manifest),
+    /reviewed cases.*journey-a.*journey-b.*journey-c.*journey-d.*journey-e/i,
+  );
+  const reviewed = ["A", "B", "C", "D", "E"].map((group) =>
+    candidate(`journey-${group.toLowerCase()}`, [group]));
+  assert.deepEqual(selectCases(reviewed, [], manifest).map(({ id }) => id), [
+    "journey-a", "journey-b", "journey-c", "journey-d", "journey-e",
+  ]);
+  reviewed[0] = candidate(
+    "journey-a",
+    ["A"],
+    ["alliance", "empire"],
+    ["native", "letterboxed"],
+    [],
+  );
+  assert.throws(
+    () => selectCases(reviewed, [], manifest),
+    /journey-a.*required steps.*A01/i,
+  );
+  reviewed[0] = candidate("journey-a", ["A"], ["alliance"], ["native"]);
+  assert.throws(
+    () => selectCases(reviewed, [], manifest),
+    /journey-a.*applicability.*empire.*letterboxed/i,
+  );
+});
+
+test("tracked manifest contains the reviewed A01 through E10 inventory", () => {
+  const manifest = validateWindowingContractManifest(JSON.parse(fs.readFileSync(
+    new URL("./windowing-contract-manifest.json", import.meta.url),
+    "utf8",
+  )));
+  assert.deepEqual(manifest.cases.map(({ id, group, required_steps, applicability }) => ({
+    id,
+    group,
+    required_steps,
+    applicability,
+  })), ["A", "B", "C", "D", "E"].map((group) => ({
+    id: `journey-${group.toLowerCase()}`,
+    group,
+    required_steps: Array.from({ length: 10 }, (_, index) => `${group}${String(index + 1).padStart(2, "0")}`),
+    applicability: { factions: ["alliance", "empire"], viewports: ["native", "letterboxed"] },
+  })));
 });
 
 test("windowing contract scope distinguishes full default and focused selections", () => {
-  const journeys = [{ groups: ["A", "B", "C", "D", "E"] }];
+  const journeys = REVIEWED_WINDOWING_CONTRACT_MANIFEST.cases.map((required) => ({
+    id: required.id,
+    groups: [required.group],
+    steps: required.required_steps,
+  }));
   assert.equal(windowingContractScope(journeys, []), "complete A-E fixture journey");
+  assert.equal(
+    windowingContractScope([{ id: "omnibus", groups: ["A", "B", "C", "D", "E"], steps: [] }], []),
+    "focused fixture selection; not complete A-E acceptance",
+  );
   assert.equal(
     windowingContractScope(journeys, ["case-a"]),
     "focused fixture selection; not complete A-E acceptance",
@@ -248,7 +452,7 @@ test("adapter smoke assertions require observed routes and exact action deltas",
   assert.ok(assertAdapterSmokeObservation(observation()) > 0);
   assert.throws(
     () => assertAdapterSmokeObservation(observation({
-      events: [{ event_id: "key-1", kind: "key", recipient: "root" }],
+      events: [observation().events[2]],
     })),
     /pointer-open/i,
   );
@@ -269,6 +473,47 @@ test("adapter smoke assertions require observed routes and exact action deltas",
       },
     })),
     /exact.*gid_menu/i,
+  );
+});
+
+test("adapter smoke derives the physical event and recipient from the application route receipt", () => {
+  const event = smokeEventFromReceipts(
+    "pointer-select",
+    "[interface] command=0x80 destination=gid status=selected label=Display Off",
+    "[windowing-route] physical=77:3 kind=pointer router=blocked application=gid underlay=0",
+    ["[interface] command=0x80 destination=gid status=selected label=Display Off"],
+  );
+  assert.deepEqual(event, {
+    trigger_id: "pointer-select",
+    event_id: "77:3",
+    kind: "pointer",
+    recipient: "blocked",
+    application_recipient: "gid",
+    underlay_action_count: 0,
+    observed_command: "[interface] command=0x80 destination=gid status=selected label=Display Off",
+    observed_route: "[windowing-route] physical=77:3 kind=pointer router=blocked application=gid underlay=0",
+    observed_actions: ["[interface] command=0x80 destination=gid status=selected label=Display Off"],
+  });
+  assert.throws(
+    () => smokeEventFromReceipts(
+      "pointer-select",
+      "[interface] command=0x80 destination=gid status=selected label=Display Off",
+      "[windowing-route] physical=77:3 kind=pointer router=blocked application=gid underlay=1",
+      ["[interface] command=0x80 destination=gid status=selected label=Display Off"],
+    ),
+    /underlay.*zero/i,
+  );
+  assert.throws(
+    () => smokeEventFromReceipts(
+      "pointer-select",
+      "[interface] command=0x80 destination=gid status=selected label=Display Off",
+      "[windowing-route] physical=77:3 kind=pointer router=blocked application=gid underlay=0",
+      [
+        "[interface] command=0x80 destination=gid status=selected label=Display Off",
+        "[interface] command=0x201 destination=galaxy_map status=applied",
+      ],
+    ),
+    /underlay.*zero/i,
   );
 });
 
@@ -342,4 +587,60 @@ test("browser runtime acquisition cleans partial resources and validates before 
     /new page failed/i,
   );
   assert.deepEqual(closed, ["context", "browser"]);
+});
+
+test("no-build verification rejects stale reviewed sources and fixture artifacts", () => {
+  const repository = fs.mkdtempSync(path.join(os.tmpdir(), "windowing-build-manifest-"));
+  try {
+    const fixtureSite = path.join(repository, "site");
+    fs.mkdirSync(fixtureSite);
+    fs.writeFileSync(path.join(repository, "reviewed-source.txt"), "source-v1");
+    fs.writeFileSync(path.join(fixtureSite, "fixture.bin"), "fixture-v1");
+    const options = {
+      repoRoot: repository,
+      siteRoot: fixtureSite,
+      sourceFiles: ["reviewed-source.txt"],
+      artifactFiles: ["fixture.bin"],
+    };
+    writeWindowingBuildManifest(options);
+    assert.equal(verifyWindowingBuildManifest(options).status, "verified");
+
+    fs.writeFileSync(path.join(repository, "reviewed-source.txt"), "source-v2");
+    assert.throws(() => verifyWindowingBuildManifest(options), /source hash mismatch.*reviewed-source/i);
+    fs.writeFileSync(path.join(repository, "reviewed-source.txt"), "source-v1");
+    fs.writeFileSync(path.join(fixtureSite, "fixture.bin"), "fixture-v2");
+    assert.throws(() => verifyWindowingBuildManifest(options), /artifact hash mismatch.*fixture\.bin/i);
+  } finally {
+    fs.rmSync(repository, { recursive: true, force: true });
+  }
+});
+
+test("build manifest binds the fixture, router, runner, and build-tool inputs", () => {
+  for (const required of [
+    "Cargo.toml",
+    "Cargo.lock",
+    ".cargo/config.toml",
+    "scripts/build-wasm.sh",
+    "scripts/build-runtime-pack.py",
+    "assets/fonts/LiberationSans-Regular.ttf",
+    "assets/fonts/LiberationSans-Bold.ttf",
+    "tools/interface-parity/prepare-site.mjs",
+    "tools/interface-parity/browser-launch.mjs",
+    "tools/interface-parity/command-events.mjs",
+    "tools/interface-parity/browser.json",
+    "tools/interface-parity/package.json",
+    "tools/interface-parity/package-lock.json",
+    "web/index.html",
+    "web/gl.js",
+    "crates/rebellion-windowing/src/manager.rs",
+    "crates/rebellion-windowing/src/snapshot.rs",
+    "crates/rebellion-windowing/src/policy.rs",
+  ]) {
+    assert.ok(WINDOWING_BUILD_SOURCE_FILES.includes(required), required);
+  }
+  assert.equal(
+    WINDOWING_BUILD_SOURCE_FILES.some((filename) => filename.includes("/node_modules/")),
+    false,
+    "dependency installation must not affect the reviewed source inventory",
+  );
 });
