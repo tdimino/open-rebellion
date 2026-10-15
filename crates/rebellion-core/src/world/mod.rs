@@ -427,8 +427,10 @@ pub const DEATH_STAR_CLASS_ID: u32 = 136;
 
 impl CapitalShipClass {
     /// True for the Death Star class. Seeded classes carry the CAPSHPSD
-    /// record id; original runtime ids carry family byte `0x34`, the family
-    /// `FUN_00560d50` routes to the superlaser path `FUN_005617b0`.
+    /// record id. port: the family `0x34` clause has no source; `0x34` is the
+    /// Emperor's character family, and the original keys the Death Star on
+    /// capital-ship family `0x18` (`ghidra/notes/death-star-strategic.md`,
+    /// `or-port-death-star-family-qtde`).
     #[must_use]
     pub fn is_death_star(&self) -> bool {
         self.dat_id == DatId::new(DEATH_STAR_CLASS_ID) || self.dat_id.family() == 0x34
@@ -712,6 +714,18 @@ pub struct Character {
     /// picks among the side's characters without it (`FUN_0055ef30`,
     /// `FUN_0055fc80`) and sets it (`FUN_0055fe70` via `FUN_004f7480`).
     pub recruited: bool,
+
+    /// Officer rank (`+0x96`), given through the Command submenu
+    /// (`crate::officer_rank`).
+    #[serde(default)]
+    pub command_kind: crate::officer_rank::CommandKind,
+    /// The fleet or system the rank commands (`+0xa8`).
+    #[serde(default)]
+    pub command_post: Option<crate::officer_rank::CommandPost>,
+    /// TEXTSTRA names with each rank, Commander, Admiral, General: the name
+    /// id plus `0x6800`, `0x6c00`, `0x7000` (`FUN_004f17f0`).
+    #[serde(default)]
+    pub ranked_names: [String; 3],
 }
 
 impl Character {
@@ -740,6 +754,15 @@ impl Character {
         self.is_captive = false;
         self.captured_by = None;
         self.capture_tick = None;
+    }
+
+    /// The name the game shows: ranked while the character holds a rank
+    /// (`FUN_004f17f0`).
+    #[must_use]
+    pub fn display_name(&self) -> &str {
+        self.command_kind
+            .name_index()
+            .map_or(&self.name, |index| &self.ranked_names[index])
     }
 }
 
@@ -810,6 +833,9 @@ impl Default for Character {
             heritage_known: false,
             is_killed: false,
             recruited: false,
+            command_kind: crate::officer_rank::CommandKind::None,
+            command_post: None,
+            ranked_names: Default::default(),
         }
     }
 }
@@ -984,8 +1010,9 @@ pub struct ShipInstance {
     pub shield_weapon_packed: u32,
     /// True while `hull_current` > 0 and the ship has not been destroyed.
     pub alive: bool,
-    /// The name the player gave it (`+0x34`, order 0x203); `None` shows the
-    /// class's (`FUN_004f6270`).
+    /// Its own name (`+0x34`): "<class name> N" once numbered
+    /// (`GameWorld::number_capital_ships`), or the one the player gave it
+    /// (order 0x203); `None` shows the class's (`FUN_004f6270`).
     pub name: Option<String>,
     /// The world-unique tag its squadrons and regiments name as their
     /// carrier (`GameWorld::last_ship_tag`); 0 until something boards it.
@@ -1396,7 +1423,7 @@ pub struct TroopUnit {
     /// The class definition (from TROOPSD.DAT).
     pub class_dat_id: DatId,
     pub is_alliance: bool,
-    /// Current regiment strength (C++ offset +0x96). Starts at class max, reduced by ground combat.
+    /// port: current regiment strength. Starts at class max, reduced by ground combat.
     pub regiment_strength: i16,
 }
 
@@ -1690,6 +1717,16 @@ pub struct GameWorld {
     /// end (`FUN_00509710` mode 1). `ghidra/notes/squadron-menu-and-transit.md`.
     #[serde(default)]
     pub squadron_transits: Vec<crate::troop_transport::SquadronTransit>,
+    /// Each system's side that last brought a fleet or squadron in
+    /// (`+0x78` bits 6..7, written by `FUN_00508660` → `FUN_0050a1b0`):
+    /// true for the Alliance. The post-battle pass gives a drawn battle to
+    /// the other side (`post_battle::pass_winner`).
+    #[serde(
+        default,
+        serialize_with = "crate::serde_ordered::serialize_hash_map",
+        deserialize_with = "crate::serde_ordered::deserialize_hash_map"
+    )]
+    pub arrival_holders: std::collections::HashMap<SystemKey, bool>,
 }
 
 /// The fleet record's name (`+0x34`, TEXTSTRA 11523): a fleet's name until
@@ -1718,6 +1755,10 @@ pub struct FleetNames {
     mode: FleetNaming,
     /// Fleets the player renamed (order 0x203).
     renamed: slotmap::SecondaryMap<FleetKey, ()>,
+    /// Per side (Alliance, Empire), keyed by capital ship class `DatId`:
+    /// the last number given. The same side counter list as fleets, whose
+    /// key is the object's record (`FUN_005302c0`, `FUN_00402d80`).
+    ship_numbers: [std::collections::BTreeMap<u32, u32>; 2],
 }
 
 fn default_difficulty_index() -> u8 {
@@ -1946,6 +1987,35 @@ impl GameWorld {
                 .get(ship.class)
                 .map(|class| class.name.as_str())
         })
+    }
+
+    /// `FUN_00517760` for capital ships: each living ship still bearing its
+    /// class's name takes "<class name> N", N being its side's counter for
+    /// that class plus one (`FUN_005302c0`). The counter never goes down,
+    /// so no number is given twice. Fighters, troops and characters are
+    /// never numbered (`empire-day30-yaga-alert-control.sav`).
+    ///
+    /// hyp: the original numbers in a pass over every object
+    /// (`FUN_0051b7f0`) and at an object's load (`FUN_005140c0`); the port
+    /// runs this pass after seeding and after a ship completes, in fleet
+    /// slot order, then roster order.
+    pub fn number_capital_ships(&mut self) {
+        let classes = &self.capital_ship_classes;
+        let counters = &mut self.fleet_names.ship_numbers;
+        for fleet in self.fleets.values_mut() {
+            let side = usize::from(!fleet.is_alliance);
+            for ship in &mut fleet.capital_ships {
+                if !ship.alive || ship.name.is_some() {
+                    continue;
+                }
+                let Some(class) = classes.get(ship.class) else {
+                    continue;
+                };
+                let number = counters[side].entry(class.dat_id.0).or_insert(0);
+                *number += 1;
+                ship.name = Some(format!("{} {number}", class.name));
+            }
+        }
     }
 
     /// How this game names its fleets.

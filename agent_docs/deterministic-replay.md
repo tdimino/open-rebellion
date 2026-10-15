@@ -115,9 +115,16 @@ The ignored fixture test requires the locally supplied original `.DAT` files.
 It records a nine-command, 25-tick, 200-system campaign, reloads its initial
 state through the current save format, and checks every command-prefix
 fingerprint against a cross-process golden, which currently runs
-`v1:326b0d70b7bfc2af` -> `v1:5c0d7e91f12f3327` (regenerated 2026-10-11 for
-save v37: each capital ship now persists the original primary and backup
-hyperdrive damage nibbles after tactical combat). Any save layout or
+`v1:bdfb9de8e21b692e` -> `v1:4b7971c4ea6e7347` (regenerated for five
+causes: characters gained the officer rank, its post and ranked names
+(save v39); the AI's mission dispatch does not require
+`can_be_commander`, a check none of `FUN_00508250`'s validators makes;
+the world gained each system's last-arrived side with the post-battle
+pass that reads it (save v40); and a character's Move became a Move
+mission whose travelling members record the fleet they board (save v41);
+and Han Solo's mission speed (GNPRTB 3083) matches his loaded MJCHARSD
+record id `0x243`, not the original's object id `0x33000243`).
+Any save layout or
 simulation change moves every fingerprint; regenerate the golden only for a
 named cause and name it in the commit. The v13 goldens did not reproduce
 even at their own commit `e8d4945`; that cause remains open. The unit tests use

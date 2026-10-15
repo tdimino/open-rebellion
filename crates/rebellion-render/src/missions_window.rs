@@ -643,7 +643,7 @@ fn member_mini(world: &GameWorld, member: MissionMember) -> Option<(Option<u32>,
             let character = world.characters.get(key)?;
             Some((
                 character_mini_resource_id(character.dat_id, character.is_major),
-                character.name.clone(),
+                character.display_name().to_owned(),
             ))
         }
         MissionMember::SpecialForce(key) => {
@@ -707,7 +707,7 @@ fn target_view(world: &GameWorld, target: Target) -> Option<(DllSource, Option<u
             Some((
                 DllSource::Gokres,
                 character_mini_resource_id(character.dat_id, character.is_major),
-                character.name.clone(),
+                character.display_name().to_owned(),
             ))
         }
         Target::Object(MissionTarget::DefenseFacility(key)) => portrait(defense_facility_mini(
@@ -737,6 +737,21 @@ fn target_view(world: &GameWorld, target: Target) -> Option<(DllSource, Option<u
                         .get(ship.class)
                         .filter(|class| ship.alive && class.is_death_star())
                 })?;
+            Some((
+                DllSource::Gokres,
+                capital_ship_mini_id(class.dat_id).map(|mini| mini - MISSION_MINI_BASE),
+                class.name.clone(),
+            ))
+        }
+        // A Move's fleet: the capital ship its members board, the fleet's
+        // first (`FUN_00552300` keeps the first that accepts).
+        Target::Object(MissionTarget::Fleet(key)) => {
+            let class = world
+                .fleets
+                .get(key)?
+                .capital_ships
+                .iter()
+                .find_map(|ship| world.capital_ship_classes.get(ship.class))?;
             Some((
                 DllSource::Gokres,
                 capital_ship_mini_id(class.dat_id).map(|mini| mini - MISSION_MINI_BASE),
@@ -1444,6 +1459,7 @@ mod tests {
             member,
             mission_id: 0,
             to: system,
+            fleet: None,
             arrival: 9,
         };
         let listed = |transits: &[rebellion_core::missions::MemberTransit]| {
@@ -1486,6 +1502,7 @@ mod tests {
                 member,
                 mission_id: 0,
                 to: system,
+                fleet: None,
                 arrival: 9,
             })
             .collect();

@@ -222,8 +222,10 @@ no longer finds that record. A team member is therefore never a decoy.
 `FUN_0047ba90` accepts a candidate only when it meets all of these:
 - the side's record list (context `+0x8c`) holds it;
 - when its container is a system, its record's `+0x30` bit `0x20` is clear;
-- that system's record `+0x28` bit `0x2` is clear. `+0x28` is the root
-  pointer of the record's `+0x24` container, so the bit is never set.
+- that system's record `+0x28` bit `0x2` is clear. `+0x28` of a system
+  record (context `+0x2c`, class `FUN_00433b10`) is a flag word, and
+  `FUN_00433e40` sets bit 2 from the system object's `+0x88` bit `0x20`
+  (hyp: a contested system).
 
 The order (`FUN_0047b360`) keeps only members with none of `0x74000f1`: a
 selected member on a mission (`0x80`) or en route (`0x20`) is dropped.
@@ -251,9 +253,9 @@ a flag word (`FUN_005f4960`).
   clear; `0x400` additionally marks `0x34000280`. The bit's only writer is
   `FUN_004182a0`, from a game setting (`FUN_004fce50`), untraced.
 - `0x8` marks the six main characters (`FUN_004025f0`). Any other character
-  gets capability bits `0x1000000`, `0x2000000`, `0x4000000` when its class
-  record may be an admiral, commander, or general (`+0xa8`, `+0xac`, `+0xb0`;
-  `FUN_004ed1c0`, `FUN_004ed1e0`, `FUN_004ed200`).
+  gets capability bits in the record's `+0x34` word: `0x1000000`, `0x2000000`,
+  `0x4000000` when its class record may be an admiral, commander, or general
+  (`+0xa8`, `+0xac`, `+0xb0`; `FUN_004ed1c0`, `FUN_004ed1e0`, `FUN_004ed200`).
 - Special forces also get a class bit in `+0x34` (`FUN_00402e80`): classes
   `0x3c000001`/`5` → `0x10000000`, `2`/`6` → `0x20000000`,
   `3`/`7` → `0x40000000`, `4`/`8` → `0x80000000`.
@@ -398,7 +400,6 @@ original as follows:
   constructor values, so the four leaders stay off Incite, Rescue, Sabotage,
   Assassination, and DS Sabotage teams, and every character legal for
   Research is reserved from Incite, Rescue, Sabotage, and Abduction teams;
-- hyp: the port has no officer rank, so a character in a fleet holds one;
 - port: Espionage takes the class for subtypes other than 6 and Abduction
   its default class (side `+0x31c` is untraced); the mission kind and target
   are the port's (side `+0x318`).

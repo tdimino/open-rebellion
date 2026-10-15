@@ -1,18 +1,19 @@
 //! Orbital bombardment resolution.
 //!
-//! Direct translation of the C++ formula chain from REBEXE.EXE:
+//! port: this formula reuses the shape of the transit-time chain, which is
+//! not bombardment:
 //!
 //! ```text
-//! FUN_00556430 → FUN_00555d30 → FUN_00555b30
-//!   → FUN_00509620 (get combat stats as short[2])
-//!   → FUN_0055d8c0 (damage formula)
-//!     → FUN_0055d860: raw_power = sqrt((atk[0]-def[0])² + (atk[1]-def[1])²)
-//!     → / DAT_006bb6e8 (GNPRTB bombardment divisor, param_id=0x1400)
-//!     → FUN_0053e190 (apply difficulty modifier)
-//!   → minimum 1 damage
+//! FUN_00556430 (transit start) → FUN_00555d30 → FUN_00555b30
+//!   → FUN_00509620 (the two systems' coordinates)
+//!   → FUN_0055d8c0 (travel ticks)
+//!     → FUN_0055d860: isqrt of the squared distance
+//!     → / DAT_006bb6e8 (GNPRTB 0x1400, the transit distance divisor)
 //! ```
 //!
-//! See `ghidra/notes/bombardment.md` and `rust-implementation-guide.md` §4.
+//! The original's bombardment is orders 0x220-0x223 (gate `FUN_00582440`, run
+//! `FUN_0058d800`, `ghidra/notes/bombardment.md`); `or-port-bombardment-8usw`
+//! replaces this module with it.
 //!
 //! # Advance contract
 //! Never mutates `GameWorld`. Returns a `BombardmentResult` for the caller to apply.
@@ -22,8 +23,9 @@ use serde::{Deserialize, Serialize};
 use crate::ids::{FleetKey, SystemKey};
 use crate::world::{ControlKind, GameWorld};
 
-/// GNPRTB `parameter_id` for the bombardment damage divisor (`DAT_006bb6e8`).
-/// Confirmed from `data/base/json/GNPRTB.json`: `param_id=0x1400` → value=5.
+/// GNPRTB `parameter_id` 0x1400 (`DAT_006bb6e8`, value 5), which the original
+/// reads as the transit distance divisor (`ghidra/notes/build-delivery.md`).
+/// port: this module divides bombardment power by it.
 const GNPRTB_BOMBARDMENT_DIVISOR_PARAM: u16 = 0x1400;
 
 /// Result of one orbital bombardment strike.
@@ -50,7 +52,7 @@ impl BombardmentSystem {
     /// damage = max(damage, 1)
     /// ```
     ///
-    /// # Guards (from `FUN_00556430`)
+    /// # Guards (port: no recovered source)
     /// - No self-bombardment: attacker faction == defender faction → damage = 0.
     /// - Bombardment disabled flag (`system.bombardment_blocked`) → damage = 0.
     ///   (Flag not yet in world model — add with blockade mechanics in task #20.)
@@ -75,7 +77,7 @@ impl BombardmentSystem {
         let fleet = &world.fleets[attacker_fleet];
         let sys = &world.systems[system];
 
-        // Guard: no self-bombardment (uVar1 == uVar2 in FUN_00556430).
+        // port: no self-bombardment; the original's gate FUN_00582440 tests no side.
         // Compare faction of attacking fleet vs controlling faction of the system.
         let fleet_is_alliance = fleet.is_alliance;
         let system_controlled_by_alliance = match sys.control {
@@ -94,7 +96,7 @@ impl BombardmentSystem {
             };
         }
 
-        // FUN_00509620: get combat stats as (attack, secondary) pair.
+        // port: (attack, secondary) pair; FUN_00509620 returns system coordinates.
         let atk = Self::fleet_bombardment_stats(world, attacker_fleet);
         let def = Self::system_bombardment_defense(world, system);
 
@@ -141,11 +143,10 @@ impl BombardmentSystem {
 
     /// Aggregate bombardment attack stats `(attack, secondary)` for a fleet.
     ///
-    /// Maps to `FUN_00509620` called for the attacker side.
+    /// port: no recovered source (`FUN_00509620` returns system coordinates).
     ///
     /// - `[0]` = aggregate `bombardment_modifier` across all capital ships + fighters.
-    /// - `[1]` = aggregate maneuverability (secondary stat proxy pending decompile
-    ///   of `FUN_00509620`'s exact secondary field selection).
+    /// - `[1]` = aggregate maneuverability.
     fn fleet_bombardment_stats(world: &GameWorld, fleet: FleetKey) -> (i32, i32) {
         let f = &world.fleets[fleet];
         let mut brd: i32 = 0;
@@ -170,7 +171,7 @@ impl BombardmentSystem {
 
     /// Aggregate bombardment defense stats `(defense, secondary)` for a system.
     ///
-    /// Maps to `FUN_00509620` called for the defender side.
+    /// port: no recovered source (`FUN_00509620` returns system coordinates).
     ///
     /// - `[0]` = sum of defense facility `bombardment_defense` (placeholder: 10 each).
     ///   Full implementation deferred pending `DefenseFacilityClass` world model.
@@ -239,6 +240,7 @@ mod tests {
             fleet_names: crate::world::FleetNames::default(),
             last_ship_tag: 0,
             squadron_transits: Vec::new(),
+            arrival_holders: std::collections::HashMap::new(),
         }
     }
 

@@ -180,15 +180,17 @@ native presentation, exact device-pixel geometry, and music-only audio path.
 
 ## Music contract
 
-The cockpit menu uses `MDATA.300`, named `MusicTrack::MainTheme` by
-the audio layer. The licensed source is staged locally as
-`data/sounds/music/main_theme.wav` and remains ignored by Git. The native menu
-starts it when the cockpit becomes visible. The browser may preload it only
-after the four-request startup gate and must begin looped playback on the first
-pointer or keyboard gesture, as required by browser autoplay policy. Returning
-to the menu restarts the same context; leaving for a campaign changes context
-without overlapping tracks. A missing or undecodable file emits one bounded
-diagnostic and leaves the menu usable.
+The cockpit menu plays track 0, `MDATA.300`: a pick with no game session
+returns it (`FUN_0041d3b0`), and the menu window's creation starts it
+(`FUN_00405050`). The native build reads it from the original install's
+`MDATA` directory (`REBELLION_GAME_DIR` or `REBELLION_MDATA_DIR`) and plays it
+again each time it ends. The browser stages it locally as
+`data/sounds/music/main_theme.wav` (ignored by Git), may preload it only after
+the four-request startup gate, and must begin looped playback on the first
+pointer or keyboard gesture, as required by browser autoplay policy. Leaving
+for a campaign starts the game's own pick without overlapping tracks. A
+missing or undecodable file emits one bounded diagnostic and leaves the menu
+usable. The full selector is in `ghidra/notes/audio-dispatch.md`, "Music".
 
 `FUN_00405560` also binds original `COMMON.DLL` WAVE resources to the cockpit
 controls. The build extracts only these licensed resources at packaging time;

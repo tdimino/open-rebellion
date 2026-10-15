@@ -5,7 +5,7 @@ edition = "2021"
 
 [features]
 default = []
-interface-test-fixtures = []
+interface-test-fixtures = ["rebellion-core/interface-test-fixtures"]
 
 [dependencies]
 rebellion-core = { path = "../rebellion-core" }
@@ -20,6 +20,9 @@ serde_json = "1"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 sha2 = "0.10"
+
+[dev-dependencies]
+rebellion-core = { path = "../rebellion-core", features = ["test-support"] }
 
 [lints]
 workspace = true

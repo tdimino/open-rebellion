@@ -114,6 +114,7 @@ the source of truth for scope, acceptance, and current work.
 
 | Checkpoint | Report | Artifact bundle |
 |---|---|---|
+| 2026-10-13 | [Tactical A0 capture index](2026-10-13-tactical-a0-capture-index.md) | 113 of 114 original-game references, TAC-03-C020 settled; frames and hashes stay in the ignored A0 manifest. C6 verdict: acceptance plan, session 8 |
 | 2026-10-12 | [Immutable routing and production coordinator](2026-10-12-strategic-window-routing-coordinator.md) | Source-level kernel, render, app, and WASM gates; no visual cell promoted |
 | PR #14 / P31 | [Game Options review checkpoint](2026-09-26-game-options-review.md) | [Durable verification summary](2026-09-26-game-options-review.json) |
 | PR #11 | [Cockpit routing correction](2026-09-14-cockpit-routing-correction.md) | [`pr11-cockpit-routing/`](pr11-cockpit-routing/) |

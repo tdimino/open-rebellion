@@ -65,15 +65,13 @@ Direct consumers:
 ## System vtable and incident bits
 
 The system vtable base is `0x0065e640` (constructor `FUN_00507130`;
-`0x0065e63c` is the second base at `+0x30`). An earlier revision of this note
-used `0x0065e638`, which shifted every slot by 8 and swapped the uprising and
-disaster bits. With the correct base:
+`0x0065e63c` is the second base at `+0x30`).
 
 | `+0x88` bit | Incident | Setter | Master slot |
 |-------------|----------|--------|-------------|
 | 2 (mask 4) | uprising in progress | `FUN_0050a4a0` | `+0x214` `FUN_00510f20` (timers) |
 | 9 | uprising visible | `FUN_0050bb00` | |
-| 11 | strong support | | |
+| 11 | Death Star in the sector | `FUN_0050a890` | from `FUN_005178b0` (`support-shifts.md`) |
 | 16 | uprising incident | `FUN_0050aa50` | `+0x248` `FUN_00511840` -> `FUN_0050d030` |
 | 17 | informant incident | `FUN_0050aac0` | `+0x24c` `FUN_00511860` -> `FUN_0050d510` |
 | 18 | disaster incident | `FUN_0050ab30` | `+0x250` `FUN_00511930` |
@@ -89,7 +87,8 @@ disaster bits. With the correct base:
   held or populated. Control never changes: `FUN_0050a130` only writes the
   uprising side into `+0x78` bits 4-5.
 - The stored requirement (`FUN_0050b5a0`) is `FUN_00559fe0(side, support,
-  strong, in_uprising, 1)`: halved by GNPRTB 7680 only when strong and Empire,
+  death_star, in_uprising, 1)`: halved by GNPRTB 7680 only when bit 11 (the
+  Death Star in the sector) is set and the side is the Empire,
   doubled by GNPRTB 7682 only in an uprising, 0 unless side 1 or 2.
   `FUN_0050bb00` sets bit 9 when the system is held, populated, in revolt and
   the surplus is >= 0.
@@ -114,7 +113,7 @@ the informant incident's setter) and then calls `FUN_00559ce0`:
 d      = rand[0..=G7708] + G7707                 ; 9 and 1, drawn twice
 score  = d1 + d2
        + ceil((G7761 - support) / -G7762)       ; 60 and -10, only when support < 60 (FUN_0055a050)
-       - k * regiments(side)                    ; k = G7680 (2) if strong && side == 2, else 1
+       - k * regiments(side)                    ; k = G7680 (2) if bit 11 && side == 2, else 1
        + p6 + p7 - p5
 ```
 
@@ -150,8 +149,8 @@ not usable (`object-state-flags.md`).
 
 Finally `FUN_0050c9f0` changes support by `+0x54 -> +0x7c`: GNPRTB 6145
 (-2) while an Incite Uprising mission is active, else 0. `FUN_00559be0`
-divides the change by GNPRTB 7681 (2) when support is strong and the change
-favours side 1 or hurts side 2, and `FUN_0053e0d0` clamps the result to
+divides the change by GNPRTB 7681 (2) when bit 11 is set (the Death Star is
+in the sector) and the change favours side 1 or hurts side 2, and `FUN_0053e0d0` clamps the result to
 0..100.
 
 ## Subdue Uprising success (`FUN_00569c20`)

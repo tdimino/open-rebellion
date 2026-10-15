@@ -46,8 +46,9 @@ window (vtable `0x00659e68`) handles it in `FUN_004ac5c0`:
 
 Each item reads a 26-byte `RT_RCDATA` record named by the order kind from
 STRATEGY.DLL (`FUN_00442790`). Its words are: 0 the kind, 1 the parent
-submenu, 2 the sort key, 5 the TEXTSTRA string, 7 and 8 the icon, 10 a second
-bitmap, and 12 the module. The items a character may show:
+submenu, 2 the sort key, 5 the TEXTSTRA string, 7 the normal bitmap, 8 the
+highlighted one, 9 the disabled one, 10 the bitmap drawn only while the item
+is checked (`FUN_004abe30`, `FUN_004aba60`), and 12 the module. The items a character may show:
 
 | Kind | Sort | TEXTSTRA | Text |
 |---|---|---|---|
@@ -82,7 +83,10 @@ in a table that `FUN_0051f930(kind, factory)` fills (`FUN_0041ec50`,
 ### When Mission is enabled
 
 - Listed: `+0x10` is `FUN_0040f340`, which returns 1.
-- Checked: `+0x14` is `FUN_0051fd30`, which returns 0.
+- Checked: `+0x14` is `FUN_0051fd30`: it runs Enabled, builds the command
+  list (`+0x40`) and asks each command's `+0x14` (`FUN_00553720`); the
+  result is 1 when one command answers true and none false (the value is
+  `EBP` at `0x51fe05`). What Mission's command answers is not read.
 - Enabled: the global gate `FUN_0051de80` (bit `0x10000000` of
   `+0xc0`→`+0x74` clear) and `+0x18`, `FUN_0051fe20`. That needs the order
   built (`+0x1c`, set when `FUN_0051fa20` allocated the list at `+0x40`),
@@ -124,6 +128,53 @@ menu (`2026-09-24-game-speed-recovery.md`): STRATEGY frame tiles
 calls the owner's vtable `+0x20` with the item's kind; a press outside closes
 the menu. For a system window that is `FUN_004ac730`, which calls
 `FUN_0041cdf0(kind, selection, no target, 0)`.
+
+## Submenus
+
+Every submenu window is built with the menu, hidden: `FUN_00442590` adds
+each child record to its parent row's list (`row +0x80`), creating a missing
+parent row with flags 8 from the child's word 1, and `FUN_00442860` builds
+each list's window (`FUN_004ab3a0` attaches it, `FUN_004aba40` stores it at
+`row +0x3c`).
+
+- **Opening.** Showing a menu window sets a 500 ms periodic timer
+  (`FUN_004aab50`, `SetTimer(hwnd, 100, 500)`). `WM_MOUSEMOVE` moves the
+  highlight (`+0x46`) onto a row only when the row is enabled (`+0x58`).
+  Each tick shows the highlighted row's submenu (`FUN_005ffe40`,
+  `ShowWindow`) unless a message waits for the window (`PeekMessageA`).
+- **Placement** (`FUN_004ab3a0`, once at build): left of the parent,
+  overlapping it by 3 pixels, or right of it (`parent right - 3`) when that
+  would cross the left edge; level with the row's top less 3 when
+  `row top + child height` fits above the parent's bottom, else with its
+  bottom on the row's bottom plus 3.
+- **Closing.** Repainting hides the submenu of every row that is not
+  highlighted (`FUN_00442b80`). A press over any window that is not a "Game
+  Menu Window" closes the family (the mouse hook `FUN_00442b90`, installed
+  by `FUN_00442c20`, calls `FUN_00442430`). Escape in a submenu hides it;
+  in the root it closes the family (`FUN_00442cf0`, `0x405`).
+- **Choosing.** A left release calls `FUN_004424c0`: the owner's `+0x20`
+  gets the row's kind from `FUN_004ab550`, which answers 0 for a row whose
+  flags have `0xd` (disabled or a submenu parent), so a release on a parent
+  does nothing. A chosen row closes the family (`0x409`).
+- **Arrows.** A row with a submenu draws an arrow at (6, row top): 10117
+  highlighted and 10118 normal for side 1, else 10128 and 10129. A parent
+  row with no icon reserves 20 pixels (`FUN_004abf60`).
+- **Parents** are always enabled: flags 8 leave `+0x58` set.
+
+### The Command submenu
+
+The four rank orders (vtables `0x669cb8`..`0x669dc0`, base `FUN_00580d30`)
+share their slots. Listed: `+0x10` is `FUN_0040f340` (1). Checked:
+`FUN_00580d80` → the character's `+0x2cc` (`FUN_004ed680`): the held rank
+`+0x96` equals the item's (`FUN_0053ebb0`: `0x260..0x263` → 0..3) and is not
+0, so None is never checked; a team of more than one is never checked.
+Enabled: `+0x2d0` (`FUN_004ed750`, `character-roster.md`), plus a ship,
+fleet or system to command (`FUN_0055f160` → `FUN_0055ed30`); a team of
+more than one fails with `0x15` (`FUN_00580db0`). The commands reach the
+character through `FUN_00580e70` → `FUN_0057c3c0` (vtable `0x6698a8`, slots
+`+0x14` `FUN_0057c520`, `+0x18` `FUN_0057c5a0`) and the root's `+0xc0`
+object's `+0x1bc`/`+0x1c0`. hyp: that object is the class of vtable
+`0x6630c0` (`FUN_0055f0b0`, `FUN_0055f160`), the one with those slots.
 
 ## Targeting
 
@@ -168,7 +219,18 @@ with Ctrl held, for window types 1, 4 and 10; type 9 issues `0x214`.
   highlighted item takes the faction color, and disabled items are gray
   (`FUN_004abe10`, `FUN_004aba60`). The P60 speed menu had the first two
   swapped. A submenu parent without an icon reserves 20 pixels
-  (`FUN_004abf60`). port: Escape closes the menu.
+  (`FUN_004abf60`).
+- Submenus: a row highlights when the pointer moves onto an enabled row and
+  stays highlighted; the menu's 500 ms timer shows the highlighted row's
+  submenu (`GameMenuEntry::children`), placed by `submenu_origin`, with the
+  side's arrows; a release on a parent does nothing; Escape hides a shown
+  submenu, else closes the menu; a press outside both closes them. A
+  character's Command lists None, Admiral, General and Commander, enabled
+  by `officer_rank::command_refusal` and checked for the held rank
+  (`object_menu::submenu_rows`); a choice gives the rank
+  (`officer_rank::give_command`). port: the timer ticks whatever input is
+  pending. hyp: the window fields `FUN_004ab3a0` reads are the parent's
+  left, top, width and height.
 - 7b: a right press selects a list item and a right release on a
   character, a special force, a regiment or empty list space opens the menu
   in the galaxy view. Since 2026-10-06 that list is the Defenses window's
@@ -179,8 +241,13 @@ with Ctrl held, for window types 1, 4 and 10; type 9 issues `0x214`.
   follow the STRATEGY records; Mission follows
   `MissionState::mission_order_enabled` and Encyclopedia opens the
   Encyclopedia. Status opens the Status window (`status-window.md`).
-  port: Move, Confirmed Move, Command and Retire are drawn disabled, the other tabs' classes open no menu, and the global gate
-  `FUN_0051de80` is taken as clear.
+  A character's or special force's Move and Confirmed Move follow
+  `MissionState::move_order_enabled` (`FUN_0053c100`) and target as a
+  `0x241` (`move-order.md`, "Characters and special forces").
+  port: Retire is drawn disabled,
+  Planetary Bombardment is a disabled parent with no rows until its four
+  targets are menu orders, the other tabs' classes open no menu, and the
+  global gate `FUN_0051de80` is taken as clear.
 - 7c: Mission starts targeting (`targeting.rs`). The galaxy view takes the
   capture, so no window or cockpit control gets a press, and a press on the
   map selects nothing (`FUN_00422ce0` has no `WM_LBUTTONDOWN` case). Cursor
@@ -218,4 +285,10 @@ with Ctrl held, for window types 1, 4 and 10; type 9 issues `0x214`.
 `FUN_0051fd30`, `FUN_0051fe20`, `FUN_0051de80`, `FUN_004f4a00`,
 `FUN_004f4990`, `FUN_0051fa20`, `FUN_00553770`, `FUN_0054d1a0`,
 `FUN_005429e0`, `FUN_0054bf00`, `FUN_0054c110`, `FUN_004ed560`,
-`FUN_00533ce0`, `FUN_004f9860`.
+`FUN_00533ce0`, `FUN_004f9860`, `FUN_00442b70`, `FUN_00442b80`,
+`FUN_00442b90`, `FUN_00442c20`, `FUN_00442c60`, `FUN_00442c90`,
+`FUN_00442cd0`, `FUN_00442cf0`, `FUN_004ab370`, `FUN_004ab550`,
+`FUN_004aba40`, `FUN_004abe30`, `FUN_004abfa0`, `FUN_005f58d0`,
+`FUN_00553720`, `FUN_0055f0b0`, `FUN_0057c3c0`, `FUN_00580d30`,
+`FUN_00580d80`, `FUN_00580ee0`, `FUN_00580fc0`, `FUN_00581080`,
+`FUN_00581140`, `FUN_00581200`.

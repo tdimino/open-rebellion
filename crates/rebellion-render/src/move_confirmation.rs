@@ -8,7 +8,7 @@
 
 use egui_macroquad::egui;
 use rebellion_core::ids::{FleetKey, SystemKey};
-use rebellion_core::missions::MissionFaction;
+use rebellion_core::missions::{MissionFaction, MissionMember};
 use rebellion_core::scrap::ScrapTarget;
 
 use crate::bmp_cache::BmpCache;
@@ -22,6 +22,7 @@ pub const MOVE_CONFIRMATION_HEIGHT: f32 = 331.0;
 // STRATEGY bitmaps (FUN_0044f180, FUN_0049a350).
 const BACKGROUND: [u32; 2] = [11125, 11126];
 const PICTURE: [u32; 2] = [1018, 1019];
+const BLOCKADE_PICTURE: [u32; 2] = [1031, 1030];
 const CONFIRM: (u32, u32) = (10926, 10927);
 const CANCEL: (u32, u32) = (10929, 10930);
 
@@ -33,17 +34,23 @@ const PICTURE_AT: (f32, f32) = (12.0, 30.0);
 
 /// TEXTSTRA `RT_RCDATA` 0x7057.
 const TRANSIT_TIME: &str = "Transit time in days";
+/// TEXTSTRA `RT_RCDATA` 0x7056.
+const BLOCKADE_EVACUATION: &str = "Units evacuating from worlds under blockade risk being destroyed by blockading vessels.  Are you sure you want to proceed with the evacuation?\nTransit time in days";
 
-/// A fleet move waiting for the player's answer.
+/// A move waiting for the player's answer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MoveConfirmation {
     pub faction: MissionFaction,
     /// The order's team: one fleet, or a fleet icon's fleets.
     pub fleets: Vec<FleetKey>,
+    /// The order's characters and special forces (its `0x241` teams).
+    pub members: Vec<MissionMember>,
     pub destination: SystemKey,
     /// The fleet the move joins, when it was released on a Fleet window
-    /// (`ghidra/notes/fleet-join-split.md`).
+    /// (`ghidra/notes/fleet-join-split.md`); characters board it.
     pub join: Option<FleetKey>,
+    /// The first member is not a fleet and stands in a blockaded system.
+    pub blockaded: bool,
     /// One `(name, days)` line per moving object (`FUN_0053c2e0`).
     pub lines: Vec<(String, u32)>,
 }
@@ -58,17 +65,27 @@ impl MoveConfirmation {
     /// is a blockaded system, so a fleet's move always shows 0x7057.
     #[must_use]
     pub fn text(&self) -> String {
-        let mut text = TRANSIT_TIME.to_string();
+        let mut text = if self.blockaded {
+            BLOCKADE_EVACUATION
+        } else {
+            TRANSIT_TIME
+        }
+        .to_string();
         for (name, days) in &self.lines {
             text.push_str(&format!("\n{name}:  {days}"));
         }
         text
     }
 
-    /// The picture `+0x2e`: 1018 for side 1, 1019 otherwise.
+    /// The picture `+0x2e`: 1018 for side 1, 1019 otherwise; under the
+    /// blockade warning 1031 for side 1, 1030 otherwise.
     #[must_use]
     pub fn picture(&self) -> u32 {
-        PICTURE[side(self.faction)]
+        if self.blockaded {
+            BLOCKADE_PICTURE[side(self.faction)]
+        } else {
+            PICTURE[side(self.faction)]
+        }
     }
 }
 
@@ -79,6 +96,7 @@ pub enum MoveConfirmationAction {
     /// validates the order again and submits it without asking.
     Confirm {
         fleets: Vec<FleetKey>,
+        members: Vec<MissionMember>,
         destination: SystemKey,
         join: Option<FleetKey>,
     },
@@ -121,6 +139,7 @@ impl MoveConfirmationState {
         Some(if confirm {
             MoveConfirmationAction::Confirm {
                 fleets: window.fleets,
+                members: window.members,
                 destination: window.destination,
                 join: window.join,
             }
@@ -352,8 +371,10 @@ mod tests {
         MoveConfirmation {
             faction,
             fleets: vec![FleetKey::default()],
+            members: Vec::new(),
             destination: SystemKey::default(),
             join: None,
+            blockaded: false,
             lines: vec![("Red Fleet".into(), 12)],
         }
     }
@@ -480,6 +501,7 @@ mod tests {
             action,
             Some(MoveConfirmationAction::Confirm {
                 fleets: vec![FleetKey::default()],
+                members: Vec::new(),
                 destination: SystemKey::default(),
                 join: None,
             })

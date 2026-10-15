@@ -288,6 +288,12 @@ and passes the complete comparison contract.
 - Review the [P58-B22 source-completion evidence](evidence/2026-09-28-tactical-source-completion.md)
   for tactical RNG sequencing, persisted power nibbles, production completion
   and destruction callbacks, and the timed trench-run producer.
+- Review the [tactical A0 capture index](evidence/2026-10-13-tactical-a0-capture-index.md)
+  for the 113 of 114 original-game references and TAC-03-C020 settled. The
+  first strict C6 verdict over the 106 cells (pass 11, fail 66, not-run 28,
+  settled 1; negative controls 6 of 6) and its triage are in the
+  [acceptance plan](../../plans/2026-09-22-tooling-tactical-106-cell-acceptance.md),
+  session 8.
 - Use the [evidence index](evidence/README.md) to find each durable report and
   artifact bundle. Every new bundle must include its own `README.md` inventory.
 

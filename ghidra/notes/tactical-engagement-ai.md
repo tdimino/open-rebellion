@@ -161,7 +161,7 @@ battle.
 
 ## Port
 
-`tactical_view.rs`: `headless_step` and `apply_headless_damage` (Simulate),
+`rebellion-core` `tactical.rs`: `headless_step` and `apply_headless_damage` (Simulate),
 `original_unit_damage_rate`, `engagement_priorities`,
 `engagement_target_value`, `stalemate_strength`; for played battles
 `advance_original_engagement` (called from `step` before movement),

@@ -3,7 +3,7 @@ title: "Ghidra Reverse Engineering"
 description: "RE status and methodology for REBEXE.EXE decompilation (22,741 functions)"
 category: "agent-docs"
 created: 2026-03-11
-updated: 2026-10-01
+updated: 2026-10-14
 tags: [ghidra, reverse-engineering, rebexe, gnprtb]
 ---
 
@@ -21,14 +21,13 @@ for the active UI evidence queue.
 
 | What | Status |
 |------|--------|
-| Combat call chain | Fully traced (orchestrator → 4 subsystems → per-unit) |
-| Bombardment formula | **Decoded**: `sqrt(delta²) / GNPRTB[0x1400]` |
-| Space combat pipeline | 7 phases mapped, vtable dispatch identified |
-| Ground combat | Troop iteration at +0x96, per-unit via vtable +0x330 |
+| Space battles | One resolver: the tactical engine `FUN_0040a050`, played or headless (`ghidra/notes/simulate-runs-tactical-engine.md`) |
+| Bombardment, Destroy System | Orders `0x220`-`0x223`, gate `FUN_00582440`, run `FUN_0058d800` (`ghidra/notes/bombardment.md`) |
+| Planetary assault | Open (`or-q-ground-resolution-nms`, `or-q-regiment-combat-eaxn`) |
 | GNPRTB parameters | **111 mapped**: 34 general (28 base + 6 per-side) + 77 combat (25 base + 52 per-side) |
 | Game object layout | 10+ field offsets confirmed across all entity types |
-| C++ class hierarchy | Reconstructed: CRebObject → CNotifyObject → CCombatUnit |
-| Entity type codes | 8 family byte ranges identified |
+| C++ class hierarchy | Reconstructed by DAT family (`ghidra/notes/cpp-class-hierarchy.md`) |
+| Entity family bytes | The DAT header ranges (`ghidra/notes/record-registry.md`) |
 | Scripted events | 15+ story events mapped, 50 event IDs |
 | Modder documentation | 4 scholar documents ready |
 | Strategic shell geometry and routing | Exact apertures, rail rectangles, controls, state paint, and modeless-window routing recovered |
@@ -69,26 +68,20 @@ any other tool pointed at the binary must use the same, not `borlandcpp`.
 ### GNPRTB Parameter System
 Two binding tables map GNPRTB parameter IDs to global data addresses:
 - **FUN_0053e450**: 34 general bindings (28 base + 6 per-side, IDs 0x0a00-0x0a21) — travel, skills, economy
-- **FUN_0055cb60**: 77 combat parameters (IDs 0x1400-0x1445) — damage, shields, bombardment
-- `DAT_006bb6e8` = parameter 0x1400 = bombardment base divisor
-- `DAT_00661a88` = difficulty modifier table
+- **FUN_0055cb60**: 77 parameters from ID 0x1400
+- `DAT_006bb6e8` = parameter 0x1400 = the transit distance divisor (5; `ghidra/notes/build-delivery.md`)
+- `DAT_00661a88` = the percentage base (100)
 - Runtime struct: 68 bytes (vtable + base fields + 8 i32 difficulty values at offset 36)
 
 ### Game Object Layout
-| Offset | Type | Field | Notes |
-|--------|------|-------|-------|
-| +0x00 | void* | vtable | C++ vtable pointer |
-| +0x50 | uint | status_flags | bit0=active, bit3=fighter_combat_eligible |
-| +0x58 | uint | combat_phase_flags | Space combat bitfield |
-| +0x60 | int | hull_current / squad_size | Polymorphic by vtable — same offset for ships and squadrons |
-| +0x64 bits 0-3 | 4-bit | shield_recharge_rate | 0-15, XOR-masked read-modify-write |
-| +0x64 bits 4-7 | 4-bit | weapon_recharge_rate | 0-15, same word as shield |
-| +0x66 | short | base_loyalty | 0-100 |
-| +0x78 bit 7 | bit | special_entity_flag | Alt shield path for special entities |
-| +0x8a | short | enhanced_loyalty | Bonus from missions, 0-0x7fff |
-| +0x96 | short | regiment_strength | Ground troops, 0=destroyed |
-| +0x9a | short | hyperdrive_modifier | Han Solo bonus, no upper bound |
-| +0xac bit 0 | bit | alive_flag | Combat-ready when set |
+
+Field offsets by class, with their setters, are in
+`ghidra/notes/entity-system.md` (§2) and `ghidra/notes/cpp-class-hierarchy.md`.
+Common misreadings: on a character `+0x96` is the CommandKind (officer rank)
+and `+0xac` bit 0 the prisoner bit; `+0x58` means something different in
+each class (MissionMgr story flags, the Emperor flag, a fleet's bombard bit);
+`+0x24 >> 4 & 3` numbers the object's copy (master, Alliance view, Empire
+view), not a difficulty.
 
 ### Interface Hubs
 
@@ -108,32 +101,19 @@ advisors do. Trace and test both.
 ### Entity Family Bytes (DatId >> 24)
 | Range | Type |
 |-------|------|
-| 0x08-0x0f | Characters |
-| 0x14-0x1b | Troops / Special Forces |
-| 0x30-0x3b | Capital Ships + Fighters |
-| 0x34 | Empire major characters (0x34000280 Emperor Palpatine, 0x35000281 Darth Vader) |
-| 0x71-0x72 | Fighter squadron types |
-| 0x73-0x74 | Special combat entity |
-| 0x90-0x98 | Star Systems |
+| 0x08-0x0f | Fleets |
+| 0x10-0x13 | Regiments |
+| 0x14-0x1b | Capital ships (0x18 the Death Star, CAPSHPSD record 136) |
+| 0x1c-0x1f | Fighter squadrons |
+| 0x20-0x2f | Facilities |
+| 0x30-0x35 | Major characters (0x34000280 Emperor Palpatine, 0x35000281 Darth Vader) |
+| 0x38 | Minor characters |
+| 0x3c | Special forces |
+| 0x41-0x73 | Missions (0x71 Dagobah, 0x73 Pickup) |
+| 0x80 | Sectors |
+| 0x90, 0x92 | Star systems |
 
-### C++ Class Hierarchy
-```
-CRebObject
-└── CNotifyObject
-    ├── CCombatUnit
-    │   ├── CCapitalShip
-    │   ├── CDeathStar
-    │   └── CFighterSquadron
-    ├── CTroopRegiment
-    ├── CSpecialForces
-    ├── CFacility
-    ├── CCharacter
-    │   ├── CMajorCharacter
-    │   └── CMinorCharacter
-    ├── CStarSystem
-    ├── CFleet
-    └── CMission
-```
+The class tree is in `ghidra/notes/cpp-class-hierarchy.md`.
 
 ## Scholar Documents
 
@@ -141,11 +121,11 @@ Read these when implementing or modding:
 
 | Document | When to Read |
 |----------|-------------|
-| `ghidra/notes/rust-implementation-guide.md` | Before implementing combat in Rust |
+| `ghidra/notes/rust-implementation-guide.md` | Before mapping original fields and families to Rust |
 | `ghidra/notes/modders-taxonomy.md` | When designing mod system or total conversion support |
 | `ghidra/notes/cpp-class-hierarchy.md` | When mapping C++ objects to Rust structs |
 | `ghidra/notes/annotated-functions.md` | When you need exact field offsets or game rules |
-| `ghidra/notes/combat-formulas.md` | Master reference for all RE findings |
+| `ghidra/notes/COMBAT-SUMMARY.md` | Where each kind of combat is resolved |
 
 ## Ghidra Scripts
 
@@ -153,9 +133,19 @@ The Java scripts run headless (Workflow, below): `DecompileTargets.java`
 (functions with callers and callees), `DecompileVtable.java` (a vtable's
 slots), `FindOperandText.java` (instructions whose text matches, such as a
 field write `+ 0xc0],`), `DumpReferences.java`, `DumpInstructions.java`,
-`DumpPointerTable.java`, `DumpMemory.java`, `FindScalarUses.java`, and
-`CreateAndDecompileTargets.java`. The historical Jython scripts below need
-PyGhidra:
+`DumpPointerTable.java`, `DumpMemory.java`, `FindScalarUses.java`,
+`DecompileCallersOf.java` (every function calling an import, such as
+`DrawTextA`), `FindIndirectCalls.java`, `FindScalarReferences.java`,
+`DumpFloatsAt.java`, and `CreateAndDecompileTargets.java` (a function
+Ghidra never defined, by address). For a range: `DecompileRange.java`
+(every function, `index.tsv` and `gaps.tsv`), then `RecoverGaps.java` (every
+function hidden in those gaps). For evidence tables: `CallSiteArgs.java`
+(the arguments pushed at every call to a function, such as a registry),
+`FindDatIds.java` (every literal record id), `FamilyChecks.java` (every
+`SHR reg,0x18` family test and what it compares) and `FindString.java` (a
+text's address and the functions using it). `ghidra/` is ignored, so add a new
+script with `git add -f`, as a cited `.c` file is. The historical Jython
+scripts below need PyGhidra:
 
 | Script | Purpose |
 |--------|---------|

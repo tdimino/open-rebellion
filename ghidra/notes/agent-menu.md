@@ -251,8 +251,8 @@ for Medium/Hard. This means:
 
 ### Subclass constructors
 
-Both `FUN_004c0710` (alliance advisor) and `FUN_004c27f0` (empire
-advisor) call `FUN_00439320` first, then set `DAT_006b28b0 |= 0x1000`
+Both `FUN_004c27f0` (Alliance advisor, player side 1) and `FUN_004c0710`
+(Empire advisor, player side 2; `FUN_004861b0`, `side-numbering.md`) call `FUN_00439320` first, then set `DAT_006b28b0 |= 0x1000`
 (Translate Counterpart starts on). The advice bit from FUN_00439320 is
 preserved.
 
@@ -434,8 +434,8 @@ preserving only 0x4000 and 0x8000.
 | FUN_00439e80.c | Advice/Translate Counterpart toggle |
 | FUN_00439e30.c | Module state query for checkmarks |
 | FUN_00439320.c | Agent base constructor — initializes DAT_006b28b0 |
-| FUN_004c0710.c | Alliance advisor subclass constructor |
-| FUN_004c27f0.c | Empire advisor subclass constructor |
+| FUN_004c0710.c | Empire advisor subclass constructor |
+| FUN_004c27f0.c | Alliance advisor subclass constructor |
 | FUN_00401b00.c | Game mode getter (DAT_006be3b8 + 0x104) |
 | FUN_004397a0.c | Agent save — serializes DAT_006b28b0 |
 | FUN_00439550.c | Agent load — deserializes DAT_006b28b0 |

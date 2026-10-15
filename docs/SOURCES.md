@@ -3,7 +3,7 @@ title: "External Sources"
 description: "All external references used for Open Rebellion mechanics documentation"
 category: "reference"
 created: 2026-03-16
-updated: 2026-03-16
+updated: 2026-10-14
 tags: [sources, bibliography, references]
 ---
 
@@ -46,7 +46,7 @@ All external references used for Open Rebellion game mechanics documentation, or
 |--------|------|-------|
 | Ghidra RE: Entity System | `ghidra/notes/entity-system.md` | Character fields, Force/Jedi, fleet notifications, object hierarchy. 669 lines. |
 | Ghidra RE: Economy Systems | `ghidra/notes/economy-systems.md` | Resources, system control, uprising thresholds, blockade. |
-| Ghidra RE: Combat Formulas | `ghidra/notes/combat-formulas.md` | 7-phase space combat, weapon arcs, shield absorption, hull damage. |
+| Ghidra RE: Combat Formulas | `ghidra/notes/combat-formulas.md` | Battle state machine, combat notification setters, scripted-event strings. Battles themselves: `ghidra/notes/simulate-runs-tactical-engine.md`. |
 | Ghidra RE: Annotated Functions | `ghidra/notes/annotated-functions.md` | 5,127 decompiled functions with signatures and purposes. |
 | Ghidra RE: C++ Class Hierarchy | `ghidra/notes/cpp-class-hierarchy.md` | CRebObject → CNotifyObject inheritance, vtable layout. |
 | Ghidra RE: Modder Taxonomy | `ghidra/notes/modders-taxonomy.md` | DAT file field purposes for mod developers. |

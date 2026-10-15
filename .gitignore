@@ -53,6 +53,8 @@ assets/references/ref-ui-full/
 # Autoresearch intermediate outputs
 *.jsonl
 progress.json
+# The task graph's export is tracked (agent_docs/task-graph.md)
+!.beads/issues.jsonl
 
 # Subdaimon outputs
 .subdaimon-output/

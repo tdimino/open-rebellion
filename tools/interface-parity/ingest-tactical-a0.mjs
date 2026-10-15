@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import Ajv2020 from "ajv/dist/2020.js";
 import { ingestCapture } from "./tactical-a0-ingest.mjs";
-import { a0Coverage, collectTacticalCells } from "./tactical-matrix.mjs";
+import { a0Coverage, collectA0Cells } from "./tactical-matrix.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../..");
@@ -49,15 +49,28 @@ const beforeMetadata = argumentsByName.has("--before-metadata")
   ? readJson(requiredPath("--before-metadata"))
   : null;
 const burstDir = argumentsByName.has("--burst") ? requiredPath("--burst") : null;
+// --cell-frame=N: the burst frame that stands for the cell, when the event
+// is not the burst's last frame.
+const cellFrameArgument = argumentsByName.get("--cell-frame");
+if (cellFrameArgument !== undefined && !/^\d+$/.test(String(cellFrameArgument))) {
+  throw new Error("--cell-frame takes a frame index");
+}
+const cellFrame = cellFrameArgument === undefined ? null : Number(cellFrameArgument);
+// --audio=WAV --audio-metadata=JSON: the guest's sound across the frame.
+const audioPath = argumentsByName.has("--audio") ? requiredPath("--audio") : null;
+const audioMetadata = argumentsByName.has("--audio-metadata")
+  ? readJson(requiredPath("--audio-metadata"))
+  : null;
 const result = ingestCapture({
-  root, surfaceLedger, manifest, metadata, pngPath, beforePath, beforeMetadata, burstDir,
+  root, surfaceLedger, manifest, metadata, pngPath, beforePath, beforeMetadata, burstDir, cellFrame,
+  audioPath, audioMetadata,
   validateManifest: (next) => {
     if (!validate(next)) {
       throw new Error(`updated A0 manifest is invalid:\n${JSON.stringify(validate.errors, null, 2)}`);
     }
   },
 });
-const cells = collectTacticalCells(surfaceLedger);
+const cells = collectA0Cells(surfaceLedger);
 const coverage = a0Coverage(result.manifest, cells);
 const temporary = `${manifestPath}.tmp-${process.pid}`;
 fs.writeFileSync(temporary, `${JSON.stringify(result.manifest, null, 2)}\n`);

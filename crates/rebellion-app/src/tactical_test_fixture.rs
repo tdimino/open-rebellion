@@ -1,7 +1,8 @@
 //! Test-only, versioned direct entry into the production tactical battle scene.
 
-use rebellion_core::ids::{CapitalShipKey, FighterKey};
+use rebellion_core::ids::{CapitalShipKey, FighterKey, FleetKey, SystemKey};
 use rebellion_core::missions::MissionFaction;
+use rebellion_core::troop_transport::TroopTransportState;
 use rebellion_core::world::{FighterEntry, Fleet, GameWorld, ShipInstance};
 use rebellion_render::tactical_view::{
     tactical_character_content_resource, TacticalAttackTarget, WeaponKind,
@@ -53,6 +54,9 @@ const EMPTY_SPACE_PRESENTATION_SCENARIO: u32 = 33;
 const DETAIL_ESCORT_PRESENTATION_SCENARIO: u32 = 34;
 const BATTLE_ALERT_PRESENTATION_SCENARIO: u32 = 35;
 const TACTICAL_AUDIO_PRESENTATION_SCENARIO: u32 = 36;
+/// The original's day-30 Battle at Yaga Minor (`empire-day30-yaga-alert-control`),
+/// rebuilt unit for unit so the A0 comparison can judge battle-dependent regions.
+const YAGA_DAY30_SCENARIO: u32 = 37;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TacticalLodFixture {
@@ -127,6 +131,9 @@ pub(crate) struct TacticalFixtureRequest {
     pub battle_options_withdrawal: bool,
     pub death_star_laser_journey: bool,
     pub trench_run_outcome: Option<TacticalTrenchRunOutcome>,
+    pub yaga_day30: bool,
+    /// Battles open with nothing selected; these gates read a selected ship.
+    pub stage_player_selection: bool,
     lod_fixture: TacticalLodFixture,
 }
 
@@ -341,7 +348,8 @@ fn decode(code: u32) -> Option<TacticalFixtureRequest> {
         | EMPTY_SPACE_PRESENTATION_SCENARIO
         | DETAIL_ESCORT_PRESENTATION_SCENARIO
         | BATTLE_ALERT_PRESENTATION_SCENARIO
-        | TACTICAL_AUDIO_PRESENTATION_SCENARIO => (
+        | TACTICAL_AUDIO_PRESENTATION_SCENARIO
+        | YAGA_DAY30_SCENARIO => (
             false,
             true,
             false,
@@ -414,6 +422,11 @@ fn decode(code: u32) -> Option<TacticalFixtureRequest> {
             TRENCH_RUN_FAILURE_SCENARIO => Some(TacticalTrenchRunOutcome::Failure),
             _ => None,
         },
+        yaga_day30: scenario == YAGA_DAY30_SCENARIO,
+        stage_player_selection: matches!(
+            scenario,
+            CAMERA_JOURNEY_SCENARIO | PRODUCTION_PARTICIPANTS_SCENARIO
+        ),
         lod_fixture,
     })
 }
@@ -436,13 +449,181 @@ pub(crate) fn apply(
     player_faction: &mut MissionFaction,
     cockpit: &mut CockpitState,
     game_mode: &mut GameMode,
+    troop_transport: &mut TroopTransportState,
 ) -> Result<(), String> {
+    let (system, attacker, defender) = if request.yaga_day30 {
+        yaga_day30_encounter(world, troop_transport)?
+    } else {
+        synthetic_encounter(request, world)?
+    };
+
+    let player_is_attacker = request.faction == CockpitFaction::Alliance;
+    tactical_flow::begin_player_battle(
+        world,
+        BattleEntry {
+            system,
+            attacker: rebellion_core::combat::CombatForce::of_fleet(world, attacker),
+            defender: rebellion_core::combat::CombatForce::of_fleet(world, defender),
+            player_is_attacker,
+            tick: 0,
+            rng_seed: 0x5eed_ba77,
+        },
+        tactical,
+        messages,
+        game_mode,
+    )
+    .map_err(|error| format!("fixture battle entry failed: {error:?}"))?;
+    #[cfg(feature = "interface-test-fixtures")]
+    if !request.battle_alert_presentation {
+        tactical.dismiss_battle_alert_for_fixture();
+    }
+    #[cfg(feature = "interface-test-fixtures")]
+    if request.stage_player_selection {
+        tactical.select_first_player_ship_for_fixture();
+    }
+    #[cfg(feature = "interface-test-fixtures")]
+    if request.focus_player_fighter {
+        tactical.focus_player_fighter_for_fixture();
+    }
+    #[cfg(feature = "interface-test-fixtures")]
+    if request.group_presentation {
+        tactical.configure_group_presentation_fixture();
+    }
+    #[cfg(feature = "interface-test-fixtures")]
+    if request.effect_presentation {
+        tactical.configure_effect_presentation_fixture();
+    }
+    #[cfg(feature = "interface-test-fixtures")]
+    if request.projectile_field_presentation {
+        tactical.configure_projectile_field_fixture();
+    }
+    #[cfg(feature = "interface-test-fixtures")]
+    if request.selected_damage_presentation {
+        tactical.configure_selected_damage_fixture();
+    }
+    #[cfg(feature = "interface-test-fixtures")]
+    if request.selected_navigation_presentation {
+        tactical.configure_selected_navigation_fixture();
+    }
+    #[cfg(feature = "interface-test-fixtures")]
+    if request.navigation_camera_presentation {
+        tactical.configure_selected_navigation_fixture();
+    }
+    #[cfg(feature = "interface-test-fixtures")]
+    if request.subsystem_field_command_presentation {
+        tactical.configure_subsystem_field_command_fixture();
+    }
+    #[cfg(feature = "interface-test-fixtures")]
+    if request.live_subsystem_damage_presentation {
+        tactical.configure_live_subsystem_damage_fixture();
+    }
+    #[cfg(feature = "interface-test-fixtures")]
+    if request.subsystem_repair_mobility_presentation {
+        tactical.configure_subsystem_repair_mobility_fixture();
+    }
+    #[cfg(feature = "interface-test-fixtures")]
+    if request.maneuver_movement_presentation {
+        tactical.configure_maneuver_movement_fixture();
+    }
+    #[cfg(feature = "interface-test-fixtures")]
+    if request.command_assignment_presentation {
+        tactical.configure_command_assignment_fixture();
+    }
+    #[cfg(feature = "interface-test-fixtures")]
+    if request.command_execution_presentation {
+        tactical.configure_command_execution_fixture();
+    }
+    #[cfg(feature = "interface-test-fixtures")]
+    if request.command_progression_presentation {
+        tactical.configure_command_progression_fixture();
+    }
+    #[cfg(feature = "interface-test-fixtures")]
+    if request.attack_targeting_presentation {
+        tactical.configure_attack_targeting_fixture();
+    }
+    #[cfg(feature = "interface-test-fixtures")]
+    if request.attack_target_lifecycle_presentation {
+        tactical.configure_attack_target_lifecycle_fixture();
+    }
+    #[cfg(feature = "interface-test-fixtures")]
+    // Outcome fixtures enter the same production Death Star path themselves.
+    // Do not pre-arm the Imperial observer route first: that would consume the
+    // fixture's deterministic result before its requested seed/rating is set.
+    if request.death_star_presentation && request.trench_run_outcome.is_none() {
+        tactical.configure_death_star_presentation_fixture();
+    }
+    #[cfg(feature = "interface-test-fixtures")]
+    if request.death_star_laser_journey {
+        tactical.configure_death_star_laser_fixture();
+    }
+    #[cfg(feature = "interface-test-fixtures")]
+    if let Some(outcome) = request.trench_run_outcome {
+        tactical.configure_trench_run_outcome_fixture(outcome);
+    }
+    #[cfg(feature = "interface-test-fixtures")]
+    if request.battle_results_presentation {
+        tactical.configure_battle_results_presentation_fixture();
+    }
+    #[cfg(feature = "interface-test-fixtures")]
+    if request.battle_options_withdrawal {
+        tactical.configure_withdrawal_warning_fixture();
+    }
+    #[cfg(feature = "interface-test-fixtures")]
+    if request.empty_space_presentation {
+        tactical.configure_empty_space_fixture();
+    }
+    #[cfg(feature = "interface-test-fixtures")]
+    if request.detail_escort_presentation {
+        tactical.configure_detail_escort_fixture();
+    }
+    #[cfg(feature = "interface-test-fixtures")]
+    if request.tactical_audio_presentation {
+        tactical.configure_tactical_audio_fixture();
+    }
+    #[cfg(feature = "interface-test-fixtures")]
+    if !request.production_participants {
+        tactical.disable_original_participant_rendering();
+    }
+    #[cfg(feature = "interface-test-fixtures")]
+    if request.suppress_capital_fallback {
+        tactical.suppress_mapped_capital_fallback();
+    }
+    #[cfg(feature = "interface-test-fixtures")]
+    if request.proof_enabled {
+        tactical.enable_resource_2560_proof();
+        if request.lod_fixture == TacticalLodFixture::Journey {
+            tactical.enable_tactical_lod_journey();
+        } else if request.lod_fixture == TacticalLodFixture::CameraJourney {
+            tactical.enable_original_camera_proof(request.faction == CockpitFaction::Empire);
+        } else if let Some(view) = request.lod_fixture.view() {
+            tactical.set_tactical_lod_fixture(view);
+        }
+    }
+    *player_faction = if player_is_attacker {
+        MissionFaction::Alliance
+    } else {
+        MissionFaction::Empire
+    };
+    cockpit.faction = request.faction;
+    Ok(())
+}
+
+/// One or a few copies of the first eligible class per side, at an empty
+/// system: the encounter every presentation fixture except Yaga uses.
+fn synthetic_encounter(
+    request: TacticalFixtureRequest,
+    world: &mut GameWorld,
+) -> Result<(SystemKey, FleetKey, FleetKey), String> {
     // Exercise two real SYSTEMSD picture/palette identities across the faction
     // matrix instead of accepting a hard-coded global palette accidentally.
+    // Fwillsving and Norval II are in the Standard galaxy the browser seeds
+    // (pictures 1 and 4) and hold no fleets, squadrons, troops or facilities
+    // at seed 0. Pictures 3, 6 and 20 are avoided: their palettes turn the
+    // 4204 fighter indicator black on black.
     let system_dat_id = if request.faction == CockpitFaction::Alliance {
-        100
+        122
     } else {
-        101
+        128
     };
     let system = world
         .systems
@@ -615,153 +796,110 @@ pub(crate) fn apply(
         world.characters[character].current_fleet = Some(player_fleet);
         world.characters[character].current_system = None;
     }
+    world.number_capital_ships();
     world.systems[system].fleets.extend([attacker, defender]);
+    Ok((system, attacker, defender))
+}
 
-    let player_is_attacker = request.faction == CockpitFaction::Alliance;
-    tactical_flow::begin_player_battle(
-        world,
-        BattleEntry {
-            system,
-            attacker: rebellion_core::combat::CombatForce::of_fleet(world, attacker),
-            defender: rebellion_core::combat::CombatForce::of_fleet(world, defender),
-            player_is_attacker,
-            tick: 0,
-            rng_seed: 0x5eed_ba77,
-        },
-        tactical,
-        messages,
-        game_mode,
-    )
-    .map_err(|error| format!("fixture battle entry failed: {error:?}"))?;
-    #[cfg(feature = "interface-test-fixtures")]
-    if !request.battle_alert_presentation {
-        tactical.dismiss_battle_alert_for_fixture();
-    }
-    #[cfg(feature = "interface-test-fixtures")]
-    if request.focus_player_fighter {
-        tactical.focus_player_fighter_for_fixture();
-    }
-    #[cfg(feature = "interface-test-fixtures")]
-    if request.group_presentation {
-        tactical.configure_group_presentation_fixture();
-    }
-    #[cfg(feature = "interface-test-fixtures")]
-    if request.effect_presentation {
-        tactical.configure_effect_presentation_fixture();
-    }
-    #[cfg(feature = "interface-test-fixtures")]
-    if request.projectile_field_presentation {
-        tactical.configure_projectile_field_fixture();
-    }
-    #[cfg(feature = "interface-test-fixtures")]
-    if request.selected_damage_presentation {
-        tactical.configure_selected_damage_fixture();
-    }
-    #[cfg(feature = "interface-test-fixtures")]
-    if request.selected_navigation_presentation {
-        tactical.configure_selected_navigation_fixture();
-    }
-    #[cfg(feature = "interface-test-fixtures")]
-    if request.navigation_camera_presentation {
-        tactical.configure_selected_navigation_fixture();
-    }
-    #[cfg(feature = "interface-test-fixtures")]
-    if request.subsystem_field_command_presentation {
-        tactical.configure_subsystem_field_command_fixture();
-    }
-    #[cfg(feature = "interface-test-fixtures")]
-    if request.live_subsystem_damage_presentation {
-        tactical.configure_live_subsystem_damage_fixture();
-    }
-    #[cfg(feature = "interface-test-fixtures")]
-    if request.subsystem_repair_mobility_presentation {
-        tactical.configure_subsystem_repair_mobility_fixture();
-    }
-    #[cfg(feature = "interface-test-fixtures")]
-    if request.maneuver_movement_presentation {
-        tactical.configure_maneuver_movement_fixture();
-    }
-    #[cfg(feature = "interface-test-fixtures")]
-    if request.command_assignment_presentation {
-        tactical.configure_command_assignment_fixture();
-    }
-    #[cfg(feature = "interface-test-fixtures")]
-    if request.command_execution_presentation {
-        tactical.configure_command_execution_fixture();
-    }
-    #[cfg(feature = "interface-test-fixtures")]
-    if request.command_progression_presentation {
-        tactical.configure_command_progression_fixture();
-    }
-    #[cfg(feature = "interface-test-fixtures")]
-    if request.attack_targeting_presentation {
-        tactical.configure_attack_targeting_fixture();
-    }
-    #[cfg(feature = "interface-test-fixtures")]
-    if request.attack_target_lifecycle_presentation {
-        tactical.configure_attack_target_lifecycle_fixture();
-    }
-    #[cfg(feature = "interface-test-fixtures")]
-    // Outcome fixtures enter the same production Death Star path themselves.
-    // Do not pre-arm the Imperial observer route first: that would consume the
-    // fixture's deterministic result before its requested seed/rating is set.
-    if request.death_star_presentation && request.trench_run_outcome.is_none() {
-        tactical.configure_death_star_presentation_fixture();
-    }
-    #[cfg(feature = "interface-test-fixtures")]
-    if request.death_star_laser_journey {
-        tactical.configure_death_star_laser_fixture();
-    }
-    #[cfg(feature = "interface-test-fixtures")]
-    if let Some(outcome) = request.trench_run_outcome {
-        tactical.configure_trench_run_outcome_fixture(outcome);
-    }
-    #[cfg(feature = "interface-test-fixtures")]
-    if request.battle_results_presentation {
-        tactical.configure_battle_results_presentation_fixture();
-    }
-    #[cfg(feature = "interface-test-fixtures")]
-    if request.battle_options_withdrawal {
-        tactical.configure_withdrawal_warning_fixture();
-    }
-    #[cfg(feature = "interface-test-fixtures")]
-    if request.empty_space_presentation {
-        tactical.configure_empty_space_fixture();
-    }
-    #[cfg(feature = "interface-test-fixtures")]
-    if request.detail_escort_presentation {
-        tactical.configure_detail_escort_fixture();
-    }
-    #[cfg(feature = "interface-test-fixtures")]
-    if request.tactical_audio_presentation {
-        tactical.configure_tactical_audio_fixture();
-    }
-    #[cfg(feature = "interface-test-fixtures")]
-    if !request.production_participants {
-        tactical.disable_original_participant_rendering();
-    }
-    #[cfg(feature = "interface-test-fixtures")]
-    if request.suppress_capital_fallback {
-        tactical.suppress_mapped_capital_fallback();
-    }
-    #[cfg(feature = "interface-test-fixtures")]
-    if request.proof_enabled {
-        tactical.enable_resource_2560_proof();
-        if request.lod_fixture == TacticalLodFixture::Journey {
-            tactical.enable_tactical_lod_journey();
-        } else if request.lod_fixture == TacticalLodFixture::CameraJourney {
-            tactical.enable_original_camera_proof(request.faction == CockpitFaction::Empire);
-        } else if let Some(view) = request.lod_fixture.view() {
-            tactical.set_tactical_lod_fixture(view);
+/// The forces of the original's day-30 Battle at Yaga Minor, read from its A0
+/// frames (Battle Alert, Battle Results and the selected-unit panels): the
+/// Alliance attacks with one Bulk Cruiser and no fighters; the Empire's Fleet 1
+/// blockades with an Imperial Star Destroyer, a Carrack Light Cruiser, six TIE
+/// Fighter squadrons (Red Group, 72 craft), Darth Vader and three
+/// Stormtrooper Regiments, which the ISD's contents panel lists.
+fn yaga_day30_encounter(
+    world: &mut GameWorld,
+    troop_transport: &mut TroopTransportState,
+) -> Result<(SystemKey, FleetKey, FleetKey), String> {
+    let system = world
+        .systems
+        .iter()
+        .find(|(_, system)| system.name == "Yaga Minor" && !system.is_destroyed)
+        .map(|(key, _)| key)
+        .ok_or("no Yaga Minor system")?;
+    let capital = |world: &GameWorld, name: &str| {
+        world
+            .capital_ship_classes
+            .iter()
+            .find(|(_, class)| class.name == name)
+            .map(|(key, class)| (key, i32::try_from(class.hull).unwrap_or(i32::MAX)))
+            .ok_or(format!("no {name} class"))
+    };
+    let bulk_cruiser = capital(world, "Bulk Cruiser")?;
+    let star_destroyer = capital(world, "Imperial Star Destroyer")?;
+    let carrack = capital(world, "Carrack Light Cruiser")?;
+    let tie_fighter = world
+        .fighter_classes
+        .iter()
+        .find(|(_, class)| class.name == "TIE Fighter")
+        .map(|(key, _)| key)
+        .ok_or("no TIE Fighter class")?;
+    let vader = world
+        .characters
+        .iter()
+        .find(|(_, character)| character.name == "Darth Vader" && !character.is_killed)
+        .map(|(key, _)| key)
+        .ok_or("no Darth Vader")?;
+
+    let attacker = world.fleets.insert(Fleet {
+        location: system,
+        capital_ships: vec![ShipInstance::new(bulk_cruiser.0, bulk_cruiser.1, true)],
+        fighters: vec![],
+        characters: vec![],
+        is_alliance: true,
+        has_death_star: false,
+    });
+    let defender = world.fleets.insert(Fleet {
+        location: system,
+        capital_ships: vec![
+            ShipInstance::new(star_destroyer.0, star_destroyer.1, false),
+            ShipInstance::new(carrack.0, carrack.1, false),
+        ],
+        fighters: vec![FighterEntry {
+            class: tie_fighter,
+            count: 6,
+            carrier: 0,
+        }],
+        characters: vec![vader],
+        is_alliance: false,
+        has_death_star: false,
+    });
+    if let Some(previous) = world.characters[vader].current_fleet {
+        if let Some(fleet) = world.fleets.get_mut(previous) {
+            fleet.characters.retain(|&character| character != vader);
         }
     }
-    *player_faction = if player_is_attacker {
-        MissionFaction::Alliance
-    } else {
-        MissionFaction::Empire
-    };
-    cockpit.faction = request.faction;
-    Ok(())
+    world.characters[vader].current_fleet = Some(defender);
+    world.characters[vader].current_system = None;
+    world.number_capital_ships();
+    world.systems[system].fleets.extend([attacker, defender]);
+
+    // Three of the seeded Empire's own Stormtrooper Regiments (TROOPSD family
+    // 0x10, index 6), moved to Yaga Minor and embarked, keep their strength.
+    let stormtroopers: Vec<_> = world
+        .troops
+        .iter()
+        .filter(|(key, troop)| {
+            !troop.is_alliance
+                && troop.class_dat_id.family() == 0x10
+                && troop.class_dat_id.index() == 6
+                && !troop_transport.is_embarked(*key)
+        })
+        .map(|(key, _)| key)
+        .take(3)
+        .collect();
+    if stormtroopers.len() != 3 {
+        return Err("fewer than three Imperial Stormtrooper Regiments".into());
+    }
+    for held in world.systems.values_mut() {
+        held.ground_units
+            .retain(|troop| !stormtroopers.contains(troop));
+    }
+    world.systems[system].ground_units.extend(&stormtroopers);
+    troop_transport
+        .load(world, defender, &stormtroopers)
+        .map_err(|error| format!("Stormtroopers did not embark: {error:?}"))?;
+    Ok((system, attacker, defender))
 }
 
 #[derive(Serialize)]
@@ -786,7 +924,9 @@ struct FixtureRecord<'a> {
     battle_alert_presentation: bool,
     tactical_audio_presentation: bool,
     battle_alert_open: bool,
-    tactical_music_mdata_id: u32,
+    /// The MDATA file playing: the Battle Alert's 310 or 311 while it shows
+    /// (`FUN_0044f860`), none once a command closes it (`FUN_00450540`).
+    tactical_music_mdata_id: Option<u32>,
     tactical_weapon_audio_wave_first: u32,
     tactical_weapon_audio_wave_last: u32,
     tactical_weapon_audio_variant_count: u32,
@@ -1260,7 +1400,7 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
         ],
     });
     emit(&FixtureRecord {
-        schema_version: 36,
+        schema_version: 37,
         status: "battle-ready",
         family: "tactical",
         fixture_code: request.code,
@@ -1284,7 +1424,10 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
         battle_alert_presentation: request.battle_alert_presentation,
         tactical_audio_presentation: request.tactical_audio_presentation,
         battle_alert_open: tactical.battle_alert_open(),
-        tactical_music_mdata_id: 307,
+        tactical_music_mdata_id: tactical.battle_alert_open().then(|| {
+            let alliance = request.faction == CockpitFaction::Alliance;
+            300 + u32::from(rebellion_render::MdataTrack::battle_alert(alliance).index())
+        }),
         tactical_weapon_audio_wave_first: 13_033,
         tactical_weapon_audio_wave_last: 13_054,
         tactical_weapon_audio_variant_count: 22,
@@ -1344,7 +1487,7 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
 
 pub(crate) fn emit_failed(request: TacticalFixtureRequest, error: &str) {
     emit(&FixtureRecord {
-        schema_version: 36,
+        schema_version: 37,
         status: "failed",
         family: "tactical",
         fixture_code: request.code,
@@ -1368,7 +1511,7 @@ pub(crate) fn emit_failed(request: TacticalFixtureRequest, error: &str) {
         battle_alert_presentation: request.battle_alert_presentation,
         tactical_audio_presentation: request.tactical_audio_presentation,
         battle_alert_open: false,
-        tactical_music_mdata_id: 307,
+        tactical_music_mdata_id: None,
         tactical_weapon_audio_wave_first: 13_033,
         tactical_weapon_audio_wave_last: 13_054,
         tactical_weapon_audio_variant_count: 22,
@@ -1497,8 +1640,9 @@ mod tests {
             decode(0x10107).unwrap().lod_fixture,
             TacticalLodFixture::CameraJourney
         );
+        assert!(decode(0x10125).unwrap().yaga_day30);
         assert!(decode(0x10100).is_none());
-        assert!(decode(0x10125).is_none());
+        assert!(decode(0x10126).is_none());
         assert!(decode(0x10301).is_none());
         assert!(decode(0x00101).is_none());
     }

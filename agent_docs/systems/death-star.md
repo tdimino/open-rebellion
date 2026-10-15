@@ -3,7 +3,7 @@ title: "Death Star System"
 description: "Construction countdown, planet destruction, and nearby-warning scan mechanics"
 category: "agent-docs"
 created: 2026-03-14
-updated: 2026-03-16
+updated: 2026-10-14
 tags: [death-star, construction, planet-destruction, simulation]
 ---
 
@@ -39,9 +39,7 @@ DeathStarSystem::start_construction(&mut ds_state, system); // -> bool (false if
 
 ## Superlaser Fire Preconditions
 
-No recovered source for the superlaser fire path. FUN_005617b0 is the
-CharacterMgr SeatOfPower check; FUN_0055f650 stores that flag. The
-preconditions below are gameplay requirements, not decompiled logic:
+The port's checks:
 1. Target not already destroyed (`!sys.is_destroyed`)
 2. Empire Death Star fleet present at target system
 3. Target not Empire-controlled (no self-destruction)
@@ -50,8 +48,12 @@ preconditions below are gameplay requirements, not decompiled logic:
 
 Scans all Alliance-controlled systems within `NEARBY_WARNING_RADIUS = 300` coordinate units of the Death Star fleet. Emits `NearbyWarning` for each. Used for Alliance intelligence messages.
 
+## Original Mechanism
+
+None of the checks above is the original's. `docs/mechanics/death-star.md` § Port lists each divergence and its node; `ghidra/notes/death-star-strategic.md` is the source.
+
 ## Source
 
+- `ghidra/notes/death-star-strategic.md`
+- `ghidra/notes/bombardment.md` — the Destroy System run
 - `ghidra/notes/economy-systems.md` § SystemDeathStarNearbyNotif
-- `ghidra/notes/community-address-remap.md` — FUN_005617b0 is SeatOfPower, not the fire path
-- `entity-system.md §4.2` — alive_flag inverted semantics

@@ -509,6 +509,58 @@
       "expected_status": "battle-ready",
       "audit_cells": [],
       "acceptance": "Test-only framebuffer negative control. No original tactical interface cell is accepted."
+    },
+    {
+      "slug": "yaga-day30",
+      "description": "The original's day-30 Battle at Yaga Minor rebuilt unit for unit, replaying the A0 master input trace (selection, highlights, orders, maneuvers, options, navigation, camera, withdrawal and results)",
+      "fixture_codes": { "alliance": 65829, "empire": 66085 },
+      "execution_kind": "journey",
+      "tactical_proof": false,
+      "production_participants": true,
+      "state_match": "empire-day30-yaga-alert-control",
+      "yaga_journey": "master",
+      "expected_status": "battle-ready",
+      "audit_cells": [],
+      "acceptance": "State-matched A1 reference frames for the A0 comparison (tools/interface-parity/tactical-a0-compare.mjs). It maps no cell itself; the comparison spec pairs its frames with the A0 cells captured from the same save."
+    },
+    {
+      "slug": "yaga-day30-options",
+      "description": "The day-30 Yaga battle through Battle Options: Observe, Take Command and Immediate Result to the results screen, as in the A0 traces",
+      "fixture_codes": { "alliance": 65829, "empire": 66085 },
+      "execution_kind": "journey",
+      "tactical_proof": false,
+      "production_participants": true,
+      "state_match": "empire-day30-yaga-alert-control",
+      "yaga_journey": "options",
+      "expected_status": "battle-ready",
+      "audit_cells": [],
+      "acceptance": "State-matched A1 reference frames for the A0 comparison (tools/interface-parity/tactical-a0-compare.mjs). It maps no cell itself; the comparison spec pairs its frames with the A0 cells captured from the same save."
+    },
+    {
+      "slug": "yaga-day30-pointer",
+      "description": "The day-30 Yaga battle's pointer states from the A0 traces: hover and held task force 1, then held Hammer and Attack Capital buttons",
+      "fixture_codes": { "alliance": 65829, "empire": 66085 },
+      "execution_kind": "journey",
+      "tactical_proof": false,
+      "production_participants": true,
+      "state_match": "empire-day30-yaga-alert-control",
+      "yaga_journey": "pointer",
+      "expected_status": "battle-ready",
+      "audit_cells": [],
+      "acceptance": "State-matched A1 reference frames for the A0 comparison (tools/interface-parity/tactical-a0-compare.mjs). It maps no cell itself; the comparison spec pairs its frames with the A0 cells captured from the same save."
+    },
+    {
+      "slug": "yaga-day30-task-force-2",
+      "description": "The day-30 Yaga battle with the ISD Ctrl-clicked into task force 2: next and previous, Hold Position and Attack Fighters, as in the A0 traces",
+      "fixture_codes": { "alliance": 65829, "empire": 66085 },
+      "execution_kind": "journey",
+      "tactical_proof": false,
+      "production_participants": true,
+      "state_match": "empire-day30-yaga-alert-control",
+      "yaga_journey": "task-force-2",
+      "expected_status": "battle-ready",
+      "audit_cells": [],
+      "acceptance": "State-matched A1 reference frames for the A0 comparison (tools/interface-parity/tactical-a0-compare.mjs). It maps no cell itself; the comparison spec pairs its frames with the A0 cells captured from the same save."
     }
   ]
 }

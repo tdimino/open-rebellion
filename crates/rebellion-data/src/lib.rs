@@ -136,6 +136,21 @@ pub fn load_game_data_with_options(
             .cloned()
             .unwrap_or_else(|| format!("{kind} {id}"))
     };
+    // A character's name with each rank (FUN_004f17f0); a missing string
+    // shows nothing, as a missing TEXTSTRA id does in the original.
+    let ranked_names = |id: u16| -> [String; 3] {
+        [
+            rebellion_core::officer_rank::CommandKind::Commander,
+            rebellion_core::officer_rank::CommandKind::Admiral,
+            rebellion_core::officer_rank::CommandKind::General,
+        ]
+        .map(|kind| {
+            kind.name_block()
+                .and_then(|block| id.checked_add(block))
+                .and_then(|ranked| string_table.get(&ranked).cloned())
+                .unwrap_or_default()
+        })
+    };
 
     let mut world = GameWorld {
         systems: slotmap::SlotMap::with_key(),
@@ -162,6 +177,7 @@ pub fn load_game_data_with_options(
         fleet_names: rebellion_core::world::FleetNames::default(),
         last_ship_tag: 0,
         squadron_transits: Vec::new(),
+        arrival_holders: std::collections::HashMap::new(),
     };
 
     // ── 1. Sectors ───────────────────────────────────────────────────────────
@@ -361,7 +377,8 @@ pub fn load_game_data_with_options(
 
     for dat in &major_file.characters {
         let name = lookup(dat.text_stra_dll_id, "Character");
-        world.characters.insert(convert_character(dat, true, name));
+        let ranked = ranked_names(dat.text_stra_dll_id);
+        world.characters.insert(convert_character(dat, true, name, ranked));
     }
 
     // ── 6. Minor characters ──────────────────────────────────────────────────
@@ -369,7 +386,8 @@ pub fn load_game_data_with_options(
 
     for dat in &minor_file.characters {
         let name = lookup(dat.text_stra_dll_id, "Character");
-        world.characters.insert(convert_character(dat, false, name));
+        let ranked = ranked_names(dat.text_stra_dll_id);
+        world.characters.insert(convert_character(dat, false, name, ranked));
     }
 
     // ── 7. GNPRTB / SDPRTB seeding parameters ───────────────────────────────
@@ -836,7 +854,12 @@ fn mission_record(m: &Mission) -> MissionRecord {
 }
 
 /// Convert a DAT character entry into a world Character.
-fn convert_character(dat: &CharacterEntry, is_major: bool, name: String) -> Character {
+fn convert_character(
+    dat: &CharacterEntry,
+    is_major: bool,
+    name: String,
+    ranked_names: [String; 3],
+) -> Character {
     Character {
         dat_id: DatId::new(dat.id),
         name,
@@ -906,6 +929,9 @@ fn convert_character(dat: &CharacterEntry, is_major: bool, name: String) -> Char
         heritage_known: false,
         is_killed: false,
         recruited: false,
+        command_kind: rebellion_core::officer_rank::CommandKind::None,
+        command_post: None,
+        ranked_names,
     }
 }
 

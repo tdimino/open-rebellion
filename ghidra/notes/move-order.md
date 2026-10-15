@@ -576,6 +576,260 @@ straight to `FUN_00487740(order, 0)`.
   `FUN_0060dc80`/`FUN_0060dcb0`/`FUN_0060dce0` and sets cursor `+0xb4`; those
   are not read.
 
+## Characters and special forces (0x241)
+
+A character's Move is a Move mission: the `0x241` order makes command `0x250`
+(mission create, `FUN_0054cd80`) for mission `0x41000001`, which the mission
+machinery of `mission-lifecycle.md` then runs. The player and the AI
+(`FUN_004bc040` builds a `0x201` for one character, side `+0x24` of the task,
+target from its caller) take the same path.
+
+### The split
+
+`FUN_0053cbc0` takes the first character or special force of the move's team
+that has `+0x50` bit 2 set (families `0x30..0x3f`), reads its location (slot
+`+0xc`), and takes every later such member at the same location. The loop in
+`FUN_0053c4b0` builds one `0x241` per distinct location (`FUN_0053c810`) until
+none is left, so a selection spread over several systems becomes several
+orders that share one target. A member with bit 2 clear stays in the remainder
+and joins the `0x204`. Each `0x241` gets the move's side (`+0x1c`, `+0x20`),
+the target (`+0x34`, slot `+0x2c`), `+0x44` = `+0x48` = 0, the mission id
+`+0x4c` = `0x41000001` (`FUN_0053c810` at `0x0053c95b`) and an empty decoy
+list `+0x58`.
+
+### Vtable `0x0065d170` (`FUN_004f5440`, `0x60` bytes, factory `FUN_004f5490`)
+
+| Slot | Function | Role |
+|---|---|---|
+| `+0xc` | `FUN_004f5500` | Kind `0x241` |
+| `+0x10` | `FUN_006158b0` | Listed: 0 (mission `0x240` lists, `FUN_0040f340`) |
+| `+0x14` | `FUN_0051fd30` | Checked |
+| `+0x18` | `FUN_0051fe20` | Enabled: built, `+0x4c`, then `FUN_00553770` |
+| `+0x1c` | `FUN_0051ff30` | Validator: Enabled, `+0x50`, then `FUN_00553960` |
+| `+0x20` | `FUN_00520040` | Execute: validate, `FUN_005539f0` runs the commands |
+| `+0x24`..`+0x30` | `FUN_0051fb70`, `FUN_0051fb80`, `FUN_0051fbb0`, `FUN_0051fbc0` | Set and get the team (`+0x2c`) and the target (`+0x34`) |
+| `+0x48` | `FUN_004f4990` | Create command `0x250` (vtable `0x00661e28`, `0x74` bytes) |
+| `+0x4c` | `FUN_004f4a00` | Fill the command and add it to the list at `+0x40` |
+| `+0x50` | `FUN_004f4b60` | Destination, route and container check |
+
+Slots `+0x14..+0x50` are the functions of mission order `0x240` (vtable
+`0x0065d118`); only the destructor, the kind and Listed differ.
+
+### Refusals
+
+Enabled (`FUN_0051fe20`, `FUN_00553770`, command slot `+0x18` =
+`FUN_0054d1a0` → `FUN_005429e0`), with no target:
+
+- `1`/`1` for any sub-check that sets no code; `1`/`0x12` when the actor
+  (`0xf8000006`, `FUN_00506850`) or a member does not resolve; `1`/`0x16` with
+  no command; `1`/`0x14` when two commands carry different sides.
+- `0x40`/`0x91` when no member is left after `FUN_0054bb90` moves prisoners
+  (slot `+0x1d4`, `+0xac` bit 0) to the captured list, which travels with the
+  team (so a prisoner alone is refused, one with a free officer is carried).
+- `0x40`/3 when the located members differ in location, `1`/`0x16` when none
+  has one (`FUN_0054bf00`; the split above makes the first impossible for a
+  Move).
+- `0x30`/n per member (`FUN_0054c110` → slot `+0x1c8`: `FUN_004ed560` for a
+  character, `FUN_00533ce0` for a special force, over `FUN_004f9860`): wrong
+  side (1), on a mission (`+0x78` bit 7, 1), destroyed (`+0x50` bit 3, 3),
+  en route (`+0x50` bit 4, 4), the base object's own refusal (5). An
+  unrecruited member (`+0x50` bit 2 clear) is allowed for `0x241`, and so are
+  an injured one and a prisoner: only `0x240` refuses those.
+
+Destination (`FUN_004f4b60`), after the above:
+
+- `1`/`0x12` for the first member, `1`/`0x14` when its side is neither 1 nor 2,
+  `0x40`/`0x92` or `0x40`/`0x93` for a missing mission record (never for id
+  `0x41000001`).
+- `0x40`/`0x20` when the order's side holds no record of the destination
+  (`FUN_004f2d10`, the side's view of it).
+- `1`/`0x28` when the destination's side bits (`+0x24` bits 6..7, in that
+  view) differ from the mover's. The test runs only for mission ids in
+  `0x40..0x4f`, which is why Move has it and Mission `0x240` does not
+  (`FUN_00542b60` makes the same split: family `0x40..0x4f` for `0x241`,
+  `0x50..0x7f` for `0x240`, else `1`/`1`).
+- Route (`FUN_005513a0`): `1`/`0x22` destination unresolved, `1`/`0x23` its
+  container unresolved, `1`/`0x25` not a system (`0x90..0x97`), a `0x98..0x9f`
+  object, a fleet (`0x08..0x0f`) or a capital ship (`0x14..0x1b`)
+  (`FUN_005531b0`).
+- Acceptance by the candidate container (`FUN_00550700` asks slot `+0x74`
+  for the character range `0x30..0x40`, then room at `+0x78`):
+  - system (`FUN_005073d0`): `1`/`0x22` destroyed (not lifted for `0x241`),
+    `1`/`0x24` not of the mover's side, `1`/`0x28`, `1`/`0x20` not completed
+    (`+0x50` bit 2 clear), `1`/`0x21` en route (`FUN_00553410`). The
+    blockade refusal `0x90`/4 is lifted for `0x241` characters. Room is
+    unlimited (`FUN_00507750`);
+  - capital ship (`FUN_00500ac0`, room `FUN_00500b40`: unlimited for
+    `0x30..0x40`): the same side, completed, destroyed and en route refusals
+    (`FUN_00553410`);
+  - fleet (`FUN_004fe0d0`, `FUN_004fe160`): `FUN_00553410` with its own
+    completed test (`+0x58 & 6`); its room is for capital ships only, so a
+    character never boards the fleet itself.
+
+Creation (the command's `+0x1c` = `FUN_0054d280` → `FUN_00542b60`, run again
+at execute): the checks above again, then `1`/`0x14` for two sides, `1`/`0x16`
+for none (`FUN_005830a0`), `0x40`/`0x21` when the side's object is missing, and
+the Move class's rules through the mission rule table (`FUN_0054cb70`:
+resolver `FUN_00523670`, validator `FUN_00523450`): `0x40`/1 when a member is
+outside the record's masks, `0x40`/`0x13` when the container is en route,
+`0x40`/`0x12` when it is destroyed (record column 11 is 1), `0x40`/`0x23` when
+the target's side is not the mission's own (columns 15 own 1, 16 other 0, 17
+opponent 0). The Move record (MISSNSD id 1, family `0x41`) has special-force
+mask `0xf0f`, character bit `0x10000`, both sides, timer minimum and spread 0,
+hidden 1, detection column 1, resign 0, column 11 1, column 13 0, column 14 1.
+Special force `0x3c000009` (mask `0x1000`) is outside `0xf0f` and cannot
+Move; the Return record (`0x42000002`) takes `0x1f0f`.
+
+So the destination must be a system, fleet or capital ship that the mover's
+side knows, that is its own side's (the order's `+0x24` bits 6..7), not
+destroyed, completed and not en route. An enemy or neutral system, and a
+system held by neither side, are refused (`1`/`0x28`, `1`/`0x24`); an own-side
+system is accepted whatever the side keeps there. A fleet or ship is a
+destination only when it is the mover's side's.
+
+### The command and the member's trip
+
+`FUN_004f4990` builds command `0x250`; `FUN_004f4a00` copies the team
+(`+0x64`), the decoys (`+0x6c`) and the order's `+0x44`, `+0x48` (`+0x50`,
+`+0x54`) into it with actor `0xf8000006` at `+0x3c`; `FUN_004f4b60` writes the
+side (`+0x58`), the mission id (`+0x5c`), the chosen container (`+0x60`) and
+the container id (`+0x48`). The route builder picks the container
+(`FUN_00552300`, `regiment-unload.md`, "Choosing the container"): the
+destination when it accepts, else for a fleet the first ship that does, for a
+system also the first fleet of the side there. A tie keeps the first
+(`FUN_0054fbb0`: only a strictly better candidate replaces). A character's
+room is unlimited, so a system destination takes the character itself and a
+fleet destination puts it aboard its first acceptable capital ship.
+Executing runs `FUN_0054d360`: the creation checks, then the mission
+manager's slot `+0x1bc` (`FUN_00549bf0` → `FUN_00547ba0`) builds the Move
+mission (class vtable `0x00665578`, ctor `FUN_0056ea00` over the transit base
+`FUN_00593730`, family `0x41`; phase hook `FUN_00524b70`). Origin `+0x6c` is
+the team's location, target location `+0x78` the container's system; `FUN_00547ba0`
+fails unless both are systems (`0x90..0x9f`). The command's `+0x48` becomes the
+mission's target `+0x70` and its `+0x60` the container `+0x74`
+(`FUN_00521ab0`, `FUN_00521b60`). hyp: both name the chosen container, since
+`FUN_004f4b60` writes `+0x48` from the chosen id unless that id is the
+destination's own.
+
+Each member is added by the mission's slot `+0x1cc` (`FUN_00522b30`): the
+mission key at `+0x68` (`FUN_00534230`, which makes `+0x78` bit 7 "on a
+mission" through `FUN_00534950`), the hidden bit `+0x78` `0x100`
+(`FUN_00534870`, record column 7) and the decoy bit. Phase 4
+(`FUN_00524b70`, `mission-lifecycle.md`) then runs for each member:
+
+1. `FUN_00556430(member, origin, target location)`: nothing when both are the
+   same system; otherwise the transit of `build-delivery.md`, "Travel" (en route
+   active `+0x50` bit 5, autorouting bit 11, event `0x387` at `clock + ticks`);
+2. `FUN_00556390(member, container)`: the in-transit bit is set across
+   systems and cleared within one (skipped when bit 11 is already set), then
+   slot `+0xa8` puts the member into the container at once
+   (`FUN_00514a60` calls `FUN_00556430`, which returns at once with bit 11
+   set).
+
+So a character sits in the destination system's container, or aboard the chosen
+ship, from the tick of the order, flagged en route until the event `0x387`
+fires (`FUN_004f7fc0`, `FUN_004fb520` clear bits 5, 11 and 12). Arrival
+reaches the mission through `FUN_00515a50` → `FUN_00545820` →
+`FUN_00522280`, which refreshes the target location and sets the ready bit;
+phases 5 and 6 run the validator (6 clears each member's en route bit),
+phase 8's timer `0x38b` has delay `0 + rand(0..=0)`, and phase `0xb` ends with
+code 1 (hyp: all within the arrival day). The members stay in the container.
+A same-system Move therefore lands the character on the day of the order, with
+no transit.
+
+If the chosen container is destroyed, the validator, which `FUN_00545240` runs
+at once, ends the mission with code 7 (`0x40`/`0x12`, column 11 = 1). If the
+target is destroyed, en route or no longer in its container, code 6
+(`0x40`/`0x21`, `0x22`, `0x20`; column 14 = 1, `FUN_00523450`,
+`FUN_00592600`). A side change of the target ends it with code 8
+(`0x40`/`0x23`). The validator runs on entering phases 4, 5, 6 and `0xb`, on leaving 8 and on a
+destruction, not on every move of the ship, so a ship that leaves for another
+system after the order takes the character with it (the character is its
+content) and only a later phase check can end the mission. hyp: what happens
+to characters aboard a ship destroyed in hyperspace (the Death Star rule
+turns characters adrift, `death-star-strategic.md`).
+
+### Travel time
+
+The original gives the same number in the confirmation window and for the
+trip: `ticks = 0` when the origin and destination locations are one system,
+`1` when they differ and either is not a system, else
+`max(1, ((isqrt(dx² + dy²) / GNPRTB[5120]) * speed) / 100)`
+(`FUN_00555b30`, `FUN_0055d8c0`, `build-delivery.md`, "Transit arithmetic";
+GNPRTB 5120 is 5). `speed` is a percent: 100 (GNPRTB 1) by default, GNPRTB
+3083 (shipped 50) when Han Solo (`0x33000243`) is a member and no special force
+is (`FUN_00542990`). The window computes it from the order's lists
+(`FUN_005425e0`: Han in the team or decoys, any family `0x3c..0x3f` member among
+all three lists); the trip reads each member's `+0x9a` (`FUN_004ed370`), which
+phase 2 sets with the same rule (`FUN_00548370`, `mission-lifecycle.md`). The
+distance is between the origin system and the destination's system (a ship's
+location is its fleet's system). A ship's hyperdrive does not enter (the
+character's own `+0x9a` does), nor does a side factor or a skill. A special
+force travels at 100.
+The port's mission transit (`missions.rs`, `MemberTransit`,
+`GNPRTB_HAN_SOLO_SPEED`) is this rule; port: it takes the member off the map
+while it travels, where the original puts it in the destination container with
+bit 5 set.
+
+### Rank, flags
+
+The container change reaches `FUN_00514a60` → `FUN_00560d50`, which clears the
+character's rank `+0x96` (`FUN_004ee350(character, 0)`) at the tick of the
+order, unless it moves between two capital ships of one fleet. The Move also
+starts `FUN_005457f0` (the story-flag check for the named majors). It requires
+`+0x50` bit 4 clear (en route) and bit 3 clear, `+0x78` bit 7 clear, and
+`+0x50` bit 2 only for the `0x204`; it sets the mission key `+0x68` (so bit 7),
+the hidden bit, bits 5 and 11 across systems, and `+0x3c`/`+0x44` of
+`build-delivery.md`. The decoy and detection manager (`FUN_00547f60`) runs on
+every phase change of a record with column 8 set, which Move's is; its mode
+word `0x4112` (`FUN_005236e0`) is the one every class returns, so a Move's
+members face the destination system's detection as any mission's do.
+
+### Enabled for a selection
+
+The Move and Confirmed Move rows of a character selection are enabled when the
+global gate `FUN_0051de80` passes and `FUN_0053c100` (`FUN_0053c4b0`, then
+every sub-order's `+0x18`) passes. For each `0x241` group that means: every
+member resolves, is of the side, is not on a mission, travelling or destroyed
+(`0x30`/n), and a free member remains. An injured one is enabled; a prisoner
+alone is not. The row ignores the target.
+
+### Confirmation line
+
+`FUN_0049a8b0` prints, for each node `FUN_0053c2e0` collects from the `0x241`
+(`FUN_004f4850`: validate, then `FUN_005425e0` stores the days at the node's
+`+0x1c`), the name of the object from the side's view (`FUN_004f2d10`,
+`FUN_004f6270`), `":  "` and the days. The nodes are the team, the decoys and
+the captured members. The days use the origin of `FUN_0054bf00` and the chosen
+container id (`+0x60`). `FUN_00487cc0` asks for confirmation on a `0x201` only
+when the first member is in a blockaded own system, and then the text is
+0x7056 (a character is not a fleet).
+
+### Port
+
+`MissionKind::Move` (`missions.rs`) is this mission: `move_order_enabled` is
+`FUN_0053c100`, `move_destination_refusal` the destination checks (codes
+`0x22`, `0x28`, `0x21`; hyp: a fleet with no capital ship gives `0x27`, as
+no ship accepts; port: a special force refuses a fleet with `0x25`),
+`move_refusal` the whole order's validation before any group starts (each
+group keeps a free member and fits the Move record's masks), `dispatch_move`
+the split into one mission per location, and `move_days` the confirmation's
+days. The release asks first only when the first member stands in a
+blockaded system of its own side; a character aboard a fleet is in the
+fleet. A fleet destination boards the member onto the fleet
+(`MissionEffect::MemberBoarded`); port: the port has no capital ship
+container for a character or special force, so the fleet holds characters
+and takes no special force. The interface's character
+and special force Move rows, the Confirmed Move window (text 0x7056 when
+blockaded) and drags from the Defenses and Fleet windows issue it
+(`issue_member_move` in the app). Rank lapse is `officer_rank.rs`,
+`clear_lapsed_ranks`.
+
+Decompiles added for this section: `FUN_004f5530`, `FUN_004f4700`,
+`FUN_005215e0`, `FUN_005233a0`, `FUN_0056ea00`, `FUN_0056ea20`,
+`FUN_0056ea40`, `FUN_0056ea60`, `FUN_0056ebc0`, `FUN_0056eed0`,
+`FUN_00593730`.
+
 ## Still open
 
 - The names of window types 4, 10 and 11, and `FUN_004a2f80` (type 4's

@@ -77,7 +77,14 @@ mission built from the order (`FUN_0054c590` -> `FUN_00582b90`). Each item is
 a 200 by 113 surface holding a 130 by 65 GOKRES icon, id `TEXTSTRA id & 0xfff`
 for the Alliance and `+ 0x1000` for the Empire (record `+0x30`), with the
 record's name in gray `0x808080`. For example, Diplomacy (TEXTSTRA 11280) is GOKRES 3088 or 7184.
-`FUN_0046cab0` maps the family to an icon index for the item.
+`FUN_0046cab0` gives each item its key (`FUN_0060ba00` stores it at item
+`+0x0c`) from the record's family `+0x2c`: Recruitment (`0x55`) 1, Jedi
+Training (`0x58`) 2, Subdue Uprising (`0x57`) 3, the three research records
+(`0x53`, by `+0x18` `0x20`/`0x21`/`0x22`) 4/5/6, Diplomacy (`0x51`) 7, Incite
+Uprising (`0x56`) 8, Espionage (`0x52`) 9, Reconnaissance (`0x54`) 10,
+Assassination (`0x63`) 11, Abduction (`0x62`) 12, Rescue (`0x61`) 13, Death
+Star Sabotage (`0x6a`) 14, Sabotage (`0x69`) 15. Any other family takes the
+next value of the counter `DAT_006a8794`.
 
 The team list starts with the order's team (`+0x28`/`+0x2c`) and the decoy list
 with `+0x58`, which is empty for a fresh `0x240` order.

@@ -3,7 +3,7 @@ title: "Mod System"
 description: "TOML manifest + JSON overlay mod system with directory layout and hot reload"
 category: "agent-docs"
 created: 2026-03-15
-updated: 2026-10-07
+updated: 2026-10-14
 tags: [modding, toml, semver, merge-patch]
 ---
 
@@ -13,6 +13,9 @@ Open Rebellion supports user mods via a TOML manifest and JSON overlay system.
 World overlays are implemented in `crates/rebellion-data/src/mods.rs`; native
 Encyclopedia presentation overlays use the same manifests and dependency order
 without entering `GameWorld` or campaign saves.
+
+What a mod can change depends on what the original reads from data and what
+it fixes in REBEXE: see `mod-surface.md` before exposing a new rule.
 
 ## Directory Layout
 

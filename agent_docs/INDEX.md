@@ -3,7 +3,7 @@ title: "Agent Docs Index"
 description: "Master index of AI agent reference documentation for Open Rebellion"
 category: agent-docs
 created: 2026-03-22
-updated: 2026-03-22
+updated: 2026-10-14
 tags: [index, agent-docs]
 ---
 
@@ -20,6 +20,7 @@ Reference documentation for AI agents working on the Open Rebellion codebase. Re
 | [simulation.md](simulation.md) | 15 simulation systems, advance() contract, integration order |
 | [deterministic-replay.md](deterministic-replay.md) | Replay format, exact native/WASM artifact gate, DAT/config identity, checkpoints, and open engine-convergence work |
 | [agent-tooling.md](agent-tooling.md) | Claude Code Minoan and Codex skill routing, including browser acceptance, Fable, and Ghidra |
+| [task-graph.md](task-graph.md) | br/bv task graph in `.beads/`: node kinds, the question-review-port-acceptance chain, commands |
 
 ## Game Knowledge
 
@@ -38,6 +39,7 @@ Reference documentation for AI agents working on the Open Rebellion codebase. Re
 | [save-load.md](save-load.md) | Save format v4, migration, mod metadata hash |
 | [mod-runtime.md](mod-runtime.md) | ModRuntime, ModConfig, enable/disable, hot reload |
 | [modding.md](modding.md) | Mod loader: TOML manifest, RFC 7396, semver, load order |
+| [mod-surface.md](mod-surface.md) | What the original fixes in REBEXE rather than data, area by area; rules for exposing a fixed rule as mod data |
 
 ## Assets & Media
 

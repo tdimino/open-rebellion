@@ -3,7 +3,7 @@ title: "Game Balance Parameters (GNPRTB)"
 description: "213 parameter entries x 8 difficulty values controlling combat and economy"
 category: "mechanics"
 created: 2026-03-16
-updated: 2026-03-16
+updated: 2026-10-14
 game_system: "gnprtb"
 sources:
   - type: "ghidra"
@@ -48,14 +48,14 @@ multiplayer:       u32
 value = gnprtb.value(param_id, difficulty)
 ```
 
-Where `difficulty` maps to column index 0-7. The packed C++ field `*(uint*)(this + 0x24) >> 4 & 3` provides a 2-bit selector (0-3) per faction side; the full 8-level index is derived at the caller layer by combining side and faction (Development, Alliance Easy/Med/Hard, Empire Easy/Med/Hard, Multiplayer).
+Where `difficulty` maps to column index 0-7 (Development, Alliance Easy/Med/Hard, Empire Easy/Med/Hard, Multiplayer). An object's `+0x24 >> 4 & 3` numbers its copy (master, Alliance view, Empire view; `ghidra/notes/entity-system.md`), not a column.
 
 ### Parameter ID Ranges
 
 | Range | Category | Count |
 |-------|----------|-------|
 | `0x0a00` | General parameters | 34 mapped |
-| `0x1400` | Combat parameters | 77 mapped |
+| `0x1400` | `0x1400` group (`0x1400` is the transit divisor) | 77 mapped |
 | **Total mapped** | | **111 of 213** |
 
 The remaining 102 parameters have known IDs but unconfirmed semantic names. Metasharp (`StarWarsRebellionEditor.NET`) provides names for 61 of the 213 entries.
@@ -64,11 +64,11 @@ The remaining 102 parameters have known IDs but unconfirmed semantic names. Meta
 
 | ID (hex) | Purpose | Base Value |
 |----------|---------|------------|
-| `0x1400` | Bombardment damage divisor | 5 |
+| `0x1400` | Transit distance divisor (`FUN_0055d8c0`) | 5 |
 | `0x0305` | Repair rate modifier | varies |
 | `0x0386` | Production rate modifier | varies |
 
-The bombardment formula divides raw power by `GNPRTB[0x1400]`, so a higher value means less bombardment damage. Combat damage, shield absorption rates, and mission modifiers all reference other GNPRTB entries.
+`FUN_0055d8c0` divides the distance between two systems by `GNPRTB[0x1400]` to give a travel time in days (`ghidra/notes/build-delivery.md`). Bombardment reads `0x600`-`0x606` (leadership divisors, the hit-roll range, energy and raw-material values, the Death Star's character roll) and 7705 (the support loss); see [Bombardment](bombardment.md).
 
 ### Difficulty Asymmetry
 

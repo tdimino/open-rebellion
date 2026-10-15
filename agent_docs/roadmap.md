@@ -3,7 +3,7 @@ title: "Roadmap"
 description: "Development milestones from Galaxy Viewer through Release packaging"
 category: "agent-docs"
 created: 2026-03-11
-updated: 2026-10-06
+updated: 2026-10-14
 tags: [roadmap, planning, milestones, parity]
 ---
 
@@ -527,8 +527,13 @@ acceptance. Their JSON ledgers provide stable finding and feature IDs.
   follow-up, uprisings, bombardment, HQ relocation, and principal missions.
   Do not require symmetric attack counts from an asymmetric game.
 - [ ] Enable AI Death Star construction/fire/cleanup and repair parity oracles.
-  The superlaser path, the construction timer, and sabotage are unrecovered;
-  the binary has no build-delay rule for sabotage (F-017).
+  `ghidra/notes/death-star-strategic.md` recovers the original: an ordinary
+  shipyard build of CAPSHPSD record 136, one per system; fire is order
+  `0x223` (gate `FUN_00582440`, no side or owner test); the destroy cascade
+  leaves fleets standing; sabotage has no build-delay rule (F-017). Port
+  nodes: `or-port-destroy-system-cascade-imrv` (P1), `or-port-bombardment-8usw`,
+  `or-port-death-star-family-qtde`; whether the AI fires it is
+  `or-q-ai-death-star-use-z9ow`.
 - [ ] Wire the recovered rules the 2026-09-25 test-pruning pass found uncalled:
   research gating of buildable ships (F-018), the decoy roll and the SUBDMSTB
   Subdue success check (F-019; both now run, and its remaining phases are
@@ -538,7 +543,9 @@ acceptance. Their JSON ledgers provide stable finding and feature IDs.
 - [ ] Correct or re-source the code behaviors the 2026-09-26 citation audit
   found without a binary source: the economy's KDY production modifier
   (F-023), the Emperor's 1.5x battle bonus (F-024), and family-`0x34` Death
-  Star detection (F-025). The revolt lifecycle, uprising incident, and
+  Star detection (F-025; the original uses capital-ship family `0x18`,
+  `0x34` is the Emperor: `ghidra/notes/death-star-strategic.md`,
+  `or-port-death-star-family-qtde`). The revolt lifecycle, uprising incident, and
   disaster now follow recovered code (F-026, browser pass pending).
 - [ ] Move the remaining probability-table consumers to the recovered step
   lookup (F-028) and the informant and resource incidents to their recovered
@@ -662,6 +669,30 @@ would tune around known simulation feedback defects.
   object-window, report, and tactical surfaces with the original bitmap-driven
   compositions for both factions. No invented visible control may satisfy a
   parity cell.
+- [ ] Bring the ground assault to parity (`UIP-F-010`, `TAC-08`,
+  `RE-GND-01`).
+  - Remove the invented live ground-combat screen
+    (`rebellion-render/src/ground_combat.rs`). The original has no ground
+    battle.
+  - Port the original report-only flow (manual pp. 119-121, figs. 2.58,
+    3.66 and 3.67).
+    - The fleet's Planetary Assault order: enabled when troops are aboard,
+      greyed out against two planetary shields.
+    - Immediate resolution.
+    - The Assault Summary window: Summary, Imperial Forces, Alliance Forces,
+      Go to System.
+    - Its damage summary tabs: troopers, capital ships, fighters, facilities
+      and personnel.
+    - The same window delivered as a message when the opponent assaults the
+      player.
+  - Recover the window's resources and the resolution rules from the
+    executable first.
+  - Cover both factions, win and loss, casualties, occupation and the return
+    to the map.
+  - Close the eight `TAC-08` cells against A0 captures of the original.
+    All eight references are captured (an A0-only family outside the
+    106-cell tactical denominator; saves `empire-day53-yaga-orbit` and
+    `empire-day128-assault-fails-selonia`).
 - [x] Complete P44 / `RE-ADV-01` for the advisor idle-frame tranche: recover
   type-302 decoding, stage all 3,988 ALSPRITE/EMSPRITE frames, render both
   faction pairs in native/WASM, and fail closed with browser-visible diagnostics.
@@ -1138,6 +1169,15 @@ would tune around known simulation feedback defects.
   Whole-process RNG continuity, strategic commander-slot binding, native beam
   and playback comparison, rare audio routes, and all 106 strict A0 cells stay
   open.
+  The A0 evidence now exists: 113 of 114 references captured from the
+  original in the capture VM, with TAC-03-C020 settled without a frame. The
+  first strict C6 verdict is pass 11, fail 66, not-run 28, settled 1, with
+  the negative controls failing their rows (6 of 6). The selected-ship panel
+  was brought to A0 and Ghidra: container origin, meters, labels, ship art,
+  Recover art, button wiring and numbered ship names (save v38). The
+  remaining work is the task graph (`agent_docs/task-graph.md`): one
+  acceptance node per failing region, fed by Ghidra questions, diagnoses and
+  the fixtures that let the 28 not-run cells run.
 - [ ] After original parity, use a separate Fable and `/ce:plan` design pass for
   an optional X-Wing Alliance-style skirmish setup menu. It may select ship
   distribution, planet, and space background, but it must reuse the production
@@ -1232,7 +1272,7 @@ secrets and signed sessions.
 - [ ] Create `data/homeworlds.json` with canon homeworld assignments (Luke→Tatooine, etc.)
 - [ ] HomeworldModifier: +10% at homeworld, -5% when enemy controls, -15 loyalty on fall
 - [ ] Wire into missions.rs probability + betrayal.rs loyalty
-- [ ] Display in Officers panel and Encyclopedia
+- [ ] Display in the character's Status window and Encyclopedia
 
 **Phase 2: Character Creation Core**
 - [ ] Add `CharacterOrigin`, `AcademyArchetype`, `ArchetypeTemplate` to rebellion-core
@@ -1261,11 +1301,33 @@ secrets and signed sessions.
 - New sectors (Unknown Regions, Corporate Sector)
 - Hyperspace lane network (optional overlay on Euclidean model)
 
-### Addon 3: Tactical Combat Convergence (Future)
-- Bring the existing 2D tactical view onto the authoritative combat path.
-- Complete ship placement, formation selection, manual targeting, and parity
-  with automatic result application.
-- 3D model sprite sheets from Hunyuan3D Pro pipeline
+### Mod surface (Ghidra groundwork)
+The tactical engine resolves every space battle, played or not; its parity
+is tracked under `or-ep-tac-x15`. Before addons open content to mods, the
+`or-ep-mod-surface-vdch` questions (all answered) map what the original
+fixes in code rather than data: Force users and training, the story encounters, mission
+families, ship-type assets, the 200-system galaxy, the movies, the
+per-side switches and the two-side limit, the object ids the executable
+names directly, the Death Star, record limits, the character roster, ground
+units, audio and text. Each answer names the constants, family checks and
+hard-coded ids the port must turn into data for new Jedi, encounters,
+missions, ships, systems, movies, sounds and translations, and for era
+overhauls that rename the sides, replace the scenario or add a superweapon.
+`agent_docs/mod-surface.md` collects the answers and the rules for exposing
+a fixed rule as mod data.
+
+- [ ] Port what the answers found the port lacks or invents: officer rank
+  and command orders `0x260`-`0x263` (`or-port-officer-rank-x4kn`),
+  majors-only recruiters and major-first mission leads
+  (`or-port-recruit-major-lead-8grm`), the original music selector in place
+  of `track_for_context` (`or-port-music-selector-v9nd`), the Force fields
+  (`or-port-force-fields-2u0m`), movie triggers
+  (`or-port-movie-triggers-45gd`), and the post-battle pass for system
+  squadrons (`or-port-system-squadron-pass-oa3p`).
+- [ ] Decide whether mods may append records. The original loads any count
+  but has no class for a new family byte and the port's loader skips
+  patches with unknown ids (`ghidra/notes/record-registry.md`); allowing
+  new records is an architecture change.
 
 ---
 

@@ -269,8 +269,8 @@ shipped game it is unreachable.
 ### Port
 
 - Status: `System::control` (`ControlKind`). Contested maps to "Neutral".
-- General and Commander: port: no command assignment (`+0x96`), so both
-  always read "Not Assigned".
+- General and Commander: the window is unreachable, so the port draws no
+  System Status; `officer_rank::rank_holder` would answer the rows.
 - Loyalty: `popularity_alliance` and `popularity_empire`, as percentages.
 - Energy: `total_energy`, and `SystemEconomy::energy_allocated`. The Raw
   Material row repeats them, as the original does.
@@ -391,10 +391,9 @@ no "Attached" row and no maintenance row. The rows, in order:
 - Status: `MovementOrder` present means Enroute. A port fleet exists only once
   complete, so Under Construction never shows.
 - ETA: `MovementOrder` arrival.
-- Admiral, General and Commander: port: no field. The port keeps no
-  character command rank (`+0x96`). `Character::can_be_admiral` and its
-  siblings are capabilities, not assignments, so each row reads "Not
-  Assigned".
+- Admiral, General and Commander: the fleet side's character holding the
+  rank in the fleet (`officer_rank::rank_holder`), by its ranked name, else
+  "Not Assigned".
 - Number Of Ships: `Fleet::ship_count()`.
 - Capacity: the sums of `CapitalShipClass::fighter_capacity` and
   `troop_capacity` over the alive ships.
@@ -588,12 +587,12 @@ The labels are 34418..34421, not the Character Status strings 34598..34601.
 - port: the picture's marks (the regiment's 11514, en route, damage and
   unbuilt) are not drawn.
 - port: each family's own Port section lists the rows the port cannot hold
-  (command ranks, damage nibbles, fighter losses, Under Construction and
+  (damage nibbles, fighter losses, Under Construction and
   Training states, facility Enroute).
 - port: the window is drawn above the modeless windows and takes the pointer
   only over itself, as the move confirmation does.
-- port: Commanding is always "None": the port keeps no command assignment
-  (`+0xa8`).
+- Commanding names the fleet or system the character's rank commands
+  (`Character::command_post`), else "None".
 - port: "Injured" never shows: the port keeps no injury (`+0x94`).
 - port: a character is en route while its mission transit lasts
   (`MissionState::en_route`). Its ETA is that transit's arrival day, and

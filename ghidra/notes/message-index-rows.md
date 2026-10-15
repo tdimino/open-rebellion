@@ -80,7 +80,9 @@ After fill, `FUN_00468f20` shows or hides each item by its mask:
   The special case `(+0x11c != 0x79 || mask == 0x200)` means that when the
   category is All, Advice (0x200) items are **hidden**. Every other category is
   shown in All.
-- If no item is selected after filtering, the first visible item is selected.
+- Hiding an item clears its selection bit (`+0x3c` bit 0). If no shown item
+  is still selected, the node the list's slot `+8` returns gets the selection
+  bit, with no visibility test on it.
 - hyp: item visibility is `+0x6c` (1 shown, 0 hidden); the `+0x3c` bit 0 is
   the selection flag.
 

@@ -1,13 +1,13 @@
 ---
-title: "Fleet Names: Fleet 1, Fleet 2"
-description: "How a fleet gets its default name: FUN_00517760 numbers a fleet still bearing the record's name from its side's counter (FUN_005302c0), which never goes down"
+title: "Fleet and Ship Names: Fleet 1, Galleon 2"
+description: "How a fleet or capital ship gets its default name: FUN_00517760 numbers an object still bearing its record's name from its side's counter for that record (FUN_005302c0), which never goes down"
 category: "ghidra"
 created: 2026-10-06
 updated: 2026-10-06
-tags: [fleets, names, counters]
+tags: [fleets, capital-ships, names, counters]
 ---
 
-# Fleet names
+# Fleet and ship names
 
 Recovered 2026-10-06 with Ghidra 12.1.3 headless (read-only project). The
 manual agrees: "The default names of Fleet 1, Fleet 2, etc., are not very
@@ -39,6 +39,20 @@ answers slot `+0x48`. When its name still equals the record's
 A renamed fleet no longer bears the record's name, so it is never numbered
 again.
 
+## Capital ships
+
+The same routine numbers capital ships, one counter per side and class
+(the list's key is the record, `FUN_00402d80`): "Imperial Star Destroyer 1",
+"Bulk Cruiser 3". `empire-day30-yaga-alert-control.sav` holds Imperial Star
+Destroyer 1, Carrack Light Cruiser 1 and 2, Victory Destroyer 1, Galleon 1
+to 3 and Bulk Cruiser 3, beside Fleet 1 to 5; no fighter, regiment or
+character carries a number.
+
+The tactical screen shows that name: the battle unit's `+0x144`
+(`FUN_005b1610`) is set by the capital ship constructor `FUN_005b05c0` (the
+fighter's is `FUN_005b9c60`) from the factory `FUN_00595f60`, which
+`FUN_0040b8a0` calls with `FUN_004f62d0(strategic object)`.
+
 ## When it runs
 
 `FUN_005140c0` (an object's load) and `FUN_0051b7f0` (a pass over every
@@ -57,11 +71,20 @@ is the fleet's slot `+0x114` handler `FUN_004fc290`, reached from
 - `fleet_label` (`system_window.rs`) reads the name, so the System window's
   Fleets tab, the Fleet window, the Fleet Finder and the move confirmation
   all show it. A fleet with no number shows "Fleet" (`FUN_004f62d0`).
-- port: Rename (`0x203`) is not ported.
+- Rename (`0x203`, `main.rs`) sets the name through
+  `GameWorld::rename_fleet` and `rename_ship`; a renamed object is never
+  numbered again.
+- `GameWorld::number_capital_ships` gives each living ship with no name of
+  its own "<class name> N" from its side's counter for that class (saved,
+  v38). hyp: it runs after seeding (`seeds.rs`) and after a ship completes
+  (`integrator.rs`), in fleet slot order, then roster order.
+- The tactical battle takes the world's name (`rebellion-core` `tactical.rs`,
+  `BattleSession::new_with_forces`), so the
+  panel and the Results window show it.
 
 ## Supporting decompiles
 
 `FUN_00517760`, `FUN_00518750`, `FUN_00506ea0`, `FUN_005302c0`,
 `FUN_004f62d0`, `FUN_004f6e60`, `FUN_004f9190`, `FUN_004fef10`,
 `FUN_005140c0`, `FUN_0051b7f0`, `FUN_005136d0`, `FUN_004fe630`,
-`FUN_004f7480`, `FUN_004f7d50`.
+`FUN_004f7480`, `FUN_004f7d50`, `FUN_005b1610`.

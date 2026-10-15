@@ -3,7 +3,7 @@ title: "Accuracy Review: annotated-functions.md"
 description: "Cross-check of annotated-functions.md claims against decompiled C source files"
 category: "ghidra"
 created: 2026-03-15
-updated: 2026-03-16
+updated: 2026-10-14
 ---
 
 # Accuracy Review: annotated-functions.md
@@ -60,8 +60,8 @@ Reviewed against decompiled C source files in `ghidra/notes/`. Every function ad
 - Vtable `*this+0x338` for on_hyperdrive_changed — CORRECT
 - Calls `FUN_004f0610` for notification — CORRECT
 
-### FUN_004ee350 — Regiment / Unit Strength Setter
-- `+0x96` stores `regiment_strength` as `short` — CORRECT
+### FUN_004ee350 — Setter for Short +0x96
+- `+0x96` is a `short` written on a master copy — CORRECT
 - `FUN_0053fc90(param_1,0,param_1)` — non-negative only — CORRECT
 - Vtable `*this+0x330` — CORRECT
 - Calls `FUN_004f04f0` for notification — CORRECT
@@ -91,24 +91,24 @@ Reviewed against decompiled C source files in `ghidra/notes/`. Every function ad
 - Event ID `0x340` (832) via `FUN_0053fe40` — CORRECT
 - Uses `FUN_004f8aa0` (two-object notification) — CORRECT
 
-### FUN_0049eea0 — "Battle in Progress" UI Handler
-- Calls `FUN_004067d0()` for is_battle_in_progress check — CORRECT
+### FUN_0049eea0 — Battle Overlay Window Content
+- Calls `FUN_004067d0()` (the TEXTSTRA edition flag) to choose the label — CORRECT
 - `*(HWND*)((int)param_1 + 0x18)` for window_handle — CORRECT
 - `*(int*)((int)param_1 + 0x30)` for display_id — CORRECT
-- `*(int*)((int)param_1 + 0x114)` for battle_info_ptr — CORRECT
-- `*(int*)(battle_info_ptr + 0x9c) == 1` for player_side — CORRECT
+- `*(int*)((int)param_1 + 0x114)` for the owner, the galaxy view — CORRECT
+- `*(int*)(owner + 0x9c) == 1` for the owner's side — CORRECT
 - Color: `0xff` if side==1 else `0xff00` — CORRECT
 - Viewport offsets `+0xcc, +0xd0, +0xd4, +0xd8` — CORRECT
 - `"Battle in Progress..."` string at `0x006a879c` — CORRECT
 - GDI calls: `GetDC`, `CreateCompatibleDC`, `ReleaseDC`, `SelectObject`, `DeleteDC` — all CORRECT
 
-### FUN_005617b0 — Death Star Planet Destruction Handler
-- Calls `FUN_005070d0` for current system, `FUN_004f6b50` for faction — CORRECT
-- `*(byte*)((int)this_00 + 0xac) & 1 == 0` (alive_flag check) — CORRECT
-- `*(byte*)((int)this_00 + 0x50) & 1 != 0` (status_flags active) — CORRECT
-- `local_14 = 0x90000109` hardcoded system DatId — CORRECT
-- `((byte)*(undefined4*)((int)local_18 + 0x24) & 0xc0) == 0x80` faction control check — CORRECT
-- Calls `FUN_0055f650` for superlaser effect — CORRECT
+### FUN_005617b0 — Palpatine at Coruscant Flag
+- Calls `FUN_005070d0` (Emperor `0x34000280`) and `FUN_004f6b50` (his location) — CORRECT
+- `*(byte*)((int)this_00 + 0xac) & 1 == 0` (not a prisoner) — CORRECT
+- `*(byte*)((int)this_00 + 0x50) & 1 != 0` (active) — CORRECT
+- `local_14 = 0x90000109` (Coruscant) — CORRECT
+- `((byte)*(undefined4*)((int)local_18 + 0x24) & 0xc0) == 0x80` owner check — CORRECT
+- Calls `FUN_0055f650` to write bit 0 of `this+0x58` — CORRECT
 
 ### FUN_005029a0 — Hull Damage Notification Dispatcher
 - Notification strings `"CapShipHullValueDamageNotif"` / `"HullValueDamage"` — CORRECT
@@ -126,96 +126,58 @@ Reviewed against decompiled C source files in `ghidra/notes/`. Every function ad
 - Notification strings `"FightSquadSquadSizeDamageNotif"` / `"SquadSizeDamage"` — CORRECT
 - Event ID `0x1a0` (416) — CORRECT
 
-### FUN_00509620 — Combat Stat Extractor
-- `this+0x2c` = combat_data_ptr — CORRECT
-- `combat_data_ptr+0x4c` = combat_stat — CORRECT
-- Returns 0 when ptr is null — CORRECT
+### FUN_00509620 — System Coordinates
+- Reads `*(this+0x2c) + 0x4c`, 0 when `+0x2c` is null — CORRECT
+- Callers `FUN_00555b30` and `FUN_00459e30` (`FUN_00555b30.c:108-109`, `FUN_00459e30.c:274`) — CORRECT
 
-### FUN_005457f0 — Space Combat Entry Point
-- Returns `1` by default — CORRECT
-- Calls `FUN_005438a0` for validation, then `FUN_00549910` for pipeline — CORRECT
+### FUN_005457f0 — Story Hook (Event `0x320`)
+- Returns `1` when `FUN_005438a0` is false — CORRECT
+- Calls `FUN_00549910(this, param_4)` otherwise — CORRECT
+- Called by `FUN_00514a60` (`FUN_00514a60.c:43`) — CORRECT
 
-### FUN_005438a0 — Named-Character Check (corrected 2026-09-26: the six ids are characters, not ship types)
+### FUN_005438a0 — Named-Character Check
 - Exactly 6 entity codes: `0x32000242, 0x31000241, 0x33000243, 0x38000343, 0x35000281, 0x34000280` — CORRECT
 
-### FUN_005442f0 — Combat Initialization
-- `entity+0xac bit0` (alive), `entity+0x50 bit0` (active), `entity+0x78 & 0xc0 == 0` (capability flags), `entity+0x50 & 0x1000 == 0` (special_disabled) — all CORRECT
-- `0x98000481` battle context DatId check — CORRECT
+### FUN_00549910 — Story Check Chain
+- Calls `FUN_005442f0`, `FUN_00544da0`, `FUN_00544030`, `FUN_00544130`, `FUN_005443f0`, `FUN_005444e0`, `FUN_005445d0`, `FUN_00544a20`, `FUN_00544be0`, `FUN_00544fc0` in that order and ANDs the results — CORRECT
+- Setter masks and slots: `FUN_00543b60` (`4`, `+0x1c4`), `FUN_00543bd0` (`0x20`, `+0x1c8`), `FUN_00543c40` (`0x40`, `+0x1cc`), `FUN_00543cb0` (`0x80`, `+0x1d0`), `FUN_00543d20` (`0x100`, `+0x1d4`), `FUN_00543d90` (`0x200`, `+0x1d8`), `FUN_00543e00` (`0x400`, `+0x1dc`), `FUN_00543e70` (`0x800`, `+0x1e0`), `FUN_00543ee0` (`0x1000`, `+0x1e4`), `FUN_00543f50` (`0x2000`, `+0x1e8`) — CORRECT
+- `FUN_005442f0` and `FUN_00544da0` pass their condition to the setter (held); the others call it with 1 then 0 (pulse), and `FUN_00544fc0` calls `FUN_00543f50(this, 1)` then `FUN_00544da0` — CORRECT
 
-### FUN_00544030 — Weapon Fire Phase (Phase 3)
-- Phase gate: `(this+0x58 & 0x01) != 0 && (this+0x58 & 0x40) == 0` — CORRECT
-- Calls `FUN_005434b0`, `FUN_005439e0`, `FUN_00543b60(side=1)`, `FUN_00543b60(side=0)` — all CORRECT
-- Attacker (side=1) fires before defender (side=0) — CORRECT
+### The story checks
+- `FUN_005442f0`: Han (`FUN_005435f0`) with `+0xac` bit 0 set, `+0x50` bit 0 set, `+0x78 & 0xc0 == 0`, `+0x50 & 0x1000 == 0`, location `0x98000481` → 1 — CORRECT
+- `FUN_00544da0`: skipped when `this+0x58 & 0x2000`; Luke a prisoner, active, `+0x78 & 0xc0 == 0`, `+0x50 & 0x1000 == 0`, location not `0x98000481`, `+0xb0 & 2`; Vader and the Emperor pass `FUN_005439e0` — CORRECT
+- `FUN_00544030`: gate `this+0x58 & 1` set and `& 0x40` clear; Luke (`FUN_005434b0`) passes `FUN_005439e0` — CORRECT
+- `FUN_00544130`: gate `this+0x58 & 0x40`; Luke passes `FUN_005439b0`; when `+0x78 & 0x80` is set, his mission's family must equal `0x71` and its `+0x68` (`piVar5[0x1a]`) equal 8, then slot `+0x1d8` — CORRECT
+- `FUN_005443f0`, `FUN_005444e0`: gate `this+0x58 & 0x40`; Leia (`FUN_00543550`) and Chewbacca (`FUN_00543690`) pass `FUN_005439e0` — CORRECT
+- `FUN_005445d0`: Luke, Leia, Han `+0xac` bit 0; Chewbacca `+0xac` bit 0 or `+0x50` bit 3; a member of `FUN_00506ed0` (root `+0xdc`, Jabba's Palace) with `+0xac` bit 0 (`FUN_004f2640`, `FUN_0052bed0`); Vader passes `FUN_005439b0`; on a mission, family `0x73` leaves the bit alone, else `+0x78 & 0x10` leads to `FUN_00534640(Vader, 1)` — CORRECT
+- `FUN_00544a20`: gate `this+0x58 & 0x1000`; Vader's location key differs from Luke's (`local_30 != local_2c`) — CORRECT
+- `FUN_00544be0`, `FUN_00544fc0`: gate `this+0x58 & 0x1000`; Vader with Luke and the Emperor elsewhere, or all three together — CORRECT
 
-### FUN_00544130 — Shield Absorption Phase (Phase 4)
-- Phase gate: returns true immediately when `this+0x58 & 0x40 == 0` — CORRECT
-- Standard path: `entity+0x78 & 0x80 == 0` — CORRECT
-- Alt path: `entity+0x78 & 0x80 != 0`, checks family range `0x71` (single check in C, see error note below)
-- `piVar5[0x1a] != 8` check — CORRECT
-- Vtable `*piVar5+0x1d8` for alt shield handler — CORRECT
+### FUN_005434b0 — Luke and His Location
+- `FUN_00507010` builds id `0x32000242`; `FUN_004f6b50` gives the location; `FUN_004025b0` / `FUN_004f26d0` its key — CORRECT
+- `FUN_00543550` (`FUN_00506fb0`) and `FUN_00543690` (`0x38000343`, `FUN_005066a0`) share the shape — CORRECT
 
-### FUN_005443f0 — Hull Damage Phase (Phase 5)
-- Phase gate: `this+0x58 & 0x40 != 0` — CORRECT
-- Calls `FUN_00543550`, `FUN_005439e0`, `FUN_00543cb0` bilateral — CORRECT
-
-### FUN_005444e0 — Fighter Engagement Phase (Phase 6)
-- Phase gate: `this+0x58 & 0x40 != 0` — CORRECT
-- Calls `FUN_00543690`, `FUN_005439e0`, `FUN_00543d20` bilateral — CORRECT
-
-### FUN_005445d0 — Combat Result Determination (Phase 7)
-- Gathers 5 stat types (weapon, hull, special/init, fighter, 5th/unknown) — CORRECT
-- Fighter exception: `alive_flag & 1 == 0 || status_flags & 8 != 0` — CORRECT
-- Family `0x73` check for special entity path — CORRECT
-- `FUN_00534640` called for family 0x73 path — CORRECT
-- `entity+0x78 & 0x10` check for alt special entity type — CORRECT
-- Fleet iteration with `FUN_004f2640`, side=1, type=2 — CORRECT
-- Alive flag check `*(uint*)(iter + 0xac)` in fleet loop — CORRECT
-
-### FUN_00544a20 — Post-Combat Cleanup (Phase 8)
-- Phase gate: `this+0x58 & 0x1000 != 0` — CORRECT
-- Requires 3 stat getters (`FUN_005434b0`, `FUN_00543760`, `FUN_00543800`) — CORRECT
-- `local_30 != local_2c` guard — CORRECT
-- `FUN_00543e00` bilateral pass — CORRECT
-
-### FUN_00544da0 — Fleet Evaluation (Phase 2)
-- Skip condition: `this+0x58 & 0x2000 != 0` → goes to LAB_00544f82 — CORRECT
-- Full eligibility: alive + active + `capability_flags & 0xc0 == 0` + not_special_disabled + `+0xb0 & 2 != 0` (combat_ready) — CORRECT
-- `0x98000481` check — CORRECT
-- Only calls `FUN_00543ee0` once (asymmetric) — CORRECT
-
-### FUN_00543b60 — Weapon Fire Resolver (Per Side)
-- Sets flag `4` in `this+0x58` via `FUN_0053a640(4, param_1, &this+0x58)` — CORRECT
-- Calls `FUN_0054a1d0` for both observers — CORRECT
-- Dispatches vtable `*this+0x1c4` — CORRECT
-
-### FUN_00543d90 — Victory Determinator
-- Sets flag `0x200` in `this+0x58` via `FUN_0053a640(0x200, ...)` — CORRECT
-- Vtable `*this+0x1d8` — CORRECT
-- Calls `FUN_0054a4a0` for victory notification — CORRECT
-
-### FUN_00534640 — Special Entity Victory Handler
-- Sets flag `8` in `this+0x78` via `FUN_0053a640(8, param_1, &this+0x78)` — CORRECT
+### FUN_00534640 — Resign Request
+- Sets flag `8` in the character's `+0x78` via `FUN_0053a640(8, param_1, &this+0x78)` — CORRECT
 - Vtable `*this+600` (decimal 600 = 0x258) — CORRECT
-- Calls `FUN_00535a50` for notification — CORRECT
+- Calls `FUN_00535a50` for both side views — CORRECT
 
-### FUN_00560d50 — Ground Combat Resolution
-- Family range checks: `0x30-0x3b` for ships, `0x14-0x1b` for troops — CORRECT
-- `entity+0x96 == 0` skip for zero-strength units — CORRECT
-- Death Star check at family `0x34` — CORRECT
-- No-friendly-fire logic — CORRECT
-- `FUN_004ee350(unit, 0, ctx)` applies strength=0 (destroy) to each unit — CORRECT
+### FUN_00560d50 — Moved Object: Clear Character Field +0x96
+- Character branch `0x30-0x3b`, capital ship branch `0x14-0x1b` — CORRECT
+- Family `0x34` (Emperor Palpatine) runs `FUN_005617b0` — CORRECT
+- Non-zero `+0x96` is cleared with `FUN_004ee350(object, 0, ctx)`, except between two capital ships in the same fleet (`0x08-0x0f`) — CORRECT
 
-### FUN_0050d5a0 — Mission Dispatch (13-Case Switch)
+### FUN_0050d5a0 — Observation Level (13-Case Switch)
 - All case values 0-12 plus default verified — CORRECT
-- Case 6 sets `bVar3=true` (special entity flag) — CORRECT
-- Case 8 and 10-11 set `bVar1=true` (alternate execution path) — CORRECT
+- Case 6 sets `bVar3=true` — CORRECT
+- Case 8 and 10-11 set `bVar1=true` — CORRECT
 - `local_134=1, local_130=3` constants set before switch — CORRECT
 - Range filter values (0x08, 0x10, 0x20, 0x28, 0x30, 0xa0, 0xb0) verified in case bodies — CORRECT
 
 ### FUN_00532e00 — Construction Yard Research Order Notification
 - Strings `"SideConstructionYardRdOrderNotif"` / `"ConstructionYardRdOrder"` — CORRECT
 - Event ID `0x127` (295) — CORRECT
-- Doc's note that the `_victory.c` filename is misleading — CORRECT (the function is not a victory handler)
+- Not a victory handler; the victory flags are `FUN_005180e0` — CORRECT
 
 ### FUN_00532f40 — Recruitment Done Notification
 - Strings `"SideRecruitmentDoneNotif"` / `"RecruitmentDone"` — CORRECT
@@ -257,66 +219,22 @@ Reviewed against decompiled C source files in `ghidra/notes/`. Every function ad
 
 ## Errors Found
 
-### 1. FUN_005617b0 — Death Star active condition logic (minor inversion in plain-English gloss)
-- **Doc says**: "target must be alive AND Death Star must be operational"
-- **What the C actually shows**: `(alive_flag & 1) == 0` — the Death Star fires when `alive_flag bit0 is CLEAR`, not set. The pseudocode in the doc correctly reproduces the C as `!(system->alive_flag & 1)`, but the plain-English explanation "target must be alive" contradicts the bit semantics documented elsewhere in the same file (`+0xac bit0 = alive_flag / bit0=alive`). If bit0=1 means "alive", then `!(alive_flag & 1)` means "target is NOT alive", which would be a contradiction.
-- **Resolution**: Looking at the struct layout table at the top of the document: `+0xac | byte | alive_flag | bit0=alive/combat-eligible`. If bit0=1 means alive, then `(alive_flag & 1) == 0` means the system is already destroyed. This contradicts the game rule claim. The correct interpretation is: the Death Star fires when the target system is **not yet destroyed** (alive_flag bit0 == 0 could mean "not destroyed" depending on encoding). The doc's plain-English explanation is inconsistent with the bit-encoding it documents. **The pseudocode is correct; the prose interpretation is ambiguous/contradictory.**
-
-### 2. FUN_00544130 — Shield absorption alt-path family range claim
-- **Doc says**: "Alternative path checks family 0x71 (fighter type)" — implying range 0x71-0x72
-- **What the C actually shows**: The range check in the alt-path is `(*puVar3 >> 0x18 < 0x71) || (0x71 < *puVar3 >> 0x18)` — this is checking for **equality with exactly 0x71**, not the range 0x71-0x72. The condition `!(x < 0x71 || 0x71 < x)` simplifies to `x == 0x71`. Only family 0x71 triggers the alt-shield path; 0x72 does not.
-- **Doc claims 0x71-0x72 are "Fighter squadron types (shield absorb special path)"** in the entity family table at the top of the document; however the actual alt-path code only tests `== 0x71`.
-
-### 3. FUN_0049eea0 — `__thiscall` vs `__fastcall` calling convention
-- **Doc says** (implied by the C++ member function pattern): This is a `__thiscall` method where `param_1` is `void* strategy_view`
-- **What the C actually shows**: `void __fastcall FUN_0049eea0(void *param_1)` — it is `__fastcall`, not `__thiscall`. The function is not a class member method in Ghidra's reconstruction; it takes `param_1` as the strategy view pointer. The doc's pseudocode treats it correctly as a plain function taking one pointer, so the behavioral analysis is fine, but the implicit assumption that this is a `__thiscall` member function is wrong.
-
-### 4. FUN_00560d50 — Ground combat "validate both sides are characters" claim
-- **Doc says**: "Validate both sides are characters (0x08-0x0f)" for the ship-path branch
-- **What the C actually shows**: The family check in that branch is `(0x13 < *param_2 >> 0x18) && (*param_2 >> 0x18 < 0x1c)` — checking if `param_2` (second entity) is in range `0x14-0x1b` (troops, not characters). The same check is applied twice for `param_2` and `param_3`. The doc's pseudocode says `defender_family in [0x14..0x1b] && context_family in [0x14..0x1b]`, which is correct, but the accompanying comment "Validate both sides are characters (0x08-0x0f)" is wrong — these are **troops** (`0x14-0x1b`), not characters (`0x08-0x0f`).
+None open. Every section above matches its `.c` file.
 
 ---
 
-## Unverifiable
+## Decompiles
 
-The following functions are referenced in the document but no corresponding C file was found in `ghidra/notes/`:
-
-- **FUN_0053a000** — Entity Validity Check (no `FUN_0053a000*.c` found; only called by others)
-- **FUN_0053a010** — Entity Validity Check, Notification Path (same)
-- **FUN_0053e0f0** — Secondary Clamp (no `FUN_0053e0f0*.c` found; glob returned no matches)
-- **FUN_00539fd0** — Side Observer Getter (no dedicated C file found)
-- **FUN_00500670** — Max Shield/Weapon Recharge getter (referenced in FUN_00501510/005015a0 but no standalone C)
-- **FUN_0053a640** — Set Phase Flag (called by weapon/shield resolvers but no standalone C)
-- **FUN_0055e4d0** — Force Detection Calculation (called in FUN_0058a3f0, no standalone C)
-- **FUN_00549910** — 7-Phase Space Combat Pipeline (called by FUN_005457f0, no standalone C)
-
-For the notification dispatchers with no standalone C file (FUN_00502430, FUN_00502430, FUN_004f0190, FUN_00535380, FUN_004f0610, FUN_004f04f0), these are only referenced as callees — their signatures are not directly verifiable but their call sites match the doc's claims.
+Every function the document cites has its `.c` file in `ghidra/notes/`,
+including `FUN_0053a000`, `FUN_0053a010`, `FUN_0053e0f0`, `FUN_00539fd0`,
+`FUN_00500670`, `FUN_0053a640`, `FUN_0055e4d0` and `FUN_00549910`.
 
 ---
 
-## Summary of Notable Findings
+## Notes
 
-1. **FUN_0050d5a0 mission dispatch**: The doc's claim that case 3 uses "Ranges 0x10-0x28, two filters" is partly correct but imprecise. The C shows case 3 uses range `0x10-0x20` (first filter) and `0x22-0x28` (second filter, as `local_74 = 0x22; local_70 = 0x28`). The doc says "0x10-0x28" for the combined range, which elides the gap — minor imprecision but not a factual error.
+1. **FUN_0050d5a0**: case 3 copies two family ranges, `0x10-0x20` and `0x22-0x28` (`local_74 = 0x22; local_70 = 0x28`).
 
-2. **FUN_00532f40**: The C uses `FUN_0053fdd0(300, ...)` not `FUN_0053fcf0` as used by the force/combat dispatchers. The doc does not explicitly name the registration function for this one — no error, just worth noting the two registration paths differ by function address.
+2. **FUN_00532f40**: registers its event with `FUN_0053fdd0(300, ...)`, the one-parameter registrar, where the force dispatchers use `FUN_0053fcf0`.
 
-3. **The `0x98000481` DatId**: The doc correctly identifies this appears in both `FUN_005442f0` (combat_init) and `FUN_00544da0` (fleet_eval). However in `FUN_00544da0` the logic is `local_38 != 0x98000481` (skip if NOT that ID), where in `FUN_005442f0` it is `local_1c != 0x98000481` (skip if NOT that ID). The doc says "fleet eval only runs for this battle type" — the C shows it runs when the battle context is NOT `0x98000481`, which is the inverse of what the doc claims. This could be a genuine error or a logic inversion in reading the control flow (a `goto` skip path).
-
----
-
-## Accuracy Score: 89/93 claims verified, 4 errors found
-
-| Category | Count |
-|----------|-------|
-| Field offsets verified correct | 28 |
-| Function signatures verified correct | 31 |
-| Game rules / logic verified correct | 21 |
-| Event IDs verified correct | 13 |
-| **Errors found** | **4** |
-| Unverifiable (missing C files) | 8 |
-
-The document is highly accurate overall. The four errors are:
-1. Ambiguous/contradictory prose around `alive_flag` semantics in the Death Star function (pseudocode is correct)
-2. Family range `0x71-0x72` claim for alt-shield path — only `0x71` is checked in the C
-3. Calling convention `__thiscall` vs actual `__fastcall` for FUN_0049eea0
-4. Comment "validate both sides are characters (0x08-0x0f)" should read "validate both sides are troops (0x14-0x1b)"
+3. **The `0x98000481` DatId** is Jabba's Palace (ABODESD). `FUN_005442f0` requires Han to be there; `FUN_00544da0` requires Luke not to be.

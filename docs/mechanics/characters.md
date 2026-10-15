@@ -23,7 +23,7 @@ Characters are named leaders who command fleets, run missions, and advance the s
 
 ## What You See
 
-- Characters appear in the Officers panel with 8 skill bars.
+- Characters appear in a system's Defenses window, a fleet's Fleet window and the Personnel finder; a character's Status window shows its ratings.
 - A character can be assigned as **Admiral** (fleet command), **Commander** (mission dispatch), or **General** (ground combat leadership).
 - Loyalty determines whether a character can be turned by the enemy. Some major characters (Luke, Vader) are immune to betrayal.
 - Characters with Force potential may awaken as Jedi -- see [jedi.md](jedi.md).

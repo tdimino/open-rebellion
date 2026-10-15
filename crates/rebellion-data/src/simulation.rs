@@ -176,7 +176,7 @@ pub fn run_simulation_tick(
     integrator.apply_regiment_arrivals(world, &regiments);
 
     // ── 3. Combat ────────────────────────────────────────────────────────
-    // FUN_0051ddf0 -> FUN_00516ef0 / FUN_00517270: a system fights on every
+    // FUN_0051ddf0 -> FUN_00517270: a system fights on every
     // pass that finds both sides present; when both remain, no result is
     // shown and the battle fires again next pass. There is no cooldown.
     let combat_triggers: Vec<_> = world
@@ -190,14 +190,20 @@ pub fn run_simulation_tick(
         .collect();
 
     for sys_key in combat_triggers {
-        let combat_rolls = take_rolls(256);
+        // One roll seeds the battle's own generator (`OriginalTacticalRng`).
+        let seed = (take_rolls(1)[0] * f64::from(u32::MAX)) as u32;
         let space_result = resolve_system_space_combat(
             world,
+            &mut states.troop_transport,
+            &mut states.movement,
             sys_key,
-            world.difficulty_index,
-            &combat_rolls,
+            seed,
             current_tick,
-            states.death_star.shield_generator_active,
+        );
+        rebellion_core::tactical::apply::reconcile_death_star_result(
+            world,
+            &mut states.death_star,
+            &mut states.victory,
         );
 
         integrator.emit_system_space_combat(world, &space_result);
@@ -714,6 +720,10 @@ pub fn run_simulation_tick(
     // build or a join on arrival, takes its signature name (fleet_name_bank).
     world.name_flagship_fleets();
 
+    // Officers who were captured, sent on a mission or moved off their post
+    // this tick lose their rank (FUN_004eeed0, FUN_00560d50).
+    rebellion_core::officer_rank::clear_lapsed_ranks(world);
+
     // ── 14. Victory check ────────────────────────────────────────────────
     integrator.emit_victory_check(&states.victory);
     if let Some(outcome) = VictorySystem::check(
@@ -1131,6 +1141,10 @@ mod tests {
             is_empire: true,
             hull: 1_000,
             turbolaser_fore: 1_000,
+            // The tactical engine fires only with a range and a recharge, as
+            // every armed shipped class has (CAPSHPSD: recharge 6-18, range 50-60).
+            turbolaser_range: 60,
+            weapon_recharge_rate: 8,
             bombardment_modifier: 100,
             ..CapitalShipClass::default()
         });

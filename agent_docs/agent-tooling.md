@@ -4,7 +4,7 @@ description: "Project-specific routing for the Claude Code Minoan and Codex skil
 category: "agent-docs"
 created: 2026-09-08
 updated: 2026-10-06
-tags: [agents, skills, codex, fable, ghidra, qa, research, gemini, audio, native, cua-driver]
+tags: [agents, skills, codex, fable, ghidra, qa, research, gemini, audio, native, cua-driver, task-graph]
 ---
 
 # Agent Tooling for Open Rebellion
@@ -181,6 +181,10 @@ Open Rebellion's Ghidra workflow is project-native rather than a general skill:
   corpus, and `ghidra/notes/` sources described there.
 - Record addresses, call chains, field offsets, and confidence, then connect the
   finding to a Rust test or acceptance fixture.
+- Take reverse-engineering work as `question` nodes of the task graph
+  (`agent_docs/task-graph.md`): one question per agent, its review, then its
+  port. A delegated agent answers questions only; review and porting stay
+  with the lead session.
 - Do not use [`bg3se-macos-ghidra`](https://github.com/tdimino/bg3se-macos/tree/main/tools/skills/bg3se-macos-ghidra); that skill encodes Baldur's Gate 3-specific
   binaries, layouts, launch flows, and terminology.
 
@@ -272,18 +276,70 @@ stand-in with the finding that replaces it.
 goldens do not pin. Adding it needs approval as a dev dependency. Formal
 verification (`kani`) is out of scope for now.
 
-### Build Cache
+### Builds and the Build Cache
 
-Cargo never prunes `target/`. Each change to a crate's code, flags or
-features writes a new hashed copy of its outputs and test binaries, and the
-old copies stay. Mutants runs leave
-`cargo-mutants-*` scratch copies in `$TMPDIR` when interrupted.
-`scripts/check-build-cache.sh` reports `target/`, `.artifacts/` and those
-copies, and warns once `target/` passes `OPEN_REBELLION_TARGET_LIMIT_GB`
-(default 20). A local Claude Code SessionStart hook (`.claude/settings.json`,
-untracked) runs it. On a warning, run it with `--prune` once no build, test or
-mutants run is in flight: it runs `cargo clean` and removes the copies. Remove
-scratch worktrees and their target directories when a split or check ends.
+Cargo runs on the Mac Mini, not this Mac. `scripts/mini-cargo.sh` syncs the
+working tree to `mac-mini-ts:~/or-native/open-rebellion` (git's file list:
+tracked files plus untracked ones git does not ignore), runs Cargo there and
+streams its output:
+
+```bash
+scripts/mini-cargo.sh -- test --workspace --features interface-test-fixtures --exclude provenance-scan
+scripts/mini-cargo.sh -- run -q -p provenance-scan -- check
+scripts/mini-cargo.sh -- build --release -p rebellion-app      # the binary stays on the Mini
+scripts/mini-cargo.sh --run ./scripts/build-wasm.sh --pull web/open-rebellion.wasm
+```
+
+The Mini holds rustup (the toolchain this Mac uses), the wasm32 target,
+rustfmt, clippy and binaryen. Native acceptance runs the binary where it is
+built, so nothing is copied back except what `--pull` names. The copy has no
+`.git`; `.build-source` records the commit and dirty file count it was synced
+from, and `scripts/launch-native.sh` writes that into `binary.txt`.
+
+After every build `scripts/prune-target.py` cuts the Mini's `target/` back
+to what that build used:
+
+- **units**: the wrapper adds `--message-format=json-render-diagnostics`,
+  and every unit the build names, fresh or rebuilt, is kept; any other
+  entry of `deps/`, `.fingerprint/`, `build/` and `examples/` in the
+  profiles it built goes. A repeated build stays fresh. A different build
+  (another feature set, `-p` selection or profile) rebuilds what it needs.
+- **codegen objects**: Cargo's macOS dev default, split-debuginfo
+  "unpacked", keeps every build's `*.rcgu.o` under a new name since rustc
+  1.88 and never deletes the old ones (rust-lang/rust#161824, fix PR
+  #162561 open). An object stays only while an executable's debug map names
+  it, so backtraces keep their lines.
+- **incremental**: each crate keeps its two most recently used incremental
+  directories (a library and its tests). The deps objects are hard links
+  into them, so they hold most of the space.
+- past 12 GB (`OPEN_REBELLION_TARGET_MAX_GB`) it runs `cargo clean`.
+
+Access times are not used: APFS does not keep them, and `cargo sweep
+--stamp`/`--file` deleted fresh units, forcing a full rebuild every other
+run. Each prune appends a JSON line to `~/or-native/build-cache.log` on the
+Mini. A launchd agent there (`scripts/install-mini-prune-agent.sh`) runs the
+object and incremental steps daily at 04:30 as a backstop.
+
+This Mac keeps no `target/`. A local Claude Code SessionStart hook
+(`.claude/settings.json`, untracked) runs `scripts/check-build-cache.sh
+--auto`, which prints the Mini's last log line and prunes this Mac unless a
+cargo, rustc or cargo-mutants process is running:
+
+- `cargo clean` when a local `target/` exists
+  (`OPEN_REBELLION_TARGET_LIMIT_GB`, default 0);
+- delete stale cargo-mutants copies, and scratch target directories (a
+  worktree's `CARGO_TARGET_DIR`) older than two days;
+- delete stale run folders: a timestamped run that no tracked file,
+  `progress.json` or A0 record names, older than 14 days, and not one of
+  the two newest of its kind;
+- move evidence untouched for 14 days to the Mac Mini,
+  `mac-mini-ts:open-rebellion-archive/.artifacts/<same path>`, deleting the
+  local copy only after rsync succeeds. A cited `.artifacts/…` path that is
+  missing here is in the archive. `interface-parity/a0` and `site` stay.
+
+Run it without arguments to report, or with `--prune` to prune now. An
+editor's rust-analyzer still checks into a local `target/`; the hook clears
+it at the next session. Ghidra headless stays on this Mac.
 
 ## Voice Resource Identification
 

@@ -272,6 +272,7 @@ const fn kind_text_id(kind: MissionKind) -> u16 {
         MissionKind::DeathStarSabotage => 11329,
         MissionKind::SubdueUprising => 11392,
         MissionKind::Assassination => 11393,
+        MissionKind::Move => 11265,
         MissionKind::Autoscrap => 0,
     }
 }
@@ -290,6 +291,7 @@ pub const fn kind_name(kind: MissionKind) -> &'static str {
         MissionKind::DeathStarSabotage => "Death Star Sabotage",
         MissionKind::SubdueUprising => "Subdue Uprising",
         MissionKind::Assassination => "Assassination",
+        MissionKind::Move => "Move",
         MissionKind::Autoscrap => "",
     }
 }
@@ -314,7 +316,7 @@ fn member_item(world: &GameWorld, member: MissionMember) -> Option<(Option<u32>,
             let character = world.characters.get(key)?;
             Some((
                 character_mini_resource_id(character.dat_id, character.is_major),
-                character.name.clone(),
+                character.display_name().to_owned(),
             ))
         }
         MissionMember::SpecialForce(key) => {

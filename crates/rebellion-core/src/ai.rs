@@ -431,11 +431,6 @@ impl AISystem {
             return false;
         }
 
-        // Our extensions (not in original, but necessary for gameplay):
-        if !character.can_be_commander {
-            return false;
-        }
-
         // Unported validators (require C++ allocation budget tracking):
         // #2 FUN_0050ad60: capacity overflow (+0x5c < +0x64) — internal budget
         //    tracking that limits total deployed entities. Our per-cycle caps

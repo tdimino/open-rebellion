@@ -1014,14 +1014,17 @@ pub mod resources {
         pub const BTN_NEXT_CAPITAL_NORMAL: u32 = 1103;
         /// Selected-capital navigator: next ship in task force, pressed state.
         pub const BTN_NEXT_CAPITAL_PRESSED: u32 = 1104;
-        /// Tactical command button: Maneuvers/Tactics, normal state.
-        pub const BTN_MANEUVERS_TACTICS_NORMAL: u32 = 1105;
-        /// Tactical command button: Maneuvers/Tactics, pressed state.
-        pub const BTN_MANEUVERS_TACTICS_PRESSED: u32 = 1106;
-        /// Tactical command button: Missions, normal state.
-        pub const BTN_MISSIONS_NORMAL: u32 = 1107;
+        /// Tactical command button: Missions, normal state. `FUN_005e4110`
+        /// places it at panel x 80, the right-hand button that opens Missions
+        /// in the original (A0 TAC-05-C012).
+        pub const BTN_MISSIONS_NORMAL: u32 = 1105;
         /// Tactical command button: Missions, pressed state.
-        pub const BTN_MISSIONS_PRESSED: u32 = 1108;
+        pub const BTN_MISSIONS_PRESSED: u32 = 1106;
+        /// Tactical command button: Maneuvers/Tactics, normal state, at panel
+        /// x 12, the left-hand button (A0 TAC-05-C006).
+        pub const BTN_MANEUVERS_TACTICS_NORMAL: u32 = 1107;
+        /// Tactical command button: Maneuvers/Tactics, pressed state.
+        pub const BTN_MANEUVERS_TACTICS_PRESSED: u32 = 1108;
 
         /// Tactical assignment: confirm, normal state.
         pub const BTN_ASSIGN_CONFIRM_NORMAL: u32 = 1113;
@@ -1078,18 +1081,21 @@ pub mod resources {
         /// Tactical command button: close Battle Options, pressed state.
         pub const BTN_BATTLE_OPTIONS_CLOSE_PRESSED: u32 = 1158;
 
+        // FUN_005df110 gives the Alliance (capital 1179) Recover 1170..1172
+        // and the Empire (capital 1182) 1173..1175; A0 TAC-05-C012 draws an
+        // Empire disabled Recover as 1175, TAC-05-C016 an Alliance one as 1172.
         /// Tactical command button: recover, Empire normal state.
-        pub const BTN_RECOVER_EMPIRE_NORMAL: u32 = 1170;
+        pub const BTN_RECOVER_EMPIRE_NORMAL: u32 = 1173;
         /// Tactical command button: recover, Empire pressed state.
-        pub const BTN_RECOVER_EMPIRE_PRESSED: u32 = 1171;
+        pub const BTN_RECOVER_EMPIRE_PRESSED: u32 = 1174;
         /// Tactical command button: recover, Empire disabled state.
-        pub const BTN_RECOVER_EMPIRE_DISABLED: u32 = 1172;
+        pub const BTN_RECOVER_EMPIRE_DISABLED: u32 = 1175;
         /// Tactical command button: recover, Alliance normal state.
-        pub const BTN_RECOVER_ALLIANCE_NORMAL: u32 = 1173;
+        pub const BTN_RECOVER_ALLIANCE_NORMAL: u32 = 1170;
         /// Tactical command button: recover, Alliance pressed state.
-        pub const BTN_RECOVER_ALLIANCE_PRESSED: u32 = 1174;
+        pub const BTN_RECOVER_ALLIANCE_PRESSED: u32 = 1171;
         /// Tactical command button: recover, Alliance disabled state.
-        pub const BTN_RECOVER_ALLIANCE_DISABLED: u32 = 1175;
+        pub const BTN_RECOVER_ALLIANCE_DISABLED: u32 = 1172;
 
         /// Tactical command button: attack Death Star, normal state.
         pub const BTN_ATTACK_DEATH_STAR_NORMAL: u32 = 1176;

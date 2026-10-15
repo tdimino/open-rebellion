@@ -49,7 +49,9 @@ pub const ENCYCLOPEDIA_EXCLUDED_MISSION_OBJECT_IDS: [u32; 10] = [
 pub struct EncyclopediaCatalogEntry {
     /// Compound game-object identity. The high byte is the source family.
     pub object_id: u32,
-    /// TEXTSTRA resource used for the visible name.
+    /// TEXTSTRA resource used for the visible name: the DAT record's name id
+    /// (`+0x30`, `FUN_00422620`), so a character's row keeps its plain name
+    /// while it holds a rank.
     pub text_resource_id: u16,
     /// Localized visible name.
     pub name: String,

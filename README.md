@@ -40,7 +40,7 @@ Open Rebellion reads the original game data files, converts them to clean JSON, 
 
 ### Current development state
 
-> **Verification (2026-10-06):** The bounded tactical launcher has 106/106 deterministic A1 mappings, while strict A0 acceptance remains 0/106. Recent strategic gates cover native keyboard shortcuts, the two-sector-window cap, Message Index interaction, Personnel and Troop Finders, per-area production destinations, fleet/ship Rename, and en-route marks. Authentic Manufacturing, Build Selection, and complete Status-window coverage, the wider interface matrix, multiplayer, and release acceptance remain open in the [interface audit](docs/qa/2026-09-10-interface-parity-audit/).
+> **Verification (2026-10-13):** Reference captures (A0) from the original game cover 110 of 114 cells: space battle and ground assault ([capture index](docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-13-tactical-a0-capture-index.md)). The four still missing are the Alliance's Death Star cells. All 106 space-battle cells run deterministically in the port (A1), but none has yet been compared with its capture or accepted. Several parts remain open in the [interface audit](docs/qa/2026-09-10-interface-parity-audit/): Manufacturing, Build Selection, the Status windows, the ground assault, multiplayer, and release acceptance.
 
 | Layer | Implementation status | Release acceptance |
 |-------|-----------------------|--------------------|
@@ -273,7 +273,9 @@ We stand on their shoulders.
 
 We're one developer and multiple agentic harnesses building in public. Read
 [CONTRIBUTING.md](CONTRIBUTING.md) to choose a scoped audit item, run its gates,
-and submit evidence. Current contribution areas include:
+and submit evidence. The [task graph](tasks/INDEX.md) lists the open parity
+work, what each piece waits on, and what is ready to pick up. Current
+contribution areas include:
 
 - **Play-testing**: Run it with your GOG copy, report what looks wrong—tick speed, AI behavior, combat balance, mission success rates
 - **Game data expertise**: If you know what GNPRTB parameter #147 does, or how the original handled sensor range, open an issue

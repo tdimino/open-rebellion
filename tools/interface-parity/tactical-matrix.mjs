@@ -11,6 +11,11 @@ export const TACTICAL_FAMILY_COUNTS = Object.freeze({
 });
 
 export const TACTICAL_CELL_TOTAL = 106;
+
+// Ground assault (TAC-08) is the original's report-only flow. The A0 run
+// captures it for the C6 comparison, but the port has no scenario for it yet
+// (UIP-F-010), so it stays out of the tactical denominator.
+export const A0_ONLY_FAMILY_COUNTS = Object.freeze({ "TAC-08": 8 });
 export const EXPECTED_ORIGINAL_EXE_SHA256 =
   "b3fe3997cab9a6e96403d638875dcba25484e4d8601751afec748471ac0ed6ab";
 
@@ -22,12 +27,12 @@ const assert = (condition, message) => {
   if (!condition) fail(message);
 };
 
-export function collectTacticalCells(surfaceLedger) {
+function collectFamilyCells(surfaceLedger, familyCounts) {
   assert(Array.isArray(surfaceLedger?.surfaces), "surface ledger has no surfaces");
   const seenIds = new Set();
   const cells = [];
 
-  for (const [family, expectedCount] of Object.entries(TACTICAL_FAMILY_COUNTS)) {
+  for (const [family, expectedCount] of Object.entries(familyCounts)) {
     const matches = surfaceLedger.surfaces.filter((surface) => surface.id === family);
     assert(matches.length === 1, `expected exactly one ${family} surface`);
     const surface = matches[0];
@@ -61,12 +66,25 @@ export function collectTacticalCells(surfaceLedger) {
       });
     }
   }
+  return cells;
+}
 
+export function collectTacticalCells(surfaceLedger) {
+  const cells = collectFamilyCells(surfaceLedger, TACTICAL_FAMILY_COUNTS);
   assert(
     cells.length === TACTICAL_CELL_TOTAL,
     `tactical denominator drift: expected ${TACTICAL_CELL_TOTAL}, got ${cells.length}`,
   );
   return cells;
+}
+
+// Every cell the A0 manifest may hold: the tactical cells, then the A0-only
+// families.
+export function collectA0Cells(surfaceLedger) {
+  return [
+    ...collectTacticalCells(surfaceLedger),
+    ...collectFamilyCells(surfaceLedger, A0_ONLY_FAMILY_COUNTS),
+  ];
 }
 
 export function catalogCoverage(catalog, cells, { strict = false } = {}) {
@@ -121,7 +139,9 @@ function validateArtifactPath(artifactPath, cellId) {
   );
 }
 
-export function a0Coverage(manifest, cells, { strict = false } = {}) {
+// Coverage counts `cells`; `alsoKnown` cells are validated but not counted,
+// so the tactical matrix accepts a manifest that also holds TAC-08.
+export function a0Coverage(manifest, cells, { strict = false, alsoKnown = [] } = {}) {
   if (!manifest) {
     if (strict) fail("strict tactical validation requires an A0 manifest");
     return { captures: new Map(), missing: cells.map(({ id }) => id) };
@@ -146,12 +166,15 @@ export function a0Coverage(manifest, cells, { strict = false } = {}) {
     "A0 capture may not use host scaling",
   );
 
-  const known = new Map(cells.map((cell) => [cell.id, cell]));
+  const known = new Map([...alsoKnown, ...cells].map((cell) => [cell.id, cell]));
+  const counted = new Set(cells.map(({ id }) => id));
   const captures = new Map();
+  const seen = new Set();
   for (const capture of manifest.captures ?? []) {
     const cell = known.get(capture.cell_id);
     assert(cell, `A0 manifest maps unknown tactical cell ${capture.cell_id}`);
-    assert(!captures.has(capture.cell_id), `duplicate A0 capture for ${capture.cell_id}`);
+    assert(!seen.has(capture.cell_id), `duplicate A0 capture for ${capture.cell_id}`);
+    seen.add(capture.cell_id);
     assert(
       capture.requirement === cell.requirement,
       `${capture.cell_id} requirement does not match the surface ledger`,
@@ -190,7 +213,7 @@ export function a0Coverage(manifest, cells, { strict = false } = {}) {
         assert(artifact.path.endsWith(".png"), `${capture.cell_id} visual path must end in .png`);
       }
     }
-    captures.set(capture.cell_id, capture);
+    if (counted.has(capture.cell_id)) captures.set(capture.cell_id, capture);
   }
 
   const missing = cells.map(({ id }) => id).filter((id) => !captures.has(id));
@@ -210,7 +233,10 @@ export function buildTacticalMatrix({
   const cells = collectTacticalCells(surfaceLedger);
   const strictEvidence = strict || requireAccepted;
   const catalogResult = catalogCoverage(catalog, cells, { strict: strictEvidence });
-  const a0Result = a0Coverage(a0Manifest, cells, { strict: strictEvidence });
+  const a0Result = a0Coverage(a0Manifest, cells, {
+    strict: strictEvidence,
+    alsoKnown: collectA0Cells(surfaceLedger),
+  });
   const rows = cells.map((cell) => ({
     ...cell,
     scenario_slug: catalogResult.mapped.get(cell.id) ?? null,

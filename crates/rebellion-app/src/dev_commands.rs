@@ -176,6 +176,8 @@ pub enum DevCommand {
     },
     /// Press at one point, move, release at another.
     Drag { from: (f32, f32), to: (f32, f32) },
+    /// Wheel lines at a point: positive scrolls down a list, negative up.
+    Scroll { x: f32, y: f32, notches: i32 },
     /// Press and release a named key.
     Press(String),
     /// Open the Message Index on a category command (`0x79..=0x82`), and
@@ -287,6 +289,7 @@ impl DevCommand {
             | Self::WaitUntil(_)
             | Self::Click { .. }
             | Self::Drag { .. }
+            | Self::Scroll { .. }
             | Self::Press(_)
             | Self::KnockOutHyperdrive(_)
             | Self::Status => Readiness::Anywhere,
@@ -379,6 +382,18 @@ pub fn parse_line(line: &str) -> Result<Option<DevCommand>, String> {
         let from = point(&args[..split])?;
         let to = point(&args[split + 4..])?;
         return Ok(Some(DevCommand::Drag { from, to }));
+    }
+    if lower.starts_with("scroll ") {
+        let args = rest("scroll ");
+        let parsed = args.rsplit_once(' ').and_then(|(at, n)| {
+            let notches = n.parse::<i32>().ok().filter(|n| *n != 0 && n.abs() <= 100)?;
+            Some((at, notches))
+        });
+        let Some((at, notches)) = parsed else {
+            return Err("scroll takes `<x>,<y> <notches>`, 1 to 100 down or -1 to -100 up".into());
+        };
+        let (x, y) = point(at)?;
+        return Ok(Some(DevCommand::Scroll { x, y, notches }));
     }
     if lower.starts_with("press ") {
         let key = rest("press ");

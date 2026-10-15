@@ -49,15 +49,22 @@ functional. Do not repeat historical parity percentages as verified results.
 
 ## Commands
 
-`~/.local/bin/cc` is not a C compiler. Use the sanitized PATH for Cargo:
+Cargo runs on the Mac Mini, never on this Mac: `scripts/mini-cargo.sh`
+syncs the tree there, runs Cargo with the sanitized PATH, and cuts the Mini's
+`target/` back to what that build used (`agent_docs/agent-tooling.md`,
+"Builds and the Build Cache"):
 
 ```bash
-env PATH=/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/Users/tomdimino/.cargo/bin cargo check --workspace
-env PATH=/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/Users/tomdimino/.cargo/bin cargo test --workspace
-env PATH=/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/Users/tomdimino/.cargo/bin cargo run -p rebellion-app -- data/base
-./scripts/build-wasm.sh
+scripts/mini-cargo.sh -- check --workspace
+scripts/mini-cargo.sh -- test --workspace
+scripts/mini-cargo.sh -- build --release -p rebellion-app   # native runs use it on the Mini
+scripts/mini-cargo.sh --run ./scripts/build-wasm.sh --pull web/open-rebellion.wasm
 ./scripts/package-web.sh dev
 ```
+
+A local build leaves a `target/` here that the SessionStart hook deletes.
+If one is unavoidable, `~/.local/bin/cc` is not a C compiler: use
+`env PATH=/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/Users/tomdimino/.cargo/bin cargo …`.
 
 Formatting and strict Clippy currently have audited baseline failures. Run
 scoped checks for touched code and do not describe those workspace gates as
@@ -100,8 +107,9 @@ green until their dedicated findings close.
   the change before calling it done.
 - Before committing, run `cargo mutants` on the touched files and close or
   explain each surviving mutant. See `agent_docs/agent-tooling.md`.
-- Before committing simulation code, run `cargo run -q -p provenance-scan --
-  check`. New rules carry a source (`FUN_`, GNPRTB, DAT) or a `port:`/`hyp:`
+- Before committing simulation code, run
+  `scripts/mini-cargo.sh -- run -q -p provenance-scan -- check`. New rules
+  carry a source (`FUN_`, `DAT_`/`_DAT_`, GNPRTB, DAT) or a `port:`/`hyp:`
   tag; the baseline of uncited items may only shrink.
 
 ## Git and Dependencies
@@ -112,8 +120,8 @@ green until their dedicated findings close.
 - Ask before adding production dependencies, changing architecture, or breaking
   save/data/network formats.
 - Never commit original game data, generated bitmap packs, secrets, or tokens.
-  The one exception is the saves we made on the capture VM
-  (`tools/original-capture/saves/`).
+  The one exception is the saves in `tools/original-capture/saves/`: ours
+  from the capture VM, plus the one David Adams gave us (credited there).
 
 ## Detailed Guides
 
@@ -123,6 +131,13 @@ green until their dedicated findings close.
   interface feature and settle its claims against the trace. Read for UI work.
 - `agent_docs/roadmap.md` — active milestones and v1.0 release sequence. Read when
   choosing or checking off work.
+- `agent_docs/task-graph.md` — the br/bv task graph in `.beads/`: question,
+  review, port and acceptance nodes. Read before choosing, delegating or
+  closing tactical, ground-assault or Ghidra work. After any br change, run
+  `scripts/task-index.py` to regenerate the public pages in `tasks/`.
+- `agent_docs/mod-surface.md` — what the original fixes in code rather than
+  data, and the rules for turning a fixed rule into mod data. Read before
+  mod or era-overhaul work.
 - `agent_docs/architecture.md` — crate graph and data flow. Read before structural
   changes.
 - `agent_docs/simulation.md` — tick order and system patterns. Read for game logic.

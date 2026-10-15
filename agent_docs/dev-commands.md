@@ -21,13 +21,21 @@ none of them. The code lives in `crates/rebellion-app/src/`:
 
 ## The loop
 
+The game runs on the Mac Mini, from the copy `scripts/mini-cargo.sh` builds
+there (`~/or-native/open-rebellion`). Build it from this Mac, then drive it
+over ssh and pull the evidence back:
+
 ```bash
+scripts/mini-cargo.sh -- build --release -p rebellion-app
 E=.artifacts/native-checks/<date>-<slug>
-scripts/launch-native.sh --build --live --seed 42 --evidence $E
-scripts/dev-send.sh $E "Start game: Empire"
-scripts/dev-send.sh $E "Skip briefing"
-scripts/dev-send.sh $E "Capture: 01-galaxy"
+ssh mac-mini-ts "cd or-native/open-rebellion && (scripts/launch-native.sh --live --seed 42 --evidence $E >/dev/null 2>&1 &)"
+ssh mac-mini-ts "cd or-native/open-rebellion && scripts/dev-send.sh $E 'Start game: Empire'"
+ssh mac-mini-ts "cd or-native/open-rebellion && scripts/dev-send.sh $E 'Capture: 01-galaxy'"
+rsync -a mac-mini-ts:or-native/open-rebellion/$E/ $E/
 ```
+
+The launch runs in the background so ssh returns; `$E/binary.txt` records
+the binary's hash and the source commit from `.build-source`.
 
 Read each capture, then send the next command. To see the whole run at
 once, use the report (below). `dev-send.sh` appends the
@@ -57,6 +65,7 @@ scaled to 640×480.
 | `Wait until day <n>` / `Wait until battle alert` / `Wait until battle` / `Wait until galaxy` | anywhere | Holds the queue until the galaxy clock reaches the day, the Battle Alert opens, the battlefield shows (not the Battle Alert or the Results, which share its mode), or the galaxy view shows; the result notes `day=… after N frames`. After 36,000 frames it is refused with the day and mode, and the queue moves on. Give `dev-send.sh` a `--timeout` long enough for the wait. At Very Slow a day can take about 8,000 frames (2026-10-11), so raise the speed before waiting several days. |
 | `Click <x>,<y>` / `Right click <x>,<y>` / `Ctrl click <x>,<y>` | anywhere | Move, press and release at the point, one per frame; `Ctrl click` holds Control around them. |
 | `Drag <x>,<y> to <x>,<y>` | anywhere | Press, move over 8 frames, release. |
+| `Scroll <x>,<y> <n>` | anywhere | Moves to the point, then posts `n` mouse-wheel lines, one a frame: positive scrolls down a list, negative up (1 to 100 either way). The port's lists without a drawn scroll bar (the Create Mission kind list, its agent lists) move one row per line. |
 | `Press <key>` | anywhere | Press and release: a letter, a digit, `f1`–`f12`, `escape`, `return`, `space`, `tab`, `delete`, the arrows, `home`, `end`, `pageup`, `pagedown`. |
 | `Start game: Alliance` / `Start game: Empire` | main menu | Starts through the menu's faction control. |
 | `Skip briefing` | galaxy | The tour's own skip, as Escape: the reply plays (ALBRIEF 10165 / EMBRIEF 11157). Refused when no briefing runs. |

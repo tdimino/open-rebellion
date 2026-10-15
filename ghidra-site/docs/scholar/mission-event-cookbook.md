@@ -1,12 +1,12 @@
 ---
-title: "Mission & Event Cookbook—REBEXE.EXE Reverse Engineering"
+title: "Mission & Event Cookbook — REBEXE.EXE Reverse Engineering"
 description: "Practical modder reference for adding missions, story events, and era-specific campaigns"
 category: "ghidra"
 created: 2026-03-15
-updated: 2026-03-16
+updated: 2026-10-14
 ---
 
-# Mission & Event Cookbook—REBEXE.EXE Reverse Engineering
+# Mission & Event Cookbook — REBEXE.EXE Reverse Engineering
 
 *A practical reference for modders who want to add new missions, story events, or era-specific campaigns to Star Wars Rebellion. Built from Ghidra decompilation of REBEXE.EXE (2.8MB), cross-referenced with rebellion-strings.txt (205 strings), rebel-all-functions.txt (4,938 annotated functions), and the 50+ decompiled C files in ghidra/notes/.*
 
@@ -16,40 +16,48 @@ updated: 2026-03-16
 
 ## 1. Mission Type Registry
 
-### The Nine Mission Types
+### Mission Types
 
-REBEXE.EXE recognizes 9 active mission type codes, dispatched via a 13-case switch in `FUN_0050d5a0`. Cases 0 and default are no-ops or guard rails. Each mission type has:
+A mission type is a MISSNSD.DAT record; its DatId family (`id >> 24`,
+`0x40`-`0x7f`) is what the executable checks. Names are the records' TEXTSTRA
+strings.
 
-1. An integer type code (`param_1` to FUN_0050d5a0)
-2. A matching `*MSTB.DAT` probability table file
-3. A set of entity family filters defining the valid target pool
-4. Boolean flags controlling decoy eligibility, special forces eligibility, and mandatory status
+| Family | Record id | Mission | Success table by name (table id) |
+|--------|-----------|---------|--------------------|
+| `0x41` | `0x01` | Move | — |
+| `0x42` | `0x02` | Return | — |
+| `0x43` | `0x03` | Autorouting | — |
+| `0x44` | `0x04` | Adrift | — |
+| `0x51` | `0x10` | Diplomacy | DIPLMSTB (`0x14`) |
+| `0x52` | `0x13` | Espionage | ESPIMSTB (`0x17`) |
+| `0x53` | `0x20`-`0x22` | Ship Design, Facility Design, Troop Training Research | — |
+| `0x54` | `0x15` | Reconnaissance | — |
+| `0x55` | `0x16` | Recruitment | RCRTMSTB (`0x18`) |
+| `0x56` | `0x40` | Incite Uprising | INCTMSTB (`0x1a`) |
+| `0x57` | `0x80` | Subdue Uprising | SUBDMSTB (`0x1c`) |
+| `0x58` | `0x42` | Jedi Training | — |
+| `0x61` | `0x11` | Rescue | RESCMSTB (`0x15`) |
+| `0x62` | `0x17` | Abduction | ABDCMSTB (`0x19`) |
+| `0x63` | `0x81` | Assassination | ASSNMSTB (`0x1d`) |
+| `0x64` | `0x44` | Palace | — |
+| `0x65` | `0x83` | Bounty | — |
+| `0x69` | `0x12` | Sabotage | SBTGMSTB (`0x16`) |
+| `0x6a` | `0x41` | Death Star Sabotage | DSSBMSTB (`0x1b`) |
+| `0x71` | `0x43` | Dagobah | — |
+| `0x72` | `0x45`, `0x46` | Vacation, Sabbatical | — |
+| `0x73` | `0x82` | Pickup | — |
 
-| Type Code | Mission | MSTB File | Notes |
-|-----------|---------|-----------|-------|
-| 1 | Diplomacy | DIPLMSTB.DAT | Fleet filter only (no troop/side filters) |
-| 2 | Recruitment | RCRTMSTB.DAT | Target filter via `local_14c[2]` |
-| 3 | Sabotage | SBTGMSTB.DAT | Two entity family ranges: 0x10/0x20 and 0x22/0x28 |
-| 4 | Abduction | ABDCMSTB.DAT | Two ranges: 0xa0/0xb0 and 0x28/0x30 |
-| 5 | Incite Uprising | INCTMSTB.DAT | Two ranges: 0x08/0x10 and 0x01/0xff; fleet enabled |
-| 6 | Assassination | ASSNMSTB.DAT | Fleet + side filter + `special_flag=true`; two ranges |
-| 7 | Rescue | RESCMSTB.DAT | Three ranges (0x08-0x10, 0x01-0xff, 0x01-0xff); special flag; `bVar3=true` decoy enable |
-| 8 | Subdue Uprising | SUBDMSTB.DAT | Six ranges; `local_150=1`; `bVar1=true` (vtable path) |
-| 9 | Espionage | ESPIMSTB.DAT | Single range 0x30/0x40 |
-| 10 | (Death Star Sabotage) | DSSBMSTB.DAT | `bVar1=true`; three ranges; no fleet filter |
-| 11 | (unknown) |—| `bVar1=true`; two ranges 0x10-0x40, 0xa0-0xb0 |
-| 12 | (unknown) |—| `bVar2=true`; single range 0x20-0x30 |
-
-**Note on case 8 (Subdue Uprising)**: This is the only mission that routes to the vtable dispatch path (`bVar1=true`). Cases 8, 10, and 11 take the `(**(code **)(*local_174 + 0x24))(local_14c + 5)` path instead of the standard `FUN_0050fc80` / `FUN_0050fbf0` dual-check.
+Table ids and their consumers (`FUN_0055c680` and neighbours, each feeding
+`FUN_0053e240`) are listed in `uprising-incident.md`.
 
 #### Mission Probability Table Format (`*MSTB.DAT`)
 
 All `*MSTB.DAT` files use the `IntTableEntry` pattern (16 bytes per entry):
 ```
-id:         u32 —entry index
-field2:     u32 —reserved
-threshold:  i32 —signed skill delta (negative = below average, 0 = average, positive = above average)
-value:      u32 —probability at this threshold (0-100)
+id:         u32  — entry index
+field2:     u32  — reserved
+threshold:  i32  — signed skill delta (negative = below average, 0 = average, positive = above average)
+value:      u32  — probability at this threshold (0-100)
 ```
 
 The probability curve is piecewise-linear between threshold/value pairs. The quadratic formula used at runtime (from `rebellion-core/src/missions.rs`) is:
@@ -72,88 +80,33 @@ where coefficients are fit to the MSTB curve at runtime.
 | SUBDMSTB.DAT | 13 |
 
 Additional tables consulted during mission resolution:
-- `FOILTB.DAT` (14 entries)—counter-intelligence foil probability
-- `ESCAPETB.DAT` (9 entries)—character escape after capture
-- `FDECOYTB.DAT` (14 entries)—fleet decoy success
-- `TDECOYTB.DAT` (14 entries)—troop decoy success
-- `RLEVADTB.DAT` (14 entries)—rebel evasion
-
-### Mission Dispatch Flow (`FUN_0050d5a0`, 503 lines)
-
-```
-FUN_0050d5a0(this, mission_type, side_id, target_entity_id)
-│
-├── FUN_00539fd0(this, side_id)       → resolve mission manager for faction
-│   └── Returns local_174 (mission context object)
-│
-├── switch(mission_type):             → set entity family filter arrays
-│   └── cases 1-12 set:
-│       local_11c[2] —primary family range (lo, hi)
-│       local_114[8] —secondary family range
-│       local_10c[8] —tertiary family range
-│       local_104[8] —quaternary family range
-│       local_16c[4] —fleet filter flag
-│       local_14c[2] —target type flag
-│       local_154    —side filter flag
-│       bVar1/bVar2  —vtable vs standard dispatch
-│       bVar3        —decoy eligibility
-│
-├── if bVar1:
-│   └── (**(code **)(*local_174 + 0x24))(target)   → vtable dispatch (Subdue/DS Sab)
-│
-├── if bVar2:
-│   ├── FUN_0050fc80(local_174, target)             → validate target
-│   ├── FUN_0050fbf0(local_174, target)             → validate mission can proceed
-│   ├── FUN_004f9ca0(local_174, target)             → check side affiliation
-│   │
-│   ├── if fleet flag:
-│   │   ├── FUN_005103a0(local_174, target)         → fleet presence check
-│   │   └── FUN_0050f390(local_174, target)         → fleet validation
-│   │
-│   ├── if side flag:
-│   │   └── FUN_0050fd10 / FUN_0050f840             → side filter checks
-│   │
-│   └── if target type flag:
-│       └── FUN_0050f410 / FUN_0050f490             → target type validation
-│
-├── iterate entity family ranges (up to 4):
-│   └── FUN_004f7e30(mission_ctx, range, target)   → per-entity validation pass
-│
-├── if bVar3 (decoy eligible):
-│   └── FUN_0050eea0(mission_ctx, target)           → decoy check
-│
-└── if all checks pass:
-    ├── FUN_004ffe70(auStack_2c, local_174, 4)      → build team candidate list
-    ├── FUN_00513120(auStack_2c)                    → iterate candidates (outer loop)
-    │   └── FUN_00502db0(auStack_4c, candidate, 4) → build sub-candidate list
-    │       └── FUN_00513120(auStack_4c)            → iterate sub-candidates (inner loop)
-    │           └── FUN_004f7e30(sub, range, target) → sub-candidate validation
-    └── return bVar9 (true = mission launched)
-```
+- `FOILTB.DAT` (14 entries) — counter-intelligence foil probability
+- `ESCAPETB.DAT` (9 entries) — character escape after capture
+- `FDECOYTB.DAT` (14 entries) — fleet decoy success
+- `TDECOYTB.DAT` (14 entries) — troop decoy success
+- `RLEVADTB.DAT` (14 entries) — rebel evasion
 
 ### How to Add a New Mission Type (REBEXE.EXE Patch Path)
 
-1. **Assign a new type code**: choose the next available integer after case 12. Set `bVar2 = true` for the standard dispatch path.
-
-2. **Set entity family filters**: in the new switch case, populate `local_11c[2]` with `{lo, hi}` family range byte pair. Add additional ranges to `local_114`, `local_10c`, `local_104` if needed. Each pair is `{min_family_byte, max_family_byte}`.
-
-3. **Create a new `*MSTB.DAT`-format table**: copy any existing MSTB file and edit threshold/value pairs to set the skill curve for your mission's success probability.
-
-4. **Add a MISSNSD.DAT entry**: MISSNSD.DAT has 25 entries (112 bytes each). Add one with:
+1. **Add a MISSNSD.DAT record** in an unused family between `0x40` and
+   `0x7f`, with:
    - `special_force_eligibility` bitmask matching your `SPECFCSD.DAT` entry
-   - `max_officers`—max assignable
-   - `base_duration`—base turns
-   - `target_flags`—`0x10000` if can target enemy systems
-   - Set `flag_col6..flag_col21` based on nearest analogous mission
-
-5. **Register the MSTB table**: the mission outcome code reads MSTB tables keyed by mission type code. The binding is in the dispatch chain downstream of `FUN_0050d5a0`. The table must be registered under the new type code at the lookup site.
+   - `max_officers` — max assignable
+   - `base_duration` — base turns
+   - `target_flags` — `0x10000` if can target enemy systems
+   - `flag_col6..flag_col21` copied from the nearest analogous mission
+2. **Create a `*MSTB.DAT`-format table**: copy an existing MSTB file and edit
+   its threshold/value pairs.
+3. **Bind the table**: the success roll reads its table by id through one
+   consumer per table (`uprising-incident.md`). Where the executable maps a
+   mission family to that consumer is open.
 
 ### How to Add a New Mission Type (open-rebellion Path)
 
 For the Rust reimplementation, no binary patching is needed:
 
 ```rust
-// In rebellion-core/src/missions.rs—add to MissionKind enum:
+// In rebellion-core/src/missions.rs — add to MissionKind enum:
 pub enum MissionKind {
     Diplomacy,
     Recruitment,
@@ -195,21 +148,21 @@ These fire when mission properties are assigned or change:
 
 | Function | Notification String | Event Name | Payload | Notes |
 |----------|--------------------|---------|---------|----|
-| FUN_00524fc0 | MissionUserIDNotif | UserID |—| Mission instance identity |
-| FUN_00525000 | MissionUserID2Notif | UserID2 |—| Secondary ID (multiplayer?) |
+| FUN_00524fc0 | MissionUserIDNotif | UserID | — | Mission instance identity |
+| FUN_00525000 | MissionUserID2Notif | UserID2 | — | Secondary ID (multiplayer?) |
 | FUN_005250a0 | MissionOriginLocationKeyNotif | OriginLocation | system key | Where mission starts |
 | FUN_005250e0 | MissionObjectiveKeyNotif | Objective | entity key | What is being targeted |
 | FUN_00525120 | MissionTargetKeyNotif | Target (parent) | entity key | Primary target |
 | FUN_00525160 | MissionTargetLocationKeyNotif | TargetLocation | system key | Target system |
 | FUN_005251a0 | MissionLeaderKeyNotif | Leader | char key | Assigned leader |
 | FUN_005251e0 | MissionLeaderSeedKeyNotif | Leader | seed key | Leader seed |
-| FUN_005252xx | MissionTeamSelectListNotif |—| list | Team member selection list |
-| FUN_005253xx | MissionDecoySelectListNotif |—| list | Decoy selection list |
-| FUN_005254xx | MissionCapturedSelectListNotif |—| list | Captured characters list |
-| FUN_005255xx | MissionMemberFinishedMissionSelectListNotif |—| list | Members who completed |
-| FUN_00525560 | MissionReadyForNextPhaseNotif | ReadyForNextPhase |—| Phase gate |
-| FUN_005255a0 | MissionImpliedTeamNotif | ImpliedTeam |—| Auto-assigned team |
-| FUN_005255e0 | MissionMandatoryNotif | Mandatory |—| Marks mission as mandatory |
+| FUN_005252xx | MissionTeamSelectListNotif | — | list | Team member selection list |
+| FUN_005253xx | MissionDecoySelectListNotif | — | list | Decoy selection list |
+| FUN_005254xx | MissionCapturedSelectListNotif | — | list | Captured characters list |
+| FUN_005255xx | MissionMemberFinishedMissionSelectListNotif | — | list | Members who completed |
+| FUN_00525560 | MissionReadyForNextPhaseNotif | ReadyForNextPhase | — | Phase gate |
+| FUN_005255a0 | MissionImpliedTeamNotif | ImpliedTeam | — | Auto-assigned team |
+| FUN_005255e0 | MissionMandatoryNotif | Mandatory | — | Marks mission as mandatory |
 
 ### Character Role State Notifications
 
@@ -237,7 +190,7 @@ Three orthogonal states, each tracked via a separate notification channel:
 
 - **OnHiddenMission**: fired for covert operations where the mission should not be visible to the opposing faction's intel. Assassination, abduction, and rescue missions use this path. The game cross-references `OnHiddenMission` during counter-intelligence checks (FOILTB.DAT).
 
-- **OnMandatoryMission**: fired after `MissionMandatoryNotif`. Blocks `CanResignFromMission`—the character is locked into the assignment until completion or death. Story event characters (Luke, Han, Leia during the Palace sequence; Darth Vader during the Final Battle chain) receive mandatory status.
+- **OnMandatoryMission**: fired after `MissionMandatoryNotif`. Blocks `CanResignFromMission` — the character is locked into the assignment until completion or death. Story event characters (Luke, Han, Leia during the Palace sequence; Darth Vader during the Final Battle chain) receive mandatory status.
 
 ### ReadyForNextPhase
 
@@ -246,9 +199,9 @@ Three orthogonal states, each tracked via a separate notification channel:
 ### MissionRemoveRequest / MissionResignRequest / CanResignFromMission
 
 Three-step resignation protocol:
-1. `MissionResignRequest`—character or player requests resignation
-2. `CanResignFromMission`—system evaluates eligibility (blocked if `OnMandatoryMission`)
-3. `MissionRemoveRequest`—actual removal authorized and executed
+1. `MissionResignRequest` — character or player requests resignation
+2. `CanResignFromMission` — system evaluates eligibility (blocked if `OnMandatoryMission`)
+3. `MissionRemoveRequest` — actual removal authorized and executed
 
 Modders implementing a new mandatory event chain must ensure their event characters receive `OnMandatoryMission` before any resign requests can be generated.
 
@@ -279,13 +232,13 @@ The `FUN_0053fdd0` call appears only on the "terminal" notification in each chai
 
 ### Event ID Sequence
 
-Event IDs are assigned in causal order—earlier events have lower IDs:
+Event IDs are assigned in causal order — earlier events have lower IDs:
 
 | Event ID (hex) | Event ID (dec) | Notification / Event Name | Function |
 |----------------|----------------|--------------------------|----------|
 | 0x12c | 300 | RecruitmentDone | FUN_00532f40 |
-| 0x1e1 | 481 | CharacterForceNotif / Force |—|
-| 0x1e5 | 485 | CharacterForceTrainingNotif / ForceTraining |—|
+| 0x1e1 | 481 | CharacterForceNotif / Force | — |
+| 0x1e5 | 485 | CharacterForceTrainingNotif / ForceTraining | — |
 | 0x210 | 528 | DagobahCompleted / LukeDagobahCompleted | FUN_0056fc70 |
 | 0x212 | 530 | BountyAttack / HanBountyAttack | FUN_00572b40 |
 | 0x220 | 544 | FinalBattle | FUN_0054ba00 |
@@ -305,7 +258,7 @@ The gap between 0x221 and 0x370 is large, leaving extensive room for custom even
 │
 ├── FUN_0054b770  →  MissionMgrLukeDagobahRequiredNotif / LukeDagobahRequired
 │   └── Gate notification. No event ID registered. Sets the Dagobah mission as required.
-│       FUN_0053a010 validity check only—no FUN_0053fdd0.
+│       FUN_0053a010 validity check only — no FUN_0053fdd0.
 │
 ├── [Luke is dispatched to Dagobah system]
 │
@@ -316,7 +269,7 @@ The gap between 0x221 and 0x370 is large, leaving extensive room for custom even
 ├── FUN_00571590  →  MissionJediTrainingTeacherKeyNotif / Teacher
 │   └── Assigns Yoda as the training teacher key. Fires when teacher is confirmed present.
 │
-├── [N training ticks pass—duration controlled by GNPRTB parameters]
+├── [N training ticks pass — duration controlled by GNPRTB parameters]
 │
 ├── FUN_0054b7b0  →  MissionMgrLukeDagobahNotif / LukeDagobah
 │   └── Full-fire event. Registers event 0x221.
@@ -325,7 +278,7 @@ The gap between 0x221 and 0x370 is large, leaving extensive room for custom even
 │
 └── FUN_0056fc70  →  LukeDagobahCompletedNotif / DagobahCompleted
     └── Completion event. Registers event 0x210.
-        FUN_0053fdd0(0x210, ...)—lower ID than 0x221, fires after.
+        FUN_0053fdd0(0x210, ...) — lower ID than 0x221, fires after.
         Luke returns to active duty. Dagobah mission slot freed.
 ```
 
@@ -347,7 +300,7 @@ FUN_0054b940  →  MissionMgrDarthToLukeFinalBattleNotif / DarthToLukeFinalBattl
 │  Fires when Vader's mission target is confirmed as Luke's system.
 │
 FUN_0054b980  →  MissionMgrDarthToEmperorFinalBattleNotif / DarthToEmperorFinalBattle
-│  Gate: Secondary routing—Vader to Emperor first. No event ID.
+│  Gate: Secondary routing — Vader to Emperor first. No event ID.
 │  The Emperor path appears to be an alternate branch (Vader retreats to Emperor
 │  before confronting Luke directly).
 │
@@ -356,7 +309,7 @@ FUN_0054b9c0  →  MissionMgrFinalBattleReadyNotif / FinalBattleReady
 │  Luke and Vader are both in position.
 │
 FUN_0056fc30  →  LukeFinalBattleReadyNotif / FinalBattleReady
-│  Luke's side fires its own FinalBattleReady—confirms both sides ready.
+│  Luke's side fires its own FinalBattleReady — confirms both sides ready.
 │  Note: this is a distinct notification from the MissionMgr version above.
 │  Same event name, different notif string, different function address.
 │
@@ -378,12 +331,12 @@ FUN_0054ba00  →  MissionMgrFinalBattleNotif / FinalBattle
 ```
 FUN_0054b800  →  MissionMgrLukePalaceNotif / LukePalace
    Gate: Luke enters Jabba's Palace mission context.
-   Returns CONCAT31(extraout_var, bVar1)—bidirectional success flag.
+   Returns CONCAT31(extraout_var, bVar1) — bidirectional success flag.
    No event ID registered (no FUN_0053fdd0 call).
 
 FUN_0054b840  →  MissionMgrHanCapturedAtPalaceNotif / HanCapturedAtPalace
    Gate: Han Solo is captured at the Palace.
-   Same pattern—no event ID. Sets Han to OnMandatoryMission.
+   Same pattern — no event ID. Sets Han to OnMandatoryMission.
 
 FUN_0054b880  →  MissionMgrLeiaPalaceNotif / LeiaPalace
    Gate: Leia enters Palace context.
@@ -394,7 +347,7 @@ FUN_0054b8c0  →  MissionMgrChewbaccaPalaceNotif / ChewbaccaPalace
    No event ID.
 ```
 
-**Design note**: none of the four Palace events register an event ID. The Palace arc is a trigger-only chain—the outcomes (rescue missions, character availability changes) are handled downstream by the rescue mission system (RESCMSTB.DAT) rather than by chained event IDs.
+**Design note**: none of the four Palace events register an event ID. The Palace arc is a trigger-only chain — the outcomes (rescue missions, character availability changes) are handled downstream by the rescue mission system (RESCMSTB.DAT) rather than by chained event IDs.
 
 ---
 
@@ -415,11 +368,11 @@ FUN_00572b40  →  HanBountyAttackNotif / BountyAttack
 │
 FUN_00572b90  →  HanCapturedByBountyHuntersNotif / CapturedByBountyHunters
    Gate: Han has been captured. No event ID.
-   Han enters OnMandatoryMission (in carbonite—cannot be reassigned).
+   Han enters OnMandatoryMission (in carbonite — cannot be reassigned).
    Triggers rescue mission availability for the Alliance.
 ```
 
-**Event ID 0x212 ordering**: BountyAttack (0x212) fires before DagobahCompleted (0x210) in the ID space but after it temporally—the ID assignment reflects source code ordering, not strict causal order.
+**Event ID 0x212 ordering**: BountyAttack (0x212) fires before DagobahCompleted (0x210) in the ID space but after it temporally — the ID assignment reflects source code ordering, not strict causal order.
 
 ---
 
@@ -430,7 +383,7 @@ FUN_00572b90  →  HanCapturedByBountyHuntersNotif / CapturedByBountyHunters
 Every story event in REBEXE.EXE is a 51-65 byte function following this exact template:
 
 ```c
-// "Gate" notification—no event ID (intermediate chain step)
+// "Gate" notification — no event ID (intermediate chain step)
 int __thiscall FireGateNotification(void *this, int param_1, int param_2) {
     bool valid = FUN_0053a010((int)this);           // validity check
     if (CONCAT31(extraout_var, valid) != 0) {
@@ -442,7 +395,7 @@ int __thiscall FireGateNotification(void *this, int param_1, int param_2) {
     return CONCAT31(extraout_var, valid);           // return validity
 }
 
-// "Full-fire" notification—registers event ID (terminal chain step)
+// "Full-fire" notification — registers event ID (terminal chain step)
 void __thiscall FireFullEvent(void *this, int param_1, int param_2) {
     bool valid = FUN_0053a010((int)this);
     if (CONCAT31(extraout_var, valid) != 0) {
@@ -453,7 +406,7 @@ void __thiscall FireFullEvent(void *this, int param_1, int param_2) {
         FUN_0053fdd0(0xNNN,                          // event ID (> 0x370 for new events)
             this, param_1, param_2);
     }
-    // void return—no success flag
+    // void return — no success flag
 }
 ```
 
@@ -546,9 +499,9 @@ Thrawn, like Vader in the Final Battle chain, must be placed in `OnMandatoryMiss
 **Step 5: open-rebellion EventState equivalent**
 
 ```rust
-// In rebellion-core/src/events.rs—add to EventState initialization:
+// In rebellion-core/src/events.rs — add to EventState initialization:
 
-// Beat 1: Thrawn Appears (gate—fires silently, no message)
+// Beat 1: Thrawn Appears (gate — fires silently, no message)
 GameEvent {
     id: EventId(0x400),
     conditions: vec![
@@ -617,7 +570,7 @@ The `is_repeatable: false` flag combined with `enabled: false` ensures the event
 
 | Address | Size | Function |
 |---------|------|---------|
-| FUN_0050d5a0 | 3050 | Mission dispatch—13-case switch on type, entity family filter setup, team candidate loop |
+| FUN_0050d5a0 | 3050 | Observation level 0-12: copies a system's state into one side's view (`observation-levels.md`) |
 | FUN_004fc080 | 439 | Mission destruction outcomes (DestroyedSabotage, DestroyedAssassination, DestroyedAutoscrap) |
 | FUN_00536800 | 120 | RoleMissionKeyNotif / Mission |
 
@@ -655,49 +608,49 @@ The `is_repeatable: false` flag combined with `enabled: false` ensures the event
 
 | Address | Size | Notif String | Event ID |
 |---------|------|-------------|---------|
-| FUN_0054b770 | 51 | MissionMgrLukeDagobahRequiredNotif / LukeDagobahRequired |—(gate) |
+| FUN_0054b770 | 51 | MissionMgrLukeDagobahRequiredNotif / LukeDagobahRequired | — (gate) |
 | FUN_0054b7b0 | 65 | MissionMgrLukeDagobahNotif / LukeDagobah | 0x221 |
-| FUN_00575320 | 56 | DagobahMissionFirstTrainingDayNotif / FirstTrainingDay |—(gate) |
-| FUN_00571590 | 56 | MissionJediTrainingTeacherKeyNotif / Teacher |—(gate) |
-| FUN_0056fc70 |—| LukeDagobahCompletedNotif / DagobahCompleted | 0x210 |
+| FUN_00575320 | 56 | DagobahMissionFirstTrainingDayNotif / FirstTrainingDay | — (gate) |
+| FUN_00571590 | 56 | MissionJediTrainingTeacherKeyNotif / Teacher | — (gate) |
+| FUN_0056fc70 | — | LukeDagobahCompletedNotif / DagobahCompleted | 0x210 |
 
 ### Final Battle Chain
 
 | Address | Size | Notif String | Event ID |
 |---------|------|-------------|---------|
-| FUN_0054b900 | 51 | MissionMgrDarthPickupNotif / DarthPickup |—(gate) |
-| FUN_0054b940 | 51 | MissionMgrDarthToLukeFinalBattleNotif / DarthToLukeFinalBattle |—(gate) |
-| FUN_0054b980 | 51 | MissionMgrDarthToEmperorFinalBattleNotif / DarthToEmperorFinalBattle |—(gate) |
-| FUN_0054b9c0 | 51 | MissionMgrFinalBattleReadyNotif / FinalBattleReady |—(gate) |
-| FUN_0056fc30 | 51 | LukeFinalBattleReadyNotif / FinalBattleReady |—(gate) |
+| FUN_0054b900 | 51 | MissionMgrDarthPickupNotif / DarthPickup | — (gate) |
+| FUN_0054b940 | 51 | MissionMgrDarthToLukeFinalBattleNotif / DarthToLukeFinalBattle | — (gate) |
+| FUN_0054b980 | 51 | MissionMgrDarthToEmperorFinalBattleNotif / DarthToEmperorFinalBattle | — (gate) |
+| FUN_0054b9c0 | 51 | MissionMgrFinalBattleReadyNotif / FinalBattleReady | — (gate) |
+| FUN_0056fc30 | 51 | LukeFinalBattleReadyNotif / FinalBattleReady | — (gate) |
 | FUN_0054ba00 | 65 | MissionMgrFinalBattleNotif / FinalBattle | 0x220 |
 
 ### Jabba's Palace
 
 | Address | Size | Notif String | Event ID |
 |---------|------|-------------|---------|
-| FUN_0054b800 | 51 | MissionMgrLukePalaceNotif / LukePalace |—(gate) |
-| FUN_0054b840 | 51 | MissionMgrHanCapturedAtPalaceNotif / HanCapturedAtPalace |—(gate) |
-| FUN_0054b880 | 51 | MissionMgrLeiaPalaceNotif / LeiaPalace |—(gate) |
-| FUN_0054b8c0 | 51 | MissionMgrChewbaccaPalaceNotif / ChewbaccaPalace |—(gate) |
+| FUN_0054b800 | 51 | MissionMgrLukePalaceNotif / LukePalace | — (gate) |
+| FUN_0054b840 | 51 | MissionMgrHanCapturedAtPalaceNotif / HanCapturedAtPalace | — (gate) |
+| FUN_0054b880 | 51 | MissionMgrLeiaPalaceNotif / LeiaPalace | — (gate) |
+| FUN_0054b8c0 | 51 | MissionMgrChewbaccaPalaceNotif / ChewbaccaPalace | — (gate) |
 
 ### Bounty Hunters
 
 | Address | Size | Notif String | Event ID |
 |---------|------|-------------|---------|
-| FUN_0054ba50 | 51 | MissionMgrBountyHuntersActiveNotif / BountyHuntersActive |—(gate) |
+| FUN_0054ba50 | 51 | MissionMgrBountyHuntersActiveNotif / BountyHuntersActive | — (gate) |
 | FUN_00572b40 | 65 | HanBountyAttackNotif / BountyAttack | 0x212 |
-| FUN_00572b90 | 51 | HanCapturedByBountyHuntersNotif / CapturedByBountyHunters |—(gate) |
+| FUN_00572b90 | 51 | HanCapturedByBountyHuntersNotif / CapturedByBountyHunters | — (gate) |
 
 ### Espionage / Force
 
 | Address | Size | Notif String | Event ID |
 |---------|------|-------------|---------|
 | FUN_005738f0 | 73 | MissionEspionageExtraSystemKeyNotif / ExtraSystem | 0x370 |
-| FUN_0058a3f0 |—| Force user detection logic |—|
-| FUN_004f1e00 |—| CharacterForceNotif / Force | 0x1e1 |
-| FUN_004f1ea0 |—| CharacterForceTrainingNotif / ForceTraining | 0x1e5 |
-| FUN_004ee470 | 129 | MissionHyperdriveModifierNotif / MissionHyperdriveModifier |—|
+| FUN_0058a3f0 | — | Force user detection logic | — |
+| FUN_004f1e00 | — | CharacterForceNotif / Force | 0x1e1 |
+| FUN_004f1ea0 | — | CharacterForceTrainingNotif / ForceTraining | 0x1e5 |
+| FUN_004ee470 | 129 | MissionHyperdriveModifierNotif / MissionHyperdriveModifier | — |
 | FUN_00532f40 | 65 | SideRecruitmentDoneNotif / RecruitmentDone | 0x12c |
 
 ---
@@ -723,10 +676,10 @@ The `is_repeatable: false` flag combined with `enabled: false` ensures the event
 | TDECOYTB.DAT | Troop decoy success | Affects missions with troop decoys |
 | SPECFCSD.DAT | Special forces: mission eligibility bitmasks | Set `mission_id` bitmask to match new mission type codes |
 
-**GNPRTB parameters likely controlling missions** (not yet fully confirmed—RE target):
+**GNPRTB parameters likely controlling missions** (not yet fully confirmed — RE target):
 
 - Parameters 0x0a00–0x0a21 include mission duration multipliers, success probability bonuses per difficulty, and reward magnitude scalars. Edit the Alliance Easy/Med/Hard and Empire Easy/Med/Hard columns independently to create asymmetric difficulty curves.
 
 ---
 
-*For combat formulas (bombardment, space combat 7-phase pipeline, ground combat), see `combat-formulas.md` and `annotated-functions.md`. For the full function taxonomy, see `modders-taxonomy.md`.*
+*For combat (where each kind is resolved, bombardment, the story-check chain), see `COMBAT-SUMMARY.md`, `bombardment.md` and `space-combat.md`. For the full function taxonomy, see `modders-taxonomy.md`.*

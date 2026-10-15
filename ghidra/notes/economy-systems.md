@@ -3,13 +3,13 @@ title: "Economy & Star System Reference — REBEXE.EXE"
 description: "Economy functions and star system management from Ghidra decompilation"
 category: "ghidra"
 created: 2026-03-13
-updated: 2026-03-16
+updated: 2026-10-14
 ---
 
 # Economy & Star System Reference — REBEXE.EXE
 
 Generated from Ghidra decompilation of REBEXE.EXE (Star Wars Rebellion 1998, LucasArts).
-Cross-referenced with: annotated-functions.md, FUN_0050e820_economy.c, FUN_00509*.c, FUN_00511*.c, FUN_00512*.c.
+Cross-referenced with: annotated-functions.md, FUN_0050e820.c, FUN_00509*.c, FUN_00511*.c, FUN_00512*.c.
 
 ---
 
@@ -17,7 +17,7 @@ Cross-referenced with: annotated-functions.md, FUN_0050e820_economy.c, FUN_00509
 
 ### CStarSystem Resource Fields (Confirmed Offsets)
 
-All four resource fields live on the `CStarSystem` object. The setter/getter pattern is identical for all four: `FUN_0053a000` validity check → `FUN_0053fc90` range validate → write field → notify two observer sides via `FUN_00539fd0(this, 1)` and `FUN_00539fd0(this, 2)` → vtable dispatch with old/new values.
+All four resource fields live on the `CStarSystem` object. The setter/getter pattern is identical for all four: `FUN_0053a000` validity check → `FUN_0053fc90` range validate → write field → copy the change into the Alliance view (`FUN_00539fd0(this, 1)`) and the Empire view (`FUN_00539fd0(this, 2)`) → vtable dispatch with old/new values. `FUN_00539fd0(object, n)` returns the object's copy `n` (`FUN_005844e0` on the holder at `+0x20`, slot `+0x24 + 4n`, n 0 to 2): 1 is the Alliance's view, 2 the Empire's (`side-numbering.md`).
 
 | Offset (hex) | Offset (dec) | Field | Validator / Setter | Notif ID | Valid Range |
 |---|---|---|---|---|---|
@@ -64,12 +64,10 @@ Error strings embedded in the binary confirm field names precisely:
    - All three must return 1 for production to proceed.
 3. **Manufacturing facility check**: `FUN_0053fc90(param_1[0x18], 0, param_1[0x17])` — validates the manufacturing facility count/type pair at offsets `+0x17` (count) and `+0x18` (type).
 4. **Production facility check**: `FUN_0053fc90(param_1[0x1a], 0, param_1[0x19])` — validates production facility pair at offsets `+0x19` / `+0x1a`.
-5. **Entity type filter** (the large nested-range check): iterates the system's entity collection via `FUN_0052bed0` (get next entity from iterator). For each entity, checks `DatId >> 24` against a multi-range list of valid production-eligible family bytes: `0x20-0x2f` (troops/special forces), `0x30-0x3f` (ships), `0x1c-0x1f`, `0x08-0x0f` (characters), `0xa0-0xaf`, `0x40-0x7f`, `0x10-0x13`.
+5. **Child family filter**: iterates every object in the system (`FUN_004fcd00(.., system, 4)`, next object `FUN_0052bed0`). Each object's family (`DatId >> 24`) must fall in one of `[0x20,0x30)` facilities and HQ, `[0x30,0x40)` characters and special forces, `[0x1c,0x20)` fighter squadrons, `[0x08,0x10)` fleets, `[0xa0,0xb0)` production managers, `[0x40,0x80)` missions or `[0x10,0x14)` regiments; any other family fails the check. Capital ships (`[0x14,0x1c)`) are not in the list; they sit in fleets.
 6. **Flight count check**: `FUN_005093e0(param_1, &local_108)` — gets the number of in-flight entities. Production is blocked if flight count >= 2.
-7. **Unit readiness check**: four separate entity iterators enumerate capital ships (`FUN_00539d70`), special forces (`FUN_00558480`), characters (`FUN_0052c170`), and troops (`FUN_00536da0`). For each unit:
-   - If `entity+0x50 >> 3 & 1` (fighter combat eligible flag) is set and `entity+0x50 >> 0xe & 1` is also set → skip.
-   - Otherwise: `((byte)(entity[0x24]) ^ (byte)(param_1[9])) & 0xc0 == 0` — faction XOR check. Both must belong to the same faction (same control bits `0xc0`). Unit at offset `+0x78 >> 7 & 1` (special entity flag) provides an alternate path for character types.
-8. **Fleet active check**: iterates fleets via `FUN_004ffe70(local_4c, param_1, 3)`. For each fleet: `entity+0x50 & 1` (active bit) must be set, then `param_1[0x22] >> 5 & 1` (a system flag) must equal `entity+0x58 >> 5 & 1` (fleet combat_phase_flags bit 5).
+7. **Side check per object**: four iterators walk the system's facilities `[0x20,0x30)` (`FUN_00539d70`), units `[0x10,0x20)` (`FUN_00558480`), production managers `[0xa0,0xb0)` (`FUN_0052c170`) and characters and special forces `[0x30,0x40)` (`FUN_00536da0`). An object is skipped when `+0x50` bit 3 (destroyed) and `+0x50` bit 14 are both set, and a character or special force also when `+0x78` bit 7 is set; every other object must share the system's side (`(object[0x24] ^ system[0x24]) & 0xc0 == 0`).
+8. **Fleet check**: iterates the system's fleets `[0x08,0x10)` via `FUN_004ffe70(local_4c, param_1, 3)`. Each fleet's bit 5 at `+0x58` must equal the system's blockade bit (`+0x88` bit 5, `blockade-bit.md`) when the fleet is active (`+0x50` bit 0), and 0 otherwise.
 
 **Production flow summary**: Energy and raw materials are consumed by manufacturing facilities at a rate determined by the item being built and facility `processing_rate`. The validators in step 2 gate whether sufficient resources exist. `system_energy_allocated` and `system_raw_material_allocated` track how much of the production pool is committed to current build queues—preventing over-commitment.
 
@@ -91,7 +89,7 @@ Five distinct `ControlKind` states fire notifications. Based on notif string nam
 
 All five use the same `FUN_0053a010` validity check pattern. `BattleWon` and `BattleWithdrew` and `BattleReady` use `FUN_004f88d0` (3-param notif dispatcher with old/new values and context). `Uprising` additionally registers event `0x151`, indicating it is a scripted-event-system trigger, not just a display notification. `BattlePending` and the three that follow use `FUN_004f8880` (1-entity param notif dispatcher).
 
-**Faction control bits**: Extracted from `entity+0x24 bits 6-7` (`(byte >> 6) & 3`). This 2-bit value is the `faction_side` parameter passed to energy/resource validators. Values: 0 = neutral, 1 = Alliance, 2 = Empire, 3 = contested (inferred).
+**Faction control bits**: Extracted from `entity+0x24 bits 6-7` (`(byte >> 6) & 3`). This 2-bit value is the `faction_side` parameter passed to energy/resource validators. Values: 1 = Alliance, 2 = Empire, 3 = Neutral, 0 unset (`side-numbering.md`).
 
 **Ownership transfer**: `param_1[9]` contains faction bits. The production eligibility check in `FUN_0050e820` uses `(entity[0x24] ^ param_1[9]) & 0xc0 == 0` to match units to the controlling faction—ownership is determined by matching the high 2 bits of the control byte at `+0x24`.
 
@@ -248,9 +246,7 @@ Not found as a separate notif function. `CombatUnitFastRepair` is likely the onl
 - From `FUN_0053f9c0(0x305, ...)` and `FUN_0053fa60(0x386, ...)` called at the end of `FUN_00511300`: parameter `0x305` (773 decimal) and `0x386` (902 decimal) are repair or production rate modifiers. These are beyond the 26 documented general GNPRTB parameters—they belong to a higher ID range.
 
 **Which units can be repaired**:
-- Capital ships and fighters (family `0x30-0x3f`) — confirmed by the space combat section of the entity type filter.
-- Death Star (family `0x34`) — included in the space-eligible set and the production range check.
-- Troops (`0x14-0x1b`) cannot fast-repair (no shipyard path), only ground recovery.
+Not traced: which object families `FUN_00511300` repairs. The families are `CAPSHPSD` `0x14` (capital ships) and `0x18` (the Death Star), `FIGHTSD` `0x1c` (fighter squadrons) and `TROOPSD` `0x10` (regiments).
 
 ---
 
@@ -381,20 +377,20 @@ The notification architecture follows a strict two-path pattern:
 **Path 1 — Field mutation** (setter functions, e.g. `FUN_00509cc0`):
 ```
 Caller sets new value
-→ FUN_0053a000(this)              // validity: is object alive/initialized?
+→ FUN_0053a000(this)              // true for the master copy (bits 4-5 clear)
 → FUN_0053fc90(new_val, min, max) // range validate
 → write this+offset = new_val
-→ FUN_00539fd0(this, 1)           // get observer list: faction side 1
-→ per-type dispatch (e.g. FUN_0050f410) with side-1 observer
-→ FUN_00539fd0(this, 2)           // get observer list: faction side 2
-→ per-type dispatch with side-2 observer
+→ FUN_00539fd0(this, 1)           // the object's Alliance view (copy 1)
+→ per-type copy (e.g. FUN_0050f410) into the Alliance view
+→ FUN_00539fd0(this, 2)           // the object's Empire view (copy 2)
+→ per-type copy into the Empire view
 → vtable[slot](old_val, new_val, context) // fire change event
 ```
 
 **Path 2 — Pure notification** (event dispatchers, e.g. `FUN_00511ec0`):
 ```
 Game logic calls notif function directly
-→ FUN_0053a010(this)              // validity: notification path check
+→ FUN_0053a010(this)              // true for a view copy
 → FUN_004f8880/8980/8aa0(...)     // dispatch notification to subscribers
 → FUN_0053fcf0/fdd0/fe40(id, ...) // register with scripted event system
 ```

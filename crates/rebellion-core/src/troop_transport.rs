@@ -552,6 +552,20 @@ impl TroopTransportState {
         Ok(SquadronMove::Departed(transit))
     }
 
+    /// Whether `fleet` would take one more squadron of the side
+    /// ([`Self::accept_squadron_fleet`]).
+    #[must_use]
+    pub fn squadron_fleet_accepts(
+        &self,
+        world: &GameWorld,
+        movement: &MovementState,
+        is_alliance: bool,
+        fleet: FleetKey,
+    ) -> bool {
+        self.accept_squadron_fleet(world, movement, is_alliance, fleet)
+            .is_ok()
+    }
+
     /// `FUN_00500ac0` and `FUN_00500b40` for a squadron: a fleet of the
     /// side, not in hyperspace, whose ships have room for one more besides
     /// those aboard and those on their way.
@@ -640,6 +654,11 @@ impl TroopTransportState {
             };
             if entered {
                 place_squadron(world, transit.leg, transit.class, transit.is_alliance);
+                // FUN_00508660 → FUN_0050a1b0: a system records the side of
+                // a squadron arriving on it.
+                if let RegimentLeg::Surface(system) = transit.leg {
+                    world.arrival_holders.insert(system, transit.is_alliance);
+                }
                 result.squadrons_arrived.push(transit);
             } else {
                 result.squadrons_lost.push(transit);

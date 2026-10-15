@@ -3,7 +3,7 @@ title: "Maintenance computation and Vader's starting location"
 description: "Original-game trace: how maintenance capacity/load work and where Vader starts"
 category: "ghidra"
 created: 2026-10-10
-updated: 2026-10-10
+updated: 2026-10-14
 tags: [maintenance, seeding, characters, vader]
 ---
 
@@ -102,61 +102,50 @@ been found.**
 
 ## 2. Vader's starting location
 
-### 2a. Character creation (stage 0xc)
+### 2a. Character creation (stage 0x14)
 
 The seeding driver `FUN_005136d0` (`FUN_005136d0.c`) runs stages 2–0x19.
-Stage 0xc calls `FUN_0051a280` (`FUN_0051a280.c`), which loops 7 linked
-lists at offsets `+0x100..+0x140` of the seeder object. For the `+0x140`
-list it checks DatIds against Yavin (`0x92000121`) and Coruscant
-(`0x90000109`) to decide the side. For each character it calls
-`FUN_0051bc70` (`FUN_0051bc70.c`).
+Stage 0xc (`FUN_0051a280` → `FUN_0051bc70`) creates the systems, each keyed
+`0x80000000 | record +0x40` to its sector (`galaxy-limits.md`); it creates no
+characters. Characters come later:
 
-`FUN_0051bc70` looks up the character's class via `FUN_0051cab0`, extracts
-the home system from class `+0x40`, and creates the character as a child of
-that system via `FUN_004f7d50`. **Characters are placed at their home
-system, not aboard fleets.**
+- **Stage 0x14** (`FUN_0051b6d0` → `FUN_0055f730`) creates every character
+  class of families `0x30` and `0x38` (`FUN_0051cad0`) through
+  `FUN_00562520`, which creates the object (`FUN_004f7d50`) with its side
+  from the class `+0x40`/`+0x44` flags: Alliance only 1, Empire only 2;
+  a class with both flags or neither is not created.
+- **Stage 0x15** (`FUN_0051b710` → `FUN_0055f7b0`) places the named
+  characters (`FUN_0055fe70` moves an object into a container and sets its
+  created and completed bits).
 
-Vader (`0x35000281`) gets Coruscant from his class `+0x40`.
+### 2b. Where each named character starts (`FUN_0055f7b0`)
 
-Our code (`crates/rebellion-data/src/seeds.rs:2044–2072`,
-`place_named_characters`): places Vader at Coruscant (the planet) via the
-`CORUSCANT_CHARACTERS` list at line 2059. **Matches stage 0xc.**
+| Character | Container |
+|---|---|
+| Palpatine `0x34000280` | Coruscant `0x90000109` |
+| Vader `0x35000281`, minor `0x38000380`-`0x38000383`, `0x3800038c` | `FUN_00562680`: a random container of the character's side |
+| Mon Mothma `0x30000240` | the Alliance HQ's container (`FUN_00506110()` `+0x1c`) |
+| Luke `0x32000242`, Leia `0x31000241`, Han `0x33000243`, minor `0x38000341`, `0x38000343`, `0x38000344` | Yavin `0x92000121` |
 
-### 2b. The fleet question
+Each group is followed by `FUN_0055d7d0` further characters placed through
+`FUN_00562610`; hyp: these are the starting recruits of each side.
 
-The user observes Vader aboard Imperial Fleet 1 at Coruscant in the
-original's day-0 state. Stage 0xc places him at the planet, not the fleet.
-Starting forces (stage 0x12, `FUN_0051aa50`) creates fleets. Fleet naming
-(stage 0x17, `FUN_0051b7f0`) numbers them.
-
-Five seeding stages are **undecompiled** and have no `.c` files in
-`ghidra/notes/`:
-
-| Stage | Function | When (relative to stage 0xc characters) |
-|---|---|---|
-| 0xd | `FUN_0051a530` | right after characters, before forces |
-| 0xe | `FUN_0051a550` | right after characters, before forces |
-| 0x14 | `FUN_0051b6d0` | after forces (0x12), before fleet naming (0x17) |
-| 0x15 | `FUN_0051b710` | after forces, before fleet naming |
-| 0x18 | `FUN_0051b940` | after fleet naming |
-
-hyp: one of stages 0x14, 0x15, or 0x18 boards specific characters (Vader,
-Palpatine, Mon Mothma, and possibly others) onto the fleet at their home
-system. Stages 0xd and 0xe run before fleets exist, so they are less likely
-candidates for fleet boarding, though they could prepare a boarding list.
+`FUN_00562710` picks the random container: it counts the active (`+0x50`
+bit 0) systems (families `0x90`-`0x97`) and fleets (families `0x08`-`0x0f`)
+of the side and rolls one index uniformly over both counts (`FUN_0053e290`).
+An index below the system count returns that system. Otherwise it takes that
+fleet and rolls again over the fleet's mode-1 children (`FUN_00502e30`),
+returning the chosen child; hyp: the children are its capital ships. Stage
+0x12 (`FUN_0051aa50`) has already created the fleets, so Vader starts at an
+Imperial system or aboard a ship of an Imperial fleet; a ship of Fleet 1 at
+Coruscant is one outcome.
 
 ### 2c. Difference from our code
 
 Our `place_named_characters` (`seeds.rs:2044–2072`) places Vader at
-Coruscant the planet. The original does the same in stage 0xc. But the
-original likely boards him onto Imperial Fleet 1 in one of the undecompiled
-stages.
-
-**The fix is to add a post-fleet-creation step that boards Vader (and
-likely Palpatine) onto the Empire's first fleet at Coruscant, and Mon
-Mothma onto the Alliance's first fleet at the Rebel HQ.** The exact
-original mechanism is untraced pending decompilation of `FUN_0051b6d0`,
-`FUN_0051b710`, or `FUN_0051b940`.
+Coruscant the planet through the `CORUSCANT_CHARACTERS` list. The original
+places Palpatine there and gives Vader and the five Imperial minor
+characters a random container of their side, fleets included.
 
 ## Summary of differences
 
@@ -168,5 +157,4 @@ original mechanism is untraced pending decompilation of `FUN_0051b6d0`,
 | Mines/refineries' maintenance cost | 0 (DAT verified) | 0 (class `+0x4c`, DAT verified) | confirmed |
 | Queued items in load | counted (`resources.rs:109`) | hyp: counted if they are game objects with exists bit | medium |
 | Seed-42 deficit | expected: fixed seeds can exceed capacity | hyp: original can also start overdrawn | medium |
-| Vader at Coruscant planet (stage 0xc) | `seeds.rs:2068` | `FUN_0051bc70` → class `+0x40` home system | confirmed |
-| Vader aboard Imperial Fleet 1 | not implemented | hyp: one of 0x14/0x15/0x18 boards him | high (observed in game, mechanism untraced) |
+| Vader's starting container | Coruscant planet (`seeds.rs:2068`) | a random Imperial system, or a ship of a random Imperial fleet (`FUN_0055f7b0` → `FUN_00562680` → `FUN_00562710`) | confirmed |

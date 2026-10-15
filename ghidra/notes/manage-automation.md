@@ -3,7 +3,7 @@ title: "Manage Garrisons / Manage Production — Player-Side Agent Automation"
 description: "Full reverse engineering of the Agent menu's Manage Garrisons and Manage Production toggles: module architecture, tick dispatch, decision rules, menu wiring, save format, and advisor messages"
 category: "ghidra"
 created: 2026-10-06
-updated: 2026-10-06
+updated: 2026-10-14
 sources:
   - type: "ghidra"
     files:
@@ -64,22 +64,11 @@ sources:
 
 # Manage Garrisons / Manage Production — Player-Side Agent Automation
 
-> **Correction (2026-10-06, checked against the decompiles).** A module's
-> state 2 means *suspended*: `FUN_004cc990` (VT[4]) readies only a module
-> whose state is neither 1 nor 2, so a state-2 module never runs, and
-> `FUN_00439950` starts every module in state 2, so all start **off**.
-> `FUN_00439e30` returns 1 when the state is not 2, and `FUN_00487900`
-> checks the menu item then: a check means the automation runs.
-> `FUN_00439d60` turns a module **on** (2 → 0, counter +1) with bit `0x10`
-> (Garrisons) or `0x20` (Production), or `0x1000000` once the counter
-> passes 3, and **off** (→ 2, counter −1) with `0x100` or `0x200`. Tables
-> below that label those bits or states the other way round are wrong.
-
 The original game's Agent menu offers three automation toggles that instruct the
 player's advisor to manage garrisons, production, and ship building
-autonomously.  All three start off (see the correction above) and share a common sub-module
-dispatch system.  The AI opponent uses a completely separate pipeline
-(FUN_00519d00 → FUN_00537180 chain) and does not share this code.
+autonomously.  All three start off (state 2, `FUN_00439950`) and share a common sub-module
+dispatch system.  The computer player uses a separate pipeline (`ai-order-emission.md`)
+and does not share this code.
 
 ## Manual Reference (pp. 64–66)
 
@@ -111,15 +100,15 @@ Constructor: `FUN_00439320(game_ptr, view_ptr)`.
 | +0x14     | void*      | game_instance        | Passed as param_1 |
 | +0x18     | BST        | sub_module_map       | std::map<uint, SubModule*>; key = module index |
 | +0x34     | SubModule* | current_module       | Currently executing module |
-| +0x3c     | struct     | notification_queue   | Processed in agent tick state 5 |
-| +0xc0     | void*      | back-ref (hyp:)      | Loaded from +0xc0 in some callers |
+| +0x3c     | struct     | galaxy_survey        | 0xfc bytes, ctor FUN_0049c780: system list at its +0x08 (FUN_004c5910, 0x9c-byte system records), sector list at +0x20 (FUN_004c5450, 200-byte sector records), id set at +0x34. Swept in agent tick state 5 |
+| +0xc0     | void*      | back-ref (hyp:)      | Loaded from +0xc0 in some callers; lies inside the +0x3c survey (its +0x84) |
 | +0x138    | struct     | advisor_reactions     | FUN_004e5210 |
 | +0x144    | void*      | view_ptr             | The galaxy view, used for UI dispatch |
 | +0x148    | int        | last_dispatch_tick   | Tick of last notification |
 | +0x14c    | int        | dispatch_interval    | 8 at init |
 | +0x150    | uint       | dispatch_flags       | Bit 0x10000000 = init complete |
 | +0x154    | list       | notification_entries | Linked list of advisor entries |
-| +0x160    | int        | toggle_off_counter   | Incremented on each disable |
+| +0x160    | int        | toggle_on_counter    | +1 each time a module is turned on, −1 each time one is turned off |
 | +0x170    | byte       | advisor_byte         | 8 at init |
 | +0x184    | SubModule* | ships_module_ptr     | Direct pointer to module 0x17 |
 | +0x188    | int        | orders_issued        | Count of orders dispatched this cycle |
@@ -162,7 +151,7 @@ Creates a polymorphic sub-module object based on index:
 | +0x10  | void* | BST next        | Linked iteration |
 | +0x14  | void* | BST iterator    | Round-robin cursor |
 | +0x18  | uint  | module_index    | 0x14, 0x15, or 0x17 |
-| +0x1c  | uint  | state           | 0=disabled, 1=ready, 2=enabled |
+| +0x1c  | uint  | state           | 0 idle (on), 1 ready (scheduled), 2 suspended (off) |
 | +0x20  | uint  | completed       | 1 = done, agent should reset |
 | +0x24  | uint  | field_24        | Flags / condition |
 | +0x28  | void* | agent_context   | Set by VT[3]; the agent's game-level context |
@@ -176,25 +165,36 @@ Creates a polymorphic sub-module object based on index:
 | Slot | Offset | Method | Base (0x0065c670) | Production (0x0065c630) | Garrison (0x0065c650) |
 |------|--------|--------|-------------------|-------------------------|-----------------------|
 | 0 | +0x00 | destructor | FUN_004c7d00 | FUN_004c6ab0 | FUN_004c7320 |
-| 1 | +0x04 | save | FUN_004c7d70 | FUN_004c6be0 | FUN_004c7450 |
-| 2 | +0x08 | load | FUN_004c7dc0 | FUN_004c6c40 | FUN_004c74b0 |
+| 1 | +0x04 | load | FUN_004c7d70 | FUN_004c6be0 | FUN_004c7450 |
+| 2 | +0x08 | save | FUN_004c7dc0 | FUN_004c6c40 | FUN_004c74b0 |
 | 3 | +0x0c | set_context | FUN_0049eca0 | FUN_0049eca0 | FUN_0049eca0 |
 | 4 | +0x10 | ready_check | FUN_00618b80 (nop) | FUN_004cc990 | FUN_004cc990 |
 | 5 | +0x14 | execute | — | FUN_004c6ca0 | FUN_004c7510 |
 | 6 | +0x18 | complete | — | FUN_004c7550 | FUN_004c7550 |
 
+Slot 1 reads and slot 2 writes. Slot 1 calls `FUN_005f4d90` → `FUN_005f4ce0` →
+`FUN_006173b0` (stream read; a short read sets state bits 3, eof and fail),
+slot 2 calls `FUN_005f4db0` → `FUN_005f4d00` → `FUN_00617430` (stream write;
+a short write sets bits 6, fail and bad). The module-map reader `FUN_004be840`
+builds each module with the factory `FUN_004bea20` and then calls its slot 1.
+The agent's own pair agrees: `FUN_00439550` (load) reads with `FUN_005f4d90`,
+`FUN_004397a0` (save) writes with `FUN_005f4db0`. The module base class
+(`FUN_004e4fb0`, vtable `0x0065c868`) has the same order: slot 1
+`FUN_004e5070`, slot 2 `FUN_004e50c0`.
+
 ### State Transitions
 
 ```
-  ┌──── toggle ON ────┐
+  ┌──── toggle OFF ───┐
   │                    │
   ▼                    │
- [2] enabled/idle      │
+ [2] suspended         │
   │                    │
   │ VT[4] skips 2      │
   │                    │
+  │ toggle ON          │
   ▼                    │
- [0] disabled ◄── toggle OFF
+ [0] idle ─────────────┘
   │
   │ VT[4]: 0→1
   ▼
@@ -204,8 +204,8 @@ Creates a polymorphic sub-module object based on index:
   │   └─ phases run, produce orders
   │
   ▼ on completion (+0x20=1):
-  if state==2 → stay 2 (enabled)
-  if state!=2 → reset to 0 (was disabled)
+  if state==2 → stay 2 (turned off meanwhile)
+  else        → back to 0 (idle)
 ```
 
 ### Initialization (FUN_00439950, Phase 3)
@@ -214,13 +214,13 @@ Creates a polymorphic sub-module object based on index:
 FUN_0049df20(agent_bst, 0x14, queue);  // Create Production module
 FUN_0049df20(agent_bst, 0x15, queue);  // Create Garrison module
 FUN_0049df20(agent_bst, 0x17, queue);  // Create Ships module
-// Set ALL modules to state 2 (enabled):
+// Set ALL modules to state 2 (suspended):
 for (node = first(bst); node != NULL; node = node->next) {
     node->state = 2;
 }
 ```
 
-All three modules start **enabled** at game start.
+All three modules start **suspended** (off) at game start.
 
 ---
 
@@ -230,25 +230,25 @@ Called from `FUN_00486fb0:141–146` with menu command IDs:
 
 | Menu ID | Module Index | DAT_006b28b0 ON bit | DAT_006b28b0 OFF bit |
 |---------|-------------|---------------------|----------------------|
-| 0x115   | 0x15 (Garrisons) | 0x100 | 0x10 |
-| 0x116   | 0x14 (Production) | 0x200 | 0x20 |
+| 0x115   | 0x15 (Garrisons) | 0x10 | 0x100 |
+| 0x116   | 0x14 (Production) | 0x20 | 0x200 |
 
 ```c
 void FUN_00439d60(agent, cmd_id) {
     node = BST_lookup(agent+0x18, module_index);
     if (node->state == 2) {
-        // DISABLE: 2 → 0
+        // TURN ON: 2 → 0
         node->state = 0;
-        agent->toggle_off_counter++;
+        agent->toggle_on_counter++;
         if (counter > 3)
             DAT_006b28b0 |= 0x1000000;  // "too many toggles" message
         else
-            DAT_006b28b0 |= off_bit;    // "automation off" message
+            DAT_006b28b0 |= on_bit;     // 0x10 / 0x20
     } else {
-        // ENABLE: → 2
+        // TURN OFF: → 2
         node->state = 2;
-        agent->toggle_off_counter--;
-        DAT_006b28b0 |= on_bit;         // "automation on" message
+        agent->toggle_on_counter--;
+        DAT_006b28b0 |= off_bit;        // 0x100 / 0x200
     }
 }
 ```
@@ -264,7 +264,7 @@ void FUN_00487900(view, menu) {
     if (view->agent == NULL) return;
 
     uint agent_active = FUN_00487c20(view);    // → agent->active (+0x10)
-    bool ships_ok     = FUN_00487c30(view);    // → agent->ships_module state==2
+    bool ships_ok     = FUN_00487c30(view);    // → FUN_00439cd0: ships module 0x17 in state 2
 
     uint build_enabled = agent_active & ships_ok;
 
@@ -286,21 +286,19 @@ void FUN_00487900(view, menu) {
     if (!(DAT_006b28b0 & 0x8000))
         CheckMenuItem(menu, 0x11e);
 
-    // Manage Garrisons/Production checked when module NOT active
-    // FUN_00439e30 returns 1 when state != 2 (disabled)
-    if (FUN_00439e30(agent, 0x115))  // Garrisons disabled?
+    // Manage Garrisons/Production checked when the module runs
+    // FUN_00439e30 returns 1 when state != 2 (not suspended)
+    if (FUN_00439e30(agent, 0x115))  // Garrisons on?
         CheckMenuItem(menu, 0x115);
-    if (FUN_00439e30(agent, 0x116))  // Production disabled?
+    if (FUN_00439e30(agent, 0x116))  // Production on?
         CheckMenuItem(menu, 0x116);
-    if (FUN_00439e30(agent, 0x117))  // hyp: Build Ships disabled?
+    if (FUN_00439e30(agent, 0x117))  // always 0: FUN_00439e30 knows only 0x115/0x116
         CheckMenuItem(menu, 0x117);
 }
 ```
 
-**hyp:** The checkmark semantics are inverted from modern convention.  A
-check appears when the module is OFF.  This may be a "needs attention"
-indicator rather than a "currently active" marker, or the original menu
-strings may read differently ("Manual Garrisons" checked = manual mode).
+A check means the automation is on: the module is idle or running, not
+suspended.
 
 ---
 
@@ -336,13 +334,16 @@ Called each day-tick.  Cycles through three states:
      - Else: dispatch via `FUN_004878f0` to the game and increment
        `orders_issued` (unless module == 0x17).
 3. If module's `+0x20` (completed) flag is set:
-   - If `state != 2`: set `state = 0` (re-disable if player toggled off).
+   - If `state != 2`: set `state = 0` (idle again; a module turned off meanwhile stays 2).
    - Clear `current_module`.
 4. Transition to state 5.
 
-### State 5 — Process Notification Queue
+### State 5 — Sweep the Galaxy Survey
 
-Calls `FUN_0049cc80` on the queue at `agent+0x3c`.
+Calls `FUN_0049cc80` on the survey at `agent+0x3c`. Each call refreshes the
+next sector record (`FUN_004c6770`) along the sector list; when the survey is
+marked dirty it clears its 26 totals and re-adds every sector record's
+statistics (`FUN_0049db10` on record `+0x60`).
 
 ### State 6 — Ready All Modules
 
@@ -357,8 +358,8 @@ void FUN_004cc990(module) {
 }
 ```
 
-This re-readies disabled modules (state 0 → 1), but they harmlessly fail
-during execution and get reset back to 0 in state 4.
+Idle modules (state 0) become ready; suspended modules (state 2) stay
+suspended.
 
 ### Scheduler — FUN_0049df70
 
@@ -476,10 +477,10 @@ by available training capacity.
 
 | Bit        | Set When | Meaning |
 |------------|----------|---------|
-| 0x10       | FUN_00439d60 | Garrison automation just turned OFF |
-| 0x20       | FUN_00439d60 | Production automation just turned OFF |
-| 0x100      | FUN_00439d60 | Garrison automation just turned ON |
-| 0x200      | FUN_00439d60 | Production automation just turned ON |
+| 0x10       | FUN_00439d60 | Garrison automation just turned ON |
+| 0x20       | FUN_00439d60 | Production automation just turned ON |
+| 0x100      | FUN_00439d60 | Garrison automation just turned OFF |
+| 0x200      | FUN_00439d60 | Production automation just turned OFF |
 | 0x1000     | FUN_00439e80 | Translate Counterpart toggle state |
 | 0x8000     | FUN_00439e80, FUN_00439320 | Agent Advice OFF (set = disabled) |
 | 0x1000000  | FUN_00439d60 | "Too many toggles" — counter > 3 |
@@ -517,11 +518,11 @@ it looks up module 0x17 and stores its pointer at `+0x184`, setting
 
 Each module's VT[1]/VT[2] serializes its type-specific fields:
 
-**Production** (FUN_004c6be0 / FUN_004c6c40):
+**Production** (load FUN_004c6be0 / save FUN_004c6c40):
 base fields, `+0x34`, `+0x38`, DatId at `+0x3c`, DatId at `+0x40`,
 iterator at `+0x48`, DatId at `+0x44`.
 
-**Garrison** (FUN_004c7450 / FUN_004c74b0):
+**Garrison** (load FUN_004c7450 / save FUN_004c74b0):
 base fields, `+0x34`, `+0x3c` (count), `+0x38`, DatId at `+0x40`,
 DatId at `+0x44`, iterator at `+0x4c`, DatId at `+0x48`.
 
@@ -534,7 +535,7 @@ any code with the player-side Agent modules:
 
 | AI Pipeline Function | Purpose |
 |---------------------|---------|
-| FUN_00519d00 | Galaxy-wide system categorization (7 buckets) |
+| FUN_00519d00 | New-game stage `0xb`: systems into side lists (`galaxy-limits.md`) |
 | FUN_00537180 | Per-system fleet deployment decisions |
 | FUN_00502020 | Garrison/fleet strength aggregation |
 | FUN_00508250 | Pre-deployment validation (18 sub-checks) |
@@ -553,14 +554,14 @@ To port the player-side Agent automation:
 
 1. **Sub-module registry** — a map from module index (0x14, 0x15, 0x17) to
    a trait object with `execute()`, `complete()`, `save()`, `load()`.  All
-   three start enabled.
+   three start suspended.
 
 2. **Toggle** — Agent menu items flip module state between 0 and 2.  Track
    a toggle counter; if > 3, fire an advisor annoyance message.
 
 3. **Tick dispatch** — each day-tick, cycle: pick highest-priority ready
    module → execute its state machine → dispatch resulting orders → process
-   notifications → re-ready all modules via VT[4].  Cap at 5 orders per
+   notifications → re-ready idle modules (state 0) via VT[4].  Cap at 5 orders per
    cycle (except Ships module which is uncapped).
 
 4. **Production logic** — compare raw-material vs. refined-resource rates;
@@ -591,19 +592,12 @@ To port the player-side Agent automation:
   slots and 0xa4–0xa5 training-facility slots, but these are not among the
   known family ranges in entity-system.md.
 
-- Menu items 0x117 and 0x118 are also handled by FUN_00439d60 (via
-  FUN_00486fb0:141–146), but the factory (FUN_0049e010) only creates
-  modules 0x14, 0x15, and 0x17.  **hyp:** 0x117 maps to module 0x17
-  (Build Ships) and 0x118 to another automation (Build Troops?).
-  FUN_00439d60 would need additional cases for these.
+- `FUN_00486fb0:141–146` passes menu items 0x117 and 0x118 to
+  FUN_00439d60 as well, which acts only on 0x115 and 0x116, and the factory
+  (FUN_0049e010) creates only modules 0x14, 0x15 and 0x17. What 0x117 and
+  0x118 do is open.
 
 - The resource comparison in FUN_004c6f00 (`agent_context+0xa8` vs
   `+0xac`) needs mapping to known GNPRTB parameters or the economy
   system's resource fields.
 
-- The checkmark inversion (checked = disabled) may reflect original menu
-  string phrasing or a Win32 convention used in 1998-era LucasArts code.
-
-- Whether the disabled-module VT[4] re-ready cycle is intentional (allowing
-  one-shot execution after disable) or an oversight needs testing against
-  the original binary.

@@ -3,13 +3,13 @@ title: "REBEXE.EXE — C++ Class Hierarchy (Reconstructed)"
 description: "Reconstructed C++ class hierarchy from Ghidra decompilation"
 category: "ghidra"
 created: 2026-03-13
-updated: 2026-03-16
+updated: 2026-10-14
 ---
 
 # REBEXE.EXE — C++ Class Hierarchy (Reconstructed)
 
 Generated from Ghidra decompilation of REBEXE.EXE (Star Wars Rebellion 1998, LucasArts).
-Cross-referenced with: annotated-functions.md, combat-formulas.md, space-combat.md.
+Cross-referenced with: annotated-functions.md, combat-formulas.md, side-numbering.md, story-missions.md, character-roster.md, death-star-strategic.md.
 
 The game uses the **Notification/Observer pattern** with pure C++ virtual dispatch throughout. Every
 mutable field on every game object is modified only through validated setters that check entity
@@ -26,32 +26,37 @@ call sites in decompiled code.
 
 ### GameObject Base Vtable Slots
 
-These slots appear on all combat entity objects; they are the base interface.
+These slots appear on all game objects; they are the base interface.
 
 ```
 +0x004  GetFamilyId()                   — entity class identifier byte (id >> 0x18)
-+0x00c  GetSideKey()                    — which combat side (1=attacker, 2=defender)
-+0x034  GetSpeed()                      — hyperspace speed for transit (FUN_0055d8c0; ship FUN_00500820, fighter FUN_00502f80, default FUN_004f63f0). Earlier read as CanBombard (F-032)
++0x00c  GetSideKey()                    — side, game numbering (1 Alliance, 2 Empire; side-numbering.md)
++0x034  GetSpeed()                      — hyperspace speed for transit (FUN_0055d8c0; ship FUN_00500820, fighter FUN_00502f80, default FUN_004f63f0).
 +0x038  IsActive()                      — reads status_flags bit0
 ```
 
-### CapitalShip / CombatEntity Vtable Slots
+### Flag-Word Handler Slots (MissionMgr, CharacterMgr)
+
+Each bit of a manager's `+0x58` flag word has a setter (`FUN_0053a640` with one mask), a
+broadcaster and a handler slot (`story-missions.md`). The MissionMgr's:
+
+```
++0x1c0  bit 0  LukeDagobahRequired   (setter FUN_00543af0)
++0x1c4  bit 2  LukeDagobah           (setter FUN_00543b60)
++0x1c8  bit 5  LukePalace            (setter FUN_00543bd0)
++0x1d0  bit 7  LeiaPalace            (setter FUN_00543cb0)
++0x1d4  bit 8  ChewbaccaPalace       (setter FUN_00543d20)
++0x1f4         called by the bit-2 broadcaster FUN_0054a1d0 with (bit 2, view)
+```
+
+The CharacterMgr's `+0x58` bit 0 is the Emperor-at-Coruscant flag: `FUN_005617b0` computes it
+and `FUN_0055f650` writes it and calls slot `+0x1d8` (`death-star-strategic.md`).
+
+### CapitalShip / FighterSquadron / Facility Vtable Slots
 
 Hull, shield, and weapon change-event slots. Used by the validate-write-notify setter chain.
 
 ```
-+0x1c4  ResolveWeaponFire(side, ctx)    — phase 3: per-side weapon fire resolver
-                                           (FUN_00543b60 → inner gate mask 0x04/bit2; outer wrapper FUN_00544030 gates on bit0 & ~bit6)
-+0x1c8  ResolveShieldAbsorb(side, ctx)  — phase 4: per-side shield absorption resolver
-                                           (FUN_00543bd0 → gate on combat_phase_flags bit5/0x20)
-+0x1d0  ResolveHullDamage(side, ctx)    — phase 5: per-side hull damage resolver
-                                           (FUN_00543cb0 → gate on combat_phase_flags bit7/0x80)
-+0x1d4  ResolveFighterEngage(side, ctx) — phase 6: per-side fighter engagement resolver
-                                           (FUN_00543d20 → gate on combat_phase_flags bit8/0x100)
-+0x1d8  ResolveShieldAlt(side, ctx)     — alt shield path for special units (family 0x71-0x72,
-                                           capability_flags bit7 set); called from FUN_00544130
-+0x1f4  ApplyWeaponDamage(side, ctx)    — notification handler called by FUN_0054a1d0;
-                                           also reached as vtable+500 decimal (0x1f4)
 +0x244  GetMaxSquadSize()               — FighterSquadron only; returns max for range check;
                                            error string "Invalid_SquadSizeDamage_value_"
 +0x248  GetMaxHullValue()               — CapitalShip/facility; returns max for range check;
@@ -64,12 +69,12 @@ Hull, shield, and weapon change-event slots. Used by the validate-write-notify s
 
 ### Character / Unit Vtable Slots
 
-Used by character stat setters; distinct from the ship combat slots above.
+Used by character stat setters; distinct from the ship slots above.
 
 ```
 +0x238  NotifyLoyaltyChanged(old, new, ctx)         — base loyalty setter (FUN_005341a0)
 +0x318  NotifyEnhancedLoyaltyChanged(old, new, ctx) — EnhancedLoyalty mission bonus (FUN_004ee030)
-+0x330  NotifyCombatStrengthChanged(old, new, ctx)  — regiment/troop strength change (FUN_004ee350)
++0x330  NotifyCommandKindChanged(old, new, ctx)     — officer rank +0x96 change (FUN_004ee350)
 +0x338  NotifyHyperdriveChanged(old, new, ctx)      — MissionHyperdriveModifier (FUN_004ee470)
 ```
 
@@ -92,115 +97,100 @@ CRebObject (base)
 │    (and many more base slots not yet traced)
 │
 ├── CNotifyObject (adds observer plumbing)
-│   │  +0x2c  void* combat_data_ptr     — ptr to associated combat data block
-│   │  +0x50  uint  status_flags        — bit0=active, bit3=fighter_combat_eligible,
-│   │                                     bit12=special_disabled
-│   │  +0x58  uint  combat_phase_flags  — space combat phase state machine bitfield
-│   │  +0x78  byte  capability_flags    — bit4=special_victory_eligible,
-│   │                                     bit6=disabled_a, bit7=alt_shield_path / disabled_b
-│   │  +0xac  byte  alive_flag          — bit0=alive/combat-eligible
-│   │  +0xb0  byte  combat_ready_flags  — bit1=combat_ready_for_fleet_eval
+│   │  +0x24  uint  side bits 6-7 (1 Alliance, 2 Empire); bits 4-5 a side selector for FUN_004fd600
+│   │  +0x2c  void* the object's DAT record (a system's record +0x4c holds its x/y, FUN_00509620)
+│   │  +0x50  uint  status_flags        — bit0=active
+│   │  +0x58  uint  flag word, per class (MissionMgr story flags, CharacterMgr seat of power,
+│   │                                     fleet order bits; see section 4)
 │   │
-│   ├── CCombatUnit (adds the combat phase vtable block)
-│   │   │  Virtual (new in CCombatUnit):
-│   │   │    +0x1c4 ResolveWeaponFire
-│   │   │    +0x1c8 ResolveShieldAbsorb
-│   │   │    +0x1d0 ResolveHullDamage
-│   │   │    +0x1d4 ResolveFighterEngage
-│   │   │    +0x1d8 ResolveShieldAlt
-│   │   │    +0x1f4 ApplyWeaponDamage
-│   │   │
-│   │   ├── CCapitalShip
-│   │   │      Family bytes: 0x30-0x33, 0x35-0x38, 0x3a-0x3b
-│   │   │      +0x60  int   hull_current             — current hull damage value
-│   │   │      +0x64  uint  shield_weapon_packed      — bits 0-3: shield_recharge_allocated
-│   │   │                                               bits 4-7: weapon_recharge_allocated
-│   │   │                                               bits 8-31: unknown (preserved)
-│   │   │      +0x96  short regiment_strength         — (ships only: used for unit strength too)
-│   │   │      Virtual (override from CCombatUnit):
-│   │   │        +0x248 GetMaxHullValue()             → error "Invalid_HullValueDamage_value_"
-│   │   │        +0x29c NotifyHullChanged(old,new,ctx)
-│   │   │        +0x2a0 NotifyShieldChanged(old,new,ctx)
-│   │   │        +0x2a4 NotifyWeaponChanged(old,new,ctx)
-│   │   │      Vtable address: PTR_LAB_0066c2d0  (set in FUN_005a7500 constructor at *param_1)
-│   │   │      Event IDs: 0x1c0 (hull damage), 0x1c1 (shield recharge), 0x1c2 (weapon recharge)
-│   │   │
-│   │   ├── CDeathStar
-│   │   │      Family byte: 0x34
-│   │   │      Inherits CCapitalShip layout; special-cased in combat result (FUN_005445d0)
-│   │   │      Family 0x73-0x74: "special combat entity" — triggers FUN_00534640 victory path
-│   │   │      Fire condition: !(alive_flag & 1) AND (status_flags & 1)
-│   │   │      faction_control field: bits 6-7 at +0x24 of faction object (0x80 = Empire)
-│   │   │      Tactical message: cmSHIP_POST_DS_STATUS, DEATHSTAR_UPDATE, DEATHSTAR_FIRE,
-│   │   │                         DEATHSTAR_WITHDRAW
-│   │   │
-│   │   └── CFighterSquadron
-│   │          Family bytes: 0x71-0x72 (shield absorb special path), 0x30-0x3b range
-│   │          +0x60  int   squad_size_current        — shares offset with hull_current
-│   │          Virtual (override):
-│   │            +0x244 GetMaxSquadSize()             → error "Invalid_SquadSizeDamage_value_"
-│   │            +0x260 NotifySquadChanged(old,new,ctx)
-│   │            +0x1d8 ResolveShieldAlt (triggered by capability_flags bit7)
-│   │          Event ID: 0x1a0 (squad size damage)
-│   │          Combat eligible via dead state: status_flags bit3 overrides alive_flag==0
+│   ├── CCapitalShip
+│   │      Family bytes: 0x14-0x1b (CAPSHPSD 0x14; the Death Star is CAPSHPSD record 136, family 0x18)
+│   │      Factories: 0x14 FUN_004fffe0 (vtable 0x0065d650), 0x18 FUN_005002a0 (vtable 0x0065d930)
+│   │      +0x60  int   hull_current             — current hull damage value
+│   │      +0x64  uint  shield_weapon_packed      — bits 0-3: shield_recharge_allocated
+│   │                                               bits 4-7: weapon_recharge_allocated
+│   │                                               bits 8-31: unknown (preserved)
+│   │      Virtual:
+│   │        +0x248 GetMaxHullValue()             → error "Invalid_HullValueDamage_value_"
+│   │        +0x26c / +0x270  fighter / regiment capacity (FUN_00502020)
+│   │        +0x29c NotifyHullChanged(old,new,ctx)
+│   │        +0x2a0 NotifyShieldChanged(old,new,ctx)
+│   │        +0x2a4 NotifyWeaponChanged(old,new,ctx)
+│   │      Event IDs: 0x1c0 (hull damage), 0x1c1 (shield recharge), 0x1c2 (weapon recharge)
+│   │      The Death Star is this class with family 0x18; every rule keys on [0x18,0x1c)
+│   │      (death-star-strategic.md). Tactical messages: cmSHIP_POST_DS_STATUS,
+│   │      DEATHSTAR_UPDATE, DEATHSTAR_FIRE, DEATHSTAR_WITHDRAW
+│   │
+│   ├── CFighterSquadron
+│   │      Family bytes: 0x1c-0x1f (FIGHTSD 0x1c)
+│   │      +0x60  int   squad_size_current        — shares offset with hull_current
+│   │      Virtual (override):
+│   │        +0x244 GetMaxSquadSize()             → error "Invalid_SquadSizeDamage_value_"
+│   │        +0x260 NotifySquadChanged(old,new,ctx)
+│   │      Event ID: 0x1a0 (squad size damage)
 │   │
 │   ├── CTroopRegiment
-│   │      Family bytes: 0x14-0x1b
-│   │      +0x96  short regiment_strength             — ground combat strength (16-bit)
-│   │      Virtual:
-│   │        +0x330 NotifyCombatStrengthChanged(old,new,ctx)
-│   │      Ground combat primitive: FUN_004ee350 (set_regiment_strength)
+│   │      Family bytes: 0x10-0x13 (TROOPSD 0x10)
 │   │      Blockade event: 0x340 (TroopRegDestroyedRunningBlockade)
 │   │
-│   ├── CSpecialForces  (sub-type of troop family)
-│   │      Family bytes: 0x14-0x1b (overlaps troops — distinguished by mission_id bitmask)
-│   │      Layout: same as CTroopRegiment at combat layer
+│   ├── CSpecialForces
+│   │      Family bytes: 0x3c-0x3f (SPECFCSD 0x3c)
 │   │
 │   └── CFacility
-│          Family bytes: 0x1c-0x1f (defense/manufacturing/production)
+│          Family bytes: 0x20-0x2f — Alliance HQ 0x20-0x21; defence 0x22-0x25 (KDY-150, LNR,
+│          GenCore, Death Star shield); shipyard 0x28, training 0x29, construction yard 0x2a;
+│          mine 0x2c, refinery 0x2d (facility-order-lists.md)
 │          +0x60  int  hull_current                   — facility integrity
 │          Virtual:
 │            +0x248 GetMaxHullValue()  (same slot as CCapitalShip — shared base)
 │            +0x29c NotifyHullChanged(old,new,ctx)
 │
-├── CCharacter (separate branch — no CCombatUnit)
+├── CCharacter (separate branch)
 │   │  +0x66  short loyalty_base              — base loyalty skill (0-100)
+│   │  +0x78  byte  mission flags             — bit4 on a mission it may resign; bits 6/7 adrift /
+│   │                                           on a mission (story-missions.md)
 │   │  +0x8a  short enhanced_loyalty          — EnhancedLoyalty mission bonus (0-100, short-safe)
+│   │  +0x8c  short Force                     — read by detection FUN_0058a3f0 (force-users.md)
+│   │  +0x96  short command_kind              — officer rank: 0 none, 1 Commander, 2 Admiral,
+│   │                                           3 General (setter FUN_004ee350, character-roster.md)
 │   │  +0x9a  short hyperdrive_mod            — MissionHyperdriveModifier (Han Solo bonus)
-│   │  Force fields (from FUN_0058a3f0):
-│   │    entity[9] >> 6 & 3                   — force_potential_tier (2-bit, 0-3)
-│   │    entity[0x23]  (short)                — force_experience
-│   │    entity+0x8c   (short)                — force_potential_raw
-│   │    entity[0x1e] & 1                     — is_unknown_jedi flag
+│   │  +0xac  byte  prisoner                  — bit0 (ai-mission-planning.md, victory-conditions.md)
+│   │  +0xb0  byte  story flags               — Luke, Han, Leia (story-missions.md)
+│   │  A character is free (FUN_005439e0) when +0xac bit0 is clear, +0x50 bit0 set,
+│   │  +0x50 bit 0x1000 clear and +0x78 bits 6-7 clear.
 │   │  Virtual:
 │   │    +0x238 NotifyLoyaltyChanged(old,new,ctx)
 │   │    +0x318 NotifyEnhancedLoyaltyChanged(old,new,ctx)
-│   │    +0x330 NotifyCombatStrengthChanged(old,new,ctx)  (reused on Character for combat skill)
+│   │    +0x330 NotifyCommandKindChanged(old,new,ctx)
 │   │    +0x338 NotifyHyperdriveChanged(old,new,ctx)
 │   │  Event IDs: 0x1e1 (Force), 0x1e5 (ForceTraining)
 │   │
 │   ├── CMajorCharacter
-│   │      Family bytes: 0x08-0x0b
+│   │      Family bytes: 0x30-0x35 (MJCHARSD; 0x34 is Palpatine 0x34000280)
 │   │      is_unable_to_betray flag (Luke, Vader cannot switch sides)
 │   │      Plot-gated: DarthToLukeFinalBattle, DarthToEmperorFinalBattle, LukeFinalBattleReady
 │   │
 │   └── CMinorCharacter
-│          Family bytes: 0x0c-0x0f
+│          Family byte: 0x38 (MNCHARSD)
 │          Stats: base+variance at game-start
 │
 ├── CStarSystem
-│      Family bytes: 0x90 (explored), 0x92 (unexplored)
-│      DatId target example: 0x90000109 (Alderaan or current Death Star target)
+│      Family bytes: 0x90 (core, vtable 0x663698), 0x92 (rim, vtable 0x664098)
+│      DatId example: 0x90000109 (Coruscant)
 │      Fields from FUN_0049eea0:
 │        +0x18  HWND   window_handle
 │        +0x30  uint   display_id
 │        +0x114 void*  battle_info_ptr
 │
 ├── CFleet
+│      Family bytes: 0x08-0x0f
 │      Fleet battle entry: FUN_004ff7a0 (FleetBattleNotif)
-│      Contains: CCapitalShip + CFighterSquadron list + CCharacter list
+│      Contains capital ships; a ship carries fighters, regiments, characters and special
+│      forces of its side (FUN_00502020)
+│      +0x58 bit 6: the fleet is in the current bombard order (bombardment.md)
 │
 └── CMission
+       Family bytes: 0x41-0x73
        Mission type codes (from FUN_004fc080 switch):
          6  = Sabotage
          7  = Assassination
@@ -217,8 +207,8 @@ Vtable address constants observed in decompiled code, mapped to class types.
 | Vtable Address | Class | Source |
 |---------------|-------|--------|
 | `PTR_LAB_0066c2d0` | CTacticalBattleManager (or CShipGroup root) | FUN_005a7500, line 108: `*param_1 = &PTR_LAB_0066c2d0` |
-| `PTR_FUN_0066bdd0` | CShipGroupHandler (message router) | FUN_005a7500, slots 0x262-0x274: 7× `param_1[N] = &PTR_FUN_0066bdd0` |
-| `PTR_FUN_0066bdb8` | CNavPointHandler | FUN_005a7500, slot 0x277: `param_1[0x277] = &PTR_FUN_0066bdb8` |
+| `PTR_FUN_0066bdd0` | Object list keyed by id | FUN_005a7500, slots 0x262-0x274: 7× `param_1[N] = &PTR_FUN_0066bdd0`, 12 bytes apart. Slot 2 `FUN_005f5560` orders nodes by `+0x18` id; slot 3 `FUN_005c6000` inserts only when `FUN_005ca4b0` finds no node with that id; dtor `FUN_005c5ff0` → list base `FUN_005f5300` |
+| `PTR_FUN_0066bdb8` | Object list keyed by id | FUN_005a7500, slot 0x277: `param_1[0x277] = &PTR_FUN_0066bdb8`. Slot 4 `FUN_005c5d80` inserts only when `FUN_005c61d0` finds no node with the same `+0x18` id; dtor `FUN_005c5b60` → `FUN_005c6190` |
 | `PTR_LAB_0066c390` | CShipEventHandler | FUN_005a7500, slot 0x291: `param_1[0x291] = &PTR_LAB_0066c390` |
 | `PTR_FUN_0066c380` | CShipEventHandler variant B | FUN_005a7500, slot 0x394 |
 | `PTR_FUN_0066c370` | CShipEventHandler variant C | FUN_005a7500, slot 0x397 |
@@ -226,8 +216,8 @@ Vtable address constants observed in decompiled code, mapped to class types.
 **Note**: `FUN_005a7500` is the **tactical battle manager/controller constructor** — it allocates and initializes the object
 that handles the 2D tactical battle view. It installs all tactical-layer message handlers (SHIP_ADD,
 SHIP_REMOVE, SHIP_FIRELASERCANNON, SHIP_TAKE_LASER_HIT, DEATHSTAR_FIRE, etc.) and sets the root
-vtable pointer to `PTR_LAB_0066c2d0`. The `FUN_00585640` constructor (GNPRTB parser) allocates
-0x44 bytes and calls `FUN_005855f0` — this is the GNPRTB parameter table reader, not a game object.
+vtable pointer to `PTR_LAB_0066c2d0`. `FUN_00585640` is a factory: it allocates
+0x44 bytes and constructs the object with `FUN_005855f0`.
 
 ---
 
@@ -235,50 +225,41 @@ vtable pointer to `PTR_LAB_0066c2d0`. The `FUN_00585640` constructor (GNPRTB par
 
 Consolidated struct layout for the shared base. Fields confirmed across multiple decompiled functions.
 
-### CNotifyObject / CCombatUnit Base (all combat entities)
+### CNotifyObject Base
 
 | Offset | Type | Field | Source Functions | Notes |
 |--------|------|-------|-----------------|-------|
 | `+0x00` | `void*` | vtable | all setters | C++ vtable pointer |
-| `+0x24` | `uint` | difficulty_packed | FUN_0054a1d0 | bits 4-5 = difficulty level 0-3 (space combat) |
-| `+0x2c` | `void*` | combat_data_ptr | FUN_00509620 | → combat data block; `+0x4c` within = bombardment stat |
-| `+0x4c` | `uint` | detection_pending | FUN_0058a3f0 | set to 1 when undiscovered Jedi detected (context obj) |
-| `+0x50` | `uint` | status_flags | many | bit0=active, bit3=fighter_combat_eligible, bit12=special_disabled |
-| `+0x58` | `uint` | combat_phase_flags | FUN_00543b60-d20, space-combat.md | Phase state machine — see bitfield table below |
-| `+0x60` | `int`  | hull_current / squad_size_current | FUN_00501490, FUN_005032c0 | Polymorphic: hull for ships, size for squadrons |
+| `+0x20` | `void*` | views | FUN_00539fd0 → FUN_005844e0 | copies 0-2 at `+0x24` + 4n of the pointed block (`side-numbering.md`) |
+| `+0x24` | `uint` | owner and view | FUN_004f8c60, FUN_0054a1d0 | bits 6-7 owner (1 Alliance, 2 Empire, 3 Neutral); bits 4-5 the copy (0 master, 1 Alliance view, 2 Empire view) |
+| `+0x2c` | `void*` | DAT record | FUN_00509620 | a system's record `+0x4c` holds its SYSTEMSD x/y (`build-delivery.md`) |
+| `+0x50` | `uint` | status_flags | many | bit0=active |
+| `+0x58` | `uint` | flag word | see below | meaning per class |
+| `+0x60` | `int`  | hull_current / squad_size_current | FUN_00501490, FUN_005032c0 | Polymorphic: hull for ships and facilities, size for squadrons |
 | `+0x64` | `uint` | shield_weapon_packed | FUN_00501510, FUN_005015a0 | bits 0-3: shield_recharge_alloc; bits 4-7: weapon_recharge_alloc |
-| `+0x66` | `short` | loyalty_base | FUN_005341a0 | Character only: base loyalty skill (0-100) |
-| `+0x78` | `byte` | capability_flags | FUN_005442f0, FUN_00544130, FUN_005445d0 | bit4=special_victory_eligible, bit6=disabled_a, bit7=alt_shield_path/disabled_b |
-| `+0x8a` | `short` | enhanced_loyalty | FUN_004ee030 | Character only: EnhancedLoyalty mission bonus (0-100) |
-| `+0x96` | `short` | regiment_strength | FUN_004ee350 | Troop/ship regiment current strength |
-| `+0x9a` | `short` | hyperdrive_mod | FUN_004ee470 | Character only: MissionHyperdriveModifier (Han Solo) |
-| `+0xac` | `byte` | alive_flag | FUN_005445d0, FUN_005617b0 | bit0=alive/combat-eligible; 0=dead |
-| `+0xb0` | `byte` | combat_ready_flags | annotated-functions.md | bit1=combat_ready_for_fleet_eval |
 
-### combat_phase_flags Bitfield (at +0x58)
+### The `+0x58` Flag Word
 
-| Bit | Mask | Meaning | Gate Phase |
-|-----|------|---------|-----------|
-| 0 | `0x0001` | Space combat active | Phase 3 weapon fire entry |
-| 1 | `0x0002` | Weapon fire (attacker side) | — |
-| 2 | `0x0004` | Weapon fire type code | Phase 3 type |
-| 5 | `0x0020` | Shield absorb type code | Phase 4 type |
-| 6 | `0x0040` | Combat phases enabled (shields, hull, fighters) | Phases 4-6 gate |
-| 7 | `0x0080` | Hull damage type code | Phase 5 type |
-| 8 | `0x0100` | Fighter engagement type code | Phase 6 type |
-| 12 | `0x1000` | Post-combat flag | Phase 8 gate |
+| Class | Bits | Source |
+|-------|------|--------|
+| MissionMgr | story flags 0-14 (LukeDagobahRequired … BountyHuntersActive) | `story-missions.md`, setters `FUN_00543af0`-`FUN_00543fc0` |
+| CharacterMgr | bit 0 = Palpatine free, active and at Empire-held Coruscant | `FUN_005617b0`, `FUN_0055f650` |
+| CFleet | bit 6 = in the current bombard order | `bombardment.md` |
 
 ### Character-Specific Fields (CCharacter branch)
 
 | Offset | Type | Field | Notes |
 |--------|------|-------|-------|
-| `+0x66` | `short` | loyalty_base | 0-100, validated + 0x7fff clamped |
-| `+0x8a` | `short` | enhanced_loyalty | EnhancedLoyalty mission bonus |
-| `+0x8c` | `short` | force_potential_raw | Detector's Force sensitivity (FUN_0058a3f0) |
-| `+0x9a` | `short` | hyperdrive_mod | MissionHyperdriveModifier |
-| `entity[9] >> 6 & 3` | 2 bits | force_potential_tier | 0-3 (None/Low/Medium/High/Very High) |
-| `entity[0x23]` | `short` | force_experience | Influences Jedi detectability |
-| `entity[0x1e] & 1` | bit | is_unknown_jedi | 0 = undiscovered Jedi |
+| `+0x50` | `uint` | status | bit 0 active, bit 3 destroyed, bit `0x1000` must be clear to be free (`story-missions.md`) |
+| `+0x66` | `short` | loyalty_base | 0-100, validated + 0x7fff clamped (FUN_005341a0) |
+| `+0x78` | `byte` | mission flags | bit 0 read by detection `FUN_0058a3f0`; bit 4 on a mission it may resign; bits 6/7 adrift / on a mission |
+| `+0x8a` | `short` | enhanced_loyalty | EnhancedLoyalty mission bonus (FUN_004ee030) |
+| `+0x8c` | `short` | Force | both characters' `+0x8c` feed detection `FUN_0055e4d0` (`force-users.md`) |
+| `+0x8e` | `short` | Force experience | `story-missions.md` |
+| `+0x96` | `short` | command_kind | officer rank 0-3 (FUN_004ee350, `character-roster.md`) |
+| `+0x9a` | `short` | hyperdrive_mod | MissionHyperdriveModifier (FUN_004ee470) |
+| `+0xac` | `byte` | prisoner | bit 0 (`ai-mission-planning.md`, `victory-conditions.md`) |
+| `+0xb0` | `byte` | story flags | Luke, Han, Leia (`story-missions.md`) |
 
 ### Tactical Battle Object (FUN_005a7500 — CTacticalBattleManager)
 
@@ -302,8 +283,8 @@ This 0x3a8-word object (initialized in FUN_005a7500) is the tactical view contro
 | `param_1[0x3a5]` | `= 0` | state |
 | `param_1[0x3a6]` | `= 0x13d` (317) | timer or counter |
 | `param_1[0x3a7]` | `= 1` | active flag |
-| `param_1[0x262]–[0x274]` (7 slots) | CShipGroupHandler vtables | each set to `&PTR_FUN_0066bdd0` |
-| `param_1[0x277]` | CNavPointHandler vtable | set to `&PTR_FUN_0066bdb8` |
+| `param_1[0x262]–[0x274]` (7 slots) | seven embedded object lists | each vtable set to `&PTR_FUN_0066bdd0` |
+| `param_1[0x277]` | embedded object list | vtable set to `&PTR_FUN_0066bdb8` |
 
 Message slots registered (in constructor order):
 
@@ -415,16 +396,16 @@ Key support functions used across all class setters.
 
 | Address | Signature | Purpose |
 |---------|-----------|---------|
-| `FUN_0053a000` | `bool(int this)` | Entity validity guard — entry check in all setters |
-| `FUN_0053a010` | `bool(int this)` | Entity validity guard — notification path variant |
+| `FUN_0053a000` | `bool(int this)` | True for the master copy (`+0x24` bits 4-5 clear); entry check in all setters |
+| `FUN_0053a010` | `bool(int this)` | True for a view copy; notification path |
 | `FUN_0053fc90` | `int(value, min, max)` | Range validator: returns 0 if out of [min, max] |
 | `FUN_0053e0f0` | `int(value, min, max)` | Secondary clamp to [0, 0x7fff] for short storage |
-| `FUN_00539fd0` | `void*(this, side)` | Side observer getter: side=1 (attacker), side=2 (defender) |
-| `FUN_0053a640` | `int(type_mask, side, flags*)` | Phase gate evaluator — checks combat_phase_flags bitmask |
-| `FUN_0053a610` | `int(type_mask, flags, flags*)` | Alternate phase gate (notification side) |
-| `FUN_005404d0` | `int(this, entity_id_at+8)` | Entity ID lookup from param |
-| `FUN_004fd3d0` | `int()` | Difficulty check — returns non-zero if combat enabled |
-| `FUN_004fd600` | `int(ctx, difficulty_bits)` | Apply difficulty modifier (extracts bits 4-5 of +0x24) |
+| `FUN_00539fd0` | `void*(this, n)` | View copy `n` of the object (`FUN_005844e0` on `+0x20`, n 0-2): 1 the Alliance's view, 2 the Empire's (`side-numbering.md`) |
+| `FUN_0053a640` | `void(mask, on, flags*)` | Sets (`on` nonzero) or clears the `mask` bits of a flag word through `FUN_0053a610` |
+| `FUN_0053a610` | `void(mask, value, flags*)` | Writes `value & mask` into the masked bits when they differ |
+| `FUN_005404d0` | `int(object, side)` | Event side mask: matches when the low four bits equal `side`, or either is 3 (`side-numbering.md`) |
+| `FUN_004fd3d0` | `int()` | Returns the callback at `DAT_006b2af0`, or 1 when none is set |
+| `FUN_004fd600` | `int(ctx, n)` | `+0xc` for n = 1 (Alliance), `+0x10` for n = 2 (Empire), else 0 |
 | `FUN_00618b70` | `void*(size)` | Heap allocator (new) — called in GNPRTB parser constructor |
 
 ---
@@ -432,22 +413,22 @@ Key support functions used across all class setters.
 ## 7. Design Patterns Summary
 
 **Setter-Notify-Event chain** (all field mutations):
-1. `FUN_0053a000` — entity live check
+1. `FUN_0053a000` — the object is the master copy
 2. vtable call to get max value (for hull, squad)  **or**  `FUN_00500670` (for shield/weapon rate)
 3. `FUN_0053fc90` — range validate
 4. Write field only if `new_value != current_value`
-5. `FUN_00539fd0(this, 1)` + notify dispatcher → side 1 observer
-6. `FUN_00539fd0(this, 2)` + notify dispatcher → side 2 observer
+5. `FUN_00539fd0(this, 1)` + notify dispatcher → the Alliance's view
+6. `FUN_00539fd0(this, 2)` + notify dispatcher → the Empire's view
 7. vtable change-event slot → fires the registered listener chain
 
-**Phase Gate pattern** (all 4 space combat phases):
+**Flag-bit setter pattern** (manager flag words at `+0x58`):
 - `FUN_0053a000` validity check
-- `FUN_0053a640(phase_type_mask, side, &combat_phase_flags)` — gate evaluator
-- If gate passes: call notify dispatcher for side 1 and side 2
-- Then call vtable phase-handler slot
+- `FUN_0053a640(mask, on, &flags)` — set or clear the bit
+- On a change: the bit's broadcaster for view 1 and view 2
+- Then the bit's handler slot (`+0x1c0`-`+0x1ec` on the MissionMgr; `story-missions.md`)
 
-**Bilateral observer dispatch**: every state change notifies both `side=1` (attacker) and `side=2`
-(defender) through their respective observer chains. The observer is retrieved via `FUN_00539fd0`
+**Bilateral view dispatch**: every state change on the master copy is pushed to the Alliance's
+view (`n=1`) and the Empire's view (`n=2`). The observer is retrieved via `FUN_00539fd0`
 and is itself a polymorphic object whose dispatch method is a separate call (e.g., `FUN_005023b0`
 for hull notifications, `FUN_00502430` for shield, `FUN_005024c0` for weapon, `FUN_005037f0` for
-squad, `FUN_004f04f0` for regiment strength).
+squad, `FUN_004f04f0` for CommandKind).

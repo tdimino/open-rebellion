@@ -333,7 +333,9 @@ impl<'a> SystemContents<'a> {
 }
 
 /// The characters and special forces at `system`, each with its side and
-/// whether it is on a hidden mission (role `+0x78` bit 8).
+/// whether it is on a hidden mission (role `+0x78` bit 8). These are the
+/// system's own contents: a character aboard a fleet there is the fleet's
+/// (`FUN_00536e20` walks the system's lists, not its fleets').
 ///
 /// port: special forces carry no hidden-mission flag.
 pub(crate) fn system_members(
@@ -344,7 +346,9 @@ pub(crate) fn system_members(
         .characters
         .iter()
         .filter(move |(_, character)| {
-            !character.is_killed && character.current_system == Some(system)
+            !character.is_killed
+                && character.current_system == Some(system)
+                && character.current_fleet.is_none()
         })
         .map(|(key, character)| {
             let side = if character.is_alliance {

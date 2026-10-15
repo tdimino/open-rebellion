@@ -37,7 +37,7 @@ The `PerceptionIntegrator` (rebellion-data `integrator.rs`) applies effects to `
 | 5 | **AI** | `ai.rs` | `advance(state, world, mfg, missions, movement, ticks)` | Per-fleet targeting, deconfliction, battle penalty. Re-evaluates every 7 ticks. |
 | 6 | **Movement** | `movement.rs` | `advance(state, ticks) -> Vec<ArrivalEvent>` | Caller must update `fleet.location` + `system.fleets` |
 | 7 | **Fog** | `fog.rs` | `advance(state, world, movement)` | Fleet presence + sensor radius (detection * 15.0); monotonic |
-| 8 | **Combat** | `combat.rs` | `resolve_space()` / `resolve_ground()` | Phase gate: `ACTIVE && !PHASES_ENABLED` (inverted) |
+| 8 | **Combat** | `tactical.rs`, `combat.rs` | `resolve_system_space_combat()` (integrator) / `resolve_ground()` | Space battles run the tactical engine headless; one session per contested system, seeded from one roll |
 | 9 | **Blockade** | `blockade.rs` | `advance(state, world, ticks)` | Hostile fleet + no defender = blockade |
 | 10 | **Uprising** | `uprising.rs` | `advance(state, world, economy, missions, ticks, rolls)` | Needs the economy summary; incidents and disasters run on recovered timers |
 | 11 | **Death Star** | `death_star.rs` | `advance(state, world, ticks)` | Self-clears construction on completion |
@@ -80,7 +80,7 @@ run_simulation_tick():
   0. economy_events  = EconomySystem::advance()       → integrator.apply_economy_events()
   1. completions     = ManufacturingSystem::advance()  → integrator.apply_build_completions()
   2. arrivals        = MovementSystem::advance()       → integrator.apply_arrivals()
-  3. combat triggers → CombatSystem::resolve_*()       → integrator.apply_space_combat() / apply_ground_combat()
+  3. combat triggers → resolve_system_space_combat() (headless BattleSession) / CombatSystem::resolve_ground() → apply_ground_combat()
   4. reveals         = FogSystem::advance()             → integrator.emit_fog_reveals()
   5. results         = MissionSystem::advance()         → integrator.apply_mission_result()
   5b. escapes        = MissionSystem::check_escapes()   → integrator.apply_escape_effects()

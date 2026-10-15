@@ -3,7 +3,7 @@ title: "Strategic Windowing Toolkit Contract"
 description: "Original strategic-window identity, registry, stacking, modality, focus, capture, keyboard routing, close, and restoration behavior"
 category: "ghidra"
 created: 2026-10-10
-updated: 2026-10-12
+updated: 2026-10-14
 ---
 
 # Strategic Windowing Toolkit Contract
@@ -121,7 +121,7 @@ vtable `0x0065bf80`. Names here describe behavior, not recovered RTTI.
 | `+0x74/+0x88` | Other common intrusive trees | Shared notification/helper registries, not strategic z-order; medium-high |
 | `+0xb8` | Game-window policy bits | Bit 0 dialog/modal-key policy; bit 4 movable title drag; high for those bits |
 | `+0xbc` | Previous/related presentation pointer | Used with active presentation state; medium |
-| `+0x10c` | Saved focus HWND | Restored by `FUN_00606580`; initialized null and no strategic writes recovered; high/unused here |
+| `+0x10c` | Saved focus HWND | `FUN_006073b0` stores the `SetFocus(+0x18)` result here; `FUN_00606580` restores it; high |
 | `+0x110` | Minimized/hidden presentation state | Toggled by `FUN_00607d00`/`FUN_00607d30`; high |
 
 `FUN_005ffce0` registers the class if necessary and calls `CreateWindowExA`.
@@ -176,10 +176,10 @@ policy word at `+0xb8`). If the current object is absent it walks registered
 native siblings to find an eligible replacement.
 
 The base destructor `FUN_005ffb60` removes the object from helper/global
-registries and tears down its trees. `FUN_00606580` can restore a saved HWND
-from `+0x10c`, but that field is initialized to zero by `FUN_00606380` and no
-strategic writer was recovered. It is not a sound basis for a port-wide focus
-stack.
+registries and tears down its trees. `FUN_00606580` restores the HWND saved at
+`+0x10c`. `FUN_00606380` initializes the field to zero and `FUN_006073b0`
+fills it with the window that held focus before `SetFocus(+0x18)`. It is not a
+port-wide focus stack.
 
 Menus have their own explicit focus rule: `FUN_00442380` stores the prior
 focus in `DAT_006b28fc` and focuses the menu; `FUN_00442430` destroys the menu
@@ -424,7 +424,7 @@ API-shaping evidence until their call contexts are named.
    handler, where modal F-key suppression applies.
 7. Drag capture is temporary; close posts destruction then a focus/raise
    recalculation. Menus explicitly restore their saved focus. The generic
-   `+0x10c` saved-focus slot is dormant on the recovered strategic paths.
+   `+0x10c` saved-focus slot is written only by `FUN_006073b0`.
 8. Posted close plus per-dispatch native routing prevents the dismissing event
    from activating the exposed surface. The port must make this invariant
    explicit with a routing snapshot.

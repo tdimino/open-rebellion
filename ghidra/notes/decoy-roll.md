@@ -43,9 +43,11 @@ FUN_0053e340((in_fleet != 0) + 10, x, &ok, &hit);
   kind-3 objects of the system holder's side and returns the first whose
   `+0x96` short equals `key`. `key` is slot `+0x1bc` of the checked object.
 - `b` is slot `+0x1c4` of the checked object.
-- The roll only counts when a counterpart was found. On success the caller
-  also requires `FUN_00534720(candidate, 1, ctx)` and `FUN_00558070(object, 1,
-  ctx)`, then decrements `+0x34`; otherwise `FUN_005888f0` runs.
+- With no counterpart, `c` is 0 and the roll still runs; the lookup only
+  feeds the return status (`FUN_00588b90.c:26-50`; detection,
+  `FUN_00588a90`, is the same). On success the caller also requires
+  `FUN_00534720(candidate, 1, ctx)` and `FUN_00558070(object, 1, ctx)`, then
+  decrements `+0x34` (`:60-73`); a failure runs the exposure `FUN_005888f0`.
 
 ## Call chain (recovered 2026-09-27)
 
@@ -187,7 +189,7 @@ skip; `+0x4c` detected.
    one without its record `+0x2c -> +0x60`, or mode 0. The mode is
    `FUN_00520e50`: a nibble of the mission's runtime block (`+0x54 -> +0x34`)
    chosen by the phase `+0x68` (2, 3, 7, 9); see "Phases, modes, and the
-   success roll" below (corrected 2026-09-28). Mode 2 enables the
+   success roll" below. Mode 2 enables the
    system's regiments when the system is held by the enemy of the mission's
    side; mode 3 also enables enemy fleets' ships and fighters when the
    mission's side has nothing there; modes 1 and 4 act on the first pass.
@@ -241,6 +243,18 @@ and one that succeeds keeps its defender out of detection.
 GNPRTB (`FUN_0055e340`, shipped values): 3584 = -1, 3585 = 1, 3586 = 60,
 3587 = -100, 3588 = 35 (decoy counterpart percent), 3589 = 35 (detection
 counterpart percent).
+
+Three more helpers sit beside the table rolls:
+
+- `FUN_0055e520(side, value, &passed, &chance)`: `chance = DAT_00661a88 - value`
+  (`DAT_00661a88` is the constant 100, `blockade-troop-withdrawal.md`),
+  `passed` is the draw `FUN_0053e2f0(chance)`. `FUN_00588da0` passes the
+  object's owner bits (`+0x24 >> 6 & 3`) and its slot `+0x1f8`.
+- `FUN_0055e570(x)`: `x >= ` GNPRTB 3585 (`DAT_006bb708`, shipped 1).
+  `FUN_005888a0` sets its result when the member's short `+0x8c` passes this,
+  `+0x78 & 0xc` is 0 and `+0xac` bit 0 is clear.
+- `FUN_0055e9a0(a, b, &over, &under)`: `over = a - b` when `a > b`, else
+  `under = b - a`; the other output is 0. No caller in the listing.
 
 Shipped tables (step rows, `threshold -> value`): TDECOYTB and FDECOYTB are
 identical, `-20:10, -19:20, -9:40, 0:50, 10:60, 20:70, 30:80, 40:90, 50:92,
@@ -361,7 +375,7 @@ and through `FUN_00587b70` (`:25-40`).
 
 Slot `+0x1dc` (`FUN_005233d0` -> `FUN_00521900`) sets the mission's end
 code `+0x64`, validated `0..0x10`, not the phase; see "Phases, modes, and the
-success roll" below (corrected 2026-09-28). The mission validator
+success roll" below. The mission validator
 `FUN_00522480` computes a new state and passes it to the same slot
 (`FUN_00522480.c:137`). It uses state 5 when no member lacks a remove or
 resign request (`+0x78 & 0xc`, `:40-52`, message `0x40`/`0x91`) and state 1
@@ -492,8 +506,8 @@ e.g. Jedi Training `(60, 30)`.
 
 The agent classes override slot `+0x1f4` with `FUN_00592f50`: every MSTB
 mission, plus Reconnaissance, Research, Palace, and Bounty. Jedi Training
-(`0x571410`), Dagobah (`0x5751d0`), Vacation, and Pickup (`0x594460`) have
-their own handlers, and Move, Return, Autorouting, and Adrift keep the base
+(`0x571410`) and Dagobah (`0x5751d0`) have their own handlers; Vacation and
+Pickup (`0x594460`) forward straight to `FUN_00592f50`, and Move, Return, Autorouting, and Adrift keep the base
 `FUN_00524b70`. `FUN_00592f50` runs `FUN_00524b70`, then on phase 10:
 
 1. It calls slot `+0x278`.
@@ -570,19 +584,7 @@ Assassination (`ai-mission-planning.md`, recovered 2026-09-28).
 
 Read-only decompiles of the functor bodies (vtables `0x0066a818`,
 `0x0066a828`, `0x0066a850`, `0x0066a858`, `0x0066a860`, `0x0066a880`, slot
-`+4`), the member iterators, and the special-force slots. Corrections to the
-sections above come first.
-
-### Corrections
-
-- The decoy roll does not need a counterpart. `FUN_00588b90` rolls with the
-  officer's espionage at 0 when `FUN_00509330`/`FUN_004fd790` find no officer
-  (`FUN_00588b90.c:26-50`); the lookup only feeds the return status. The
-  same holds for detection (`FUN_00588a90`).
-- `FUN_00588b90` decrements the defender count only on success
-  (`:60-73`); a failure runs the exposure `FUN_005888f0`.
-- `FUN_0053e340` sets the outcome to 1 and replaces it with the chance roll
-  only when the row is found, so a missing row succeeds (`FUN_0053e340.c`).
+`+4`), the member iterators, and the special-force slots.
 
 ### The run (`FUN_00547f60`, `FUN_005898f0`)
 
@@ -687,8 +689,10 @@ ends with 5, and so does a team whose members were all deleted.
 
 - The setup sets `+0x28 +0x2c` only with `+0x24` and `+0x30` only with
   `+0x20`, so the port folds each kind flag into its walk flag.
-- With no officer ranks, the officer terms of the decoy and detection rolls
-  (`espionage * G3588 / 100`, `espionage * G3589 / 100`) are 0 and omitted.
+- The officer is the side's holder of the detector's rank at the detector's
+  fleet, or at the system for a regiment or a system squadron
+  (`officer_rank::rank_holder`); its espionage and combat are its effective
+  skills. A capture records the captor's side, not the officer's key.
 - A captured member's capture applies after the run, so the run marks it
   gone from its lists at once, as it does a destroyed special force.
 - Only a decoy decoys, and the lists that skip decoying members never meet

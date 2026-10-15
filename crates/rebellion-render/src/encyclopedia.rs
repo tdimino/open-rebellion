@@ -1,8 +1,8 @@
-//! Encyclopedia viewer — browse ships, characters, and systems with artwork.
-//!
-//! Displays a floating egui window with tabs for capital ships, fighters,
-//! characters, and star systems.  Each entity shows its 400×200 BMP artwork
-//! loaded from `EData`/ alongside stats pulled from `GameWorld`.
+//! Galactic Encyclopedia: the original index and topic window
+//! (`FUN_00429f30`) over the DAT catalog, with its 400×200 EDATA artwork.
+//! A row's title is its DAT record's name (TEXTSTRA id at record `+0x30`,
+//! else the inline name at `+0x34`; `FUN_00422620`), never a character's
+//! ranked name.
 //!
 //! # EDATA mapping
 //!
@@ -23,27 +23,19 @@
 //!
 //! Star systems use a two-level lookup via `ENCYBMAP.DLL` (not yet implemented
 //! here — systems fall back to a placeholder image).
-//!
-//! # Integration
-//!
-//! ```ignore
-//! egui_macroquad::ui(|ctx| {
-//!     if let Some(action) = draw_encyclopedia(ctx, world, &mut enc_state) {
-//!         // handle action (currently none, may add focus-system in future)
-//!     }
-//! });
-//! ```
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+#[cfg(feature = "interface-test-fixtures")]
+use std::path::Path;
+use std::path::PathBuf;
 
 use egui_macroquad::egui::TextureOptions;
-use egui_macroquad::egui::{self, Color32, RichText, ScrollArea, TextureHandle, Vec2};
-use rebellion_core::ids::{CapitalShipKey, CharacterKey, FighterKey, SystemKey};
-use rebellion_core::world::GameWorld;
+use egui_macroquad::egui::{self, Color32, TextureHandle};
 
 #[cfg(not(target_arch = "wasm32"))]
-use crate::bmp_cache::{load_approved_hd_assets, validated_hd_bytes};
+use crate::bmp_cache::load_approved_hd_assets;
+#[cfg(all(feature = "interface-test-fixtures", not(target_arch = "wasm32")))]
+use crate::bmp_cache::validated_hd_bytes;
 use crate::bmp_cache::{ApprovedHdAsset, AssetRenderProfile, BmpCache, DllSource};
 pub use crate::encyclopedia_surface::{
     encyclopedia_index_list_action, encyclopedia_keyboard_action, encyclopedia_title_search_match,
@@ -71,11 +63,12 @@ pub fn set_encyclopedia_asset_cache(cache: HashMap<String, Vec<u8>>) {
     *WASM_EDATA_CACHE.lock().unwrap() = cache;
 }
 
+#[cfg(any(test, feature = "interface-test-fixtures"))]
 fn edata_filename(edata_n: u16) -> String {
     format!("EDATA.{edata_n:03}")
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(feature = "interface-test-fixtures", target_arch = "wasm32"))]
 fn wasm_edata_bytes(edata_n: u16) -> Option<Vec<u8>> {
     WASM_EDATA_CACHE
         .lock()
@@ -185,395 +178,6 @@ impl Default for EncyclopediaState {
             textures: HashMap::new(),
         }
     }
-}
-
-// ---------------------------------------------------------------------------
-// Public draw function
-// ---------------------------------------------------------------------------
-
-/// Render the encyclopedia window inside an `egui_macroquad::ui` closure.
-///
-/// Returns `Some(SystemKey)` when the user clicks "Zoom to system" on a
-/// star system entry (caller should pan the galaxy map to that system).
-/// Returns `None` otherwise.
-#[expect(
-    clippy::too_many_lines,
-    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
-)]
-#[expect(
-    clippy::cast_possible_truncation,
-    reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
-)]
-pub fn draw_encyclopedia(
-    ctx: &egui::Context,
-    world: &GameWorld,
-    state: &mut EncyclopediaState,
-    bmp_cache: &mut BmpCache,
-) -> Option<SystemKey> {
-    if !state.open {
-        return None;
-    }
-
-    let mut focus_system: Option<SystemKey> = None;
-
-    // Extract fields that the Window::open() needs to borrow independently
-    // of the closure's mutable borrow of `state`.
-    let mut window_open = state.open;
-
-    egui::Window::new("Encyclopedia")
-        .default_size([700.0, 520.0])
-        .min_width(480.0)
-        .min_height(360.0)
-        .collapsible(true)
-        .open(&mut window_open)
-        .show(ctx, |ui| {
-            // ── Tab bar ───────────────────────────────────────────────────
-            ui.horizontal(|ui| {
-                for (label, tab) in [
-                    ("Capital Ships", EncyclopediaTab::CapitalShips),
-                    ("Fighters", EncyclopediaTab::Fighters),
-                    ("Characters", EncyclopediaTab::Characters),
-                    ("Systems", EncyclopediaTab::Systems),
-                ] {
-                    if ui.selectable_label(state.tab == tab, label).clicked() && state.tab != tab {
-                        state.tab = tab;
-                        state.selected_index = 0;
-                    }
-                }
-            });
-            ui.separator();
-
-            // ── Two-column layout: list (left) | detail (right) ───────────
-            ui.columns(2, |cols| {
-                // Left: scrollable entity list
-                let list_ui = &mut cols[0];
-                ScrollArea::vertical()
-                    .id_salt("enc_list")
-                    .show(list_ui, |ui| match state.tab {
-                        EncyclopediaTab::CapitalShips => {
-                            let keys: Vec<(CapitalShipKey, &str)> = world
-                                .capital_ship_classes
-                                .iter()
-                                .map(|(k, c)| (k, c.name.as_str()))
-                                .collect();
-                            for (i, (_, name)) in keys.iter().enumerate() {
-                                let sel = state.selected_index == i;
-                                if ui.selectable_label(sel, *name).clicked() {
-                                    state.selected_index = i;
-                                }
-                            }
-                        }
-                        EncyclopediaTab::Fighters => {
-                            let keys: Vec<(FighterKey, &str)> = world
-                                .fighter_classes
-                                .iter()
-                                .map(|(k, c)| (k, c.name.as_str()))
-                                .collect();
-                            for (i, (_, name)) in keys.iter().enumerate() {
-                                let sel = state.selected_index == i;
-                                if ui.selectable_label(sel, *name).clicked() {
-                                    state.selected_index = i;
-                                }
-                            }
-                        }
-                        EncyclopediaTab::Characters => {
-                            let chars: Vec<(CharacterKey, &str)> = world
-                                .characters
-                                .iter()
-                                .map(|(k, c)| (k, c.name.as_str()))
-                                .collect();
-                            for (i, (_, name)) in chars.iter().enumerate() {
-                                let sel = state.selected_index == i;
-                                if ui.selectable_label(sel, *name).clicked() {
-                                    state.selected_index = i;
-                                }
-                            }
-                        }
-                        EncyclopediaTab::Systems => {
-                            let systems: Vec<(SystemKey, &str)> = world
-                                .systems
-                                .iter()
-                                .map(|(k, s)| (k, s.name.as_str()))
-                                .collect();
-                            for (i, (_, name)) in systems.iter().enumerate() {
-                                let sel = state.selected_index == i;
-                                if ui.selectable_label(sel, *name).clicked() {
-                                    state.selected_index = i;
-                                }
-                            }
-                        }
-                    });
-
-                // Right: detail pane
-                let detail_ui = &mut cols[1];
-                ScrollArea::vertical()
-                    .id_salt("enc_detail")
-                    .show(detail_ui, |ui| {
-                        match state.tab {
-                            EncyclopediaTab::CapitalShips => {
-                                let ships: Vec<CapitalShipKey> =
-                                    world.capital_ship_classes.keys().collect();
-                                if let Some(&key) = ships.get(state.selected_index) {
-                                    if let Some(ship) = world.capital_ship_classes.get(key) {
-                                        // GOKRES.DLL 122×50 ship status sprite.
-                                        // Formula: resource_id = dat_id.raw() + 1024.
-                                        // Ships without a sprite fall through to the EDATA image.
-                                        let gokres_id = ship.dat_id.raw() + 1024;
-                                        if let Some(tex) =
-                                            bmp_cache.get(ctx, DllSource::Gokres, gokres_id)
-                                        {
-                                            ui.add(
-                                                egui::Image::new(tex)
-                                                    .fit_to_exact_size(Vec2::new(122.0, 50.0)),
-                                            );
-                                        }
-
-                                        // EDATA offset for capital ships: 42 + 0-based index
-                                        let edata_n = 42u16 + state.selected_index as u16;
-                                        show_edata_image(ui, ctx, edata_n, state);
-                                        ui.add_space(4.0);
-                                        ui.heading(&ship.name);
-                                        ui.separator();
-                                        let faction = match (ship.is_alliance, ship.is_empire) {
-                                            (true, false) => "Alliance",
-                                            (false, true) => "Empire",
-                                            _ => "Both",
-                                        };
-                                        stat_row(ui, "Faction", faction);
-                                        stat_row(ui, "Hull", &ship.hull.to_string());
-                                        stat_row(ui, "Shields", &ship.shield_strength.to_string());
-                                        stat_row(
-                                            ui,
-                                            "Sublight",
-                                            &ship.sub_light_engine.to_string(),
-                                        );
-                                        stat_row(ui, "Hyperdrive", &ship.hyperdrive.to_string());
-                                        stat_row(ui, "Maneuver", &ship.maneuverability.to_string());
-                                        stat_row(
-                                            ui,
-                                            "Fighters",
-                                            &ship.fighter_capacity.to_string(),
-                                        );
-                                        stat_row(ui, "Troops", &ship.troop_capacity.to_string());
-                                        stat_row(
-                                            ui,
-                                            "Build cost",
-                                            &ship.refined_material_cost.to_string(),
-                                        );
-                                        stat_row(
-                                            ui,
-                                            "Maintenance",
-                                            &ship.maintenance_cost.to_string(),
-                                        );
-                                        stat_row(
-                                            ui,
-                                            "Research order",
-                                            &ship.research_order.to_string(),
-                                        );
-                                        stat_row(
-                                            ui,
-                                            "Build time",
-                                            &ship.research_difficulty.to_string(),
-                                        );
-                                    }
-                                }
-                            }
-                            EncyclopediaTab::Fighters => {
-                                let fighters: Vec<FighterKey> =
-                                    world.fighter_classes.keys().collect();
-                                if let Some(&key) = fighters.get(state.selected_index) {
-                                    if let Some(ftr) = world.fighter_classes.get(key) {
-                                        // EDATA offset for fighters: 34 + 0-based index
-                                        let edata_n = 34u16 + state.selected_index as u16;
-                                        show_edata_image(ui, ctx, edata_n, state);
-                                        ui.add_space(4.0);
-                                        ui.heading(&ftr.name);
-                                        ui.separator();
-                                        let faction = match (ftr.is_alliance, ftr.is_empire) {
-                                            (true, false) => "Alliance",
-                                            (false, true) => "Empire",
-                                            _ => "Both",
-                                        };
-                                        stat_row(ui, "Faction", faction);
-                                        stat_row(
-                                            ui,
-                                            "Squadron size",
-                                            &ftr.squadron_size.to_string(),
-                                        );
-                                        stat_row(ui, "Torpedoes", &ftr.torpedoes.to_string());
-                                        stat_row(
-                                            ui,
-                                            "Build cost",
-                                            &ftr.refined_material_cost.to_string(),
-                                        );
-                                        stat_row(
-                                            ui,
-                                            "Maintenance",
-                                            &ftr.maintenance_cost.to_string(),
-                                        );
-                                    }
-                                }
-                            }
-                            EncyclopediaTab::Characters => {
-                                let chars: Vec<CharacterKey> = world.characters.keys().collect();
-                                if let Some(&key) = chars.get(state.selected_index) {
-                                    if let Some(chr) = world.characters.get(key) {
-                                        // Major characters (0..5) → EDATA 72+; minor (6+) → 78+
-                                        // We don't have a major/minor flag split by index here,
-                                        // but world.characters stores major first (load order).
-                                        // Use 72 for first 6, 78 for the rest.
-                                        let edata_n = if state.selected_index < 6 {
-                                            72u16 + state.selected_index as u16
-                                        } else {
-                                            78u16 + (state.selected_index - 6) as u16
-                                        };
-                                        show_edata_image(ui, ctx, edata_n, state);
-                                        ui.add_space(4.0);
-                                        ui.heading(&chr.name);
-                                        ui.separator();
-                                        let kind = if chr.is_major {
-                                            "Major character"
-                                        } else {
-                                            "Minor character"
-                                        };
-                                        stat_row(ui, "Type", kind);
-                                        stat_row_pair(
-                                            ui,
-                                            "Diplomacy",
-                                            chr.diplomacy.base,
-                                            chr.diplomacy.variance,
-                                        );
-                                        stat_row_pair(
-                                            ui,
-                                            "Espionage",
-                                            chr.espionage.base,
-                                            chr.espionage.variance,
-                                        );
-                                        stat_row_pair(
-                                            ui,
-                                            "Ship Design",
-                                            chr.ship_design.base,
-                                            chr.ship_design.variance,
-                                        );
-                                        stat_row_pair(
-                                            ui,
-                                            "Troop Training",
-                                            chr.troop_training.base,
-                                            chr.troop_training.variance,
-                                        );
-                                        stat_row_pair(
-                                            ui,
-                                            "Facility Design",
-                                            chr.facility_design.base,
-                                            chr.facility_design.variance,
-                                        );
-                                        stat_row_pair(
-                                            ui,
-                                            "Combat",
-                                            chr.combat.base,
-                                            chr.combat.variance,
-                                        );
-                                        stat_row_pair(
-                                            ui,
-                                            "Leadership",
-                                            chr.leadership.base,
-                                            chr.leadership.variance,
-                                        );
-                                        stat_row_pair(
-                                            ui,
-                                            "Loyalty",
-                                            chr.loyalty.base,
-                                            chr.loyalty.variance,
-                                        );
-                                        if chr.jedi_probability > 0 {
-                                            stat_row(
-                                                ui,
-                                                "Jedi probability",
-                                                &format!("{}%", chr.jedi_probability),
-                                            );
-                                        }
-                                        let mut roles = Vec::new();
-                                        if chr.can_be_admiral {
-                                            roles.push("Admiral");
-                                        }
-                                        if chr.can_be_general {
-                                            roles.push("General");
-                                        }
-                                        if chr.can_be_commander {
-                                            roles.push("Commander");
-                                        }
-                                        if !roles.is_empty() {
-                                            stat_row(ui, "Roles", &roles.join(", "));
-                                        }
-                                    }
-                                }
-                            }
-                            EncyclopediaTab::Systems => {
-                                let systems: Vec<SystemKey> = world.systems.keys().collect();
-                                if let Some(&key) = systems.get(state.selected_index) {
-                                    if let Some(system) = world.systems.get(key) {
-                                        // Systems use ENCYBMAP.DLL for their image index.
-                                        // Until ENCYBMAP is parsed, show a placeholder.
-                                        show_placeholder_image(ui);
-                                        ui.add_space(4.0);
-                                        ui.heading(&system.name);
-                                        ui.separator();
-                                        if let Some(sector) = world.sectors.get(system.sector) {
-                                            stat_row(ui, "Sector", &sector.name);
-                                            let region = match sector.group {
-                                                rebellion_core::dat::SectorGroup::Core => "Core",
-                                                rebellion_core::dat::SectorGroup::RimInner => {
-                                                    "Inner Rim"
-                                                }
-                                                rebellion_core::dat::SectorGroup::RimOuter => {
-                                                    "Outer Rim"
-                                                }
-                                            };
-                                            stat_row(ui, "Region", region);
-                                        }
-                                        stat_row(
-                                            ui,
-                                            "Position",
-                                            &format!("({}, {})", system.x, system.y),
-                                        );
-                                        stat_row(
-                                            ui,
-                                            "Alliance",
-                                            &format!("{:.0}%", system.popularity_alliance * 100.0),
-                                        );
-                                        stat_row(
-                                            ui,
-                                            "Empire",
-                                            &format!("{:.0}%", system.popularity_empire * 100.0),
-                                        );
-                                        stat_row(ui, "Fleets", &system.fleets.len().to_string());
-                                        stat_row(
-                                            ui,
-                                            "Defenses",
-                                            &system.defense_facilities.len().to_string(),
-                                        );
-                                        stat_row(
-                                            ui,
-                                            "Shipyards",
-                                            &system.manufacturing_facilities.len().to_string(),
-                                        );
-
-                                        ui.add_space(6.0);
-                                        if ui.small_button("Zoom to system on map").clicked() {
-                                            focus_system = Some(key);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    });
-            });
-        });
-
-    // Write back the open flag (egui sets it to false when the X button is clicked).
-    state.open = window_open;
-
-    focus_system
 }
 
 // ---------------------------------------------------------------------------
@@ -2556,6 +2160,7 @@ pub fn draw_encyclopedia_index_catalog_fixture(
 /// the `image` crate, and registers it as an egui texture.  Subsequent calls
 /// use the cached handle.  If the file is missing or fails to decode, shows
 /// a gray placeholder rectangle.
+#[cfg(feature = "interface-test-fixtures")]
 fn show_edata_image(
     ui: &mut egui::Ui,
     ctx: &egui::Context,
@@ -2610,6 +2215,7 @@ pub fn draw_encyclopedia_artwork_fixture(
 }
 
 /// Draw a gray placeholder rectangle when no image is available.
+#[cfg(feature = "interface-test-fixtures")]
 fn show_placeholder_image(ui: &mut egui::Ui) {
     let (rect, _) = ui.allocate_exact_size(egui::vec2(400.0, 200.0), egui::Sense::hover());
     ui.painter().rect_filled(rect, 4.0, Color32::from_gray(40));
@@ -2629,7 +2235,7 @@ fn show_placeholder_image(ui: &mut egui::Ui) {
 /// `edata_path`). Original-parity mode never probes the HD path.
 /// Returns `None` if neither exists or decoding fails.
 /// On WASM targets, always returns `None` (filesystem access not available).
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "interface-test-fixtures", not(target_arch = "wasm32")))]
 fn load_edata_texture(
     ctx: &egui::Context,
     edata_n: u16,
@@ -2668,7 +2274,7 @@ fn load_edata_texture(
 }
 
 /// Decode an image file (BMP or PNG) and register it as an egui texture.
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "interface-test-fixtures", not(target_arch = "wasm32")))]
 fn load_image_file(
     ctx: &egui::Context,
     edata_n: u16,
@@ -2680,6 +2286,7 @@ fn load_image_file(
     load_image_bytes(ctx, edata_n, &bytes, texture_options)
 }
 
+#[cfg(any(test, feature = "interface-test-fixtures"))]
 fn load_image_bytes(
     ctx: &egui::Context,
     edata_n: u16,
@@ -2699,7 +2306,7 @@ fn load_image_bytes(
     Some(handle)
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(feature = "interface-test-fixtures", target_arch = "wasm32"))]
 fn load_edata_texture(
     ctx: &egui::Context,
     edata_n: u16,
@@ -2710,32 +2317,6 @@ fn load_edata_texture(
 ) -> Option<TextureHandle> {
     let bytes = wasm_edata_bytes(edata_n)?;
     load_image_bytes(ctx, edata_n, &bytes, TextureOptions::NEAREST)
-}
-
-// ---------------------------------------------------------------------------
-// Stat display helpers
-// ---------------------------------------------------------------------------
-
-/// Two-column stat row: label on left, value on right.
-fn stat_row(ui: &mut egui::Ui, label: &str, value: &str) {
-    ui.horizontal(|ui| {
-        ui.label(
-            RichText::new(format!("{label}:"))
-                .small()
-                .color(Color32::from_gray(160)),
-        );
-        ui.label(RichText::new(value).small());
-    });
-}
-
-/// Two-column stat row for `SkillPair` values (base ± variance).
-fn stat_row_pair(ui: &mut egui::Ui, label: &str, base: u32, variance: u32) {
-    let value = if variance > 0 {
-        format!("{base} ± {variance}")
-    } else {
-        base.to_string()
-    };
-    stat_row(ui, label, &value);
 }
 
 #[cfg(test)]

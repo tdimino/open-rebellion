@@ -12,6 +12,7 @@
 use egui_macroquad::egui;
 use rebellion_core::ids::CharacterKey;
 use rebellion_core::missions::{MemberTransit, MissionMember};
+use rebellion_core::officer_rank::CommandPost;
 use rebellion_core::world::GameWorld;
 
 use crate::bmp_cache::BmpCache;
@@ -85,8 +86,9 @@ pub const fn force_ranking(value: u32) -> &'static str {
 /// The Character Status rows (`FUN_004486f0`). `en_route` is the mission
 /// transits (`MissionState::en_route`).
 ///
-/// port: Commanding (`+0xa8`) is always "None" and "Injured" (`+0x94`)
-/// never shows: the port keeps neither. A character is en route while its
+/// Commanding names the fleet or system the character's rank commands
+/// (`+0xa8`). port: "Injured" (`+0x94`) never shows: the port keeps no
+/// injury. A character is en route while its
 /// mission transit lasts; Attached then names the transit's destination,
 /// the container of an object in hyperspace (`FUN_00556390`).
 #[must_use]
@@ -125,8 +127,17 @@ pub fn character_rows(
     } else {
         "Awaiting Orders"
     };
+    let commanding = match character.command_post {
+        Some(CommandPost::Fleet(fleet)) => fleet_label(world, fleet),
+        Some(CommandPost::System(system)) => world
+            .systems
+            .get(system)
+            .map(|system| system.name.clone()),
+        None => None,
+    }
+    .unwrap_or_else(|| "None".to_owned());
     let mut rows = vec![
-        row("Commanding:", "None"),
+        row("Commanding:", commanding),
         // FUN_0044a2e0: the literal, for the shipped TEXTSTRA 1.00.00
         // (FUN_00406850).
         row("Attached: ", attached),
@@ -493,6 +504,9 @@ mod tests {
             heritage_known: false,
             is_killed: false,
             recruited: true,
+            command_kind: rebellion_core::officer_rank::CommandKind::None,
+            command_post: None,
+            ranked_names: Default::default(),
         }
     }
 
@@ -603,6 +617,7 @@ mod tests {
             member: MissionMember::Character(key),
             mission_id: 3,
             to: hoth,
+            fleet: None,
             arrival: 42,
         };
         let rows = character_rows(&world, &[transit], key).expect("rows");

@@ -176,5 +176,5 @@ no presence at either end.**
 - `regiment-unload.md`: reparent + en-route bit on cross-system move
 - `crates/rebellion-render/src/object_menu.rs`: port's menu lists (line 406)
 - `crates/rebellion-core/src/resources.rs`: port's `maintenance_used` (line 43)
-- `crates/rebellion-core/src/combat.rs`: port's `side_present` (line 89)
+- `crates/rebellion-core/src/combat.rs`: port's `side_present` (line 33)
 - `crates/rebellion-core/src/troop_transport.rs`: port's transit storage

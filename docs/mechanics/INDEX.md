@@ -15,9 +15,9 @@ Complete reference for all 19 game mechanics documents in Open Rebellion.
 
 | Document | System | Description |
 |----------|--------|-------------|
-| [space-combat.md](space-combat.md) | `space-combat` | 7-phase space combat pipeline: weapon damage, shields, hull, fighters |
+| [space-combat.md](space-combat.md) | `space-combat` | Every fleet battle runs the tactical engine: forces, headless step, shields, stalemate, results |
 | [ground-combat.md](ground-combat.md) | `ground-combat` | Troop regiment engagement, per-unit resolution, garrison defense |
-| [bombardment.md](bombardment.md) | `bombardment` | Orbital bombardment: Euclidean distance, GNPRTB divisor, fighter defense |
+| [bombardment.md](bombardment.md) | `bombardment` | Bombardment orders: defence fire, per-hit target rolls, support shifts, Destroy System |
 
 ## Economy
 
