@@ -207,7 +207,27 @@ export function validateWindowingContractManifest(value) {
   return value;
 }
 
-export function validateWindowingContractEvidence(value, evidenceRoot) {
+function isInside(directory, candidate) {
+  return candidate.startsWith(`${path.resolve(directory)}${path.sep}`);
+}
+
+function validateEvidenceBinding(binding) {
+  if (!isPlainObject(binding)
+      || typeof binding.runId !== "string" || binding.runId.length === 0
+      || typeof binding.caseId !== "string" || binding.caseId.length === 0
+      || !FACTIONS.includes(binding.faction)
+      || !VIEWPORTS.includes(binding.viewport)
+      || typeof binding.directory !== "string" || binding.directory.length === 0
+      || typeof binding.fixtureWasm !== "string" || binding.fixtureWasm.length === 0) {
+    fail("structured evidence requires an execution binding (run, case, faction, viewport, directory, fixture WASM)");
+  }
+  return binding;
+}
+
+// Evidence must be this execution's own: result JSON and screenshot inside
+// its directory, the served fixture WASM, and a result JSON naming the same
+// run, case, faction, viewport and artifact hashes.
+export function validateWindowingContractEvidence(value, evidenceRoot, binding) {
   if (!isPlainObject(value)
       || value.schema_version !== WINDOWING_CONTRACT_SCHEMA_VERSION
       || !isPlainObject(value.diagnostics)
@@ -228,7 +248,9 @@ export function validateWindowingContractEvidence(value, evidenceRoot) {
   if (typeof evidenceRoot !== "string" || evidenceRoot.length === 0) {
     fail("structured evidence requires an evidence root");
   }
+  const execution = validateEvidenceBinding(binding);
   const absoluteRoot = path.resolve(evidenceRoot);
+  const resolved = new Map();
   const artifacts = new Map();
   for (const artifact of value.artifacts) {
     if (!isPlainObject(artifact)
@@ -245,9 +267,39 @@ export function validateWindowingContractEvidence(value, evidenceRoot) {
     const actualHash = sha256(fs.readFileSync(absolutePath));
     if (actualHash !== artifact.sha256) fail(`artifact hash mismatch for ${artifact.path}`);
     artifacts.set(artifact.kind, artifact);
+    resolved.set(artifact.kind, absolutePath);
   }
   for (const kind of ["result_json", "screenshot", "fixture_wasm"]) {
     if (!artifacts.has(kind)) fail(`missing artifact ${kind}`);
+  }
+  for (const kind of ["result_json", "screenshot"]) {
+    if (!isInside(execution.directory, resolved.get(kind))) {
+      fail(`artifact ${kind} is not in this execution's directory: ${artifacts.get(kind).path}`);
+    }
+  }
+  if (resolved.get("fixture_wasm") !== path.resolve(execution.fixtureWasm)) {
+    fail(`artifact fixture_wasm is not the served fixture: ${artifacts.get("fixture_wasm").path}`);
+  }
+  let result;
+  try {
+    result = JSON.parse(fs.readFileSync(resolved.get("result_json"), "utf8"));
+  } catch (error) {
+    fail(`result JSON is unreadable: ${error.message}`);
+  }
+  const observed = isPlainObject(result) && isPlainObject(result.observation)
+    ? result.observation
+    : {};
+  const label = `${execution.caseId}/${execution.faction}/${execution.viewport}`;
+  if (!isPlainObject(result)
+      || result.run_id !== execution.runId
+      || observed.case_id !== execution.caseId
+      || observed.faction !== execution.faction
+      || observed.viewport !== execution.viewport) {
+    fail(`result JSON does not belong to run ${execution.runId} execution ${label}`);
+  }
+  if (result.screenshot_sha256 !== artifacts.get("screenshot").sha256
+      || result.wasm_sha256 !== artifacts.get("fixture_wasm").sha256) {
+    fail(`result JSON hashes do not match the screenshot and fixture WASM of ${label}`);
   }
   return value;
 }
@@ -436,9 +488,12 @@ export function selectCases(cases, requestedIds, reviewedManifest = REVIEWED_WIN
   return defaults;
 }
 
-export function windowingContractScope(cases, requestedIds) {
-  if (!Array.isArray(cases) || cases.length === 0 || !Array.isArray(requestedIds)) {
-    fail("scope requires selected cases and requested case ids");
+// Completeness comes from what ran: every reviewed case must have executed in
+// every applicable faction and viewport and recorded each required step.
+export function windowingContractScope(cases, requestedIds, executions) {
+  if (!Array.isArray(cases) || cases.length === 0 || !Array.isArray(requestedIds)
+      || !Array.isArray(executions)) {
+    fail("scope requires selected cases, requested case ids, and executions");
   }
   const byId = new Map(cases.map((candidate) => [candidate.id, candidate]));
   const coversReviewedInventory = REVIEWED_WINDOWING_CONTRACT_MANIFEST.cases.every((required) => {
@@ -446,7 +501,15 @@ export function windowingContractScope(cases, requestedIds) {
     return candidate !== undefined
       && candidate.groups.length === 1
       && candidate.groups[0] === required.group
-      && required.required_steps.every((step) => candidate.steps.includes(step));
+      && required.applicability.factions.every((faction) =>
+        required.applicability.viewports.every((viewport) =>
+          executions.some((execution) =>
+            execution.case_id === required.id
+              && execution.faction === faction
+              && execution.viewport === viewport
+              && Array.isArray(execution.completed_steps)
+              && required.required_steps.every((step) =>
+                execution.completed_steps.some(({ id }) => id === step)))));
   });
   if (requestedIds.length === 0 && coversReviewedInventory) {
     return "complete A-E fixture journey";
@@ -455,6 +518,34 @@ export function windowingContractScope(cases, requestedIds) {
     return "adapter smoke only; not A-E acceptance";
   }
   return "focused fixture selection; not complete A-E acceptance";
+}
+
+// Each declared step must be completed exactly once, in declared order, with
+// its own positive assertion count; together they account for every
+// assertion the case reports.
+function createStepRecorder(definition, label) {
+  const completed = [];
+  return {
+    complete(stepId, assertions) {
+      if (!definition.steps.includes(stepId)) fail(`case ${label} completed undeclared step ${stepId}`);
+      if (completed.some(({ id }) => id === stepId)) fail(`case ${label} completed step ${stepId} twice`);
+      const expected = definition.steps[completed.length];
+      if (stepId !== expected) fail(`case ${label} completed step ${stepId} before ${expected}`);
+      if (!Number.isSafeInteger(assertions) || assertions <= 0) {
+        fail(`case ${label} step ${stepId} reported zero assertions`);
+      }
+      completed.push(Object.freeze({ id: stepId, assertions }));
+    },
+    finish(assertions) {
+      const missing = definition.steps.filter((step) => !completed.some(({ id }) => id === step));
+      if (missing.length > 0) fail(`case ${label} did not complete steps ${missing.join(", ")}`);
+      const stepAssertions = completed.reduce((sum, step) => sum + step.assertions, 0);
+      if (definition.steps.length > 0 && stepAssertions !== assertions) {
+        fail(`case ${label} step assertions (${stepAssertions}) do not account for its ${assertions} assertions`);
+      }
+      return [...completed];
+    },
+  };
 }
 
 export async function runSelectedCases(cases, createContext) {
@@ -466,8 +557,12 @@ export async function runSelectedCases(cases, createContext) {
   for (const definition of cases) {
     for (const faction of definition.factions) {
       for (const viewport of definition.viewports) {
+        const label = `${definition.id}/${faction}/${viewport}`;
+        const steps = createStepRecorder(definition, label);
         const context = await createContext({ definition, faction, viewport });
         try {
+          if (!isPlainObject(context)) fail(`case ${label} received no execution context`);
+          context.completeStep = (stepId, assertions) => steps.complete(stepId, assertions);
           const setup = await definition.setup(context);
           const observation = validateObservation(await definition.actions(context, setup));
           if (observation.case_id !== definition.id
@@ -477,15 +572,31 @@ export async function runSelectedCases(cases, createContext) {
           }
           const assertions = await definition.assertions(context, observation, setup);
           if (!Number.isSafeInteger(assertions) || assertions <= 0) {
-            fail(`case ${definition.id}/${faction}/${viewport} reported zero assertions`);
+            fail(`case ${label} reported zero assertions`);
           }
+          const completedSteps = steps.finish(assertions);
           const evidence = validateWindowingContractEvidence(
             await definition.evidence(context, observation, setup),
             context.evidenceRoot,
+            {
+              runId: context.runId,
+              caseId: definition.id,
+              faction,
+              viewport,
+              directory: context.directory,
+              fixtureWasm: context.fixtureWasm,
+            },
           );
           executedCases += 1;
           assertionCount += assertions;
-          executions.push({ case_id: definition.id, faction, viewport, assertions, evidence });
+          executions.push({
+            case_id: definition.id,
+            faction,
+            viewport,
+            assertions,
+            completed_steps: completedSteps,
+            evidence,
+          });
         } finally {
           await context?.cleanup?.();
         }
@@ -695,6 +806,8 @@ export async function createBrowserRuntime(runDirectory, dependencies = {}) {
       fail("fixture server did not report a listening port");
     }
     const origin = `http://127.0.0.1:${address.port}`;
+    const runId = path.basename(runDirectory);
+    const fixtureWasm = path.join(site, "open-rebellion-test.wasm");
 
     return {
       async createContext({ definition, faction, viewport }) {
@@ -739,6 +852,8 @@ export async function createBrowserRuntime(runDirectory, dependencies = {}) {
         return {
           page,
           directory,
+          runId,
+          fixtureWasm,
           evidenceRoot: path.join(root, ".artifacts/interface-parity"),
           faction,
           viewport,
@@ -845,6 +960,7 @@ export async function createBrowserRuntime(runDirectory, dependencies = {}) {
               family: "strategic-windowing-contract",
               scope: "adapter smoke only; not A-E acceptance",
               status: "pass",
+              run_id: runId,
               assertion_count: assertionCount,
               observation,
               ready,
@@ -856,7 +972,7 @@ export async function createBrowserRuntime(runDirectory, dependencies = {}) {
               muted: browserManifest.launch_arguments.includes("--mute-audio"),
               requests,
               errors,
-              wasm_sha256: sha256(fs.readFileSync(path.join(site, "open-rebellion-test.wasm"))),
+              wasm_sha256: sha256(fs.readFileSync(fixtureWasm)),
               screenshot_sha256: sha256(screenshot),
             };
             assert.ok(requests.length > 0, "adapter smoke recorded no fixture requests");
@@ -881,7 +997,7 @@ export async function createBrowserRuntime(runDirectory, dependencies = {}) {
                 },
                 {
                   kind: "fixture_wasm",
-                  path: path.relative(evidenceRoot, path.join(site, "open-rebellion-test.wasm")),
+                  path: path.relative(evidenceRoot, fixtureWasm),
                   sha256: result.wasm_sha256,
                 },
               ],
@@ -916,7 +1032,7 @@ export async function main(argv = process.argv.slice(2)) {
     const result = {
       schema_version: WINDOWING_CONTRACT_SCHEMA_VERSION,
       family: "strategic-windowing-contract",
-      scope: windowingContractScope(selected, options.caseIds),
+      scope: windowingContractScope(selected, options.caseIds, summary.executions),
       status: "pass",
       ...summary,
     };

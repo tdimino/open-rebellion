@@ -128,6 +128,7 @@ use rebellion_render::windowing_input::{
 };
 #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
 use rebellion_render::EncyclopediaState;
+use rebellion_render::MdataTrack;
 use rebellion_render::{
     cockpit_accelerator, draw_advisor, draw_audio_controls, draw_cockpit_background,
     draw_cockpit_chrome, draw_cockpit_egui_layer, draw_credits, draw_event_screen, draw_fleets,
@@ -149,7 +150,7 @@ use rebellion_render::{draw_defenses_windows, DefensesWindowAction, DefensesWind
 use rebellion_render::{draw_missions_windows, MissionsWindowAction, MissionsWindowState};
 use rebellion_render::{FleetWindowAction, FleetWindowState};
 #[cfg(not(target_arch = "wasm32"))]
-use rebellion_render::{MdataTrack, MusicSelector, SfxKind};
+use rebellion_render::{MusicSelector, SfxKind};
 use strategic_windowing::{
     ApplicationInputLocks, LegacyInputBlockers, LegacyInputRestrictionLatch, WindowScene,
 };
@@ -1108,17 +1109,22 @@ impl macroquad::miniquad::EventHandler for StrategicRawInputCollector {
     }
 }
 
+/// Key-only backend capture; production collects keys and pointers together
+/// in [`StrategicRawInputCollector`].
+#[cfg(test)]
 #[derive(Debug, Default)]
 struct StrategicRawKeyCollector {
     events: Vec<StrategicRawKeyEvent>,
 }
 
+#[cfg(test)]
 impl StrategicRawKeyCollector {
     fn take(&mut self) -> Vec<StrategicRawKeyEvent> {
         std::mem::take(&mut self.events)
     }
 }
 
+#[cfg(test)]
 impl macroquad::miniquad::EventHandler for StrategicRawKeyCollector {
     fn update(&mut self) {}
 
@@ -1146,6 +1152,7 @@ struct StrategicRootKeyBatch {
 }
 
 impl StrategicRootKeyBatch {
+    #[cfg(test)]
     fn collect_from_raw(
         frame: u64,
         router: &mut FrameInputRouter,
@@ -1195,11 +1202,15 @@ impl StrategicRootKeyBatch {
         Self { events }
     }
 
+    /// Reports each key's disposition for the child that owned it at the
+    /// frame boundary. `fleet` names the focused Fleet window and whether
+    /// its in-place rename was open; each key it receives is decided on its
+    /// own by [`rename_edit_owns_key`].
     fn report_legacy_children(
         &self,
         router: &mut FrameInputRouter,
         handles_keyboard: bool,
-        fleet: Option<(rebellion_windowing::WindowId, InputDisposition)>,
+        fleet: Option<(rebellion_windowing::WindowId, bool)>,
     ) {
         for event in &self.events {
             let recipient = router.keyboard_recipient(event.id);
@@ -1211,7 +1222,13 @@ impl StrategicRootKeyBatch {
                 }),
                 InputRecipient::Window(window) => fleet
                     .filter(|(fleet_window, _)| *fleet_window == window)
-                    .map(|(_, disposition)| disposition),
+                    .map(|(_, renaming)| {
+                        if renaming && rename_edit_owns_key(*event) {
+                            InputDisposition::Handled
+                        } else {
+                            InputDisposition::Unhandled
+                        }
+                    }),
                 InputRecipient::Blocked => None,
             };
             if let Some(disposition) = disposition {
@@ -1220,9 +1237,37 @@ impl StrategicRootKeyBatch {
         }
     }
 
-    fn contains(&self, key: KeyCode) -> bool {
-        self.events.iter().any(|event| event.key == key)
+    /// Initial presses in backend order. port: root shortcuts act on a key's
+    /// first press only, as the `is_key_pressed` dispatch before the frame
+    /// router did, so a held key never re-toggles a panel, the palette or a
+    /// window; whether the original's accelerators auto-repeat is untraced.
+    fn presses(&self) -> impl Iterator<Item = StrategicKeyEvent> + '_ {
+        self.events.iter().copied().filter(|event| !event.repeat)
     }
+
+    fn contains(&self, key: KeyCode) -> bool {
+        self.presses().any(|event| event.key == key)
+    }
+}
+
+/// Whether an open in-place rename consumes `event`. The application loop
+/// runs `TranslateAcceleratorA` before dispatch (`FUN_00413560`), so the
+/// accelerators, F1 to F7 and the Alt chords, never reach the edit and
+/// bubble to the strategic view; every other strategic key is the edit's
+/// text, Enter or Escape (`FUN_004ac950`, `FUN_004aca40`;
+/// `ghidra/notes/strategic-windowing-toolkit.md`, "Keyboard ownership").
+const fn rename_edit_owns_key(event: StrategicKeyEvent) -> bool {
+    !event.alt
+        && !matches!(
+            event.key,
+            KeyCode::F1
+                | KeyCode::F2
+                | KeyCode::F3
+                | KeyCode::F4
+                | KeyCode::F5
+                | KeyCode::F6
+                | KeyCode::F7
+        )
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -1375,6 +1420,88 @@ fn restore_egui_input(
     ctx.input_mut(|input| *input = saved);
 }
 
+/// Focus losses the browser shell has counted (`web/index.html`).
+#[cfg(target_arch = "wasm32")]
+fn browser_focus_losses() -> u32 {
+    extern "C" {
+        fn open_rebellion_focus_losses() -> u32;
+    }
+    // SAFETY: the shell's `open_rebellion_focus` plugin defines this
+    // argumentless import before the module starts.
+    unsafe { open_rebellion_focus_losses() }
+}
+
+/// Run one retained legacy window family's pass with its input muted unless
+/// the frame boundary permits it. Layout and paint are unchanged.
+fn with_retained_input<T>(
+    ctx: &egui_macroquad::egui::Context,
+    allowed: bool,
+    draw: impl FnOnce() -> T,
+) -> T {
+    let saved = (!allowed).then(|| suspend_legacy_egui_input(ctx));
+    let drawn = draw();
+    if let Some(saved) = saved {
+        restore_egui_input(ctx, saved);
+    }
+    drawn
+}
+
+#[cfg(test)]
+mod frame_input_tests {
+    use super::with_retained_input;
+    use egui_macroquad::egui;
+
+    /// Clicks a retained window's area and reports whether the window saw
+    /// the click and whether the input reached owners drawn after it.
+    fn click_retained_window(allowed: bool) -> (bool, bool) {
+        let ctx = egui::Context::default();
+        let point = egui::pos2(20.0, 20.0);
+        let button = |pressed| egui::Event::PointerButton {
+            pos: point,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::default(),
+        };
+        let mut clicked = false;
+        let mut released_after = false;
+        for events in [
+            vec![egui::Event::PointerMoved(point)],
+            vec![egui::Event::PointerMoved(point)],
+            vec![button(true)],
+            vec![button(false)],
+            vec![],
+        ] {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(200.0, 200.0),
+                )),
+                events,
+                ..egui::RawInput::default()
+            };
+            let _ = ctx.run(input, |ctx| {
+                with_retained_input(ctx, allowed, || {
+                    egui::Area::new(egui::Id::new("retained"))
+                        .fixed_pos(egui::Pos2::ZERO)
+                        .show(ctx, |ui| {
+                            let response = ui
+                                .allocate_response(egui::vec2(100.0, 100.0), egui::Sense::click());
+                            clicked |= response.clicked();
+                        });
+                });
+                released_after |= ctx.input(|input| input.pointer.primary_released());
+            });
+        }
+        (clicked, released_after)
+    }
+
+    #[test]
+    fn a_held_retained_window_ignores_clicks_and_later_owners_still_receive_them() {
+        assert_eq!(click_retained_window(true), (true, true));
+        assert_eq!(click_retained_window(false), (false, true));
+    }
+}
+
 #[cfg(test)]
 mod panel_toggle_tests {
     use super::{
@@ -1451,55 +1578,109 @@ mod panel_toggle_tests {
         assert!(!router.claim_root(batch.events[0].id));
     }
 
-    #[test]
-    fn focused_fleet_reports_disposition_before_root_shortcut_bubbling() {
-        use rebellion_render::windowing_input::{InputDisposition, InputRecipient};
+    fn opened_fleet(
+        coordinator: &mut crate::strategic_windowing::StrategicWindowing,
+    ) -> rebellion_windowing::WindowId {
         use rebellion_render::windowing_policy::contextual_spec;
         use rebellion_windowing::{
             SubjectId, WindowCommand, WindowKind, WindowOwner, WindowTransition,
         };
 
-        let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
         coordinator.enqueue(WindowCommand::Open(contextual_spec(
             WindowKind::Fleet,
             SubjectId::new(2, 100),
             WindowOwner::StrategicRoot,
         )));
         let applied = coordinator.apply_pending();
-        let fleet = match applied[0].result.as_ref().unwrap().transition {
+        match applied[0].result.as_ref().unwrap().transition {
             WindowTransition::Opened { id } => id,
             ref transition => panic!("expected Fleet open, got {transition:?}"),
-        };
-        let frame = coordinator.begin_frame();
-        let events = [StrategicRawKeyEvent {
-            key: KeyCode::P,
-            alt: true,
-            repeat: false,
-        }];
+        }
+    }
 
-        let mut unhandled_router = FrameInputRouter::default();
-        unhandled_router.begin_frame(3, &frame);
-        let unhandled = StrategicRootKeyBatch::collect_from_raw(3, &mut unhandled_router, &events);
+    fn key(key: KeyCode, alt: bool) -> StrategicRawKeyEvent {
+        StrategicRawKeyEvent {
+            key,
+            alt,
+            repeat: false,
+        }
+    }
+
+    #[test]
+    fn a_focused_fleet_without_a_rename_bubbles_every_key_to_root() {
+        use rebellion_render::windowing_input::InputRecipient;
+
+        let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
+        let fleet = opened_fleet(&mut coordinator);
+        let frame = coordinator.begin_frame();
+        let events = [key(KeyCode::P, true), key(KeyCode::R, false)];
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(3, &frame);
+        let batch = StrategicRootKeyBatch::collect_from_raw(3, &mut router, &events);
         assert_eq!(
-            unhandled_router.keyboard_recipient(unhandled.events[0].id),
+            router.keyboard_recipient(batch.events[0].id),
             InputRecipient::Window(fleet)
         );
-        unhandled.report_legacy_children(
-            &mut unhandled_router,
-            false,
-            Some((fleet, InputDisposition::Unhandled)),
-        );
-        assert!(unhandled_router.claim_root(unhandled.events[0].id));
 
-        let mut handled_router = FrameInputRouter::default();
-        handled_router.begin_frame(4, &frame);
-        let handled = StrategicRootKeyBatch::collect_from_raw(4, &mut handled_router, &events);
-        handled.report_legacy_children(
-            &mut handled_router,
-            false,
-            Some((fleet, InputDisposition::Handled)),
-        );
-        assert!(!handled_router.claim_root(handled.events[0].id));
+        batch.report_legacy_children(&mut router, false, Some((fleet, false)));
+
+        assert!(router.claim_root(batch.events[0].id));
+        assert!(router.claim_root(batch.events[1].id));
+    }
+
+    #[test]
+    fn an_open_fleet_rename_owns_its_text_keys_while_accelerators_bubble_to_root() {
+        // FUN_00413560 translates accelerators before dispatch; the edit
+        // owns its text, Enter and Escape (FUN_004ac950, FUN_004aca40).
+        let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
+        let fleet = opened_fleet(&mut coordinator);
+        let frame = coordinator.begin_frame();
+        let events = [
+            key(KeyCode::R, false),
+            key(KeyCode::F2, false),
+            key(KeyCode::Escape, false),
+            key(KeyCode::P, true),
+            key(KeyCode::Key2, false),
+            key(KeyCode::Key2, true),
+        ];
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(4, &frame);
+        let batch = StrategicRootKeyBatch::collect_from_raw(4, &mut router, &events);
+
+        batch.report_legacy_children(&mut router, false, Some((fleet, true)));
+
+        let bubbled: Vec<bool> = batch
+            .events
+            .iter()
+            .map(|event| router.claim_root(event.id))
+            .collect();
+        assert_eq!(bubbled, [false, true, false, true, false, true]);
+    }
+
+    #[test]
+    fn held_keys_dispatch_root_shortcuts_on_their_first_press_only() {
+        let coordinator = crate::strategic_windowing::StrategicWindowing::new();
+        let frame = coordinator.begin_frame();
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(5, &frame);
+        let repeat = |key| StrategicRawKeyEvent {
+            key,
+            alt: false,
+            repeat: true,
+        };
+        let events = [
+            key(KeyCode::Tab, false),
+            repeat(KeyCode::Tab),
+            repeat(KeyCode::Tab),
+            repeat(KeyCode::Escape),
+            key(KeyCode::GraveAccent, false),
+        ];
+        let batch = StrategicRootKeyBatch::collect_from_raw(5, &mut router, &events);
+
+        let pressed: Vec<KeyCode> = batch.presses().map(|event| event.key).collect();
+        assert_eq!(pressed, [KeyCode::Tab, KeyCode::GraveAccent]);
+        assert!(batch.contains(KeyCode::Tab));
+        assert!(!batch.contains(KeyCode::Escape));
     }
 
     #[test]
@@ -2364,6 +2545,8 @@ async fn main() {
     let mut strategic_frame_number = 0_u64;
     let strategic_input_subscriber = macroquad::input::utils::register_input_subscriber();
     let mut strategic_raw_input = StrategicRawInputCollector::default();
+    #[cfg(target_arch = "wasm32")]
+    let mut focus_loss_watch = strategic_windowing::FocusLossWatch::default();
 
     loop {
         let dt = get_frame_time();
@@ -4423,18 +4606,8 @@ Some(RailAudience::side(*faction_is_alliance)),
         };
         let strategic_frame_boundary =
             strategic_windowing.begin_production_frame(strategic_locks, legacy_blockers);
-        let fleet_keyboard_disposition = fleet_window_state
-            .keyboard_owner(strategic_frame_boundary.snapshot())
-            .map(|(window, handles_keyboard)| {
-                (
-                    window,
-                    if handles_keyboard {
-                        InputDisposition::Handled
-                    } else {
-                        InputDisposition::Unhandled
-                    },
-                )
-            });
+        let fleet_keyboard_owner =
+            fleet_window_state.keyboard_owner(strategic_frame_boundary.snapshot());
         let mut legacy_restriction_latch = LegacyInputRestrictionLatch::new(legacy_blockers);
         let strategic_frame_sequence_valid =
             if let Some(next_frame) = strategic_frame_number.checked_add(1) {
@@ -4448,6 +4621,14 @@ Some(RailAudience::side(*faction_is_alliance)),
                 {
                     strategic_windowing.enqueue(rebellion_windowing::WindowCommand::CancelCapture(
                         rebellion_windowing::CaptureCancelReason::HoldStarted,
+                    ));
+                }
+                // port: native focus loss is not reported by miniquad 0.4.8,
+                // so only the browser shell's count cancels a capture.
+                #[cfg(target_arch = "wasm32")]
+                if focus_loss_watch.lost(browser_focus_losses()) {
+                    strategic_windowing.enqueue(rebellion_windowing::WindowCommand::CancelCapture(
+                        rebellion_windowing::CaptureCancelReason::FocusLost,
                     ));
                 }
                 true
@@ -5083,18 +5264,26 @@ Some(RailAudience::side(*faction_is_alliance)),
                 #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
                 let mut pending_windowing_route_receipts = Vec::new();
                 let strategic_pointer_events = if strategic_frame_sequence_valid {
-                    StrategicPointerBatch::collect_from_raw(
-                        strategic_frame_number,
-                        &mut strategic_input_router,
-                        &strategic_raw_input_events.pointers,
-                        |point| {
-                            fleet_window_state.hit_window_ids(
-                                strategic_frame_boundary.snapshot(),
-                                cockpit_layout,
-                                point,
-                            )
-                        },
-                    )
+                    // Hit testing follows the layers egui itself routes this
+                    // frame's pointer through, so a retained window painted
+                    // over a Fleet window keeps the event from it.
+                    let mut batch = StrategicPointerBatch::default();
+                    egui_macroquad::cfg(|ctx| {
+                        batch = StrategicPointerBatch::collect_from_raw(
+                            strategic_frame_number,
+                            &mut strategic_input_router,
+                            &strategic_raw_input_events.pointers,
+                            |point| {
+                                fleet_window_state.hit_window_ids(
+                                    strategic_frame_boundary.snapshot(),
+                                    cockpit_layout,
+                                    point,
+                                    ctx.layer_id_at(egui_macroquad::egui::pos2(point.0, point.1)),
+                                )
+                            },
+                        );
+                    });
+                    batch
                 } else {
                     StrategicPointerBatch::default()
                 };
@@ -5117,6 +5306,8 @@ Some(RailAudience::side(*faction_is_alliance)),
                         .then(|| suspend_legacy_egui_input(ctx));
                     let strategic_input_enabled = strategic_root_pointer_enabled;
                     let strategic_owner_input_enabled = strategic_owner_pointer_enabled;
+                    let retained_window_input =
+                        strategic_frame_boundary.retained_window_input_allowed();
                     // Register the cockpit background before panels so the
                     // opaque chrome never covers their content or artwork.
                     draw_cockpit_background(ctx, &cockpit_state, &mut bmp_cache);
@@ -5574,18 +5765,20 @@ Some(RailAudience::side(*faction_is_alliance)),
                         commanded
                     };
 
-                    for action in draw_sector_windows(
-                        ctx,
-                        &world,
-                        &movement_state,
-                        fog_state,
-                        &mut sector_window_state,
-                        cockpit_state.faction,
-                        cockpit_layout,
-                        &mut bmp_cache,
-                        &mission_state,
-                        &uprising_state,
-                    )
+                    for action in with_retained_input(ctx, retained_window_input, || {
+                        draw_sector_windows(
+                            ctx,
+                            &world,
+                            &movement_state,
+                            fog_state,
+                            &mut sector_window_state,
+                            cockpit_state.faction,
+                            cockpit_layout,
+                            &mut bmp_cache,
+                            &mission_state,
+                            &uprising_state,
+                        )
+                    })
                     .into_iter()
                     .chain(commanded_sector_actions)
                     {
@@ -5735,20 +5928,22 @@ Some(RailAudience::side(*faction_is_alliance)),
                         &defenses_window_state,
                         &missions_window_state,
                     );
-                    for action in draw_system_windows(
-                        ctx,
-                        &world,
-                        &movement_state,
-                        fog_state,
-                        &mission_state,
-                        &mfg_state,
-                        &delivery_state,
-                        &mut system_window_state,
-                        cockpit_state.faction,
-                        cockpit_layout,
-                        &mut bmp_cache,
-                        galaxy_front == GalaxyFront::System,
-                    ) {
+                    for action in with_retained_input(ctx, retained_window_input, || {
+                        draw_system_windows(
+                            ctx,
+                            &world,
+                            &movement_state,
+                            fog_state,
+                            &mission_state,
+                            &mfg_state,
+                            &delivery_state,
+                            &mut system_window_state,
+                            cockpit_state.faction,
+                            cockpit_layout,
+                            &mut bmp_cache,
+                            galaxy_front == GalaxyFront::System,
+                        )
+                    }) {
                         match action {
                             SystemWindowAction::FocusSector(system) => {
                                 sector_window_state.open_for_system(
@@ -6093,18 +6288,20 @@ Some(RailAudience::side(*faction_is_alliance)),
                         }
                     }
 
-                    for action in draw_defenses_windows(
-                        ctx,
-                        &world,
-                        fog_state,
-                        &mission_state,
-                        &economy_state,
-                        &mut defenses_window_state,
-                        cockpit_state.faction,
-                        cockpit_layout,
-                        &mut bmp_cache,
-                        galaxy_front == GalaxyFront::Defenses,
-                    ) {
+                    for action in with_retained_input(ctx, retained_window_input, || {
+                        draw_defenses_windows(
+                            ctx,
+                            &world,
+                            fog_state,
+                            &mission_state,
+                            &economy_state,
+                            &mut defenses_window_state,
+                            cockpit_state.faction,
+                            cockpit_layout,
+                            &mut bmp_cache,
+                            galaxy_front == GalaxyFront::Defenses,
+                        )
+                    }) {
                         match action {
                             DefensesWindowAction::OpenSector(system) => {
                                 sector_window_state.open_for_system(
@@ -6229,17 +6426,19 @@ Some(RailAudience::side(*faction_is_alliance)),
                         }
                     }
 
-                    for action in draw_missions_windows(
-                        ctx,
-                        &world,
-                        fog_state,
-                        &mission_state,
-                        &mut missions_window_state,
-                        cockpit_state.faction,
-                        cockpit_layout,
-                        &mut bmp_cache,
-                        galaxy_front == GalaxyFront::Missions,
-                    ) {
+                    for action in with_retained_input(ctx, retained_window_input, || {
+                        draw_missions_windows(
+                            ctx,
+                            &world,
+                            fog_state,
+                            &mission_state,
+                            &mut missions_window_state,
+                            cockpit_state.faction,
+                            cockpit_layout,
+                            &mut bmp_cache,
+                            galaxy_front == GalaxyFront::Missions,
+                        )
+                    }) {
                         match action {
                             MissionsWindowAction::OpenSector(system) => {
                                 sector_window_state.open_for_system(
@@ -7339,7 +7538,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                 strategic_root_keys.report_legacy_children(
                     &mut strategic_input_router,
                     egui_claims_keyboard || legacy_keyboard_handled,
-                    fleet_keyboard_disposition,
+                    fleet_keyboard_owner,
                 );
 
                 // Child surfaces have now handled their input. Keep every
@@ -7504,17 +7703,14 @@ Some(RailAudience::side(*faction_is_alliance)),
                     dispatch_cockpit_button!(btn);
                 }
 
-                // Root consumes the normalized keyboard events in backend
-                // order. Each repeat retains its own event id and modifier
-                // state; a newly introduced restriction stops later events.
+                // Root consumes the normalized key presses in backend order,
+                // each with its own event id and modifier state; a newly
+                // introduced restriction stops later events.
                 if strategic_frame_boundary.root_shortcuts_allowed() {
-                    for event in strategic_root_keys.events.iter().copied() {
+                    for event in strategic_root_keys.presses() {
                         if strategic_dispatch_restricted {
                             break;
                         }
-                        // Repeats remain separate events and deliberately run
-                        // through the same ordered dispatch as initial presses.
-                        let _is_repeat = event.repeat;
 
                         let panel_index = match event.key {
                             KeyCode::F => Some(0),

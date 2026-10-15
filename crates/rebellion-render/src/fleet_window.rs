@@ -691,17 +691,23 @@ impl FleetWindowState {
         })
     }
 
-    /// Exact visible manager identities whose Fleet rectangles cover `point`.
+    /// Exact visible manager identity whose Fleet rectangle covers `point`
+    /// when `top_layer`, egui's topmost interactable layer there, is that
+    /// window's own area. A retained window of another family painted above
+    /// it, or no layer at all, leaves the event to the strategic root, as
+    /// egui leaves it to that other window.
     #[must_use]
     pub fn hit_window_ids(
         &self,
         snapshot: &RoutingSnapshot,
         layout: CockpitLayout,
         point: (f32, f32),
+        top_layer: Option<egui::LayerId>,
     ) -> std::collections::BTreeSet<WindowId> {
         let point = egui::pos2(point.0, point.1);
         self.windows
             .iter()
+            .filter(|window| top_layer.is_some_and(|layer| layer.id == area_id(window)))
             .filter_map(|window| {
                 window.id.filter(|id| {
                     snapshot.is_visible(*id)
@@ -2984,6 +2990,46 @@ pub(crate) mod tests {
             state.keyboard_owner(&manager.begin_frame()),
             Some((id, true))
         );
+    }
+
+    #[test]
+    fn fleet_pointer_routes_only_when_its_own_area_is_the_topmost_layer() {
+        let (world, system) = world(ControlKind::Controlled(Faction::Alliance));
+        let mut manager = WindowManager::new();
+        let mut state = FleetWindowState::default();
+        let prepared = state
+            .prepare_open(
+                &world,
+                system,
+                ORIGIN,
+                CockpitFaction::Alliance,
+                scaled(),
+                None,
+            )
+            .unwrap();
+        let (id, _) = commit_prepared_fleet_window(&mut manager, &mut state, prepared);
+        let snapshot = manager.begin_frame();
+        let rect = state.screen_rect(scaled(), system).unwrap();
+        let inside = (rect.center().x, rect.center().y);
+        let outside = (rect.max.x + 1.0, rect.max.y + 1.0);
+        let content = state.windows.iter().find(|window| window.id == Some(id));
+        let own = egui::LayerId::new(egui::Order::Foreground, area_id(content.unwrap()));
+        let system_window_above =
+            egui::LayerId::new(egui::Order::Foreground, egui::Id::new("system-window"));
+
+        assert_eq!(
+            state.hit_window_ids(&snapshot, scaled(), inside, Some(own)),
+            std::collections::BTreeSet::from([id])
+        );
+        assert!(state
+            .hit_window_ids(&snapshot, scaled(), inside, Some(system_window_above))
+            .is_empty());
+        assert!(state
+            .hit_window_ids(&snapshot, scaled(), inside, None)
+            .is_empty());
+        assert!(state
+            .hit_window_ids(&snapshot, scaled(), outside, Some(own))
+            .is_empty());
     }
 
     #[test]

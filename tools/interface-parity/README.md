@@ -85,6 +85,14 @@ them without a central registry edit. Each case is created with
   count; and
 - async `evidence(context, observation, setup)`, returning retained evidence.
 
+A case records each step as it runs with `context.completeStep(id, assertions)`.
+Every declared step must be completed exactly once, in declared order, with its
+own positive assertion count, and the step counts must add up to the count
+`assertions` returns. Completeness is computed from these recorded executions:
+the run reports complete A-E scope only when every reviewed case ran in every
+applicable faction and viewport and recorded each required step. Declared
+steps alone never count.
+
 Case IDs must be unique. Unknown selections, missing reviewed cases or
 applicability cells, malformed observations, duplicate physical-event
 recipients, zero executed cases, and zero assertions are errors. Empty
@@ -94,7 +102,11 @@ event's trigger, physical ID, kind, router recipient, application recipient,
 zero-underlay count and raw application/router receipts, plus identical
 nonnegative `before` and `after` action-counter keys. Each execution must return
 structured evidence with clean request/browser diagnostics and verified hashes
-for its result JSON, screenshot and fixture WASM. Fixture request code 66 is
+for its result JSON, screenshot and fixture WASM. The evidence is bound to its
+execution: the result JSON and screenshot must lie in that execution's own
+directory, the WASM must be the served fixture, and the result JSON must name
+the same run ID, case, faction and viewport and the same screenshot and WASM
+hashes. Older files elsewhere under the evidence root are rejected. Fixture request code 66 is
 scenario enum value 65; the
 existing faction byte remains unchanged, while viewport remains explicit
 runner metadata because it is a browser-context property rather than a WASM

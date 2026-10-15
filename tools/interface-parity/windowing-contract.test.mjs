@@ -86,19 +86,47 @@ function observation(overrides = {}) {
   };
 }
 
-function evidenceFixture(t) {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "windowing-run-evidence-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+function sha256(contents) {
+  return createHash("sha256").update(contents).digest("hex");
+}
+
+// One execution's evidence as the browser runtime lays it out: result JSON
+// and screenshot in the execution directory, the fixture WASM in the site.
+function evidenceFixture(t, {
+  runId = "windowing-contract-run-1",
+  caseId = "case-a",
+  faction = "alliance",
+  viewport = "native",
+  result = {},
+} = {}) {
+  const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "windowing-run-evidence-"));
+  t.after(() => fs.rmSync(evidenceRoot, { recursive: true, force: true }));
+  const directory = path.join(evidenceRoot, runId, caseId, faction, viewport);
+  const fixtureWasm = path.join(evidenceRoot, "site", "fixture.wasm");
+  fs.mkdirSync(directory, { recursive: true });
+  fs.mkdirSync(path.dirname(fixtureWasm), { recursive: true });
+  fs.writeFileSync(path.join(directory, "after.png"), "image");
+  fs.writeFileSync(fixtureWasm, "wasm");
+  fs.writeFileSync(path.join(directory, "result.json"), JSON.stringify({
+    run_id: runId,
+    observation: { case_id: caseId, faction, viewport },
+    screenshot_sha256: sha256("image"),
+    wasm_sha256: sha256("wasm"),
+    ...result,
+  }));
   const artifacts = [
-    ["result_json", "result.json", "result"],
-    ["screenshot", "after.png", "image"],
-    ["fixture_wasm", "fixture.wasm", "wasm"],
-  ].map(([kind, relative, contents]) => {
-    fs.writeFileSync(path.join(directory, relative), contents);
-    return { kind, path: relative, sha256: createHash("sha256").update(contents).digest("hex") };
-  });
+    ["result_json", path.join(directory, "result.json")],
+    ["screenshot", path.join(directory, "after.png")],
+    ["fixture_wasm", fixtureWasm],
+  ].map(([kind, file]) => ({
+    kind,
+    path: path.relative(evidenceRoot, file),
+    sha256: sha256(fs.readFileSync(file)),
+  }));
   return {
-    evidenceRoot: directory,
+    evidenceRoot,
+    binding: { runId, caseId, faction, viewport, directory, fixtureWasm },
+    context: { evidenceRoot, runId, directory, fixtureWasm },
     evidence: {
       schema_version: 1,
       diagnostics: { errors: [], requests: [{ path: "/", status: 200 }] },
@@ -166,10 +194,72 @@ test("windowing_contract_case_selection_reports_executed_cases", async (t) => {
     },
   })], ["case-a"]);
 
-  const summary = await runSelectedCases(selected, async () => ({ evidenceRoot: fixture.evidenceRoot }));
+  const summary = await runSelectedCases(selected, async () => ({ ...fixture.context }));
   assert.deepEqual(hooks, ["setup", "actions", "assertions", "evidence"]);
   assert.equal(summary.executed_cases, 1);
   assert.equal(summary.assertion_count, 3);
+  assert.deepEqual(summary.executions[0].completed_steps, []);
+});
+
+test("execution records each declared step it completes, in order, with its own assertions", async (t) => {
+  const fixture = evidenceFixture(t);
+  const journey = (complete, assertions) => defineWindowingContractCase({
+    id: "case-a",
+    groups: ["A"],
+    steps: ["A01", "A02"],
+    factions: ["alliance"],
+    viewports: ["native"],
+    setup: async () => {},
+    actions: async (context) => {
+      complete(context);
+      return observation({ case_id: "case-a" });
+    },
+    assertions: async () => assertions,
+    evidence: async () => fixture.evidence,
+  });
+  const run = (definition) => runSelectedCases([definition], async () => ({ ...fixture.context }));
+
+  const summary = await run(journey((context) => {
+    context.completeStep("A01", 2);
+    context.completeStep("A02", 1);
+  }, 3));
+  assert.deepEqual(summary.executions[0].completed_steps, [
+    { id: "A01", assertions: 2 },
+    { id: "A02", assertions: 1 },
+  ]);
+
+  // Declared steps alone are not completion: one assertion, no steps run.
+  await assert.rejects(() => run(journey(() => {}, 1)), /did not complete steps A01, A02/i);
+  await assert.rejects(
+    () => run(journey((context) => context.completeStep("A01", 1), 1)),
+    /did not complete steps A02/i,
+  );
+  await assert.rejects(
+    () => run(journey((context) => context.completeStep("A02", 1), 1)),
+    /completed step A02 before A01/i,
+  );
+  await assert.rejects(
+    () => run(journey((context) => context.completeStep("A03", 1), 1)),
+    /undeclared step A03/i,
+  );
+  await assert.rejects(
+    () => run(journey((context) => {
+      context.completeStep("A01", 1);
+      context.completeStep("A01", 1);
+    }, 2)),
+    /completed step A01 twice/i,
+  );
+  await assert.rejects(
+    () => run(journey((context) => context.completeStep("A01", 0), 1)),
+    /step A01 reported zero assertions/i,
+  );
+  await assert.rejects(
+    () => run(journey((context) => {
+      context.completeStep("A01", 1);
+      context.completeStep("A02", 1);
+    }, 10)),
+    /step assertions \(2\) do not account for its 10 assertions/i,
+  );
 });
 
 test("windowing_contract_runner_validates_observations_and_execution_identity", async () => {
@@ -196,51 +286,68 @@ test("windowing_contract_runner_validates_observations_and_execution_identity", 
   );
 });
 
-test("windowing evidence requires clean diagnostics and verified artifact hashes", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "windowing-evidence-"));
-  try {
-    const artifacts = [
-      ["result_json", "result.json", "result"],
-      ["screenshot", "after.png", "image"],
-      ["fixture_wasm", "fixture.wasm", "wasm"],
-    ].map(([kind, relative, contents]) => {
-      fs.writeFileSync(path.join(directory, relative), contents);
-      return {
-        kind,
-        path: relative,
-        sha256: createHash("sha256").update(contents).digest("hex"),
-      };
-    });
-    const evidence = {
-      schema_version: 1,
-      diagnostics: { errors: [], requests: [{ path: "/", status: 200 }] },
-      artifacts,
-    };
-    assert.deepEqual(validateWindowingContractEvidence(evidence, directory), evidence);
-    assert.throws(() => validateWindowingContractEvidence({}, directory), /structured evidence/i);
+test("windowing evidence requires clean diagnostics and verified artifact hashes", (t) => {
+  const { evidence, evidenceRoot, binding } = evidenceFixture(t);
+  const { artifacts } = evidence;
+  assert.deepEqual(validateWindowingContractEvidence(evidence, evidenceRoot, binding), evidence);
+  assert.throws(() => validateWindowingContractEvidence({}, evidenceRoot, binding), /structured evidence/i);
+  assert.throws(
+    () => validateWindowingContractEvidence({
+      ...evidence,
+      diagnostics: { errors: ["page:error"], requests: [] },
+    }, evidenceRoot, binding),
+    /diagnostics.*error/i,
+  );
+  assert.throws(
+    () => validateWindowingContractEvidence({
+      ...evidence,
+      artifacts: artifacts.map((artifact) => artifact.kind === "screenshot"
+        ? { ...artifact, sha256: "0".repeat(64) }
+        : artifact),
+    }, evidenceRoot, binding),
+    /hash mismatch.*after\.png/i,
+  );
+  assert.throws(
+    () => validateWindowingContractEvidence(
+      { ...evidence, artifacts: artifacts.slice(0, 2) },
+      evidenceRoot,
+      binding,
+    ),
+    /missing artifact.*fixture_wasm/i,
+  );
+  assert.throws(
+    () => validateWindowingContractEvidence(evidence, evidenceRoot, undefined),
+    /execution binding/i,
+  );
+});
+
+test("windowing evidence belongs to the current run, case, faction and viewport", (t) => {
+  const current = evidenceFixture(t);
+  const validate = (fixture, binding = current.binding) =>
+    () => validateWindowingContractEvidence(fixture.evidence, fixture.evidenceRoot, binding);
+
+  // An older run's files under the same evidence root still hash correctly.
+  const older = evidenceFixture(t, { runId: "windowing-contract-run-0" });
+  assert.throws(
+    validate(older, { ...older.binding, directory: current.binding.directory }),
+    /result_json is not in this execution's directory/i,
+  );
+  assert.throws(
+    validate(older, { ...older.binding, runId: current.binding.runId }),
+    /does not belong to run windowing-contract-run-1/i,
+  );
+  for (const [dimension, value] of [["caseId", "case-b"], ["faction", "empire"], ["viewport", "letterboxed"]]) {
     assert.throws(
-      () => validateWindowingContractEvidence({
-        ...evidence,
-        diagnostics: { errors: ["page:error"], requests: [] },
-      }, directory),
-      /diagnostics.*error/i,
+      validate(current, { ...current.binding, [dimension]: value }),
+      /does not belong to run/i,
     );
-    assert.throws(
-      () => validateWindowingContractEvidence({
-        ...evidence,
-        artifacts: artifacts.map((artifact) => artifact.kind === "screenshot"
-          ? { ...artifact, sha256: "0".repeat(64) }
-          : artifact),
-      }, directory),
-      /hash mismatch.*after\.png/i,
-    );
-    assert.throws(
-      () => validateWindowingContractEvidence({ ...evidence, artifacts: artifacts.slice(0, 2) }, directory),
-      /missing artifact.*fixture_wasm/i,
-    );
-  } finally {
-    fs.rmSync(directory, { recursive: true, force: true });
   }
+  assert.throws(
+    validate(current, { ...current.binding, fixtureWasm: path.join(current.evidenceRoot, "other.wasm") }),
+    /fixture_wasm is not the served fixture/i,
+  );
+  const stale = evidenceFixture(t, { result: { screenshot_sha256: sha256("before") } });
+  assert.throws(validate(stale, stale.binding), /hashes do not match/i);
 });
 
 test("case execution rejects unstructured evidence", async () => {
@@ -349,17 +456,36 @@ test("windowing contract scope distinguishes full default and focused selections
     groups: [required.group],
     steps: required.required_steps,
   }));
-  assert.equal(windowingContractScope(journeys, []), "complete A-E fixture journey");
+  const executions = REVIEWED_WINDOWING_CONTRACT_MANIFEST.cases.flatMap((required) =>
+    required.applicability.factions.flatMap((faction) =>
+      required.applicability.viewports.map((viewport) => ({
+        case_id: required.id,
+        faction,
+        viewport,
+        completed_steps: required.required_steps.map((id) => ({ id, assertions: 1 })),
+      }))));
+  const focused = "focused fixture selection; not complete A-E acceptance";
+  assert.equal(windowingContractScope(journeys, [], executions), "complete A-E fixture journey");
+  // Declared steps without recorded executions are not complete.
+  assert.equal(windowingContractScope(journeys, [], []), focused);
+  assert.equal(windowingContractScope(journeys, [], executions.slice(0, -1)), focused);
   assert.equal(
-    windowingContractScope([{ id: "omnibus", groups: ["A", "B", "C", "D", "E"], steps: [] }], []),
-    "focused fixture selection; not complete A-E acceptance",
+    windowingContractScope(journeys, [], executions.map((execution, index) => index === 0
+      ? { ...execution, completed_steps: execution.completed_steps.slice(1) }
+      : execution)),
+    focused,
   );
   assert.equal(
-    windowingContractScope(journeys, ["case-a"]),
-    "focused fixture selection; not complete A-E acceptance",
+    windowingContractScope(
+      [{ id: "omnibus", groups: ["A", "B", "C", "D", "E"], steps: [] }],
+      [],
+      executions,
+    ),
+    focused,
   );
+  assert.equal(windowingContractScope(journeys, ["case-a"], executions), focused);
   assert.equal(
-    windowingContractScope([ADAPTER_SMOKE_CASE], ["adapter-smoke"]),
+    windowingContractScope([ADAPTER_SMOKE_CASE], ["adapter-smoke"], []),
     "adapter smoke only; not A-E acceptance",
   );
 });

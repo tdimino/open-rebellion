@@ -142,6 +142,32 @@ impl LegacyInputRestrictionLatch {
     }
 }
 
+/// Notices operating-system focus losses between frames. A loss cancels the
+/// manager's pointer capture, since the release that would end it may never
+/// arrive.
+#[derive(Debug, Default)]
+#[cfg_attr(
+    not(target_arch = "wasm32"),
+    allow(dead_code, reason = "only the browser shell reports focus loss")
+)]
+pub struct FocusLossWatch {
+    seen: Option<u32>,
+}
+
+#[cfg_attr(
+    not(target_arch = "wasm32"),
+    allow(dead_code, reason = "only the browser shell reports focus loss")
+)]
+impl FocusLossWatch {
+    /// Whether `count` records a loss since the previous observation. The
+    /// first observation only sets the baseline.
+    pub fn lost(&mut self, count: u32) -> bool {
+        let lost = self.seen.is_some_and(|seen| seen != count);
+        self.seen = Some(count);
+        lost
+    }
+}
+
 /// Immutable production routing lease for one frame.
 ///
 /// The manager snapshot and legacy restriction state are copied together before
@@ -185,6 +211,20 @@ impl StrategicFrameBoundary {
                 self.snapshot.keyboard_route().target,
                 RouteTarget::StrategicRoot
             )
+    }
+
+    /// Permit for the retained legacy detail windows (Sector, System,
+    /// Defenses, Missions) to read input. Application locks and legacy
+    /// strategic modals hold them as they hold migrated content: outside
+    /// clicks under Encyclopedia, Status, Build Selection, Create Mission and
+    /// Move Confirmation reach no underlying control in either faction
+    /// (`ghidra/notes/strategic-windowing-toolkit.md`, "Strategic
+    /// modality"). Transient menus and root gestures keep their own rules.
+    #[must_use]
+    pub fn retained_window_input_allowed(&self) -> bool {
+        !self.migrated_modal_active()
+            && !self.locks.blocks_strategic_input()
+            && !self.legacy.strategic_modal
     }
 
     /// Permit for a named legacy pointer owner itself. Unlike the strategic
@@ -976,6 +1016,76 @@ mod tests {
         assert!(!frame.legacy_pointer_allowed());
         assert!(!frame.legacy_keyboard_allowed());
         assert!(!frame.root_shortcuts_allowed());
+    }
+
+    #[test]
+    fn retained_windows_hold_input_under_application_locks_and_legacy_modals() {
+        let coordinator = StrategicWindowing::new();
+        let frame = |locks, legacy| coordinator.begin_production_frame(locks, legacy);
+        let none = LegacyInputBlockers::default();
+
+        assert!(frame(ApplicationInputLocks::default(), none).retained_window_input_allowed());
+        for locks in [
+            ApplicationInputLocks {
+                event_screen: true,
+                ..ApplicationInputLocks::default()
+            },
+            ApplicationInputLocks {
+                briefing: true,
+                ..ApplicationInputLocks::default()
+            },
+            ApplicationInputLocks {
+                scene_transition: true,
+                ..ApplicationInputLocks::default()
+            },
+        ] {
+            assert!(!frame(locks, none).retained_window_input_allowed());
+        }
+        let modal = LegacyInputBlockers {
+            strategic_modal: true,
+            ..none
+        };
+        assert!(!frame(ApplicationInputLocks::default(), modal).retained_window_input_allowed());
+        for keeps_own_rules in [
+            LegacyInputBlockers {
+                transient_menu: true,
+                ..none
+            },
+            LegacyInputBlockers {
+                root_gesture: true,
+                ..none
+            },
+        ] {
+            assert!(frame(ApplicationInputLocks::default(), keeps_own_rules)
+                .retained_window_input_allowed());
+        }
+    }
+
+    #[test]
+    fn retained_windows_hold_input_under_a_migrated_modal() {
+        let mut coordinator = StrategicWindowing::new();
+        coordinator.enqueue(WindowCommand::Open(singleton_spec(
+            WindowKind::Encyclopedia,
+            WindowOwner::StrategicRoot,
+        )));
+        opened_id(&coordinator.apply_pending()[0]);
+        let frame = coordinator.begin_production_frame(
+            ApplicationInputLocks::default(),
+            LegacyInputBlockers::default(),
+        );
+
+        assert!(!frame.retained_window_input_allowed());
+    }
+
+    #[test]
+    fn a_focus_loss_is_reported_once_after_the_baseline() {
+        let mut watch = FocusLossWatch::default();
+
+        assert!(!watch.lost(3));
+        assert!(!watch.lost(3));
+        assert!(watch.lost(4));
+        assert!(!watch.lost(4));
+        assert!(watch.lost(0));
     }
 
     #[test]
