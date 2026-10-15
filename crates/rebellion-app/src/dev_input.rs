@@ -66,6 +66,14 @@ impl DevInput {
 
     /// Queue a press at `from`, a move in even steps, and a release at `to`.
     pub fn drag(&mut self, from: (f32, f32), to: (f32, f32)) {
+        self.hold_drag(from, to);
+        self.release(to.0, to.1);
+    }
+
+    /// Queue a press at `from` and a move in even steps to `to`, leaving the
+    /// left button held until [`Self::release`]. A focus change can then
+    /// land mid-gesture, which a `drag` finishes too quickly to meet.
+    pub fn hold_drag(&mut self, from: (f32, f32), to: (f32, f32)) {
         self.steps.push_back(Step::Move(from.0, from.1));
         self.steps.push_back(Step::Down {
             x: from.0,
@@ -79,11 +87,11 @@ impl DevInput {
                 from.1 + (to.1 - from.1) * t,
             ));
         }
-        self.steps.push_back(Step::Up {
-            x: to.0,
-            y: to.1,
-            right: false,
-        });
+    }
+
+    /// Queue the left button's release at a logical point.
+    pub fn release(&mut self, x: f32, y: f32) {
+        self.steps.push_back(Step::Up { x, y, right: false });
     }
 
     /// Queue a move to a logical point and `notches` wheel lines there, one
@@ -342,5 +350,40 @@ mod platform {
 
     pub(super) fn post(_step: Step) -> Result<(), String> {
         Err("scripted input is built for macOS only".into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_held_drag_keeps_the_button_down_until_its_release() {
+        let mut input = DevInput::default();
+        input.hold_drag((10.0, 20.0), (50.0, 20.0));
+        assert_eq!(input.steps.len(), 2 + usize::from(DRAG_FRAMES));
+        let released = input.steps.iter().any(|s| matches!(s, Step::Up { .. }));
+        assert!(!released);
+        assert_eq!(input.steps.back(), Some(&Step::Drag(50.0, 20.0)));
+
+        input.release(50.0, 20.0);
+        assert_eq!(
+            input.steps.back(),
+            Some(&Step::Up {
+                x: 50.0,
+                y: 20.0,
+                right: false
+            })
+        );
+    }
+
+    #[test]
+    fn a_whole_drag_is_a_held_drag_and_its_release() {
+        let mut whole = DevInput::default();
+        whole.drag((10.0, 20.0), (50.0, 20.0));
+        let mut split = DevInput::default();
+        split.hold_drag((10.0, 20.0), (50.0, 20.0));
+        split.release(50.0, 20.0);
+        assert_eq!(whole.steps, split.steps);
     }
 }

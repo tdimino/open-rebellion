@@ -1431,6 +1431,22 @@ fn browser_focus_losses() -> u32 {
     unsafe { open_rebellion_focus_losses() }
 }
 
+/// Whether AppKit reports the application active
+/// (`-[NSApplication isActive]`).
+#[cfg(target_os = "macos")]
+fn native_app_active() -> bool {
+    use macroquad::miniquad::native::apple::frameworks::{
+        class, msg_send, sel, sel_impl, ObjcId, BOOL, NO,
+    };
+    // SAFETY: called on the main thread inside the game loop, which AppKit
+    // runs; `sharedApplication` exists for the whole process.
+    unsafe {
+        let app: ObjcId = msg_send![class!(NSApplication), sharedApplication];
+        let active: BOOL = msg_send![app, isActive];
+        active != NO
+    }
+}
+
 /// Run one retained legacy window family's pass with its input muted unless
 /// the frame boundary permits it. Layout and paint are unchanged.
 fn with_retained_input<T>(
@@ -2545,8 +2561,11 @@ async fn main() {
     let mut strategic_frame_number = 0_u64;
     let strategic_input_subscriber = macroquad::input::utils::register_input_subscriber();
     let mut strategic_raw_input = StrategicRawInputCollector::default();
-    #[cfg(target_arch = "wasm32")]
     let mut focus_loss_watch = strategic_windowing::FocusLossWatch::default();
+    #[cfg(target_os = "macos")]
+    let mut native_focus = strategic_windowing::FocusStateCounter::default();
+    #[cfg(target_os = "macos")]
+    let mut native_active_logged: Option<bool> = None;
 
     loop {
         let dt = get_frame_time();
@@ -4321,6 +4340,14 @@ Some(RailAudience::side(*faction_is_alliance)),
                     dev_input.drag(from, to);
                     dev_hold_frames = 2;
                 }
+                DevCommand::HoldDrag { from, to } => {
+                    dev_input.hold_drag(from, to);
+                    dev_hold_frames = 2;
+                }
+                DevCommand::Release { x, y } => {
+                    dev_input.release(x, y);
+                    dev_hold_frames = 2;
+                }
                 DevCommand::Scroll { x, y, notches } => {
                     dev_input.scroll(x, y, notches);
                     dev_hold_frames = 2;
@@ -4623,10 +4650,28 @@ Some(RailAudience::side(*faction_is_alliance)),
                         rebellion_windowing::CaptureCancelReason::HoldStarted,
                     ));
                 }
-                // port: native focus loss is not reported by miniquad 0.4.8,
-                // so only the browser shell's count cancels a capture.
+                // miniquad 0.4.8 passes focus loss to no input subscriber:
+                // the browser shell counts it, and on macOS each frame
+                // samples AppKit's active state. port: other native hosts
+                // report none.
                 #[cfg(target_arch = "wasm32")]
-                if focus_loss_watch.lost(browser_focus_losses()) {
+                let focus_losses = Some(browser_focus_losses());
+                #[cfg(target_os = "macos")]
+                let focus_losses = {
+                    let active = native_app_active();
+                    if native_active_logged != Some(active) {
+                        macroquad::logging::info!("[windowing] app_active={}", active);
+                        native_active_logged = Some(active);
+                    }
+                    Some(native_focus.sample(active))
+                };
+                #[cfg(not(any(target_arch = "wasm32", target_os = "macos")))]
+                let focus_losses: Option<u32> = None;
+                if focus_losses.is_some_and(|count| focus_loss_watch.lost(count)) {
+                    macroquad::logging::info!(
+                        "[windowing] focus_lost fleet_drag_owner={:?}",
+                        fleet_window_state.drag_owner()
+                    );
                     strategic_windowing.enqueue(rebellion_windowing::WindowCommand::CancelCapture(
                         rebellion_windowing::CaptureCancelReason::FocusLost,
                     ));
@@ -9057,6 +9102,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                             window, ..
                         } = event
                         {
+                            macroquad::logging::info!("[windowing] {:?}", event);
                             strategic_input_router.cancel_window(*window);
                             fleet_window_state.cancel_pointer_capture(*window);
                         }

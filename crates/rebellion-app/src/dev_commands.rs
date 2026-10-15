@@ -176,6 +176,10 @@ pub enum DevCommand {
     },
     /// Press at one point, move, release at another.
     Drag { from: (f32, f32), to: (f32, f32) },
+    /// Press at one point and move to another, leaving the button held.
+    HoldDrag { from: (f32, f32), to: (f32, f32) },
+    /// Release the held left button at a point.
+    Release { x: f32, y: f32 },
     /// Wheel lines at a point: positive scrolls down a list, negative up.
     Scroll { x: f32, y: f32, notches: i32 },
     /// Press and release a named key.
@@ -289,6 +293,8 @@ impl DevCommand {
             | Self::WaitUntil(_)
             | Self::Click { .. }
             | Self::Drag { .. }
+            | Self::HoldDrag { .. }
+            | Self::Release { .. }
             | Self::Scroll { .. }
             | Self::Press(_)
             | Self::KnockOutHyperdrive(_)
@@ -375,13 +381,16 @@ pub fn parse_line(line: &str) -> Result<Option<DevCommand>, String> {
         }));
     }
     if lower.starts_with("drag ") {
-        let args = rest("drag ");
-        let Some(split) = args.to_ascii_lowercase().find(" to ") else {
-            return Err("drag takes `<x>,<y> to <x>,<y>`".into());
-        };
-        let from = point(&args[..split])?;
-        let to = point(&args[split + 4..])?;
+        let (from, to) = span(rest("drag "), "drag")?;
         return Ok(Some(DevCommand::Drag { from, to }));
+    }
+    if lower.starts_with("hold drag ") {
+        let (from, to) = span(rest("hold drag "), "hold drag")?;
+        return Ok(Some(DevCommand::HoldDrag { from, to }));
+    }
+    if lower.starts_with("release at ") {
+        let (x, y) = point(rest("release at "))?;
+        return Ok(Some(DevCommand::Release { x, y }));
     }
     if lower.starts_with("scroll ") {
         let args = rest("scroll ");
@@ -462,6 +471,15 @@ fn point(text: &str) -> Result<(f32, f32), String> {
     }
 }
 
+/// `<x>,<y> to <x>,<y>`, the two ends of a drag.
+#[cfg(not(target_arch = "wasm32"))]
+fn span(args: &str, command: &str) -> Result<((f32, f32), (f32, f32)), String> {
+    let Some(split) = args.to_ascii_lowercase().find(" to ") else {
+        return Err(format!("{command} takes `<x>,<y> to <x>,<y>`"));
+    };
+    Ok((point(&args[..split])?, point(&args[split + 4..])?))
+}
+
 /// A decimal or `0x` hexadecimal number.
 #[cfg(not(target_arch = "wasm32"))]
 fn number(text: &str) -> Result<u16, String> {
@@ -536,6 +554,33 @@ mod tests {
                 assert_eq!(palette_switch(off, debug_build), debug_build, "{off:?}");
             }
         }
+    }
+
+    #[test]
+    fn a_held_drag_and_its_release_parse_apart_from_a_whole_drag() {
+        assert_eq!(
+            parse_line("Hold drag 100,200 to 140,210"),
+            Ok(Some(DevCommand::HoldDrag {
+                from: (100.0, 200.0),
+                to: (140.0, 210.0)
+            }))
+        );
+        assert_eq!(
+            parse_line("release at 140,210"),
+            Ok(Some(DevCommand::Release { x: 140.0, y: 210.0 }))
+        );
+        assert_eq!(
+            parse_line("Drag 100,200 to 140,210"),
+            Ok(Some(DevCommand::Drag {
+                from: (100.0, 200.0),
+                to: (140.0, 210.0)
+            }))
+        );
+        assert!(parse_line("Hold drag 100,200").is_err());
+        assert_eq!(
+            parse_line("Release advice topic 3"),
+            Ok(Some(DevCommand::ReleaseAdviceTopic(3)))
+        );
     }
 
     #[test]

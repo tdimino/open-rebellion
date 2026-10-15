@@ -146,18 +146,10 @@ impl LegacyInputRestrictionLatch {
 /// manager's pointer capture, since the release that would end it may never
 /// arrive.
 #[derive(Debug, Default)]
-#[cfg_attr(
-    not(target_arch = "wasm32"),
-    allow(dead_code, reason = "only the browser shell reports focus loss")
-)]
 pub struct FocusLossWatch {
     seen: Option<u32>,
 }
 
-#[cfg_attr(
-    not(target_arch = "wasm32"),
-    allow(dead_code, reason = "only the browser shell reports focus loss")
-)]
 impl FocusLossWatch {
     /// Whether `count` records a loss since the previous observation. The
     /// first observation only sets the baseline.
@@ -165,6 +157,34 @@ impl FocusLossWatch {
         let lost = self.seen.is_some_and(|seen| seen != count);
         self.seen = Some(count);
         lost
+    }
+}
+
+/// Running count of focus losses for a host that reports focus as a state
+/// sampled each frame (AppKit's `-[NSApplication isActive]`) rather than as
+/// an event. Each active-to-inactive change is one loss.
+#[derive(Debug, Default)]
+#[cfg_attr(
+    not(target_os = "macos"),
+    allow(dead_code, reason = "only the macOS host samples its focus state")
+)]
+pub struct FocusStateCounter {
+    was_active: bool,
+    losses: u32,
+}
+
+#[cfg_attr(
+    not(target_os = "macos"),
+    allow(dead_code, reason = "only the macOS host samples its focus state")
+)]
+impl FocusStateCounter {
+    /// Records one sample and returns the losses counted so far.
+    pub fn sample(&mut self, active: bool) -> u32 {
+        if self.was_active && !active {
+            self.losses = self.losses.wrapping_add(1);
+        }
+        self.was_active = active;
+        self.losses
     }
 }
 
@@ -1086,6 +1106,24 @@ mod tests {
         assert!(watch.lost(4));
         assert!(!watch.lost(4));
         assert!(watch.lost(0));
+    }
+
+    #[test]
+    fn a_sampled_focus_state_counts_each_change_to_inactive_as_one_loss() {
+        let mut focus = FocusStateCounter::default();
+        let mut watch = FocusLossWatch::default();
+        let mut cancels = Vec::new();
+
+        for active in [false, true, true, false, false, true, false] {
+            cancels.push(watch.lost(focus.sample(active)));
+        }
+
+        assert_eq!(
+            cancels,
+            [false, false, false, true, false, false, true],
+            "a host inactive from the start loses nothing; each later \
+             active-to-inactive change cancels once"
+        );
     }
 
     #[test]
