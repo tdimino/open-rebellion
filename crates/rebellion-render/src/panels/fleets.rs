@@ -1,14 +1,14 @@
-//! Fleets panel — fleet roster with composition and character assignment.
+//! Fleets panel — fleet roster with composition and officers.
 //!
 //! Rendered as a left-side egui panel. Lists all fleets belonging to the player
 //! faction. Clicking a fleet expands a detail row showing capital ships, fighter
-//! squadrons, assigned characters, and action buttons (assign/remove officer
-//! and go to system). Fleets move through their pop-up menu and the system
+//! squadrons, the characters aboard, and a go-to-system button. Characters
+//! board a fleet through their Move (`0x241`). Fleets move through their pop-up menu and the system
 //! window drag, and join or split on the Fleet window
 //! (`crate::fleet_window`).
 
 use egui_macroquad::egui::{self, RichText, ScrollArea, Vec2};
-use rebellion_core::ids::{CharacterKey, DatId, FleetKey};
+use rebellion_core::ids::{DatId, FleetKey};
 use rebellion_core::missions::MissionFaction;
 use rebellion_core::movement::MovementState;
 use rebellion_core::troop_transport::TroopTransportState;
@@ -83,8 +83,6 @@ const MINI_ICON_HEIGHT: f32 = 20.0;
 pub struct FleetsState {
     /// The fleet currently expanded to show details.
     pub expanded_fleet: Option<FleetKey>,
-    /// If set, show the character assignment picker for this fleet.
-    pub assigning_to: Option<FleetKey>,
 }
 
 // ---------------------------------------------------------------------------
@@ -93,8 +91,8 @@ pub struct FleetsState {
 
 /// Render the fleet roster as a left-side egui panel.
 ///
-/// `player_faction` filters which fleets are shown. Returns panel actions for
-/// character assignment and map navigation.
+/// `player_faction` filters which fleets are shown. Returns the map
+/// navigation action.
 #[expect(
     clippy::too_many_lines,
     reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
@@ -164,7 +162,6 @@ pub fn draw_fleets(
                         let toggle = if is_expanded { "▼" } else { "▶" };
                         if ui.small_button(toggle).clicked() {
                             state.expanded_fleet = if is_expanded { None } else { Some(fleet_key) };
-                            state.assigning_to = None;
                         }
 
                         ui.vertical(|ui| {
@@ -323,87 +320,12 @@ pub fn draw_fleets(
                                 let char_name = world
                                     .characters
                                     .get(char_key)
-                                    .map_or("Unknown", |c| c.name.as_str());
-                                ui.horizontal(|ui| {
-                                    ui.label(
-                                        RichText::new(format!("  {char_name}"))
-                                            .color(theme::TEXT_PRIMARY)
-                                            .size(11.0),
-                                    );
-                                    // Remove from fleet button
-                                    if ui
-                                        .small_button(
-                                            RichText::new("×").color(theme::DANGER_RED).size(11.0),
-                                        )
-                                        .clicked()
-                                    {
-                                        action = Some(PanelAction::RemoveCharacterFromFleet {
-                                            character: char_key,
-                                            fleet: fleet_key,
-                                        });
-                                    }
-                                });
-                            }
-
-                            // ── Assign officer picker ────────────────────
-                            if state.assigning_to == Some(fleet_key) {
-                                ui.add_space(4.0);
+                                    .map_or("Unknown", |c| c.display_name());
                                 ui.label(
-                                    RichText::new("Select officer to assign:")
-                                        .color(theme::GOLD)
-                                        .size(10.0),
-                                );
-                                let available =
-                                    available_characters(world, fleet_key, player_faction);
-                                if available.is_empty() {
-                                    ui.label(
-                                        RichText::new("No available officers")
-                                            .color(theme::TEXT_DISABLED)
-                                            .size(10.0),
-                                    );
-                                } else {
-                                    ScrollArea::vertical()
-                                        .id_salt("assign_scroll")
-                                        .max_height(120.0)
-                                        .show(ui, |ui| {
-                                            for (ck, name) in &available {
-                                                if ui
-                                                    .button(
-                                                        RichText::new(name.as_str())
-                                                            .color(theme::TEXT_PRIMARY)
-                                                            .size(11.0),
-                                                    )
-                                                    .clicked()
-                                                {
-                                                    action =
-                                                        Some(PanelAction::AssignCharacterToFleet {
-                                                            character: *ck,
-                                                            fleet: fleet_key,
-                                                        });
-                                                    state.assigning_to = None;
-                                                }
-                                            }
-                                        });
-                                }
-                                if ui
-                                    .small_button(
-                                        RichText::new("Cancel")
-                                            .color(theme::TEXT_DISABLED)
-                                            .size(10.0),
-                                    )
-                                    .clicked()
-                                {
-                                    state.assigning_to = None;
-                                }
-                            } else if ui
-                                .button(
-                                    RichText::new("Assign Officer")
-                                        .color(theme::GOLD)
+                                    RichText::new(format!("  {char_name}"))
+                                        .color(theme::TEXT_PRIMARY)
                                         .size(11.0),
-                                )
-                                .clicked()
-                            {
-                                state.assigning_to = Some(fleet_key);
+                                );
                             }
 
                             // ── Navigation ───────────────────────────────
@@ -467,45 +389,6 @@ pub(crate) fn fighter_mini_id(dat_id: DatId) -> Option<u32> {
             .copied(),
         _ => None,
     }
-}
-
-/// Find characters eligible for fleet assignment:
-/// same faction, not captive, not on mission, not already in this fleet.
-fn available_characters(
-    world: &GameWorld,
-    fleet_key: FleetKey,
-    player_faction: MissionFaction,
-) -> Vec<(CharacterKey, String)> {
-    let Some(fleet) = world.fleets.get(fleet_key) else {
-        return vec![];
-    };
-
-    let mut result = Vec::new();
-    for (ck, c) in &world.characters {
-        // Faction filter
-        let owns = match player_faction {
-            MissionFaction::Alliance => c.is_alliance,
-            MissionFaction::Empire => c.is_empire,
-        };
-        if !owns {
-            continue;
-        }
-        if c.is_captive || c.on_mission || c.on_mandatory_mission {
-            continue;
-        }
-        // Not already in this fleet
-        if fleet.characters.contains(&ck) {
-            continue;
-        }
-        // Not already in another fleet
-        let in_another = world.fleets.values().any(|f| f.characters.contains(&ck));
-        if in_another {
-            continue;
-        }
-        result.push((ck, c.name.clone()));
-    }
-    result.sort_by(|a, b| a.1.cmp(&b.1));
-    result
 }
 
 #[cfg(test)]

@@ -780,8 +780,8 @@ reads where the story characters are and whether they are free, then sets
 one bit of the story-flag word `this+0x58` through that bit's setter.
 A **held** check writes its condition; a **pulse** check sets the bit and
 clears it again, so the handler runs once. Handlers, timers and the
-chains they drive: [story-missions.md](story-missions.md),
-[story-encounters.md](story-encounters.md).
+chains they drive: [story-missions.md](https://github.com/tdimino/open-rebellion/blob/main/ghidra/notes/story-missions.md),
+[story-encounters.md](https://github.com/tdimino/open-rebellion/blob/main/ghidra/notes/story-encounters.md).
 
 | Order | Check | Bit | Setter (mask, slot) | Condition |
 |---|---|---|---|---|

@@ -50,7 +50,7 @@ Every family a shipped record carries is registered except FLEETSD record 5, who
 4. **Build lists and research.** `FUN_00567880` lists a class for a side only when its production range `[+0x24, +0x28)` holds the producer family `0x28`..`0x2a`, its side flag (`+0x40` Alliance, `+0x44` Empire) is set and its refined cost `+0x48` is non-zero; it is buildable when `research_order` is at or below the side's level. In the shipped data every `research_order` of 1 or more is unique per side and producer family, and the research code (`FUN_00567a90`, `FUN_00567ba0`) takes the first record at a tier, so a second record at a tier above 0 is buildable but is never the one researched or priced. A cost of 0 hides the record. hyp: the six load-time tier checks only gate each other and cannot fail the load.
 5. **Encyclopedia.** `FUN_00422620` lists a class only in the family bands `[0x14,0x20)`, `[0x28,0x30)`, `[0x22,0x28)`, `[0x10,0x14)`, `[0x30,0x40)`, `[8,0x10)`, `[0x50,0x80)` with the hidden flag `+0x5c` clear, keys it `(record +0x30 & 0xfff) + 0x1000`, and skips a key already present (`FUN_0060a860`). A new record needs a text word with new low 12 bits and ENCYTEXT / ENCYBMAP entries for it.
 6. **Art and strings.** The name is the TEXTSTRA id; GOKRES, ENCYBMAP and EDATA use the same low 12 bits; tactical meshes use the ordinal registry (`ship-type-assets.md`).
-7. **Ids named in code.** 77 literals in code are DAT ids: every TROOPSD and SPECFCSD id, the six majors, eight minors (`0x38000341`, `343`, `344`, `380`..`383`, `38c`), one mission id for 21 of the 22 mission families, the five ABODESD ids and the UNIQUESD ids `0xf2000002`, `0xf3000003`, `0xf8000008`, `0xf9000009`, `0xfa00000a` that new-game stage 9 (`FUN_00519910`) creates one by one (the stage fails when any is missing). The AI names one ship class per side (`FUN_004198a0`: Alliance `0x1400004a`, Empire `0x14000082`). An appended record is inert on those paths.
+7. **Ids named in code.** 77 literals in code are DAT ids ([tables/hardcodedids.tsv](tables/hardcodedids.tsv), which also lists 22 literals no shipped DAT holds): every TROOPSD and SPECFCSD id, the six majors, eight minors (`0x38000341`, `343`, `344`, `380`..`383`, `38c`), one mission id for 21 of the 22 mission families, the five ABODESD ids and the UNIQUESD ids `0xf2000002`, `0xf3000003`, `0xf8000008`, `0xf9000009`, `0xfa00000a` that new-game stage 9 (`FUN_00519910`) creates one by one (the stage fails when any is missing). The AI names one ship class per side (`FUN_004198a0`: Alliance `0x1400004a`, Empire `0x14000082`). An appended record is inert on those paths.
 
 ## Per file
 
@@ -81,6 +81,13 @@ Every family a shipped record carries is registered except FLEETSD record 5, who
 5. **More than three producer families:** the side object's slots and `FUN_0052e580`, `FUN_00567880`, `FUN_00567c90`.
 
 The port's mod loader rejects records with new ids (`crates/rebellion-data/src/mods.rs`, `agent_docs/mod-surface.md`); allowing them is an architecture change.
+
+
+## Tables
+
+- [tables/recordfactories.tsv](tables/recordfactories.tsv): each entity DAT's header count and range, file and memory record sizes, record factory and RCDATA id.
+- [tables/familyregistry.tsv](tables/familyregistry.tsv): the 58 family-to-class registrations (`FUN_0051ebf0`) with their constructors and the DAT that ships each family.
+- [tables/hardcodedids.tsv](tables/hardcodedids.tsv): every DatId literal in code, its family, whether a shipped DAT holds it, and the functions that name it.
 
 ## Functions
 

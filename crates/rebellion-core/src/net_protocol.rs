@@ -446,26 +446,29 @@ pub enum NetMessage {
     VtableLoyaltyChanged,
     /// vtable +0x318 NotifyEnhancedLoyaltyChanged(old, new, ctx)
     VtableEnhancedLoyaltyChanged,
-    /// vtable +0x330 NotifyCombatStrengthChanged(old, new, ctx)
+    /// vtable +0x330 NotifyCommandKindChanged(old, new, ctx): character +0x96
     VtableCombatStrengthChanged,
     /// vtable +0x338 NotifyHyperdriveChanged(old, new, ctx)
     VtableHyperdriveChanged,
 
     // -----------------------------------------------------------------------
-    // Combat phase dispatch (CCombatUnit vtable)
-    // Source: cpp-class-hierarchy.md §1
+    // Flag-word handler slots. port: the variant names are the port's; the
+    // slots are the MissionMgr story-flag and CharacterMgr Emperor-flag
+    // handlers, not combat phases (cpp-class-hierarchy.md, "Flag-Word
+    // Handler Slots").
     // -----------------------------------------------------------------------
-    /// vtable +0x1c4 ResolveWeaponFire(side, ctx)
+    /// vtable +0x1c4: MissionMgr bit 2 LukeDagobah (setter `FUN_00543b60`)
     CombatPhaseWeaponFire,
-    /// vtable +0x1c8 ResolveShieldAbsorb(side, ctx)
+    /// vtable +0x1c8: MissionMgr bit 5 LukePalace (setter `FUN_00543bd0`)
     CombatPhaseShieldAbsorb,
-    /// vtable +0x1d0 ResolveHullDamage(side, ctx)
+    /// vtable +0x1d0: MissionMgr bit 7 LeiaPalace (setter `FUN_00543cb0`)
     CombatPhaseHullDamage,
-    /// vtable +0x1d4 ResolveFighterEngage(side, ctx)
+    /// vtable +0x1d4: MissionMgr bit 8 ChewbaccaPalace (setter `FUN_00543d20`)
     CombatPhaseFighterEngage,
-    /// vtable +0x1d8 ResolveShieldAlt(side, ctx) — alt path for family 0x71-0x72
+    /// vtable +0x1d8: called by `FUN_0055f650`, which writes the CharacterMgr
+    /// Emperor-at-Coruscant flag; on the Dagobah mission, the state-8 slot
     CombatPhaseShieldAlt,
-    /// vtable +0x1f4 ApplyWeaponDamage(side, ctx)
+    /// vtable +0x1f4: called by the bit-2 broadcaster `FUN_0054a1d0`
     CombatApplyWeaponDamage,
 }
 

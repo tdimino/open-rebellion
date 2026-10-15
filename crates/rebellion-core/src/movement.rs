@@ -831,6 +831,8 @@ pub fn apply_fleet_arrival(
         destination.fleets.sort_unstable();
         destination.fleets.dedup();
     }
+    // FUN_00508660 → FUN_0050a1b0: the system records the arriving side.
+    world.arrival_holders.insert(arrival.system, is_alliance);
     // port: an arrival ends a hold (`TroopTransportState::load`).
     troop_transport.release(arrival.fleet);
 

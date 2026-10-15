@@ -77,7 +77,12 @@ ships and eight fighters; six defenses, six manufacturing facilities, and two
 production facilities; 15 visible mission types; ten troop types; and six major
 characters, 54 minor characters, and nine special-forces types. A compound
 object ID uses the DAT family as its high byte and the source record ID as its
-low word. P65 sorts case-insensitively by source name with that identity as a
+low word. A row's title is its DAT record's name: the TEXTSTRA id in record
+`+0x30` (`FUN_00422620`), or the inline name at `+0x34` when that string is
+empty. A character's row therefore keeps its plain name while the character
+holds a rank (`FUN_004f17f0` names only the live object).
+
+P65 sorts case-insensitively by source name with that identity as a
 stable tie breaker, matching the alphabetical index behavior visible in the
 classified original capture. Missions are restricted to family `[0x50,0x80)`
 and then require the resolved mission record's `+0x5c` hidden flag to be zero.

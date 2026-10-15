@@ -80,7 +80,7 @@ fn draw_active_missions(
 
                 // Team lead, plus how many more members and decoys go along.
                 let commander_name = mission
-                    .lead_character()
+                    .lead_character(world)
                     .and_then(|key| world.characters.get(key))
                     .map_or("Unknown", |c| c.name.as_str());
                 let others = mission.team.len().saturating_sub(1);
@@ -157,5 +157,6 @@ fn mission_kind_display(kind: MissionKind) -> (&'static str, Color32) {
         MissionKind::SubdueUprising => ("[SUBD]", Color32::from_rgb(100, 200, 100)),
         MissionKind::DeathStarSabotage => ("[DSSB]", Color32::from_rgb(255, 60, 60)),
         MissionKind::Autoscrap => ("[AUTO]", Color32::from_rgb(120, 120, 120)),
+        MissionKind::Move => ("[MOVE]", Color32::from_rgb(120, 120, 120)),
     }
 }

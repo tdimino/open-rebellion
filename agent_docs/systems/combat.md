@@ -3,7 +3,7 @@ title: "Combat System"
 description: "Space battles through the tactical engine (played, simulated or headless), ground combat in combat.rs, and bombardment.rs"
 category: "agent-docs"
 created: 2026-03-14
-updated: 2026-10-14
+updated: 2026-10-15
 tags: [combat, space-combat, ground-combat, simulation]
 ---
 
@@ -61,8 +61,10 @@ session without its window (`BattleSession::simulate_to_end`, `FUN_0040a050`
 state 8), then shows the normal Battle Results. `tactical::apply::apply_results`
 writes hulls and squadrons back by `TacticalShip::fleet` /
 `TacticalFighter::fleet`. Every fleet a side has at the system takes part. A
-withdrawn ship survives and hyperspaces to the nearest friendly or neutral
-system; after Simulate the results name that system for the player's fleet.
+withdrawn ship survives and hyperspaces to the first system the retreat
+chain accepts (`post_battle::retreat_destination`: the nearest of its side
+not blockaded, else the nearest of its side); after Simulate the results
+name that system for the player's fleet.
 When only some of a fleet's survivors withdrew (a ship whose hyperdrive was
 knocked out stays), the ones that withdrew leave as a new fleet with the
 squadrons aboard them, and the rest hold the system (port: the original's
@@ -129,7 +131,7 @@ original resolves regiment against regiment is open (`or-q-regiment-combat-eaxn`
 
 ## Effect Application
 
-- Space: `core::tactical::apply::apply_results` writes hulls and squadrons back by `TacticalShip::fleet` / `TacticalFighter::fleet`, moves withdrawn ships, and removes destroyed units and empty fleets.
+- Space: `core::tactical::apply::apply_results` writes hulls and squadrons back by `TacticalShip::fleet` / `TacticalFighter::fleet`, moves withdrawn ships, removes destroyed units and empty fleets, then runs the post-battle pass (`core::post_battle`, `FUN_00516ef0`): the loser's fleets and system squadrons stay at a system of their own or leave for the chain's first accepted place, and are destroyed when none accepts them (`ghidra/notes/system-squadrons-combat.md`).
 - Ground: `apply_ground_combat_result_inner` (integrator) updates `TroopUnit.regiment_strength` and removes destroyed troops.
 
 ## Source

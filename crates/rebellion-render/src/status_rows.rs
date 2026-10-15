@@ -15,6 +15,7 @@ use rebellion_core::ids::{
 use rebellion_core::manufacturing::{ManufacturingState, ProductionArea};
 use rebellion_core::missions::{MissionFaction, MissionMember, MissionState, MissionTarget};
 use rebellion_core::movement::MovementState;
+use rebellion_core::officer_rank::{rank_holder, CommandKind, CommandPost};
 use rebellion_core::troop_transport::{RegimentLeg, TroopTransportState};
 use rebellion_core::world::{CapitalShipClass, GameWorld, ShipInstance};
 
@@ -119,10 +120,20 @@ const fn yes_no(value: bool) -> &'static str {
     }
 }
 
-/// 34658 "Not Assigned". port: the port keeps no character command rank
-/// (`+0x96`), so a fleet's or system's Admiral, General and Commander rows
-/// always read it.
+/// 34658 "Not Assigned".
 const NOT_ASSIGNED: &str = "Not Assigned";
+
+/// A fleet's rank row: the name of its side's character holding `kind` in
+/// it (`FUN_004fd790` → `FUN_005006f0`, the name `FUN_004f62d0`), else
+/// "Not Assigned".
+fn fleet_officer(world: &GameWorld, key: FleetKey, is_alliance: bool, kind: CommandKind) -> String {
+    rank_holder(world, CommandPost::Fleet(key), kind, is_alliance)
+        .and_then(|holder| world.characters.get(holder))
+        .map_or_else(
+            || NOT_ASSIGNED.to_owned(),
+            |holder| holder.display_name().to_owned(),
+        )
+}
 
 /// The shared ETA row (`FUN_004fd2b0`): 34662 "ETA Destination:", 14356
 /// "Day " and the arrival day.
@@ -249,9 +260,18 @@ pub fn fleet_rows(sources: StatusSources<'_>, key: FleetKey) -> Option<Vec<Statu
     let troop_capacity: u32 = ships.iter().map(|(_, class)| class.troop_capacity).sum();
     let squadrons: u32 = fleet.fighters.iter().map(|entry| entry.count).sum();
     rows.extend([
-        row("Admiral:", NOT_ASSIGNED),
-        row("General:", NOT_ASSIGNED),
-        row("Commander:", NOT_ASSIGNED),
+        row(
+            "Admiral:",
+            fleet_officer(world, key, fleet.is_alliance, CommandKind::Admiral),
+        ),
+        row(
+            "General:",
+            fleet_officer(world, key, fleet.is_alliance, CommandKind::General),
+        ),
+        row(
+            "Commander:",
+            fleet_officer(world, key, fleet.is_alliance, CommandKind::Commander),
+        ),
         row("Number Of Ships", fleet.ship_count().to_string()),
         heading("Capacity:"),
         row("Fighter Squadrons:", fighter_capacity.to_string()),
@@ -719,7 +739,9 @@ fn target_name(world: &GameWorld, mission: &rebellion_core::missions::ActiveMiss
                 .special_forces
                 .get(key)
                 .map(|value| class_name(world, value.class_dat_id)),
-            MissionTarget::DeathStar(fleet) => fleet_label(world, fleet),
+            MissionTarget::DeathStar(fleet) | MissionTarget::Fleet(fleet) => {
+                fleet_label(world, fleet)
+            }
         })
     });
     object
@@ -852,7 +874,7 @@ pub fn status_view(sources: StatusSources<'_>, object: StatusObject) -> Option<S
                 side,
                 character_mini_resource_id(character.dat_id, character.is_major)
                     .map(|mini| (DllSource::Gokres, mini - 0x4000)),
-                character.name.clone(),
+                character.display_name().to_owned(),
                 character_rows(world, sources.missions.en_route(), key)?,
             )
         }
@@ -1729,6 +1751,7 @@ mod tests {
                 member: MissionMember::SpecialForce(unit),
                 mission_id: 1,
                 to: there,
+                fleet: None,
                 arrival: 15,
             },
         );
@@ -1766,6 +1789,7 @@ mod tests {
             member: MissionMember::Character(a),
             mission_id,
             to: here,
+            fleet: None,
             arrival,
         };
         states.missions = with_entry(&states.missions, "en_route", transit(id + 1, 50));

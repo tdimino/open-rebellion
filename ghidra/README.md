@@ -24,24 +24,24 @@ coverage is incomplete and tracked in the
 
 **Key finding:** All game logic lives in REBEXE.EXE. STRATEGY.DLL is a resource container (BMPs, strings, data tables). COMMON.DLL handles DirectPlay networking.
 
-## Scholar Documents (7 analysis docs, 6,049 lines)
+## Scholar Documents (7 analysis docs, 4,560 lines)
 
 | Document | Lines | What It Covers |
 |----------|-------|----------------|
-| `notes/annotated-functions.md` | 1,662 | Struct field layouts (+0x60 hull, +0x64 shield nibbles, +0x96 regiment strength, +0xac alive flag), renamed variables, 50 event IDs (0x127–0x370), game rules |
-| `notes/modders-taxonomy.md` | 805 | 10 game systems mapped for total conversion mods (Yuuzhan Vong, Thrawn's Revenge, KOTOR). Per-system function addresses, GNPRTB parameters, mod guidance |
-| `notes/rust-implementation-guide.md` | 647 | Maps decompiled C to Open Rebellion's stateless `advance()` pattern: space battles through the tactical engine, ground combat, bombardment pointers, `MstbTable`, 15 missing CapitalShipClass fields |
-| `notes/cpp-class-hierarchy.md` | 445 | CRebObject → CNotifyObject → CCombatUnit hierarchy. 19 vtable slots, 6 vtable pointer constants, field layouts, setter-notify-event pattern |
-| `notes/entity-system.md` | 668 | Characters (8 enhanced skills, Force/Jedi 6-tier, betrayal), game objects (5 destruction variants), fleets (4 events), factions (Alliance/Empire/Neutral bit encoding) |
-| `notes/mission-event-cookbook.md` | 724 | 9+ mission types (FUN_0050d5a0 13-case switch), 4 story event chains (Dagobah, Vader's Palace, Bounty Hunters, Jabba), event ID registry |
-| `notes/economy-systems.md` | 478 | Resources (energy/material at +0x5c–0x68), 5 ControlKind states, uprising tables (UPRIS1TB/2TB), blockade manufacturing halt, repair formulas |
+| `notes/annotated-functions.md` | 1,071 | Struct layouts (+0x60 hull, +0x64 shield/weapon nibbles, +0x96 CommandKind, +0xac prisoner bit), the story-check chain `FUN_00549910`, renamed variables, 50 event IDs (0x127-0x370), game rules |
+| `notes/modders-taxonomy.md` | 793 | 10 game systems categorized for total conversion mods (Yuuzhan Vong, Thrawn, KOTOR). Function addresses, GNPRTB params, mod guidance per system |
+| `notes/rust-implementation-guide.md` | 417 | Maps decompiled C to Open Rebellion's `advance()` pattern: space battles through the tactical engine, ground combat, bombardment pointers, `MstbTable`, 15 new CapitalShipClass fields |
+| `notes/cpp-class-hierarchy.md` | 434 | CRebObject → CNotifyObject classes by DAT family, master and side-view copies. 19 vtable slots, 6 vtable pointer constants, complete field layout, setter-notify-event pattern |
+| `notes/entity-system.md` | 678 | Characters (8 enhanced skills, Force fields (`force-users.md`), betrayal), game objects (5 destruction variants), fleets (4 events), factions (Alliance/Empire/Neutral bits) |
+| `notes/mission-event-cookbook.md` | 685 | Mission types by MISSNSD family, 4 story event chains (Dagobah, Vader, Palace, Bounty), event ID registry (0x12c-0x370), Thrawn Campaign example |
+| `notes/economy-systems.md` | 482 | Resources (energy/material at +0x5c-0x68), 5 ControlKind states, uprising (UPRIS1TB/2TB), blockade manufacturing halt, repair (GNPRTB 0x305/0x386), 36 system notif handlers |
 
 ## Combat Subsystem (3 dedicated docs)
 
 | Document | Subsystem | Key Functions |
 |----------|-----------|---------------|
 | `notes/space-combat.md` | The MissionMgr story-flag word `+0x58`; it applies no damage | FUN_00549910, FUN_00544030, FUN_005443f0 |
-| `notes/ground-combat.md` | Ground combat — troop iteration + per-unit resolution | FUN_00560d50, FUN_004ee350, FUN_005617b0 |
+| `notes/ground-combat.md` | Character move hook: clears CommandKind `+0x96` of a moved character or of the characters aboard a moved capital ship; Emperor-at-Coruscant flag (family `0x34`); no ground combat | FUN_00560d50, FUN_004ee350, FUN_005617b0 |
 | `notes/bombardment.md` | Bombardment orders 0x220-0x223: gate, Death Star, defence fire, hit rolls, support shifts | FUN_00582440, FUN_005637c0, FUN_0058d800, FUN_0058d990, FUN_0058dc10, FUN_0058df60, FUN_0058e320 |
 
 ## AI Pipeline (6 core functions fully traced)

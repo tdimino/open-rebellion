@@ -71,8 +71,9 @@ The module id and the DLL are tied only by this registration. A conversion that 
 ## Music
 
 - **Table:** `PTR_s_MDATA_300_006a8478[i]` points to `MDATA.(300+i)` for i = 0..15. The directory string `MDATA\` (`0x006a8590`) is joined to the install or data location. Music streams from loose files.
-- **Start and stop:** `FUN_00417520(track)` runs only for `track < 0x10` with the music switch on (`DAT_006a8470`): it stops the current track (`FUN_00417640`), sets `DAT_006b147c = track + 1`, builds the path and plays it (`FUN_00610c40`, then volume `FUN_00610cb0`). `MusicSwitch` and `MusicVolume` are registry values (`FUN_004173c0` reads, `FUN_004176e0` / `FUN_00417670` save; `game-options.md`). `FUN_00417610(track)` stops then plays, marking the track forced (flag 2).
-- **Default selector:** `FUN_0041d3b0` returns 0 without a session (`DAT_006b14e4` null), else `FUN_004369a0` → `FUN_00487fb0` → `FUN_0043a250(advice agent at session +0xc0)`. `FUN_0043a250` keeps a counter at `+0x190`: while it is above 0 it decrements and returns `rand(6)/2 + 1` (tracks 1..3); at 0 it resets to 3 and returns the agent's vtable slot `+0x1c`. The situational track therefore plays once in four calls.
+- **Start and stop:** `FUN_00417520(track)` runs only for `track < 0x10` with the music switch on (`DAT_006a8470`): it stops a playing track (`FUN_00417640`, which clears the forced flag `DAT_006b1490` bit 2), sets `DAT_006b147c = track + 1`, builds the path and plays it once (`FUN_00610c40`, then volume `FUN_00610cb0`). `MusicSwitch` and `MusicVolume` are registry values (`FUN_004173c0` reads, `FUN_004176e0` / `FUN_00417670` save; `game-options.md`). `FUN_00417610(track)` stops then plays, marking the track forced (flag 2).
+- **End of track:** `FUN_00417780` handles message `0x4c9` for the playing track: a forced track plays again, any other is replaced by the default selector's pick.
+- **Default selector:** `FUN_0041d3b0` returns 0 without a session (`DAT_006b14e4` null), else `FUN_004369a0` → `FUN_00487fb0` → `FUN_0043a250(advice agent at session +0xc0)`. `FUN_0043a250` keeps a counter at `+0x190`: while it is above 0 it decrements and returns `rand(6)/2 + 1` (tracks 1..3); at 0 it resets to 3 and returns the agent's vtable slot `+0x1c`. The situational track therefore plays once in four calls. The agent's constructor `FUN_00439320` sets the counter to 0, so a new game's first pick is situational; the save writes and reads it (`FUN_004397a0`, `FUN_00439550`). `rand(n)` is `FUN_0041cd80`: the session generator `DAT_006b14d8` through `FUN_005f5700`, 0 without a session.
 - **Situational tracks** (vtable slot `+0x1c`, switch on the agent's state byte `+0x170`; any other value → `rand(3) + 1`):
 
   | `+0x170` | 1 | 2 | 4 | `0x10` | `0x20` | `0x40` |
@@ -81,8 +82,8 @@ The module id and the DLL are tied only by this registration. A conversion that 
   | Empire agent (vtable `0x65c4a0`, `FUN_004c2700`) | 9 | 8 | 7 | 6 | 5 | 4 |
 
   hyp: `+0x170` is the agent's current situation flag; its writers (`FUN_004c27f0`, `FUN_004c0710`) are not read.
-- **Fixed tracks:** `FUN_0044f860` (Battle Alert) calls `FUN_00417610(10)` when the window's side `+0x9c == 1` (Alliance), `FUN_00417610(11)` otherwise. `FUN_0046f360` (battle result window) stores a track at `+0x18c` that `FUN_00470e70` plays on close: Alliance `0xc` or `0xd`, Empire `0xe` or `0xf`, by the report's result fields `+0x50` / `+0x54` (which of each pair is win and which loss is not settled; compare the branches with `battle-alert-lists.md`).
-- **Restart:** `FUN_004727a0` and `FUN_00422cb0` stop the track and restart it from the default selector; `FUN_00405050` and `FUN_004065ec` start it at game start. `FUN_004139a4` holds the string "Start Of Intro Music Failed." (hyp: the intro's own music start).
+- **Fixed tracks:** `FUN_0044f860` (Battle Alert) calls `FUN_00417610(10)` when the window's side `+0x9c == 1` (Alliance), `FUN_00417610(11)` otherwise. The alert's command handler `FUN_00450540` (its vtable at `0x659d70`) takes commands `0x65`, `0x66` and `0x67`, calls `FUN_0041ce60`, stops the music (`FUN_00417640`) and closes the window, so combat itself plays no music. `FUN_0046f360` (battle result window) stores a track at `+0x18c` and sets `+0x188`; the window's paint handler `FUN_00471200` calls `FUN_00470e70`, which plays it forced and clears `+0x188`, so the track starts when the window first paints. The report's winner `+0x50` against the window's side picks it: the player's side won → `0xc` (Alliance) or `0xe` (Empire); no winner (`+0x50 == 0`), the player's side lost, or the other side won → `0xd` or `0xf`. The headline bitmaps on the same branches confirm the reading (10759 Alliance victory or 10758 Empire defeated with `0xc`; 10757 Alliance defeated with `0xd`). The window's close, `FUN_004727a0` (vtable `0x65a300`, slot `+0x30`), stops the track, starts the default selector's pick and requests the close (`FUN_00606960`).
+- **Restart:** `FUN_00405050` (the menu window's creation) starts the default selector's pick, track 0 without a session. The cockpit window `FUN_00422ce0` calls `FUN_00422cb0`, which starts the default selector's pick when `+0xb4` is set, on its creation and on message `0x402`, a movie's last frame (`movies.md`), after rereading the music settings (`FUN_004173c0`). The switch's save handler `FUN_004176e0` stops and starts the music. `FUN_004139a4` holds the string "Start Of Intro Music Failed." (hyp: the intro's own music start).
 - **Audio engine:** `FUN_00610d00` creates DirectSound (`FUN_00610e30`, `FUN_00611330`) and an MCI sequencer device (`FUN_00611e90`, device type `0x204`); hyp: the shipped files never use the MIDI device. Smacker audio goes through DirectSound (`FUN_00611dc0` calls `SmackSoundUseDirectSound`).
 
 ## Mod surface
@@ -121,14 +122,16 @@ What a total conversion that replaces or adds audio must change:
 | [FUN_004173c0](FUN_004173c0.c), [FUN_004176e0](FUN_004176e0.c), [FUN_00417670](FUN_00417670.c) | Music init, switch and volume (registry) |
 | [FUN_0041d3b0](FUN_0041d3b0.c), [FUN_004369a0](FUN_004369a0.c), [FUN_00487fb0](FUN_00487fb0.c), [FUN_0043a250](FUN_0043a250.c) | Default track selector |
 | [FUN_004c48e0](FUN_004c48e0.c), [FUN_004c2700](FUN_004c2700.c) | Alliance / Empire agent situational track (vtable slot 7) |
-| [FUN_0044f860](FUN_0044f860.c), [FUN_0046f360](FUN_0046f360.c), [FUN_00470e70](FUN_00470e70.c) | Battle Alert (tracks 10/11) and result window (12..15) |
+| [FUN_00417780](FUN_00417780.c) | End of track: replay a forced track, else the default pick |
+| [FUN_0041cd80](FUN_0041cd80.c), [FUN_00439320](FUN_00439320.c) | Session random draw; advice agent constructor (`+0x190 = 0`) |
+| [FUN_0044f860](FUN_0044f860.c), [FUN_00450540](FUN_00450540.c), [FUN_0046f360](FUN_0046f360.c), [FUN_00470e70](FUN_00470e70.c), [FUN_00471200](FUN_00471200.c), [FUN_004727a0](FUN_004727a0.c) | Battle Alert (tracks 10/11, its commands stop the music) and result window (12..15, its close picks again) |
+| [FUN_00422cb0](FUN_00422cb0.c) | Cockpit restart from the default pick (creation, movie end) |
 | [FUN_00421ba0](FUN_00421ba0.c) | Video file switch |
 
 ## Open questions
 
 - Which DLL each of the 15 windows' `+0x1c` names for its control sounds (module 7 or 8).
 - Writers of the advice agents' `+0x170` (`1, 2, 4, 0x10, 0x20, 0x40`).
-- Win versus loss in tracks 12..15.
 - Whether `0x25a`, `0x25b`, `0x261` and `0x1f43` are ever played (computed-id callers of `FUN_00610c30` are not all traced).
 - The source of `FUN_00469de0`'s dialog record, and what plays module-13 briefing voices besides scripts (`FUN_0042b1d0`, `FUN_00404440`).
 - The family behind each `base + index` tactical event caller.

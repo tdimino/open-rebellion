@@ -689,8 +689,10 @@ ends with 5, and so does a team whose members were all deleted.
 
 - The setup sets `+0x28 +0x2c` only with `+0x24` and `+0x30` only with
   `+0x20`, so the port folds each kind flag into its walk flag.
-- With no officer ranks, the officer terms of the decoy and detection rolls
-  (`espionage * G3588 / 100`, `espionage * G3589 / 100`) are 0 and omitted.
+- The officer is the side's holder of the detector's rank at the detector's
+  fleet, or at the system for a regiment or a system squadron
+  (`officer_rank::rank_holder`); its espionage and combat are its effective
+  skills. A capture records the captor's side, not the officer's key.
 - A captured member's capture applies after the run, so the run marks it
   gone from its lists at once, as it does a destroyed special force.
 - Only a decoy decoys, and the lists that skip decoying members never meet

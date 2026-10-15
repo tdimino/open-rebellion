@@ -16,6 +16,7 @@ use rebellion_core::ids::{
 };
 use rebellion_core::manufacturing::ProductionArea;
 use rebellion_core::missions::MissionMember;
+use rebellion_core::officer_rank::CommandKind;
 
 use crate::bmp_cache::BmpCache;
 use crate::cockpit::{CockpitFaction, CockpitLayout, CockpitViewport};
@@ -30,6 +31,8 @@ pub enum ObjectMenuCommand {
     ConfirmedMove,
     Mission,
     Command,
+    /// A Command submenu order (`0x260..0x263`).
+    Rank(CommandKind),
     Encyclopedia,
     Status,
     Retire,
@@ -200,6 +203,47 @@ const COMMAND: ObjectMenuItem = item(
     "Command",
     true,
 );
+/// The Command submenu's orders, in sort-key order: None (402), Admiral
+/// (406), General (408), Commander (409); each record's word 10 is the
+/// check mark 11902.
+const COMMAND_RANKS: [ObjectMenuItem; 4] = [
+    item(
+        0x260,
+        ObjectMenuCommand::Rank(CommandKind::None),
+        402,
+        12354,
+        "None",
+        false,
+    ),
+    item(
+        0x262,
+        ObjectMenuCommand::Rank(CommandKind::Admiral),
+        406,
+        12358,
+        "Admiral",
+        false,
+    ),
+    item(
+        0x263,
+        ObjectMenuCommand::Rank(CommandKind::General),
+        408,
+        12360,
+        "General",
+        false,
+    ),
+    item(
+        0x261,
+        ObjectMenuCommand::Rank(CommandKind::Commander),
+        409,
+        12356,
+        "Commander",
+        false,
+    ),
+];
+
+/// The bitmap record word 10 names, drawn for a checked item.
+const CHECK_BITMAP: u32 = 11902;
+
 const ENCYCLOPEDIA: ObjectMenuItem = item(
     0x100,
     ObjectMenuCommand::Encyclopedia,
@@ -302,6 +346,8 @@ const PRODUCER_RENAME: ObjectMenuItem = item(
 pub struct ObjectMenuRow {
     pub item: ObjectMenuItem,
     pub enabled: bool,
+    /// The order's `+0x14`: the row draws its word-10 bitmap.
+    pub checked: bool,
 }
 
 impl ObjectMenuRow {
@@ -309,9 +355,14 @@ impl ObjectMenuRow {
     pub const fn entry(&self) -> GameMenuEntry<'static> {
         GameMenuEntry {
             label: self.item.label,
-            icon: None,
+            icon: if self.checked {
+                Some(CHECK_BITMAP)
+            } else {
+                None
+            },
             enabled: self.enabled,
             submenu: self.item.submenu,
+            children: &[],
         }
     }
 }
@@ -361,10 +412,14 @@ impl ObjectMenuRow {
 /// - Encyclopedia is enabled for a single selection.
 /// - Status is enabled for any single selection that is not a system
 ///   (`FUN_0051d990`, `ghidra/notes/status-window.md`).
-/// - port: a character's or special force's Move and Confirmed Move,
-///   Command, Retire and the other fleet orders stay disabled until their
-///   windows and orders are ported. In the original, Command is a submenu
-///   parent.
+/// - A submenu parent row is always enabled (`FUN_00442590` builds it with
+///   flags 8 alone); its orders are [`submenu_rows`]. port: Planetary
+///   Bombardment stays disabled, with no rows under it, until its four
+///   targets are ported as menu orders.
+/// - A character's or special force's Move and Confirmed Move are
+///   enabled when `gates.member_move` says so (`FUN_0053c100`).
+/// - port: Retire and the other fleet orders stay disabled until their
+///   windows and orders are ported.
 #[must_use]
 pub fn object_menu_rows(selection: Option<MenuObject>, gates: OrderGates) -> Vec<ObjectMenuRow> {
     // A fleet icon's Move rows act on the system's fleets of the player's
@@ -380,6 +435,10 @@ pub fn object_menu_rows(selection: Option<MenuObject>, gates: OrderGates) -> Vec
         )
     );
     let troop = matches!(selection, Some(MenuObject::Troop(_)));
+    let member = matches!(
+        selection,
+        Some(MenuObject::Character(_) | MenuObject::SpecialForce(_))
+    );
     let fleet_entry = matches!(selection, Some(MenuObject::Fleet(_)));
     let ship = matches!(selection, Some(MenuObject::Ship { .. }));
     let producer = matches!(selection, Some(MenuObject::Producer { .. }));
@@ -422,6 +481,7 @@ pub fn object_menu_rows(selection: Option<MenuObject>, gates: OrderGates) -> Vec
         .chain(&[ENCYCLOPEDIA, STATUS])
         .map(|&item| ObjectMenuRow {
             item,
+            checked: false,
             enabled: match item.command {
                 ObjectMenuCommand::Mission => gates.mission,
                 ObjectMenuCommand::Move => {
@@ -429,14 +489,18 @@ pub fn object_menu_rows(selection: Option<MenuObject>, gates: OrderGates) -> Vec
                         || (troop && gates.troop_move)
                         || (squadron && gates.squadron_move)
                         || (ship && gates.ship_move)
+                        || (member && gates.member_move)
                 }
                 ObjectMenuCommand::CreateFleet => ship && gates.ship_move,
                 ObjectMenuCommand::Rename => (fleet_entry || ship) && gates.rename,
                 ObjectMenuCommand::Destination => gates.destination,
                 ObjectMenuCommand::Stop => producer && gates.stop,
                 ObjectMenuCommand::Build => producer && gates.build,
-                ObjectMenuCommand::ConfirmedMove => fleet && gates.fleet_move,
+                ObjectMenuCommand::ConfirmedMove => {
+                    (fleet && gates.fleet_move) || (member && gates.member_move)
+                }
                 ObjectMenuCommand::Scrap => gates.scrap,
+                ObjectMenuCommand::Command => true,
                 ObjectMenuCommand::Encyclopedia => selection.is_some(),
                 // FUN_0051d990: a single selection that is not a system.
                 ObjectMenuCommand::Status => {
@@ -450,6 +514,31 @@ pub fn object_menu_rows(selection: Option<MenuObject>, gates: OrderGates) -> Vec
     rows
 }
 
+/// The rows of `parent`'s submenu, in sort-key order. A character's Command
+/// lists the four ranks (`FUN_004f2400`); each is listed always (`+0x10`,
+/// `FUN_0040f340`), enabled by `gates.command` (`+0x18`) and checked for the
+/// rank the character holds (`+0x14`, `FUN_00580d80` → `FUN_004ed680`:
+/// never None).
+#[must_use]
+pub fn submenu_rows(parent: ObjectMenuItem, gates: OrderGates) -> Vec<ObjectMenuRow> {
+    if parent.command != ObjectMenuCommand::Command {
+        return Vec::new();
+    }
+    COMMAND_RANKS
+        .iter()
+        .map(|&item| {
+            let ObjectMenuCommand::Rank(kind) = item.command else {
+                unreachable!("COMMAND_RANKS holds rank orders only");
+            };
+            ObjectMenuRow {
+                item,
+                enabled: gates.command.enabled(kind),
+                checked: kind != CommandKind::None && gates.command.held == kind,
+            }
+        })
+        .collect()
+}
+
 /// Whether the selection passes each order's own rule, its `+0x18` slot.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct OrderGates {
@@ -460,6 +549,9 @@ pub struct OrderGates {
     /// fleet) its fleet orbits a system (`TroopTransportState::move_squadron`).
     pub squadron_move: bool,
     pub ship_move: bool,
+    /// A character's or special force's Move and Confirmed Move
+    /// (`MissionState::move_order_enabled`, `FUN_0053c100`).
+    pub member_move: bool,
     /// Rename (0x203): the selection is the player's and can take a name
     /// (`FUN_004f6e60` refuses a destroyed object).
     pub rename: bool,
@@ -476,6 +568,31 @@ pub struct OrderGates {
     /// Scrap (0x200): every object of the order is the player's and not en
     /// route (`FUN_004f9860`, `FUN_004ffa70`; `rebellion_core::scrap`).
     pub scrap: bool,
+    /// The Command submenu's orders, for a character.
+    pub command: CommandGates,
+}
+
+/// The Command submenu orders' rules for the selected character.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct CommandGates {
+    /// Whether each order passes `+0x18` (`FUN_0055f160` → `FUN_004ed750`;
+    /// `rebellion_core::officer_rank::command_refusal`), in the order None,
+    /// Commander, Admiral, General.
+    pub allowed: [bool; 4],
+    /// The rank the character holds (`+0x96`).
+    pub held: CommandKind,
+}
+
+impl CommandGates {
+    #[must_use]
+    pub const fn enabled(self, kind: CommandKind) -> bool {
+        self.allowed[match kind {
+            CommandKind::None => 0,
+            CommandKind::Commander => 1,
+            CommandKind::Admiral => 2,
+            CommandKind::General => 3,
+        }]
+    }
 }
 
 /// An open object pop-up menu.
@@ -483,6 +600,8 @@ pub struct OrderGates {
 pub struct ObjectMenuState {
     selection: Option<MenuObject>,
     rows: Vec<ObjectMenuRow>,
+    /// Each row's submenu rows, empty for a row that has none.
+    submenus: Vec<Vec<ObjectMenuRow>>,
     /// The 640 by 480 canvas point of the right-button release.
     point: (f32, f32),
 }
@@ -491,9 +610,15 @@ impl ObjectMenuState {
     /// Open the menu for `selection` at a canvas `point`.
     #[must_use]
     pub fn new(selection: Option<MenuObject>, gates: OrderGates, point: (i16, i16)) -> Self {
+        let rows = object_menu_rows(selection, gates);
+        let submenus = rows
+            .iter()
+            .map(|row| submenu_rows(row.item, gates))
+            .collect();
         Self {
             selection,
-            rows: object_menu_rows(selection, gates),
+            rows,
+            submenus,
             point: (f32::from(point.0), f32::from(point.1)),
         }
     }
@@ -541,7 +666,20 @@ pub fn draw_object_menu(
     input_enabled: bool,
 ) -> Option<(ObjectMenuCommand, Option<MenuObject>)> {
     let open = menu.as_ref()?;
-    let entries: Vec<GameMenuEntry<'static>> = open.rows.iter().map(ObjectMenuRow::entry).collect();
+    let children: Vec<Vec<GameMenuEntry<'static>>> = open
+        .submenus
+        .iter()
+        .map(|rows| rows.iter().map(ObjectMenuRow::entry).collect())
+        .collect();
+    let entries: Vec<GameMenuEntry<'_>> = open
+        .rows
+        .iter()
+        .zip(&children)
+        .map(|(row, children)| GameMenuEntry {
+            children,
+            ..row.entry()
+        })
+        .collect();
     let placement = GameMenuPlacement {
         owner: galaxy_owner(layout),
         point: open.point,
@@ -566,6 +704,11 @@ pub fn draw_object_menu(
             *menu = None;
             Some(chosen)
         }
+        GameMenuResponse::ChosenChild { row, child } => {
+            let chosen = (open.submenus[row][child].item.command, open.selection);
+            *menu = None;
+            Some(chosen)
+        }
     }
 }
 
@@ -580,11 +723,16 @@ mod tests {
         troop_move: false,
         squadron_move: false,
         ship_move: false,
+        member_move: false,
         rename: false,
         destination: false,
         stop: false,
         build: false,
         scrap: false,
+        command: CommandGates {
+            allowed: [false; 4],
+            held: CommandKind::None,
+        },
     };
 
     fn labels(rows: &[ObjectMenuRow]) -> Vec<&'static str> {
@@ -716,11 +864,13 @@ mod tests {
             troop_move: true,
             squadron_move: true,
             ship_move: true,
+            member_move: true,
             rename: false,
             destination: false,
             stop: false,
             build: false,
             scrap: false,
+            command: CommandGates::default(),
         };
         assert_eq!(
             enabled(&object_menu_rows(fleet, gates)),
@@ -730,11 +880,23 @@ mod tests {
             enabled(&object_menu_rows(fleet, OrderGates::default())),
             ["Encyclopedia", "Status"]
         );
-        // port: a character's move is not ported, so its rows stay disabled.
+        // A character's two rows share its own rule (FUN_0053c100 over the
+        // 0x241, member_move); Command is a submenu parent, which
+        // FUN_00442590 builds enabled.
         let character = Some(MenuObject::Character(CharacterKey::default()));
         assert_eq!(
             enabled(&object_menu_rows(character, gates)),
-            ["Encyclopedia", "Status"]
+            ["Move", "Confirmed Move", "Command", "Encyclopedia", "Status"]
+        );
+        assert_eq!(
+            enabled(&object_menu_rows(
+                character,
+                OrderGates {
+                    member_move: false,
+                    ..gates
+                }
+            )),
+            ["Command", "Encyclopedia", "Status"]
         );
     }
 
@@ -892,11 +1054,13 @@ mod tests {
             troop_move: true,
             squadron_move: true,
             ship_move: true,
+            member_move: true,
             rename: false,
             destination: false,
             stop: true,
             build: true,
             scrap: false,
+            command: CommandGates::default(),
         };
         assert_eq!(
             enabled(&object_menu_rows(icon(Quadrant::Fleets), every_gate)),
@@ -973,6 +1137,7 @@ mod tests {
         });
         let gates = OrderGates {
             ship_move: true,
+            member_move: true,
             ..OrderGates::default()
         };
         assert_eq!(
@@ -1064,15 +1229,16 @@ mod tests {
     #[test]
     fn mission_follows_the_order_rule_and_encyclopedia_needs_one_selection() {
         // FUN_0051fe20 enables Mission; FUN_0051d990 enables Encyclopedia
-        // for a single selection.
+        // for a single selection; FUN_00442590 builds the Command submenu
+        // parent enabled.
         let character = Some(MenuObject::Character(CharacterKey::default()));
         assert_eq!(
             enabled(&object_menu_rows(character, MISSION_GATE)),
-            ["Mission", "Encyclopedia", "Status"]
+            ["Mission", "Command", "Encyclopedia", "Status"]
         );
         assert_eq!(
             enabled(&object_menu_rows(character, OrderGates::default())),
-            ["Encyclopedia", "Status"]
+            ["Command", "Encyclopedia", "Status"]
         );
     }
 
@@ -1206,8 +1372,9 @@ mod tests {
             GameMenuEntry {
                 label: "Command",
                 icon: None,
-                enabled: false,
+                enabled: true,
                 submenu: true,
+                children: &[],
             }
         );
         let mission = rows.iter().find(|row| row.item.label == "Mission").unwrap();

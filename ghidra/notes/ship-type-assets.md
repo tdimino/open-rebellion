@@ -71,7 +71,7 @@ Answers task-graph node `or-q-mod-ships-dc1b` (epic `or-ep-mod-surface-vdch`), f
 
 ## Evidence
 
-- **The registry.** `FUN_00597610` stores 38 names (`CALAMARI` .. `DREADNAUGHT_A`, 14 more Alliance, `STRIKE_CRUISER` .. `DREADNAUGHT_E`, `XWING`.. `ASSAULT_GUNSHIP`, `DEATH_STAR`) and writes `param_1[0x9a..0xbf] = 0x740..0x74e, 0x780..0x78e, 0x642, 0x643, 0x640, 0x641, 0x680..0x683, 0x788`. The registry order is not DAT order: ordinals 11-14 are DAT ids 77, 75, 76, 78 and the Empire's DatId 136 (Death Star) is ordinal 37 (read). Join to the DATs: [ordtable.tsv] (38 rows: ordinal, name, DAT kind, record id, family, side, class key, GOKRES base `+0x4000`, ENCYBMAP key `+0x1000`, mesh or sprite base, HUD id).
+- **The registry** ([tables/ordtable.tsv](tables/ordtable.tsv)). `FUN_00597610` stores 38 names (`CALAMARI` .. `DREADNAUGHT_A`, 14 more Alliance, `STRIKE_CRUISER` .. `DREADNAUGHT_E`, `XWING`.. `ASSAULT_GUNSHIP`, `DEATH_STAR`) and writes `param_1[0x9a..0xbf] = 0x740..0x74e, 0x780..0x78e, 0x642, 0x643, 0x640, 0x641, 0x680..0x683, 0x788`. The registry order is not DAT order: ordinals 11-14 are DAT ids 77, 75, 76, 78 and the Empire's DatId 136 (Death Star) is ordinal 37 (read). Join to the DATs: [ordtable.tsv] (38 rows: ordinal, name, DAT kind, record id, family, side, class key, GOKRES base `+0x4000`, ENCYBMAP key `+0x1000`, mesh or sprite base, HUD id).
 - **Mesh bases.** `FUN_005ab650` stores `0x7da, 0x7e4 .. 0x866` to `+0xa50..+0xa88` (ordinals 0-14, 2010-2150) and `0x9ce .. 0xa46` to `+0xa8c..+0xabc` (ordinals 15-28, 2510-2630), then `0xa50` to `+0xac0` (2640, the 29th). The consumer `*(short *)(mgr + ordinal*4 + 0xa50)` is at `FUN_005ab650` and `FUN_005ab0e0`. `FUN_005ac6c0`/`FUN_005acaf0`/`FUN_005acf80` save and load `0x100` such slots, so the on-disk array is fixed at 256 entries even though 29 are used.
 - **Fighter literals.** `FUN_005ab650` `case 0x1d: 4000; 0x1e: 0xfaa; 0x1f: 0xfb4; 0x20: 0xfbe; 0x21: 0x1004; 0x22: 0x100e; 0x23: 0x1018; 0x24: 0x1022` for the player side, and `0xfa4, 0xfae, 0xfb8, 0xfc2, 0x1008, 0x1012, 0x101c, 0x1026` otherwise; unknown type goes to `0x541`.
 - **Voice.** `FUN_005bae60` sets 0x13d (317) event slots; the first 0x32c8 (13000) block is weapon and effect WAVEs, the rest voice ids. `FUN_005ba980` treats events `< 0x20` as sound effects (flag 6) and others as voices (flag 0xe). No ship type reaches this table.
@@ -97,7 +97,7 @@ Proposed follow-up questions:
 
 - What exactly does `FUN_005c12d0` do with the ordinal checks in `FUN_005b1f60` (start: `FUN_005b1f60`, `FUN_005c12d0`)?
 - Where does a type-301 `.x` file name its texture, and does the loader accept a new base without a table entry (start: `FUN_005d26c0`, `FUN_005c1f10`)?
-- Which of the 47 `[0x14,0x1c)` testers would break if capital ships were given families beyond `0x1b`, and which need the Death Star band `0x18` (start: `familybands.tsv`)?
+- Which of the 47 `[0x14,0x1c)` testers would break if capital ships were given families beyond `0x1b`, and which need the Death Star band `0x18` (start: [tables/familybands.tsv](tables/familybands.tsv))?
 - Does the registry names array (`param_1+0x28`, 0x26 slots) bound the 39th type, and what reads the names (start: `FUN_00597610`, `FUN_005975d0`, `FUN_005a02c0`)?
 
 ## Open questions

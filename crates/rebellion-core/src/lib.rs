@@ -25,6 +25,8 @@ mod mission_planning;
 pub mod missions;
 pub mod movement;
 pub mod net_protocol;
+pub mod officer_rank;
+pub mod post_battle;
 pub mod repair;
 pub mod research;
 pub mod resources;

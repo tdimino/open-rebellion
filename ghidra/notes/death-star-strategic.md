@@ -26,7 +26,7 @@ Answers task-graph node `or-q-mod-superweapons-awzg` (epic `or-ep-mod-surface-vd
 | CAPSHPSD record 136: `family_id` 24, TEXTSTRA 10120, `is_empire` 1, `is_alliance` 0; the other 29 records are family 20 | `CAPSHPSD.DAT` | DAT |
 | Capital-ship iterators over literal ranges: `[0x14,0x18)` (`FUN_005001b0`), `[0x18,0x1c)` (`FUN_005003d0`, ctor `FUN_00500450`), `[0x14,0x1c)` (`FUN_00502db0`) | | literal |
 | First Death Star in the game `FUN_005061f0`; "is this id a Death Star" `FUN_00506300` / `FUN_00506260` | | literal |
-| The object factory registry (`FUN_0051ebf0`, `FUN_00540540`, lookup `FUN_00540500`, used by `FUN_0053f100`, 59 families) holds capital-ship factories for `0x14` (`FUN_004fffe0`, vtable `0x0065d650`) and `0x18` (`FUN_005002a0`, vtable `0x0065d930`) only | | table (code) |
+| The object factory registry (`FUN_0051ebf0`, `FUN_00540540`, lookup `FUN_00540500`, used by `FUN_0053f100`, 58 families) holds capital-ship factories for `0x14` (`FUN_004fffe0`, vtable `0x0065d650`) and `0x18` (`FUN_005002a0`, vtable `0x0065d930`) only | | table (code) |
 | The two ship vtables differ only in the destructor, slot 1 and the clone slot (57); the class is a type tag | | literal |
 | Class lookup: CAPSHPSD covers `[0x14,0x1c)`; index = low 24 bits (136 → `0x18000088`) | `FUN_00567790`, `FUN_0058ec90` | table |
 | A fleet "has a Death Star" when a child is in `[0x18,0x1c)` (`FUN_005003d0`, `FUN_00582440`, `FUN_00507ab0`, `FUN_0040b0e0`). The AI record flag `0x10` (`+0x38`, read by `FUN_004b1070`) comes from object `+0x50` bit 7 through `FUN_00433780`, not from the family | | literal |

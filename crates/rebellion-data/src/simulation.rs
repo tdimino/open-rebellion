@@ -176,7 +176,7 @@ pub fn run_simulation_tick(
     integrator.apply_regiment_arrivals(world, &regiments);
 
     // ── 3. Combat ────────────────────────────────────────────────────────
-    // FUN_0051ddf0 -> FUN_00516ef0 / FUN_00517270: a system fights on every
+    // FUN_0051ddf0 -> FUN_00517270: a system fights on every
     // pass that finds both sides present; when both remain, no result is
     // shown and the battle fires again next pass. There is no cooldown.
     let combat_triggers: Vec<_> = world
@@ -719,6 +719,10 @@ pub fn run_simulation_tick(
     // port: a fleet that gained its side's flagship class this tick, by a
     // build or a join on arrival, takes its signature name (fleet_name_bank).
     world.name_flagship_fleets();
+
+    // Officers who were captured, sent on a mission or moved off their post
+    // this tick lose their rank (FUN_004eeed0, FUN_00560d50).
+    rebellion_core::officer_rank::clear_lapsed_ranks(world);
 
     // ── 14. Victory check ────────────────────────────────────────────────
     integrator.emit_victory_check(&states.victory);

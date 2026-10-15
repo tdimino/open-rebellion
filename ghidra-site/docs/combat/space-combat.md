@@ -12,10 +12,10 @@ The functions from `FUN_005434b0` to `FUN_0054a770` belong to the
 MissionMgr. They test where the story characters are and set bits in the
 story-flag word at `+0x58`; they apply no damage and resolve no battle.
 Every space battle runs the tactical engine
-([simulate-runs-tactical-engine.md](simulate-runs-tactical-engine.md)).
+([simulate-runs-tactical-engine.md](https://github.com/tdimino/open-rebellion/blob/main/ghidra/notes/simulate-runs-tactical-engine.md)).
 The full story reading, with each bit's handler and mission, is
-[story-missions.md](story-missions.md) and
-[story-encounters.md](story-encounters.md).
+[story-missions.md](https://github.com/tdimino/open-rebellion/blob/main/ghidra/notes/story-missions.md) and
+[story-encounters.md](https://github.com/tdimino/open-rebellion/blob/main/ghidra/notes/story-encounters.md).
 
 ## Entry
 

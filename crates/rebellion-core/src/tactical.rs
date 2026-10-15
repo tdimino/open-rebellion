@@ -545,7 +545,7 @@ pub struct TacticalShip {
     /// Zero-based task-force assignment shown in the eight source HUD slots.
     pub task_force: u8,
     /// The strategic fleet this hull belongs to. Every fleet of a side at
-    /// the system fights (`FUN_00516ef0`), not only the lead one.
+    /// the system fights (`FUN_0040b0e0`), not only the lead one.
     pub fleet: Option<FleetKey>,
     /// Index into the fleet's `capital_ships` for damage application.
     pub fleet_ship_index: usize,
@@ -1051,7 +1051,7 @@ pub struct TacticalFighter {
     /// Capital-ship index reserved as this squadron's recovery carrier.
     pub recovery_target: Option<usize>,
     /// A squadron the battle system holds for its side, not carried by a
-    /// fleet (`FUN_00516ef0` adds it to the combat). Its
+    /// fleet (`FUN_0040b0e0` exports it after the fleets' units). Its
     /// `fleet_fighter_index` indexes the side's entries in `System::fighters`.
     pub held_by_system: bool,
 }
@@ -3234,7 +3234,7 @@ impl BattleSession {
 
         // Expand every fleet of each side at the system into individual
         // hulls, the lead fleet first, then seat the squadrons the system
-        // holds for it (FUN_00516ef0 marks each through FUN_004f78e0).
+        // holds for it (FUN_0040b0e0).
         let mut side_fleets: [Vec<FleetKey>; 2] = [Vec::new(), Vec::new()];
         for (force, is_attacker) in [(attacker_force, true), (defender_force, false)] {
             let fleets = &mut side_fleets[usize::from(!is_attacker)];
@@ -3884,7 +3884,7 @@ impl BattleSession {
     }
 
     /// Seat the squadrons `system` holds for a side as fighters that need no
-    /// carrier (`FUN_00516ef0`, `ghidra/notes/system-squadrons-combat.md`).
+    /// carrier (`FUN_0040b0e0`, `ghidra/notes/system-squadrons-combat.md`).
     /// hyp: they take their side's fighter line, as a fleet's squadrons do;
     /// where the original places them is untraced.
     fn expand_system_squadrons(

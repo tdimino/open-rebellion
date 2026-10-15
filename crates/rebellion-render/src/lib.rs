@@ -74,7 +74,7 @@ pub use advisor::set_advisor_asset_cache;
 pub use advisor::{
     draw_advisor, staged_wave, AdvisorFaction, AdvisorState, AdvisorVoice, CockpitStep,
 };
-pub use audio::{draw_audio_controls, AudioVolumeState, MusicContext, MusicTrack, SfxKind};
+pub use audio::{draw_audio_controls, AudioVolumeState, MdataTrack, MusicSelector, SfxKind};
 #[cfg(target_arch = "wasm32")]
 pub use bmp_cache::set_bmp_cache;
 #[cfg(not(target_arch = "wasm32"))]
@@ -93,7 +93,7 @@ pub use defenses_window::{
 #[cfg(target_arch = "wasm32")]
 pub use encyclopedia::set_encyclopedia_asset_cache;
 pub use encyclopedia::{
-    draw_encyclopedia, draw_encyclopedia_index_catalog, draw_encyclopedia_index_shell,
+    draw_encyclopedia_index_catalog, draw_encyclopedia_index_shell,
     draw_encyclopedia_surface, EncyclopediaState, EncyclopediaSurfaceState, EncyclopediaTab,
     OriginalEncyclopediaCatalog, OriginalEncyclopediaEntry, ENCYCLOPEDIA_INDEX_HEIGHT,
     ENCYCLOPEDIA_INDEX_WIDTH,
@@ -143,8 +143,8 @@ pub use missions_window::{
 };
 pub use panels::game_setup::{draw_game_setup, Difficulty, GameSetupAction, GameSetupState};
 pub use panels::{
-    draw_fleets, draw_missions, draw_mod_manager, draw_officers, draw_save_load, FleetsState,
-    ModInfo, ModManagerAction, ModManagerState, OfficersState, PanelAction, SaveLoadPanelState,
+    draw_fleets, draw_missions, draw_mod_manager, draw_save_load, FleetsState,
+    ModInfo, ModManagerAction, ModManagerState, PanelAction, SaveLoadPanelState,
     SaveSlotInfo,
 };
 pub use rebellion_core::tactical::resource_ids::{

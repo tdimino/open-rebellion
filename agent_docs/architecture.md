@@ -93,8 +93,8 @@ crates/rebellion-render/src/
 ├── message_log.rs      — Scrollable egui event feed, 7 color-coded categories (380 LOC)
 ├── fleet_movement.rs   — Diamond fleet icons, dashed route lines, ETA labels, fleet hover detection
 ├── fog.rs              — Dim overlays for unexplored/unseen systems
-├── audio.rs            — AudioVolumeState, SfxKind, MusicTrack, draw_audio_controls (egui widget); track choice is the port's, not the original selector (ghidra/notes/audio-dispatch.md)
-├── encyclopedia.rs     — 4-tab entity browser with BMP texture cache from EData/
+├── audio.rs            — AudioVolumeState, SfxKind, MdataTrack, MusicSelector, draw_audio_controls (egui widget); track choice is the port's, not the original selector (ghidra/notes/audio-dispatch.md)
+├── encyclopedia.rs     — the original Galactic Encyclopedia index and topic window over the DAT catalog
 ├── bmp_cache.rs        — DllSource enum, BMP/PNG texture cache with HD fallback, WASM path rebasing, named DLL resource ID catalog
 ├── cockpit.rs          — Faction cockpit chrome (top/bottom bars), 9 control buttons, CockpitViewport
 ├── tactical_view.rs    — The battle window: drawing, input, HUD and panels over rebellion_core::tactical (re-exported)
@@ -106,15 +106,10 @@ crates/rebellion-render/src/
 └── panels/
     ├── mod.rs           — PanelAction enum: panel, mission, save, and combat actions
     ├── game_setup.rs    — Galaxy size, difficulty, faction selection (replaces faction_select)
-    ├── officers.rs       — Character roster with skill bars, full detail view (Force, location, skills)
-    ├── fleets.rs         — Fleet roster: composition, assign/remove officers (joining is on the Fleet window)
-    ├── manufacturing.rs  — Production queue manager
+    ├── fleets.rs         — Fleet roster: composition and officers (characters board by Move)
     ├── missions.rs       — Active missions with progress and cancel; missions start from the object pop-up menu
-    ├── research.rs       — 3 tech tree tabs, active project progress, character assignment
-    ├── jedi.rs           — Force-sensitive roster, tier progression, training controls
     ├── bombardment.rs    — Orbital bombardment targeting: fleet selection, damage forecast, fire
     ├── death_star.rs     — Death Star: construction progress, superlaser targeting, movement orders
-    ├── loyalty.rs        — Loyalty dashboard: per-system danger, uprising risk, betrayal risk
     ├── save_load.rs      — Save/load UI: 10 slots, auto-save
     ├── mod_manager.rs    — Mod Manager: discover, enable/disable, reload, dependency display
     └── command_palette.rs — developer command palette: simulation and per-system interface commands (debug or native builds)
@@ -284,8 +279,8 @@ Round-trip validation is enforced inside `parse_and_dump` in `tools/dat-dumper/s
 7. `targeting::{capture_pointer, draw_targeting_cursor}` -- the galaxy view's targeting mode after the menu's Mission
 8. `draw_status_bar(ctx, world, clock, audio_vol)` -- bottom bar with speed/audio controls
 9. `draw_message_log(ctx, log, state)` -- scrollable event feed
-10. Panel functions: `draw_officers`, `draw_fleets`, `draw_missions`, `draw_research`, `draw_jedi`
-11. `draw_encyclopedia(ctx, world, state)` -- floating 4-tab entity browser
+10. Panel functions that only debug-build letter keys open: `draw_fleets`, `draw_missions`, `draw_bombardment`, `draw_death_star`
+11. `draw_encyclopedia_surface(ctx, cache, origin, scale, state, surface)` -- the original Galactic Encyclopedia index and topic window
 12. `draw_main_menu(ctx) -> MainMenuAction` -- title screen
 13. `draw_game_setup(ctx, state) -> GameSetupAction` -- new game config
 

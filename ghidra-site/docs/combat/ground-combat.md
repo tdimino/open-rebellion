@@ -11,8 +11,8 @@ updated: 2026-10-14
 `FUN_00560d50` is the character manager's hook run by the object-move
 dispatcher `FUN_00514a60`. It resolves no combat and has no gate on
 regiments (`0x10`..`0x13`) or special forces (`0x3c`..`0x3f`). Ground
-units and their art: [ground-unit-assets.md](ground-unit-assets.md);
-officer rank: [character-roster.md](character-roster.md); bombardment:
+units and their art: [ground-unit-assets.md](https://github.com/tdimino/open-rebellion/blob/main/ghidra/notes/ground-unit-assets.md);
+officer rank: [character-roster.md](https://github.com/tdimino/open-rebellion/blob/main/ghidra/notes/character-roster.md); bombardment:
 [bombardment.md](bombardment.md).
 
 ## Families it tests

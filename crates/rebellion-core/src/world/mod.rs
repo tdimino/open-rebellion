@@ -427,8 +427,10 @@ pub const DEATH_STAR_CLASS_ID: u32 = 136;
 
 impl CapitalShipClass {
     /// True for the Death Star class. Seeded classes carry the CAPSHPSD
-    /// record id; original runtime ids carry family byte `0x34`, the family
-    /// `FUN_00560d50` routes to the superlaser path `FUN_005617b0`.
+    /// record id. port: the family `0x34` clause has no source; `0x34` is the
+    /// Emperor's character family, and the original keys the Death Star on
+    /// capital-ship family `0x18` (`ghidra/notes/death-star-strategic.md`,
+    /// `or-port-death-star-family-qtde`).
     #[must_use]
     pub fn is_death_star(&self) -> bool {
         self.dat_id == DatId::new(DEATH_STAR_CLASS_ID) || self.dat_id.family() == 0x34
@@ -712,6 +714,18 @@ pub struct Character {
     /// picks among the side's characters without it (`FUN_0055ef30`,
     /// `FUN_0055fc80`) and sets it (`FUN_0055fe70` via `FUN_004f7480`).
     pub recruited: bool,
+
+    /// Officer rank (`+0x96`), given through the Command submenu
+    /// (`crate::officer_rank`).
+    #[serde(default)]
+    pub command_kind: crate::officer_rank::CommandKind,
+    /// The fleet or system the rank commands (`+0xa8`).
+    #[serde(default)]
+    pub command_post: Option<crate::officer_rank::CommandPost>,
+    /// TEXTSTRA names with each rank, Commander, Admiral, General: the name
+    /// id plus `0x6800`, `0x6c00`, `0x7000` (`FUN_004f17f0`).
+    #[serde(default)]
+    pub ranked_names: [String; 3],
 }
 
 impl Character {
@@ -740,6 +754,15 @@ impl Character {
         self.is_captive = false;
         self.captured_by = None;
         self.capture_tick = None;
+    }
+
+    /// The name the game shows: ranked while the character holds a rank
+    /// (`FUN_004f17f0`).
+    #[must_use]
+    pub fn display_name(&self) -> &str {
+        self.command_kind
+            .name_index()
+            .map_or(&self.name, |index| &self.ranked_names[index])
     }
 }
 
@@ -810,6 +833,9 @@ impl Default for Character {
             heritage_known: false,
             is_killed: false,
             recruited: false,
+            command_kind: crate::officer_rank::CommandKind::None,
+            command_post: None,
+            ranked_names: Default::default(),
         }
     }
 }
@@ -1397,7 +1423,7 @@ pub struct TroopUnit {
     /// The class definition (from TROOPSD.DAT).
     pub class_dat_id: DatId,
     pub is_alliance: bool,
-    /// Current regiment strength (C++ offset +0x96). Starts at class max, reduced by ground combat.
+    /// port: current regiment strength. Starts at class max, reduced by ground combat.
     pub regiment_strength: i16,
 }
 
@@ -1691,6 +1717,16 @@ pub struct GameWorld {
     /// end (`FUN_00509710` mode 1). `ghidra/notes/squadron-menu-and-transit.md`.
     #[serde(default)]
     pub squadron_transits: Vec<crate::troop_transport::SquadronTransit>,
+    /// Each system's side that last brought a fleet or squadron in
+    /// (`+0x78` bits 6..7, written by `FUN_00508660` → `FUN_0050a1b0`):
+    /// true for the Alliance. The post-battle pass gives a drawn battle to
+    /// the other side (`post_battle::pass_winner`).
+    #[serde(
+        default,
+        serialize_with = "crate::serde_ordered::serialize_hash_map",
+        deserialize_with = "crate::serde_ordered::deserialize_hash_map"
+    )]
+    pub arrival_holders: std::collections::HashMap<SystemKey, bool>,
 }
 
 /// The fleet record's name (`+0x34`, TEXTSTRA 11523): a fleet's name until

@@ -316,7 +316,7 @@ pub fn character_target(character: &rebellion_core::world::Character) -> Charact
 /// and a character aboard names its fleet, not its ship.
 fn character_text(world: &GameWorld, character: &rebellion_core::world::Character) -> String {
     if character.is_killed {
-        return format!("{} - Killed", character.name);
+        return format!("{} - Killed", character.display_name());
     }
     let location = character
         .current_fleet
@@ -329,8 +329,8 @@ fn character_text(world: &GameWorld, character: &rebellion_core::world::Characte
         })
         .unwrap_or_else(|| "Location Unknown".to_owned());
     match character_state(character) {
-        Some(state) => format!("{} - {location} ( {state} ) ", character.name),
-        None => format!("{} - {location}", character.name),
+        Some(state) => format!("{} - {location} ( {state} ) ", character.display_name()),
+        None => format!("{} - {location}", character.display_name()),
     }
 }
 
@@ -1061,6 +1061,9 @@ mod tests {
             heritage_known: false,
             is_killed: false,
             recruited: true,
+            command_kind: rebellion_core::officer_rank::CommandKind::None,
+            command_post: None,
+            ranked_names: Default::default(),
         }
     }
 

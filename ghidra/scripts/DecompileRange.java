@@ -2,7 +2,7 @@
 // Skips Unwind@ funclets and thunks. Writes FUN_xxxxxxxx.c per function and index.tsv:
 // entry, body bytes, name, caller count, callers, callees, referenced strings; and gaps.tsv:
 // spans of 32 bytes or more between function bodies that hold no function (undefined code
-// such as a refresh Ghidra never defined; recover it with CreateAndDecompileTargets.java).
+// such as a refresh Ghidra never defined; recover them all with RecoverGaps.java).
 // Usage with analyzeHeadless:
 //   -postScript DecompileRange.java OUTPUT_DIR 0x005e0000 0x005f0000 [MIN_BYTES]
 //@category OpenRebellion

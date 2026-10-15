@@ -269,7 +269,7 @@ The following panels could not be tested due to P1-DEF-001 (faction selection bu
 | Panel | Reason Not Tested |
 |-------|------------------|
 | Fleet Context Menu | Right-click on fleet diamond — no fleets visible at default camera position |
-| Character Detail View | Requires clicking character in Officers panel — panel click not tested |
+| Character Detail View | Requires a character's Status window from its pop-up menu — not tested |
 | Save/Load Panel | Cockpit button click not tested |
 | Mod Manager (Tab) | Not tested |
 | Tactical Combat | Requires combat to trigger |

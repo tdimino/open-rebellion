@@ -47,9 +47,16 @@ const MANDATORY: u32 = 0x40_0000;
 /// Set at construction; cleared when a planner takes the object
 /// (`FUN_0047b610`, `FUN_0047b730`).
 const UNASSIGNED: u32 = 0x80_0000;
-/// Officer rank 1 (`+0x96` = 1, `FUN_00402230`; ranks 2 and 3 are
-/// `0x1000000` and `0x2000000`).
-const OFFICER_RANK_1: u32 = 0x400_0000;
+/// The held officer rank's bit (`+0x96`, `FUN_00402230`): Commander
+/// `0x4000000`, Admiral `0x1000000`, General `0x2000000`.
+const fn officer_rank_bit(kind: crate::officer_rank::CommandKind) -> u32 {
+    match kind {
+        crate::officer_rank::CommandKind::None => 0,
+        crate::officer_rank::CommandKind::Commander => 0x400_0000,
+        crate::officer_rank::CommandKind::Admiral => 0x100_0000,
+        crate::officer_rank::CommandKind::General => 0x200_0000,
+    }
+}
 /// Reserved: a Diplomacy-capable object with diplomacy of 80 or more, or a
 /// research-capable one the side needs (`FUN_00402230`).
 const RESERVED: u32 = 0x800_0000;
@@ -76,7 +83,7 @@ fn capability(kind: MissionKind) -> Option<u32> {
         MissionKind::DeathStarSabotage => 0x80,
         MissionKind::InciteUprising => 0x100,
         MissionKind::Recruitment => 0x400,
-        MissionKind::Autoscrap => return None,
+        MissionKind::Autoscrap | MissionKind::Move => return None,
     })
 }
 
@@ -214,7 +221,7 @@ fn selectors(kind: MissionKind) -> Option<Selectors> {
         MissionKind::Sabotage => (SABOTAGE, 2, decoys(0x4, DecoyCap::Posture)),
         // FUN_00482180, FUN_00482330 (cap 4).
         MissionKind::DeathStarSabotage => (DS_SABOTAGE, 2, decoys(0x80, DecoyCap::Fixed(4))),
-        MissionKind::Autoscrap => return None,
+        MissionKind::Autoscrap | MissionKind::Move => return None,
     };
     Some(Selectors {
         team,
@@ -469,11 +476,7 @@ fn records(
         if missions.is_en_route(member) {
             flags |= EN_ROUTE;
         }
-        // hyp: the port has no officer rank (+0x96); a character in a fleet
-        // holds one.
-        if c.current_fleet.is_some() {
-            flags |= OFFICER_RANK_1;
-        }
+        flags |= officer_rank_bit(c.command_kind);
         records.push(agent_record(world, member, flags, caps));
     }
     for (key, unit) in &world.special_forces {
@@ -513,11 +516,13 @@ fn agent_record(
             continue;
         };
         // port: a kind with no MISSNSD record admits any members, as at
-        // creation.
+        // creation. FUN_005420d0 also runs the class validator's creation
+        // checks (FUN_0054c440), so only a major gets Recruitment.
         let legal = kind
             .record_id()
             .and_then(|id| world.mission_record(id))
-            .is_none_or(|record| members_allowed(world, record.members, [member]));
+            .is_none_or(|record| members_allowed(world, record.members, [member]))
+            && crate::missions::creation_refusal(world, kind, [member]).is_none();
         if legal {
             caps |= bit;
         }
@@ -818,6 +823,7 @@ mod tests {
             member: travelling,
             mission_id: 1,
             to: SystemKey::default(),
+            fleet: None,
             arrival: 9,
         });
         let mut planner = Planner::new(&world, &missions, &HashSet::new(), true, 1);
@@ -851,6 +857,7 @@ mod tests {
             member: busy,
             mission_id: 1,
             to: SystemKey::default(),
+            fleet: None,
             arrival: 9,
         });
         let mut planner = Planner::new(&world, &missions, &HashSet::new(), true, 1);

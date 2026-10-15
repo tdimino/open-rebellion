@@ -16,13 +16,13 @@ Provenance: until 2026-09-26, 2,752 `FUN_<address>.c` files were empty placehold
 
 | File | Lines | Content |
 |------|-------|---------|
-| [annotated-functions.md](annotated-functions.md) | 1,662 | Struct layouts (+0x60 hull, +0x64 shield/weapon nibbles, +0x96 strength, +0xac alive), renamed variables, 50 event IDs (0x127-0x370), game rules |
-| [modders-taxonomy.md](modders-taxonomy.md) | 805 | 10 game systems categorized for total conversion mods (Yuuzhan Vong, Thrawn, KOTOR). Function addresses, GNPRTB params, mod guidance per system |
-| [rust-implementation-guide.md](rust-implementation-guide.md) | 647 | Maps decompiled C to Open Rebellion's `advance()` pattern: space battles through the tactical engine, ground combat, bombardment pointers, `MstbTable`, 15 new CapitalShipClass fields |
-| [cpp-class-hierarchy.md](cpp-class-hierarchy.md) | 445 | CRebObject → CNotifyObject → CCombatUnit hierarchy. 19 vtable slots, 6 vtable pointer constants, complete field layout, setter-notify-event pattern |
-| [entity-system.md](entity-system.md) | 668 | Characters (8 enhanced skills, Force fields (force-users.md), betrayal), game objects (5 destruction variants), fleets (4 events), factions (Alliance/Empire/Neutral bits) |
-| [mission-event-cookbook.md](mission-event-cookbook.md) | 724 | Mission types by MISSNSD family, 4 story event chains (Dagobah, Vader, Palace, Bounty), event ID registry (0x12c-0x370), Thrawn Campaign example |
-| [economy-systems.md](economy-systems.md) | 478 | Resources (energy/material at +0x5c-0x68), 5 ControlKind states, uprising (UPRIS1TB/2TB), blockade manufacturing halt, repair (GNPRTB 0x305/0x386), 36 system notif handlers |
+| [annotated-functions.md](annotated-functions.md) | 1,071 | Struct layouts (+0x60 hull, +0x64 shield/weapon nibbles, +0x96 CommandKind, +0xac prisoner bit), the story-check chain `FUN_00549910`, renamed variables, 50 event IDs (0x127-0x370), game rules |
+| [modders-taxonomy.md](modders-taxonomy.md) | 793 | 10 game systems categorized for total conversion mods (Yuuzhan Vong, Thrawn, KOTOR). Function addresses, GNPRTB params, mod guidance per system |
+| [rust-implementation-guide.md](rust-implementation-guide.md) | 417 | Maps decompiled C to Open Rebellion's `advance()` pattern: space battles through the tactical engine, ground combat, bombardment pointers, `MstbTable`, 15 new CapitalShipClass fields |
+| [cpp-class-hierarchy.md](cpp-class-hierarchy.md) | 434 | CRebObject → CNotifyObject classes by DAT family, master and side-view copies. 19 vtable slots, 6 vtable pointer constants, complete field layout, setter-notify-event pattern |
+| [entity-system.md](entity-system.md) | 678 | Characters (8 enhanced skills, Force fields (force-users.md), betrayal), game objects (5 destruction variants), fleets (4 events), factions (Alliance/Empire/Neutral bits) |
+| [mission-event-cookbook.md](mission-event-cookbook.md) | 685 | Mission types by MISSNSD family, 4 story event chains (Dagobah, Vader, Palace, Bounty), event ID registry (0x12c-0x370), Thrawn Campaign example |
+| [economy-systems.md](economy-systems.md) | 482 | Resources (energy/material at +0x5c-0x68), 5 ControlKind states, uprising (UPRIS1TB/2TB), blockade manufacturing halt, repair (GNPRTB 0x305/0x386), 36 system notif handlers |
 
 ## Atlas
 

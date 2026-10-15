@@ -3334,19 +3334,15 @@ async function probeTacticalBattleAlertEntry(
 }
 
 function probeTacticalAudioRouting(folder, stable, consoleLines, ready) {
-  assert.equal(ready.tactical_music_mdata_id, 307);
+  // FUN_00450540: each Battle Alert command stops the music; combat plays none.
+  assert.equal(ready.tactical_music_mdata_id, null);
   assert.equal(ready.tactical_weapon_audio_wave_first, 13033);
   assert.equal(ready.tactical_weapon_audio_wave_last, 13054);
   assert.equal(ready.tactical_weapon_audio_variant_count, 22);
   assert.equal(ready.tactical_voice_variant_count, 285);
   assert.equal(ready.battle_alert_open, false);
-  const music = consoleLines.find(({ text }) =>
-    text.includes("[audio] context=combat track=Battle mdata=307"));
   const cueLogs = consoleLines.filter(({ text }) =>
     text.includes("[audio] context=combat event=0x") && text.includes("routed=true"));
-  assert.ok(music, "tactical music context was not routed");
-  assert.match(music.text, /loaded=true/);
-  assert.match(music.text, /muted=true/);
   const routed = cueLogs.map(({ text }) => {
     const match = text.match(/event=0x([0-9a-f]{2}) wave=(\d+)/);
     assert.ok(match, `malformed tactical cue log: ${text}`);
@@ -3381,12 +3377,11 @@ function probeTacticalAudioRouting(folder, stable, consoleLines, ready) {
   fs.writeFileSync(path.join(folder, "tactical-audio-muted.png"), stable.bytes);
   return [{
     type: "tactical-audio-routing",
-    music_mdata_id: 307,
+    music_mdata_id: null,
     tactical_wave_first: 13033,
     tactical_wave_last: 13054,
     tactical_wave_variants: 22,
     tactical_voice_variants: 285,
-    music_log: music.text,
     cue_logs: cueLogs.map(({ text }) => text),
     voice_logs: voiceLogs.map(({ text }) => text),
     browser_muted: true,
@@ -4479,7 +4474,7 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
     // A state-matched scenario rebuilds an original battle instead of the
     // synthetic encounter; its probe asserts that battle's forces.
     if (battle && !scenario.state_match) {
-      assert.equal(ready.schema_version, 36);
+      assert.equal(ready.schema_version, 37);
       assert.equal(ready.family, "tactical");
       assert.equal(ready.faction, faction);
       assert.equal(ready.proof_enabled, scenario.tactical_proof);

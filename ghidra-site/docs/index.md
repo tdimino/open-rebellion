@@ -1,9 +1,9 @@
 ---
-title: "Ghidra Reverse Engineering—REBEXE.EXE"
-description: "Exhaustive decompilation of Star Wars Rebellion (1998)—5,127 functions, 7 scholar docs, 8 scripts"
+title: "Ghidra Reverse Engineering — REBEXE.EXE"
+description: "Working decompilation corpus for Star Wars Rebellion (1998), including simulation findings and an incomplete interface evidence set"
 category: ghidra
 created: 2026-03-13
-updated: 2026-03-22
+updated: 2026-09-16
 tags: [ghidra, reverse-engineering, rebexe, decompilation, combat, ai, gnprtb]
 ---
 
@@ -12,66 +12,69 @@ tags: [ghidra, reverse-engineering, rebexe, decompilation, combat, ai, gnprtb]
   <img class="light-only" src="/open-rebellion/assets/tanit-light.png" alt="Symbol of Tanit" width="80">
 </div>
 
-# Ghidra Reverse Engineering—REBEXE.EXE
+# Ghidra Reverse Engineering — REBEXE.EXE
 
-Exhaustive decompilation of Star Wars Rebellion (1998, LucasArts) for the Open Rebellion reimplementation.
+Reverse engineering of Star Wars Rebellion (1998, LucasArts) for the Open
+Rebellion reimplementation. Simulation coverage is extensive. Interface
+coverage is incomplete and tracked in the
+[interface reverse-engineering ledger](https://github.com/tdimino/open-rebellion/blob/main/docs/qa/2026-09-10-interface-parity-audit/reverse-engineering-ledger.md).
 
 ## What We Decompiled
 
 | Target | Size | Total Functions | Decompiled | Coverage |
 |--------|------|-----------------|------------|----------|
-| **REBEXE.EXE** | 2.8 MB | 22,741 | **5,127** | Every function >100 bytes |
-| COMMON.DLL | 2.9 MB | 0 | 0 | Resource container (321 BMPs, 5 WAVs). No game logic. |
-| STRATEGY.DLL | 29 MB | 43 (CRT only) | N/A | Resource-only—no game logic |
+| **REBEXE.EXE** | 2.8 MB | 22,741 | **4,934 canonical export targets; 2,144 non-empty** | Partial text export; query the project for empty UI targets |
+| COMMON.DLL | 2.9 MB | — | 0 | Imported, not analyzed |
+| STRATEGY.DLL | 29 MB | 43 (CRT only) | N/A | Resource-only — no game logic |
 
-**Key finding:** All game logic lives in REBEXE.EXE. STRATEGY.DLL and COMMON.DLL are resource containers only (BMPs, strings, data tables). DirectPlay networking lives in REBEXE.EXE at `0x5a0000–0x5b0000`.
+**Key finding:** All game logic lives in REBEXE.EXE. STRATEGY.DLL is a resource container (BMPs, strings, data tables). COMMON.DLL handles DirectPlay networking.
 
-## Scholar Documents (7 analysis docs, 6,049 lines)
+## Scholar Documents (7 analysis docs, 4,560 lines)
 
 | Document | Lines | What It Covers |
 |----------|-------|----------------|
-| `notes/annotated-functions.md` | 1,662 | Struct field layouts (+0x60 hull, +0x64 shield nibbles, +0x96 regiment strength, +0xac alive flag), renamed variables, 50 event IDs (0x127–0x370), game rules |
-| `notes/modders-taxonomy.md` | 805 | 10 game systems mapped for total conversion mods (Yuuzhan Vong, Thrawn's Revenge, KOTOR). Per-system function addresses, GNPRTB parameters, mod guidance |
-| `notes/rust-implementation-guide.md` | 1,267 | Maps decompiled C to Open Rebellion's stateless `advance()` pattern. `CombatSystem::resolve_space()`, `GnprtbParams`, `MstbTable`, 15 missing CapitalShipClass fields |
-| `notes/cpp-class-hierarchy.md` | 445 | CRebObject → CNotifyObject → CCombatUnit hierarchy. 19 vtable slots, 6 vtable pointer constants, field layouts, setter-notify-event pattern |
-| `notes/entity-system.md` | 668 | Characters (8 enhanced skills, Force/Jedi 6-tier, betrayal), game objects (5 destruction variants), fleets (4 events), factions (Alliance/Empire/Neutral bit encoding) |
-| `notes/mission-event-cookbook.md` | 724 | 9+ mission types (FUN_0050d5a0 13-case switch), 4 story event chains (Dagobah, Vader's Palace, Bounty Hunters, Jabba), event ID registry |
-| `notes/economy-systems.md` | 478 | Resources (energy/material at +0x5c–0x68), 5 ControlKind states, uprising tables (UPRIS1TB/2TB), blockade manufacturing halt, repair formulas |
+| `notes/annotated-functions.md` | 1,071 | Struct layouts (+0x60 hull, +0x64 shield/weapon nibbles, +0x96 CommandKind, +0xac prisoner bit), the story-check chain `FUN_00549910`, renamed variables, 50 event IDs (0x127-0x370), game rules |
+| `notes/modders-taxonomy.md` | 793 | 10 game systems categorized for total conversion mods (Yuuzhan Vong, Thrawn, KOTOR). Function addresses, GNPRTB params, mod guidance per system |
+| `notes/rust-implementation-guide.md` | 417 | Maps decompiled C to Open Rebellion's `advance()` pattern: space battles through the tactical engine, ground combat, bombardment pointers, `MstbTable`, 15 new CapitalShipClass fields |
+| `notes/cpp-class-hierarchy.md` | 434 | CRebObject → CNotifyObject classes by DAT family, master and side-view copies. 19 vtable slots, 6 vtable pointer constants, complete field layout, setter-notify-event pattern |
+| `notes/entity-system.md` | 678 | Characters (8 enhanced skills, Force fields (`force-users.md`), betrayal), game objects (5 destruction variants), fleets (4 events), factions (Alliance/Empire/Neutral bits) |
+| `notes/mission-event-cookbook.md` | 685 | Mission types by MISSNSD family, 4 story event chains (Dagobah, Vader, Palace, Bounty), event ID registry (0x12c-0x370), Thrawn Campaign example |
+| `notes/economy-systems.md` | 482 | Resources (energy/material at +0x5c-0x68), 5 ControlKind states, uprising (UPRIS1TB/2TB), blockade manufacturing halt, repair (GNPRTB 0x305/0x386), 36 system notif handlers |
 
 ## Combat Subsystem (3 dedicated docs)
 
 | Document | Subsystem | Key Functions |
 |----------|-----------|---------------|
-| `notes/space-combat.md` | Space combat—7-phase auto-resolve pipeline | FUN_00549910, FUN_00544030, FUN_005443f0 |
-| `notes/ground-combat.md` | Ground combat—troop iteration + per-unit resolution | FUN_00560d50, FUN_004ee350, FUN_005617b0 |
-| `notes/bombardment.md` | Orbital bombardment—Euclidean distance formula | FUN_00556430, FUN_0055d8c0, FUN_0055d860 |
+| `notes/space-combat.md` | The MissionMgr story-flag word `+0x58`; it applies no damage | FUN_00549910, FUN_00544030, FUN_005443f0 |
+| `notes/ground-combat.md` | Character move hook: clears CommandKind `+0x96` of a moved character or of the characters aboard a moved capital ship; Emperor-at-Coruscant flag (family `0x34`); no ground combat | FUN_00560d50, FUN_004ee350, FUN_005617b0 |
+| `notes/bombardment.md` | Bombardment orders 0x220-0x223: gate, Death Star, defence fire, hit rolls, support shifts | FUN_00582440, FUN_005637c0, FUN_0058d800, FUN_0058d990, FUN_0058dc10, FUN_0058df60, FUN_0058e320 |
 
 ## AI Pipeline (6 core functions fully traced)
 
 | # | Function | Purpose | Lines | Status in Open Rebellion |
 |---|----------|---------|-------|--------------------------|
-| 1 | FUN_00519d00 | Galaxy-wide system bucketing (7 categories) | 252 | DONE—evaluate_galaxy_state() + ratio scoring |
-| 2 | FUN_00537180 | Primary fleet deployment (per-system iteration) | 381 | AUGMENTED—per-fleet scoring with 4 factors |
-| 3 | FUN_005385f0 | Secondary deployment (redistribution) | 252 | DONE—aggression-scaled redistribution |
-| 4 | FUN_00502020 | Garrison strength assessment | 897 | DONE—ships + troops + facilities |
-| 5 | FUN_00508250 | Pre-dispatch validation (18 boolean checks) | ~200 | DONE—can_dispatch() with 6 checks |
-| 6 | FUN_00520580 | Movement order issuance | ~300 | DONE—with already_moving dedup |
+| 1 | FUN_00519d00 | Galaxy-wide system bucketing (7 categories) | 252 | DONE — evaluate_galaxy_state() + ratio scoring |
+| 2 | FUN_00537180 | Primary fleet deployment (per-system iteration) | 381 | AUGMENTED — per-fleet scoring with 4 factors |
+| 3 | FUN_005385f0 | Secondary deployment (redistribution) | 252 | DONE — aggression-scaled redistribution |
+| 4 | FUN_00502020 | Garrison strength assessment | 897 | DONE — ships + troops + facilities |
+| 5 | FUN_00508250 | Pre-dispatch validation (18 boolean checks) | ~200 | DONE — can_dispatch() with 6 checks |
+| 6 | FUN_00520580 | Movement order issuance | ~300 | DONE — with already_moving dedup |
 
 ## Key Discoveries
 
 - **111 GNPRTB parameters mapped**: 34 general (28 base + 6 per-side) + 77 combat (25 base + 52 per-side). These are the "knobs" that control game difficulty and balance.
 - **Bombardment formula**: `damage = sqrt((atk[0]-def[0])^2 + (atk[1]-def[1])^2) / GNPRTB[0x1400]`
-- **Hull and squad_size share offset +0x60**—polymorphism by vtable, not separate structs
+- **Hull and squad_size share offset +0x60** — polymorphism by vtable, not separate structs
 - **Shield/weapon recharge packed into 4-bit nibbles** at offset +0x64
-- **C++ class hierarchy**: CRebObject → CNotifyObject → CCombatUnit/CCharacter/CStarSystem—all combat dispatched via vtable
-- **AI is omniscient**—no fog-of-war check in FUN_00519d00 (galaxy evaluation)
-- **Turn processing**: FUN_004927c0 (9K lines) is the master tick function—research dispatch, fleet orders, manufacturing, event processing
+- **C++ class hierarchy**: CRebObject → CNotifyObject → CCombatUnit/CCharacter/CStarSystem — all combat dispatched via vtable
+- **AI is omniscient** — no fog-of-war check in FUN_00519d00 (galaxy evaluation)
+- **Turn processing**: FUN_004927c0 (9K lines) is the master tick function — research dispatch, fleet orders, manufacturing, event processing
 
-## Ghidra Scripts (8 Jython scripts)
+## Ghidra Scripts (targeted Python and Java scripts)
 
 | Script | Purpose |
 |--------|---------|
-| `FindAllFunctions.py` | x86 prologue scanner—finds all function entry points |
+| `FindAllFunctions.py` | x86 prologue scanner — finds all function entry points |
 | `DumpAllGameFunctions.py` | Exhaustive catalog of 4,938 functions with referenced strings |
 | `DumpStrings.py` | Keyword string search → file output |
 | `DumpCombatXrefs.py` | String → function cross-reference tracer |
@@ -79,6 +82,29 @@ Exhaustive decompilation of Star Wars Rebellion (1998, LucasArts) for the Open R
 | `DumpCombatRegion.py` | Function listing in combat address range |
 | `FindCombatMath.py` | Pattern search for combat math operations |
 | `DumpGNPRTBXrefs.py` | GNPRTB parameter → function tracer |
+| `DecompileTargets.py` | Decompile an explicit address list with PyGhidra/Jython-enabled installs |
+| `DecompileTargets.java` | Run the same bounded decompilation in standard Ghidra 12 headless installs |
+| `DumpScalars.py` | Emit typed scalar values at explicit addresses with PyGhidra/Jython-enabled installs |
+| `DumpScalars.java` | Emit the same scalar values in standard Ghidra 12 headless installs |
+| `DumpReferences.py` | Emit references to explicit functions or data addresses |
+| `DumpInstructions.py` | Emit bounded instruction listings around a target address |
+| `ListFunctionsRange.py` | List functions in one bounded address range |
+| `DumpPointerTable.py` | Decode a bounded pointer table with referenced symbols |
+
+These targeted probes support reproducible interface work without checking
+in the saved Ghidra database or generated decompilation corpus. Other local
+scratch scripts remain ignored until separately reviewed.
+
+For P57B2B3, Ghidra 11.3.2 headless ran with OpenJDK 21 and an isolated
+temporary user home. The bounded decompilation of
+[`FUN_005a9030`](https://github.com/tdimino/open-rebellion/blob/main/ghidra/notes/FUN_005a9030.c), its callers, and placement scalars
+recovered exact tactical participant X slots and faction lanes without writing
+to the saved project.
+
+For P58F8, Ghidra 12.1.3 recovered the maneuver-state bonus, stationary
+constructor direction state, effective-power velocity, and millisecond
+position integration. See
+[`tactical-maneuver-movement.md`](https://github.com/tdimino/open-rebellion/blob/main/ghidra/notes/tactical-maneuver-movement.md).
 
 ## Decompiled Functions by Game System
 
@@ -91,7 +117,7 @@ Exhaustive decompilation of Star Wars Rebellion (1998, LucasArts) for the Open R
 | Characters | 0x4ee000–0x4f4000 | ~80 | Enhanced skills, Force system, loyalty |
 | Missions | 0x4f4000–0x515000 | ~120 | FUN_0050d5a0 (13-case switch) |
 | AI system | 0x515000–0x540000 | ~150 | 6-function pipeline (see table above) |
-| Space combat | 0x540000–0x560000 | ~100 | 7-phase pipeline, CombatPhaseFlags |
+| MissionMgr story checks | 0x540000–0x560000 | ~100 | The `+0x58` flag word (story-missions.md); battles run the tactical engine |
 | Ground combat | 0x560000–0x570000 | ~40 | Troop iteration, regiment damage |
 | Economy | 0x570000–0x590000 | ~60 | Manufacturing, resources, blockade |
 | Events | 0x590000–0x5a0000 | ~40 | Scripted chains, condition/action eval |
@@ -108,13 +134,13 @@ ghidra/
 ├── Open Rebellion Ghidra.rep/    # Ghidra project data (not tracked)
 ├── notes/
 │   ├── INDEX.md                  # Master index of all notes
-│   ├── FUNCTION_INDEX.md         # 5,127-function catalog
+│   ├── FUNCTION_INDEX.md         # Function catalog
 │   ├── 7 analysis .md files      # Scholar documents (see table above)
 │   ├── 3 combat .md files        # Combat subsystem docs
 │   ├── 4 review .md files        # Internal review notes
-│   └── ~5,127 .c files           # Decompiled C pseudocode
+│   └── FUN_*.c files             # Partial pseudocode export; some files are empty
 └── scripts/
-    └── 8 .py files               # Ghidra Jython scripts
+    └── 14 tracked .py files      # Broad analysis plus bounded UI probes
 ```
 
 ## How to Use
@@ -123,31 +149,14 @@ ghidra/
 2. Open project: `Open Rebellion Ghidra.gpr`
 3. Double-click REBEXE.EXE in Program Trees
 4. Navigate to function: Go → Address → `0x00519d00`
-5. [GhidraMCP](https://github.com/LaurieWired/GhidraMCP) plugin (LaurieWired v11.3.2): `curl -X POST http://127.0.0.1:8080/decompile -d "FUN_ADDR"`
+5. GhidraMCP plugin: `curl -X POST http://127.0.0.1:8080/decompile -d "FUN_ADDR"`
 6. Jython scripts: Window → Jython → `exec(open("path/to/script.py").read())`
-
-## Frequently Asked Questions
-
-**What is REBEXE.EXE?**
-REBEXE.EXE is the 2.8 MB main executable of Star Wars Rebellion (1998, LucasArts). All game logic—combat, AI, diplomacy, research, events—lives in this binary. STRATEGY.DLL is a resource container only (BMPs, strings, data tables). COMMON.DLL is a pure resource container (321 BMPs: UI buttons, panel chrome, main menu backgrounds, cockpit speed-control buttons; 5 WAVs: UI interaction sounds). DirectPlay networking lives in REBEXE.EXE itself at `0x5a0000–0x5b0000`.
-
-**How many functions were decompiled?**
-5,127 functions—every function >100 bytes—out of 22,741 total identified in REBEXE.EXE. Coverage focuses on game logic: combat, AI deployment, movement, economy, events, and mission systems.
-
-**What is the GNPRTB table?**
-GNPRTB is a 111-parameter lookup table embedded in REBEXE.EXE that governs all combat math: damage formulas, accuracy, repair rates, and balance scaling. Parameter 0x1400 specifically controls orbital bombardment damage. The table has 34 general parameters (28 base + 6 per-side) and 77 combat parameters (25 base + 52 per-side).
-
-**How does space combat work?**
-Space combat resolves through a 7-phase pipeline. Phase 1 loads GNPRTB parameters. Phases 2-6 compute fleet power ratios, apply modifiers, iterate unit-by-unit damage, and resolve outcomes. Phase 7 writes results. The entry point is FUN_00549910; the main resolution loop is FUN_00544030.
-
-**Is the AI tick-based or event-driven?**
-Event-driven. Message 0x1f0 (day tick notification) triggers AI evaluation once per game-day via the CNotifyObject observer pattern. There is no fixed tick interval—the master turn function FUN_004927c0 (9,000 lines) processes all AI logic each day.
-
-**Can I use this for modding?**
-Yes. The Modders Taxonomy document maps all 10 game systems to specific function addresses and GNPRTB parameters with guidance for total conversion mods. The GNPRTB table is the primary lever for rebalancing combat, and all mission probability formulas are documented with their MSTB table inputs.
 
 ## Relationship to Open Rebellion
 
 The decompiled code is the ground truth for the reimplementation. Every simulation system in `crates/rebellion-core/src/` is ported from specific decompiled functions. The `agent_docs/systems/ai-parity-tracker.md` maps each original function to our Rust implementation with DONE/AUGMENTED/PARTIAL/MISSING status.
 
-The `ghidra/` directory is gitignored (binary project files + non-redistributable decompiled code). This README is the only tracked file. The tracked reference for agents is `agent_docs/ghidra-re.md`.
+The `ghidra/` directory is gitignored by default because it contains binary
+project files and non-redistributable decompilation output. Bounded reviewed
+notes and scripts may be force-added when they are necessary provenance. The
+tracked reference for agents is `agent_docs/ghidra-re.md`.

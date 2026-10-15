@@ -168,7 +168,7 @@ and a next proof in the [machine-readable ledger](reverse-engineering-ledger.jso
 | RE-TAC-01 | Tactical loader, control tree, and event-handler registry | static-proven | Join subordinate control vtables and event slots to exact rectangles, predicates, handlers, and observable transitions |
 | RE-TAC-02 | Tactical control geometry and resource-state selection | static-partial; bounded practical launcher complete at P58-B22 | Follow the [ranked recovery map](../../reference/space-battle-launcher/reverse-engineering-map.md) through whole-process RNG continuity, strategic commander binding, native beam/playback behavior, rare audio callers, remaining controls, and A0 comparison |
 | RE-TAC-03 | Tactical battle-results composition | static-partial | Connect state setters, result construction, canonical application, reports, media, and strategic return |
-| RE-DS-01 | Strategic Destroy System and sabotage paths | static-partial | Resolve confirmation, report, and family `0x34` predicates |
+| RE-DS-01 | Strategic Destroy System and sabotage paths | static-partial | Resolve confirmation and report branches; the family `[0x18,0x1c)` predicates, gate and cascade are in `ghidra/notes/death-star-strategic.md` |
 | RE-DS-02 | Tactical Death Star and trench-run routing | static-partial; exact producer, timer, chatter, casualties, and result-to-film dispatch implemented | Bind the strategic commander slot, compare native beam/playback/audio timing and return behavior, and close A0 |
 | RE-END-01 | Campaign endings, skip, return, restart, and failure | static-partial | Recover the complete terminal media matrix |
 | RE-NET-01 | Original multiplayer screens and controls | static-partial | Finish template 10100–10103 geometry and provider/host/join routing |

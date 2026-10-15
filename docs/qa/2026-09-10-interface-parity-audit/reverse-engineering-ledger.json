@@ -560,7 +560,7 @@
       "status": "static-partial",
       "retrieval": {
         "sources": ["REBEXE.EXE", "STRATEGY.DLL", "GOKRES.DLL", "TEXTSTRA.DLL"],
-        "method": "Trace Death Star family 0x34 predicates through item menus, confirmation, target destruction, sabotage outcomes, reports, and resulting galaxy state.",
+        "method": "Trace the Death Star predicates (capital-ship family range [0x18,0x1c); ghidra/notes/death-star-strategic.md covers the gate FUN_00582440, the destroy cascade and sabotage) through item menus, confirmation, reports, and resulting galaxy state.",
         "next_proof": "Resolve every enabled, disabled, confirmation, destruction, success, failure, foiled, and report branch."
       },
       "runtime_capture_required": true

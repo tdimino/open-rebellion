@@ -88,8 +88,12 @@ work, not parity, and wait until after v1.0.
    unmodded game behaves exactly as before. Replay goldens must not change.
 2. **One extension point per port node.** Each node cites the note row it
    exposes, names the literals it replaces, and is verified end to end for
-   both factions. Changing what the loader accepts (for example, letting
-   `mods.rs` add records with new ids, which it rejects today) is an
+   both factions. A mod may add records with new ids only in families the
+   original registers; a reference to an unknown record falls back as the
+   original's does (an unknown ship type reads as ordinal 0, the Calamari
+   cruiser), and a new family byte is refused; `mods.rs` still rejects
+   every new id until that port lands. How added records name
+   their art is open. Any other change to what the loader accepts is an
    architecture change: explain it and ask first.
 3. **Expose only what the original computes.** Where the original has no
    mechanism (a Dark Side attribute, a third side, diplomacy), the port adds

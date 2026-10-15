@@ -136,7 +136,7 @@ pub(crate) fn begin_player_battle(
     let mut death_stars = 0;
     for force in [entry.attacker, entry.defender] {
         // A side without a fleet fights with the squadrons the system holds
-        // for it (FUN_00516ef0); it must hold some.
+        // for it (FUN_0040b0e0 exports them after the fleets); it must hold some.
         let Some(key) = force.fleet else {
             if system.squadron_count(force.is_alliance) == 0 {
                 return Err(BattleEntryError::MissingFleet);
@@ -470,11 +470,15 @@ pub(crate) fn apply_system_occupation(
             Faction::Empire => character.is_alliance,
             Faction::Neutral => false,
         };
-        if character.current_system == Some(system) && is_enemy && !character.is_killed {
+        // A fleet's crew is aboard the fleet, not on the world.
+        if character.current_system == Some(system)
+            && character.current_fleet.is_none()
+            && is_enemy
+            && !character.is_killed
+        {
             character.is_captive = true;
             character.captured_by = Some(winner);
             character.capture_tick = Some(tick);
-            character.current_fleet = None;
         }
     }
 }

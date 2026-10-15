@@ -11,9 +11,8 @@ use crate::game_menu::{draw_game_menu, GameMenuEntry, GameMenuPlacement, GameMen
 
 const AGENT_MENU_ID: &str = "original-agent-menu";
 
-/// The bitmap each record names in word 10, shown for a checked item.
-/// hyp: word 10 is the checked item's bitmap, as the Command submenu's
-/// ranks carry it (`object-popup-menu.md`).
+/// The bitmap each record names in word 10, drawn only for a checked item
+/// (`FUN_004abe30`, `FUN_004aba60`: flags bit 1).
 const CHECK_BITMAP: u32 = 11902;
 
 /// An Agent menu command the port carries out.
@@ -222,6 +221,7 @@ pub fn draw_agent_menu(
             icon: item.checked.then_some(CHECK_BITMAP),
             enabled: item.enabled,
             submenu: false,
+            children: &[],
         })
         .collect();
     match draw_game_menu(
@@ -235,7 +235,8 @@ pub fn draw_agent_menu(
         input_enabled,
     ) {
         GameMenuResponse::Open => None,
-        GameMenuResponse::Dismissed => {
+        // No row of this menu has a submenu; a choice in one closes it.
+        GameMenuResponse::Dismissed | GameMenuResponse::ChosenChild { .. } => {
             state.anchor = None;
             None
         }

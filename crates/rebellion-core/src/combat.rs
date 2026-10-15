@@ -43,8 +43,9 @@ pub fn side_present(world: &GameWorld, system: SystemKey, is_alliance: bool) -> 
 }
 
 /// One side of a space battle: its fleet, if any, and the squadrons the
-/// side holds at the battle system. `FUN_00516ef0` adds every system squadron
-/// to the combat (`FUN_00556710`), and they fight without a carrier
+/// side holds at the battle system. `FUN_0040b0e0` sends the system's own
+/// squadrons into the battle after every fleet's units, through the same
+/// record builder `FUN_0040be90`, so they fight without a carrier
 /// (`ghidra/notes/system-squadrons-combat.md`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CombatForce {
@@ -82,8 +83,9 @@ pub struct GroundCombatResult {
 
 /// A troop unit's regiment strength changed during ground combat.
 ///
-/// Mirrors C++ per-unit resolution: `FUN_004ee350` sets `unit->regiment_strength`
-/// (offset +0x96, short) and fires the vtable notification at +0x330.
+/// port: no recovered source; the original's planetary assault is open
+/// (`or-q-ground-resolution-nms`). `FUN_004ee350` sets a character's
+/// CommandKind at +0x96, not a regiment's strength (`ghidra/notes/ground-combat.md`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TroopDamageEvent {
     pub troop: TroopKey,
@@ -99,21 +101,23 @@ pub struct CombatSystem;
 
 impl CombatSystem {
     // -----------------------------------------------------------------------
-    // Ground combat — FUN_00560d50 (232 lines)
+    // Ground combat — port: no recovered source (or-q-ground-resolution-nms)
     // -----------------------------------------------------------------------
 
     /// Auto-resolve ground combat at a system between all opposing troop units.
     ///
-    /// Mirrors `FUN_00560d50` (232 lines): iterates troops (`DatId` family 0x14-0x1b)
-    /// at the system, checks `regiment_strength` at C++ offset +0x96, calls per-unit
-    /// resolution `FUN_004ee350`.
+    /// port: no recovered source. The original's resolution is open
+    /// (`or-q-ground-resolution-nms`, `or-q-regiment-combat-eaxn`; replacement
+    /// `or-p-gnd-ykv`). `FUN_00560d50` and `FUN_004ee350` are the character
+    /// CommandKind hook and setter, not ground combat (`ghidra/notes/ground-combat.md`).
     ///
     /// Per-unit resolution uses class-based attack/defense stats from TROOPSD.DAT
     /// (`TroopClassDef`). Defense facilities at the system grant a defense bonus
     /// to the defending faction's troops.
     ///
-    /// Family 0x34 (the Empire major characters, not the Death Star; F-025) takes a
-    /// separate path — see `DeathStarSystem::fire()`.
+    /// The Death Star is capital-ship family 0x18
+    /// (`ghidra/notes/death-star-strategic.md`); Destroy System runs in
+    /// `DeathStarSystem::fire()`.
     ///
     /// # Advance contract
     /// - Does NOT mutate world. Returns `TroopDamageEvents`.
@@ -141,7 +145,7 @@ impl CombatSystem {
         let mut rng = rng_rolls.iter().copied();
         let mut troop_damage: Vec<TroopDamageEvent> = Vec::new();
 
-        // Step 6-8 of FUN_00560d50: iterate all troops at system by faction.
+        // port: iterate all troops at the system by faction.
         let (atk_keys, def_keys): (Vec<TroopKey>, Vec<TroopKey>) = sys
             .ground_units
             .iter()
@@ -221,7 +225,7 @@ impl CombatSystem {
             1.0 + (f64::from(total) / 200.0)
         };
 
-        // Per-unit resolution: FUN_004ee350 (30 lines).
+        // port: per-unit resolution.
         // Each attacker regiment attacks each defender regiment individually.
         // Damage computed from class attack/defense stats scaled by regiment strength.
         let mut current_strength: std::collections::HashMap<TroopKey, i16> = active_atk
@@ -355,7 +359,9 @@ impl CombatSystem {
     // Planet destruction goes through DeathStarSystem::fire() in death_star.rs.
     // FUN_005617b0 recomputes CharacterMgr SeatOfPower (Emperor Palpatine,
     // 0x34000280, alive and active at Coruscant held by the Empire); it is not a
-    // superlaser fire check. The real superlaser fire path is unrecovered.
+    // superlaser fire check. The original fires through order 0x223 (gate
+    // FUN_00582440, run FUN_0058d800; ghidra/notes/bombardment.md,
+    // or-port-bombardment-8usw).
 }
 
 // ---------------------------------------------------------------------------
@@ -364,22 +370,24 @@ impl CombatSystem {
 
 /// `DatId` family-byte classification for combat dispatch.
 ///
-/// Mirrors the C++ family-byte check (`entity_id >> 24`) used in
-/// `FUN_00560d50`, `FUN_005445d0`, and related combat functions.
+/// port: no recovered source; only this module's tests use it. The DAT
+/// families are in `ghidra/notes/record-registry.md`, and the variant notes
+/// below give what each byte holds there; `or-q-port-family-checks-p00`
+/// decides what each port path should key on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CombatEntityKind {
-    /// family 0x30-0x33, 0x35-0x3b
+    /// family 0x30-0x33, 0x35-0x3b: in the DATs, characters (majors 0x30-0x35, minors 0x38)
     CapitalShip,
-    /// family 0x34. FUN_00560d50 routes it to FUN_005617b0 (SeatOfPower); 0x34
-    /// is the Empire major-character family, not the Death Star (F-025).
+    /// family 0x34: the Emperor's character family, not the Death Star (capital
+    /// ships 0x18; `or-port-death-star-family-qtde`).
     DeathStar,
-    /// family 0x71-0x72 (`alt_shield_path`: +0x78 bit7)
+    /// family 0x71: the Dagobah mission in the DATs; no shield path keys on it
     FighterSquadron,
-    /// family 0x73-0x74 (`FUN_00534640` result path)
+    /// family 0x73-0x74: 0x73 is the Pickup mission; `FUN_00534640` is the resign request
     SpecialCombatEntity,
-    /// family 0x14-0x1b (`regiment_strength` at +0x96)
+    /// family 0x14-0x1b: capital ships in the DATs; regiments are 0x10-0x13
     Troop,
-    /// family 0x08-0x0f
+    /// family 0x08-0x0f: fleets in the DATs
     Character,
     /// Unrecognized family byte
     Unknown,
@@ -394,7 +402,7 @@ impl CombatEntityKind {
             0x14..=0x1b => Self::Troop,
             0x30..=0x33 | 0x35..=0x3b => Self::CapitalShip,
             0x34 => Self::DeathStar,
-            0x71 => Self::FighterSquadron, // exact == 0x71 only, NOT range (reviewer-corrected)
+            0x71 => Self::FighterSquadron, // exact 0x71: the Dagobah mission family
             // 0x72 is a different entity type, not alt-shield
             0x73..=0x74 => Self::SpecialCombatEntity,
             _ => Self::Unknown,
@@ -449,6 +457,7 @@ mod tests {
             fleet_names: crate::world::FleetNames::default(),
             last_ship_tag: 0,
             squadron_transits: Vec::new(),
+            arrival_holders: std::collections::HashMap::new(),
         }
     }
 

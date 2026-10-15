@@ -826,7 +826,9 @@ impl PerceptionIntegrator {
             .characters
             .iter()
             .filter(|(_, character)| {
+                // A fleet's crew is aboard the fleet, not on the world.
                 character.current_system == Some(system)
+                    && character.current_fleet.is_none()
                     && !character.is_killed
                     && match winner {
                         rebellion_core::dat::Faction::Alliance => character.is_empire,
@@ -841,7 +843,6 @@ impl PerceptionIntegrator {
                 value.is_captive = true;
                 value.captured_by = Some(winner);
                 value.capture_tick = Some(tick);
-                value.current_fleet = None;
             }
             self.emit(
                 SYS_COMBAT,
@@ -1644,6 +1645,9 @@ fn apply_mission_effects_inner(
             }
             MissionEffect::MemberMoved { member, to } => {
                 rebellion_core::missions::move_member(world, *member, *to);
+            }
+            MissionEffect::MemberBoarded { member, fleet } => {
+                rebellion_core::missions::board_member(world, *member, *fleet);
             }
             MissionEffect::CharacterEscaped {
                 character,
@@ -3038,7 +3042,7 @@ pub struct SpaceForceSummary {
 }
 
 /// Aggregate result for every hostile fleet orbiting one system.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SystemSpaceCombatResult {
     pub system: SystemKey,
     /// Alliance is the attacker and Empire is the defender in auto-resolve.
@@ -3055,6 +3059,8 @@ pub struct SystemSpaceCombatResult {
     pub empire_after: SpaceForceSummary,
     /// True when both sides remain, so the system fights again next pass.
     pub stalemate: bool,
+    /// The write-back's log lines: withdrawals and the post-battle pass.
+    pub log: Vec<String>,
 }
 
 fn orbiting_fleets_by_faction(
@@ -3189,6 +3195,7 @@ pub fn resolve_system_space_combat(
         stalemate: winner == CombatSide::Draw
             && side_present(world, system, true)
             && side_present(world, system, false),
+        log: withdrawal_log,
     }
 }
 

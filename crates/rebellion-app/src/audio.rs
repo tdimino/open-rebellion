@@ -18,14 +18,6 @@
 //!
 //! ```text
 //! data/sounds/
-//!   music/
-//!     main_theme.wav      (MDATA.300 — Return of the Jedi/Battle of Endor cue)
-//!     battle.wav          (MDATA.307 — Attacking a Star Destroyer)
-//!     victory.wav         (MDATA.201 extraction)
-//!     defeat.wav          (MDATA.202 extraction)
-//!     imperial.wav        (MDATA.306 — Emperor Arrives / Death of Yoda)
-//!     hoth.wav            (MDATA.312 — Battle of Hoth medley)
-//!     endor.wav           (MDATA.300 — Battle of Endor medley)
 //!   sfx/
 //!     mission_success.wav
 //!     mission_fail.wav
@@ -57,19 +49,13 @@
 //! `voice-empire/` under names like `14001-voicefxa.wav`.  The staged
 //! copies for runtime use live under `data/sounds/voice/`.
 //!
-//! # Context-based music
+//! # Music
 //!
-//! Call `play_music_for_context` instead of `play_music` when you only know
-//! the game context (galaxy map, combat, etc.).  The engine maps contexts to
-//! tracks:
-//!
-//! | Context | Track |
-//! |---------|-------|
-//! | `MainMenu` | `MainTheme` |
-//! | `GalaxyMap` | `MainTheme` |
-//! | Combat | Battle |
-//! | Victory | Victory |
-//! | Defeat | Defeat |
+//! Music streams from the original's loose files `MDATA\\MDATA.300`..`.315`
+//! (RIFF WAVE), a track index 0..15 (`MdataTrack`). A track plays once; when
+//! it ends a forced track (Battle Alert, battle result) plays again and any
+//! other asks the caller for the next default pick (`FUN_00417780`,
+//! `ghidra/notes/audio-dispatch.md`, "Music").
 //!
 //! # WASM
 //!
@@ -85,8 +71,7 @@
 //! let mut audio = AudioEngine::new();
 //! audio.load_all(Path::new("data/sounds"));
 //!
-//! // Context-based: engine picks the right track.
-//! audio.play_music_for_context(MusicContext::GalaxyMap, &vol_state);
+//! audio.start_track(MdataTrack::MENU, &mdata_dir, &vol_state, get_time());
 //!
 //! // On game events:
 //! audio.play_sfx(SfxKind::BuildComplete, &vol_state);
@@ -106,9 +91,7 @@ use std::path::{Path, PathBuf};
 
 use quad_snd::{AudioContext, Sound};
 
-#[cfg(not(target_arch = "wasm32"))]
-pub use rebellion_render::audio::MusicContext;
-pub use rebellion_render::audio::{AudioVolumeState, MusicTrack, SfxKind};
+pub use rebellion_render::audio::{AudioVolumeState, MdataTrack, SfxKind};
 use rebellion_render::tactical_view::TacticalVoiceFaction;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -186,30 +169,6 @@ pub const TACTICAL_SFX_ASSETS: &[(u8, u8, &str, u32)] = &[
     (0x14, 0, "sfx/tactical_event_14_0.wav", 13_054),
 ];
 
-#[cfg(not(target_arch = "wasm32"))]
-fn music_file(track: MusicTrack) -> &'static str {
-    match track {
-        MusicTrack::MainTheme => "main_theme.wav",
-        MusicTrack::Battle => "battle.wav",
-        MusicTrack::Victory => "victory.wav",
-        MusicTrack::Defeat => "defeat.wav",
-        MusicTrack::Imperial => "imperial.wav",
-        MusicTrack::Hoth => "hoth.wav",
-        MusicTrack::Endor => "endor.wav",
-    }
-}
-
-/// Select a `MusicTrack` for a given `MusicContext`.
-#[cfg(not(target_arch = "wasm32"))]
-pub fn track_for_context(ctx: MusicContext) -> MusicTrack {
-    match ctx {
-        MusicContext::MainMenu | MusicContext::GalaxyMap => MusicTrack::MainTheme,
-        MusicContext::Combat => MusicTrack::Battle,
-        MusicContext::Victory => MusicTrack::Victory,
-        MusicContext::Defeat => MusicTrack::Defeat,
-    }
-}
-
 /// Build the filename for a voice line as found in the extracted DLL output.
 ///
 /// Alliance: `{id}-voicefxa.wav`, Empire: `{id}-voicefxe.wav`.
@@ -267,6 +226,29 @@ pub const MESSAGE_SOUNDS: [u32; 9] = [
     0x450, 0x451, 0x454, 0x455, 0x456, 0x45a, 0x45e, 0x461, 0x462,
 ];
 
+/// A RIFF WAVE's play time: its `data` chunk over the `fmt ` byte rate.
+#[cfg(not(target_arch = "wasm32"))]
+fn riff_seconds(bytes: &[u8]) -> Option<f64> {
+    if bytes.get(0..4)? != b"RIFF" || bytes.get(8..12)? != b"WAVE" {
+        return None;
+    }
+    let word = |at: usize| -> Option<u32> {
+        Some(u32::from_le_bytes(bytes.get(at..at + 4)?.try_into().ok()?))
+    };
+    let (mut at, mut byte_rate, mut data) = (12usize, None, None);
+    while at + 8 <= bytes.len() {
+        let size = usize::try_from(word(at + 4)?).ok()?;
+        match bytes.get(at..at + 4)? {
+            b"fmt " => byte_rate = word(at + 16),
+            b"data" => data = Some(size.min(bytes.len() - at - 8)),
+            _ => {}
+        }
+        at += 8 + size + (size & 1);
+    }
+    let byte_rate = f64::from(byte_rate.filter(|rate| *rate > 0)?);
+    Some(f64::from(u32::try_from(data?).ok()?) / byte_rate)
+}
+
 // ---------------------------------------------------------------------------
 // AudioEngine
 // ---------------------------------------------------------------------------
@@ -297,14 +279,23 @@ pub struct AudioEngine {
     message_playing: Option<u32>,
 
     /// Currently loaded music track + which track it is.
-    music: Option<(Sound, MusicTrack)>,
+    music: Option<(Sound, MdataTrack)>,
 
     /// Whether music is currently playing.
     music_playing: bool,
 
+    /// When the playing track ends, in `get_time` seconds.
+    #[cfg(not(target_arch = "wasm32"))]
+    music_ends_at: Option<f64>,
+
+    /// The forced flag (`DAT_006b1490` bit 2): set by `force_track`
+    /// (`FUN_00417610`), cleared by a stop (`FUN_00417640`).
+    #[cfg(not(target_arch = "wasm32"))]
+    music_forced: bool,
+
     /// Missing tracks already reported, keeping diagnostics bounded.
     #[cfg(not(target_arch = "wasm32"))]
-    missing_music_logged: HashSet<MusicTrack>,
+    missing_music_logged: HashSet<MdataTrack>,
 }
 
 impl AudioEngine {
@@ -320,6 +311,10 @@ impl AudioEngine {
             message_playing: None,
             music: None,
             music_playing: false,
+            #[cfg(not(target_arch = "wasm32"))]
+            music_ends_at: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            music_forced: false,
             #[cfg(not(target_arch = "wasm32"))]
             missing_music_logged: HashSet::new(),
         }
@@ -400,8 +395,8 @@ impl AudioEngine {
 
     /// Load all audio resources from `sounds_dir`.
     ///
-    /// SFX and voice lines are pre-loaded.  Music is loaded on demand in
-    /// `play_music`.
+    /// SFX and voice lines are pre-loaded.  Music is read when it starts
+    /// (`start_track`).
     #[cfg(not(target_arch = "wasm32"))]
     pub fn load_all(&mut self, sounds_dir: &Path) {
         self.load_sfx(sounds_dir);
@@ -569,7 +564,7 @@ impl AudioEngine {
     /// subsequent frames after a user gesture rather than attempting playback
     /// before the decoded buffer exists.
     #[cfg(target_arch = "wasm32")]
-    pub fn load_music_bytes(&mut self, track: MusicTrack, bytes: &[u8]) {
+    pub fn load_music_bytes(&mut self, track: MdataTrack, bytes: &[u8]) {
         self.stop_music();
         let sound = Sound::load(&self.ctx, bytes);
         self.music = Some((sound, track));
@@ -736,93 +731,117 @@ impl AudioEngine {
     /// not already loaded.
     ///
     /// If the same track is already playing, this is a no-op.
+    /// Play `track` once from `mdata_dir` (`FUN_00417520`): a playing track
+    /// stops first, which clears the forced flag.
     #[expect(
         clippy::cast_possible_truncation,
         reason = "Audio gains are bounded values; the playback API takes f32."
     )]
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn play_music(
+    pub fn start_track(
         &mut self,
-        track: MusicTrack,
-        sounds_dir: &Path,
+        track: MdataTrack,
+        mdata_dir: &Path,
         vol_state: &AudioVolumeState,
+        now: f64,
     ) {
-        let vol = vol_state.effective_music_volume() as f32;
-
-        // Same track already playing — do nothing.
-        if let Some((_, current)) = &self.music {
-            if *current == track && self.music_playing {
-                return;
-            }
+        if self.music_playing {
+            self.stop_music();
         }
-
-        self.stop_music();
-
-        let staged_path = audio_base_path(sounds_dir)
-            .join("music")
-            .join(music_file(track));
-        let path = if staged_path.exists() {
-            staged_path
-        } else if track == MusicTrack::MainTheme {
-            let configured = std::env::var_os("REBELLION_MDATA_DIR")
-                .map(PathBuf::from)
-                .map(|directory| directory.join("MDATA.300"));
-            configured
-                .filter(|candidate| candidate.exists())
-                .unwrap_or_else(|| PathBuf::from("../star-wars-rebellion/MDATA/MDATA.300"))
-        } else {
-            staged_path
-        };
-        if !path.exists() {
-            if self.missing_music_logged.insert(track) {
-                eprintln!(
-                    "[audio] music unavailable track={track:?} expected_path={}",
-                    path.display()
-                );
-            }
-            return;
-        }
-
+        self.music = None;
+        self.music_ends_at = None;
+        let path = mdata_dir.join(track.file_name());
         let bytes = match std::fs::read(&path) {
-            Ok(b) => b,
-            Err(e) => {
-                eprintln!("[audio] Failed to read music {}: {e}", path.display());
+            Ok(bytes) => bytes,
+            Err(error) => {
+                if self.missing_music_logged.insert(track) {
+                    eprintln!(
+                        "[audio] music unavailable track={} path={}: {error}",
+                        track.index(),
+                        path.display()
+                    );
+                }
                 return;
             }
         };
-
+        let Some(seconds) = riff_seconds(&bytes) else {
+            eprintln!("[audio] music track={} is not a RIFF WAVE: {}", track.index(), path.display());
+            return;
+        };
         let sound = Sound::load(&self.ctx, &bytes);
         sound.play(
             &self.ctx,
             quad_snd::PlaySoundParams {
-                looped: true,
-                volume: vol,
+                looped: false,
+                volume: vol_state.effective_music_volume() as f32,
             },
+        );
+        eprintln!(
+            "[audio] music track={} file={} forced={} seconds={seconds:.1} muted={}",
+            track.index(),
+            track.file_name(),
+            self.music_forced,
+            vol_state.muted || vol_state.music_muted
         );
         self.music = Some((sound, track));
         self.music_playing = true;
+        self.music_ends_at = Some(now + seconds);
     }
 
-    /// Select and start the appropriate music track for a game context.
-    ///
-    /// Delegates to `play_music` after mapping context → track.  If the
-    /// correct track is already playing, this is a no-op.
+    /// Stop, play `track` and mark it forced (`FUN_00417610`): it plays again
+    /// each time it ends until a stop.
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn play_music_for_context(
+    pub fn force_track(
         &mut self,
-        context: MusicContext,
-        sounds_dir: &Path,
+        track: MdataTrack,
+        mdata_dir: &Path,
         vol_state: &AudioVolumeState,
+        now: f64,
     ) {
-        let track = track_for_context(context);
-        self.play_music(track, sounds_dir, vol_state);
+        self.stop_music();
+        self.music_forced = true;
+        self.start_track(track, mdata_dir, vol_state, now);
     }
 
-    /// Stop the current music track immediately.
+    /// The end-of-track event (`FUN_00417780`, message `0x4c9`): a forced
+    /// track plays again here; `true` means a free track ended and the caller
+    /// starts the next default pick.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn poll_track_end(
+        &mut self,
+        mdata_dir: &Path,
+        vol_state: &AudioVolumeState,
+        now: f64,
+    ) -> bool {
+        if !self.music_playing || self.music_ends_at.is_none_or(|end| now < end) {
+            return false;
+        }
+        self.music_playing = false;
+        self.music_ends_at = None;
+        let Some((_, track)) = self.music.take() else {
+            return false;
+        };
+        if self.music_forced {
+            self.start_track(track, mdata_dir, vol_state, now);
+            return false;
+        }
+        true
+    }
+
+    /// Stop the current music track immediately (`FUN_00417640`), which
+    /// clears the forced flag.
     pub fn stop_music(&mut self) {
-        if let Some((sound, _)) = self.music.take() {
+        if let Some((sound, track)) = self.music.take() {
             sound.stop(&self.ctx);
+            if self.music_playing {
+                eprintln!("[audio] music stopped track={}", track.index());
+            }
             self.music_playing = false;
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.music_ends_at = None;
+            self.music_forced = false;
         }
     }
 
@@ -840,9 +859,9 @@ impl AudioEngine {
         }
     }
 
-    /// Returns the currently playing `MusicTrack`, if any.
+    /// Returns the currently playing track, if any.
     #[allow(dead_code)]
-    pub fn current_track(&self) -> Option<MusicTrack> {
+    pub fn current_track(&self) -> Option<MdataTrack> {
         self.music.as_ref().map(|(_, t)| *t)
     }
 

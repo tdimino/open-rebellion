@@ -32,10 +32,17 @@ pub enum TargetOrder {
     Mission(Vec<MissionMember>),
     /// Move (`0x201`), or Confirmed Move (`0x202`) when `confirmed`, for a
     /// team of fleets: one fleet's own, or a sector window's fleet icon's
-    /// (`FUN_00512700`, kind `0x10`). port: a character's or special force's
-    /// move is not ported.
+    /// (`FUN_00512700`, kind `0x10`).
     FleetMove {
         fleets: Vec<FleetKey>,
+        confirmed: bool,
+    },
+    /// Move or Confirmed Move of characters and special forces: a Move
+    /// mission per location (`0x241`, `ghidra/notes/move-order.md`,
+    /// "Characters and special forces (0x241)"). Released on a Fleet
+    /// window they board that fleet.
+    MemberMove {
+        members: Vec<MissionMember>,
         confirmed: bool,
     },
     /// A regiment's Move (`0x201`). Released on a Fleet window it boards the

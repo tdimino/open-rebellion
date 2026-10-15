@@ -50,8 +50,9 @@ pub fn apply_results(
     log: &mut Vec<String>,
 ) -> BattleReturn {
     let mut withdrawal = None;
-    // FUN_005032c0: the squadrons the system held lose craft as carried
-    // ones do; each surviving squadron returns to the system.
+    // FUN_0040c780 -> FUN_0040d260 -> FUN_00503370 -> FUN_005032c0: the
+    // squadrons the system held lose craft as carried ones do; each surviving
+    // squadron returns to the system.
     if let Some(system) = world.systems.get_mut(session.system) {
         for (is_attacker, is_alliance) in [
             (true, session.attacker_is_alliance),
@@ -79,7 +80,7 @@ pub fn apply_results(
         system.fighters.retain(|entry| entry.count > 0);
     }
 
-    // Every fleet of each side fought (FUN_00516ef0), the lead fleet first.
+    // Every fleet of each side fought (FUN_0040b0e0), the lead fleet first.
     let mut fleets: Vec<(FleetKey, bool)> = Vec::new();
     for (fleet, is_attacker) in [
         (session.attacker_fleet, true),
@@ -239,7 +240,7 @@ pub fn apply_results(
                 Some(fleet_key)
             };
             if let Some(leaving) = leaving {
-                let destination = withdraw_fleet(world, movement, leaving, session.system, log);
+                let destination = withdraw_fleet(world, movement, troop_transport, leaving, log);
                 // The results name where the player's fleet went; an equal
                 // stalemate withdraws both sides, and the enemy's
                 // destination must not take its place.
@@ -248,6 +249,27 @@ pub fn apply_results(
                 }
             }
         }
+    }
+    // FUN_0051ddf0 → FUN_00516ef0: the winner's system squadrons are
+    // checked in their seat and the loser's fleets and squadrons look for a
+    // place to go (`post_battle`).
+    let recorded = match session.winner {
+        Some(CombatWinner::Attacker) => Some(session.attacker_is_alliance),
+        Some(CombatWinner::Defender) => Some(!session.attacker_is_alliance),
+        Some(CombatWinner::Draw) | None => None,
+    };
+    if let Some(winner_is_alliance) =
+        crate::post_battle::pass_winner(world, session.system, recorded)
+    {
+        crate::post_battle::run_pass(
+            world,
+            movement,
+            troop_transport,
+            session.system,
+            winner_is_alliance,
+            session.start_tick,
+            log,
+        );
     }
     troop_transport.destroy_untransportable_cargo(world);
     let mut result = BattleReturn {
@@ -280,49 +302,26 @@ pub fn apply_results(
     result
 }
 
-/// Send a fleet that withdrew from a battle to the nearest friendly or
-/// neutral system (manual p. 151, Withdraw from Battle; the Battle Alert's
-/// Retreat, p. 141). port: the original's choice of destination is untraced;
-/// the nearest such system by map distance stands in. A fleet with no such
-/// system, or a ship without a hyperdrive, stays.
+/// Send a fleet that withdrew from a battle (manual p. 151, Withdraw from
+/// Battle; the Battle Alert's Retreat, p. 141) where the retreat chain
+/// places it (`post_battle::retreat_destination`). A fleet with no place,
+/// or a ship without a hyperdrive, stays.
 fn withdraw_fleet(
     world: &mut GameWorld,
     movement: &mut MovementState,
+    troop_transport: &TroopTransportState,
     fleet: FleetKey,
-    battle_system: SystemKey,
     log: &mut Vec<String>,
 ) -> Option<SystemKey> {
     let value = world.fleets.get(fleet)?;
     let (is_alliance, origin) = (value.is_alliance, value.location);
-    let side = if is_alliance {
-        Faction::Alliance
-    } else {
-        Faction::Empire
-    };
-    let here = world
-        .systems
-        .get(origin)
-        .map(|system| (system.x, system.y))?;
-    let distance = |x: u16, y: u16| {
-        let (dx, dy) = (
-            i64::from(x) - i64::from(here.0),
-            i64::from(y) - i64::from(here.1),
-        );
-        dx * dx + dy * dy
-    };
-    let destination = world
-        .systems
-        .iter()
-        .filter(|&(key, system)| {
-            key != battle_system
-                && !system.is_destroyed
-                && system
-                    .control
-                    .faction()
-                    .is_none_or(|faction| faction == side)
-        })
-        .min_by_key(|(_, system)| distance(system.x, system.y))
-        .map(|(key, _)| key);
+    let destination = crate::post_battle::retreat_destination(
+        world,
+        troop_transport,
+        movement,
+        origin,
+        is_alliance,
+    );
     if let Some(destination) = destination {
         let departed = crate::movement::begin_faction_fleet_transit(
             movement,

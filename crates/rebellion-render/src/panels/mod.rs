@@ -12,8 +12,8 @@
 //!
 //! ```ignore
 //! egui_macroquad::ui(|ctx| {
-//!     if let Some(action) = panels::draw_officers(ctx, world, &mut officer_state) {
-//!         apply_officer_action(&mut world, &mut missions, action);
+//!     if let Some(action) = panels::draw_fleets(ctx, world, /* … */) {
+//!         apply_panel_action(&mut world, action);
 //!     }
 //! });
 //! egui_macroquad::draw();
@@ -23,12 +23,8 @@ pub mod bombardment;
 pub mod death_star;
 pub mod fleets;
 pub mod game_setup;
-pub mod jedi;
-pub mod loyalty;
 pub mod missions;
 pub mod mod_manager;
-pub mod officers;
-pub mod research;
 pub mod save_load;
 
 #[cfg(any(debug_assertions, not(target_arch = "wasm32")))]
@@ -37,14 +33,12 @@ pub mod command_palette;
 pub use fleets::{draw_fleets, FleetsState};
 pub use missions::draw_missions;
 pub use mod_manager::{draw_mod_manager, ModInfo, ModManagerAction, ModManagerState};
-pub use officers::{draw_officers, OfficersState};
 pub use save_load::{draw_save_load, SaveLoadPanelState, SaveSlotInfo};
 
 use rebellion_core::fleet_join::FleetMover;
 use rebellion_core::ids::{CharacterKey, FleetKey, SystemKey, TroopKey};
 use rebellion_core::manufacturing::BuildableKind;
 use rebellion_core::missions::{MissionFaction, MissionKind, MissionMember};
-use rebellion_core::research::TechType;
 use rebellion_core::troop_transport::{RegimentTarget, SquadronSource};
 
 /// Player-initiated actions returned by War Room panels.
@@ -57,23 +51,9 @@ pub enum PanelAction {
     /// Player has chosen a starting faction.  Gates all other panels.
     SelectFaction(MissionFaction),
 
-    // ── Officers ──────────────────────────────────────────────────────────────
-    /// Show detailed stats for the selected character (sets panel focus).
-    FocusCharacter(CharacterKey),
-
     // ── Fleets ────────────────────────────────────────────────────────────────
     /// Focus the galaxy map on the system where a fleet is located.
     FocusFleetSystem(SystemKey),
-    /// Assign a character to a fleet as commander.
-    AssignCharacterToFleet {
-        character: CharacterKey,
-        fleet: FleetKey,
-    },
-    /// Remove a character from a fleet.
-    RemoveCharacterFromFleet {
-        character: CharacterKey,
-        fleet: FleetKey,
-    },
     /// A fleet's or capital ships' Move (`0x201`) released on a Fleet window
     /// (`fleet_join::join_fleet`).
     JoinFleet { mover: FleetMover, target: FleetKey },
@@ -122,6 +102,12 @@ pub enum PanelAction {
     MoveSquadron {
         source: SquadronSource,
         target: RegimentTarget,
+    },
+    /// Characters' and special forces' Move (`0x241`), checked and, when
+    /// it asked, confirmed (`MissionState::dispatch_move`).
+    MoveMembers {
+        members: Vec<MissionMember>,
+        destination: rebellion_core::missions::MoveDestination,
     },
 
     // ── Manufacturing ─────────────────────────────────────────────────────────
@@ -174,28 +160,6 @@ pub enum PanelAction {
     ToggleMod { name: String },
     /// Reload all mods from disk.
     ReloadMods,
-
-    // ── Research ──────────────────────────────────────────────────────────
-    /// Assign a character to research a tech tree.
-    DispatchResearch {
-        character: CharacterKey,
-        tech_type: TechType,
-        faction: MissionFaction,
-    },
-    /// Cancel an active research project.
-    CancelResearch {
-        tech_type: TechType,
-        faction: MissionFaction,
-    },
-
-    // ── Jedi Training ──────────────────────────────────────────────────────
-    /// Start Force training for a character.
-    StartJediTraining {
-        character: CharacterKey,
-        faction: MissionFaction,
-    },
-    /// Stop Force training for a character.
-    StopJediTraining { character: CharacterKey },
 
     // ── Bombardment ──────────────────────────────────────────────────
     /// Order orbital bombardment from a fleet against its current system.

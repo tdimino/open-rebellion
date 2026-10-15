@@ -207,12 +207,12 @@ struct OpenDefensesWindow {
     scroll: ScrollDrag,
 }
 
-/// A left press held on a squadron row until its release (`CoolDragList`,
-/// `FUN_006083c0`).
+/// A left press held on a squadron, character or special-force row until
+/// its release (`CoolDragList`, `FUN_006083c0`).
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct SquadronDrag {
+struct RowDrag {
     system: SystemKey,
-    class: FighterKey,
+    item: DefensesItem,
     is_alliance: bool,
     press: egui::Pos2,
     list: egui::Rect,
@@ -225,7 +225,7 @@ pub struct DefensesWindowState {
     /// When one of these windows last took focus (`window_focus`).
     focus_serial: u64,
     windows: Vec<OpenDefensesWindow>,
-    drag: Option<SquadronDrag>,
+    drag: Option<RowDrag>,
 }
 
 impl Default for DefensesWindowState {
@@ -407,14 +407,18 @@ impl DefensesWindowState {
     /// outside the list, it becomes the `0x29a` drop, as in the Fleet
     /// window (`FUN_006083c0`).
     ///
-    /// port: only squadrons drag; the page's other objects keep their
-    /// pop-up Move.
+    /// Ctrl held at the drop makes it a Confirmed Move (`0x202`,
+    /// `GetAsyncKeyState(0x11)`) for characters and special forces.
+    ///
+    /// port: regiments and defenses do not drag; they keep their pop-up
+    /// Move.
     fn end_drag(&mut self, ctx: &egui::Context, scale: f32) -> Option<DefensesWindowAction> {
-        let (released, down, point) = ctx.input(|input| {
+        let (released, down, point, ctrl) = ctx.input(|input| {
             (
                 input.pointer.primary_released(),
                 input.pointer.primary_down(),
                 input.pointer.latest_pos(),
+                input.modifiers.ctrl,
             )
         });
         if !released {
@@ -429,12 +433,25 @@ impl DefensesWindowState {
         if moved.length_sq() <= DRAG_DISTANCE_SQUARED || rect_contains(drag.list, point) {
             return None;
         }
-        Some(DefensesWindowAction::DragSquadron {
-            system: drag.system,
-            class: drag.class,
-            is_alliance: drag.is_alliance,
-            point,
-        })
+        match drag.item {
+            DefensesItem::Squadron { class, .. } => Some(DefensesWindowAction::DragSquadron {
+                system: drag.system,
+                class,
+                is_alliance: drag.is_alliance,
+                point,
+            }),
+            DefensesItem::Character(key) => Some(DefensesWindowAction::DragMember {
+                member: MissionMember::Character(key),
+                confirmed: ctrl,
+                point,
+            }),
+            DefensesItem::SpecialForce(key) => Some(DefensesWindowAction::DragMember {
+                member: MissionMember::SpecialForce(key),
+                confirmed: ctrl,
+                point,
+            }),
+            DefensesItem::Troop(_) | DefensesItem::Defense(_) => None,
+        }
     }
 
     fn prepare_faction(&mut self, faction: CockpitFaction) {
@@ -520,6 +537,14 @@ pub enum DefensesWindowAction {
         system: SystemKey,
         class: FighterKey,
         is_alliance: bool,
+        point: egui::Pos2,
+    },
+    /// A Personnel page row dragged out of the list: the galaxy view
+    /// issues `0x201`, or `0x202` with Ctrl, and the character or special
+    /// force goes on a Move mission (`0x241`).
+    DragMember {
+        member: MissionMember,
+        confirmed: bool,
         point: egui::Pos2,
     },
 }
@@ -610,7 +635,7 @@ fn page_rows(
                         Some(DefensesRow {
                             item: DefensesItem::Character(key),
                             mini: character_mini_resource_id(character.dat_id, character.is_major)?,
-                            label: character.name.clone(),
+                            label: character.display_name().to_owned(),
                         })
                     }
                     MissionMember::SpecialForce(key) => {
@@ -772,7 +797,7 @@ struct WindowDrawResult {
     deselect: bool,
     /// The selection and canvas point of a right release on the list.
     object_menu: Option<(Option<MenuObject>, (i16, i16))>,
-    drag: Option<SquadronDrag>,
+    drag: Option<RowDrag>,
     /// The list's first row and bar press after this frame.
     scroll: Option<(usize, ScrollDrag)>,
 }
@@ -1148,10 +1173,16 @@ fn draw_defenses_window(
                     result.select = Some(row.item);
                     result.focus = true;
                 }
-                // A left press on a squadron captures the mouse for a drag
-                // (FUN_006083c0).
-                if let (DefensesItem::Squadron { class, .. }, Some(press)) = (
+                // A left press on a squadron, character or special force
+                // captures the mouse for a drag (FUN_006083c0).
+                let draggable = matches!(
                     row.item,
+                    DefensesItem::Squadron { .. }
+                        | DefensesItem::Character(_)
+                        | DefensesItem::SpecialForce(_)
+                );
+                if let (true, Some(press)) = (
+                    draggable,
                     ctx.input(|input| {
                         input
                             .pointer
@@ -1161,9 +1192,9 @@ fn draw_defenses_window(
                     }),
                 ) {
                     if response.is_pointer_button_down_on() && rect_contains(cell, press) {
-                        result.drag = Some(SquadronDrag {
+                        result.drag = Some(RowDrag {
                             system: window.system,
-                            class,
+                            item: row.item,
                             is_alliance: side == 1,
                             press,
                             list,

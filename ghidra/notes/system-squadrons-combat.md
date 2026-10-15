@@ -108,12 +108,19 @@ which runs `FUN_0041e270` → `FUN_0051ddf0` → `FUN_00516ef0` then
 
 ### `FUN_00516ef0`
 
-- `FUN_00509ad0(system)` returns `+0x54` → `+0x64` of the system, or 0
-  (hyp: the side of a pending battle record).
+- `FUN_00509ad0(system)` returns `+0x54` → `+0x64` of the system, or 0.
+  The import `FUN_0040c780` writes the battle's winner there through
+  `FUN_0050ceb0(system, winner)` (0..3), so the field is the last battle's
+  winner.
 - When it is 0 and both sides are present (fleets or squadrons,
   `FUN_00516ef0.c:63-94`), the side is taken from the system's `+0x78`
-  bits 6-7: holder 1 gives 2, holder 2 gives 1, 3 gives 3. A nonzero
-  `FUN_00509ad0` is used as the side directly.
+  bits 6-7: holder 3 gives 3, holder 1 gives 2, holders 2 and 0 give 1.
+  `FUN_00508660`, the system's hook for an arriving child, writes the
+  arriving fleet's or squadron's side there through `FUN_0050a1b0`, so the
+  holder is the side that arrived last and the tie goes to the other side.
+  A nonzero `FUN_00509ad0` is used as the side directly.
+- The chosen side is the winner; the other side (`local_60`) is the
+  loser.
 - For that side's system squadrons (`FUN_00503a50`, `:123-137`) it calls
   `FUN_00556710` per squadron.
 - For the other side (`local_60`) it calls `FUN_004f78e0(obj, 1, ctx)` on
@@ -121,17 +128,47 @@ which runs `FUN_0041e270` → `FUN_0051ddf0` → `FUN_00516ef0` then
   bit `0x1000` (`GameObjAutoscrapRequestNotif` in `build-delivery.md`) and
   updates both side views.
 
-`FUN_00556710` takes no combat action. For a squadron that is not
-destroyed and not flagged `0x1000` it calls slot `+0xb4(0, ctx)` when the
-squadron's container is destroyed, asks the container (slot `+0x54`) and
-calls slot `+0xb0`, builds a route context of kind `0x3f0` for the
-squadron's side (`FUN_00551100`, `FUN_00551270`, then `FUN_00551c80`, the
-route and room helpers of `move-order.md` and `regiment-unload.md`) and
-calls slot `+0xb8`. It calls `+0xb8` again when the squadron is en route
-(`+0x50` bit `0x10`) or its container changed and the containing system
-(`FUN_00555540`, `0x90`..`0x97`) is blockaded (`+0x88` bit `0x20`) by the
-other side (`FUN_00509890`). hyp: it re-homes system squadrons after the
-battle; the three slots are not resolved.
+Before the loop `FUN_00516ef0` calls `FUN_0050a580(system, 0)`, which
+clears the system's `+0x88` bit `0x10` and notifies both side views.
+
+### `FUN_00556710`: the winner's squadron check
+
+`FUN_00556710(squadron, ctx)` moves nothing and fights nothing. It
+re-validates a squadron's seat in its container in three stages, each run
+only while the squadron is not destroyed (`+0x50` bit 3) and not flagged
+(`+0x50` bit `0x1000`). Slots are the fighter-squadron vtable `0x0065def0`.
+
+1. Container (`FUN_004f6b50`, the `+0x1c` parent) is destroyed: slot `+0xb4`
+   `FUN_004f8710(0, ctx)`. A completed squadron not en route
+   (`+0x50` bit 2 set, bit `0x20` clear) is destroyed through `FUN_004f7ed0`
+   with the container's reason byte, else it is flagged `0x1000`.
+2. The container's slot `+0x54` (a system: `FUN_005072d0`, then the base
+   `FUN_004f6490`) answers "may this child sit here" into a two-word status
+   record `{1, code}` (`FUN_00520580`). Code `-1` accepts. The base accepts
+   when `(child +0x24 ^ container +0x24) & 0xc0 == 0`, that is, the same
+   side, and otherwise answers `0x24`. `FUN_005072d0` also accepts a
+   regiment (family `0x10..0x13`) at an unpopulated system of side 3
+   (`+0x88` bit 0 clear). A refusal calls slot `+0xb0` `FUN_00503510`:
+   flag `0x1000` unless destroyed.
+3. A route context (`FUN_00551060`) is built for the squadron's side with
+   kind `0x3f0` (`FUN_00551100(ctx, side, side, 0x3f0, {1})`), loaded with
+   the container (`FUN_00551270`), and the squadron is placed into that
+   container (`FUN_00551c80`, the move-order leg builder of `move-order.md`
+   and `regiment-unload.md`). Status code `-1` accepts. Kind `0x3f0` lifts
+   the blockade refusal (`FUN_005073d0`: a blockaded system, `+0x88` bit
+   `0x20`, gives `0x90`/4 and `0x3f0` resets it to accept). A refusal with
+   a leg recorded calls slot `+0xb8` `FUN_004f8760`: a completed squadron
+   not en route is destroyed with reason 4 (`+0xac(4)`), else it is flagged.
+4. When it is still valid and the squadron is en route (`+0x50` bit
+   `0x10`) or its origin container (`+0x38`) lies in a different system than
+   its container, and the container system is blockaded (`+0x88` bit
+   `0x20`) by a side (`FUN_00509890`) other than the squadron's, and the
+   squadron is not a fleet or ship family, it calls `+0xb8` again.
+
+There is no destination search. A squadron the system holds for its own
+side passes stages 1 to 3 untouched. hyp: whether the `iStack_34 != -1`
+guard in stage 3 (route object field at `+0x18`) is set by a refusal is not
+traced, so a stage-3 refusal may skip `+0xb8`.
 
 ### `FUN_00517270`
 
@@ -144,9 +181,164 @@ battle; the three slots are not resolved.
 | no | yes | winner 2: the same with 2 |
 | no | no | `FUN_0050a040(system, 0)`; no result object |
 
-It then calls the character manager's `FUN_00560d00(system, winner)`. A
-side left with only system squadrons is still present, so the system stays
-contested.
+`FUN_0050a040(system, w)` writes the low two bits of the system's `+0x78`
+(the last battle's result, 0 none, 1 Alliance, 2 Empire), notifies both
+views and calls slot `+0x1f0`. It runs only when at most one side is
+present. `FUN_00517ee0(system, w, FUN_00509ae0(system, 1),
+FUN_00509ae0(system, 2))` runs when one side remains. `FUN_00517270` does
+not change the system's side, move any object or clear any `0x1000` flag;
+it re-reads presence after `FUN_00516ef0` and the flagged objects' handler
+(next section). It then calls the character manager's
+`FUN_00560d00(system, winner)`. A side left with only system squadrons is
+still present, so the system stays contested.
+
+hyp: `FUN_00517ee0` and `FUN_00509ae0` (per-side figures for the result
+record) are not read here.
+
+## 3b. Flagged objects: event `0x307` and `FUN_00515480`
+
+`FUN_00516ef0` calls `FUN_004f78e0(obj, 1)` on every fleet and system
+squadron of the losing side. It sets `+0x50` bit `0x1000` and calls slot
+`+0x13c(1, ctx)`. A fleet's `FUN_004ff690` and a squadron's `FUN_004f2bd0`
+(`FUN_004fba70`) both raise event `0x307` through `FUN_0053f9c0(0x307, obj,
+flag, ctx)`: `FUN_0053f950` builds the event (`FUN_0053ff90`, keys at
+`+0x3c` object and `+0x50` flag) and hands it to the dispatcher callback
+`DAT_006b2af8` (`FUN_004fd390`). The handler `FUN_0057b1f0` calls
+`FUN_00515480(obj id, flag, ctx)`. hyp: dispatch is synchronous, as the call
+chain has no queue; settle by breaking on `FUN_0057b1f0` in a battle.
+
+The flag's other names: `GameObjAutoscrapRequestNotif` (`build-delivery.md`).
+The handler serves any object whose container no longer suits it, with the
+battle as one source. The player's Scrap order uses reason `0x14`, maintenance
+autoscrap `0x15` (`FUN_004f8850`).
+
+### Setting the reason: `+0xac(reason, ctx)`
+
+Slot `+0xac` is `FUN_004f8660` -> `FUN_004f71d0`: it writes the destruction
+reason byte `+0x40 & 0xff`, notifies both views and calls slot `+0x100`
+(`FUN_004fb200` -> `FUN_004f7560`), which sets `+0x50` bit 3 (destroyed) when
+the new reason is nonzero. So `+0xac(2)` destroys the object with reason 2
+and `+0xac(5)` with reason 5. Reasons read: 2 no accepting place found
+(`FUN_00515480`), 3 control change (`FUN_004f8680`), 4 removal
+(`FUN_004f8760`), 5 cannot travel (`FUN_00515480`, `FUN_004ff690`), `0xb`
+disaster, `0xc` squadron loss, `0xf`/`0x10` Destroy System, `0x14` scrap,
+`0x15` autoscrap. hyp: the player-facing text of reasons 2 and 5 is not
+traced.
+
+### `FUN_00515480(obj, flag, ctx)` branch by branch
+
+1. Object missing (`FUN_00504dc0`) or destroyed (`+0x50` bit 3): return
+   true, nothing else.
+2. A character (`+0x14` slot `+4` type in `0x30..0x3f`) that is completed
+   (`+0x50` bit 2): the story hook `FUN_00545df0` on manager `FUN_00506e40`
+   (`root +0xb8`); no relocation.
+3. `flag == 0` (a clear): return true. Nothing runs on a clear.
+4. Otherwise the relocation manager is `FUN_00506e60` (`root +0xbc`, the
+   holder of the nearness table). A hint id `H` (null by default) is set:
+   - not completed (bit 2 clear): `H` = the system holding the object's
+     origin object (`+0x38`) when it differs from the system holding the
+     object, else null;
+   - completed and en route (bit `0x20`): `H` = the transit origin
+     (`FUN_004f6e30`: the id at `+0x54 -> +0xc`) unless it equals the
+     destination (`FUN_00540450`: `+0x1c`), in which case `H` is cleared and
+     the origin id is nulled (`FUN_004f7fa0`);
+   - completed and not en route: `H` stays null.
+5. When the container (`FUN_0050c640`) is a system (`0x90..0x97`) and the
+   manager exists, the retreat-candidate chain
+   `FUN_005545e0(mgr, obj, containerId, &H, 0, 1, &D, &status)` runs.
+   Status is a `{1, code}` record: `-1` accepted, anything else refused;
+   it starts refused. `D` receives the chosen destination id.
+6. Status still refused: `+0xac(2, ctx)`: the object is destroyed with
+   reason 2. No retreat, no move.
+7. Status accepted and the object is completed and not destroyed:
+   `FUN_00555410(obj, D, &same)` sets `same = 1` unless the object's
+   containing system differs from `D`'s containing system (an unresolved
+   id leaves 1). With `same == 0` and speed zero (slot `+0x34(inTransit)`)
+   the object gets `+0xac(5, ctx)`. A fleet's speed is `FUN_004fd900`,
+   the slowest member (any member at 0 gives 0); a ship's `FUN_00500820`,
+   effective hyperdrive (`+0x1ec - +0x210`, then `+0x1f0 - +0x214`), else
+   the base `FUN_004f63f0`; a squadron's `FUN_00502f80` likewise, ending in
+   `FUN_004f63f0`, which is `DAT_006b9050` (100) while the object exists.
+8. The relocation `FUN_00556390(obj, D, ctx)`: when slot `+0x38` says the
+   object may travel (`FUN_004fda10` for a fleet, `FUN_004f6410` bit 16
+   otherwise) and bit `0x800` is clear it computes `same` again and sets the
+   en-route-active bit `0x20` to `same == 0` (`FUN_004f7640`); then, if not
+   destroyed, slot `+0xa8(D, ctx)`: a ship or squadron `FUN_004f8630`, a
+   fleet `FUN_004feca0`, both reparent through `FUN_004f6fd0`. A changed
+   container calls slot `+0xf4(old, new, ctx)` (`FUN_004faf50` for fleets,
+   ships and squadrons) which first clears bit `0x1000`
+   (`FUN_004f78e0(0)`) and starts the transit event `0x320`. A non-travelling
+   object goes straight to `+0xa8`.
+9. A fleet's slot `+0x13c` (`FUN_004ff690`) runs after the event: every
+   completed ship of the fleet that is not en route and whose speed is 0
+   gets `+0xac(5)`. It runs on a clear as well as a set.
+
+### The retreat-candidate chain (`FUN_005545e0`)
+
+Each stage runs only while status is refused, and each candidate is judged
+by `FUN_005571c0(obj, candidate, skipCurrent, &D, &status)`, which asks
+whether the object could be sent there as a move: route context kind
+`0x204` (`0x241` for a character, `FUN_005511d0`), loaded with the
+candidate (`FUN_005513a0`) and placed by `FUN_00551630` (the same checks a
+Move order makes, `move-order.md`). The first accepted candidate is `D`.
+
+| Stage | Function | Candidates, in order |
+|---|---|---|
+| 1 | `FUN_00554740` | the object's parent, grandparent and great-grandparent when each is a system, fleet or ship (the object stays where it is when its container still accepts it); skipped when the container is a `0x98..0x9f` object |
+| 2 | `FUN_00554ab0` | the hint `H`, then its parent and grandparent (fleet, ship, system) |
+| 3 | `FUN_00554e80` | systems of the object's side that are not blockaded (`+0x88` bit `0x20` clear), nearest first |
+| 4 | `FUN_00554f80` | the object's side's fleets (`FUN_004ffef0` mode 3) at the nearest systems, in the same order |
+| 5 | `FUN_005550e0` | systems of the object's side that are blockaded |
+| 6 | `FUN_005551e0` | systems with side bits `3` (neutral) |
+| 7 | `FUN_005552e0` | skipped for a side-3 object; systems of the other side |
+
+"Nearest first" is the nearness table at manager `+0x68` (`FUN_00554150` ->
+`FUN_0058afd0`, row `(id - 100) * 0x324`, 200 systems sorted by distance,
+`galaxy-limits.md`, `build-delivery.md`). Stage 3 to 7 candidates are
+tried one by one until one is accepted. A candidate system accepts a
+fleet (`0x204`) only when it is of the object's side (`FUN_00553410`:
+`0x24` otherwise), completed, not destroyed and not en route; the blockade
+refusal (`0x90`/4) is lifted for fleets and refuses a squadron
+(`FUN_005073d0`). hyp: stage 6 and 7 can accept only objects whose kind is
+accepted at a system of another side; the acceptance of fleets and
+squadrons at enemy systems is the unread part of `FUN_005073d0`
+(`FUN_00553410` alone refuses a system of another side).
+
+### What a flagged object finally does
+
+- Mobile, a destination accepted in another system, speed above 0: it
+  moves there at once (reparent to the system or carrier `D`) and travels
+  as a normal move; the move clears the flag.
+- A destination in the same system (stage 1 accepts its own container): no
+  container change, so nothing in the handler clears bit `0x1000`. hyp: it
+  stays set until the next container change. Readers of the bit:
+  `FUN_00556710` skips a flagged squadron in all stages, the object
+  invariant `FUN_004f9700` fails while it is set, and six story gates test
+  it. Settle by reading the bit after a battle.
+- Destination in another system and speed 0: destroyed, reason 5. A fleet
+  member ship with speed 0 is destroyed with reason 5 whatever the
+  fleet does.
+- No candidate accepted: destroyed, reason 2.
+- Retreat to a "chosen system" is therefore the first accepted candidate of
+  the chain above, not a tactical retreat; `FUN_00516730` (the battle
+  retreat options) reuses the same chain (`build-delivery.md`).
+
+The flag clears in `FUN_004fb520` (arrival/slot `+0x11c`, also clears
+autorouting and en route active) and `FUN_004faf50` (container change,
+first statement). `FUN_004faf50(from, to)` also sets en route active
+through event `0x320`.
+
+### Sides and ties
+
+- Winner side (`FUN_00509ad0`, else the holder rule): `FUN_00556710` on
+  its system squadrons only; fleets are not touched.
+- Loser side: every fleet and every system squadron flagged, then handled
+  by `FUN_00515480` above. A loser with no objects flags nothing.
+- No winner: `FUN_00509ad0` 0 and not both present gives no winner and no
+  calls. Both present gives the holder rule, so a battle that ends with
+  both sides present still names a winner and flags the other side's
+  objects; `FUN_00517270` independently reports no result and the battle
+  bit stays.
 
 ## 4. Not part of the battle
 
@@ -158,11 +350,10 @@ travel start (`COMBAT-SUMMARY.md`).
 
 ## Still open
 
-- The meaning of system `+0x54` and its `+0x64` field read by
-  `FUN_00509ad0`.
-- Slots `+0xb0`, `+0xb4`, `+0xb8` of the fighter-squadron class, called by
-  `FUN_00556710`, and why `FUN_00516ef0` flags the other side's forces with
-  `+0x50` bit `0x1000`.
+- Whether event `0x307` dispatches synchronously (section 3b) and whether a
+  flagged object that stays in its own system keeps bit `0x1000`.
+- The unread half of system acceptance for fleets and squadrons at enemy
+  systems (`FUN_005073d0` per family) and `FUN_00517ee0`.
 - Where the engine places exported system squadrons (coordinates,
   formation); `FUN_0040be90` builds the record and the placement is inside
   the tactical setup (`FUN_005a7500` and its handlers).
@@ -187,5 +378,30 @@ travel start (`COMBAT-SUMMARY.md`).
   no winning fleet, so no bombardment or landing follows.
   hyp: they start on their side's fighter line; the original placement is
   untraced (above).
-- port: `FUN_00516ef0`'s post-battle pass (`FUN_00556710`, the `0x1000`
-  flag) has no counterpart.
+- `rebellion_core::post_battle` is the pass (`FUN_00516ef0`), run at the
+  end of `tactical::apply::apply_results`, which every played, simulated
+  and unwatched battle returns through. `pass_winner` takes the battle's
+  winner, else, with both sides present, the side that did not arrive last
+  (`GameWorld::arrival_holders`, written on each fleet arrival and each
+  squadron arrival on a planet). `run_pass` checks the winner's system
+  squadrons (`FUN_00556710`: a destroyed system takes them, a system of the
+  other side sends them through the chain) and sends every fleet and
+  system squadron of the loser through the chain (`FUN_00515480`): stay
+  when the battle system is theirs (a squadron also needs it unblockaded),
+  else the nearest unblockaded system of their side, else (a squadron) the
+  nearest fleet of their side with room, else (a fleet) the nearest
+  blockaded system of their side; none destroys the object (reason 2), and
+  a fleet that must travel at speed 0 is destroyed (reason 5). A fleet that
+  stays loses each ship that cannot travel (`FUN_004ff690`). A fleet that
+  withdrew from the battle goes where the chain without its own system
+  sends it (`retreat_destination`).
+- port: `resolve_system_space_combat` seats the Alliance as the session's
+  attacker, so `CombatSide::Attacker` means Alliance there.
+- port: stage 4 of `FUN_00556710` (an en-route squadron, or one whose
+  origin lies elsewhere) has no counterpart: the port keeps no origin for a
+  squadron the system holds.
+- hyp: the chain's stages 6 and 7 accept nothing, the characters aboard a
+  destroyed fleet are captured, a flagged object that stays keeps no flag
+  (the port keeps none), and a withdrawal skips the current system.
+- `FUN_00517270`'s presence check reports the result; its `+0x78` low bits
+  are not kept.

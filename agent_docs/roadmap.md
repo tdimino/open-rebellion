@@ -527,8 +527,13 @@ acceptance. Their JSON ledgers provide stable finding and feature IDs.
   follow-up, uprisings, bombardment, HQ relocation, and principal missions.
   Do not require symmetric attack counts from an asymmetric game.
 - [ ] Enable AI Death Star construction/fire/cleanup and repair parity oracles.
-  The superlaser path, the construction timer, and sabotage are unrecovered;
-  the binary has no build-delay rule for sabotage (F-017).
+  `ghidra/notes/death-star-strategic.md` recovers the original: an ordinary
+  shipyard build of CAPSHPSD record 136, one per system; fire is order
+  `0x223` (gate `FUN_00582440`, no side or owner test); the destroy cascade
+  leaves fleets standing; sabotage has no build-delay rule (F-017). Port
+  nodes: `or-port-destroy-system-cascade-imrv` (P1), `or-port-bombardment-8usw`,
+  `or-port-death-star-family-qtde`; whether the AI fires it is
+  `or-q-ai-death-star-use-z9ow`.
 - [ ] Wire the recovered rules the 2026-09-25 test-pruning pass found uncalled:
   research gating of buildable ships (F-018), the decoy roll and the SUBDMSTB
   Subdue success check (F-019; both now run, and its remaining phases are
@@ -1267,7 +1272,7 @@ secrets and signed sessions.
 - [ ] Create `data/homeworlds.json` with canon homeworld assignments (Luke→Tatooine, etc.)
 - [ ] HomeworldModifier: +10% at homeworld, -5% when enemy controls, -15 loyalty on fall
 - [ ] Wire into missions.rs probability + betrayal.rs loyalty
-- [ ] Display in Officers panel and Encyclopedia
+- [ ] Display in the character's Status window and Encyclopedia
 
 **Phase 2: Character Creation Core**
 - [ ] Add `CharacterOrigin`, `AcademyArchetype`, `ArchetypeTemplate` to rebellion-core
@@ -1299,8 +1304,8 @@ secrets and signed sessions.
 ### Mod surface (Ghidra groundwork)
 The tactical engine resolves every space battle, played or not; its parity
 is tracked under `or-ep-tac-x15`. Before addons open content to mods, the
-`or-ep-mod-surface-vdch` questions map what the original fixes in code
-rather than data: Force users and training, the story encounters, mission
+`or-ep-mod-surface-vdch` questions (all answered) map what the original
+fixes in code rather than data: Force users and training, the story encounters, mission
 families, ship-type assets, the 200-system galaxy, the movies, the
 per-side switches and the two-side limit, the object ids the executable
 names directly, the Death Star, record limits, the character roster, ground
@@ -1310,6 +1315,19 @@ missions, ships, systems, movies, sounds and translations, and for era
 overhauls that rename the sides, replace the scenario or add a superweapon.
 `agent_docs/mod-surface.md` collects the answers and the rules for exposing
 a fixed rule as mod data.
+
+- [ ] Port what the answers found the port lacks or invents: officer rank
+  and command orders `0x260`-`0x263` (`or-port-officer-rank-x4kn`),
+  majors-only recruiters and major-first mission leads
+  (`or-port-recruit-major-lead-8grm`), the original music selector in place
+  of `track_for_context` (`or-port-music-selector-v9nd`), the Force fields
+  (`or-port-force-fields-2u0m`), movie triggers
+  (`or-port-movie-triggers-45gd`), and the post-battle pass for system
+  squadrons (`or-port-system-squadron-pass-oa3p`).
+- [ ] Decide whether mods may append records. The original loads any count
+  but has no class for a new family byte and the port's loader skips
+  patches with unknown ids (`ghidra/notes/record-registry.md`); allowing
+  new records is an architecture change.
 
 ---
 

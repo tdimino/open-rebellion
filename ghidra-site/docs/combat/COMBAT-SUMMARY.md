@@ -12,11 +12,11 @@ updated: 2026-10-14
 
 | Kind | Resolver | Note |
 |---|---|---|
-| Space battle | The battle session `FUN_0040a050`: the tactical engine, windowed or headless for Simulate and computer battles | [simulate-runs-tactical-engine.md](simulate-runs-tactical-engine.md), the `tactical-*.md` notes |
-| Death Star in battle | Tactical Death Star object and trench run | [tactical-death-star-path.md](tactical-death-star-path.md) |
-| Bombardment, Destroy System | Orders `0x220`-`0x223`, gate `FUN_00582440`, run `FUN_0058d800` | [bombardment.md](bombardment.md), [death-star-strategic.md](death-star-strategic.md) |
-| Regiments lost to a blockade | Withdraw percent | [blockade-troop-withdrawal.md](blockade-troop-withdrawal.md) |
-| Ground units and their art | Regiment and special-force classes | [ground-unit-assets.md](ground-unit-assets.md) |
+| Space battle | The battle session `FUN_0040a050`: the tactical engine, windowed or headless for Simulate and computer battles | [simulate-runs-tactical-engine.md](https://github.com/tdimino/open-rebellion/blob/main/ghidra/notes/simulate-runs-tactical-engine.md), the `tactical-*.md` notes |
+| Death Star in battle | Tactical Death Star object and trench run | [tactical-death-star-path.md](https://github.com/tdimino/open-rebellion/blob/main/ghidra/notes/tactical-death-star-path.md) |
+| Bombardment, Destroy System | Orders `0x220`-`0x223`, gate `FUN_00582440`, run `FUN_0058d800` | [bombardment.md](bombardment.md), [death-star-strategic.md](https://github.com/tdimino/open-rebellion/blob/main/ghidra/notes/death-star-strategic.md) |
+| Regiments lost to a blockade | Withdraw percent | [blockade-troop-withdrawal.md](https://github.com/tdimino/open-rebellion/blob/main/ghidra/notes/blockade-troop-withdrawal.md) |
+| Ground units and their art | Regiment and special-force classes | [ground-unit-assets.md](https://github.com/tdimino/open-rebellion/blob/main/ghidra/notes/ground-unit-assets.md) |
 | GNPRTB parameters | Parameter table | [combat-formulas.md](combat-formulas.md) |
 
 ## The object-move dispatcher: `FUN_00514a60`

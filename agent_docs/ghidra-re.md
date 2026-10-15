@@ -137,7 +137,13 @@ field write `+ 0xc0],`), `DumpReferences.java`, `DumpInstructions.java`,
 `DecompileCallersOf.java` (every function calling an import, such as
 `DrawTextA`), `FindIndirectCalls.java`, `FindScalarReferences.java`,
 `DumpFloatsAt.java`, and `CreateAndDecompileTargets.java` (a function
-Ghidra never defined, by address). `ghidra/` is ignored, so add a new
+Ghidra never defined, by address). For a range: `DecompileRange.java`
+(every function, `index.tsv` and `gaps.tsv`), then `RecoverGaps.java` (every
+function hidden in those gaps). For evidence tables: `CallSiteArgs.java`
+(the arguments pushed at every call to a function, such as a registry),
+`FindDatIds.java` (every literal record id), `FamilyChecks.java` (every
+`SHR reg,0x18` family test and what it compares) and `FindString.java` (a
+text's address and the functions using it). `ghidra/` is ignored, so add a new
 script with `git add -f`, as a cited `.c` file is. The historical Jython
 scripts below need PyGhidra:
 

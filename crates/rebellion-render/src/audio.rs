@@ -55,46 +55,102 @@ pub enum SfxKind {
 }
 
 // ---------------------------------------------------------------------------
-// MusicTrack — named music track identifiers
+// MdataTrack and MusicSelector — the original's 16 tracks and default pick
 // ---------------------------------------------------------------------------
 
-/// Named music track identifiers.
-///
-/// Maps 1:1 to WAV files under `data/sounds/music/`.  Files are named
-/// `{lowercase_variant}.wav` (e.g. `main_theme.wav`, `battle.wav`).
+/// A music track: the file `MDATA.(300 + index)` for index 0..15, the table
+/// at `0x006a8478` that `FUN_00417520` plays from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum MusicTrack {
-    MainTheme,
-    Battle,
-    Victory,
-    Defeat,
-    /// Emperor Arrives / Death of Yoda / Obi-Wan Revelation (MDATA.306)
-    Imperial,
-    /// Battle of Hoth medley (MDATA.312)
-    Hoth,
-    /// Battle of Endor III medley (MDATA.315)
-    Endor,
+pub struct MdataTrack(u8);
+
+impl MdataTrack {
+    /// The track a session-less pick returns (`FUN_0041d3b0`): the menu's.
+    pub const MENU: Self = Self(0);
+
+    /// `FUN_00417520` plays only `track < 0x10`.
+    #[must_use]
+    pub const fn new(index: u8) -> Option<Self> {
+        if index < 16 {
+            Some(Self(index))
+        } else {
+            None
+        }
+    }
+
+    #[must_use]
+    pub const fn index(self) -> u8 {
+        self.0
+    }
+
+    /// The file name under `MDATA\`.
+    #[must_use]
+    pub fn file_name(self) -> String {
+        format!("MDATA.{}", 300 + u16::from(self.0))
+    }
+
+    /// The Battle Alert's track (`FUN_0044f860`): 10 when the window's side
+    /// (`+0x9c`) is the Alliance, 11 otherwise.
+    #[must_use]
+    pub const fn battle_alert(player_alliance: bool) -> Self {
+        Self(if player_alliance { 10 } else { 11 })
+    }
+
+    /// The battle result window's track (`FUN_0046f360`): 12 or 14 when the
+    /// report's winner (`+0x50`) is the player's side, else 13 or 15, the
+    /// Alliance's pair first.
+    #[must_use]
+    pub const fn battle_result(player_alliance: bool, player_won: bool) -> Self {
+        Self(match (player_alliance, player_won) {
+            (true, true) => 12,
+            (true, false) => 13,
+            (false, true) => 14,
+            (false, false) => 15,
+        })
+    }
 }
 
-// ---------------------------------------------------------------------------
-// MusicContext — high-level game context → track selection
-// ---------------------------------------------------------------------------
+/// The default track pick (`FUN_0041d3b0` -> `FUN_0043a250` on the side's
+/// advice agent).
+#[derive(Debug, Clone, Default)]
+pub struct MusicSelector {
+    /// The agent's counter at `+0x190`: 0 when the agent is built
+    /// (`FUN_00439320`). port: the save does not carry it
+    /// (`FUN_004397a0` writes it), so a loaded game starts at 0.
+    counter: u8,
+}
 
-/// High-level game context used by the app to pick a `MusicTrack`.
-///
-/// The audio engine maps context to track so callers do not hard-code tracks.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum MusicContext {
-    /// Title screen and setup screens.
-    MainMenu,
-    /// Galaxy map during normal play.
-    GalaxyMap,
-    /// Active space battle (tactical or auto-resolve).
-    Combat,
-    /// Game won.
-    Victory,
-    /// Game lost.
-    Defeat,
+impl MusicSelector {
+    /// The next default track. Without a game session it is track 0. In a
+    /// session, while the counter is above 0 it counts down and returns
+    /// `rand(6) / 2 + 1`, a calm track 1..3; at 0 it resets to 3 and returns
+    /// the agent's situational track (vtable slot `+0x1c`), so the
+    /// situational track plays one pick in four. `roll(n)` draws from
+    /// `0..n` (`FUN_0041cd80`).
+    ///
+    /// port: the situational slot switches on the agent's state byte
+    /// `+0x170` (`FUN_004c48e0` Alliance 4..9, `FUN_004c2700` Empire 9..4),
+    /// which the port does not track yet (or-q-advice-music-state-rkf2); it
+    /// takes the slot's own default branch, `rand(3) + 1`.
+    pub fn default_pick(&mut self, in_session: bool, mut roll: impl FnMut(u32) -> u32) -> MdataTrack {
+        if !in_session {
+            return MdataTrack::MENU;
+        }
+        if self.counter > 0 {
+            self.counter -= 1;
+            return calm_track(roll(6) / 2 + 1);
+        }
+        self.counter = 3;
+        calm_track(roll(3) + 1)
+    }
+
+    /// A new game's agent starts the counter at 0.
+    pub fn reset(&mut self) {
+        self.counter = 0;
+    }
+}
+
+fn calm_track(index: u32) -> MdataTrack {
+    MdataTrack(u8::try_from(index.clamp(1, 3)).unwrap_or(1))
 }
 
 // ---------------------------------------------------------------------------

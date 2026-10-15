@@ -133,7 +133,8 @@ green until their dedicated findings close.
   choosing or checking off work.
 - `agent_docs/task-graph.md` — the br/bv task graph in `.beads/`: question,
   review, port and acceptance nodes. Read before choosing, delegating or
-  closing tactical, ground-assault or Ghidra work.
+  closing tactical, ground-assault or Ghidra work. After any br change, run
+  `scripts/task-index.py` to regenerate the public pages in `tasks/`.
 - `agent_docs/mod-surface.md` — what the original fixes in code rather than
   data, and the rules for turning a fixed rule into mod data. Read before
   mod or era-overhaul work.

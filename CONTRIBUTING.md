@@ -8,6 +8,7 @@ bounded, auditable unit at a time.
 
 | Work | Start here |
 |------|------------|
+| Parity questions, ports and tactical acceptance | A ready node in the [task graph](tasks/INDEX.md) |
 | Gameplay, simulation, persistence, browser, or multiplayer | [Full-functionality audit](docs/qa/2026-09-08-full-functionality-audit/) and its `P00` through `P40` acceptance passes |
 | Original interface implementation | [Interface parity guide](docs/qa/2026-09-10-interface-parity-audit/) and a required family or cell in `2026-10-06-surface-ledger.json` |
 | Ghidra or resource recovery | An open `RE-*` package in the [reverse-engineering ledger](docs/qa/2026-09-10-interface-parity-audit/reverse-engineering-ledger.md) |
@@ -16,7 +17,8 @@ bounded, auditable unit at a time.
 | Milestone planning | [Roadmap](agent_docs/roadmap.md) |
 | Architecture and subsystem context | [Agent documentation index](agent_docs/INDEX.md) and [documentation index](docs/INDEX.md) |
 
-Before coding, identify the relevant `P##`, `RE-*`, surface-family, or cell ID.
+Before coding, identify the relevant `P##`, `RE-*`, surface-family, cell, or
+task-graph node ID.
 Keep the pull request focused on that unit and cite the ID in its description.
 
 ## Development workflow

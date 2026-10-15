@@ -15,7 +15,7 @@ use rebellion_core::carriage;
 use rebellion_core::dat::{ExplorationStatus, Faction};
 use rebellion_core::fleet_join;
 use rebellion_core::fog::FogState;
-use rebellion_core::ids::{DatId, FleetKey, SystemKey, TroopKey};
+use rebellion_core::ids::{CharacterKey, DatId, FleetKey, SystemKey, TroopKey};
 use rebellion_core::movement::MovementState;
 use rebellion_core::troop_transport::TroopTransportState;
 use rebellion_core::world::{ControlKind, Fleet, GameWorld};
@@ -229,6 +229,8 @@ enum ItemObject {
         fleet: FleetKey,
         index: usize,
     },
+    /// A Personnel tab character (`FUN_004ed350`'s menu).
+    Character(CharacterKey),
 }
 
 impl ItemObject {
@@ -237,6 +239,7 @@ impl ItemObject {
             Self::Fighter { fleet, index } => MenuObject::Fighter { fleet, index },
             Self::Fleet(fleet) => MenuObject::Fleet(fleet),
             Self::Regiment(troop) => MenuObject::Troop(troop),
+            Self::Character(character) => MenuObject::Character(character),
             Self::Ship {
                 fleet,
                 index,
@@ -543,13 +546,16 @@ impl FleetWindowState {
     /// the galaxy view moves the whole selection against the window under
     /// the point (`FUN_00422ce0`, window type 4: `0x201`).
     ///
-    /// port: Ctrl's Confirmed Move (`0x202`) is not ported for a regiment.
+    /// Ctrl held at the drop makes a character's move a Confirmed Move
+    /// (`0x202`, `GetAsyncKeyState(0x11)`). port: Ctrl's Confirmed Move is
+    /// not ported for the other objects.
     fn end_drag(&mut self, ctx: &egui::Context, scale: f32) -> Option<FleetWindowAction> {
-        let (released, down, point) = ctx.input(|input| {
+        let (released, down, point, ctrl) = ctx.input(|input| {
             (
                 input.pointer.primary_released(),
                 input.pointer.primary_down(),
                 input.pointer.latest_pos(),
+                input.modifiers.ctrl,
             )
         });
         if !released {
@@ -570,6 +576,11 @@ impl FleetWindowState {
             }
             ItemObject::Fleet(fleet) => FleetWindowAction::DragFleet { fleet, point },
             ItemObject::Regiment(troop) => FleetWindowAction::DragRegiment { troop, point },
+            ItemObject::Character(character) => FleetWindowAction::DragCharacter {
+                character,
+                confirmed: ctrl,
+                point,
+            },
             ItemObject::Ship {
                 fleet,
                 index,
@@ -663,6 +674,13 @@ pub enum FleetWindowAction {
     /// view hit-tests the screen point and issues `0x201` (`FUN_00422ce0`).
     DragRegiment {
         troop: TroopKey,
+        point: egui::Pos2,
+    },
+    /// A Personnel tab character dragged out of its list: `0x201`, or
+    /// `0x202` with Ctrl, which puts it on a Move mission (`0x241`).
+    DragCharacter {
+        character: CharacterKey,
+        confirmed: bool,
         point: egui::Pos2,
     },
     /// A Fighters tab squadron dragged out of its list: the same `0x201`
@@ -1132,13 +1150,13 @@ fn right_items(
         FleetWindowTab::Personnel => value
             .characters
             .iter()
-            .filter_map(|&character| world.characters.get(character))
-            .map(|character| RightItem {
+            .filter_map(|&key| world.characters.get(key).map(|character| (key, character)))
+            .map(|(key, character)| RightItem {
                 mini: character_mini_resource_id(character.dat_id, character.is_major),
                 kind: MiniObject::Character,
-                label: character.name.clone(),
+                label: character.display_name().to_owned(),
                 flags: 0,
-                object: None,
+                object: Some(ItemObject::Character(key)),
             })
             .collect(),
     }
@@ -1989,7 +2007,7 @@ fn draw_fleet_window(
                             result.object_menu = Some((object.menu_object(), point));
                         }
                     }
-                    // A left press on a regiment, ship or squadron captures
+                    // A left press on a regiment, ship, squadron or character captures
                     // the mouse for a drag (FUN_006083c0).
                     if let (Some(object), Some(press)) = (
                         item.object,

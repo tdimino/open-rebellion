@@ -1,9 +1,9 @@
 ---
 title: "Save/Load System"
-description: "Native and browser save v38, canonical fingerprints, campaign setup, continuation state, troop cargo, embarked tracking, deliveries, and the no-migration rule"
+description: "Native and browser save v41, canonical fingerprints, campaign setup, continuation state, troop cargo, embarked tracking, deliveries, and the no-migration rule"
 category: "agent-docs"
 created: 2026-03-15
-updated: 2026-10-10
+updated: 2026-10-15
 tags: [save-load, bincode, migration, serialization, wasm, determinism]
 ---
 
@@ -11,14 +11,14 @@ tags: [save-load, bincode, migration, serialization, wasm, determinism]
 
 `crates/rebellion-data/src/save.rs` owns native files and browser storage.
 `crates/rebellion-app/src/main.rs` converts between a live campaign and the
-serializable snapshot. The current format is v38, and it is the only one
+serializable snapshot. The current format is v41, and it is the only one
 that loads.
 
-## Native format (v38)
+## Native format (v41)
 
 ```text
 [magic: 8 bytes "OPENREB\0"]
-[version: u32 LE]             — SAVE_VERSION = 38
+[version: u32 LE]             — SAVE_VERSION = 41
 [save_name: u32 len + UTF-8]
 [timestamp_secs: u64 LE]
 [mod_count: u32 LE]
@@ -81,9 +81,15 @@ arrival (v26), the fleet naming mode (v28), and the player's Manage
 Garrisons and Manage Production automation, the Agent Advice setting, renamed
 fleets and ships, and each production area's destination (v29), each side's
 last number per capital ship class (v38; `ghidra/notes/fleet-names.md`),
+each character's officer rank, the fleet or system it commands and its
+ranked names (v39; `ghidra/notes/character-roster.md`), each system's
+side that last brought a fleet or squadron in (v40;
+`ghidra/notes/system-squadrons-combat.md`),
 `UprisingState`, queue destinations and en-route deliveries, missions with
 their member lists, phase, and timer, members travelling to a mission
-target, and the MISSNSD and SPECFCSD records.
+target and the fleet a Move's member boards there (v41; Move missions and
+their fleet targets, `ghidra/notes/move-order.md`), and the MISSNSD and
+SPECFCSD records.
 
 ## Deterministic fingerprints
 

@@ -536,6 +536,7 @@ pub fn draw_game_speed_menu(
         icon: Some(item.icon_resource),
         enabled: true,
         submenu: false,
+        children: &[],
     });
     match draw_game_menu(
         ctx,
@@ -548,7 +549,8 @@ pub fn draw_game_speed_menu(
         input_enabled,
     ) {
         GameMenuResponse::Open => None,
-        GameMenuResponse::Dismissed => {
+        // No row of this menu has a submenu; a choice in one closes it.
+        GameMenuResponse::Dismissed | GameMenuResponse::ChosenChild { .. } => {
             ui_state.menu_anchor = None;
             None
         }

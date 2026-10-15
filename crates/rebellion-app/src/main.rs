@@ -62,7 +62,7 @@ use rebellion_core::ids::{CharacterKey, FleetKey, SystemKey};
 use rebellion_core::jedi::{JediState, JediSystem};
 use rebellion_core::manufacturing::{ManufacturingState, ManufacturingSystem, QueueItem};
 use rebellion_core::missions::{
-    MissionEffect, MissionFaction, MissionKind, MissionState, MissionSystem,
+    MissionEffect, MissionFaction, MissionKind, MissionMember, MissionState, MissionSystem,
 };
 use rebellion_core::movement::{
     apply_fleet_arrival, begin_faction_fleet_transit, begin_fleet_transit, fleet_move_confirms,
@@ -106,13 +106,10 @@ use rebellion_render::move_confirmation::{
     MoveConfirmationState, ScrapConfirmation, ScrapConfirmationAction, ScrapConfirmationState,
 };
 use rebellion_render::object_menu::{
-    draw_object_menu, MenuObject, ObjectMenuCommand, ObjectMenuState, OrderGates,
+    draw_object_menu, CommandGates, MenuObject, ObjectMenuCommand, ObjectMenuState, OrderGates,
 };
 use rebellion_render::panels::bombardment::{draw_bombardment, BombardmentPanelState};
 use rebellion_render::panels::death_star::draw_death_star;
-use rebellion_render::panels::jedi::{draw_jedi, JediPanelState};
-use rebellion_render::panels::loyalty::draw_loyalty;
-use rebellion_render::panels::research::{draw_research, ResearchPanelState};
 use rebellion_render::personnel_finder::{
     draw_personnel_finder, PersonnelFinderAction, PersonnelFinderState,
 };
@@ -131,7 +128,7 @@ use rebellion_render::{
     draw_advisor, draw_audio_controls, draw_cockpit_background, draw_cockpit_chrome,
     draw_cockpit_egui_layer, draw_credits, draw_event_screen, draw_fleets, draw_galaxy_backdrop,
     draw_galaxy_map, draw_game_options, draw_game_setup, draw_ground_combat, draw_main_menu,
-    draw_missions, draw_multiplayer_setup, draw_officers, draw_save_load, draw_sector_windows,
+    draw_missions, draw_multiplayer_setup, draw_save_load, draw_sector_windows,
     draw_system_windows, draw_tactical_view, handle_cockpit_egui_input, set_cockpit_viewport_clip,
     show_event_screen, update_event_screen, AdvisorFaction, AdvisorState, AssetRenderProfile,
     AudioVolumeState, BmpCache, CockpitButton, CockpitFaction, CockpitState, CreditsState,
@@ -139,7 +136,7 @@ use rebellion_render::{
     GameOptionsOrigin, GameOptionsState, GameSetupAction, GameSetupState, GroundAction,
     GroundCombatState, MainMenuAction, MainMenuState, MenuDestinationAction, MessageCategory,
     MessageDisplay, MessageLog, MessageLogState, MessageRail, MessageTarget, MultiplayerSetupAction,
-    MultiplayerSetupState, OfficersState, OriginalEncyclopediaCatalog, OriginalEncyclopediaEntry,
+    MultiplayerSetupState, OriginalEncyclopediaCatalog, OriginalEncyclopediaEntry,
     PanelAction, RailAudience, SectorWindowAction, SectorWindowState, SystemWindowAction,
     SystemWindowState, TacticalAction, TacticalState, TacticalTrenchRunOutcome, VideoError,
     VideoPlayer,
@@ -148,7 +145,8 @@ use rebellion_render::{draw_defenses_windows, DefensesWindowAction, DefensesWind
 use rebellion_render::{draw_fleet_windows, FleetWindowAction, FleetWindowState};
 use rebellion_render::{draw_missions_windows, MissionsWindowAction, MissionsWindowState};
 #[cfg(not(target_arch = "wasm32"))]
-use rebellion_render::{MusicContext, SfxKind};
+use rebellion_render::{MusicSelector, SfxKind};
+use rebellion_render::MdataTrack;
 
 /// Top-level game mode state machine.
 ///
@@ -178,6 +176,36 @@ enum GameMode {
     GroundCombat,
     /// Victory/defeat modal overlay on the frozen galaxy map.
     VictoryModal { alliance_won: bool },
+}
+
+/// The screens music follows (`ghidra/notes/audio-dispatch.md`, "Music"):
+/// the menu window's creation picks without a session (`FUN_00405050`), the
+/// cockpit's creation and the end of a movie pick in one (`FUN_00422cb0`).
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MusicScene {
+    Menu,
+    Play,
+    Movie,
+}
+
+/// The scene a mode belongs to; the options screen keeps the scene it
+/// opened over.
+#[cfg(not(target_arch = "wasm32"))]
+const fn music_scene(mode: &GameMode) -> Option<MusicScene> {
+    match mode {
+        GameMode::MainMenu
+        | GameMode::LoadGame
+        | GameMode::Credits
+        | GameMode::MultiplayerSetup
+        | GameMode::GameSetup => Some(MusicScene::Menu),
+        GameMode::Galaxy
+        | GameMode::TacticalCombat
+        | GameMode::GroundCombat
+        | GameMode::VictoryModal { .. } => Some(MusicScene::Play),
+        GameMode::Cutscene { .. } => Some(MusicScene::Movie),
+        GameMode::GameOptions { .. } => None,
+    }
 }
 
 /// Which cutscene is playing — determines post-cutscene transition.
@@ -1145,7 +1173,7 @@ async fn main() {
             Some(source)
         }
         Err(error) => {
-            macroquad::logging::error!("[encyclopedia] source_catalog unavailable error={error}");
+            macroquad::logging::error!("[encyclopedia] source_catalog unavailable error={}", error);
             None
         }
     };
@@ -1344,7 +1372,6 @@ async fn main() {
 
     // ── War Room panel state ────────────────────────────────────────────────
     let mut player_faction = MissionFaction::Alliance;
-    let mut officers_state = OfficersState::default();
     let mut fleets_state = FleetsState::default();
     let mut build_selection_state = BuildSelectionState::default();
     let mut mission_dialog_state = MissionDialogState::default();
@@ -1364,8 +1391,6 @@ async fn main() {
     let mut pending_message_sound: Option<u16> = None;
     #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
     let mut enc_state = EncyclopediaState::new();
-    let mut research_panel_state = ResearchPanelState::default();
-    let mut jedi_panel_state = JediPanelState::default();
     let mut bombardment_panel_state = BombardmentPanelState::default();
     let mut mod_manager_state = rebellion_render::ModManagerState::default();
     #[cfg(any(debug_assertions, not(target_arch = "wasm32")))]
@@ -1413,14 +1438,10 @@ async fn main() {
         enc_state.set_hd_path(hd_path);
     }
     // Panel visibility (mutually exclusive left panels)
-    let mut show_officers = false;
     let mut show_fleets = false;
     let mut show_missions = false;
-    let mut show_research = false;
-    let mut show_jedi = false;
     let mut show_bombardment = false;
     let mut show_death_star = false;
-    let mut show_loyalty = false;
     let mut save_load_panel_state = rebellion_render::SaveLoadPanelState::default();
     let saves_dir = rebellion_data::save::default_saves_dir();
     let mut save_slots = read_save_slots(&saves_dir);
@@ -1540,8 +1561,6 @@ async fn main() {
     #[cfg(target_arch = "wasm32")]
     let browser_main_theme = browser_audio_files.remove("music/main_theme.wav");
     #[cfg(target_arch = "wasm32")]
-    let browser_battle_theme = browser_audio_files.remove("music/battle.wav");
-    #[cfg(target_arch = "wasm32")]
     let browser_menu_sfx: Vec<_> = audio::MENU_SFX_ASSETS
         .iter()
         .filter_map(|&(kind, path, _)| browser_audio_files.remove(path).map(|bytes| (kind, bytes)))
@@ -1566,7 +1585,6 @@ async fn main() {
         .collect();
     #[cfg(target_arch = "wasm32")]
     let mut browser_menu_audio = if browser_main_theme.is_some()
-        || browser_battle_theme.is_some()
         || !browser_menu_sfx.is_empty()
         || !browser_tactical_sfx.is_empty()
         || !browser_tactical_voice.is_empty()
@@ -1575,7 +1593,7 @@ async fn main() {
         // Its resume handlers are then ready for the first user gesture.
         let mut engine = audio::AudioEngine::new();
         if let Some(bytes) = browser_main_theme.as_deref() {
-            engine.load_music_bytes(rebellion_render::MusicTrack::MainTheme, bytes);
+            engine.load_music_bytes(MdataTrack::MENU, bytes);
         }
         for (kind, bytes) in &browser_menu_sfx {
             engine.load_sfx_bytes(*kind, bytes);
@@ -1597,7 +1615,16 @@ async fn main() {
     {
         audio_vol.backend_available = browser_menu_audio.is_some();
     }
-    let mut tactical_music_active = false;
+    #[cfg(not(target_arch = "wasm32"))]
+    let mdata_dir = original_game_dir().join("MDATA");
+    #[cfg(not(target_arch = "wasm32"))]
+    let mut music_selector = MusicSelector::default();
+    #[cfg(not(target_arch = "wasm32"))]
+    let mut music_scene_now: Option<MusicScene> = None;
+    #[cfg(not(target_arch = "wasm32"))]
+    let mut music_alert_open = false;
+    #[cfg(not(target_arch = "wasm32"))]
+    let mut music_result: Option<MdataTrack> = None;
 
     let mut cutscene_player = open_cutscene(
         Path::new(INTRO_CUTSCENE),
@@ -1992,8 +2019,9 @@ async fn main() {
                 } else if fleet_window_state.renaming() {
                     // The rename edit answers Escape by closing unissued.
                 } else if object_menu.is_some() {
-                    // Escape closes only the open object pop-up menu.
-                    object_menu = None;
+                    // The object pop-up menu takes Escape itself
+                    // (FUN_00442cf0): a shown submenu hides, else the menu
+                    // closes.
                 } else if game_speed_ui.menu_anchor.is_some() {
                     // Escape closes only the open Game Speed menu.
                     game_speed_ui.menu_anchor = None;
@@ -2004,14 +2032,10 @@ async fn main() {
                     cockpit_state.gid_ui.menu_open = false;
                     cockpit_state.gid_ui.category = None;
                 } else {
-                    show_officers = false;
                     show_fleets = false;
                     show_missions = false;
-                    show_research = false;
-                    show_jedi = false;
                     show_bombardment = false;
                     show_death_star = false;
-                    show_loyalty = false;
                     save_load_panel_state.close();
                     game_mode = GameMode::MainMenu;
                     macroquad::logging::info!(
@@ -2130,28 +2154,20 @@ async fn main() {
                     {
                         toggle_exclusive_panel(
                             &mut [
-                                &mut show_officers,
                                 &mut show_fleets,
                                 &mut show_missions,
-                                &mut show_research,
-                                &mut show_jedi,
                                 &mut show_bombardment,
                                 &mut show_death_star,
-                                &mut show_loyalty,
                             ],
                             $index,
                         );
                     }
                 };
             }
-            toggle_panel!(KeyCode::O, 0);
-            toggle_panel!(KeyCode::F, 1);
-            toggle_panel!(KeyCode::N, 2);
-            toggle_panel!(KeyCode::T, 3);
-            toggle_panel!(KeyCode::J, 4);
-            toggle_panel!(KeyCode::B, 5);
-            toggle_panel!(KeyCode::D, 6);
-            toggle_panel!(KeyCode::L, 7);
+            toggle_panel!(KeyCode::F, 0);
+            toggle_panel!(KeyCode::N, 1);
+            toggle_panel!(KeyCode::B, 2);
+            toggle_panel!(KeyCode::D, 3);
             if !alt_down
                 && is_key_pressed(KeyCode::S)
                 && !matches!(
@@ -2621,7 +2637,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                 .systems
                 .keys()
                 .filter_map(|sys_key| {
-                    // FUN_0051ddf0 -> FUN_00516ef0 / FUN_00517270: a system
+                    // FUN_0051ddf0 -> FUN_00517270: a system
                     // fights on every pass that finds both sides present;
                     // when both remain the battle fires again next pass.
                     // There is no cooldown.
@@ -2719,6 +2735,9 @@ Some(RailAudience::side(*faction_is_alliance)),
                     sim_rng.gen::<u32>(),
                     current_tick,
                 );
+                for line in &space_result.log {
+                    macroquad::logging::info!("{}", line);
+                }
                 tactical_flow::reconcile_death_star_result(
                     &world,
                     &mut death_star_state,
@@ -2949,7 +2968,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                     let name = world
                         .characters
                         .get(*character)
-                        .map_or_else(|| "Unknown".into(), |c| c.name.clone());
+                        .map_or_else(|| "Unknown".into(), |c| c.display_name().to_owned());
                     // FUN_00490340: the escape carries the character's code,
                     // for the side it escapes to.
                     msg_log.push(
@@ -3390,7 +3409,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                 let name = world
                     .characters
                     .get(*character)
-                    .map_or_else(|| "Unknown".into(), |c| c.name.clone());
+                    .map_or_else(|| "Unknown".into(), |c| c.display_name().to_owned());
                 let to_faction = if *defected_to_alliance {
                     "Alliance"
                 } else {
@@ -3542,7 +3561,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                         let name = world
                             .characters
                             .get(*character)
-                            .map_or_else(|| "Unknown".into(), |c| c.name.clone());
+                            .map_or_else(|| "Unknown".into(), |c| c.display_name().to_owned());
                         let tier_str = match new_tier {
                             rebellion_core::world::ForceTier::None => "None",
                             rebellion_core::world::ForceTier::Aware => "Force Aware",
@@ -3572,7 +3591,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                         let name = world
                             .characters
                             .get(*character)
-                            .map_or_else(|| "Unknown".into(), |c| c.name.clone());
+                            .map_or_else(|| "Unknown".into(), |c| c.display_name().to_owned());
                         msg_log.push(GameMessage::new(
                             current_tick,
                             format!("{name}'s Force sensitivity discovered!"),
@@ -3614,6 +3633,10 @@ Some(RailAudience::side(*faction_is_alliance)),
                 };
             }
         }
+
+        // FUN_004eeed0, FUN_00560d50: a rank lapses as soon as its holder
+        // is taken, killed, sent on a mission or moved off its post.
+        rebellion_core::officer_rank::clear_lapsed_ranks(&mut world);
 
         // ── Developer commands ───────────────────────────────────────────────
 
@@ -3760,6 +3783,10 @@ Some(RailAudience::side(*faction_is_alliance)),
                 }
                 DevCommand::Drag { from, to } => {
                     dev_input.drag(from, to);
+                    dev_hold_frames = 2;
+                }
+                DevCommand::Scroll { x, y, notches } => {
+                    dev_input.scroll(x, y, notches);
                     dev_hold_frames = 2;
                 }
                 DevCommand::Press(key) => match dev_input.press(&key) {
@@ -4035,12 +4062,6 @@ Some(RailAudience::side(*faction_is_alliance)),
                 missions_window_state.clear();
                 object_menu = None;
                 targeting = None;
-                #[cfg(not(target_arch = "wasm32"))]
-                audio_engine.play_music_for_context(
-                    MusicContext::MainMenu,
-                    &sounds_dir,
-                    &audio_vol,
-                );
 
                 #[cfg(target_arch = "wasm32")]
                 if let Some(focus) = web_accessibility::take_focus_update() {
@@ -4376,7 +4397,6 @@ Some(RailAudience::side(*faction_is_alliance)),
                                     warmed_galaxy_font_sizes.clear();
                                     msg_log = MessageLog::default();
                                     log_state = MessageLogState::default();
-                                    officers_state = OfficersState::default();
                                     fleets_state = FleetsState::default();
                                     build_selection_state = BuildSelectionState::default();
                                     mission_dialog_state = MissionDialogState::default();
@@ -4387,18 +4407,12 @@ Some(RailAudience::side(*faction_is_alliance)),
                                     personnel_finder_state = PersonnelFinderState::default();
                                     message_index = None;
                                     advice_saved_speed = None;
-                                    research_panel_state = ResearchPanelState::default();
-                                    jedi_panel_state = JediPanelState::default();
                                     bombardment_panel_state = BombardmentPanelState::default();
                                     encyclopedia_surface.close();
-                                    show_officers = false;
                                     show_fleets = false;
                                     show_missions = false;
-                                    show_research = false;
-                                    show_jedi = false;
                                     show_bombardment = false;
                                     show_death_star = false;
-                                    show_loyalty = false;
                                     save_load_panel_state =
                                         rebellion_render::SaveLoadPanelState::default();
                                     save_slots = read_save_slots(&saves_dir);
@@ -4509,16 +4523,6 @@ Some(RailAudience::side(*faction_is_alliance)),
                                     format!("You command the {faction_name} — {campaign_summary}."),
                                     MessageCategory::Event,
                                 ));
-
-                                // Start galaxy map music and play faction voice greeting.
-                                #[cfg(not(target_arch = "wasm32"))]
-                                {
-                                    audio_engine.play_music_for_context(
-                                        MusicContext::GalaxyMap,
-                                        &sounds_dir,
-                                        &audio_vol,
-                                    );
-                                }
 
                                 // Sync advisor faction and send greeting
                                 advisor_state =
@@ -4916,17 +4920,6 @@ Some(RailAudience::side(*faction_is_alliance)),
                     }
 
                     // War Room panels (mutually exclusive left panels)
-                    if show_officers {
-                        if let Some(action) = draw_officers(
-                            ctx,
-                            &world,
-                            &mut officers_state,
-                            player_faction,
-                            &mut bmp_cache,
-                        ) {
-                            panel_actions.push(action);
-                        }
-                    }
                     if show_fleets {
                         if let Some(action) = draw_fleets(
                             ctx,
@@ -4947,28 +4940,6 @@ Some(RailAudience::side(*faction_is_alliance)),
                             panel_actions.push(action);
                         }
                     }
-                    if show_research {
-                        if let Some(action) = draw_research(
-                            ctx,
-                            &world,
-                            &research_state,
-                            &mut research_panel_state,
-                            player_faction,
-                        ) {
-                            panel_actions.push(action);
-                        }
-                    }
-                    if show_jedi {
-                        if let Some(action) = draw_jedi(
-                            ctx,
-                            &world,
-                            &jedi_state,
-                            &mut jedi_panel_state,
-                            player_faction,
-                        ) {
-                            panel_actions.push(action);
-                        }
-                    }
                     if show_bombardment {
                         if let Some(action) = draw_bombardment(
                             ctx,
@@ -4982,13 +4953,6 @@ Some(RailAudience::side(*faction_is_alliance)),
                     if show_death_star {
                         if let Some(action) =
                             draw_death_star(ctx, &world, &death_star_state, player_faction)
-                        {
-                            panel_actions.push(action);
-                        }
-                    }
-                    if show_loyalty {
-                        if let Some(action) =
-                            draw_loyalty(ctx, &world, &uprising_state, player_faction)
                         {
                             panel_actions.push(action);
                         }
@@ -5519,6 +5483,49 @@ Some(RailAudience::side(*faction_is_alliance)),
                                     None => {}
                                 }
                             }
+                            // FUN_00422ce0: the drop issues 0x201 (0x202 with
+                            // Ctrl) against the window under the point, and
+                            // FUN_0053c4b0 makes it a 0x241 Move mission.
+                            FleetWindowAction::DragCharacter {
+                                character,
+                                confirmed,
+                                point,
+                            } => {
+                                let windows = ReleaseWindows {
+                                    sector: &sector_window_state,
+                                    system: &system_window_state,
+                                    fleet: &fleet_window_state,
+                                    defenses: &defenses_window_state,
+                                    missions: &missions_window_state,
+                                };
+                                let Some(target) = release_destination(
+                                    ctx,
+                                    &world,
+                                    &movement_state,
+                                    fog_state,
+                                    cockpit_layout,
+                                    windows,
+                                    point,
+                                ) else {
+                                    continue;
+                                };
+                                issue_member_move(
+                                    &FleetMoveContext {
+                                        world: &world,
+                                        movement: &movement_state,
+                                        blockaded: blockade_state.blockaded_systems(),
+                                        faction: player_faction,
+                                        tick: clock.tick,
+                                    },
+                                    &mission_state,
+                                    vec![MissionMember::Character(character)],
+                                    confirmed,
+                                    target,
+                                    &mut advisor_state,
+                                    &mut move_confirmation_state,
+                                    &mut panel_actions,
+                                );
+                            }
                             FleetWindowAction::DragRegiment { troop, point } => {
                                 let windows = ReleaseWindows {
                                     sector: &sector_window_state,
@@ -5626,6 +5633,49 @@ Some(RailAudience::side(*faction_is_alliance)),
                                     player_faction,
                                 );
                                 object_menu = Some(ObjectMenuState::new(selection, gates, point));
+                            }
+                            // FUN_00422ce0: the drop issues 0x201 (0x202 with
+                            // Ctrl) against the window under the point, and
+                            // FUN_0053c4b0 makes it a 0x241 Move mission.
+                            DefensesWindowAction::DragMember {
+                                member,
+                                confirmed,
+                                point,
+                            } => {
+                                let windows = ReleaseWindows {
+                                    sector: &sector_window_state,
+                                    system: &system_window_state,
+                                    fleet: &fleet_window_state,
+                                    defenses: &defenses_window_state,
+                                    missions: &missions_window_state,
+                                };
+                                let Some(target) = release_destination(
+                                    ctx,
+                                    &world,
+                                    &movement_state,
+                                    fog_state,
+                                    cockpit_layout,
+                                    windows,
+                                    point,
+                                ) else {
+                                    continue;
+                                };
+                                issue_member_move(
+                                    &FleetMoveContext {
+                                        world: &world,
+                                        movement: &movement_state,
+                                        blockaded: blockade_state.blockaded_systems(),
+                                        faction: player_faction,
+                                        tick: clock.tick,
+                                    },
+                                    &mission_state,
+                                    vec![member],
+                                    confirmed,
+                                    target,
+                                    &mut advisor_state,
+                                    &mut move_confirmation_state,
+                                    &mut panel_actions,
+                                );
                             }
                             DefensesWindowAction::DragSquadron {
                                 system,
@@ -5803,6 +5853,19 @@ Some(RailAudience::side(*faction_is_alliance)),
                                 confirmed: command == ObjectMenuCommand::ConfirmedMove,
                             }));
                         }
+                        // FUN_0053c4b0 expands a character's or special
+                        // force's move into 0x241 Move missions.
+                        Some((
+                            command @ (ObjectMenuCommand::Move | ObjectMenuCommand::ConfirmedMove),
+                            Some(object @ (MenuObject::Character(_) | MenuObject::SpecialForce(_))),
+                        )) => {
+                            if let Some(member) = object.mission_member() {
+                                targeting = Some(Targeting::new(TargetOrder::MemberMove {
+                                    members: vec![member],
+                                    confirmed: command == ObjectMenuCommand::ConfirmedMove,
+                                }));
+                            }
+                        }
                         Some((ObjectMenuCommand::Move, Some(MenuObject::Troop(troop)))) => {
                             targeting = Some(Targeting::new(TargetOrder::TroopMove { troop }));
                         }
@@ -5826,6 +5889,44 @@ Some(RailAudience::side(*faction_is_alliance)),
                                     is_alliance,
                                 },
                             }));
+                        }
+                        // FUN_00561bb0: a Command submenu order gives the
+                        // character the rank, or takes it when it holds it.
+                        Some((
+                            ObjectMenuCommand::Rank(kind),
+                            Some(MenuObject::Character(character)),
+                        )) => {
+                            let is_alliance = player_faction == MissionFaction::Alliance;
+                            match rebellion_core::officer_rank::command_refusal(
+                                &world,
+                                character,
+                                is_alliance,
+                                kind,
+                            ) {
+                                None => {
+                                    rebellion_core::officer_rank::give_command(
+                                        &mut world, character, kind,
+                                    );
+                                    let held = world
+                                        .characters
+                                        .get(character)
+                                        .map(|value| (value.command_kind, value.command_post));
+                                    macroquad::logging::info!(
+                                        "[interface] command={:#x} destination=officer_rank status=applied character={} held={:?}",
+                                        kind.order(),
+                                        world
+                                            .characters
+                                            .get(character)
+                                            .map_or("", |value| value.display_name()),
+                                        held
+                                    );
+                                }
+                                Some(refusal) => macroquad::logging::info!(
+                                    "[interface] command={:#x} destination=officer_rank status=refused reason={:?}",
+                                    kind.order(),
+                                    refusal
+                                ),
+                            }
                         }
                         // FUN_00487cc0 always confirms kind 0x200; the
                         // window lists the order's team (FUN_0049a350).
@@ -6351,6 +6452,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                     // which validates again and departs without asking.
                     if let Some(MoveConfirmationAction::Confirm {
                         fleets,
+                        members,
                         destination,
                         join,
                     }) = draw_move_confirmation(
@@ -6359,6 +6461,15 @@ Some(RailAudience::side(*faction_is_alliance)),
                         cockpit_layout,
                         &mut bmp_cache,
                     ) {
+                        if !members.is_empty() {
+                            panel_actions.push(PanelAction::MoveMembers {
+                                members,
+                                destination: join.map_or(
+                                    rebellion_core::missions::MoveDestination::System(destination),
+                                    rebellion_core::missions::MoveDestination::Fleet,
+                                ),
+                            });
+                        }
                         panel_actions.extend(fleets.into_iter().map(|fleet| match join {
                             Some(target) => PanelAction::JoinFleet {
                                 mover: FleetMover::Fleet(fleet),
@@ -6440,6 +6551,12 @@ Some(RailAudience::side(*faction_is_alliance)),
                                         &[],
                                         system,
                                     );
+                                    macroquad::logging::info!(
+                                        "[order] mission dialog {:?} at {:?}: {:?}",
+                                        team,
+                                        system,
+                                        kinds
+                                    );
                                     mission_dialog_state.open(player_faction, system, team, kinds);
                                 }
                                 Some(TargetingEnd::Target {
@@ -6457,6 +6574,25 @@ Some(RailAudience::side(*faction_is_alliance)),
                                     confirmed,
                                     target,
                                     &mut msg_log,
+                                    &mut move_confirmation_state,
+                                    &mut panel_actions,
+                                ),
+                                Some(TargetingEnd::Target {
+                                    order: TargetOrder::MemberMove { members, confirmed },
+                                    target,
+                                }) => issue_member_move(
+                                    &FleetMoveContext {
+                                        world: &world,
+                                        movement: &movement_state,
+                                        blockaded: blockade_state.blockaded_systems(),
+                                        faction: player_faction,
+                                        tick: clock.tick,
+                                    },
+                                    &mission_state,
+                                    members,
+                                    confirmed,
+                                    target,
+                                    &mut advisor_state,
                                     &mut move_confirmation_state,
                                     &mut panel_actions,
                                 ),
@@ -7325,7 +7461,6 @@ Some(RailAudience::side(*faction_is_alliance)),
                             missions_window_state.clear();
                             object_menu = None;
                             targeting = None;
-                            officers_state = OfficersState::default();
                             fleets_state = FleetsState::default();
                             build_selection_state = BuildSelectionState::default();
                             mission_dialog_state = MissionDialogState::default();
@@ -7337,18 +7472,12 @@ Some(RailAudience::side(*faction_is_alliance)),
                             personnel_finder_state = PersonnelFinderState::default();
                             message_index = None;
                             advice_saved_speed = None;
-                            research_panel_state = ResearchPanelState::default();
-                            jedi_panel_state = JediPanelState::default();
                             bombardment_panel_state = BombardmentPanelState::default();
                             encyclopedia_surface.close();
-                            show_officers = false;
                             show_fleets = false;
                             show_missions = false;
-                            show_research = false;
-                            show_jedi = false;
                             show_bombardment = false;
                             show_death_star = false;
-                            show_loyalty = false;
                             save_load_panel_state.close();
                             event_screen_state = EventScreenState::new();
                             tactical_state = TacticalState::new();
@@ -7417,8 +7546,6 @@ Some(RailAudience::side(*faction_is_alliance)),
                         &mut troop_transport_state,
                         active_fog_state,
                         &mut ai_state,
-                        &mut research_state,
-                        &mut jedi_state,
                         &mut death_star_state,
                         &mut msg_log,
                         &mut advisor_state,
@@ -7461,60 +7588,72 @@ Some(RailAudience::side(*faction_is_alliance)),
             break;
         }
 
-        // 6. Route the recovered tactical score and event cue. Battle Alert
-        // remains in the strategic sound context until Take Command.
-        let tactical_audio_context =
-            game_mode == GameMode::TacticalCombat && !tactical_state.battle_alert_open();
-        if tactical_audio_context && !tactical_music_active {
-            #[cfg(not(target_arch = "wasm32"))]
-            audio_engine.play_music_for_context(
-                rebellion_render::MusicContext::Combat,
-                &sounds_dir,
-                &audio_vol,
-            );
-            #[cfg(target_arch = "wasm32")]
-            if let (Some(engine), Some(bytes)) =
-                (browser_menu_audio.as_mut(), browser_battle_theme.as_deref())
-            {
-                engine.load_music_bytes(rebellion_render::MusicTrack::Battle, bytes);
-            }
-            macroquad::logging::info!(
-                "[audio] context=combat track=Battle mdata=307 loaded={} muted={}",
-                {
-                    #[cfg(not(target_arch = "wasm32"))]
-                    {
-                        original_game_dir().join("MDATA/MDATA.307").exists()
-                            || sounds_dir.join("music/battle.wav").exists()
-                    }
-                    #[cfg(target_arch = "wasm32")]
-                    {
-                        browser_battle_theme.is_some()
-                    }
-                },
-                audio_vol.muted || audio_vol.music_muted
-            );
-            tactical_music_active = true;
-        } else if !tactical_audio_context && tactical_music_active {
-            #[cfg(not(target_arch = "wasm32"))]
-            if matches!(game_mode, GameMode::MainMenu | GameMode::Galaxy) {
-                audio_engine.play_music_for_context(
-                    if game_mode == GameMode::MainMenu {
-                        rebellion_render::MusicContext::MainMenu
-                    } else {
-                        rebellion_render::MusicContext::GalaxyMap
-                    },
-                    &sounds_dir,
+        // 6. Music (ghidra/notes/audio-dispatch.md, "Music"), then the
+        // tactical event cues. The Battle Alert forces its side's track
+        // (FUN_0044f860); each of its three commands stops the music
+        // (FUN_00450540), so combat plays none; the result window forces its
+        // track on first paint (FUN_00471200) and its close stops it and
+        // picks again (FUN_004727a0).
+        let alert_open =
+            game_mode == GameMode::TacticalCombat && tactical_state.battle_alert_open();
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let player_alliance = player_faction == MissionFaction::Alliance;
+            let result_track = if game_mode == GameMode::TacticalCombat {
+                tactical_state.result_music()
+            } else {
+                None
+            };
+            let now = get_time();
+            let mut roll = |n: u32| macroquad::rand::gen_range(0, n.max(1));
+            if alert_open && !music_alert_open {
+                audio_engine.force_track(
+                    MdataTrack::battle_alert(player_alliance),
+                    &mdata_dir,
                     &audio_vol,
+                    now,
                 );
+            } else if !alert_open && music_alert_open {
+                audio_engine.stop_music();
             }
-            #[cfg(target_arch = "wasm32")]
-            if let (Some(engine), Some(bytes)) =
-                (browser_menu_audio.as_mut(), browser_main_theme.as_deref())
-            {
-                engine.load_music_bytes(rebellion_render::MusicTrack::MainTheme, bytes);
+            if let (Some(track), None) = (result_track, music_result) {
+                audio_engine.force_track(track, &mdata_dir, &audio_vol, now);
+            } else if result_track.is_none() && music_result.is_some() {
+                audio_engine.stop_music();
+                if music_scene(&game_mode) == Some(MusicScene::Play) {
+                    let track = music_selector.default_pick(true, &mut roll);
+                    audio_engine.start_track(track, &mdata_dir, &audio_vol, now);
+                }
             }
-            tactical_music_active = false;
+            let scene = music_scene(&game_mode).or(music_scene_now);
+            if scene != music_scene_now {
+                match scene {
+                    Some(MusicScene::Menu) => {
+                        let track = music_selector.default_pick(false, &mut roll);
+                        audio_engine.start_track(track, &mdata_dir, &audio_vol, now);
+                    }
+                    Some(MusicScene::Play) => {
+                        // FUN_00439320: a game's advice agent starts the
+                        // counter at 0.
+                        if music_scene_now != Some(MusicScene::Movie) {
+                            music_selector.reset();
+                        }
+                        let track = music_selector.default_pick(true, &mut roll);
+                        audio_engine.start_track(track, &mdata_dir, &audio_vol, now);
+                    }
+                    Some(MusicScene::Movie) | None => {}
+                }
+                music_scene_now = scene;
+            }
+            if audio_engine.poll_track_end(&mdata_dir, &audio_vol, now) {
+                let in_session = music_scene_now == Some(MusicScene::Play);
+                let track = music_selector.default_pick(in_session, &mut roll);
+                audio_engine.start_track(track, &mdata_dir, &audio_vol, now);
+            }
+            music_alert_open = alert_open;
+            music_result = result_track;
         }
+        let tactical_audio_context = game_mode == GameMode::TacticalCombat && !alert_open;
 
         if tactical_audio_context {
             for cue in tactical_state.take_pending_audio_cues() {
@@ -7658,14 +7797,10 @@ Some(RailAudience::side(*faction_is_alliance)),
                         fleets: &fleet_window_state,
                         sectors: &sector_window_state,
                         map: &map_state,
-                        left_panel_open: show_officers
-                            || show_fleets
+                        left_panel_open: show_fleets
                             || show_missions
-                            || show_research
-                            || show_jedi
                             || show_bombardment
-                            || show_death_star
-                            || show_loyalty,
+                            || show_death_star,
                     },
                 );
                 quadrant_watch.observe(
@@ -7850,8 +7985,112 @@ fn issue_fleet_move(
     move_confirmation_state.open(MoveConfirmation {
         faction: context.faction,
         fleets: fleets.to_vec(),
+        members: Vec::new(),
         destination,
         join,
+        blockaded: false,
+        lines,
+    });
+}
+
+/// Issue a character's or special force's Move or Confirmed Move with its
+/// target set: `FUN_00486fb0` validates the `0x201` (each `0x241`'s
+/// validator, `MissionState::move_order_enabled` and
+/// `MissionState::move_destination_refusal`; a refusal reaches the side's
+/// advisor, `FUN_00487c90`), then asks first when `FUN_00487cc0` says so:
+/// for Confirmed Move, or when the first member stands in a blockaded
+/// system, whose window warns of the evacuation (0x7056, `FUN_0049a350`).
+/// The window lists each member's name and days (`FUN_004f4850`).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The release hands over the order and every window it may open."
+)]
+fn issue_member_move(
+    context: &FleetMoveContext<'_>,
+    mission_state: &MissionState,
+    members: Vec<MissionMember>,
+    confirmed: bool,
+    target: ReleaseTarget,
+    advisor_state: &mut AdvisorState,
+    move_confirmation_state: &mut MoveConfirmationState,
+    panel_actions: &mut Vec<PanelAction>,
+) {
+    use rebellion_core::missions::MoveDestination;
+    let world = context.world;
+    let (destination, join) = match target {
+        ReleaseTarget::System(system) => (system, None),
+        ReleaseTarget::Fleet { fleet, system } => (system, Some(fleet)),
+    };
+    let order = join.map_or(MoveDestination::System(destination), MoveDestination::Fleet);
+    let refusal =
+        mission_state.move_refusal(world, context.movement, context.faction, &members, order);
+    if let Some(refusal) = refusal {
+        macroquad::logging::info!(
+            "[interface] command=0x241 destination={order:?} status=refused code={:?}",
+            refusal.status()
+        );
+        advisor_state.refuse(refusal.status());
+        return;
+    }
+    // FUN_00487cc0: a 0x201 asks only when the first member's container is
+    // a blockaded system of the member's side; a character aboard a fleet
+    // has the fleet as its container.
+    let first_system = members.first().and_then(|&member| match member {
+        MissionMember::Character(key) => world
+            .characters
+            .get(key)
+            .filter(|c| c.current_fleet.is_none())
+            .and_then(|c| c.current_system),
+        MissionMember::SpecialForce(key) => world
+            .systems
+            .iter()
+            .find(|(_, system)| system.special_forces.contains(&key))
+            .map(|(system, _)| system),
+    });
+    let side = if context.faction == MissionFaction::Alliance {
+        Faction::Alliance
+    } else {
+        Faction::Empire
+    };
+    let blockaded = first_system.is_some_and(|system| {
+        context.blockaded.contains(&system)
+            && world
+                .systems
+                .get(system)
+                .is_some_and(|value| value.control.is_controlled_by(side))
+    });
+    if !confirmed && !blockaded {
+        panel_actions.push(PanelAction::MoveMembers {
+            members,
+            destination: order,
+        });
+        return;
+    }
+    let lines = MissionState::move_days(world, context.faction, &members, order)
+        .into_iter()
+        .filter_map(|(member, days)| {
+            let name = match member {
+                MissionMember::Character(key) => {
+                    world.characters.get(key)?.display_name().to_owned()
+                }
+                MissionMember::SpecialForce(key) => {
+                    let unit = world.special_forces.get(key)?;
+                    world
+                        .buildable_classes
+                        .get(&unit.class_dat_id)
+                        .map_or_else(String::new, |class| class.name.clone())
+                }
+            };
+            Some((name, days))
+        })
+        .collect();
+    move_confirmation_state.open(MoveConfirmation {
+        faction: context.faction,
+        fleets: Vec::new(),
+        members,
+        destination,
+        join,
+        blockaded,
         lines,
     });
 }
@@ -8179,6 +8418,11 @@ fn order_gates(
             _ => false,
         },
         // FUN_004f9860: the ship's fleet is the player's and in orbit.
+        member_move: selection
+            .and_then(MenuObject::mission_member)
+            .is_some_and(|member| {
+                mission_state.move_order_enabled(world, player_faction, &[member])
+            }),
         ship_move: match selection {
             Some(MenuObject::Ship { fleet, index, .. }) => {
                 fleet_move_enabled(movement_state, world, fleet, is_alliance)
@@ -8262,6 +8506,26 @@ fn order_gates(
                 side,
             )
         }),
+        command: match selection {
+            Some(MenuObject::Character(character)) => {
+                use rebellion_core::officer_rank::{command_refusal, CommandKind};
+                let allowed = [
+                    CommandKind::None,
+                    CommandKind::Commander,
+                    CommandKind::Admiral,
+                    CommandKind::General,
+                ]
+                .map(|kind| command_refusal(world, character, is_alliance, kind).is_none());
+                CommandGates {
+                    allowed,
+                    held: world
+                        .characters
+                        .get(character)
+                        .map_or(CommandKind::None, |value| value.command_kind),
+                }
+            }
+            _ => CommandGates::default(),
+        },
     }
 }
 
@@ -8407,8 +8671,6 @@ fn apply_panel_action(
     troop_transport_state: &mut TroopTransportState,
     fog_state: &mut FogState,
     ai_state: &mut AIState,
-    research_state: &mut ResearchState,
-    jedi_state: &mut JediState,
     death_star_state: &mut DeathStarState,
     msg_log: &mut MessageLog,
     advisor_state: &mut AdvisorState,
@@ -8489,39 +8751,37 @@ fn apply_panel_action(
                 ));
             }
         }
+        // FUN_0053c4b0: one 0x241 Move mission per location (command 0x250).
+        PanelAction::MoveMembers {
+            members,
+            destination,
+        } => {
+            let result = mission_state.dispatch_move(
+                world,
+                movement_state,
+                *player_faction,
+                &members,
+                destination,
+                clock.tick,
+            );
+            match &result {
+                Ok(ids) => macroquad::logging::info!(
+                    "[interface] command=0x241 destination={:?} status=applied missions={:?}",
+                    destination,
+                    ids
+                ),
+                Err(refusal) => {
+                    macroquad::logging::info!(
+                        "[interface] command=0x241 destination={destination:?} status=refused code={:?}",
+                        refusal.status()
+                    );
+                    advisor_state.refuse(refusal.status());
+                }
+            }
+        }
         PanelAction::FocusFleetSystem(sys_key) => {
             if world.systems.contains_key(sys_key) {
                 map_state.selected_system = Some(sys_key);
-            }
-        }
-        PanelAction::AssignCharacterToFleet { character, fleet } => {
-            if let Some(f) = world.fleets.get_mut(fleet) {
-                if !f.characters.contains(&character) {
-                    f.characters.push(character);
-                }
-            }
-            if let Some(c) = world.characters.get_mut(character) {
-                let name = c.name.clone();
-                c.current_fleet = Some(fleet);
-                msg_log.push(GameMessage::new(
-                    clock.tick,
-                    format!("{name} assigned to fleet"),
-                    MessageCategory::Event,
-                ));
-            }
-        }
-        PanelAction::RemoveCharacterFromFleet { character, fleet } => {
-            if let Some(f) = world.fleets.get_mut(fleet) {
-                f.characters.retain(|&c| c != character);
-            }
-            if let Some(c) = world.characters.get_mut(character) {
-                let name = c.name.clone();
-                c.current_fleet = None;
-                msg_log.push(GameMessage::new(
-                    clock.tick,
-                    format!("{name} removed from fleet"),
-                    MessageCategory::Event,
-                ));
             }
         }
         // ghidra/notes/fleet-join-split.md.
@@ -8742,7 +9002,7 @@ fn apply_panel_action(
                 .iter()
                 .find_map(|member| member.character())
                 .and_then(|key| world.characters.get(key))
-                .map_or_else(|| "Your team".into(), |c| c.name.clone());
+                .map_or_else(|| "Your team".into(), |c| c.display_name().to_owned());
             let request = rebellion_core::missions::MissionRequest {
                 kind,
                 faction,
@@ -8775,6 +9035,7 @@ fn apply_panel_action(
                 MissionKind::SubdueUprising => "Subdue Uprising",
                 MissionKind::DeathStarSabotage => "Death Star Sabotage",
                 MissionKind::Autoscrap => "Autoscrap",
+                MissionKind::Move => "Move",
             };
             msg_log.push(GameMessage::at_system(
                 clock.tick,
@@ -8790,7 +9051,6 @@ fn apply_panel_action(
         // they require access to the full save state and are not routed through
         // this helper.
         PanelAction::SelectFaction(_)
-        | PanelAction::FocusCharacter(_)
         | PanelAction::OpenSaveLoad
         | PanelAction::SaveGame { .. }
         | PanelAction::LoadGame { .. }
@@ -8941,7 +9201,7 @@ fn apply_panel_action(
                             msg_log.push(filed(
                                 GameMessage::new(
                                     clock.tick,
-                                    format!("{} has been killed.", c.name),
+                                    format!("{} has been killed.", c.display_name()),
                                     MessageCategory::Event,
                                 ),
                                 MessageRail::Mission,
@@ -9107,9 +9367,9 @@ fn apply_panel_action(
                 ));
                 for m in missions {
                     let char_name = m
-                        .lead_character()
+                        .lead_character(world)
                         .and_then(|key| world.characters.get(key))
-                        .map_or_else(|| "Unknown".into(), |c| c.name.clone());
+                        .map_or_else(|| "Unknown".into(), |c| c.display_name().to_owned());
                     let sys_name = world
                         .systems
                         .get(m.target_system)
@@ -9164,93 +9424,6 @@ fn apply_panel_action(
                 MessageCategory::Event,
             ));
         }
-
-        // ── Research ─────────────────────────────────────────────────────────
-        PanelAction::DispatchResearch {
-            character,
-            tech_type,
-            faction,
-        } => {
-            let is_alliance = faction == MissionFaction::Alliance;
-            let current_level = research_state.level(is_alliance, tech_type);
-            // Calculate research duration from world data
-            let ticks = rebellion_core::research::ResearchSystem::ticks_for_next_level(
-                world,
-                is_alliance,
-                tech_type,
-                current_level,
-            );
-            let project = rebellion_core::research::ResearchProject {
-                tech_type,
-                character,
-                faction_is_alliance: is_alliance,
-                ticks_remaining: ticks,
-                total_ticks: ticks,
-            };
-            research_state.dispatch(project);
-            let char_name = world
-                .characters
-                .get(character)
-                .map_or_else(|| "Unknown".into(), |c| c.name.clone());
-            let tree_name = match tech_type {
-                rebellion_core::research::TechType::Ship => "Ship",
-                rebellion_core::research::TechType::Troop => "Troop",
-                rebellion_core::research::TechType::Facility => "Facility",
-            };
-            msg_log.push(GameMessage::new(
-                clock.tick,
-                format!(
-                    "{} assigned to {} research (level {} → {}, {} ticks)",
-                    char_name,
-                    tree_name,
-                    current_level,
-                    current_level + 1,
-                    ticks
-                ),
-                MessageCategory::Event,
-            ));
-        }
-        PanelAction::CancelResearch { tech_type, faction } => {
-            let is_alliance = faction == MissionFaction::Alliance;
-            research_state.cancel(is_alliance, tech_type);
-            let tree_name = match tech_type {
-                rebellion_core::research::TechType::Ship => "Ship",
-                rebellion_core::research::TechType::Troop => "Troop",
-                rebellion_core::research::TechType::Facility => "Facility",
-            };
-            msg_log.push(GameMessage::new(
-                clock.tick,
-                format!("{tree_name} research cancelled"),
-                MessageCategory::Event,
-            ));
-        }
-
-        // ── Jedi Training ────────────────────────────────────────────────────
-        PanelAction::StartJediTraining { character, faction } => {
-            let is_alliance = faction == MissionFaction::Alliance;
-            jedi_state.start_training(character, is_alliance, clock.tick);
-            let char_name = world
-                .characters
-                .get(character)
-                .map_or_else(|| "Unknown".into(), |c| c.name.clone());
-            msg_log.push(GameMessage::new(
-                clock.tick,
-                format!("{char_name} begins Force training"),
-                MessageCategory::Event,
-            ));
-        }
-        PanelAction::StopJediTraining { character } => {
-            jedi_state.stop_training(character);
-            let char_name = world
-                .characters
-                .get(character)
-                .map_or_else(|| "Unknown".into(), |c| c.name.clone());
-            msg_log.push(GameMessage::new(
-                clock.tick,
-                format!("{char_name} Force training stopped"),
-                MessageCategory::Event,
-            ));
-        }
     }
 }
 
@@ -9285,6 +9458,7 @@ fn apply_mission_result(
         MissionKind::SubdueUprising => "Subdue Uprising",
         MissionKind::DeathStarSabotage => "Death Star Sabotage",
         MissionKind::Autoscrap => "Autoscrap",
+        MissionKind::Move => "Move",
     };
     let sys_name = world
         .systems
@@ -9306,7 +9480,8 @@ fn apply_mission_result(
         | MissionKind::Rescue
         | MissionKind::Abduction
         | MissionKind::DeathStarSabotage
-        | MissionKind::Autoscrap => MessageCategory::Mission,
+        | MissionKind::Autoscrap
+        | MissionKind::Move => MessageCategory::Mission,
     };
     // Notifications 0x16 and 0x17, Mission Report and Mission Failed.
     log.push(filed(
@@ -9448,6 +9623,9 @@ fn apply_mission_result(
             MissionEffect::MemberMoved { member, to } => {
                 rebellion_core::missions::move_member(world, *member, *to);
             }
+            MissionEffect::MemberBoarded { member, fleet } => {
+                rebellion_core::missions::board_member(world, *member, *fleet);
+            }
             MissionEffect::CharacterEscaped {
                 character,
                 escaped_to_alliance,
@@ -9462,7 +9640,7 @@ fn apply_mission_result(
                 let name = world
                     .characters
                     .get(*character)
-                    .map_or_else(|| "Unknown".into(), |c| c.name.clone());
+                    .map_or_else(|| "Unknown".into(), |c| c.display_name().to_owned());
                 // FUN_00490340: the escape carries the character's code.
                 log.push(
                     GameMessage::new(
@@ -9637,7 +9815,7 @@ fn apply_ai_actions(
                 let char_name = world
                     .characters
                     .get(*character)
-                    .map_or("unknown", |c| c.name.as_str());
+                    .map_or("unknown", |c| c.display_name());
                 log.push(GameMessage::new(
                     tick,
                     format!("{char_name} assigned to {tech_type:?} research ({ticks} ticks)"),
@@ -10101,7 +10279,7 @@ fn play_message_sound(engine: &mut audio::AudioEngine, sound: Option<u16>, vol: 
             vol.effective_sfx_volume()
         );
     } else {
-        macroquad::logging::warn!("[message] sound 0x{sound:x} is not staged");
+        macroquad::logging::warn!("[message] sound 0x{:x} is not staged", sound);
     }
 }
 
@@ -10219,11 +10397,11 @@ fn open_cutscene(
     tick: u64,
     #[cfg(not(target_arch = "wasm32"))] audio_engine: &mut audio::AudioEngine,
 ) -> Option<VideoPlayer> {
-    #[cfg(not(target_arch = "wasm32"))]
-    audio_engine.stop_music();
-
     match VideoPlayer::open(path, volume) {
         Ok(player) => {
+            // A skipped movie leaves the music playing; nothing would restart it.
+            #[cfg(not(target_arch = "wasm32"))]
+            audio_engine.stop_music();
             macroquad::logging::info!("[cutscene] opened path={}", path.display());
             Some(player)
         }
@@ -10390,7 +10568,9 @@ mod tactical_ground_tests {
             production_facilities: vec![],
             is_headquarters: false,
             is_destroyed: false,
-            control: ControlKind::Uncontrolled,
+            // The defender holds the system, so the post-battle pass keeps its
+            // fleet there (FUN_00516ef0 → FUN_00515480, chain stage 1).
+            control: ControlKind::Controlled(rebellion_core::dat::Faction::Empire),
         });
         let ship_class = CapitalShipKey::default();
         let fighter_class = FighterKey::default();

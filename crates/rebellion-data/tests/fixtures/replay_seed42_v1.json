@@ -480,7 +480,7 @@
     "version": 1,
     "value": "e9cee81ebabf1d85"
   },
-  "initial_state_fingerprint": "v1:94fe725ce614a451",
+  "initial_state_fingerprint": "v1:bdfb9de8e21b692e",
   "commands": [
     {
       "tick": 0,
@@ -565,47 +565,47 @@
     {
       "tick": 0,
       "command_count": 1,
-      "state_fingerprint": "v1:d8c1fcb7d3bfddc5"
+      "state_fingerprint": "v1:e634cb3b686d9aae"
     },
     {
       "tick": 0,
       "command_count": 2,
-      "state_fingerprint": "v1:2c3b4968fba74bff"
+      "state_fingerprint": "v1:6d6f11c18cf83138"
     },
     {
       "tick": 5,
       "command_count": 3,
-      "state_fingerprint": "v1:0b779d945a7722e5"
+      "state_fingerprint": "v1:71ed720f1582be72"
     },
     {
       "tick": 10,
       "command_count": 4,
-      "state_fingerprint": "v1:9f681ad22b1dc754"
+      "state_fingerprint": "v1:4380811599e95eca"
     },
     {
       "tick": 15,
       "command_count": 5,
-      "state_fingerprint": "v1:74404c20761835b1"
+      "state_fingerprint": "v1:50345b609291a1d7"
     },
     {
       "tick": 20,
       "command_count": 6,
-      "state_fingerprint": "v1:263c9658dbc5692a"
+      "state_fingerprint": "v1:5bae6241649f876a"
     },
     {
       "tick": 25,
       "command_count": 7,
-      "state_fingerprint": "v1:4c9a517f66c1c4b1"
+      "state_fingerprint": "v1:52aeb1c0d759f2a8"
     },
     {
       "tick": 25,
       "command_count": 8,
-      "state_fingerprint": "v1:6ed0d186615a71d8"
+      "state_fingerprint": "v1:4b7971c4ea6e7347"
     },
     {
       "tick": 25,
       "command_count": 9,
-      "state_fingerprint": "v1:6ed0d186615a71d8"
+      "state_fingerprint": "v1:4b7971c4ea6e7347"
     }
   ]
 }

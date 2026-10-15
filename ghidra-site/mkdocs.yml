@@ -1,5 +1,5 @@
 site_name: "Open Rebellion — Ghidra RE"
-site_description: "Exhaustive reverse engineering of Star Wars Rebellion (1998, LucasArts)—5,127 decompiled functions, full combat formulas, AI behavior decoded, C++ class hierarchy reconstructed."
+site_description: "Reverse engineering of Star Wars Rebellion (1998, LucasArts)—decompiled REBEXE functions, the battle and bombardment paths, AI behavior, the C++ class hierarchy."
 site_url: "https://tdimino.github.io/open-rebellion/"
 repo_url: "https://github.com/tdimino/open-rebellion"
 repo_name: "tdimino/open-rebellion"
@@ -51,10 +51,6 @@ markdown_extensions:
 extra_css:
   - stylesheets/extra.css
 
-extra_files:
-  - robots.txt
-  - llms.txt
-
 plugins:
   - search
   - meta
@@ -63,9 +59,6 @@ plugins:
         background_color: "#0d0d0d"
         color: "#ffc107"
         font_family: Roboto
-  - sitemap:
-      changefreq: monthly
-      priority: 0.7
 
 nav:
   - Home: index.md
@@ -81,17 +74,17 @@ nav:
     - AI Behavior Analysis: scholar/ai-behavior-analysis.md
     - COMMON.DLL Analysis: scholar/common-dll-analysis.md
   - Combat:
-    - Space Combat Pipeline: combat/space-combat.md
-    - Ground Combat: combat/ground-combat.md
-    - Bombardment Formula: combat/bombardment.md
-    - Combat Formulas: combat/combat-formulas.md
-    - Combat Summary: combat/COMBAT-SUMMARY.md
+    - Story-Check Chain: combat/space-combat.md
+    - Character Move Hook: combat/ground-combat.md
+    - Orbital Bombardment: combat/bombardment.md
+    - Binary Overview: combat/combat-formulas.md
+    - Where Combat Is Resolved: combat/COMBAT-SUMMARY.md
   - Setup & Workflow: setup.md
   - Expansions:
     - Homeworld Expansion: expansions/homeworld.md
     - Total Conversions & Eras: expansions/total-conversions.md
   - Indexes:
-    - Function Index (5,127): indexes/function-index.md
+    - Function Index (5,151): indexes/function-index.md
     - Notes Index: indexes/notes-index.md
   - Game Guide:
     - The Galactic Civil War: guide/scenario.md

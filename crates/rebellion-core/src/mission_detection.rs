@@ -9,11 +9,12 @@
 use std::collections::HashSet;
 
 use crate::dat::Faction;
-use crate::ids::{FleetKey, SystemKey, TroopKey};
+use crate::ids::{CharacterKey, FleetKey, SystemKey, TroopKey};
 use crate::missions::{
     member_location_kind, member_skill, running_end_code, ActiveMission, MemberTransit,
     MissionEffect, MissionFaction, MissionMember,
 };
+use crate::officer_rank::{rank_holder, CommandKind, CommandPost};
 use crate::uprising::{
     roll_injury, Draws, UprisingState, GNPRTB_INJURY_BASE, GNPRTB_INJURY_MIN_CHANCE,
     GNPRTB_INJURY_SPREAD,
@@ -24,6 +25,14 @@ use crate::world::{GameWorld, Skill};
 const GNPRTB_DETECTION_OFFSET: u16 = 3584;
 /// GNPRTB 3584 as shipped.
 const SHIPPED_DETECTION_OFFSET: i64 = -1;
+/// GNPRTB 3588 (`DAT_006bb710`): the percent of the officer's espionage
+/// added to a defender against a decoy.
+const GNPRTB_DECOY_OFFICER_PERCENT: u16 = 3588;
+/// GNPRTB 3589 (`DAT_006bb70c`): the percent of the officer's espionage
+/// added to a defender against detection.
+const GNPRTB_DETECTION_OFFICER_PERCENT: u16 = 3589;
+/// GNPRTB 3588 and 3589 as shipped.
+const SHIPPED_OFFICER_PERCENT: i64 = 35;
 /// GNPRTB 2565 as shipped: the injury roll's least chance.
 const SHIPPED_INJURY_MIN_CHANCE: i64 = 1;
 /// GNPRTB 2566 as shipped: the injury roll's base.
@@ -255,6 +264,20 @@ fn table_roll(world: &GameWorld, table: &str, x: i32, rng: &mut MissionRng) -> O
     Some(rng.chance(value))
 }
 
+/// The officer backing `defender` (`FUN_005888f0`): its side's holder of
+/// the rank slot `+0x1bc` names, an Admiral for a ship, a Commander for
+/// fighters, a General for a regiment, in the defender's fleet when it has
+/// one (`FUN_004fd790`), else at the system (`FUN_00509330`).
+fn officer(world: &GameWorld, location: SystemKey, defender: Defender) -> Option<CharacterKey> {
+    let (kind, post) = match defender.id {
+        DefenderId::Ship(fleet, _) => (CommandKind::Admiral, CommandPost::Fleet(fleet)),
+        DefenderId::Fighter(fleet, _, _) => (CommandKind::Commander, CommandPost::Fleet(fleet)),
+        DefenderId::SystemFighter(_, _) => (CommandKind::Commander, CommandPost::System(location)),
+        DefenderId::Regiment(_) => (CommandKind::General, CommandPost::System(location)),
+    };
+    rank_holder(world, post, kind, defender.side == Faction::Alliance)
+}
+
 fn param(world: &GameWorld, id: u16, shipped: i64) -> i32 {
     i32::try_from(crate::movement::gnprtb_or_shipped(world, id, shipped)).unwrap_or(0)
 }
@@ -338,9 +361,16 @@ impl Run<'_> {
             .map_or(0, |value| i32::try_from(value).unwrap_or(i32::MAX))
     }
 
-    /// `FUN_005888f0` / `FUN_005349e0`: the member rolls RLEVADTB against the
-    /// defender's officer, evading or being captured. port: the port assigns
-    /// no officer ranks, so the captor is the defender and its combat is 0.
+    /// The skill `skill` of the officer backing `defender`, 0 without one.
+    fn officer_skill(&self, defender: Defender, skill: Skill) -> i32 {
+        officer(self.world, self.location, defender)
+            .map_or(0, |officer| self.skill(MissionMember::Character(officer), skill))
+    }
+
+    /// `FUN_005888f0` / `FUN_005349e0`: the member rolls RLEVADTB on its
+    /// combat less the defender's officer's (0 without one), evading or
+    /// being captured. port: the capture records the captor's side, not the
+    /// officer or defender key (`+0x54 -> +0x30`).
     fn expose(
         &mut self,
         mission: &mut ActiveMission,
@@ -350,7 +380,8 @@ impl Run<'_> {
         out: &mut Vec<MissionEffect>,
     ) {
         let combat = self.skill(member, Skill::Combat);
-        match (table_roll(self.world, RLEVADTB, combat, rng), member) {
+        let x = combat - self.officer_skill(defender, Skill::Combat);
+        match (table_roll(self.world, RLEVADTB, x, rng), member) {
             // Slot +0x208: evade. A character also rolls the injury.
             (Some(true), MissionMember::Character(character)) => {
                 self.request_resign(mission, member);
@@ -450,9 +481,14 @@ impl Run<'_> {
             else {
                 return;
             };
-            // port: the port assigns no officer ranks, so the officer term
-            // `espionage * G3588 / 100` (DAT_006bb710, shipped 35) is 0.
-            let x = self.skill(decoy, Skill::Espionage) - defender.detection;
+            let officer = self.officer_skill(defender, Skill::Espionage)
+                * param(
+                    self.world,
+                    GNPRTB_DECOY_OFFICER_PERCENT,
+                    SHIPPED_OFFICER_PERCENT,
+                )
+                / 100;
+            let x = self.skill(decoy, Skill::Espionage) - defender.detection - officer;
             let table = if defender.in_fleet {
                 FDECOYTB
             } else {
@@ -503,9 +539,14 @@ impl Run<'_> {
             if self.decoyed.contains(&defender.id) {
                 continue;
             }
-            // port: the port assigns no officer ranks, so the officer term
-            // `espionage * G3589 / 100` (DAT_006bb70c, shipped 35) is 0.
-            let x = espionage - defender.detection - special_forces - offset;
+            let officer = self.officer_skill(defender, Skill::Espionage)
+                * param(
+                    self.world,
+                    GNPRTB_DETECTION_OFFICER_PERCENT,
+                    SHIPPED_OFFICER_PERCENT,
+                )
+                / 100;
+            let x = espionage - defender.detection - special_forces - officer - offset;
             // port: an absent FOILTB detects nothing.
             if table_roll(self.world, FOILTB, x, rng) == Some(true) {
                 self.detected = true;

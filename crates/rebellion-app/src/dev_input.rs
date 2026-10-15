@@ -31,6 +31,8 @@ enum Step {
     Key { code: u16, down: bool },
     /// Control pressed or released, as AppKit reports a modifier key.
     Ctrl(bool),
+    /// One wheel line: positive away from the user (up), negative down.
+    Scroll(i32),
 }
 
 /// Input waiting to be posted, one step a frame.
@@ -82,6 +84,15 @@ impl DevInput {
             y: to.1,
             right: false,
         });
+    }
+
+    /// Queue a move to a logical point and `notches` wheel lines there, one
+    /// a frame: positive scrolls down a list, negative up.
+    pub fn scroll(&mut self, x: f32, y: f32, notches: i32) {
+        self.steps.push_back(Step::Move(x, y));
+        let line = if notches > 0 { -1 } else { 1 };
+        self.steps
+            .extend((0..notches.unsigned_abs()).map(|_| Step::Scroll(line)));
     }
 
     /// Queue a key's press and release, or say why the name is unknown.
@@ -190,6 +201,27 @@ mod platform {
     const LEFT_CONTROL: u64 = 0x04_0001;
     /// `kVK_Control`.
     const CONTROL_KEY: u16 = 59;
+    /// `kCGScrollEventUnitLine`: miniquad scales a line by 10, as a mouse
+    /// wheel's.
+    const SCROLL_LINE: u32 = 1;
+
+    // AppKit has no scroll-wheel constructor; a CoreGraphics event wrapped
+    // by `+[NSEvent eventWithCGEvent:]` is one. Both frameworks come with
+    // AppKit.
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        fn CGEventCreateScrollWheelEvent(
+            source: *const std::ffi::c_void,
+            units: u32,
+            wheel_count: u32,
+            wheel1: i32,
+            ...
+        ) -> *mut std::ffi::c_void;
+    }
+    #[link(name = "CoreFoundation", kind = "framework")]
+    extern "C" {
+        fn CFRelease(object: *const std::ffi::c_void);
+    }
 
     /// The game window and its content view (miniquad's view): the
     /// application's largest window (it also owns a small menu-bar strip).
@@ -274,6 +306,21 @@ mod platform {
                         isARepeat: NO
                         keyCode: CONTROL_KEY];
                     (event, sel!(flagsChanged:))
+                }
+                Step::Scroll(lines) => {
+                    let cg = CGEventCreateScrollWheelEvent(
+                        std::ptr::null(),
+                        SCROLL_LINE,
+                        1,
+                        lines,
+                    );
+                    if cg.is_null() {
+                        return Err("CoreGraphics made no scroll event".into());
+                    }
+                    // The NSEvent retains the CoreGraphics event.
+                    let event: ObjcId = msg_send![class!(NSEvent), eventWithCGEvent: cg];
+                    CFRelease(cg);
+                    (event, sel!(scrollWheel:))
                 }
             };
             if event.is_null() {

@@ -1780,6 +1780,21 @@ impl TacticalState {
         self.battle_alert_open
     }
 
+    /// The battle result window's track while the window shows
+    /// (`FUN_0046f360` stores it, `FUN_00471200` plays it on first paint).
+    #[must_use]
+    pub fn result_music(&self) -> Option<crate::audio::MdataTrack> {
+        let session = self
+            .session
+            .as_ref()
+            .filter(|session| session.phase == BattlePhase::Results)?;
+        let player_alliance = player_is_alliance(session);
+        Some(crate::audio::MdataTrack::battle_result(
+            player_alliance,
+            winner_is_alliance(session) == Some(player_alliance),
+        ))
+    }
+
     /// Whether the battle shows as a window over the command center: the
     /// Battle Alert before it, the results after it (the 470x331 window on
     /// the strategic canvas). The app draws the live command center beneath.
@@ -5022,7 +5037,7 @@ fn battle_result_entries(
                 .flat_map(|fleet| fleet.characters.iter())
                 .filter_map(|character| world.characters.get(*character))
                 .map(|character| BattleResultEntry {
-                    name: character.name.clone(),
+                    name: character.display_name().to_owned(),
                     condition: BattleResultCondition::Operational,
                 })
                 .collect()
@@ -5742,7 +5757,7 @@ fn battle_alert_rows(
                             let character = world.characters.get(key)?;
                             Some(BattleAlertRow::unit(
                                 character_mini_resource_id(character.dat_id, character.is_major),
-                                character.name.clone(),
+                                character.display_name().to_owned(),
                                 false,
                             ))
                         }
