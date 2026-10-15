@@ -31,10 +31,55 @@ node fleet-finder.mjs --no-build --only=alliance/chrome  # one faction/case, reu
 node fleet-registry.mjs  # verify the Fleet Registry, a port extension, from the main menu
 node audit-batch.mjs  # verify the Troop/Personnel Finders, Message Index, Alt keys and Agent menu
 node status-window.mjs  # verify a character's Status window from its pop-up menu
+node windowing-contract.mjs --no-build --case adapter-smoke  # early shared-adapter smoke only
 ```
 
 Harness unit regressions can be run from the repository root with
 `make test-interface-harness`, or here with `npm run test:unit`.
+
+## Strategic windowing contract runner
+
+`windowing-contract.mjs` is the fail-closed runner for the strategic windowing
+journeys. Its default selection is the complete A-E inventory and exits nonzero
+until modules providing all five groups are installed. The explicit
+`--case adapter-smoke` selection is the early SW-12H gate: it runs both factions
+at 640x480 and 1280x800, clicks the real GID control, selects the real Display
+Off child row to release the menu boundary, sends a real Alt+2 input, and
+retains the matched application command for each unique event recipient plus
+exact before/after action deltas. It is adapter evidence, not full A-E or
+original-game acceptance. Explicit named journey selections are likewise
+reported as focused evidence, even when their declared groups happen to span
+A-E; only the validated default inventory reports complete A-E scope.
+
+Build once and reuse that exact fixture artifact with:
+
+```sh
+npm run build
+node windowing-contract.mjs --no-build --case adapter-smoke
+```
+
+Named journey modules use filenames matching `windowing-contract-*.mjs` and
+export `windowingContractCase` or `windowingContractCases`. The runner discovers
+them without a central registry edit. Each case is created with
+`defineWindowingContractCase` and declares:
+
+- `id`, `groups`, `factions`, and `viewports`;
+- async `setup(context)` and `actions(context, setup)` hooks, where `actions`
+  returns the schema-versioned observation for that exact case, faction, and
+  viewport;
+- async `assertions(context, observation, setup)`, returning a positive assertion
+  count; and
+- async `evidence(context, observation, setup)`, returning retained evidence.
+
+Case IDs must be unique. Unknown selections, missing A-E groups, malformed
+observations, duplicate physical-event recipients, zero executed cases, and
+zero assertions are errors. Empty discovered case arrays also fail closed.
+Observations use schema version 1 and record each
+event's ID/kind/recipient plus identical nonnegative `before` and `after`
+action-counter keys. Fixture request code 66 is scenario enum value 65; the
+existing faction byte remains unchanged, while viewport remains explicit
+runner metadata because it is a browser-context property rather than a WASM
+fixture-code bit.
 
 The encyclopedia-artwork gate is deliberately narrower than `OBJ-01`. Its
 test-only fixture paints one owned `EDATA.042` source image at native 400×200
