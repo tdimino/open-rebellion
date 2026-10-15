@@ -91,7 +91,9 @@ use rebellion_data::encyclopedia_topics::EncyclopediaAudience;
 use rebellion_render::build_selection::{
     draw_build_selection, BuildSelectionAction, BuildSelectionState,
 };
-use rebellion_render::fleet_finder::{draw_fleet_finder, FleetFinderAction, FleetFinderState};
+use rebellion_render::fleet_finder::{
+    draw_fleet_finder_focused, FleetFinderAction, FleetFinderState,
+};
 use rebellion_render::fleet_window::{draw_managed_fleet_windows, FleetWindowEntry};
 use rebellion_render::game_speed::{
     choose_game_speed, draw_day_readout, draw_game_speed_menu, draw_pause_alert,
@@ -1211,6 +1213,7 @@ impl StrategicRootKeyBatch {
         router: &mut FrameInputRouter,
         handles_keyboard: bool,
         fleet: Option<(rebellion_windowing::WindowId, bool)>,
+        fleet_finder: Option<rebellion_windowing::WindowId>,
     ) {
         for event in &self.events {
             let recipient = router.keyboard_recipient(event.id);
@@ -1220,6 +1223,13 @@ impl StrategicRootKeyBatch {
                 } else {
                     InputDisposition::Unhandled
                 }),
+                InputRecipient::Window(window) if fleet_finder == Some(window) => {
+                    Some(if event.key == KeyCode::Escape {
+                        InputDisposition::Handled
+                    } else {
+                        InputDisposition::Unhandled
+                    })
+                }
                 InputRecipient::Window(window) => fleet
                     .filter(|(fleet_window, _)| *fleet_window == window)
                     .map(|(_, renaming)| {
@@ -1321,6 +1331,18 @@ impl StrategicPointerBatch {
             .map(|event| (event.id, event.phase))
             .collect()
     }
+
+    fn has_blocked_pointer_input(&self, router: &FrameInputRouter) -> bool {
+        self.events
+            .iter()
+            .any(|event| router.pointer_recipient(event.id) == InputRecipient::Blocked)
+    }
+
+    fn blocks_pointer_phase(&self, router: &FrameInputRouter, phase: PointerPhase) -> bool {
+        self.events.iter().any(|event| {
+            event.phase == phase && router.pointer_recipient(event.id) == InputRecipient::Blocked
+        })
+    }
 }
 
 const fn strategic_root_key(key: KeyCode) -> bool {
@@ -1413,6 +1435,101 @@ fn suspend_legacy_egui_input(
     saved
 }
 
+#[derive(Default)]
+struct RetainedLegacyInputFilter {
+    context: egui_macroquad::egui::Context,
+}
+
+impl RetainedLegacyInputFilter {
+    fn reset(&mut self) {
+        self.context = egui_macroquad::egui::Context::default();
+    }
+
+    fn install(
+        &mut self,
+        target: &egui_macroquad::egui::Context,
+        batch: &StrategicPointerBatch,
+        router: &FrameInputRouter,
+        suppress_all_input: bool,
+    ) -> Option<egui_macroquad::egui::InputState> {
+        let saved = target.input(Clone::clone);
+        let has_blocked = batch.has_blocked_pointer_input(router);
+        let mut raw = saved.raw.clone();
+        if suppress_all_input {
+            self.reset();
+            raw.events.clear();
+            raw.modifiers = egui_macroquad::egui::Modifiers::NONE;
+            raw.focused = false;
+        } else if has_blocked {
+            let mut next_route = 0;
+            raw.events.retain(|event| {
+                if !is_routed_egui_pointer_event(event) {
+                    return true;
+                }
+                let Some(routed) = batch.events.get(next_route) else {
+                    return false;
+                };
+                next_route += 1;
+                egui_event_matches_phase(event, routed.phase)
+                    && router.pointer_recipient(routed.id) != InputRecipient::Blocked
+            });
+        }
+
+        let options = target.options(Clone::clone);
+        self.context
+            .options_mut(|filtered_options| *filtered_options = options);
+        let mut filtered = None;
+        let _ = self.context.run(raw, |ctx| {
+            filtered = Some(ctx.input(Clone::clone));
+        });
+        let filtered = filtered.expect("the retained input filter runs one egui pass");
+        target.input_mut(|input| *input = filtered);
+        Some(saved)
+    }
+}
+
+const fn is_routed_egui_pointer_event(event: &egui_macroquad::egui::Event) -> bool {
+    matches!(
+        event,
+        egui_macroquad::egui::Event::PointerMoved(_)
+            | egui_macroquad::egui::Event::PointerButton { .. }
+            | egui_macroquad::egui::Event::MouseWheel { .. }
+    )
+}
+
+fn egui_event_matches_phase(event: &egui_macroquad::egui::Event, phase: PointerPhase) -> bool {
+    use egui_macroquad::egui::{Event, PointerButton};
+
+    let button = |button| match button {
+        PointerButton::Primary => PointerButtonId::Primary,
+        PointerButton::Secondary => PointerButtonId::Secondary,
+        PointerButton::Middle => PointerButtonId::Middle,
+        PointerButton::Extra1 => PointerButtonId::Extra(1),
+        PointerButton::Extra2 => PointerButtonId::Extra(2),
+    };
+    match (event, phase) {
+        (Event::PointerMoved(_), PointerPhase::Motion(_) | PointerPhase::Hover)
+        | (Event::MouseWheel { .. }, PointerPhase::Auxiliary) => true,
+        (
+            Event::PointerButton {
+                button: event_button,
+                pressed,
+                ..
+            },
+            PointerPhase::Press(phase_button),
+        ) => *pressed && button(*event_button) == phase_button,
+        (
+            Event::PointerButton {
+                button: event_button,
+                pressed,
+                ..
+            },
+            PointerPhase::Release(phase_button),
+        ) => !*pressed && button(*event_button) == phase_button,
+        _ => false,
+    }
+}
+
 fn restore_egui_input(
     ctx: &egui_macroquad::egui::Context,
     saved: egui_macroquad::egui::InputState,
@@ -1464,8 +1581,17 @@ fn with_retained_input<T>(
 
 #[cfg(test)]
 mod frame_input_tests {
-    use super::with_retained_input;
+    use super::{
+        restore_egui_input, with_retained_input, RetainedLegacyInputFilter, StrategicPointerBatch,
+        StrategicRawPointerEvent,
+    };
     use egui_macroquad::egui;
+    use rebellion_render::fleet_finder::FleetFinderState;
+    use rebellion_render::windowing_input::{
+        FrameInputRouter, InputRecipient, PointerButtonId, PointerPhase,
+    };
+    use rebellion_render::CockpitFaction;
+    use std::collections::BTreeSet;
 
     /// Clicks a retained window's area and reports whether the window saw
     /// the click and whether the input reached owners drawn after it.
@@ -1516,6 +1642,175 @@ mod frame_input_tests {
         assert_eq!(click_retained_window(true), (true, true));
         assert_eq!(click_retained_window(false), (false, true));
     }
+
+    #[test]
+    fn finder_close_quarantines_release_before_retained_legacy_input() {
+        let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
+        coordinator
+            .enqueue_fleet_finder_open(FleetFinderState::prepare_open(CockpitFaction::Alliance));
+        let finder = coordinator.apply_pending()[0]
+            .fleet_finder_content_id
+            .expect("Fleet Finder open allocates an identity");
+        assert!(coordinator.acknowledge_fleet_finder_publication(finder));
+
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(1, &coordinator.begin_frame());
+        let modal_batch = StrategicPointerBatch::collect_from_raw(
+            1,
+            &mut router,
+            &[
+                StrategicRawPointerEvent {
+                    ordinal: 0,
+                    point: (20.0, 20.0),
+                    phase: PointerPhase::Press(PointerButtonId::Secondary),
+                },
+                StrategicRawPointerEvent {
+                    ordinal: 1,
+                    point: (20.0, 20.0),
+                    phase: PointerPhase::Auxiliary,
+                },
+            ],
+            |_| BTreeSet::from([finder]),
+        );
+        assert_eq!(
+            router.pointer_recipient(modal_batch.events[0].id),
+            InputRecipient::Window(finder)
+        );
+        let ctx = egui::Context::default();
+        let point = egui::pos2(20.0, 20.0);
+        let mut legacy_filter = RetainedLegacyInputFilter::default();
+        let modal_input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(200.0, 200.0),
+            )),
+            events: vec![
+                egui::Event::PointerButton {
+                    pos: point,
+                    button: egui::PointerButton::Secondary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::default(),
+                },
+                egui::Event::MouseWheel {
+                    unit: egui::MouseWheelUnit::Line,
+                    delta: egui::vec2(0.0, 1.0),
+                    modifiers: egui::Modifiers::default(),
+                },
+            ],
+            ..egui::RawInput::default()
+        };
+        let _ = ctx.run(modal_input, |ctx| {
+            let saved = legacy_filter
+                .install(ctx, &modal_batch, &router, true)
+                .expect("a modal installs filtered legacy input");
+            assert!(!ctx.input(|input| input.pointer.secondary_down()));
+            assert_eq!(
+                ctx.input(|input| input.smooth_scroll_delta),
+                egui::Vec2::ZERO
+            );
+            restore_egui_input(ctx, saved);
+        });
+
+        coordinator.enqueue(rebellion_windowing::WindowCommand::Close(finder));
+        assert!(coordinator.apply_pending()[0].result.is_ok());
+        router.begin_frame(2, &coordinator.begin_frame());
+        let mixed = StrategicPointerBatch::collect_from_raw(
+            2,
+            &mut router,
+            &[
+                StrategicRawPointerEvent {
+                    ordinal: 0,
+                    point: (20.0, 20.0),
+                    phase: PointerPhase::Release(PointerButtonId::Secondary),
+                },
+                StrategicRawPointerEvent {
+                    ordinal: 1,
+                    point: (30.0, 30.0),
+                    phase: PointerPhase::Press(PointerButtonId::Primary),
+                },
+            ],
+            |_| BTreeSet::new(),
+        );
+        assert_eq!(
+            router.pointer_recipient(mixed.events[0].id),
+            InputRecipient::Blocked
+        );
+        assert_eq!(
+            router.pointer_recipient(mixed.events[1].id),
+            InputRecipient::Root
+        );
+        assert!(
+            mixed.blocks_pointer_phase(&router, PointerPhase::Release(PointerButtonId::Secondary))
+        );
+        assert!(!mixed.blocks_pointer_phase(&router, PointerPhase::Press(PointerButtonId::Primary)));
+
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(200.0, 200.0),
+            )),
+            events: vec![
+                egui::Event::PointerButton {
+                    pos: point,
+                    button: egui::PointerButton::Secondary,
+                    pressed: false,
+                    modifiers: egui::Modifiers::default(),
+                },
+                egui::Event::PointerButton {
+                    pos: egui::pos2(30.0, 30.0),
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::default(),
+                },
+            ],
+            ..egui::RawInput::default()
+        };
+        let mut legacy_saw_release = false;
+        let mut legacy_saw_press = false;
+        let mut managed_seam_saw_both = false;
+        let _ = ctx.run(input, |ctx| {
+            let saved = legacy_filter
+                .install(ctx, &mixed, &router, false)
+                .expect("the blocked release installs event-filtered legacy input");
+            legacy_saw_release = ctx.input(|input| input.pointer.secondary_released());
+            legacy_saw_press = ctx.input(|input| input.pointer.primary_pressed());
+            restore_egui_input(ctx, saved);
+            managed_seam_saw_both = ctx.input(|input| {
+                input.pointer.secondary_released() && input.pointer.primary_pressed()
+            });
+        });
+
+        assert!(!legacy_saw_release);
+        assert!(legacy_saw_press);
+        assert!(managed_seam_saw_both);
+
+        router.begin_frame(3, &coordinator.begin_frame());
+        let empty = StrategicPointerBatch::default();
+        let mut retained_state_is_clean = false;
+        let _ = ctx.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(200.0, 200.0),
+                )),
+                ..egui::RawInput::default()
+            },
+            |ctx| {
+                let saved = legacy_filter
+                    .install(ctx, &empty, &router, false)
+                    .expect("clean frames retain the filtered input history");
+                retained_state_is_clean = ctx.input(|input| {
+                    input.pointer.primary_down()
+                        && !input.pointer.secondary_down()
+                        && !input.pointer.secondary_released()
+                        && input.raw_scroll_delta == egui::Vec2::ZERO
+                        && input.smooth_scroll_delta == egui::Vec2::ZERO
+                });
+                restore_egui_input(ctx, saved);
+            },
+        );
+        assert!(retained_state_is_clean);
+    }
 }
 
 #[cfg(test)]
@@ -1541,7 +1836,7 @@ mod panel_toggle_tests {
             repeat: false,
         }];
         let batch = StrategicRootKeyBatch::collect_from_raw(1, &mut router, &events);
-        batch.report_legacy_children(&mut router, false, None);
+        batch.report_legacy_children(&mut router, false, None, None);
 
         assert!(router.claim_root(batch.events[0].id));
         assert!(!router.claim_root(batch.events[0].id));
@@ -1566,7 +1861,7 @@ mod panel_toggle_tests {
             },
         ];
         let batch = StrategicRootKeyBatch::collect_from_raw(9, &mut router, &events);
-        batch.report_legacy_children(&mut router, false, None);
+        batch.report_legacy_children(&mut router, false, None, None);
 
         assert_eq!(batch.events.len(), 2);
         assert!(batch.events[0].alt);
@@ -1589,7 +1884,7 @@ mod panel_toggle_tests {
             repeat: false,
         }];
         let batch = StrategicRootKeyBatch::collect_from_raw(2, &mut router, &events);
-        batch.report_legacy_children(&mut router, true, None);
+        batch.report_legacy_children(&mut router, true, None, None);
 
         assert!(!router.claim_root(batch.events[0].id));
     }
@@ -1638,7 +1933,7 @@ mod panel_toggle_tests {
             InputRecipient::Window(fleet)
         );
 
-        batch.report_legacy_children(&mut router, false, Some((fleet, false)));
+        batch.report_legacy_children(&mut router, false, Some((fleet, false)), None);
 
         assert!(router.claim_root(batch.events[0].id));
         assert!(router.claim_root(batch.events[1].id));
@@ -1663,7 +1958,7 @@ mod panel_toggle_tests {
         router.begin_frame(4, &frame);
         let batch = StrategicRootKeyBatch::collect_from_raw(4, &mut router, &events);
 
-        batch.report_legacy_children(&mut router, false, Some((fleet, true)));
+        batch.report_legacy_children(&mut router, false, Some((fleet, true)), None);
 
         let bubbled: Vec<bool> = batch
             .events
@@ -2558,6 +2853,7 @@ async fn main() {
     // families that still use the legacy cross-family focus serial.
     let mut fleet_legacy_bridge_serial = 0_u64;
     let mut strategic_input_router = rebellion_render::windowing_input::FrameInputRouter::default();
+    let mut retained_legacy_input_filter = RetainedLegacyInputFilter::default();
     let mut strategic_frame_number = 0_u64;
     let strategic_input_subscriber = macroquad::input::utils::register_input_subscriber();
     let mut strategic_raw_input = StrategicRawInputCollector::default();
@@ -4618,7 +4914,6 @@ Some(RailAudience::side(*faction_is_alliance)),
                 || move_confirmation_state.is_open()
                 || scrap_confirmation_state.is_open()
                 || status_window_state.is_open()
-                || fleet_finder_state.is_open()
                 || troop_finder_state.is_open()
                 || personnel_finder_state.is_open()
                 || message_index.is_some()
@@ -4635,6 +4930,8 @@ Some(RailAudience::side(*faction_is_alliance)),
             strategic_windowing.begin_production_frame(strategic_locks, legacy_blockers);
         let fleet_keyboard_owner =
             fleet_window_state.keyboard_owner(strategic_frame_boundary.snapshot());
+        let fleet_finder_keyboard_owner =
+            fleet_finder_state.keyboard_owner(strategic_frame_boundary.snapshot());
         let mut legacy_restriction_latch = LegacyInputRestrictionLatch::new(legacy_blockers);
         let strategic_frame_sequence_valid =
             if let Some(next_frame) = strategic_frame_number.checked_add(1) {
@@ -5144,6 +5441,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                             if campaign_loaded {
                                 drop(strategic_windowing.reset_session());
                                 strategic_input_router.reset_session();
+                                retained_legacy_input_filter.reset();
                                 // Sync cockpit chrome to player faction
                                 cockpit_state =
                                     CockpitState::new(if faction == MissionFaction::Alliance {
@@ -5304,6 +5602,7 @@ Some(RailAudience::side(*faction_is_alliance)),
 
                 // 4. All egui panels in a single ui() + draw() pass
                 let mut pending_cockpit_button = None;
+                let mut pending_fleet_finder_action = None;
                 #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
                 let windowing_map_selection_before = map_state.selected_system;
                 #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
@@ -5319,12 +5618,20 @@ Some(RailAudience::side(*faction_is_alliance)),
                             &mut strategic_input_router,
                             &strategic_raw_input_events.pointers,
                             |point| {
-                                fleet_window_state.hit_window_ids(
+                                let mut hits = fleet_window_state.hit_window_ids(
                                     strategic_frame_boundary.snapshot(),
                                     cockpit_layout,
                                     point,
                                     ctx.layer_id_at(egui_macroquad::egui::pos2(point.0, point.1)),
-                                )
+                                );
+                                if let Some(window) = fleet_finder_state.hit_window(
+                                    strategic_frame_boundary.snapshot(),
+                                    cockpit_layout,
+                                    point,
+                                ) {
+                                    hits.insert(window);
+                                }
+                                hits
                             },
                         );
                     });
@@ -5333,6 +5640,10 @@ Some(RailAudience::side(*faction_is_alliance)),
                     StrategicPointerBatch::default()
                 };
                 let strategic_pointer_routes = strategic_pointer_events.router_events();
+                map_state.pointer_blocked |= strategic_pointer_events.blocks_pointer_phase(
+                    &strategic_input_router,
+                    PointerPhase::Press(PointerButtonId::Primary),
+                );
                 let strategic_root_keys = if strategic_frame_sequence_valid {
                     StrategicRootKeyBatch::collect_from_indexed_raw(
                         strategic_frame_number,
@@ -5346,9 +5657,12 @@ Some(RailAudience::side(*faction_is_alliance)),
                 let mut egui_claims_keyboard = false;
                 let mut legacy_keyboard_handled = false;
                 egui_macroquad::ui(|ctx| {
-                    let retained_legacy_input = strategic_frame_boundary
-                        .migrated_modal_active()
-                        .then(|| suspend_legacy_egui_input(ctx));
+                    let retained_legacy_input = retained_legacy_input_filter.install(
+                        ctx,
+                        &strategic_pointer_events,
+                        &strategic_input_router,
+                        strategic_frame_boundary.migrated_modal_active(),
+                    );
                     let strategic_input_enabled = strategic_root_pointer_enabled;
                     let strategic_owner_input_enabled = strategic_owner_pointer_enabled;
                     let retained_window_input =
@@ -7007,50 +7321,6 @@ Some(RailAudience::side(*faction_is_alliance)),
                         );
                     }
 
-                    // FUN_00429440: the Finder's choice opens its system's
-                    // sector window, then the Fleet window from the fleet
-                    // icon with the fleet or ship selected.
-                    if let Some(FleetFinderAction::Open(entry)) = draw_fleet_finder(
-                        ctx,
-                        &world,
-                        &movement_state,
-                        fog_state,
-                        &mut fleet_finder_state,
-                        cockpit_layout,
-                        &mut bmp_cache,
-                    ) {
-                        // A fleet in hyperspace is its destination's child
-                        // (FUN_00556390), so its windows open there.
-                        if let Some(system) = rebellion_core::movement::listed_location(
-                            &movement_state,
-                            &world,
-                            entry.fleet(),
-                        ) {
-                            sector_window_state.open_for_system(
-                                &world,
-                                system,
-                                cockpit_state.faction,
-                            );
-                            if let Some(point) = sector_window_state.fleet_window_point(
-                                &world,
-                                cockpit_layout,
-                                system,
-                            ) {
-                                map_state.selected_system = Some(system);
-                                enqueue_fleet_window(
-                                    &mut strategic_windowing,
-                                    &fleet_window_state,
-                                    &world,
-                                    system,
-                                    point,
-                                    cockpit_state.faction,
-                                    cockpit_layout,
-                                    Some(entry),
-                                );
-                            }
-                        }
-                    }
-
                     // FUN_0046df90 (Troop Finder) / FUN_00464c20 (Personnel
                     // Finder) command slots: a Finder's choice goes through
                     // FUN_00429440, which opens the target's sector window
@@ -7318,6 +7588,10 @@ Some(RailAudience::side(*faction_is_alliance)),
                         // team may undertake; with none, nothing opens.
                         if strategic_owner_input_enabled
                             && targeting_held
+                            && !strategic_pointer_events.blocks_pointer_phase(
+                                &strategic_input_router,
+                                PointerPhase::Release(PointerButtonId::Primary),
+                            )
                             && is_mouse_button_released(MouseButton::Left)
                         {
                             let windows = ReleaseWindows {
@@ -7576,6 +7850,20 @@ Some(RailAudience::side(*faction_is_alliance)),
                     if let Some(saved) = retained_legacy_input {
                         restore_egui_input(ctx, saved);
                     }
+                    pending_fleet_finder_action = draw_fleet_finder_focused(
+                        ctx,
+                        &world,
+                        &movement_state,
+                        fog_state,
+                        &mut fleet_finder_state,
+                        strategic_frame_boundary.snapshot().focused(),
+                        cockpit_layout,
+                        &mut bmp_cache,
+                    );
+                    if let Some(focus) = fleet_finder_state.take_focus_request() {
+                        strategic_windowing
+                            .enqueue(rebellion_windowing::WindowCommand::Focus(focus));
+                    }
                     egui_claims_pointer = ctx.is_pointer_over_area() || ctx.wants_pointer_input();
                     egui_claims_keyboard = ctx.wants_keyboard_input();
                 });
@@ -7584,6 +7872,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                     &mut strategic_input_router,
                     egui_claims_keyboard || legacy_keyboard_handled,
                     fleet_keyboard_owner,
+                    fleet_finder_keyboard_owner,
                 );
 
                 // Child surfaces have now handled their input. Keep every
@@ -7599,7 +7888,6 @@ Some(RailAudience::side(*faction_is_alliance)),
                         || move_confirmation_state.is_open()
                         || scrap_confirmation_state.is_open()
                         || status_window_state.is_open()
-                        || fleet_finder_state.is_open()
                         || troop_finder_state.is_open()
                         || personnel_finder_state.is_open()
                         || message_index.is_some()
@@ -7626,11 +7914,13 @@ Some(RailAudience::side(*faction_is_alliance)),
                         let (command, destination) = match btn {
                             CockpitButton::SystemFinder => (0x12d, "system_finder"),
                             CockpitButton::FleetFinder => {
-                                fleet_finder_state.open(cockpit_state.faction);
+                                strategic_windowing.enqueue_fleet_finder_open(
+                                    FleetFinderState::prepare_open(cockpit_state.faction),
+                                );
                                 strategic_dispatch_restricted = true;
                                 strategic_input_router.set_application_hold(true);
                                 macroquad::logging::info!(
-                                    "[interface] command=0x12e destination=fleet_finder status=opened_original"
+                                    "[interface] command=0x12e destination=fleet_finder status=queued"
                                 );
                                 (0x12e, "fleet_finder")
                             }
@@ -7746,6 +8036,56 @@ Some(RailAudience::side(*faction_is_alliance)),
 
                 if let Some(btn) = pending_cockpit_button {
                     dispatch_cockpit_button!(btn);
+                }
+
+                if let Some(action) = pending_fleet_finder_action {
+                    strategic_dispatch_restricted = true;
+                    strategic_input_router.set_application_hold(true);
+                    match action {
+                        FleetFinderAction::Close(window) => {
+                            strategic_windowing
+                                .enqueue(rebellion_windowing::WindowCommand::Close(window));
+                        }
+                        FleetFinderAction::Open(entry) => {
+                            if let Some(window) = fleet_finder_state.window_id() {
+                                strategic_windowing
+                                    .enqueue(rebellion_windowing::WindowCommand::Close(window));
+                            }
+                            // FUN_00429440: a Finder choice opens its system's
+                            // sector window, then the Fleet window with the
+                            // chosen fleet or ship selected. A fleet in
+                            // hyperspace belongs to its destination here
+                            // (FUN_00556390).
+                            if let Some(system) = rebellion_core::movement::listed_location(
+                                &movement_state,
+                                &world,
+                                entry.fleet(),
+                            ) {
+                                sector_window_state.open_for_system(
+                                    &world,
+                                    system,
+                                    cockpit_state.faction,
+                                );
+                                if let Some(point) = sector_window_state.fleet_window_point(
+                                    &world,
+                                    cockpit_layout,
+                                    system,
+                                ) {
+                                    map_state.selected_system = Some(system);
+                                    enqueue_fleet_window(
+                                        &mut strategic_windowing,
+                                        &fleet_window_state,
+                                        &world,
+                                        system,
+                                        point,
+                                        cockpit_state.faction,
+                                        cockpit_layout,
+                                        Some(entry),
+                                    );
+                                }
+                            }
+                        }
+                    }
                 }
 
                 // Root consumes the normalized key presses in backend order,
@@ -8597,6 +8937,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                             campaign.restore(state);
                             drop(strategic_windowing.reset_session());
                             strategic_input_router.reset_session();
+                            retained_legacy_input_filter.reset();
                             let restored_fingerprint =
                                 rebellion_data::save::compute_state_fingerprint(
                                     &campaign.snapshot(),
@@ -9026,8 +9367,10 @@ Some(RailAudience::side(*faction_is_alliance)),
             }
         }
 
-        let fleet_content_reports =
+        let mut strategic_content_reports =
             fleet_window_state.content_reports(strategic_frame_boundary.snapshot(), &world);
+        strategic_content_reports
+            .extend(fleet_finder_state.content_reports(strategic_frame_boundary.snapshot()));
 
         // Window intents commit only after input and painting have completed.
         // Fleet content is published only after the matching manager commit;
@@ -9039,6 +9382,8 @@ Some(RailAudience::side(*faction_is_alliance)),
                 mut removed_content,
                 prepared_fleet,
                 fleet_content_id,
+                prepared_fleet_finder,
+                fleet_finder_content_id,
                 minimized_fleet,
                 restored_fleet,
             } = applied;
@@ -9070,6 +9415,30 @@ Some(RailAudience::side(*faction_is_alliance)),
                     }
                 }
             }
+            if let (Some(prepared), Some(id), Ok(commit)) =
+                (prepared_fleet_finder, fleet_finder_content_id, &result)
+            {
+                if fleet_finder_state.commit_open(prepared, &commit.transition) == Some(id) {
+                    let committed = strategic_windowing.has_content(id)
+                        || strategic_windowing.acknowledge_fleet_finder_publication(id);
+                    if !committed {
+                        fleet_finder_state.remove_content(&[id]);
+                        removed_content
+                            .extend(strategic_windowing.rollback_fleet_finder_publication(id));
+                    }
+                } else {
+                    macroquad::logging::error!(
+                        "[windowing] Fleet Finder content commit did not match identity={id:?}"
+                    );
+                    if matches!(
+                        commit.transition,
+                        rebellion_windowing::WindowTransition::Opened { .. }
+                    ) {
+                        removed_content
+                            .extend(strategic_windowing.rollback_fleet_finder_publication(id));
+                    }
+                }
+            }
             if (activated_fleet && result.is_ok()) || committed_fleet_open {
                 fleet_legacy_bridge_serial = FleetWindowState::next_legacy_bridge_serial();
             }
@@ -9094,6 +9463,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                 }
             }
             fleet_window_state.remove_content(&removed_content);
+            fleet_finder_state.remove_content(&removed_content);
 
             match &result {
                 Ok(commit) => {
@@ -9125,9 +9495,12 @@ Some(RailAudience::side(*faction_is_alliance)),
 
         // Reports reconcile after command commit against the immutable frame
         // that actually routed and painted this content.
-        let reconciliation = strategic_windowing
-            .reconcile(strategic_frame_boundary.snapshot(), &fleet_content_reports);
+        let reconciliation = strategic_windowing.reconcile(
+            strategic_frame_boundary.snapshot(),
+            &strategic_content_reports,
+        );
         fleet_window_state.remove_content(&reconciliation.removed);
+        fleet_finder_state.remove_content(&reconciliation.removed);
         for event in &reconciliation.events {
             if let rebellion_windowing::WindowEvent::CaptureCancelled { window, .. } = event {
                 strategic_input_router.cancel_window(*window);

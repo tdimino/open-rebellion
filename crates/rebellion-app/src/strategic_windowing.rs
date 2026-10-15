@@ -4,11 +4,14 @@ use std::collections::BTreeSet;
 
 use rebellion_core::ids::SystemKey;
 use rebellion_render::{
-    fleet_window::PreparedFleetWindow, windowing_policy::SUBJECT_COMMAND_CONTEXT,
+    fleet_finder::{PreparedFleetFinder, FLEET_FINDER_NAME_CONTROL},
+    fleet_window::PreparedFleetWindow,
+    windowing_policy::SUBJECT_COMMAND_CONTEXT,
 };
 use rebellion_windowing::{
-    BubblePolicy, ContentReport, ExistingEffect, ReconcileReport, RouteTarget, RoutingSnapshot,
-    SubjectId, WindowCommand, WindowCommit, WindowError, WindowEvent, WindowId, WindowTransition,
+    BubblePolicy, ContentReport, ExistingEffect, FocusTarget, ReconcileReport, RouteTarget,
+    RoutingSnapshot, SubjectId, WindowCommand, WindowCommit, WindowError, WindowEvent, WindowId,
+    WindowTransition,
 };
 
 /// Result of applying one queued command at the dispatch commit boundary.
@@ -25,6 +28,10 @@ pub struct AppliedWindowCommand {
     pub prepared_fleet: Option<PreparedFleetWindow>,
     /// Identity whose attachment is valid for `prepared_fleet` after commit.
     pub fleet_content_id: Option<WindowId>,
+    /// Fleet Finder content prepared beside its singleton open.
+    pub prepared_fleet_finder: Option<PreparedFleetFinder>,
+    /// Identity whose attachment is valid for `prepared_fleet_finder`.
+    pub fleet_finder_content_id: Option<WindowId>,
     /// Temporary rail-adapter payload committed only with Fleet minimize.
     pub minimized_fleet: Option<(WindowId, SystemKey, (i16, i16))>,
     /// Exact temporary rail projection retired only after the caller also
@@ -36,6 +43,7 @@ pub struct AppliedWindowCommand {
 struct QueuedWindowCommand {
     command: WindowCommand,
     prepared_fleet: Option<PreparedFleetWindow>,
+    prepared_fleet_finder: Option<PreparedFleetFinder>,
     minimized_fleet: Option<(WindowId, SystemKey, (i16, i16))>,
     restored_fleet: Option<WindowId>,
 }
@@ -354,6 +362,7 @@ impl StrategicWindowing {
         self.pending.push(QueuedWindowCommand {
             command,
             prepared_fleet: None,
+            prepared_fleet_finder: None,
             minimized_fleet: None,
             restored_fleet: None,
         });
@@ -365,6 +374,18 @@ impl StrategicWindowing {
         self.pending.push(QueuedWindowCommand {
             command: WindowCommand::Open(prepared.spec()),
             prepared_fleet: Some(prepared),
+            prepared_fleet_finder: None,
+            minimized_fleet: None,
+            restored_fleet: None,
+        });
+    }
+
+    /// Queues inert Fleet Finder content beside its semantic singleton open.
+    pub fn enqueue_fleet_finder_open(&mut self, prepared: PreparedFleetFinder) {
+        self.pending.push(QueuedWindowCommand {
+            command: WindowCommand::Open(prepared.spec()),
+            prepared_fleet: None,
+            prepared_fleet_finder: Some(prepared),
             minimized_fleet: None,
             restored_fleet: None,
         });
@@ -381,6 +402,7 @@ impl StrategicWindowing {
         self.pending.push(QueuedWindowCommand {
             command: WindowCommand::Minimize(window),
             prepared_fleet: None,
+            prepared_fleet_finder: None,
             minimized_fleet: Some((window, system, logical_position)),
             restored_fleet: None,
         });
@@ -393,6 +415,7 @@ impl StrategicWindowing {
         self.pending.push(QueuedWindowCommand {
             command: WindowCommand::Restore(window),
             prepared_fleet: None,
+            prepared_fleet_finder: None,
             minimized_fleet: None,
             restored_fleet: Some(window),
         });
@@ -410,12 +433,14 @@ impl StrategicWindowing {
                 let QueuedWindowCommand {
                     command,
                     prepared_fleet,
+                    prepared_fleet_finder,
                     minimized_fleet,
                     restored_fleet: queued_restored_fleet,
                 } = queued;
                 let result = self.manager.apply(command);
                 let mut removed_content = Vec::new();
                 let mut fleet_content_id = None;
+                let mut fleet_finder_content_id = None;
                 let mut committed_minimized_fleet = None;
                 let mut restored_fleet = None;
                 if let Ok(commit) = &result {
@@ -452,6 +477,29 @@ impl StrategicWindowing {
                             restored_fleet = fleet_content_id;
                         }
                     }
+                    if prepared_fleet_finder.is_some() {
+                        fleet_finder_content_id = match &commit.transition {
+                            WindowTransition::Opened { id } => Some(*id),
+                            WindowTransition::Existing { id, .. } => {
+                                self.attached_content.contains(id).then_some(*id)
+                            }
+                            _ => None,
+                        };
+                        if let WindowTransition::Opened { id } = commit.transition {
+                            let focus = FocusTarget {
+                                window: id,
+                                control: Some(FLEET_FINDER_NAME_CONTROL),
+                            };
+                            if let Ok(focus_commit) =
+                                self.manager.apply(WindowCommand::Focus(focus))
+                            {
+                                self.record_transition(
+                                    &focus_commit.transition,
+                                    &focus_commit.events,
+                                );
+                            }
+                        }
+                    }
                 }
                 AppliedWindowCommand {
                     command,
@@ -459,6 +507,8 @@ impl StrategicWindowing {
                     removed_content,
                     prepared_fleet,
                     fleet_content_id,
+                    prepared_fleet_finder,
+                    fleet_finder_content_id,
                     minimized_fleet: committed_minimized_fleet,
                     restored_fleet,
                 }
@@ -488,9 +538,27 @@ impl StrategicWindowing {
             && self.attached_content.insert(id)
     }
 
+    /// Acknowledges Fleet Finder publication only for its exact singleton.
+    pub fn acknowledge_fleet_finder_publication(&mut self, id: WindowId) -> bool {
+        self.manager
+            .begin_frame()
+            .key(id)
+            .is_some_and(|key| key.kind == rebellion_windowing::WindowKind::FleetFinder)
+            && self.attached_content.insert(id)
+    }
+
     /// Compensates a failed renderer publication or rail eviction by closing
     /// the exact manager identity and returning the content teardown target.
     pub fn rollback_fleet_publication(&mut self, id: WindowId) -> Vec<WindowId> {
+        self.rollback_publication(id)
+    }
+
+    /// Compensates a failed Fleet Finder publication with an exact close.
+    pub fn rollback_fleet_finder_publication(&mut self, id: WindowId) -> Vec<WindowId> {
+        self.rollback_publication(id)
+    }
+
+    fn rollback_publication(&mut self, id: WindowId) -> Vec<WindowId> {
         let Ok(commit) = self.manager.apply(WindowCommand::Close(id)) else {
             return Vec::new();
         };
@@ -614,12 +682,18 @@ impl StrategicWindowing {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use super::*;
     use rebellion_core::dat::{ExplorationStatus, SectorGroup};
     use rebellion_core::ids::DatId;
     use rebellion_core::world::{ControlKind, GameWorld, Sector, System};
+    use rebellion_render::windowing_input::{
+        FrameInputRouter, InputDisposition, InputEventId, InputRecipient,
+    };
     use rebellion_render::windowing_policy::{contextual_spec, singleton_spec};
     use rebellion_render::{
+        fleet_finder::{FleetFinderState, FLEET_FINDER_NAME_CONTROL},
         CockpitFaction, CockpitLayout, CockpitViewport, FleetWindowState, SystemWindowState,
     };
     use rebellion_windowing::{
@@ -802,6 +876,129 @@ mod tests {
         assert_eq!(coordinator.rollback_fleet_publication(id), [id]);
         assert!(!coordinator.begin_frame().is_visible(id));
         assert!(!coordinator.has_content(id));
+    }
+
+    #[test]
+    fn finder_duplicate_open_preserves_id_selection_and_focus() {
+        let mut coordinator = StrategicWindowing::new();
+        let mut finder = FleetFinderState::default();
+        coordinator
+            .enqueue_fleet_finder_open(FleetFinderState::prepare_open(CockpitFaction::Alliance));
+        assert!(coordinator.begin_frame().paint_order().is_empty());
+
+        let mut opened = coordinator.apply_pending().remove(0);
+        let id = opened.fleet_finder_content_id.unwrap();
+        let transition = &opened.result.as_ref().unwrap().transition;
+        assert_eq!(
+            finder.commit_open(opened.prepared_fleet_finder.take().unwrap(), transition),
+            Some(id)
+        );
+        assert!(coordinator.acknowledge_fleet_finder_publication(id));
+        let name_focus = FocusTarget {
+            window: id,
+            control: Some(FLEET_FINDER_NAME_CONTROL),
+        };
+        assert_eq!(coordinator.begin_frame().focused(), Some(name_focus));
+
+        finder.set_tab(rebellion_render::fleet_finder::FinderTab::Imperial);
+        coordinator
+            .enqueue_fleet_finder_open(FleetFinderState::prepare_open(CockpitFaction::Empire));
+        let mut duplicate = coordinator.apply_pending().remove(0);
+        assert!(matches!(
+            duplicate.result.as_ref().unwrap().transition,
+            WindowTransition::Existing {
+                id: existing,
+                effect: ExistingEffect::NoOp,
+            } if existing == id
+        ));
+        assert_eq!(duplicate.fleet_finder_content_id, Some(id));
+        assert_eq!(
+            finder.commit_open(
+                duplicate.prepared_fleet_finder.take().unwrap(),
+                &duplicate.result.as_ref().unwrap().transition,
+            ),
+            Some(id)
+        );
+        assert_eq!(finder.window_id(), Some(id));
+        assert_eq!(coordinator.begin_frame().focused(), Some(name_focus));
+    }
+
+    #[test]
+    fn finder_unhandled_function_key_stops_at_modal_boundary() {
+        let mut coordinator = StrategicWindowing::new();
+        coordinator
+            .enqueue_fleet_finder_open(FleetFinderState::prepare_open(CockpitFaction::Alliance));
+        let id = opened_id(&coordinator.apply_pending()[0]);
+        let frame = coordinator.begin_frame();
+        let event = InputEventId {
+            frame: 1,
+            ordinal: 0,
+        };
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(1, &frame);
+        router.collect_keyboard(event);
+
+        assert_eq!(router.keyboard_recipient(event), InputRecipient::Window(id));
+        router.report_key(
+            event,
+            InputRecipient::Window(id),
+            InputDisposition::Unhandled,
+        );
+        assert!(!router.claim_root(event));
+    }
+
+    #[test]
+    fn finder_close_key_cannot_open_another_surface_in_same_frame() {
+        let mut coordinator = StrategicWindowing::new();
+        coordinator
+            .enqueue_fleet_finder_open(FleetFinderState::prepare_open(CockpitFaction::Alliance));
+        let id = opened_id(&coordinator.apply_pending()[0]);
+        let closing_frame = coordinator.begin_production_frame(
+            ApplicationInputLocks::default(),
+            LegacyInputBlockers::default(),
+        );
+        let event = InputEventId {
+            frame: 7,
+            ordinal: 0,
+        };
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(7, closing_frame.snapshot());
+        router.collect_keyboard(event);
+        router.report_key(event, InputRecipient::Window(id), InputDisposition::Handled);
+
+        coordinator.enqueue(WindowCommand::Close(id));
+        assert!(coordinator.apply_pending()[0].result.is_ok());
+
+        assert!(!router.claim_root(event));
+        assert_eq!(
+            closing_frame
+                .snapshot()
+                .pointer_route(&BTreeSet::new())
+                .target,
+            RouteTarget::BlockedBy(id)
+        );
+        assert!(!closing_frame.root_shortcuts_allowed());
+        assert!(coordinator.begin_frame().paint_order().is_empty());
+    }
+
+    #[test]
+    fn finder_modal_blocks_unmigrated_legacy_input_paths() {
+        let mut coordinator = StrategicWindowing::new();
+        coordinator
+            .enqueue_fleet_finder_open(FleetFinderState::prepare_open(CockpitFaction::Alliance));
+        let id = opened_id(&coordinator.apply_pending()[0]);
+        let frame = coordinator.begin_production_frame(
+            ApplicationInputLocks::default(),
+            LegacyInputBlockers::default(),
+        );
+
+        assert_eq!(frame.snapshot().active_modal(), Some(id));
+        assert!(!frame.retained_window_input_allowed());
+        assert!(!frame.legacy_surface_input_allowed());
+        assert!(!frame.legacy_owned_pointer_allowed());
+        assert!(!frame.legacy_pointer_allowed());
+        assert!(!frame.legacy_keyboard_allowed());
+        assert!(!frame.root_shortcuts_allowed());
     }
 
     #[test]
