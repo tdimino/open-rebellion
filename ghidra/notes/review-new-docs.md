@@ -3,7 +3,7 @@ title: "Accuracy Review: Three New Scholar Documents"
 description: "Cross-reference audit of 46 claims across economy, entity, and mission/event documents"
 category: "ghidra"
 created: 2026-03-15
-updated: 2026-03-16
+updated: 2026-10-14
 ---
 
 # Accuracy Review: Three New Scholar Documents
@@ -37,11 +37,11 @@ FUN_004f0190(pvVar4, pvVar5);  // sides 1 and 2
 
 ---
 
-#### 1.2 RegimentStrength — `FUN_004ee350`
+#### 1.2 CommandKind — `FUN_004ee350`
 
 **Claim**: Field `+0x96`, range check `FUN_0053fc90(value, 0, value)` (non-negative only), vtable `+0x330`, observer `FUN_004f04f0`.
 
-**C file**: `FUN_004ee350_unit_combat.c`
+**C file**: `FUN_004ee350.c`
 
 ```c
 iVar3 = FUN_0053fc90(param_1,0,param_1);
@@ -270,7 +270,7 @@ Confirmed: IDs from `0xa00` through `0xa21` (= `0x0a00` through `0x0a21`), 34 ca
 | # | Claim | Result |
 |---|-------|--------|
 | 1 | EnhancedLoyalty field `+0x8a`, guards, vtable `+0x318` | Verified Correct |
-| 2 | RegimentStrength field `+0x96`, range, vtable `+0x330` | Verified Correct |
+| 2 | Character CommandKind field `+0x96` (`ground-combat.md`), range, vtable `+0x330` | Verified Correct |
 | 3 | HyperdriveModifier field `+0x9a`, range, vtable `+0x338` | Verified Correct |
 | 4 | BaseLoyalty field `+0x66`, guards, vtable `+0x238` | Verified Correct |
 | 5 | Faction bits `+0x24 >> 6 & 3` and `>> 4 & 3` | Verified Correct |

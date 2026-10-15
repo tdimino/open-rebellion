@@ -3,7 +3,7 @@ title: "Mission & Event Cookbook — REBEXE.EXE Reverse Engineering"
 description: "Practical modder reference for adding missions, story events, and era-specific campaigns"
 category: "ghidra"
 created: 2026-03-15
-updated: 2026-03-16
+updated: 2026-10-14
 ---
 
 # Mission & Event Cookbook — REBEXE.EXE Reverse Engineering
@@ -682,4 +682,4 @@ The `is_repeatable: false` flag combined with `enabled: false` ensures the event
 
 ---
 
-*For combat formulas (bombardment, space combat 7-phase pipeline, ground combat), see `combat-formulas.md` and `annotated-functions.md`. For the full function taxonomy, see `modders-taxonomy.md`.*
+*For combat (where each kind is resolved, bombardment, the story-check chain), see `COMBAT-SUMMARY.md`, `bombardment.md` and `space-combat.md`. For the full function taxonomy, see `modders-taxonomy.md`.*

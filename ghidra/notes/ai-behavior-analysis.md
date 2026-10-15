@@ -3,7 +3,7 @@ title: "AI Behavior Analysis — Original REBEXE.EXE"
 description: "Complete reverse engineering of the original Star Wars Rebellion AI: fleet deployment, character assignment, production, threat evaluation, and galaxy-wide strategic planning"
 category: "ghidra"
 created: 2026-03-20
-updated: 2026-03-20
+updated: 2026-10-14
 sources:
   - type: "ghidra"
     files:
@@ -28,32 +28,32 @@ sources:
 
 ## Architecture: No Single AI Function
 
-The original Rebellion AI is **event-driven and distributed** across a 6-function pipeline, not a monolithic decision function. It uses the CRebObject → CNotifyObject → CCombatUnit hierarchy with a setter-notify-event pattern. The AI never runs as a single top-level call — it's triggered through the notification/observer system and evaluated per-system.
+The original Rebellion AI is **event-driven and distributed** across a 6-function pipeline, not a monolithic decision function. It uses the CRebObject → CNotifyObject hierarchy with a setter-notify-event pattern (`cpp-class-hierarchy.md`). The AI never runs as a single top-level call — it's triggered through the notification/observer system and evaluated per-system.
 
 ## The AI Pipeline (6 Functions)
 
 ```
-1. Galaxy Evaluation (FUN_00519d00)
-   ↓ categorizes all 200 systems into 7 faction-specific buckets
+0. New-game stage 0xb (FUN_00519d00), before play starts
+   ↓ divides the systems between the sides (galaxy-limits.md)
 2. System Iteration (FUN_00537180 / FUN_005385f0)
    ↓ for each system: check faction, evaluate entities, trigger deployment
-3. Strength Assessment (FUN_00502020)
-   ↓ per-system: count ships (0x30-0x3f), troops (0x10-0x13), facilities (0x1c-0x1f)
+3. Capital-ship contents check (FUN_00502020)
+   ↓ per ship: characters and special forces (0x30-0x3f), fighters (0x1c-0x1f), regiments (0x10-0x13)
 4. System Validation (FUN_00508250)
    ↓ pre-check: can this operation proceed? (~18 validators)
-5. Entity Dispatch (FUN_00508660)
-   ↓ route entities to placement handlers by family type (10+ handlers)
+5. System object check (FUN_00508660)
+   ↓ run the checks for the object's family (fleets, regiments, fighters, HQ, facilities)
 6. Movement Orders (FUN_00520580)
    ↓ set fleet deployment/movement parameters
 ```
 
 ## Function Details
 
-### 1. Galaxy-Wide System Distribution — `FUN_00519d00` (252 lines)
+### 1. New-Game System Distribution — `FUN_00519d00` (252 lines)
 
-**Address**: 0x00519d00 | **Purpose**: Strategic evaluation of all 200 systems
+**Address**: 0x00519d00 | **Purpose**: Stage `0xb` of the new-game driver `FUN_005136d0`: splits the created systems into side lists by SDPRTB `0x1e00`/`0x1e01` (`galaxy-limits.md`, `facility-ownership.md`). It runs once at setup and is not part of the computer player.
 
-- Iterates ALL systems via `FUN_0051cad0(0x90)` (family byte 0x90 = explored systems)
+- Iterates the systems via `FUN_0051cad0(0x90)` (systems are families `0x90` core and `0x92` rim)
 - Checks specific DatIds: `0x92000121` (unexplored), `0x90000109` (Coruscant)
 - Calls `FUN_005597e0(faction, type)` with 4 combinations:
   - `(1, 0)` — Alliance systems, type 0
@@ -67,7 +67,7 @@ The original Rebellion AI is **event-driven and distributed** across a 6-functio
 - Validates: total across all buckets == total system count
 - Calls `FUN_0053e190` — ratio/percentage scoring function
 
-**Implication**: The original AI has a global strategic awareness layer that our Rust implementation lacks. It doesn't just evaluate systems one-at-a-time — it categorizes the entire galaxy first, then makes decisions based on the distribution.
+The bucket counts come from list sizes (`FUN_004f4290`), so they follow the DAT and the galaxy-size filter; stage `0xc` (`FUN_0051a280`) creates each system with its list's side.
 
 ### 2. System-Level Entity Deployment — `FUN_00537180` (381 lines)
 
@@ -77,55 +77,53 @@ The original Rebellion AI is **event-driven and distributed** across a 6-functio
 - **Faction ownership check**: `(*(uint*)(entity + 0x24) >> 6 & 3) != local_c8`
   - Offset +0x24 is the entity's ownership byte
   - Bits 6-7 encode faction: 1=Alliance, 2=Empire, 3=Neutral, 0 unset (`side-numbering.md`)
-- Validates troops at each system (family 0x14-0x1b)
+- Tests objects at each system for the capital-ship families `0x14`-`0x1b` (`FUN_00537180.c:112`)
 - Calls `FUN_00553410` for faction-specific system operations
-- Checks sectors (family 0xa0-0xa2)
+- Checks per-system objects of family `0xa0`-`0xa1` (`galaxy-limits.md`; sectors are `0x80`-`0x8f`)
 - **Triggers fleet movement** via `FUN_00520580` to set deployment parameters
 
 **This is the fleet movement decision point.** When this function determines a system needs reinforcement or an enemy system is vulnerable, it calls FUN_00520580 to issue the movement order.
 
-### 3. Garrison/Fleet Strength Aggregator — `FUN_00502020` (897 lines)
+### 3. Capital-Ship Contents Check — `FUN_00502020` (897 lines)
 
-**Address**: 0x00502020 | **Purpose**: Evaluate whether a system/fleet is strong enough
+**Address**: 0x00502020 | **Purpose**: Validate a capital ship (`param_1`, which answers slot `+0x248` max hull) and what it carries
 
-- Checks entity family ranges:
-  - `0x30-0x3f` — capital ships
-  - `0x1c-0x1f` — facilities
-  - `0x10-0x13` — troops
-- **Faction alignment**: `((byte)*(uint*)(entity + 0x24) ^ (byte)param_1[9]) & 0xc0) == 0`
-  - XOR of ownership bytes, masked to bits 6-7
-  - Returns true only if same faction
+- Every child must be in one of three family ranges and on the ship's side:
+  - `0x30-0x3f` — characters (major `0x30`-`0x35`, minor `0x38`) and special forces (`0x3c`)
+  - `0x1c-0x1f` — fighter squadrons
+  - `0x10-0x13` — regiments
+- **Side alignment**: `((byte)*(uint*)(entity + 0x24) ^ (byte)param_1[9]) & 0xc0) == 0`
+  - XOR of the side bits 6-7
+- Then checks the ship's own fields: hull `+0x60` within 0..slot `+0x248`, `+0x50` bit 3 at full hull, and `FUN_00500670`/`FUN_00500680`
 - Calls sub-functions:
-  - `FUN_005007a0` — fleet unit counter (iterates type=3 entities)
+  - `FUN_005007a0` — walks the ship's children (`FUN_004f25c0`, kind 3)
   - `FUN_004f6b50` — entity resolver
-  - `FUN_005039d0` — facility iterator (family 0x1c-0x20)
-  - `FUN_00504c40` — troop iterator (family 0x10-0x14)
-- Compares entity counts against capacity:
-  - `vtable+0x248` — `GetMaxHullValue()` (ship capacity)
-  - `vtable+0x26c` / `+0x270` — additional capacity checks
-- **Returns boolean**: is this system/fleet adequate?
+  - `FUN_005039d0` — fighter iterator (`[0x1c,0x20)`), count against slot `+0x26c`
+  - `FUN_00504c40` — regiment iterator (`[0x10,0x14)`), count against slot `+0x270`
+- **Returns boolean**: whether the ship and its contents are valid
 
-**Implication**: The original AI evaluates garrison strength by counting EVERY entity type at a system — ships, troops, and facilities. Our AI only checks fleet presence (is_empty/is_not_empty). The original is much more nuanced.
+**Port**: `system_strength()` in `ai.rs` scores a system by ship hulls, regiments and defence facilities and cites no source; this function checks one capital ship.
 
-### 4. Entity Placement Dispatcher — `FUN_00508660` (304 lines)
+### 4. System Object Check — `FUN_00508660` (304 lines)
 
-**Address**: 0x00508660 | **Purpose**: Route entities to type-specific placement handlers
+**Address**: 0x00508660 | **Purpose**: Run the system's checks for one object by its family
 
-Uses `vtable+0x04` (`GetFamilyId`) to dispatch by entity family:
+Uses `vtable+0x04` (`GetFamilyId`) and ANDs the results of the checks for each matching range:
 
-| Family Range | Handler | Entity Type |
+| Family Range | Checks | Object |
 |-------------|---------|-------------|
-| 0x08-0x0f | FUN_0050ac80 + FUN_0050bc60 + FUN_0050be00 + FUN_0050a1b0 | **Characters** |
-| 0x10-0x13 | FUN_0050b610 + FUN_0050ba90 + FUN_0050b500 | **Troops** |
-| 0x1c-0x1f | FUN_0050a1b0 + FUN_0050c6c0 | **Facilities** |
-| 0x20-0x21 | FUN_0050c9f0 | Ships (type A) |
-| 0x22 | FUN_0050b310 | Ships (type B) |
-| 0x28 | FUN_0050bb70 + FUN_0050c180 | Ships (type C) |
-| 0x29 | FUN_0050c1b0 | Ships (type D) |
-| 0x2a | FUN_0050c1e0 | Ships (type E) |
-| 0x2c-0x2f | FUN_0050c560 | Ships (type F) |
+| 0x20-0x2f | FUN_0050b760 | Facilities (any) |
+| 0x20-0x21 | FUN_0050c9f0 | Alliance HQ |
+| 0x22 | FUN_0050b310 | KDY-150 battery |
+| 0x2c-0x2f | FUN_0050c560 | Mines, refineries |
+| 0x28 | FUN_0050bb70 + FUN_0050c180 | Shipyard |
+| 0x29 | FUN_0050c1b0 | Training facility |
+| 0x2a | FUN_0050c1e0 | Construction yard |
+| 0x08-0x0f | FUN_0050ac80 + FUN_0050bc60 + FUN_0050be00 + FUN_0050a1b0 + FUN_0050c0b0 + FUN_0050c6c0 + FUN_0050ac10 | Fleets |
+| 0x1c-0x1f | FUN_0050a1b0 + FUN_0050c6c0 + FUN_0050ac10 | Fighter squadrons |
+| 0x10-0x13 | FUN_0050b610 + FUN_0050ba90 + FUN_0050b500 + FUN_0050c540 | Regiments |
 
-**Character assignment** happens through `FUN_0050ac80` (character placement) + `FUN_0050a1b0` (faction-conditioned placement). The faction check uses `param_1[9] >> 6 & 3` — the same ownership bit pattern.
+`FUN_0050a1b0` takes the object's side (`param_1[9] >> 6 & 3`) and runs only when `param_2` is nonzero. Facility identities: `facility-order-lists.md`.
 
 ### 5. System-Level Deployment Companion — `FUN_005385f0` (252 lines)
 
@@ -150,19 +148,19 @@ Calls approximately 18 validator functions before allowing entity deployment. Th
 
 | Address | Lines | Purpose |
 |---------|-------|---------|
-| FUN_005039d0 | — | Facility iterator (family 0x1c-0x20) |
-| FUN_00504c40 | — | Troop iterator (family 0x10-0x14) |
+| FUN_005039d0 | — | Fighter iterator (families `[0x1c,0x20)`) |
+| FUN_00504c40 | — | Regiment iterator (families `[0x10,0x14)`) |
 | FUN_005007a0 | — | Fleet unit counter |
 | FUN_004f6b50 | — | Entity resolver by DatId |
 | FUN_00520580 | — | **Set movement/deployment orders** |
 | FUN_00553b80 | — | Faction resolver from system |
-| FUN_005597e0 | — | Faction-specific system count getter |
+| FUN_005597e0 | — | Returns a side's SDPRTB `0x1e00`/`0x1e01` share (side 3: the remainder of 100) |
 | FUN_0053e190 | — | Math/scoring function (ratio or percentage) |
 | FUN_005202d0 | — | System pre-validation |
 | FUN_00551190 | — | Collection setup for deployment |
 | FUN_00504e60 | — | Entity lookup with family filter |
-| FUN_0050a1b0 | — | Faction-conditioned entity placement |
-| FUN_0050ac80 | — | Character placement |
+| FUN_0050a1b0 | — | Side-conditioned check (fleets, fighters) |
+| FUN_0050ac80 | — | Fleet check |
 | FUN_00506ea0 | 13 | Faction-specific evaluator pointer (Alliance +0xc4, Empire +0xc8) |
 | FUN_0052e970 | 53 | Binary capacity check (NOT a scoring function — see 2026-03-23 findings) |
 
@@ -183,25 +181,34 @@ same_faction = (((byte)*(uint*)(entity + 0x24) ^ (byte)param_1[9]) & 0xc0) == 0;
 
 ### Entity Family Byte Ranges
 
+From the DAT `family_id` fields and the code's range literals (`ground-unit-assets.md`, `record-registry.md`, `death-star-strategic.md`):
+
 | Range | Entity Type |
 |-------|------------|
-| 0x08-0x0f | Characters (major + minor) |
-| 0x10-0x13 | Troops |
-| 0x14-0x1b | Troop classes |
-| 0x1c-0x1f | Facilities |
-| 0x20-0x2f | Ships (various sub-types) |
-| 0x30-0x3f | Capital ships |
-| 0x90 | Explored systems |
-| 0x92 | Unexplored systems |
-| 0xa0-0xa2 | Sectors |
+| 0x08-0x0f | Fleets |
+| 0x10-0x13 | Regiments (TROOPSD `0x10`) |
+| 0x14-0x1b | Capital ships (CAPSHPSD `0x14`; the Death Star `0x18`) |
+| 0x1c-0x1f | Fighter squadrons (FIGHTSD `0x1c`) |
+| 0x20-0x21 | Alliance HQ |
+| 0x22-0x25 | Defence facilities (KDY-150, LNR, GenCore, Death Star shield) |
+| 0x28-0x2a | Shipyard, training facility, construction yard |
+| 0x2c-0x2d | Mine, refinery |
+| 0x30-0x35 | Major characters (`0x34` Palpatine) |
+| 0x38 | Minor characters |
+| 0x3c | Special forces |
+| 0x41-0x73 | Missions |
+| 0x80-0x8f | Sectors (SECTORSD `0x80`) |
+| 0x90 | Core systems |
+| 0x92 | Rim systems |
+| 0xa0-0xa5 | Per-system objects (`galaxy-limits.md`) |
 
 ## Parity Status (Updated 2026-03-23)
 
 | Feature | Original (REBEXE.EXE) | Current (ai.rs) | Status |
 |---------|----------------------|-----------------|--------|
 | Galaxy-wide evaluation | FUN_00519d00: 7-bucket system categorization | `evaluate_galaxy_state()` — 7 buckets + control_ratio + aggression | DONE (v0.13.0) |
-| Strength assessment | FUN_00502020: counts ships + troops + facilities | `system_strength()` — ships + troops + facilities | DONE (v0.13.0) |
-| Entity-type routing | FUN_00508660: 10+ family-specific handlers | `evaluate_officers()` + `evaluate_production()` + `evaluate_research()` | DONE (v0.14.0) |
+| Strength assessment | FUN_00502020 checks one capital ship's contents | `system_strength()` — ships + troops + facilities | NO SOURCE |
+| Entity-type routing | FUN_00508660 is a per-family system object check | `evaluate_officers()` + `evaluate_production()` + `evaluate_research()` | NO SOURCE |
 | Two-pass evaluation | FUN_00537180 + FUN_005385f0 | Two-pass with aggression scaling | AUGMENTED (v0.14.0) |
 | System validation | FUN_00508250: 18 pre-checks | `can_dispatch()` — 4 of 18 checks | PARTIAL — 14 remain |
 | Target scoring | FUN_0052e970: binary capacity check | 4-factor weighted model | **AUGMENTED — our model is superior** |

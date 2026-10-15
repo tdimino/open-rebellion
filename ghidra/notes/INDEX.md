@@ -20,16 +20,43 @@ Provenance: until 2026-09-26, 2,752 `FUN_<address>.c` files were empty placehold
 | [modders-taxonomy.md](modders-taxonomy.md) | 805 | 10 game systems categorized for total conversion mods (Yuuzhan Vong, Thrawn, KOTOR). Function addresses, GNPRTB params, mod guidance per system |
 | [rust-implementation-guide.md](rust-implementation-guide.md) | 647 | Maps decompiled C to Open Rebellion's `advance()` pattern: space battles through the tactical engine, ground combat, bombardment pointers, `MstbTable`, 15 new CapitalShipClass fields |
 | [cpp-class-hierarchy.md](cpp-class-hierarchy.md) | 445 | CRebObject → CNotifyObject → CCombatUnit hierarchy. 19 vtable slots, 6 vtable pointer constants, complete field layout, setter-notify-event pattern |
-| [entity-system.md](entity-system.md) | 668 | Characters (8 enhanced skills, Force/Jedi 6-tier system, betrayal), game objects (5 destruction variants), fleets (4 events), factions (Alliance/Empire/Neutral bits) |
+| [entity-system.md](entity-system.md) | 668 | Characters (8 enhanced skills, Force fields (force-users.md), betrayal), game objects (5 destruction variants), fleets (4 events), factions (Alliance/Empire/Neutral bits) |
 | [mission-event-cookbook.md](mission-event-cookbook.md) | 724 | Mission types by MISSNSD family, 4 story event chains (Dagobah, Vader, Palace, Bounty), event ID registry (0x12c-0x370), Thrawn Campaign example |
 | [economy-systems.md](economy-systems.md) | 478 | Resources (energy/material at +0x5c-0x68), 5 ControlKind states, uprising (UPRIS1TB/2TB), blockade manufacturing halt, repair (GNPRTB 0x305/0x386), 36 system notif handlers |
+
+## Atlas
+
+| File | Lines | Content |
+|------|-------|---------|
+| [rebexe-map.md](rebexe-map.md) | 892 | Every address range of REBEXE.EXE (22 ranges, 0x00401000-0x00629000): subsystems, classes, vtables, key functions, and what the port lacks per range |
+
+## Mod Surface
+
+What the original fixes in code rather than data (epic `or-ep-mod-surface-vdch`).
+
+| File | Lines | Content |
+|------|-------|---------|
+| [force-users.md](force-users.md) | 125 | Force fields (`+0x8c`/`+0x8e`/`+0x90`, `+0xac` bits 4/5/7), creation, discovery (timer `0x389`), Jedi Training, detection, the Luke/Leia/Vader/Palpatine id rules, R1-R18 |
+| [movies.md](movies.md) | 286 | The one movie player, the id-to-file switch `FUN_00421ba0`, app-state and message-class triggers, the trench-run pair, the return path |
+| [galaxy-limits.md](galaxy-limits.md) | 125 | What fixes 200 systems and 20 sectors: the nearness table, family windows, the galaxy-size filter, the view frame, the save |
+| [story-encounters.md](story-encounters.md) | 157 | Each story chain as trigger, test and outcome rows: the `FUN_005438a0` gate, timers `0x392`/`0x393`, the ten flag checks, side branches |
+| [ship-type-assets.md](ship-type-assets.md) | 106 | Ship and fighter meshes, portraits, art, icons, encyclopedia and voice: the 38-entry ordinal registry versus DAT arithmetic |
+| [side-switches.md](side-switches.md) | 256 | Every per-side switch (DLLs, cockpit art, advisor, voices, movies) and the structures that hold exactly two sides |
+| [scenario-literals.md](scenario-literals.md) | 200 | Every object id REBEXE names directly (leaders, Coruscant, Yavin, HQ, named characters, research milestones), and what replacing each breaks |
+| [ground-unit-assets.md](ground-unit-assets.md) | 192 | Troop, special-force and facility art from the TEXTSTRA id, the eight facility sprites, build-list rules, the factory registry's exact family bytes, literal ids in finders and the AI |
+| [audio-dispatch.md](audio-dispatch.md) | 134 | Sound descriptors (wave id plus module id), the module-to-DLL map, the 317-event tactical table, the 16-track music table and its selectors |
+| [text-sources.md](text-sources.md) | 150 | The string hook and its module groups, the text DLLs and their id ranges, the TEXTSTRA version gate, `data0.reb`, and the literals and glue fixed in REBEXE |
+| [death-star-strategic.md](death-star-strategic.md) | 143 | The strategic Death Star as CAPSHPSD family `0x18`: build, move, Destroy System, the destroy cascade (fleets survive), victory bits, sabotage, and what a second superweapon hits |
+| [character-roster.md](character-roster.md) | 130 | The recruit pick (minors by side), majors-only recruiters, major and minor classes, the mission-lead tier, and officer rank `+0x96` with its DAT eligibility |
+| [record-registry.md](record-registry.md) | 109 | The generic DAT record loop, the record-factory and family-to-class registries, producer bands and research slots, special-force classes by id, and why an appended record fails |
 
 ## Reference Documents
 
 | File | Lines | Content |
 |------|-------|---------|
-| [combat-formulas.md](combat-formulas.md) | ~200 | **Master reference** — binary overview, 111 GNPRTB mappings, confirmed functions, scripted events, Ghidra scripts |
-| [COMBAT-SUMMARY.md](COMBAT-SUMMARY.md) | ~115 | Combat call chain diagram, confirmed formulas, entity type codes, implementation readiness |
+| [combat-formulas.md](combat-formulas.md) | ~180 | Binary overview, battle-session states, notification setters found from strings, largest functions in `0x4f0000`-`0x540000` with the note covering each, scripted-event strings |
+| [COMBAT-SUMMARY.md](COMBAT-SUMMARY.md) | ~80 | Where each kind of combat is resolved, the object-move dispatcher `FUN_00514a60` and its hooks, the DatId family table |
+| [system-squadrons-combat.md](system-squadrons-combat.md) | ~190 | System-held fighter squadrons: presence and the battle bit, export into the tactical engine after the fleets, losses through the import (`FUN_0040d260` → `FUN_00503370`), the post-battle pass `FUN_00516ef0` and the presence result `FUN_00517270` |
 
 ## Combat Subsystem Docs
 
@@ -55,7 +82,7 @@ Provenance: until 2026-09-26, 2,752 `FUN_<address>.c` files were empty placehold
 | [simulate-runs-tactical-engine.md](simulate-runs-tactical-engine.md) | Every space battle is the battle session `FUN_0040a050`: pending-battle search, each side's Play/Simulate answer (the computer always simulates), the tactical engine windowed or headless, the 1200-second stalemate, write-back without shields; no other resolver | FUN_0040a050, FUN_004362b0, FUN_00485d50, FUN_00516d50, FUN_00596820, FUN_0059a530, FUN_005ae9c0, FUN_0040cfc0 |
 | [victory-conditions.md](victory-conditions.md) | Win flags at game root `+0x74` (`FUN_005180e0`; codes AD/LC/MC/CA/CD/DC/EC/EW/AW/GO): Standard and Headquarters Only rules, triggers, side objects and notification `0x128`, advisor hand-off, ending movies MDATA 105-108 | FUN_005180e0, FUN_00530a50, FUN_00518460, FUN_00532f90, FUN_00425c90, FUN_00414830, FUN_00421ba0 |
 | [support-shifts.md](support-shifts.md) | Sector-wide popular-support shifts (records via `FUN_00518b20`, event `0x373`) after control changes, blockade ends, Alliance HQ removal and Death Star kills, with GNPRTB/SDPRTB `0x1400`-`0x1445`; `+0x88` bit 11 = the Death Star in the sector | FUN_0055de50, FUN_0055dbf0, FUN_00518be0, FUN_0050c9f0, FUN_005178b0, FUN_0058e320 |
-| [ground-combat.md](ground-combat.md) | Ground combat — troop iteration + per-unit resolution | FUN_00560d50, FUN_004ee350, FUN_005617b0 |
+| [ground-combat.md](ground-combat.md) | Character move hook: clears CommandKind `+0x96` of a moved character or of the characters aboard a moved capital ship; Emperor-at-Coruscant flag (family `0x34`); no ground combat | FUN_00560d50, FUN_004ee350, FUN_005617b0 |
 | [game-end-path.md](game-end-path.md) | Game end: the single writer of object +0x50 bit 3, what removes the Alliance HQ (Destroy System container cascade, bombardment hit, capture), the advisor ending slots and codes 0x10-0x13, the computer player's progress counters, and the movie window's return to the main menu | FUN_004f7560, FUN_004fb520, FUN_004f8710, FUN_004f8680, FUN_004c3010, FUN_00425c90, FUN_004189b0, FUN_004138a0 |
 | [bombardment.md](bombardment.md) | Bombardment orders 0x220-0x223: gate, Death Star Destroy System, KDY/LNR defence fire, per-hit rolls against military (incl. the Alliance HQ), civilian and resource targets, support shifts; the port's formula is the transit chain | FUN_00582440, FUN_005637c0, FUN_0058d800, FUN_0058d990, FUN_0058dc10, FUN_0058df60, FUN_0058e320 |
 | [blockade-troop-withdrawal.md](blockade-troop-withdrawal.md) | Regiments lost running a blockade: withdraw percent, per-regiment copy, departure roll, event 0x340 | FUN_0050b310, FUN_0055a020, FUN_00504990, FUN_00504a00, FUN_00508660 |

@@ -2,6 +2,7 @@
 title: "AI Order Emission: Every Order the Computer Player Sends"
 description: "The computer player's orders by source: 13 of its 14 task modules, the fleet tasks and posture engine under modules 9 and 8, the character-command tasks of module 12, and the mission planners; each order's trigger, side gate and the port's matching path or its absence"
 category: "ghidra"
+updated: 2026-10-14
 tags: [ai, orders, modules, posture, production, fleets, characters, missions]
 ---
 
@@ -68,7 +69,7 @@ state `+0x1c` is 1. Shared mechanics:
 | | | | `0x3ec` | Scrap, Destination, Build `0x210` | goal bit `0x10`, 20%: `FUN_004cda90`, `FUN_004ce070`, `FUN_004ce5b0`, `FUN_004ce6f0` |
 | 9 | `FUN_004cf290` | – | – | Create Fleet, Move | the fleet tasks (below) |
 | 8 | `FUN_004cf600` | – | – | Create Fleet, Move, assault and bombardment | the regional records and the posture engine (below) |
-| 5 | `FUN_004cfed0` | 4 | `0x3f4` | Build `0x212`, Retire | 70% minus `+0x2c4`: trains the troop class whose counter (`+0x2ec`-`+0x2f8`) is lowest below max(`+0x2fc`, 8) at a system wanting troops (`FUN_004d0480`, `FUN_004d01a0`, `FUN_004d15f0`); when that budget is negative, retires the first special force (`FUN_004d0610`) |
+| 5 | `FUN_004cfed0` | 4 | `0x3f4` | Build `0x212`, Retire | 70% minus `+0x2c4`: trains the special-force class whose counter (`+0x2ec`-`+0x2f8`; classes by literal id in `FUN_00402e80`, `record-registry.md`) is lowest below max(`+0x2fc`, 8) at a system wanting them (`FUN_004d0480`, `FUN_004d01a0`, `FUN_004d15f0`); when that budget is negative, retires the first special force (`FUN_004d0610`) |
 | | | | `0x3ec` | Scrap, Destination, Build `0x210` | goal bit 4, 30%: `FUN_004d0d30`, `FUN_004d1310`, `FUN_004d1710`, `FUN_004d1850` |
 | 7 | `FUN_004d3100` | 17 | `0x3f1` | Move, Scrap | fighters to a system whose record wants them (`+0x11c`): Move when `FUN_004d3610` finds a source (`FUN_004d3a90`), else Scrap (`FUN_004d3db0`) |
 | | | | `0x3f2` | Destination, Build `0x211`; Move, Scrap | 80% minus `+0x1e0` at a system wanting ships (`FUN_004d3ff0`, `FUN_004d5dd0`, `FUN_004d5f10`); when 90% minus `+0x1e0` is negative, `FUN_004d4800` moves and scraps |

@@ -3,7 +3,7 @@ title: "Simulate runs the tactical engine headless"
 description: "The Battle Alert's Simulate path, shield persistence, the 1200-second stalemate withdrawal, and what a battle writes back to a strategic ship"
 category: "ghidra"
 created: 2026-10-10
-updated: 2026-10-10
+updated: 2026-10-14
 ---
 
 # Simulate runs the tactical engine headless
@@ -107,8 +107,8 @@ a stalemate inside one battle.
 ## No other resolver
 
 Every space battle goes through this session; nothing else resolves one.
-`FUN_00549910` and the functions `space-combat.md` lists as phases
-(`FUN_005442f0`-`FUN_00544fc0`) are the MissionMgr story checks
+`FUN_00549910` and its checks (`FUN_005442f0`-`FUN_00544fc0`,
+[space-combat.md](space-combat.md)) are the MissionMgr story checks
 ([story-missions.md](story-missions.md)) and apply no damage. The only hull
 writers are the tactical import above (`FUN_00501490` ← `FUN_00501ae0` /
 `FUN_00501b70` ← `FUN_0040cfc0` / `FUN_0040d170` ← `FUN_0040c780`).

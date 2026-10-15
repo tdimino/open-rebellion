@@ -1,122 +1,79 @@
 ---
-title: "Combat System—Reverse Engineering Summary"
-description: "Complete combat call chain discovery from the system battle orchestrator"
+title: "Combat Notes Map and the Object-Move Dispatcher"
+description: "Where each kind of combat is resolved, the object-move dispatcher FUN_00514a60 and its hooks, and the DatId family table"
 category: "ghidra"
 created: 2026-03-13
-updated: 2026-03-16
+updated: 2026-10-14
 ---
 
-# Combat System—Reverse Engineering Summary
+# Combat Notes Map and the Object-Move Dispatcher
 
-## Discovery: Complete Combat Call Chain
+## Where combat is resolved
 
-### System Battle Orchestrator: FUN_00514a60
-**The entry point for all combat resolution at a star system.**
+| Kind | Resolver | Note |
+|---|---|---|
+| Space battle | The battle session `FUN_0040a050`: the tactical engine, windowed or headless for Simulate and computer battles | [simulate-runs-tactical-engine.md](simulate-runs-tactical-engine.md), the `tactical-*.md` notes |
+| Death Star in battle | Tactical Death Star object and trench run | [tactical-death-star-path.md](tactical-death-star-path.md) |
+| Bombardment, Destroy System | Orders `0x220`-`0x223`, gate `FUN_00582440`, run `FUN_0058d800` | [bombardment.md](bombardment.md), [death-star-strategic.md](death-star-strategic.md) |
+| Regiments lost to a blockade | Withdraw percent | [blockade-troop-withdrawal.md](blockade-troop-withdrawal.md) |
+| Ground units and their art | Regiment and special-force classes | [ground-unit-assets.md](ground-unit-assets.md) |
+| GNPRTB parameters | Parameter table | [combat-formulas.md](combat-formulas.md) |
+
+## The object-move dispatcher: `FUN_00514a60`
+
+`FUN_00514a60(obj, from, to, ctx)` runs on every change of container
+(event `0x320`; only caller `FUN_0057ba50`, slot 8). It runs these hooks in
+order and ANDs their results:
 
 ```
-FUN_00514a60(system, attacker_side, defender_side, battle_context)
-  ├── FUN_005457f0 → FUN_00549910  (SPACE COMBAT)
-  │     ├── FUN_005442f0  (initialize combat state)
-  │     ├── FUN_00544da0  (fleet composition evaluation)
-  │     ├── FUN_00544030  (WEAPON DAMAGE—calls FUN_00543b60 for each side)
-  │     │     └── FUN_00543b60  (per-side weapon fire, vtable +0x1c4 dispatch)
-  │     ├── FUN_00544130  (SHIELD ABSORPTION—83 lines)
-  │     ├── FUN_005443f0  (HULL DAMAGE APPLICATION—54 lines)
-  │     ├── FUN_005444e0  (FIGHTER ENGAGEMENT—53 lines)
-  │     ├── FUN_005445d0  (combat result determination)
-  │     └── FUN_00544a20  (post-combat cleanup)
-  │
-  ├── FUN_00560d50  (GROUND COMBAT—232 lines)
-  │     ├── Iterates troops (family_id 0x14-0x1b)
-  │     ├── Checks regiment strength at offset +0x96
-  │     ├── FUN_005617b0  (Death Star handler, family_id 0x34)
-  │     └── FUN_004ee350  (per-unit combat resolution)
-  │           └── vtable +0x330  (notification dispatch → HullValueDamage etc.)
-  │
-  ├── FUN_00529d20  (fleet combat at object +0xe)
-  │
-  └── FUN_00556430  (BOMBARDMENT—78 lines)
-        ├── FUN_00555540  (get fleet strength for a side)
-        ├── FUN_00509620  (get combat stats as short[2])
-        └── FUN_00555d30 → FUN_00555b30 → FUN_0055d8c0  (BOMBARDMENT FORMULA)
-              ├── FUN_0055d860  (power ratio = EUCLIDEAN DISTANCE)
-              │     = sqrt((atk[0]-def[0])² + (atk[1]-def[1])²)
-              ├── / DAT_006bb6e8  (GNPRTB divisor parameter)
-              └── FUN_0053e190  (apply difficulty modifier via DAT_00661a88)
+FUN_00514a60(obj, from, to, ctx)
+  ├── FUN_005457f0  MissionMgr hook (thunk_FUN_00506e40): story-check chain
+  │                 FUN_00549910 when obj is a story character      → space-combat.md
+  ├── FUN_00560d50  character manager hook (thunk_FUN_00506e80): clears
+  │                 CommandKind +0x96; Emperor-at-Coruscant flag     → ground-combat.md
+  ├── FUN_00529d20  producing manager's hook (key +0x38, FUN_00505750),
+  │                 when obj's +0x50 bit 2 (Completed) is clear: if obj
+  │                 is the manager's product (FUN_0040d760), FUN_0052ac40
+  │                 → FUN_00529820 (hyp: product destination update)
+  ├── FUN_00556430  travel start: transit time from the two systems'
+  │                 coordinates                                       → build-delivery.md
+  └── from/to container slots +0xc4, +0xc8, +0xcc by obj +0x50 bits
+      0x40, 0x01, 0x200; then FUN_00518530 on both containers
 ```
 
-## Confirmed Formulas
+None of these hooks applies damage. The transit chain under
+`FUN_00556430` (`FUN_00555d30` → `FUN_00555b30` → `FUN_0055d8c0`,
+coordinates from `FUN_00509620`, `isqrt` in `FUN_0055d860`, divisor
+`DAT_006bb6e8` = GNPRTB `0x1400`) computes travel ticks
+`max(1, isqrt(d²) / GNPRTB 5120 * speed / 100)` (`build-delivery.md`,
+"Travel").
 
-### Bombardment Damage
-```
-raw_power = sqrt((attacker_bombardment - defender_defense)² + (atk[1] - def[1])²)
-damage = apply_modifier(raw_power / GNPRTB_PARAM[DAT_006bb6e8], difficulty)
-if damage == 0: damage = 1  // minimum 1
-```
+## DatId family byte (`id >> 24`)
 
-### Ground Combat
-- Iterates all troops at a system (DatId family 0x14-0x1b)
-- Checks regiment strength at object offset +0x96 (short)
-- Per-unit resolution via FUN_004ee350 → sets new value, fires notification
+From the DAT `family_id` fields and the executable's range checks:
 
-### Space Combat (Auto-Resolve)
-7-phase pipeline:
-1. Initialize → 2. Evaluate fleets → 3. Weapon damage → 4. Shield absorption
-→ 5. Hull damage → 6. Fighter engagement → 7. Determine result
+| Family | Kind | DAT |
+|---|---|---|
+| `0x08`-`0x0f` | Fleets | (executable use) |
+| `0x10` | Regiments | `TROOPSD` |
+| `0x14` | Capital ships | `CAPSHPSD` |
+| `0x18` | Death Star | `CAPSHPSD` record 136 |
+| `0x1c` | Fighter squadrons | `FIGHTSD` |
+| `0x22`-`0x2a` | Facilities | |
+| `0x30`-`0x35` | Major characters (`0x34` Palpatine, `0x35` Vader) | `MJCHARSD` |
+| `0x38` | Minor characters | `MNCHARSD` |
+| `0x3c` | Special forces | |
+| `0x41`-`0x73` | Missions (`0x71` Dagobah, `0x73` Pickup) | |
+| `0x80` | Sectors | |
+| `0x90`, `0x92` | Systems | |
 
-Weapon damage calls FUN_00543b60 twice (once per side) with vtable dispatch at +0x1c4 for weapon-type-specific calculation.
+Range checks in code use the class blocks: `[0x10,0x14)` regiments,
+`[0x14,0x1c)` capital ships, `[0x18,0x1c)` Death Star class, `[0x30,0x3c)`
+characters, `[0x3c,0x40)` special forces.
 
-## Key Global Data Addresses
+## Decompiled files
 
-| Address | Purpose |
-|---------|---------|
-| DAT_006bb6e8 | Bombardment GNPRTB divisor |
-| DAT_00661a88 | Difficulty modifier table |
-
-## Entity Type Codes (DatId Family Byte)
-
-| Range | Type |
-|-------|------|
-| 0x08-0x0f | Characters |
-| 0x10-0x13 | Troops (general) |
-| 0x14-0x1b | Troops/Special Forces (combat-eligible) |
-| 0x1c-0x1f | Facilities |
-| 0x30-0x3b | Capital Ships |
-| 0x34 | Special (Death Star?) |
-| 0x90-0x98 | Systems |
-
-## Mission Type Codes
-
-| Code | Mission |
-|------|---------|
-| 6 | Sabotage |
-| 7 | Assassination |
-| 0x15 (21) | Autoscrap |
-
-## What We Have vs What We Need
-
-### Have (sufficient to implement)
-- Complete combat call chain traced from system battle to individual damage
-- Bombardment formula (Euclidean distance / GNPRTB divisor)
-- Space combat 7-phase pipeline identified
-- Ground combat iteration pattern
-- Entity type classification
-- Notification/Observer dispatch architecture understood
-
-### Need (next session)
-- Decompile FUN_00544130 (shield absorption—83 lines, should contain shield formula)
-- Decompile FUN_005443f0 (hull damage application—should contain hull damage formula)
-- Decompile FUN_005444e0 (fighter engagement—squadron combat)
-- Find the specific vtable handler for weapon damage calculation (vtable +0x1c4)
-- Read DAT_006bb6e8 value to identify which GNPRTB parameter it is
-- Trace FUN_00509620 to understand the combat stat pair format (short[2])
-
-### Sufficient to Start Implementation
-Even without all formulas perfectly decoded, we have enough to implement a **reasonable approximation**:
-- Space combat: aggregate fleet firepower vs aggregate fleet defense
-- Ground combat: iterate troops, compare attack vs defense ratings
-- Bombardment: Euclidean distance formula with GNPRTB scaling
-- Shield absorption: likely shield_strength - damage_remaining pattern
-- Hull damage: remaining damage after shields → subtract from hull
-
-The quadratic mission probability formula from rebellion2 still applies for all mission types. The *MSTB probability tables provide the exact coefficients.
+`FUN_00514a60.c`, `FUN_005457f0.c`, `FUN_00560d50.c`, `FUN_00529d20.c`,
+`FUN_0052ac40.c`, `FUN_00556430.c`,
+`FUN_00555d30.c`, `FUN_00555b30.c`, `FUN_0055d8c0.c`, `FUN_0055d860.c`,
+`FUN_00509620.c`.

@@ -3,7 +3,7 @@ title: "Roadmap"
 description: "Development milestones from Galaxy Viewer through Release packaging"
 category: "agent-docs"
 created: 2026-03-11
-updated: 2026-10-06
+updated: 2026-10-14
 tags: [roadmap, planning, milestones, parity]
 ---
 
@@ -538,7 +538,9 @@ acceptance. Their JSON ledgers provide stable finding and feature IDs.
 - [ ] Correct or re-source the code behaviors the 2026-09-26 citation audit
   found without a binary source: the economy's KDY production modifier
   (F-023), the Emperor's 1.5x battle bonus (F-024), and family-`0x34` Death
-  Star detection (F-025). The revolt lifecycle, uprising incident, and
+  Star detection (F-025; the original uses capital-ship family `0x18`,
+  `0x34` is the Emperor: `ghidra/notes/death-star-strategic.md`,
+  `or-port-death-star-family-qtde`). The revolt lifecycle, uprising incident, and
   disaster now follow recovered code (F-026, browser pass pending).
 - [ ] Move the remaining probability-table consumers to the recovered step
   lookup (F-028) and the informant and resource incidents to their recovered
@@ -1299,10 +1301,15 @@ The tactical engine resolves every space battle, played or not; its parity
 is tracked under `or-ep-tac-x15`. Before addons open content to mods, the
 `or-ep-mod-surface-vdch` questions map what the original fixes in code
 rather than data: Force users and training, the story encounters, mission
-families, ship-type assets, the 200-system galaxy, and the movies. Each
-answer names the constants, family checks and hard-coded ids the port must
-turn into data for new Jedi, encounters, missions, ships, systems and
-movies.
+families, ship-type assets, the 200-system galaxy, the movies, the
+per-side switches and the two-side limit, the object ids the executable
+names directly, the Death Star, record limits, the character roster, ground
+units, audio and text. Each answer names the constants, family checks and
+hard-coded ids the port must turn into data for new Jedi, encounters,
+missions, ships, systems, movies, sounds and translations, and for era
+overhauls that rename the sides, replace the scenario or add a superweapon.
+`agent_docs/mod-surface.md` collects the answers and the rules for exposing
+a fixed rule as mod data.
 
 ---
 

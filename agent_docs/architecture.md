@@ -3,7 +3,7 @@ title: "Architecture"
 description: "Crate dependency graph and module structure for the Open Rebellion codebase"
 category: "agent-docs"
 created: 2026-03-11
-updated: 2026-10-01
+updated: 2026-10-14
 tags: [architecture, crate-graph, entity-identity, simulation]
 ---
 
@@ -57,7 +57,7 @@ crates/rebellion-core/src/
 ├── bombardment.rs    — Port bombardment: the transit-distance formula, not the original's (ghidra/notes/bombardment.md)
 ├── blockade.rs       — Fleet-presence blockade, manufacturing halt, troop destruction
 ├── uprising.rs       — Recovered revolt lifecycle, uprising incident (UPRIS1TB/UPRIS2TB codes), Subdue gain, disaster
-├── death_star.rs     — Construction countdown, planet destruction, nearby-warning scan. `cleanup_destroyed_system()` removes all entities (fleets, troops, facilities) and cancels in-transit orders to the destroyed system.
+├── death_star.rs     — Construction countdown, planet destruction, nearby-warning scan. `cleanup_destroyed_system()` removes all entities (fleets, troops, facilities) and cancels in-transit orders to the destroyed system; the original keeps fleets (ghidra/notes/death-star-strategic.md).
 ├── research.rs       — 3 tech trees (Ship/Troop/Facility), MSTB difficulty lookup
 ├── jedi.rs           — 4-tier Force progression (None→Aware→Training→Experienced), detection
 ├── victory.rs        — current HQ/Death Star outcome checks; parity divergences documented
@@ -93,7 +93,7 @@ crates/rebellion-render/src/
 ├── message_log.rs      — Scrollable egui event feed, 7 color-coded categories (380 LOC)
 ├── fleet_movement.rs   — Diamond fleet icons, dashed route lines, ETA labels, fleet hover detection
 ├── fog.rs              — Dim overlays for unexplored/unseen systems
-├── audio.rs            — AudioVolumeState, SfxKind, MusicTrack, draw_audio_controls (egui widget)
+├── audio.rs            — AudioVolumeState, SfxKind, MusicTrack, draw_audio_controls (egui widget); track choice is the port's, not the original selector (ghidra/notes/audio-dispatch.md)
 ├── encyclopedia.rs     — 4-tab entity browser with BMP texture cache from EData/
 ├── bmp_cache.rs        — DllSource enum, BMP/PNG texture cache with HD fallback, WASM path rebasing, named DLL resource ID catalog
 ├── cockpit.rs          — Faction cockpit chrome (top/bottom bars), 9 control buttons, CockpitViewport

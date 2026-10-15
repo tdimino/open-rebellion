@@ -3,7 +3,7 @@ title: "Manage Garrisons / Manage Production — Player-Side Agent Automation"
 description: "Full reverse engineering of the Agent menu's Manage Garrisons and Manage Production toggles: module architecture, tick dispatch, decision rules, menu wiring, save format, and advisor messages"
 category: "ghidra"
 created: 2026-10-06
-updated: 2026-10-06
+updated: 2026-10-14
 sources:
   - type: "ghidra"
     files:
@@ -67,8 +67,8 @@ sources:
 The original game's Agent menu offers three automation toggles that instruct the
 player's advisor to manage garrisons, production, and ship building
 autonomously.  All three start off (state 2, `FUN_00439950`) and share a common sub-module
-dispatch system.  The AI opponent uses a completely separate pipeline
-(FUN_00519d00 → FUN_00537180 chain) and does not share this code.
+dispatch system.  The computer player uses a separate pipeline (`ai-order-emission.md`)
+and does not share this code.
 
 ## Manual Reference (pp. 64–66)
 
@@ -535,7 +535,7 @@ any code with the player-side Agent modules:
 
 | AI Pipeline Function | Purpose |
 |---------------------|---------|
-| FUN_00519d00 | Galaxy-wide system categorization (7 buckets) |
+| FUN_00519d00 | New-game stage `0xb`: systems into side lists (`galaxy-limits.md`) |
 | FUN_00537180 | Per-system fleet deployment decisions |
 | FUN_00502020 | Garrison/fleet strength aggregation |
 | FUN_00508250 | Pre-deployment validation (18 sub-checks) |

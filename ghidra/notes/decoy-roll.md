@@ -506,8 +506,8 @@ e.g. Jedi Training `(60, 30)`.
 
 The agent classes override slot `+0x1f4` with `FUN_00592f50`: every MSTB
 mission, plus Reconnaissance, Research, Palace, and Bounty. Jedi Training
-(`0x571410`), Dagobah (`0x5751d0`), Vacation, and Pickup (`0x594460`) have
-their own handlers, and Move, Return, Autorouting, and Adrift keep the base
+(`0x571410`) and Dagobah (`0x5751d0`) have their own handlers; Vacation and
+Pickup (`0x594460`) forward straight to `FUN_00592f50`, and Move, Return, Autorouting, and Adrift keep the base
 `FUN_00524b70`. `FUN_00592f50` runs `FUN_00524b70`, then on phase 10:
 
 1. It calls slot `+0x278`.

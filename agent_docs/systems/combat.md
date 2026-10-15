@@ -117,6 +117,16 @@ instead computes one number from the transit-distance formula
 into a popularity cut with no source. Task-graph node
 `or-port-bombardment-8usw` replaces it.
 
+## Ground combat
+
+`CombatSystem::resolve_ground` cites `FUN_00560d50` and `FUN_004ee350`.
+`FUN_00560d50` is the character manager's object-move hook (gates on capital ships `0x14`-`0x1b` and characters
+`0x30`-`0x3b`; `0x34` routes to the Emperor-at-Coruscant flag
+`FUN_005617b0`), and `FUN_004ee350` sets a character's CommandKind `+0x96`
+(`ghidra/notes/ground-unit-assets.md`, `character-roster.md`). Where the
+original resolves regiment against regiment is open (`or-q-regiment-combat-eaxn`);
+`or-p-gnd-ykv` ports the original's report-only ground assault.
+
 ## Effect Application
 
 - Space: `core::tactical::apply::apply_results` writes hulls and squadrons back by `TacticalShip::fleet` / `TacticalFighter::fleet`, moves withdrawn ships, and removes destroyed units and empty fleets.
@@ -126,6 +136,6 @@ into a popularity cut with no source. Task-graph node
 
 - `ghidra/notes/simulate-runs-tactical-engine.md` — Simulate and the stalemate
 - `ghidra/notes/tactical-engagement-ai.md` — targets, steering, the band
-- `ghidra/notes/ground-combat.md` — troop iteration
+- `ghidra/notes/ground-unit-assets.md` — what `FUN_00560d50` is, regiment family gates
 - `ghidra/notes/bombardment.md` — orders, defence fire, hit rolls, support shifts
 - `ghidra/notes/combat-formulas.md` — GNPRTB parameter mapping

@@ -339,7 +339,7 @@ origin `+0x6c` (`FUN_00520bb0`), so its members never landed. Otherwise, when th
 is a system, it raises observation level 6 there for the mission's own side
 (`FUN_0050d5a0(system, 6, mission +0x24 >> 6 & 3)`). It then reroutes the
 target's container `+0x70`/`+0x74` (`FUN_00521160`, `FUN_00521030`) when that
-container is neither a system (`0x90..0x98`) nor a sector (`0x98..0xa0`),
+container is neither a system (`0x90..0x98`) nor of family `0x98..0xa0`,
 through the container's slot `+0x24` or `FUN_004f7f20`. It never moves the
 members: they stay where phase 4 put them. A repeating mission never reaches
 this slot until an end code is set.

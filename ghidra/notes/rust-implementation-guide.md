@@ -10,7 +10,7 @@ updated: 2026-10-14
 
 *Maps decompiled C++ from REBEXE.EXE to `rebellion-core` Rust. Written for the Knesset Tiamat swarm.*
 
-**Source notes**: `ghidra/notes/space-combat.md`, `ground-combat.md`, `bombardment.md`, `annotated-functions.md`, `COMBAT-SUMMARY.md`
+**Source notes**: `simulate-runs-tactical-engine.md`, `bombardment.md`, `death-star-strategic.md`, `story-missions.md`, `build-delivery.md`, `record-registry.md`, `character-roster.md`
 **Target crate**: `crates/rebellion-core/src/` — zero IO, no rendering deps, all advance() pattern
 
 ---
@@ -30,33 +30,25 @@ updated: 2026-10-14
 
 ### 1.1 The C++ Entity Base Object
 
-Every combat entity in REBEXE.EXE shares one heap-allocated C++ object layout. The fields below are confirmed from Ghidra across multiple functions:
+Every game object in REBEXE.EXE shares one heap-allocated C++ object layout. The fields below are read across multiple functions:
 
 ```
 +0x00   void*   vtable
-+0x50   uint    status_flags         bit0=active, bit3=fighter_combat_eligible, bit12=special_disabled
-+0x58   uint    combat_phase_flags   space combat state machine (see §2.2)
-+0x60   int     hull_current         current hull damage value (ships); squad size (squadrons)
++0x24   uint    owner_bits           bits 6-7 = side (1 Alliance, 2 Empire)
++0x50   uint    status_flags         bit0=active, bit2=completed, bit3=destroyed, bit4=en route,
+                                     bit5=en route active, bit6=existing, bit11=autorouting,
+                                     bit12=autoscrap request (build-delivery.md)
++0x60   int     hull_current         current hull (ships); squad size (squadrons)
 +0x64   uint    shield_weapon_packed bits 0-3 = shield_recharge_allocated, bits 4-7 = weapon_recharge_allocated
 +0x66   short   loyalty_current      characters: base loyalty 0-100
-+0x78   byte    capability_flags     bit6+7=disabled, bit4=special_entity_flag, bit7=alt_shield_path
++0x78   uint    role_flags           characters: bit0=decoy, bit4=may resign its mission, bit6=adrift, bit7=on a mission
 +0x8a   short   enhanced_loyalty     mission bonus, raw 0-0x7fff, clamped 0-100
-+0x96   short   regiment_strength    troops/ships: current regiment strength
++0x96   short   command_kind         characters: officer rank 0 none, 1 Commander, 2 Admiral, 3 General
 +0x9a   short   hyperdrive_modifier  mission speed bonus (Han Solo: +hyperdrive_mod)
-+0xac   byte    alive_flag           bit0=alive/combat-eligible
-+0xb0   byte    combat_ready_flags   bit1=combat_ready_for_fleet_eval
++0xac   byte    character_flags      bit0=prisoner, bit4=Force aware, bit5=Force sensitive, bit7=discoverer
 ```
 
-The space combat state object (`this` in `FUN_00549910` and its callees) adds:
-
-```
-+0x24   uint    difficulty_packed    bits 4-5 = difficulty level 0-3
-+0x1c4  code*   vtable_weapon_fire
-+0x1c8  code*   vtable_shield_absorb
-+0x1d0  code*   vtable_hull_damage
-+0x1d4  code*   vtable_fighter_engage
-+0x1d8  code*   vtable_who_won
-```
+`FUN_00549910`'s `this` is the MissionMgr; its `+0x58` is the story-flag word (`story-missions.md`). On a fleet, `+0x58` bit 6 marks the fleet's bombard order (`bombardment.md`). Officer rank is `character-roster.md`.
 
 ### 1.2 What This Means for `CapitalShipClass` and Instance Records
 
@@ -81,7 +73,7 @@ pub weapons_starboard_laser: u32,
 // Defense
 pub shield_recharge: u32,       // max shield recharge per round
 pub damage_control: u32,        // hull repair rate
-pub bombardment: u32,           // bombardment attack stat (used in §4)
+pub bombardment: u32,           // CAPSHPSD bombardment strength (see §4)
 ```
 
 **Add a new `ShipInstance` world type** (runtime per-hull state — replaces the count-only `ShipEntry`):
@@ -98,8 +90,8 @@ pub struct ShipInstance {
     /// Note: C++ writes via XOR-mask pattern `(new ^ old) & 0xf ^ old` — functionally equivalent
     /// to simple mask-OR for in-range values, but the XOR is what the original binary does.
     pub shield_weapon_packed: u8,
-    /// bit0 = alive; cleared when hull_current reaches 0.
-    pub alive: bool,
+    /// `+0x50` bit 3: destroyed.
+    pub destroyed: bool,
     pub faction_is_alliance: bool,
 }
 
@@ -107,12 +99,6 @@ impl ShipInstance {
     pub fn shield_nibble(&self) -> u8 { self.shield_weapon_packed & 0x0f }
     pub fn weapon_nibble(&self) -> u8 { (self.shield_weapon_packed >> 4) & 0x0f }
 }
-```
-
-**Add to `TroopUnit`** (already exists, but needs strength):
-```rust
-/// Current regiment strength (C++ offset +0x96). Starts at class max, reduced by ground combat.
-pub regiment_strength: i16,
 ```
 
 **Add to `FighterClass`** (template — from FIGHTSD.DAT):
@@ -124,21 +110,18 @@ pub bombardment: u32,
 
 ### 1.3 GNPRTB Fields Needed in the World Model
 
-Rather than hardcoding constants, these GNPRTB parameter values should be loaded into `GameWorld` at startup (or passed directly to `advance()`). The two confirmed combat parameters:
+Load these GNPRTB values into `GameWorld` at startup rather than hard-coding them:
 
-```rust
-/// Game-balance parameters from GNPRTB.DAT, indexed by difficulty (0-3).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GnprtbParams {
-    /// DAT_006bb6e8 — bombardment damage divisor.
-    /// Scales Euclidean-distance raw power to final damage.
-    pub bombardment_divisor: [i32; 4],
-    /// DAT_00661a88 — difficulty modifier table (4 entries, one per difficulty).
-    pub difficulty_modifier: [i32; 4],
-}
-```
+| GNPRTB | Global / reader | Use | Shipped |
+|---|---|---|---|
+| `0x1400` (5120) | `DAT_006bb6e8`, `FUN_0055d8c0` | system-distance divisor in transit ticks | 5 in every column |
+| `0x600`, `0x601` | `FUN_0055e930`, `FUN_0055e950` | leadership divisors for bombardment defence fire and hits | 40 |
+| `0x602`, `0x603` | `FUN_0055e970` | bombardment hit draw | 1..10 |
+| `0x604`, `0x605` | `FUN_0058cf80` | energy and raw-material target values | 9 |
+| `0x606` | `FUN_0055e9e0` | character hit chance under Destroy System | 50 |
+| 7705 | `FUN_0055a0e0` | support shift for the bombarding side | −20 |
 
-Add `pub gnprtb: GnprtbParams` to `GameWorld`. Populated by `rebellion-data` during loading.
+`DAT_00661a88` is the percentage base 100 of `FUN_0053e170` / `FUN_0053e190` (`s * x / 100`); no difficulty modifier enters the transit or bombardment arithmetic (`build-delivery.md`, `bombardment.md`).
 
 ---
 
@@ -153,8 +136,7 @@ second; the 1200 s stalemate rule ends every battle. See
 `tactical-weapon-loop.md`.
 
 `FUN_00549910` and the flag word at `+0x58` are the MissionMgr story checks
-(`story-missions.md`), not a combat pipeline; no combat damage passes through
-them.
+(`story-missions.md`) and apply no combat damage.
 
 | Step | Port |
 |---|---|
@@ -164,242 +146,26 @@ them.
 | Write-back (`FUN_0040cfc0`, `FUN_005032c0`) | `tactical::apply::apply_results` |
 | A battle nobody watches | `rebellion-data` `integrator::resolve_system_space_combat` |
 
-### 2.1 Entity Kind Enum
+### 2.1 Family Bytes
 
-`combat.rs` keeps a family-byte classification (`CombatEntityKind`) and the
-packed-difficulty helper:
+`combat.rs` `CombatEntityKind::from_family_byte` classifies by DatId family byte with ranges that do not match the DAT headers (characters `0x08`-`0x0f`, troops `0x14`-`0x1b`, ships `0x30`-`0x3b`, a Death Star at `0x34`, fighters `0x71`-`0x72`). The headers give (`record-registry.md`, Appendix below):
 
-```rust
-/// Mirrors the C++ family-byte classification for combat dispatch.
-/// Derived from `entity.id >> 24` in C++; in Rust, from the DatId family byte.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CombatEntityKind {
-    CapitalShip,             // family 0x30-0x33, 0x35-0x3b
-    DeathStar,               // family 0x34 → FUN_005617b0 / FUN_00534640
-    FighterSquadron,         // family 0x71-0x72 (alt_shield_path)
-    SpecialCombatEntity,     // family 0x73-0x74 (FUN_00534640 result path)
-    Troop,                   // family 0x14-0x1b
-    Character,               // family 0x08-0x0f
-}
+- capital ships `0x14`-`0x1b` (CAPSHPSD), the Death Star by its record's family `0x18`;
+- fighters `0x1c`-`0x1f`, troops `0x10`-`0x13`, special forces `0x3c`-`0x3f`;
+- major characters `0x30`-`0x37` (`0x34` Palpatine), minor characters `0x38`-`0x3b`;
+- fleets `0x08`-`0x0f`; missions `0x40`-`0x7f` (`0x71` Dagobah, `0x73` Pickup).
 
-impl CombatEntityKind {
-    pub fn from_family_byte(family: u8) -> Self {
-        match family {
-            0x08..=0x0f => Self::Character,
-            0x14..=0x1b => Self::Troop,
-            0x30..=0x33 | 0x35..=0x3b => Self::CapitalShip,
-            0x34 => Self::DeathStar,
-            0x71..=0x72 => Self::FighterSquadron,
-            0x73..=0x74 => Self::SpecialCombatEntity,
-            _ => Self::CapitalShip, // safe default
-        }
-    }
-}
-```
+The original identifies a Death Star by a ship in `[0x18,0x1c)` (`FUN_005003d0`, `FUN_00582440`, `FUN_0058d440`; `death-star-strategic.md`). Task-graph node `or-port-death-star-family-qtde` moves the port's `is_death_star` and `CombatEntityKind` onto it.
 
-The difficulty modifier (bits 4-5 of `+0x24`) extracted from C++ line 21 of `FUN_0054a1d0`:
-
-```rust
-/// Extract difficulty level (0-3) from the packed difficulty field.
-/// C++: `*(uint *)((int)this + 0x24) >> 4 & 3`
-pub fn extract_difficulty(packed: u32) -> u8 {
-    ((packed >> 4) & 3) as u8
-}
-```
+`extract_difficulty` reads `+0x24 >> 4 & 3`, which `FUN_0054a1d0` (a story-flag broadcaster) passes to `FUN_004fd600` to pick the Alliance (1) or Empire (2) view; it is a side selector.
 
 ---
 
 ## 3. Ground Combat
 
-### 3.1 The C++ Flow → Rust Iterator
+The original resolves a planetary assault as order `0x234` in `0x0058c120`-`0x0058c8b0` (`rebexe-map.md`). Where regiment-versus-regiment combat is resolved, and which class fields it reads (attack `+0x64`, defense `+0x68`, bombardment defense `+0x60`), is open: task-graph nodes `or-q-ground-resolution-nms` and `or-q-regiment-combat-eaxn`. Epic `or-ep-gnd-mmf` and node `or-p-gnd-ykv` port the original's report-only assault and remove the port's `resolve_ground`, whose troop loop and `regiment_strength` rest on `FUN_00560d50`.
 
-`FUN_00560d50` (232 lines) iterates all troops at a system, checks regiment strength, and calls per-unit resolution. Direct Rust translation:
-
-```rust
-// crates/rebellion-core/src/combat.rs (continued)
-
-pub struct GroundCombatResult {
-    pub system: SystemKey,
-    pub winner: CombatSide,
-    pub troop_damage: Vec<TroopDamageEvent>,
-    pub tick: u64,
-}
-
-#[derive(Debug, Clone)]
-pub struct TroopDamageEvent {
-    pub troop: TroopKey,
-    pub strength_before: i16,
-    pub strength_after: i16,
-}
-
-impl CombatSystem {
-    /// Auto-resolve ground combat at a system between all opposing troop units.
-    ///
-    /// Mirrors FUN_00560d50 (232 lines): iterates troops at system, checks
-    /// regiment_strength at +0x96, calls per-unit resolution (FUN_004ee350).
-    ///
-    /// # Advance contract
-    /// - Does NOT mutate world. Returns TroopDamageEvents.
-    /// - Death Star (family 0x34) takes a separate path — see resolve_death_star().
-    /// - `rng_rolls`: one roll per troop pair engagement. Budget: troop_count² rolls.
-    pub fn resolve_ground(
-        world: &GameWorld,
-        system: SystemKey,
-        attacker_is_alliance: bool,
-        rng_rolls: &[f64],
-        tick: u64,
-    ) -> GroundCombatResult {
-        let system_data = &world.systems[system];
-        let mut rng = rng_rolls.iter().copied();
-        let mut troop_damage: Vec<TroopDamageEvent> = Vec::new();
-
-        // FUN_00560d50 step 6-8: iterate all troops at system, filter by strength.
-        // C++: `FUN_004f25c0(type=3)` iterates troops (family 0x14-0x1b).
-        // In Rust: walk system.ground_units, look up TroopUnit in world.troops.
-        let (attacker_troops, defender_troops): (Vec<TroopKey>, Vec<TroopKey>) =
-            system_data.ground_units.iter()
-                .copied()
-                .partition(|&key| world.troops[key].is_alliance == attacker_is_alliance);
-
-        // Regiment strength check (C++ offset +0x96, short):
-        // skip units with strength <= 0 — they are destroyed / non-combat.
-        let active_attackers: Vec<TroopKey> = attacker_troops.iter()
-            .copied()
-            .filter(|&key| world.troops[key].regiment_strength > 0)
-            .collect();
-
-        let active_defenders: Vec<TroopKey> = defender_troops.iter()
-            .copied()
-            .filter(|&key| world.troops[key].regiment_strength > 0)
-            .collect();
-
-        // Per-unit resolution (FUN_004ee350, 30 lines):
-        // For each attacker-defender pair, resolve combat and emit damage events.
-        // No friendly fire: same-side check mirrors C++ `param_2 == param_1 → skip`.
-        for &atk_key in &active_attackers {
-            for &def_key in &active_defenders {
-                let atk = &world.troops[atk_key];
-                let def = &world.troops[def_key];
-
-                // Same-side guard (C++: `if (param_2 == param_1) continue`).
-                // In Rust both are already in opposite partitions — guard is implicit.
-
-                let roll = rng.next().unwrap_or(0.5);
-
-                // FUN_004ee350 pseudocode:
-                //   short old_strength = unit->regiment_strength;  // +0x96
-                //   if (old_strength != param_1) {
-                //       unit->regiment_strength = new_value;
-                //       notify_side(unit, 1, ctx); notify_side(unit, 2, ctx);
-                //       vtable[unit, +0x330](old, new, ctx);  // HullValueDamage etc.
-                //   }
-                //
-                // Approximation (attack vs defense ratio, pending vtable +0x330 decompile):
-                let atk_power = atk.regiment_strength as f64;
-                let def_power = def.regiment_strength as f64;
-                let hit_prob = atk_power / (atk_power + def_power);
-
-                if roll < hit_prob {
-                    // Attacker scores a hit on defender.
-                    let old_strength = def.regiment_strength;
-                    let reduction = (def.regiment_strength / 4).max(1);
-                    let new_strength = (def.regiment_strength - reduction).max(0);
-                    troop_damage.push(TroopDamageEvent {
-                        troop: def_key,
-                        strength_before: old_strength,
-                        strength_after: new_strength,
-                    });
-                } else {
-                    // Defender scores a hit on attacker.
-                    let old_strength = atk.regiment_strength;
-                    let reduction = (atk.regiment_strength / 4).max(1);
-                    let new_strength = (atk.regiment_strength - reduction).max(0);
-                    troop_damage.push(TroopDamageEvent {
-                        troop: atk_key,
-                        strength_before: old_strength,
-                        strength_after: new_strength,
-                    });
-                }
-            }
-        }
-
-        // Determine winner by counting surviving units after applying damage.
-        // Build temporary strength maps from the damage events.
-        let surviving_attackers = Self::count_survivors(
-            &active_attackers, &troop_damage, world);
-        let surviving_defenders = Self::count_survivors(
-            &active_defenders, &troop_damage, world);
-
-        let winner = match (surviving_attackers > 0, surviving_defenders > 0) {
-            (true, false)  => CombatSide::Attacker,
-            (false, true)  => CombatSide::Defender,
-            _              => CombatSide::Draw,
-        };
-
-        GroundCombatResult { system, winner, troop_damage, tick }
-    }
-
-    fn count_survivors(
-        troops: &[TroopKey],
-        damage: &[TroopDamageEvent],
-        world: &GameWorld,
-    ) -> usize {
-        troops.iter().filter(|&&key| {
-            // Check if any damage event sets this unit to 0.
-            if let Some(evt) = damage.iter().rev().find(|e| e.troop == key) {
-                evt.strength_after > 0
-            } else {
-                world.troops[key].regiment_strength > 0
-            }
-        }).count()
-    }
-}
-```
-
-### 3.2 Applying Ground Combat Results
-
-The caller in `main.rs` applies `TroopDamageEvent` to `GameWorld`:
-
-```rust
-// In main.rs apply_ground_combat_result():
-for evt in result.troop_damage {
-    if let Some(unit) = world.troops.get_mut(evt.troop) {
-        unit.regiment_strength = evt.strength_after;
-    }
-}
-// Remove destroyed units (strength == 0).
-world.systems[result.system].ground_units.retain(|&key| {
-    world.troops.get(key).map_or(false, |u| u.regiment_strength > 0)
-});
-```
-
-### 3.3 Death Star Handler Stub
-
-Family `0x34` triggers `FUN_005617b0` (68 lines, not yet fully decompiled):
-
-```rust
-impl CombatSystem {
-    /// Death Star superlaser resolution.
-    ///
-    /// Called when a Death Star (family 0x34) is present at the system.
-    /// FUN_005617b0 (68 lines) — pending full decompile.
-    ///
-    /// Stub: marks the system as destroyed and returns attacker victory.
-    pub fn resolve_death_star(
-        world: &GameWorld,
-        system: SystemKey,
-        tick: u64,
-    ) -> GroundCombatResult {
-        // TODO: decompile FUN_005617b0 for exact superlaser mechanics.
-        GroundCombatResult {
-            system,
-            winner: CombatSide::Attacker, // Death Star always wins
-            troop_damage: Vec::new(),
-            tick,
-        }
-    }
-}
-```
+`FUN_00560d50` is the character manager's move hook, run by the object-move dispatcher `FUN_00514a60` (event `0x320`). A moved capital ship (`0x14`-`0x1b`) clears the CommandKind (`+0x96`) of every character aboard through `FUN_004ee350`; a moved character (`0x30`-`0x3b`) keeps its CommandKind only between two capital ships of the same fleet. For the Emperor (family `0x34`) it also calls `FUN_005617b0`, which sets the Emperor-at-Coruscant flag (`FUN_0055f650`, event `0x230` `SeatOfPower`) when Palpatine is not a prisoner, is active and sits at Empire-held Coruscant `0x90000109` (`ground-unit-assets.md`, `character-roster.md`, `story-encounters.md` row 7a).
 
 ---
 
@@ -622,26 +388,30 @@ battles no window opens:
    seeded from one roll, then the caller reconciles a destroyed Death Star
    (`tactical::apply::reconcile_death_star_result`).
 2. Ground: `CombatSystem::resolve_ground(&world, system, alliance_attacks,
-   &rolls, tick)`, applied by `apply_ground_combat_result_inner`.
-3. Bombardment: `BombardmentSystem::resolve_bombardment`, the port formula
-   (§4).
-
-Pending decompile for ground combat: the per-unit resolve `FUN_004ee350`
-(vtable `+0x330`). `FUN_005617b0` is the Palpatine-at-Coruscant flag, not a
-Death Star handler (`or-ch-combat-family-notes-yfx`).
+   &rolls, tick)`, applied by `apply_ground_combat_result_inner`; node
+   `or-p-gnd-ykv` replaces it with the original's assault (§3).
+3. Bombardment: `BombardmentSystem::resolve_bombardment`, the port formula;
+   node `or-port-bombardment-8usw` replaces it with `FUN_0058d800` (§4).
 
 ---
 
 ## Appendix: Entity Family Byte Quick Reference
 
-For `CombatEntityKind::from_family_byte()` and routing in `resolve_ground()`:
+DAT header ranges (`record-registry.md`):
 
-| Family Range | Entity Type | Combat Path |
+| Family Range | Entity Type | Families in use |
 |---|---|---|
-| `0x08-0x0f` | Characters | Side validation only (no direct combat) |
-| `0x14-0x1b` | Troops / Special Forces | Ground combat — `FUN_00560d50` |
-| `0x30-0x33`, `0x35-0x3b` | Capital Ships | Space combat — vtable +0x1c4 path |
-| `0x34` | Death Star | `FUN_005617b0` special path |
-| `0x71-0x72` | Fighter squadrons | Space combat — alt_shield_path (+0x78 bit7) |
-| `0x73-0x74` | Special combat entity | Space result — `FUN_00534640` path |
-| `0x90-0x98` | Star Systems | Not combat entities |
+| `0x08-0x0f` | Fleets | executable-made |
+| `0x10-0x13` | Troop regiments (TROOPSD) | `0x10` |
+| `0x14-0x1b` | Capital ships (CAPSHPSD) | `0x14`; `0x18` Death Star (record 136) |
+| `0x1c-0x1f` | Fighter squadrons (FIGHTSD) | `0x1c` |
+| `0x20-0x21` | Alliance HQ (ALLFACSD) | `0x20` |
+| `0x22-0x27` | Defence facilities (DEFFACSD) | `0x22`-`0x25` |
+| `0x28-0x2b` | Manufacturing facilities (MANFACSD) | `0x28`-`0x2a` |
+| `0x2c-0x2f` | Production facilities (PROFACSD) | `0x2c`, `0x2d` |
+| `0x30-0x37` | Major characters (MJCHARSD) | `0x30`-`0x35` (`0x34` Palpatine) |
+| `0x38-0x3b` | Minor characters (MNCHARSD) | `0x38` |
+| `0x3c-0x3f` | Special forces (SPECFCSD) | `0x3c` |
+| `0x40-0x7f` | Missions (MISSNSD) | 22 kinds (`0x71` Dagobah, `0x73` Pickup) |
+| `0x80-0x8f` | Sectors (SECTORSD) | `0x80` |
+| `0x90-0x97` | Star systems (SYSTEMSD) | `0x90`, `0x92` |

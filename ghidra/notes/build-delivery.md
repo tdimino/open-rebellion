@@ -42,8 +42,9 @@ So an object is en route while it travels itself, or while its container
   objects from the moment they are ordered.
 - `FUN_0052aac0` chooses the current product: the first queued object that
   `FUN_00528890` accepts. `FUN_00529770` stores its key at manager `+0x74`
-  (DeploymentKey, notifier `FUN_0052bd00` `ManuMgrDeploymentKeyNotif`, event
-  `0x321`).
+  (ProductKey: vtable slot `+0x24c`, notifier `FUN_0052bcb0`
+  `ManuMgrProductKeyNotif`, event `0x320`). The DeploymentKey is `+0x78`
+  (slot `+0x250`, `FUN_0052bd00` `ManuMgrDeploymentKeyNotif`, event `0x321`).
 - Objects carry `DestinationLocationAtDeparture` (key at `+0x3c`, setter
   `FUN_004f7120`, notifier `FUN_004fbe50`) and `DestinationCount` (arrival tick
   at `+0x44`, setter `FUN_004f7390`, notifier `FUN_004fbf10`). The
@@ -213,11 +214,13 @@ Vtables were found through the shared side-key slot `+0xc` (`FUN_004f6a80`,
 
 ### When transit starts
 
-- The only caller of `FUN_00514a60` is `FUN_0057ba50.c:16`, the fire slot of
-  event `0x31a` (factory `FUN_0057bbb0`, `FUN_0051ef80.c:27`). Event `0x31a`
-  is raised by the object slot stub at `0x004fbaf0` (object vtable `+0x148`).
-  So travel is started after a container change, with the object already in
-  its new container; the arrival handler does not move it again (below).
+- The only caller of `FUN_00514a60` is `FUN_0057ba50.c:16`, slot 8 of
+  vtable `0x006697d8`, the fire slot of event `0x320` (transit start; factory
+  `FUN_0057b8d0`, `FUN_0051ef80.c:26`). `FUN_004faf50` and `FUN_0052bcb0`
+  raise it through `FUN_0053f9f0`/`FUN_0053fe40(0x320, ...)`, which store the
+  two keys at `+0x4c`/`+0x50`. hyp: travel starts after the container change,
+  with the object already in its new container; the arrival handler does not
+  move it again (below).
 - `FUN_004fb4b0` (object vtable `+0x118`) sets Deployed (`FUN_004fb4b0.c:10`)
   and raises event `0x308` (`FUN_004fb4b0.c:18`), whose handler
   `FUN_005150c0` (via `FUN_0057a9e0`) does, for types `0x10..0x3f`:
