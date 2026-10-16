@@ -122,6 +122,9 @@ use rebellion_render::status_window::{
     draw_managed_status_window, StatusWindowAction, StatusWindowState,
 };
 use rebellion_render::system_window::{draw_managed_system_windows, fleet_label};
+use rebellion_render::tactical_view::{
+    TacticalWindowEvent, TacticalWindowInput, TacticalWindowPhase,
+};
 use rebellion_render::targeting::{
     capture_pointer, draw_targeting_cursor, release_destination, ReleaseTarget, ReleaseWindows,
     TargetOrder, Targeting, TargetingEnd,
@@ -156,7 +159,8 @@ use rebellion_render::{FleetWindowAction, FleetWindowState};
 #[cfg(not(target_arch = "wasm32"))]
 use rebellion_render::{MusicSelector, SfxKind};
 use strategic_windowing::{
-    ApplicationInputLocks, LegacyInputBlockers, LegacyInputRestrictionLatch, WindowScene,
+    ApplicationInputLocks, CommittedTacticalPhase, LegacyInputBlockers,
+    LegacyInputRestrictionLatch, StrategicWindowing, TacticalWindowIdentity, WindowScene,
 };
 
 /// Top-level game mode state machine.
@@ -1421,6 +1425,230 @@ impl StrategicPointerBatch {
     }
 }
 
+fn route_tactical_window_input(
+    batch: &StrategicPointerBatch,
+    router: &mut FrameInputRouter,
+    window: rebellion_windowing::WindowId,
+    pointer_screen: (f32, f32),
+    primary_down: bool,
+    wheel_y: f32,
+) -> TacticalWindowInput {
+    let owner = InputRecipient::Window(window);
+    let mut input = TacticalWindowInput {
+        pointer_screen,
+        primary_down,
+        ..TacticalWindowInput::default()
+    };
+    for event in &batch.events {
+        let recipient = router.pointer_recipient(event.id);
+        if recipient == InputRecipient::Blocked
+            && event.phase == PointerPhase::Release(PointerButtonId::Primary)
+        {
+            input.events.push(TacticalWindowEvent::CancelGesture);
+        }
+        if recipient != owner || !router.claim(event.id, owner) {
+            continue;
+        }
+        match event.phase {
+            PointerPhase::Press(PointerButtonId::Primary) => {
+                input
+                    .events
+                    .push(TacticalWindowEvent::PrimaryPress(event.point));
+            }
+            PointerPhase::Release(PointerButtonId::Primary) => {
+                input
+                    .events
+                    .push(TacticalWindowEvent::PrimaryRelease(event.point));
+            }
+            PointerPhase::Auxiliary => input.events.push(TacticalWindowEvent::Wheel {
+                screen: event.point,
+                delta_y: wheel_y,
+            }),
+            PointerPhase::Press(_)
+            | PointerPhase::Motion(_)
+            | PointerPhase::Release(_)
+            | PointerPhase::Hover => {}
+        }
+    }
+    input
+}
+
+/// A tactical modal command captured under one frozen manager identity and
+/// held until the next frame commits that identity's exact close receipt.
+#[derive(Debug, Clone, PartialEq)]
+struct PreparedTacticalWindowAction {
+    action: TacticalAction,
+    battle_session: u64,
+    window: TacticalWindowIdentity,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TacticalResultDestination {
+    System(SystemKey),
+    Fleet(FleetKey),
+}
+
+fn tactical_result_destination(action: &TacticalAction) -> Option<TacticalResultDestination> {
+    match action {
+        TacticalAction::OpenBattleSystem(system) => {
+            Some(TacticalResultDestination::System(*system))
+        }
+        TacticalAction::OpenBattleFleet(fleet) => Some(TacticalResultDestination::Fleet(*fleet)),
+        _ => None,
+    }
+}
+
+fn take_tactical_destination_for_galaxy(
+    pending: &mut Option<TacticalResultDestination>,
+    galaxy_active: bool,
+) -> Option<TacticalResultDestination> {
+    galaxy_active.then(|| pending.take()).flatten()
+}
+
+fn reset_pending_tactical_handoff(
+    action: &mut Option<PreparedTacticalWindowAction>,
+    destination: &mut Option<TacticalResultDestination>,
+) {
+    *action = None;
+    *destination = None;
+}
+
+impl PreparedTacticalWindowAction {
+    fn phases(&self) -> Option<(TacticalWindowPhase, TacticalWindowPhase)> {
+        match (self.window.kind, &self.action) {
+            (
+                rebellion_windowing::WindowKind::BattleAlert,
+                TacticalAction::BeginCombat | TacticalAction::RetreatBeforeBattle,
+            ) => Some((TacticalWindowPhase::Alert, TacticalWindowPhase::Combat)),
+            (rebellion_windowing::WindowKind::BattleAlert, TacticalAction::AutoResolve) => {
+                Some((TacticalWindowPhase::Alert, TacticalWindowPhase::Results))
+            }
+            (
+                rebellion_windowing::WindowKind::BattleResults,
+                TacticalAction::ReturnToGalaxy
+                | TacticalAction::OpenBattleSystem(_)
+                | TacticalAction::OpenBattleFleet(_),
+            ) => Some((TacticalWindowPhase::Results, TacticalWindowPhase::Inactive)),
+            _ => None,
+        }
+    }
+}
+
+fn prepare_tactical_window_action(
+    action: TacticalAction,
+    battle_session: Option<u64>,
+    window: Option<TacticalWindowIdentity>,
+) -> Option<PreparedTacticalWindowAction> {
+    let battle_session = battle_session?;
+    let prepared = PreparedTacticalWindowAction {
+        action,
+        battle_session,
+        window: window?,
+    };
+    prepared.phases().is_some().then_some(prepared)
+}
+
+/// Releases a deferred tactical effect only after the manager proves it closed
+/// the same live identity at the requested phase boundary.
+fn approve_tactical_window_action(
+    prepared: PreparedTacticalWindowAction,
+    live_battle_session: Option<u64>,
+    live_phase: TacticalWindowPhase,
+    committed: &CommittedTacticalPhase,
+) -> Option<TacticalAction> {
+    let (expected_live_phase, next_phase) = prepared.phases()?;
+    let expected_reason = if next_phase == TacticalWindowPhase::Results {
+        rebellion_windowing::CloseReason::Replaced
+    } else {
+        rebellion_windowing::CloseReason::Requested
+    };
+    let expected_key =
+        rebellion_windowing::WindowKey::contextual(prepared.window.kind, prepared.window.subject);
+    let exact_close_count = committed
+        .events
+        .iter()
+        .filter(|event| {
+            matches!(
+                event,
+                rebellion_windowing::WindowEvent::Closed {
+                    window,
+                    key,
+                    reason,
+                } if *window == prepared.window.id
+                    && *key == expected_key
+                    && *reason == expected_reason
+            )
+        })
+        .count();
+    let next_window_matches = match next_phase {
+        TacticalWindowPhase::Results => committed.window.is_some_and(|window| {
+            window.id != prepared.window.id
+                && window.subject == prepared.window.subject
+                && window.kind == rebellion_windowing::WindowKind::BattleResults
+        }),
+        TacticalWindowPhase::Combat | TacticalWindowPhase::Inactive => committed.window.is_none(),
+        TacticalWindowPhase::Alert => false,
+    };
+    (live_battle_session == Some(prepared.battle_session)
+        && live_phase == expected_live_phase
+        && next_window_matches
+        && committed.removed_content.as_slice() == [prepared.window.id]
+        && exact_close_count == 1)
+        .then_some(prepared.action)
+}
+
+fn take_approved_tactical_window_action(
+    pending: &mut Option<PreparedTacticalWindowAction>,
+    live_battle_session: Option<u64>,
+    live_phase: TacticalWindowPhase,
+    committed: &CommittedTacticalPhase,
+) -> Option<TacticalAction> {
+    let action = approve_tactical_window_action(
+        pending.as_ref()?.clone(),
+        live_battle_session,
+        live_phase,
+        committed,
+    )?;
+    pending.take();
+    Some(action)
+}
+
+#[derive(Debug)]
+struct CommittedTacticalWindowAction {
+    phase: CommittedTacticalPhase,
+    approved_action: Option<TacticalAction>,
+}
+
+/// Production tactical handoff seam: atomically commits the phase transition
+/// and releases the deferred effect only from that same commit's receipts.
+fn commit_pending_tactical_window_action(
+    coordinator: &mut StrategicWindowing,
+    pending: &mut Option<PreparedTacticalWindowAction>,
+    live_battle_session: Option<u64>,
+    live_phase: TacticalWindowPhase,
+) -> Result<Option<CommittedTacticalWindowAction>, rebellion_windowing::WindowError> {
+    let Some(prepared) = pending.as_ref().cloned() else {
+        return Ok(None);
+    };
+    let Some((_, next_phase)) = prepared.phases() else {
+        return Ok(None);
+    };
+    let Some(phase) = coordinator.commit_tactical_transition_if_exact(
+        prepared.battle_session,
+        prepared.window,
+        next_phase,
+    )?
+    else {
+        return Ok(None);
+    };
+    let approved_action =
+        take_approved_tactical_window_action(pending, live_battle_session, live_phase, &phase);
+    Ok(Some(CommittedTacticalWindowAction {
+        phase,
+        approved_action,
+    }))
+}
+
 /// Collects the app's normalized strategic pointer batch and folds the
 /// manager-owned Message Index surface into the same hit set as the retained
 /// strategic windows. Keeping this seam shared by production and tests makes
@@ -1859,14 +2087,20 @@ fn commit_build_selection_gameplay(
 #[cfg(test)]
 mod frame_input_tests {
     use super::{
-        collect_strategic_pointer_batch, restore_egui_input, with_retained_input,
+        approve_tactical_window_action, collect_strategic_pointer_batch,
+        commit_pending_tactical_window_action, reset_pending_tactical_handoff, restore_egui_input,
+        route_tactical_window_input, tactical_result_destination,
+        take_approved_tactical_window_action, take_tactical_destination_for_galaxy,
+        with_retained_input, CommittedTacticalWindowAction, PreparedTacticalWindowAction,
         RetainedLegacyInputFilter, StrategicPointerBatch, StrategicRawPointerEvent,
+        TacticalResultDestination,
     };
     use egui_macroquad::egui;
     use rebellion_render::build_selection::BuildSelectionState;
     use rebellion_render::fleet_finder::FleetFinderState;
     use rebellion_render::message_index::MessageIndexState;
     use rebellion_render::status_window::StatusWindowState;
+    use rebellion_render::tactical_view::TacticalWindowEvent;
     use rebellion_render::windowing_input::{
         FrameInputRouter, InputRecipient, PointerButtonId, PointerPhase,
     };
@@ -2150,6 +2384,491 @@ mod frame_input_tests {
             },
         );
         assert!(retained_state_is_clean);
+    }
+
+    #[test]
+    fn tactical_modal_route_quarantines_release_after_scene_switch() {
+        use crate::strategic_windowing::WindowScene;
+        use rebellion_render::tactical_view::TacticalWindowPhase;
+
+        let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
+        let alert = coordinator
+            .commit_scene_phase_for_battle(
+                WindowScene::Tactical,
+                Some(1),
+                TacticalWindowPhase::Alert,
+            )
+            .unwrap()
+            .window
+            .unwrap()
+            .id;
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(1, &coordinator.begin_frame());
+        let press = StrategicPointerBatch::collect_from_raw(
+            1,
+            &mut router,
+            &[StrategicRawPointerEvent {
+                ordinal: 0,
+                point: (300.0, 350.0),
+                phase: PointerPhase::Press(PointerButtonId::Primary),
+            }],
+            |_| BTreeSet::from([alert]),
+        );
+        let admitted =
+            route_tactical_window_input(&press, &mut router, alert, (300.0, 350.0), true, 0.0);
+        assert_eq!(
+            admitted.events,
+            vec![TacticalWindowEvent::PrimaryPress((300.0, 350.0))]
+        );
+
+        coordinator
+            .commit_scene_phase_for_battle(WindowScene::Galaxy, None, TacticalWindowPhase::Inactive)
+            .unwrap();
+        router.begin_frame(2, &coordinator.begin_frame());
+        let release = StrategicPointerBatch::collect_from_raw(
+            2,
+            &mut router,
+            &[StrategicRawPointerEvent {
+                ordinal: 0,
+                point: (300.0, 350.0),
+                phase: PointerPhase::Release(PointerButtonId::Primary),
+            }],
+            |_| BTreeSet::new(),
+        );
+        let quarantined =
+            route_tactical_window_input(&release, &mut router, alert, (300.0, 350.0), false, 0.0);
+        assert_eq!(quarantined.events, vec![TacticalWindowEvent::CancelGesture]);
+        assert_eq!(
+            router.pointer_recipient(release.events[0].id),
+            InputRecipient::Blocked
+        );
+    }
+
+    #[test]
+    fn tactical_modal_route_preserves_same_frame_raw_event_order() {
+        use crate::strategic_windowing::WindowScene;
+        use rebellion_render::tactical_view::TacticalWindowPhase;
+
+        let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
+        let alert = coordinator
+            .commit_scene_phase_for_battle(
+                WindowScene::Tactical,
+                Some(4),
+                TacticalWindowPhase::Alert,
+            )
+            .unwrap()
+            .window
+            .unwrap()
+            .id;
+        let raw = [
+            StrategicRawPointerEvent {
+                ordinal: 0,
+                point: (101.0, 102.0),
+                phase: PointerPhase::Press(PointerButtonId::Primary),
+            },
+            StrategicRawPointerEvent {
+                ordinal: 1,
+                point: (201.0, 202.0),
+                phase: PointerPhase::Release(PointerButtonId::Primary),
+            },
+            StrategicRawPointerEvent {
+                ordinal: 2,
+                point: (301.0, 302.0),
+                phase: PointerPhase::Press(PointerButtonId::Primary),
+            },
+            StrategicRawPointerEvent {
+                ordinal: 3,
+                point: (401.0, 402.0),
+                phase: PointerPhase::Auxiliary,
+            },
+        ];
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(1, &coordinator.begin_frame());
+        let batch = StrategicPointerBatch::collect_from_raw(1, &mut router, &raw, |_| {
+            BTreeSet::from([alert])
+        });
+
+        let routed =
+            route_tactical_window_input(&batch, &mut router, alert, (9.0, 10.0), false, -2.5);
+        assert_eq!(
+            routed.events,
+            vec![
+                TacticalWindowEvent::PrimaryPress((101.0, 102.0)),
+                TacticalWindowEvent::PrimaryRelease((201.0, 202.0)),
+                TacticalWindowEvent::PrimaryPress((301.0, 302.0)),
+                TacticalWindowEvent::Wheel {
+                    screen: (401.0, 402.0),
+                    delta_y: -2.5,
+                },
+            ]
+        );
+        assert!(batch
+            .events
+            .iter()
+            .all(|event| { router.pointer_recipient(event.id) == InputRecipient::Window(alert) }));
+        assert!(batch
+            .events
+            .iter()
+            .all(|event| { !router.claim(event.id, InputRecipient::Window(alert)) }));
+    }
+
+    #[test]
+    fn tactical_result_exit_waits_for_exact_close_receipt() {
+        use crate::strategic_windowing::WindowScene;
+        use rebellion_render::tactical_view::TacticalWindowPhase;
+        use rebellion_render::TacticalAction;
+
+        let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
+        let opened = coordinator
+            .commit_scene_phase_for_battle(
+                WindowScene::Tactical,
+                Some(7),
+                TacticalWindowPhase::Results,
+            )
+            .unwrap();
+        let prepared = PreparedTacticalWindowAction {
+            action: TacticalAction::ReturnToGalaxy,
+            battle_session: 7,
+            window: opened.window.unwrap(),
+        };
+
+        assert_eq!(
+            approve_tactical_window_action(
+                prepared.clone(),
+                Some(7),
+                TacticalWindowPhase::Results,
+                &opened,
+            ),
+            None,
+            "an open receipt cannot authorize Results effects"
+        );
+        assert!(coordinator
+            .commit_tactical_transition_if_exact(8, prepared.window, TacticalWindowPhase::Inactive,)
+            .unwrap()
+            .is_none());
+        assert_eq!(
+            coordinator.begin_frame().active_modal(),
+            Some(prepared.window.id),
+            "a stale battle token cannot retire the live Results identity"
+        );
+
+        let closed = coordinator
+            .commit_tactical_transition_if_exact(7, prepared.window, TacticalWindowPhase::Inactive)
+            .unwrap()
+            .expect("the exact live identity closes");
+        assert_eq!(
+            approve_tactical_window_action(
+                prepared,
+                Some(7),
+                TacticalWindowPhase::Results,
+                &closed,
+            ),
+            Some(TacticalAction::ReturnToGalaxy)
+        );
+
+        let alert = coordinator
+            .commit_scene_phase_for_battle(
+                WindowScene::Tactical,
+                Some(9),
+                TacticalWindowPhase::Alert,
+            )
+            .unwrap();
+        let prepared = PreparedTacticalWindowAction {
+            action: TacticalAction::BeginCombat,
+            battle_session: 9,
+            window: alert.window.unwrap(),
+        };
+        assert_eq!(
+            approve_tactical_window_action(
+                prepared.clone(),
+                Some(9),
+                TacticalWindowPhase::Alert,
+                &alert,
+            ),
+            None,
+            "Alert effects also wait for the exact close receipt"
+        );
+        let closed = coordinator
+            .commit_tactical_transition_if_exact(9, prepared.window, TacticalWindowPhase::Combat)
+            .unwrap()
+            .expect("the exact Alert identity closes into Combat");
+        assert_eq!(
+            approve_tactical_window_action(prepared, Some(9), TacticalWindowPhase::Alert, &closed,),
+            Some(TacticalAction::BeginCombat)
+        );
+    }
+
+    #[test]
+    fn tactical_auto_resolve_uses_atomic_alert_results_replace() {
+        use crate::strategic_windowing::WindowScene;
+        use rebellion_render::tactical_view::TacticalWindowPhase;
+        use rebellion_render::TacticalAction;
+        use rebellion_windowing::{CloseReason, WindowEvent, WindowKind};
+
+        let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
+        let alert = coordinator
+            .commit_scene_phase_for_battle(
+                WindowScene::Tactical,
+                Some(21),
+                TacticalWindowPhase::Alert,
+            )
+            .unwrap()
+            .window
+            .unwrap();
+        let mut pending = Some(PreparedTacticalWindowAction {
+            action: TacticalAction::AutoResolve,
+            battle_session: 21,
+            window: alert,
+        });
+
+        let committed = commit_pending_tactical_window_action(
+            &mut coordinator,
+            &mut pending,
+            Some(21),
+            TacticalWindowPhase::Alert,
+        )
+        .unwrap()
+        .expect("production AutoResolve replaces Alert with Results");
+        let CommittedTacticalWindowAction {
+            phase: replaced,
+            approved_action,
+        } = committed;
+        let results = replaced.window.expect("Results opens in the same commit");
+        assert_eq!(results.subject, alert.subject);
+        assert_eq!(results.kind, WindowKind::BattleResults);
+        assert_ne!(results.id, alert.id);
+        assert_eq!(replaced.removed_content, [alert.id]);
+        assert!(replaced.events.iter().any(|event| matches!(
+            event,
+            WindowEvent::Closed {
+                window,
+                reason: CloseReason::Replaced,
+                ..
+            } if *window == alert.id
+        )));
+        assert_eq!(approved_action, Some(TacticalAction::AutoResolve));
+        assert!(pending.is_none());
+    }
+
+    #[test]
+    fn tactical_action_approval_rejects_wrong_receipts_and_dispatches_once() {
+        use crate::strategic_windowing::WindowScene;
+        use rebellion_render::tactical_view::TacticalWindowPhase;
+        use rebellion_render::TacticalAction;
+        use rebellion_windowing::{CloseReason, SubjectId, WindowEvent, WindowKey, WindowKind};
+
+        let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
+        let alert = coordinator
+            .commit_scene_phase_for_battle(
+                WindowScene::Tactical,
+                Some(31),
+                TacticalWindowPhase::Alert,
+            )
+            .unwrap()
+            .window
+            .unwrap();
+        let results = coordinator
+            .commit_scene_phase_for_battle(
+                WindowScene::Tactical,
+                Some(31),
+                TacticalWindowPhase::Results,
+            )
+            .unwrap()
+            .window
+            .unwrap();
+        let prepared = PreparedTacticalWindowAction {
+            action: TacticalAction::ReturnToGalaxy,
+            battle_session: 31,
+            window: results,
+        };
+        let expected_key = WindowKey::contextual(WindowKind::BattleResults, results.subject);
+        let exact_event = WindowEvent::Closed {
+            window: results.id,
+            key: expected_key,
+            reason: CloseReason::Requested,
+        };
+        let candidate =
+            |event, removed_content| crate::strategic_windowing::CommittedTacticalPhase {
+                window: None,
+                events: vec![event],
+                removed_content,
+            };
+
+        for wrong in [
+            candidate(
+                WindowEvent::Closed {
+                    window: alert.id,
+                    key: expected_key,
+                    reason: CloseReason::Requested,
+                },
+                vec![results.id],
+            ),
+            candidate(
+                WindowEvent::Closed {
+                    window: results.id,
+                    key: WindowKey::contextual(WindowKind::BattleResults, SubjectId::new(99, 99)),
+                    reason: CloseReason::Requested,
+                },
+                vec![results.id],
+            ),
+            candidate(
+                WindowEvent::Closed {
+                    window: results.id,
+                    key: expected_key,
+                    reason: CloseReason::Replaced,
+                },
+                vec![results.id],
+            ),
+            candidate(exact_event, vec![alert.id]),
+        ] {
+            assert_eq!(
+                approve_tactical_window_action(
+                    prepared.clone(),
+                    Some(31),
+                    TacticalWindowPhase::Results,
+                    &wrong,
+                ),
+                None
+            );
+        }
+
+        let exact = coordinator
+            .commit_tactical_transition_if_exact(31, results, TacticalWindowPhase::Inactive)
+            .unwrap()
+            .unwrap();
+        let mut pending = Some(prepared);
+        assert_eq!(
+            take_approved_tactical_window_action(
+                &mut pending,
+                Some(31),
+                TacticalWindowPhase::Results,
+                &exact,
+            ),
+            Some(TacticalAction::ReturnToGalaxy)
+        );
+        assert_eq!(
+            take_approved_tactical_window_action(
+                &mut pending,
+                Some(31),
+                TacticalWindowPhase::Results,
+                &exact,
+            ),
+            None,
+            "one exact receipt can dispatch the prepared effect at most once"
+        );
+    }
+
+    #[test]
+    fn tactical_results_destination_waits_for_receipt_and_eventual_galaxy() {
+        use crate::strategic_windowing::WindowScene;
+        use rebellion_core::ids::SystemKey;
+        use rebellion_render::tactical_view::TacticalWindowPhase;
+        use rebellion_render::TacticalAction;
+
+        let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
+        let results = coordinator
+            .commit_scene_phase_for_battle(
+                WindowScene::Tactical,
+                Some(51),
+                TacticalWindowPhase::Results,
+            )
+            .unwrap()
+            .window
+            .unwrap();
+        let routed = TacticalAction::OpenBattleSystem(SystemKey::default());
+        let mut pending_action = Some(PreparedTacticalWindowAction {
+            action: routed.clone(),
+            battle_session: 51,
+            window: results,
+        });
+        let mut pending_destination = None;
+
+        assert_eq!(
+            pending_destination, None,
+            "routing alone cannot queue navigation"
+        );
+        let preclose = coordinator
+            .commit_scene_phase_for_battle(
+                WindowScene::Tactical,
+                Some(51),
+                TacticalWindowPhase::Results,
+            )
+            .unwrap();
+        assert_eq!(
+            take_approved_tactical_window_action(
+                &mut pending_action,
+                Some(51),
+                TacticalWindowPhase::Results,
+                &preclose,
+            ),
+            None,
+            "the routed action remains inert before its exact close receipt"
+        );
+        assert_eq!(pending_destination, None);
+
+        let closed = coordinator
+            .commit_tactical_transition_if_exact(51, results, TacticalWindowPhase::Inactive)
+            .unwrap()
+            .unwrap();
+        let approved = take_approved_tactical_window_action(
+            &mut pending_action,
+            Some(51),
+            TacticalWindowPhase::Results,
+            &closed,
+        )
+        .expect("the exact Results close releases navigation");
+        pending_destination = tactical_result_destination(&approved);
+        assert_eq!(
+            pending_destination,
+            Some(TacticalResultDestination::System(SystemKey::default()))
+        );
+
+        assert_eq!(
+            take_tactical_destination_for_galaxy(&mut pending_destination, false),
+            None,
+            "GroundCombat retains the approved destination"
+        );
+        assert!(pending_destination.is_some());
+        assert_eq!(
+            take_tactical_destination_for_galaxy(&mut pending_destination, true),
+            Some(TacticalResultDestination::System(SystemKey::default())),
+            "the first eventual Galaxy frame dispatches it"
+        );
+        assert_eq!(
+            take_tactical_destination_for_galaxy(&mut pending_destination, true),
+            None,
+            "an approved destination dispatches at most once"
+        );
+    }
+
+    #[test]
+    fn tactical_pending_handoff_reset_clears_action_and_destination() {
+        use crate::strategic_windowing::WindowScene;
+        use rebellion_core::ids::FleetKey;
+        use rebellion_render::tactical_view::TacticalWindowPhase;
+        use rebellion_render::TacticalAction;
+
+        let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
+        let results = coordinator
+            .commit_scene_phase_for_battle(
+                WindowScene::Tactical,
+                Some(61),
+                TacticalWindowPhase::Results,
+            )
+            .unwrap()
+            .window
+            .unwrap();
+        let mut action = Some(PreparedTacticalWindowAction {
+            action: TacticalAction::OpenBattleFleet(FleetKey::default()),
+            battle_session: 61,
+            window: results,
+        });
+        let mut destination = Some(TacticalResultDestination::Fleet(FleetKey::default()));
+
+        reset_pending_tactical_handoff(&mut action, &mut destination);
+
+        assert!(action.is_none());
+        assert!(destination.is_none());
     }
 }
 
@@ -3588,6 +4307,8 @@ async fn main() {
 
     // ── Tactical combat state ────────────────────────────────────────────────
     let mut tactical_state = TacticalState::new();
+    let mut pending_tactical_window_action: Option<PreparedTacticalWindowAction> = None;
+    let mut pending_tactical_destination: Option<TacticalResultDestination> = None;
     let mut ground_combat_state: Option<GroundCombatState> = None;
 
     // ── Cockpit chrome ───────────────────────────────────────────────────────
@@ -5927,12 +6648,147 @@ Some(RailAudience::side(*faction_is_alliance)),
             | GameMode::GameSetup
             | GameMode::GameOptions { .. } => WindowScene::Suspended,
         };
-        if strategic_windowing.scene() != desired_window_scene {
-            for event in strategic_windowing.enter_scene(desired_window_scene) {
-                if let rebellion_windowing::WindowEvent::CaptureCancelled { window, .. } = event {
-                    strategic_input_router.cancel_window(window);
-                    fleet_window_state.cancel_pointer_capture(window);
+        let previous_window_scene = strategic_windowing.scene();
+        let returning_to_galaxy = previous_window_scene != WindowScene::Galaxy
+            && desired_window_scene == WindowScene::Galaxy;
+        let tactical_window_phase = tactical_state.windowing_phase();
+        let tactical_battle_session = tactical_state.windowing_battle_session();
+        let tactical_action_handoff = pending_tactical_window_action.is_some();
+        let mut approved_tactical_action = None;
+        let mut tactical_window_identity = None;
+        let mut tactical_windowing_failed = false;
+        if let Some(prepared) = pending_tactical_window_action.clone() {
+            let (expected_phase, _) = prepared
+                .phases()
+                .expect("only supported tactical actions enter the pending slot");
+            if tactical_battle_session != Some(prepared.battle_session)
+                || tactical_window_phase != expected_phase
+            {
+                macroquad::logging::warn!(
+                    "[windowing] discarded stale tactical action battle={} window={:?}",
+                    prepared.battle_session,
+                    prepared.window.id
+                );
+                pending_tactical_window_action = None;
+                tactical_windowing_failed = true;
+            } else {
+                match commit_pending_tactical_window_action(
+                    &mut strategic_windowing,
+                    &mut pending_tactical_window_action,
+                    tactical_battle_session,
+                    tactical_window_phase,
+                ) {
+                    Ok(Some(committed_action)) => {
+                        tactical_window_identity = committed_action.phase.window;
+                        apply_capture_cancellation_events(
+                            &committed_action.phase.events,
+                            &mut strategic_input_router,
+                            &mut fleet_window_state,
+                        );
+                        approved_tactical_action = committed_action.approved_action;
+                        if approved_tactical_action.is_none() {
+                            macroquad::logging::error!(
+                                "[windowing] tactical close lacked its exact receipt"
+                            );
+                            tactical_windowing_failed = true;
+                        }
+                    }
+                    Ok(None) => {
+                        macroquad::logging::warn!(
+                            "[windowing] discarded stale tactical manager identity battle={} window={:?}",
+                            prepared.battle_session,
+                            prepared.window.id
+                        );
+                        pending_tactical_window_action = None;
+                        tactical_windowing_failed = true;
+                    }
+                    Err(error) => {
+                        macroquad::logging::error!(
+                            "[windowing] tactical close rejected battle={} window={:?} error={error:?}",
+                            prepared.battle_session,
+                            prepared.window.id
+                        );
+                        tactical_windowing_failed = true;
+                    }
                 }
+            }
+        } else {
+            match strategic_windowing.commit_scene_phase_for_battle(
+                desired_window_scene,
+                tactical_battle_session,
+                tactical_window_phase,
+            ) {
+                Ok(committed) => {
+                    tactical_window_identity = committed.window;
+                    apply_capture_cancellation_events(
+                        &committed.events,
+                        &mut strategic_input_router,
+                        &mut fleet_window_state,
+                    );
+                }
+                Err(error) => {
+                    macroquad::logging::error!(
+                        "[windowing] tactical scene commit rejected scene={desired_window_scene:?} phase={:?} error={error:?}",
+                        tactical_window_phase
+                    );
+                    tactical_windowing_failed = true;
+                }
+            }
+        }
+        if desired_window_scene != WindowScene::Tactical {
+            tactical_state.cancel_window_gestures();
+        }
+        if returning_to_galaxy && !tactical_windowing_failed {
+            // Reconcile the newly active Galaxy membership before publishing
+            // its first route. Dormant records remain registered in Tactical,
+            // but stale Galaxy modeless content never receives one permissive
+            // frame on return.
+            let return_candidate = strategic_windowing.begin_frame();
+            let mut reports = system_window_state.content_reports(&return_candidate, &world);
+            reports.extend(fleet_window_state.content_reports(&return_candidate, &world));
+            reports.extend(fleet_finder_state.content_reports(&return_candidate));
+            reports.extend(encyclopedia_surface.content_reports(&return_candidate));
+            reports.extend(message_index.content_reports(&return_candidate));
+            reports.extend(build_selection_state.content_reports(&return_candidate));
+            reports.extend(status_window_state.content_reports(
+                &return_candidate,
+                StatusSources {
+                    world: &world,
+                    missions: &mission_state,
+                    movement: &movement_state,
+                    transport: &troop_transport_state,
+                    manufacturing: &mfg_state,
+                    today: clock.tick,
+                },
+            ));
+            let reconciliation = strategic_windowing.reconcile(&return_candidate, &reports);
+            system_window_state.remove_content(&reconciliation.removed);
+            fleet_window_state.remove_content(&reconciliation.removed);
+            fleet_finder_state.remove_content(&reconciliation.removed);
+            encyclopedia_surface.remove_content(&reconciliation.removed);
+            status_window_state.remove_content(&reconciliation.removed);
+            build_selection_state.remove_content(&reconciliation.removed);
+            let message_actions = message_index.remove_content(&reconciliation.removed);
+            apply_message_index_actions(
+                message_actions,
+                &mut msg_log,
+                &mut clock,
+                &mut advice_saved_speed,
+                &mut pending_message_sound,
+            );
+            apply_capture_cancellation_events(
+                &reconciliation.events,
+                &mut strategic_input_router,
+                &mut fleet_window_state,
+            );
+            if !reconciliation.invalid_reports.is_empty()
+                || !reconciliation.blocking_unpainted.is_empty()
+            {
+                macroquad::logging::warn!(
+                    "[windowing] galaxy return reconcile invalid={:?} blocking={:?}",
+                    reconciliation.invalid_reports,
+                    reconciliation.blocking_unpainted
+                );
             }
         }
         #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
@@ -5956,7 +6812,9 @@ Some(RailAudience::side(*faction_is_alliance)),
             event_screen: event_screen_state.is_active(),
             briefing: !interface_fixture_active && briefing_lock,
             fixture_setup: false,
-            scene_transition: desired_window_scene != WindowScene::Galaxy,
+            scene_transition: desired_window_scene == WindowScene::Suspended
+                || tactical_windowing_failed
+                || tactical_action_handoff,
         };
         let legacy_blockers = LegacyInputBlockers {
             strategic_modal: mission_dialog_state.is_open()
@@ -6026,6 +6884,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                     strategic_windowing.enqueue(rebellion_windowing::WindowCommand::CancelCapture(
                         rebellion_windowing::CaptureCancelReason::FocusLost,
                     ));
+                    tactical_state.cancel_window_gestures();
                 }
                 true
             } else {
@@ -6044,6 +6903,11 @@ Some(RailAudience::side(*faction_is_alliance)),
         let battle_window_underlay =
             game_mode == GameMode::TacticalCombat && tactical_state.over_command_center();
         let tactical_frame = game_mode == GameMode::TacticalCombat;
+        let mut tactical_window_input = TacticalWindowInput {
+            pointer_screen: mouse_position(),
+            primary_down: is_mouse_button_down(MouseButton::Left),
+            ..TacticalWindowInput::default()
+        };
         let render_mode = if battle_window_underlay {
             GameMode::Galaxy
         } else {
@@ -6448,6 +7312,10 @@ Some(RailAudience::side(*faction_is_alliance)),
                                     save_slots = read_save_slots(&saves_dir);
                                     event_screen_state = EventScreenState::new();
                                     tactical_state = TacticalState::new();
+                                    reset_pending_tactical_handoff(
+                                        &mut pending_tactical_window_action,
+                                        &mut pending_tactical_destination,
+                                    );
                                     ground_combat_state = None;
 
                                     let alliance_hq = world
@@ -6706,10 +7574,29 @@ Some(RailAudience::side(*faction_is_alliance)),
                                 ) {
                                     hits.insert(window);
                                 }
+                                if let Some(window) = tactical_window_identity.filter(|_| {
+                                    tactical_state.windowing_contains_screen_point(
+                                        screen_width(),
+                                        screen_height(),
+                                        point,
+                                    )
+                                }) {
+                                    hits.insert(window.id);
+                                }
                                 hits
                             },
                         );
                     });
+                    if let Some(window) = tactical_window_identity {
+                        tactical_window_input = route_tactical_window_input(
+                            &batch,
+                            &mut strategic_input_router,
+                            window.id,
+                            mouse_position(),
+                            is_mouse_button_down(MouseButton::Left),
+                            mouse_wheel().1,
+                        );
+                    }
                     batch
                 } else {
                     StrategicPointerBatch::default()
@@ -9643,20 +10530,56 @@ Some(RailAudience::side(*faction_is_alliance)),
         if tactical_frame {
             // Under the Battle Alert or the results, the command center pass
             // above has drawn the droids; the window is all that is left.
-            let tac_action = draw_tactical_view(
+            let rendered_tac_action = draw_tactical_view(
                 &mut tactical_state,
                 &mut bmp_cache,
                 &world,
                 &troop_transport_state,
+                &tactical_window_input,
             );
-            let requested_result_system = match &tac_action {
-                TacticalAction::OpenBattleSystem(system) => Some(*system),
-                _ => None,
+            let manager_approved_action = approved_tactical_action.is_some();
+            let tac_action = if let Some(action) = approved_tactical_action.take() {
+                action
+            } else if let Some(prepared) = prepare_tactical_window_action(
+                rendered_tac_action.clone(),
+                tactical_battle_session,
+                tactical_window_identity,
+            ) {
+                pending_tactical_window_action = Some(prepared);
+                TacticalAction::None
+            } else {
+                if matches!(
+                    &rendered_tac_action,
+                    TacticalAction::BeginCombat
+                        | TacticalAction::AutoResolve
+                        | TacticalAction::RetreatBeforeBattle
+                        | TacticalAction::ReturnToGalaxy
+                        | TacticalAction::OpenBattleSystem(_)
+                        | TacticalAction::OpenBattleFleet(_)
+                ) {
+                    macroquad::logging::error!(
+                        "[windowing] refused tactical action without its live identity"
+                    );
+                    TacticalAction::None
+                } else {
+                    rendered_tac_action
+                }
             };
-            let requested_result_fleet = match &tac_action {
-                TacticalAction::OpenBattleFleet(fleet) => Some(*fleet),
-                _ => None,
-            };
+            if manager_approved_action
+                && matches!(
+                    &tac_action,
+                    TacticalAction::BeginCombat
+                        | TacticalAction::AutoResolve
+                        | TacticalAction::RetreatBeforeBattle
+                )
+            {
+                tactical_state.commit_battle_alert_exit();
+            }
+            if manager_approved_action {
+                if let Some(destination) = tactical_result_destination(&tac_action) {
+                    pending_tactical_destination = Some(destination);
+                }
+            }
 
             match tac_action {
                 TacticalAction::BeginCombat => {
@@ -9867,42 +10790,6 @@ Some(RailAudience::side(*faction_is_alliance)),
                     } else {
                         game_mode = GameMode::Galaxy;
                     }
-
-                    if game_mode == GameMode::Galaxy {
-                        if let Some(system) = requested_result_system {
-                            map_state.selected_system = Some(system);
-                            let layout = cockpit_state.layout();
-                            let _ = enqueue_system_window(
-                                &mut strategic_windowing,
-                                &system_window_state,
-                                &world,
-                                system,
-                                (85, 55),
-                                cockpit_state.faction,
-                                layout,
-                            );
-                        }
-                        // port: the fleet's Fleet window with the fleet
-                        // selected, as the Fleet Finder opens it
-                        // (FUN_00429440).
-                        if let Some(fleet) = requested_result_fleet {
-                            if let Some(value) = world.fleets.get(fleet) {
-                                let system = value.location;
-                                map_state.selected_system = Some(system);
-                                let layout = cockpit_state.layout();
-                                enqueue_fleet_window(
-                                    &mut strategic_windowing,
-                                    &fleet_window_state,
-                                    &world,
-                                    system,
-                                    (85, 55),
-                                    cockpit_state.faction,
-                                    layout,
-                                    Some(FleetWindowEntry::Fleet(fleet)),
-                                );
-                            }
-                        }
-                    }
                 }
                 TacticalAction::TogglePause => {
                     if let Some(ref mut session) = tactical_state.session {
@@ -9946,6 +10833,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                 }
                 TacticalAction::RetreatBeforeBattle => {
                     if let Some(ref mut session) = tactical_state.session {
+                        session.queue_withdrawal_started_voice();
                         let player_side = session.player_is_attacker;
                         for ship in &mut session.ships {
                             if ship.alive
@@ -9990,6 +10878,46 @@ Some(RailAudience::side(*faction_is_alliance)),
                         game_mode = GameMode::Cutscene {
                             kind: CutsceneKind::TrenchRun(outcome),
                         };
+                    }
+                }
+            }
+        }
+
+        if let Some(destination) = take_tactical_destination_for_galaxy(
+            &mut pending_tactical_destination,
+            game_mode == GameMode::Galaxy,
+        ) {
+            match destination {
+                TacticalResultDestination::System(system) => {
+                    map_state.selected_system = Some(system);
+                    let layout = cockpit_state.layout();
+                    let _ = enqueue_galaxy_system_window(
+                        &mut strategic_windowing,
+                        &system_window_state,
+                        &world,
+                        system,
+                        (85, 55),
+                        cockpit_state.faction,
+                        layout,
+                    );
+                }
+                TacticalResultDestination::Fleet(fleet) => {
+                    // FUN_00429440: the Results fleet shortcut returns to the
+                    // Fleet window with that exact fleet selected.
+                    if let Some(value) = world.fleets.get(fleet) {
+                        let system = value.location;
+                        map_state.selected_system = Some(system);
+                        let layout = cockpit_state.layout();
+                        enqueue_galaxy_fleet_window(
+                            &mut strategic_windowing,
+                            &fleet_window_state,
+                            &world,
+                            system,
+                            (85, 55),
+                            cockpit_state.faction,
+                            layout,
+                            Some(FleetWindowEntry::Fleet(fleet)),
+                        );
                     }
                 }
             }
@@ -10152,6 +11080,10 @@ Some(RailAudience::side(*faction_is_alliance)),
                             save_load_panel_state.close();
                             event_screen_state = EventScreenState::new();
                             tactical_state = TacticalState::new();
+                            reset_pending_tactical_handoff(
+                                &mut pending_tactical_window_action,
+                                &mut pending_tactical_destination,
+                            );
                             ground_combat_state = None;
                             dual_ai_mode = secondary_ai_state.is_some();
                             msg_log = MessageLog::default();
@@ -10555,6 +11487,12 @@ Some(RailAudience::side(*faction_is_alliance)),
                 today: clock.tick,
             },
         ));
+        strategic_content_reports.extend(
+            strategic_windowing.tactical_content_reports(
+                strategic_frame_boundary.snapshot(),
+                tactical_window_phase,
+            ),
+        );
 
         // Window intents commit only after input and painting have completed.
         // Detail content is published only after the matching manager commit;
@@ -12930,6 +13868,23 @@ fn enqueue_system_window(
     true
 }
 
+fn enqueue_galaxy_system_window(
+    strategic_windowing: &mut strategic_windowing::StrategicWindowing,
+    state: &SystemWindowState,
+    world: &GameWorld,
+    system: SystemKey,
+    logical_position: (i16, i16),
+    faction: CockpitFaction,
+    layout: rebellion_render::CockpitLayout,
+) -> bool {
+    let Some(prepared) = state.prepare_open(world, system, logical_position, faction, layout)
+    else {
+        return false;
+    };
+    strategic_windowing.enqueue_galaxy_system_open(prepared);
+    true
+}
+
 #[expect(
     clippy::too_many_arguments,
     reason = "The lifecycle adapter carries the existing Fleet opener's complete content context."
@@ -12950,6 +13905,29 @@ fn enqueue_fleet_window(
         return false;
     };
     strategic_windowing.enqueue_fleet_open(prepared);
+    true
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The Results adapter carries the existing Fleet opener's complete content context."
+)]
+fn enqueue_galaxy_fleet_window(
+    strategic_windowing: &mut strategic_windowing::StrategicWindowing,
+    state: &FleetWindowState,
+    world: &GameWorld,
+    system: SystemKey,
+    logical_position: (i16, i16),
+    faction: CockpitFaction,
+    layout: rebellion_render::CockpitLayout,
+    selected: Option<FleetWindowEntry>,
+) -> bool {
+    let Some(prepared) =
+        state.prepare_open(world, system, logical_position, faction, layout, selected)
+    else {
+        return false;
+    };
+    strategic_windowing.enqueue_galaxy_fleet_open(prepared);
     true
 }
 

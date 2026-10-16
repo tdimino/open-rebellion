@@ -12,12 +12,13 @@ use rebellion_render::{
     message_index::PreparedMessageIndex,
     status_window::PreparedStatusWindow,
     system_window::PreparedSystemWindow,
-    windowing_policy::SUBJECT_COMMAND_CONTEXT,
+    tactical_view::TacticalWindowPhase,
+    windowing_policy::{contextual_spec, SUBJECT_BATTLE, SUBJECT_COMMAND_CONTEXT},
 };
 use rebellion_windowing::{
-    BubblePolicy, ContentReport, ExistingEffect, FocusTarget, ReconcileReport, RouteTarget,
-    RoutingSnapshot, SubjectId, WindowCommand, WindowCommit, WindowError, WindowEvent, WindowId,
-    WindowTransition,
+    BubblePolicy, ContentReport, ContentStatus, ExistingEffect, FocusTarget, ReconcileReport,
+    RouteTarget, RoutingSnapshot, SubjectId, WindowCommand, WindowCommit, WindowError, WindowEvent,
+    WindowId, WindowKind, WindowOwner, WindowTransition,
 };
 
 use crate::encyclopedia_surface::{EncyclopediaSurfaceController, EncyclopediaWindowOpenError};
@@ -76,6 +77,28 @@ pub struct CommittedEncyclopediaOpen {
     pub window_id: WindowId,
     /// Capture/focus receipts emitted by the open and semantic-focus commits.
     pub events: Vec<WindowEvent>,
+}
+
+/// Exact manager identity of the tactical modal for one battle session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TacticalWindowIdentity {
+    /// Opaque manager identity for this modal phase.
+    pub id: WindowId,
+    /// Stable subject shared by every phase of one battle session.
+    pub subject: SubjectId,
+    /// Distinct Alert or Results semantic kind.
+    pub kind: WindowKind,
+}
+
+/// Atomic result of synchronizing the manager with the tactical phase.
+#[derive(Debug)]
+pub struct CommittedTacticalPhase {
+    /// Active tactical modal after the commit, if this phase has one.
+    pub window: Option<TacticalWindowIdentity>,
+    /// Ordered focus and capture receipts emitted by the commit.
+    pub events: Vec<WindowEvent>,
+    /// Exact retired tactical content identities.
+    pub removed_content: Vec<WindowId>,
 }
 
 #[derive(Debug)]
@@ -344,11 +367,16 @@ impl StrategicFrameBoundary {
 pub struct StrategicWindowing {
     manager: rebellion_windowing::WindowManager,
     pending: Vec<QueuedWindowCommand>,
+    pending_galaxy: Vec<QueuedWindowCommand>,
     scene: WindowScene,
     galaxy: BTreeSet<WindowId>,
     tactical: BTreeSet<WindowId>,
     attached_content: BTreeSet<WindowId>,
     next_context_subject: Option<u64>,
+    next_battle_subject: Option<u64>,
+    battle_session_token: Option<u64>,
+    battle_subject: Option<SubjectId>,
+    tactical_window: Option<TacticalWindowIdentity>,
 }
 
 impl Default for StrategicWindowing {
@@ -364,11 +392,16 @@ impl StrategicWindowing {
         Self {
             manager: rebellion_windowing::WindowManager::new(),
             pending: Vec::new(),
+            pending_galaxy: Vec::new(),
             scene: WindowScene::Galaxy,
             galaxy: BTreeSet::new(),
             tactical: BTreeSet::new(),
             attached_content: BTreeSet::new(),
             next_context_subject: Some(1),
+            next_battle_subject: Some(1),
+            battle_session_token: None,
+            battle_subject: None,
+            tactical_window: None,
         }
     }
 
@@ -477,10 +510,48 @@ impl StrategicWindowing {
         });
     }
 
+    /// Queues validated System content for publication only after Galaxy is
+    /// active. Battle Results destinations must not join Tactical membership.
+    pub fn enqueue_galaxy_system_open(&mut self, prepared: PreparedSystemWindow) {
+        self.pending_galaxy.push(QueuedWindowCommand {
+            command: WindowCommand::Open(prepared.spec()),
+            prepared_build_selection: None,
+            prepared_build_selection_confirm: None,
+            prepared_system: Some(prepared),
+            prepared_fleet: None,
+            prepared_fleet_finder: None,
+            prepared_message_index: None,
+            prepared_status: None,
+            minimized_system: None,
+            restored_system: None,
+            minimized_fleet: None,
+            restored_fleet: None,
+        });
+    }
+
     /// Queues a validated Fleet content candidate beside its semantic open.
     /// The candidate returns to the app only after the manager applies it.
     pub fn enqueue_fleet_open(&mut self, prepared: PreparedFleetWindow) {
         self.pending.push(QueuedWindowCommand {
+            command: WindowCommand::Open(prepared.spec()),
+            prepared_build_selection: None,
+            prepared_build_selection_confirm: None,
+            prepared_system: None,
+            prepared_fleet: Some(prepared),
+            prepared_fleet_finder: None,
+            prepared_message_index: None,
+            prepared_status: None,
+            minimized_system: None,
+            restored_system: None,
+            minimized_fleet: None,
+            restored_fleet: None,
+        });
+    }
+
+    /// Queues validated Fleet content for publication only after Galaxy is
+    /// active, preserving the outgoing Results frame's immutable lease.
+    pub fn enqueue_galaxy_fleet_open(&mut self, prepared: PreparedFleetWindow) {
+        self.pending_galaxy.push(QueuedWindowCommand {
             command: WindowCommand::Open(prepared.spec()),
             prepared_build_selection: None,
             prepared_build_selection_confirm: None,
@@ -671,7 +742,12 @@ impl StrategicWindowing {
         if self.scene == WindowScene::Suspended {
             return Vec::new();
         }
-        let pending = std::mem::take(&mut self.pending);
+        let mut pending = if self.scene == WindowScene::Galaxy {
+            std::mem::take(&mut self.pending_galaxy)
+        } else {
+            Vec::new()
+        };
+        pending.extend(std::mem::take(&mut self.pending));
         pending
             .into_iter()
             .map(|queued| {
@@ -996,6 +1072,226 @@ impl StrategicWindowing {
         result
     }
 
+    /// Atomically synchronizes Alert/Combat/Results registration for the
+    /// authoritative tactical phase. One subject survives all phases of a
+    /// battle and is retired only when the session becomes inactive.
+    #[cfg(test)]
+    fn commit_tactical_phase(
+        &mut self,
+        phase: TacticalWindowPhase,
+    ) -> Result<CommittedTacticalPhase, WindowError> {
+        let battle = (phase != TacticalWindowPhase::Inactive)
+            .then_some(self.battle_session_token.unwrap_or(0));
+        self.commit_tactical_phase_for_battle(battle, phase)
+    }
+
+    fn commit_tactical_phase_for_battle(
+        &mut self,
+        battle_session: Option<u64>,
+        phase: TacticalWindowPhase,
+    ) -> Result<CommittedTacticalPhase, WindowError> {
+        assert_eq!(
+            battle_session.is_some(),
+            phase != TacticalWindowPhase::Inactive,
+            "an active tactical phase must identify its battle session"
+        );
+        let desired_kind = match phase {
+            TacticalWindowPhase::Alert => Some(WindowKind::BattleAlert),
+            TacticalWindowPhase::Results => Some(WindowKind::BattleResults),
+            TacticalWindowPhase::Combat | TacticalWindowPhase::Inactive => None,
+        };
+        let new_battle = battle_session.is_some() && battle_session != self.battle_session_token;
+        let needs_subject =
+            battle_session.is_some() && (new_battle || self.battle_subject.is_none());
+        let allocated_subject = if needs_subject {
+            let value = self.next_battle_subject.ok_or(WindowError::IdExhausted)?;
+            Some((SubjectId::new(SUBJECT_BATTLE, value), value.checked_add(1)))
+        } else {
+            None
+        };
+        let subject = allocated_subject
+            .map(|(subject, _)| subject)
+            .or(self.battle_subject);
+
+        if let Some(kind) = desired_kind {
+            let subject = subject.expect("active tactical phases allocate a battle subject");
+            if !new_battle {
+                if let Some(window) = self.tactical_window.filter(|window| window.kind == kind) {
+                    return Ok(CommittedTacticalPhase {
+                        window: Some(window),
+                        events: Vec::new(),
+                        removed_content: Vec::new(),
+                    });
+                }
+            }
+
+            let spec = contextual_spec(kind, subject, WindowOwner::StrategicRoot);
+            let command = self
+                .tactical_window
+                .map_or(WindowCommand::Open(spec), |old| WindowCommand::Replace {
+                    old: old.id,
+                    new: spec,
+                });
+            let commit = self.manager.apply(command)?;
+            self.record_transition(&commit.transition, &commit.events);
+            let removed_content = self.release_matching_content(&commit.events);
+            let id = match commit.transition {
+                WindowTransition::Opened { id } | WindowTransition::Replaced { new: id, .. } => id,
+                _ => unreachable!("tactical phase sync only opens or replaces"),
+            };
+            if let Some((_, next)) = allocated_subject {
+                self.next_battle_subject = next;
+            }
+            self.battle_session_token = battle_session;
+            self.battle_subject = Some(subject);
+            let window = TacticalWindowIdentity { id, subject, kind };
+            self.attached_content.insert(id);
+            self.tactical_window = Some(window);
+            return Ok(CommittedTacticalPhase {
+                window: Some(window),
+                events: commit.events,
+                removed_content,
+            });
+        }
+
+        let mut events = Vec::new();
+        let mut removed_content = Vec::new();
+        if let Some(window) = self.tactical_window {
+            let commit = self.manager.apply(WindowCommand::Close(window.id))?;
+            self.record_transition(&commit.transition, &commit.events);
+            removed_content = self.release_matching_content(&commit.events);
+            events = commit.events;
+            self.tactical_window = None;
+        }
+        if phase == TacticalWindowPhase::Inactive {
+            self.battle_session_token = None;
+            self.battle_subject = None;
+        } else {
+            let subject = subject.expect("combat belongs to an active battle subject");
+            if let Some((_, next)) = allocated_subject {
+                self.next_battle_subject = next;
+            }
+            self.battle_session_token = battle_session;
+            self.battle_subject = Some(subject);
+        }
+        Ok(CommittedTacticalPhase {
+            window: None,
+            events,
+            removed_content,
+        })
+    }
+
+    /// Commits an explicitly identified battle session and scene before the
+    /// next immutable routing snapshot. A changed session always gets a fresh
+    /// subject, even when Results transitions directly to a new Alert.
+    pub fn commit_scene_phase_for_battle(
+        &mut self,
+        scene: WindowScene,
+        battle_session: Option<u64>,
+        tactical_phase: TacticalWindowPhase,
+    ) -> Result<CommittedTacticalPhase, WindowError> {
+        let mut events = Vec::new();
+        let mut removed_content = Vec::new();
+
+        if scene == WindowScene::Galaxy {
+            let retired =
+                self.commit_tactical_phase_for_battle(None, TacticalWindowPhase::Inactive)?;
+            events.extend(retired.events);
+            removed_content.extend(retired.removed_content);
+        }
+
+        events.extend(self.enter_scene(scene));
+        if scene == WindowScene::Tactical {
+            let committed =
+                self.commit_tactical_phase_for_battle(battle_session, tactical_phase)?;
+            events.extend(committed.events);
+            removed_content.extend(committed.removed_content);
+            return Ok(CommittedTacticalPhase {
+                window: committed.window,
+                events,
+                removed_content,
+            });
+        }
+
+        Ok(CommittedTacticalPhase {
+            window: self.tactical_window,
+            events,
+            removed_content,
+        })
+    }
+
+    /// Advances a tactical modal only when the deferred action still names
+    /// the exact live battle and window identity. A stale prior-frame action
+    /// therefore cannot close a newer battle's modal.
+    pub fn commit_tactical_transition_if_exact(
+        &mut self,
+        battle_session: u64,
+        window: TacticalWindowIdentity,
+        next_phase: TacticalWindowPhase,
+    ) -> Result<Option<CommittedTacticalPhase>, WindowError> {
+        let valid_transition = matches!(
+            (window.kind, next_phase),
+            (WindowKind::BattleAlert, TacticalWindowPhase::Combat)
+                | (WindowKind::BattleAlert, TacticalWindowPhase::Results)
+                | (WindowKind::BattleResults, TacticalWindowPhase::Inactive)
+        );
+        if !valid_transition
+            || self.battle_session_token != Some(battle_session)
+            || self.battle_subject != Some(window.subject)
+            || self.tactical_window != Some(window)
+        {
+            return Ok(None);
+        }
+        let next_session = (next_phase != TacticalWindowPhase::Inactive).then_some(battle_session);
+        self.commit_tactical_phase_for_battle(next_session, next_phase)
+            .map(Some)
+    }
+
+    /// Commits scene membership and the authoritative tactical phase before
+    /// the next immutable routing snapshot. This compatibility entry point
+    /// retains the currently observed battle; production supplies its token
+    /// through [`Self::commit_scene_phase_for_battle`].
+    #[cfg(test)]
+    pub fn commit_scene_phase(
+        &mut self,
+        scene: WindowScene,
+        tactical_phase: TacticalWindowPhase,
+    ) -> Result<CommittedTacticalPhase, WindowError> {
+        let battle = (tactical_phase != TacticalWindowPhase::Inactive)
+            .then_some(self.battle_session_token.unwrap_or(0));
+        self.commit_scene_phase_for_battle(scene, battle, tactical_phase)
+    }
+
+    /// Reports the active tactical modal against the exact frozen snapshot.
+    /// A phase mismatch stays registered as unpaintable so reconciliation
+    /// cannot expose the command-center underlay permissively.
+    #[must_use]
+    pub fn tactical_content_reports(
+        &self,
+        frame: &RoutingSnapshot,
+        phase: TacticalWindowPhase,
+    ) -> Vec<ContentReport> {
+        let Some(window) = self
+            .tactical_window
+            .filter(|window| frame.key(window.id).is_some())
+        else {
+            return Vec::new();
+        };
+        let ready = matches!(
+            (window.kind, phase),
+            (WindowKind::BattleAlert, TacticalWindowPhase::Alert)
+                | (WindowKind::BattleResults, TacticalWindowPhase::Results)
+        );
+        vec![ContentReport {
+            window: window.id,
+            status: if ready {
+                ContentStatus::Ready
+            } else {
+                ContentStatus::Unpaintable
+            },
+        }]
+    }
+
     /// Switches active membership before the next frame snapshot is created.
     pub fn enter_scene(&mut self, scene: WindowScene) -> Vec<WindowEvent> {
         if self.scene == scene {
@@ -1019,9 +1315,13 @@ impl StrategicWindowing {
     )]
     pub fn reset_session(&mut self) -> Vec<WindowEvent> {
         self.pending.clear();
+        self.pending_galaxy.clear();
         self.galaxy.clear();
         self.tactical.clear();
         self.attached_content.clear();
+        self.battle_session_token = None;
+        self.battle_subject = None;
+        self.tactical_window = None;
         self.scene = WindowScene::Galaxy;
         self.manager.reset_session()
     }
@@ -1863,6 +2163,408 @@ mod tests {
             WindowKey::contextual(WindowKind::Status, first),
             WindowKey::contextual(WindowKind::Status, second)
         );
+    }
+
+    #[test]
+    fn tactical_windowing_phase_change_uses_same_battle_subject_distinct_kind() {
+        use rebellion_render::tactical_view::TacticalWindowPhase;
+        use rebellion_windowing::CloseReason;
+
+        let mut coordinator = StrategicWindowing::new();
+        coordinator.enter_scene(WindowScene::Tactical);
+
+        let alert = coordinator
+            .commit_tactical_phase(TacticalWindowPhase::Alert)
+            .expect("Battle Alert opens");
+        let alert_window = alert.window.expect("Alert owns a window");
+        let alert_frame = coordinator.begin_frame();
+
+        let results = coordinator
+            .commit_tactical_phase(TacticalWindowPhase::Results)
+            .expect("Results atomically replaces Alert");
+        let results_window = results.window.expect("Results owns a window");
+
+        assert_eq!(alert_window.subject, results_window.subject);
+        assert_eq!(alert_window.kind, WindowKind::BattleAlert);
+        assert_eq!(results_window.kind, WindowKind::BattleResults);
+        assert_ne!(alert_window.id, results_window.id);
+        assert_eq!(results.removed_content, [alert_window.id]);
+        assert!(results.events.iter().any(|event| matches!(
+            event,
+            WindowEvent::Closed {
+                window,
+                reason: CloseReason::Replaced,
+                ..
+            } if *window == alert_window.id
+        )));
+        assert!(!coordinator.has_content(alert_window.id));
+        assert!(coordinator.has_content(results_window.id));
+        assert_eq!(alert_frame.active_modal(), Some(alert_window.id));
+        assert_eq!(
+            coordinator.begin_frame().active_modal(),
+            Some(results_window.id)
+        );
+    }
+
+    #[test]
+    fn tactical_windowing_back_to_back_battles_allocate_distinct_subjects() {
+        use rebellion_render::tactical_view::TacticalWindowPhase;
+
+        let mut coordinator = StrategicWindowing::new();
+        let old_results = coordinator
+            .commit_scene_phase_for_battle(
+                WindowScene::Tactical,
+                Some(41),
+                TacticalWindowPhase::Results,
+            )
+            .unwrap()
+            .window
+            .unwrap();
+        let old_frame = coordinator.begin_frame();
+
+        let new_alert = coordinator
+            .commit_scene_phase_for_battle(
+                WindowScene::Tactical,
+                Some(42),
+                TacticalWindowPhase::Alert,
+            )
+            .unwrap()
+            .window
+            .unwrap();
+
+        assert_ne!(new_alert.subject, old_results.subject);
+        assert_ne!(new_alert.id, old_results.id);
+        assert_eq!(old_frame.active_modal(), Some(old_results.id));
+        assert_eq!(coordinator.begin_frame().active_modal(), Some(new_alert.id));
+    }
+
+    #[test]
+    fn tactical_windowing_result_destination_waits_for_the_galaxy_scene() {
+        use rebellion_render::tactical_view::TacticalWindowPhase;
+
+        let (world, system) = fleet_world();
+        let state = SystemWindowState::default();
+        let mut coordinator = StrategicWindowing::new();
+        coordinator
+            .commit_scene_phase_for_battle(
+                WindowScene::Tactical,
+                Some(7),
+                TacticalWindowPhase::Results,
+            )
+            .unwrap();
+        let prepared = state
+            .prepare_open(
+                &world,
+                system,
+                (85, 55),
+                CockpitFaction::Alliance,
+                fleet_layout(),
+            )
+            .unwrap();
+
+        coordinator.enqueue_galaxy_system_open(prepared);
+        assert!(coordinator.apply_pending().is_empty());
+
+        coordinator
+            .commit_scene_phase_for_battle(WindowScene::Galaxy, None, TacticalWindowPhase::Inactive)
+            .unwrap();
+        let applied = coordinator.apply_pending();
+        let system_window = applied[0].system_content_id.unwrap();
+        assert!(coordinator.begin_frame().is_visible(system_window));
+
+        coordinator
+            .commit_scene_phase_for_battle(
+                WindowScene::Tactical,
+                Some(8),
+                TacticalWindowPhase::Combat,
+            )
+            .unwrap();
+        assert!(!coordinator.begin_frame().is_visible(system_window));
+    }
+
+    #[test]
+    fn tactical_windowing_combat_gap_retains_the_battle_subject() {
+        use rebellion_render::tactical_view::TacticalWindowPhase;
+
+        let mut coordinator = StrategicWindowing::new();
+        let alert = coordinator
+            .commit_scene_phase(WindowScene::Tactical, TacticalWindowPhase::Alert)
+            .unwrap()
+            .window
+            .unwrap();
+
+        let combat = coordinator
+            .commit_scene_phase(WindowScene::Tactical, TacticalWindowPhase::Combat)
+            .unwrap();
+        assert_eq!(combat.window, None);
+
+        let results = coordinator
+            .commit_scene_phase(WindowScene::Tactical, TacticalWindowPhase::Results)
+            .unwrap()
+            .window
+            .unwrap();
+        assert_eq!(results.subject, alert.subject);
+        assert_eq!(results.kind, WindowKind::BattleResults);
+    }
+
+    #[test]
+    fn tactical_windowing_suspension_preserves_the_exact_modal_identity() {
+        use rebellion_render::tactical_view::TacticalWindowPhase;
+
+        let mut coordinator = StrategicWindowing::new();
+        let alert = coordinator
+            .commit_scene_phase(WindowScene::Tactical, TacticalWindowPhase::Alert)
+            .unwrap()
+            .window
+            .unwrap();
+
+        let suspended = coordinator
+            .commit_scene_phase(WindowScene::Suspended, TacticalWindowPhase::Alert)
+            .unwrap();
+        assert_eq!(suspended.window, Some(alert));
+        assert_eq!(coordinator.begin_frame().active_modal(), None);
+
+        let restored = coordinator
+            .commit_scene_phase(WindowScene::Tactical, TacticalWindowPhase::Alert)
+            .unwrap();
+        assert_eq!(restored.window, Some(alert));
+        assert_eq!(coordinator.begin_frame().active_modal(), Some(alert.id));
+    }
+
+    #[test]
+    fn tactical_windowing_dormant_galaxy_modal_does_not_block_battle_input() {
+        use rebellion_render::tactical_view::TacticalWindowPhase;
+
+        let mut coordinator = StrategicWindowing::new();
+        coordinator.enqueue(WindowCommand::Open(singleton_spec(
+            WindowKind::Encyclopedia,
+            WindowOwner::StrategicRoot,
+        )));
+        let galaxy_modal = opened_id(&coordinator.apply_pending()[0]);
+        assert!(coordinator.attach_content(galaxy_modal));
+
+        let alert = coordinator
+            .commit_scene_phase_for_battle(
+                WindowScene::Tactical,
+                Some(41),
+                TacticalWindowPhase::Alert,
+            )
+            .expect("Battle Alert opens while the Encyclopedia is dormant")
+            .window
+            .expect("Battle Alert receives a manager identity");
+        let battle_frame = coordinator.begin_frame();
+
+        assert_eq!(alert.kind, WindowKind::BattleAlert);
+        assert_eq!(battle_frame.active_modal(), Some(alert.id));
+        assert_eq!(
+            battle_frame.key(alert.id),
+            Some(WindowKey::contextual(alert.kind, alert.subject))
+        );
+        assert_eq!(battle_frame.key(galaxy_modal), None);
+        assert!(coordinator.has_content(galaxy_modal));
+    }
+
+    #[test]
+    fn tactical_windowing_alert_blocks_command_center_outside_panel() {
+        use rebellion_render::tactical_view::TacticalWindowPhase;
+
+        let mut coordinator = StrategicWindowing::new();
+        let committed = coordinator
+            .commit_scene_phase(WindowScene::Tactical, TacticalWindowPhase::Alert)
+            .expect("Battle Alert opens before the tactical snapshot");
+        let alert = committed.window.expect("Alert owns a window").id;
+        let frame = coordinator.begin_frame();
+
+        assert_eq!(frame.active_modal(), Some(alert));
+        assert_eq!(
+            frame.pointer_route(&BTreeSet::new()).target,
+            RouteTarget::BlockedBy(alert)
+        );
+        assert_eq!(frame.keyboard_route().bubble, BubblePolicy::StopAtWindow);
+        assert_eq!(
+            coordinator.tactical_content_reports(&frame, TacticalWindowPhase::Alert),
+            [ContentReport {
+                window: alert,
+                status: ContentStatus::Ready,
+            }]
+        );
+    }
+
+    #[test]
+    fn tactical_windowing_results_blocks_underlay_until_next_snapshot() {
+        use rebellion_render::tactical_view::TacticalWindowPhase;
+        use rebellion_windowing::CloseReason;
+
+        let mut coordinator = StrategicWindowing::new();
+        let results = coordinator
+            .commit_scene_phase(WindowScene::Tactical, TacticalWindowPhase::Results)
+            .expect("Battle Results opens")
+            .window
+            .expect("Results owns a window")
+            .id;
+        let closing_frame = coordinator.begin_frame();
+
+        let closed = coordinator
+            .commit_scene_phase(WindowScene::Tactical, TacticalWindowPhase::Inactive)
+            .expect("the exact Results identity closes");
+
+        assert_eq!(closed.removed_content, [results]);
+        assert!(closed.events.iter().any(|event| matches!(
+            event,
+            WindowEvent::Closed {
+                window,
+                reason: CloseReason::Requested,
+                ..
+            } if *window == results
+        )));
+        assert_eq!(closing_frame.active_modal(), Some(results));
+        assert_eq!(
+            closing_frame.pointer_route(&BTreeSet::new()).target,
+            RouteTarget::BlockedBy(results)
+        );
+        assert_eq!(coordinator.begin_frame().active_modal(), None);
+    }
+
+    #[test]
+    fn tactical_windowing_new_campaign_discards_old_queued_confirm() {
+        use rebellion_render::tactical_view::TacticalWindowPhase;
+
+        let mut coordinator = StrategicWindowing::new();
+        let old_results = coordinator
+            .commit_scene_phase(WindowScene::Tactical, TacticalWindowPhase::Results)
+            .unwrap()
+            .window
+            .unwrap();
+        coordinator.enqueue(WindowCommand::Close(old_results.id));
+
+        coordinator.reset_session();
+        assert!(coordinator.apply_pending().is_empty());
+        let new_alert = coordinator
+            .commit_scene_phase(WindowScene::Tactical, TacticalWindowPhase::Alert)
+            .unwrap()
+            .window
+            .unwrap();
+
+        assert_ne!(new_alert.id, old_results.id);
+        assert_ne!(new_alert.subject, old_results.subject);
+        assert_eq!(coordinator.begin_frame().active_modal(), Some(new_alert.id));
+    }
+
+    #[test]
+    fn tactical_windowing_scene_switch_cancels_capture_and_orphan_release() {
+        use rebellion_render::tactical_view::TacticalWindowPhase;
+        use rebellion_windowing::CaptureCancelReason;
+
+        let mut coordinator = StrategicWindowing::new();
+        coordinator.enqueue(WindowCommand::Open(contextual_spec(
+            WindowKind::Fleet,
+            SubjectId::new(1, 77),
+            WindowOwner::StrategicRoot,
+        )));
+        let galaxy_window = opened_id(&coordinator.apply_pending()[0]);
+        coordinator.enqueue(WindowCommand::CapturePointer(galaxy_window));
+        assert!(coordinator.apply_pending()[0].result.is_ok());
+        assert_eq!(
+            coordinator.begin_frame().capture_owner(),
+            Some(galaxy_window)
+        );
+
+        let committed = coordinator
+            .commit_scene_phase(WindowScene::Tactical, TacticalWindowPhase::Combat)
+            .unwrap();
+
+        assert!(committed.events.contains(&WindowEvent::CaptureCancelled {
+            window: galaxy_window,
+            reason: CaptureCancelReason::SceneChanged,
+        }));
+        assert_eq!(coordinator.begin_frame().capture_owner(), None);
+        assert_eq!(
+            coordinator
+                .begin_frame()
+                .pointer_route(&BTreeSet::new())
+                .target,
+            RouteTarget::StrategicRoot
+        );
+    }
+
+    #[test]
+    fn tactical_windowing_return_restores_only_valid_galaxy_content() {
+        use rebellion_render::tactical_view::TacticalWindowPhase;
+        use rebellion_windowing::ContentStatus;
+
+        let mut coordinator = StrategicWindowing::new();
+        for subject in [11, 12] {
+            coordinator.enqueue(WindowCommand::Open(contextual_spec(
+                WindowKind::Fleet,
+                SubjectId::new(1, subject),
+                WindowOwner::StrategicRoot,
+            )));
+        }
+        let opened = coordinator.apply_pending();
+        let valid = opened_id(&opened[0]);
+        let stale = opened_id(&opened[1]);
+        assert!(coordinator.attach_content(valid));
+        assert!(coordinator.attach_content(stale));
+        coordinator
+            .commit_scene_phase(WindowScene::Tactical, TacticalWindowPhase::Combat)
+            .unwrap();
+
+        coordinator
+            .commit_scene_phase(WindowScene::Galaxy, TacticalWindowPhase::Inactive)
+            .unwrap();
+        let return_candidate = coordinator.begin_frame();
+        let reconciliation = coordinator.reconcile(
+            &return_candidate,
+            &[
+                ContentReport {
+                    window: valid,
+                    status: ContentStatus::Ready,
+                },
+                ContentReport {
+                    window: stale,
+                    status: ContentStatus::Absent,
+                },
+            ],
+        );
+
+        assert_eq!(reconciliation.removed, [stale]);
+        assert!(return_candidate.paint_order().contains(&stale));
+        let first_galaxy_frame = coordinator.begin_production_frame(
+            ApplicationInputLocks::default(),
+            LegacyInputBlockers::default(),
+        );
+        assert_eq!(first_galaxy_frame.snapshot().paint_order(), [valid]);
+        assert_eq!(first_galaxy_frame.snapshot().active_modal(), None);
+        assert!(coordinator.has_content(valid));
+        assert!(!coordinator.has_content(stale));
+    }
+
+    #[test]
+    fn tactical_windowing_unpaintable_results_remains_fail_closed() {
+        use rebellion_render::tactical_view::TacticalWindowPhase;
+
+        let mut coordinator = StrategicWindowing::new();
+        let results = coordinator
+            .commit_scene_phase(WindowScene::Tactical, TacticalWindowPhase::Results)
+            .unwrap()
+            .window
+            .unwrap()
+            .id;
+        let frame = coordinator.begin_frame();
+
+        let reports = coordinator.tactical_content_reports(&frame, TacticalWindowPhase::Combat);
+        let reconciliation = coordinator.reconcile(&frame, &reports);
+
+        assert_eq!(
+            reports,
+            [ContentReport {
+                window: results,
+                status: ContentStatus::Unpaintable,
+            }]
+        );
+        assert_eq!(reconciliation.blocking_unpainted, [results]);
+        assert!(reconciliation.removed.is_empty());
+        assert_eq!(coordinator.begin_frame().active_modal(), Some(results));
     }
 
     #[test]
