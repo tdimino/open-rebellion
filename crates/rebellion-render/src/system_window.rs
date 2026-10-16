@@ -19,7 +19,10 @@ use rebellion_core::ids::{DatId, FleetKey, SystemKey};
 use rebellion_core::manufacturing::{ManufacturingState, ProductionArea};
 use rebellion_core::missions::MissionState;
 use rebellion_core::world::{ControlKind, GameWorld};
-use rebellion_windowing::WindowId;
+use rebellion_windowing::{
+    ContentReport, ContentStatus, RoutingSnapshot, SubjectId, WindowId, WindowKind, WindowOwner,
+    WindowSpec, WindowTransition,
+};
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{CockpitFaction, CockpitLayout};
@@ -31,6 +34,10 @@ use crate::manufacturing_window::{
     YARD_COLUMN,
 };
 use crate::object_menu::MenuObject;
+use crate::windowing_input::{
+    FrameInputRouter, InputEventId, InputRecipient, PointerButtonId, PointerPhase,
+};
+use crate::windowing_policy::{contextual_spec, system_subject};
 
 pub const SYSTEM_WINDOW_CLIENT_WIDTH: f32 = 226.0;
 /// `FUN_0045aac0` creates type 9 at 226 by 304 (`0xe2` by `0x130`).
@@ -168,6 +175,10 @@ enum Relationship {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct OpenSystemWindow {
+    /// Opaque session identity allocated by the shared window manager.
+    /// Fixture-only direct opens deliberately have no production identity.
+    id: Option<WindowId>,
+    subject: Option<SubjectId>,
     system: SystemKey,
     logical_position: (i16, i16),
     tab: SystemWindowTab,
@@ -178,10 +189,41 @@ struct OpenSystemWindow {
     selected_band: Option<ProductionArea>,
 }
 
+/// Validated System content held aside until the manager accepts its stable
+/// `(System, system DAT ID)` identity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PreparedSystemWindow {
+    spec: WindowSpec,
+    faction: CockpitFaction,
+    system: SystemKey,
+    logical_position: (i16, i16),
+}
+
+impl PreparedSystemWindow {
+    /// Complete manager declaration for this content candidate.
+    #[must_use]
+    pub const fn spec(&self) -> WindowSpec {
+        self.spec
+    }
+
+    /// Runtime system identity retained beside the stable DAT subject.
+    #[must_use]
+    pub const fn system(&self) -> SystemKey {
+        self.system
+    }
+}
+
 /// A minimized window on the galaxy view's rail.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RailEntry {
     System(OpenSystemWindow),
+    /// Temporary projection of manager-owned System content. The content
+    /// itself stays attached to its exact identity while minimized.
+    ManagedSystem {
+        id: WindowId,
+        system: SystemKey,
+        logical_position: (i16, i16),
+    },
     /// A Fleet window (type 4); its icon comes from `FUN_004a76e0`.
     Fleet {
         id: WindowId,
@@ -205,24 +247,33 @@ impl RailEntry {
     const fn system(&self) -> SystemKey {
         match self {
             Self::System(window) => window.system,
-            Self::Fleet { system, .. }
+            Self::ManagedSystem { system, .. }
+            | Self::Fleet { system, .. }
             | Self::Defenses { system, .. }
             | Self::Missions { system, .. } => *system,
         }
     }
 
     const fn is_system_window(&self) -> bool {
-        matches!(self, Self::System(_))
+        matches!(self, Self::System(_) | Self::ManagedSystem { .. })
     }
 
     /// One slot per window: the window type and its system.
     fn same_window(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::Fleet { id: left, .. }, Self::Fleet { id: right, .. }) => left == right,
+            (Self::ManagedSystem { id: left, .. }, Self::ManagedSystem { id: right, .. })
+            | (Self::Fleet { id: left, .. }, Self::Fleet { id: right, .. }) => left == right,
             _ => {
                 self.system() == other.system()
                     && std::mem::discriminant(self) == std::mem::discriminant(other)
             }
+        }
+    }
+
+    const fn managed_id(&self) -> Option<WindowId> {
+        match self {
+            Self::ManagedSystem { id, .. } | Self::Fleet { id, .. } => Some(*id),
+            Self::System(_) | Self::Defenses { .. } | Self::Missions { .. } => None,
         }
     }
 }
@@ -250,10 +301,88 @@ impl Default for SystemWindowState {
 }
 
 impl SystemWindowState {
+    /// Allocates a temporary cross-family serial after the shared manager has
+    /// already accepted a System activation. This does not order System
+    /// content; the routing snapshot remains its sole order authority.
+    #[must_use]
+    pub fn next_legacy_bridge_serial() -> u64 {
+        crate::window_focus::next_serial()
+    }
+
     /// Whether any window of this kind is open.
     #[must_use]
     pub fn any_open(&self) -> bool {
         !self.windows.is_empty()
+    }
+
+    /// Validates and prepares System content without mutating the live store.
+    /// The stable subject is the system's original DAT identity.
+    #[must_use]
+    pub fn prepare_open(
+        &self,
+        world: &GameWorld,
+        system: SystemKey,
+        logical_position: (i16, i16),
+        faction: CockpitFaction,
+        layout: CockpitLayout,
+    ) -> Option<PreparedSystemWindow> {
+        let subject = system_subject(world, system)?;
+        Some(PreparedSystemWindow {
+            spec: contextual_spec(WindowKind::System, subject, WindowOwner::StrategicRoot),
+            faction,
+            system,
+            logical_position: clamp_to_galaxy(logical_position, layout),
+        })
+    }
+
+    /// Publishes new System content, or confirms the exact preserved content,
+    /// only after a successful manager open commit.
+    pub fn commit_open(
+        &mut self,
+        prepared: PreparedSystemWindow,
+        transition: &WindowTransition,
+    ) -> Option<WindowId> {
+        let subject = prepared.spec.key.subject?;
+        match *transition {
+            WindowTransition::Opened { id } => {
+                if self.windows.iter().any(|window| {
+                    window.id == Some(id)
+                        || window.subject == Some(subject)
+                        || window.system == prepared.system
+                }) {
+                    return None;
+                }
+                if self.windows.is_empty() {
+                    self.faction = prepared.faction;
+                } else if self.faction != prepared.faction {
+                    return None;
+                }
+                self.windows.push(OpenSystemWindow {
+                    id: Some(id),
+                    subject: Some(subject),
+                    system: prepared.system,
+                    logical_position: prepared.logical_position,
+                    tab: SystemWindowTab::Overview,
+                    selected_item: None,
+                    selected_band: None,
+                });
+                Some(id)
+            }
+            WindowTransition::Existing { id, .. } => {
+                if self.faction != prepared.faction {
+                    return None;
+                }
+                self.windows
+                    .iter()
+                    .any(|window| {
+                        window.id == Some(id)
+                            && window.subject == Some(subject)
+                            && window.system == prepared.system
+                    })
+                    .then_some(id)
+            }
+            _ => None,
+        }
     }
 
     /// Open at the original logical double-click point, clamped so the client
@@ -281,6 +410,8 @@ impl SystemWindowState {
         let logical_position = clamp_to_galaxy(logical_position, layout);
         self.focus_serial = crate::window_focus::next_serial();
         self.windows.push(OpenSystemWindow {
+            id: None,
+            subject: None,
             system,
             logical_position,
             tab: SystemWindowTab::Overview,
@@ -288,6 +419,75 @@ impl SystemWindowState {
             selected_band: None,
         });
         true
+    }
+
+    /// Exact manager identity attached to `system`'s committed content.
+    #[must_use]
+    pub fn window_id(&self, system: SystemKey) -> Option<WindowId> {
+        self.windows
+            .iter()
+            .find(|window| window.system == system)
+            .and_then(|window| window.id)
+    }
+
+    /// Whether `system`'s exact content identity participates in this frozen
+    /// frame. Direct fixture content has no manager identity and stays visible.
+    #[must_use]
+    pub fn window_is_visible(&self, snapshot: &RoutingSnapshot, system: SystemKey) -> bool {
+        self.windows.iter().any(|window| {
+            window.system == system && window.id.is_none_or(|id| snapshot.is_visible(id))
+        })
+    }
+
+    /// Whether exact manager-owned System content remains attached.
+    #[must_use]
+    pub fn contains_window(&self, id: WindowId) -> bool {
+        self.windows.iter().any(|window| window.id == Some(id))
+    }
+
+    /// Removes only content and temporary rail projections named by manager
+    /// teardown receipts.
+    pub fn remove_content(&mut self, removed: &[WindowId]) {
+        self.windows
+            .retain(|window| window.id.is_none_or(|id| !removed.contains(&id)));
+        self.rail
+            .retain(|entry| entry.managed_id().is_none_or(|id| !removed.contains(&id)));
+    }
+
+    /// Reports every active System identity in the frozen snapshot, including
+    /// minimized history entries whose content remains attached.
+    #[must_use]
+    pub fn content_reports(
+        &self,
+        snapshot: &RoutingSnapshot,
+        world: &GameWorld,
+    ) -> Vec<ContentReport> {
+        snapshot
+            .paint_order()
+            .iter()
+            .chain(snapshot.presentation_history())
+            .copied()
+            .filter(|&id| {
+                snapshot
+                    .key(id)
+                    .is_some_and(|key| key.kind == WindowKind::System)
+            })
+            .map(|id| {
+                let ready = self.windows.iter().any(|window| {
+                    window.id == Some(id)
+                        && world.systems.contains_key(window.system)
+                        && system_subject(world, window.system) == window.subject
+                });
+                ContentReport {
+                    window: id,
+                    status: if ready {
+                        ContentStatus::Ready
+                    } else {
+                        ContentStatus::Absent
+                    },
+                }
+            })
+            .collect()
     }
 
     /// Open `system`'s window on `tab`.
@@ -367,6 +567,47 @@ impl SystemWindowState {
         })
     }
 
+    /// Whether visible System content covers `point`. Minimized manager
+    /// content remains attached but cannot block the strategic root.
+    #[must_use]
+    pub fn contains_visible_screen_point(
+        &self,
+        snapshot: &RoutingSnapshot,
+        layout: CockpitLayout,
+        point: (f32, f32),
+    ) -> bool {
+        self.windows.iter().any(|window| {
+            window.id.is_none_or(|id| snapshot.is_visible(id))
+                && rect_contains(
+                    window_screen_rect(*window, layout),
+                    egui::pos2(point.0, point.1),
+                )
+        })
+    }
+
+    /// Exact visible manager identity whose System rectangle covers `point`
+    /// when egui reports that same content layer as topmost.
+    #[must_use]
+    pub fn hit_window_ids(
+        &self,
+        snapshot: &RoutingSnapshot,
+        layout: CockpitLayout,
+        point: (f32, f32),
+        top_layer: Option<egui::LayerId>,
+    ) -> std::collections::BTreeSet<WindowId> {
+        let point = egui::pos2(point.0, point.1);
+        self.windows
+            .iter()
+            .filter(|window| top_layer.is_some_and(|layer| layer.id == window_area_id(**window)))
+            .filter_map(|window| {
+                window.id.filter(|id| {
+                    snapshot.is_visible(*id)
+                        && rect_contains(window_screen_rect(*window, layout), point)
+                })
+            })
+            .collect()
+    }
+
     #[must_use]
     pub fn window_count(&self) -> usize {
         self.windows.len()
@@ -399,7 +640,7 @@ impl SystemWindowState {
     pub fn release_target(&self, layer: egui::LayerId) -> Option<SystemKey> {
         self.windows
             .iter()
-            .find(|window| area_id(window.system) == layer.id)
+            .find(|window| window_area_id(**window) == layer.id)
             .map(|window| window.system)
     }
 
@@ -413,7 +654,7 @@ impl SystemWindowState {
     pub fn rail_entries(&self) -> impl Iterator<Item = (SystemKey, &'static str)> + '_ {
         self.rail.iter().map(|entry| {
             let kind = match entry {
-                RailEntry::System(_) => "system",
+                RailEntry::System(_) | RailEntry::ManagedSystem { .. } => "system",
                 RailEntry::Fleet { .. } => "fleet",
                 RailEntry::Defenses { .. } => "defenses",
                 RailEntry::Missions { .. } => "missions",
@@ -451,7 +692,7 @@ impl SystemWindowState {
         let Some(index) = self
             .windows
             .iter()
-            .position(|window| window.system == system)
+            .position(|window| window.id.is_none() && window.system == system)
         else {
             return false;
         };
@@ -479,8 +720,37 @@ impl SystemWindowState {
             return (false, None);
         };
         let window = self.windows.remove(index);
-        let evicted = Self::evicted_fleet(self.push_rail(RailEntry::System(window)));
+        let evicted = self
+            .push_rail(RailEntry::System(window))
+            .and_then(|entry| entry.managed_id());
         (true, evicted)
+    }
+
+    /// Put a manager-owned minimized System window on the temporary rail.
+    pub fn minimize_system_window(
+        &mut self,
+        id: WindowId,
+        system: SystemKey,
+        logical_position: (i16, i16),
+    ) -> Option<WindowId> {
+        self.push_rail(RailEntry::ManagedSystem {
+            id,
+            system,
+            logical_position,
+        })
+        .and_then(|entry| entry.managed_id())
+    }
+
+    /// Retire the exact temporary System rail projection after the manager
+    /// and content store have both committed a restore.
+    pub fn restore_system_window(&mut self, id: WindowId) -> bool {
+        let Some(index) = self.rail.iter().position(
+            |entry| matches!(entry, RailEntry::ManagedSystem { id: held, .. } if *held == id),
+        ) else {
+            return false;
+        };
+        self.rail.remove(index);
+        true
     }
 
     /// Put a minimized Fleet window on the rail (`0x466`).
@@ -490,11 +760,12 @@ impl SystemWindowState {
         system: SystemKey,
         logical_position: (i16, i16),
     ) -> Option<WindowId> {
-        Self::evicted_fleet(self.push_rail(RailEntry::Fleet {
+        self.push_rail(RailEntry::Fleet {
             id,
             system,
             logical_position,
-        }))
+        })
+        .and_then(|entry| entry.managed_id())
     }
 
     /// Retire the exact temporary Fleet rail projection after the shared
@@ -517,10 +788,11 @@ impl SystemWindowState {
         system: SystemKey,
         logical_position: (i16, i16),
     ) -> Option<WindowId> {
-        Self::evicted_fleet(self.push_rail(RailEntry::Defenses {
+        self.push_rail(RailEntry::Defenses {
             system,
             logical_position,
-        }))
+        })
+        .and_then(|entry| entry.managed_id())
     }
 
     /// Put a minimized Missions window on the rail (`0x466`).
@@ -529,17 +801,11 @@ impl SystemWindowState {
         system: SystemKey,
         logical_position: (i16, i16),
     ) -> Option<WindowId> {
-        Self::evicted_fleet(self.push_rail(RailEntry::Missions {
+        self.push_rail(RailEntry::Missions {
             system,
             logical_position,
-        }))
-    }
-
-    fn evicted_fleet(entry: Option<RailEntry>) -> Option<WindowId> {
-        entry.and_then(|entry| match entry {
-            RailEntry::Fleet { id, .. } => Some(id),
-            RailEntry::System(_) | RailEntry::Defenses { .. } | RailEntry::Missions { .. } => None,
         })
+        .and_then(|entry| entry.managed_id())
     }
 
     fn push_rail(&mut self, entry: RailEntry) -> Option<RailEntry> {
@@ -550,11 +816,9 @@ impl SystemWindowState {
     }
 
     fn restore(&mut self, system: SystemKey) -> bool {
-        let Some(index) = self
-            .rail
-            .iter()
-            .position(|entry| entry.is_system_window() && entry.system() == system)
-        else {
+        let Some(index) = self.rail.iter().position(
+            |entry| matches!(entry, RailEntry::System(window) if window.system == system),
+        ) else {
             return false;
         };
         if let RailEntry::System(window) = self.rail.remove(index) {
@@ -601,9 +865,19 @@ impl SystemWindowState {
 pub enum SystemWindowAction {
     FocusSector(SystemKey),
     SelectSystem(SystemKey),
-    /// A legacy System minimize displaced this exact manager-owned Fleet
-    /// projection from the shared twelve-slot rail.
-    EvictFleetWindow(WindowId),
+    /// A pointer activation requests shared raise/focus for this identity.
+    Activate(WindowId),
+    /// Close or stale content requests exact manager teardown.
+    Close(WindowId),
+    /// Manager-owned System content requests minimization. Content stays
+    /// attached until an explicit close/eviction receipt removes it.
+    MinimizeManaged {
+        window: WindowId,
+        system: SystemKey,
+        logical_position: (i16, i16),
+    },
+    /// A legacy rail insertion displaced this exact manager-owned detail.
+    EvictManagedWindow(WindowId),
     /// A right-button release on a band opens the object pop-up menu
     /// (`FUN_004ac5c0`) for the selection, at a 640 by 480 canvas point.
     OpenObjectMenu {
@@ -613,6 +887,12 @@ pub enum SystemWindowAction {
     },
     /// A click on a minimized Fleet window's rail slot restores it.
     RestoreFleetWindow {
+        id: WindowId,
+        system: SystemKey,
+        logical_position: (i16, i16),
+    },
+    /// A click on a minimized System window's rail slot restores the same ID.
+    RestoreSystemWindow {
         id: WindowId,
         system: SystemKey,
         logical_position: (i16, i16),
@@ -678,7 +958,105 @@ pub fn draw_system_windows(
     cache: &mut BmpCache,
     front: bool,
 ) -> Vec<SystemWindowAction> {
-    state.prepare_faction(faction);
+    draw_system_windows_with_snapshot(
+        ctx,
+        world,
+        movement,
+        fog,
+        missions,
+        manufacturing,
+        deliveries,
+        state,
+        faction,
+        layout,
+        cache,
+        None,
+        &[],
+        None,
+        front,
+    )
+}
+
+/// Draw manager-owned System content in the frozen manager order while the
+/// existing reference rail remains a temporary presentation adapter.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Keep explicit state and rendering inputs at this UI boundary; the rail's Missions icon reads the mission state."
+)]
+pub fn draw_managed_system_windows(
+    ctx: &egui::Context,
+    world: &GameWorld,
+    movement: &rebellion_core::movement::MovementState,
+    fog: &FogState,
+    missions: &MissionState,
+    manufacturing: &ManufacturingState,
+    deliveries: &DeliveryState,
+    state: &mut SystemWindowState,
+    faction: CockpitFaction,
+    layout: CockpitLayout,
+    cache: &mut BmpCache,
+    snapshot: &RoutingSnapshot,
+    pointer_events: &[(InputEventId, PointerPhase)],
+    router: &mut FrameInputRouter,
+    front: bool,
+) -> Vec<SystemWindowAction> {
+    draw_system_windows_with_snapshot(
+        ctx,
+        world,
+        movement,
+        fog,
+        missions,
+        manufacturing,
+        deliveries,
+        state,
+        faction,
+        layout,
+        cache,
+        Some(snapshot),
+        pointer_events,
+        Some(router),
+        front,
+    )
+}
+
+fn claim_system_pointer_event(
+    router: &mut FrameInputRouter,
+    events: &[(InputEventId, PointerPhase)],
+    window: WindowId,
+    phase: PointerPhase,
+) -> Option<InputEventId> {
+    events.iter().rev().find_map(|(event, candidate)| {
+        (*candidate == phase
+            && router.pointer_recipient(*event) == InputRecipient::Window(window)
+            && router.claim(*event, InputRecipient::Window(window)))
+        .then_some(*event)
+    })
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Shared implementation for production snapshots and fixture-only direct content."
+)]
+fn draw_system_windows_with_snapshot(
+    ctx: &egui::Context,
+    world: &GameWorld,
+    movement: &rebellion_core::movement::MovementState,
+    fog: &FogState,
+    missions: &MissionState,
+    manufacturing: &ManufacturingState,
+    deliveries: &DeliveryState,
+    state: &mut SystemWindowState,
+    faction: CockpitFaction,
+    layout: CockpitLayout,
+    cache: &mut BmpCache,
+    snapshot: Option<&RoutingSnapshot>,
+    pointer_events: &[(InputEventId, PointerPhase)],
+    mut router: Option<&mut FrameInputRouter>,
+    front: bool,
+) -> Vec<SystemWindowAction> {
+    if state.windows.iter().all(|window| window.id.is_none()) {
+        state.prepare_faction(faction);
+    }
     let mut actions: Vec<SystemWindowAction> = draw_reference_rail(
         ctx, world, movement, fog, missions, state, faction, layout, cache,
     )
@@ -690,52 +1068,134 @@ pub fn draw_system_windows(
         deliveries,
         fog,
     };
-    let windows = state.windows.clone();
-    let focused_system = windows.last().map(|window| window.system);
+    let mut windows = Vec::new();
+    if let Some(snapshot) = snapshot {
+        windows.extend(snapshot.paint_order().iter().filter_map(|id| {
+            if snapshot
+                .key(*id)
+                .is_some_and(|key| key.kind == WindowKind::System)
+            {
+                state
+                    .windows
+                    .iter()
+                    .find(|window| window.id == Some(*id))
+                    .copied()
+            } else {
+                None
+            }
+        }));
+    }
+    // Direct content exists only in renderer tests and explicit fixtures.
+    windows.extend(
+        state
+            .windows
+            .iter()
+            .filter(|window| window.id.is_none())
+            .copied(),
+    );
+    let focused_manager = snapshot.and_then(|frame| frame.focused().map(|focus| focus.window));
+    let focused_fixture_system = windows
+        .last()
+        .filter(|window| window.id.is_none())
+        .map(|window| window.system);
     for window in windows {
         let system = window.system;
-        let result = draw_system_window(
-            ctx,
-            sources,
-            window,
-            front && focused_system == Some(system),
-            faction,
-            layout,
-            cache,
-        );
-        if result.close {
-            state.close(system);
+        let focused = front
+            && match window.id {
+                Some(id) => focused_manager == Some(id),
+                None => focused_fixture_system == Some(system),
+            };
+        let result = draw_system_window(ctx, sources, window, focused, faction, layout, cache);
+        let pointer_mutation = result.focus
+            || result.close
+            || result.minimize
+            || result.focus_sector
+            || result.tab.is_some()
+            || result.item.is_some()
+            || result.band.is_some()
+            || result.object_menu.is_some();
+        let pointer_permitted = match (window.id, pointer_mutation, router.as_deref_mut()) {
+            (Some(id), true, Some(router)) => {
+                let phase = if result.object_menu.is_some() {
+                    PointerPhase::Release(PointerButtonId::Secondary)
+                } else {
+                    PointerPhase::Release(PointerButtonId::Primary)
+                };
+                claim_system_pointer_event(router, pointer_events, id, phase)
+                    .or_else(|| {
+                        (phase == PointerPhase::Release(PointerButtonId::Primary))
+                            .then(|| {
+                                claim_system_pointer_event(
+                                    router,
+                                    pointer_events,
+                                    id,
+                                    PointerPhase::Press(PointerButtonId::Primary),
+                                )
+                            })
+                            .flatten()
+                    })
+                    .is_some()
+            }
+            (Some(_), true, None) => false,
+            _ => true,
+        };
+        if (result.close && pointer_permitted) || !world.systems.contains_key(system) {
+            if let Some(id) = window.id {
+                actions.push(SystemWindowAction::Close(id));
+            } else {
+                state.close(system);
+            }
             continue;
         }
-        if result.minimize {
-            let (_, evicted) = state.minimize_with_eviction(system);
-            actions.extend(evicted.map(SystemWindowAction::EvictFleetWindow));
+        if result.minimize && pointer_permitted {
+            if let Some(id) = window.id {
+                actions.push(SystemWindowAction::MinimizeManaged {
+                    window: id,
+                    system,
+                    logical_position: window.logical_position,
+                });
+            } else {
+                let (_, evicted) = state.minimize_with_eviction(system);
+                actions.extend(evicted.map(SystemWindowAction::EvictManagedWindow));
+            }
             continue;
         }
-        if result.focus_sector {
+        if result.focus_sector && pointer_permitted {
             actions.push(SystemWindowAction::FocusSector(system));
-            state.close(system);
+            if let Some(id) = window.id {
+                actions.push(SystemWindowAction::Close(id));
+            } else {
+                state.close(system);
+            }
             continue;
         }
-        if let Some(tab) = result.tab {
-            state.select_tab(system, tab);
+        if pointer_permitted {
+            if let Some(tab) = result.tab {
+                state.select_tab(system, tab);
+            }
+            if let Some(item) = result.item {
+                state.select_item(system, item);
+            }
+            if let Some(area) = result.band {
+                state.select_band(system, area);
+            }
         }
-        if let Some(item) = result.item {
-            state.select_item(system, item);
-        }
-        if let Some(area) = result.band {
-            state.select_band(system, area);
-        }
-        if result.focus {
-            state.focus(system);
+        if result.focus && pointer_permitted {
+            if let Some(id) = window.id {
+                actions.push(SystemWindowAction::Activate(id));
+            } else {
+                state.focus(system);
+            }
             actions.push(SystemWindowAction::SelectSystem(system));
         }
-        if let Some((selection, point)) = result.object_menu {
-            actions.push(SystemWindowAction::OpenObjectMenu {
-                system,
-                selection,
-                point,
-            });
+        if pointer_permitted {
+            if let Some((selection, point)) = result.object_menu {
+                actions.push(SystemWindowAction::OpenObjectMenu {
+                    system,
+                    selection,
+                    point,
+                });
+            }
         }
     }
     actions
@@ -835,6 +1295,15 @@ fn draw_reference_rail(
             state.restore(window.system);
             None
         }
+        RailEntry::ManagedSystem {
+            id,
+            system,
+            logical_position,
+        } => Some(SystemWindowAction::RestoreSystemWindow {
+            id,
+            system,
+            logical_position,
+        }),
         RailEntry::Fleet {
             id,
             system,
@@ -909,7 +1378,7 @@ fn draw_system_window(
     });
     let scale = layout.scale;
     let screen_rect = window_screen_rect(window, layout);
-    let id = area_id(window.system);
+    let id = window_area_id(window);
     if focused {
         ctx.move_to_top(egui::LayerId::new(egui::Order::Foreground, id));
     }
@@ -1203,6 +1672,13 @@ fn draw_system_window(
 
 fn area_id(system: SystemKey) -> egui::Id {
     egui::Id::new(("original-system-window", system))
+}
+
+fn window_area_id(window: OpenSystemWindow) -> egui::Id {
+    window.id.map_or_else(
+        || area_id(window.system),
+        crate::windowing::managed_child_id,
+    )
 }
 
 fn tab_rect(window: egui::Rect, scale: f32, tab: SystemWindowTab) -> egui::Rect {
@@ -1618,6 +2094,166 @@ mod tests {
             });
         world.systems[system].production_facilities.push(key);
         FacilityItem::Production(key)
+    }
+
+    fn commit_prepared_system_window(
+        manager: &mut WindowManager,
+        state: &mut SystemWindowState,
+        prepared: PreparedSystemWindow,
+    ) -> (WindowId, WindowTransition) {
+        let commit = manager
+            .apply(WindowCommand::Open(prepared.spec()))
+            .expect("prepared System window should satisfy its declared policy");
+        let id = state
+            .commit_open(prepared, &commit.transition)
+            .expect("successful System open should publish or preserve content");
+        (id, commit.transition)
+    }
+
+    #[test]
+    fn system_window_shared_identity_preserves_content() {
+        // `strategic-windowing-toolkit.md`, Window-family matrix: type 9 is a
+        // subject-keyed Strategic-root detail whose reopen restores/raises.
+        let (mut world, systems) = fixture_world(1);
+        let system = systems[0];
+        let mine = add_mine(&mut world, system);
+        let mut manager = WindowManager::new();
+        let mut state = SystemWindowState::default();
+        let layout = layout(CockpitFaction::Alliance, 1.0);
+
+        let first = state
+            .prepare_open(&world, system, ORIGIN, CockpitFaction::Alliance, layout)
+            .expect("live system has a stable DAT subject");
+        assert_eq!(first.spec().key.kind, WindowKind::System);
+        assert_eq!(first.spec().owner, WindowOwner::StrategicRoot);
+        let (id, opened) = commit_prepared_system_window(&mut manager, &mut state, first);
+        assert_eq!(opened, WindowTransition::Opened { id });
+
+        let content = state.window_mut(system).unwrap();
+        content.tab = SystemWindowTab::Mines;
+        content.selected_item = Some(mine);
+        content.selected_band = Some(ProductionArea::ConstructionYard);
+
+        let reopened = state
+            .prepare_open(&world, system, (400, 300), CockpitFaction::Alliance, layout)
+            .unwrap();
+        let (reopened_id, transition) =
+            commit_prepared_system_window(&mut manager, &mut state, reopened);
+        assert_eq!(reopened_id, id);
+        assert!(matches!(
+            transition,
+            WindowTransition::Existing { id: existing, .. } if existing == id
+        ));
+        assert_eq!(state.window_count(), 1);
+        assert_eq!(
+            state.selection(system),
+            Some((
+                SystemWindowTab::Mines,
+                Some(ProductionArea::ConstructionYard)
+            ))
+        );
+        let content = state.window_mut(system).unwrap();
+        assert_eq!(content.logical_position, ORIGIN);
+        assert_eq!(content.selected_item, Some(mine));
+
+        manager.apply(WindowCommand::Minimize(id)).unwrap();
+        assert!(!state.window_is_visible(&manager.begin_frame(), system));
+        let restored = state
+            .prepare_open(&world, system, (500, 350), CockpitFaction::Alliance, layout)
+            .unwrap();
+        let (restored_id, transition) =
+            commit_prepared_system_window(&mut manager, &mut state, restored);
+        assert_eq!(restored_id, id);
+        assert!(matches!(
+            transition,
+            WindowTransition::Existing { id: existing, .. } if existing == id
+        ));
+        assert!(state.window_is_visible(&manager.begin_frame(), system));
+        assert_eq!(state.window_count(), 1);
+        assert_eq!(state.window_mut(system).unwrap().selected_item, Some(mine));
+    }
+
+    #[test]
+    fn system_window_stale_subject_does_not_retarget() {
+        // A stale runtime key must not acquire another system's DAT subject or
+        // mutate the content already attached to the manager-issued identity.
+        let (mut world, systems) = fixture_world(1);
+        let stale_system = systems[0];
+        let mut manager = WindowManager::new();
+        let mut state = SystemWindowState::default();
+        let layout = layout(CockpitFaction::Alliance, 1.0);
+        let prepared = state
+            .prepare_open(
+                &world,
+                stale_system,
+                ORIGIN,
+                CockpitFaction::Alliance,
+                layout,
+            )
+            .unwrap();
+        let (id, _) = commit_prepared_system_window(&mut manager, &mut state, prepared);
+        state.select_tab(stale_system, SystemWindowTab::Refineries);
+
+        let mut replacement = world.systems.remove(stale_system).unwrap();
+        replacement.dat_id = DatId::new(101);
+        replacement.name = "Replacement".into();
+        let replacement_system = world.systems.insert(replacement);
+        assert_ne!(replacement_system, stale_system);
+
+        assert!(state
+            .prepare_open(
+                &world,
+                stale_system,
+                (400, 300),
+                CockpitFaction::Alliance,
+                layout,
+            )
+            .is_none());
+        assert_eq!(state.window_id(stale_system), Some(id));
+        assert_eq!(
+            state.selection(stale_system),
+            Some((SystemWindowTab::Refineries, None))
+        );
+        assert_eq!(state.window_id(replacement_system), None);
+    }
+
+    #[test]
+    fn system_window_manager_order_is_independent_of_content_vector() {
+        // The System store retains content lookup order only; shared manager
+        // activation is the sole cross-family stack authority.
+        let (world, systems) = fixture_world(2);
+        let mut manager = WindowManager::new();
+        let mut state = SystemWindowState::default();
+        let layout = layout(CockpitFaction::Alliance, 1.0);
+        let mut ids = Vec::new();
+        for system in &systems {
+            let prepared = state
+                .prepare_open(&world, *system, ORIGIN, CockpitFaction::Alliance, layout)
+                .unwrap();
+            ids.push(commit_prepared_system_window(&mut manager, &mut state, prepared).0);
+        }
+        assert_eq!(
+            state
+                .windows
+                .iter()
+                .filter_map(|window| window.id)
+                .collect::<Vec<_>>(),
+            ids
+        );
+
+        state.select_tab(systems[0], SystemWindowTab::Mines);
+        manager.apply(WindowCommand::Activate(ids[0])).unwrap();
+
+        assert_eq!(
+            state
+                .windows
+                .iter()
+                .filter_map(|window| window.id)
+                .collect::<Vec<_>>(),
+            ids,
+            "local content mutation must not emulate a raise"
+        );
+        assert_eq!(manager.begin_frame().paint_order(), &[ids[1], ids[0]]);
     }
 
     /// A painted text's words, top-left corner, width and font size.
