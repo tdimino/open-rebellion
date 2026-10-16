@@ -15,6 +15,10 @@ use crate::message_log::{
     GameMessage, MessageId, MessageLog, MessageRail, MessageTarget, POST_SILENTLY,
 };
 use crate::scroll_bar::{ScrollBar, ScrollDrag, ScrollRange, TEXT_BAR_299D};
+use rebellion_windowing::{
+    ContentReport, ContentStatus, ExistingEffect, RoutingSnapshot, WindowId, WindowKind,
+    WindowOwner, WindowSpec, WindowTransition,
+};
 
 // ---------------------------------------------------------------------------
 // Shell constants (unchanged)
@@ -665,6 +669,10 @@ pub enum MessageIndexAction {
 /// Mutable state for the Message Index window.
 #[derive(Debug, Clone)]
 pub struct MessageIndexState {
+    /// Shared singleton identity accepted at the app commit boundary.
+    window_id: Option<WindowId>,
+    /// Whether the committed content could paint in the latest app pass.
+    paintable: bool,
     /// Current display mode.
     mode: IndexMode,
     /// The active category command (`0x79..0x82`), default All (`0x79`).
@@ -701,6 +709,8 @@ pub struct MessageIndexState {
 impl Default for MessageIndexState {
     fn default() -> Self {
         Self {
+            window_id: None,
+            paintable: true,
             mode: IndexMode::List,
             category: 0x79,
             selected: BTreeSet::new(),
@@ -717,10 +727,177 @@ impl Default for MessageIndexState {
     }
 }
 
+/// Candidate Message Index content. It remains inert until the app
+/// coordinator accepts the shared singleton identity.
+#[derive(Debug, Clone, Copy)]
+pub struct PreparedMessageIndex {
+    category: u16,
+    initial_row: Option<usize>,
+}
+
+impl PreparedMessageIndex {
+    #[must_use]
+    pub const fn spec(self) -> WindowSpec {
+        crate::windowing_policy::singleton_spec(
+            WindowKind::MessageIndex,
+            WindowOwner::StrategicRoot,
+        )
+    }
+
+    #[must_use]
+    pub const fn category(self) -> u16 {
+        self.category
+    }
+
+    /// Adds the developer-command row to reveal after a new open commits.
+    /// Duplicate singleton opens discard this request with the prepared state.
+    #[must_use]
+    pub const fn with_initial_row(mut self, row: usize) -> Self {
+        self.initial_row = Some(row);
+        self
+    }
+
+    #[must_use]
+    pub const fn initial_row(&self) -> Option<usize> {
+        self.initial_row
+    }
+}
+
 impl MessageIndexState {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Prepares a validated category for a manager-owned singleton open.
+    #[must_use]
+    pub const fn prepare_open(category: u16) -> Option<PreparedMessageIndex> {
+        if category >= 0x79 && category <= 0x82 {
+            Some(PreparedMessageIndex {
+                category,
+                initial_row: None,
+            })
+        } else {
+            None
+        }
+    }
+
+    /// Publishes prepared content only for a new manager identity. A duplicate
+    /// NoOp acknowledges the existing identity without rebuilding rows,
+    /// selection, scroll, display state, or focus.
+    pub fn commit_open(
+        &mut self,
+        prepared: PreparedMessageIndex,
+        transition: &WindowTransition,
+    ) -> Option<(WindowId, Vec<MessageIndexAction>)> {
+        match *transition {
+            WindowTransition::Opened { id } if self.window_id.is_none() => {
+                *self = Self::default();
+                self.window_id = Some(id);
+                let actions = self.set_category(prepared.category);
+                Some((id, actions))
+            }
+            WindowTransition::Existing {
+                id,
+                effect: ExistingEffect::NoOp,
+            } if self.window_id == Some(id) => Some((id, Vec::new())),
+            _ => None,
+        }
+    }
+
+    /// Exact manager identity currently owning the app-held content.
+    #[must_use]
+    pub const fn window_id(&self) -> Option<WindowId> {
+        self.window_id
+    }
+
+    #[must_use]
+    pub const fn is_open(&self) -> bool {
+        self.window_id.is_some()
+    }
+
+    /// Manager-owned Message Index hit for event-local pointer routing.
+    #[must_use]
+    pub fn hit_window(
+        &self,
+        frame: &RoutingSnapshot,
+        layout: CockpitLayout,
+        point: (f32, f32),
+    ) -> Option<WindowId> {
+        let id = self.window_id?;
+        (frame
+            .key(id)
+            .is_some_and(|key| key.kind == WindowKind::MessageIndex)
+            && frame.allows_input(id)
+            && window_rect(layout).contains(egui::pos2(point.0, point.1)))
+        .then_some(id)
+    }
+
+    /// Exact manager identity that owns this frame's keyboard lease.
+    #[must_use]
+    pub fn keyboard_owner(&self, frame: &RoutingSnapshot) -> Option<WindowId> {
+        let id = self.window_id?;
+        matches!(
+            frame.keyboard_route().target,
+            rebellion_windowing::RouteTarget::Window(target) if target.window == id
+        )
+        .then_some(id)
+    }
+
+    /// Retains the modal identity while recording a failed paint attempt.
+    pub fn mark_unpaintable(&mut self) {
+        self.paintable = false;
+    }
+
+    /// Records that the exact committed content can paint again.
+    pub fn mark_paintable(&mut self) {
+        self.paintable = true;
+    }
+
+    /// Explicit Message Index content state for the immutable manager frame.
+    #[must_use]
+    pub fn content_reports(&self, frame: &RoutingSnapshot) -> Vec<ContentReport> {
+        frame
+            .paint_order()
+            .iter()
+            .copied()
+            .filter(|id| {
+                frame
+                    .key(*id)
+                    .is_some_and(|key| key.kind == WindowKind::MessageIndex)
+            })
+            .map(|id| ContentReport {
+                window: id,
+                status: if self.window_id == Some(id) && self.paintable {
+                    ContentStatus::Ready
+                } else {
+                    ContentStatus::Unpaintable
+                },
+            })
+            .collect()
+    }
+
+    /// Returns the exact manager close target without releasing the frozen
+    /// frame's modal lease or app-held content.
+    #[must_use]
+    pub const fn request_close(&self) -> Option<WindowId> {
+        self.window_id
+    }
+
+    /// Applies close side effects and releases content only after an exact
+    /// manager teardown receipt.
+    pub fn remove_content(&mut self, removed: &[WindowId]) -> Vec<MessageIndexAction> {
+        if !self.window_id.is_some_and(|id| removed.contains(&id)) {
+            return Vec::new();
+        }
+        let actions = self.close();
+        *self = Self::default();
+        actions
+    }
+
+    /// Clears app-owned state during a whole-session reset.
+    pub fn reset(&mut self) {
+        *self = Self::default();
     }
 
     /// The active category command.
@@ -1606,6 +1783,301 @@ pub fn draw_message_index_fixture(
 mod tests {
     use super::*;
     use crate::message_log::{MessageCategory, RailAudience};
+    use crate::windowing_input::{
+        FrameInputRouter, InputDisposition, InputEventId, InputRecipient, PointerButtonId,
+        PointerPhase,
+    };
+    use rebellion_windowing::{
+        ContentStatus, ExistingEffect, FocusTarget, RouteTarget, WindowCommand, WindowManager,
+        WindowTransition,
+    };
+
+    fn open_managed_message_index(
+        manager: &mut WindowManager,
+        state: &mut MessageIndexState,
+        category: u16,
+    ) -> rebellion_windowing::WindowId {
+        let prepared = MessageIndexState::prepare_open(category).unwrap();
+        let committed = manager.apply(WindowCommand::Open(prepared.spec())).unwrap();
+        let (id, _) = state
+            .commit_open(prepared, &committed.transition)
+            .expect("manager receipt publishes Message Index content");
+        id
+    }
+
+    fn managed_layout() -> CockpitLayout {
+        CockpitLayout {
+            canvas: crate::cockpit::CockpitViewport {
+                x: 0.0,
+                y: 0.0,
+                width: 640.0,
+                height: 480.0,
+            },
+            galaxy: crate::cockpit::CockpitViewport {
+                x: 65.0,
+                y: 60.0,
+                width: 485.0,
+                height: 350.0,
+            },
+            scale: 1.0,
+        }
+    }
+
+    #[test]
+    fn message_index_windowing_preserves_context() {
+        let mut manager = WindowManager::new();
+        let mut state = MessageIndexState::new();
+        let id = open_managed_message_index(&mut manager, &mut state, 0x82);
+        state.selected = BTreeSet::from([17]);
+        state.scroll_offset = 4;
+
+        let duplicate = MessageIndexState::prepare_open(0x79).unwrap();
+        let committed = manager
+            .apply(WindowCommand::Open(duplicate.spec()))
+            .unwrap();
+        assert!(matches!(
+            committed.transition,
+            WindowTransition::Existing {
+                id: existing,
+                effect: ExistingEffect::NoOp,
+            } if existing == id
+        ));
+        assert_eq!(
+            state.commit_open(duplicate, &committed.transition),
+            Some((id, Vec::new()))
+        );
+        assert_eq!(state.category(), 0x82);
+        assert_eq!(state.selected(), &BTreeSet::from([17]));
+        assert_eq!(state.scroll_offset, 4);
+    }
+
+    #[test]
+    fn message_index_prepare_rejects_categories_outside_native_range() {
+        assert!(MessageIndexState::prepare_open(0x78).is_none());
+        assert!(MessageIndexState::prepare_open(0x83).is_none());
+    }
+
+    #[test]
+    fn message_index_rejects_receipts_for_a_different_manager_identity() {
+        let mut manager = WindowManager::new();
+        let mut state = MessageIndexState::new();
+        let original = open_managed_message_index(&mut manager, &mut state, 0x82);
+        manager.apply(WindowCommand::Close(original)).unwrap();
+
+        let reopened = MessageIndexState::prepare_open(0x79).unwrap();
+        let committed = manager.apply(WindowCommand::Open(reopened.spec())).unwrap();
+        let replacement = match committed.transition {
+            WindowTransition::Opened { id } => id,
+            ref other => panic!("expected a fresh manager identity, got {other:?}"),
+        };
+        assert_ne!(replacement, original);
+        assert_eq!(state.commit_open(reopened, &committed.transition), None);
+
+        let duplicate = MessageIndexState::prepare_open(0x79).unwrap();
+        let duplicate_commit = manager
+            .apply(WindowCommand::Open(duplicate.spec()))
+            .unwrap();
+        assert!(matches!(
+            duplicate_commit.transition,
+            WindowTransition::Existing {
+                id,
+                effect: ExistingEffect::NoOp,
+            } if id == replacement
+        ));
+        assert_eq!(
+            state.commit_open(duplicate, &duplicate_commit.transition),
+            None
+        );
+        assert_eq!(state.window_id(), Some(original));
+        assert_eq!(state.category(), 0x82);
+    }
+
+    #[test]
+    fn message_index_windowing_blocks_underlay() {
+        let mut manager = WindowManager::new();
+        let mut state = MessageIndexState::new();
+        let id = open_managed_message_index(&mut manager, &mut state, 0x79);
+        let frame = manager.begin_frame();
+        let inside = window_rect(managed_layout()).center();
+        let hits = state
+            .hit_window(&frame, managed_layout(), (inside.x, inside.y))
+            .into_iter()
+            .collect::<BTreeSet<_>>();
+
+        assert_eq!(frame.active_modal(), Some(id));
+        assert_eq!(
+            frame.pointer_route(&hits).target,
+            RouteTarget::Window(FocusTarget {
+                window: id,
+                control: None,
+            })
+        );
+        assert_eq!(
+            frame.pointer_route(&BTreeSet::new()).target,
+            RouteTarget::BlockedBy(id)
+        );
+        assert_eq!(
+            state.content_reports(&frame),
+            [rebellion_windowing::ContentReport {
+                window: id,
+                status: ContentStatus::Ready,
+            }]
+        );
+        assert_eq!(
+            state.hit_window(
+                &frame,
+                managed_layout(),
+                (inside.x, window_rect(managed_layout()).max.y + 1.0),
+            ),
+            None
+        );
+
+        let covering = manager
+            .apply(WindowCommand::Open(
+                crate::windowing_policy::singleton_spec(
+                    WindowKind::Encyclopedia,
+                    WindowOwner::StrategicRoot,
+                ),
+            ))
+            .unwrap();
+        let covering_id = match covering.transition {
+            WindowTransition::Opened { id } => id,
+            ref other => panic!("expected covering modal to open, got {other:?}"),
+        };
+        let covered_frame = manager.begin_frame();
+        assert_eq!(covered_frame.active_modal(), Some(covering_id));
+        assert_eq!(
+            state.hit_window(&covered_frame, managed_layout(), (inside.x, inside.y)),
+            None
+        );
+
+        let event = InputEventId {
+            frame: 4,
+            ordinal: 0,
+        };
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(4, &frame);
+        router.collect_keyboard(event);
+        assert_eq!(router.keyboard_recipient(event), InputRecipient::Window(id));
+        router.report_key(
+            event,
+            InputRecipient::Window(id),
+            InputDisposition::Unhandled,
+        );
+        assert!(
+            !router.claim_root(event),
+            "an unhandled modal key cannot bubble to the strategic root"
+        );
+    }
+
+    #[test]
+    fn message_index_windowing_close_keeps_lease() {
+        let mut manager = WindowManager::new();
+        let mut state = MessageIndexState::new();
+        let id = open_managed_message_index(&mut manager, &mut state, 0x82);
+        let closing_frame = manager.begin_frame();
+        let event = InputEventId {
+            frame: 5,
+            ordinal: 0,
+        };
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(5, &closing_frame);
+        router.collect_keyboard(event);
+        assert_eq!(router.keyboard_recipient(event), InputRecipient::Window(id));
+        router.report_key(event, InputRecipient::Window(id), InputDisposition::Handled);
+        let closed = manager.apply(WindowCommand::Close(id)).unwrap();
+        let removed = match closed.transition {
+            WindowTransition::Closed { ref closed, .. } => closed.clone(),
+            ref other => panic!("expected Message Index close, got {other:?}"),
+        };
+
+        assert_eq!(closing_frame.active_modal(), Some(id));
+        assert_eq!(
+            closing_frame.pointer_route(&BTreeSet::new()).target,
+            RouteTarget::BlockedBy(id)
+        );
+        assert!(
+            !router.claim_root(event),
+            "the close key remains consumed under the frozen modal lease"
+        );
+        assert!(state.is_open(), "content waits for the exact close receipt");
+        assert_eq!(
+            state.remove_content(&removed),
+            [
+                MessageIndexAction::AdviceHidden,
+                MessageIndexAction::MarkCategoryRead(Some(MessageRail::Advice)),
+            ]
+        );
+        assert!(!state.is_open());
+    }
+
+    #[test]
+    fn message_index_duplicate_open_preserves_rows_and_focus() {
+        let mut manager = WindowManager::new();
+        let mut state = MessageIndexState::new();
+        let id = open_managed_message_index(&mut manager, &mut state, 0x79);
+        state.selected = BTreeSet::from([23]);
+        state.scroll_offset = 6;
+        let focus = FocusTarget {
+            window: id,
+            control: None,
+        };
+        assert_eq!(manager.begin_frame().focused(), Some(focus));
+
+        let duplicate = MessageIndexState::prepare_open(0x82).unwrap();
+        let committed = manager
+            .apply(WindowCommand::Open(duplicate.spec()))
+            .unwrap();
+        assert_eq!(
+            state.commit_open(duplicate, &committed.transition),
+            Some((id, Vec::new()))
+        );
+
+        assert_eq!(state.selected(), &BTreeSet::from([23]));
+        assert_eq!(state.scroll_offset, 6);
+        assert_eq!(manager.begin_frame().focused(), Some(focus));
+    }
+
+    #[test]
+    fn message_index_outside_press_does_not_select_map_system() {
+        let mut manager = WindowManager::new();
+        let mut state = MessageIndexState::new();
+        let id = open_managed_message_index(&mut manager, &mut state, 0x79);
+        let frame = manager.begin_frame();
+        let event = InputEventId {
+            frame: 9,
+            ordinal: 0,
+        };
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(9, &frame);
+        router.collect_pointer(
+            event,
+            &BTreeSet::new(),
+            PointerPhase::Press(PointerButtonId::Primary),
+        );
+        let mut selected_map_system = None;
+        if router.claim_root(event) {
+            selected_map_system = Some(7_u16);
+        }
+
+        assert_eq!(router.pointer_recipient(event), InputRecipient::Blocked);
+        assert_eq!(frame.active_modal(), Some(id));
+        assert_eq!(selected_map_system, None);
+    }
+
+    #[test]
+    fn message_index_unpaintable_modal_keeps_exact_recovery_close() {
+        let mut manager = WindowManager::new();
+        let mut state = MessageIndexState::new();
+        let id = open_managed_message_index(&mut manager, &mut state, 0x79);
+        state.mark_unpaintable();
+        let frame = manager.begin_frame();
+        let reports = state.content_reports(&frame);
+
+        assert_eq!(reports[0].status, ContentStatus::Unpaintable);
+        assert_eq!(manager.reconcile(&frame, &reports).blocking_unpainted, [id]);
+        assert_eq!(state.request_close(), Some(id));
+    }
 
     // ── Geometry tests (preserved) ──────────────────────────────────────
 

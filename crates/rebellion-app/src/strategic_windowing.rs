@@ -8,6 +8,7 @@ use rebellion_data::encyclopedia_session::EncyclopediaSession;
 use rebellion_render::{
     fleet_finder::{PreparedFleetFinder, FLEET_FINDER_NAME_CONTROL},
     fleet_window::PreparedFleetWindow,
+    message_index::PreparedMessageIndex,
     system_window::PreparedSystemWindow,
     windowing_policy::SUBJECT_COMMAND_CONTEXT,
 };
@@ -41,6 +42,10 @@ pub struct AppliedWindowCommand {
     pub prepared_fleet_finder: Option<PreparedFleetFinder>,
     /// Identity whose attachment is valid for `prepared_fleet_finder`.
     pub fleet_finder_content_id: Option<WindowId>,
+    /// Message Index content prepared beside its singleton open.
+    pub prepared_message_index: Option<PreparedMessageIndex>,
+    /// Identity whose attachment is valid for `prepared_message_index`.
+    pub message_index_content_id: Option<WindowId>,
     /// Temporary rail-adapter payload committed only with System minimize.
     pub minimized_system: Option<(WindowId, SystemKey, (i16, i16))>,
     /// Exact temporary System rail projection retired after restore commit.
@@ -67,6 +72,7 @@ struct QueuedWindowCommand {
     prepared_system: Option<PreparedSystemWindow>,
     prepared_fleet: Option<PreparedFleetWindow>,
     prepared_fleet_finder: Option<PreparedFleetFinder>,
+    prepared_message_index: Option<PreparedMessageIndex>,
     minimized_system: Option<(WindowId, SystemKey, (i16, i16))>,
     restored_system: Option<WindowId>,
     minimized_fleet: Option<(WindowId, SystemKey, (i16, i16))>,
@@ -389,6 +395,7 @@ impl StrategicWindowing {
             prepared_system: None,
             prepared_fleet: None,
             prepared_fleet_finder: None,
+            prepared_message_index: None,
             minimized_system: None,
             restored_system: None,
             minimized_fleet: None,
@@ -403,6 +410,7 @@ impl StrategicWindowing {
             prepared_system: Some(prepared),
             prepared_fleet: None,
             prepared_fleet_finder: None,
+            prepared_message_index: None,
             minimized_system: None,
             restored_system: None,
             minimized_fleet: None,
@@ -418,6 +426,7 @@ impl StrategicWindowing {
             prepared_system: None,
             prepared_fleet: Some(prepared),
             prepared_fleet_finder: None,
+            prepared_message_index: None,
             minimized_system: None,
             restored_system: None,
             minimized_fleet: None,
@@ -432,6 +441,22 @@ impl StrategicWindowing {
             prepared_system: None,
             prepared_fleet: None,
             prepared_fleet_finder: Some(prepared),
+            prepared_message_index: None,
+            minimized_system: None,
+            restored_system: None,
+            minimized_fleet: None,
+            restored_fleet: None,
+        });
+    }
+
+    /// Queues inert Message Index content beside its semantic singleton open.
+    pub fn enqueue_message_index_open(&mut self, prepared: PreparedMessageIndex) {
+        self.pending.push(QueuedWindowCommand {
+            command: WindowCommand::Open(prepared.spec()),
+            prepared_system: None,
+            prepared_fleet: None,
+            prepared_fleet_finder: None,
+            prepared_message_index: Some(prepared),
             minimized_system: None,
             restored_system: None,
             minimized_fleet: None,
@@ -452,6 +477,7 @@ impl StrategicWindowing {
             prepared_system: None,
             prepared_fleet: None,
             prepared_fleet_finder: None,
+            prepared_message_index: None,
             minimized_system: Some((window, system, logical_position)),
             restored_system: None,
             minimized_fleet: None,
@@ -467,6 +493,7 @@ impl StrategicWindowing {
             prepared_system: None,
             prepared_fleet: None,
             prepared_fleet_finder: None,
+            prepared_message_index: None,
             minimized_system: None,
             restored_system: Some(window),
             minimized_fleet: None,
@@ -506,6 +533,7 @@ impl StrategicWindowing {
             prepared_system: None,
             prepared_fleet: None,
             prepared_fleet_finder: None,
+            prepared_message_index: None,
             minimized_system: None,
             restored_system: None,
             minimized_fleet: Some((window, system, logical_position)),
@@ -522,6 +550,7 @@ impl StrategicWindowing {
             prepared_system: None,
             prepared_fleet: None,
             prepared_fleet_finder: None,
+            prepared_message_index: None,
             minimized_system: None,
             restored_system: None,
             minimized_fleet: None,
@@ -543,6 +572,7 @@ impl StrategicWindowing {
                     prepared_system,
                     prepared_fleet,
                     prepared_fleet_finder,
+                    prepared_message_index,
                     minimized_system,
                     restored_system: queued_restored_system,
                     minimized_fleet,
@@ -553,6 +583,7 @@ impl StrategicWindowing {
                 let mut system_content_id = None;
                 let mut fleet_content_id = None;
                 let mut fleet_finder_content_id = None;
+                let mut message_index_content_id = None;
                 let mut committed_minimized_system = None;
                 let mut committed_minimized_fleet = None;
                 let mut restored_system = None;
@@ -643,6 +674,15 @@ impl StrategicWindowing {
                             }
                         }
                     }
+                    if prepared_message_index.is_some() {
+                        message_index_content_id = match &commit.transition {
+                            WindowTransition::Opened { id } => Some(*id),
+                            WindowTransition::Existing { id, .. } => {
+                                self.attached_content.contains(id).then_some(*id)
+                            }
+                            _ => None,
+                        };
+                    }
                 }
                 AppliedWindowCommand {
                     command,
@@ -654,6 +694,8 @@ impl StrategicWindowing {
                     fleet_content_id,
                     prepared_fleet_finder,
                     fleet_finder_content_id,
+                    prepared_message_index,
+                    message_index_content_id,
                     minimized_system: committed_minimized_system,
                     restored_system,
                     minimized_fleet: committed_minimized_fleet,
@@ -703,6 +745,15 @@ impl StrategicWindowing {
             && self.attached_content.insert(id)
     }
 
+    /// Acknowledges Message Index publication only for its exact singleton.
+    pub fn acknowledge_message_index_publication(&mut self, id: WindowId) -> bool {
+        self.manager
+            .begin_frame()
+            .key(id)
+            .is_some_and(|key| key.kind == rebellion_windowing::WindowKind::MessageIndex)
+            && self.attached_content.insert(id)
+    }
+
     /// Compensates a failed renderer publication or rail eviction by closing
     /// the exact manager identity and returning the content teardown target.
     pub fn rollback_fleet_publication(&mut self, id: WindowId) -> Vec<WindowId> {
@@ -717,6 +768,11 @@ impl StrategicWindowing {
 
     /// Compensates a failed Fleet Finder publication with an exact close.
     pub fn rollback_fleet_finder_publication(&mut self, id: WindowId) -> Vec<WindowId> {
+        self.rollback_publication(id)
+    }
+
+    /// Compensates a failed Message Index publication with an exact close.
+    pub fn rollback_message_index_publication(&mut self, id: WindowId) -> Vec<WindowId> {
         self.rollback_publication(id)
     }
 
@@ -856,6 +912,7 @@ mod tests {
     use rebellion_render::windowing_policy::{contextual_spec, singleton_spec};
     use rebellion_render::{
         fleet_finder::{FleetFinderState, FLEET_FINDER_NAME_CONTROL},
+        message_index::{MessageIndexAction, MessageIndexState},
         CockpitFaction, CockpitLayout, CockpitViewport, FleetWindowState, SystemWindowState,
     };
     use rebellion_windowing::{
@@ -1155,6 +1212,68 @@ mod tests {
         );
         assert_eq!(finder.window_id(), Some(id));
         assert_eq!(coordinator.begin_frame().focused(), Some(name_focus));
+    }
+
+    #[test]
+    fn message_index_app_state_closes_only_from_exact_receipt() {
+        let mut coordinator = StrategicWindowing::new();
+        let mut index = MessageIndexState::new();
+        coordinator.enqueue_message_index_open(
+            MessageIndexState::prepare_open(0x82)
+                .unwrap()
+                .with_initial_row(2),
+        );
+        assert!(coordinator.begin_frame().paint_order().is_empty());
+
+        let mut opened = coordinator.apply_pending().remove(0);
+        assert_eq!(
+            opened
+                .prepared_message_index
+                .as_ref()
+                .unwrap()
+                .initial_row(),
+            Some(2)
+        );
+        let id = opened.message_index_content_id.unwrap();
+        let (_, actions) = index
+            .commit_open(
+                opened.prepared_message_index.take().unwrap(),
+                &opened.result.as_ref().unwrap().transition,
+            )
+            .unwrap();
+        assert_eq!(actions, [MessageIndexAction::AdviceShown]);
+        assert!(coordinator.acknowledge_message_index_publication(id));
+        assert!(coordinator.has_content(id));
+
+        coordinator.enqueue_message_index_open(MessageIndexState::prepare_open(0x79).unwrap());
+        let mut duplicate = coordinator.apply_pending().remove(0);
+        assert_eq!(duplicate.message_index_content_id, Some(id));
+        assert_eq!(
+            index.commit_open(
+                duplicate.prepared_message_index.take().unwrap(),
+                &duplicate.result.as_ref().unwrap().transition,
+            ),
+            Some((id, Vec::new()))
+        );
+        assert_eq!(index.category(), 0x82);
+
+        let closing_frame = coordinator.begin_frame();
+        coordinator.enqueue(WindowCommand::Close(id));
+        let closed = coordinator.apply_pending().remove(0);
+        assert_eq!(closed.removed_content, [id]);
+        assert_eq!(closing_frame.active_modal(), Some(id));
+        assert!(index.is_open(), "app state waits for the close receipt");
+        assert_eq!(
+            index.remove_content(&closed.removed_content),
+            [
+                MessageIndexAction::AdviceHidden,
+                MessageIndexAction::MarkCategoryRead(Some(
+                    rebellion_render::message_log::MessageRail::Advice,
+                )),
+            ]
+        );
+        assert!(!index.is_open());
+        assert!(!coordinator.has_content(id));
     }
 
     #[test]

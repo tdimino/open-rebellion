@@ -1215,6 +1215,7 @@ impl StrategicRootKeyBatch {
         fleet: Option<(rebellion_windowing::WindowId, bool)>,
         fleet_finder: Option<rebellion_windowing::WindowId>,
         encyclopedia: Option<rebellion_windowing::WindowId>,
+        message_index: Option<rebellion_windowing::WindowId>,
     ) {
         for event in &self.events {
             let recipient = router.keyboard_recipient(event.id);
@@ -1233,6 +1234,13 @@ impl StrategicRootKeyBatch {
                 }
                 InputRecipient::Window(window) if encyclopedia == Some(window) => {
                     Some(if handles_keyboard || event.key == KeyCode::Escape {
+                        InputDisposition::Handled
+                    } else {
+                        InputDisposition::Unhandled
+                    })
+                }
+                InputRecipient::Window(window) if message_index == Some(window) => {
+                    Some(if event.key == KeyCode::Escape {
                         InputDisposition::Handled
                     } else {
                         InputDisposition::Unhandled
@@ -1351,6 +1359,28 @@ impl StrategicPointerBatch {
             event.phase == phase && router.pointer_recipient(event.id) == InputRecipient::Blocked
         })
     }
+}
+
+/// Collects the app's normalized strategic pointer batch and folds the
+/// manager-owned Message Index surface into the same hit set as the retained
+/// strategic windows. Keeping this seam shared by production and tests makes
+/// the modal's outside-click block observable before galaxy-map dispatch.
+fn collect_strategic_pointer_batch(
+    frame_number: u64,
+    router: &mut FrameInputRouter,
+    events: &[StrategicRawPointerEvent],
+    frame: &rebellion_windowing::RoutingSnapshot,
+    layout: rebellion_render::CockpitLayout,
+    message_index: &MessageIndexState,
+    retained_hits: impl Fn((f32, f32)) -> BTreeSet<rebellion_windowing::WindowId>,
+) -> StrategicPointerBatch {
+    StrategicPointerBatch::collect_from_raw(frame_number, router, events, |point| {
+        let mut hits = retained_hits(point);
+        if let Some(window) = message_index.hit_window(frame, layout, point) {
+            hits.insert(window);
+        }
+        hits
+    })
 }
 
 const fn strategic_root_key(key: KeyCode) -> bool {
@@ -1592,12 +1622,14 @@ fn with_retained_input<T>(
 enum ManagedStrategicSurface {
     Encyclopedia(rebellion_windowing::WindowId),
     FleetFinder(rebellion_windowing::WindowId),
+    MessageIndex(rebellion_windowing::WindowId),
 }
 
 fn managed_strategic_surface_plan(
     frame: &rebellion_windowing::RoutingSnapshot,
     encyclopedia: Option<rebellion_windowing::WindowId>,
     fleet_finder: Option<rebellion_windowing::WindowId>,
+    message_index: Option<rebellion_windowing::WindowId>,
 ) -> Vec<(ManagedStrategicSurface, bool)> {
     frame
         .paint_order()
@@ -1607,6 +1639,8 @@ fn managed_strategic_surface_plan(
                 ManagedStrategicSurface::Encyclopedia(*id)
             } else if Some(*id) == fleet_finder {
                 ManagedStrategicSurface::FleetFinder(*id)
+            } else if Some(*id) == message_index {
+                ManagedStrategicSurface::MessageIndex(*id)
             } else {
                 return None;
             };
@@ -1632,15 +1666,17 @@ fn apply_capture_cancellation_events(
 #[cfg(test)]
 mod frame_input_tests {
     use super::{
-        restore_egui_input, with_retained_input, RetainedLegacyInputFilter, StrategicPointerBatch,
-        StrategicRawPointerEvent,
+        collect_strategic_pointer_batch, restore_egui_input, with_retained_input,
+        RetainedLegacyInputFilter, StrategicPointerBatch, StrategicRawPointerEvent,
     };
     use egui_macroquad::egui;
     use rebellion_render::fleet_finder::FleetFinderState;
+    use rebellion_render::message_index::MessageIndexState;
     use rebellion_render::windowing_input::{
         FrameInputRouter, InputRecipient, PointerButtonId, PointerPhase,
     };
-    use rebellion_render::CockpitFaction;
+    use rebellion_render::{CockpitFaction, CockpitLayout, CockpitViewport};
+    use rebellion_windowing::{WindowCommand, WindowManager};
     use std::collections::BTreeSet;
 
     /// Clicks a retained window's area and reports whether the window saw
@@ -1691,6 +1727,61 @@ mod frame_input_tests {
     fn a_held_retained_window_ignores_clicks_and_later_owners_still_receive_them() {
         assert_eq!(click_retained_window(true), (true, true));
         assert_eq!(click_retained_window(false), (false, true));
+    }
+
+    #[test]
+    fn message_index_outside_press_is_blocked_before_app_map_dispatch() {
+        let mut manager = WindowManager::new();
+        let mut message_index = MessageIndexState::new();
+        let prepared = MessageIndexState::prepare_open(0x79).unwrap();
+        let committed = manager.apply(WindowCommand::Open(prepared.spec())).unwrap();
+        message_index
+            .commit_open(prepared, &committed.transition)
+            .expect("manager receipt publishes Message Index content");
+        let frame = manager.begin_frame();
+        let layout = CockpitLayout {
+            canvas: CockpitViewport {
+                x: 0.0,
+                y: 0.0,
+                width: 640.0,
+                height: 480.0,
+            },
+            galaxy: CockpitViewport {
+                x: 65.0,
+                y: 60.0,
+                width: 485.0,
+                height: 350.0,
+            },
+            scale: 1.0,
+        };
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(9, &frame);
+        let batch = collect_strategic_pointer_batch(
+            9,
+            &mut router,
+            &[StrategicRawPointerEvent {
+                ordinal: 0,
+                // Inside the galaxy aperture but outside the centered
+                // Message Index rectangle.
+                point: (66.0, 61.0),
+                phase: PointerPhase::Press(PointerButtonId::Primary),
+            }],
+            &frame,
+            layout,
+            &message_index,
+            |_| BTreeSet::new(),
+        );
+        let event = batch.events[0].id;
+        let map_pointer_blocked =
+            batch.blocks_pointer_phase(&router, PointerPhase::Press(PointerButtonId::Primary));
+        let mut selected_map_system = None;
+        if !map_pointer_blocked && router.claim_root(event) {
+            selected_map_system = Some(7_u16);
+        }
+
+        assert_eq!(router.pointer_recipient(event), InputRecipient::Blocked);
+        assert!(map_pointer_blocked);
+        assert_eq!(selected_map_system, None);
     }
 
     #[test]
@@ -1886,7 +1977,7 @@ mod panel_toggle_tests {
             repeat: false,
         }];
         let batch = StrategicRootKeyBatch::collect_from_raw(1, &mut router, &events);
-        batch.report_legacy_children(&mut router, false, None, None, None);
+        batch.report_legacy_children(&mut router, false, None, None, None, None);
 
         assert!(router.claim_root(batch.events[0].id));
         assert!(!router.claim_root(batch.events[0].id));
@@ -1911,7 +2002,7 @@ mod panel_toggle_tests {
             },
         ];
         let batch = StrategicRootKeyBatch::collect_from_raw(9, &mut router, &events);
-        batch.report_legacy_children(&mut router, false, None, None, None);
+        batch.report_legacy_children(&mut router, false, None, None, None, None);
 
         assert_eq!(batch.events.len(), 2);
         assert!(batch.events[0].alt);
@@ -1934,7 +2025,7 @@ mod panel_toggle_tests {
             repeat: false,
         }];
         let batch = StrategicRootKeyBatch::collect_from_raw(2, &mut router, &events);
-        batch.report_legacy_children(&mut router, true, None, None, None);
+        batch.report_legacy_children(&mut router, true, None, None, None, None);
 
         assert!(!router.claim_root(batch.events[0].id));
     }
@@ -1998,7 +2089,7 @@ mod panel_toggle_tests {
         let frame = coordinator.begin_frame();
 
         assert_eq!(
-            managed_strategic_surface_plan(&frame, Some(encyclopedia), Some(finder)),
+            managed_strategic_surface_plan(&frame, Some(encyclopedia), Some(finder), None),
             [
                 (ManagedStrategicSurface::FleetFinder(finder), false),
                 (ManagedStrategicSurface::Encyclopedia(encyclopedia), true,),
@@ -2014,7 +2105,7 @@ mod panel_toggle_tests {
         coordinator.enqueue(WindowCommand::Close(encyclopedia));
         coordinator.apply_pending();
         assert_eq!(
-            managed_strategic_surface_plan(&coordinator.begin_frame(), None, Some(finder)),
+            managed_strategic_surface_plan(&coordinator.begin_frame(), None, Some(finder), None),
             [(ManagedStrategicSurface::FleetFinder(finder), true)]
         );
 
@@ -2034,7 +2125,7 @@ mod panel_toggle_tests {
         };
         let frame = reverse.begin_frame();
         assert_eq!(
-            managed_strategic_surface_plan(&frame, Some(encyclopedia), Some(finder)),
+            managed_strategic_surface_plan(&frame, Some(encyclopedia), Some(finder), None),
             [
                 (ManagedStrategicSurface::Encyclopedia(encyclopedia), false,),
                 (ManagedStrategicSurface::FleetFinder(finder), true),
@@ -2072,7 +2163,7 @@ mod panel_toggle_tests {
             InputRecipient::Window(fleet)
         );
 
-        batch.report_legacy_children(&mut router, false, Some((fleet, false)), None, None);
+        batch.report_legacy_children(&mut router, false, Some((fleet, false)), None, None, None);
 
         assert!(router.claim_root(batch.events[0].id));
         assert!(router.claim_root(batch.events[1].id));
@@ -2097,7 +2188,7 @@ mod panel_toggle_tests {
         router.begin_frame(4, &frame);
         let batch = StrategicRootKeyBatch::collect_from_raw(4, &mut router, &events);
 
-        batch.report_legacy_children(&mut router, false, Some((fleet, true)), None, None);
+        batch.report_legacy_children(&mut router, false, Some((fleet, true)), None, None, None);
 
         let bubbled: Vec<bool> = batch
             .events
@@ -2136,7 +2227,7 @@ mod panel_toggle_tests {
             router.keyboard_recipient(batch.events[0].id),
             InputRecipient::Window(encyclopedia)
         );
-        batch.report_legacy_children(&mut router, true, None, None, Some(encyclopedia));
+        batch.report_legacy_children(&mut router, true, None, None, Some(encyclopedia), None);
 
         assert!(!router.claim_root(batch.events[0].id));
     }
@@ -2161,7 +2252,7 @@ mod panel_toggle_tests {
             router.keyboard_recipient(batch.events[0].id),
             InputRecipient::Window(encyclopedia)
         );
-        batch.report_legacy_children(&mut router, false, None, None, Some(encyclopedia));
+        batch.report_legacy_children(&mut router, false, None, None, Some(encyclopedia), None);
 
         assert!(!router.claim_root(batch.events[0].id));
     }
@@ -2666,7 +2757,7 @@ async fn main() {
     let mut personnel_finder_state = PersonnelFinderState::default();
     // The open Message Index (window 0x0d) and the speed its Advice
     // category saved (FUN_00487ff0 +0x58).
-    let mut message_index: Option<MessageIndexState> = None;
+    let mut message_index = MessageIndexState::new();
     let mut advice_saved_speed: Option<GameSpeed> = None;
     // The sound of the message the Message Index last showed, played by the
     // next frame's audio step.
@@ -4853,8 +4944,6 @@ Some(RailAudience::side(*faction_is_alliance)),
                 },
                 DevCommand::OpenMessageIndex { category, row } => {
                     let player_is_alliance = player_faction == MissionFaction::Alliance;
-                    let index = message_index.get_or_insert_with(MessageIndexState::new);
-                    let mut actions = index.set_category(category);
                     let rows = rebellion_render::message_index::filtered_messages(
                         &msg_log,
                         category,
@@ -4864,33 +4953,34 @@ Some(RailAudience::side(*faction_is_alliance)),
                         dev_commands::Row::Number(n) => n,
                         dev_commands::Row::Last => rows.len(),
                     });
+                    let Some(mut prepared) = MessageIndexState::prepare_open(category) else {
+                        dev_channel
+                            .refuse(&format!("unknown Message Index category 0x{category:x}"));
+                        continue;
+                    };
                     match row {
                         None => {
-                            index.return_to_list();
                             dev_channel.note(&format!("{} rows", rows.len()));
                         }
-                        Some(row) => match index.view_row(&rows, row) {
-                            Some(action) => {
-                                let title = rows[row - 1]
+                        Some(row) => match rows.get(row.saturating_sub(1)) {
+                            Some(message) if row > 0 => {
+                                let title = message
                                     .display
                                     .as_ref()
-                                    .map_or(rows[row - 1].text.as_str(), |d| d.title.as_str());
+                                    .map_or(message.text.as_str(), |d| d.title.as_str());
                                 eprintln!("[message_index] viewing row {row}: {title}");
                                 dev_channel.note(&format!("row {row} of {}: {title}", rows.len()));
-                                actions.push(action);
+                                prepared = prepared.with_initial_row(row);
                             }
                             None => {
                                 dev_channel.refuse(&format!("row {row} of {} rows", rows.len()));
                             }
+                            Some(_) => {
+                                dev_channel.refuse(&format!("row {row} of {} rows", rows.len()));
+                            }
                         },
                     }
-                    apply_message_index_actions(
-                        actions,
-                        &mut msg_log,
-                        &mut clock,
-                        &mut advice_saved_speed,
-                        &mut pending_message_sound,
-                    );
+                    strategic_windowing.enqueue_message_index_open(prepared);
                 }
                 DevCommand::PostMessage { class, system } => {
                     let result = dev_actions::find_system(&world, &system).and_then(|key| {
@@ -4959,16 +5049,15 @@ Some(RailAudience::side(*faction_is_alliance)),
                         .next()
                         .unwrap_or_default()
                         .to_owned();
-                    let index = message_index.as_ref().map_or_else(
-                        || "closed".to_owned(),
-                        |index| {
-                            let name = dev_commands::MESSAGE_CATEGORIES
-                                .iter()
-                                .find(|(_, command)| *command == index.category())
-                                .map_or("?", |(name, _)| name);
-                            format!("{name}/{:?}", index.mode())
-                        },
-                    );
+                    let index = if message_index.is_open() {
+                        let name = dev_commands::MESSAGE_CATEGORIES
+                            .iter()
+                            .find(|(_, command)| *command == message_index.category())
+                            .map_or("?", |(name, _)| name);
+                        format!("{name}/{:?}", message_index.mode())
+                    } else {
+                        "closed".to_owned()
+                    };
                     // Each side's top strip: raw, refined, and maintenance
                     // as capacity − use (`top-bar-resource-counters.md`).
                     let strip = |side: Faction| {
@@ -5115,7 +5204,6 @@ Some(RailAudience::side(*faction_is_alliance)),
                 || status_window_state.is_open()
                 || troop_finder_state.is_open()
                 || personnel_finder_state.is_open()
-                || message_index.is_some()
                 || original_modal_fixture_open,
             focused_control: command_palette_open,
             transient_menu: object_menu.is_some()
@@ -5132,6 +5220,8 @@ Some(RailAudience::side(*faction_is_alliance)),
             fleet_finder_state.keyboard_owner(strategic_frame_boundary.snapshot());
         let encyclopedia_keyboard_owner =
             encyclopedia_surface.keyboard_owner(strategic_frame_boundary.snapshot());
+        let message_index_keyboard_owner =
+            message_index.keyboard_owner(strategic_frame_boundary.snapshot());
         let mut legacy_restriction_latch = LegacyInputRestrictionLatch::new(legacy_blockers);
         let strategic_frame_sequence_valid =
             if let Some(next_frame) = strategic_frame_number.checked_add(1) {
@@ -5581,7 +5671,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                                     fleet_finder_state = FleetFinderState::default();
                                     troop_finder_state = TroopFinderState::default();
                                     personnel_finder_state = PersonnelFinderState::default();
-                                    message_index = None;
+                                    message_index.reset();
                                     advice_saved_speed = None;
                                     bombardment_panel_state = BombardmentPanelState::default();
                                     encyclopedia_surface.reset();
@@ -5785,9 +5875,6 @@ Some(RailAudience::side(*faction_is_alliance)),
                     || fleet_finder_state.contains_screen_point(cockpit_layout, pointer)
                     || troop_finder_state.contains_screen_point(cockpit_layout, pointer)
                     || personnel_finder_state.contains_screen_point(cockpit_layout, pointer)
-                    || message_index.is_some()
-                        && rebellion_render::message_index::window_rect(cockpit_layout)
-                            .contains(egui_macroquad::egui::pos2(pointer.0, pointer.1))
                     || cockpit_state.gid_ui.menu_open
                     || original_modal_fixture_open
                     || game_speed_ui.menu_anchor.is_some()
@@ -5807,6 +5894,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                 // 4. All egui panels in a single ui() + draw() pass
                 let mut pending_cockpit_button = None;
                 let mut pending_fleet_finder_action = None;
+                let mut message_choice = None;
                 #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
                 let windowing_map_selection_before = map_state.selected_system;
                 #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
@@ -5817,10 +5905,13 @@ Some(RailAudience::side(*faction_is_alliance)),
                     // over a Fleet window keeps the event from it.
                     let mut batch = StrategicPointerBatch::default();
                     egui_macroquad::cfg(|ctx| {
-                        batch = StrategicPointerBatch::collect_from_raw(
+                        batch = collect_strategic_pointer_batch(
                             strategic_frame_number,
                             &mut strategic_input_router,
                             &strategic_raw_input_events.pointers,
+                            strategic_frame_boundary.snapshot(),
+                            cockpit_layout,
+                            &message_index,
                             |point| {
                                 let top_layer =
                                     ctx.layer_id_at(egui_macroquad::egui::pos2(point.0, point.1));
@@ -6044,92 +6135,18 @@ Some(RailAudience::side(*faction_is_alliance)),
                             .flatten()
                     });
                     if let Some(command) = index_command {
-                        if message_index.is_none() {
-                            if let Some(category) =
-                                rebellion_render::message_index::opening_category(command)
-                            {
-                                let mut index = MessageIndexState::new();
-                                let actions = index.set_category(category);
-                                message_index = Some(index);
-                                legacy_restriction_latch.note_start();
-                                apply_message_index_actions(
-                                    actions,
-                                    &mut msg_log,
-                                    &mut clock,
-                                    &mut advice_saved_speed,
-                                    &mut pending_message_sound,
-                                );
-                                macroquad::logging::info!(
-                                    "[interface] command=0x{:x} destination=message_index category=0x{:x} status=opened_original",
-                                    command,
-                                    category
-                                );
-                            }
-                        }
-                    }
-                    // Display (0x67) goes to the message's object through
-                    // FUN_00429440, as the Finders' choices below do.
-                    if message_index.is_some()
-                        && strategic_frame_boundary.legacy_surface_input_allowed()
-                        && strategic_root_keys.contains(KeyCode::Escape)
-                    {
-                        legacy_keyboard_handled = true;
-                        let closing = message_index.take().map(|index| index.close());
-                        apply_message_index_actions(
-                            closing.into_iter().flatten().collect(),
-                            &mut msg_log,
-                            &mut clock,
-                            &mut advice_saved_speed,
-                            &mut pending_message_sound,
-                        );
-                    }
-                    let mut message_choice = None;
-                    if let Some(index) = message_index.as_mut() {
-                        let actions = rebellion_render::message_index::draw_message_index(
-                            ctx,
-                            &mut bmp_cache,
-                            cockpit_state.faction,
-                            rebellion_render::message_index::window_rect(cockpit_layout).min,
-                            cockpit_layout.scale,
-                            &msg_log,
-                            index,
-                            player_faction == MissionFaction::Alliance,
-                        );
-                        message_choice = actions.iter().find_map(|action| match action {
-                            MessageIndexAction::GoTo(MessageTarget::System(system)) => {
-                                Some((*system, FinderTarget::Sector))
-                            }
-                            // A fleet in hyperspace opens at its destination
-                            // (FUN_00556390), as the Fleet Finder's choice.
-                            MessageIndexAction::GoTo(MessageTarget::Fleet(fleet)) => {
-                                rebellion_core::movement::listed_location(
-                                    &movement_state,
-                                    &world,
-                                    *fleet,
-                                )
-                                .map(|system| (system, FinderTarget::Fleet(*fleet)))
-                            }
-                            _ => None,
-                        });
-                        if actions.contains(&MessageIndexAction::Close) {
-                            let closing = message_index.take().map(|index| index.close());
-                            apply_message_index_actions(
-                                actions
-                                    .into_iter()
-                                    .chain(closing.into_iter().flatten())
-                                    .collect(),
-                                &mut msg_log,
-                                &mut clock,
-                                &mut advice_saved_speed,
-                                &mut pending_message_sound,
+                        if let Some(category) =
+                            rebellion_render::message_index::opening_category(command)
+                        {
+                            strategic_windowing.enqueue_message_index_open(
+                                MessageIndexState::prepare_open(category)
+                                    .expect("opening_category returns a Message Index category"),
                             );
-                        } else {
-                            apply_message_index_actions(
-                                actions,
-                                &mut msg_log,
-                                &mut clock,
-                                &mut advice_saved_speed,
-                                &mut pending_message_sound,
+                            legacy_restriction_latch.note_start();
+                            macroquad::logging::info!(
+                                "[interface] command=0x{:x} destination=message_index category=0x{:x} status=queued_shared",
+                                command,
+                                category
                             );
                         }
                     }
@@ -7609,9 +7626,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                             Some((system, FinderTarget::Fleet(fleet)))
                         }
                     });
-                    if let Some((system, target)) =
-                        troop_choice.or(personnel_choice).or(message_choice)
-                    {
+                    if let Some((system, target)) = troop_choice.or(personnel_choice) {
                         sector_window_state.open_for_system(&world, system, cockpit_state.faction);
                         map_state.selected_system = Some(system);
                         match target {
@@ -8017,10 +8032,12 @@ Some(RailAudience::side(*faction_is_alliance)),
                     // input is muted; only the active modal receives this
                     // frame's egui events and supplies the outside barrier.
                     let mut encyclopedia_close_queued = false;
+                    let mut message_index_close_queued = false;
                     let managed_surfaces = managed_strategic_surface_plan(
                         strategic_frame_boundary.snapshot(),
                         encyclopedia_surface.window_id(),
                         fleet_finder_state.window_id(),
+                        message_index.window_id(),
                     );
                     for (surface, allows_input) in managed_surfaces {
                         match surface {
@@ -8099,6 +8116,59 @@ Some(RailAudience::side(*faction_is_alliance)),
                                     }
                                 }
                             }
+                            ManagedStrategicSurface::MessageIndex(_) => {
+                                let actions = with_retained_input(ctx, allows_input, || {
+                                    if cockpit_layout.scale <= 0.0 {
+                                        message_index.mark_unpaintable();
+                                        return Vec::new();
+                                    }
+                                    let actions =
+                                        rebellion_render::message_index::draw_message_index(
+                                            ctx,
+                                            &mut bmp_cache,
+                                            cockpit_state.faction,
+                                            rebellion_render::message_index::window_rect(
+                                                cockpit_layout,
+                                            )
+                                            .min,
+                                            cockpit_layout.scale,
+                                            &msg_log,
+                                            &mut message_index,
+                                            player_faction == MissionFaction::Alliance,
+                                        );
+                                    message_index.mark_paintable();
+                                    actions
+                                });
+                                message_choice = actions.iter().find_map(|action| match action {
+                                    MessageIndexAction::GoTo(MessageTarget::System(system)) => {
+                                        Some((*system, FinderTarget::Sector))
+                                    }
+                                    MessageIndexAction::GoTo(MessageTarget::Fleet(fleet)) => {
+                                        rebellion_core::movement::listed_location(
+                                            &movement_state,
+                                            &world,
+                                            *fleet,
+                                        )
+                                        .map(|system| (system, FinderTarget::Fleet(*fleet)))
+                                    }
+                                    _ => None,
+                                });
+                                if actions.contains(&MessageIndexAction::Close) {
+                                    if let Some(window) = message_index.request_close() {
+                                        strategic_windowing.enqueue(
+                                            rebellion_windowing::WindowCommand::Close(window),
+                                        );
+                                        message_index_close_queued = true;
+                                    }
+                                }
+                                apply_message_index_actions(
+                                    actions,
+                                    &mut msg_log,
+                                    &mut clock,
+                                    &mut advice_saved_speed,
+                                    &mut pending_message_sound,
+                                );
+                            }
                         }
                     }
                     if !encyclopedia_close_queued
@@ -8112,6 +8182,38 @@ Some(RailAudience::side(*faction_is_alliance)),
                             legacy_keyboard_handled = true;
                         }
                     }
+                    if !message_index_close_queued
+                        && message_index_keyboard_owner.is_some()
+                        && strategic_root_keys.contains(KeyCode::Escape)
+                    {
+                        if let Some(window) = message_index.request_close() {
+                            strategic_windowing
+                                .enqueue(rebellion_windowing::WindowCommand::Close(window));
+                            legacy_keyboard_handled = true;
+                        }
+                    }
+                    if let Some((system, target)) = message_choice {
+                        sector_window_state.open_for_system(&world, system, cockpit_state.faction);
+                        map_state.selected_system = Some(system);
+                        if let FinderTarget::Fleet(fleet) = target {
+                            if let Some(point) = sector_window_state.fleet_window_point(
+                                &world,
+                                cockpit_layout,
+                                system,
+                            ) {
+                                enqueue_fleet_window(
+                                    &mut strategic_windowing,
+                                    &fleet_window_state,
+                                    &world,
+                                    system,
+                                    point,
+                                    cockpit_state.faction,
+                                    cockpit_layout,
+                                    Some(FleetWindowEntry::Fleet(fleet)),
+                                );
+                            }
+                        }
+                    }
                     egui_claims_pointer = ctx.is_pointer_over_area() || ctx.wants_pointer_input();
                     egui_claims_keyboard = ctx.wants_keyboard_input();
                 });
@@ -8122,6 +8224,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                     fleet_keyboard_owner,
                     fleet_finder_keyboard_owner,
                     encyclopedia_keyboard_owner,
+                    message_index_keyboard_owner,
                 );
 
                 // Child surfaces have now handled their input. Keep every
@@ -8139,7 +8242,6 @@ Some(RailAudience::side(*faction_is_alliance)),
                         || status_window_state.is_open()
                         || troop_finder_state.is_open()
                         || personnel_finder_state.is_open()
-                        || message_index.is_some()
                         || original_modal_fixture_open,
                     focused_control: command_palette_now_open,
                     transient_menu: object_menu.is_some()
@@ -8393,24 +8495,19 @@ Some(RailAudience::side(*faction_is_alliance)),
                             );
                         } else if let Some(btn) = cockpit_accelerator(event.key) {
                             dispatch_cockpit_button!(btn);
-                        } else if event.key == KeyCode::F6 && message_index.is_none() {
+                        } else if event.key == KeyCode::F6 {
                             if let Some(category) =
                                 rebellion_render::message_index::opening_category(0x75)
                             {
-                                let mut index = MessageIndexState::new();
-                                let actions = index.set_category(category);
-                                message_index = Some(index);
-                                apply_message_index_actions(
-                                    actions,
-                                    &mut msg_log,
-                                    &mut clock,
-                                    &mut advice_saved_speed,
-                                    &mut pending_message_sound,
+                                strategic_windowing.enqueue_message_index_open(
+                                    MessageIndexState::prepare_open(category).expect(
+                                        "opening_category returns a Message Index category",
+                                    ),
                                 );
                                 strategic_dispatch_restricted = true;
                                 strategic_input_router.set_application_hold(true);
                                 macroquad::logging::info!(
-                                    "[interface] command=0x75 destination=message_index category=0x{:x} status=opened_original",
+                                    "[interface] command=0x75 destination=message_index category=0x{:x} status=queued_shared",
                                     category
                                 );
                             }
@@ -9216,7 +9313,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                             fleet_finder_state = FleetFinderState::default();
                             troop_finder_state = TroopFinderState::default();
                             personnel_finder_state = PersonnelFinderState::default();
-                            message_index = None;
+                            message_index.reset();
                             advice_saved_speed = None;
                             bombardment_panel_state = BombardmentPanelState::default();
                             encyclopedia_surface.reset();
@@ -9615,6 +9712,8 @@ Some(RailAudience::side(*faction_is_alliance)),
             .extend(fleet_finder_state.content_reports(strategic_frame_boundary.snapshot()));
         strategic_content_reports
             .extend(encyclopedia_surface.content_reports(strategic_frame_boundary.snapshot()));
+        strategic_content_reports
+            .extend(message_index.content_reports(strategic_frame_boundary.snapshot()));
 
         // Window intents commit only after input and painting have completed.
         // Detail content is published only after the matching manager commit;
@@ -9630,6 +9729,8 @@ Some(RailAudience::side(*faction_is_alliance)),
                 fleet_content_id,
                 prepared_fleet_finder,
                 fleet_finder_content_id,
+                prepared_message_index,
+                message_index_content_id,
                 minimized_system,
                 restored_system,
                 minimized_fleet,
@@ -9715,6 +9816,61 @@ Some(RailAudience::side(*faction_is_alliance)),
                     }
                 }
             }
+            if let (Some(prepared), Some(id), Ok(commit)) =
+                (prepared_message_index, message_index_content_id, &result)
+            {
+                let initial_row = prepared.initial_row();
+                let opened = matches!(
+                    commit.transition,
+                    rebellion_windowing::WindowTransition::Opened { .. }
+                );
+                if let Some((committed_id, mut actions)) =
+                    message_index.commit_open(prepared, &commit.transition)
+                {
+                    if committed_id == id {
+                        if opened {
+                            if let Some(row) = initial_row {
+                                let rows = rebellion_render::message_index::filtered_messages(
+                                    &msg_log,
+                                    message_index.category(),
+                                    player_faction == MissionFaction::Alliance,
+                                );
+                                actions.extend(message_index.view_row(&rows, row));
+                            }
+                        }
+                        let committed = strategic_windowing.has_content(id)
+                            || strategic_windowing.acknowledge_message_index_publication(id);
+                        if committed {
+                            apply_message_index_actions(
+                                actions,
+                                &mut msg_log,
+                                &mut clock,
+                                &mut advice_saved_speed,
+                                &mut pending_message_sound,
+                            );
+                        } else {
+                            let close_actions = message_index.remove_content(&[id]);
+                            apply_message_index_actions(
+                                close_actions,
+                                &mut msg_log,
+                                &mut clock,
+                                &mut advice_saved_speed,
+                                &mut pending_message_sound,
+                            );
+                            removed_content
+                                .extend(strategic_windowing.rollback_message_index_publication(id));
+                        }
+                    }
+                } else {
+                    macroquad::logging::error!(
+                        "[windowing] Message Index content commit did not match identity={id:?}"
+                    );
+                    if opened {
+                        removed_content
+                            .extend(strategic_windowing.rollback_message_index_publication(id));
+                    }
+                }
+            }
             if (activated_fleet && result.is_ok()) || committed_fleet_open {
                 fleet_legacy_bridge_serial = FleetWindowState::next_legacy_bridge_serial();
             }
@@ -9765,6 +9921,14 @@ Some(RailAudience::side(*faction_is_alliance)),
             fleet_window_state.remove_content(&removed_content);
             fleet_finder_state.remove_content(&removed_content);
             encyclopedia_surface.remove_content(&removed_content);
+            let message_close_actions = message_index.remove_content(&removed_content);
+            apply_message_index_actions(
+                message_close_actions,
+                &mut msg_log,
+                &mut clock,
+                &mut advice_saved_speed,
+                &mut pending_message_sound,
+            );
 
             match &result {
                 Ok(commit) => {
@@ -9799,6 +9963,14 @@ Some(RailAudience::side(*faction_is_alliance)),
         fleet_window_state.remove_content(&reconciliation.removed);
         fleet_finder_state.remove_content(&reconciliation.removed);
         encyclopedia_surface.remove_content(&reconciliation.removed);
+        let message_close_actions = message_index.remove_content(&reconciliation.removed);
+        apply_message_index_actions(
+            message_close_actions,
+            &mut msg_log,
+            &mut clock,
+            &mut advice_saved_speed,
+            &mut pending_message_sound,
+        );
         apply_capture_cancellation_events(
             &reconciliation.events,
             &mut strategic_input_router,
