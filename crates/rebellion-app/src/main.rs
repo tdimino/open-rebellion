@@ -91,6 +91,7 @@ use rebellion_data::encyclopedia_topics::EncyclopediaAudience;
 use rebellion_render::build_selection::{
     draw_build_selection, BuildSelectionAction, BuildSelectionState, PreparedBuildSelectionConfirm,
 };
+use rebellion_render::defenses_window::draw_managed_defenses_windows;
 use rebellion_render::fleet_finder::{
     draw_fleet_finder_focused, FleetFinderAction, FleetFinderState,
 };
@@ -153,8 +154,8 @@ use rebellion_render::{
     SystemWindowAction, SystemWindowState, TacticalAction, TacticalState, TacticalTrenchRunOutcome,
     VideoError, VideoPlayer,
 };
-use rebellion_render::{draw_defenses_windows, DefensesWindowAction, DefensesWindowState};
 use rebellion_render::{draw_missions_windows, MissionsWindowAction, MissionsWindowState};
+use rebellion_render::{DefensesWindowAction, DefensesWindowState};
 use rebellion_render::{FleetWindowAction, FleetWindowState};
 #[cfg(not(target_arch = "wasm32"))]
 use rebellion_render::{MusicSelector, SfxKind};
@@ -2056,13 +2057,28 @@ fn apply_capture_cancellation_events(
     events: &[rebellion_windowing::WindowEvent],
     router: &mut FrameInputRouter,
     fleets: &mut FleetWindowState,
+    defenses: &mut DefensesWindowState,
 ) {
     for event in events {
         if let rebellion_windowing::WindowEvent::CaptureCancelled { window, .. } = event {
             macroquad::logging::info!("[windowing] {:?}", event);
             router.cancel_window(*window);
             fleets.cancel_pointer_capture(*window);
+            defenses.cancel_pointer_capture(*window);
         }
+    }
+}
+
+fn enqueue_application_hold_capture_cancellation(
+    coordinator: &mut StrategicWindowing,
+    application_held: bool,
+    fleet_drag_owner: Option<rebellion_windowing::WindowId>,
+    defenses_drag_owner: Option<rebellion_windowing::WindowId>,
+) {
+    if application_held && (fleet_drag_owner.is_some() || defenses_drag_owner.is_some()) {
+        coordinator.enqueue(rebellion_windowing::WindowCommand::CancelCapture(
+            rebellion_windowing::CaptureCancelReason::HoldStarted,
+        ));
     }
 }
 
@@ -2087,9 +2103,10 @@ fn commit_build_selection_gameplay(
 #[cfg(test)]
 mod frame_input_tests {
     use super::{
-        approve_tactical_window_action, collect_strategic_pointer_batch,
-        commit_pending_tactical_window_action, reset_pending_tactical_handoff, restore_egui_input,
-        route_tactical_window_input, tactical_result_destination,
+        apply_capture_cancellation_events, approve_tactical_window_action,
+        collect_strategic_pointer_batch, commit_pending_tactical_window_action,
+        enqueue_application_hold_capture_cancellation, reset_pending_tactical_handoff,
+        restore_egui_input, route_tactical_window_input, tactical_result_destination,
         take_approved_tactical_window_action, take_tactical_destination_for_galaxy,
         with_retained_input, CommittedTacticalWindowAction, PreparedTacticalWindowAction,
         RetainedLegacyInputFilter, StrategicPointerBatch, StrategicRawPointerEvent,
@@ -2097,12 +2114,14 @@ mod frame_input_tests {
     };
     use egui_macroquad::egui;
     use rebellion_render::build_selection::BuildSelectionState;
+    use rebellion_render::defenses_window::DefensesWindowState;
     use rebellion_render::fleet_finder::FleetFinderState;
+    use rebellion_render::fleet_window::FleetWindowState;
     use rebellion_render::message_index::MessageIndexState;
     use rebellion_render::status_window::StatusWindowState;
     use rebellion_render::tactical_view::TacticalWindowEvent;
     use rebellion_render::windowing_input::{
-        FrameInputRouter, InputRecipient, PointerButtonId, PointerPhase,
+        FrameInputRouter, InputEventId, InputRecipient, PointerButtonId, PointerPhase,
     };
     use rebellion_render::{CockpitFaction, CockpitLayout, CockpitViewport};
     use rebellion_windowing::{WindowCommand, WindowManager};
@@ -2156,6 +2175,92 @@ mod frame_input_tests {
     fn a_held_retained_window_ignores_clicks_and_later_owners_still_receive_them() {
         assert_eq!(click_retained_window(true), (true, true));
         assert_eq!(click_retained_window(false), (false, true));
+    }
+
+    #[cfg(feature = "interface-test-fixtures")]
+    #[test]
+    fn application_hold_cancels_defenses_drag_through_exact_production_receipt() {
+        use rebellion_render::windowing_policy::contextual_spec;
+        use rebellion_windowing::{
+            CaptureCancelReason, SubjectId, WindowEvent, WindowKind, WindowOwner, WindowTransition,
+        };
+
+        let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
+        coordinator.enqueue(WindowCommand::Open(contextual_spec(
+            WindowKind::Defenses,
+            SubjectId::new(2, 100),
+            WindowOwner::StrategicRoot,
+        )));
+        let window = match coordinator.apply_pending()[0]
+            .result
+            .as_ref()
+            .unwrap()
+            .transition
+        {
+            WindowTransition::Opened { id } => id,
+            ref transition => panic!("expected Defenses open, got {transition:?}"),
+        };
+        coordinator.enqueue(WindowCommand::CapturePointer(window));
+        assert!(coordinator.apply_pending()[0].result.is_ok());
+
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(1, &coordinator.begin_frame());
+        let press = InputEventId {
+            frame: 1,
+            ordinal: 0,
+        };
+        assert_eq!(
+            router.collect_pointer(
+                press,
+                &BTreeSet::from([window]),
+                PointerPhase::Press(PointerButtonId::Primary),
+            ),
+            InputRecipient::Window(window)
+        );
+        assert!(router.claim(press, InputRecipient::Window(window)));
+
+        let mut fleets = FleetWindowState::default();
+        let mut defenses = DefensesWindowState::default();
+        defenses.seed_managed_drag_for_test(window);
+        assert!(defenses.is_dragging());
+        assert_eq!(defenses.drag_owner(), Some(window));
+
+        enqueue_application_hold_capture_cancellation(
+            &mut coordinator,
+            true,
+            fleets.drag_owner(),
+            defenses.drag_owner(),
+        );
+        let applied = coordinator.apply_pending();
+        let commit = applied[0].result.as_ref().unwrap();
+        assert_eq!(
+            commit.events,
+            vec![WindowEvent::CaptureCancelled {
+                window,
+                reason: CaptureCancelReason::HoldStarted,
+            }]
+        );
+        apply_capture_cancellation_events(&commit.events, &mut router, &mut fleets, &mut defenses);
+
+        assert_eq!(coordinator.begin_frame().capture_owner(), None);
+        assert!(!defenses.is_dragging());
+        assert_eq!(defenses.drag_owner(), None);
+
+        router.begin_frame(2, &coordinator.begin_frame());
+        let release = InputEventId {
+            frame: 2,
+            ordinal: 0,
+        };
+        assert_eq!(
+            router.collect_pointer(
+                release,
+                &BTreeSet::new(),
+                PointerPhase::Release(PointerButtonId::Primary),
+            ),
+            InputRecipient::Blocked,
+            "the exact cancellation receipt quarantines the orphan release"
+        );
+        assert!(!router.claim_root(release));
     }
 
     #[test]
@@ -4625,6 +4730,7 @@ async fn main() {
     // that still use the legacy cross-family focus serial.
     let mut system_legacy_bridge_serial = 0_u64;
     let mut fleet_legacy_bridge_serial = 0_u64;
+    let mut defenses_legacy_bridge_serial = 0_u64;
     let mut strategic_input_router = rebellion_render::windowing_input::FrameInputRouter::default();
     let mut retained_legacy_input_filter = RetainedLegacyInputFilter::default();
     let mut strategic_frame_number = 0_u64;
@@ -6684,6 +6790,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                             &committed_action.phase.events,
                             &mut strategic_input_router,
                             &mut fleet_window_state,
+                            &mut defenses_window_state,
                         );
                         approved_tactical_action = committed_action.approved_action;
                         if approved_tactical_action.is_none() {
@@ -6724,6 +6831,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                         &committed.events,
                         &mut strategic_input_router,
                         &mut fleet_window_state,
+                        &mut defenses_window_state,
                     );
                 }
                 Err(error) => {
@@ -6746,6 +6854,7 @@ Some(RailAudience::side(*faction_is_alliance)),
             let return_candidate = strategic_windowing.begin_frame();
             let mut reports = system_window_state.content_reports(&return_candidate, &world);
             reports.extend(fleet_window_state.content_reports(&return_candidate, &world));
+            reports.extend(defenses_window_state.content_reports(&return_candidate, &world));
             reports.extend(fleet_finder_state.content_reports(&return_candidate));
             reports.extend(encyclopedia_surface.content_reports(&return_candidate));
             reports.extend(message_index.content_reports(&return_candidate));
@@ -6764,6 +6873,7 @@ Some(RailAudience::side(*faction_is_alliance)),
             let reconciliation = strategic_windowing.reconcile(&return_candidate, &reports);
             system_window_state.remove_content(&reconciliation.removed);
             fleet_window_state.remove_content(&reconciliation.removed);
+            defenses_window_state.remove_content(&reconciliation.removed);
             fleet_finder_state.remove_content(&reconciliation.removed);
             encyclopedia_surface.remove_content(&reconciliation.removed);
             status_window_state.remove_content(&reconciliation.removed);
@@ -6780,6 +6890,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                 &reconciliation.events,
                 &mut strategic_input_router,
                 &mut fleet_window_state,
+                &mut defenses_window_state,
             );
             if !reconciliation.invalid_reports.is_empty()
                 || !reconciliation.blocking_unpainted.is_empty()
@@ -6832,6 +6943,7 @@ Some(RailAudience::side(*faction_is_alliance)),
         };
         let strategic_frame_boundary =
             strategic_windowing.begin_production_frame(strategic_locks, legacy_blockers);
+        defenses_window_state.refresh_release_targets(strategic_frame_boundary.snapshot(), &world);
         let fleet_keyboard_owner =
             fleet_window_state.keyboard_owner(strategic_frame_boundary.snapshot());
         let fleet_finder_keyboard_owner =
@@ -6850,15 +6962,14 @@ Some(RailAudience::side(*faction_is_alliance)),
                 strategic_frame_number = next_frame;
                 strategic_input_router
                     .begin_frame(strategic_frame_number, strategic_frame_boundary.snapshot());
-                strategic_input_router
-                    .set_application_hold(strategic_frame_boundary.migrated_input_held());
-                if strategic_frame_boundary.migrated_input_held()
-                    && fleet_window_state.drag_owner().is_some()
-                {
-                    strategic_windowing.enqueue(rebellion_windowing::WindowCommand::CancelCapture(
-                        rebellion_windowing::CaptureCancelReason::HoldStarted,
-                    ));
-                }
+                let migrated_input_held = strategic_frame_boundary.migrated_input_held();
+                strategic_input_router.set_application_hold(migrated_input_held);
+                enqueue_application_hold_capture_cancellation(
+                    &mut strategic_windowing,
+                    migrated_input_held,
+                    fleet_window_state.drag_owner(),
+                    defenses_window_state.drag_owner(),
+                );
                 // miniquad 0.4.8 passes focus loss to no input subscriber:
                 // the browser shell counts it, and on macOS each frame
                 // samples AppKit's active state. port: other native hosts
@@ -7495,7 +7606,11 @@ Some(RailAudience::side(*faction_is_alliance)),
                         cockpit_layout,
                         pointer,
                     )
-                    || defenses_window_state.contains_screen_point(cockpit_layout, pointer)
+                    || defenses_window_state.contains_visible_screen_point(
+                        strategic_frame_boundary.snapshot(),
+                        cockpit_layout,
+                        pointer,
+                    )
                     || missions_window_state.contains_screen_point(cockpit_layout, pointer)
                     || fleet_window_state.is_dragging()
                     || defenses_window_state.is_dragging()
@@ -7554,6 +7669,12 @@ Some(RailAudience::side(*faction_is_alliance)),
                                     top_layer,
                                 );
                                 hits.extend(fleet_window_state.hit_window_ids(
+                                    strategic_frame_boundary.snapshot(),
+                                    cockpit_layout,
+                                    point,
+                                    top_layer,
+                                ));
+                                hits.extend(defenses_window_state.hit_window_ids(
                                     strategic_frame_boundary.snapshot(),
                                     cockpit_layout,
                                     point,
@@ -8069,7 +8190,9 @@ Some(RailAudience::side(*faction_is_alliance)),
                                 logical_position,
                             } => {
                                 map_state.selected_system = Some(system);
-                                defenses_window_state.open(
+                                enqueue_defenses_window(
+                                    &mut strategic_windowing,
+                                    &defenses_window_state,
                                     &world,
                                     system,
                                     logical_position,
@@ -8181,7 +8304,18 @@ Some(RailAudience::side(*faction_is_alliance)),
                             let serial = serial.max(fleet_window_state.fixture_focus_serial());
                             serial
                         },
-                        &defenses_window_state,
+                        {
+                            let serial = defenses_legacy_bridge_serial;
+                            #[cfg(feature = "interface-test-fixtures")]
+                            let serial = serial.max(defenses_window_state.focus_serial());
+                            visible_legacy_bridge_serial(
+                                serial,
+                                defenses_window_state.has_visible_content(
+                                    strategic_frame_boundary.snapshot(),
+                                    &world,
+                                ),
+                            )
+                        },
                         &missions_window_state,
                     );
                     for action in with_retained_input(ctx, retained_window_input, || {
@@ -8242,15 +8376,17 @@ Some(RailAudience::side(*faction_is_alliance)),
                             } => strategic_windowing.enqueue_fleet_restore(id),
                             SystemWindowAction::RestoreDefensesWindow {
                                 system,
-                                logical_position,
+                                logical_position: _,
                             } => {
-                                defenses_window_state.open(
-                                    &world,
-                                    system,
-                                    logical_position,
-                                    cockpit_state.faction,
-                                    cockpit_layout,
-                                );
+                                if let Some(window) = exact_minimized_defenses_restore(
+                                    strategic_frame_boundary.snapshot(),
+                                    defenses_window_state.window_id(system),
+                                    rebellion_render::windowing_policy::system_subject(
+                                        &world, system,
+                                    ),
+                                ) {
+                                    strategic_windowing.enqueue_defenses_restore(window);
+                                }
                             }
                             SystemWindowAction::RestoreMissionsWindow {
                                 system,
@@ -8570,7 +8706,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                     }
 
                     for action in with_retained_input(ctx, retained_window_input, || {
-                        draw_defenses_windows(
+                        draw_managed_defenses_windows(
                             ctx,
                             &world,
                             fog_state,
@@ -8580,6 +8716,9 @@ Some(RailAudience::side(*faction_is_alliance)),
                             cockpit_state.faction,
                             cockpit_layout,
                             &mut bmp_cache,
+                            strategic_frame_boundary.snapshot(),
+                            &strategic_pointer_routes,
+                            &mut strategic_input_router,
                             galaxy_front == GalaxyFront::Defenses,
                         )
                     }) {
@@ -8595,6 +8734,18 @@ Some(RailAudience::side(*faction_is_alliance)),
                             DefensesWindowAction::SelectSystem(system) => {
                                 map_state.selected_system = Some(system);
                             }
+                            DefensesWindowAction::Activate(window) => strategic_windowing
+                                .enqueue(rebellion_windowing::WindowCommand::Activate(window)),
+                            DefensesWindowAction::CapturePointer(window) => strategic_windowing
+                                .enqueue(rebellion_windowing::WindowCommand::CapturePointer(
+                                    window,
+                                )),
+                            DefensesWindowAction::ReleasePointer(window) => strategic_windowing
+                                .enqueue(rebellion_windowing::WindowCommand::ReleasePointer(
+                                    window,
+                                )),
+                            DefensesWindowAction::Close(window) => strategic_windowing
+                                .enqueue(rebellion_windowing::WindowCommand::Close(window)),
                             DefensesWindowAction::Minimize {
                                 system,
                                 logical_position,
@@ -8606,6 +8757,15 @@ Some(RailAudience::side(*faction_is_alliance)),
                                         .enqueue(rebellion_windowing::WindowCommand::Close(window));
                                 }
                             }
+                            DefensesWindowAction::MinimizeManaged {
+                                window,
+                                system,
+                                logical_position,
+                            } => strategic_windowing.enqueue_defenses_minimize(
+                                window,
+                                system,
+                                logical_position,
+                            ),
                             DefensesWindowAction::OpenObjectMenu {
                                 selection, point, ..
                             } => {
@@ -9285,7 +9445,9 @@ Some(RailAudience::side(*faction_is_alliance)),
                                     system,
                                     rebellion_render::quadrant_icons::Quadrant::Defenses,
                                 ) {
-                                    defenses_window_state.open(
+                                    enqueue_defenses_window(
+                                        &mut strategic_windowing,
+                                        &defenses_window_state,
                                         &world,
                                         system,
                                         point,
@@ -11468,6 +11630,9 @@ Some(RailAudience::side(*faction_is_alliance)),
         strategic_content_reports.extend(
             fleet_window_state.content_reports(strategic_frame_boundary.snapshot(), &world),
         );
+        strategic_content_reports.extend(
+            defenses_window_state.content_reports(strategic_frame_boundary.snapshot(), &world),
+        );
         strategic_content_reports
             .extend(fleet_finder_state.content_reports(strategic_frame_boundary.snapshot()));
         strategic_content_reports
@@ -11507,6 +11672,8 @@ Some(RailAudience::side(*faction_is_alliance)),
                 confirmed_build_selection,
                 prepared_system,
                 system_content_id,
+                prepared_defenses,
+                defenses_content_id,
                 prepared_fleet,
                 fleet_content_id,
                 prepared_fleet_finder,
@@ -11517,6 +11684,8 @@ Some(RailAudience::side(*faction_is_alliance)),
                 status_content_id,
                 minimized_system,
                 restored_system,
+                minimized_defenses,
+                restored_defenses,
                 minimized_fleet,
                 restored_fleet,
             } = applied;
@@ -11530,7 +11699,13 @@ Some(RailAudience::side(*faction_is_alliance)),
                 rebellion_windowing::WindowCommand::Activate(id)
                     if fleet_window_state.contains_window(id)
             );
+            let activated_defenses = matches!(
+                command,
+                rebellion_windowing::WindowCommand::Activate(id)
+                    if defenses_window_state.contains_window(id)
+            );
             let mut committed_system_open = false;
+            let mut committed_defenses_open = false;
             let mut committed_fleet_open = false;
             if let (Some(prepared), Some(id), Ok(commit)) = (
                 prepared_build_selection,
@@ -11571,6 +11746,28 @@ Some(RailAudience::side(*faction_is_alliance)),
                 } else {
                     macroquad::logging::error!(
                         "[windowing] System content commit did not match identity={id:?}"
+                    );
+                    if matches!(
+                        commit.transition,
+                        rebellion_windowing::WindowTransition::Opened { .. }
+                    ) {
+                        removed_content.extend(strategic_windowing.rollback_detail_publication(id));
+                    }
+                }
+            }
+            if let (Some(prepared), Some(id), Ok(commit)) =
+                (prepared_defenses, defenses_content_id, &result)
+            {
+                if defenses_window_state.commit_open(prepared, &commit.transition) == Some(id) {
+                    committed_defenses_open = strategic_windowing.has_content(id)
+                        || strategic_windowing.acknowledge_defenses_publication(id);
+                    if !committed_defenses_open {
+                        defenses_window_state.remove_content(&[id]);
+                        removed_content.extend(strategic_windowing.rollback_detail_publication(id));
+                    }
+                } else {
+                    macroquad::logging::error!(
+                        "[windowing] Defenses content commit did not match identity={id:?}"
                     );
                     if matches!(
                         commit.transition,
@@ -11728,11 +11925,17 @@ Some(RailAudience::side(*faction_is_alliance)),
             if (activated_system && result.is_ok()) || committed_system_open {
                 system_legacy_bridge_serial = SystemWindowState::next_legacy_bridge_serial();
             }
+            if (activated_defenses && result.is_ok()) || committed_defenses_open {
+                defenses_legacy_bridge_serial = DefensesWindowState::next_legacy_bridge_serial();
+            }
             if let Some(window) = restored_system {
                 system_window_state.restore_system_window(window);
             }
             if let Some(window) = restored_fleet {
                 system_window_state.restore_fleet_window(window);
+            }
+            if restored_defenses.is_some() {
+                defenses_legacy_bridge_serial = DefensesWindowState::next_legacy_bridge_serial();
             }
             if let (Some((window, system, logical_position)), Ok(commit)) =
                 (minimized_system, &result)
@@ -11768,8 +11971,28 @@ Some(RailAudience::side(*faction_is_alliance)),
                     }
                 }
             }
+            if let (Some((window, system, logical_position)), Ok(commit)) =
+                (minimized_defenses, &result)
+            {
+                if matches!(
+                    &commit.transition,
+                    rebellion_windowing::WindowTransition::Minimized { .. }
+                ) {
+                    if let Some(evicted) =
+                        system_window_state.minimize_defenses_window(system, logical_position)
+                    {
+                        strategic_input_router.cancel_window(evicted);
+                        fleet_window_state.cancel_pointer_capture(evicted);
+                        defenses_window_state.cancel_pointer_capture(evicted);
+                        removed_content
+                            .extend(strategic_windowing.rollback_detail_publication(evicted));
+                    }
+                    debug_assert!(defenses_window_state.contains_window(window));
+                }
+            }
             system_window_state.remove_content(&removed_content);
             fleet_window_state.remove_content(&removed_content);
+            defenses_window_state.remove_content(&removed_content);
             fleet_finder_state.remove_content(&removed_content);
             encyclopedia_surface.remove_content(&removed_content);
             status_window_state.remove_content(&removed_content);
@@ -11789,6 +12012,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                         &commit.events,
                         &mut strategic_input_router,
                         &mut fleet_window_state,
+                        &mut defenses_window_state,
                     );
                     if !removed_content.is_empty() {
                         macroquad::logging::info!(
@@ -11814,6 +12038,7 @@ Some(RailAudience::side(*faction_is_alliance)),
         );
         system_window_state.remove_content(&reconciliation.removed);
         fleet_window_state.remove_content(&reconciliation.removed);
+        defenses_window_state.remove_content(&reconciliation.removed);
         fleet_finder_state.remove_content(&reconciliation.removed);
         encyclopedia_surface.remove_content(&reconciliation.removed);
         status_window_state.remove_content(&reconciliation.removed);
@@ -11830,6 +12055,7 @@ Some(RailAudience::side(*faction_is_alliance)),
             &reconciliation.events,
             &mut strategic_input_router,
             &mut fleet_window_state,
+            &mut defenses_window_state,
         );
         if !reconciliation.invalid_reports.is_empty()
             || !reconciliation.blocking_unpainted.is_empty()
@@ -11856,6 +12082,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                             &committed.events,
                             &mut strategic_input_router,
                             &mut fleet_window_state,
+                            &mut defenses_window_state,
                         );
                     }
                     Err(error) => {
@@ -13885,6 +14112,23 @@ fn enqueue_galaxy_system_window(
     true
 }
 
+fn enqueue_defenses_window(
+    strategic_windowing: &mut strategic_windowing::StrategicWindowing,
+    state: &DefensesWindowState,
+    world: &GameWorld,
+    system: SystemKey,
+    logical_position: (i16, i16),
+    faction: CockpitFaction,
+    layout: rebellion_render::CockpitLayout,
+) -> bool {
+    let Some(prepared) = state.prepare_open(world, system, logical_position, faction, layout)
+    else {
+        return false;
+    };
+    strategic_windowing.enqueue_defenses_open(prepared);
+    true
+}
+
 #[expect(
     clippy::too_many_arguments,
     reason = "The lifecycle adapter carries the existing Fleet opener's complete content context."
@@ -13934,18 +14178,133 @@ fn enqueue_galaxy_fleet_window(
 fn galaxy_front(
     system_serial: u64,
     fleet_serial: u64,
-    defenses: &DefensesWindowState,
+    defenses_serial: u64,
     missions: &MissionsWindowState,
 ) -> GalaxyFront {
     [
         (system_serial, GalaxyFront::System),
         (fleet_serial, GalaxyFront::Fleet),
-        (defenses.focus_serial(), GalaxyFront::Defenses),
+        (defenses_serial, GalaxyFront::Defenses),
         (missions.focus_serial(), GalaxyFront::Missions),
     ]
     .into_iter()
     .max_by_key(|&(serial, _)| serial)
     .map_or(GalaxyFront::System, |(_, front)| front)
+}
+
+/// Resolves the legacy system-keyed Defenses rail action only when the exact
+/// candidate remains a minimized Defenses identity for the same stable DAT
+/// subject in this frame's frozen manager snapshot.
+fn exact_minimized_defenses_restore(
+    snapshot: &rebellion_windowing::RoutingSnapshot,
+    candidate: Option<rebellion_windowing::WindowId>,
+    expected_subject: Option<rebellion_windowing::SubjectId>,
+) -> Option<rebellion_windowing::WindowId> {
+    let candidate = candidate?;
+    let expected_subject = expected_subject?;
+    (snapshot.presentation_history().contains(&candidate)
+        && snapshot.key(candidate).is_some_and(|key| {
+            key.kind == rebellion_windowing::WindowKind::Defenses
+                && key.subject == Some(expected_subject)
+        }))
+    .then_some(candidate)
+}
+
+const fn visible_legacy_bridge_serial(serial: u64, exact_content_visible: bool) -> u64 {
+    if exact_content_visible {
+        serial
+    } else {
+        0
+    }
+}
+
+#[cfg(test)]
+mod defenses_restore_guard_tests {
+    use super::{
+        exact_minimized_defenses_restore, galaxy_front, visible_legacy_bridge_serial, GalaxyFront,
+    };
+    use rebellion_render::windowing_policy::contextual_spec;
+    use rebellion_render::MissionsWindowState;
+    use rebellion_windowing::{
+        SubjectId, WindowCommand, WindowKind, WindowManager, WindowOwner, WindowTransition,
+    };
+
+    fn open(
+        manager: &mut WindowManager,
+        kind: WindowKind,
+        subject: SubjectId,
+    ) -> rebellion_windowing::WindowId {
+        let spec = contextual_spec(kind, subject, WindowOwner::StrategicRoot);
+        match manager.apply(WindowCommand::Open(spec)).unwrap().transition {
+            WindowTransition::Opened { id } => id,
+            transition => panic!("expected open, got {transition:?}"),
+        }
+    }
+
+    #[test]
+    fn stale_defenses_rail_does_not_retarget_a_visible_replacement() {
+        let expected = SubjectId::new(2, 100);
+        let mut manager = WindowManager::new();
+        let stale = open(&mut manager, WindowKind::Defenses, expected);
+        manager.apply(WindowCommand::Minimize(stale)).unwrap();
+        assert_eq!(
+            exact_minimized_defenses_restore(&manager.begin_frame(), Some(stale), Some(expected)),
+            Some(stale)
+        );
+
+        manager.apply(WindowCommand::Close(stale)).unwrap();
+        let replacement = open(&mut manager, WindowKind::Defenses, expected);
+        assert_ne!(replacement, stale);
+        assert_eq!(
+            exact_minimized_defenses_restore(
+                &manager.begin_frame(),
+                Some(replacement),
+                Some(expected),
+            ),
+            None,
+            "a system-keyed stale rail action cannot target visible replacement content"
+        );
+
+        let mut wrong_kind = WindowManager::new();
+        let system = open(&mut wrong_kind, WindowKind::System, expected);
+        wrong_kind.apply(WindowCommand::Minimize(system)).unwrap();
+        assert_eq!(
+            exact_minimized_defenses_restore(
+                &wrong_kind.begin_frame(),
+                Some(system),
+                Some(expected),
+            ),
+            None
+        );
+
+        let mut wrong_subject = WindowManager::new();
+        let other = SubjectId::new(2, 101);
+        let defenses = open(&mut wrong_subject, WindowKind::Defenses, other);
+        wrong_subject
+            .apply(WindowCommand::Minimize(defenses))
+            .unwrap();
+        assert_eq!(
+            exact_minimized_defenses_restore(
+                &wrong_subject.begin_frame(),
+                Some(defenses),
+                Some(expected),
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn defenses_bridge_serial_contributes_only_with_exact_visible_content() {
+        let missions = MissionsWindowState::default();
+        assert_eq!(
+            galaxy_front(7, 6, visible_legacy_bridge_serial(99, false), &missions,),
+            GalaxyFront::System
+        );
+        assert_eq!(
+            galaxy_front(7, 6, visible_legacy_bridge_serial(99, true), &missions,),
+            GalaxyFront::Defenses
+        );
+    }
 }
 
 fn filed(message: GameMessage, rail: MessageRail, audience: Option<RailAudience>) -> GameMessage {

@@ -7,6 +7,7 @@ use rebellion_data::encyclopedia_presenter::EncyclopediaEntryIntent;
 use rebellion_data::encyclopedia_session::EncyclopediaSession;
 use rebellion_render::{
     build_selection::{PreparedBuildSelection, PreparedBuildSelectionConfirm},
+    defenses_window::PreparedDefensesWindow,
     fleet_finder::{PreparedFleetFinder, FLEET_FINDER_NAME_CONTROL},
     fleet_window::PreparedFleetWindow,
     message_index::PreparedMessageIndex,
@@ -42,6 +43,10 @@ pub struct AppliedWindowCommand {
     pub prepared_system: Option<PreparedSystemWindow>,
     /// Identity whose attachment is valid for `prepared_system` after commit.
     pub system_content_id: Option<WindowId>,
+    /// Defenses content prepared alongside this semantic open.
+    pub prepared_defenses: Option<PreparedDefensesWindow>,
+    /// Identity whose attachment is valid for `prepared_defenses` after commit.
+    pub defenses_content_id: Option<WindowId>,
     /// Fleet content prepared alongside this command, never published before
     /// the manager accepts the semantic identity.
     pub prepared_fleet: Option<PreparedFleetWindow>,
@@ -63,6 +68,10 @@ pub struct AppliedWindowCommand {
     pub minimized_system: Option<(WindowId, SystemKey, (i16, i16))>,
     /// Exact temporary System rail projection retired after restore commit.
     pub restored_system: Option<WindowId>,
+    /// Temporary rail-adapter payload committed only with Defenses minimize.
+    pub minimized_defenses: Option<(WindowId, SystemKey, (i16, i16))>,
+    /// Exact Defenses identity restored from the temporary legacy rail.
+    pub restored_defenses: Option<WindowId>,
     /// Temporary rail-adapter payload committed only with Fleet minimize.
     pub minimized_fleet: Option<(WindowId, SystemKey, (i16, i16))>,
     /// Exact temporary rail projection retired only after the caller also
@@ -107,12 +116,15 @@ struct QueuedWindowCommand {
     prepared_build_selection: Option<PreparedBuildSelection>,
     prepared_build_selection_confirm: Option<PreparedBuildSelectionConfirm>,
     prepared_system: Option<PreparedSystemWindow>,
+    prepared_defenses: Option<PreparedDefensesWindow>,
     prepared_fleet: Option<PreparedFleetWindow>,
     prepared_fleet_finder: Option<PreparedFleetFinder>,
     prepared_message_index: Option<PreparedMessageIndex>,
     prepared_status: Option<PreparedStatusWindow>,
     minimized_system: Option<(WindowId, SystemKey, (i16, i16))>,
     restored_system: Option<WindowId>,
+    minimized_defenses: Option<(WindowId, SystemKey, (i16, i16))>,
+    restored_defenses: Option<WindowId>,
     minimized_fleet: Option<(WindowId, SystemKey, (i16, i16))>,
     restored_fleet: Option<WindowId>,
 }
@@ -443,12 +455,15 @@ impl StrategicWindowing {
             prepared_build_selection: None,
             prepared_build_selection_confirm: None,
             prepared_system: None,
+            prepared_defenses: None,
             prepared_fleet: None,
             prepared_fleet_finder: None,
             prepared_message_index: None,
             prepared_status: None,
             minimized_system: None,
             restored_system: None,
+            minimized_defenses: None,
+            restored_defenses: None,
             minimized_fleet: None,
             restored_fleet: None,
         });
@@ -461,12 +476,15 @@ impl StrategicWindowing {
             prepared_build_selection: Some(prepared),
             prepared_build_selection_confirm: None,
             prepared_system: None,
+            prepared_defenses: None,
             prepared_fleet: None,
             prepared_fleet_finder: None,
             prepared_message_index: None,
             prepared_status: None,
             minimized_system: None,
             restored_system: None,
+            minimized_defenses: None,
+            restored_defenses: None,
             minimized_fleet: None,
             restored_fleet: None,
         });
@@ -481,12 +499,15 @@ impl StrategicWindowing {
             prepared_build_selection: None,
             prepared_build_selection_confirm: Some(prepared),
             prepared_system: None,
+            prepared_defenses: None,
             prepared_fleet: None,
             prepared_fleet_finder: None,
             prepared_message_index: None,
             prepared_status: None,
             minimized_system: None,
             restored_system: None,
+            minimized_defenses: None,
+            restored_defenses: None,
             minimized_fleet: None,
             restored_fleet: None,
         });
@@ -499,12 +520,36 @@ impl StrategicWindowing {
             prepared_build_selection: None,
             prepared_build_selection_confirm: None,
             prepared_system: Some(prepared),
+            prepared_defenses: None,
             prepared_fleet: None,
             prepared_fleet_finder: None,
             prepared_message_index: None,
             prepared_status: None,
             minimized_system: None,
             restored_system: None,
+            minimized_defenses: None,
+            restored_defenses: None,
+            minimized_fleet: None,
+            restored_fleet: None,
+        });
+    }
+
+    /// Queues validated Defenses content beside its semantic detail open.
+    pub fn enqueue_defenses_open(&mut self, prepared: PreparedDefensesWindow) {
+        self.pending.push(QueuedWindowCommand {
+            command: WindowCommand::Open(prepared.spec()),
+            prepared_build_selection: None,
+            prepared_build_selection_confirm: None,
+            prepared_system: None,
+            prepared_defenses: Some(prepared),
+            prepared_fleet: None,
+            prepared_fleet_finder: None,
+            prepared_message_index: None,
+            prepared_status: None,
+            minimized_system: None,
+            restored_system: None,
+            minimized_defenses: None,
+            restored_defenses: None,
             minimized_fleet: None,
             restored_fleet: None,
         });
@@ -518,12 +563,15 @@ impl StrategicWindowing {
             prepared_build_selection: None,
             prepared_build_selection_confirm: None,
             prepared_system: Some(prepared),
+            prepared_defenses: None,
             prepared_fleet: None,
             prepared_fleet_finder: None,
             prepared_message_index: None,
             prepared_status: None,
             minimized_system: None,
             restored_system: None,
+            minimized_defenses: None,
+            restored_defenses: None,
             minimized_fleet: None,
             restored_fleet: None,
         });
@@ -537,12 +585,15 @@ impl StrategicWindowing {
             prepared_build_selection: None,
             prepared_build_selection_confirm: None,
             prepared_system: None,
+            prepared_defenses: None,
             prepared_fleet: Some(prepared),
             prepared_fleet_finder: None,
             prepared_message_index: None,
             prepared_status: None,
             minimized_system: None,
             restored_system: None,
+            minimized_defenses: None,
+            restored_defenses: None,
             minimized_fleet: None,
             restored_fleet: None,
         });
@@ -556,12 +607,15 @@ impl StrategicWindowing {
             prepared_build_selection: None,
             prepared_build_selection_confirm: None,
             prepared_system: None,
+            prepared_defenses: None,
             prepared_fleet: Some(prepared),
             prepared_fleet_finder: None,
             prepared_message_index: None,
             prepared_status: None,
             minimized_system: None,
             restored_system: None,
+            minimized_defenses: None,
+            restored_defenses: None,
             minimized_fleet: None,
             restored_fleet: None,
         });
@@ -574,12 +628,15 @@ impl StrategicWindowing {
             prepared_build_selection: None,
             prepared_build_selection_confirm: None,
             prepared_system: None,
+            prepared_defenses: None,
             prepared_fleet: None,
             prepared_fleet_finder: Some(prepared),
             prepared_message_index: None,
             prepared_status: None,
             minimized_system: None,
             restored_system: None,
+            minimized_defenses: None,
+            restored_defenses: None,
             minimized_fleet: None,
             restored_fleet: None,
         });
@@ -592,12 +649,15 @@ impl StrategicWindowing {
             prepared_build_selection: None,
             prepared_build_selection_confirm: None,
             prepared_system: None,
+            prepared_defenses: None,
             prepared_fleet: None,
             prepared_fleet_finder: None,
             prepared_message_index: Some(prepared),
             prepared_status: None,
             minimized_system: None,
             restored_system: None,
+            minimized_defenses: None,
+            restored_defenses: None,
             minimized_fleet: None,
             restored_fleet: None,
         });
@@ -620,12 +680,15 @@ impl StrategicWindowing {
             prepared_build_selection: None,
             prepared_build_selection_confirm: None,
             prepared_system: None,
+            prepared_defenses: None,
             prepared_fleet: None,
             prepared_fleet_finder: None,
             prepared_message_index: None,
             prepared_status: Some(prepared),
             minimized_system: None,
             restored_system: None,
+            minimized_defenses: None,
+            restored_defenses: None,
             minimized_fleet: None,
             restored_fleet: None,
         });
@@ -644,12 +707,15 @@ impl StrategicWindowing {
             prepared_build_selection: None,
             prepared_build_selection_confirm: None,
             prepared_system: None,
+            prepared_defenses: None,
             prepared_fleet: None,
             prepared_fleet_finder: None,
             prepared_message_index: None,
             prepared_status: None,
             minimized_system: Some((window, system, logical_position)),
             restored_system: None,
+            minimized_defenses: None,
+            restored_defenses: None,
             minimized_fleet: None,
             restored_fleet: None,
         });
@@ -663,12 +729,64 @@ impl StrategicWindowing {
             prepared_build_selection: None,
             prepared_build_selection_confirm: None,
             prepared_system: None,
+            prepared_defenses: None,
             prepared_fleet: None,
             prepared_fleet_finder: None,
             prepared_message_index: None,
             prepared_status: None,
             minimized_system: None,
             restored_system: Some(window),
+            minimized_defenses: None,
+            restored_defenses: None,
+            minimized_fleet: None,
+            restored_fleet: None,
+        });
+    }
+
+    /// Queues manager-owned Defenses minimization with its temporary legacy
+    /// rail projection as one commit unit.
+    pub fn enqueue_defenses_minimize(
+        &mut self,
+        window: WindowId,
+        system: SystemKey,
+        logical_position: (i16, i16),
+    ) {
+        self.pending.push(QueuedWindowCommand {
+            command: WindowCommand::Minimize(window),
+            prepared_build_selection: None,
+            prepared_build_selection_confirm: None,
+            prepared_system: None,
+            prepared_defenses: None,
+            prepared_fleet: None,
+            prepared_fleet_finder: None,
+            prepared_message_index: None,
+            prepared_status: None,
+            minimized_system: None,
+            restored_system: None,
+            minimized_defenses: Some((window, system, logical_position)),
+            restored_defenses: None,
+            minimized_fleet: None,
+            restored_fleet: None,
+        });
+    }
+
+    /// Queues restoration of the exact manager-owned Defenses identity kept
+    /// attached while the legacy rail projects its minimized state.
+    pub fn enqueue_defenses_restore(&mut self, window: WindowId) {
+        self.pending.push(QueuedWindowCommand {
+            command: WindowCommand::Restore(window),
+            prepared_build_selection: None,
+            prepared_build_selection_confirm: None,
+            prepared_system: None,
+            prepared_defenses: None,
+            prepared_fleet: None,
+            prepared_fleet_finder: None,
+            prepared_message_index: None,
+            prepared_status: None,
+            minimized_system: None,
+            restored_system: None,
+            minimized_defenses: None,
+            restored_defenses: Some(window),
             minimized_fleet: None,
             restored_fleet: None,
         });
@@ -706,12 +824,15 @@ impl StrategicWindowing {
             prepared_build_selection: None,
             prepared_build_selection_confirm: None,
             prepared_system: None,
+            prepared_defenses: None,
             prepared_fleet: None,
             prepared_fleet_finder: None,
             prepared_message_index: None,
             prepared_status: None,
             minimized_system: None,
             restored_system: None,
+            minimized_defenses: None,
+            restored_defenses: None,
             minimized_fleet: Some((window, system, logical_position)),
             restored_fleet: None,
         });
@@ -726,12 +847,15 @@ impl StrategicWindowing {
             prepared_build_selection: None,
             prepared_build_selection_confirm: None,
             prepared_system: None,
+            prepared_defenses: None,
             prepared_fleet: None,
             prepared_fleet_finder: None,
             prepared_message_index: None,
             prepared_status: None,
             minimized_system: None,
             restored_system: None,
+            minimized_defenses: None,
+            restored_defenses: None,
             minimized_fleet: None,
             restored_fleet: Some(window),
         });
@@ -756,12 +880,15 @@ impl StrategicWindowing {
                     prepared_build_selection,
                     prepared_build_selection_confirm,
                     prepared_system,
+                    prepared_defenses,
                     prepared_fleet,
                     prepared_fleet_finder,
                     prepared_message_index,
                     prepared_status,
                     minimized_system,
                     restored_system: queued_restored_system,
+                    minimized_defenses,
+                    restored_defenses: queued_restored_defenses,
                     minimized_fleet,
                     restored_fleet: queued_restored_fleet,
                 } = queued;
@@ -770,13 +897,16 @@ impl StrategicWindowing {
                 let mut build_selection_content_id = None;
                 let mut confirmed_build_selection = None;
                 let mut system_content_id = None;
+                let mut defenses_content_id = None;
                 let mut fleet_content_id = None;
                 let mut fleet_finder_content_id = None;
                 let mut message_index_content_id = None;
                 let mut status_content_id = None;
                 let mut committed_minimized_system = None;
+                let mut committed_minimized_defenses = None;
                 let mut committed_minimized_fleet = None;
                 let mut restored_system = None;
+                let mut restored_defenses = None;
                 let mut restored_fleet = None;
                 if let Ok(commit) = &result {
                     self.record_transition(&commit.transition, &commit.events);
@@ -803,6 +933,7 @@ impl StrategicWindowing {
                     }
                     if matches!(commit.transition, WindowTransition::Minimized { .. }) {
                         committed_minimized_system = minimized_system;
+                        committed_minimized_defenses = minimized_defenses;
                         committed_minimized_fleet = minimized_fleet;
                     }
                     if queued_restored_system.is_some_and(|window| {
@@ -812,6 +943,14 @@ impl StrategicWindowing {
                         )
                     }) {
                         restored_system = queued_restored_system;
+                    }
+                    if queued_restored_defenses.is_some_and(|window| {
+                        matches!(
+                            commit.transition,
+                            WindowTransition::Restored { id, .. } if id == window
+                        )
+                    }) {
+                        restored_defenses = queued_restored_defenses;
                     }
                     if queued_restored_fleet.is_some_and(|window| {
                         matches!(
@@ -839,6 +978,26 @@ impl StrategicWindowing {
                             )
                         {
                             restored_system = system_content_id;
+                        }
+                    }
+                    if prepared_defenses.is_some() {
+                        defenses_content_id = match &commit.transition {
+                            WindowTransition::Opened { id } => Some(*id),
+                            WindowTransition::Existing { id, .. } => {
+                                self.attached_content.contains(id).then_some(*id)
+                            }
+                            _ => None,
+                        };
+                        if defenses_content_id.is_some()
+                            && matches!(
+                                commit.transition,
+                                WindowTransition::Existing {
+                                    effect: ExistingEffect::RestoredAndRaised,
+                                    ..
+                                }
+                            )
+                        {
+                            restored_defenses = defenses_content_id;
                         }
                     }
                     if prepared_fleet.is_some() {
@@ -913,6 +1072,8 @@ impl StrategicWindowing {
                     confirmed_build_selection,
                     prepared_system,
                     system_content_id,
+                    prepared_defenses,
+                    defenses_content_id,
                     prepared_fleet,
                     fleet_content_id,
                     prepared_fleet_finder,
@@ -923,6 +1084,8 @@ impl StrategicWindowing {
                     status_content_id,
                     minimized_system: committed_minimized_system,
                     restored_system,
+                    minimized_defenses: committed_minimized_defenses,
+                    restored_defenses,
                     minimized_fleet: committed_minimized_fleet,
                     restored_fleet,
                 }
@@ -967,6 +1130,15 @@ impl StrategicWindowing {
             .begin_frame()
             .key(id)
             .is_some_and(|key| key.kind == rebellion_windowing::WindowKind::System)
+            && self.attached_content.insert(id)
+    }
+
+    /// Acknowledges Defenses publication only for the exact manager identity.
+    pub fn acknowledge_defenses_publication(&mut self, id: WindowId) -> bool {
+        self.manager
+            .begin_frame()
+            .key(id)
+            .is_some_and(|key| key.kind == rebellion_windowing::WindowKind::Defenses)
             && self.attached_content.insert(id)
     }
 
@@ -1395,7 +1567,8 @@ mod tests {
         message_index::{MessageIndexAction, MessageIndexState},
         status_rows::{StatusObject, StatusSources},
         status_window::StatusWindowState,
-        CockpitFaction, CockpitLayout, CockpitViewport, FleetWindowState, SystemWindowState,
+        CockpitFaction, CockpitLayout, CockpitViewport, DefensesWindowState, FleetWindowState,
+        SystemWindowState,
     };
     use rebellion_windowing::{
         ControlId, FocusTarget, SubjectId, WindowKey, WindowKind, WindowOwner,
@@ -1727,6 +1900,62 @@ mod tests {
         assert!(rejected.result.is_err());
         assert_eq!(rejected.minimized_fleet, None);
         assert_eq!(rejected.restored_fleet, None);
+    }
+
+    #[test]
+    fn defenses_detail_commits_raise_restore_and_exact_removal_receipts() {
+        let (world, system) = fleet_world();
+        let mut state = DefensesWindowState::default();
+        let mut coordinator = StrategicWindowing::new();
+        let prepared = state
+            .prepare_open(
+                &world,
+                system,
+                (40, 50),
+                CockpitFaction::Alliance,
+                fleet_layout(),
+            )
+            .unwrap();
+
+        coordinator.enqueue_defenses_open(prepared);
+        assert!(coordinator.begin_frame().paint_order().is_empty());
+        let mut opened = coordinator.apply_pending().remove(0);
+        let id = opened.defenses_content_id.unwrap();
+        assert_eq!(
+            state.commit_open(
+                opened.prepared_defenses.take().unwrap(),
+                &opened.result.as_ref().unwrap().transition,
+            ),
+            Some(id)
+        );
+        assert!(coordinator.acknowledge_defenses_publication(id));
+        assert_eq!(state.window_id(system), Some(id));
+
+        coordinator.enqueue_defenses_minimize(id, system, (40, 50));
+        let minimized = coordinator.apply_pending().remove(0);
+        assert_eq!(minimized.minimized_defenses, Some((id, system, (40, 50))));
+        assert_eq!(minimized.restored_defenses, None);
+        assert!(coordinator.has_content(id));
+        assert!(!coordinator.begin_frame().is_visible(id));
+        assert!(state.contains_window(id));
+
+        coordinator.enqueue_defenses_restore(id);
+        let restored = coordinator.apply_pending().remove(0);
+        assert_eq!(restored.defenses_content_id, None);
+        assert_eq!(restored.restored_defenses, Some(id));
+        assert!(matches!(
+            restored.result.as_ref().unwrap().transition,
+            WindowTransition::Restored { id: restored_id, .. } if restored_id == id
+        ));
+        assert!(coordinator.begin_frame().is_visible(id));
+        assert!(state.contains_window(id));
+
+        coordinator.enqueue(WindowCommand::Close(id));
+        let closed = coordinator.apply_pending().remove(0);
+        assert_eq!(closed.removed_content, [id]);
+        state.remove_content(&closed.removed_content);
+        assert!(!state.contains_window(id));
+        assert!(!coordinator.has_content(id));
     }
 
     #[test]

@@ -22,6 +22,10 @@ use rebellion_core::ids::{
 };
 use rebellion_core::missions::{MissionMember, MissionState};
 use rebellion_core::world::GameWorld;
+use rebellion_windowing::{
+    ContentReport, ContentStatus, RoutingSnapshot, SubjectId, WindowId, WindowKind, WindowOwner,
+    WindowSpec, WindowTransition,
+};
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{CockpitFaction, CockpitLayout};
@@ -37,6 +41,10 @@ use crate::system_window::{
     exact_clicked, logical_rect, opposing_contents_visible, rect_contains, special_force_mini,
     troop_mini,
 };
+use crate::windowing_input::{
+    FrameInputRouter, InputEventId, InputRecipient, PointerButtonId, PointerPhase,
+};
+use crate::windowing_policy::{contextual_spec, system_subject};
 
 pub const DEFENSES_WINDOW_WIDTH: f32 = 235.0;
 pub const DEFENSES_WINDOW_HEIGHT: f32 = 304.0;
@@ -195,6 +203,10 @@ struct DefensesRow {
 
 #[derive(Debug, Clone, PartialEq)]
 struct OpenDefensesWindow {
+    /// Opaque session identity allocated by the shared window manager.
+    /// Fixture-only direct opens deliberately have no production identity.
+    id: Option<WindowId>,
+    subject: Option<SubjectId>,
     system: SystemKey,
     logical_position: (i16, i16),
     page: DefensesPage,
@@ -205,6 +217,33 @@ struct OpenDefensesWindow {
     /// press (`FUN_0060a490`, RCDATA `0x29cc`).
     first_row: usize,
     scroll: ScrollDrag,
+    /// Whether this exact content identity was admitted for release targeting
+    /// by the current frozen presentation snapshot.
+    release_target_visible: bool,
+}
+
+/// Validated Defenses content held aside until the manager accepts its stable
+/// `(Defenses, system DAT ID)` identity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PreparedDefensesWindow {
+    spec: WindowSpec,
+    faction: CockpitFaction,
+    system: SystemKey,
+    logical_position: (i16, i16),
+}
+
+impl PreparedDefensesWindow {
+    /// Complete manager declaration for this content candidate.
+    #[must_use]
+    pub const fn spec(&self) -> WindowSpec {
+        self.spec
+    }
+
+    /// Runtime system identity retained beside the stable DAT subject.
+    #[must_use]
+    pub const fn system(&self) -> SystemKey {
+        self.system
+    }
 }
 
 /// A left press held on a squadron, character or special-force row until
@@ -226,6 +265,7 @@ pub struct DefensesWindowState {
     focus_serial: u64,
     windows: Vec<OpenDefensesWindow>,
     drag: Option<RowDrag>,
+    drag_owner: Option<WindowId>,
 }
 
 impl Default for DefensesWindowState {
@@ -235,15 +275,107 @@ impl Default for DefensesWindowState {
             focus_serial: 0,
             windows: Vec::new(),
             drag: None,
+            drag_owner: None,
         }
     }
 }
 
+#[derive(Default)]
+struct EndDragResult {
+    actions: Vec<DefensesWindowAction>,
+    claimed_primary_release_by: Option<WindowId>,
+}
+
 impl DefensesWindowState {
+    /// Allocates a temporary cross-family serial after the shared manager has
+    /// already accepted a Defenses activation. The frozen routing snapshot,
+    /// not this bridge, remains the Defenses family's order authority.
+    #[must_use]
+    pub fn next_legacy_bridge_serial() -> u64 {
+        crate::window_focus::next_serial()
+    }
+
     /// Whether any window of this kind is open.
     #[must_use]
     pub fn any_open(&self) -> bool {
         !self.windows.is_empty()
+    }
+
+    /// Validates and prepares Defenses content without mutating the live
+    /// store. The stable subject is the system's original DAT identity.
+    #[must_use]
+    pub fn prepare_open(
+        &self,
+        world: &GameWorld,
+        system: SystemKey,
+        logical_position: (i16, i16),
+        faction: CockpitFaction,
+        layout: CockpitLayout,
+    ) -> Option<PreparedDefensesWindow> {
+        let subject = system_subject(world, system)?;
+        Some(PreparedDefensesWindow {
+            spec: contextual_spec(WindowKind::Defenses, subject, WindowOwner::StrategicRoot),
+            faction,
+            system,
+            logical_position: clamp_window_to_galaxy(
+                logical_position,
+                layout,
+                DEFENSES_WINDOW_WIDTH,
+                DEFENSES_WINDOW_HEIGHT,
+            ),
+        })
+    }
+
+    /// Publishes new Defenses content, or confirms the exact preserved
+    /// content, only after a successful manager open commit.
+    pub fn commit_open(
+        &mut self,
+        prepared: PreparedDefensesWindow,
+        transition: &WindowTransition,
+    ) -> Option<WindowId> {
+        let subject = prepared.spec.key.subject?;
+        match *transition {
+            WindowTransition::Opened { id } => {
+                if self.windows.iter().any(|window| {
+                    window.id == Some(id)
+                        || window.subject == Some(subject)
+                        || window.system == prepared.system
+                }) {
+                    return None;
+                }
+                if self.windows.is_empty() {
+                    self.faction = prepared.faction;
+                } else if self.faction != prepared.faction {
+                    return None;
+                }
+                self.windows.push(OpenDefensesWindow {
+                    id: Some(id),
+                    subject: Some(subject),
+                    system: prepared.system,
+                    logical_position: prepared.logical_position,
+                    page: DefensesPage::Personnel,
+                    selected: None,
+                    first_row: 0,
+                    scroll: ScrollDrag::default(),
+                    release_target_visible: false,
+                });
+                Some(id)
+            }
+            WindowTransition::Existing { id, .. } => {
+                if self.faction != prepared.faction {
+                    return None;
+                }
+                self.windows
+                    .iter()
+                    .any(|window| {
+                        window.id == Some(id)
+                            && window.subject == Some(subject)
+                            && window.system == prepared.system
+                    })
+                    .then_some(id)
+            }
+            _ => None,
+        }
     }
 
     /// Open `system`'s Defenses window at a logical point, clamped into the
@@ -266,6 +398,8 @@ impl DefensesWindowState {
         }
         self.focus_serial = crate::window_focus::next_serial();
         self.windows.push(OpenDefensesWindow {
+            id: None,
+            subject: None,
             system,
             logical_position: clamp_window_to_galaxy(
                 logical_position,
@@ -277,8 +411,101 @@ impl DefensesWindowState {
             selected: None,
             first_row: 0,
             scroll: ScrollDrag::default(),
+            release_target_visible: true,
         });
         true
+    }
+
+    /// Exact manager identity attached to `system`'s committed content.
+    #[must_use]
+    pub fn window_id(&self, system: SystemKey) -> Option<WindowId> {
+        self.windows
+            .iter()
+            .find(|window| window.system == system)
+            .and_then(|window| window.id)
+    }
+
+    /// Whether `system`'s exact content identity participates in this frozen
+    /// frame. Direct fixture content has no manager identity and stays visible.
+    #[must_use]
+    pub fn window_is_visible(&self, snapshot: &RoutingSnapshot, system: SystemKey) -> bool {
+        self.windows.iter().any(|window| {
+            window.system == system && window.id.is_none_or(|id| snapshot.is_visible(id))
+        })
+    }
+
+    /// Whether exact Defenses content participates visibly in this frozen
+    /// frame. Manager-owned content must retain its committed kind and DAT
+    /// subject; direct fixture content remains visible while its system exists.
+    #[must_use]
+    pub fn has_visible_content(&self, snapshot: &RoutingSnapshot, world: &GameWorld) -> bool {
+        self.windows.iter().any(|window| match window.id {
+            Some(id) => {
+                snapshot.is_visible(id)
+                    && snapshot.key(id).is_some_and(|key| {
+                        key.kind == WindowKind::Defenses && key.subject == window.subject
+                    })
+                    && system_subject(world, window.system) == window.subject
+            }
+            None => world.systems.contains_key(window.system),
+        })
+    }
+
+    /// Whether exact manager-owned Defenses content remains attached.
+    #[must_use]
+    pub fn contains_window(&self, id: WindowId) -> bool {
+        self.windows.iter().any(|window| window.id == Some(id))
+    }
+
+    /// Removes only content named by manager teardown receipts.
+    pub fn remove_content(&mut self, removed: &[WindowId]) {
+        self.windows
+            .retain(|window| window.id.is_none_or(|id| !removed.contains(&id)));
+        if self.drag.as_ref().is_some_and(|drag| {
+            !self
+                .windows
+                .iter()
+                .any(|window| window.system == drag.system)
+        }) {
+            self.drag = None;
+            self.drag_owner = None;
+        }
+    }
+
+    /// Reports every active Defenses identity in the frozen snapshot,
+    /// including minimized history entries whose content remains attached.
+    #[must_use]
+    pub fn content_reports(
+        &self,
+        snapshot: &RoutingSnapshot,
+        world: &GameWorld,
+    ) -> Vec<ContentReport> {
+        snapshot
+            .paint_order()
+            .iter()
+            .chain(snapshot.presentation_history())
+            .copied()
+            .filter(|&id| {
+                snapshot
+                    .key(id)
+                    .is_some_and(|key| key.kind == WindowKind::Defenses)
+            })
+            .map(|id| {
+                let ready = self.windows.iter().any(|window| {
+                    window.id == Some(id)
+                        && world.systems.contains_key(window.system)
+                        && system_subject(world, window.system) == window.subject
+                });
+                ContentReport {
+                    window: id,
+                    status: if ready {
+                        ContentStatus::Ready
+                    } else {
+                        ContentStatus::Absent
+                    },
+                }
+            })
+            .collect()
     }
 
     #[must_use]
@@ -297,6 +524,45 @@ impl DefensesWindowState {
         self.windows
             .iter()
             .any(|window| rect_contains(window_screen_rect(window, layout), point))
+    }
+
+    /// Whether visible Defenses content covers `point`. Minimized manager
+    /// content stays attached but cannot block the strategic root.
+    #[must_use]
+    pub fn contains_visible_screen_point(
+        &self,
+        snapshot: &RoutingSnapshot,
+        layout: CockpitLayout,
+        point: (f32, f32),
+    ) -> bool {
+        let point = egui::pos2(point.0, point.1);
+        self.windows.iter().any(|window| {
+            window.id.is_none_or(|id| snapshot.is_visible(id))
+                && rect_contains(window_screen_rect(window, layout), point)
+        })
+    }
+
+    /// Exact visible manager identity whose Defenses rectangle covers
+    /// `point` when egui reports that content layer as topmost.
+    #[must_use]
+    pub fn hit_window_ids(
+        &self,
+        snapshot: &RoutingSnapshot,
+        layout: CockpitLayout,
+        point: (f32, f32),
+        top_layer: Option<egui::LayerId>,
+    ) -> std::collections::BTreeSet<WindowId> {
+        let point = egui::pos2(point.0, point.1);
+        self.windows
+            .iter()
+            .filter(|window| top_layer.is_some_and(|layer| layer.id == area_id(window)))
+            .filter_map(|window| {
+                window.id.filter(|id| {
+                    snapshot.is_visible(*id)
+                        && rect_contains(window_screen_rect(window, layout), point)
+                })
+            })
+            .collect()
     }
 
     /// The screen rect of `system`'s window.
@@ -387,13 +653,32 @@ impl DefensesWindowState {
     pub fn release_target(&self, layer: egui::LayerId) -> Option<SystemKey> {
         self.windows
             .iter()
-            .find(|window| area_id(window.system) == layer.id)
+            .find(|window| window.release_target_visible && area_id(window) == layer.id)
             .map(|window| window.system)
+    }
+
+    /// Refreshes which retained egui layers may resolve a gameplay release.
+    /// The application calls this immediately after freezing the frame so a
+    /// stale prior-frame area cannot retarget before Defenses paints.
+    pub fn refresh_release_targets(&mut self, snapshot: &RoutingSnapshot, world: &GameWorld) {
+        for window in &mut self.windows {
+            window.release_target_visible = match window.id {
+                Some(id) => {
+                    snapshot.is_visible(id)
+                        && snapshot.key(id).is_some_and(|key| {
+                            key.kind == WindowKind::Defenses && key.subject == window.subject
+                        })
+                        && system_subject(world, window.system) == window.subject
+                }
+                None => world.systems.contains_key(window.system),
+            };
+        }
     }
 
     pub fn clear(&mut self) {
         self.windows.clear();
         self.drag = None;
+        self.drag_owner = None;
     }
 
     /// Whether a left press on a squadron row is held: the list has
@@ -401,6 +686,36 @@ impl DefensesWindowState {
     #[must_use]
     pub fn is_dragging(&self) -> bool {
         self.drag.is_some()
+    }
+
+    /// Exact manager capture owner of the active Defenses drag, if migrated.
+    #[must_use]
+    pub const fn drag_owner(&self) -> Option<WindowId> {
+        self.drag_owner
+    }
+
+    /// Seeds the renderer side of an exact manager-owned drag for production
+    /// boundary tests without exposing mutable capture internals in release
+    /// builds.
+    #[cfg(feature = "interface-test-fixtures")]
+    #[doc(hidden)]
+    pub fn seed_managed_drag_for_test(&mut self, window: WindowId) {
+        self.drag = Some(RowDrag {
+            system: SystemKey::default(),
+            item: DefensesItem::Character(CharacterKey::default()),
+            is_alliance: true,
+            press: egui::Pos2::ZERO,
+            list: egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+        });
+        self.drag_owner = Some(window);
+    }
+
+    /// Applies a manager capture-cancellation receipt to renderer payload.
+    pub fn cancel_pointer_capture(&mut self, window: WindowId) {
+        if self.drag_owner == Some(window) {
+            self.drag = None;
+            self.drag_owner = None;
+        }
     }
 
     /// End a held drag on the left release: far enough from the press and
@@ -412,7 +727,13 @@ impl DefensesWindowState {
     ///
     /// port: regiments and defenses do not drag; they keep their pop-up
     /// Move.
-    fn end_drag(&mut self, ctx: &egui::Context, scale: f32) -> Option<DefensesWindowAction> {
+    fn end_drag(
+        &mut self,
+        ctx: &egui::Context,
+        scale: f32,
+        router: Option<&mut FrameInputRouter>,
+        pointer_events: &[(InputEventId, PointerPhase)],
+    ) -> EndDragResult {
         let (released, down, point, ctrl) = ctx.input(|input| {
             (
                 input.pointer.primary_released(),
@@ -422,36 +743,61 @@ impl DefensesWindowState {
             )
         });
         if !released {
-            if !down {
+            if !down && self.drag_owner.is_none() {
                 self.drag = None;
             }
-            return None;
+            return EndDragResult::default();
         }
-        let drag = self.drag.take()?;
-        let point = point?;
+        let mut result = EndDragResult::default();
+        if let (Some(owner), Some(router)) = (self.drag_owner, router) {
+            if claim_defenses_pointer_event(
+                router,
+                pointer_events,
+                owner,
+                PointerPhase::Release(PointerButtonId::Primary),
+            )
+            .is_none()
+            {
+                return result;
+            }
+            result.claimed_primary_release_by = Some(owner);
+        }
+        let Some(drag) = self.drag.take() else {
+            return result;
+        };
+        result.actions.extend(
+            self.drag_owner
+                .take()
+                .map(DefensesWindowAction::ReleasePointer),
+        );
+        let Some(point) = point else {
+            return result;
+        };
         let moved = (point - drag.press) / scale;
         if moved.length_sq() <= DRAG_DISTANCE_SQUARED || rect_contains(drag.list, point) {
-            return None;
+            return result;
         }
-        match drag.item {
-            DefensesItem::Squadron { class, .. } => Some(DefensesWindowAction::DragSquadron {
+        let action = match drag.item {
+            DefensesItem::Squadron { class, .. } => DefensesWindowAction::DragSquadron {
                 system: drag.system,
                 class,
                 is_alliance: drag.is_alliance,
                 point,
-            }),
-            DefensesItem::Character(key) => Some(DefensesWindowAction::DragMember {
+            },
+            DefensesItem::Character(key) => DefensesWindowAction::DragMember {
                 member: MissionMember::Character(key),
                 confirmed: ctrl,
                 point,
-            }),
-            DefensesItem::SpecialForce(key) => Some(DefensesWindowAction::DragMember {
+            },
+            DefensesItem::SpecialForce(key) => DefensesWindowAction::DragMember {
                 member: MissionMember::SpecialForce(key),
                 confirmed: ctrl,
                 point,
-            }),
-            DefensesItem::Troop(_) | DefensesItem::Defense(_) => None,
-        }
+            },
+            DefensesItem::Troop(_) | DefensesItem::Defense(_) => return result,
+        };
+        result.actions.push(action);
+        result
     }
 
     fn prepare_faction(&mut self, faction: CockpitFaction) {
@@ -517,9 +863,24 @@ pub enum DefensesWindowAction {
     /// (`FUN_00429ce0`).
     OpenSector(SystemKey),
     SelectSystem(SystemKey),
+    /// A manager-owned Defenses window took pointer activation.
+    Activate(WindowId),
+    /// A routed primary press began a drag owned by this exact window.
+    CapturePointer(WindowId),
+    /// The matching routed primary release completed that capture.
+    ReleasePointer(WindowId),
+    /// The close button or stale renderer content requests exact teardown.
+    Close(WindowId),
     /// The minimize button (`0xc9`) posts `0x466`: the window goes to the
     /// galaxy view's rail.
     Minimize {
+        system: SystemKey,
+        logical_position: (i16, i16),
+    },
+    /// Production minimize intent for manager-owned Defenses content. The
+    /// rail adapter observes it only after the manager accepts the command.
+    MinimizeManaged {
+        window: WindowId,
         system: SystemKey,
         logical_position: (i16, i16),
     },
@@ -740,8 +1101,8 @@ fn cockpit_faction(faction: CockpitFaction) -> Faction {
     }
 }
 
-fn area_id(system: SystemKey) -> egui::Id {
-    egui::Id::new(("original-defenses-window", system))
+fn area_id(window: &OpenDefensesWindow) -> egui::Id {
+    egui::Id::new(("original-defenses-window", window.id, window.system))
 }
 
 fn window_screen_rect(window: &OpenDefensesWindow, layout: CockpitLayout) -> egui::Rect {
@@ -800,6 +1161,17 @@ struct WindowDrawResult {
     drag: Option<RowDrag>,
     /// The list's first row and bar press after this frame.
     scroll: Option<(usize, ScrollDrag)>,
+    /// Normalized physical phases that causally produced this frame's
+    /// mutations, in backend order with duplicates removed.
+    causal_pointer_phases: Vec<PointerPhase>,
+}
+
+impl WindowDrawResult {
+    fn note_pointer_phase(&mut self, phase: PointerPhase) {
+        if !self.causal_pointer_phases.contains(&phase) {
+            self.causal_pointer_phases.push(phase);
+        }
+    }
 }
 
 /// Draw every open Defenses window.
@@ -823,33 +1195,212 @@ pub fn draw_defenses_windows(
     cache: &mut BmpCache,
     front: bool,
 ) -> Vec<DefensesWindowAction> {
-    state.prepare_faction(faction);
-    let windows = state.windows.clone();
-    let focused_system = windows.last().map(|window| window.system);
-    let mut actions: Vec<_> = state.end_drag(ctx, layout.scale).into_iter().collect();
+    draw_defenses_windows_with_snapshot(
+        ctx,
+        world,
+        fog,
+        missions,
+        economy,
+        state,
+        faction,
+        layout,
+        cache,
+        None,
+        &[],
+        None,
+        front,
+    )
+}
+
+/// Draw manager-owned Defenses content in the frozen bottom-to-top paint
+/// order and admit mutations only through routed pointer events.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Keep explicit state and rendering inputs at this UI boundary, as the Fleet window does."
+)]
+pub fn draw_managed_defenses_windows(
+    ctx: &egui::Context,
+    world: &GameWorld,
+    fog: &FogState,
+    missions: &MissionState,
+    economy: &EconomyState,
+    state: &mut DefensesWindowState,
+    faction: CockpitFaction,
+    layout: CockpitLayout,
+    cache: &mut BmpCache,
+    snapshot: &RoutingSnapshot,
+    pointer_events: &[(InputEventId, PointerPhase)],
+    router: &mut FrameInputRouter,
+    front: bool,
+) -> Vec<DefensesWindowAction> {
+    draw_defenses_windows_with_snapshot(
+        ctx,
+        world,
+        fog,
+        missions,
+        economy,
+        state,
+        faction,
+        layout,
+        cache,
+        Some(snapshot),
+        pointer_events,
+        Some(router),
+        front,
+    )
+}
+
+fn claim_defenses_pointer_event(
+    router: &mut FrameInputRouter,
+    events: &[(InputEventId, PointerPhase)],
+    window: WindowId,
+    phase: PointerPhase,
+) -> Option<InputEventId> {
+    events.iter().find_map(|(event, candidate)| {
+        (*candidate == phase
+            && router.pointer_recipient(*event) == InputRecipient::Window(window)
+            && router.claim(*event, InputRecipient::Window(window)))
+        .then_some(*event)
+    })
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Shared implementation for production snapshots and fixture-only direct content."
+)]
+fn draw_defenses_windows_with_snapshot(
+    ctx: &egui::Context,
+    world: &GameWorld,
+    fog: &FogState,
+    missions: &MissionState,
+    economy: &EconomyState,
+    state: &mut DefensesWindowState,
+    faction: CockpitFaction,
+    layout: CockpitLayout,
+    cache: &mut BmpCache,
+    snapshot: Option<&RoutingSnapshot>,
+    pointer_events: &[(InputEventId, PointerPhase)],
+    mut router: Option<&mut FrameInputRouter>,
+    front: bool,
+) -> Vec<DefensesWindowAction> {
+    if state.windows.iter().all(|window| window.id.is_none()) {
+        state.prepare_faction(faction);
+    }
+    if let Some(snapshot) = snapshot {
+        state.refresh_release_targets(snapshot, world);
+    } else {
+        for window in &mut state.windows {
+            window.release_target_visible =
+                window.id.is_none() && world.systems.contains_key(window.system);
+        }
+    }
+    let mut windows = Vec::new();
+    let mut stale_manager_windows = Vec::new();
+    if let Some(snapshot) = snapshot {
+        for &id in snapshot.paint_order() {
+            let Some(key) = snapshot
+                .key(id)
+                .filter(|key| key.kind == WindowKind::Defenses)
+            else {
+                continue;
+            };
+            match state
+                .windows
+                .iter()
+                .find(|window| window.id == Some(id))
+                .cloned()
+            {
+                Some(window) if window.release_target_visible && key.subject == window.subject => {
+                    windows.push(window);
+                }
+                Some(_) | None => stale_manager_windows.push(id),
+            }
+        }
+    }
+    // Direct content exists only in renderer tests and explicit fixtures.
+    windows.extend(
+        state
+            .windows
+            .iter()
+            .filter(|window| window.id.is_none())
+            .cloned(),
+    );
+    let focused_manager = snapshot.and_then(|frame| frame.focused().map(|focus| focus.window));
+    let focused_fixture_system = windows
+        .last()
+        .filter(|window| window.id.is_none())
+        .map(|window| window.system);
+    for &id in &stale_manager_windows {
+        state.cancel_pointer_capture(id);
+    }
+    let ended_drag = state.end_drag(ctx, layout.scale, router.as_deref_mut(), pointer_events);
+    let mut actions = stale_manager_windows
+        .into_iter()
+        .map(DefensesWindowAction::Close)
+        .collect::<Vec<_>>();
+    actions.extend(ended_drag.actions);
     for window in &windows {
+        let focused = front
+            && match window.id {
+                Some(id) => focused_manager == Some(id),
+                None => focused_fixture_system == Some(window.system),
+            };
         let result = draw_defenses_window(
-            ctx,
-            world,
-            fog,
-            missions,
-            economy,
-            window,
-            front && focused_system == Some(window.system),
-            faction,
-            layout,
-            cache,
+            ctx, world, fog, missions, economy, window, focused, faction, layout, cache,
         );
         let system = window.system;
-        if let Some(drag) = result.drag {
-            state.drag = Some(drag);
+        let scroll_changed = result
+            .scroll
+            .as_ref()
+            .is_some_and(|(first, scroll)| *first != window.first_row || *scroll != window.scroll);
+        let pointer_mutation = result.focus
+            || result.close
+            || result.minimize
+            || result.open_sector
+            || result.page.is_some()
+            || result.select.is_some()
+            || result.deselect
+            || result.object_menu.is_some()
+            || result.drag.is_some()
+            || scroll_changed;
+        let pointer_permitted = match (window.id, pointer_mutation, router.as_deref_mut()) {
+            (Some(id), true, Some(router)) => {
+                !result.causal_pointer_phases.is_empty()
+                    && result.causal_pointer_phases.iter().all(|&phase| {
+                        (phase == PointerPhase::Release(PointerButtonId::Primary)
+                            && ended_drag.claimed_primary_release_by == Some(id))
+                            || claim_defenses_pointer_event(router, pointer_events, id, phase)
+                                .is_some()
+                    })
+            }
+            (Some(_), true, None) => false,
+            _ => true,
+        };
+        if pointer_permitted {
+            if let Some(drag) = result.drag {
+                state.drag = Some(drag);
+                state.drag_owner = window.id;
+                if let Some(id) = window.id {
+                    actions.push(DefensesWindowAction::CapturePointer(id));
+                }
+            }
         }
-        if result.close || !world.systems.contains_key(system) {
-            state.close(system);
+        if (result.close && pointer_permitted) || !world.systems.contains_key(system) {
+            if let Some(id) = window.id {
+                actions.push(DefensesWindowAction::Close(id));
+            } else {
+                state.close(system);
+            }
             continue;
         }
-        if result.minimize {
-            if let Some(closed) = state.close(system) {
+        if result.minimize && pointer_permitted {
+            if let Some(id) = window.id {
+                actions.push(DefensesWindowAction::MinimizeManaged {
+                    window: id,
+                    system,
+                    logical_position: window.logical_position,
+                });
+            } else if let Some(closed) = state.close(system) {
                 actions.push(DefensesWindowAction::Minimize {
                     system,
                     logical_position: closed.logical_position,
@@ -857,10 +1408,13 @@ pub fn draw_defenses_windows(
             }
             continue;
         }
-        if result.open_sector {
+        if result.open_sector && pointer_permitted {
             actions.push(DefensesWindowAction::OpenSector(system));
         }
-        if let Some(open) = state.window_mut(system) {
+        if pointer_permitted {
+            let Some(open) = state.window_mut(system) else {
+                continue;
+            };
             // FUN_004a90d0 refills only for a different page.
             if let Some((first_row, scroll)) = result.scroll {
                 open.first_row = first_row;
@@ -879,16 +1433,22 @@ pub fn draw_defenses_windows(
                 open.selected = Some(item);
             }
         }
-        if result.focus {
-            state.focus(system);
+        if result.focus && pointer_permitted {
+            if let Some(id) = window.id {
+                actions.push(DefensesWindowAction::Activate(id));
+            } else {
+                state.focus(system);
+            }
             actions.push(DefensesWindowAction::SelectSystem(system));
         }
-        if let Some((selection, point)) = result.object_menu {
-            actions.push(DefensesWindowAction::OpenObjectMenu {
-                system,
-                selection,
-                point,
-            });
+        if pointer_permitted {
+            if let Some((selection, point)) = result.object_menu {
+                actions.push(DefensesWindowAction::OpenObjectMenu {
+                    system,
+                    selection,
+                    point,
+                });
+            }
         }
     }
     actions
@@ -921,7 +1481,7 @@ fn draw_defenses_window(
     let rows = page_rows(world, fog, missions, player, window.system, window.page);
     let scale = layout.scale;
     let screen_rect = window_screen_rect(window, layout);
-    let id = area_id(window.system);
+    let id = area_id(window);
     if focused {
         ctx.move_to_top(egui::LayerId::new(egui::Order::Foreground, id));
     }
@@ -986,6 +1546,9 @@ fn draw_defenses_window(
             result.open_sector = clicked[0];
             result.minimize = clicked[1];
             result.close = clicked[2];
+            if clicked.into_iter().any(|clicked| clicked) {
+                result.note_pointer_phase(PointerPhase::Release(PointerButtonId::Primary));
+            }
 
             // The tabs. No tab is ever disabled; an empty one opens its
             // empty page. port: the help messages (`FUN_00600a40`) are not
@@ -1012,6 +1575,7 @@ fn draw_defenses_window(
                 if exact_clicked(&response, rect) {
                     result.page = Some(page);
                     result.focus = true;
+                    result.note_pointer_phase(PointerPhase::Release(PointerButtonId::Primary));
                 }
             }
 
@@ -1067,6 +1631,17 @@ fn draw_defenses_window(
             let mut scroll = window.scroll;
             let first_row = bar.update(&mut scroll, range, VISIBLE_ROWS, pointer);
             result.scroll = Some((first_row, scroll));
+            if first_row != window.first_row || scroll != window.scroll {
+                if pointer.pressed {
+                    result.note_pointer_phase(PointerPhase::Press(PointerButtonId::Primary));
+                }
+                if pointer.down && !pointer.pressed {
+                    result.note_pointer_phase(PointerPhase::Motion(PointerButtonId::Primary));
+                }
+                if pointer.released {
+                    result.note_pointer_phase(PointerPhase::Release(PointerButtonId::Primary));
+                }
+            }
             let range = ScrollRange {
                 first: first_row,
                 ..range
@@ -1074,7 +1649,8 @@ fn draw_defenses_window(
             let bar_left = LIST.0 + LIST.2 - bar.width();
             let on_bar = range.overflows()
                 && pointer.at.is_some_and(|(x, y)| {
-                    (bar_left..LIST.0 + LIST.2).contains(&x) && (LIST.1..LIST.1 + LIST.3).contains(&y)
+                    (bar_left..LIST.0 + LIST.2).contains(&x)
+                        && (LIST.1..LIST.1 + LIST.3).contains(&y)
                 });
             let list_painter = painter.with_clip_rect(list);
             // The list control under the rows (FUN_006083c0): a left or
@@ -1086,21 +1662,27 @@ fn draw_defenses_window(
                 ui.id().with((window.system, "list")),
                 egui::Sense::click(),
             );
-            let (any_pressed, right_pressed, release_point) = ctx.input(|input| {
+            let (primary_pressed, right_pressed, release_point) = ctx.input(|input| {
                 (
-                    input.pointer.button_pressed(egui::PointerButton::Primary)
-                        || input.pointer.button_pressed(egui::PointerButton::Secondary),
+                    input.pointer.button_pressed(egui::PointerButton::Primary),
                     input.pointer.button_pressed(egui::PointerButton::Secondary),
                     input.pointer.interact_pos(),
                 )
             });
+            let any_pressed = primary_pressed || right_pressed;
             if any_pressed && list_response.is_pointer_button_down_on() && !on_bar {
                 result.deselect = true;
                 result.focus = true;
+                result.note_pointer_phase(PointerPhase::Press(if right_pressed {
+                    PointerButtonId::Secondary
+                } else {
+                    PointerButtonId::Primary
+                }));
             }
             if list_response.secondary_clicked() {
                 if let Some(point) = release_point.filter(|point| rect_contains(list, *point)) {
                     result.object_menu = Some((None, canvas_point(layout, point)));
+                    result.note_pointer_phase(PointerPhase::Release(PointerButtonId::Secondary));
                 }
             }
             let font = egui::FontId::proportional((9.0 * scale).max(6.0));
@@ -1165,6 +1747,7 @@ fn draw_defenses_window(
                 if exact_clicked(&response, cell) {
                     result.select = Some(row.item);
                     result.focus = true;
+                    result.note_pointer_phase(PointerPhase::Release(PointerButtonId::Primary));
                 }
                 // A right press selects the row as a left press does
                 // (FUN_006083c0 shares the WM_LBUTTONDOWN path); the release
@@ -1172,6 +1755,7 @@ fn draw_defenses_window(
                 if right_pressed && response.is_pointer_button_down_on() {
                     result.select = Some(row.item);
                     result.focus = true;
+                    result.note_pointer_phase(PointerPhase::Press(PointerButtonId::Secondary));
                 }
                 // A left press on a squadron, character or special force
                 // captures the mouse for a drag (FUN_006083c0).
@@ -1199,6 +1783,7 @@ fn draw_defenses_window(
                             press,
                             list,
                         });
+                        result.note_pointer_phase(PointerPhase::Press(PointerButtonId::Primary));
                     }
                 }
                 if response.secondary_clicked() {
@@ -1209,6 +1794,8 @@ fn draw_defenses_window(
                             .filter(|point| rect_contains(cell.intersect(list), *point)),
                     ) {
                         result.object_menu = Some((Some(object), canvas_point(layout, point)));
+                        result
+                            .note_pointer_phase(PointerPhase::Release(PointerButtonId::Secondary));
                     }
                 }
             }
@@ -1224,10 +1811,12 @@ fn draw_defenses_window(
 
             if window_response.clicked() || clicked.iter().any(|&value| value) {
                 result.focus = true;
+                result.note_pointer_phase(PointerPhase::Release(PointerButtonId::Primary));
             }
         });
     if area.response.clicked() {
         result.focus = true;
+        result.note_pointer_phase(PointerPhase::Release(PointerButtonId::Primary));
     }
     result
 }
@@ -1245,6 +1834,7 @@ mod tests {
         Character, ControlKind, DefenseFacilityInstance, Sector, SpecialForceUnit, System,
         TroopUnit,
     };
+    use rebellion_windowing::{WindowCommand, WindowManager, WindowTransition};
 
     const KDY: u32 = 0x2200_0001;
     const LNR: u32 = 0x2300_0002;
@@ -1567,6 +2157,275 @@ mod tests {
 
     const ORIGIN: (i16, i16) = (20, 30);
 
+    fn commit_prepared_defenses_window(
+        manager: &mut WindowManager,
+        state: &mut DefensesWindowState,
+        prepared: PreparedDefensesWindow,
+    ) -> (WindowId, WindowTransition) {
+        let commit = manager
+            .apply(WindowCommand::Open(prepared.spec()))
+            .expect("prepared Defenses identity is accepted");
+        let id = state
+            .commit_open(prepared, &commit.transition)
+            .expect("matching manager receipt publishes Defenses content");
+        (id, commit.transition)
+    }
+
+    #[test]
+    fn defenses_window_shared_identity_preserves_content() {
+        let (world, system, _) = stocked();
+        let mut manager = WindowManager::new();
+        let mut state = DefensesWindowState::default();
+        let prepared = state
+            .prepare_open(&world, system, ORIGIN, CockpitFaction::Alliance, scaled())
+            .expect("live system has a stable DAT subject");
+        assert_eq!(prepared.spec().key.kind, WindowKind::Defenses);
+        assert_eq!(prepared.spec().owner, WindowOwner::StrategicRoot);
+        let (id, opened) = commit_prepared_defenses_window(&mut manager, &mut state, prepared);
+        assert_eq!(opened, WindowTransition::Opened { id });
+
+        let selected = DefensesItem::Defense(world.systems[system].defense_facilities[0]);
+        let content = state.window_mut(system).unwrap();
+        content.page = DefensesPage::Batteries;
+        content.selected = Some(selected);
+        content.first_row = 1;
+
+        let reopened = state
+            .prepare_open(
+                &world,
+                system,
+                (400, 300),
+                CockpitFaction::Alliance,
+                scaled(),
+            )
+            .unwrap();
+        let (reopened_id, transition) =
+            commit_prepared_defenses_window(&mut manager, &mut state, reopened);
+        assert_eq!(reopened_id, id);
+        assert!(matches!(
+            transition,
+            WindowTransition::Existing { id: existing, .. } if existing == id
+        ));
+        assert_eq!(state.window_count(), 1);
+        let content = state.window_mut(system).unwrap();
+        assert_eq!(content.logical_position, ORIGIN);
+        assert_eq!(content.page, DefensesPage::Batteries);
+        assert_eq!(content.selected, Some(selected));
+        assert_eq!(content.first_row, 1);
+
+        manager.apply(WindowCommand::Minimize(id)).unwrap();
+        assert!(!state.window_is_visible(&manager.begin_frame(), system));
+        let restored = state
+            .prepare_open(
+                &world,
+                system,
+                (500, 350),
+                CockpitFaction::Alliance,
+                scaled(),
+            )
+            .unwrap();
+        let (restored_id, transition) =
+            commit_prepared_defenses_window(&mut manager, &mut state, restored);
+        assert_eq!(restored_id, id);
+        assert!(matches!(
+            transition,
+            WindowTransition::Existing { id: existing, .. } if existing == id
+        ));
+        assert!(state.window_is_visible(&manager.begin_frame(), system));
+        let content = state.window_mut(system).unwrap();
+        assert_eq!(content.logical_position, ORIGIN);
+        assert_eq!(content.page, DefensesPage::Batteries);
+        assert_eq!(content.selected, Some(selected));
+        assert_eq!(content.first_row, 1);
+    }
+
+    #[test]
+    fn defenses_window_stale_subject_does_not_retarget() {
+        let (mut world, stale_system) = world(ControlKind::Controlled(Faction::Alliance));
+        let mut manager = WindowManager::new();
+        let mut state = DefensesWindowState::default();
+        let prepared = state
+            .prepare_open(
+                &world,
+                stale_system,
+                ORIGIN,
+                CockpitFaction::Alliance,
+                scaled(),
+            )
+            .unwrap();
+        let (id, _) = commit_prepared_defenses_window(&mut manager, &mut state, prepared);
+        state.show_page(stale_system, DefensesPage::Shields);
+        let layer = egui::LayerId::new(
+            egui::Order::Foreground,
+            area_id(
+                state
+                    .windows
+                    .iter()
+                    .find(|window| window.id == Some(id))
+                    .unwrap(),
+            ),
+        );
+        let valid = run_managed(
+            &world,
+            &MissionState::new(),
+            &mut state,
+            &manager,
+            vec![(vec![egui::Event::PointerMoved(at(100.0, 100.0))], vec![])],
+        );
+        assert!(valid.actions.is_empty());
+        assert_eq!(state.release_target(layer), Some(stale_system));
+
+        world.systems[stale_system].dat_id = DatId::new(101);
+        world.systems[stale_system].name = "Replacement".into();
+        state.refresh_release_targets(&manager.begin_frame(), &world);
+        assert_eq!(
+            state.release_target(layer),
+            None,
+            "the app prepass must invalidate a stale layer before Fleet can resolve a drop"
+        );
+        let rendered = run_managed(
+            &world,
+            &MissionState::new(),
+            &mut state,
+            &manager,
+            vec![(vec![egui::Event::PointerMoved(at(100.0, 100.0))], vec![])],
+        );
+
+        assert_eq!(rendered.actions, [DefensesWindowAction::Close(id)]);
+        assert!(
+            !rendered
+                .painted
+                .iter()
+                .any(|(resource, _)| *resource == BACKGROUND),
+            "stale content must close before it paints the replacement subject"
+        );
+        assert_eq!(state.window_id(stale_system), Some(id));
+        assert_eq!(
+            state.release_target(layer),
+            None,
+            "a drop or targeting release cannot resolve a stale same-key DAT replacement"
+        );
+        assert_eq!(
+            state.window_mut(stale_system).unwrap().page,
+            DefensesPage::Shields
+        );
+        assert_eq!(
+            state.content_reports(&manager.begin_frame(), &world),
+            [ContentReport {
+                window: id,
+                status: ContentStatus::Absent,
+            }]
+        );
+    }
+
+    #[test]
+    fn defenses_window_manager_order_is_independent_of_content_vector() {
+        let (mut world, first_system) = world(ControlKind::Controlled(Faction::Alliance));
+        let mut second = world.systems[first_system].clone();
+        second.dat_id = DatId::new(101);
+        second.name = "Coruscant".into();
+        let second_system = world.systems.insert(second);
+        let systems = [first_system, second_system];
+        let mut manager = WindowManager::new();
+        let mut state = DefensesWindowState::default();
+        let mut ids = Vec::new();
+        for system in systems {
+            let prepared = state
+                .prepare_open(&world, system, ORIGIN, CockpitFaction::Alliance, scaled())
+                .unwrap();
+            ids.push(commit_prepared_defenses_window(&mut manager, &mut state, prepared).0);
+        }
+        assert_eq!(
+            state
+                .windows
+                .iter()
+                .filter_map(|window| window.id)
+                .collect::<Vec<_>>(),
+            ids
+        );
+
+        manager.apply(WindowCommand::Activate(ids[0])).unwrap();
+
+        assert_eq!(
+            state
+                .windows
+                .iter()
+                .filter_map(|window| window.id)
+                .collect::<Vec<_>>(),
+            ids,
+            "local content order must not emulate a manager raise"
+        );
+        assert_eq!(manager.begin_frame().paint_order(), &[ids[1], ids[0]]);
+    }
+
+    #[test]
+    fn defenses_visible_content_follows_exact_frozen_identity() {
+        let (mut world, system) = world(ControlKind::Controlled(Faction::Alliance));
+        let mut manager = WindowManager::new();
+        let mut state = DefensesWindowState::default();
+        let prepared = state
+            .prepare_open(&world, system, ORIGIN, CockpitFaction::Alliance, scaled())
+            .unwrap();
+        let (id, _) = commit_prepared_defenses_window(&mut manager, &mut state, prepared);
+        assert!(state.has_visible_content(&manager.begin_frame(), &world));
+
+        manager.apply(WindowCommand::Minimize(id)).unwrap();
+        assert!(!state.has_visible_content(&manager.begin_frame(), &world));
+
+        manager.apply(WindowCommand::Restore(id)).unwrap();
+        assert!(state.has_visible_content(&manager.begin_frame(), &world));
+
+        world.systems[system].dat_id = DatId::new(101);
+        assert!(
+            !state.has_visible_content(&manager.begin_frame(), &world),
+            "same-key replacement content is not the committed Defenses subject"
+        );
+
+        world.systems[system].dat_id = DatId::new(100);
+        assert!(state.has_visible_content(&manager.begin_frame(), &world));
+        manager.apply(WindowCommand::Close(id)).unwrap();
+        assert!(
+            !state.has_visible_content(&manager.begin_frame(), &world),
+            "attached content stops contributing when its manager identity closes"
+        );
+    }
+
+    #[test]
+    fn defenses_pointer_hits_only_its_visible_topmost_manager_layer() {
+        let (world, system) = world(ControlKind::Controlled(Faction::Alliance));
+        let mut manager = WindowManager::new();
+        let mut state = DefensesWindowState::default();
+        let prepared = state
+            .prepare_open(&world, system, ORIGIN, CockpitFaction::Alliance, scaled())
+            .unwrap();
+        let (id, _) = commit_prepared_defenses_window(&mut manager, &mut state, prepared);
+        let snapshot = manager.begin_frame();
+        let rect = state.screen_rect(scaled(), system).unwrap();
+        let inside = (rect.center().x, rect.center().y);
+        let outside = (rect.max.x + 1.0, rect.max.y + 1.0);
+        let content = state
+            .windows
+            .iter()
+            .find(|window| window.id == Some(id))
+            .unwrap();
+        let own = egui::LayerId::new(egui::Order::Foreground, area_id(content));
+        let other = egui::LayerId::new(egui::Order::Foreground, egui::Id::new("other-window"));
+
+        assert_eq!(
+            state.hit_window_ids(&snapshot, scaled(), inside, Some(own)),
+            std::collections::BTreeSet::from([id])
+        );
+        assert!(state
+            .hit_window_ids(&snapshot, scaled(), inside, Some(other))
+            .is_empty());
+        assert!(state
+            .hit_window_ids(&snapshot, scaled(), inside, None)
+            .is_empty());
+        assert!(state
+            .hit_window_ids(&snapshot, scaled(), outside, Some(own))
+            .is_empty());
+    }
+
     /// A logical point in the window opened at `ORIGIN` on [`scaled`].
     fn at(x: f32, y: f32) -> egui::Pos2 {
         egui::pos2(
@@ -1616,7 +2475,16 @@ mod tests {
         assert!(state.contains_screen_point(scaled(), point(at(234.0, 303.0))));
         assert!(!state.contains_screen_point(scaled(), point(at(235.5, 150.0))));
 
-        let layer = egui::LayerId::new(egui::Order::Foreground, area_id(system));
+        let layer = egui::LayerId::new(
+            egui::Order::Foreground,
+            area_id(
+                state
+                    .windows
+                    .iter()
+                    .find(|window| window.system == system)
+                    .unwrap(),
+            ),
+        );
         assert_eq!(state.release_target(layer), Some(system));
         let elsewhere = egui::LayerId::new(egui::Order::Foreground, egui::Id::new("elsewhere"));
         assert_eq!(state.release_target(elsewhere), None);
@@ -1695,6 +2563,107 @@ mod tests {
                     CockpitFaction::Alliance,
                     scaled(),
                     &mut cache,
+                    true,
+                ));
+            });
+            result.painted = PAINTED.with(|painted| painted.take());
+            result.texts.clear();
+            for clipped in output.shapes {
+                if let egui::Shape::Text(text) = clipped.shape {
+                    let format = &text.galley.job.sections[0].format;
+                    result.texts.push(Text {
+                        text: text.galley.text().to_owned(),
+                        pos: text.pos,
+                        color: format.color,
+                        font: format.font_id.size,
+                        size: text.galley.size(),
+                        wrap: text.galley.job.wrap.max_width,
+                    });
+                }
+            }
+        }
+        result
+    }
+
+    /// Draw manager-owned content once per frame while feeding the exact
+    /// normalized pointer phases that produced each egui input batch.
+    fn run_managed(
+        world: &GameWorld,
+        missions: &MissionState,
+        state: &mut DefensesWindowState,
+        manager: &WindowManager,
+        frames: Vec<(Vec<egui::Event>, Vec<PointerPhase>)>,
+    ) -> Run {
+        let ctx = egui::Context::default();
+        let mut cache = BmpCache::new();
+        let fog = world
+            .systems
+            .keys()
+            .fold(FogState::new(Faction::Alliance), |mut fog, key| {
+                fog.reveal(key);
+                fog
+            });
+        let mut economy = EconomyState::default();
+        for key in world.systems.keys() {
+            economy.per_system.insert(
+                key,
+                SystemEconomy {
+                    garrison_requirement: 2,
+                    ..SystemEconomy::default()
+                },
+            );
+        }
+        let window = state
+            .windows
+            .iter()
+            .find_map(|window| window.id)
+            .expect("managed test content has an identity");
+        let mut router = FrameInputRouter::default();
+        let mut result = Run::default();
+        for (index, (events, phases)) in frames.into_iter().enumerate() {
+            let frame = u64::try_from(index + 1).unwrap();
+            let snapshot = manager.begin_frame();
+            router.begin_frame(frame, &snapshot);
+            let mut routed = Vec::new();
+            for (ordinal, phase) in phases.into_iter().enumerate() {
+                let event = InputEventId {
+                    frame,
+                    ordinal: u32::try_from(ordinal).unwrap(),
+                };
+                assert_eq!(
+                    router.collect_pointer(
+                        event,
+                        &std::collections::BTreeSet::from([window]),
+                        phase,
+                    ),
+                    InputRecipient::Window(window)
+                );
+                routed.push((event, phase));
+            }
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1400.0, 1000.0),
+                )),
+                time: Some(index as f64 * 0.05),
+                events,
+                ..Default::default()
+            };
+            PAINTED.with(|painted| painted.borrow_mut().clear());
+            let output = ctx.run(input, |ctx| {
+                result.actions.extend(draw_managed_defenses_windows(
+                    ctx,
+                    world,
+                    &fog,
+                    missions,
+                    &economy,
+                    state,
+                    CockpitFaction::Alliance,
+                    scaled(),
+                    &mut cache,
+                    &snapshot,
+                    &routed,
+                    &mut router,
                     true,
                 ));
             });
@@ -1996,6 +2965,104 @@ mod tests {
         // Above the list, a right click opens nothing.
         let outside = run(&world, &missions, &mut state, right_click(at(100.0, 60.0)));
         assert!(menus(&outside).is_empty());
+    }
+
+    #[test]
+    fn managed_secondary_press_selects_and_clears_with_its_exact_phase() {
+        let (world, system, missions) = stocked();
+        let mut manager = WindowManager::new();
+        let mut state = DefensesWindowState::default();
+        let prepared = state
+            .prepare_open(&world, system, ORIGIN, CockpitFaction::Alliance, scaled())
+            .unwrap();
+        commit_prepared_defenses_window(&mut manager, &mut state, prepared);
+        let secondary = |point, pressed| egui::Event::PointerButton {
+            pos: point,
+            button: egui::PointerButton::Secondary,
+            pressed,
+            modifiers: egui::Modifiers::default(),
+        };
+        let row = at(100.0, 100.0);
+        run_managed(
+            &world,
+            &missions,
+            &mut state,
+            &manager,
+            vec![
+                (vec![egui::Event::PointerMoved(row)], vec![]),
+                (vec![egui::Event::PointerMoved(row)], vec![]),
+                (
+                    vec![secondary(row, true)],
+                    vec![PointerPhase::Press(PointerButtonId::Secondary)],
+                ),
+            ],
+        );
+        let hidden = world
+            .characters
+            .iter()
+            .find(|(_, value)| value.name == "Hidden")
+            .unwrap()
+            .0;
+        assert_eq!(
+            state.windows[0].selected,
+            Some(DefensesItem::Character(hidden)),
+            "a routed secondary press selects before its later menu release"
+        );
+
+        let empty = at(100.0, 250.0);
+        run_managed(
+            &world,
+            &missions,
+            &mut state,
+            &manager,
+            vec![
+                (vec![egui::Event::PointerMoved(empty)], vec![]),
+                (vec![egui::Event::PointerMoved(empty)], vec![]),
+                (
+                    vec![secondary(empty, true)],
+                    vec![PointerPhase::Press(PointerButtonId::Secondary)],
+                ),
+            ],
+        );
+        assert_eq!(
+            state.windows[0].selected, None,
+            "the same routed secondary press clears empty list space"
+        );
+    }
+
+    #[test]
+    fn managed_scroll_thumb_motion_commits_with_motion_phase() {
+        let (mut world, system, missions) = stocked();
+        for index in 0..8 {
+            add_character(&mut world, system, &format!("Extra {index}"), true);
+        }
+        let mut manager = WindowManager::new();
+        let mut state = DefensesWindowState::default();
+        let prepared = state
+            .prepare_open(&world, system, ORIGIN, CockpitFaction::Alliance, scaled())
+            .unwrap();
+        commit_prepared_defenses_window(&mut manager, &mut state, prepared);
+        let thumb = at(220.0, 100.0);
+        let dragged = at(220.0, 200.0);
+        run_managed(
+            &world,
+            &missions,
+            &mut state,
+            &manager,
+            vec![
+                (vec![egui::Event::PointerMoved(thumb)], vec![]),
+                (vec![egui::Event::PointerMoved(thumb)], vec![]),
+                (
+                    vec![press(thumb, true)],
+                    vec![PointerPhase::Press(PointerButtonId::Primary)],
+                ),
+                (
+                    vec![egui::Event::PointerMoved(dragged)],
+                    vec![PointerPhase::Motion(PointerButtonId::Primary)],
+                ),
+            ],
+        );
+        assert_eq!(state.windows[0].first_row, 1);
     }
 
     #[test]
