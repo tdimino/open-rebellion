@@ -89,7 +89,7 @@ use rebellion_data::encyclopedia_presenter::{
 use rebellion_data::encyclopedia_topics::EncyclopediaAudience;
 
 use rebellion_render::build_selection::{
-    draw_build_selection, BuildSelectionAction, BuildSelectionState,
+    draw_build_selection, BuildSelectionAction, BuildSelectionState, PreparedBuildSelectionConfirm,
 };
 use rebellion_render::fleet_finder::{
     draw_fleet_finder_focused, FleetFinderAction, FleetFinderState,
@@ -1219,6 +1219,7 @@ impl StrategicRootKeyBatch {
         encyclopedia: Option<rebellion_windowing::WindowId>,
         message_index: Option<rebellion_windowing::WindowId>,
         status: Option<rebellion_windowing::WindowId>,
+        build_selection: Option<rebellion_windowing::WindowId>,
     ) {
         for event in &self.events {
             let recipient = router.keyboard_recipient(event.id);
@@ -1231,6 +1232,7 @@ impl StrategicRootKeyBatch {
                 encyclopedia,
                 message_index,
                 status,
+                build_selection,
             );
             if let Some(disposition) = disposition {
                 router.report_key(event.id, recipient, disposition);
@@ -1264,6 +1266,7 @@ fn legacy_child_key_disposition(
     encyclopedia: Option<rebellion_windowing::WindowId>,
     message_index: Option<rebellion_windowing::WindowId>,
     status: Option<rebellion_windowing::WindowId>,
+    build_selection: Option<rebellion_windowing::WindowId>,
 ) -> Option<InputDisposition> {
     match recipient {
         InputRecipient::Root => Some(if handles_keyboard {
@@ -1299,6 +1302,27 @@ fn legacy_child_key_disposition(
                 InputDisposition::Unhandled
             })
         }
+        InputRecipient::Window(window) if build_selection == Some(window) => Some(
+            if matches!(
+                event.key,
+                KeyCode::Escape
+                    | KeyCode::KpAdd
+                    | KeyCode::KpSubtract
+                    | KeyCode::Key1
+                    | KeyCode::Key2
+                    | KeyCode::Key3
+                    | KeyCode::Key4
+                    | KeyCode::Key5
+                    | KeyCode::Key6
+                    | KeyCode::Key7
+                    | KeyCode::Key8
+                    | KeyCode::Key9
+            ) {
+                InputDisposition::Handled
+            } else {
+                InputDisposition::Unhandled
+            },
+        ),
         InputRecipient::Window(window) => fleet
             .filter(|(fleet_window, _)| *fleet_window == window)
             .map(|(_, renaming)| {
@@ -1409,6 +1433,7 @@ fn collect_strategic_pointer_batch(
     layout: rebellion_render::CockpitLayout,
     message_index: &MessageIndexState,
     status: &StatusWindowState,
+    build_selection: &BuildSelectionState,
     retained_hits: impl Fn((f32, f32)) -> BTreeSet<rebellion_windowing::WindowId>,
 ) -> StrategicPointerBatch {
     StrategicPointerBatch::collect_from_raw(frame_number, router, events, |point| {
@@ -1417,6 +1442,9 @@ fn collect_strategic_pointer_batch(
             hits.insert(window);
         }
         if let Some(window) = status.hit_window(frame, layout, point) {
+            hits.insert(window);
+        }
+        if let Some(window) = build_selection.hit_window(frame, layout, point) {
             hits.insert(window);
         }
         hits
@@ -1664,6 +1692,7 @@ enum ManagedStrategicSurface {
     FleetFinder(rebellion_windowing::WindowId),
     MessageIndex(rebellion_windowing::WindowId),
     Status(rebellion_windowing::WindowId),
+    BuildSelection(rebellion_windowing::WindowId),
 }
 
 fn managed_strategic_surface_plan(
@@ -1672,6 +1701,7 @@ fn managed_strategic_surface_plan(
     fleet_finder: Option<rebellion_windowing::WindowId>,
     message_index: Option<rebellion_windowing::WindowId>,
     status: Option<rebellion_windowing::WindowId>,
+    build_selection: Option<rebellion_windowing::WindowId>,
 ) -> Vec<(ManagedStrategicSurface, bool)> {
     frame
         .paint_order()
@@ -1685,6 +1715,8 @@ fn managed_strategic_surface_plan(
                 ManagedStrategicSurface::MessageIndex(*id)
             } else if Some(*id) == status {
                 ManagedStrategicSurface::Status(*id)
+            } else if Some(*id) == build_selection {
+                ManagedStrategicSurface::BuildSelection(*id)
             } else {
                 return None;
             };
@@ -1806,6 +1838,24 @@ fn apply_capture_cancellation_events(
     }
 }
 
+/// Publishes one Build Selection order only after the exact manager teardown
+/// receipt and a fresh source validation consume its prepared confirmation.
+fn commit_build_selection_gameplay(
+    prepared: Option<PreparedBuildSelectionConfirm>,
+    removed_content: &[rebellion_windowing::WindowId],
+    world: &GameWorld,
+    state: &mut BuildSelectionState,
+    manufacturing: &mut ManufacturingState,
+) -> Option<BuildSelectionAction> {
+    let committed = state.commit_confirm(prepared?, removed_content, world)?;
+    let (action, items) = committed.into_order();
+    let BuildSelectionAction::Confirm { system, .. } = action else {
+        return None;
+    };
+    manufacturing.build_units(system, items);
+    Some(action)
+}
+
 #[cfg(test)]
 mod frame_input_tests {
     use super::{
@@ -1813,6 +1863,7 @@ mod frame_input_tests {
         RetainedLegacyInputFilter, StrategicPointerBatch, StrategicRawPointerEvent,
     };
     use egui_macroquad::egui;
+    use rebellion_render::build_selection::BuildSelectionState;
     use rebellion_render::fleet_finder::FleetFinderState;
     use rebellion_render::message_index::MessageIndexState;
     use rebellion_render::status_window::StatusWindowState;
@@ -1900,6 +1951,7 @@ mod frame_input_tests {
         };
         let mut router = FrameInputRouter::default();
         let status = StatusWindowState::default();
+        let build_selection = BuildSelectionState::default();
         router.begin_frame(9, &frame);
         let batch = collect_strategic_pointer_batch(
             9,
@@ -1915,6 +1967,7 @@ mod frame_input_tests {
             layout,
             &message_index,
             &status,
+            &build_selection,
             |_| BTreeSet::new(),
         );
         let event = batch.events[0].id;
@@ -2103,14 +2156,15 @@ mod frame_input_tests {
 #[cfg(test)]
 mod panel_toggle_tests {
     use super::{
-        collect_strategic_pointer_batch, legacy_child_key_disposition,
-        managed_strategic_surface_plan, panel_letters_open_panels, toggle_exclusive_panel,
-        ManagedStrategicSurface, StrategicPointerBatch, StrategicRawInputCollector,
-        StrategicRawKeyCollector, StrategicRawKeyEvent, StrategicRawPointerEvent,
-        StrategicRootKeyBatch,
+        collect_strategic_pointer_batch, commit_build_selection_gameplay,
+        legacy_child_key_disposition, managed_strategic_surface_plan, panel_letters_open_panels,
+        toggle_exclusive_panel, BuildSelectionAction, ManagedStrategicSurface,
+        StrategicPointerBatch, StrategicRawInputCollector, StrategicRawKeyCollector,
+        StrategicRawKeyEvent, StrategicRawPointerEvent, StrategicRootKeyBatch,
     };
     use macroquad::miniquad::{EventHandler, KeyMods, MouseButton};
     use macroquad::prelude::KeyCode;
+    use rebellion_render::build_selection::BuildSelectionState;
     use rebellion_render::message_index::MessageIndexState;
     use rebellion_render::status_rows::{StatusObject, StatusSources};
     use rebellion_render::status_window::StatusWindowState;
@@ -2131,7 +2185,7 @@ mod panel_toggle_tests {
             repeat: false,
         }];
         let batch = StrategicRootKeyBatch::collect_from_raw(1, &mut router, &events);
-        batch.report_legacy_children(&mut router, false, None, None, None, None, None);
+        batch.report_legacy_children(&mut router, false, None, None, None, None, None, None);
 
         assert!(router.claim_root(batch.events[0].id));
         assert!(!router.claim_root(batch.events[0].id));
@@ -2156,7 +2210,7 @@ mod panel_toggle_tests {
             },
         ];
         let batch = StrategicRootKeyBatch::collect_from_raw(9, &mut router, &events);
-        batch.report_legacy_children(&mut router, false, None, None, None, None, None);
+        batch.report_legacy_children(&mut router, false, None, None, None, None, None, None);
 
         assert_eq!(batch.events.len(), 2);
         assert!(batch.events[0].alt);
@@ -2179,7 +2233,7 @@ mod panel_toggle_tests {
             repeat: false,
         }];
         let batch = StrategicRootKeyBatch::collect_from_raw(2, &mut router, &events);
-        batch.report_legacy_children(&mut router, true, None, None, None, None, None);
+        batch.report_legacy_children(&mut router, true, None, None, None, None, None, None);
 
         assert!(!router.claim_root(batch.events[0].id));
     }
@@ -2259,7 +2313,14 @@ mod panel_toggle_tests {
 
         let frame = coordinator.begin_frame();
         assert_eq!(
-            managed_strategic_surface_plan(&frame, Some(encyclopedia), None, None, Some(status_id),),
+            managed_strategic_surface_plan(
+                &frame,
+                Some(encyclopedia),
+                None,
+                None,
+                Some(status_id),
+                None,
+            ),
             [
                 (ManagedStrategicSurface::Encyclopedia(encyclopedia), false),
                 (ManagedStrategicSurface::Status(status_id), true),
@@ -2303,6 +2364,7 @@ mod panel_toggle_tests {
             layout,
             &MessageIndexState::default(),
             &status,
+            &BuildSelectionState::default(),
             |_| std::collections::BTreeSet::new(),
         );
         assert_eq!(
@@ -2334,6 +2396,7 @@ mod panel_toggle_tests {
             None,
             None,
             Some(status_id),
+            None,
         );
         assert_eq!(
             legacy_child_key_disposition(
@@ -2345,6 +2408,7 @@ mod panel_toggle_tests {
                 None,
                 None,
                 Some(status_id),
+                None,
             ),
             Some(InputDisposition::Unhandled)
         );
@@ -2377,7 +2441,14 @@ mod panel_toggle_tests {
         let frame = coordinator.begin_frame();
 
         assert_eq!(
-            managed_strategic_surface_plan(&frame, Some(encyclopedia), Some(finder), None, None),
+            managed_strategic_surface_plan(
+                &frame,
+                Some(encyclopedia),
+                Some(finder),
+                None,
+                None,
+                None,
+            ),
             [
                 (ManagedStrategicSurface::FleetFinder(finder), false),
                 (ManagedStrategicSurface::Encyclopedia(encyclopedia), true,),
@@ -2397,6 +2468,7 @@ mod panel_toggle_tests {
                 &coordinator.begin_frame(),
                 None,
                 Some(finder),
+                None,
                 None,
                 None,
             ),
@@ -2419,7 +2491,14 @@ mod panel_toggle_tests {
         };
         let frame = reverse.begin_frame();
         assert_eq!(
-            managed_strategic_surface_plan(&frame, Some(encyclopedia), Some(finder), None, None),
+            managed_strategic_surface_plan(
+                &frame,
+                Some(encyclopedia),
+                Some(finder),
+                None,
+                None,
+                None,
+            ),
             [
                 (ManagedStrategicSurface::Encyclopedia(encyclopedia), false,),
                 (ManagedStrategicSurface::FleetFinder(finder), true),
@@ -2431,6 +2510,358 @@ mod panel_toggle_tests {
                 .target,
             rebellion_windowing::RouteTarget::BlockedBy(finder)
         );
+    }
+
+    #[test]
+    fn managed_build_selection_owns_production_routes_and_paint_seam() {
+        use rebellion_core::ids::{DatId, SystemKey};
+        use rebellion_core::manufacturing::{BuildableKind, ProductionArea};
+
+        let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
+        let mut state = BuildSelectionState::default();
+        coordinator.enqueue_build_selection_open(
+            state
+                .prepare_open(
+                    SystemKey::default(),
+                    ProductionArea::TrainingFacility,
+                    true,
+                    vec![BuildableKind::Troop(DatId::new(0x1000_0001))],
+                )
+                .unwrap(),
+        );
+        let mut applied = coordinator.apply_pending().remove(0);
+        let id = applied.build_selection_content_id.unwrap();
+        assert_eq!(
+            state.commit_open(
+                applied.prepared_build_selection.take().unwrap(),
+                &applied.result.as_ref().unwrap().transition,
+            ),
+            Some(id)
+        );
+        assert!(coordinator.acknowledge_build_selection_publication(id));
+
+        let frame = coordinator.begin_frame();
+        assert_eq!(
+            managed_strategic_surface_plan(&frame, None, None, None, None, Some(id)),
+            [(ManagedStrategicSurface::BuildSelection(id), true)]
+        );
+        assert_eq!(state.keyboard_owner(&frame), Some(id));
+        assert_eq!(
+            frame
+                .pointer_route(&std::collections::BTreeSet::new())
+                .target,
+            rebellion_windowing::RouteTarget::BlockedBy(id)
+        );
+
+        let layout = CockpitLayout {
+            canvas: CockpitViewport {
+                x: 0.0,
+                y: 0.0,
+                width: 640.0,
+                height: 480.0,
+            },
+            galaxy: CockpitViewport {
+                x: 65.0,
+                y: 60.0,
+                width: 485.0,
+                height: 350.0,
+            },
+            scale: 1.0,
+        };
+        let mut pointer_router = FrameInputRouter::default();
+        pointer_router.begin_frame(12, &frame);
+        let pointer = collect_strategic_pointer_batch(
+            12,
+            &mut pointer_router,
+            &[
+                StrategicRawPointerEvent {
+                    ordinal: 0,
+                    point: (66.0, 61.0),
+                    phase: PointerPhase::Press(PointerButtonId::Primary),
+                },
+                StrategicRawPointerEvent {
+                    ordinal: 1,
+                    point: (307.5, 235.0),
+                    phase: PointerPhase::Press(PointerButtonId::Primary),
+                },
+            ],
+            &frame,
+            layout,
+            &MessageIndexState::default(),
+            &StatusWindowState::default(),
+            &state,
+            |_| std::collections::BTreeSet::new(),
+        );
+        assert_eq!(
+            pointer_router.pointer_recipient(pointer.events[0].id),
+            InputRecipient::Blocked
+        );
+        assert_eq!(
+            pointer_router.pointer_recipient(pointer.events[1].id),
+            InputRecipient::Window(id)
+        );
+
+        let mut key_router = FrameInputRouter::default();
+        key_router.begin_frame(13, &frame);
+        let keys = StrategicRootKeyBatch::collect_from_raw(
+            13,
+            &mut key_router,
+            &[key(KeyCode::F2, false), key(KeyCode::Escape, false)],
+        );
+        keys.report_legacy_children(
+            &mut key_router,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(id),
+        );
+        assert_eq!(
+            legacy_child_key_disposition(
+                keys.events[0],
+                InputRecipient::Window(id),
+                false,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(id),
+            ),
+            Some(InputDisposition::Unhandled)
+        );
+        assert_eq!(
+            legacy_child_key_disposition(
+                keys.events[1],
+                InputRecipient::Window(id),
+                false,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(id),
+            ),
+            Some(InputDisposition::Handled)
+        );
+        assert!(!key_router.root_may_handle(keys.events[0].id));
+        assert!(!key_router.root_may_handle(keys.events[1].id));
+    }
+
+    #[test]
+    fn build_selection_gameplay_commits_once_after_exact_teardown_and_live_source() {
+        use rebellion_core::dat::{ExplorationStatus, Faction};
+        use rebellion_core::ids::{DatId, SectorKey};
+        use rebellion_core::manufacturing::{BuildableKind, ManufacturingState, ProductionArea};
+        use rebellion_core::world::{
+            BuildableClass, ControlKind, GameWorld, ManufacturingFacilityInstance, System,
+        };
+        use rebellion_render::windowing_policy::singleton_spec;
+        use rebellion_windowing::{
+            WindowCommand, WindowKind, WindowManager, WindowOwner, WindowTransition,
+        };
+
+        let mut world = GameWorld::default();
+        let system = world.systems.insert(System {
+            dat_id: DatId::new(0x9000_0001),
+            name: "Bortras".into(),
+            sector: SectorKey::default(),
+            x: 0,
+            y: 0,
+            exploration_status: ExplorationStatus::Explored,
+            popularity_alliance: 0.5,
+            popularity_empire: 0.5,
+            is_populated: true,
+            total_energy: 0,
+            raw_materials: 0,
+            espionage_rating: 0.0,
+            fleets: vec![],
+            ground_units: vec![],
+            special_forces: vec![],
+            fighters: vec![],
+            defense_facilities: vec![],
+            manufacturing_facilities: vec![],
+            production_facilities: vec![],
+            is_headquarters: false,
+            is_destroyed: false,
+            control: ControlKind::Controlled(Faction::Alliance),
+        });
+        let yard_class = DatId::new(0x2900_0002);
+        let product_class = DatId::new(0x1000_0001);
+        world.buildable_classes.insert(
+            yard_class,
+            BuildableClass {
+                refined_material_cost: 10,
+                processing_rate: 4,
+                is_alliance: true,
+                is_empire: false,
+                ..BuildableClass::default()
+            },
+        );
+        world.buildable_classes.insert(
+            product_class,
+            BuildableClass {
+                refined_material_cost: 8,
+                is_alliance: true,
+                is_empire: false,
+                ..BuildableClass::default()
+            },
+        );
+        let yard = world
+            .manufacturing_facilities
+            .insert(ManufacturingFacilityInstance {
+                class_dat_id: yard_class,
+                side: Faction::Alliance,
+                is_shipyard: false,
+            });
+        world.systems[system].manufacturing_facilities.push(yard);
+
+        let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
+        let mut state = BuildSelectionState::default();
+        let mut manufacturing = ManufacturingState::new();
+        coordinator.enqueue_build_selection_open(
+            state
+                .prepare_open(
+                    system,
+                    ProductionArea::TrainingFacility,
+                    true,
+                    vec![BuildableKind::Troop(product_class)],
+                )
+                .unwrap(),
+        );
+        let mut opened = coordinator.apply_pending().remove(0);
+        let id = opened.build_selection_content_id.unwrap();
+        assert_eq!(
+            state.commit_open(
+                opened.prepared_build_selection.take().unwrap(),
+                &opened.result.as_ref().unwrap().transition,
+            ),
+            Some(id)
+        );
+        assert!(coordinator.acknowledge_build_selection_publication(id));
+
+        let prepared = state.prepare_confirm(&world).unwrap();
+        let mut unrelated = WindowManager::new();
+        unrelated
+            .apply(WindowCommand::Open(singleton_spec(
+                WindowKind::Encyclopedia,
+                WindowOwner::StrategicRoot,
+            )))
+            .unwrap();
+        let wrong = unrelated
+            .apply(WindowCommand::Open(singleton_spec(
+                WindowKind::MessageIndex,
+                WindowOwner::StrategicRoot,
+            )))
+            .unwrap();
+        let WindowTransition::Opened { id: wrong_id } = wrong.transition else {
+            panic!("expected manager-issued wrong identity");
+        };
+        assert_ne!(wrong_id, id);
+        assert_eq!(
+            commit_build_selection_gameplay(
+                Some(prepared),
+                &[wrong_id],
+                &world,
+                &mut state,
+                &mut manufacturing,
+            ),
+            None
+        );
+        assert!(state.is_open());
+        assert_eq!(manufacturing.queued_at(system), 0);
+        assert_eq!(
+            commit_build_selection_gameplay(
+                Some(prepared),
+                &[],
+                &world,
+                &mut state,
+                &mut manufacturing,
+            ),
+            None
+        );
+        assert!(state.is_open());
+        assert_eq!(manufacturing.queued_at(system), 0);
+
+        coordinator.enqueue_build_selection_confirm(prepared);
+        coordinator.enqueue_build_selection_confirm(prepared);
+        let mut applied = coordinator.apply_pending();
+        let accepted = applied.remove(0);
+        let rejected = applied.remove(0);
+        assert!(rejected.result.is_err());
+        assert_eq!(rejected.confirmed_build_selection, None);
+        assert_eq!(
+            commit_build_selection_gameplay(
+                rejected.confirmed_build_selection,
+                &rejected.removed_content,
+                &world,
+                &mut state,
+                &mut manufacturing,
+            ),
+            None
+        );
+        assert_eq!(manufacturing.queued_at(system), 0);
+
+        assert!(matches!(
+            commit_build_selection_gameplay(
+                accepted.confirmed_build_selection,
+                &accepted.removed_content,
+                &world,
+                &mut state,
+                &mut manufacturing,
+            ),
+            Some(BuildSelectionAction::Confirm { count: 1, .. })
+        ));
+        assert_eq!(manufacturing.queued_at(system), 1);
+        assert_eq!(
+            commit_build_selection_gameplay(
+                Some(prepared),
+                &accepted.removed_content,
+                &world,
+                &mut state,
+                &mut manufacturing,
+            ),
+            None
+        );
+        assert_eq!(manufacturing.queued_at(system), 1);
+
+        coordinator.enqueue_build_selection_open(
+            state
+                .prepare_open(
+                    system,
+                    ProductionArea::TrainingFacility,
+                    true,
+                    vec![BuildableKind::Troop(product_class)],
+                )
+                .unwrap(),
+        );
+        let mut reopened = coordinator.apply_pending().remove(0);
+        let reopened_id = reopened.build_selection_content_id.unwrap();
+        assert_eq!(
+            state.commit_open(
+                reopened.prepared_build_selection.take().unwrap(),
+                &reopened.result.as_ref().unwrap().transition,
+            ),
+            Some(reopened_id)
+        );
+        assert!(coordinator.acknowledge_build_selection_publication(reopened_id));
+        let stale = state.prepare_confirm(&world).unwrap();
+        coordinator.enqueue_build_selection_confirm(stale);
+        let stale_close = coordinator.apply_pending().remove(0);
+        world.systems[system].manufacturing_facilities.clear();
+        assert_eq!(
+            commit_build_selection_gameplay(
+                stale_close.confirmed_build_selection,
+                &stale_close.removed_content,
+                &world,
+                &mut state,
+                &mut manufacturing,
+            ),
+            None
+        );
+        assert_eq!(manufacturing.queued_at(system), 1);
     }
 
     fn key(key: KeyCode, alt: bool) -> StrategicRawKeyEvent {
@@ -2465,6 +2896,7 @@ mod panel_toggle_tests {
             None,
             None,
             None,
+            None,
         );
 
         assert!(router.claim_root(batch.events[0].id));
@@ -2494,6 +2926,7 @@ mod panel_toggle_tests {
             &mut router,
             false,
             Some((fleet, true)),
+            None,
             None,
             None,
             None,
@@ -2545,6 +2978,7 @@ mod panel_toggle_tests {
             Some(encyclopedia),
             None,
             None,
+            None,
         );
 
         assert!(!router.claim_root(batch.events[0].id));
@@ -2576,6 +3010,7 @@ mod panel_toggle_tests {
             None,
             None,
             Some(encyclopedia),
+            None,
             None,
             None,
         );
@@ -5524,8 +5959,7 @@ Some(RailAudience::side(*faction_is_alliance)),
             scene_transition: desired_window_scene != WindowScene::Galaxy,
         };
         let legacy_blockers = LegacyInputBlockers {
-            strategic_modal: build_selection_state.is_open()
-                || mission_dialog_state.is_open()
+            strategic_modal: mission_dialog_state.is_open()
                 || move_confirmation_state.is_open()
                 || scrap_confirmation_state.is_open()
                 || troop_finder_state.is_open()
@@ -5550,6 +5984,8 @@ Some(RailAudience::side(*faction_is_alliance)),
             message_index.keyboard_owner(strategic_frame_boundary.snapshot());
         let status_keyboard_owner =
             status_window_state.keyboard_owner(strategic_frame_boundary.snapshot());
+        let build_selection_keyboard_owner =
+            build_selection_state.keyboard_owner(strategic_frame_boundary.snapshot());
         let mut legacy_restriction_latch = LegacyInputRestrictionLatch::new(legacy_blockers);
         let strategic_frame_sequence_valid =
             if let Some(next_frame) = strategic_frame_number.checked_add(1) {
@@ -6196,7 +6632,6 @@ Some(RailAudience::side(*faction_is_alliance)),
                     || fleet_window_state.is_dragging()
                     || defenses_window_state.is_dragging()
                     || mission_dialog_state.contains_screen_point(cockpit_layout, pointer)
-                    || build_selection_state.contains_screen_point(cockpit_layout, pointer)
                     || move_confirmation_state.contains_screen_point(cockpit_layout, pointer)
                     || scrap_confirmation_state.contains_screen_point(cockpit_layout, pointer)
                     || fleet_finder_state.contains_screen_point(cockpit_layout, pointer)
@@ -6240,6 +6675,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                             cockpit_layout,
                             &message_index,
                             &status_window_state,
+                            &build_selection_state,
                             |point| {
                                 let top_layer =
                                     ctx.layer_id_at(egui_macroquad::egui::pos2(point.0, point.1));
@@ -7724,10 +8160,13 @@ Some(RailAudience::side(*faction_is_alliance)),
                                 area,
                                 is_alliance,
                             );
-                            if build_selection_state.open(system, area, is_alliance, kinds) {
+                            if let Some(prepared) =
+                                build_selection_state.prepare_open(system, area, is_alliance, kinds)
+                            {
+                                strategic_windowing.enqueue_build_selection_open(prepared);
                                 legacy_restriction_latch.note_start();
                                 macroquad::logging::info!(
-                                    "[interface] command=0x21x destination=build_selection status=opened area={area:?} system={}",
+                                    "[interface] command=0x21x destination=build_selection status=queued area={area:?} system={}",
                                     world.systems.get(system).map_or("", |value| value.name.as_str())
                                 );
                             }
@@ -7871,49 +8310,6 @@ Some(RailAudience::side(*faction_is_alliance)),
                         None => {}
                     }
 
-                    match draw_build_selection(
-                        ctx,
-                        &world,
-                        &mfg_state,
-                        &mut build_selection_state,
-                        cockpit_layout,
-                        &mut bmp_cache,
-                    ) {
-                        Some(BuildSelectionAction::Confirm {
-                            system,
-                            area,
-                            kind,
-                            count,
-                        }) => panel_actions.push(PanelAction::BuildProduction {
-                            system,
-                            area,
-                            kind,
-                            count,
-                        }),
-                        Some(BuildSelectionAction::Encyclopedia) => {
-                            if encyclopedia_session_store.current().is_some() {
-                                let intent = EncyclopediaEntryIntent::Contextual {
-                                    audience: encyclopedia_audience(player_faction),
-                                    // Upstream recovered this caller while the
-                                    // class-to-topic join remains explicitly
-                                    // unbound. Preserve the caller and use the
-                                    // presenter's unresolved index fallback.
-                                    object_id: 0,
-                                    caller: EncyclopediaContextCaller::Handler00438800Command67,
-                                };
-                                pending_encyclopedia_open.get_or_insert(intent);
-                                legacy_restriction_latch.note_start();
-                                macroquad::logging::info!(
-                                    "[encyclopedia] production_route status=queued origin=contextual caller=FUN_00438800_command_0x67 requested=unresolved"
-                                );
-                            } else {
-                                macroquad::logging::warn!(
-                                    "[encyclopedia] production_route unavailable origin=build_selection reason=no_session"
-                                );
-                            }
-                        }
-                        None => {}
-                    }
                     #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
                     if let Some(request) = interface_fixture_request {
                         interface_test_fixture::emit_production(
@@ -8357,6 +8753,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                         fleet_finder_state.window_id(),
                         message_index.window_id(),
                         status_window_state.window_id(),
+                        build_selection_state.window_id(),
                     );
                     for (surface, allows_input) in managed_surfaces {
                         match surface {
@@ -8537,6 +8934,59 @@ Some(RailAudience::side(*faction_is_alliance)),
                                     }
                                 }
                             }
+                            ManagedStrategicSurface::BuildSelection(_) => {
+                                let action = with_retained_input(ctx, allows_input, || {
+                                    draw_build_selection(
+                                        ctx,
+                                        &world,
+                                        &mfg_state,
+                                        &mut build_selection_state,
+                                        cockpit_layout,
+                                        &mut bmp_cache,
+                                    )
+                                });
+                                match action {
+                                    Some(BuildSelectionAction::Confirm { .. }) => {
+                                        if let Some(prepared) =
+                                            build_selection_state.prepare_confirm(&world)
+                                        {
+                                            strategic_windowing
+                                                .enqueue_build_selection_confirm(prepared);
+                                        }
+                                    }
+                                    Some(BuildSelectionAction::Close) => {
+                                        if let Some(window) = build_selection_state.request_close()
+                                        {
+                                            strategic_windowing.enqueue(
+                                                rebellion_windowing::WindowCommand::Close(window),
+                                            );
+                                        }
+                                    }
+                                    Some(BuildSelectionAction::Encyclopedia) => {
+                                        if encyclopedia_session_store.current().is_some() {
+                                            let intent = EncyclopediaEntryIntent::Contextual {
+                                                audience: encyclopedia_audience(player_faction),
+                                                // Upstream recovered this caller while the
+                                                // class-to-topic join remains explicitly
+                                                // unbound. Preserve the caller and use the
+                                                // presenter's unresolved index fallback.
+                                                object_id: 0,
+                                                caller: EncyclopediaContextCaller::Handler00438800Command67,
+                                            };
+                                            pending_encyclopedia_open.get_or_insert(intent);
+                                            legacy_restriction_latch.note_start();
+                                            macroquad::logging::info!(
+                                                "[encyclopedia] production_route status=queued origin=contextual caller=FUN_00438800_command_0x67 requested=unresolved"
+                                            );
+                                        } else {
+                                            macroquad::logging::warn!(
+                                                "[encyclopedia] production_route unavailable origin=build_selection reason=no_session"
+                                            );
+                                        }
+                                    }
+                                    None => {}
+                                }
+                            }
                         }
                     }
                     if !encyclopedia_close_queued
@@ -8604,6 +9054,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                     encyclopedia_keyboard_owner,
                     message_index_keyboard_owner,
                     status_keyboard_owner,
+                    build_selection_keyboard_owner,
                 );
 
                 // Child surfaces have now handled their input. Keep every
@@ -8614,8 +9065,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                 #[cfg(not(any(debug_assertions, not(target_arch = "wasm32"))))]
                 let command_palette_now_open = false;
                 legacy_restriction_latch.observe(LegacyInputBlockers {
-                    strategic_modal: build_selection_state.is_open()
-                        || mission_dialog_state.is_open()
+                    strategic_modal: mission_dialog_state.is_open()
                         || move_confirmation_state.is_open()
                         || scrap_confirmation_state.is_open()
                         || troop_finder_state.is_open()
@@ -10092,6 +10542,8 @@ Some(RailAudience::side(*faction_is_alliance)),
             .extend(encyclopedia_surface.content_reports(strategic_frame_boundary.snapshot()));
         strategic_content_reports
             .extend(message_index.content_reports(strategic_frame_boundary.snapshot()));
+        strategic_content_reports
+            .extend(build_selection_state.content_reports(strategic_frame_boundary.snapshot()));
         strategic_content_reports.extend(status_window_state.content_reports(
             strategic_frame_boundary.snapshot(),
             StatusSources {
@@ -10112,6 +10564,9 @@ Some(RailAudience::side(*faction_is_alliance)),
                 command,
                 result,
                 mut removed_content,
+                prepared_build_selection,
+                build_selection_content_id,
+                confirmed_build_selection,
                 prepared_system,
                 system_content_id,
                 prepared_fleet,
@@ -10139,6 +10594,32 @@ Some(RailAudience::side(*faction_is_alliance)),
             );
             let mut committed_system_open = false;
             let mut committed_fleet_open = false;
+            if let (Some(prepared), Some(id), Ok(commit)) = (
+                prepared_build_selection,
+                build_selection_content_id,
+                &result,
+            ) {
+                if build_selection_state.commit_open(prepared, &commit.transition) == Some(id) {
+                    let committed = strategic_windowing.has_content(id)
+                        || strategic_windowing.acknowledge_build_selection_publication(id);
+                    if !committed {
+                        build_selection_state.remove_content(&[id]);
+                        removed_content
+                            .extend(strategic_windowing.rollback_build_selection_publication(id));
+                    }
+                } else {
+                    macroquad::logging::error!(
+                        "[windowing] Build Selection content commit did not match identity={id:?}"
+                    );
+                    if matches!(
+                        commit.transition,
+                        rebellion_windowing::WindowTransition::Opened { .. }
+                    ) {
+                        removed_content
+                            .extend(strategic_windowing.rollback_build_selection_publication(id));
+                    }
+                }
+            }
             if let (Some(prepared), Some(id), Ok(commit)) =
                 (prepared_system, system_content_id, &result)
             {
@@ -10286,6 +10767,23 @@ Some(RailAudience::side(*faction_is_alliance)),
                     }
                 }
             }
+            if let Some(BuildSelectionAction::Confirm {
+                system,
+                area,
+                count,
+                ..
+            }) = commit_build_selection_gameplay(
+                confirmed_build_selection,
+                &removed_content,
+                &world,
+                &mut build_selection_state,
+                &mut mfg_state,
+            ) {
+                macroquad::logging::info!(
+                    "[interface] command=0x21x destination=production_build status=queued area={area:?} count={count} system={}",
+                    world.systems.get(system).map_or("", |value| value.name.as_str())
+                );
+            }
             if (activated_fleet && result.is_ok()) || committed_fleet_open {
                 fleet_legacy_bridge_serial = FleetWindowState::next_legacy_bridge_serial();
             }
@@ -10337,6 +10835,7 @@ Some(RailAudience::side(*faction_is_alliance)),
             fleet_finder_state.remove_content(&removed_content);
             encyclopedia_surface.remove_content(&removed_content);
             status_window_state.remove_content(&removed_content);
+            build_selection_state.remove_content(&removed_content);
             let message_close_actions = message_index.remove_content(&removed_content);
             apply_message_index_actions(
                 message_close_actions,
@@ -10380,6 +10879,7 @@ Some(RailAudience::side(*faction_is_alliance)),
         fleet_finder_state.remove_content(&reconciliation.removed);
         encyclopedia_surface.remove_content(&reconciliation.removed);
         status_window_state.remove_content(&reconciliation.removed);
+        build_selection_state.remove_content(&reconciliation.removed);
         let message_close_actions = message_index.remove_content(&reconciliation.removed);
         apply_message_index_actions(
             message_close_actions,

@@ -8,10 +8,14 @@
 //! takes the number to build. Confirm replaces what the band was building.
 
 use egui_macroquad::egui;
-use rebellion_core::build_selection::{estimate, BuildEstimate};
+use rebellion_core::build_selection::{estimate, order_items, BuildEstimate};
 use rebellion_core::ids::SystemKey;
-use rebellion_core::manufacturing::{BuildableKind, ManufacturingState, ProductionArea};
+use rebellion_core::manufacturing::{BuildableKind, ManufacturingState, ProductionArea, QueueItem};
 use rebellion_core::world::GameWorld;
+use rebellion_windowing::{
+    ContentReport, ContentStatus, ExistingEffect, RoutingSnapshot, WindowId, WindowKind,
+    WindowOwner, WindowSpec, WindowTransition,
+};
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::CockpitLayout;
@@ -69,6 +73,7 @@ pub const MAX_QUANTITY: u32 = 255;
 /// One open window: the band it orders for and its controls' state.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BuildSelection {
+    window_id: Option<WindowId>,
     system: SystemKey,
     area: ProductionArea,
     is_alliance: bool,
@@ -81,6 +86,11 @@ pub struct BuildSelection {
 }
 
 impl BuildSelection {
+    #[must_use]
+    pub fn system(&self) -> SystemKey {
+        self.system
+    }
+
     #[must_use]
     pub fn area(&self) -> ProductionArea {
         self.area
@@ -140,6 +150,64 @@ pub struct BuildSelectionState {
     remembered: [Option<BuildableKind>; 3],
 }
 
+/// Inert Build Selection content prepared before the shared manager accepts
+/// the singleton identity.
+#[derive(Debug, Clone)]
+pub struct PreparedBuildSelection {
+    dialog: BuildSelection,
+}
+
+impl PreparedBuildSelection {
+    #[must_use]
+    pub fn spec(&self) -> WindowSpec {
+        crate::windowing_policy::singleton_spec(
+            WindowKind::BuildSelection,
+            WindowOwner::StrategicRoot,
+        )
+    }
+}
+
+/// Exact confirmation candidate paired with the manager close transaction.
+/// It carries no gameplay side effect and may be consumed only after the
+/// matching teardown receipt and a fresh source validation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PreparedBuildSelectionConfirm {
+    window: WindowId,
+    system: SystemKey,
+    area: ProductionArea,
+    kind: BuildableKind,
+    count: u32,
+    is_alliance: bool,
+}
+
+impl PreparedBuildSelectionConfirm {
+    #[must_use]
+    pub const fn window_id(self) -> WindowId {
+        self.window
+    }
+}
+
+/// A source-revalidated order released by the exact confirmation receipt.
+/// The app consumes the already validated queue items directly, so gameplay
+/// is not preceded by a second, potentially divergent validation pass.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommittedBuildSelectionConfirm {
+    action: BuildSelectionAction,
+    items: Vec<QueueItem>,
+}
+
+impl CommittedBuildSelectionConfirm {
+    #[must_use]
+    pub const fn action(&self) -> BuildSelectionAction {
+        self.action
+    }
+
+    #[must_use]
+    pub fn into_order(self) -> (BuildSelectionAction, Vec<QueueItem>) {
+        (self.action, self.items)
+    }
+}
+
 const fn area_index(area: ProductionArea) -> usize {
     match area {
         ProductionArea::Shipyard => 0,
@@ -149,6 +217,194 @@ const fn area_index(area: ProductionArea) -> usize {
 }
 
 impl BuildSelectionState {
+    /// Prepares manufacturing context without replacing any published content.
+    /// An empty class list rejects before a manager command is queued.
+    #[must_use]
+    pub fn prepare_open(
+        &self,
+        system: SystemKey,
+        area: ProductionArea,
+        is_alliance: bool,
+        kinds: Vec<BuildableKind>,
+    ) -> Option<PreparedBuildSelection> {
+        if kinds.is_empty() {
+            return None;
+        }
+        let selected = self.remembered[area_index(area)]
+            .and_then(|kind| kinds.iter().position(|&listed| listed == kind))
+            .unwrap_or(0);
+        Some(PreparedBuildSelection {
+            dialog: BuildSelection {
+                window_id: None,
+                system,
+                area,
+                is_alliance,
+                kinds,
+                selected,
+                quantity: 1,
+                list_open: false,
+            },
+        })
+    }
+
+    /// Publishes prepared content only for a newly accepted singleton. A NoOp
+    /// duplicate acknowledges the old identity and preserves its context and
+    /// control state exactly.
+    pub fn commit_open(
+        &mut self,
+        mut prepared: PreparedBuildSelection,
+        transition: &WindowTransition,
+    ) -> Option<WindowId> {
+        match *transition {
+            WindowTransition::Opened { id } if self.dialog.is_none() => {
+                prepared.dialog.window_id = Some(id);
+                self.dialog = Some(prepared.dialog);
+                Some(id)
+            }
+            WindowTransition::Existing {
+                id,
+                effect: ExistingEffect::NoOp,
+            } if self.window_id() == Some(id) => Some(id),
+            _ => None,
+        }
+    }
+
+    /// Exact manager identity owning the published content.
+    #[must_use]
+    pub fn window_id(&self) -> Option<WindowId> {
+        self.dialog.as_ref().and_then(|dialog| dialog.window_id)
+    }
+
+    /// Manager-owned window hit for event-local pointer routing.
+    #[must_use]
+    pub fn hit_window(
+        &self,
+        frame: &RoutingSnapshot,
+        layout: CockpitLayout,
+        point: (f32, f32),
+    ) -> Option<WindowId> {
+        let id = self.window_id()?;
+        (frame
+            .key(id)
+            .is_some_and(|key| key.kind == WindowKind::BuildSelection)
+            && frame.allows_input(id)
+            && rect_contains(window_rect(layout), egui::pos2(point.0, point.1)))
+        .then_some(id)
+    }
+
+    /// Exact manager identity that owns this frame's keyboard lease.
+    #[must_use]
+    pub fn keyboard_owner(&self, frame: &RoutingSnapshot) -> Option<WindowId> {
+        let id = self.window_id()?;
+        matches!(
+            frame.keyboard_route().target,
+            rebellion_windowing::RouteTarget::Window(target) if target.window == id
+        )
+        .then_some(id)
+    }
+
+    /// Explicit content state for manager reconciliation.
+    #[must_use]
+    pub fn content_reports(&self, frame: &RoutingSnapshot) -> Vec<ContentReport> {
+        frame
+            .paint_order()
+            .iter()
+            .copied()
+            .filter(|id| {
+                frame
+                    .key(*id)
+                    .is_some_and(|key| key.kind == WindowKind::BuildSelection)
+            })
+            .map(|id| ContentReport {
+                window: id,
+                status: if self.window_id() == Some(id) {
+                    ContentStatus::Ready
+                } else {
+                    ContentStatus::Unpaintable
+                },
+            })
+            .collect()
+    }
+
+    /// Returns the exact close target while content remains attached for this
+    /// frame's immutable modal lease.
+    #[must_use]
+    pub fn request_close(&self) -> Option<WindowId> {
+        self.window_id()
+    }
+
+    /// Releases manager-owned content only from an exact teardown receipt.
+    pub fn remove_content(&mut self, removed: &[WindowId]) {
+        if self.window_id().is_some_and(|id| removed.contains(&id)) {
+            self.dialog = None;
+        }
+    }
+
+    /// Prepares the current order only while its exact source can still build.
+    #[must_use]
+    pub fn prepare_confirm(&self, world: &GameWorld) -> Option<PreparedBuildSelectionConfirm> {
+        let dialog = self.dialog.as_ref()?;
+        let window = dialog.window_id?;
+        order_items(
+            world,
+            dialog.system,
+            dialog.area,
+            dialog.kind(),
+            dialog.quantity,
+            dialog.is_alliance,
+        )?;
+        Some(PreparedBuildSelectionConfirm {
+            window,
+            system: dialog.system,
+            area: dialog.area,
+            kind: dialog.kind(),
+            count: dialog.quantity,
+            is_alliance: dialog.is_alliance,
+        })
+    }
+
+    /// Consumes a confirmation at most once, only after the exact manager
+    /// close receipt and a fresh validation of the same manufacturing source.
+    pub fn commit_confirm(
+        &mut self,
+        prepared: PreparedBuildSelectionConfirm,
+        removed: &[WindowId],
+        world: &GameWorld,
+    ) -> Option<CommittedBuildSelectionConfirm> {
+        if !removed.contains(&prepared.window) {
+            return None;
+        }
+        let dialog = self.dialog.as_ref()?;
+        if dialog.window_id != Some(prepared.window)
+            || dialog.system != prepared.system
+            || dialog.area != prepared.area
+            || dialog.kind() != prepared.kind
+            || dialog.quantity != prepared.count
+            || dialog.is_alliance != prepared.is_alliance
+        {
+            return None;
+        }
+        let items = order_items(
+            world,
+            prepared.system,
+            prepared.area,
+            prepared.kind,
+            prepared.count,
+            prepared.is_alliance,
+        )?;
+        self.dialog = None;
+        self.remembered[area_index(prepared.area)] = Some(prepared.kind);
+        Some(CommittedBuildSelectionConfirm {
+            action: BuildSelectionAction::Confirm {
+                system: prepared.system,
+                area: prepared.area,
+                kind: prepared.kind,
+                count: prepared.count,
+            },
+            items,
+        })
+    }
+
     /// Open the window for a band with the classes its manager lists. With
     /// none, nothing opens. The quantity starts at 1 (`FUN_00437f80`).
     pub fn open(
@@ -165,6 +421,7 @@ impl BuildSelectionState {
             .and_then(|kind| kinds.iter().position(|&listed| listed == kind))
             .unwrap_or(0);
         self.dialog = Some(BuildSelection {
+            window_id: None,
             system,
             area,
             is_alliance,
@@ -192,7 +449,9 @@ impl BuildSelectionState {
 
     /// Close and Cancel discard the order (`FUN_00438800`, 100 and 102).
     pub fn close(&mut self) {
-        self.dialog = None;
+        if self.window_id().is_none() {
+            self.dialog = None;
+        }
     }
 
     /// Whether `point` falls on the open window, so the galaxy map under it
@@ -205,6 +464,9 @@ impl BuildSelectionState {
     /// Confirm (`0x65`, `FUN_00438980`): remember the class for its kind of
     /// manager and submit the order; the window closes.
     pub fn confirm(&mut self) -> Option<BuildSelectionAction> {
+        if self.window_id().is_some() {
+            return None;
+        }
         let dialog = self.dialog.take()?;
         let kind = dialog.kind();
         self.remembered[area_index(dialog.area)] = Some(kind);
@@ -227,6 +489,8 @@ pub enum BuildSelectionAction {
         kind: BuildableKind,
         count: u32,
     },
+    /// Close or Cancel requests an exact manager close for migrated content.
+    Close,
     /// Encyclopedia (`0x67`, `FUN_0041d6b0`). port: it opens the
     /// Encyclopedia; the selected class's entry is not bound yet.
     Encyclopedia,
@@ -315,7 +579,9 @@ pub fn draw_build_selection(
         }
     });
 
-    egui::Area::new(egui::Id::new("original-build-selection"))
+    let area_id = egui::Id::new("original-build-selection");
+    ctx.move_to_top(egui::LayerId::new(egui::Order::Tooltip, area_id));
+    egui::Area::new(area_id)
         .fixed_pos(window.min)
         .order(egui::Order::Tooltip)
         .show(ctx, |ui| {
@@ -525,9 +791,20 @@ pub fn draw_build_selection(
         });
 
     if confirm {
+        if let Some(dialog) = state.dialog().filter(|dialog| dialog.window_id.is_some()) {
+            return Some(BuildSelectionAction::Confirm {
+                system: dialog.system,
+                area: dialog.area,
+                kind: dialog.kind(),
+                count: dialog.quantity,
+            });
+        }
         return state.confirm();
     }
     if close {
+        if state.window_id().is_some() {
+            return Some(BuildSelectionAction::Close);
+        }
         state.close();
     }
     action
@@ -573,6 +850,7 @@ mod tests {
     use rebellion_core::world::{
         BuildableClass, ControlKind, ManufacturingFacilityInstance, System,
     };
+    use rebellion_windowing::{WindowCommand, WindowManager, WindowTransition};
 
     fn layout() -> CockpitLayout {
         scaled(1.0)
@@ -665,6 +943,297 @@ mod tests {
             vec![BuildableKind::Troop(DatId::new(0x1000_0001))],
         ));
         state
+    }
+
+    fn managed_open(
+        state: &mut BuildSelectionState,
+        system: SystemKey,
+        area: ProductionArea,
+        is_alliance: bool,
+        kinds: Vec<BuildableKind>,
+    ) -> (WindowManager, rebellion_windowing::WindowId) {
+        let prepared = state
+            .prepare_open(system, area, is_alliance, kinds)
+            .expect("valid Build Selection context");
+        let mut manager = WindowManager::new();
+        let committed = manager
+            .apply(WindowCommand::Open(prepared.spec()))
+            .expect("manager accepts Build Selection");
+        let WindowTransition::Opened { id } = committed.transition else {
+            panic!("expected new Build Selection identity");
+        };
+        assert_eq!(state.commit_open(prepared, &committed.transition), Some(id));
+        (manager, id)
+    }
+
+    #[test]
+    fn build_selection_windowing_failed_context_preserves_old() {
+        let (_world, system) = galaxy(true);
+        let kind = BuildableKind::Troop(DatId::new(0x1000_0001));
+        let mut state = BuildSelectionState::default();
+        let (_manager, id) = managed_open(
+            &mut state,
+            system,
+            ProductionArea::TrainingFacility,
+            true,
+            vec![kind],
+        );
+
+        assert!(state
+            .prepare_open(
+                SystemKey::default(),
+                ProductionArea::Shipyard,
+                false,
+                Vec::new(),
+            )
+            .is_none());
+        assert_eq!(state.window_id(), Some(id));
+        assert_eq!(state.dialog().unwrap().system(), system);
+        assert_eq!(
+            state.dialog().unwrap().area(),
+            ProductionArea::TrainingFacility
+        );
+        assert_eq!(state.dialog().unwrap().kind(), kind);
+    }
+
+    #[test]
+    fn build_selection_duplicate_open_preserves_manufacturing_context() {
+        let (_world, system) = galaxy(true);
+        let first = BuildableKind::Troop(DatId::new(0x1000_0001));
+        let replacement = BuildableKind::Troop(DatId::new(0x1000_0002));
+        let mut state = BuildSelectionState::default();
+        let (mut manager, id) = managed_open(
+            &mut state,
+            system,
+            ProductionArea::TrainingFacility,
+            true,
+            vec![first, replacement],
+        );
+        let dialog = state.dialog_mut().unwrap();
+        dialog.select(1);
+        dialog.step_quantity(true);
+        dialog.list_open = true;
+        let before = dialog.clone();
+
+        let duplicate = state
+            .prepare_open(
+                SystemKey::default(),
+                ProductionArea::Shipyard,
+                false,
+                vec![first],
+            )
+            .unwrap();
+        let committed = manager
+            .apply(WindowCommand::Open(duplicate.spec()))
+            .expect("duplicate singleton is a NoOp");
+        assert_eq!(
+            state.commit_open(duplicate, &committed.transition),
+            Some(id)
+        );
+        assert!(matches!(
+            committed.transition,
+            WindowTransition::Existing {
+                id: existing,
+                effect: rebellion_windowing::ExistingEffect::NoOp,
+            } if existing == id
+        ));
+        assert_eq!(state.dialog(), Some(&before));
+    }
+
+    #[test]
+    fn build_selection_rejects_mismatched_publication_receipts_without_replacing_content() {
+        let (_world, system) = galaxy(true);
+        let first = BuildableKind::Troop(DatId::new(0x1000_0001));
+        let replacement = BuildableKind::Troop(DatId::new(0x1000_0002));
+        let mut state = BuildSelectionState::default();
+        let (_manager, original) = managed_open(
+            &mut state,
+            system,
+            ProductionArea::TrainingFacility,
+            true,
+            vec![first],
+        );
+        state.dialog_mut().unwrap().step_quantity(true);
+        let before = state.dialog().unwrap().clone();
+
+        let mut unrelated = WindowManager::new();
+        unrelated
+            .apply(WindowCommand::Open(
+                crate::windowing_policy::singleton_spec(
+                    WindowKind::Encyclopedia,
+                    WindowOwner::StrategicRoot,
+                ),
+            ))
+            .unwrap();
+        let prepared = state
+            .prepare_open(
+                SystemKey::default(),
+                ProductionArea::Shipyard,
+                false,
+                vec![replacement],
+            )
+            .unwrap();
+        let opened = unrelated
+            .apply(WindowCommand::Open(prepared.spec()))
+            .unwrap();
+        let WindowTransition::Opened { id: unrelated_id } = opened.transition else {
+            panic!("expected unrelated opened receipt");
+        };
+        assert_ne!(unrelated_id, original);
+        assert_eq!(state.commit_open(prepared, &opened.transition), None);
+
+        let duplicate = state
+            .prepare_open(
+                SystemKey::default(),
+                ProductionArea::Shipyard,
+                false,
+                vec![replacement],
+            )
+            .unwrap();
+        assert_eq!(
+            state.commit_open(
+                duplicate,
+                &WindowTransition::Existing {
+                    id: unrelated_id,
+                    effect: ExistingEffect::NoOp,
+                },
+            ),
+            None
+        );
+        assert_eq!(state.dialog(), Some(&before));
+    }
+
+    #[test]
+    fn build_selection_windowing_confirm_is_once() {
+        let (mut world, system) = galaxy(true);
+        let kind = BuildableKind::Troop(DatId::new(0x1000_0001));
+        let mut state = BuildSelectionState::default();
+        let (mut manager, id) = managed_open(
+            &mut state,
+            system,
+            ProductionArea::TrainingFacility,
+            true,
+            vec![kind],
+        );
+        let prepared = state
+            .prepare_confirm(&world)
+            .expect("live source prepares confirmation");
+        let before = state.dialog().unwrap().clone();
+        assert_eq!(state.commit_confirm(prepared, &[], &world), None);
+        assert_eq!(state.dialog(), Some(&before));
+        let mut unrelated = WindowManager::new();
+        unrelated
+            .apply(WindowCommand::Open(
+                crate::windowing_policy::singleton_spec(
+                    WindowKind::Encyclopedia,
+                    WindowOwner::StrategicRoot,
+                ),
+            ))
+            .unwrap();
+        let wrong = unrelated
+            .apply(WindowCommand::Open(
+                crate::windowing_policy::singleton_spec(
+                    WindowKind::MessageIndex,
+                    WindowOwner::StrategicRoot,
+                ),
+            ))
+            .unwrap();
+        let WindowTransition::Opened { id: wrong_id } = wrong.transition else {
+            panic!("expected manager-issued wrong identity");
+        };
+        assert_ne!(wrong_id, id);
+        assert_eq!(state.commit_confirm(prepared, &[wrong_id], &world), None);
+        assert_eq!(state.dialog(), Some(&before));
+        let closed = manager
+            .apply(WindowCommand::Close(id))
+            .expect("exact close commits");
+        let WindowTransition::Closed { closed, .. } = closed.transition else {
+            panic!("expected close receipt");
+        };
+        let expected = BuildSelectionAction::Confirm {
+            system,
+            area: ProductionArea::TrainingFacility,
+            kind,
+            count: 1,
+        };
+        assert_eq!(
+            state
+                .commit_confirm(prepared, &closed, &world)
+                .map(|committed| committed.action()),
+            Some(expected)
+        );
+        assert_eq!(state.commit_confirm(prepared, &closed, &world), None);
+
+        let (mut manager, id) = managed_open(
+            &mut state,
+            system,
+            ProductionArea::TrainingFacility,
+            true,
+            vec![kind],
+        );
+        let stale = state.prepare_confirm(&world).unwrap();
+        world.systems[system].manufacturing_facilities.clear();
+        let closed = manager.apply(WindowCommand::Close(id)).unwrap();
+        let WindowTransition::Closed { closed, .. } = closed.transition else {
+            panic!("expected close receipt");
+        };
+        assert_eq!(state.commit_confirm(stale, &closed, &world), None);
+        state.remove_content(&closed);
+        assert!(!state.is_open());
+    }
+
+    #[test]
+    fn managed_build_selection_reasserts_its_layer_after_lower_surfaces_raise() {
+        let (world, system) = galaxy(true);
+        let kind = BuildableKind::Troop(DatId::new(0x1000_0001));
+        let mut state = BuildSelectionState::default();
+        let (manager, _id) = managed_open(
+            &mut state,
+            system,
+            ProductionArea::TrainingFacility,
+            true,
+            vec![kind],
+        );
+        let frame = manager.begin_frame();
+        let layout = layout();
+        let ctx = egui::Context::default();
+        let mut cache = BmpCache::new();
+        let manufacturing = ManufacturingState::new();
+        let lower = egui::Id::new("raising-lower-managed-surface");
+
+        for _ in 0..3 {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(700.0, 520.0),
+                )),
+                ..Default::default()
+            };
+            let _ = ctx.run(input, |ctx| {
+                ctx.move_to_top(egui::LayerId::new(egui::Order::Tooltip, lower));
+                egui::Area::new(lower)
+                    .order(egui::Order::Tooltip)
+                    .fixed_pos(window_rect(layout).min)
+                    .show(ctx, |ui| {
+                        ui.allocate_response(window_rect(layout).size(), egui::Sense::click());
+                    });
+                assert_eq!(state.keyboard_owner(&frame), state.window_id());
+                let _ = draw_build_selection(
+                    ctx,
+                    &world,
+                    &manufacturing,
+                    &mut state,
+                    layout,
+                    &mut cache,
+                );
+            });
+        }
+
+        assert_eq!(
+            ctx.layer_id_at(window_rect(layout).center())
+                .map(|layer| layer.id),
+            Some(egui::Id::new("original-build-selection"))
+        );
     }
 
     fn press(pos: egui::Pos2, pressed: bool) -> egui::Event {

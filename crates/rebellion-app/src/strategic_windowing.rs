@@ -6,6 +6,7 @@ use rebellion_core::ids::SystemKey;
 use rebellion_data::encyclopedia_presenter::EncyclopediaEntryIntent;
 use rebellion_data::encyclopedia_session::EncyclopediaSession;
 use rebellion_render::{
+    build_selection::{PreparedBuildSelection, PreparedBuildSelectionConfirm},
     fleet_finder::{PreparedFleetFinder, FLEET_FINDER_NAME_CONTROL},
     fleet_window::PreparedFleetWindow,
     message_index::PreparedMessageIndex,
@@ -30,6 +31,12 @@ pub struct AppliedWindowCommand {
     pub result: Result<WindowCommit, WindowError>,
     /// Matching attached content identities released by teardown receipts.
     pub removed_content: Vec<WindowId>,
+    /// Build Selection content prepared beside its singleton open.
+    pub prepared_build_selection: Option<PreparedBuildSelection>,
+    /// Identity whose attachment is valid for `prepared_build_selection`.
+    pub build_selection_content_id: Option<WindowId>,
+    /// Gameplay-free confirmation released only by its exact accepted close.
+    pub confirmed_build_selection: Option<PreparedBuildSelectionConfirm>,
     /// System content prepared alongside this semantic open.
     pub prepared_system: Option<PreparedSystemWindow>,
     /// Identity whose attachment is valid for `prepared_system` after commit.
@@ -74,6 +81,8 @@ pub struct CommittedEncyclopediaOpen {
 #[derive(Debug)]
 struct QueuedWindowCommand {
     command: WindowCommand,
+    prepared_build_selection: Option<PreparedBuildSelection>,
+    prepared_build_selection_confirm: Option<PreparedBuildSelectionConfirm>,
     prepared_system: Option<PreparedSystemWindow>,
     prepared_fleet: Option<PreparedFleetWindow>,
     prepared_fleet_finder: Option<PreparedFleetFinder>,
@@ -398,6 +407,46 @@ impl StrategicWindowing {
     pub fn enqueue(&mut self, command: WindowCommand) {
         self.pending.push(QueuedWindowCommand {
             command,
+            prepared_build_selection: None,
+            prepared_build_selection_confirm: None,
+            prepared_system: None,
+            prepared_fleet: None,
+            prepared_fleet_finder: None,
+            prepared_message_index: None,
+            prepared_status: None,
+            minimized_system: None,
+            restored_system: None,
+            minimized_fleet: None,
+            restored_fleet: None,
+        });
+    }
+
+    /// Queues validated Build Selection context beside its singleton open.
+    pub fn enqueue_build_selection_open(&mut self, prepared: PreparedBuildSelection) {
+        self.pending.push(QueuedWindowCommand {
+            command: WindowCommand::Open(prepared.spec()),
+            prepared_build_selection: Some(prepared),
+            prepared_build_selection_confirm: None,
+            prepared_system: None,
+            prepared_fleet: None,
+            prepared_fleet_finder: None,
+            prepared_message_index: None,
+            prepared_status: None,
+            minimized_system: None,
+            restored_system: None,
+            minimized_fleet: None,
+            restored_fleet: None,
+        });
+    }
+
+    /// Queues the exact close paired with an inert Build Selection confirm.
+    /// The candidate is returned only if that close commits and releases the
+    /// attached content identity.
+    pub fn enqueue_build_selection_confirm(&mut self, prepared: PreparedBuildSelectionConfirm) {
+        self.pending.push(QueuedWindowCommand {
+            command: WindowCommand::Close(prepared.window_id()),
+            prepared_build_selection: None,
+            prepared_build_selection_confirm: Some(prepared),
             prepared_system: None,
             prepared_fleet: None,
             prepared_fleet_finder: None,
@@ -414,6 +463,8 @@ impl StrategicWindowing {
     pub fn enqueue_system_open(&mut self, prepared: PreparedSystemWindow) {
         self.pending.push(QueuedWindowCommand {
             command: WindowCommand::Open(prepared.spec()),
+            prepared_build_selection: None,
+            prepared_build_selection_confirm: None,
             prepared_system: Some(prepared),
             prepared_fleet: None,
             prepared_fleet_finder: None,
@@ -431,6 +482,8 @@ impl StrategicWindowing {
     pub fn enqueue_fleet_open(&mut self, prepared: PreparedFleetWindow) {
         self.pending.push(QueuedWindowCommand {
             command: WindowCommand::Open(prepared.spec()),
+            prepared_build_selection: None,
+            prepared_build_selection_confirm: None,
             prepared_system: None,
             prepared_fleet: Some(prepared),
             prepared_fleet_finder: None,
@@ -447,6 +500,8 @@ impl StrategicWindowing {
     pub fn enqueue_fleet_finder_open(&mut self, prepared: PreparedFleetFinder) {
         self.pending.push(QueuedWindowCommand {
             command: WindowCommand::Open(prepared.spec()),
+            prepared_build_selection: None,
+            prepared_build_selection_confirm: None,
             prepared_system: None,
             prepared_fleet: None,
             prepared_fleet_finder: Some(prepared),
@@ -463,6 +518,8 @@ impl StrategicWindowing {
     pub fn enqueue_message_index_open(&mut self, prepared: PreparedMessageIndex) {
         self.pending.push(QueuedWindowCommand {
             command: WindowCommand::Open(prepared.spec()),
+            prepared_build_selection: None,
+            prepared_build_selection_confirm: None,
             prepared_system: None,
             prepared_fleet: None,
             prepared_fleet_finder: None,
@@ -489,6 +546,8 @@ impl StrategicWindowing {
                 old,
                 new,
             }),
+            prepared_build_selection: None,
+            prepared_build_selection_confirm: None,
             prepared_system: None,
             prepared_fleet: None,
             prepared_fleet_finder: None,
@@ -511,6 +570,8 @@ impl StrategicWindowing {
     ) {
         self.pending.push(QueuedWindowCommand {
             command: WindowCommand::Minimize(window),
+            prepared_build_selection: None,
+            prepared_build_selection_confirm: None,
             prepared_system: None,
             prepared_fleet: None,
             prepared_fleet_finder: None,
@@ -528,6 +589,8 @@ impl StrategicWindowing {
     pub fn enqueue_system_restore(&mut self, window: WindowId) {
         self.pending.push(QueuedWindowCommand {
             command: WindowCommand::Restore(window),
+            prepared_build_selection: None,
+            prepared_build_selection_confirm: None,
             prepared_system: None,
             prepared_fleet: None,
             prepared_fleet_finder: None,
@@ -569,6 +632,8 @@ impl StrategicWindowing {
     ) {
         self.pending.push(QueuedWindowCommand {
             command: WindowCommand::Minimize(window),
+            prepared_build_selection: None,
+            prepared_build_selection_confirm: None,
             prepared_system: None,
             prepared_fleet: None,
             prepared_fleet_finder: None,
@@ -587,6 +652,8 @@ impl StrategicWindowing {
     pub fn enqueue_fleet_restore(&mut self, window: WindowId) {
         self.pending.push(QueuedWindowCommand {
             command: WindowCommand::Restore(window),
+            prepared_build_selection: None,
+            prepared_build_selection_confirm: None,
             prepared_system: None,
             prepared_fleet: None,
             prepared_fleet_finder: None,
@@ -610,6 +677,8 @@ impl StrategicWindowing {
             .map(|queued| {
                 let QueuedWindowCommand {
                     command,
+                    prepared_build_selection,
+                    prepared_build_selection_confirm,
                     prepared_system,
                     prepared_fleet,
                     prepared_fleet_finder,
@@ -622,6 +691,8 @@ impl StrategicWindowing {
                 } = queued;
                 let result = self.manager.apply(command);
                 let mut removed_content = Vec::new();
+                let mut build_selection_content_id = None;
+                let mut confirmed_build_selection = None;
                 let mut system_content_id = None;
                 let mut fleet_content_id = None;
                 let mut fleet_finder_content_id = None;
@@ -634,6 +705,26 @@ impl StrategicWindowing {
                 if let Ok(commit) = &result {
                     self.record_transition(&commit.transition, &commit.events);
                     removed_content = self.release_matching_content(&commit.events);
+                    if prepared_build_selection.is_some() {
+                        build_selection_content_id = match &commit.transition {
+                            WindowTransition::Opened { id } => Some(*id),
+                            WindowTransition::Existing { id, .. } => {
+                                self.attached_content.contains(id).then_some(*id)
+                            }
+                            _ => None,
+                        };
+                    }
+                    if let Some(prepared) = prepared_build_selection_confirm {
+                        let window = prepared.window_id();
+                        if matches!(
+                            &commit.transition,
+                            WindowTransition::Closed { root, closed, .. }
+                                if *root == window && closed.contains(&window)
+                        ) && removed_content.contains(&window)
+                        {
+                            confirmed_build_selection = Some(prepared);
+                        }
+                    }
                     if matches!(commit.transition, WindowTransition::Minimized { .. }) {
                         committed_minimized_system = minimized_system;
                         committed_minimized_fleet = minimized_fleet;
@@ -741,6 +832,9 @@ impl StrategicWindowing {
                     command,
                     result,
                     removed_content,
+                    prepared_build_selection,
+                    build_selection_content_id,
+                    confirmed_build_selection,
                     prepared_system,
                     system_content_id,
                     prepared_fleet,
@@ -779,6 +873,15 @@ impl StrategicWindowing {
             .begin_frame()
             .key(id)
             .is_some_and(|key| key.kind == rebellion_windowing::WindowKind::Fleet)
+            && self.attached_content.insert(id)
+    }
+
+    /// Acknowledges Build Selection publication only for its exact singleton.
+    pub fn acknowledge_build_selection_publication(&mut self, id: WindowId) -> bool {
+        self.manager
+            .begin_frame()
+            .key(id)
+            .is_some_and(|key| key.kind == rebellion_windowing::WindowKind::BuildSelection)
             && self.attached_content.insert(id)
     }
 
@@ -821,6 +924,11 @@ impl StrategicWindowing {
     /// Compensates a failed renderer publication or rail eviction by closing
     /// the exact manager identity and returning the content teardown target.
     pub fn rollback_fleet_publication(&mut self, id: WindowId) -> Vec<WindowId> {
+        self.rollback_publication(id)
+    }
+
+    /// Compensates a failed Build Selection publication with an exact close.
+    pub fn rollback_build_selection_publication(&mut self, id: WindowId) -> Vec<WindowId> {
         self.rollback_publication(id)
     }
 
@@ -972,9 +1080,12 @@ mod tests {
     use std::collections::BTreeSet;
 
     use super::*;
-    use rebellion_core::dat::{ExplorationStatus, SectorGroup};
+    use rebellion_core::dat::{ExplorationStatus, Faction, SectorGroup};
     use rebellion_core::ids::DatId;
-    use rebellion_core::world::{ControlKind, GameWorld, Sector, System};
+    use rebellion_core::manufacturing::{BuildableKind, ProductionArea};
+    use rebellion_core::world::{
+        BuildableClass, ControlKind, GameWorld, ManufacturingFacilityInstance, Sector, System,
+    };
     use rebellion_render::windowing_input::{
         FrameInputRouter, InputDisposition, InputEventId, InputRecipient,
     };
@@ -1035,6 +1146,124 @@ mod tests {
             control: ControlKind::Uncontrolled,
         });
         (world, system)
+    }
+
+    #[test]
+    fn build_selection_windowing_modal_cancels_capture() {
+        use rebellion_render::build_selection::BuildSelectionState;
+        use rebellion_windowing::CaptureCancelReason;
+
+        let mut coordinator = StrategicWindowing::new();
+        coordinator.enqueue(WindowCommand::Open(contextual_spec(
+            WindowKind::Fleet,
+            SubjectId::new(1, 1),
+            WindowOwner::StrategicRoot,
+        )));
+        let owner = opened_id(&coordinator.apply_pending()[0]);
+        coordinator.enqueue(WindowCommand::CapturePointer(owner));
+        assert!(coordinator.apply_pending()[0].result.is_ok());
+
+        let state = BuildSelectionState::default();
+        coordinator.enqueue_build_selection_open(
+            state
+                .prepare_open(
+                    SystemKey::default(),
+                    ProductionArea::TrainingFacility,
+                    true,
+                    vec![BuildableKind::Troop(DatId::new(0x1000_0001))],
+                )
+                .unwrap(),
+        );
+        let applied = coordinator.apply_pending();
+        let commit = applied[0].result.as_ref().unwrap();
+        assert!(commit.events.contains(&WindowEvent::CaptureCancelled {
+            window: owner,
+            reason: CaptureCancelReason::ModalOpened,
+        }));
+    }
+
+    #[test]
+    fn build_selection_windowing_confirm_is_once() {
+        use rebellion_render::build_selection::{BuildSelectionAction, BuildSelectionState};
+
+        let (mut world, system) = fleet_world();
+        let yard_class = DatId::new(0x2900_0002);
+        let product_class = DatId::new(0x1000_0001);
+        world.buildable_classes.insert(
+            yard_class,
+            BuildableClass {
+                refined_material_cost: 10,
+                processing_rate: 4,
+                is_alliance: true,
+                is_empire: false,
+                ..BuildableClass::default()
+            },
+        );
+        world.buildable_classes.insert(
+            product_class,
+            BuildableClass {
+                refined_material_cost: 8,
+                is_alliance: true,
+                is_empire: false,
+                ..BuildableClass::default()
+            },
+        );
+        let yard = world
+            .manufacturing_facilities
+            .insert(ManufacturingFacilityInstance {
+                class_dat_id: yard_class,
+                side: Faction::Alliance,
+                is_shipyard: false,
+            });
+        world.systems[system].manufacturing_facilities.push(yard);
+
+        let mut coordinator = StrategicWindowing::new();
+        let mut state = BuildSelectionState::default();
+        coordinator.enqueue_build_selection_open(
+            state
+                .prepare_open(
+                    system,
+                    ProductionArea::TrainingFacility,
+                    true,
+                    vec![BuildableKind::Troop(product_class)],
+                )
+                .unwrap(),
+        );
+        let mut opened = coordinator.apply_pending().remove(0);
+        let id = opened.build_selection_content_id.unwrap();
+        assert_eq!(
+            state.commit_open(
+                opened.prepared_build_selection.take().unwrap(),
+                &opened.result.as_ref().unwrap().transition,
+            ),
+            Some(id)
+        );
+        assert!(coordinator.acknowledge_build_selection_publication(id));
+
+        let prepared = state.prepare_confirm(&world).unwrap();
+        coordinator.enqueue_build_selection_confirm(prepared);
+        coordinator.enqueue_build_selection_confirm(prepared);
+        let mut applied = coordinator.apply_pending();
+        let first = applied.remove(0);
+        let second = applied.remove(0);
+        assert_eq!(first.confirmed_build_selection, Some(prepared));
+        assert!(second.result.is_err());
+        assert_eq!(second.confirmed_build_selection, None);
+        assert_eq!(
+            state
+                .commit_confirm(prepared, &first.removed_content, &world)
+                .map(|committed| committed.action()),
+            Some(BuildSelectionAction::Confirm {
+                system,
+                area: ProductionArea::TrainingFacility,
+                kind: BuildableKind::Troop(product_class),
+                count: 1,
+            })
+        );
+        assert_eq!(
+            state.commit_confirm(prepared, &first.removed_content, &world),
+            None
+        );
     }
 
     fn fleet_layout() -> CockpitLayout {
