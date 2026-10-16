@@ -5,9 +5,9 @@
 //! instead of pushing to a `MessageLog`.
 
 use crate::integrator::{
-    apply_ground_combat_result_inner, resolve_system_space_combat, PerceptionIntegrator,
+    apply_ground_combat_result_inner, resolve_system_space_combat_for, PerceptionIntegrator,
 };
-use rebellion_core::ai::{AIState, AISystem};
+use rebellion_core::ai::{AIAction, AIState, AISystem};
 use rebellion_core::betrayal::{BetrayalState, BetrayalSystem};
 use rebellion_core::blockade::{BlockadeState, BlockadeSystem};
 use rebellion_core::bombardment::BombardmentSystem;
@@ -32,6 +32,7 @@ use rebellion_core::uprising::{UprisingState, UprisingSystem};
 use rebellion_core::victory::{VictoryState, VictorySystem};
 use rebellion_core::world::{CampaignConfig, GameWorld, MstbTable};
 
+// port: safety bound on repeated ground passes; the original assault (order 0x234) is untraced.
 const MAX_SYSTEM_GROUND_COMBAT_ROUNDS: u32 = 256;
 
 /// Bundles all mutable simulation state needed for a tick.
@@ -65,12 +66,350 @@ pub struct SimulationStates {
     pub campaign_config: CampaignConfig,
 }
 
+/// port: the `index`th roll of `tick`'s derived stream, one SplitMix64 step
+/// over the tick, `salt` (the bits of the tick's first supplied roll, so each
+/// seed has its own stream) and the index, in `[0, 1)`.
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "53 bits fill an f64 mantissa exactly"
+)]
+fn derived_roll(tick: u64, salt: u64, index: u64) -> f64 {
+    let mut z = (tick ^ salt)
+        .wrapping_mul(0x9e37_79b9_7f4a_7c15)
+        .wrapping_add(index.wrapping_add(1).wrapping_mul(0xd1b5_4a32_d192_ed03));
+    z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    z ^= z >> 31;
+    (z >> 11) as f64 / (1u64 << 53) as f64
+}
+
+/// The rounds a day runs less one (`FUN_0051dea0.c:11-30`, the per-day
+/// count), from the `--config` AI tuning (`RoundsPerDay::at`).
+#[must_use]
+pub fn day_rate(clock: &GameClock, config: &rebellion_core::tuning::GameConfig) -> u16 {
+    config.ai.rounds_per_day.at(clock.speed).max(1) - 1
+}
+
+/// The states one AI step reads and writes.
+pub struct AiCtx<'a> {
+    pub world: &'a mut GameWorld,
+    pub missions: &'a mut MissionState,
+    pub manufacturing: &'a mut ManufacturingState,
+    pub movement: &'a mut MovementState,
+    pub transport: &'a mut TroopTransportState,
+    pub stockpiles: &'a mut StockpileState,
+    pub victory: &'a mut VictoryState,
+    pub death_star: &'a mut DeathStarState,
+    pub blockade: &'a mut BlockadeState,
+    pub research: &'a ResearchState,
+    pub uprising: &'a UprisingState,
+    pub config: &'a rebellion_core::tuning::GameConfig,
+}
+
+/// One AI order's fate, for the caller's records.
+#[derive(Debug, Clone)]
+pub struct AiOrderRecord {
+    pub faction: Option<rebellion_core::ai::AiFaction>,
+    /// The second AI of a dual-AI run.
+    pub dual: bool,
+    pub issued: rebellion_core::ai_scheduler::Issued,
+    pub outcome: crate::integrator::AiOutcome,
+    pub strike: crate::integrator::StrikeEffects,
+}
+
+impl AiOrderRecord {
+    /// Who issued the order and when, as its `ai_action` record reads it.
+    #[must_use]
+    pub fn origin(&self) -> crate::telemetry::AiOrderOrigin<'static> {
+        crate::telemetry::AiOrderOrigin {
+            faction: self.faction.map_or("None", faction_name),
+            module: self.issued.kind,
+            round: self.issued.round,
+            issued: self.issued.day,
+            dual: self.dual,
+        }
+    }
+}
+
+const fn faction_name(faction: rebellion_core::ai::AiFaction) -> &'static str {
+    match faction {
+        rebellion_core::ai::AiFaction::Alliance => "Alliance",
+        rebellion_core::ai::AiFaction::Empire => "Empire",
+    }
+}
+
+/// The human player's advisor agent in its side's slot of a step
+/// (`FUN_00486500` runs it in phase 8, `FUN_00439a10`).
+pub struct AgentSlot<'a> {
+    pub agent: &'a mut rebellion_core::agent_automation::PlayerAgent,
+    /// The player's side; the Alliance holds the first slot.
+    pub alliance: bool,
+    pub economy: &'a rebellion_core::economy::EconomyState,
+    /// The order the step applied, for the caller's log.
+    pub applied: Option<rebellion_core::agent_automation::AgentOrder>,
+}
+
+/// One in-day step (`FUN_0051dea0` `+0x20`): each side's pending order is
+/// applied, the Alliance's first (`FUN_00436250`), then each side runs its
+/// round on the one world (`FUN_004361a0`), neither seeing the other's new
+/// order. A step that applied anything rolls for the regiments running a
+/// blockade, as the original does at departure in that step's phase 5.
+/// `sides` holds each AI and whether it is the second of a dual-AI run;
+/// `agent` the human player's advisor agent, which takes the player's slot.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "A step reads the AI sides, the player's agent, the held predicate and the rolls."
+)]
+pub fn ai_step(
+    ctx: &mut AiCtx<'_>,
+    sides: &mut [(&mut AIState, bool)],
+    mut agent: Option<&mut AgentSlot<'_>>,
+    step: u16,
+    day: u64,
+    held: &dyn Fn(
+        &GameWorld,
+        &TroopTransportState,
+        &AIAction,
+    ) -> Option<rebellion_core::ids::SystemKey>,
+    rolls: &mut dyn FnMut(usize) -> Vec<f64>,
+) -> (
+    Vec<AiOrderRecord>,
+    Vec<rebellion_core::blockade::BlockadeEvent>,
+) {
+    use crate::integrator::{apply_ai_order, resolve_ai_strike, AiOutcome, StrikeEffects};
+    // FUN_004361a0 steps the Alliance (session +0x10) before the Empire.
+    sides.sort_by_key(|(state, _)| {
+        !matches!(state.faction, Some(rebellion_core::ai::AiFaction::Alliance))
+    });
+    // The agent's slot is the player's side: before the AI sides when the
+    // player is the Alliance, after them when the Empire.
+    let agent_first = agent.as_ref().is_some_and(|slot| slot.alliance);
+    let apply_agent = |slot: &mut Option<&mut AgentSlot<'_>>, ctx: &mut AiCtx<'_>| {
+        if let Some(slot) = slot {
+            slot.applied = slot.agent.take_pending();
+            if let Some(order) = &slot.applied {
+                rebellion_core::agent_automation::apply_orders(
+                    std::slice::from_ref(order),
+                    ctx.manufacturing,
+                );
+            }
+        }
+    };
+    if agent_first {
+        apply_agent(&mut agent, ctx);
+    }
+    let mut records = Vec::new();
+    for (state, dual) in sides.iter_mut() {
+        let Some(issued) = state.scheduler.pending.take() else {
+            continue;
+        };
+        let (outcome, strike) = if let Some(system) = held(ctx.world, ctx.transport, &issued.action)
+        {
+            (AiOutcome::Held { system }, StrikeEffects::default())
+        } else if matches!(
+            issued.action,
+            AIAction::Bombard { .. } | AIAction::DestroySystem { .. }
+        ) {
+            resolve_ai_strike(
+                &issued.action,
+                ctx.world,
+                ctx.victory,
+                ctx.death_star,
+                ctx.movement,
+                ctx.manufacturing,
+                ctx.blockade,
+                day,
+            )
+        } else {
+            let outcome = apply_ai_order(
+                &issued.action,
+                state,
+                ctx.missions,
+                ctx.manufacturing,
+                ctx.movement,
+                ctx.transport,
+                ctx.stockpiles,
+                ctx.world,
+                ctx.uprising,
+                day,
+            );
+            (outcome, StrikeEffects::default())
+        };
+        // A refused or held order restarts its module (FUN_004dd810).
+        AISystem::settle(state, issued.kind, outcome.is_applied());
+        records.push(AiOrderRecord {
+            faction: state.faction,
+            dual: *dual,
+            issued,
+            outcome,
+            strike,
+        });
+    }
+    if !agent_first {
+        apply_agent(&mut agent, ctx);
+    }
+    let mut runs = Vec::new();
+    if records.iter().any(|record| record.outcome.is_applied()) {
+        rebellion_core::carriage::tag_all(ctx.world);
+        let running =
+            BlockadeSystem::running_regiments(ctx.blockade, ctx.world, ctx.movement, ctx.transport);
+        let running_rolls = rolls(running.len());
+        runs = BlockadeSystem::resolve_running(&running, &running_rolls, day);
+    }
+    let step_agent = |slot: &mut Option<&mut AgentSlot<'_>>, ctx: &AiCtx<'_>| {
+        if let Some(slot) = slot {
+            slot.agent
+                .step(ctx.world, ctx.manufacturing, slot.economy, slot.alliance);
+        }
+    };
+    if agent_first {
+        step_agent(&mut agent, ctx);
+    }
+    for (state, _) in sides.iter_mut() {
+        let inputs = rebellion_core::ai_scheduler::AiInputs {
+            world: ctx.world,
+            manufacturing: ctx.manufacturing,
+            movement: ctx.movement,
+            config: ctx.config,
+            research: ctx.research,
+            uprisings: ctx.uprising,
+            transport: ctx.transport,
+            missions: ctx.missions,
+            tick: day,
+            round_in_day: step,
+        };
+        state.scheduler.pending = AISystem::round(state, &inputs);
+    }
+    if !agent_first {
+        step_agent(&mut agent, ctx);
+    }
+    (records, runs)
+}
+
+/// [`ai_step`] over the simulation's states, with its records emitted and
+/// its blockade runs applied. Headless holds no order.
+fn ai_step_emitting(
+    world: &mut GameWorld,
+    states: &mut SimulationStates,
+    config: &rebellion_core::tuning::GameConfig,
+    integrator: &mut PerceptionIntegrator,
+    step: u16,
+    day: u64,
+    rolls: &mut dyn FnMut(usize) -> Vec<f64>,
+) {
+    let mut ctx = AiCtx {
+        world,
+        missions: &mut states.missions,
+        manufacturing: &mut states.manufacturing,
+        movement: &mut states.movement,
+        transport: &mut states.troop_transport,
+        stockpiles: &mut states.stockpiles,
+        victory: &mut states.victory,
+        death_star: &mut states.death_star,
+        blockade: &mut states.blockade,
+        research: &states.research,
+        uprising: &states.uprising,
+        config,
+    };
+    let mut sides: Vec<(&mut AIState, bool)> = vec![(&mut states.ai, false)];
+    if let Some(ai2) = states.ai2.as_mut() {
+        sides.push((ai2, true));
+    }
+    let (records, runs) = ai_step(
+        &mut ctx,
+        &mut sides,
+        None,
+        step,
+        day,
+        &|_, _, _| None,
+        rolls,
+    );
+    let AiCtx {
+        world, transport, ..
+    } = ctx;
+    integrator.at_tick(day, |integrator| {
+        for record in &records {
+            integrator.emit_ai_order(
+                world,
+                &record.issued.action,
+                &record.origin(),
+                &record.outcome,
+            );
+            integrator.emit_strike(world, &record.strike);
+        }
+        integrator.apply_blockade_events(world, transport, &runs);
+    });
+}
+
+/// The day's end for every side (`FUN_00485de0.c:7-11`): each side's
+/// day as its `ai_day` record reads it, then its order count clears.
+pub fn close_ai_days(
+    sides: &mut [(&mut AIState, bool)],
+    clock: &GameClock,
+    config: &rebellion_core::tuning::GameConfig,
+    day: u64,
+) -> Vec<crate::telemetry::AiDay<'static>> {
+    use rebellion_core::tick::GameSpeed;
+    let speed = clock.speed;
+    let rate = day_rate(clock, config);
+    let speed_name = match speed {
+        GameSpeed::VerySlow => "very_slow",
+        GameSpeed::Slow => "slow",
+        GameSpeed::Medium => "medium",
+        GameSpeed::Fast | GameSpeed::Paused => "fast",
+    };
+    let mut days = Vec::new();
+    for (state, dual) in sides.iter_mut() {
+        if let Some(faction) = state.faction {
+            let scheduler = &state.scheduler;
+            days.push(crate::telemetry::AiDay {
+                faction: faction_name(faction),
+                day,
+                speed: speed_name,
+                paused: speed == GameSpeed::Paused,
+                rate,
+                rounds: if scheduler.carried {
+                    0
+                } else {
+                    scheduler.round_in_day + 1
+                },
+                orders: scheduler.orders_today,
+                dual: *dual,
+            });
+        }
+        AISystem::end_day(state);
+    }
+    days
+}
+
+/// [`close_ai_days`] over the simulation's sides, with its records emitted.
+fn close_ai_days_emitting(
+    states: &mut SimulationStates,
+    integrator: &mut PerceptionIntegrator,
+    config: &rebellion_core::tuning::GameConfig,
+    day: u64,
+) {
+    let mut sides: Vec<(&mut AIState, bool)> = vec![(&mut states.ai, false)];
+    if let Some(ai2) = states.ai2.as_mut() {
+        sides.push((ai2, true));
+    }
+    for closed in close_ai_days(&mut sides, &states.clock, config, day) {
+        integrator.emit(
+            rebellion_core::game_events::SYS_AI,
+            rebellion_core::game_events::EVT_AI_DAY,
+            crate::telemetry::ai_day_payload(&closed),
+        );
+    }
+}
+
 /// Run one simulation tick across all 15 systems.
 ///
 /// Advances each system in the canonical order (economy → manufacturing → movement →
-/// combat → fog → missions → events → AI → blockade → uprising → betrayal →
-/// `death_star` → research → jedi → victory), applies effects to `world`, and
-/// returns a `Vec<GameEventRecord>` describing everything that happened.
+/// combat → blockade → fog → missions → events → AI (with its Bombard orders) →
+/// running regiments → uprising → betrayal → `death_star` (with the AI's Destroy
+/// System shots) → research → repair → jedi → victory), applies effects to
+/// `world`, and returns a `Vec<GameEventRecord>` describing everything that
+/// happened.
 ///
 /// `tick_events` comes from `GameClock::advance()`. `rolls` is a pre-generated
 /// slice of uniform `[0,1)` f64 values consumed sequentially by systems that
@@ -99,23 +438,55 @@ pub fn run_simulation_tick(
     };
 
     let mut integrator = PerceptionIntegrator::new(last_tick_event.tick, wall_ms);
-    let mut roll_cursor = 0usize;
+    let roll_cursor = std::cell::Cell::new(0usize);
+    let derived_count = std::cell::Cell::new(0u64);
     let current_tick = last_tick_event.tick;
+    let roll_salt = rolls.first().map_or(0, |roll| roll.to_bits());
 
     // `MovementState` is authoritative while a fleet is in hyperspace. Repair
     // stale save/index state before economy and manufacturing inspect orbits.
     reconcile_fleet_orbits(&states.movement, world);
+    // System bit 11 before anything reads it (FUN_005178b0).
+    rebellion_core::death_star::refresh_sectors(world, &states.movement);
 
-    // Helper: consume N rolls from the slice, padding with 1.0 if exhausted.
-    let mut take_rolls = |n: usize| -> Vec<f64> {
-        let end = (roll_cursor + n).min(rolls.len());
-        let slice = &rolls[roll_cursor..end];
-        roll_cursor = end;
-        let mut v: Vec<f64> = slice.to_vec();
-        // Pad with 1.0 (safe default: never fires probability checks)
-        v.resize(n, 1.0);
+    // Helper: consume N rolls from the slice. A supplied buffer that runs
+    // out is continued from a SplitMix64 stream keyed on the tick and the
+    // seed (port: the original draws every roll from its generator and never
+    // runs short).
+    let take_rolls = |n: usize| -> Vec<f64> {
+        let start = roll_cursor.get();
+        let end = (start + n).min(rolls.len());
+        roll_cursor.set(end);
+        let mut v: Vec<f64> = rolls[start..end].to_vec();
+        while v.len() < n {
+            let index = derived_count.get();
+            derived_count.set(index + 1);
+            v.push(derived_roll(current_tick, roll_salt, index));
+        }
         v
     };
+
+    // The day before closes: an AI day a native save left open finishes its
+    // rounds (FUN_0051dea0), then every side's order count clears
+    // (FUN_00485de0 via phase 13). Its last round's order stays pending.
+    if let Some(first) = tick_events.first() {
+        if states.ai.scheduler.day_open() {
+            let day = first.tick.saturating_sub(1);
+            let rate = day_rate(&states.clock, config);
+            for step in states.ai.scheduler.next_step()..=rate {
+                ai_step_emitting(
+                    world,
+                    states,
+                    config,
+                    &mut integrator,
+                    step,
+                    day,
+                    &mut |n| take_rolls(n),
+                );
+            }
+            close_ai_days_emitting(states, &mut integrator, config, day);
+        }
+    }
 
     // ── 0. Economy (runs BEFORE manufacturing — affects production) ──────
     let economy_events = EconomySystem::advance_with_uprisings(
@@ -137,6 +508,7 @@ pub fn run_simulation_tick(
         states.blockade.blockaded_systems(),
         &take_rolls(tick_events.len()),
     );
+    integrator.emit_maintenance_shortfall(world, &states.troop_transport, &stockpile_events);
     rebellion_core::scrap::scrap_all(
         world,
         &mut states.stockpiles,
@@ -161,6 +533,7 @@ pub fn run_simulation_tick(
     states.deliveries.depart(world, &mfg_advance.departures);
     let delivered = states.deliveries.advance(world, tick_events);
     integrator.apply_build_completions(world, &delivered.arrivals);
+    integrator.apply_boarded(world, &delivered.boarded);
     integrator.apply_deliveries_lost(world, &delivered.lost);
 
     // ── 2. Movement ──────────────────────────────────────────────────────
@@ -174,6 +547,8 @@ pub fn run_simulation_tick(
     // Regiments travelling on their own (FUN_00556430, event 0x387).
     let regiments = states.troop_transport.advance_transit(world, current_tick);
     integrator.apply_regiment_arrivals(world, &regiments);
+    // An arriving Death Star sets bit 11 in its new sector (event 0x301).
+    rebellion_core::death_star::refresh_sectors(world, &states.movement);
 
     // ── 3. Combat ────────────────────────────────────────────────────────
     // FUN_0051ddf0 -> FUN_00517270: a system fights on every
@@ -192,13 +567,22 @@ pub fn run_simulation_tick(
     for sys_key in combat_triggers {
         // One roll seeds the battle's own generator (`OriginalTacticalRng`).
         let seed = (take_rolls(1)[0] * f64::from(u32::MAX)) as u32;
-        let space_result = resolve_system_space_combat(
+        // port: with one AI the side it does not play is the person's
+        // (FUN_004865b0 gives it the withdrawal threshold 0.0); with two,
+        // or none, both are computer players.
+        let human_is_alliance = match (&states.ai2, states.ai.faction) {
+            (None, Some(rebellion_core::ai::AiFaction::Empire)) => Some(true),
+            (None, Some(rebellion_core::ai::AiFaction::Alliance)) => Some(false),
+            _ => None,
+        };
+        let space_result = resolve_system_space_combat_for(
             world,
             &mut states.troop_transport,
             &mut states.movement,
             sys_key,
             seed,
             current_tick,
+            human_is_alliance,
         );
         rebellion_core::tactical::apply::reconcile_death_star_result(
             world,
@@ -207,14 +591,11 @@ pub fn run_simulation_tick(
         );
 
         integrator.emit_system_space_combat(world, &space_result);
-        // Record battle for AI target scoring (battle repeat penalty)
-        AISystem::record_battle(&mut states.ai, sys_key, current_tick);
-        if let Some(ref mut ai2) = states.ai2 {
-            AISystem::record_battle(ai2, sys_key, current_tick);
-        }
 
         // Orbital bombardment follows a decisive space victory. Ground
         // assault is resolved below after surviving transports have landed.
+        // port: this follow-up has no source of its own; the original's
+        // bombardment is the Bombard order (or-port-bombardment-8usw).
         // Alliance is always coded as attacker, Empire as defender in the trigger above.
         // The space combat winner gets to follow up with ground assault + orbital bombardment.
         let winner_info = match (space_result.winner, space_result.winner_fleet) {
@@ -240,6 +621,14 @@ pub fn run_simulation_tick(
                 world,
                 &brd_result,
                 attacker,
+            );
+            // FUN_0058e320 ends a bombardment run, as for the AI's Bombard.
+            // port: the run rolls no hits, so +0x28 stays clear.
+            rebellion_core::bombardment::finalize(
+                world,
+                sys_key,
+                attacker,
+                rebellion_core::bombardment::BombardmentRun::default(),
             );
             integrator.emit_bombardment(world, sys_key, brd_result.damage, headquarters_destroyed);
         }
@@ -293,6 +682,7 @@ pub fn run_simulation_tick(
             // space battle to trigger the normal bombardment follow-up. Strike
             // the HQ before landing, but only when a transport is actually
             // carrying an invasion force. Occupation alone is not sufficient.
+            // port: no source of its own (or-port-bombardment-8usw).
             if faction == Faction::Empire
                 && sys_key == states.victory.alliance_hq
                 && world
@@ -317,6 +707,13 @@ pub fn run_simulation_tick(
                         world,
                         &result,
                         Faction::Empire,
+                    );
+                    // FUN_0058e320, as above.
+                    rebellion_core::bombardment::finalize(
+                        world,
+                        sys_key,
+                        Faction::Empire,
+                        rebellion_core::bombardment::BombardmentRun::default(),
                     );
                     integrator.emit_bombardment(
                         world,
@@ -434,6 +831,16 @@ pub fn run_simulation_tick(
         )
     };
 
+    // A Death Star lost in battle clears bit 11 before the blockade and
+    // uprising steps read it (event 0x301).
+    rebellion_core::death_star::refresh_sectors(world, &states.movement);
+
+    // The blockade rule reruns as an arrival or a battle settles, before the
+    // AI's orders take effect (`FUN_0050b8e0` through event 0x311,
+    // `ghidra/notes/blockade-bit.md`, "When it runs"): a fleet the AI sends on
+    // the day it arrives still blockades for that day.
+    let mut blockade_events = BlockadeSystem::advance(&mut states.blockade, world, tick_events);
+
     // ── 4. Fog of war ────────────────────────────────────────────────────
     let reveals = FogSystem::advance(&mut states.fog, world, &states.movement);
     integrator.emit_fog_reveals(&reveals, world);
@@ -450,12 +857,19 @@ pub fn run_simulation_tick(
         &mission_rolls,
     );
     rebellion_core::missions::apply_advance_effects(world, &mission_advance.effects);
+    for ended in &mission_advance.ended {
+        integrator.emit(
+            rebellion_core::game_events::SYS_MISSIONS,
+            rebellion_core::game_events::EVT_MISSION_ENDED,
+            crate::telemetry::mission_ended_payload(ended),
+        );
+    }
     states.ai.free_mission_members(&mission_advance.effects);
     if let Some(ref mut ai2) = states.ai2 {
         ai2.free_mission_members(&mission_advance.effects);
     }
     for result in &mission_advance.results {
-        integrator.apply_mission_result(world, result, &mut states.uprising);
+        integrator.apply_mission_result(world, result, &mut states.uprising, &mut states.research);
         // Knesset Shamash-Bet #R11: emit `EVT_CHARACTER_KILLED` telemetry for
         // mission-side assassinations. The integrator's `MissionEffect::CharacterKilled`
         // arm marks `is_killed = true` via `mark_killed()` instead of deleting
@@ -558,58 +972,7 @@ pub fn run_simulation_tick(
         &states.movement,
     );
 
-    // ── 7. AI ────────────────────────────────────────────────────────────
-    let ai_actions = AISystem::advance(
-        &mut states.ai,
-        world,
-        &states.manufacturing,
-        &states.missions,
-        &states.movement,
-        tick_events,
-        config,
-        &states.research,
-    );
-    integrator.apply_ai_actions(
-        &ai_actions,
-        &mut states.ai,
-        &mut states.missions,
-        &mut states.manufacturing,
-        &mut states.movement,
-        &mut states.troop_transport,
-        &mut states.research,
-        world,
-        current_tick,
-        false,
-    );
-
-    // ── 7b. AI (second faction, dual-AI mode) ───────────────────────────
-    if let Some(ref mut ai2) = states.ai2 {
-        let secondary_actions = AISystem::advance(
-            ai2,
-            world,
-            &states.manufacturing,
-            &states.missions,
-            &states.movement,
-            tick_events,
-            config,
-            &states.research,
-        );
-        integrator.apply_ai_actions(
-            &secondary_actions,
-            ai2,
-            &mut states.missions,
-            &mut states.manufacturing,
-            &mut states.movement,
-            &mut states.troop_transport,
-            &mut states.research,
-            world,
-            current_tick,
-            true,
-        );
-    }
-
     // ── 8. Blockade ──────────────────────────────────────────────────────
-    let mut blockade_events = BlockadeSystem::advance(&mut states.blockade, world, tick_events);
     if let Some(last) = tick_events.last() {
         running_regiments.extend(BlockadeSystem::running_regiments(
             &mut states.blockade,
@@ -658,63 +1021,76 @@ pub fn run_simulation_tick(
     // ── 11. Death Star ───────────────────────────────────────────────────
     let ds_events = DeathStarSystem::advance(&mut states.death_star, world, tick_events);
     integrator.apply_death_star_events(world, &ds_events);
-    // Update victory state and clean up destroyed systems.
-    //
-    // Knesset Shamash-Bet #R11: `cleanup_destroyed_system` now drains an
-    // out-parameter `Vec<GameEffect>` — we turn each `GameEffect::CharacterKilled`
-    // into an `EVT_CHARACTER_KILLED` telemetry record (DI-H2 payload uses
-    // `name` / `dat_id` rather than `CharacterKey`). Character-death story
+    // Update victory state and clean up destroyed systems; each character
+    // killed gets an `EVT_CHARACTER_KILLED` record. Character-death story
     // events are strictly next-tick reactive.
     for evt in &ds_events {
         if let rebellion_core::death_star::DeathStarEvent::PlanetDestroyed { system, .. } = evt {
-            states.victory.death_star_location = Some(*system);
-            let mut cleanup_effects: Vec<rebellion_core::effects::GameEffect> = Vec::new();
-            rebellion_core::death_star::cleanup_destroyed_system(
+            let killed = crate::integrator::destroy_system(
                 world,
                 *system,
-                &mut states.movement,
+                &mut states.victory,
                 &mut states.death_star,
+                &mut states.movement,
                 &mut states.manufacturing,
                 &mut states.blockade,
-                &mut cleanup_effects,
             );
-            let dest_sys_name = world
-                .systems
-                .get(*system)
-                .map_or_else(|| String::from("<unknown>"), |s| s.name.clone());
-            for effect in cleanup_effects.drain(..) {
-                if let rebellion_core::effects::GameEffect::CharacterKilled { character } = effect {
-                    let (name, dat_id) = world.characters.get(character).map_or_else(
-                        || (String::from("<unknown>"), 0),
-                        |c| (c.name.clone(), c.dat_id.raw()),
-                    );
-                    integrator.emit(
-                        rebellion_core::game_events::SYS_MISSIONS,
-                        rebellion_core::game_events::EVT_CHARACTER_KILLED,
-                        serde_json::json!({
-                            "name": name,
-                            "dat_id": dat_id,
-                            "cause": "death_star",
-                            "system": dest_sys_name,
-                        }),
-                    );
-                }
-            }
+            integrator.emit_killed(world, *system, &killed);
         }
     }
 
     // ── 12. Research ─────────────────────────────────────────────────────
-    let research_results = ResearchSystem::advance(&mut states.research, world, tick_events);
-    integrator.apply_research_results(&research_results, &mut states.research);
+    let research_results = ResearchSystem::advance(
+        &mut states.research,
+        world,
+        &states.uprising,
+        tick_events,
+        &take_rolls(tick_events.len()),
+    );
+    integrator.apply_research_results(&research_results);
 
     // ── 12b. Ship repair ────────────────────────────────────────────────
-    let repair_events = RepairSystem::advance(&mut states.repair, world, tick_events);
+    let repair_events = RepairSystem::advance(
+        &mut states.repair,
+        world,
+        &states.uprising,
+        tick_events,
+        &take_rolls(RepairSystem::roll_budget(world, tick_events.len())),
+    );
     integrator.apply_repair_events(world, &repair_events);
 
     // ── 13. Jedi training ────────────────────────────────────────────────
     let jedi_rolls = take_rolls(states.jedi.training.len().max(1));
     let jedi_events = JediSystem::advance(&mut states.jedi, world, tick_events, &jedi_rolls);
     integrator.apply_jedi_events(world, &jedi_events, &mut states.jedi);
+
+    // ── 13b. AI ──────────────────────────────────────────────────────────
+    // Phase 8 (FUN_004361a0) follows every due timer of phase 5, so the
+    // rounds run after the daily stages. port: the decompiles do not place
+    // the flagship naming, the rank lapses or the victory check relative to
+    // phase 8; they follow it here. port: a call carrying several days runs
+    // one day's rounds.
+    let headquarters_only = states.campaign_config.victory_conditions
+        == rebellion_core::world::VictoryConditions::HeadquartersOnly;
+    states.ai.set_headquarters_only(headquarters_only);
+    states.ai.scheduler.day_started = true;
+    if let Some(ai2) = states.ai2.as_mut() {
+        ai2.set_headquarters_only(headquarters_only);
+        ai2.scheduler.day_started = true;
+    }
+    rebellion_core::carriage::tag_all(world);
+    let rate = day_rate(&states.clock, config);
+    for step in 0..=rate {
+        ai_step_emitting(
+            world,
+            states,
+            config,
+            &mut integrator,
+            step,
+            current_tick,
+            &mut |n| take_rolls(n),
+        );
+    }
 
     // port: a fleet that gained its side's flagship class this tick, by a
     // build or a join on arrival, takes its signature name (fleet_name_bank).
@@ -740,6 +1116,11 @@ pub fn run_simulation_tick(
         integrator.emit_campaign_snapshot(world, states.movement.len(), &states.economy);
     }
 
+    // The decision traces the steps above recorded (`rebellion_core::trace`).
+    for record in crate::telemetry::drain_trace_records(integrator.tick(), integrator.wall_ms()) {
+        integrator.push(record);
+    }
+
     integrator.finish()
 }
 
@@ -760,6 +1141,23 @@ mod tests {
         CapitalShipClass, Character, ControlKind, Fleet, ShipInstance, System, TroopClassDef,
         TroopUnit, VictoryConditions,
     };
+
+    /// GNPRTB 7760 (60 at every difficulty), the support a side needs to
+    /// hold a system without regiments (FUN_0055a080).
+    fn support_control_threshold() -> rebellion_core::world::GnprtbParams {
+        let entry = rebellion_core::world::GnprtbEntry {
+            parameter_id: 7760,
+            development: 60,
+            alliance_sp_easy: 60,
+            alliance_sp_medium: 60,
+            alliance_sp_hard: 60,
+            empire_sp_easy: 60,
+            empire_sp_medium: 60,
+            empire_sp_hard: 60,
+            multiplayer: 60,
+        };
+        rebellion_core::world::GnprtbParams::new(vec![entry])
+    }
 
     fn make_test_states() -> (GameWorld, SimulationStates) {
         let mut world = GameWorld::default();
@@ -1090,6 +1488,8 @@ mod tests {
     )]
     fn decisive_imperial_bombardment_destroys_the_alliance_hq_facility() {
         let mut world = GameWorld::default();
+        world.gnprtb = support_control_threshold();
+        // Each HQ's people back its holder, so it stays held without troops.
         let make_system = |dat_id, name: &str, control, is_headquarters| System {
             dat_id: DatId::new(dat_id),
             name: name.into(),
@@ -1097,8 +1497,16 @@ mod tests {
             x: dat_id as u16 * 100,
             y: 0,
             exploration_status: rebellion_core::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
+            popularity_alliance: if control == ControlKind::Controlled(Faction::Alliance) {
+                0.9
+            } else {
+                0.1
+            },
+            popularity_empire: if control == ControlKind::Controlled(Faction::Empire) {
+                0.9
+            } else {
+                0.1
+            },
             is_populated: true,
             total_energy: 0,
             raw_materials: 0,
@@ -1370,6 +1778,7 @@ mod tests {
     )]
     fn troop_transport_arrives_lands_occupies_and_captures() {
         let mut world = GameWorld::default();
+        world.gnprtb = support_control_threshold();
         let add_system = |world: &mut GameWorld, dat_id, name: &str, control, is_headquarters| {
             world.systems.insert(System {
                 dat_id: DatId::new(dat_id),

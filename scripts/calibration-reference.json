@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "note": "Reference values for scripts/calibrate.py. Every value carries a src (Ghidra function, GNPRTB parameter, manual page or VM capture). A metric with no cited value stays null with status TODO; never fill one from a headless run.",
+  "constants": {
+    "research.passive_timer_days": {
+      "min": 30,
+      "spread": 30,
+      "src": "ghidra/notes/timer-scheduler.md:147 (timer 0x381, FUN_00530460; GNPRTB 7169 min 30, GNPRTB 7170 spread 30)"
+    },
+    "research.mission_repeat_days": {
+      "min": 10,
+      "spread": 10,
+      "src": "ghidra/notes/research.md:21-22 (MISSNSD research record repeats on a timer of 10 + rand 10 days)"
+    },
+    "research.mission_points_per_success": {
+      "min": 1,
+      "max": 7,
+      "src": "ghidra/notes/research.md:33 (FUN_0056cdb0 slot +0x27c; GNPRTB 6171 + rand(0..=6172) = 1 + rand 6)"
+    },
+    "research.mission_chance_per_member": {
+      "value": "effective skill / 100",
+      "src": "ghidra/notes/research.md:31 (per member, a draw against the effective skill; FUN_0056cdb0, FUN_0053e2f0). The report runs a consistency check of trace chance against skill/100; it is not parity evidence, because both come from one variable."
+    },
+    "orders.per_side_per_day": {
+      "metric": "orders.max_per_side_day",
+      "max_by_speed": {"fast": 5, "medium": 10, "slow": 10, "very_slow": 10},
+      "src": "ghidra FUN_00485b40 (counts orders, ends the round at the cap), FUN_00485a50.c:35 (sets the cap to 10), FUN_0051dea0 (rate+1 rounds a day: 5 Fast, 13 Medium, 61 Slow, 601 Very Slow; one order per round), so at most 5 per side per day at Fast and 10 at the other speeds. Graded on the maximum over every side-day."
+    },
+    "research.max_level": {
+      "metric": "research.max_level_observed",
+      "max": 15,
+      "src": "scripts/golden_values.json values.research.research_max_level (source there: mechanics docs, not a Ghidra read)"
+    }
+  },
+  "metrics": {
+    "mission_success_rate.Diplomacy": {"value": null, "status": "TODO", "src": "slot +0x274 success chance (ghidra/notes/mission-lifecycle.md:142); per-class formulas not yet read"},
+    "mission_success_rate.Recruitment": {"value": null, "status": "TODO", "src": "FUN_0053e2f0 draw (ghidra/notes/mission-lifecycle.md:204); chance formula not yet read"},
+    "mission_success_rate.Sabotage": {"value": null, "status": "TODO", "src": "FUN_0056a300 (ghidra/notes/mission-lifecycle.md:243); chance formula not yet read"},
+    "mission_success_rate.Assassination": {"value": null, "status": "TODO", "src": "FUN_00576620 (ghidra/notes/mission-lifecycle.md:229); chance formula not yet read"},
+    "mission_success_rate.Espionage": {"value": null, "status": "TODO", "src": "FUN_00573540 (ghidra/notes/mission-lifecycle.md:198); chance formula not yet read"},
+    "mission_success_rate.Abduction": {"value": null, "status": "TODO", "src": "FUN_00576eb0 (ghidra/notes/mission-lifecycle.md:226); chance formula not yet read"},
+    "battle.attacker_win_rate_by_strength_ratio": {"value": null, "status": "TODO", "src": "needs a VM capture series of equal-ratio battles"},
+    "research.days_to_level": {"value": null, "status": "TODO", "src": "needs a VM capture of an Alliance and an Empire run with the timer 0x381 armed"},
+    "control.share_over_time": {"value": null, "status": "TODO", "src": "needs a VM capture series from the same start"}
+  }
+}

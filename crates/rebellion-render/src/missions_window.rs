@@ -21,7 +21,7 @@ use rebellion_core::world::GameWorld;
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{CockpitFaction, CockpitLayout};
 use crate::defenses_window::title_resource;
-use crate::fleet_window::{en_route_mark, faction_side, paint_native, MiniObject};
+use crate::fleet_window::{en_route_mark, faction_side, mini_layers, paint_native, MiniObject};
 use crate::mission_dialog::{kind_icon, kind_name};
 use crate::panels::fleets::capital_ship_mini_id;
 use crate::quadrant_icons::{mission_keys, missions_side, visible_members};
@@ -140,8 +140,10 @@ struct MemberRow {
     member: MissionMember,
     mini: Option<u32>,
     label: String,
-    /// En route to the mission's target (`+0x50` bit 4): the mark drawn over
-    /// its mini (`en_route_mark`).
+    /// What its mini stands for, which picks the backdrop under it.
+    object: Option<MiniObject>,
+    /// En route to the mission's target (`+0x50` bit 4): the mark drawn under
+    /// its mini (`en_route_mark`, `mini_layers`).
     en_route: Option<(DllSource, u32)>,
 }
 
@@ -501,57 +503,28 @@ const fn side_faction(side: u8) -> MissionFaction {
 /// window shows them, as for the sector window's icons. hyp: the rows follow
 /// the mission keys' order, the map `FUN_004a1590` collects them in, which
 /// for the port's sequential ids is the order the missions began.
-/// The members the window lists at `system`: those there, then those on
-/// their way to it. A member's transit puts it in its target's container
-/// at once (`FUN_00556430` to `+0x74`; `mission-lifecycle.md`), so it is
-/// listed there, en route (`+0x50` bit 4), as a fleet is
-/// (`move-order.md`). Each carries its side, whether it is on a hidden
-/// mission, and whether it is en route.
+/// The members the window lists at `system`. A travelling member stands in
+/// its destination container from the order on (`FUN_00556430` to `+0x74`;
+/// `move-order.md`), so it is listed there, en route (`+0x50` bit 5). Each
+/// carries its side, whether it is on a hidden mission, and whether it is en
+/// route.
 fn listed_members(
     world: &GameWorld,
     fog: &FogState,
-    transits: &[rebellion_core::missions::MemberTransit],
     player: Faction,
     system: SystemKey,
 ) -> Vec<(MissionMember, u8, bool, bool)> {
-    let mut members: Vec<_> = visible_members(world, fog, player, system)
+    visible_members(world, fog, player, system)
         .into_iter()
-        .map(|(member, side, hidden)| (member, side, hidden, false))
-        .collect();
-    if world.systems.get(system).is_none_or(|value| {
-        value.exploration_status == rebellion_core::dat::ExplorationStatus::Unexplored
-    }) {
-        return members;
-    }
-    let opposing_visible =
-        crate::system_window::opposing_contents_visible(world, fog, player, system);
-    let own = crate::fleet_window::faction_side(player);
-    for transit in transits.iter().filter(|transit| transit.to == system) {
-        let (side, hidden) = match transit.member {
-            MissionMember::Character(key) => match world.characters.get(key) {
-                Some(character) if !character.is_killed => (
-                    if character.is_alliance {
-                        1
-                    } else if character.is_empire {
-                        2
-                    } else {
-                        0
-                    },
-                    character.on_hidden_mission,
-                ),
-                _ => continue,
-            },
-            MissionMember::SpecialForce(key) => match world.special_forces.get(key) {
-                Some(force) => (crate::fleet_window::fleet_side(force.is_alliance), false),
-                None => continue,
-            },
-        };
-        if (opposing_visible || side == own) && !members.iter().any(|(m, ..)| *m == transit.member)
-        {
-            members.push((transit.member, side, hidden, true));
-        }
-    }
-    members
+        .map(|(member, side, hidden)| {
+            (
+                member,
+                side,
+                hidden,
+                crate::quadrant_icons::member_en_route(world, member),
+            )
+        })
+        .collect()
 }
 
 fn mission_rows(
@@ -563,8 +536,7 @@ fn mission_rows(
 ) -> Vec<MissionRow> {
     let keys = mission_keys(missions);
     let mut sides = BTreeMap::new();
-    for (member, side, hidden, _) in listed_members(world, fog, missions.en_route(), player, system)
-    {
+    for (member, side, hidden, _) in listed_members(world, fog, player, system) {
         if hidden {
             continue;
         }
@@ -603,19 +575,21 @@ fn member_rows(
         return Vec::new();
     };
     let keys = mission_keys(missions);
-    listed_members(world, fog, missions.en_route(), player, system)
+    listed_members(world, fog, player, system)
         .into_iter()
         .filter(|(member, ..)| keys.get(member) == Some(&id))
         .filter(|(member, ..)| value.decoys.contains(member) == (tab == MissionsTab::Decoys))
         .filter_map(|(member, _, _, en_route)| {
             let (mini, label) = member_mini(world, member)?;
+            let object = mini_object(world, member);
             Some(MemberRow {
                 member,
                 mini,
                 label,
+                object,
                 en_route: mini
                     .filter(|_| en_route)
-                    .and_then(|mini| Some(en_route_mark(mini_object(world, member)?, mini))),
+                    .and_then(|mini| Some(en_route_mark(object?, mini))),
             })
         })
         .collect()
@@ -1245,24 +1219,17 @@ fn draw_missions_window(
                         .and_then(|mini| cache.original_resource_size(DllSource::Gokres, mini));
                     if let Some(mini) = member.mini {
                         let (x, y) = size.map_or((0.0, 0.0), |size| centered(MEMBER_IMAGE, size));
-                        paint_native(
-                            &member_painter,
-                            ctx,
-                            cache,
-                            DllSource::Gokres,
-                            mini,
-                            cell,
-                            scale,
-                            x,
-                            y,
+                        let layers = member.object.map_or_else(
+                            || vec![(DllSource::Gokres, mini)],
+                            |object| mini_layers(object, mini, member.en_route.is_some()),
                         );
-                        if let Some((source, mark)) = member.en_route {
+                        for (source, bitmap) in layers {
                             paint_native(
                                 &member_painter,
                                 ctx,
                                 cache,
                                 source,
-                                mark,
+                                bitmap,
                                 cell,
                                 scale,
                                 x,
@@ -1443,31 +1410,21 @@ mod tests {
     #[test]
     fn a_member_on_its_way_is_listed_at_its_target_with_the_en_route_mark() {
         // FUN_00556430 puts a travelling member in its target's container at
-        // once (mission-lifecycle.md); FUN_0042c3b0 draws 11501 over the
-        // mini of an en route (+0x50 bit 4) character.
+        // once (move-order.md); FUN_0042c3b0 draws 11501 under the mini of an
+        // en route (+0x50 bit 5) character.
         let (mut world, system, _, _) = busy();
         let traveller = world.characters.insert(Character {
             dat_id: DatId::new(832),
             name: "Traveller".into(),
             is_alliance: true,
-            current_system: None,
+            current_system: Some(system),
+            en_route: true,
             recruited: true,
             ..Default::default()
         });
         let member = MissionMember::Character(traveller);
-        let transit = rebellion_core::missions::MemberTransit {
-            member,
-            mission_id: 0,
-            to: system,
-            fleet: None,
-            arrival: 9,
-        };
-        let listed = |transits: &[rebellion_core::missions::MemberTransit]| {
-            listed_members(&world, &unseen(), transits, Faction::Alliance, system)
-        };
-        assert!(!listed(&[]).iter().any(|(m, ..)| *m == member));
-        let with = listed(&[transit]);
-        assert!(with.contains(&(member, 1, false, true)), "{with:?}");
+        let listed = listed_members(&world, &unseen(), Faction::Alliance, system);
+        assert!(listed.contains(&(member, 1, false, true)), "{listed:?}");
         assert_eq!(
             mini_object(&world, member).map(|object| en_route_mark(object, 0)),
             Some((DllSource::Strategy, 11_501))
@@ -1489,25 +1446,17 @@ mod tests {
                 is_alliance,
                 is_empire: !is_alliance,
                 is_killed,
+                current_system: Some(system),
+                en_route: true,
                 recruited: true,
                 ..Default::default()
             }))
         };
         let own = traveller("Own", true, false);
-        let killed = traveller("Killed", true, true);
+        let _killed = traveller("Killed", true, true);
         let enemy = traveller("Enemy", false, false);
-        let transits: Vec<_> = [own, killed, enemy]
-            .into_iter()
-            .map(|member| rebellion_core::missions::MemberTransit {
-                member,
-                mission_id: 0,
-                to: system,
-                fleet: None,
-                arrival: 9,
-            })
-            .collect();
         let listed = |fog: &FogState| {
-            listed_members(&world, fog, &transits, Faction::Alliance, system)
+            listed_members(&world, fog, Faction::Alliance, system)
                 .into_iter()
                 .filter(|(.., en_route)| *en_route)
                 .map(|(member, ..)| member)
@@ -1525,6 +1474,8 @@ mod tests {
                     is_alliance: true,
                     skills: [0; 8],
                     on_mission: false,
+                    en_route: false,
+                    on_hidden_mission: false,
                 },
             ))
         };

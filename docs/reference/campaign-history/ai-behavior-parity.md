@@ -69,7 +69,7 @@ strategic awareness, but the current call-path and object-registry analysis does
 not yet prove full omniscience. Validation must cover `FUN_0051cad0(0x90)`, its
 ownership context, and handling of family `0x92` before this becomes a parity
 claim. This is reverse-engineered evidence, not player testimony.
-[AI fog-of-war reverse-engineering analysis](../../plans/2026-03-22-ai-fog-of-war-proposal.md#the-original-was-omniscient-by-design).
+[AI fog-of-war reverse-engineering analysis](../../plans/archive/2026-03-22-ai-fog-of-war-proposal.md#the-original-was-omniscient-by-design).
 
 ## Faction profile
 

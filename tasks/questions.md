@@ -56,7 +56,7 @@ Unblocks: [or-r-hook-surround-orders-ukr](reviews.md#or-r-hook-surround-orders-u
 <a id="or-q-port-family-checks-p00"></a>
 ### Do the port's combat family checks and event names match the DATs?
 
-`or-q-port-family-checks-p00` · **open** · P1 · ghidra, question · updated 2026-10-15  
+`or-q-port-family-checks-p00` · **open** · P1 · ghidra, question · updated 2026-10-16  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > crates/rebellion-core/src/combat.rs reads DatId families from the older notes: family 0x71 as a fighter alt-shield path (lines ~393, 847, 1531), 0x73/0x74 as a special combat result path (409, 1533), and ground combat over troops at 0x14-0x1b (1259, 1296), which the DATs give as capital ships. 0x71 is the Dagobah mission and 0x73 Pickup (MISSNSD). FUN_00560d50 is a move handler, not ground combat (annotated-functions.md). Separately, events.rs names 0x304-0x306 MaintenanceShortfall, SaboteurDetected, CharacterKilled; FUN_004fc080 sends them with GameObjDestroyedAutoscrapNotif, GameObjDestroyedSabotageNotif and GameObjDestroyedAssassinationNotif (entity-system.md). Decide from the decompiles what each port path should key on, then port.
@@ -64,6 +64,8 @@ Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX
 **Notes**
 
 > The comments now mark CombatEntityKind, the ground-combat path and CapitalShipClass::is_death_star's 0x34 clause as port: with no source and give the DAT families; the behaviour is unchanged. CombatEntityKind is used only by combat.rs's own tests.
+> 2026-10-16: CombatEntityKind and from_family_byte deleted (combat.rs). Only its own test called it, and the test asserted a mapping that contradicts annotated-functions.md:13-22 (0x30 characters, 0x34 Palpatine, 0x14 capital ships, 0x08 fleets). The remaining family reads (0x71, 0x73/0x74, ground combat over 0x14-0x1b) stay open here.
+> 2026-10-16: event 0x304 is EVT_DESTROYED_AUTOSCRAP; the overdraft scrap (timer 0x382) files the Maintenance Shortfall notice (FUN_00498970). 0x305 keeps the name EVT_SABOTEUR_DETECTED though FUN_004fc080 sends GameObjDestroyedSabotageNotif on it; still open with the family reads.
 
 <a id="or-q-withdraw-destination-m8b"></a>
 ### Q: Where does Withdraw send the fleet, and what result does the battle then report?
@@ -85,7 +87,7 @@ Unblocks: [or-r-withdraw-destination-skj](reviews.md#or-r-withdraw-destination-s
 <a id="or-q-ai-posture-planner-jta"></a>
 ### Q: What do the AI posture kinds 1-6 and the 14-state sector planner do, and what runs them?
 
-`or-q-ai-posture-planner-jta` · **open** · P2 · ghidra, question · updated 2026-10-14  
+`or-q-ai-posture-planner-jta` · **open** · P2 · ghidra, question · updated 2026-10-15  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > AI posture base class vt 0x65c0b0 with 6 derived kinds, the sector planner step machine FUN_004adb70 and target chooser FUN_004adde0; the outer loop calling FUN_004adb70/FUN_00478000 and its *out flag; need-record counters +0x58..+0x9c and context floors ctx+0x164..+0x174; planner on_event codes 0/2/3. Start from FUN_004773f0, FUN_00477190, FUN_00477630, FUN_004774c0, FUN_004adb70, FUN_004adde0, FUN_004ae150-FUN_004ae440, FUN_004b3300, FUN_0047b250, FUN_004bd0a0. Done when a note gives each state's transition and the posture each kind selects, for both sides. Sources: map-04, -05, -06.
@@ -93,6 +95,7 @@ Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX
 **Notes**
 
 > ai-order-emission.md now covers what runs the posture (module 8 FUN_004cf600 -> FUN_004774c0 state 5 -> FUN_004adb70), the posture kind vtables (slot 14 per kind), the emitter FUN_004b1070 need bits and FUN_004ae320's bombardment choice, and that posture side +4 is 1/2 (map-06's 0/1 reading is wrong). Still open: what each kind 1-6 is for, the state meanings of FUN_004774c0, need-record counters.
+> 2026-10-15: ported in crates/rebellion-core/src/ai_regions.rs (module 8 driver FUN_004cf630, record step FUN_004774c0, posture states 1-14 FUN_004adb70, slots 13-18 and 21, FUN_004b1070). Dual-AI playtest seed 42: every record cycles its posture daily; fleets with no target rally at their loading system; no engage/assault/drop/bombard target passes in 1000 days because no fleet carries regiments (loading-system surplus 0 on both sides; see or-pfrm) and no enemy fleet stands in a record's sector. Close when the kind and state meanings are folded into ai-order-emission.md.
 
 <a id="or-q-assault-summary-6gi"></a>
 ### Q: What are the Assault Summary window's resources, layout and tabs?
@@ -678,10 +681,14 @@ Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX
 <a id="or-q-timers-o8d"></a>
 ### Q: What do timers 0x380-0x389 and 0x392 arm and fire?
 
-`or-q-timers-o8d` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-timers-o8d` · **open** · P3 · ghidra, question · updated 2026-10-16  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > Timer 0x380/0x389 targets (vtable +0x228 on family 0x14..0x20), 0x383-0x386 delay records on +0x54+0x18/0x28/0x30, and MissionMgr's init timer 0x392. Start from FUN_00565400, FUN_00565730, FUN_00565a60, FUN_00565d90, FUN_0050ca80-FUN_0050cb20, FUN_005116d0, FUN_00511610, FUN_0053fa60, FUN_00560a30, FUN_00556fa0, FUN_0057c2c0. Done when a note tables each timer's delay source and effect. Sources: map-11, -13, -14, -15.
+
+**Notes**
+
+> 2026-10-16: 0x386 traced (arm on the blockade bit, re-arm on a changed minimum 7694/7696, periodic, FUN_0050cb20 shift; timer-scheduler.md "Timer 0x386", checked in the VM on Yaga Minor) and ported in blockade.rs; 0x382 is the overdraft scrap (FUN_00530350). 0x380, 0x383-0x385, 0x389 and 0x392 still open.
 
 <a id="or-q-troop-finder-icons-pdy5"></a>
 ### Q: Where do the Troop Finder column icons come from?

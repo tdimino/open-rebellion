@@ -122,10 +122,19 @@ impl EventLogger {
         }
 
         // ── Combat diagnostics ────────────────────────────────────────
+        // An order counts when it applied; a record without an outcome is
+        // an applied one.
+        let applied = |e: &&GameEventRecord| {
+            e.details
+                .get("outcome")
+                .and_then(|v| v.as_str())
+                .is_none_or(|outcome| outcome == "applied")
+        };
         let move_fleet_attacks = self
             .events
             .iter()
             .filter(|e| e.event_type == "ai_action")
+            .filter(applied)
             .filter(|e| e.details.get("type").and_then(|v| v.as_str()) == Some("MoveFleet"))
             .filter(|e| e.details.get("reason").and_then(|v| v.as_str()) == Some("Attack"))
             .count();
@@ -133,6 +142,7 @@ impl EventLogger {
             .events
             .iter()
             .filter(|e| e.event_type == "ai_action")
+            .filter(applied)
             .filter(|e| e.details.get("type").and_then(|v| v.as_str()) == Some("MoveFleet"))
             .filter(|e| e.details.get("reason").and_then(|v| v.as_str()) == Some("Reinforce"))
             .count();

@@ -51,22 +51,14 @@ CONFIG_DIR = PROJECT_DIR / "configs" / "autoresearch"
 # Minimum improvement threshold to accept a candidate
 IMPROVEMENT_THRESHOLD = 0.01
 
-# Default tunable parameters with (min, max, step) bounds
+# Default tunable parameters with (min, max, step) bounds. Only fields of
+# GameConfig (crates/rebellion-core/src/tuning.rs) take effect.
 DEFAULT_CONFIG = {
+    # The orders a side issues a day (+0x428, FUN_00485a50.c:35). The rounds a
+    # day by speed (ai.rounds_per_day) stay at the original's: the loop tunes
+    # flat parameters only.
     "ai": {
-        "tick_interval": {"value": 7, "min": 3, "max": 21, "step": 2},
-        "diplomacy_skill_threshold": {"value": 60, "min": 30, "max": 90, "step": 10},
-        "espionage_skill_threshold": {"value": 50, "min": 30, "max": 80, "step": 10},
-        "max_construction_yards": {"value": 5, "min": 2, "max": 10, "step": 1},
-        "max_covert_ops_per_eval": {"value": 3, "min": 1, "max": 8, "step": 1},
-    },
-    "movement": {
-        "distance_scale": {"value": 2, "min": 1, "max": 5, "step": 1},
-        "min_transit_ticks": {"value": 10, "min": 5, "max": 25, "step": 5},
-    },
-    "production": {
-        "capship_threshold": {"value": 5, "min": 2, "max": 10, "step": 1},
-        "fighter_ratio": {"value": 3, "min": 1, "max": 6, "step": 1},
+        "day_orders": {"value": 10, "min": 5, "max": 20, "step": 1},
     },
     "scoring": {
         "victory_center": {"value": 3000, "min": 1500, "max": 5000, "step": 250},

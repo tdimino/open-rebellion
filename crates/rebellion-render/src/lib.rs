@@ -9,11 +9,11 @@ pub mod bmp_cache;
 pub mod briefing_tour;
 pub mod build_selection;
 pub mod cockpit;
+pub mod control_registry;
 pub mod defenses_window;
 pub mod encyclopedia;
 pub mod encyclopedia_surface;
 pub mod encyclopedia_textures;
-pub mod event_screen;
 pub mod fleet_finder;
 pub mod fleet_movement;
 pub mod fleet_registry;
@@ -113,10 +113,6 @@ pub use encyclopedia_surface::{
 pub use encyclopedia_textures::{
     EncyclopediaTextureBackend, EncyclopediaTextureResolution, EncyclopediaTextureSampling,
     EncyclopediaTextureUpload, EncyclopediaTopicTextureCache,
-};
-pub use event_screen::{
-    draw_event_screen, show_event_screen, show_event_screen_raw, update_event_screen,
-    EventScreenState,
 };
 pub use fleet_movement::{draw_fleet_overlays, hovered_fleet};
 pub use fleet_window::{

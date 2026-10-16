@@ -1426,7 +1426,7 @@ mod tests {
         let original = GameConfig::default();
         let same = GameConfig::default();
         let mut changed = GameConfig::default();
-        changed.ai.tick_interval += 1;
+        changed.scoring.victory_center += 1;
 
         assert_eq!(
             compute_config_fingerprint(&original).unwrap(),
@@ -1579,7 +1579,7 @@ mod tests {
         );
 
         let mut changed_config = initial.clone();
-        changed_config.game_config.ai.tick_interval += 1;
+        changed_config.game_config.scoring.victory_center += 1;
         assert!(
             execute_replay(environment, &recording.manifest, changed_config)
                 .unwrap_err()

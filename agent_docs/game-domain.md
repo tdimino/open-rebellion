@@ -3,7 +3,7 @@ title: "Game Domain: Star Wars Rebellion"
 description: "Game mechanics overview covering galaxy structure, factions, units, missions, and combat"
 category: "agent-docs"
 created: 2026-03-11
-updated: 2026-10-14
+updated: 2026-10-16
 tags: [reference, game-mechanics, factions, missions]
 ---
 
@@ -86,26 +86,26 @@ Starting unit/facility deployments for new games:
 See `agent_docs/simulation.md` for full API reference on all 15 systems.
 
 ### Core Loop (v0.2.0)
-- **Tick system** (`tick.rs`): Frame-independent GameClock, GameSpeed (Paused/Normal/Fast/Faster), TickEvent markers
+- **Tick system** (`tick.rs`): Frame-independent GameClock, GameSpeed (Paused, Very Slow, Slow, Medium, Fast), TickEvent markers
 - **Manufacturing** (`manufacturing.rs`): Per-system production queues with overflow propagation; blockade-aware (`advance_with_blockade`)
 - **Events** (`events.rs`): Conditional triggers (TickReached, CharacterAtSystem, Random, EventFired), event chaining
-- **AI** (`ai.rs`): Rule-based opponent — officer assignment, production priority, fleet deployment, espionage dispatch. Re-evaluates every 7 ticks.
+- **AI** (`ai.rs`, `ai_scheduler.rs`): the original's modules, one round a side per in-day step, rate+1 steps a day by speed (systems/ai-parity-tracker.md).
 - **Movement** (`movement.rs`): Fleet hyperspace transit with speed from slowest hyperdrive rating
 - **Fog of war** (`fog.rs`): Per-faction monotonic visibility with advance intel at 50% transit
 - **Mod loader** (`rebellion-data/src/mods.rs`): TOML manifests, RFC 7396 merge patch, semver, hot reload
 
 ### War Machine (v0.4.0)
-- **9 mission types** (`missions.rs`): Diplomacy, Recruitment, Sabotage, Assassination, Espionage, Rescue, Abduction, InciteUprising, Autoscrap — MSTB probability tables with quadratic fallback
+- **Missions** (`missions.rs`): Diplomacy, Recruitment, Sabotage, Assassination, Espionage, Rescue, Abduction, InciteUprising, Autoscrap, SubdueUprising, DeathStarSabotage, Research (three trees) and Move—MSTB probability tables with quadratic fallback
 - **Space combat** (`tactical.rs`): every battle runs the tactical engine, played, simulated or headless (`FUN_0040a050` state 8); re-fought every tick while both sides remain
 - **Ground combat** (`combat.rs`): a port resolution with no source; the original's is open (`or-q-ground-resolution-nms`)
 - **Orbital bombardment** (`bombardment.rs`): a port formula built on the transit distance; the original's orders, defence fire and hit rolls are in `ghidra/notes/bombardment.md`
-- **Blockade** (`blockade.rs`): Hostile fleet without defender halts manufacturing, destroys in-transit troops
+- **Blockade** (`blockade.rs`): Hostile fleet without defender halts manufacturing, destroys in-transit troops, and runs timer `0x386`, the blockader's support shift (`systems/blockade.md`)
 - **Uprising** (`uprising.rs`): revolts start on a troop shortfall and never change control; an incident every 30-100 ticks maps its score through UPRIS1TB/UPRIS2TB step lookups to losses; natural disasters erode resources and facilities
 - **Death Star** (`death_star.rs`): Construction countdown, superlaser fire (precondition checks from RE), nearby-warning scan
-- **Research** (`research.rs`): 3 tech trees (Ship/Troop/Facility) per faction, `research_order` + `research_difficulty`
+- **Research** (`research.rs`): 3 tech trees (Ship/Troop/Facility) per faction, points pools fed by timer `0x381` and Research missions, spent on `research_order` at `research_difficulty` (`systems/research.md`)
 - **Jedi training** (`jedi.rs`): 4-tier Force progression (None→Aware→Training→Experienced), XP accumulation, detection checks
 - **Victory conditions** (`victory.rs`): HQ capture, Death Star fire/destroyed, `resolved` flag prevents re-trigger
-- **Save/load** (`rebellion-data/src/save.rs`): Bincode with OPENREB header, v4 format with mod metadata + FNV-1a hash, migration framework, 10 slots. See `agent_docs/save-load.md`.
+- **Save/load** (`rebellion-data/src/save.rs`): Bincode with OPENREB header, mod metadata and FNV-1a hash, 10 slots; an older version is rejected, never migrated. See `agent_docs/save-load.md`.
 
 ### Full Parity (v0.5.0)
 - **4 scripted story chains** (`story_events.rs`): Luke Dagobah (0x221→0x210), Final Battle (0x220), Bounty Hunters (0x212), Jabba's Palace (0x380-0x383)
@@ -120,10 +120,8 @@ See `agent_docs/simulation.md` for full API reference on all 15 systems.
 ### Mod Workshop (v0.6.0)
 - **Sensor-radius fog** (`fog.rs`): fleets with detection capability reveal nearby systems within `detection * 15.0` coordinate radius
 - **Captivity state** (`world/mod.rs`): `is_captive`, `captured_by: Option<Faction>`, `capture_tick: Option<u64>` on Character — set on capture, cleared on rescue/escape
-- **Research pure contract** (`research.rs`): `advance()` returns results only, caller applies level-ups
 - **Mod runtime** (`mods.rs`): `ModRuntime`, `ModConfig`, enable/disable with `config.toml` persistence, structured `ModError`, hot reload integration. See `agent_docs/mod-runtime.md`.
 - **Mod Manager panel** (`panels/mod_manager.rs`): egui floating window with mod list, enable/disable, reload, Tab shortcut
-- **Save migration framework** (`save.rs`): versioned dispatch, mod metadata in header, FNV-1a hash. See `agent_docs/save-load.md`.
 
 ### Mission Effects (applied in main.rs)
 | Effect | World Mutation |

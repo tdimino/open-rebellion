@@ -1,8 +1,10 @@
-//! Externalized tuning parameters for AI and production systems.
+//! Externalized tuning parameters: the autoresearch scoring targets.
 //!
-//! All hardcoded constants are centralized here as `GameConfig`. The struct
-//! is `Serialize`/`Deserialize` so the autoresearch loop can mutate parameters
-//! via JSON, and the playtest binary can accept `--config <path>`.
+//! The AI's tempo, the orders a side issues a day and the rounds it runs,
+//! defaults to the original's values; its picks follow the original's rules.
+//! `GameConfig` is `Serialize`/`Deserialize` so the autoresearch loop can
+//! mutate parameters via JSON, and the playtest binary can accept
+//! `--config <path>`.
 //!
 //! Each field is tagged as **parity** (matches original REBEXE.EXE behavior)
 //! or **augmentation** (our improvement beyond the original).
@@ -11,120 +13,72 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::tick::GameSpeed;
+
 /// Root configuration for all tunable game parameters.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct GameConfig {
     pub ai: AiConfig,
-    pub production: ProductionConfig,
     pub scoring: ScoringConfig,
 }
 
-/// AI behavior tuning parameters.
+/// The AI's tempo. port: tunable through `--config` so the tempo can be
+/// calibrated; the defaults are the original's.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AiConfig {
-    /// Game-days between AI re-evaluations. **Augmentation** (original unknown).
-    pub tick_interval: u64,
-
-    /// Maximum popularity at which AI still sends diplomacy missions. **Augmentation.**
-    pub diplomacy_target_popularity_cap: f32,
-
-    /// Maximum covert operations dispatched per evaluation cycle. **Augmentation.**
-    pub max_covert_ops_per_eval: usize,
-
-    /// Maximum construction yards per system. **Parity.**
-    pub max_construction_yards: usize,
-
-    /// Maximum simultaneous attack fronts (capped at fleet count). **Augmentation.**
-    pub max_attack_fronts: usize,
-
-    /// Battle cooldown decay ticks — full recovery after this many ticks. **Augmentation.**
-    pub battle_cooldown_ticks: f64,
-
-    /// Proximity divisor for attack scoring (higher = less distance penalty). **Augmentation.**
-    pub proximity_divisor: f64,
-
-    // ── Attack scoring weights (must sum to 1.0) ── **Augmentation.**
-    /// Weight for target weakness in attack scoring.
-    pub weight_weakness: f64,
-    /// Weight for proximity in attack scoring.
-    pub weight_proximity: f64,
-    /// Weight for deconfliction in attack scoring.
-    pub weight_deconfliction: f64,
-    /// Weight for battle freshness in attack scoring.
-    pub weight_freshness: f64,
-
-    /// Alliance deployment budget — fraction of `max_attack_fronts` the Alliance uses.
-    /// **Parity** (`FUN_00506ea0`: Alliance evaluator at +0xc4 on global struct).
-    /// Alliance is more conservative, opening fewer attack fronts.
-    pub alliance_deploy_budget: f64,
-
-    /// Empire deployment budget — fraction of `max_attack_fronts` the Empire uses.
-    /// **Parity** (`FUN_00506ea0`: Empire evaluator at +0xc8 on global struct).
-    /// Empire is more aggressive, opening more attack fronts.
-    pub empire_deploy_budget: f64,
-
-    /// Minimum troop garrison count before a controlled system is considered
-    /// a troop deployment receiver. Systems with fewer than this many friendly
-    /// troops will receive reinforcements from donor systems. **Augmentation.**
-    pub troop_garrison_min: usize,
-
-    /// Maximum troop count at a system above which it becomes a donor.
-    /// Systems with more than this many friendly troops will send excess to
-    /// undersupplied systems. **Augmentation.**
-    pub troop_garrison_donor_threshold: usize,
-
-    /// Death Star retreat threshold — if enemy fleet strength at the DS location
-    /// exceeds this multiple of friendly escort strength, the DS retreats to
-    /// the nearest friendly system. **Augmentation.**
-    pub ds_retreat_strength_ratio: f64,
-
-    /// Maximum reconnaissance missions the AI will queue per evaluation cycle.
-    /// Prevents over-investing in intelligence gathering. **Augmentation.**
-    pub max_recon_per_eval: usize,
+    /// The orders a side issues a day (`+0x428` = 10, `FUN_00485a50.c:35`;
+    /// tested at `FUN_00485b40.c:21`).
+    pub day_orders: u16,
+    /// The rounds a side runs a day, by speed.
+    pub rounds_per_day: RoundsPerDay,
 }
 
 impl Default for AiConfig {
     fn default() -> Self {
         Self {
-            tick_interval: 7,
-            diplomacy_target_popularity_cap: 0.8,
-            max_covert_ops_per_eval: 3,
-            max_construction_yards: 5,
-            max_attack_fronts: 3,
-            battle_cooldown_ticks: 100.0,
-            proximity_divisor: 100.0,
-            weight_weakness: 0.30,
-            weight_proximity: 0.30,
-            weight_deconfliction: 0.25,
-            weight_freshness: 0.15,
-            alliance_deploy_budget: 0.6,
-            empire_deploy_budget: 0.8,
-            troop_garrison_min: 1,
-            troop_garrison_donor_threshold: 3,
-            ds_retreat_strength_ratio: 2.0,
-            max_recon_per_eval: 2,
+            day_orders: u16::from(crate::ai_scheduler::DAY_ORDERS),
+            rounds_per_day: RoundsPerDay::default(),
         }
     }
 }
 
-/// Production doctrine tuning parameters.
+/// The rounds a side runs a day at each speed: the per-day count plus one
+/// (`FUN_0051dea0.c:11-30`), a round per in-day step (`FUN_004361a0`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
-pub struct ProductionConfig {
-    /// Build capital ships when fewer than this many in the fleet. **Augmentation.**
-    pub capship_threshold: usize,
-
-    /// Fighter-to-capship ratio target. **Augmentation.**
-    pub fighter_ratio: usize,
+pub struct RoundsPerDay {
+    pub very_slow: u16,
+    pub slow: u16,
+    pub medium: u16,
+    pub fast: u16,
 }
 
-impl Default for ProductionConfig {
+impl Default for RoundsPerDay {
+    /// `GameSpeed::original_rate` plus one: 601, 61, 13 and 5
+    /// (`FUN_0051dea0.c:11-30`).
     fn default() -> Self {
+        let rounds = |speed: GameSpeed| speed.original_rate().map_or(1, |rate| rate + 1);
         Self {
-            capship_threshold: 5,
-            fighter_ratio: 3,
+            very_slow: rounds(GameSpeed::VerySlow),
+            slow: rounds(GameSpeed::Slow),
+            medium: rounds(GameSpeed::Medium),
+            fast: rounds(GameSpeed::Fast),
+        }
+    }
+}
+
+impl RoundsPerDay {
+    /// The rounds a day at `speed`. port: a paused clock, as a replay's
+    /// `AdvanceTicks` or a headless run uses, runs Fast's.
+    #[must_use]
+    pub const fn at(&self, speed: GameSpeed) -> u16 {
+        match speed {
+            GameSpeed::VerySlow => self.very_slow,
+            GameSpeed::Slow => self.slow,
+            GameSpeed::Medium => self.medium,
+            GameSpeed::Fast | GameSpeed::Paused => self.fast,
         }
     }
 }
@@ -143,6 +97,7 @@ pub struct ScoringConfig {
 }
 
 impl Default for ScoringConfig {
+    // port: Augmentation targets for the autoresearch scorer, not original rules.
     fn default() -> Self {
         Self {
             victory_center: 3000,

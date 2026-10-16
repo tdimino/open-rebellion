@@ -54,8 +54,6 @@ pub enum WindowScene {
 /// Non-window application surfaces that hold strategic input.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ApplicationInputLocks {
-    /// Full-screen authored event playback.
-    pub event_screen: bool,
     /// Advisor briefing sequence.
     pub briefing: bool,
     /// Deterministic test fixture setup.
@@ -68,7 +66,7 @@ impl ApplicationInputLocks {
     /// Whether any application surface blocks strategic dispatch.
     #[must_use]
     pub const fn blocks_strategic_input(self) -> bool {
-        self.event_screen || self.briefing || self.fixture_setup || self.scene_transition
+        self.briefing || self.fixture_setup || self.scene_transition
     }
 }
 
@@ -1046,10 +1044,6 @@ mod tests {
 
         assert!(frame(ApplicationInputLocks::default(), none).retained_window_input_allowed());
         for locks in [
-            ApplicationInputLocks {
-                event_screen: true,
-                ..ApplicationInputLocks::default()
-            },
             ApplicationInputLocks {
                 briefing: true,
                 ..ApplicationInputLocks::default()

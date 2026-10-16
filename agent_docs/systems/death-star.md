@@ -3,7 +3,7 @@ title: "Death Star System"
 description: "Construction countdown, planet destruction, and nearby-warning scan mechanics"
 category: "agent-docs"
 created: 2026-03-14
-updated: 2026-10-14
+updated: 2026-10-16
 tags: [death-star, construction, planet-destruction, simulation]
 ---
 
@@ -25,7 +25,7 @@ tags: [death-star, construction, planet-destruction, simulation]
 let events = DeathStarSystem::advance(&mut ds_state, &world, &tick_events);
 
 // Player/AI fires superlaser (precondition-checked):
-let fired = DeathStarSystem::fire(&world, target_system, tick); // Option<DeathStarEvent>
+let fired = DeathStarSystem::fire(&ds_state, &world, target_system, tick); // Option<DeathStarEvent>
 
 // Start construction at a system:
 DeathStarSystem::start_construction(&mut ds_state, system); // -> bool (false if already building)
@@ -47,6 +47,16 @@ The port's checks:
 ## Nearby Warning
 
 Scans all Alliance-controlled systems within `NEARBY_WARNING_RADIUS = 300` coordinate units of the Death Star fleet. Emits `NearbyWarning` for each. Used for Alliance intelligence messages.
+
+## Sector bit 11
+
+`death_star::refresh_sectors` sets `GameWorld::death_star_sectors`, system
+`+0x88` bit 11: a usable Death Star (complete, not en route) in the sector
+(`FUN_005178b0`). It runs at the start of each tick, after arrivals, after
+the battles, and after a load or a new game (`simulation.md`), and is not
+saved. Readers: the garrison and Incite halving
+(`uprising.md`) and the support-change halving (`blockade.md`). A kill ends
+with the bombardment finalize (`FUN_0058e320`, `combat.md`, "Bombardment").
 
 ## Original Mechanism
 

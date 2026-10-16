@@ -862,7 +862,9 @@ impl CockpitState {
 #[must_use]
 pub fn draw_cockpit_chrome(state: &CockpitState) -> CockpitLayout {
     clear_background(BLACK);
-    state.layout()
+    let layout = state.layout();
+    crate::control_registry::set_canvas(layout.canvas.x, layout.canvas.y, layout.scale);
+    layout
 }
 
 /// Apply or clear macroquad's top-left-origin scissor rectangle.

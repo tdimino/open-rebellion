@@ -66,3 +66,4 @@ Note: `ghidra/` is gitignored except README.md — decompiled code is non-redist
 | Report | Date |
 |--------|------|
 | [Knesset Athirat](reports/2026-03-13-knesset-athirat-swarm-report.md) | 2026-03-13 — Living Galaxy + War Room, 4 daborot |
+| [Original-game logging and speedup](reports/2026-10-16-original-game-logging-and-speedup.md) | 2026-10-16 — hooking and speeding up the original in the Arm64 VM: proxy DLL, Frida, time hooks, Wine |

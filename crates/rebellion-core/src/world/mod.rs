@@ -10,6 +10,8 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
+mod slot_order;
+
 use crate::dat::{ExplorationStatus, Faction, GalaxySize};
 use crate::ids::{
     CapitalShipKey, CharacterKey, DatId, DefenseFacilityKey, FighterKey, FleetKey,
@@ -240,7 +242,7 @@ impl SeedOptions {
 ///
 /// Systems belong to a sector and hold all surface assets (facilities, ground units)
 /// as well as the fleets in orbit or departing from them.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct System {
     /// Original .DAT identifier, preserved for round-trip serialization.
     pub dat_id: DatId,
@@ -311,7 +313,7 @@ pub struct System {
 ///
 /// Sectors are the strategic layer above systems: capturing a sector
 /// shifts diplomatic and morale values across all its systems.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Sector {
     /// Original .DAT identifier.
     pub dat_id: DatId,
@@ -688,6 +690,11 @@ pub struct Character {
     /// Fleet this character is currently assigned to.
     #[serde(default)]
     pub current_fleet: Option<FleetKey>,
+    /// Travelling to `current_system` (and `current_fleet`): the original's
+    /// en route bit `+0x50` bit 4, set from the order until arrival
+    /// (`FUN_004f8240`; `move-order.md`, "Who reads the en route bit").
+    #[serde(default)]
+    pub en_route: bool,
 
     // ── Story state ────────────────────────────────────────────────────
     /// True once the player has witnessed the Luke–Vader paternity reveal.
@@ -830,6 +837,7 @@ impl Default for Character {
             is_captive: false,
             current_system: None,
             current_fleet: None,
+            en_route: false,
             heritage_known: false,
             is_killed: false,
             recruited: false,
@@ -858,7 +866,7 @@ pub struct SkillPair {
 /// Capital ships are stored as individual `ShipInstance` records (per-hull
 /// state with `hull_current` and `alive`). Fighter squadrons remain as
 /// aggregate `(class_key, count)` pairs.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Fleet {
     /// Last orbiting system. An active movement order is authoritative in transit.
     pub location: SystemKey,
@@ -986,6 +994,13 @@ impl System {
     }
 }
 
+/// GNPRTB parameter `0x800`: the most a ship's damage counter holds and the
+/// divisor of the figure a counter removes (`DAT_006bb388`, `FUN_00500670`,
+/// `FUN_0053e170`).
+pub const GNPRTB_DAMAGE_COUNTER_MAX: u16 = 0x800;
+/// Its shipped value in every column (`GNPRTB.DAT` `0x800`).
+pub const SHIPPED_DAMAGE_COUNTER_MAX: i64 = 4;
+
 /// A single hull of a capital ship — the primary ship record in Fleet.
 ///
 /// Each element in `Fleet::capital_ships` is one physical hull with its own
@@ -994,8 +1009,9 @@ impl System {
 ///
 /// Mirrors the C++ entity object fields confirmed by Ghidra:
 /// - `hull_current` → offset +0x60 (int)
-/// - `shield_weapon_packed` → offset +0x64 (bits 0-3 = shield, 4-7 = weapon,
-///   16-19 = primary hyperdrive damage, 20-23 = backup hyperdrive damage)
+/// - `damage_counters` → offset +0x64, six 4-bit damage counters (bits 0-3
+///   shield, 4-7 weapon, 8-11 and 12-15 two further, 16-19 primary drive,
+///   20-23 backup drive; `ship-damage-repair.md`)
 /// - `alive` → offset +0xac bit0
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShipInstance {
@@ -1003,11 +1019,14 @@ pub struct ShipInstance {
     pub class: CapitalShipKey,
     /// Current hull. Starts at `CapitalShipClass::hull`, reduced by combat.
     pub hull_current: i32,
-    /// Packed nibbles: bits 0-3 = `shield_recharge_allocated`, bits 4-7 =
-    /// `weapon_recharge_allocated`, bits 16-19 = primary hyperdrive damage,
-    /// and bits 20-23 = backup hyperdrive damage.
+    /// The six damage counters, one nibble each (ship `+0x64`; setters
+    /// `FUN_00501510`, `FUN_005015a0`, `FUN_00501640`, `FUN_005016e0`,
+    /// `FUN_00501780`, `FUN_00501820`): shield 0-3, weapon 4-7, tractor
+    /// 8-11 and engines 12-15 (hyp: the tactical categories in the order
+    /// `FUN_005018c0` numbers parts 2 to 5), primary drive 16-19, backup
+    /// drive 20-23. Each runs 0 to GNPRTB `0x800` (shipped 4).
     /// The C++ binary uses XOR-mask writes `(new ^ old) & 0xf ^ old` — functionally a nibble store.
-    pub shield_weapon_packed: u32,
+    pub damage_counters: u32,
     /// True while `hull_current` > 0 and the ship has not been destroyed.
     pub alive: bool,
     /// Its own name (`+0x34`): "<class name> N" once numbered
@@ -1015,8 +1034,25 @@ pub struct ShipInstance {
     /// (order 0x203); `None` shows the class's (`FUN_004f6270`).
     pub name: Option<String>,
     /// The world-unique tag its squadrons and regiments name as their
-    /// carrier (`GameWorld::last_ship_tag`); 0 until something boards it.
+    /// carrier and the AI keys its records by (`GameWorld::last_ship_tag`);
+    /// 0 until the first tag, which `carriage::tag_all` gives before each
+    /// AI pass.
     pub tag: u32,
+    /// The repair timer `0x380` while the ship is damaged and usable
+    /// (`FUN_005577f0`, `FUN_0057c2c0`; `repair::RepairSystem`).
+    pub repair_timer: Option<RepairTimer>,
+}
+
+/// Ship repair timer `0x380` (`ship-damage-repair.md`, "Repair"): armed
+/// while the ship is damaged and not in hyperspace, it fires at `due` and
+/// rearms for the same interval; a change of `fast` rearms it at once.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RepairTimer {
+    /// The tick it fires on.
+    pub due: u64,
+    /// Whether the ship's system holds a counted shipyard of its own side
+    /// (`FUN_00557860`), which sets the short interval GNPRTB `0x804`.
+    pub fast: bool,
 }
 
 impl ShipInstance {
@@ -1029,10 +1065,11 @@ impl ShipInstance {
             // Zero is the legacy/uninitialized sentinel. Space-combat entry
             // derives the source defaults from the class when this word has
             // not yet been allocated.
-            shield_weapon_packed: 0,
+            damage_counters: 0,
             alive: true,
             name: None,
             tag: 0,
+            repair_timer: None,
         }
     }
 
@@ -1044,48 +1081,80 @@ impl ShipInstance {
             .collect()
     }
 
-    /// Shield recharge allocation nibble (bits 0-3).
+    /// Shield damage counter (bits 0-3).
+    ///
+    /// src: ship `+0x64` bits 0-3, setter `FUN_00501510` (`ship-damage-repair.md`).
     #[must_use]
     pub fn shield_nibble(&self) -> u8 {
-        (self.shield_weapon_packed & 0x0f) as u8
+        (self.damage_counters & 0x0f) as u8
     }
 
-    /// Weapon recharge allocation nibble (bits 4-7).
+    /// Weapon damage counter (bits 4-7).
+    ///
+    /// src: ship `+0x64` bits 4-7, setter `FUN_005015a0` (`ship-damage-repair.md`).
     #[must_use]
     pub fn weapon_nibble(&self) -> u8 {
-        ((self.shield_weapon_packed >> 4) & 0x0f) as u8
+        ((self.damage_counters >> 4) & 0x0f) as u8
     }
 
-    /// Replace the shield allocation nibble while preserving weapon power.
+    /// Replace the shield damage counter, keeping the others.
     ///
     /// `FUN_00501510` accepts only the low four bits and performs the same
     /// masked read-modify-write against source offset `+0x64`.
     pub fn set_shield_nibble(&mut self, value: u8) {
-        self.shield_weapon_packed =
-            (self.shield_weapon_packed & !0x0f) | u32::from(value.min(0x0f));
+        self.damage_counters = (self.damage_counters & !0x0f) | u32::from(value.min(0x0f));
     }
 
-    /// Replace the weapon allocation nibble while preserving shield power.
+    /// Replace the weapon damage counter, keeping the others.
     ///
     /// `FUN_005015a0` stores the bounded value in bits 4 through 7 of source
     /// offset `+0x64`.
     pub fn set_weapon_nibble(&mut self, value: u8) {
-        self.shield_weapon_packed =
-            (self.shield_weapon_packed & !0xf0) | (u32::from(value.min(0x0f)) << 4);
+        self.damage_counters = (self.damage_counters & !0xf0) | (u32::from(value.min(0x0f)) << 4);
+    }
+
+    /// Damage counter `index` (0 shield, 1 weapon, 2 and 3 the two further,
+    /// 4 primary drive, 5 backup drive): nibble `index` of ship `+0x64`
+    /// (`FUN_005006a0`, `FUN_00500f60`).
+    #[must_use]
+    pub fn damage_counter(&self, index: usize) -> u8 {
+        ((self.damage_counters >> (4 * index)) & 0x0f) as u8
+    }
+
+    /// Store damage counter `index` (see [`Self::damage_counter`]), keeping
+    /// the others (`FUN_00501510` and its five siblings).
+    pub fn set_damage_counter(&mut self, index: usize, value: u8) {
+        let shift = 4 * index;
+        self.damage_counters =
+            (self.damage_counters & !(0x0f << shift)) | (u32::from(value.min(0x0f)) << shift);
+    }
+
+    /// The sum of the six counters (`FUN_005006a0`).
+    #[must_use]
+    pub fn damage_counter_sum(&self) -> u32 {
+        (0..6).map(|i| u32::from(self.damage_counter(i))).sum()
+    }
+
+    /// Ship `+0x50` bit 9, damaged: hull damage or any counter non-zero
+    /// (`FUN_00501c00`). The port keeps the hull remaining, so hull damage
+    /// is the class hull less `hull_current`.
+    #[must_use]
+    pub fn is_damaged(&self, class_hull: i32) -> bool {
+        self.hull_current < class_hull || self.damage_counters & 0x00ff_ffff != 0
     }
 
     /// Primary-drive damage nibble from ship `+0x64` bits 16-19
     /// (`FUN_005011f0`, written by `FUN_00501780`).
     #[must_use]
     pub fn primary_hyperdrive_damage(&self) -> u8 {
-        ((self.shield_weapon_packed >> 16) & 0x0f) as u8
+        ((self.damage_counters >> 16) & 0x0f) as u8
     }
 
     /// Backup-drive damage nibble from ship `+0x64` bits 20-23
     /// (`FUN_00501230`).
     #[must_use]
     pub fn backup_hyperdrive_damage(&self) -> u8 {
-        ((self.shield_weapon_packed >> 20) & 0x0f) as u8
+        ((self.damage_counters >> 20) & 0x0f) as u8
     }
 
     /// Tactical hyperdrive hits represented by the two original strategic
@@ -1093,9 +1162,7 @@ impl ShipInstance {
     #[must_use]
     pub fn hyperdrive_damage_hits(&self, class: &CapitalShipClass) -> u8 {
         u8::from(class.hyperdrive > 0 && self.primary_hyperdrive_damage() > 0)
-            + u8::from(
-                class.hyperdrive_if_damaged > 0 && self.backup_hyperdrive_damage() > 0,
-            )
+            + u8::from(class.hyperdrive_if_damaged > 0 && self.backup_hyperdrive_damage() > 0)
     }
 
     /// Persist tactical hyperdrive hits into the original ship damage
@@ -1104,12 +1171,9 @@ impl ShipInstance {
     pub fn set_hyperdrive_damage_hits(&mut self, class: &CapitalShipClass, hits: u8) {
         let primary = u32::from(class.hyperdrive > 0 && hits > 0);
         let backup_threshold = u8::from(class.hyperdrive > 0);
-        let backup = u32::from(
-            class.hyperdrive_if_damaged > 0 && hits > backup_threshold,
-        );
-        self.shield_weapon_packed = (self.shield_weapon_packed & !0x00ff_0000)
-            | (primary << 16)
-            | (backup << 20);
+        let backup = u32::from(class.hyperdrive_if_damaged > 0 && hits > backup_threshold);
+        self.damage_counters =
+            (self.damage_counters & !0x00ff_0000) | (primary << 16) | (backup << 20);
     }
 }
 
@@ -1182,6 +1246,9 @@ impl GnprtbParams {
     /// `difficulty`: 0=development, `1=alliance_easy`, `2=alliance_medium`, `3=alliance_hard`,
     ///               `4=empire_easy`, `5=empire_medium`, `6=empire_hard`, 7=multiplayer.
     /// Returns 0 if `param_id` is out of range.
+    ///
+    /// src: GNPRTB.DAT, one 44-byte entry per parameter with 8 value columns
+    /// (`agent_docs/dat-formats.md`); `FUN_0053e390` reads one by id.
     #[must_use]
     pub fn value(&self, param_id: u16, difficulty: u8) -> i32 {
         self.entries
@@ -1235,6 +1302,9 @@ impl SdprtbParams {
     }
 
     /// Return a side-aware seeding parameter for the requested difficulty column.
+    ///
+    /// src: SDPRTB.DAT, one 76-byte entry per parameter with 16 value columns,
+    /// Alliance and Empire per difficulty (`agent_docs/dat-formats.md`).
     #[must_use]
     pub fn value(&self, param_id: u16, difficulty: u8, faction: Faction) -> i32 {
         self.entries
@@ -1367,12 +1437,17 @@ impl MstbTable {
     /// `x` is below every threshold. Returns 0 for an empty table.
     #[must_use]
     pub fn step_lookup(&self, x: i32) -> u32 {
+        self.step_row(x).map_or(0, |e| e.value)
+    }
+
+    /// The row [`Self::step_lookup`] reads for `x`.
+    #[must_use]
+    pub fn step_row(&self, x: i32) -> Option<&MstbEntry> {
         self.entries
             .iter()
             .take_while(|e| e.threshold <= x)
             .last()
             .or_else(|| self.entries.first())
-            .map_or(0, |e| e.value)
     }
 
     /// Look up the value for `skill_score` using linear interpolation.
@@ -1418,7 +1493,7 @@ impl MstbTable {
 }
 
 /// A troop regiment stationed at a system — a deployed instance of a troop class.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct TroopUnit {
     /// The class definition (from TROOPSD.DAT).
     pub class_dat_id: DatId,
@@ -1428,7 +1503,7 @@ pub struct TroopUnit {
 }
 
 /// A special-forces unit stationed at a system.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SpecialForceUnit {
     /// The class definition (from SPECFCSD.DAT).
     pub class_dat_id: DatId,
@@ -1440,6 +1515,13 @@ pub struct SpecialForceUnit {
     /// Currently a mission member (role flag bit 7, `RoleOnMissionNotif`
     /// `FUN_00536b00`; special forces share the role flags with characters).
     pub on_mission: bool,
+    /// Travelling to the system that lists it, as [`Character::en_route`].
+    #[serde(default)]
+    pub en_route: bool,
+    /// On a hidden mission (role `+0x78` bit 8), as
+    /// [`Character::on_hidden_mission`].
+    #[serde(default)]
+    pub on_hidden_mission: bool,
 }
 
 /// What one unit of a regiment, special-force or facility class costs to
@@ -1515,7 +1597,7 @@ pub enum FacilityRef {
 }
 
 /// A defense facility instance on a system surface.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct DefenseFacilityInstance {
     /// The class definition (from DEFFACSD.DAT).
     pub class_dat_id: DatId,
@@ -1526,7 +1608,7 @@ pub struct DefenseFacilityInstance {
 }
 
 /// A manufacturing facility instance (shipyard, training center, construction yard).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ManufacturingFacilityInstance {
     /// The class definition (from MANFACSD.DAT).
     pub class_dat_id: DatId,
@@ -1541,7 +1623,7 @@ pub struct ManufacturingFacilityInstance {
 }
 
 /// A production facility instance (mine, refinery).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ProductionFacilityInstance {
     /// The class definition (from PROFACSD.DAT).
     pub class_dat_id: DatId,
@@ -1655,22 +1737,33 @@ pub struct DefenseFacilityClassDef {
 /// they're meaningless outside the arena they index into.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct GameWorld {
+    #[serde(with = "slot_order")]
     pub systems: slotmap::SlotMap<SystemKey, System>,
+    #[serde(with = "slot_order")]
     pub sectors: slotmap::SlotMap<SectorKey, Sector>,
+    #[serde(with = "slot_order")]
     pub capital_ship_classes: slotmap::SlotMap<CapitalShipKey, CapitalShipClass>,
+    #[serde(with = "slot_order")]
     pub fighter_classes: slotmap::SlotMap<FighterKey, FighterClass>,
+    #[serde(with = "slot_order")]
     pub characters: slotmap::SlotMap<CharacterKey, Character>,
+    #[serde(with = "slot_order")]
     pub fleets: slotmap::SlotMap<FleetKey, Fleet>,
     /// Deployed troop regiments (instances, not class definitions).
+    #[serde(with = "slot_order")]
     pub troops: slotmap::SlotMap<TroopKey, TroopUnit>,
     /// Deployed special-forces units.
+    #[serde(with = "slot_order")]
     pub special_forces: slotmap::SlotMap<SpecialForceKey, SpecialForceUnit>,
     /// Defense facilities on system surfaces.
+    #[serde(with = "slot_order")]
     pub defense_facilities: slotmap::SlotMap<DefenseFacilityKey, DefenseFacilityInstance>,
     /// Manufacturing facilities (shipyards, training centers, construction yards).
+    #[serde(with = "slot_order")]
     pub manufacturing_facilities:
         slotmap::SlotMap<ManufacturingFacilityKey, ManufacturingFacilityInstance>,
     /// Production facilities (mines, refineries).
+    #[serde(with = "slot_order")]
     pub production_facilities: slotmap::SlotMap<ProductionFacilityKey, ProductionFacilityInstance>,
     /// Troop class definitions keyed by `DatId` (from TROOPSD.DAT).
     /// Used by ground combat to look up per-class attack/defense values.
@@ -1705,10 +1798,15 @@ pub struct GameWorld {
     /// character (side `+0xb8`, set by `FUN_0052f590` from `FUN_0055fc80`).
     /// Recruitment then ends with code `0x10` (`FUN_0056b370`).
     pub recruit_pool_empty: [bool; 2],
+    /// Per side (Alliance, Empire) and tree (ship, troop, facility): the
+    /// tree has no higher class (side `+0xac`, `+0xb0`, `+0xb4`, set by
+    /// `FUN_0052f440`, never cleared). The Research validator reads it
+    /// (`FUN_0052eb10`, end code `0xe`).
+    #[serde(default)]
+    pub research_exhausted: [[bool; 3]; 2],
     /// Each fleet's name (`+0x34`) and each side's default-name counter.
     pub fleet_names: FleetNames,
-    /// The last tag given to a capital ship that took a squadron or a
-    /// regiment aboard (`ShipInstance::tag`).
+    /// The last tag given to a capital ship (`ShipInstance::tag`).
     pub last_ship_tag: u32,
     /// Squadrons travelling on their own, in departure order. The original
     /// reparents the object to its destination at once and marks it en
@@ -1727,6 +1825,11 @@ pub struct GameWorld {
         deserialize_with = "crate::serde_ordered::deserialize_hash_map"
     )]
     pub arrival_holders: std::collections::HashMap<SystemKey, bool>,
+    /// The sectors whose systems carry `+0x88` bit 11: a usable Death Star
+    /// lies at one of their systems (`FUN_005178b0`). Derived each tick by
+    /// `death_star::refresh_sectors`, so never saved.
+    #[serde(skip)]
+    pub death_star_sectors: std::collections::HashSet<SectorKey>,
 }
 
 /// The fleet record's name (`+0x34`, TEXTSTRA 11523): a fleet's name until
@@ -1761,11 +1864,19 @@ pub struct FleetNames {
     ship_numbers: [std::collections::BTreeMap<u32, u32>; 2],
 }
 
+// port: the serde default for a world saved without a difficulty column index.
 fn default_difficulty_index() -> u8 {
     2
 }
 
 impl GameWorld {
+    /// `+0x88` bit 11 of `sys`: a usable Death Star lies in its sector
+    /// (`FUN_005178b0`, `FUN_0050a890`).
+    #[must_use]
+    pub fn death_star_in_sector(&self, sys: &System) -> bool {
+        self.death_star_sectors.contains(&sys.sector)
+    }
+
     /// The facilities at `system`: defense, then manufacturing, then
     /// production.
     #[must_use]
@@ -1905,7 +2016,9 @@ impl GameWorld {
     /// it: Research (`0x53`) has three records and Vacation (`0x72`) two.
     #[must_use]
     pub fn mission_record(&self, id: crate::ids::DatId) -> Option<&MissionRecord> {
-        self.mission_records.iter().find(|record| record.dat_id == id)
+        self.mission_records
+            .iter()
+            .find(|record| record.dat_id == id)
     }
 
     /// Whether `side` recruited its last pool character (side `+0xb8`).
@@ -1941,9 +2054,7 @@ impl GameWorld {
         let numbered = format!("{FLEET_RECORD_NAME} {number}");
         let name = match self.fleet_names.mode {
             FleetNaming::Original => numbered,
-            FleetNaming::Canonical => self
-                .free_bank_name(fleet)
-                .map_or(numbered, str::to_owned),
+            FleetNaming::Canonical => self.free_bank_name(fleet).map_or(numbered, str::to_owned),
         };
         self.fleet_names.names.insert(fleet, name);
     }
@@ -2089,9 +2200,12 @@ impl GameWorld {
     }
 
     fn bank_name_held(&self, name: &str) -> bool {
-        self.fleets
-            .keys()
-            .any(|fleet| self.fleet_names.names.get(fleet).is_some_and(|held| held == name))
+        self.fleets.keys().any(|fleet| {
+            self.fleet_names
+                .names
+                .get(fleet)
+                .is_some_and(|held| held == name)
+        })
     }
 
     fn holds_class(&self, fleet: &Fleet, class: crate::ids::DatId) -> bool {
@@ -2121,6 +2235,27 @@ impl GameWorld {
     pub fn set_recruit_pool_empty(&mut self, side: crate::dat::Faction) {
         if let Some(index) = recruit_side_index(side) {
             self.recruit_pool_empty[index] = true;
+        }
+    }
+
+    /// Whether `side`'s `tech` tree has no higher class (side `+0xac`-`+0xb4`).
+    #[must_use]
+    pub fn research_exhausted(
+        &self,
+        side: crate::dat::Faction,
+        tech: crate::research::TechType,
+    ) -> bool {
+        recruit_side_index(side).is_some_and(|index| self.research_exhausted[index][tech.index()])
+    }
+
+    /// Mark `side`'s `tech` tree exhausted (`FUN_0052f440`).
+    pub fn set_research_exhausted(
+        &mut self,
+        side: crate::dat::Faction,
+        tech: crate::research::TechType,
+    ) {
+        if let Some(index) = recruit_side_index(side) {
+            self.research_exhausted[index][tech.index()] = true;
         }
     }
 }
@@ -2408,13 +2543,20 @@ mod tests {
         }
         // The signature name is still free; every other name is held.
         let next = world.insert_fleet(fleet(true));
-        assert_eq!(world.fleet_name(next).map(str::to_owned), Some(format!("Fleet {bank}")));
+        assert_eq!(
+            world.fleet_name(next).map(str::to_owned),
+            Some(format!("Fleet {bank}"))
+        );
     }
 
     #[test]
     fn a_new_fleet_with_the_flagship_takes_the_signature_name() {
         let mut world = canonical_world();
-        let value = fleet_with(&mut world, false, crate::fleet_name_bank::SUPER_STAR_DESTROYER);
+        let value = fleet_with(
+            &mut world,
+            false,
+            crate::fleet_name_bank::SUPER_STAR_DESTROYER,
+        );
         let squadron = world.insert_fleet(value);
         assert_eq!(world.fleet_name(squadron), Some("Death Squadron"));
     }
@@ -2423,7 +2565,11 @@ mod tests {
     fn a_fleet_gaining_the_flagship_is_renamed_and_frees_its_old_name() {
         let mut world = canonical_world();
         let alpha = world.insert_fleet(fleet(true));
-        let cruiser = fleet_with(&mut world, true, crate::fleet_name_bank::MON_CALAMARI_CRUISER);
+        let cruiser = fleet_with(
+            &mut world,
+            true,
+            crate::fleet_name_bank::MON_CALAMARI_CRUISER,
+        );
         world.fleets[alpha].capital_ships = cruiser.capital_ships;
         world.name_flagship_fleets();
         assert_eq!(world.fleet_name(alpha), Some("Rebel Command Fleet"));
@@ -2490,9 +2636,17 @@ mod tests {
     #[test]
     fn a_signature_name_held_by_one_fleet_is_not_given_to_another_flagship() {
         let mut world = canonical_world();
-        let first = fleet_with(&mut world, false, crate::fleet_name_bank::SUPER_STAR_DESTROYER);
+        let first = fleet_with(
+            &mut world,
+            false,
+            crate::fleet_name_bank::SUPER_STAR_DESTROYER,
+        );
         let first = world.insert_fleet(first);
-        let second = fleet_with(&mut world, false, crate::fleet_name_bank::SUPER_STAR_DESTROYER);
+        let second = fleet_with(
+            &mut world,
+            false,
+            crate::fleet_name_bank::SUPER_STAR_DESTROYER,
+        );
         let second = world.insert_fleet(second);
         world.name_flagship_fleets();
         assert_eq!(world.fleet_name(first), Some("Death Squadron"));
@@ -2504,7 +2658,11 @@ mod tests {
         let mut world = canonical_world();
         let rebel = world.insert_fleet(fleet(true));
         // An Imperial fleet holding a (captured) Mon Calamari cruiser.
-        let captor = fleet_with(&mut world, false, crate::fleet_name_bank::MON_CALAMARI_CRUISER);
+        let captor = fleet_with(
+            &mut world,
+            false,
+            crate::fleet_name_bank::MON_CALAMARI_CRUISER,
+        );
         let captor = world.insert_fleet(captor);
         world.name_flagship_fleets();
         assert_eq!(world.fleet_name(rebel), Some("Alpha Group"));
@@ -2514,7 +2672,11 @@ mod tests {
     #[test]
     fn a_destroyed_flagship_does_not_count() {
         let mut world = canonical_world();
-        let mut value = fleet_with(&mut world, false, crate::fleet_name_bank::SUPER_STAR_DESTROYER);
+        let mut value = fleet_with(
+            &mut world,
+            false,
+            crate::fleet_name_bank::SUPER_STAR_DESTROYER,
+        );
         value.capital_ships[0].alive = false;
         let fleet = world.insert_fleet(value);
         assert_eq!(world.fleet_name(fleet), Some("Seventh Fleet"));
@@ -2523,7 +2685,11 @@ mod tests {
     #[test]
     fn original_naming_never_renames_a_flagship_fleet() {
         let mut world = GameWorld::default();
-        let value = fleet_with(&mut world, false, crate::fleet_name_bank::SUPER_STAR_DESTROYER);
+        let value = fleet_with(
+            &mut world,
+            false,
+            crate::fleet_name_bank::SUPER_STAR_DESTROYER,
+        );
         let fleet = world.insert_fleet(value);
         world.name_flagship_fleets();
         assert_eq!(world.fleet_name(fleet), Some("Fleet 1"));
@@ -2533,7 +2699,11 @@ mod tests {
     fn starting_canonical_naming_renames_the_seeded_fleets_in_slot_order() {
         let mut world = GameWorld::default();
         let first = world.insert_fleet(fleet(false));
-        let value = fleet_with(&mut world, false, crate::fleet_name_bank::SUPER_STAR_DESTROYER);
+        let value = fleet_with(
+            &mut world,
+            false,
+            crate::fleet_name_bank::SUPER_STAR_DESTROYER,
+        );
         let flagship = world.insert_fleet(value);
         world.start_fleet_naming(FleetNaming::Canonical);
         assert_eq!(world.fleet_naming(), FleetNaming::Canonical);
@@ -2545,7 +2715,9 @@ mod tests {
     fn seeded_fleets_past_the_bank_keep_their_own_numbers() {
         let mut world = GameWorld::default();
         let bank = crate::fleet_name_bank::ALLIANCE.len();
-        let fleets: Vec<FleetKey> = (0..=bank).map(|_| world.insert_fleet(fleet(true))).collect();
+        let fleets: Vec<FleetKey> = (0..=bank)
+            .map(|_| world.insert_fleet(fleet(true)))
+            .collect();
         world.start_fleet_naming(FleetNaming::Canonical);
         // Bank minus the signature name: the rest keep "Fleet N".
         assert_eq!(world.fleet_name(fleets[bank - 2]), Some("Phoenix Cell"));
@@ -2843,7 +3015,7 @@ mod tests {
     }
 
     #[test]
-    fn ship_power_allocations_store_independent_bounded_nibbles() {
+    fn ship_damage_counters_store_independent_bounded_nibbles() {
         let mut ship = ShipInstance::new(CapitalShipKey::default(), 100, true);
         assert_eq!(ship.shield_nibble(), 0);
         assert_eq!(ship.weapon_nibble(), 0);
@@ -2858,6 +3030,6 @@ mod tests {
 
         ship.set_shield_nibble(u8::MAX);
         ship.set_weapon_nibble(u8::MAX);
-        assert_eq!(ship.shield_weapon_packed, 0xff);
+        assert_eq!(ship.damage_counters, 0xff);
     }
 }

@@ -269,14 +269,14 @@ fn count_sf(world: &GameWorld, keys: &[SpecialForceKey], tab: PersonnelTab) -> [
 
 /// A character's state word (`FUN_00465bb0`): Captured (`0x8746`) when held,
 /// else On Mission (`0x8745`), else Injured (`0x8747`), else Enroute
-/// (`0x8744`); the first that applies. port: the port keeps no injury, and a
-/// character off the map and in no fleet is the one travelling.
+/// (`0x8744`, `+0x50` bit 5); the first that applies. port: the port keeps no
+/// injury.
 fn character_state(character: &rebellion_core::world::Character) -> Option<&'static str> {
     if character.is_captive {
         Some("Captured")
     } else if character.on_mission {
         Some("On Mission")
-    } else if character.current_system.is_none() && character.current_fleet.is_none() {
+    } else if character.en_route {
         Some("Enroute")
     } else {
         None
@@ -1058,6 +1058,7 @@ mod tests {
             is_captive: false,
             current_system: None,
             current_fleet: None,
+            en_route: false,
             heritage_known: false,
             is_killed: false,
             recruited: true,
@@ -1078,6 +1079,8 @@ mod tests {
             is_alliance,
             skills: [0; 8],
             on_mission: false,
+            en_route: false,
+            on_hidden_mission: false,
         });
         world.systems[system].special_forces.push(key);
         key
@@ -1211,8 +1214,11 @@ mod tests {
         leia.on_mission = true;
         leia.is_captive = true;
         world.characters.insert(leia);
+        // A traveller stands at its destination (move-order.md).
         let mut han = default_character();
         han.name = "Han".into();
+        han.current_system = Some(yavin);
+        han.en_route = true;
         world.characters.insert(han);
         // Aboard a fleet is not en route, wherever the fleet is.
         let mut wedge = default_character();
@@ -1239,7 +1245,7 @@ mod tests {
         assert_eq!(
             names,
             [
-                "Han - Location Unknown ( Enroute ) ",
+                "Han - Yavin ( Enroute ) ",
                 "Leia - Yavin ( Captured ) ",
                 "Wedge - Location Unknown"
             ]

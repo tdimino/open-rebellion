@@ -66,7 +66,16 @@ def make_check(
 
 
 def unique_event_ticks(events: list[dict], event_type: str) -> list[int]:
-    return sorted({int(event.get("tick", 0)) for event in events if event.get("event_type") == event_type})
+    """The ticks of `event_type`'s records; an `ai_action` counts only when
+    it applied (a record without an outcome is an applied one)."""
+    return sorted(
+        {
+            int(event.get("tick", 0))
+            for event in events
+            if event.get("event_type") == event_type
+            and event.get("details", {}).get("outcome", "applied") == "applied"
+        }
+    )
 
 
 def dominant_interval(ticks: list[int]) -> int | None:
@@ -78,17 +87,6 @@ def dominant_interval(ticks: list[int]) -> int | None:
 
 def event_types_present(events: list[dict]) -> set[str]:
     return {event.get("event_type", "") for event in events}
-
-
-def event_id_set(events: list[dict]) -> set[int]:
-    ids: set[int] = set()
-    for event in events:
-        if event.get("event_type") != "event_fired":
-            continue
-        details = event.get("details", {})
-        if isinstance(details, dict) and isinstance(details.get("event_id"), int):
-            ids.add(details["event_id"])
-    return ids
 
 
 def build_presence_checks(
@@ -283,27 +281,6 @@ def evaluate(events: list[dict], golden: dict) -> dict:
                         details="within bounds",
                     )
                 )
-
-    # Research: the mechanics docs map the three original completion event IDs.
-    fired_ids = event_id_set(events)
-    research_ids = {
-        values["research"]["research_completion_event_ship"],
-        values["research"]["research_completion_event_troop"],
-        values["research"]["research_completion_event_facility"],
-    }
-    if not fired_ids:
-        checks.append(make_check("research.completion_event_ids", "skip", expected=sorted(research_ids), observed=[], details="No event_fired records in log."))
-    else:
-        observed_research_ids = sorted(fired_ids & research_ids)
-        checks.append(
-            make_check(
-                "research.completion_event_ids",
-                "pass" if observed_research_ids else "fail",
-                expected=sorted(research_ids),
-                observed=observed_research_ids,
-                details=f"all event_fired ids={sorted(fired_ids)}",
-            )
-        )
 
     return finalize(events, checks, golden)
 

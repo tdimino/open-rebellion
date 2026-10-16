@@ -112,6 +112,13 @@ pub enum MissionKind {
     /// DSSBMSTB.DAT. Skill: espionage.
     DeathStarSabotage,
 
+    /// Ship Design, Troop Training or Facility Design Research (MISSNSD
+    /// `0x53000020`, `0x53000022`, `0x53000021`; `ghidra/notes/research.md`):
+    /// each member rolls against its skill for the tree, and the points the
+    /// successes earn go to the side's pool for that tree. It repeats until
+    /// resigned or the tree is exhausted.
+    Research(crate::research::TechType),
+
     /// A character's or special force's Move (order `0x241`, MISSNSD
     /// `0x41000001`): the members travel to a system or board a fleet of
     /// their side (`ghidra/notes/move-order.md`, "Characters and special
@@ -120,6 +127,31 @@ pub enum MissionKind {
 }
 
 impl MissionKind {
+    /// The kind's TEXTSTRA name, as the Create Mission dialog shows it; empty
+    /// for `Autoscrap`, which has none.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            MissionKind::Diplomacy => "Diplomacy",
+            MissionKind::Rescue => "Rescue",
+            MissionKind::Sabotage => "Sabotage",
+            MissionKind::Espionage => "Espionage",
+            MissionKind::Recruitment => "Recruitment",
+            MissionKind::Abduction => "Abduction",
+            MissionKind::InciteUprising => "Incite Uprising",
+            MissionKind::DeathStarSabotage => "Death Star Sabotage",
+            MissionKind::SubdueUprising => "Subdue Uprising",
+            MissionKind::Assassination => "Assassination",
+            MissionKind::Research(crate::research::TechType::Ship) => "Ship Design Research",
+            MissionKind::Research(crate::research::TechType::Facility) => {
+                "Facility Design Research"
+            }
+            MissionKind::Research(crate::research::TechType::Troop) => "Troop Training Research",
+            MissionKind::Move => "Move",
+            MissionKind::Autoscrap => "",
+        }
+    }
+
     /// DAT file stem for this kind's MSTB table, ids `0x14..0x1d` of
     /// `FUN_0058b420` (`ghidra/notes/uprising-incident.md`). `None` for
     /// `Autoscrap`, which has none.
@@ -136,7 +168,7 @@ impl MissionKind {
             MissionKind::InciteUprising => Some("INCTMSTB"),
             MissionKind::SubdueUprising => Some("SUBDMSTB"),
             MissionKind::DeathStarSabotage => Some("DSSBMSTB"),
-            MissionKind::Autoscrap | MissionKind::Move => None,
+            MissionKind::Autoscrap | MissionKind::Move | MissionKind::Research(_) => None,
         }
     }
 
@@ -156,6 +188,8 @@ impl MissionKind {
             MissionKind::Assassination | MissionKind::Abduction => (25, 35),
             MissionKind::Espionage => (15, 25),
             MissionKind::DeathStarSabotage => (30, 40),
+            // MISSNSD 11-13: 10 + rand(0..=10).
+            MissionKind::Research(_) => (10, 20),
             MissionKind::Autoscrap => (1, 1),
             MissionKind::Move => (0, 0),
         }
@@ -258,6 +292,10 @@ pub struct ActiveMission {
     /// Members with a resign request (role `+0x78` bit 3, `FUN_00534640`),
     /// set when an exposed member may resign (record column 9).
     pub resigning: Vec<MissionMember>,
+    /// The phase-10 outcome passes it has run (`FUN_00592f50`); a repeating
+    /// mission runs one per cycle.
+    #[serde(default)]
+    pub rolls: u32,
 }
 
 /// The phase that starts every member's transit (`FUN_00520b20`).
@@ -301,6 +339,7 @@ impl ActiveMission {
             timer_due: None,
             container_loss_seen: false,
             resigning: Vec::new(),
+            rolls: 0,
         }
     }
 
@@ -444,6 +483,8 @@ pub enum MissionTarget {
 struct ObjectState {
     side: crate::dat::Faction,
     location: Option<SystemKey>,
+    /// A special force travelling to its destination (`+0x50` bit 5).
+    en_route: bool,
 }
 
 impl MissionTarget {
@@ -458,6 +499,7 @@ impl MissionTarget {
                 .find(|(_, sys)| listed(sys))
                 .map(|(key, _)| key)
         };
+        let mut en_route = false;
         let (side, location) = match self {
             MissionTarget::DefenseFacility(key) => (
                 world.defense_facilities.get(key)?.side,
@@ -475,10 +517,14 @@ impl MissionTarget {
                 faction_of(world.troops.get(key)?.is_alliance),
                 at(&|sys| sys.ground_units.contains(&key)),
             ),
-            MissionTarget::SpecialForce(key) => (
-                faction_of(world.special_forces.get(key)?.is_alliance),
-                at(&|sys| sys.special_forces.contains(&key)),
-            ),
+            MissionTarget::SpecialForce(key) => {
+                let unit = world.special_forces.get(key)?;
+                en_route = unit.en_route;
+                (
+                    faction_of(unit.is_alliance),
+                    at(&|sys| sys.special_forces.contains(&key)),
+                )
+            }
             MissionTarget::DeathStar(key) => {
                 let fleet = world.fleets.get(key)?;
                 fleet.capital_ships.iter().find(|ship| {
@@ -498,6 +544,7 @@ impl MissionTarget {
         Some(ObjectState {
             side,
             location,
+            en_route,
         })
     }
 }
@@ -609,7 +656,7 @@ impl MissionRequest {
     }
 }
 
-/// Why [`MissionState::dispatch_guarded`] refused a request.
+/// Why [`MissionState::dispatch_validated`] refused a request.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MissionRefusal {
     /// No free member remained on the team (`FUN_0054bb90`, `0x40`/`0x91`).
@@ -617,10 +664,6 @@ pub enum MissionRefusal {
     /// A member is missing, on the other side, already on a mission, or
     /// elsewhere than the other members (`FUN_00522b30`).
     MemberUnavailable(MissionMember),
-    /// Sabotage names no object or the Death Star (`FUN_0056a110`, `0x40`/
-    /// `0x28`), or DS Sabotage names no Death Star (`FUN_005744c0`,
-    /// `0x40`/`0x29`). `death_star` names which mission refused.
-    TargetUnavailable { death_star: bool },
     /// The record does not admit these members: a special force or
     /// character the record does not take, or a side it does not run for
     /// (`FUN_00583320`, `0x40`/`0x01`).
@@ -629,9 +672,15 @@ pub enum MissionRefusal {
     /// `0x30..0x37`, a minor or a special force, is refused
     /// (`FUN_0056b370` -> `FUN_0056b550` / `FUN_0056b680`, `0x40`/`0x06`).
     RecruiterNotMajor,
+    /// A Research member whose effective skill for the tree is 0
+    /// (`FUN_0056c820`, `0x40`/`0x04`).
+    NoResearchSkill,
     /// A Move's destination is refused with `1`/`code` (`FUN_004f4b60`,
     /// the route `FUN_005513a0` and the container's acceptance).
     DestinationRefused(u32),
+    /// The class validator refuses the target or its container at creation
+    /// (`FUN_00542b60` -> `FUN_0054c590`, [`validate`]).
+    TargetRefused(TargetRefusal),
 }
 
 impl MissionRefusal {
@@ -644,11 +693,11 @@ impl MissionRefusal {
             // hyp: FUN_00522b30 adds no unavailable member, so the team the
             // validator sees is empty, as for EmptyTeam.
             Self::MemberUnavailable(_) => (0x40, 0x91),
-            Self::TargetUnavailable { death_star: false } => (0x40, 0x28),
-            Self::TargetUnavailable { death_star: true } => (0x40, 0x29),
             Self::MembersNotAllowed => (0x40, 0x01),
             Self::RecruiterNotMajor => (0x40, 0x06),
+            Self::NoResearchSkill => (0x40, 0x04),
             Self::DestinationRefused(code) => (1, *code),
+            Self::TargetRefused(refusal) => refusal.status(),
         }
     }
 }
@@ -661,15 +710,19 @@ struct MemberState {
     recruited: bool,
     busy: bool,
     prisoner: bool,
+    /// Travelling to its destination, where `location` already places it
+    /// (`+0x50` bit 5, `move-order.md`).
+    en_route: bool,
     location: MemberLocation,
 }
 
 /// Where a member is: a fleet, else a system (the original compares each
 /// member's location key, slot `+0xc`, in `FUN_00522b30`).
 ///
-/// port: `FUN_00522b30` also compares the en route bit (`+0x50` bit 5) and
-/// the arrival tick (`+0x44`); the port has no en route members yet, so
-/// members with no location match each other.
+/// A travelling member is placed at its destination, so `Nowhere` is only
+/// an unplaced or killed member. `FUN_00522b30` also compares the en route
+/// bit (`+0x50` bit 5) and the arrival tick (`+0x44`); the port's checks
+/// refuse a travelling member before comparing locations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum MemberLocation {
     Fleet(crate::ids::FleetKey),
@@ -693,6 +746,7 @@ fn member_state(world: &GameWorld, member: MissionMember) -> Option<MemberState>
                 recruited: c.recruited,
                 busy: c.on_mission || c.on_mandatory_mission,
                 prisoner: c.is_captive,
+                en_route: c.en_route,
                 location,
             })
         }
@@ -710,6 +764,7 @@ fn member_state(world: &GameWorld, member: MissionMember) -> Option<MemberState>
                 recruited: true,
                 busy: unit.on_mission,
                 prisoner: false,
+                en_route: unit.en_route,
                 location,
             })
         }
@@ -772,6 +827,8 @@ pub fn members_allowed(
 /// ones every caller runs, the dialog list (`FUN_0054c590`), the AI's
 /// capability bits (`FUN_0054c440`) and order creation.
 ///
+/// - Research (`FUN_0056c510` → `FUN_0056c820`): a member whose effective
+///   skill for the tree is 0 is refused.
 /// - Recruitment (`FUN_0056b370`): every member of the three lists must be
 ///   in families `0x30..0x37` (`FUN_0056b550`, `FUN_0056b680`), so a minor
 ///   (`0x38`) or a special force (`0x3c..0x3f`) cannot recruit. port:
@@ -781,6 +838,15 @@ pub(crate) fn creation_refusal(
     kind: MissionKind,
     members: impl IntoIterator<Item = MissionMember>,
 ) -> Option<MissionRefusal> {
+    if let MissionKind::Research(tech) = kind {
+        let skilled =
+            |member| member_skill(world, member, tech.skill()).is_some_and(|value| value > 0);
+        return if members.into_iter().all(skilled) {
+            None
+        } else {
+            Some(MissionRefusal::NoResearchSkill)
+        };
+    }
     if kind != MissionKind::Recruitment {
         return None;
     }
@@ -801,8 +867,8 @@ pub(crate) fn creation_refusal(
 /// validator passes on a mission built from them (`FUN_0054c590` runs it on
 /// a temporary mission, `FUN_00582b90`).
 ///
-/// port: records outside the port's kinds are skipped (Recon, Research, and
-/// Jedi Training are a separate finding), and so are kinds that need a
+/// port: records outside the port's kinds are skipped (Recon and Jedi
+/// Training are a separate finding), and so are kinds that need a
 /// character or object target, since this target is a system; the dialog's
 /// drop onto a character or object is F-019 phase 7.
 #[must_use]
@@ -835,7 +901,7 @@ pub fn available_kinds(
             let mut mission =
                 ActiveMission::new(0, *kind, faction, team.to_vec(), target_system, 0);
             mission.decoys = decoys.to_vec();
-            running_end_code(&mission, world, uprisings, &[]) == 0
+            validate(&mission, world, uprisings, Check::Creation).is_none()
         })
         .map(|(kind, _)| kind)
         .collect()
@@ -907,6 +973,42 @@ pub fn member_chance(
     target_character: Option<CharacterKey>,
     member: MissionMember,
 ) -> i32 {
+    member_odds(
+        world,
+        kind,
+        faction,
+        target_system,
+        target_character,
+        member,
+    )
+    .chance
+}
+
+/// A member's chance and what it came from, for [`member_chance`] and the
+/// mission trace: the table input and the MSTB it indexes, when it has them.
+struct MemberOdds {
+    chance: i32,
+    table: Option<(&'static str, i32)>,
+    /// The member's effective skill behind the chance, when it has one.
+    skill: Option<i32>,
+    /// Which input the chance used.
+    source: &'static str,
+}
+
+fn member_odds(
+    world: &GameWorld,
+    kind: MissionKind,
+    faction: MissionFaction,
+    target_system: SystemKey,
+    target_character: Option<CharacterKey>,
+    member: MissionMember,
+) -> MemberOdds {
+    let flat = |chance, skill, source| MemberOdds {
+        chance,
+        table: None,
+        skill,
+        source,
+    };
     let skill = |skill| {
         member_skill(world, member, skill).map_or(0, |value| i32::try_from(value).unwrap_or(0))
     };
@@ -944,18 +1046,55 @@ pub fn member_chance(
             target_combat().map(|target| skill(Skill::Combat) - target)
         }
         // Autoscrap is no MSTB mission; it always succeeds.
-        MissionKind::Autoscrap => return 100,
+        MissionKind::Autoscrap => return flat(100, None, "fixed 100"),
         // Move never reaches a roll (its class has no phase 10 outcome).
-        MissionKind::Move => return 0,
+        MissionKind::Move => return flat(0, None, "fixed 0"),
+        // Research's +0x274 (FUN_0056cb20) returns 0; its +0x27c
+        // (FUN_0056cdb0) draws 0..99 against the member's effective skill
+        // for the tree (FUN_005337f0, FUN_0053e2f0), with no GNPRTB term.
+        MissionKind::Research(tech) => {
+            let own = skill(tech.skill());
+            return flat(own, Some(own), "research skill, no table");
+        }
     };
-    let (Some(input), Some(table)) = (
+    let (own, source) = match kind {
+        MissionKind::Diplomacy => (
+            skill(Skill::Diplomacy),
+            "diplomacy skill + stormtroopers - opposing support, DIPLMSTB",
+        ),
+        MissionKind::Espionage => (skill(Skill::Espionage), "espionage skill, ESPIMSTB"),
+        MissionKind::Rescue => (skill(Skill::Combat), "combat skill, RESCMSTB"),
+        MissionKind::Sabotage | MissionKind::DeathStarSabotage => (
+            (skill(Skill::Espionage) + skill(Skill::Combat)) / 2,
+            "mean of espionage and combat skill, sabotage MSTB",
+        ),
+        MissionKind::Recruitment => (
+            skill(Skill::Leadership),
+            "leadership skill - opposing support, RCRTMSTB",
+        ),
+        MissionKind::InciteUprising => (
+            skill(Skill::Leadership),
+            "leadership skill - opposing support - stormtroopers, INCTMSTB",
+        ),
+        MissionKind::SubdueUprising => (
+            skill(Skill::Leadership),
+            "leadership skill + stormtroopers - opposing support, SUBDMSTB",
+        ),
+        _ => (skill(Skill::Combat), "combat skill - target combat, MSTB"),
+    };
+    let (Some(input), Some((key, table))) = (
         input,
         kind.mstb_key()
-            .and_then(|key| world.mission_tables.get(key)),
+            .and_then(|key| Some((key, world.mission_tables.get(key)?))),
     ) else {
-        return 0;
+        return flat(0, Some(own), "no table or target: chance 0");
     };
-    i32::try_from(table.step_lookup(input)).unwrap_or(i32::MAX)
+    MemberOdds {
+        chance: i32::try_from(table.step_lookup(input)).unwrap_or(i32::MAX),
+        table: Some((key, input)),
+        skill: Some(own),
+        source,
+    }
 }
 
 /// A character's skill as [`member_skill`] reads it.
@@ -964,8 +1103,8 @@ fn skill_of(world: &GameWorld, character: CharacterKey, skill: Skill) -> i32 {
         .map_or(0, |value| i32::try_from(value).unwrap_or(0))
 }
 
-/// Set or clear a member's on-mission role flag. Clearing it also clears a
-/// character's hidden-mission flag.
+/// Set or clear a member's on-mission role flag. Clearing it also clears the
+/// member's hidden-mission flag.
 ///
 /// The original's leave path `FUN_00536220` recomputes OnMission (bit 7,
 /// `FUN_00534950` → `FUN_00534800`) and clears bits 0 and 2..5; where it
@@ -983,15 +1122,18 @@ pub fn set_on_mission(world: &mut GameWorld, member: MissionMember, on_mission: 
         MissionMember::SpecialForce(key) => {
             if let Some(unit) = world.special_forces.get_mut(key) {
                 unit.on_mission = on_mission;
+                if !on_mission {
+                    unit.on_hidden_mission = false;
+                }
             }
         }
     }
 }
 
 /// Apply a [`MissionEffect::MemberMoved`]: take the member out of its fleet
-/// or system, then put it at `to`, or leave it off the map while it travels.
-/// A killed character stays where `mark_killed` left it.
-pub fn move_member(world: &mut GameWorld, member: MissionMember, to: Option<SystemKey>) {
+/// or system and put it at `to`. A killed character stays where
+/// `mark_killed` left it.
+pub fn move_member(world: &mut GameWorld, member: MissionMember, to: SystemKey) {
     match member {
         MissionMember::Character(key) => {
             if world.characters.get(key).is_none_or(|c| c.is_killed) {
@@ -1002,7 +1144,7 @@ pub fn move_member(world: &mut GameWorld, member: MissionMember, to: Option<Syst
             }
             let character = &mut world.characters[key];
             character.current_fleet = None;
-            character.current_system = to;
+            character.current_system = Some(to);
         }
         MissionMember::SpecialForce(key) => {
             if !world.special_forces.contains_key(key) {
@@ -1011,24 +1153,41 @@ pub fn move_member(world: &mut GameWorld, member: MissionMember, to: Option<Syst
             for (_, system) in &mut world.systems {
                 system.special_forces.retain(|&unit| unit != key);
             }
-            if let Some(system) = to.and_then(|to| world.systems.get_mut(to)) {
+            if let Some(system) = world.systems.get_mut(to) {
                 system.special_forces.push(key);
             }
         }
     }
 }
 
-/// Apply [`MissionEffect::MemberBoarded`]: a landed character goes aboard
-/// `fleet` when the fleet is still its side's. The original's character is
-/// aboard the chosen ship from the order on and travels with it
-/// (`move-order.md`), so it boards wherever the fleet now is. port: a
-/// fleet lost on the way leaves the character at the target system, and a
-/// special force never boards (the port's fleets carry no special forces).
+/// Apply [`MissionEffect::EnRoute`].
+pub fn set_en_route(world: &mut GameWorld, member: MissionMember, en_route: bool) {
+    match member {
+        MissionMember::Character(key) => {
+            if let Some(character) = world.characters.get_mut(key) {
+                character.en_route = en_route;
+            }
+        }
+        MissionMember::SpecialForce(key) => {
+            if let Some(unit) = world.special_forces.get_mut(key) {
+                unit.en_route = en_route;
+            }
+        }
+    }
+}
+
+/// Apply [`MissionEffect::MemberBoarded`]: a character goes aboard `fleet`
+/// at the order when the fleet is still its side's, and travels with it
+/// from then on (`move-order.md`). port: a special force never boards (the
+/// port's fleets carry no special forces).
 pub fn board_member(world: &mut GameWorld, member: MissionMember, fleet: crate::ids::FleetKey) {
     let MissionMember::Character(key) = member else {
         return;
     };
-    let Some(character) = world.characters.get(key).filter(|c| !c.is_killed && !c.is_captive)
+    let Some(character) = world
+        .characters
+        .get(key)
+        .filter(|c| !c.is_killed && !c.is_captive)
     else {
         return;
     };
@@ -1057,6 +1216,7 @@ pub fn apply_advance_effects(world: &mut GameWorld, effects: &[MissionEffect]) {
         match effect {
             MissionEffect::MemberMoved { member, to } => move_member(world, *member, *to),
             MissionEffect::MemberBoarded { member, fleet } => board_member(world, *member, *fleet),
+            MissionEffect::EnRoute { member, en_route } => set_en_route(world, *member, *en_route),
             MissionEffect::MemberAvailable { member } => set_on_mission(world, *member, false),
             MissionEffect::CharacterCaptured {
                 character,
@@ -1082,7 +1242,8 @@ pub fn raise_skill(world: &mut GameWorld, character: CharacterKey, skill: Skill,
 /// `0x38..0x3c`, MNCHARSD, `FUN_0056f450`) it has not recruited (`+0x50` bit
 /// 1 clear). port: the original walks its character container
 /// (`FUN_00506e20`); the port walks them in `DatId` order.
-pub(crate) fn recruit_pool(world: &GameWorld, side: crate::dat::Faction) -> Vec<CharacterKey> {
+#[must_use]
+pub fn recruit_pool(world: &GameWorld, side: crate::dat::Faction) -> Vec<CharacterKey> {
     let mut pool: Vec<(crate::ids::DatId, CharacterKey)> = world
         .characters
         .iter()
@@ -1149,10 +1310,6 @@ pub struct MemberTransit {
     pub member: MissionMember,
     /// The mission that sent it.
     pub mission_id: u64,
-    /// Its destination, the mission's target container `+0x74`.
-    pub to: SystemKey,
-    /// The fleet a Move's member boards on arrival.
-    pub fleet: Option<crate::ids::FleetKey>,
     /// The day it arrives.
     pub arrival: u64,
 }
@@ -1199,15 +1356,9 @@ impl MissionState {
         self.en_route.iter().any(|transit| transit.member == member)
     }
 
-    /// Put `transit` on the road, for other modules' tests.
-    #[cfg(test)]
-    pub(crate) fn push_transit(&mut self, transit: MemberTransit) {
-        self.en_route.push(transit);
-    }
-
     /// Dispatch a new mission and return its assigned id. Members are taken
-    /// as given; [`MissionState::dispatch_guarded`] applies the original's
-    /// member rules. The mission steps from phase 0 on the next advance.
+    /// as given; [`MissionState::dispatch_validated`] applies the original's
+    /// member and target rules. The mission steps from phase 0 on the next advance.
     pub fn dispatch(&mut self, request: MissionRequest) -> u64 {
         let id = self.next_id;
         self.next_id += 1;
@@ -1226,8 +1377,9 @@ impl MissionState {
         id
     }
 
-    /// Dispatch a mission after the original's member checks, and mark every
-    /// member on a mission.
+    /// Dispatch a mission after the creation checks of command `0x250`
+    /// (`FUN_0054d360.c:28-41` -> `FUN_00542b60`), and mark every member on
+    /// a mission. A refused order creates no mission.
     ///
     /// `FUN_0054bb90` moves prisoners from either list to the captured list
     /// and refuses an empty team (message `0x40`/`0x91`). `FUN_00522b30` then
@@ -1235,30 +1387,17 @@ impl MissionState {
     /// already a member, has no mission yet (`RoleOnMissionNotif`
     /// `FUN_00536b00`; a mandatory mission counts, `FUN_00536b80`), and
     /// shares the location of the members already accepted
-    /// (`ghidra/notes/decoy-roll.md`, "Adding members"). Completion clears
-    /// the flags through `MemberAvailable`.
-    pub fn dispatch_guarded(
+    /// (`ghidra/notes/decoy-roll.md`, "Adding members"). The class validator
+    /// then checks the target (`FUN_0054c590`, [`validate`] at creation,
+    /// `FUN_00542b60.c:139-150`). Completion clears the flags through
+    /// `MemberAvailable`.
+    pub fn dispatch_validated(
         &mut self,
         request: MissionRequest,
         world: &mut GameWorld,
+        uprisings: &crate::uprising::UprisingState,
     ) -> Result<u64, MissionRefusal> {
         let side_is_alliance = request.faction == MissionFaction::Alliance;
-        // The creation checks of FUN_0056a110 and FUN_005744c0 read the
-        // target object's family (slot +4). port: a missing object is
-        // refused, because every original order names one.
-        let death_star = request
-            .target_object
-            .map(|target| matches!(target, MissionTarget::DeathStar(_)));
-        let target_ok = match request.kind {
-            MissionKind::Sabotage => death_star == Some(false),
-            MissionKind::DeathStarSabotage => death_star == Some(true),
-            _ => true,
-        };
-        if !target_ok {
-            return Err(MissionRefusal::TargetUnavailable {
-                death_star: request.kind == MissionKind::DeathStarSabotage,
-            });
-        }
         // FUN_0054bb90 moves every prisoner out of the team and decoy lists
         // into the captured list first. FUN_0054c200 then adds the team, the
         // decoys, and the captured, in that order, so the first free team
@@ -1285,11 +1424,14 @@ impl MissionState {
                     continue;
                 }
                 // Saves written before dispatch set the flag can hold an
-                // active mission for a member whose flag is still false.
-                // port: a member still travelling to an ended mission's
-                // target is refused; the original compares its en route bit
-                // and arrival tick instead (FUN_00522b30).
-                if state.is_alliance != side_is_alliance || state.busy || self.engaged(member) {
+                // active mission for a member whose flag is still false. A
+                // travelling member is refused, as the order's validator
+                // refuses it (status 4, FUN_004f9860).
+                if state.is_alliance != side_is_alliance
+                    || state.busy
+                    || state.en_route
+                    || self.engaged(member)
+                {
                     return Err(MissionRefusal::MemberUnavailable(member));
                 }
                 match location {
@@ -1318,12 +1460,65 @@ impl MissionState {
                 return Err(MissionRefusal::MembersNotAllowed);
             }
         }
+        // FUN_0054c590 runs the class validator on a temporary mission built
+        // from the order (FUN_00582b90): the base and kind rules, then the
+        // class validator, whose member rules (creation_refusal) come before
+        // its target checks (FUN_0056b370.c:24-77, FUN_0056c510).
+        let mut mission = ActiveMission::new(
+            0,
+            request.kind,
+            request.faction,
+            team.clone(),
+            request.target_system,
+            request.tick,
+        );
+        mission.decoys.clone_from(&decoys);
+        mission.captured.clone_from(&captured);
+        mission.target_character = request.target_character;
+        mission.target_object = request.target_object;
+        let class_target = match base_rules(&mission, world, uprisings, Check::Creation) {
+            Some(Some(refusal)) => return Err(MissionRefusal::TargetRefused(refusal)),
+            Some(None) => false,
+            None => true,
+        };
         let members = team.iter().chain(&decoys).chain(&captured).copied();
         if let Some(refusal) = creation_refusal(world, request.kind, members) {
             return Err(refusal);
         }
+        let target_refusal = if class_target {
+            class_rules(&mission, world, uprisings, Check::Creation)
+        } else {
+            // port: with no MISSNSD record the base rules don't run; the
+            // object checks of FUN_0056a110/FUN_005744c0 still do.
+            object_refusal(mission.kind, mission.target_object)
+        };
+        if let Some(refusal) = target_refusal {
+            return Err(MissionRefusal::TargetRefused(refusal));
+        }
+        // FUN_00522b30 sets OnHiddenMission (bit 8) when the record is
+        // hidden (FUN_00520b70, MISSNSD column 7: Move among them;
+        // decoy-roll.md, "Adding members").
+        let hidden = request
+            .kind
+            .record_id()
+            .and_then(|id| world.mission_record(id))
+            .is_some_and(|record| record.hidden);
         for member in team.iter().chain(&decoys).chain(&captured) {
             set_on_mission(world, *member, true);
+            if hidden {
+                match *member {
+                    MissionMember::Character(key) => {
+                        if let Some(c) = world.characters.get_mut(key) {
+                            c.on_hidden_mission = true;
+                        }
+                    }
+                    MissionMember::SpecialForce(key) => {
+                        if let Some(unit) = world.special_forces.get_mut(key) {
+                            unit.on_hidden_mission = true;
+                        }
+                    }
+                }
+            }
         }
         let id = self.dispatch(MissionRequest {
             team,
@@ -1336,13 +1531,11 @@ impl MissionState {
         Ok(id)
     }
 
-    /// Whether `member` belongs to a queued mission or is still travelling
-    /// to one.
+    /// Whether `member` belongs to a queued mission.
     fn engaged(&self, member: MissionMember) -> bool {
         self.missions
             .iter()
             .any(|mission| mission.members().any(|x| x == member))
-            || self.is_en_route(member)
     }
 
     /// Whether the object pop-up menu enables Mission (order `0x240`) for
@@ -1376,6 +1569,7 @@ impl MissionState {
                 || !state.recruited
                 || state.busy
                 || state.prisoner
+                || state.en_route
                 || self.engaged(member)
             {
                 return false;
@@ -1416,6 +1610,7 @@ impl MissionState {
             if state.is_alliance != side_is_alliance
                 || !state.recruited
                 || state.busy
+                || state.en_route
                 || self.engaged(member)
                 || state.location == MemberLocation::Nowhere
             {
@@ -1559,6 +1754,7 @@ impl MissionState {
         &mut self,
         world: &mut GameWorld,
         movement: &crate::movement::MovementState,
+        uprisings: &crate::uprising::UprisingState,
         faction: MissionFaction,
         members: &[MissionMember],
         destination: MoveDestination,
@@ -1579,16 +1775,16 @@ impl MissionState {
             .filter(|group| {
                 let aboard = |member: &MissionMember| {
                     matches!(destination, MoveDestination::Fleet(fleet)
-                        if member_state(world, *member).is_some_and(|state| {
-                            state.location == MemberLocation::Fleet(fleet)
-                        }))
+                    if member_state(world, *member).is_some_and(|state| {
+                        state.location == MemberLocation::Fleet(fleet)
+                    }))
                 };
                 !group.iter().all(aboard)
             })
             .collect();
         let mut ids = Vec::new();
         for team in groups {
-            ids.push(self.dispatch_guarded(
+            ids.push(self.dispatch_validated(
                 MissionRequest {
                     kind: MissionKind::Move,
                     faction,
@@ -1600,6 +1796,7 @@ impl MissionState {
                     tick,
                 },
                 world,
+                uprisings,
             )?);
         }
         Ok(ids)
@@ -1634,11 +1831,15 @@ impl MissionState {
             );
             mission.target_object = None;
             let speed = MissionSystem::character_speed(&mission, world);
-            let from = group.iter().find_map(|&member| member_location(world, member));
+            let from = group
+                .iter()
+                .find_map(|&member| member_location(world, member));
             let days = match (from, to) {
                 (Some(from), Some(to)) if from == to => 0,
                 (Some(from), Some(to)) => match (position(from), position(to)) {
-                    (Some(a), Some(b)) => crate::movement::transit_ticks_between(world, a, b, speed),
+                    (Some(a), Some(b)) => {
+                        crate::movement::transit_ticks_between(world, a, b, speed)
+                    }
                     _ => 1,
                 },
                 _ => 1,
@@ -1709,6 +1910,14 @@ pub enum MissionEffect {
         side: crate::dat::Faction,
         points: i32,
     },
+    /// A Research mission's points for `tech` go to `faction`'s pool
+    /// (`FUN_0056cf30` → `FUN_00530600`;
+    /// [`crate::research::ResearchSystem::add_points`]).
+    ResearchPoints {
+        faction: MissionFaction,
+        tech: crate::research::TechType,
+        points: u32,
+    },
     /// A successful member's base skill rises by `amount` (GNPRTB
     /// 6156..6168, the skill setters `FUN_00533e20`..`FUN_005341a0`).
     SkillRaised {
@@ -1773,17 +1982,23 @@ pub enum MissionEffect {
     /// A member has left its mission and may take another
     /// (`RoleOnMissionNotif` `FUN_00536b00` cleared).
     MemberAvailable { member: MissionMember },
-    /// A member moved for its mission: off the map when it starts a transit
-    /// (`to: None`), into the target system when it lands (`FUN_00556390`).
+    /// A member moved for its mission into the target system, at the
+    /// order (`FUN_00556390` puts it in the destination container).
     MemberMoved {
         member: MissionMember,
-        to: Option<SystemKey>,
+        to: SystemKey,
     },
-    /// A Move's character boards the fleet it was sent to, on landing
+    /// A Move's character boards the fleet it was sent to, at the order
     /// (`FUN_00556390` puts it in the chosen container).
     MemberBoarded {
         member: MissionMember,
         fleet: crate::ids::FleetKey,
+    },
+    /// A member's en route bit (`+0x50` bit 4): set when it leaves for its
+    /// destination, cleared when it arrives (`FUN_00545820`).
+    EnRoute {
+        member: MissionMember,
+        en_route: bool,
     },
 
     // ── Escape ──────────────────────────────────────────────────────────────
@@ -1884,6 +2099,17 @@ const GNPRTB_SABOTAGE_COMBAT_RAISE: u16 = 6166;
 const GNPRTB_DS_SABOTAGE_ESPIONAGE_RAISE: u16 = 6167;
 /// GNPRTB 6168 (`DAT_006bb57c`): DS Sabotage's combat raise.
 const GNPRTB_DS_SABOTAGE_COMBAT_RAISE: u16 = 6168;
+/// GNPRTB 6158 (`FUN_0055bfd0`): Research's raise of the tree's skill.
+const GNPRTB_RESEARCH_RAISE: u16 = 6158;
+/// GNPRTB 6171 and 6172 (`FUN_0055c9f0`): a Research success's points,
+/// 6171 + rand(0..=6172), shipped 1 and 6.
+const GNPRTB_RESEARCH_POINTS: u16 = 6171;
+/// GNPRTB 6172, the spread (`FUN_0055c9f0`).
+const GNPRTB_RESEARCH_POINTS_SPREAD: u16 = 6172;
+/// GNPRTB 6171's shipped value.
+const SHIPPED_RESEARCH_POINTS: i64 = 1;
+/// GNPRTB 6172's shipped value.
+const SHIPPED_RESEARCH_POINTS_SPREAD: i64 = 6;
 /// The shipped value of every skill raise, GNPRTB 6156..6168.
 const SHIPPED_SKILL_RAISE: i64 = 1;
 
@@ -1933,6 +2159,9 @@ impl MissionKind {
             MissionKind::SubdueUprising => 0x5700_0080,
             MissionKind::Assassination => 0x6300_0081,
             MissionKind::Move => 0x4100_0001,
+            MissionKind::Research(crate::research::TechType::Ship) => 0x5300_0020,
+            MissionKind::Research(crate::research::TechType::Facility) => 0x5300_0021,
+            MissionKind::Research(crate::research::TechType::Troop) => 0x5300_0022,
             MissionKind::Autoscrap => return None,
         };
         Some(crate::ids::DatId::new(raw))
@@ -1950,7 +2179,8 @@ impl MissionKind {
             | MissionKind::Espionage
             | MissionKind::Recruitment
             | MissionKind::InciteUprising
-            | MissionKind::SubdueUprising => TargetRules::System,
+            | MissionKind::SubdueUprising
+            | MissionKind::Research(_) => TargetRules::System,
             MissionKind::Move => TargetRules::Container,
         }
     }
@@ -1974,7 +2204,7 @@ fn character_location(world: &GameWorld, character: &Character) -> Option<System
 }
 
 /// A member's location key, as [`character_location`] reads a character.
-fn member_location(world: &GameWorld, member: MissionMember) -> Option<SystemKey> {
+pub(crate) fn member_location(world: &GameWorld, member: MissionMember) -> Option<SystemKey> {
     match member_state(world, member)?.location {
         MemberLocation::Fleet(fleet) => world.fleets.get(fleet).map(|f| f.location),
         MemberLocation::System(system) => Some(system),
@@ -2003,11 +2233,7 @@ fn character_side(character: &Character) -> Option<crate::dat::Faction> {
 /// its container; an object kind reads its named object (a mission without
 /// one reads as missing). A system reads as located in itself (`hyp:` the system
 /// slot `+0xc` is untraced) and as its holder's side (inference).
-fn target_view(
-    mission: &ActiveMission,
-    world: &GameWorld,
-    en_route: &[MemberTransit],
-) -> Option<TargetView> {
+fn target_view(mission: &ActiveMission, world: &GameWorld) -> Option<TargetView> {
     match mission.kind.target_rules() {
         // FUN_00521030 reads the order's object. port: the original keeps a
         // destroyed object (+0x50 bit 3) for its rule 4; the port removes
@@ -2025,11 +2251,9 @@ fn target_view(
             Some(TargetView {
                 side: character_side(character),
                 destroyed: character.is_killed,
-                // port: only a mission member's transit is visible here; a
-                // target aboard a moving fleet reads its fleet's location.
-                en_route: en_route
-                    .iter()
-                    .any(|transit| transit.member == MissionMember::Character(key)),
+                // port: a target aboard a moving fleet reads its fleet's
+                // location; the fleet's own hyperspace bit is not read.
+                en_route: character.en_route,
                 location: character_location(world, character),
                 prisoner: character.is_captive,
             })
@@ -2047,7 +2271,7 @@ fn object_view(mission: &ActiveMission, world: &GameWorld) -> Option<TargetView>
     Some(TargetView {
         side: Some(object.as_ref().map_or(opponent, |object| object.side)),
         destroyed: object.is_none(),
-        en_route: false,
+        en_route: object.as_ref().is_some_and(|object| object.en_route),
         location: object.and_then(|object| object.location),
         prisoner: false,
     })
@@ -2065,60 +2289,200 @@ fn system_view(mission: &ActiveMission, world: &GameWorld) -> Option<TargetView>
     })
 }
 
-/// The validator `FUN_00522480` over the running checks: the end code the
-/// first failing rule sets, or 0 (`ghidra/notes/mission-lifecycle.md`, "The
-/// validator and the end codes").
+/// Which checks of the class validator run (`FUN_00582b90`): at creation
+/// (`+4` and `+0xc` set, `FUN_0054c590.c:45-46`) every running check runs
+/// as well as the creation-only ones.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Check {
+    Creation,
+    Running,
+}
+
+/// Why a class validator refuses a mission's target or container: the
+/// status pair it sets and, for a running check, the end code
+/// (`ghidra/notes/mission-lifecycle.md`, "The validator and the end codes").
 ///
-/// port: the validator reads the real container and target. Before phase 5
-/// with a remote target (`FUN_00520af0` false), the original reads the
-/// side's own copy of them instead (`FUN_00521160`, `FUN_005211c0` through
-/// `FUN_004f2d10`); the port keeps no per-side copies.
-pub(crate) fn running_end_code(
+/// port: the creation checks that read a container in flight (`0x40`/`0x13`,
+/// `FUN_00523450.c:38-47`) or a container that is not a system
+/// (`0x40`/`0x10`, `FUN_00592600.c:35-72`) never fire, because the port's
+/// container is always the target system. Column 12 (`0x40`/`0x11`,
+/// `FUN_00592600.c:73-102`) reads system `+0x88` bit 1, which the port does
+/// not keep, and is skipped. An object target is never incomplete
+/// (`0x40`/`0x34`, `FUN_00593500.c:49-58`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TargetRefusal {
+    /// The side cannot see the target (`FUN_00542b60.c:129-137`,
+    /// `FUN_004f2d10`): `0x40`/`0x21`.
+    TargetMissing,
+    /// Column 11 and the container destroyed (`FUN_00523450.c:50-60`):
+    /// `0x40`/`0x12`, end 7.
+    ContainerDestroyed,
+    /// The target's side against columns 15 to 17
+    /// (`FUN_00523450.c:61-89`): `0x40`/`0x23`, end 8.
+    TargetWrongSide,
+    /// Column 14 and the target destroyed (`FUN_00592600.c:106-115`):
+    /// `0x40`/`0x21`, end 6.
+    TargetDestroyed,
+    /// The target travelling (`FUN_00592600.c:117-126`): `0x40`/`0x22`,
+    /// end 6.
+    TargetEnRoute,
+    /// The target outside its container (`FUN_00592600.c:127-150`):
+    /// `0x40`/`0x20`, end 6.
+    TargetElsewhere,
+    /// Column 13 and the container not a populated system
+    /// (`FUN_00592600.c:153-179`): `0x40`/`0x16`, end `0xd`.
+    ContainerUnpopulated,
+    /// A system target's uprising state against columns 18 and 19
+    /// (`FUN_005868c0.c:49-74`): `0x40`/`0x20`, end 6.
+    UprisingState,
+    /// A prisoner target without column 20 (`FUN_00586e20.c:49-87`):
+    /// `0x40`/`0x2a`, end 6.
+    PrisonerTarget,
+    /// A free target without column 21 (`FUN_00586e20.c:49-87`):
+    /// `0x40`/`0x2b`, end 6.
+    FreeTarget,
+    /// Sabotage naming a Death Star (`FUN_0056a110.c:25-69`): `0x40`/`0x28`.
+    TargetIsDeathStar,
+    /// DS Sabotage naming no Death Star (`FUN_005744c0.c:25-47`):
+    /// `0x40`/`0x29`.
+    TargetNotDeathStar,
+    /// Diplomacy at full support (`FUN_00573ee0.c:24-46`): `0x40`/`0x33`,
+    /// end `0xf`.
+    SupportFull,
+    /// Recruitment once the pool is empty (side `+0xb8`,
+    /// `FUN_0056b370.c:54-77`): `0x40`/`0x35`, end `0x10`.
+    RecruitPoolEmpty,
+    /// Research at a target with no working yard of the tree's kind
+    /// (`FUN_0056c510`, `FUN_00509670`, `FUN_00528100`): `0x40`/`0x2c`,
+    /// end `0xc`.
+    NoYard,
+    /// Research once the side's tree is exhausted (`FUN_0056c510`,
+    /// `FUN_0052eb10`): `0x40`/`0x32`, end `0xe`.
+    TreeExhausted,
+}
+
+impl TargetRefusal {
+    /// The validator's two-word status (each variant's check:
+    /// `FUN_00523450`, `FUN_00592600`, `FUN_005868c0`, `FUN_00586e20` and the
+    /// class validators).
+    #[must_use]
+    pub const fn status(self) -> (u32, u32) {
+        let code = match self {
+            Self::TargetMissing | Self::TargetDestroyed => 0x21,
+            Self::ContainerDestroyed => 0x12,
+            Self::TargetWrongSide => 0x23,
+            Self::TargetEnRoute => 0x22,
+            Self::TargetElsewhere | Self::UprisingState => 0x20,
+            Self::ContainerUnpopulated => 0x16,
+            Self::PrisonerTarget => 0x2a,
+            Self::FreeTarget => 0x2b,
+            Self::TargetIsDeathStar => 0x28,
+            Self::TargetNotDeathStar => 0x29,
+            Self::SupportFull => 0x33,
+            Self::RecruitPoolEmpty => 0x35,
+            Self::NoYard => 0x2c,
+            Self::TreeExhausted => 0x32,
+        };
+        (0x40, code)
+    }
+
+    /// The end code a running mission takes (`FUN_00522480`, each
+    /// variant's check); `None` for a creation-only check.
+    #[must_use]
+    pub const fn end_code(self) -> Option<u8> {
+        match self {
+            Self::TargetMissing | Self::TargetIsDeathStar | Self::TargetNotDeathStar => None,
+            Self::ContainerDestroyed => Some(7),
+            Self::TargetWrongSide => Some(8),
+            Self::TargetDestroyed
+            | Self::TargetEnRoute
+            | Self::TargetElsewhere
+            | Self::UprisingState
+            | Self::PrisonerTarget
+            | Self::FreeTarget => Some(6),
+            Self::ContainerUnpopulated => Some(0xd),
+            Self::SupportFull => Some(0xf),
+            Self::RecruitPoolEmpty => Some(0x10),
+            Self::NoYard => Some(0xc),
+            Self::TreeExhausted => Some(0xe),
+        }
+    }
+}
+
+/// `FUN_0056c510`'s target tests, shared by creation and every pass:
+/// [`TargetRefusal::NoYard`] or [`TargetRefusal::TreeExhausted`].
+pub(crate) fn research_target_refusal(
+    world: &GameWorld,
+    uprisings: &crate::uprising::UprisingState,
+    tech: crate::research::TechType,
+    side: crate::dat::Faction,
+    target: SystemKey,
+) -> Option<TargetRefusal> {
+    if !crate::research::ResearchSystem::has_working_yard(world, uprisings, target, side, tech) {
+        return Some(TargetRefusal::NoYard);
+    }
+    world
+        .research_exhausted(side, tech)
+        .then_some(TargetRefusal::TreeExhausted)
+}
+
+/// The class validator's target checks (`FUN_00523450`, `FUN_00592600`,
+/// the kind's rules and its class validator), in their order: the first
+/// failing check's refusal, or `None`. `check` adds the creation-only
+/// checks (`FUN_00582b90` `+4`); the member checks run before
+/// ([`creation_refusal`], [`members_allowed`]).
+///
+/// port: the validator reads the real container and target. At creation
+/// (`FUN_00542b60` step e) and before phase 5 with a remote target
+/// (`FUN_00520af0` false), the original reads the side's own copy of them
+/// instead (`FUN_00521160`, `FUN_005211c0` through `FUN_004f2d10`); the
+/// port keeps no per-side copies.
+pub(crate) fn validate(
     mission: &ActiveMission,
     world: &GameWorld,
     uprisings: &crate::uprising::UprisingState,
-    en_route: &[MemberTransit],
-) -> u8 {
-    use crate::dat::Faction;
-    // Rule 1 (FUN_00522480.c:42-52): end 5 unless a team member stands
-    // without a remove or resign request; an empty team ends too, and a
-    // killed member is deleted. port: the port has no remove requests, and
-    // +0xa4 bit 1, which lifts the rule, is untraced and taken as clear.
-    let standing = mission.team.iter().any(|&member| {
-        member_state(world, member).is_some() && !mission.resigning.contains(&member)
-    });
-    if !standing {
-        return 5;
+    check: Check,
+) -> Option<TargetRefusal> {
+    match base_rules(mission, world, uprisings, check) {
+        Some(verdict) => verdict,
+        None => class_rules(mission, world, uprisings, check),
     }
-    // port: a kind with no MISSNSD record runs no other checks.
+}
+
+/// The base and kind rules (`FUN_00523450`, `FUN_00592600`, `FUN_005868c0`,
+/// `FUN_00586e20`): `Some` with the verdict when they decide it (a refusal,
+/// or a skip of every later check), `None` when the class validator runs
+/// next.
+fn base_rules(
+    mission: &ActiveMission,
+    world: &GameWorld,
+    uprisings: &crate::uprising::UprisingState,
+    check: Check,
+) -> Option<Option<TargetRefusal>> {
+    use crate::dat::Faction;
+    let creation = check == Check::Creation;
+    // port: a kind with no MISSNSD record runs no checks.
     let Some(record) = mission
         .kind
         .record_id()
         .and_then(|id| world.mission_record(id))
     else {
-        return 0;
+        return Some(None);
     };
-    // FUN_005830a0: members of both sides (status 0x14) or of none (0x16)
-    // skip every later check without an end code. Rule 1 has already ended
-    // a mission with no standing team member, so some member has a side.
-    let sides: Vec<bool> = mission
-        .members()
-        .filter_map(|member| member_state(world, member).map(|state| state.is_alliance))
-        .collect();
-    if sides.contains(&true) && sides.contains(&false) {
-        return 0;
-    }
     let rules = record.rules;
     // FUN_00523450 rule 1: a missing target or container skips the rest.
-    let Some(container) = world.systems.get(mission.target_system) else {
-        return 0;
+    // At creation the side's missing view of the target has already
+    // refused the order (FUN_00542b60.c:129-137).
+    let (Some(container), Some(target)) = (
+        world.systems.get(mission.target_system),
+        target_view(mission, world),
+    ) else {
+        return Some(creation.then_some(TargetRefusal::TargetMissing));
     };
-    let Some(target) = target_view(mission, world, en_route) else {
-        return 0;
-    };
+    let refuse = |refusal| Some(Some(refusal));
     // Rule 2 (col 11): the container is destroyed.
     if rules.container_loss_ends && container.is_destroyed {
-        return 7;
+        return refuse(TargetRefusal::ContainerDestroyed);
     }
     // Rule 3 (cols 15..17): the target's side against the mission's.
     let side = Faction::from(mission.faction);
@@ -2132,19 +2496,22 @@ pub(crate) fn running_end_code(
         _ => rules.other_side_target,
     };
     if !side_allowed {
-        return 8;
+        return refuse(TargetRefusal::TargetWrongSide);
     }
     // Rule 4 (col 14): the target is destroyed.
     if rules.target_loss_ends && target.destroyed {
-        return 6;
+        return refuse(TargetRefusal::TargetDestroyed);
     }
     // Rules 5 and 6: the target is travelling or has left the container.
-    if target.en_route || target.location != Some(mission.target_system) {
-        return 6;
+    if target.en_route {
+        return refuse(TargetRefusal::TargetEnRoute);
+    }
+    if target.location != Some(mission.target_system) {
+        return refuse(TargetRefusal::TargetElsewhere);
     }
     // Rule 7 (col 13): the container must be a populated system.
     if rules.needs_populated_container && !container.is_populated {
-        return 0xd;
+        return refuse(TargetRefusal::ContainerUnpopulated);
     }
     match mission.kind.target_rules() {
         // FUN_005868c0 (cols 18, 19).
@@ -2158,35 +2525,112 @@ pub(crate) fn running_end_code(
                 rules.calm_target
             };
             if !allowed {
-                return 6;
+                return refuse(TargetRefusal::UprisingState);
             }
         }
         // FUN_00586e20 (cols 20, 21).
         TargetRules::Character => {
-            let allowed = if target.prisoner {
-                rules.prisoner_target
-            } else {
-                rules.free_target
-            };
-            if !allowed {
-                return 6;
+            if target.prisoner && !rules.prisoner_target {
+                return refuse(TargetRefusal::PrisonerTarget);
+            }
+            if !target.prisoner && !rules.free_target {
+                return refuse(TargetRefusal::FreeTarget);
             }
         }
         TargetRules::Object | TargetRules::Container => {}
     }
-    // FUN_00573ee0: Diplomacy stops at full support.
-    if mission.kind == MissionKind::Diplomacy
-        && crate::uprising::support_points(container, side) == FULL_SUPPORT
-    {
-        return 0xf;
+    None
+}
+
+/// The object checks of the Sabotage class validators at creation, which
+/// read the object's family (slot `+4`): Sabotage refuses the Death Star
+/// (`FUN_0056a110`, `0x40`/`0x28`), Death Star Sabotage anything else
+/// (`FUN_005744c0`, `0x40`/`0x29`). An order naming no object leaves the side
+/// no target to see (`FUN_00542b60.c:129-137`, `0x40`/`0x21`).
+fn object_refusal(kind: MissionKind, object: Option<MissionTarget>) -> Option<TargetRefusal> {
+    let death_star = object.map(|target| matches!(target, MissionTarget::DeathStar(_)));
+    match (kind, death_star) {
+        (MissionKind::Sabotage | MissionKind::DeathStarSabotage, None) => {
+            Some(TargetRefusal::TargetMissing)
+        }
+        (MissionKind::Sabotage, Some(true)) => Some(TargetRefusal::TargetIsDeathStar),
+        (MissionKind::DeathStarSabotage, Some(false)) => Some(TargetRefusal::TargetNotDeathStar),
+        _ => None,
     }
-    // FUN_0056b370: Recruitment stops once its side recruited the last pool
-    // character (side +0xb8; status 0x40/0x35). Its member rule is
-    // creation_refusal.
-    if mission.kind == MissionKind::Recruitment && world.recruit_pool_empty(side) {
-        return 0x10;
+}
+
+/// The class validators' target checks, after the base and kind rules: the
+/// first failing check's refusal, or `None`.
+fn class_rules(
+    mission: &ActiveMission,
+    world: &GameWorld,
+    uprisings: &crate::uprising::UprisingState,
+    check: Check,
+) -> Option<TargetRefusal> {
+    let creation = check == Check::Creation;
+    let side = crate::dat::Faction::from(mission.faction);
+    let container = world.systems.get(mission.target_system)?;
+    if creation {
+        if let Some(refusal) = object_refusal(mission.kind, mission.target_object) {
+            return Some(refusal);
+        }
     }
-    0
+    match mission.kind {
+        // FUN_00573ee0: Diplomacy stops at full support.
+        MissionKind::Diplomacy
+            if crate::uprising::support_points(container, side) == FULL_SUPPORT =>
+        {
+            return Some(TargetRefusal::SupportFull);
+        }
+        // FUN_0056c510.
+        MissionKind::Research(tech) => {
+            if let Some(refusal) =
+                research_target_refusal(world, uprisings, tech, side, mission.target_system)
+            {
+                return Some(refusal);
+            }
+        }
+        // FUN_0056b370: Recruitment stops once its side recruited the last
+        // pool character (side +0xb8). Its member rule is creation_refusal.
+        MissionKind::Recruitment if world.recruit_pool_empty(side) => {
+            return Some(TargetRefusal::RecruitPoolEmpty);
+        }
+        _ => {}
+    }
+    None
+}
+
+/// The validator `FUN_00522480` over the running checks: the end code the
+/// first failing rule sets, or 0 (`ghidra/notes/mission-lifecycle.md`, "The
+/// validator and the end codes").
+pub(crate) fn running_end_code(
+    mission: &ActiveMission,
+    world: &GameWorld,
+    uprisings: &crate::uprising::UprisingState,
+) -> u8 {
+    // Rule 1 (FUN_00522480.c:42-52): end 5 unless a team member stands
+    // without a remove or resign request; an empty team ends too, and a
+    // killed member is deleted. port: the port has no remove requests, and
+    // +0xa4 bit 1, which lifts the rule, is untraced and taken as clear.
+    let standing = mission.team.iter().any(|&member| {
+        member_state(world, member).is_some() && !mission.resigning.contains(&member)
+    });
+    if !standing {
+        return 5;
+    }
+    // FUN_005830a0: members of both sides (status 0x14) or of none (0x16)
+    // skip every later check without an end code. Rule 1 has already ended
+    // a mission with no standing team member, so some member has a side.
+    let sides: Vec<bool> = mission
+        .members()
+        .filter_map(|member| member_state(world, member).map(|state| state.is_alliance))
+        .collect();
+    if sides.contains(&true) && sides.contains(&false) {
+        return 0;
+    }
+    validate(mission, world, uprisings, Check::Running)
+        .and_then(TargetRefusal::end_code)
+        .unwrap_or(0)
 }
 
 // ---------------------------------------------------------------------------
@@ -2249,6 +2693,10 @@ pub struct MissionEnded {
     /// the validator's reason.
     pub end_code: u8,
     pub tick: u64,
+    /// The day the order was given (`ActiveMission::ordered_tick`).
+    pub ordered_tick: u64,
+    /// The outcome passes it ran (`ActiveMission::rolls`).
+    pub rolls: u32,
 }
 
 /// What one [`MissionSystem::advance`] produced.
@@ -2303,16 +2751,10 @@ impl MissionSystem {
                 .partition(|transit| transit.arrival <= now);
             state.en_route = travelling;
             for transit in arrived {
-                out.effects.push(MissionEffect::MemberMoved {
+                out.effects.push(MissionEffect::EnRoute {
                     member: transit.member,
-                    to: Some(transit.to),
+                    en_route: false,
                 });
-                if let Some(fleet) = transit.fleet {
-                    out.effects.push(MissionEffect::MemberBoarded {
-                        member: transit.member,
-                        fleet,
-                    });
-                }
             }
 
             let missions = std::mem::take(&mut state.missions);
@@ -2358,6 +2800,8 @@ impl MissionSystem {
                         faction: mission.faction,
                         end_code: mission.end_code,
                         tick: now,
+                        ordered_tick: mission.ordered_tick,
+                        rolls: mission.rolls,
                     });
                 } else {
                     state.missions.push_back(mission);
@@ -2388,7 +2832,7 @@ impl MissionSystem {
                 .is_some_and(|c| c.is_killed);
         mission.container_loss_seen |= container_lost;
         if mission.end_code == 0 && (container_lost || target_lost) {
-            mission.end_code = running_end_code(mission, ctx.world, ctx.uprisings, &state.en_route);
+            mission.end_code = running_end_code(mission, ctx.world, ctx.uprisings);
             if mission.end_code == 0 && container_lost && mission.phase > 6 {
                 mission.end_code = 7;
             }
@@ -2412,7 +2856,9 @@ impl MissionSystem {
     /// only while every member still travels, so a mission with no member,
     /// or with any member off the road, is ready. The original deletes a
     /// killed member, so a dead one is skipped: a team killed on the way
-    /// counts as arrived.
+    /// counts as arrived. It reads the transit schedule, which arrival
+    /// updates within the day; the world's en route flag follows when the
+    /// day's effects apply.
     fn transit_over(mission: &ActiveMission, world: &GameWorld, state: &MissionState) -> bool {
         let (mut travelling, mut stopped) = (false, false);
         for member in mission.members() {
@@ -2437,6 +2883,7 @@ impl MissionSystem {
         now: u64,
         draws: &mut MissionRolls<'_>,
     ) {
+        let mut timer_fired = false;
         loop {
             if mission.phase == PHASE_END {
                 return;
@@ -2466,12 +2913,25 @@ impl MissionSystem {
                 mission,
                 ctx.world,
                 ctx.uprisings,
-                &state.en_route,
                 &mut draws.stream,
                 &mut out.effects,
             );
             // FUN_00522980: every phase but 4 and 8 steps on at once.
             if !matches!(mission.phase, PHASE_TRANSIT | PHASE_TIMER) {
+                mission.ready = true;
+            }
+            // A timer is due once its day is reached (FUN_0054edc0), and the
+            // scheduler drains every due item before the day advances
+            // (FUN_0051df30, FUN_0041dff0 phase 5): a 0-day timer fires the
+            // day it is armed. port: here, ahead of other missions' items
+            // due the same day, which the original runs first; and once a
+            // pass, so a repeating mission with a 0-day timer, which would
+            // keep the original's drain from ending, fires once a day.
+            if mission.phase == PHASE_TIMER
+                && !timer_fired
+                && mission.timer_due.is_some_and(|due| due <= now)
+            {
+                timer_fired = true;
                 mission.ready = true;
             }
         }
@@ -2489,14 +2949,14 @@ impl MissionSystem {
         draws: &mut MissionRolls<'_>,
     ) {
         let world = ctx.world;
-        let validate = |mission: &mut ActiveMission, state: &MissionState| {
+        let validate = |mission: &mut ActiveMission| {
             if mission.end_code == 0 {
-                mission.end_code = running_end_code(mission, world, ctx.uprisings, &state.en_route);
+                mission.end_code = running_end_code(mission, world, ctx.uprisings);
             }
         };
         // Leaving phase 8 runs the validator, then disarms timer 0x38b.
         if previous == PHASE_TIMER {
-            validate(mission, state);
+            validate(mission);
             mission.timer_due = None;
         }
         match mission.phase {
@@ -2509,7 +2969,7 @@ impl MissionSystem {
                 mission.speed = Self::character_speed(mission, world);
             }
             PHASE_TRANSIT => {
-                validate(mission, state);
+                validate(mission);
                 if mission.end_code == 0 {
                     Self::depart(mission, world, state, out, now);
                 }
@@ -2523,7 +2983,7 @@ impl MissionSystem {
             // phase 6 lands the members, which the arrivals already did.
             5 | 6 => {
                 if mission.origin != Some(mission.target_system) {
-                    validate(mission, state);
+                    validate(mission);
                 }
             }
             PHASE_TIMER => {
@@ -2554,10 +3014,11 @@ impl MissionSystem {
             // (FUN_00593730) has no outcome.
             PHASE_OUTCOME if mission.kind != MissionKind::Move => {
                 let result = Self::roll_members(mission, ctx, now, &mut draws.stream, &out.results);
+                mission.rolls += 1;
                 out.results.push(result);
             }
             PHASE_END => {
-                validate(mission, state);
+                validate(mission);
                 if mission.end_code == 0 {
                     mission.end_code = 1;
                 }
@@ -2623,24 +3084,21 @@ impl MissionSystem {
                 position(to),
                 mission.speed,
             );
-            if days == 0 {
-                out.effects.push(MissionEffect::MemberMoved {
-                    member,
-                    to: Some(to),
-                });
-                if let Some(fleet) = fleet {
-                    out.effects
-                        .push(MissionEffect::MemberBoarded { member, fleet });
-                }
-            } else {
-                // port: a travelling member is off the map, as a delivery is.
+            // The member stands in its destination container from the order
+            // on, en route until it arrives (`move-order.md`).
+            out.effects.push(MissionEffect::MemberMoved { member, to });
+            if let Some(fleet) = fleet {
                 out.effects
-                    .push(MissionEffect::MemberMoved { member, to: None });
+                    .push(MissionEffect::MemberBoarded { member, fleet });
+            }
+            if days > 0 {
+                out.effects.push(MissionEffect::EnRoute {
+                    member,
+                    en_route: true,
+                });
                 state.en_route.push(MemberTransit {
                     member,
                     mission_id: mission.id,
-                    to,
-                    fleet,
                     arrival: now + u64::from(days),
                 });
             }
@@ -2684,6 +3142,8 @@ impl MissionSystem {
         let mut result = 0_u8;
         // The target of an in-roll action, once it has been acted on.
         let mut target_taken = false;
+        // Research's points, +0xa8, zeroed by its +0x278 (FUN_0056cd70).
+        let mut research_points = 0_u32;
         // Subdue's view of the target as the successes change it.
         let mut system = world.systems.get(target).cloned();
         let mut revolting = ctx.uprisings.is_uprising(target);
@@ -2712,7 +3172,7 @@ impl MissionSystem {
             if mission.kind == MissionKind::InciteUprising && system.is_none() {
                 continue;
             }
-            let chance = member_chance(
+            let odds = member_odds(
                 world,
                 mission.kind,
                 mission.faction,
@@ -2720,7 +3180,32 @@ impl MissionSystem {
                 mission.target_character,
                 member,
             );
-            if !stream.chance(chance) {
+            let chance = odds.chance;
+            // `FUN_0053e2f0`: a draw over 0..=99 below the chance.
+            let rolled = stream.draw(99);
+            crate::trace::record(crate::trace::TraceMask::MISSIONS, "member_roll", || {
+                let row = odds.table.and_then(|(key, input)| {
+                    world.mission_tables.get(key)?.step_row(input).map(|row| {
+                        serde_json::json!({ "table": key, "input": input, "threshold": row.threshold })
+                    })
+                });
+                serde_json::json!({
+                    "mission_id": mission.id,
+                    "kind": format!("{:?}", mission.kind),
+                    "member": member
+                        .character()
+                        .and_then(|key| world.characters.get(key))
+                        .map_or_else(|| format!("{member:?}"), |c| c.name.clone()),
+                    "target_system": world.systems.get(target).map(|sys| sys.name.clone()),
+                    "row": row,
+                    "chance": chance,
+                    "skill": odds.skill,
+                    "input_source": odds.source,
+                    "rolled": rolled,
+                    "succeeded": rolled < chance,
+                })
+            });
+            if rolled >= chance {
                 continue;
             }
             // Slot +0x1d8 holds for a character (FUN_0040f340) and not for a
@@ -2892,7 +3377,39 @@ impl MissionSystem {
                 }
                 MissionKind::Autoscrap => result = 3,
                 MissionKind::Move => {}
+                // FUN_0056cdb0: at the target system (FUN_00586720), a
+                // success adds GNPRTB 6171 + rand(0..=6172) to the mission's
+                // points (FUN_0055c9f0) and raises the skill by GNPRTB 6158.
+                MissionKind::Research(tech) => {
+                    if world.systems.contains_key(target) {
+                        let min = crate::movement::gnprtb_or_shipped(
+                            world,
+                            GNPRTB_RESEARCH_POINTS,
+                            SHIPPED_RESEARCH_POINTS,
+                        );
+                        let spread = crate::movement::gnprtb_or_shipped(
+                            world,
+                            GNPRTB_RESEARCH_POINTS_SPREAD,
+                            SHIPPED_RESEARCH_POINTS_SPREAD,
+                        );
+                        let gained =
+                            min + i64::from(stream.draw(i32::try_from(spread).unwrap_or(0)));
+                        research_points =
+                            research_points.saturating_add(u32::try_from(gained).unwrap_or(0));
+                        effects.extend(raise(tech.skill(), GNPRTB_RESEARCH_RAISE));
+                    }
+                }
             }
+        }
+        // FUN_0056cf30 (Research's +0x280): the mission's points go to the
+        // side's pool for the tree, and the result is 3 when any were earned.
+        if let MissionKind::Research(tech) = mission.kind {
+            result = if research_points > 0 { 3 } else { 2 };
+            effects.push(MissionEffect::ResearchPoints {
+                faction: mission.faction,
+                tech,
+                points: research_points,
+            });
         }
         // Slot +0x280: an unset result fails (FUN_00576700).
         if result == 0 {
@@ -3317,6 +3834,8 @@ mod tests {
                 is_alliance: true,
                 skills: [0; 8],
                 on_mission: true,
+                en_route: false,
+                on_hidden_mission: false,
             },
         ));
 
@@ -3445,7 +3964,7 @@ mod tests {
     }
 
     #[test]
-    fn dispatch_guarded_blocks_mandatory_mission() {
+    fn dispatch_validated_blocks_mandatory_mission() {
         let mut world = minimal_world();
         let mut sys_sm: slotmap::SlotMap<SystemKey, ()> = slotmap::SlotMap::with_key();
         let system = sys_sm.insert(());
@@ -3460,7 +3979,7 @@ mod tests {
         });
 
         let mut state = MissionState::new();
-        let result = state.dispatch_guarded(
+        let result = state.dispatch_validated(
             MissionRequest::single(
                 MissionKind::Diplomacy,
                 MissionFaction::Alliance,
@@ -3470,6 +3989,7 @@ mod tests {
                 0,
             ),
             &mut world,
+            &crate::uprising::UprisingState::default(),
         );
         assert_eq!(
             result,
@@ -3502,7 +4022,7 @@ mod tests {
             0,
         ));
 
-        let second = state.dispatch_guarded(
+        let second = state.dispatch_validated(
             MissionRequest::single(
                 MissionKind::Espionage,
                 MissionFaction::Alliance,
@@ -3512,6 +4032,7 @@ mod tests {
                 0,
             ),
             &mut world,
+            &crate::uprising::UprisingState::default(),
         );
 
         assert_eq!(
@@ -3536,7 +4057,7 @@ mod tests {
         });
         let mut state = MissionState::new();
         let send = |state: &mut MissionState, world: &mut GameWorld| {
-            state.dispatch_guarded(
+            state.dispatch_validated(
                 MissionRequest::single(
                     MissionKind::Diplomacy,
                     MissionFaction::Alliance,
@@ -3546,6 +4067,7 @@ mod tests {
                     0,
                 ),
                 world,
+                &crate::uprising::UprisingState::default(),
             )
         };
 
@@ -3649,18 +4171,17 @@ mod tests {
         // FUN_004f9860 refuses an object en route (status 4); FUN_00533ce0
         // one already on a mission.
         let mut world = minimal_world();
-        let (here, there) = two_systems();
-        let agent = MissionMember::Character(agent_at(&mut world, here, true));
-        let mut travelling = MissionState::new();
-        travelling.push_transit(MemberTransit {
-            member: agent,
-            mission_id: 7,
-            to: there,
-            fleet: None,
-            arrival: 10,
-        });
-        assert!(!travelling.mission_order_enabled(&world, MissionFaction::Alliance, &[agent]));
+        let (here, _) = two_systems();
+        let key = agent_at(&mut world, here, true);
+        let agent = MissionMember::Character(key);
+        world.characters[key].en_route = true;
+        assert!(!MissionState::new().mission_order_enabled(
+            &world,
+            MissionFaction::Alliance,
+            &[agent]
+        ));
 
+        world.characters[key].en_route = false;
         let mut queued = MissionState::new();
         queued.dispatch(request(vec![agent], vec![], here));
         assert!(!queued.mission_order_enabled(&world, MissionFaction::Alliance, &[agent]));
@@ -3718,7 +4239,11 @@ mod tests {
 
         let alone = request(vec![MissionMember::Character(prisoner)], vec![], here);
         assert_eq!(
-            state.dispatch_guarded(alone, &mut world),
+            state.dispatch_validated(
+                alone,
+                &mut world,
+                &crate::uprising::UprisingState::default()
+            ),
             Err(MissionRefusal::EmptyTeam)
         );
         assert!(!world.characters[prisoner].on_mission);
@@ -3728,7 +4253,11 @@ mod tests {
             MissionMember::Character(prisoner),
         ];
         state
-            .dispatch_guarded(request(team, vec![], here), &mut world)
+            .dispatch_validated(
+                request(team, vec![], here),
+                &mut world,
+                &crate::uprising::UprisingState::default(),
+            )
             .expect("the free lead keeps the team non-empty");
         let mission = &state.missions()[0];
         assert_eq!(mission.team, vec![MissionMember::Character(lead)]);
@@ -3749,7 +4278,11 @@ mod tests {
         ];
 
         assert_eq!(
-            state.dispatch_guarded(request(team, vec![], here), &mut world),
+            state.dispatch_validated(
+                request(team, vec![], here),
+                &mut world,
+                &crate::uprising::UprisingState::default()
+            ),
             Err(MissionRefusal::MemberUnavailable(MissionMember::Character(
                 imperial
             )))
@@ -3773,7 +4306,11 @@ mod tests {
         ];
 
         assert_eq!(
-            state.dispatch_guarded(request(team, vec![], here), &mut world),
+            state.dispatch_validated(
+                request(team, vec![], here),
+                &mut world,
+                &crate::uprising::UprisingState::default()
+            ),
             Err(MissionRefusal::MemberUnavailable(MissionMember::Character(
                 far
             )))
@@ -3796,13 +4333,14 @@ mod tests {
         let prisoner = MissionMember::Character(prisoner);
 
         state
-            .dispatch_guarded(
+            .dispatch_validated(
                 request(
                     vec![me, me, prisoner, prisoner],
                     vec![me, decoy, decoy],
                     here,
                 ),
                 &mut world,
+                &crate::uprising::UprisingState::default(),
             )
             .expect("one lead");
         let mission = &state.missions()[0];
@@ -3840,10 +4378,19 @@ mod tests {
                 is_alliance: true,
                 skills,
                 on_mission: false,
+                en_route: false,
+                on_hidden_mission: false,
             },
         ));
         let mission = |team: Vec<MissionMember>| {
-            ActiveMission::timed(0, MissionKind::Sabotage, MissionFaction::Alliance, team, here, 1)
+            ActiveMission::timed(
+                0,
+                MissionKind::Sabotage,
+                MissionFaction::Alliance,
+                team,
+                here,
+                1,
+            )
         };
         let c = MissionMember::Character;
 
@@ -3853,7 +4400,10 @@ mod tests {
         assert_eq!(minors.lead_character(&world), Some(minor));
         // A special force (tier 1) leads only a team without characters,
         // whatever its leadership.
-        assert_eq!(mission(vec![unit, c(tied)]).lead_character(&world), Some(tied));
+        assert_eq!(
+            mission(vec![unit, c(tied)]).lead_character(&world),
+            Some(tied)
+        );
         assert_eq!(mission(vec![unit]).lead(&world), Some(unit));
         assert_eq!(mission(vec![unit]).lead_character(&world), None);
     }
@@ -3884,6 +4434,8 @@ mod tests {
             is_alliance,
             skills: [0; 8],
             on_mission: false,
+            en_route: false,
+            on_hidden_mission: false,
         });
         let at = world.systems.insert(crate::world::System {
             dat_id: crate::ids::DatId::new(0x9000_0001),
@@ -3925,7 +4477,11 @@ mod tests {
         let member = MissionMember::Character(dead);
 
         assert_eq!(
-            state.dispatch_guarded(request(vec![member], vec![], here), &mut world),
+            state.dispatch_validated(
+                request(vec![member], vec![], here),
+                &mut world,
+                &crate::uprising::UprisingState::default()
+            ),
             Err(MissionRefusal::MemberUnavailable(member))
         );
         assert!(state.is_empty());
@@ -3948,7 +4504,11 @@ mod tests {
         ];
 
         assert_eq!(
-            state.dispatch_guarded(request(team, vec![], here), &mut world),
+            state.dispatch_validated(
+                request(team, vec![], here),
+                &mut world,
+                &crate::uprising::UprisingState::default()
+            ),
             Err(MissionRefusal::MemberUnavailable(MissionMember::Character(
                 gone
             )))
@@ -3967,9 +4527,10 @@ mod tests {
         let decoy = MissionMember::SpecialForce(unit);
 
         assert_eq!(
-            state.dispatch_guarded(
+            state.dispatch_validated(
                 request(vec![MissionMember::Character(lead)], vec![decoy], at),
-                &mut world
+                &mut world,
+                &crate::uprising::UprisingState::default()
             ),
             Err(MissionRefusal::MemberUnavailable(decoy))
         );
@@ -3997,7 +4558,11 @@ mod tests {
         state.next_id = 1;
 
         assert_eq!(
-            state.dispatch_guarded(request(vec![prisoner], vec![], here), &mut world),
+            state.dispatch_validated(
+                request(vec![prisoner], vec![], here),
+                &mut world,
+                &crate::uprising::UprisingState::default()
+            ),
             Err(MissionRefusal::MemberUnavailable(prisoner))
         );
     }
@@ -4015,13 +4580,14 @@ mod tests {
         let mut state = MissionState::new();
 
         state
-            .dispatch_guarded(
+            .dispatch_validated(
                 request(
                     vec![MissionMember::Character(lead)],
                     vec![MissionMember::Character(prisoner)],
                     here,
                 ),
                 &mut world,
+                &crate::uprising::UprisingState::default(),
             )
             .expect("dispatch");
         let mission = &state.missions()[0];
@@ -4047,7 +4613,11 @@ mod tests {
         ];
 
         assert_eq!(
-            state.dispatch_guarded(request(team, vec![], here), &mut world),
+            state.dispatch_validated(
+                request(team, vec![], here),
+                &mut world,
+                &crate::uprising::UprisingState::default()
+            ),
             Err(MissionRefusal::MemberUnavailable(MissionMember::Character(
                 prisoner
             )))
@@ -4071,7 +4641,11 @@ mod tests {
         ];
 
         assert_eq!(
-            state.dispatch_guarded(request(team, vec![], here), &mut world),
+            state.dispatch_validated(
+                request(team, vec![], here),
+                &mut world,
+                &crate::uprising::UprisingState::default()
+            ),
             Err(MissionRefusal::MemberUnavailable(MissionMember::Character(
                 below
             )))
@@ -4091,9 +4665,10 @@ mod tests {
         let decoy = MissionMember::SpecialForce(unit);
 
         let id = state
-            .dispatch_guarded(
+            .dispatch_validated(
                 request(vec![MissionMember::Character(lead)], vec![decoy], at),
                 &mut world,
+                &crate::uprising::UprisingState::default(),
             )
             .expect("dispatch");
         assert_eq!(state.missions()[0].decoys, vec![decoy]);
@@ -4167,6 +4742,8 @@ mod tests {
             is_alliance: true,
             skills: [0; 8],
             on_mission: true,
+            en_route: false,
+            on_hidden_mission: false,
         });
         let team = vec![
             MissionMember::SpecialForce(unit),
@@ -4696,6 +5273,8 @@ mod tests {
             is_alliance: true,
             skills,
             on_mission: false,
+            en_route: false,
+            on_hidden_mission: false,
         });
         let chance = member_chance(
             &world,
@@ -4821,7 +5400,7 @@ mod tests {
         let envoy = agent_at(world, from, true);
         let mut state = MissionState::new();
         state
-            .dispatch_guarded(
+            .dispatch_validated(
                 MissionRequest::single(
                     MissionKind::Diplomacy,
                     MissionFaction::Alliance,
@@ -4831,15 +5410,17 @@ mod tests {
                     0,
                 ),
                 world,
+                &crate::uprising::UprisingState::default(),
             )
             .expect("a free envoy");
         (state, envoy)
     }
 
     #[test]
-    fn a_new_mission_steps_to_the_transit_phase_and_sends_its_members_off_the_map() {
+    fn a_new_mission_steps_to_the_transit_phase_and_places_its_members_en_route_at_the_target() {
         // FUN_00524b70 phase 4: FUN_00556430 starts each member's transit
-        // from the origin +0x6c; the phase waits for the arrivals.
+        // from the origin +0x6c, standing it in the target container en
+        // route (move-order.md); the phase waits for the arrivals.
         let mut world = minimal_world();
         let from = system_at(&mut world, 0);
         let to = system_at(&mut world, 100);
@@ -4853,7 +5434,13 @@ mod tests {
         let member = MissionMember::Character(envoy);
         assert_eq!(
             advance.effects,
-            vec![MissionEffect::MemberMoved { member, to: None }]
+            vec![
+                MissionEffect::MemberMoved { member, to },
+                MissionEffect::EnRoute {
+                    member,
+                    en_route: true
+                }
+            ]
         );
         // isqrt(100^2) / GNPRTB 5120 (5) * 100 / 100 = 20 days from day 0.
         assert_eq!(
@@ -4861,8 +5448,6 @@ mod tests {
             &[MemberTransit {
                 member,
                 mission_id: mission.id,
-                to,
-                fleet: None,
                 arrival: 20
             }]
         );
@@ -4889,9 +5474,9 @@ mod tests {
         let advance = step(&mut state, &world, 20, &[0.3]);
         assert_eq!(
             advance.effects,
-            vec![MissionEffect::MemberMoved {
+            vec![MissionEffect::EnRoute {
                 member: MissionMember::Character(envoy),
-                to: Some(to)
+                en_route: false
             }]
         );
         assert!(state.en_route().is_empty());
@@ -4912,7 +5497,7 @@ mod tests {
             advance.effects,
             vec![MissionEffect::MemberMoved {
                 member: MissionMember::Character(envoy),
-                to: Some(here)
+                to: here
             }]
         );
         assert!(state.en_route().is_empty());
@@ -4950,7 +5535,7 @@ mod tests {
         world.characters[prisoner].captured_by = Some(crate::dat::Faction::Empire);
         let mut state = MissionState::new();
         state
-            .dispatch_guarded(
+            .dispatch_validated(
                 MissionRequest::single(
                     MissionKind::Rescue,
                     MissionFaction::Alliance,
@@ -4960,6 +5545,7 @@ mod tests {
                     0,
                 ),
                 &mut world,
+                &crate::uprising::UprisingState::default(),
             )
             .expect("a free hero");
         // 1 + floor(1.0 * 7).min(6) = 7 days.
@@ -4988,7 +5574,7 @@ mod tests {
         world.characters[prisoner].captured_by = Some(crate::dat::Faction::Empire);
         let mut state = MissionState::new();
         state
-            .dispatch_guarded(
+            .dispatch_validated(
                 MissionRequest::single(
                     MissionKind::Rescue,
                     MissionFaction::Alliance,
@@ -4998,6 +5584,7 @@ mod tests {
                     0,
                 ),
                 world,
+                &crate::uprising::UprisingState::default(),
             )
             .expect("a free hero");
         step(&mut state, world, 1, &[1.0]);
@@ -5263,7 +5850,7 @@ mod tests {
         world.characters[recruiter].is_major = true;
         let mut state = MissionState::new();
         state
-            .dispatch_guarded(
+            .dispatch_validated(
                 MissionRequest::single(
                     MissionKind::Recruitment,
                     MissionFaction::Alliance,
@@ -5273,6 +5860,7 @@ mod tests {
                     0,
                 ),
                 &mut world,
+                &crate::uprising::UprisingState::default(),
             )
             .expect("a free recruiter");
         step(&mut state, &world, 1, &[0.0]);
@@ -5372,35 +5960,51 @@ mod tests {
     #[test]
     fn sabotage_needs_an_object_other_than_the_death_star_and_ds_sabotage_needs_the_death_star() {
         // FUN_0056a110 refuses a family 0x18..0x1c target (0x40/0x28);
-        // FUN_005744c0 refuses any other (0x40/0x29). port: every order
-        // names an object, so none is refused too.
+        // FUN_005744c0 refuses any other (0x40/0x29). An order naming no
+        // object leaves the side no target to see (FUN_00542b60.c:129-137,
+        // 0x40/0x21).
         let mut world = minimal_world();
         let here = system_at(&mut world, 0);
         let yard = MissionTarget::ManufacturingFacility(enemy_yard(&mut world, here));
         let death_star = MissionTarget::DeathStar(death_star_fleet(&mut world, here));
         let mut state = MissionState::new();
-        for (kind, target, allowed) in [
-            (MissionKind::Sabotage, None, false),
-            (MissionKind::Sabotage, Some(death_star), false),
-            (MissionKind::Sabotage, Some(yard), true),
-            (MissionKind::DeathStarSabotage, None, false),
-            (MissionKind::DeathStarSabotage, Some(yard), false),
-            (MissionKind::DeathStarSabotage, Some(death_star), true),
+        for (kind, target, refusal) in [
+            (
+                MissionKind::Sabotage,
+                None,
+                Some(TargetRefusal::TargetMissing),
+            ),
+            (
+                MissionKind::Sabotage,
+                Some(death_star),
+                Some(TargetRefusal::TargetIsDeathStar),
+            ),
+            (MissionKind::Sabotage, Some(yard), None),
+            (
+                MissionKind::DeathStarSabotage,
+                None,
+                Some(TargetRefusal::TargetMissing),
+            ),
+            (
+                MissionKind::DeathStarSabotage,
+                Some(yard),
+                Some(TargetRefusal::TargetNotDeathStar),
+            ),
+            (MissionKind::DeathStarSabotage, Some(death_star), None),
         ] {
             let request = sabotage_request(&mut world, kind, here, target);
-            let outcome = state.dispatch_guarded(request, &mut world);
+            let outcome = state.dispatch_validated(
+                request,
+                &mut world,
+                &crate::uprising::UprisingState::default(),
+            );
             assert_eq!(
                 outcome.is_ok(),
-                allowed,
+                refusal.is_none(),
                 "{kind:?} naming {target:?}: {outcome:?}"
             );
-            if !allowed {
-                assert_eq!(
-                    outcome,
-                    Err(MissionRefusal::TargetUnavailable {
-                        death_star: kind == MissionKind::DeathStarSabotage,
-                    })
-                );
+            if let Some(refusal) = refusal {
+                assert_eq!(outcome, Err(MissionRefusal::TargetRefused(refusal)));
             }
         }
     }
@@ -5507,6 +6111,8 @@ mod tests {
             is_alliance: false,
             skills: [0; 8],
             on_mission: false,
+            en_route: false,
+            on_hidden_mission: false,
         });
         world.systems[here].special_forces.push(unit);
 
@@ -5559,7 +6165,7 @@ mod tests {
         let request = sabotage_request(world, MissionKind::Sabotage, here, Some(target));
         let mut state = MissionState::new();
         state
-            .dispatch_guarded(request, world)
+            .dispatch_validated(request, world, &crate::uprising::UprisingState::default())
             .expect("a free saboteur");
         step(&mut state, world, 1, &[0.0]);
         assert!(step(&mut state, world, 2, &[0.0]).ended.is_empty());
@@ -5670,9 +6276,9 @@ mod tests {
         let arrival = step(&mut state, &world, 20, &[]);
         assert_eq!(
             arrival.effects,
-            vec![MissionEffect::MemberMoved {
+            vec![MissionEffect::EnRoute {
                 member: MissionMember::Character(envoy),
-                to: Some(to)
+                en_route: false
             }]
         );
     }
@@ -5709,11 +6315,13 @@ mod tests {
             is_alliance: true,
             skills: [0; 8],
             on_mission: false,
+            en_route: false,
+            on_hidden_mission: false,
         });
         world.systems[from].special_forces.push(unit);
         let mut state = MissionState::new();
         state
-            .dispatch_guarded(
+            .dispatch_validated(
                 MissionRequest {
                     kind: MissionKind::Diplomacy,
                     faction: MissionFaction::Alliance,
@@ -5725,6 +6333,7 @@ mod tests {
                     tick: 0,
                 },
                 &mut world,
+                &crate::uprising::UprisingState::default(),
             )
             .expect("both members share a system");
 
@@ -5784,18 +6393,16 @@ mod tests {
             is_alliance: true,
             skills: [0; 8],
             on_mission: true,
+            en_route: false,
+            on_hidden_mission: false,
         });
         world.systems[from].special_forces.push(unit);
 
-        move_member(&mut world, MissionMember::Character(pilot), None);
-        move_member(&mut world, MissionMember::SpecialForce(unit), None);
+        move_member(&mut world, MissionMember::Character(pilot), to);
+        move_member(&mut world, MissionMember::SpecialForce(unit), to);
         assert!(world.fleets[fleet].characters.is_empty());
         assert_eq!(world.characters[pilot].current_fleet, None);
-        assert_eq!(world.characters[pilot].current_system, None);
         assert!(world.systems[from].special_forces.is_empty());
-
-        move_member(&mut world, MissionMember::Character(pilot), Some(to));
-        move_member(&mut world, MissionMember::SpecialForce(unit), Some(to));
         assert_eq!(world.characters[pilot].current_system, Some(to));
         assert_eq!(world.systems[to].special_forces, vec![unit]);
     }
@@ -5836,7 +6443,7 @@ mod tests {
         let officer = agent_at(world, here, false);
         let mut state = MissionState::new();
         state
-            .dispatch_guarded(
+            .dispatch_validated(
                 MissionRequest::single(
                     MissionKind::Assassination,
                     MissionFaction::Alliance,
@@ -5846,6 +6453,7 @@ mod tests {
                     0,
                 ),
                 world,
+                &crate::uprising::UprisingState::default(),
             )
             .expect("a free assassin");
         step(&mut state, world, 1, &[0.0]);
@@ -5979,7 +6587,7 @@ mod tests {
         world.characters[recruiter].is_major = true;
         let mut state = MissionState::new();
         state
-            .dispatch_guarded(
+            .dispatch_validated(
                 MissionRequest::single(
                     MissionKind::Recruitment,
                     MissionFaction::Alliance,
@@ -5989,6 +6597,7 @@ mod tests {
                     0,
                 ),
                 &mut world,
+                &crate::uprising::UprisingState::default(),
             )
             .expect("a free recruiter");
         step(&mut state, &world, 1, &[0.0]);
@@ -6014,18 +6623,12 @@ mod tests {
     }
 
     #[test]
-    fn another_member_s_transit_does_not_count_as_the_target_travelling() {
+    fn another_character_en_route_does_not_count_as_the_target_travelling() {
         // FUN_00592600 rule 5 reads the target's own en route bit.
         let mut world = minimal_world();
         let (mut state, _) = waiting_assassination(&mut world, true);
         let bystander = agent_at(&mut world, state.missions()[0].target_system, true);
-        state.en_route.push(MemberTransit {
-            member: MissionMember::Character(bystander),
-            mission_id: 99,
-            to: state.missions()[0].target_system,
-            fleet: None,
-            arrival: 100,
-        });
+        world.characters[bystander].en_route = true;
 
         let advance = step(&mut state, &world, 11, &[0.99]);
 
@@ -6111,7 +6714,7 @@ mod tests {
         world.characters[prisoner].captured_by = Some(crate::dat::Faction::Empire);
         let mut state = MissionState::new();
         state
-            .dispatch_guarded(
+            .dispatch_validated(
                 MissionRequest::single(
                     MissionKind::Rescue,
                     MissionFaction::Alliance,
@@ -6121,6 +6724,7 @@ mod tests {
                     0,
                 ),
                 world,
+                &crate::uprising::UprisingState::default(),
             )
             .expect("a free hero");
         step(&mut state, world, 1, &[]);
@@ -6196,7 +6800,7 @@ mod tests {
         let second = agent_at(&mut world, from, true);
         let mut state = MissionState::new();
         state
-            .dispatch_guarded(
+            .dispatch_validated(
                 MissionRequest {
                     kind: MissionKind::Diplomacy,
                     faction: MissionFaction::Alliance,
@@ -6211,6 +6815,7 @@ mod tests {
                     tick: 0,
                 },
                 &mut world,
+                &crate::uprising::UprisingState::default(),
             )
             .expect("two free envoys");
         step(&mut state, &world, 1, &[]);
@@ -6266,7 +6871,7 @@ mod tests {
     }
 
     #[test]
-    fn a_cancelled_mission_s_members_travel_on_and_land_at_its_target() {
+    fn a_cancelled_mission_s_members_travel_on_to_its_target() {
         // port: release frees the flags, and each member's own transit runs
         // on as it does for a mission that ends (MemberTransit); the
         // original's cancel path is untraced.
@@ -6274,7 +6879,8 @@ mod tests {
         let from = system_at(&mut world, 0);
         let to = system_at(&mut world, 100);
         let (mut state, envoy) = diplomacy_from(&mut world, from, to);
-        step(&mut state, &world, 1, &[]);
+        let departure = step(&mut state, &world, 1, &[]);
+        apply_advance_effects(&mut world, &departure.effects);
         let id = state.missions()[0].id;
 
         state.release(id, &mut world).expect("the mission runs");
@@ -6283,7 +6889,7 @@ mod tests {
         assert!(!world.characters[envoy].on_mission);
         assert!(state.is_en_route(member));
         assert_eq!(
-            state.dispatch_guarded(
+            state.dispatch_validated(
                 MissionRequest::single(
                     MissionKind::Diplomacy,
                     MissionFaction::Alliance,
@@ -6293,15 +6899,16 @@ mod tests {
                     2,
                 ),
                 &mut world,
+                &crate::uprising::UprisingState::default(),
             ),
             Err(MissionRefusal::MemberUnavailable(member))
         );
         let arrival = step(&mut state, &world, 20, &[]);
         assert_eq!(
             arrival.effects,
-            vec![MissionEffect::MemberMoved {
+            vec![MissionEffect::EnRoute {
                 member,
-                to: Some(to)
+                en_route: false
             }]
         );
     }
@@ -6317,7 +6924,7 @@ mod tests {
         world.characters[pilot].mark_killed();
         let resting = world.characters[pilot].current_system;
 
-        move_member(&mut world, MissionMember::Character(pilot), Some(to));
+        move_member(&mut world, MissionMember::Character(pilot), to);
 
         assert_eq!(world.characters[pilot].current_system, resting);
         assert_ne!(resting, Some(to));
@@ -6335,10 +6942,7 @@ mod tests {
         apply_advance_effects(
             &mut world,
             &[
-                MissionEffect::MemberMoved {
-                    member,
-                    to: Some(to),
-                },
+                MissionEffect::MemberMoved { member, to },
                 MissionEffect::MemberAvailable { member },
                 MissionEffect::CharacterKilled {
                     character: envoy,
@@ -6376,6 +6980,8 @@ mod tests {
                 is_alliance: true,
                 skills: [0; 8],
                 on_mission: true,
+                en_route: false,
+                on_hidden_mission: false,
             });
             world.systems[here].special_forces.push(key);
             key
@@ -6426,11 +7032,11 @@ mod tests {
             5,
         );
         let uprisings = UprisingState::default();
-        assert_eq!(running_end_code(&mission, &world, &uprisings, &[]), 8);
+        assert_eq!(running_end_code(&mission, &world, &uprisings), 8);
 
         mission.decoys = vec![MissionMember::Character(agent_at(&mut world, here, false))];
 
-        assert_eq!(running_end_code(&mission, &world, &uprisings, &[]), 0);
+        assert_eq!(running_end_code(&mission, &world, &uprisings), 0);
     }
 
     #[test]
@@ -6463,6 +7069,8 @@ mod tests {
             is_alliance,
             skills: [0; 8],
             on_mission: false,
+            en_route: false,
+            on_hidden_mission: false,
         }))
     }
 
@@ -6543,7 +7151,7 @@ mod tests {
         });
         let mut state = MissionState::new();
 
-        let refused = state.dispatch_guarded(
+        let refused = state.dispatch_validated(
             MissionRequest {
                 decoys: vec![unit],
                 ..MissionRequest::single(
@@ -6556,6 +7164,7 @@ mod tests {
                 )
             },
             &mut world,
+            &crate::uprising::UprisingState::default(),
         );
 
         assert_eq!(refused, Err(MissionRefusal::MembersNotAllowed));

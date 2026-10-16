@@ -94,11 +94,31 @@ A named record:
 
 An object appears once per graph that holds it, under the same instance id.
 In `empire-day2-start.sav` the ISD appears in `0x80000081` (full payload)
-and `0x800000a1` (shorter). A later Empire save (day 488) also has
-`0x80000091`/`0x80000092` for Imperial ships and `0x80000041`, `0x80000051`,
-`0x80000062` for Alliance ships: bit 7 of the low byte is set for the
-Imperial copies and clear for the Alliance ones. What the rest encodes has
-not been traced. Edit every graph copy that a recipe touches.
+and `0x800000a1` (shorter). Edit every graph copy that a recipe touches.
+
+Graph key bits (low word):
+
+| Bits | Meaning |
+|---|---|
+| 6-7 | owner: 1 Alliance (`0x40`), 2 Empire (`0x80`), 3 neither (`0xc0`) |
+| 4-5 | copy: 0 master, `0x10` the Alliance's view, `0x20` the Empire's view |
+| 8 (`0x100`) | an entry in the destroyed-object list |
+
+The owner bits match `obj+0x24 >> 6 & 3` (`FUN_00433e40`); the serializer
+was not traced, so that identity is inferred. Bits 0-3 are untraced.
+
+Payload of a master copy (facilities and units checked):
+
+| Word | Field |
+|---|---|
+| 0 | `+0x50` state (`object-state-flags.md`): `0x00030047` usable, `0x0003000e` destroyed (bit 3), `0x142` in production |
+| 1 | producer id (`0xa0…`) while in production |
+| 9 | location: system DatId (`0x90…`/`0x92…`), parent fleet (`0x08…`) or ship (`0x14…`); `2` while queued |
+
+A queued object's destination is in its producer's queue entry: the object's
+DatId, then the destination system twice, then the name. A scrapped
+facility stays in the save as a destroyed-list record (graph `0x100`,
+state `0x0e`) at its last system.
 
 `empire-day2-start.sav` (SHA-256 `d9da6a3b…7cbc79`, 410,763 bytes):
 

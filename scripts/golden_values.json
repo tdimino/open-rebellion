@@ -1691,9 +1691,6 @@
       "research_min_ticks": 10,
       "research_default_ticks": 30,
       "research_max_level": 15,
-      "research_completion_event_ship": 293,
-      "research_completion_event_troop": 294,
-      "research_completion_event_facility": 295,
       "description": "Research constants from mechanics docs and event mapping."
     },
     "death_star": {
@@ -1705,13 +1702,13 @@
     },
     "ai": {
       "original_tick_interval_days": 1,
-      "current_tick_interval_days": 7,
+      "current_tick_interval_days": 1,
       "original_trigger_event_id": 496,
       "strategic_bucket_count": 7,
       "pipeline_function_count": 6,
       "validator_subfunction_count": 18,
       "original_system_count": 200,
-      "description": "Original AI evaluates every game-day (event 0x1f0); current implementation is throttled to AiConfig::default() tick_interval = 7."
+      "description": "Original AI evaluates every game-day (event 0x1f0); the port runs one AI round per side per day."
     },
     "movement": {
       "current_distance_scale": 2,

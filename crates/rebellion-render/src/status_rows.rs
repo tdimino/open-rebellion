@@ -599,8 +599,8 @@ pub fn troop_rows(sources: StatusSources<'_>, key: TroopKey) -> Option<Vec<Statu
 /// `+0x1dc`, `+0x1e0`, `+0x1f0` and `+0x1f4`: skills 0, 1, 5 and 6.
 ///
 /// port: a special force exists only once built, so "Under Construction"
-/// never shows; it is en route while its mission transit lasts, as a
-/// character is.
+/// never shows. An en route unit stands at its destination, as a character
+/// does, and its mission transit gives the arrival day.
 #[must_use]
 pub fn special_force_rows(
     sources: StatusSources<'_>,
@@ -612,19 +612,15 @@ pub fn special_force_rows(
         .missions
         .en_route()
         .iter()
-        .find(|transit| transit.member == MissionMember::SpecialForce(key));
-    let attached = transit.map_or_else(
-        || {
-            world
-                .systems
-                .iter()
-                .find(|(_, value)| value.special_forces.contains(&key))
-                .map(|(_, value)| value.name.clone())
-                .unwrap_or_default()
-        },
-        |transit| system_name(world, transit.to),
-    );
-    let status = if transit.is_some() {
+        .find(|transit| transit.member == MissionMember::SpecialForce(key))
+        .filter(|_| unit.en_route);
+    let attached = world
+        .systems
+        .iter()
+        .find(|(_, value)| value.special_forces.contains(&key))
+        .map(|(_, value)| value.name.clone())
+        .unwrap_or_default();
+    let status = if unit.en_route {
         "Enroute"
     } else if unit.on_mission {
         "On Mission"
@@ -1419,6 +1415,8 @@ mod tests {
             is_alliance: true,
             skills: [10, 11, 12, 13, 14, 15, 16, 17],
             on_mission: true,
+            en_route: false,
+            on_hidden_mission: false,
         });
         world.systems[here].special_forces.push(unit);
         let states = States::new();
@@ -1727,10 +1725,10 @@ mod tests {
 
     #[test]
     fn a_special_force_on_its_way_is_attached_to_the_target() {
-        // FUN_00445780: Attached names the transit's destination, then
-        // "Enroute" and the ETA.
+        // FUN_00445780: Attached names the destination, where an en route
+        // unit already stands (move-order.md), then "Enroute" and the ETA.
         let mut world = GameWorld::default();
-        let here = system(
+        let _origin = system(
             &mut world,
             "Hoth",
             ControlKind::Controlled(Faction::Alliance),
@@ -1741,8 +1739,10 @@ mod tests {
             is_alliance: true,
             skills: [0; 8],
             on_mission: true,
+            en_route: true,
+            on_hidden_mission: false,
         });
-        world.systems[here].special_forces.push(unit);
+        world.systems[there].special_forces.push(unit);
         let mut states = States::new();
         states.missions = with_entry(
             &states.missions,
@@ -1750,8 +1750,6 @@ mod tests {
             rebellion_core::missions::MemberTransit {
                 member: MissionMember::SpecialForce(unit),
                 mission_id: 1,
-                to: there,
-                fleet: None,
                 arrival: 15,
             },
         );
@@ -1788,8 +1786,6 @@ mod tests {
         let transit = |mission_id, arrival| rebellion_core::missions::MemberTransit {
             member: MissionMember::Character(a),
             mission_id,
-            to: here,
-            fleet: None,
             arrival,
         };
         states.missions = with_entry(&states.missions, "en_route", transit(id + 1, 50));

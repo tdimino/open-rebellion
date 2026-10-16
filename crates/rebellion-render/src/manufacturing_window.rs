@@ -8,7 +8,9 @@
 use rebellion_core::delivery::DeliveryState;
 use rebellion_core::fog::FogState;
 use rebellion_core::ids::{DatId, ManufacturingFacilityKey, ProductionFacilityKey, SystemKey};
-use rebellion_core::manufacturing::{BuildableKind, ManufacturingState, ProductionArea};
+use rebellion_core::manufacturing::{
+    BuildableKind, Destination, ManufacturingState, ProductionArea,
+};
 use rebellion_core::world::{FacilityRef, GameWorld};
 
 use crate::fleet_window::{control_side, fleet_side};
@@ -143,13 +145,18 @@ pub fn band(
     system: SystemKey,
     area: ProductionArea,
 ) -> Band {
-    let destination_system = manufacturing.destination(system, area).unwrap_or(system);
     let destination = format!(
         "Destination: {}",
-        world
-            .systems
-            .get(destination_system)
-            .map_or("", |value| value.name.as_str())
+        match manufacturing
+            .destination(system, area)
+            .unwrap_or(Destination::System(system))
+        {
+            Destination::System(key) => world
+                .systems
+                .get(key)
+                .map_or("", |value| value.name.as_str()),
+            Destination::Fleet(fleet) => world.fleet_name(fleet).unwrap_or(""),
+        }
     );
     let queue = manufacturing
         .queue(system, area)
@@ -458,7 +465,10 @@ fn pending_units(
         queue
             .items()
             .iter()
-            .filter(move |item| item.destination.unwrap_or(*origin) == system)
+            .filter(move |item| {
+                item.destination.unwrap_or(Destination::System(*origin))
+                    == Destination::System(system)
+            })
             .map(|item| item.kind)
     })
 }
@@ -682,7 +692,7 @@ mod tests {
             ..CapitalShipClass::default()
         });
         let mut manufacturing = ManufacturingState::new();
-        manufacturing.set_destination(system, ProductionArea::Shipyard, away);
+        manufacturing.set_destination(system, ProductionArea::Shipyard, Destination::System(away));
         manufacturing.build(
             system,
             &QueueItem::new(BuildableKind::CapitalShip(class), 10),
@@ -751,7 +761,8 @@ mod tests {
         let mut manufacturing = ManufacturingState::new();
         manufacturing.enqueue(
             elsewhere,
-            QueueItem::new(BuildableKind::ManufacturingFacility(template), 5).delivered_to(system),
+            QueueItem::new(BuildableKind::ManufacturingFacility(template), 5)
+                .delivered_to(Destination::System(system)),
         );
         // Built for its own system, this one is not listed here.
         manufacturing.enqueue(
@@ -766,7 +777,7 @@ mod tests {
             &world,
             &[rebellion_core::manufacturing::Departure {
                 origin: elsewhere,
-                destination: system,
+                destination: Destination::System(system),
                 tick: 0,
                 kind: BuildableKind::ManufacturingFacility(template),
             }],

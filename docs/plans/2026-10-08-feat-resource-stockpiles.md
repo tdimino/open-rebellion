@@ -3,8 +3,9 @@ title: "Resource Stockpiles and Top-Bar Counters"
 description: "Model each side's raw and refined materials and maintenance as the original does, and fill the command center's three monitors"
 type: feat
 status: active
+progress: "75% — phases 1-3 landed (d7119926, 4f280da8); phase 4 monitors wired, but the both-faction native and browser checks are unrecorded"
+updated: 2026-10-15
 created: 2026-10-08
-updated: 2026-10-08
 tags: [economy, manufacturing, resources, cockpit, parity]
 ---
 
@@ -17,6 +18,13 @@ finds that the first two are per-side stockpiles that facility cycles change
 one unit at a time, and the third is maintenance capacity less maintenance
 used. The port has no stockpiles and no facility cycles: its builds run on
 fixed day counts and never draw refined material.
+
+**Remaining scope (2026-10-15).** Phases 1 to 3 landed (d7119926, 4f280da8),
+and nothing has touched `stockpiles.rs` or `resources.rs` since. What is left
+is Phase 4's native and browser checks of the Raw and Refined monitors for
+both factions, plus the Known gaps below. This plan is their only record; it
+closes when those checks are recorded or a roadmap or audit row takes them
+over.
 
 ## What the original does
 

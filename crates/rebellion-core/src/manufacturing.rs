@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 
 use std::collections::HashSet;
 
-use crate::ids::{CapitalShipKey, DatId, FighterKey, SystemKey};
+use crate::ids::{CapitalShipKey, DatId, FighterKey, FleetKey, SystemKey};
 use crate::tick::TickEvent;
 
 // ---------------------------------------------------------------------------
@@ -126,9 +126,31 @@ pub struct QueueItem {
     /// the manager's `+0x68`.
     pub total_cost: u32,
     /// Where the finished object goes; `None` keeps it at the building
-    /// system. A different system makes it travel there once completed
-    /// (`FUN_0052bee0`, `crate::delivery`).
-    pub destination: Option<SystemKey>,
+    /// system. A different system or a fleet makes it travel there once
+    /// completed (`FUN_0052bee0`, `crate::delivery`).
+    pub destination: Option<Destination>,
+}
+
+/// Where a production area sends what it builds (the manager's `+0x74`,
+/// copied to the product's `+0x3c`): a system, or a fleet whose container
+/// takes the product (`production-destination.md`: the Destination
+/// targeting release takes a planet or a fleet).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Destination {
+    System(SystemKey),
+    Fleet(FleetKey),
+}
+
+impl Destination {
+    /// The system it stands for now: a fleet's location, or `None` once
+    /// the fleet is gone.
+    #[must_use]
+    pub fn system(self, world: &crate::world::GameWorld) -> Option<SystemKey> {
+        match self {
+            Self::System(system) => Some(system),
+            Self::Fleet(fleet) => world.fleets.get(fleet).map(|f| f.location),
+        }
+    }
 }
 
 impl QueueItem {
@@ -145,7 +167,7 @@ impl QueueItem {
 
     /// The same item, delivered to `destination` once completed.
     #[must_use]
-    pub fn delivered_to(self, destination: SystemKey) -> Self {
+    pub fn delivered_to(self, destination: Destination) -> Self {
         QueueItem {
             destination: Some(destination),
             ..self
@@ -373,7 +395,7 @@ pub struct ManufacturingState {
         serialize_with = "crate::serde_ordered::serialize_hash_map",
         deserialize_with = "crate::serde_ordered::deserialize_hash_map"
     )]
-    destinations: HashMap<(SystemKey, ProductionArea), SystemKey>,
+    destinations: HashMap<(SystemKey, ProductionArea), Destination>,
 }
 
 impl ManufacturingState {
@@ -454,7 +476,7 @@ impl ManufacturingState {
 
     /// Where `system`'s `area` delivers what it builds, when not at home.
     #[must_use]
-    pub fn destination(&self, system: SystemKey, area: ProductionArea) -> Option<SystemKey> {
+    pub fn destination(&self, system: SystemKey, area: ProductionArea) -> Option<Destination> {
         self.destinations.get(&(system, area)).copied()
     }
 
@@ -466,9 +488,9 @@ impl ManufacturingState {
         &mut self,
         system: SystemKey,
         area: ProductionArea,
-        destination: SystemKey,
+        destination: Destination,
     ) {
-        let target = (destination != system).then_some(destination);
+        let target = (destination != Destination::System(system)).then_some(destination);
         match target {
             Some(destination) => self.destinations.insert((system, area), destination),
             None => self.destinations.remove(&(system, area)),
@@ -535,7 +557,7 @@ pub struct Departure {
     /// The building system.
     pub origin: SystemKey,
     /// Where the item goes.
-    pub destination: SystemKey,
+    pub destination: Destination,
     /// The game-day on which the item completed.
     pub tick: u64,
     /// What was built.
@@ -635,7 +657,7 @@ impl ManufacturingSystem {
             for item in queue.take_completed() {
                 match item
                     .destination
-                    .filter(|&destination| destination != system_key)
+                    .filter(|&destination| destination != Destination::System(system_key))
                 {
                     Some(destination) => departures.push(Departure {
                         origin: system_key,
@@ -755,8 +777,14 @@ mod tests {
     fn a_build_for_another_system_departs_and_one_for_its_own_completes_there() {
         let systems = mock_system_keys(3);
         let mut state = ManufacturingState::new();
-        state.enqueue(systems[0], cap_ship_item(1).delivered_to(systems[1]));
-        state.enqueue(systems[2], fighter_item(1).delivered_to(systems[2]));
+        state.enqueue(
+            systems[0],
+            cap_ship_item(1).delivered_to(Destination::System(systems[1])),
+        );
+        state.enqueue(
+            systems[2],
+            fighter_item(1).delivered_to(Destination::System(systems[2])),
+        );
         work(&mut state, systems[0], ProductionArea::Shipyard, 1);
         work(&mut state, systems[2], ProductionArea::Shipyard, 1);
 
@@ -767,7 +795,7 @@ mod tests {
             advance.departures,
             vec![Departure {
                 origin: systems[0],
-                destination: systems[1],
+                destination: Destination::System(systems[1]),
                 tick: 9,
                 kind: cap_ship_item(1).kind,
             }]
@@ -888,11 +916,12 @@ mod tests {
         // agent's 0x214 acts on one area's manager (manage-automation.md).
         let mut systems: slotmap::SlotMap<SystemKey, ()> = slotmap::SlotMap::with_key();
         let (home, away) = (systems.insert(()), systems.insert(()));
+        let (to_home, to_away) = (Destination::System(home), Destination::System(away));
         let mut state = ManufacturingState::new();
         state.enqueue(home, cap_ship_item(10));
         state.enqueue(home, troop_item(5));
 
-        state.set_destination(home, ProductionArea::Shipyard, away);
+        state.set_destination(home, ProductionArea::Shipyard, to_away);
         let destinations = |state: &ManufacturingState| {
             ProductionArea::ALL
                 .iter()
@@ -900,10 +929,10 @@ mod tests {
                 .flat_map(|queue| queue.items().iter().map(|item| item.destination))
                 .collect::<Vec<_>>()
         };
-        assert_eq!(destinations(&state), [Some(away), None]);
+        assert_eq!(destinations(&state), [Some(to_away), None]);
         assert_eq!(
             state.destination(home, ProductionArea::Shipyard),
-            Some(away)
+            Some(to_away)
         );
         assert_eq!(
             state.destination(home, ProductionArea::TrainingFacility),
@@ -913,10 +942,13 @@ mod tests {
         // A later product of that area takes it; another area's does not.
         state.enqueue(home, cap_ship_item(3));
         state.enqueue(home, troop_item(5));
-        assert_eq!(destinations(&state), [Some(away), Some(away), None, None]);
+        assert_eq!(
+            destinations(&state),
+            [Some(to_away), Some(to_away), None, None]
+        );
 
         // Back at home clears it.
-        state.set_destination(home, ProductionArea::Shipyard, home);
+        state.set_destination(home, ProductionArea::Shipyard, to_home);
         assert_eq!(destinations(&state), [None, None, None, None]);
         assert_eq!(state.destination(home, ProductionArea::Shipyard), None);
     }

@@ -332,12 +332,23 @@ impl<'a> SystemContents<'a> {
     }
 }
 
+/// Whether `member` is en route to the place it is listed (`+0x50` bit 5,
+/// `move-order.md`).
+pub(crate) fn member_en_route(world: &GameWorld, member: MissionMember) -> bool {
+    match member {
+        MissionMember::Character(key) => world.characters.get(key).is_some_and(|c| c.en_route),
+        MissionMember::SpecialForce(key) => world
+            .special_forces
+            .get(key)
+            .is_some_and(|unit| unit.en_route),
+    }
+}
+
 /// The characters and special forces at `system`, each with its side and
 /// whether it is on a hidden mission (role `+0x78` bit 8). These are the
 /// system's own contents: a character aboard a fleet there is the fleet's
 /// (`FUN_00536e20` walks the system's lists, not its fleets').
 ///
-/// port: special forces carry no hidden-mission flag.
 pub(crate) fn system_members(
     world: &GameWorld,
     system: SystemKey,
@@ -374,7 +385,7 @@ pub(crate) fn system_members(
             Some((
                 MissionMember::SpecialForce(*key),
                 fleet_side(force.is_alliance),
-                false,
+                force.on_hidden_mission,
             ))
         });
     characters.chain(forces)
@@ -677,6 +688,8 @@ mod tests {
             is_alliance: true,
             skills: [0; 8],
             on_mission: false,
+            en_route: false,
+            on_hidden_mission: false,
         });
         world.systems[system].special_forces.push(force);
         assert_eq!(alliance_side(&world, system, Quadrant::Defenses), Some(1));

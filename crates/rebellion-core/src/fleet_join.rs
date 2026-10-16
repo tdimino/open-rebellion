@@ -285,14 +285,18 @@ fn move_ships_into(
     }
     let ships_carried_it = holds_death_star_ship(world, from);
     let source = &mut world.fleets[from];
-    let characters_leave = crate::carriage::character_ship(source)
-        .is_some_and(|first| ships.contains(&first));
+    let characters_leave =
+        crate::carriage::character_ship(source).is_some_and(|first| ships.contains(&first));
     let mut moved = Vec::with_capacity(ships.len());
     for &index in ships.iter().rev() {
         moved.push(source.capital_ships.remove(index));
     }
     moved.reverse();
-    let tags: Vec<u32> = moved.iter().map(|ship| ship.tag).filter(|&tag| tag != 0).collect();
+    let tags: Vec<u32> = moved
+        .iter()
+        .map(|ship| ship.tag)
+        .filter(|&tag| tag != 0)
+        .collect();
     let mut squadrons = Vec::new();
     source.fighters.retain(|entry| {
         let aboard = tags.contains(&entry.carrier);
@@ -594,6 +598,70 @@ pub fn move_ships_to_system(
         expected_is_alliance,
     )
     .map(FleetOrderOutcome::Departed)
+}
+
+/// What an AI order moves: the whole of `fleet` when `tags` is empty,
+/// else its ships with these tags. `None` when the fleet is gone.
+#[must_use]
+pub fn mover_of_tags(world: &GameWorld, fleet: FleetKey, tags: &[u32]) -> Option<FleetMover> {
+    if tags.is_empty() {
+        return Some(FleetMover::Fleet(fleet));
+    }
+    let ships = world
+        .fleets
+        .get(fleet)?
+        .capital_ships
+        .iter()
+        .enumerate()
+        .filter(|(_, ship)| ship.tag != 0 && tags.contains(&ship.tag))
+        .map(|(index, _)| index)
+        .collect();
+    Some(FleetMover::Ships {
+        fleet,
+        ships,
+        roster: roster(world, fleet)?,
+    })
+}
+
+/// The AI's Create Fleet (`0x270`, `crate::ai_regions`): the ships of
+/// `fleet` with these tags as a fleet of their own in `to_system`, or in
+/// their own system without one ([`move_ships_to_system`]).
+///
+/// # Errors
+/// As [`move_ships_to_system`]; a tag no ship of the fleet carries is
+/// left out.
+pub fn create_fleet_of_tags(
+    world: &mut GameWorld,
+    movement: &mut MovementState,
+    troop_transport: &mut TroopTransportState,
+    fleet: FleetKey,
+    tags: &[u32],
+    to_system: Option<SystemKey>,
+    expected_is_alliance: bool,
+) -> Result<FleetOrderOutcome, FleetOrderError> {
+    let source = world
+        .fleets
+        .get(fleet)
+        .ok_or(FleetOrderError::MissingFleet)?;
+    let ships: Vec<usize> = source
+        .capital_ships
+        .iter()
+        .enumerate()
+        .filter(|(_, ship)| ship.tag != 0 && tags.contains(&ship.tag))
+        .map(|(index, _)| index)
+        .collect();
+    let system = to_system.unwrap_or(source.location);
+    let chosen = roster(world, fleet).ok_or(FleetOrderError::MissingFleet)?;
+    move_ships_to_system(
+        world,
+        movement,
+        troop_transport,
+        fleet,
+        &ships,
+        chosen,
+        system,
+        expected_is_alliance,
+    )
 }
 
 /// Put a split's ships and cargo back where they were in `fleet` and
@@ -1282,10 +1350,20 @@ mod tests {
 
         let world = &setup.world;
         let squadrons = |fleet: FleetKey| -> Vec<u32> {
-            world.fleets[fleet].fighters.iter().map(|entry| entry.carrier).collect()
+            world.fleets[fleet]
+                .fighters
+                .iter()
+                .map(|entry| entry.carrier)
+                .collect()
         };
-        assert_eq!(squadrons(created), [world.fleets[created].capital_ships[0].tag]);
-        assert_eq!(squadrons(source), [world.fleets[source].capital_ships[0].tag]);
+        assert_eq!(
+            squadrons(created),
+            [world.fleets[created].capital_ships[0].tag]
+        );
+        assert_eq!(
+            squadrons(source),
+            [world.fleets[source].capital_ships[0].tag]
+        );
         assert_eq!(world.fleets[created].characters, [admiral]);
         assert!(world.fleets[source].characters.is_empty());
         assert_eq!(world.characters[admiral].current_fleet, Some(created));

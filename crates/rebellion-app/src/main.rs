@@ -7,6 +7,8 @@ mod dev_channel;
 mod dev_commands;
 #[cfg(not(target_arch = "wasm32"))]
 mod dev_input;
+#[cfg(not(target_arch = "wasm32"))]
+mod dev_policy;
 mod encyclopedia_content;
 mod encyclopedia_hd;
 mod encyclopedia_mods;
@@ -46,7 +48,7 @@ use std::collections::{BTreeSet, HashSet};
 use std::path::{Path, PathBuf};
 
 use rebellion_core::agent_automation::{AutomationModule, PlayerAgent};
-use rebellion_core::ai::{AIAction, AIState, AISystem, AiFaction, FleetMoveReason};
+use rebellion_core::ai::{AIAction, AIState, AiFaction, FleetMoveReason};
 use rebellion_core::betrayal::{BetrayalState, BetrayalSystem};
 use rebellion_core::blockade::{BlockadeState, BlockadeSystem};
 use rebellion_core::bombardment::BombardmentSystem;
@@ -58,9 +60,9 @@ use rebellion_core::economy::{EconomyEvent, EconomyState, EconomySystem};
 use rebellion_core::events::{EventAction, EventState, EventSystem};
 use rebellion_core::fleet_join::FleetMover;
 use rebellion_core::fog::{FogState, FogSystem};
-use rebellion_core::ids::{CharacterKey, FleetKey, SystemKey};
+use rebellion_core::ids::{CharacterKey, FleetKey, SystemKey, TroopKey};
 use rebellion_core::jedi::{JediState, JediSystem};
-use rebellion_core::manufacturing::{ManufacturingState, ManufacturingSystem, QueueItem};
+use rebellion_core::manufacturing::{ManufacturingState, ManufacturingSystem};
 use rebellion_core::missions::{
     MissionEffect, MissionFaction, MissionKind, MissionMember, MissionState, MissionSystem,
 };
@@ -70,7 +72,7 @@ use rebellion_core::movement::{
     system_side_fleets, validate_fleet_dispatch, validate_fleets_dispatch, MovementState,
     MovementSystem,
 };
-use rebellion_core::repair::{RepairEvent, RepairState, RepairSystem};
+use rebellion_core::repair::{RepairState, RepairSystem};
 use rebellion_core::research::{ResearchState, ResearchSystem};
 use rebellion_core::stockpiles::{StockpileEvent, StockpileState, StockpileSystem};
 use rebellion_core::tick::{GameClock, GameSpeed};
@@ -131,13 +133,13 @@ use rebellion_render::EncyclopediaState;
 use rebellion_render::MdataTrack;
 use rebellion_render::{
     cockpit_accelerator, draw_advisor, draw_audio_controls, draw_cockpit_background,
-    draw_cockpit_chrome, draw_cockpit_egui_layer, draw_credits, draw_event_screen, draw_fleets,
+    draw_cockpit_chrome, draw_cockpit_egui_layer, draw_credits, draw_fleets,
     draw_galaxy_backdrop, draw_galaxy_map, draw_game_options, draw_game_setup, draw_ground_combat,
     draw_main_menu, draw_missions, draw_multiplayer_setup, draw_save_load, draw_sector_windows,
     draw_system_windows, draw_tactical_view, handle_cockpit_egui_input, set_cockpit_viewport_clip,
-    show_event_screen, update_event_screen, update_galaxy_map_input, AdvisorFaction, AdvisorState,
+    update_galaxy_map_input, AdvisorFaction, AdvisorState,
     AssetRenderProfile, AudioVolumeState, BmpCache, CockpitButton, CockpitFaction, CockpitState,
-    CreditsState, EventScreenState, FleetsState, GalaxyMapState, GameMessage, GameOptionsAction,
+    CreditsState, FleetsState, GalaxyMapState, GameMessage, GameOptionsAction,
     GameOptionsOrigin, GameOptionsState, GameSetupAction, GameSetupState, GroundAction,
     GroundCombatState, MainMenuAction, MainMenuState, MenuDestinationAction, MessageCategory,
     MessageDisplay, MessageLog, MessageLogState, MessageRail, MessageTarget,
@@ -511,6 +513,9 @@ impl LiveCampaign<'_> {
         *self.deliveries = state.deliveries;
         *self.player_agent = state.player_agent;
         *self.stockpiles = state.stockpiles;
+        // Bit 11 is derived, not saved: rebuild it before an in-day AI round
+        // or a panel action reads it.
+        rebellion_core::death_star::refresh_sectors(self.world, self.movement);
     }
 }
 
@@ -2191,6 +2196,10 @@ async fn main() {
     let mut pending_interface: Vec<rebellion_render::InterfaceCommand> = Vec::new();
     #[cfg(not(target_arch = "wasm32"))]
     let mut dev_channel = dev_channel::DevChannel::from_env();
+    #[cfg(not(target_arch = "wasm32"))]
+    if dev_commands::palette_enabled() {
+        rebellion_data::telemetry::enable_native_from_env();
+    }
     // A live inbox keeps the queue open after the script's last line.
     #[cfg(not(target_arch = "wasm32"))]
     let mut command_script = dev_commands::CommandScript::from_env().or_else(|| {
@@ -2206,6 +2215,24 @@ async fn main() {
     // frames it has waited.
     #[cfg(not(target_arch = "wasm32"))]
     let mut dev_wait_until: Option<(dev_commands::WaitCondition, u32)> = None;
+    // The frames the pending wait may run, when its line gave `within <n> frames`.
+    #[cfg(not(target_arch = "wasm32"))]
+    let mut dev_wait_budget: Option<u32> = None;
+    // What `Wait until message` and `Wait until mission resolved` count from.
+    #[cfg(not(target_arch = "wasm32"))]
+    let mut dev_wait_baseline: u64 = 0;
+    // Ids of the player's side's missions as they resolved, oldest first.
+    #[cfg(not(target_arch = "wasm32"))]
+    let mut dev_missions_resolved: Vec<u64> = Vec::new();
+    #[cfg(not(target_arch = "wasm32"))]
+    let mut dev_policy = dev_policy::DevPolicy::default();
+    // Until when, and for how many frames, a `Wait <n> ms` or `Wait <n> frames`
+    // holds the queue: the policies act then, not in a click's hold frames.
+    #[cfg(not(target_arch = "wasm32"))]
+    let mut dev_policy_hold = (0.0_f64, 0_u32);
+    // The mission count before a `Mission:` dispatches, to see it land.
+    #[cfg(not(target_arch = "wasm32"))]
+    let mut dev_mission_check: Option<usize> = None;
     // Frames the next line has waited for the galaxy view.
     #[cfg(not(target_arch = "wasm32"))]
     let mut dev_galaxy_wait_frames: u32 = 0;
@@ -2214,9 +2241,17 @@ async fn main() {
     #[cfg(not(target_arch = "wasm32"))]
     let mut dev_input = dev_input::DevInput::default();
     #[cfg(not(target_arch = "wasm32"))]
+    rebellion_render::control_registry::set_enabled(dev_commands::palette_enabled());
+    #[cfg(not(target_arch = "wasm32"))]
     let mut dev_queue_drained = false;
     #[cfg(not(target_arch = "wasm32"))]
     let mut dev_commands_ready: Vec<dev_commands::DevCommand> = Vec::new();
+    // The file a `Save:` or `Load:` names, for the SaveGame or LoadGame it
+    // queues in place of a slot.
+    #[cfg(not(target_arch = "wasm32"))]
+    let mut dev_save_file: Option<PathBuf> = None;
+    #[cfg(not(target_arch = "wasm32"))]
+    let mut dev_load_file: Option<PathBuf> = None;
     #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
     {
         enc_state.set_edata_path(configured_edata_path(&gdata_path));
@@ -2237,9 +2272,6 @@ async fn main() {
     let mut save_load_panel_state = rebellion_render::SaveLoadPanelState::default();
     let saves_dir = rebellion_data::save::default_saves_dir();
     let mut save_slots = read_save_slots(&saves_dir);
-
-    // ── Event screen overlay ─────────────────────────────────────────────────
-    let mut event_screen_state = EventScreenState::new();
 
     // ── Tactical combat state ────────────────────────────────────────────────
     let mut tactical_state = TacticalState::new();
@@ -2566,9 +2598,83 @@ async fn main() {
     let mut native_focus = strategic_windowing::FocusStateCounter::default();
     #[cfg(target_os = "macos")]
     let mut native_active_logged: Option<bool> = None;
+    // The systems whose battle the combat loop left for a later pass.
+    let mut held_battles: Vec<SystemKey> = Vec::new();
+    // One site's AI in-day steps (`FUN_0051dea0` `+0x20`) of a day, through
+    // the shared driver; each order's record is written and shown. The
+    // player's agent takes the player's slot, except in dual-AI mode, where
+    // an AI plays the player's side.
+    macro_rules! run_ai_steps {
+        ($steps:expr, $day:expr) => {{
+            let steps = $steps;
+            // In dual-AI mode the agent's last order is dropped, so turning
+            // the mode off later applies no stale order.
+            let mut agent = if secondary_ai_state.is_none() {
+                Some(rebellion_data::simulation::AgentSlot {
+                    agent: &mut player_agent,
+                    alliance: player_faction == MissionFaction::Alliance,
+                    economy: &economy_state,
+                    applied: None,
+                })
+            } else {
+                player_agent.take_pending();
+                None
+            };
+            let mut sides: Vec<(&mut AIState, bool)> = vec![(&mut ai_state, false)];
+            if let Some(second) = secondary_ai_state.as_mut() {
+                sides.push((second, true));
+            }
+            for step in steps {
+                let mut ctx = rebellion_data::simulation::AiCtx {
+                    world: &mut world,
+                    missions: &mut mission_state,
+                    manufacturing: &mut mfg_state,
+                    movement: &mut movement_state,
+                    transport: &mut troop_transport_state,
+                    stockpiles: &mut stockpile_state,
+                    victory: &mut victory_state,
+                    death_star: &mut death_star_state,
+                    blockade: &mut blockade_state,
+                    research: &research_state,
+                    uprising: &uprising_state,
+                    config: &game_config,
+                };
+                let (records, runs) = rebellion_data::simulation::ai_step(
+                    &mut ctx,
+                    &mut sides,
+                    agent.as_mut(),
+                    step,
+                    $day,
+                    &|world, transport, action| held_at(world, transport, &held_battles, action),
+                    &mut |n| (0..n).map(|_| sim_rng.gen::<f64>()).collect(),
+                );
+                if let Some(order) = agent.as_ref().and_then(|slot| slot.applied.as_ref()) {
+                    macroquad::logging::info!("[agent] order={:?}", order);
+                }
+                show_ai_records(
+                    &records,
+                    $day,
+                    &world,
+                    &mut msg_log,
+                    #[cfg(not(target_arch = "wasm32"))]
+                    &mut audio_engine,
+                    #[cfg(not(target_arch = "wasm32"))]
+                    &audio_vol,
+                );
+                show_blockade_events(
+                    &runs,
+                    &mut world,
+                    &mut troop_transport_state,
+                    &text_templates,
+                    &mut msg_log,
+                );
+            }
+        }};
+    }
 
     loop {
         let dt = get_frame_time();
+        rebellion_render::control_registry::begin_frame();
         // Scripted input posts one event a frame; AppKit delivers it before
         // the next frame, as it delivers hardware input.
         #[cfg(not(target_arch = "wasm32"))]
@@ -2705,9 +2811,6 @@ async fn main() {
             }
         }
 
-        // ── Event screen overlay timer ────────────────────────────────────
-        update_event_screen(&mut event_screen_state, dt);
-
         // ── Global keyboard shortcuts ───────────────────────────────────────
         if matches!(game_mode, GameMode::Cutscene { .. }) {
             if is_key_pressed(KeyCode::Escape) || is_key_pressed(KeyCode::Space) {
@@ -2716,7 +2819,6 @@ async fn main() {
                 }
             }
         } else if is_key_pressed(KeyCode::Escape)
-            && !event_screen_state.is_active()
             && game_mode != GameMode::Galaxy
         {
             if let GameMode::GameOptions { origin } = game_mode.clone() {
@@ -2754,11 +2856,31 @@ async fn main() {
         let tick_events = if game_mode == GameMode::Galaxy
             && (interface_fixture_active || !advisor_state.holds_clock())
         {
-            clock.advance(dt)
+            // Fast forward (dev): exactly one day a frame, as the systems
+            // read `tick_events.last()`.
+            #[cfg(not(target_arch = "wasm32"))]
+            let clock_dt = match clock.speed.seconds_per_day() {
+                // Only while a wait that needs days is pending: between
+                // commands the clock runs at the chosen speed.
+                Some(seconds)
+                    if dev_policy.fast_forward
+                        && dev_wait_until.is_some_and(|(condition, _)| condition.needs_clock()) =>
+                {
+                    seconds
+                }
+                _ => dt,
+            };
+            #[cfg(target_arch = "wasm32")]
+            let clock_dt = dt;
+            clock.advance(clock_dt)
         } else {
             vec![]
         };
 
+        #[cfg(not(target_arch = "wasm32"))]
+        rebellion_data::telemetry::set_native_seq(
+            command_script.as_ref().and_then(|script| script.last_seq()),
+        );
         if !tick_events.is_empty() {
             // Used by the Dabora 2 notification paths that need to timestamp
             // message-log entries. `current_tick` is re-bound further down for
@@ -2768,6 +2890,31 @@ async fn main() {
             // Active movement orders are authoritative; repair stale orbit
             // indexes before economy and manufacturing inspect fleet presence.
             reconcile_fleet_orbits(&movement_state, &mut world);
+            // System bit 11 before anything reads it (FUN_005178b0).
+            rebellion_core::death_star::refresh_sectors(&mut world, &movement_state);
+
+            // The day before closes: the AI rounds its frames left run (a
+            // fast-forward day, a frame that crossed several steps, or a first
+            // round a battle held), then every side's order count clears
+            // (FUN_00485de0 via phase 13). Its last round's order stays
+            // pending. port: a frame that crosses several days closes only the
+            // day before the first; the days between run no rounds and write
+            // no ai_day, as a headless call carrying several days does.
+            if ai_state.scheduler.day_open() {
+                let day = tick_events[0].tick - 1;
+                let rate = rebellion_data::simulation::day_rate(&clock, &game_config);
+                run_ai_steps!(ai_state.scheduler.next_step()..=rate, day);
+                let mut sides: Vec<(&mut AIState, bool)> = vec![(&mut ai_state, false)];
+                if let Some(second) = secondary_ai_state.as_mut() {
+                    sides.push((second, true));
+                }
+                for closed in
+                    rebellion_data::simulation::close_ai_days(&mut sides, &clock, &game_config, day)
+                {
+                    rebellion_data::telemetry::native_ai_day(clock.tick, &closed);
+                }
+                player_agent.end_day();
+            }
 
             // ── Economy (runs BEFORE manufacturing — affects production) ──────
             let economy_events = EconomySystem::advance_with_uprisings(
@@ -2810,6 +2957,12 @@ async fn main() {
                         // FUN_00510d70 → FUN_004f6f40: the system's facilities
                         // follow its new holder.
                         world.hand_over_facilities(*system);
+                        rebellion_data::telemetry::native_control_resolved(
+                            economy_tick,
+                            &world,
+                            *system,
+                            *new_control,
+                        );
                         // Only a change of side is a loyalty change; a
                         // contested system has not declared neutrality.
                         let new = side(new_control.faction());
@@ -2848,32 +3001,9 @@ async fn main() {
                             system_audience(&world, *system),
                         ));
                     }
-                    EconomyEvent::MaintenanceShortfall {
-                        faction_is_alliance,
-                        deficit_system_count,
-                    } => {
-                        let faction_str = if *faction_is_alliance {
-                            "Alliance"
-                        } else {
-                            "Empire"
-                        };
-                        // Notification 0xc, Maintenance Shortfall.
-                        msg_log.push(filed(
-GameMessage::new(
-                            economy_tick,
-                            format!(
-                                "{faction_str} reports maintenance shortfall across {deficit_system_count} systems"
-                            ),
-                            MessageCategory::Event,
-                        )
-                        // FUN_00498970: a maintenance shortfall carries code 0xc.
-                        .with_advice(0xc),
-MessageRail::Manufacturing,
-Some(RailAudience::side(*faction_is_alliance)),
-));
-                    }
-                    _ => {} // Telemetry-only events (collection rate, garrison, incidents, support change tier)
+                    _ => {}
                 }
+                rebellion_data::telemetry::native_economy_record(economy_tick, &world, ev);
             }
 
             // ── Stockpiles: facility cycles, yard work, overdraft scraps ─────
@@ -2889,6 +3019,28 @@ Some(RailAudience::side(*faction_is_alliance)),
                 blockade_state.blockaded_systems(),
                 &stockpile_rolls,
             );
+            // Notification 0xc: each overdraft scrap's notice, named before
+            // the scrap removes the unit.
+            rebellion_data::telemetry::native_maintenance_shortfall(
+                economy_tick,
+                &world,
+                &troop_transport_state,
+                &stockpile_events,
+            );
+            for event in &stockpile_events {
+                if let StockpileEvent::OverdraftScrap { side, target } = *event {
+                    if let Some(message) = maintenance_shortfall_message(
+                        &world,
+                        &troop_transport_state,
+                        &text_templates,
+                        side,
+                        target,
+                        economy_tick,
+                    ) {
+                        msg_log.push(message);
+                    }
+                }
+            }
             rebellion_core::scrap::scrap_all(
                 &mut world,
                 &mut stockpile_state,
@@ -2940,7 +3092,8 @@ Some(RailAudience::side(*faction_is_alliance)),
             };
             for departure in &mfg_advance.departures {
                 let origin = system_name(&world, departure.origin);
-                let destination = system_name(&world, departure.destination);
+                let destination =
+                    rebellion_data::integrator::destination_name(&world, departure.destination);
                 // Notification 0x21, Construction Complete.
                 msg_log.push(filed(
                     GameMessage::at_system(
@@ -2960,6 +3113,15 @@ Some(RailAudience::side(*faction_is_alliance)),
             let delivered = delivery_state.advance(&world, &tick_events);
             for completion in &delivered.arrivals {
                 rebellion_data::integrator::apply_build_completion_inner(completion, &mut world);
+            }
+            for (fleet, completion) in &delivered.boarded {
+                rebellion_data::integrator::apply_boarding_inner(*fleet, completion, &mut world);
+            }
+            let arrived = delivered
+                .arrivals
+                .iter()
+                .chain(delivered.boarded.iter().map(|(_, completion)| completion));
+            for completion in arrived {
                 // Notification 0xd, Unit Arrival.
                 msg_log.push(filed(
                     GameMessage::at_system(
@@ -3041,6 +3203,8 @@ Some(RailAudience::side(*faction_is_alliance)),
                     applied.is_alliance,
                 ));
             }
+            // An arriving Death Star sets bit 11 in its new sector (event 0x301).
+            rebellion_core::death_star::refresh_sectors(&mut world, &movement_state);
             // Regiments travelling on their own (FUN_00556430, event 0x387).
             let now = tick_events.last().map_or(clock.tick, |event| event.tick);
             let regiments = troop_transport_state.advance_transit(&mut world, now);
@@ -3217,7 +3381,11 @@ Some(RailAudience::side(*faction_is_alliance)),
                 })
                 .collect();
 
-            for (sys_key, atk_force, def_force) in combat_triggers {
+            // The systems whose battle waits this frame: the one the Battle
+            // Alert opens and every trigger the loop leaves for a later pass.
+            let mut engaged_systems: Vec<SystemKey> = Vec::new();
+            let mut triggers = combat_triggers.into_iter();
+            while let Some((sys_key, atk_force, def_force)) = triggers.next() {
                 let sys_name = world
                     .systems
                     .get(sys_key)
@@ -3237,6 +3405,8 @@ Some(RailAudience::side(*faction_is_alliance)),
                     } else {
                         !atk_is_alliance
                     };
+                    // The battle's AI threshold reads the ships' tags.
+                    rebellion_core::carriage::tag_all(&mut world);
                     if let Err(error) = tactical_flow::begin_player_battle(
                         &world,
                         tactical_flow::BattleEntry {
@@ -3272,22 +3442,26 @@ Some(RailAudience::side(*faction_is_alliance)),
                     }
                     #[cfg(not(target_arch = "wasm32"))]
                     audio_engine.play_sfx(SfxKind::CombatStart, &audio_vol);
+                    engaged_systems.push(sys_key);
+                    engaged_systems.extend(triggers.by_ref().map(|(system, _, _)| system));
                     break; // Handle one player battle at a time.
                 }
 
                 // Nobody watches this battle: it runs headless (FUN_0040a050
                 // state 8), as the shared simulation's battles do.
-                let space_result = rebellion_data::integrator::resolve_system_space_combat(
+                let space_result = rebellion_data::integrator::resolve_system_space_combat_for(
                     &mut world,
                     &mut troop_transport_state,
                     &mut movement_state,
                     sys_key,
                     sim_rng.gen::<u32>(),
                     current_tick,
+                    Some(player_is_alliance),
                 );
                 for line in &space_result.log {
                     macroquad::logging::info!("{}", line);
                 }
+                rebellion_data::telemetry::native_combat_space(current_tick, &world, &space_result);
                 tactical_flow::reconcile_death_star_result(
                     &world,
                     &mut death_star_state,
@@ -3343,6 +3517,11 @@ Some(RailAudience::side(*faction_is_alliance)),
                     );
                 }
             }
+
+            // The battles left for a later pass hold the AI's orders there
+            // until the next day's combat (`held_at`). The opened battle
+            // closes before any round runs, as rounds run in the galaxy only.
+            held_battles = engaged_systems.get(1..).unwrap_or_default().to_vec();
 
             // Continue unresolved surface engagements even after every troop
             // has left its transport. This mirrors the shared simulation loop
@@ -3415,6 +3594,16 @@ Some(RailAudience::side(*faction_is_alliance)),
                 )
             };
 
+            // A Death Star lost in battle clears bit 11 before the blockade
+            // and uprising steps read it (event 0x301).
+            rebellion_core::death_star::refresh_sectors(&mut world, &movement_state);
+
+            // The blockade rule reruns as an arrival or a battle settles,
+            // before the AI's orders take effect (`FUN_0050b8e0` through
+            // event 0x311, `ghidra/notes/blockade-bit.md`, "When it runs").
+            let mut blockade_events =
+                BlockadeSystem::advance(&mut blockade_state, &world, &tick_events);
+
             // ── Fog of war ──────────────────────────────────────────────────
             let alliance_reveals =
                 FogSystem::advance(&mut fog_alliance_state, &world, &movement_state);
@@ -3452,12 +3641,17 @@ Some(RailAudience::side(*faction_is_alliance)),
             );
             // Member moves and releases come before the results.
             rebellion_core::missions::apply_advance_effects(&mut world, &mission_advance.effects);
+            rebellion_data::telemetry::native_mission_ended(&mission_advance.ended);
             ai_state.free_mission_members(&mission_advance.effects);
             if let Some(second_ai) = secondary_ai_state.as_mut() {
                 second_ai.free_mission_members(&mission_advance.effects);
             }
 
             for result in &mission_advance.results {
+                #[cfg(not(target_arch = "wasm32"))]
+                if result.faction == player_faction {
+                    dev_missions_resolved.push(result.mission_id);
+                }
                 apply_mission_result(
                     result,
                     &mut world,
@@ -3467,6 +3661,13 @@ Some(RailAudience::side(*faction_is_alliance)),
                     #[cfg(not(target_arch = "wasm32"))]
                     &audio_vol,
                 );
+                let research_results = ResearchSystem::apply_mission_points(
+                    &mut world,
+                    &mut research_state,
+                    &result.effects,
+                );
+                rebellion_data::telemetry::native_research_results(result.tick, &research_results);
+                push_research_reports(&mut msg_log, result.tick, &research_results);
                 for ended in rebellion_data::integrator::apply_mission_state_effects(
                     &result.effects,
                     &world,
@@ -3596,75 +3797,6 @@ Some(RailAudience::side(*faction_is_alliance)),
                 }
             }
 
-            // ── Story event screens ──────────────────────────────────────────
-            // Show a full-screen BMP overlay for scripted story moments.
-            // Only trigger if no overlay is already active (highest-priority event wins).
-            if !event_screen_state.is_active() {
-                // #R4: resolve Luke's heritage_known for render-layer BMP branching
-                let heritage_known = world
-                    .characters
-                    .values()
-                    .find(|c| c.name.contains("Luke"))
-                    .is_some_and(|c| c.heritage_known);
-
-                for fired in &fired_events {
-                    use rebellion_core::events::{
-                        EVT_BOUNTY_ATTACK, EVT_CHARACTER_FORCE, EVT_DAGOBAH_COMPLETED,
-                        EVT_FINAL_BATTLE, EVT_FORCE_TRAINING, EVT_LUKE_DAGOBAH,
-                    };
-                    // Build a human-readable title + description for each story beat.
-                    let screen = match fired.event_id {
-                        EVT_CHARACTER_FORCE => Some((
-                            "The Force Awakens",
-                            "A disturbance in the Force... Luke Skywalker's potential has been noticed.",
-                        )),
-                        EVT_FORCE_TRAINING => Some((
-                            "Jedi Training Begins",
-                            "Luke Skywalker begins his path in the ways of the Force.",
-                        )),
-                        EVT_LUKE_DAGOBAH => Some((
-                            "The Path to Dagobah",
-                            "Luke has departed for the Dagobah system to seek out Yoda.",
-                        )),
-                        EVT_DAGOBAH_COMPLETED => Some((
-                            "Training Complete",
-                            "Luke Skywalker has completed his Jedi training on Dagobah.",
-                        )),
-                        EVT_FINAL_BATTLE => Some((
-                            "The Final Battle",
-                            "The Emperor has mobilized the full might of the Empire. The fate of the galaxy will be decided now.",
-                        )),
-                        EVT_BOUNTY_ATTACK => Some((
-                            "A Trap is Sprung",
-                            "Bounty hunters strike! Han Solo has been captured and frozen in carbonite.",
-                        )),
-                        0x380 => Some(("Jabba's Demand", "Jabba the Hutt demands the return of Solo. A debt must be paid.")),
-                        0x381 => Some(("The Rescue Plan", "Princess Leia has devised a plan to rescue Han Solo from Jabba's palace.")),
-                        0x382 => Some(("Into Jabba's Palace", "Alliance agents infiltrate Jabba's fortress. The rescue is underway.")),
-                        0x383 => Some(("Jabba Defeated", "Jabba the Hutt is dead. Han Solo is free.")),
-                        0x390 => Some(("The Empire Strikes", "Darth Vader has launched a devastating offensive.")),
-                        0x391 => Some(("Vader's Ultimatum", "Darth Vader delivers an ultimatum to Alliance command.")),
-                        0x393 => Some(("The Emperor Watches", "The Emperor himself turns his attention to the conflict.")),
-                        0x394 => Some(("Imperial Intervention", "The Emperor has intervened directly in the war.")),
-                        0x397 => Some(("Hunters Dispatched", "Bounty hunters have been unleashed across the galaxy.")),
-                        0x398 => Some(("Closing In", "The bounty hunters are closing in on their quarry.")),
-                        0x399 => Some(("Alliance Mobilizes", "Mon Mothma has ordered a full mobilization of Alliance forces.")),
-                        0x39A => Some(("The Final Stand", "The Alliance makes its final stand against the Empire.")),
-                        _ => None,
-                    };
-                    if let Some((title, description)) = screen {
-                        show_event_screen(
-                            &mut event_screen_state,
-                            fired.event_id,
-                            title,
-                            description,
-                            heritage_known,
-                        );
-                        break; // One overlay at a time
-                    }
-                }
-            }
-
             // ── Story cutscene triggers (C1–C8) ─────────────────────────────
             // When a story event fires that maps to a cutscene file (101–108),
             // launch the cutscene. Only the first matching event triggers a
@@ -3689,85 +3821,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                 }
             }
 
-            // ── AI ──────────────────────────────────────────────────────────
-            let ai_actions = AISystem::advance(
-                &mut ai_state,
-                &world,
-                &mfg_state,
-                &mission_state,
-                &movement_state,
-                &tick_events,
-                &game_config,
-                &research_state,
-            );
-            apply_ai_actions(
-                &ai_actions,
-                &mut ai_state,
-                &mut mission_state,
-                &mut mfg_state,
-                &mut movement_state,
-                &mut troop_transport_state,
-                &mut research_state,
-                &mut world,
-                &mut msg_log,
-                tick_events.last().map_or(0, |e| e.tick),
-                #[cfg(not(target_arch = "wasm32"))]
-                &mut audio_engine,
-                #[cfg(not(target_arch = "wasm32"))]
-                &audio_vol,
-            );
-
-            // ── The player's agent (FUN_00439a10): once a day, its running
-            // modules issue Destination and build orders. Not in dual-AI
-            // mode, where an AI plays the player's side.
-            if secondary_ai_state.is_none() {
-                for _ in &tick_events {
-                    let orders = player_agent.advance(
-                        &world,
-                        &mfg_state,
-                        &economy_state,
-                        player_faction == MissionFaction::Alliance,
-                    );
-                    for order in &orders {
-                        macroquad::logging::info!("[agent] order={:?}", order);
-                    }
-                    rebellion_core::agent_automation::apply_orders(&orders, &mut mfg_state);
-                }
-            }
-
-            // ── Dual AI (second faction) ────────────────────────────────────
-            if let Some(ref mut second_ai) = secondary_ai_state {
-                let second_actions = AISystem::advance(
-                    second_ai,
-                    &world,
-                    &mfg_state,
-                    &mission_state,
-                    &movement_state,
-                    &tick_events,
-                    &game_config,
-                    &research_state,
-                );
-                apply_ai_actions(
-                    &second_actions,
-                    second_ai,
-                    &mut mission_state,
-                    &mut mfg_state,
-                    &mut movement_state,
-                    &mut troop_transport_state,
-                    &mut research_state,
-                    &mut world,
-                    &mut msg_log,
-                    tick_events.last().map_or(0, |e| e.tick),
-                    #[cfg(not(target_arch = "wasm32"))]
-                    &mut audio_engine,
-                    #[cfg(not(target_arch = "wasm32"))]
-                    &audio_vol,
-                );
-            }
-
             // ── Blockade ─────────────────────────────────────────────────────
-            let mut blockade_events =
-                BlockadeSystem::advance(&mut blockade_state, &world, &tick_events);
             if let Some(last) = tick_events.last() {
                 running_regiments.extend(BlockadeSystem::running_regiments(
                     &mut blockade_state,
@@ -3784,83 +3838,13 @@ Some(RailAudience::side(*faction_is_alliance)),
                     last.tick,
                 ));
             }
-            for evt in &blockade_events {
-                match evt {
-                    rebellion_core::blockade::BlockadeEvent::BlockadeStarted { system, tick } => {
-                        let name = world
-                            .systems
-                            .get(*system)
-                            .map_or_else(|| "unknown".into(), |s| s.name.clone());
-                        for message in blockade_messages(
-                            &world,
-                            &text_templates,
-                            *system,
-                            *tick,
-                            format!("Blockade established at {name}"),
-                        ) {
-                            msg_log.push(message);
-                        }
-                    }
-                    rebellion_core::blockade::BlockadeEvent::BlockadeEnded { system, tick } => {
-                        let name = world
-                            .systems
-                            .get(*system)
-                            .map_or_else(|| "unknown".into(), |s| s.name.clone());
-                        // Notification 7, Blockade Message.
-                        msg_log.push(filed(
-                            GameMessage::at_system(
-                                *tick,
-                                format!("Blockade lifted at {name}"),
-                                MessageCategory::Combat,
-                                *system,
-                            ),
-                            MessageRail::Conflict,
-                            Some(RailAudience::Both),
-                        ));
-                    }
-                    rebellion_core::blockade::BlockadeEvent::TroopDestroyed {
-                        system,
-                        troop,
-                        tick,
-                    } => {
-                        // The regiment was aboard a fleet leaving the system.
-                        troop_transport_state.destroy_embarked(&mut world, *troop);
-                        let name = world
-                            .systems
-                            .get(*system)
-                            .map_or_else(|| "unknown".into(), |s| s.name.clone());
-                        // Notification 7, Blockade Message.
-                        msg_log.push(filed(
-                            GameMessage::at_system(
-                                *tick,
-                                format!("Troops destroyed by blockade at {name}"),
-                                MessageCategory::Combat,
-                                *system,
-                            ),
-                            MessageRail::Conflict,
-                            Some(RailAudience::Both),
-                        ));
-                    }
-                }
-            }
-
-            // ── Repair ──────────────────────────────────────────────────────
-            let repair_events = RepairSystem::advance(&mut repair_state, &world, &tick_events);
-            for evt in &repair_events {
-                if let RepairEvent::ShipRepaired {
-                    fleet,
-                    ship_index,
-                    hull_after,
-                    ..
-                } = evt
-                {
-                    if let Some(f) = world.fleets.get_mut(*fleet) {
-                        if let Some(ship) = f.capital_ships.get_mut(*ship_index) {
-                            ship.hull_current = *hull_after;
-                        }
-                    }
-                }
-            }
+            show_blockade_events(
+                &blockade_events,
+                &mut world,
+                &mut troop_transport_state,
+                &text_templates,
+                &mut msg_log,
+            );
 
             // ── Uprising and disaster (FUN_0050b800, events 0x38d and 0x38f) ──
             let uprising_tick = tick_events.last().map_or(0, |event| event.tick);
@@ -4037,50 +4021,34 @@ Some(RailAudience::side(*faction_is_alliance)),
             }
 
             // ── Research ─────────────────────────────────────────────────────
-            let research_results =
-                ResearchSystem::advance(&mut research_state, &world, &tick_events);
-            for result in &research_results {
-                let rebellion_core::research::ResearchResult::TechUnlocked {
-                    faction_is_alliance,
-                    tech_type,
-                    new_level,
-                } = result;
-                let faction_name = if *faction_is_alliance {
-                    "Alliance"
-                } else {
-                    "Empire"
-                };
-                let tech_name = match tech_type {
-                    rebellion_core::research::TechType::Ship => "Ship",
-                    rebellion_core::research::TechType::Troop => "Troop",
-                    rebellion_core::research::TechType::Facility => "Facility",
-                };
-                // Notification 5, Research Report.
-                msg_log.push(filed(
-                    GameMessage::new(
-                        current_tick,
-                        format!("{faction_name} {tech_name} tech advanced to level {new_level}"),
-                        MessageCategory::Event,
-                    )
-                    // FUN_00499aa0: research carries code 4.
-                    .with_advice(4),
-                    MessageRail::Manufacturing,
-                    Some(RailAudience::side(*faction_is_alliance)),
-                ));
+            let research_rolls: Vec<f64> = (0..tick_events.len())
+                .map(|_| sim_rng.gen::<f64>())
+                .collect();
+            let research_results = ResearchSystem::advance(
+                &mut research_state,
+                &mut world,
+                &uprising_state,
+                &tick_events,
+                &research_rolls,
+            );
+            rebellion_data::telemetry::native_research_results(current_tick, &research_results);
+            push_research_reports(&mut msg_log, current_tick, &research_results);
+
+            // ── Repair ──────────────────────────────────────────────────────
+            let repair_rolls: Vec<f64> = (0..RepairSystem::roll_budget(&world, tick_events.len()))
+                .map(|_| sim_rng.gen::<f64>())
+                .collect();
+            let repair_events = RepairSystem::advance(
+                &mut repair_state,
+                &world,
+                &uprising_state,
+                &tick_events,
+                &repair_rolls,
+            );
+            for evt in &repair_events {
+                evt.apply(&mut world);
             }
-            // Apply research level-ups (advance() is now pure — caller must apply)
-            for result in &research_results {
-                let rebellion_core::research::ResearchResult::TechUnlocked {
-                    faction_is_alliance,
-                    tech_type,
-                    ..
-                } = result;
-                if *faction_is_alliance {
-                    research_state.alliance.advance(*tech_type);
-                } else {
-                    research_state.empire.advance(*tech_type);
-                }
-            }
+            rebellion_data::telemetry::native_repair_events(current_tick, &world, &repair_events);
 
             // ── Jedi training ────────────────────────────────────────────────
             let jedi_rolls: Vec<f64> = (0..jedi_state.training.len().max(1))
@@ -4151,6 +4119,27 @@ Some(RailAudience::side(*faction_is_alliance)),
                 }
             }
 
+            // ── AI ───────────────────────────────────────────────────────────
+            // Phase 8 (FUN_004361a0) follows every due timer of phase 5, so
+            // the day's first round runs after the daily stages; the later
+            // rounds run over the day's frames (below). A player battle or a
+            // cutscene opened this frame holds the round until it closes:
+            // hyp: the Battle Alert is modal before the step's phase 8; how
+            // FUN_0040a050's alert states gate FUN_0051dea0's steps is
+            // untraced. The first galaxy frame after it runs the round.
+            let headquarters_only = campaign_config.victory_conditions
+                == rebellion_core::world::VictoryConditions::HeadquartersOnly;
+            ai_state.set_headquarters_only(headquarters_only);
+            ai_state.scheduler.day_started = true;
+            if let Some(second) = secondary_ai_state.as_mut() {
+                second.set_headquarters_only(headquarters_only);
+                second.scheduler.day_started = true;
+            }
+            if game_mode == GameMode::Galaxy {
+                rebellion_core::carriage::tag_all(&mut world);
+                run_ai_steps!(0..=0, current_tick);
+            }
+
             // ── Victory check ────────────────────────────────────────────────
             if let Some(outcome) = VictorySystem::check(
                 &victory_state,
@@ -4184,9 +4173,26 @@ Some(RailAudience::side(*faction_is_alliance)),
             }
         }
 
+        // ── AI in-day rounds (FUN_0051dea0 `+0x20`) ──────────────────────
+        // The day's later steps, spread over its frames, and a first round a
+        // closed battle held. Rounds run while the clock runs in the galaxy.
+        if game_mode == GameMode::Galaxy
+            && (interface_fixture_active || !advisor_state.holds_clock())
+            && clock.tick >= 1
+        {
+            let rounds = game_config.ai.rounds_per_day.at(clock.speed);
+            let next = ai_state.scheduler.next_step();
+            if let Some(upto) = clock.in_day_step(rounds).filter(|&upto| next <= upto) {
+                rebellion_core::carriage::tag_all(&mut world);
+                run_ai_steps!(next..=upto, clock.tick);
+            }
+        }
+
         // FUN_004eeed0, FUN_00560d50: a rank lapses as soon as its holder
         // is taken, killed, sent on a mission or moved off its post.
         rebellion_core::officer_rank::clear_lapsed_ranks(&mut world);
+
+        rebellion_data::telemetry::flush_native_traces(clock.tick);
 
         // ── Developer commands ───────────────────────────────────────────────
 
@@ -4198,6 +4204,48 @@ Some(RailAudience::side(*faction_is_alliance)),
             for (seq, line) in dev_channel.poll(get_time()) {
                 script.push_live(seq, line);
             }
+            // What the waits and policies read of the game this frame.
+            let dev_observed = dev_policy::Observed {
+                day: clock.tick,
+                mode: format!("{game_mode:?}")
+                    .split(|c: char| !c.is_alphanumeric())
+                    .next()
+                    .unwrap_or_default()
+                    .to_owned(),
+                galaxy: game_mode == GameMode::Galaxy,
+                main_menu: game_mode == GameMode::MainMenu,
+                battle_alert: tactical_state.battle_alert_open().then(|| {
+                    tactical_state
+                        .session
+                        .as_ref()
+                        .map_or_else(|| "?".to_owned(), |session| session.system_name.clone())
+                }),
+                results: game_mode == GameMode::TacticalCombat
+                    && tactical_state.over_command_center()
+                    && !tactical_state.battle_alert_open(),
+                pause_alert: clock.pause_requested(),
+                paused: clock.speed.seconds_per_day().is_none(),
+                briefing: advisor_state.holds_clock(),
+                advice_index: message_index
+                    .as_ref()
+                    .is_some_and(|index| index.category() == dev_commands::MESSAGE_CATEGORIES[9].1),
+            };
+            // A wait for the alert or the battle itself must find it standing.
+            let dev_waits_for_battle = matches!(
+                dev_wait_until,
+                Some((
+                    dev_commands::WaitCondition::BattleAlert | dev_commands::WaitCondition::Battle,
+                    _
+                ))
+            );
+            if !dev_waits_for_battle
+                && (dev_wait_until.is_some()
+                    || dev_policy_hold.1 > 0
+                    || get_time() < dev_policy_hold.0)
+            {
+                dev_policy.answer_modals(&dev_observed, &mut dev_input);
+            }
+            dev_policy_hold.1 = dev_policy_hold.1.saturating_sub(1);
             if let Some((condition, frames)) = dev_wait_until.as_mut() {
                 use dev_commands::WaitCondition;
                 let met = match *condition {
@@ -4210,11 +4258,39 @@ Some(RailAudience::side(*faction_is_alliance)),
                             && !tactical_state.over_command_center()
                     }
                     WaitCondition::Galaxy => game_mode == GameMode::Galaxy,
+                    WaitCondition::MissionResolved(None) => {
+                        dev_missions_resolved.len() as u64 > dev_wait_baseline
+                    }
+                    WaitCondition::MissionResolved(Some(id)) => dev_missions_resolved.contains(&id),
+                    WaitCondition::Message(category) => msg_log.messages().iter().any(|message| {
+                        message.id > dev_wait_baseline
+                            && message
+                                .audience
+                                .includes(player_faction == MissionFaction::Alliance)
+                            && message.rail.is_some_and(|rail| {
+                                rebellion_render::message_index::category_rail(category)
+                                    .map_or(true, |wanted| rail == wanted)
+                            })
+                    }),
+                    WaitCondition::PauseAlert => clock.pause_requested(),
+                    WaitCondition::Tech {
+                        alliance,
+                        tech,
+                        level,
+                    } => research_state.level(alliance, tech) >= level,
                 };
-                if met {
+                let blocker = if met {
+                    None
+                } else {
+                    dev_policy.blocker(&dev_observed, *condition)
+                };
+                if let Some(blocker) = blocker {
+                    dev_channel.refuse(&blocker);
+                    dev_wait_until = None;
+                } else if met {
                     dev_channel.note(&format!("day={} after {frames} frames", clock.tick));
                     dev_wait_until = None;
-                } else if *frames >= dev_commands::WAIT_UNTIL_FRAMES {
+                } else if *frames >= dev_wait_budget.unwrap_or(dev_commands::WAIT_UNTIL_FRAMES) {
                     dev_channel.refuse(&format!(
                         "waited {frames} frames for {condition:?}; day={} mode={game_mode:?}",
                         clock.tick
@@ -4322,19 +4398,115 @@ Some(RailAudience::side(*faction_is_alliance)),
         #[cfg(not(target_arch = "wasm32"))]
         for command in std::mem::take(&mut dev_commands_ready) {
             use dev_commands::DevCommand;
+            // What `Save:` and `Load:` must not run behind.
+            let dev_modal = if tactical_state.battle_alert_open() {
+                Some("the Battle Alert")
+            } else if clock.pause_requested() {
+                Some("the pause alert")
+            } else if mission_dialog_state.is_open() {
+                Some("the mission dialog")
+            } else {
+                None
+            };
+            if matches!(
+                command,
+                DevCommand::WaitUntil(_) | DevCommand::WaitUntilWithin(..)
+            ) {
+                dev_wait_budget = None;
+            }
+            let command = match command {
+                DevCommand::WaitUntilWithin(condition, frames) => {
+                    dev_wait_budget = Some(frames);
+                    DevCommand::WaitUntil(condition)
+                }
+                command => command,
+            };
             match command {
                 DevCommand::Capture(name) => {
                     dev_capture = Some(name.unwrap_or_else(|| {
                         format!("capture-{}", dev_channel.next_capture_number())
                     }));
                 }
-                DevCommand::WaitMs(ms) => dev_hold_until = get_time() + f64::from(ms) / 1000.0,
-                DevCommand::WaitFrames(frames) => dev_hold_frames = frames,
-                DevCommand::WaitUntil(condition) => dev_wait_until = Some((condition, 0)),
+                DevCommand::WaitMs(ms) => {
+                    dev_hold_until = get_time() + f64::from(ms) / 1000.0;
+                    dev_policy_hold.0 = dev_hold_until;
+                }
+                DevCommand::WaitFrames(frames) => {
+                    dev_hold_frames = frames;
+                    dev_policy_hold.1 = frames;
+                }
+                // Rewritten to `WaitUntil` above.
+                DevCommand::WaitUntilWithin(..) => {}
+                DevCommand::WaitUntil(condition) => {
+                    // A mission the player's side is not running resolves
+                    // never (or, an old id, at once): refuse it up front.
+                    if let dev_commands::WaitCondition::MissionResolved(Some(id)) = condition {
+                        if !mission_state
+                            .missions()
+                            .iter()
+                            .any(|mission| mission.id == id && mission.faction == player_faction)
+                        {
+                            dev_channel.refuse(&format!(
+                                "mission {id} is not an active mission of the player's side"
+                            ));
+                            continue;
+                        }
+                    }
+                    dev_wait_baseline = match condition {
+                        dev_commands::WaitCondition::Message(_) => {
+                            msg_log.messages().last().map_or(0, |message| message.id)
+                        }
+                        _ => dev_missions_resolved.len() as u64,
+                    };
+                    dev_wait_until = Some((condition, 0));
+                }
+                DevCommand::FastForward(on) => {
+                    dev_policy.fast_forward = on;
+                    dev_channel.note(&format!("fast_forward={}", if on { "on" } else { "off" }));
+                }
+                DevCommand::BattlePolicy(policy) => {
+                    dev_policy.battle = policy;
+                    dev_channel.note(&format!("battle policy {policy:?}"));
+                }
+                DevCommand::AdvicePolicy(policy) => {
+                    dev_policy.advice = policy;
+                    dev_channel.note(&format!("advice policy {policy:?}"));
+                }
                 // Two frames after the last step let the game read it.
                 DevCommand::Click { x, y, right, ctrl } => {
                     dev_input.click(x, y, right, ctrl);
                     dev_hold_frames = 2;
+                }
+                DevCommand::ClickControl { name, right } => match dev_commands::control_rect(&name)
+                {
+                    Ok(rect) => {
+                        let (x, y) = rect.center();
+                        dev_input.click(x, y, right, false);
+                        dev_hold_frames = 2;
+                        dev_channel.note(&format!("{name} at {x:.0},{y:.0}"));
+                    }
+                    Err(why) => dev_channel.refuse(&why),
+                },
+                DevCommand::LocateControl(name) => match dev_commands::control_rect(&name) {
+                    Ok(rect) => {
+                        let (x, y) = rect.center();
+                        dev_channel.note(&format!(
+                            "{name} rect {:.0},{:.0} {:.0}x{:.0} center {x:.0},{y:.0}",
+                            rect.x, rect.y, rect.width, rect.height
+                        ));
+                    }
+                    Err(why) => dev_channel.refuse(&why),
+                },
+                DevCommand::ListControls(window) => {
+                    let names = rebellion_render::control_registry::names(window.as_deref());
+                    if names.is_empty() {
+                        dev_channel.refuse(&format!(
+                            "no controls registered{}",
+                            window.map_or_else(String::new, |window| format!(" under {window:?}"))
+                        ));
+                    } else {
+                        dev_channel.note(&format!("[{}]", names.join(", ")));
+                    }
                 }
                 DevCommand::Drag { from, to } => {
                     dev_input.drag(from, to);
@@ -4457,6 +4629,13 @@ Some(RailAudience::side(*faction_is_alliance)),
                         Err(why) => dev_channel.refuse(&why),
                     }
                 }
+                DevCommand::DamageShip(ref fleet) => {
+                    let alliance = player_faction == MissionFaction::Alliance;
+                    match dev_actions::damage_ship(&mut world, alliance, fleet) {
+                        Ok(detail) => dev_channel.note(&detail),
+                        Err(why) => dev_channel.refuse(&why),
+                    }
+                }
                 DevCommand::Status => {
                     let mode = format!("{game_mode:?}");
                     let mode = mode
@@ -4490,7 +4669,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                     let status = format!(
                         "mode={mode} day={} speed={:?} pause_alert={} battle_alert={} \
                          message_index={index} briefing={} side={:?} \
-                         alliance={} empire={}",
+                         alliance={} empire={} fast_forward={}",
                         clock.tick,
                         clock.speed,
                         clock.pause_requested(),
@@ -4499,6 +4678,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                         player_faction,
                         strip(Faction::Alliance),
                         strip(Faction::Empire),
+                        if dev_policy.fast_forward { "on" } else { "off" },
                     );
                     eprintln!("[dev-command] status: {status}");
                     dev_channel.note(&status);
@@ -4512,6 +4692,111 @@ Some(RailAudience::side(*faction_is_alliance)),
                     let held = advice_topics.held_topics();
                     dev_channel.note(&format!("held: {held:?}"));
                 }
+                DevCommand::ListCharacters(side) => {
+                    dev_channel.note(&rebellion_data::readouts::list_characters(
+                        &world,
+                        &mission_state,
+                        &movement_state,
+                        side,
+                    ))
+                }
+                DevCommand::ListMissions(side) => {
+                    dev_channel.note(&rebellion_data::readouts::list_missions(
+                        &world,
+                        &mission_state,
+                        clock.tick,
+                        side,
+                    ))
+                }
+                DevCommand::ShowResearch => dev_channel.note(
+                    &rebellion_data::readouts::show_research(&world, &research_state),
+                ),
+                DevCommand::ListProduction(side) => {
+                    dev_channel.note(&rebellion_data::readouts::list_production(
+                        &world, &mfg_state, clock.tick, side,
+                    ))
+                }
+                DevCommand::ShowSide(side) => {
+                    dev_channel.note(&rebellion_data::readouts::show_side(
+                        &world,
+                        &stockpile_state,
+                        &mfg_state,
+                        &mission_state,
+                        side,
+                    ))
+                }
+                DevCommand::Save(name) => {
+                    if game_mode != GameMode::Galaxy {
+                        dev_channel.refuse(&format!(
+                            "the galaxy must show to save; the game is in {game_mode:?}"
+                        ));
+                    } else if let Some(modal) = dev_modal {
+                        dev_channel.refuse(&format!("{modal} is open; close it first"));
+                    } else {
+                        dev_save_file = Some(dev_actions::save_path(dev_channel.evidence(), &name));
+                        panel_actions.push(PanelAction::SaveGame { slot: 0, name });
+                    }
+                }
+                DevCommand::Load(name) => {
+                    let path = dev_actions::save_path(dev_channel.evidence(), &name);
+                    if !matches!(game_mode, GameMode::MainMenu | GameMode::Galaxy) {
+                        dev_channel.refuse(&format!(
+                            "a save loads from the main menu or the galaxy; the game is in {game_mode:?}"
+                        ));
+                    } else if let Some(modal) = dev_modal {
+                        dev_channel.refuse(&format!("{modal} is open; close it first"));
+                    } else if !path.is_file() {
+                        dev_channel.refuse(&format!("no save at {}", path.display()));
+                    } else {
+                        dev_load_file = Some(path);
+                        panel_actions.push(PanelAction::LoadGame { slot: 0 });
+                    }
+                }
+                DevCommand::Mission {
+                    team,
+                    kind,
+                    system,
+                    decoys,
+                } => {
+                    match dev_actions::mission_order(
+                        &world,
+                        &uprising_state,
+                        &mission_state,
+                        player_faction,
+                        &team,
+                        &decoys,
+                        kind,
+                        &system,
+                        clock.tick,
+                    ) {
+                        Ok(order) => {
+                            // The result is written once the dispatch has run
+                            // (below, after the panel actions).
+                            if let Ok(mut last) = dev_actions::LAST_DISPATCH_REFUSAL.lock() {
+                                *last = None;
+                            }
+                            dev_mission_check = Some(mission_state.len());
+                            panel_actions.push(PanelAction::DispatchMission {
+                                kind: order.kind,
+                                faction: player_faction,
+                                team: order.team,
+                                decoys: order.decoys,
+                                target: order.target,
+                                target_character: None,
+                                tick: clock.tick,
+                            });
+                        }
+                        Err(why) => dev_channel.refuse(&why),
+                    }
+                }
+                DevCommand::Recruit {
+                    character,
+                    side,
+                    system,
+                } => match dev_actions::recruit(&mut world, &character, side, system.as_deref()) {
+                    Ok(detail) => dev_channel.note(&detail),
+                    Err(why) => dev_channel.refuse(&why),
+                },
                 DevCommand::SkipBriefing => {
                     if advisor_state.holds_clock() {
                         advisor_state.skip_tour();
@@ -4607,7 +4892,6 @@ Some(RailAudience::side(*faction_is_alliance)),
         #[cfg(not(any(debug_assertions, not(target_arch = "wasm32"))))]
         let command_palette_open = false;
         let strategic_locks = ApplicationInputLocks {
-            event_screen: event_screen_state.is_active(),
             briefing: !interface_fixture_active && briefing_lock,
             fixture_setup: false,
             scene_transition: desired_window_scene != WindowScene::Galaxy,
@@ -5054,6 +5338,10 @@ Some(RailAudience::side(*faction_is_alliance)),
                                         &world,
                                     );
                                     movement_state = MovementState::new();
+                                    rebellion_core::death_star::refresh_sectors(
+                                        &mut world,
+                                        &movement_state,
+                                    );
                                     blockade_state = BlockadeState::new();
                                     uprising_state = UprisingState::new();
                                     death_star_state = DeathStarState::default();
@@ -5070,6 +5358,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                                     game_config = rebellion_core::tuning::GameConfig::default();
                                     dual_ai_mode = false;
                                     secondary_ai_state = None;
+                                    held_battles.clear();
 
                                     map_state = GalaxyMapState::default();
                                     warmed_galaxy_font_sizes.clear();
@@ -5094,7 +5383,6 @@ Some(RailAudience::side(*faction_is_alliance)),
                                     save_load_panel_state =
                                         rebellion_render::SaveLoadPanelState::default();
                                     save_slots = read_save_slots(&saves_dir);
-                                    event_screen_state = EventScreenState::new();
                                     tactical_state = TacticalState::new();
                                     ground_combat_state = None;
 
@@ -5167,6 +5455,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                                 economy_state = EconomyState::default();
                                 player_agent =
                                     PlayerAgent::for_new_game(campaign_config.difficulty);
+                                held_battles.clear();
 
                                 // AI controls the opposite faction
                                 if faction == MissionFaction::Empire {
@@ -5291,7 +5580,6 @@ Some(RailAudience::side(*faction_is_alliance)),
                     || game_speed_ui.menu_anchor.is_some()
                     || object_menu.is_some()
                     || pause_alert_contains_screen_point(&clock, cockpit_layout, pointer)
-                    || event_screen_state.is_active()
                     || briefing_lock
                     || battle_window_underlay
                     || !strategic_root_pointer_enabled;
@@ -7465,16 +7753,18 @@ Some(RailAudience::side(*faction_is_alliance)),
                                 // a band's own area.
                                 Some(TargetingEnd::Target {
                                     order: TargetOrder::Destination { system, area },
-                                    target:
-                                        ReleaseTarget::System(destination)
-                                        | ReleaseTarget::Fleet {
-                                            system: destination,
-                                            ..
-                                        },
+                                    target,
                                 }) => panel_actions.push(PanelAction::SetDestination {
                                     system,
                                     area,
-                                    destination,
+                                    destination: match target {
+                                        ReleaseTarget::System(key) => {
+                                            rebellion_core::manufacturing::Destination::System(key)
+                                        }
+                                        ReleaseTarget::Fleet { fleet, .. } => {
+                                            rebellion_core::manufacturing::Destination::Fleet(fleet)
+                                        }
+                                    },
                                 }),
                                 Some(TargetingEnd::Dropped) | None => {}
                             }
@@ -7542,12 +7832,6 @@ Some(RailAudience::side(*faction_is_alliance)),
                         }
                     }
 
-                    // Story event screen overlay (top-most, including the advisor). Preserve
-                    // the pre-draw state so the click that dismisses an event cannot also
-                    // activate a cockpit control underneath it in the same frame.
-                    let event_screen_was_active = event_screen_state.is_active();
-                    draw_event_screen(ctx, &mut event_screen_state, &mut bmp_cache);
-
                     // Under the battle window the command center takes no
                     // pointer input: this foreground layer absorbs it, so the
                     // windows beneath stay as they are.
@@ -7566,11 +7850,11 @@ Some(RailAudience::side(*faction_is_alliance)),
                     // The galaxy view holds the capture while targeting, and
                     // the briefing tour's hooks hold it while they are in
                     // (FUN_0041d9d0: a press skips the tour instead).
-                    pending_cockpit_button = (strategic_input_enabled
-                        && !event_screen_was_active
-                        && !event_screen_state.is_active())
-                    .then(|| handle_cockpit_egui_input(ctx, &mut cockpit_state, &mut bmp_cache))
-                    .flatten();
+                    pending_cockpit_button = strategic_input_enabled
+                        .then(|| {
+                            handle_cockpit_egui_input(ctx, &mut cockpit_state, &mut bmp_cache)
+                        })
+                        .flatten();
                     // Future manager-owned content paints after this restore;
                     // every retained legacy surface above was input-muted.
                     if let Some(saved) = retained_legacy_input {
@@ -8526,6 +8810,21 @@ Some(RailAudience::side(*faction_is_alliance)),
                     }
                     .snapshot();
                     let active_mods = mod_runtime.enabled_mod_list();
+                    // A `Save:` names its file; it opens no slot and logs nothing.
+                    #[cfg(not(target_arch = "wasm32"))]
+                    if let Some(path) = dev_save_file.take() {
+                        match rebellion_data::save::save_file(&path, &name, &state, &active_mods) {
+                            Ok(fingerprint) => {
+                                dev_channel.set_path(&path);
+                                dev_channel.note(&format!(
+                                    "tick {} fingerprint {fingerprint}",
+                                    state.clock.tick
+                                ));
+                            }
+                            Err(error) => dev_channel.refuse(&format!("{error:#}")),
+                        }
+                        continue;
+                    }
                     match rebellion_data::save::save_slot(
                         &saves_dir,
                         slot,
@@ -8557,7 +8856,17 @@ Some(RailAudience::side(*faction_is_alliance)),
                     }
                 }
                 PanelAction::LoadGame { slot } => {
-                    match rebellion_data::save::load_slot(&saves_dir, slot) {
+                    // A `Load:` names its file in place of a slot.
+                    #[cfg(not(target_arch = "wasm32"))]
+                    let dev_loaded = dev_load_file.take();
+                    #[cfg(not(target_arch = "wasm32"))]
+                    let loaded = match &dev_loaded {
+                        Some(path) => rebellion_data::save::load_file(path, slot),
+                        None => rebellion_data::save::load_slot(&saves_dir, slot),
+                    };
+                    #[cfg(target_arch = "wasm32")]
+                    let loaded = rebellion_data::save::load_slot(&saves_dir, slot);
+                    match loaded {
                         Ok((meta, state)) => {
                             macroquad::logging::info!(
                                 "load_state_fingerprint slot={} tick={} fingerprint={}",
@@ -8601,6 +8910,10 @@ Some(RailAudience::side(*faction_is_alliance)),
                                 rebellion_data::save::compute_state_fingerprint(
                                     &campaign.snapshot(),
                                 );
+                            // The battles left for a later pass are the
+                            // contested systems the save holds (the combat
+                            // triggers, FUN_00509710 / FUN_0050b8e0).
+                            held_battles = contested_systems(&world);
                             game_speed_ui = GameSpeedUiState::default();
                             macroquad::logging::info!(
                                 "[campaign] loaded configuration={}",
@@ -8645,11 +8958,16 @@ Some(RailAudience::side(*faction_is_alliance)),
                             show_bombardment = false;
                             show_death_star = false;
                             save_load_panel_state.close();
-                            event_screen_state = EventScreenState::new();
                             tactical_state = TacticalState::new();
                             ground_combat_state = None;
                             dual_ai_mode = secondary_ai_state.is_some();
                             msg_log = MessageLog::default();
+                            // Mission ids and message ids start over with the save.
+                            #[cfg(not(target_arch = "wasm32"))]
+                            {
+                                dev_missions_resolved.clear();
+                                dev_wait_baseline = 0;
+                            }
                             msg_log.push(GameMessage::new(
                                 clock.tick,
                                 format!("Loaded save ‘{}’ from slot {}", meta.name, slot + 1),
@@ -8662,8 +8980,20 @@ Some(RailAudience::side(*faction_is_alliance)),
                                     slot, clock.tick, fingerprint, player_faction
                                 );
                             }
+                            #[cfg(not(target_arch = "wasm32"))]
+                            if let Some(path) = &dev_loaded {
+                                dev_channel.set_path(path);
+                                dev_channel.note(&format!(
+                                    "tick {} fingerprint {}",
+                                    clock.tick, meta.state_fingerprint
+                                ));
+                            }
                         }
                         Err(error) => {
+                            #[cfg(not(target_arch = "wasm32"))]
+                            if dev_loaded.is_some() {
+                                dev_channel.refuse(&format!("{error:#}"));
+                            }
                             save_load_panel_state.error_message = Some(error.to_string());
                             game_options_state.error = Some(error.to_string());
                         }
@@ -8722,6 +9052,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                         &mut victory_state,
                         campaign_config,
                         &mut blockade_state,
+                        &uprising_state,
                         &event_state,
                         &mut mod_runtime,
                         #[cfg(not(target_arch = "wasm32"))]
@@ -9007,6 +9338,18 @@ Some(RailAudience::side(*faction_is_alliance)),
         // its frame (or its wait) is over.
         #[cfg(not(target_arch = "wasm32"))]
         {
+            if let Some(before) = dev_mission_check.take() {
+                if mission_state.len() > before {
+                    dev_channel.note("dispatched");
+                } else {
+                    let why = dev_actions::LAST_DISPATCH_REFUSAL
+                        .lock()
+                        .ok()
+                        .and_then(|mut last| last.take())
+                        .unwrap_or_else(|| "no reason recorded".to_owned());
+                    dev_channel.refuse(&format!("the dispatch was refused: {why}"));
+                }
+            }
             if let Some(name) = dev_capture.take() {
                 match dev_channel::capture_frame(dev_channel.evidence(), &name) {
                     Ok((path, width, height)) => {
@@ -9939,6 +10282,7 @@ fn apply_panel_action(
     victory_state: &mut VictoryState,
     campaign_config: CampaignConfig,
     blockade_state: &mut BlockadeState,
+    uprising_state: &UprisingState,
     event_state: &EventState,
     mod_runtime: &mut rebellion_data::mods::ModRuntime,
     #[cfg(not(target_arch = "wasm32"))] encyclopedia_base_input: Option<
@@ -10017,6 +10361,7 @@ fn apply_panel_action(
             let result = mission_state.dispatch_move(
                 world,
                 movement_state,
+                uprising_state,
                 *player_faction,
                 &members,
                 destination,
@@ -10075,10 +10420,7 @@ fn apply_panel_action(
             macroquad::logging::info!(
                 "[interface] command=0x214 destination=production_destination status=set areas={} to={}",
                 areas.len(),
-                world
-                    .systems
-                    .get(destination)
-                    .map_or("", |value| value.name.as_str())
+                rebellion_data::integrator::destination_name(&world, destination)
             );
         }
         PanelAction::Rename { fleet, ship, name } => {
@@ -10271,9 +10613,14 @@ fn apply_panel_action(
                 target_object: None,
                 tick,
             };
-            if let Err(refusal) = mission_state.dispatch_guarded(request, world) {
+            if let Err(refusal) = mission_state.dispatch_validated(request, world, uprising_state) {
                 // FUN_00487c90 shows no text: the side's advisor reacts
                 // (`mission-dialog.md`, "Refusal").
+                #[cfg(not(target_arch = "wasm32"))]
+                if let Ok(mut last) = dev_actions::LAST_DISPATCH_REFUSAL.lock() {
+                    let (a, b) = refusal.status();
+                    *last = Some(format!("{refusal:?} (0x{a:x}/0x{b:x})"));
+                }
                 advisor_state.refuse(refusal.status());
                 return;
             }
@@ -10292,6 +10639,7 @@ fn apply_panel_action(
                 MissionKind::InciteUprising => "Incite Uprising",
                 MissionKind::SubdueUprising => "Subdue Uprising",
                 MissionKind::DeathStarSabotage => "Death Star Sabotage",
+                MissionKind::Research(_) => rebellion_render::mission_dialog::kind_name(kind),
                 MissionKind::Autoscrap => "Autoscrap",
                 MissionKind::Move => "Move",
             };
@@ -10371,7 +10719,11 @@ fn apply_panel_action(
         PanelAction::OrderBombardment { fleet, system } => {
             // Guard: both fleet and system must still exist (prevents panic in resolve).
             if world.fleets.contains_key(fleet) && world.systems.contains_key(system) {
-                let attacker_is_alliance = world.fleets[fleet].is_alliance;
+                let attacker = if world.fleets[fleet].is_alliance {
+                    Faction::Alliance
+                } else {
+                    Faction::Empire
+                };
                 let result = BombardmentSystem::resolve_bombardment(
                     world,
                     fleet,
@@ -10379,48 +10731,27 @@ fn apply_panel_action(
                     world.difficulty_index,
                     clock.tick,
                 );
-                let attacker = if attacker_is_alliance {
-                    Faction::Alliance
-                } else {
-                    Faction::Empire
-                };
                 let headquarters_destroyed = VictorySystem::apply_headquarters_bombardment(
                     victory_state,
                     world,
                     &result,
                     attacker,
                 );
-                if let Some(sys) = world.systems.get_mut(system) {
-                    let pop_reduction = (result.damage as f32 / 100.0).min(0.25);
-                    if attacker_is_alliance {
-                        sys.popularity_empire =
-                            (sys.popularity_empire - pop_reduction).clamp(0.0, 1.0);
-                    } else {
-                        sys.popularity_alliance =
-                            (sys.popularity_alliance - pop_reduction).clamp(0.0, 1.0);
-                    }
-                }
-                msg_log.push(GameMessage::new(
-                    clock.tick,
-                    format!("Orbital bombardment — {} damage", result.damage),
-                    MessageCategory::Combat,
-                ));
-                if headquarters_destroyed {
-                    let system_name = world
-                        .systems
-                        .get(system)
-                        .map_or("Unknown", |system| system.name.as_str());
-                    // Notification 0x1f, Rebel HQ Destroyed.
-                    msg_log.push(filed(
-                        GameMessage::new(
-                            clock.tick,
-                            format!("Alliance headquarters destroyed at {system_name}"),
-                            MessageCategory::Combat,
-                        ),
-                        MessageRail::Resource,
-                        Some(RailAudience::Both),
-                    ));
-                }
+                // FUN_0058e320, as for the AI's Bombard
+                // (`integrator::resolve_ai_strike`). port: the bombardment
+                // rolls no hits, so +0x28 stays clear.
+                rebellion_core::bombardment::finalize(
+                    world,
+                    system,
+                    attacker,
+                    rebellion_core::bombardment::BombardmentRun::default(),
+                );
+                let strike = rebellion_data::integrator::StrikeEffects {
+                    bombardment: Some((system, result.damage, headquarters_destroyed)),
+                    ..Default::default()
+                };
+                rebellion_data::telemetry::native_strike(clock.tick, world, &strike);
+                strike_messages(world, msg_log, clock.tick, &strike);
             }
         }
         PanelAction::FireDeathStar { system } => {
@@ -10428,56 +10759,32 @@ fn apply_panel_action(
             if let Some(rebellion_core::death_star::DeathStarEvent::PlanetDestroyed { .. }) =
                 DeathStarSystem::fire(death_star_state, world, system, clock.tick)
             {
-                let name = world
-                    .systems
-                    .get(system)
-                    .map_or_else(|| "Unknown".to_string(), |s| s.name.clone());
-                if let Some(sys) = world.systems.get_mut(system) {
-                    sys.is_destroyed = true;
-                }
-                victory_state.death_star_location = Some(system);
-                // Drain the telemetry out-param into the message log so
-                // interactive play surfaces the killed characters
-                // immediately; the run_simulation_tick flow does the same
-                // via the `PerceptionIntegrator`.
-                let mut cleanup_effects: Vec<rebellion_core::effects::GameEffect> = Vec::new();
-                rebellion_core::death_star::cleanup_destroyed_system(
+                let killed = rebellion_data::integrator::destroy_system(
                     world,
                     system,
-                    movement_state,
+                    victory_state,
                     death_star_state,
+                    movement_state,
                     mfg_state,
                     blockade_state,
-                    &mut cleanup_effects,
                 );
-                for effect in cleanup_effects.drain(..) {
-                    if let rebellion_core::effects::GameEffect::CharacterKilled { character } =
-                        effect
-                    {
-                        if let Some(c) = world.characters.get(character) {
-                            // Notification 0x1a, Character Health.
-                            msg_log.push(filed(
-                                GameMessage::new(
-                                    clock.tick,
-                                    format!("{} has been killed.", c.display_name()),
-                                    MessageCategory::Event,
-                                ),
-                                MessageRail::Mission,
-                                character_audience(&world, character),
-                            ));
-                        }
-                    }
-                }
-                // Notification 0x15, Planet Destroyed.
-                msg_log.push(filed(
-                    GameMessage::new(
-                        clock.tick,
-                        format!("{name} DESTROYED by Death Star superlaser!"),
-                        MessageCategory::Combat,
-                    ),
-                    MessageRail::Mission,
-                    Some(RailAudience::Both),
-                ));
+                // FUN_0058e320 after a kill (FUN_0058d990 sets +0x28 and +0x2c).
+                rebellion_core::bombardment::finalize(
+                    world,
+                    system,
+                    Faction::Empire,
+                    rebellion_core::bombardment::BombardmentRun {
+                        support_loss: true,
+                        planet_destroyed: true,
+                    },
+                );
+                let strike = rebellion_data::integrator::StrikeEffects {
+                    destroyed: Some(system),
+                    killed,
+                    ..Default::default()
+                };
+                rebellion_data::telemetry::native_strike(clock.tick, world, &strike);
+                strike_messages(world, msg_log, clock.tick, &strike);
             }
         }
         PanelAction::MoveDeathStar { system } => {
@@ -10523,6 +10830,8 @@ fn apply_panel_action(
             // all states — not available inside apply_panel_action(). The actual
             // simulation will catch up on the next frame when clock.advance(dt)
             // emits the pending TickEvents. For instant effect, set speed to Faster.
+            // port: the AI's in-day rounds then go on under the new day number
+            // with the old day's step count, until the next tick closes it.
             clock.tick += n;
         }
         // The caller routes speed through the clock's pause stop.
@@ -10689,6 +10998,42 @@ fn apply_panel_action(
 // Effect application helpers
 // ---------------------------------------------------------------------------
 
+/// Notification 5, Research Report, for each level a side bought.
+fn push_research_reports(
+    msg_log: &mut MessageLog,
+    tick: u64,
+    results: &[rebellion_core::research::ResearchResult],
+) {
+    for result in results {
+        let rebellion_core::research::ResearchResult::TechUnlocked {
+            faction_is_alliance,
+            tech_type,
+            new_level,
+        } = result;
+        let faction_name = if *faction_is_alliance {
+            "Alliance"
+        } else {
+            "Empire"
+        };
+        let tech_name = match tech_type {
+            rebellion_core::research::TechType::Ship => "Ship",
+            rebellion_core::research::TechType::Troop => "Troop",
+            rebellion_core::research::TechType::Facility => "Facility",
+        };
+        msg_log.push(filed(
+            GameMessage::new(
+                tick,
+                format!("{faction_name} {tech_name} tech advanced to level {new_level}"),
+                MessageCategory::Event,
+            )
+            // FUN_00499aa0: research carries code 4.
+            .with_advice(4),
+            MessageRail::Manufacturing,
+            Some(RailAudience::side(*faction_is_alliance)),
+        ));
+    }
+}
+
 #[expect(
     clippy::too_many_lines,
     reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
@@ -10700,6 +11045,7 @@ fn apply_mission_result(
     #[cfg(not(target_arch = "wasm32"))] audio_engine: &mut audio::AudioEngine,
     #[cfg(not(target_arch = "wasm32"))] audio_vol: &AudioVolumeState,
 ) {
+    rebellion_data::telemetry::native_mission_resolved(world, result);
     let faction_name = match result.faction {
         MissionFaction::Alliance => "Alliance",
         MissionFaction::Empire => "Empire",
@@ -10717,6 +11063,13 @@ fn apply_mission_result(
         MissionKind::DeathStarSabotage => "Death Star Sabotage",
         MissionKind::Autoscrap => "Autoscrap",
         MissionKind::Move => "Move",
+        MissionKind::Research(rebellion_core::research::TechType::Ship) => "Ship Design Research",
+        MissionKind::Research(rebellion_core::research::TechType::Troop) => {
+            "Troop Training Research"
+        }
+        MissionKind::Research(rebellion_core::research::TechType::Facility) => {
+            "Facility Design Research"
+        }
     };
     let sys_name = world
         .systems
@@ -10738,6 +11091,7 @@ fn apply_mission_result(
         | MissionKind::Rescue
         | MissionKind::Abduction
         | MissionKind::DeathStarSabotage
+        | MissionKind::Research(_)
         | MissionKind::Autoscrap
         | MissionKind::Move => MessageCategory::Mission,
     };
@@ -10782,6 +11136,8 @@ fn apply_mission_result(
                 skill,
                 amount,
             } => rebellion_core::missions::raise_skill(world, *character, *skill, *amount),
+            // Credited by ResearchSystem::apply_mission_points.
+            MissionEffect::ResearchPoints { .. } => {}
             MissionEffect::UprisingIncident(event) => {
                 rebellion_core::uprising::apply_uprising_event(world, event);
             }
@@ -10888,6 +11244,9 @@ fn apply_mission_result(
             MissionEffect::MemberBoarded { member, fleet } => {
                 rebellion_core::missions::board_member(world, *member, *fleet);
             }
+            MissionEffect::EnRoute { member, en_route } => {
+                rebellion_core::missions::set_en_route(world, *member, *en_route);
+            }
             MissionEffect::CharacterEscaped {
                 character,
                 escaped_to_alliance,
@@ -10943,146 +11302,292 @@ fn apply_mission_result(
 // SetHeritageKnown (Dabora 3 #R4) is handled in the canonical function.
 // ---------------------------------------------------------------------------
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "Keep explicit state and UI inputs at this existing integration boundary."
-)]
-#[expect(
-    clippy::too_many_lines,
-    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
-)]
-fn apply_ai_actions(
-    actions: &[AIAction],
-    ai_state: &mut AIState,
-    mission_state: &mut MissionState,
-    mfg_state: &mut ManufacturingState,
-    movement_state: &mut MovementState,
-    troop_transport_state: &mut TroopTransportState,
-    research_state: &mut ResearchState,
-    world: &mut GameWorld,
-    log: &mut MessageLog,
+/// The system whose battle waits that `action` would move or change a
+/// fleet, squadron, regiment or planet at, if any. The original resolves a
+/// battle before its computer player orders again: the Battle Alert and the
+/// battle are `FUN_0040a050` states 5-0x17, and the day stands still under
+/// the alert and its result (the original from save `alliance-day54`, the
+/// Battle at Praesitlyn on days 508 and 532: the day held while the Retreat
+/// result was up). hyp: the round scheduler stands still with the day.
+fn held_at(
+    world: &GameWorld,
+    transport: &TroopTransportState,
+    held: &[SystemKey],
+    action: &AIAction,
+) -> Option<SystemKey> {
+    if held.is_empty() {
+        return None;
+    }
+    let at = |fleet: &FleetKey| {
+        world
+            .fleets
+            .get(*fleet)
+            .map(|value| value.location)
+            .filter(|location| held.contains(location))
+    };
+    let system = |system: &SystemKey| held.contains(system).then_some(*system);
+    let aboard = |troop: &TroopKey| {
+        world
+            .fleets
+            .iter()
+            .find(|(key, value)| {
+                held.contains(&value.location) && transport.cargo(*key).contains(troop)
+            })
+            .map(|(_, value)| value.location)
+    };
+    match action {
+        AIAction::MoveFleet { fleet, .. }
+        | AIAction::CreateFleet { fleet, .. }
+        | AIAction::Assault { fleet }
+        | AIAction::MoveCharacterToFleet { fleet, .. } => at(fleet),
+        AIAction::JoinFleet { fleet, target, .. } => at(fleet).or_else(|| at(target)),
+        AIAction::Bombard {
+            fleet,
+            system: at_system,
+            ..
+        }
+        | AIAction::DestroySystem {
+            fleet,
+            system: at_system,
+        } => at(fleet).or_else(|| system(at_system)),
+        AIAction::MoveSquadrons { squadrons, fleet } => at(fleet).or_else(|| {
+            squadrons.iter().find_map(|source| match source {
+                SquadronSource::Fleet { fleet, .. } => at(fleet),
+                SquadronSource::System { system: from, .. } => system(from),
+            })
+        }),
+        AIAction::MoveRegiments { troops, .. } => troops.iter().find_map(aboard),
+        AIAction::Scrap { targets } => targets.iter().find_map(|target| match target {
+            rebellion_core::scrap::ScrapTarget::CapitalShip { fleet, .. }
+            | rebellion_core::scrap::ScrapTarget::Fighter { fleet, .. } => at(fleet),
+            rebellion_core::scrap::ScrapTarget::SystemFighter { system: from, .. } => system(from),
+            rebellion_core::scrap::ScrapTarget::Troop(troop) => aboard(troop),
+            _ => None,
+        }),
+        _ => None,
+    }
+}
+
+/// The systems where both sides are present, each a battle the next combat
+/// pass fights (FUN_00509710 / FUN_0050b8e0).
+fn contested_systems(world: &GameWorld) -> Vec<SystemKey> {
+    world
+        .systems
+        .keys()
+        .filter(|&system| side_present(world, system, true) && side_present(world, system, false))
+        .collect()
+}
+
+/// Write each AI order's records, stamped with the day its step ran, and
+/// show what an applied one did: the dispatch message, the fleet's
+/// departure sound and message, and the strike's messages.
+fn show_ai_records(
+    records: &[rebellion_data::simulation::AiOrderRecord],
     tick: u64,
+    world: &GameWorld,
+    log: &mut MessageLog,
     #[cfg(not(target_arch = "wasm32"))] audio_engine: &mut audio::AudioEngine,
     #[cfg(not(target_arch = "wasm32"))] audio_vol: &AudioVolumeState,
 ) {
-    for action in actions {
-        match action {
+    rebellion_data::telemetry::native_ai_records(tick, world, records);
+    for record in records {
+        let origin = record.origin();
+        if !record.outcome.is_applied() {
+            continue;
+        }
+        match &record.issued.action {
             AIAction::DispatchMission {
                 kind,
-                team,
-                decoys,
                 target_system,
-                target_character,
-                target_object,
+                ..
             } => {
-                let ai_faction = ai_state.faction.unwrap_or(AiFaction::Empire);
-                let request = rebellion_core::missions::MissionRequest {
-                    kind: *kind,
-                    faction: ai_faction.as_mission_faction(),
-                    team: team.clone(),
-                    decoys: decoys.clone(),
-                    target_system: *target_system,
-                    target_character: *target_character,
-                    target_object: *target_object,
-                    tick,
-                };
-                if mission_state.dispatch_guarded(request, world).is_err() {
-                    continue;
-                }
-                for character in team.iter().chain(decoys).filter_map(|m| m.character()) {
-                    ai_state.mark_busy(character);
-                }
-                let faction_name = match ai_faction {
-                    AiFaction::Alliance => "Alliance",
-                    AiFaction::Empire => "Empire",
-                };
                 log.push(GameMessage::at_system(
                     tick,
-                    format!("{faction_name} dispatched {kind:?} mission"),
+                    format!("{} dispatched {kind:?} mission", origin.faction),
                     MessageCategory::Ai,
                     *target_system,
                 ));
             }
-            AIAction::EnqueueProduction { system, kind, work } => {
-                mfg_state.enqueue(*system, QueueItem::new(*kind, *work));
-            }
             AIAction::MoveFleet {
-                fleet,
                 to_system,
                 reason,
                 troops,
+                ..
             } => {
-                let transit = world.fleets.get(*fleet).and_then(|fleet| {
-                    rebellion_core::movement::fleet_transit_ticks(
-                        fleet,
-                        world,
-                        fleet.location,
-                        *to_system,
-                    )
-                    .map(|ticks| (ticks, fleet.is_alliance))
-                });
-                if let Some((transit, is_alliance)) = transit {
-                    let embarked = troops.is_empty()
-                        || troop_transport_state.embark(world, *fleet, troops).is_ok();
-                    if embarked
-                        && begin_fleet_transit(movement_state, world, *fleet, *to_system, transit)
-                    {
-                        #[cfg(not(target_arch = "wasm32"))]
-                        {
-                            audio_engine.play_sfx(SfxKind::FleetDeparture, audio_vol);
-                        }
-                        let reason_str = match reason {
-                            FleetMoveReason::Attack => "attack",
-                            FleetMoveReason::Reinforce => "reinforce",
-                        };
-                        log.push(GameMessage::at_system(
-                            tick,
-                            format!(
-                                "{} fleet moving to system ({}){}",
-                                if is_alliance { "Alliance" } else { "Empire" },
-                                reason_str,
-                                if troops.is_empty() {
-                                    String::new()
-                                } else {
-                                    format!(" with {} regiment(s)", troops.len())
-                                },
-                            ),
-                            MessageCategory::Ai,
-                            *to_system,
-                        ));
-                    } else if embarked && !troops.is_empty() {
-                        let origin = world.fleets.get(*fleet).map(|value| value.location);
-                        if let Some(origin) = origin {
-                            let _ = troop_transport_state.disembark_all(world, *fleet, origin);
-                        }
-                    }
+                #[cfg(not(target_arch = "wasm32"))]
+                audio_engine.play_sfx(SfxKind::FleetDeparture, audio_vol);
+                let reason = match reason {
+                    FleetMoveReason::Attack => "attack",
+                    FleetMoveReason::Reinforce => "reinforce",
+                };
+                log.push(GameMessage::at_system(
+                    tick,
+                    format!(
+                        "{} fleet moving to system ({reason}){}",
+                        origin.faction,
+                        if troops.is_empty() {
+                            String::new()
+                        } else {
+                            format!(" with {} regiment(s)", troops.len())
+                        },
+                    ),
+                    MessageCategory::Ai,
+                    *to_system,
+                ));
+            }
+            AIAction::Bombard { .. } | AIAction::DestroySystem { .. } => {
+                strike_messages(world, log, tick, &record.strike);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// The messages of a bombardment or a Death Star shot, the player's or the
+/// AI's: the damage, the Alliance headquarters destroyed, each character
+/// killed and the planet destroyed.
+fn strike_messages(
+    world: &GameWorld,
+    log: &mut MessageLog,
+    tick: u64,
+    strike: &rebellion_data::integrator::StrikeEffects,
+) {
+    let system_name = |system: SystemKey| {
+        world
+            .systems
+            .get(system)
+            .map_or_else(|| "Unknown".to_string(), |s| s.name.clone())
+    };
+    if let Some((system, damage, headquarters_destroyed)) = strike.bombardment {
+        log.push(GameMessage::new(
+            tick,
+            format!("Orbital bombardment — {damage} damage"),
+            MessageCategory::Combat,
+        ));
+        if headquarters_destroyed {
+            // Notification 0x1f, Rebel HQ Destroyed.
+            log.push(filed(
+                GameMessage::new(
+                    tick,
+                    format!("Alliance headquarters destroyed at {}", system_name(system)),
+                    MessageCategory::Combat,
+                ),
+                MessageRail::Resource,
+                Some(RailAudience::Both),
+            ));
+        }
+    }
+    if let Some(system) = strike.destroyed {
+        for &character in &strike.killed {
+            if let Some(c) = world.characters.get(character) {
+                // Notification 0x1a, Character Health.
+                log.push(filed(
+                    GameMessage::new(
+                        tick,
+                        format!("{} has been killed.", c.display_name()),
+                        MessageCategory::Event,
+                    ),
+                    MessageRail::Mission,
+                    character_audience(world, character),
+                ));
+            }
+        }
+        // Notification 0x15, Planet Destroyed.
+        log.push(filed(
+            GameMessage::new(
+                tick,
+                format!(
+                    "{} DESTROYED by Death Star superlaser!",
+                    system_name(system)
+                ),
+                MessageCategory::Combat,
+            ),
+            MessageRail::Mission,
+            Some(RailAudience::Both),
+        ));
+    }
+}
+
+/// Write the blockade events and show their messages: a blockade started
+/// or lifted, and the regiments a run destroyed aboard a departing fleet.
+fn show_blockade_events(
+    events: &[rebellion_core::blockade::BlockadeEvent],
+    world: &mut GameWorld,
+    transport: &mut TroopTransportState,
+    templates: &rebellion_data::text_templates::TextTemplates,
+    log: &mut MessageLog,
+) {
+    rebellion_data::telemetry::native_blockade_events(world, events);
+    for evt in events {
+        match evt {
+            rebellion_core::blockade::BlockadeEvent::BlockadeStarted { system, tick } => {
+                let name = world
+                    .systems
+                    .get(*system)
+                    .map_or_else(|| "unknown".into(), |s| s.name.clone());
+                for message in blockade_messages(
+                    world,
+                    templates,
+                    *system,
+                    *tick,
+                    format!("Blockade established at {name}"),
+                ) {
+                    log.push(message);
                 }
             }
-            AIAction::DispatchResearch {
-                character,
-                tech_type,
-                ticks,
-            } => {
-                let is_alliance = ai_state
-                    .faction
-                    .is_some_and(|f| matches!(f, AiFaction::Alliance));
-                research_state.dispatch(rebellion_core::research::ResearchProject {
-                    tech_type: *tech_type,
-                    character: *character,
-                    faction_is_alliance: is_alliance,
-                    ticks_remaining: *ticks,
-                    total_ticks: *ticks,
-                });
-                ai_state.mark_busy(*character);
-                let char_name = world
-                    .characters
-                    .get(*character)
-                    .map_or("unknown", |c| c.display_name());
-                log.push(GameMessage::new(
-                    tick,
-                    format!("{char_name} assigned to {tech_type:?} research ({ticks} ticks)"),
-                    MessageCategory::Ai,
+            rebellion_core::blockade::BlockadeEvent::BlockadeEnded { system, tick } => {
+                let name = world
+                    .systems
+                    .get(*system)
+                    .map_or_else(|| "unknown".into(), |s| s.name.clone());
+                // Notification 7, Blockade Message.
+                log.push(filed(
+                    GameMessage::at_system(
+                        *tick,
+                        format!("Blockade lifted at {name}"),
+                        MessageCategory::Combat,
+                        *system,
+                    ),
+                    MessageRail::Conflict,
+                    Some(RailAudience::Both),
                 ));
+            }
+            rebellion_core::blockade::BlockadeEvent::TroopDestroyed {
+                system,
+                troop,
+                tick,
+            } => {
+                // The regiment was aboard a fleet leaving the system.
+                if transport.destroy_embarked(world, *troop) {
+                    rebellion_data::telemetry::native_troop_destroyed(*tick, world, *system);
+                }
+                let name = world
+                    .systems
+                    .get(*system)
+                    .map_or_else(|| "unknown".into(), |s| s.name.clone());
+                // Notification 7, Blockade Message.
+                log.push(filed(
+                    GameMessage::at_system(
+                        *tick,
+                        format!("Troops destroyed by blockade at {name}"),
+                        MessageCategory::Combat,
+                        *system,
+                    ),
+                    MessageRail::Conflict,
+                    Some(RailAudience::Both),
+                ));
+            }
+            // Timer 0x386 raises no notice (FUN_0050cb20).
+            rebellion_core::blockade::BlockadeEvent::SupportShift {
+                system,
+                side,
+                delta,
+                tick,
+            } => {
+                rebellion_core::uprising::apply_support_change(world, *system, *side, *delta);
+                rebellion_data::telemetry::native_support_shift(
+                    *tick, world, *system, *side, *delta,
+                );
             }
         }
     }
@@ -11443,6 +11948,57 @@ fn fleet_arrival_display(
         overlay: 0,
         sound: 0x45a,
     })
+}
+
+/// Notification `0xc`, the Maintenance Shortfall notice (`FUN_00498970`,
+/// event `0x304`, which `FUN_004fc080` raises for each object scrapped with
+/// reason `0x15`): "Maintenance Shortfall" (`0x7080`), "The following units
+/// have been destroyed at | due to a maintenance shortfall:" (`0x7081`, the
+/// system as argument 3) and a line per unit (`0x7082`), over the side's
+/// picture (`0x3f5` Alliance, `0x3f6` Empire), playing `0x456`
+/// (`FUN_0048bbf0.c:17-24`). One notice per scrapped unit, filed for its
+/// side. hyp: whether the original merges a system's units into one notice
+/// is untraced; the overdraft timer scraps one unit a fire.
+fn maintenance_shortfall_message(
+    world: &GameWorld,
+    transport: &TroopTransportState,
+    templates: &rebellion_data::text_templates::TextTemplates,
+    side: rebellion_core::dat::Faction,
+    target: rebellion_core::scrap::ScrapTarget,
+    tick: u64,
+) -> Option<GameMessage> {
+    use rebellion_data::text_templates::TemplateArg;
+    let system = rebellion_core::scrap::target_system(world, transport, target)?;
+    let sys_name = world.systems.get(system)?.name.clone();
+    let unit = rebellion_core::scrap::target_name(world, target);
+    let alliance = side == rebellion_core::dat::Faction::Alliance;
+    let place = TemplateArg::named(sys_name.clone());
+    let named = TemplateArg::named(unit.clone());
+    let display = templates.format(0x7080, &[]).and_then(|title| {
+        Some(MessageDisplay {
+            title,
+            body: templates.format(0x7081, &[None, None, Some(&place)])?
+                + &templates.format(0x7082, &[Some(&named)])?,
+            background: if alliance { 0x3f5 } else { 0x3f6 },
+            overlay: 0,
+            sound: 0x456,
+        })
+    });
+    let message = GameMessage::at_system(
+        tick,
+        format!("{unit} destroyed at {sys_name} due to a maintenance shortfall"),
+        MessageCategory::Event,
+        system,
+    )
+    .with_advice(0xc);
+    Some(filed(
+        match display {
+            Some(display) => message.with_display(display),
+            None => message,
+        },
+        MessageRail::Manufacturing,
+        Some(RailAudience::side(alliance)),
+    ))
 }
 
 /// Notification 4, the Loyalty Change Message (`FUN_00499760`, event
@@ -12042,6 +12598,7 @@ mod tactical_ground_tests {
             step_accumulator: 0.0,
             winner: Some(rebellion_render::CombatWinner::Attacker),
             stalemate: rebellion_render::tactical_view::TacticalStalemateWatch::default(),
+            morale: rebellion_render::tactical_view::TacticalMorale::default(),
             engagement: rebellion_render::tactical_view::TacticalEngagementState::default(),
             holder_is_alliance: None,
             blockaded_at_start: false,
@@ -12186,6 +12743,7 @@ mod fleet_move_tests {
     use super::*;
     use rebellion_core::dat::{ExplorationStatus, SectorGroup};
     use rebellion_core::ids::DatId;
+    use rebellion_core::manufacturing::QueueItem;
     use rebellion_core::world::{
         CapitalShipClass, ControlKind, Fleet, Sector, ShipInstance, System,
     };

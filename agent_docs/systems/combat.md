@@ -3,7 +3,7 @@ title: "Combat System"
 description: "Space battles through the tactical engine (played, simulated or headless), ground combat in combat.rs, and bombardment.rs"
 category: "agent-docs"
 created: 2026-03-14
-updated: 2026-10-15
+updated: 2026-10-16
 tags: [combat, space-combat, ground-combat, simulation]
 ---
 
@@ -115,9 +115,11 @@ The original's bombardment (orders `0x220`-`0x223`, `FUN_00582440`,
 hit against a target's value, destroys facilities, regiments and the HQ, and
 shifts support (`ghidra/notes/bombardment.md`). The port's `bombardment.rs`
 instead computes one number from the transit-distance formula
-(`FUN_0055d8c0`, `ghidra/notes/build-delivery.md`), and `main.rs` turns it
-into a popularity cut with no source. Task-graph node
-`or-port-bombardment-8usw` replaces it.
+(`FUN_0055d8c0`, `ghidra/notes/build-delivery.md`) for the headquarters check
+and the records. The support shifts are the original's finalize
+(`bombardment::finalize`, `FUN_0058e320`); the port rolls no hits, so a
+bombardment shifts none and a Death Star kill shifts every sector. Task-graph
+node `or-port-bombardment-8usw` replaces the rest.
 
 ## Ground combat
 

@@ -297,7 +297,7 @@ The ignored `data/base/ui/tactical-dll/TACTICAL3D/` store retains exact PE
 identifiers and hashes without using named resources as paths. P55 decodes all
 87 meshes, 370 indexed images, and 27 palettes into the ignored `runtime/`
 subtree. These assets are not yet included in `runtime.orpk`; follow the
-[tactical 3D asset plan](../docs/plans/2026-09-12-feat-tactical-3d-asset-pipeline.md).
+[tactical 3D asset plan](../docs/plans/archive/2026-09-12-feat-tactical-3d-asset-pipeline.md).
 
 **Batch upscale command** (Vertex, all non-portrait packs):
 ```bash
@@ -356,7 +356,7 @@ image = { version = "0.25", default-features = false, features = ["bmp", "png"] 
 The original 1998 tactical renderer used real Direct3D Retained Mode meshes,
 not pre-rendered ship sprite sheets. Strict parity therefore starts with the 87
 type-301 DirectX `.x` resources and their type-303 textures. See the
-[tactical 3D asset plan](../docs/plans/2026-09-12-feat-tactical-3d-asset-pipeline.md).
+[tactical 3D asset plan](../docs/plans/archive/2026-09-12-feat-tactical-3d-asset-pipeline.md).
 The runtime target is a compact deterministic mesh pack rendered through
 macroquad inside the original battle aperture. GLB is useful for conversion
 inspection, but it is not required in the WASM runtime.
@@ -504,7 +504,7 @@ Reproducible extraction, production commands, numeric object selectors, mod
 schema, and reload behavior are documented in
 [README_MOD.md](../README_MOD.md) and the
 [staging tool guide](../tools/stage-ui-assets/README.md). The approved design
-is [Encyclopedia Data Extraction, Modding, and Display](../docs/plans/2026-09-27-design-encyclopedia-data-pipeline.md).
+is [Encyclopedia Data Extraction, Modding, and Display](../docs/plans/completed/2026-09-27-design-encyclopedia-data-pipeline.md).
 Current acceptance covers both factions, all seven categories, navigation and
 return paths, strict startup/package behavior, and twelve applicable lossless
 comparisons against the original executable under Wine. Native-Windows parity

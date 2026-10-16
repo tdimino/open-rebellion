@@ -11,6 +11,7 @@
 use egui_macroquad::egui;
 use rebellion_core::ids::SystemKey;
 use rebellion_core::missions::{MissionFaction, MissionKind, MissionMember};
+use rebellion_core::research::TechType;
 use rebellion_core::world::GameWorld;
 
 use crate::bmp_cache::{BmpCache, DllSource};
@@ -272,6 +273,10 @@ const fn kind_text_id(kind: MissionKind) -> u16 {
         MissionKind::DeathStarSabotage => 11329,
         MissionKind::SubdueUprising => 11392,
         MissionKind::Assassination => 11393,
+        // MISSNSD records 0x53000020-22.
+        MissionKind::Research(TechType::Ship) => 11296,
+        MissionKind::Research(TechType::Facility) => 11297,
+        MissionKind::Research(TechType::Troop) => 11298,
         MissionKind::Move => 11265,
         MissionKind::Autoscrap => 0,
     }
@@ -280,20 +285,7 @@ const fn kind_text_id(kind: MissionKind) -> u16 {
 /// A kind's TEXTSTRA name.
 #[must_use]
 pub const fn kind_name(kind: MissionKind) -> &'static str {
-    match kind {
-        MissionKind::Diplomacy => "Diplomacy",
-        MissionKind::Rescue => "Rescue",
-        MissionKind::Sabotage => "Sabotage",
-        MissionKind::Espionage => "Espionage",
-        MissionKind::Recruitment => "Recruitment",
-        MissionKind::Abduction => "Abduction",
-        MissionKind::InciteUprising => "Incite Uprising",
-        MissionKind::DeathStarSabotage => "Death Star Sabotage",
-        MissionKind::SubdueUprising => "Subdue Uprising",
-        MissionKind::Assassination => "Assassination",
-        MissionKind::Move => "Move",
-        MissionKind::Autoscrap => "",
-    }
+    kind.name()
 }
 
 /// A kind's GOKRES icon: its TEXTSTRA id's low 12 bits, plus `0x1000` for the
@@ -481,6 +473,9 @@ pub fn draw_mission_dialog(
             let (frame, _) = ui.allocate_exact_size(window.size(), egui::Sense::hover());
             let painter = ui.painter().with_clip_rect(frame);
             let at = |x: f32, y: f32, w: f32, h: f32| logical_rect(frame, scale, x, y, w, h);
+            let name = |control: &str, rect: egui::Rect| {
+                crate::control_registry::register_screen("MissionDialog", control, rect);
+            };
 
             // The page panel, then the title strip: the 240-pixel bar laid
             // twice, 30 pixels apart, at (2, 2), and the title over it.
@@ -522,6 +517,7 @@ pub fn draw_mission_dialog(
                 title_color,
             );
 
+            name("Close", at(242.0, 3.0, 14.0, 14.0));
             if button(
                 ui,
                 cache,
@@ -538,6 +534,13 @@ pub fn draw_mission_dialog(
                 (MissionDialogPage::Agents, 130.0, AGENTS_TAB[side]),
             ] {
                 let rect = at(7.0 + x, 20.0, 116.0, 33.0);
+                name(
+                    match page {
+                        MissionDialogPage::Mission => "MissionTab",
+                        MissionDialogPage::Agents => "AgentsTab",
+                    },
+                    rect,
+                );
                 if button(
                     ui,
                     cache,
@@ -592,6 +595,7 @@ pub fn draw_mission_dialog(
                             egui::Color32::WHITE,
                         );
                     }
+                    name("KindDropdown", at(101.0, 174.0, 65.0, 18.0));
                     if button(
                         ui,
                         cache,
@@ -624,6 +628,7 @@ pub fn draw_mission_dialog(
                     for to_decoys in [false, true] {
                         let (x, y) = if to_decoys { DECOYS_LIST } else { AGENTS_LIST };
                         let list = at(x, y, LIST_SIZE.0, LIST_SIZE.1);
+                        name(if to_decoys { "DecoyList" } else { "AgentList" }, list);
                         let (members, row) = if to_decoys {
                             (dialog.decoys.clone(), &mut dialog.decoys_row)
                         } else {
@@ -652,6 +657,8 @@ pub fn draw_mission_dialog(
                             dialog.move_selected(!to_decoys);
                         }
                     }
+                    name("ToDecoys", at(120.0, 136.0, 16.0, 16.0));
+                    name("ToAgents", at(120.0, 221.0, 16.0, 16.0));
                     if button(
                         ui,
                         cache,
@@ -677,6 +684,9 @@ pub fn draw_mission_dialog(
                 }
             }
 
+            name("Cancel", at(170.0, 320.0, 64.0, 33.0));
+            name("Confirm", at(102.0, 320.0, 64.0, 33.0));
+            name("Encyclopedia", at(33.0, 320.0, 64.0, 33.0));
             if button(
                 ui,
                 cache,
@@ -718,6 +728,7 @@ pub fn draw_mission_dialog(
                 let (x, y, w, h) = KIND_BOX;
                 let popup = at(x, y + h, w, h + 4.0);
                 let item = at(x + 2.0, y + h + 2.0, w - 4.0, h);
+                name("KindList", popup);
                 painter.rect_filled(popup, 0.0, egui::Color32::BLACK);
                 let response = ui.interact(popup, ui.id().with("kind-list"), egui::Sense::click());
                 if response.hovered() {
@@ -855,11 +866,18 @@ fn draw_list(
                 image.map_or(item.center().y, |rect| rect.max.y),
             ),
             egui::Align2::CENTER_TOP,
-            name,
+            &name,
             font.clone(),
             color,
         );
         let clip = item.intersect(list);
+        if crate::control_registry::enabled() {
+            crate::control_registry::register_screen(
+                "MissionDialog",
+                &format!("{} {name}", if decoys { "Decoy" } else { "Agent" }),
+                clip,
+            );
+        }
         let response = ui.interact(
             clip,
             ui.id().with(("item", decoys, index)),
@@ -1357,6 +1375,8 @@ mod tests {
                 is_alliance: true,
                 skills: [0; 8],
                 on_mission: false,
+                en_route: false,
+                on_hidden_mission: false,
             });
 
         assert_eq!(

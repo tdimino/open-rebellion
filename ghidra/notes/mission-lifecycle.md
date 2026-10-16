@@ -465,20 +465,30 @@ prisoner target (`+0xac` bit 0) needs `R +0x90` (col 20) and a free one
 
 Object rules (`FUN_00593500`): the base rules only, while running.
 
-The shipped columns for the port's kinds:
+The shipped columns (`data/base/MISSNSD.DAT`, column `n` = file word `6 + n`):
 
-| Family | c11 | c13 | c14 | c15 own | c16 other | c17 opp | c18 | c19 | c20 | c21 |
-|---|---|---|---|---|---|---|---|---|---|---|
-| 0x51 Diplomacy | 1 | 1 | 1 | 1 | 1 | 0 | 0 | 1 | 0 | 0 |
-| 0x52 Espionage | 0 | 0 | 0 | 1 | 1 | 1 | 1 | 1 | 0 | 0 |
-| 0x55 Recruitment | 1 | 1 | 1 | 1 | 0 | 0 | 1 | 1 | 0 | 0 |
-| 0x56 Incite | 1 | 1 | 1 | 0 | 0 | 1 | 1 | 1 | 0 | 0 |
-| 0x57 Subdue | 1 | 1 | 1 | 1 | 0 | 0 | 1 | 0 | 0 | 0 |
-| 0x61 Rescue | 0 | 0 | 1 | 0 | 0 | 1 | 0 | 0 | 1 | 0 |
-| 0x62 Abduction | 0 | 0 | 1 | 0 | 0 | 1 | 0 | 0 | 0 | 1 |
-| 0x63 Assassination | 0 | 0 | 1 | 0 | 0 | 1 | 0 | 0 | 0 | 1 |
-| 0x69 Sabotage | 0 | 0 | 1 | 0 | 1 | 1 | 0 | 0 | 0 | 0 |
-| 0x6a DS Sabotage | 0 | 0 | 1 | 0 | 0 | 1 | 0 | 0 | 0 | 0 |
+| Family | c11 | c12 | c13 | c14 | c15 own | c16 other | c17 opp | c18 | c19 | c20 | c21 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 0x51 Diplomacy | 1 | 1 | 1 | 1 | 1 | 1 | 0 | 0 | 1 | 0 | 0 |
+| 0x52 Espionage | 0 | 1 | 0 | 0 | 1 | 1 | 1 | 1 | 1 | 0 | 0 |
+| 0x53 Research | 1 | 1 | 0 | 1 | 1 | 0 | 0 | 1 | 1 | 0 | 0 |
+| 0x54 Recon | 0 | 0 | 0 | 0 | 0 | 1 | 1 | 1 | 1 | 0 | 0 |
+| 0x55 Recruitment | 1 | 1 | 1 | 1 | 1 | 0 | 0 | 1 | 1 | 0 | 0 |
+| 0x56 Incite | 1 | 1 | 1 | 1 | 0 | 0 | 1 | 1 | 1 | 0 | 0 |
+| 0x57 Subdue | 1 | 1 | 1 | 1 | 1 | 0 | 0 | 1 | 0 | 0 | 0 |
+| 0x61 Rescue | 0 | 1 | 0 | 1 | 0 | 0 | 1 | 0 | 0 | 1 | 0 |
+| 0x62 Abduction | 0 | 1 | 0 | 1 | 0 | 0 | 1 | 0 | 0 | 0 | 1 |
+| 0x63 Assassination | 0 | 1 | 0 | 1 | 0 | 0 | 1 | 0 | 0 | 0 | 1 |
+| 0x69 Sabotage | 0 | 1 | 0 | 1 | 0 | 1 | 1 | 0 | 0 | 0 | 0 |
+| 0x6a DS Sabotage | 0 | 1 | 0 | 1 | 0 | 0 | 1 | 0 | 0 | 0 | 0 |
+
+The three Research records (`0x53000020`..`22`) share their columns. Recon
+(`0x54000015`) has no port kind.
+
+Column 12 (`R +0x70`) is a creation-only rule (`FUN_00592600.c:73-102`):
+when `C` is a system (`0x90..0x97`), it needs `+0x88` bit 1, else
+`0x40`/`0x11`; any other container passes. What sets `+0x88` bit 1 is not
+traced.
 
 So Diplomacy stops on an enemy-held or revolting system, Subdue once the
 revolt is over, and Rescue once its target is free.
@@ -487,9 +497,51 @@ Inference: Rescue's own-side column is 0, so a prisoner must read as its
 captor's side for a Rescue to run; the side a system reads as is taken to be
 its holder. Neither is traced to a writer.
 
+## The creation checks (`FUN_00542b60`)
+
+Command `0x250` creates a mission only when `FUN_00542b60` passes with no
+status (`FUN_0054d360.c:28-41`); its validity slot `FUN_0054d280` makes the
+same call. A refused order creates no mission object. The checks run in
+order, and each later one tests `status +4 == -1`:
+
+1. The order's family: `0x240` needs mission family `0x50..0x7f`,
+   `0x241` `0x40..0x4f` (`FUN_00542b60.c:36-70`; `1`/`1`).
+2. `FUN_0054bb90`: prisoners move to the captured list; an empty team is
+   `0x40`/`0x91` (`:79-87`).
+3. `FUN_0054bf00`, `FUN_0054c200`: the per-member adds (`:90-106`).
+4. `FUN_005830a0`: members of both sides `1`/`0x14`, of none `1`/`0x16`
+   (`:110-118`).
+5. The side's own view of the target (`FUN_004f2d10`) is missing:
+   `0x40`/`0x21` (`:129-137`).
+6. The record (`FUN_0051cab0`) and `FUN_0054c590` (`:139-150`): the class's
+   resolver yields the container, and the checker `FUN_00582b90(1, 1, 1, ..)`
+   runs the class validator with the creation checks (`+4`) and the running
+   checks (`+0xc`) both on (`FUN_0054c590.c:33-48`). A resolver failure
+   refuses with no status.
+
+So every running check of the class also runs at creation. The
+creation-only checks are:
+
+| Check | Where | Status |
+|---|---|---|
+| Member masks, one side, the record's side flag | `FUN_00523450.c:30-33` -> `FUN_00583320.c:21-76` | `0x40`/`1` |
+| The container in flight (`+0x50` bit 4) | `FUN_00523450.c:38-47` | `0x40`/`0x13` |
+| The container's family not `0x90..0x97` or `0x98..0x9f` | `FUN_00592600.c:35-72` | `0x40`/`0x10` |
+| Column 12 and a system container without `+0x88` bit 1 | `FUN_00592600.c:73-102` | `0x40`/`0x11` |
+| A system kind's target not a system (`0x90..0x97`) | `FUN_005868c0.c:25-48` | `0x40`/`0x24` |
+| A character kind's target not a character (`0x30..0x3b`) | `FUN_00586e20.c:25-48` | `0x40`/`0x26` |
+| An object kind's target not an object (`0x10..0x3f`) | `FUN_00593500.c:25-48` | `0x40`/`0x27` |
+| The object not completed (`+0x50` bit 2) | `FUN_00593500.c:49-58` | `0x40`/`0x34` |
+| Sabotage of a Death Star (`0x18..0x1b`), or of a character | `FUN_0056a110.c:25-69` | `0x40`/`0x28`, `0x40`/`0x25` |
+| DS Sabotage of anything but a Death Star | `FUN_005744c0.c:25-47` | `0x40`/`0x29` |
+| Recruitment: a member outside `0x30..0x37` (`FUN_0056b550.c:29-52`) | `FUN_0056b370.c:24-52` | `0x40`/`6` |
+| Research: a member with skill 0 for the tree | `FUN_0056c510` -> `FUN_0056c820` | `0x40`/`4` |
+
+At creation the running checks set the same statuses as while running
+(the table in "The running checks"), without an end code.
+
 ## Still open
 
-- The creation-only checks (checker `+4` = 1) that refuse a new mission.
 - Which object a character mission stores as its target `+0x70` and
   container `+0x74` (the per-class slot `+0x1bc` init is not a defined
   function in the database); Sabotage's is its order's object (`+0x4c`).

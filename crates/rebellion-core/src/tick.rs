@@ -193,6 +193,28 @@ impl GameClock {
         self.speed != GameSpeed::Paused && self.stop_day.is_none_or(|day| self.tick < day)
     }
 
+    /// The in-day step the day has reached when it runs `rounds` steps
+    /// (`FUN_0051dea0` `+0x20`, the per-day count plus one), spread evenly
+    /// over the day: step `r` is due once `r / rounds` of the day has passed.
+    /// `None` while paused. port: the original's steps follow its scheduler
+    /// timer (`FUN_004fcee0`); the even spread stands in for it. hyp: a
+    /// speed change keeps the steps already run and counts the new rate from
+    /// the part of the day gone (the original's `+0x20` on a rate change is
+    /// untraced), so a change to a slower speed can run many steps at once.
+    #[must_use]
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "The accumulator is in [0, 1), so the product is below `rounds`."
+    )]
+    pub fn in_day_step(&self, rounds: u16) -> Option<u16> {
+        if self.speed == GameSpeed::Paused || rounds == 0 {
+            return None;
+        }
+        let reached = (self.accumulator * f32::from(rounds)).floor() as u16;
+        Some(reached.min(rounds - 1))
+    }
+
     /// Advance the clock by `dt` real seconds.
     ///
     /// Returns a `Vec<TickEvent>` — one entry per game-day that completed
@@ -442,5 +464,4 @@ mod tests {
         assert_eq!(GameSpeed::Paused.faster(), GameSpeed::Paused);
         assert_eq!(GameSpeed::Paused.slower(), GameSpeed::Paused);
     }
-
 }

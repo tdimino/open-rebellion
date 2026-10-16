@@ -1,104 +1,34 @@
-//! Rule-based AI manager for the computer-controlled faction.
+//! The computer player of either side.
 //!
-//! The AI evaluates the game state each `AI_TICK_INTERVAL` game-days and
-//! produces a list of `AIAction` recommendations. The caller applies those
-//! actions to `ManufacturingState`, `MissionState`, and `GameWorld`.
+//! `AISystem::round` (`crate::ai_scheduler`) runs one side's round and
+//! returns its order as an `AIAction` recommendation; the caller applies it
+//! to `ManufacturingState`, `MissionState` and `GameWorld`.
 //!
-//! # Design
-//!
-//! Follows the same stateless pattern as manufacturing and mission systems:
-//! - `AIState` holds per-faction persistent data (cooldowns, assignments)
-//! - `AISystem::advance(state, world, mfg, missions, tick_events) -> Vec<AIAction>`
-//! - Actions are recommendations only — the caller decides whether to apply them
-//!
-//! # Heuristics (ported from rebellion2's AIManager.cs)
-//!
-//! 1. **Officer assignment**: for each available (unassigned) character —
-//!    - If major character AND unrecruited officers exist → recruitment mission
-//!    - Else if major OR diplomacy > 60 → diplomacy mission targeting lowest-popularity system
-//! 2. **Production — fighters**: if a system has idle manufacturing capacity,
-//!    enqueue the best available fighter class for fleets with excess carrier slots
-//! 3. **Production — facilities**: if a system has fewer than `MAX_CONSTRUCTION_YARDS`
-//!    construction yards and has free slots, enqueue another
-//!
-//! # AI tick gating
-//!
-//! The AI only re-evaluates every `AI_TICK_INTERVAL` game-days. This prevents
-//! thrashing and is consistent with the original game's turn-based cadence.
+//! The original builds the same fourteen modules for each computer player
+//! (`FUN_00485a50`) and steps one armed module per main-loop pass, the sides
+//! taking turns (`FUN_0041cf20` -> `FUN_004361a0`, `FUN_00485b40`;
+//! `ghidra/notes/ai-order-emission.md`, "Scheduler and executor"): module
+//! 13 and its controller (`crate::ai_strategy`), module 8's regional
+//! records (`crate::ai_regions`), module 9's fleet tasks
+//! (`crate::fleet_tasks`), module 12's character tasks
+//! (`crate::character_tasks`), the production modules
+//! (`crate::ai_production`) and module 4's mission planners
+//! (`crate::ai_research`, `crate::mission_planning`).
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
 
-use crate::dat::ExplorationStatus;
-use crate::ids::{
-    CapitalShipKey, CharacterKey, DatId, FighterKey, FleetKey, ManufacturingFacilityKey, SystemKey,
-    TroopKey,
-};
-use crate::manufacturing::{BuildableKind, FacilityBuild, ManufacturingState};
+use crate::ai_production::{Round, SystemRecord};
+use crate::ids::{CharacterKey, FleetKey, ManufacturingFacilityKey, SystemKey, TroopKey};
+use crate::manufacturing::BuildableKind;
 use crate::mission_planning::Planner;
 use crate::missions::{MissionFaction, MissionKind, MissionState};
-use crate::research::{ResearchState, ResearchSystem, TechType};
-use crate::tick::TickEvent;
-use crate::tuning::GameConfig;
-use crate::world::{Character, ControlKind, GameWorld};
+use crate::world::{Character, GameWorld};
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-
-/// How many game-days between full AI re-evaluations.
-pub const AI_TICK_INTERVAL: u64 = 5;
-
-/// Diplomacy skill threshold above which a minor character is considered a
-/// viable diplomat (rebellion2: `officer.GetSkillValue(Diplomacy) > 60`).
-pub const DIPLOMACY_SKILL_THRESHOLD: u32 = 60;
-
-/// Maximum construction yards the AI will build per system before stopping.
-pub const MAX_CONSTRUCTION_YARDS: usize = 5;
-
-/// Minimum popularity fraction below which the AI considers a system a
-/// diplomacy target (systems already at high popularity are deprioritized).
-pub const DIPLOMACY_TARGET_POPULARITY_CAP: f32 = 0.8;
-
-/// Maximum number of new covert missions the AI will queue per evaluation pass.
-/// Prevents spamming every available operative on espionage each tick interval.
-pub const MAX_COVERT_OPS_PER_EVAL: usize = 3;
-
-// ---------------------------------------------------------------------------
-// GalaxyState — strategic categorization of all systems
-// ---------------------------------------------------------------------------
-
-/// Snapshot of the galaxy's strategic state from one faction's perspective.
-#[derive(Debug, Default)]
-struct GalaxyState {
-    /// Systems we control (not contested).
-    our_controlled: Vec<SystemKey>,
-    /// Our controlled systems with no friendly fleet present.
-    our_undefended: Vec<SystemKey>,
-    /// Our HQ system.
-    our_hq: Option<SystemKey>,
-    /// Systems controlled by the enemy (sorted by weakness for targeting).
-    enemy_controlled: Vec<SystemKey>,
-    /// Systems with at least one enemy fleet, regardless of political control.
-    enemy_fleet_systems: Vec<SystemKey>,
-    /// Enemy HQ system.
-    enemy_hq: Option<SystemKey>,
-    /// Our systems with enemy fleets present.
-    contested: Vec<SystemKey>,
-    /// Neutral/unclaimed systems.
-    unoccupied: Vec<SystemKey>,
-
-    /// Fraction of controlled systems that are ours: our / (our + enemy).
-    /// 0.0 = we control nothing, 1.0 = we control everything.
-    /// Used by `FUN_0053e190` ratio scoring to scale aggression.
-    control_ratio: f64,
-
-    /// Aggression level derived from `control_ratio`.
-    /// 0.0 = fully defensive (hunker down), 1.0 = fully offensive (all-out attack).
-    /// Interpolated: 10% control → 0.2, 50% → 0.5, 90% → 0.8.
-    aggression: f64,
-}
 
 // ---------------------------------------------------------------------------
 // AiFaction
@@ -144,30 +74,42 @@ impl AiFaction {
 // AIState
 // ---------------------------------------------------------------------------
 
-/// Persistent AI state for one controlled faction.
-///
-/// Tracks which characters are currently on missions and the tick of the last
-/// full evaluation, so the AI doesn't re-evaluate every single day.
+/// Persistent AI state for one side: busy characters and each module's saved
+/// state.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AIState {
     /// Which faction this AI controls.
     pub faction: Option<AiFaction>,
-    /// Game-day of the last full evaluation pass.
-    pub last_eval_tick: u64,
     /// Characters currently dispatched on missions (not available for re-dispatch).
     #[serde(
         serialize_with = "crate::serde_ordered::serialize_hash_set",
         deserialize_with = "crate::serde_ordered::deserialize_hash_set"
     )]
     pub busy_characters: HashSet<CharacterKey>,
-    /// Systems where combat recently occurred — deprioritized for attack targeting.
-    /// Maps `SystemKey` → tick of last battle. Decays over ~100 ticks.
-    #[serde(
-        default,
-        serialize_with = "crate::serde_ordered::serialize_hash_map",
-        deserialize_with = "crate::serde_ordered::deserialize_hash_map"
-    )]
-    pub battle_cooldowns: HashMap<SystemKey, u64>,
+    /// The class G character tasks (module 12, `crate::character_tasks`).
+    #[serde(default)]
+    pub character_tasks: crate::character_tasks::CharacterTasks,
+    /// The Research planners (`crate::ai_research`).
+    #[serde(default)]
+    pub research_planners: crate::ai_research::ResearchPlanners,
+    /// The production modules (`crate::ai_production`).
+    #[serde(default)]
+    pub production: crate::ai_production::ProductionState,
+    /// The marks the strategic modules keep (`crate::ai_records`).
+    #[serde(default)]
+    pub marks: crate::ai_records::Marks,
+    /// Module 13 and its controller (`crate::ai_strategy`).
+    #[serde(default)]
+    pub strategy: crate::ai_strategy::StrategyState,
+    /// Module 8's regional records (`crate::ai_regions`).
+    #[serde(default)]
+    pub regions: crate::ai_regions::Regions,
+    /// Module 9's fleet tasks (`crate::fleet_tasks`).
+    #[serde(default)]
+    pub fleet_tasks: crate::fleet_tasks::FleetTasks,
+    /// The round scheduler (`crate::ai_scheduler`).
+    #[serde(default)]
+    pub scheduler: crate::ai_scheduler::Scheduler,
 }
 
 impl AIState {
@@ -175,16 +117,27 @@ impl AIState {
     pub fn new(faction: AiFaction) -> Self {
         AIState {
             faction: Some(faction),
-            last_eval_tick: 0,
             busy_characters: HashSet::new(),
-            battle_cooldowns: HashMap::new(),
+            character_tasks: crate::character_tasks::CharacterTasks::default(),
+            research_planners: crate::ai_research::ResearchPlanners::default(),
+            production: crate::ai_production::ProductionState::default(),
+            marks: crate::ai_records::Marks::default(),
+            strategy: crate::ai_strategy::StrategyState::default(),
+            regions: crate::ai_regions::Regions::default(),
+            fleet_tasks: crate::fleet_tasks::FleetTasks::default(),
+            scheduler: crate::ai_scheduler::Scheduler::default(),
         }
     }
 
-    /// Returns true if enough ticks have elapsed since the last evaluation.
-    #[must_use]
-    pub fn should_evaluate(&self, current_tick: u64, tick_interval: u64) -> bool {
-        current_tick == 0 || current_tick.saturating_sub(self.last_eval_tick) >= tick_interval
+    /// The game type the strategic modules read (`c+4 & 1`, set from the
+    /// settings when the context is built, `FUN_004182a0`).
+    pub fn set_headquarters_only(&mut self, on: bool) {
+        let bit = crate::ai_strategy::ctx::HEADQUARTERS_ONLY;
+        if on {
+            self.strategy.flags |= bit;
+        } else {
+            self.strategy.flags &= !bit;
+        }
     }
 
     /// Mark a character as busy (on a mission).
@@ -224,7 +177,7 @@ impl AIState {
 ///
 /// Actions are pure recommendations — the AI system never mutates state
 /// directly. The caller decides whether to apply each action.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum AIAction {
     /// Dispatch a mission: the order `0x240` a planner emits
     /// (`FUN_0047b360`), with its team (`+0x2c`) and decoys (`+0x58`).
@@ -239,13 +192,23 @@ pub enum AIAction {
         target_object: Option<crate::missions::MissionTarget>,
     },
 
-    /// Enqueue a unit or facility for construction at a system.
+    /// A production module's Build `0x210`/`0x211`/`0x212`: `count` units
+    /// at `system`'s yards, after a Destination `0x214` when `destination`
+    /// is set (`crate::ai_production`).
     EnqueueProduction {
         system: SystemKey,
         kind: BuildableKind,
-        /// Units of work: the class's refined-material cost, which the
-        /// yards' cycles draw one unit at a time (`crate::stockpiles`).
+        /// Units of work per unit: the class's refined-material cost, which
+        /// the yards' cycles draw one unit at a time (`crate::stockpiles`).
         work: u32,
+        count: u32,
+        destination: Option<crate::manufacturing::Destination>,
+    },
+
+    /// A production module's Scrap `0x200`; a Retire `0x242` of a special
+    /// force arrives as its Scrap (`crate::ai_production`, hyp).
+    Scrap {
+        targets: Vec<crate::scrap::ScrapTarget>,
     },
 
     /// Move a fleet to a target system (attack or reinforce).
@@ -259,16 +222,114 @@ pub enum AIAction {
         troops: Vec<TroopKey>,
     },
 
-    /// Assign a character to research a tech tree.
-    DispatchResearch {
+    /// Create Fleet `0x270` of a regional record (`ai_regions`): the
+    /// tagged ships of one fleet form a new fleet in `to_system`, travelling
+    /// there first from another system; in their own system without one.
+    CreateFleet {
+        fleet: FleetKey,
+        ships: Vec<u32>,
+        to_system: Option<SystemKey>,
+    },
+
+    /// A Move `0x201` onto another fleet of the side: a regional record's
+    /// regroup moves a whole fleet (`FUN_004b0c90`, `ships` empty), a fleet
+    /// task the ships of `fleet` with these tags (`FUN_00475490`).
+    JoinFleet {
+        fleet: FleetKey,
+        ships: Vec<u32>,
+        target: FleetKey,
+    },
+
+    /// A Move `0x201` of regiments onto a fleet or to a system: a regional
+    /// record's loading, unloading or drop (`crate::ai_regions`).
+    MoveRegiments {
+        troops: Vec<TroopKey>,
+        to: crate::troop_transport::RegimentTarget,
+    },
+
+    /// A Move `0x201` of a system's squadrons onto a fleet there
+    /// (`FUN_004b0120`).
+    MoveSquadrons {
+        squadrons: Vec<crate::troop_transport::SquadronSource>,
+        fleet: FleetKey,
+    },
+
+    /// A Move `0x201` of characters off a fleet into its system
+    /// (`FUN_004b06b0`).
+    MoveCharacters {
+        characters: Vec<CharacterKey>,
+        to_system: SystemKey,
+    },
+
+    /// Planetary Assault `0x234` (`FUN_004b1070`). port: the fleet's held
+    /// cargo is released to the landing (`crate::troop_transport`).
+    Assault { fleet: FleetKey },
+
+    /// General Bombardment `0x222` or Target Military Facilities `0x220`
+    /// (`FUN_004b1070`).
+    Bombard {
+        fleet: FleetKey,
+        system: SystemKey,
+        kind: crate::ai_regions::Strike,
+    },
+
+    /// Destroy System `0x223` by the fleet's Death Star (`FUN_004b1070`).
+    DestroySystem { fleet: FleetKey, system: SystemKey },
+
+    /// Move a character to a system: the Move `0x201` of a character task
+    /// (`FUN_004bc040`).
+    MoveCharacter {
         character: CharacterKey,
-        tech_type: TechType,
-        ticks: u32,
+        to_system: SystemKey,
+    },
+
+    /// Move a character onto a fleet: a class I task's Move `0x201` onto
+    /// its record's flagship (`FUN_004bca20`), whose fleet the port boards.
+    MoveCharacterToFleet {
+        character: CharacterKey,
+        fleet: FleetKey,
+    },
+
+    /// Give or take an officer rank: the Command order `0x260`..`0x263` of
+    /// a character task (`FUN_004bbf50`; `None` on release, `FUN_004bbba0`).
+    GiveCommand {
+        character: CharacterKey,
+        kind: crate::officer_rank::CommandKind,
     },
 }
 
+impl From<crate::ai_production::Order> for AIAction {
+    fn from(order: crate::ai_production::Order) -> Self {
+        use crate::ai_production::Order;
+        match order {
+            Order::Build {
+                producer,
+                kind,
+                work,
+                count,
+                destination,
+            } => Self::EnqueueProduction {
+                system: producer,
+                kind,
+                work,
+                count,
+                destination,
+            },
+            Order::Scrap(targets) => Self::Scrap { targets },
+            Order::MoveShips { fleet, ships, to } => Self::CreateFleet {
+                fleet,
+                ships,
+                to_system: Some(to),
+            },
+            Order::Retire(force) => Self::Scrap {
+                targets: vec![crate::scrap::ScrapTarget::SpecialForce(force)],
+            },
+        }
+    }
+}
+
 /// Why the AI is moving a fleet.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FleetMoveReason {
     /// Attacking a weak or neutral enemy system.
     Attack,
@@ -283,278 +344,64 @@ pub enum FleetMoveReason {
 /// Stateless AI evaluation system.
 pub struct AISystem;
 
+/// A system's name for a trace record.
+fn system_label(world: &GameWorld, system: SystemKey) -> Option<String> {
+    world.systems.get(system).map(|sys| sys.name.clone())
+}
+
 impl AISystem {
-    /// Evaluate the AI faction's situation and return recommended actions.
-    ///
-    /// Returns an empty vec if no ticks elapsed or the AI interval hasn't
-    /// elapsed yet. The caller should apply each `AIAction` in order.
-    ///
-    /// After applying `DispatchMission` actions, the caller must also call
-    /// `state.mark_busy(character)` for each dispatched character member, and
-    /// `state.mark_available(character)` when the corresponding
-    /// `MissionResult` arrives.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "Keep the existing explicit simulation inputs; grouping them changes the API."
-    )]
-    pub fn advance(
-        state: &mut AIState,
-        world: &GameWorld,
-        mfg_state: &ManufacturingState,
-        mission_state: &MissionState,
-        movement: &crate::movement::MovementState,
-        tick_events: &[TickEvent],
-        config: &GameConfig,
-        research_state: &ResearchState,
-    ) -> Vec<AIAction> {
-        let Some(last_tick_event) = tick_events.last() else {
-            return Vec::new();
-        };
-
-        let current_tick = last_tick_event.tick;
-
-        if !state.should_evaluate(current_tick, config.ai.tick_interval) {
-            return Vec::new();
-        }
-
-        state.last_eval_tick = current_tick;
-
-        let Some(faction) = state.faction else {
-            return Vec::new();
-        };
-
-        let mut actions = Vec::new();
-        let mut planner = Planner::new(
-            world,
-            mission_state,
-            &state.busy_characters,
-            matches!(faction, AiFaction::Alliance),
-            current_tick,
-        );
-
-        // Run each heuristic module.
-        Self::evaluate_officers(&mut planner, world, faction, config, &mut actions);
-        Self::evaluate_espionage(&mut planner, world, faction, config, &mut actions);
-        Self::evaluate_rescue(&mut planner, world, faction, &mut actions);
-        Self::evaluate_reconnaissance(&mut planner, world, faction, config, &mut actions);
-        Self::evaluate_research(
-            state,
-            &planner,
-            world,
-            research_state,
-            faction,
-            &mut actions,
-        );
-        Self::evaluate_production(
-            world,
-            mfg_state,
-            research_state,
-            faction,
-            config,
-            &mut actions,
-        );
-        Self::evaluate_uprising_prevention(&mut planner, world, faction, &mut actions);
-        Self::evaluate_ds_escort(world, movement, faction, config, &mut actions);
-        Self::evaluate_fleet_deployment(
-            state,
-            world,
-            movement,
-            faction,
-            current_tick,
-            config,
-            &mut actions,
-        );
-        Self::evaluate_troop_deployment(world, movement, faction, config, &mut actions);
-
-        actions
-    }
-
     // -----------------------------------------------------------------------
     // Officer heuristics
     // -----------------------------------------------------------------------
 
-    /// `FUN_00508250` port: Pre-dispatch validation cascade.
-    /// Returns true if a character is eligible for mission dispatch.
-    ///
-    /// Ports 15 of the original 18 AND-chained validators. The remaining 3
-    /// (#2, #3, #4) reference internal C++ allocation budgets (+0x58, +0x5c,
-    /// +0x64) that track entity deployment counts against capacity limits —
-    /// our AI evaluates holistically per cycle, so over-dispatch is naturally
-    /// limited by available characters and the per-cycle mission caps.
-    fn can_dispatch(
-        state: &AIState,
-        faction: AiFaction,
-        char_key: CharacterKey,
-        character: &Character,
-    ) -> bool {
-        // Knesset Shamash-Bet #R11: killed characters stay in the arena for
-        // reactive story events but must be invisible to dispatch logic.
-        if character.is_killed {
-            return false;
-        }
-        // #1 FUN_0051ebb0: Always returns 1 — no-op gate (elided).
-
-        // #5 FUN_0050b230: Faction check + status bits (+0x88>>11) + scoring.
-        // We port the faction check; the status bits encode "entity is deployed"
-        // which we cover via is_busy / on_mission checks below.
-        if !faction.owns_character(character) {
-            return false;
-        }
-
-        // #9 FUN_0050b5a0: Faction + status bits (+0x88 bits 0,2,11) + scoring.
-        // Bit 0 = "entity exists/valid", bit 2 = "entity is available",
-        // bit 11 = "entity is deployed". Our model tracks these via the
-        // is_captive / on_mission / is_busy flags below.
-
-        // #13 FUN_0050bc60: Faction match (character family 4) — covered above.
-
-        // #14 FUN_0050be00: Mandatory mission check
-        if character.on_mandatory_mission {
-            return false;
-        }
-
-        // #17 FUN_0050b800: Status bits (0,2) + position check (+0x7c >= 0).
-        // Bit 0 = valid, bit 2 = available, position = current system index.
-        // We approximate: character must have a valid system assignment or at
-        // least not be in an invalid state.
-        if character.is_captive {
-            return false;
-        }
-
-        // #18 FUN_0050bb00: Faction + status bits + deployment flag.
-        // Combined faction + "not already deployed" — we cover via is_busy.
-        if state.is_busy(char_key) {
-            return false;
-        }
-
-        if character.on_mission || character.on_hidden_mission {
-            return false;
-        }
-
-        // Unported validators (require C++ allocation budget tracking):
-        // #2 FUN_0050ad60: capacity overflow (+0x5c < +0x64) — internal budget
-        //    tracking that limits total deployed entities. Our per-cycle caps
-        //    (max_covert_ops_per_eval, etc.) serve the same purpose.
-        // #3 FUN_0050ad80: fleet entity count vs capacity at +0x5c — the most
-        //    complex validator, checking entity counts against fleet-level budgets.
-        //    Our fleet-level checks in can_dispatch_fleet cover the fleet side.
-        // #4 FUN_0050b0b0: entity count via vtable+0x1c8 vs budget at +0x64 —
-        //    a global deployment budget we don't model. Our per-cycle caps
-        //    prevent over-dispatch equivalently.
-
-        true
-    }
-
-    /// System-level dispatch validation for fleet/troop operations.
-    ///
-    /// Ports validators from `FUN_00508250` that check system state rather than
-    /// character state. Called before moving fleets or dispatching troops to a
-    /// target system.
-    fn can_dispatch_to_system(
+    /// Trace a candidate list the evaluators scored, best first as they
+    /// walk it. The scores are each evaluator's own sort key.
+    fn trace_scored(
         world: &GameWorld,
-        _faction: AiFaction,
-        target_sys: SystemKey,
-    ) -> bool {
-        let Some(system) = world.systems.get(target_sys) else {
-            return false;
-        };
-
-        // Destroyed systems are never valid targets.
-        if system.is_destroyed {
-            return false;
-        }
-
-        // #16 FUN_0050b8e0 computes faction strengths and writes derived
-        // readiness flags. It does not reject a destination merely because
-        // defenders are stronger. Defender strength is already represented by
-        // `score_attack_target`, while force allocation is handled per fleet.
-
-        // #6 FUN_0050b2c0 is a loyalty validator for population-facing
-        // operations, not a prohibition on military attacks. Applying it here
-        // made the AI reject the most hostile enemy worlds and endlessly move
-        // fleets among friendly systems instead.
-
-        true
-    }
-
-    /// Fleet-level dispatch validation.
-    ///
-    /// Ports validators that check fleet composition before dispatch.
-    /// 12 of 18 original checks are now represented here or in
-    /// `can_dispatch` / `can_dispatch_to_system`.
-    fn can_dispatch_fleet(world: &GameWorld, fleet_key: FleetKey, faction: AiFaction) -> bool {
-        let Some(fleet) = world.fleets.get(fleet_key) else {
-            return false;
-        };
-        let is_alliance = matches!(faction, AiFaction::Alliance);
-
-        // #5/#9/#18: Faction match — covers all three faction-check validators.
-        if fleet.is_alliance != is_alliance {
-            return false;
-        }
-
-        // #12 FUN_0050bb70: Ship capacity — fleet must have ships.
-        if fleet.is_empty() {
-            return false;
-        }
-
-        // #7 FUN_0050b310: Ship type compatibility — fleet count + facility
-        // count + bit5 of +0x88. The original checks whether the fleet's ship
-        // types are compatible with the target system's facilities. We
-        // approximate: fleets with at least one alive capital ship are always
-        // dispatchable for attack. Repair/dock dispatch would need a shipyard
-        // check at the destination, but that's a separate code path.
-        let has_alive_ship = fleet.capital_ships.iter().any(|s| s.alive);
-        if !has_alive_ship && fleet.fighters.is_empty() {
-            return false;
-        }
-
-        // #8 FUN_0050b610: Troop deployment readiness — bit0 of +0x88 +
-        // troop class validation via FUN_0055a080. The original verifies that
-        // troops assigned to a fleet are deployable. Our troops are system-level
-        // (not fleet-level), so this check is effectively always-true. But we
-        // verify the fleet's origin system exists and is valid.
-        if world.systems.get(fleet.location).is_none() {
-            return false;
-        }
-
-        // #10 FUN_0050b500: Fleet troop count minus allocation > 0.
-        // Original checks `troop_count - troop_allocation > 0` using +0x80.
-        // We don't track per-fleet troop allocation; troops are system-level.
-        // This validator is effectively always-true in our model.
-
-        // #11 FUN_0050ba90: Troop availability boolean. Covered indirectly by
-        // the troop deployment system (evaluate_troop_deployment) which checks
-        // per-system troop counts before issuing MoveTroops actions.
-
-        // #15 FUN_0050c350: Fleet/facility nested iteration + per-entity check.
-        // The original iterates all entities in the fleet and checks each via
-        // FUN_0050c580 (a per-entity validity gate). We approximate: all ships
-        // in the fleet must belong to the dispatching faction. This is
-        // guaranteed by construction (fleets are faction-owned), so the check
-        // is implicit.
-
-        // Unported validators (require C++ allocation budget tracking):
-        // #2 FUN_0050ad60: capacity overflow (+0x5c < +0x64)
-        // #3 FUN_0050ad80: fleet entity count vs capacity at +0x5c
-        // #4 FUN_0050b0b0: entity count via vtable+0x1c8 vs budget at +0x64
-        // These track deployment counts against global capacity limits. Our AI
-        // evaluates holistically per cycle with per-cycle caps, preventing the
-        // same over-dispatch issue through a different mechanism.
-
-        true
+        kind: &'static str,
+        scored: impl FnOnce() -> Vec<(SystemKey, f64)>,
+    ) {
+        crate::trace::record(crate::trace::TraceMask::AI, kind, || {
+            let candidates: Vec<_> = scored()
+                .into_iter()
+                .map(|(system, score)| {
+                    serde_json::json!({ "system": system_label(world, system), "score": score })
+                })
+                .collect();
+            serde_json::json!({ "candidates": candidates })
+        });
     }
 
     /// Plan `kind`'s team and decoys (`crate::mission_planning`) and push
-    /// the order when the planner sends anyone. Returns whether it did.
+    /// the order when the planner sends anyone, unless `actions` already
+    /// holds `stop` orders. Returns whether it did.
     fn dispatch_planned(
         planner: &mut Planner<'_>,
+        stop: usize,
         kind: MissionKind,
         target: (SystemKey, Option<CharacterKey>),
         target_object: Option<crate::missions::MissionTarget>,
         actions: &mut Vec<AIAction>,
     ) -> bool {
-        let Some((team, decoys)) = planner.plan(kind) else {
+        if actions.len() >= stop {
+            return false;
+        }
+        let planned = planner.plan(kind);
+        crate::trace::record(crate::trace::TraceMask::AI, "dispatch", || {
+            let world = planner.world;
+            serde_json::json!({
+                "kind": format!("{kind:?}"),
+                "target_system": system_label(world, target.0),
+                "target_character": target
+                    .1
+                    .and_then(|key| world.characters.get(key))
+                    .map(|c| c.name.clone()),
+                "chosen": planned.is_some(),
+                "team": planned.as_ref().map(|(team, _)| team.len()),
+                "decoys": planned.as_ref().map(|(_, decoys)| decoys.len()),
+            })
+        });
+        let Some((team, decoys)) = planned else {
             return false;
         };
         actions.push(AIAction::DispatchMission {
@@ -568,26 +415,98 @@ impl AISystem {
         true
     }
 
+    /// The round's record of each system, in the world's order.
+    fn system_records<'r>(round: &'r Round<'_>) -> impl Iterator<Item = &'r SystemRecord> + 'r {
+        round
+            .inputs
+            .world
+            .systems
+            .keys()
+            .filter_map(|key| round.records.get(&key))
+    }
+
+    /// Whether the class validator at creation (`FUN_00542b60` ->
+    /// `FUN_0054c590`) admits `kind` against this target: the backstop
+    /// behind the queries' record bits, so no pick is refused at the order.
+    fn admits(
+        round: &Round<'_>,
+        faction: AiFaction,
+        kind: MissionKind,
+        system: SystemKey,
+        character: Option<CharacterKey>,
+        object: Option<crate::missions::MissionTarget>,
+    ) -> bool {
+        let mut mission = crate::missions::ActiveMission::new(
+            0,
+            kind,
+            faction.as_mission_faction(),
+            Vec::new(),
+            system,
+            0,
+        );
+        mission.target_character = character;
+        mission.target_object = object;
+        crate::missions::validate(
+            &mission,
+            round.inputs.world,
+            round.inputs.uprisings,
+            crate::missions::Check::Creation,
+        )
+        .is_none()
+    }
+
+    /// Whether the side's Diplomacy already works `system`: the Diplomacy
+    /// planner's claim on its target (`+0x2c` bit `0x20000000`,
+    /// `FUN_00481720.c:76, 287`), which its query forbids.
+    fn diplomacy_claimed(missions: &MissionState, faction: AiFaction, system: SystemKey) -> bool {
+        missions.missions().iter().any(|m| {
+            m.kind == MissionKind::Diplomacy
+                && m.faction == faction.as_mission_faction()
+                && m.target_system == system
+        })
+    }
+
     /// Incite, Diplomacy, and Recruitment orders.
     ///
-    /// port: the side's strategic choice of mission and target (side
-    /// `+0x318`, `+0x31c`) is untraced, so the port picks the targets; the
-    /// original planners pick the members.
-    /// - Incite: the enemy system where the enemy is most popular.
-    /// - Diplomacy: each system below the popularity cap, least popular
-    ///   first, while the planner finds a diplomat.
-    /// - Recruitment: the side's most popular system, while its recruit pool
-    ///   holds anyone and the planner finds a recruiter.
-    fn evaluate_officers(
+    /// The targets are those the original's system queries take over the
+    /// round's records (`FUN_00433e40`, `sys+0x2c`) and the creation
+    /// validator admits ([`Self::admits`]). port: the side's choice among
+    /// them (side `+0x318`, `+0x31c`) is untraced, so the port ranks them;
+    /// the original planners pick the members.
+    /// - Incite (`FUN_00480370.c:109`: bit `0x100`, an enemy system where
+    ///   our support is above 50): our most popular first.
+    /// - Diplomacy (`FUN_00481720.c:97-268`: bit `0x40`, our systems below
+    ///   support 70 and neutral ones, no foreign fleet, no uprising): ours
+    ///   first, then neutral, least popular first, while the planner finds a
+    ///   diplomat; a system our Diplomacy works is skipped.
+    /// - Recruitment (`FUN_0047dcc0.c:62, 119, 139-166`: bit 2): our most
+    ///   popular calm, unblockaded system, while its recruit pool holds
+    ///   anyone and the planner finds a recruiter.
+    ///
+    /// port: the three are separate planners in the original, each with its
+    /// own module-4 turn; the port's one pseudo-planner tries Incite, then
+    /// Diplomacy, then Recruitment, so with one dispatch a turn an Incite
+    /// target with a team keeps the other two waiting.
+    pub(crate) fn evaluate_officers(
         planner: &mut Planner<'_>,
-        world: &GameWorld,
+        round: &Round<'_>,
+        missions: &MissionState,
         faction: AiFaction,
-        config: &GameConfig,
+        limit: usize,
         actions: &mut Vec<AIAction>,
     ) {
-        if let Some(target) = Self::find_incite_target(world, faction) {
+        let world = round.inputs.world;
+        let stop = actions.len().saturating_add(limit);
+        if let Some(target) = Self::find_incite_target(round, faction) {
+            Self::trace_scored(world, "incite_candidate", || {
+                vec![(
+                    target,
+                    f64::from(faction.system_popularity(&world.systems[target])),
+                )]
+            });
             Self::dispatch_planned(
                 planner,
+                stop,
                 MissionKind::InciteUprising,
                 (target, None),
                 None,
@@ -595,18 +514,30 @@ impl AISystem {
             );
         }
 
-        let cap = config.ai.diplomacy_target_popularity_cap;
-        let mut diplomacy_targets: Vec<(SystemKey, f32)> = world
-            .systems
-            .iter()
-            .map(|(key, system)| (key, faction.system_popularity(system)))
-            .filter(|&(_, popularity)| popularity < cap)
+        let mut diplomacy_targets: Vec<(SystemKey, bool, f32)> = Self::system_records(round)
+            .filter(|r| r.q & 0x40 != 0)
+            .filter(|r| !Self::diplomacy_claimed(missions, faction, r.key))
+            .filter(|r| Self::admits(round, faction, MissionKind::Diplomacy, r.key, None, None))
+            .map(|r| {
+                let popularity = faction.system_popularity(&world.systems[r.key]);
+                (r.key, !r.own, popularity)
+            })
             .collect();
-        diplomacy_targets
-            .sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
-        for (target, _) in diplomacy_targets {
+        // FUN_00481720 queries our systems, then neutral ones.
+        diplomacy_targets.sort_by(|a, b| {
+            a.1.cmp(&b.1)
+                .then(a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal))
+        });
+        Self::trace_scored(world, "diplomacy_candidates", || {
+            diplomacy_targets
+                .iter()
+                .map(|&(key, _, popularity)| (key, f64::from(popularity)))
+                .collect()
+        });
+        for (target, _, _) in diplomacy_targets {
             if !Self::dispatch_planned(
                 planner,
+                stop,
                 MissionKind::Diplomacy,
                 (target, None),
                 None,
@@ -618,10 +549,17 @@ impl AISystem {
 
         let side = crate::dat::Faction::from(faction.as_mission_faction());
         let mut pool = crate::missions::recruit_pool(world, side).len();
-        if let Some(base) = Self::find_friendly_system(world, faction) {
+        if let Some(base) = Self::find_friendly_system(round, faction) {
+            Self::trace_scored(world, "recruitment_base", || {
+                vec![(
+                    base,
+                    f64::from(faction.system_popularity(&world.systems[base])),
+                )]
+            });
             while pool > 0 && !world.recruit_pool_empty(side) {
                 if !Self::dispatch_planned(
                     planner,
+                    stop,
                     MissionKind::Recruitment,
                     (base, None),
                     None,
@@ -634,48 +572,53 @@ impl AISystem {
         }
     }
 
-    /// Find a system that the AI faction has relatively high popularity in —
-    /// used as a recruitment base.
-    fn find_friendly_system(world: &GameWorld, faction: AiFaction) -> Option<SystemKey> {
-        world
-            .systems
-            .iter()
-            .max_by(|(_, a), (_, b)| {
+    /// The Recruitment base: `sys+0x2c` bit 2 (`FUN_00433e40.c:845-849`), a
+    /// populated system of ours with no uprising or blockade (`sys+0x28 &
+    /// 3`) that is not system `0x121` (`sys+0x30 & 0x8000000`). hyp: the
+    /// side object's `+0xa4` (`FUN_00433e40.c:62`, `:845`), which the bit
+    /// also needs, is untraced and read as set. port: the most popular such
+    /// system.
+    fn find_friendly_system(round: &Round<'_>, faction: AiFaction) -> Option<SystemKey> {
+        let world = round.inputs.world;
+        Self::system_records(round)
+            .filter(|r| r.own && r.populated)
+            .filter(|r| r.a & crate::ai_production::bit::BLOCKED == 0)
+            .filter(|r| r.s & crate::ai_records::sys::SPECIAL == 0)
+            .filter(|r| Self::admits(round, faction, MissionKind::Recruitment, r.key, None, None))
+            .max_by(|a, b| {
                 faction
-                    .system_popularity(a)
-                    .partial_cmp(&faction.system_popularity(b))
+                    .system_popularity(&world.systems[a.key])
+                    .partial_cmp(&faction.system_popularity(&world.systems[b.key]))
                     .unwrap_or(std::cmp::Ordering::Equal)
             })
-            .map(|(k, _)| k)
+            .map(|r| r.key)
     }
 
-    /// Find an enemy-controlled system suitable for inciting uprising.
-    /// Targets systems where the enemy has high popularity (firmly controlled).
-    fn find_incite_target(world: &GameWorld, faction: AiFaction) -> Option<SystemKey> {
-        world
-            .systems
-            .iter()
-            .filter(|(_, s)| {
-                let enemy_pop = match faction {
-                    AiFaction::Alliance => s.popularity_empire,
-                    AiFaction::Empire => s.popularity_alliance,
-                };
-                enemy_pop > 0.5
+    /// The Incite target: `sys+0x2c` bit `0x100` in an enemy system
+    /// (`FUN_00480370.c:109`, `FUN_0041a340(.., 0x100, 4, ..)`), set where
+    /// our support is above 50 (`FUN_00433e40.c:636-637`). port: our most
+    /// popular such system.
+    fn find_incite_target(round: &Round<'_>, faction: AiFaction) -> Option<SystemKey> {
+        let world = round.inputs.world;
+        Self::system_records(round)
+            .filter(|r| r.enemy && r.q & 0x100 != 0)
+            .filter(|r| {
+                Self::admits(
+                    round,
+                    faction,
+                    MissionKind::InciteUprising,
+                    r.key,
+                    None,
+                    None,
+                )
             })
-            .max_by(|(_, a), (_, b)| {
-                let enemy_a = match faction {
-                    AiFaction::Alliance => a.popularity_empire,
-                    AiFaction::Empire => a.popularity_alliance,
-                };
-                let enemy_b = match faction {
-                    AiFaction::Alliance => b.popularity_empire,
-                    AiFaction::Empire => b.popularity_alliance,
-                };
-                enemy_a
-                    .partial_cmp(&enemy_b)
+            .max_by(|a, b| {
+                faction
+                    .system_popularity(&world.systems[a.key])
+                    .partial_cmp(&faction.system_popularity(&world.systems[b.key]))
                     .unwrap_or(std::cmp::Ordering::Equal)
             })
-            .map(|(k, _)| k)
+            .map(|r| r.key)
     }
 
     // -----------------------------------------------------------------------
@@ -690,22 +633,24 @@ impl AISystem {
     /// 1. **Sabotage**: enemy systems with manufacturing facilities, the most
     ///    first.
     /// 2. **Assassination**, then **Abduction**: enemy characters.
-    /// 3. **Espionage**: unexplored systems.
+    /// 3. **Espionage**: systems with `sys+0x2c` bit `0x200` (held by the
+    ///    side or its enemy, `FUN_00433e40`), the enemy's first
+    ///    (`FUN_004b1bf0.c:31-52`).
     ///
-    /// At most `max_covert_ops_per_eval` covert missions are queued per pass,
-    /// and a kind stops once its planner finds no team.
+    /// A kind stops once its planner finds no team.
     #[expect(
         clippy::too_many_lines,
         reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
     )]
-    fn evaluate_espionage(
+    pub(crate) fn evaluate_espionage(
         planner: &mut Planner<'_>,
-        world: &GameWorld,
+        round: &Round<'_>,
         faction: AiFaction,
-        config: &GameConfig,
+        limit: usize,
         actions: &mut Vec<AIAction>,
     ) {
-        let mut ops_queued = 0;
+        let world = round.inputs.world;
+        let stop = actions.len().saturating_add(limit);
 
         // ── Priority 1: Sabotage enemy manufacturing systems ─────────────────
         // Score each enemy system by number of mfg facilities (proxy for value).
@@ -734,20 +679,35 @@ impl AISystem {
                     .first()
                     .map(|&first| (sys_key, enemy_mfg.len(), first))
             })
+            .filter(|&(system, _, facility)| {
+                let target = crate::missions::MissionTarget::ManufacturingFacility(facility);
+                Self::admits(
+                    round,
+                    faction,
+                    MissionKind::Sabotage,
+                    system,
+                    None,
+                    Some(target),
+                )
+            })
             .collect();
 
         // Highest facility count first.
         sabotage_targets.sort_by_key(|a| std::cmp::Reverse(a.1));
+        Self::trace_scored(world, "sabotage_candidates", || {
+            sabotage_targets
+                .iter()
+                .map(|&(key, facilities, _)| (key, facilities as f64))
+                .collect()
+        });
 
         for &(target_sys, _, facility) in &sabotage_targets {
-            if ops_queued >= config.ai.max_covert_ops_per_eval {
-                break;
-            }
             let target = Some(crate::missions::MissionTarget::ManufacturingFacility(
                 facility,
             ));
             if !Self::dispatch_planned(
                 planner,
+                stop,
                 MissionKind::Sabotage,
                 (target_sys, None),
                 target,
@@ -755,7 +715,6 @@ impl AISystem {
             ) {
                 break;
             }
-            ops_queued += 1;
         }
 
         // ── Priority 2: Assassination, then Abduction, of enemy characters ──
@@ -772,8 +731,19 @@ impl AISystem {
             .characters
             .iter()
             .filter(|(_, c)| c.is_major && !faction.owns_character(c) && !c.is_killed)
-            .filter(|(_, c)| !c.is_captive)
+            // port: a target en route would end the mission at once (rule 5).
+            .filter(|(_, c)| !c.is_captive && !c.en_route)
             .filter_map(|(key, c)| whereabouts(c).map(|system| (key, system)))
+            .filter(|&(key, system)| {
+                Self::admits(
+                    round,
+                    faction,
+                    MissionKind::Assassination,
+                    system,
+                    Some(key),
+                    None,
+                )
+            })
             .collect();
 
         // Abduction targets: ALL enemy characters, sorted by lowest combat defense
@@ -781,55 +751,96 @@ impl AISystem {
         let mut abduction_targets: Vec<(CharacterKey, SystemKey, u32)> = world
             .characters
             .iter()
-            .filter(|(_, c)| !faction.owns_character(c) && !c.is_captive && !c.is_killed)
+            .filter(|(_, c)| {
+                !faction.owns_character(c) && !c.is_captive && !c.is_killed && !c.en_route
+            })
             .filter_map(|(key, c)| {
                 let defense = c.combat.base + c.combat.variance / 2;
                 whereabouts(c).map(|system| (key, system, defense))
             })
+            .filter(|&(key, system, _)| {
+                Self::admits(
+                    round,
+                    faction,
+                    MissionKind::Abduction,
+                    system,
+                    Some(key),
+                    None,
+                )
+            })
             .collect();
         abduction_targets.sort_by_key(|a| a.2);
+        crate::trace::record(
+            crate::trace::TraceMask::AI,
+            "covert_character_candidates",
+            || {
+                let name = |key: CharacterKey| world.characters.get(key).map(|c| c.name.clone());
+                serde_json::json!({
+                    "assassination": enemy_major_chars
+                        .iter()
+                        .map(|&(key, system)| serde_json::json!({
+                            "character": name(key),
+                            "system": system_label(world, system),
+                        }))
+                        .collect::<Vec<_>>(),
+                    "abduction": abduction_targets
+                        .iter()
+                        .map(|&(key, system, defense)| serde_json::json!({
+                            "character": name(key),
+                            "system": system_label(world, system),
+                            "score": defense,
+                        }))
+                        .collect::<Vec<_>>(),
+                })
+            },
+        );
 
         for &(target_char, target_sys) in &enemy_major_chars {
-            if ops_queued >= config.ai.max_covert_ops_per_eval {
-                break;
-            }
             let target = (target_sys, Some(target_char));
-            if !Self::dispatch_planned(planner, MissionKind::Assassination, target, None, actions) {
+            if !Self::dispatch_planned(
+                planner,
+                stop,
+                MissionKind::Assassination,
+                target,
+                None,
+                actions,
+            ) {
                 break;
             }
-            ops_queued += 1;
         }
 
         for &(target_char, target_sys, _) in &abduction_targets {
-            if ops_queued >= config.ai.max_covert_ops_per_eval {
-                break;
-            }
             let target = (target_sys, Some(target_char));
-            if !Self::dispatch_planned(planner, MissionKind::Abduction, target, None, actions) {
+            if !Self::dispatch_planned(planner, stop, MissionKind::Abduction, target, None, actions)
+            {
                 break;
             }
-            ops_queued += 1;
         }
 
-        // ── Priority 3: Intelligence gathering on unexplored enemy systems ────
-        let unexplored_targets: Vec<SystemKey> = world
-            .systems
-            .iter()
-            .filter_map(|(sys_key, system)| {
-                if system.exploration_status == ExplorationStatus::Unexplored {
-                    Some(sys_key)
-                } else {
-                    None
-                }
-            })
+        // ── Priority 3: Espionage ─────────────────────────────────────────
+        // FUN_004b1bf0 asks FUN_0041a3a0(.., 0x200, 4): sys+0x2c bit 0x200
+        // in an enemy system, else FUN_0041a460(.., 0x200, 0): in any
+        // (:31-52). Bit 0x200 marks an explored system the side or its
+        // enemy holds (FUN_00433e40). port: the original asks within the
+        // sector of the regional record whose posture asked for Espionage
+        // (module 4 states 2 and 3, not ported); the port asks galaxy-wide,
+        // in the world's order.
+        let mut espionage_targets: Vec<(bool, SystemKey)> = Self::system_records(round)
+            .filter(|r| r.q & 0x200 != 0)
+            .filter(|r| Self::admits(round, faction, MissionKind::Espionage, r.key, None, None))
+            .map(|r| (!r.enemy, r.key))
             .collect();
+        espionage_targets.sort_by_key(|&(not_enemy, _)| not_enemy);
+        let espionage_targets: Vec<SystemKey> =
+            espionage_targets.into_iter().map(|(_, key)| key).collect();
+        Self::trace_scored(world, "espionage_candidates", || {
+            espionage_targets.iter().map(|&key| (key, 0.0)).collect()
+        });
 
-        for &target_sys in &unexplored_targets {
-            if ops_queued >= config.ai.max_covert_ops_per_eval {
-                break;
-            }
+        for &target_sys in &espionage_targets {
             if !Self::dispatch_planned(
                 planner,
+                stop,
                 MissionKind::Espionage,
                 (target_sys, None),
                 None,
@@ -837,7 +848,6 @@ impl AISystem {
             ) {
                 break;
             }
-            ops_queued += 1;
         }
     }
 
@@ -849,29 +859,49 @@ impl AISystem {
     ///
     /// Scans for characters held captive by the enemy; the Rescue planner
     /// (`FUN_0047e270`, `FUN_0047e3f0`) picks each team.
-    fn evaluate_rescue(
+    pub(crate) fn evaluate_rescue(
         planner: &mut Planner<'_>,
-        world: &GameWorld,
+        round: &Round<'_>,
         faction: AiFaction,
+        limit: usize,
         actions: &mut Vec<AIAction>,
     ) {
+        let world = round.inputs.world;
+        let stop = actions.len().saturating_add(limit);
         // Find captive allies (our characters held by the enemy).
         let captives: Vec<(CharacterKey, SystemKey)> = world
             .characters
             .iter()
             .filter_map(|(key, c)| {
-                if c.is_captive && faction.owns_character(c) {
+                // port: a captive en route would end the mission at once
+                // (rule 5).
+                if c.is_captive && faction.owns_character(c) && !c.en_route {
                     c.current_system.map(|sys| (key, sys))
                 } else {
                     None
                 }
             })
+            .filter(|&(key, system)| {
+                Self::admits(round, faction, MissionKind::Rescue, system, Some(key), None)
+            })
             .collect();
 
+        crate::trace::record(crate::trace::TraceMask::AI, "rescue_candidates", || {
+            let candidates: Vec<_> = captives
+                .iter()
+                .map(|&(key, system)| {
+                    serde_json::json!({
+                        "character": world.characters.get(key).map(|c| c.name.clone()),
+                        "system": system_label(world, system),
+                    })
+                })
+                .collect();
+            serde_json::json!({ "candidates": candidates })
+        });
         // One rescue per captive while the planner finds a team.
         for (captive_key, captive_system) in captives {
             let target = (captive_system, Some(captive_key));
-            if !Self::dispatch_planned(planner, MissionKind::Rescue, target, None, actions) {
+            if !Self::dispatch_planned(planner, stop, MissionKind::Rescue, target, None, actions) {
                 break;
             }
         }
@@ -883,21 +913,22 @@ impl AISystem {
 
     /// Dispatch reconnaissance missions to gather intelligence on enemy systems.
     ///
-    /// Unlike `evaluate_espionage`'s intelligence gathering (Priority 3), which
-    /// targets only unexplored systems, this targets explored enemy-controlled
-    /// systems to update our intelligence picture. The original game uses
+    /// This targets explored enemy-controlled systems to update our
+    /// intelligence picture. The original game uses
     /// mission type 0x54 for this — we reuse `MissionKind::Espionage` since
     /// the mechanic is the same (reveal system state).
     ///
     /// Priority: enemy-controlled systems with the most fleets/facilities
     /// (highest strategic value to scout).
-    fn evaluate_reconnaissance(
+    pub(crate) fn evaluate_reconnaissance(
         planner: &mut Planner<'_>,
-        world: &GameWorld,
+        round: &Round<'_>,
         faction: AiFaction,
-        config: &GameConfig,
+        limit: usize,
         actions: &mut Vec<AIAction>,
     ) {
+        let world = round.inputs.world;
+        let stop = actions.len().saturating_add(limit);
         let is_alliance = matches!(faction, AiFaction::Alliance);
         let enemy_faction = if is_alliance {
             crate::dat::Faction::Empire
@@ -916,13 +947,15 @@ impl AISystem {
                 if system.is_destroyed {
                     return None;
                 }
-                // Only target explored systems (unexplored are handled by
-                // evaluate_espionage). Score by total enemy assets.
+                // Only target explored systems. Score by total enemy assets.
                 if system.exploration_status != crate::dat::ExplorationStatus::Explored {
                     return None;
                 }
                 let value = Self::system_strength(world, system, !is_alliance);
                 Some((sys_key, value))
+            })
+            .filter(|&(system, _)| {
+                Self::admits(round, faction, MissionKind::Espionage, system, None, None)
             })
             .collect();
 
@@ -932,10 +965,17 @@ impl AISystem {
 
         // Sort by highest value first (most important to scout).
         recon_targets.sort_by_key(|a| std::cmp::Reverse(a.1));
+        Self::trace_scored(world, "reconnaissance_candidates", || {
+            recon_targets
+                .iter()
+                .map(|&(key, strength)| (key, f64::from(strength)))
+                .collect()
+        });
 
-        for (target_sys, _) in recon_targets.into_iter().take(config.ai.max_recon_per_eval) {
+        for (target_sys, _) in recon_targets {
             if !Self::dispatch_planned(
                 planner,
+                stop,
                 MissionKind::Espionage,
                 (target_sys, None),
                 None,
@@ -946,384 +986,13 @@ impl AISystem {
         }
     }
 
-    // -----------------------------------------------------------------------
-    // Research heuristics
-    // -----------------------------------------------------------------------
-
-    /// Assign idle characters with research skills to tech tree advancement.
+    /// A garrison strength score for a system: the side's live hull total,
+    /// its regiment strength, and ten per facility. Higher is more heavily
+    /// defended.
     ///
-    /// For each tech tree (Ship, Troop, Facility), if no project is active for
-    /// this faction, find the best available character and dispatch them.
-    /// Characters are matched by their primary research skill:
-    /// - Ship: `ship_design`
-    /// - Troop: `troop_training`
-    /// - Facility: `facility_design`
-    fn evaluate_research(
-        state: &AIState,
-        planner: &Planner<'_>,
-        world: &GameWorld,
-        research_state: &ResearchState,
-        faction: AiFaction,
-        actions: &mut Vec<AIAction>,
-    ) {
-        let is_alliance = matches!(faction, AiFaction::Alliance);
-
-        for &tech in &[TechType::Ship, TechType::Troop, TechType::Facility] {
-            // Skip if there's already an active project for this faction + tree.
-            let has_active = research_state
-                .projects
-                .iter()
-                .any(|p| p.faction_is_alliance == is_alliance && p.tech_type == tech);
-            if has_active {
-                continue;
-            }
-
-            // Find the best available character for this tree.
-            let best = world
-                .characters
-                .iter()
-                .filter(|(key, c)| {
-                    Self::can_dispatch(state, faction, *key, c) && !planner.sent(*key)
-                })
-                .filter_map(|(key, c)| {
-                    let skill = match tech {
-                        TechType::Ship => c.ship_design.base + c.ship_design.variance / 2,
-                        TechType::Troop => c.troop_training.base + c.troop_training.variance / 2,
-                        TechType::Facility => {
-                            c.facility_design.base + c.facility_design.variance / 2
-                        }
-                    };
-                    // Only consider characters with meaningful skill (>= 30).
-                    if skill >= 30 {
-                        Some((key, skill))
-                    } else {
-                        None
-                    }
-                })
-                .max_by_key(|&(_, skill)| skill);
-
-            if let Some((char_key, _)) = best {
-                let current_level = research_state.level(is_alliance, tech);
-                let ticks =
-                    ResearchSystem::ticks_for_next_level(world, is_alliance, tech, current_level);
-                actions.push(AIAction::DispatchResearch {
-                    character: char_key,
-                    tech_type: tech,
-                    ticks,
-                });
-            }
-        }
-    }
-
-    // -----------------------------------------------------------------------
-    // Production heuristics
-    // -----------------------------------------------------------------------
-
-    /// For systems with idle manufacturing capacity, enqueue appropriate units.
-    ///
-    /// - Systems with no active queue → enqueue best available fighter class
-    /// - Systems with few construction yards → enqueue a manufacturing facility
-    #[expect(
-        clippy::too_many_lines,
-        reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
-    )]
-    fn evaluate_production(
-        world: &GameWorld,
-        mfg_state: &ManufacturingState,
-        research_state: &ResearchState,
-        faction: AiFaction,
-        config: &GameConfig,
-        actions: &mut Vec<AIAction>,
-    ) {
-        let best_fighter = Self::best_fighter_class(world, research_state, faction);
-        let best_capship = Self::best_capital_ship_class(world, research_state, faction);
-
-        // Count existing fleet assets to decide what to build next.
-        let is_alliance = matches!(faction, AiFaction::Alliance);
-        let our_capship_count: usize = world
-            .fleets
-            .values()
-            .filter(|f| f.is_alliance == is_alliance)
-            .map(|f| f.ship_count() as usize)
-            .sum();
-        let our_fighter_count: usize = world
-            .fleets
-            .values()
-            .filter(|f| f.is_alliance == is_alliance)
-            .flat_map(|f| &f.fighters)
-            .map(|e| e.count as usize)
-            .sum::<usize>()
-            + world
-                .systems
-                .values()
-                .map(|system| system.squadron_count(is_alliance) as usize)
-                .sum::<usize>();
-
-        let our_faction = if is_alliance {
-            crate::dat::Faction::Alliance
-        } else {
-            crate::dat::Faction::Empire
-        };
-
-        let first_order = actions.len();
-        for (sys_key, system) in &world.systems {
-            // A faction cannot use an isolated facility after losing control of
-            // its system. Without this ownership gate, seeded facilities on
-            // neutral worlds produced one-ship fleets across the galaxy.
-            if !system.control.is_controlled_by(our_faction) {
-                continue;
-            }
-
-            // Only act on systems where this faction has manufacturing facilities.
-            let has_mfg = system.manufacturing_facilities.iter().any(|mfk| {
-                world
-                    .manufacturing_facilities
-                    .get(*mfk)
-                    .is_some_and(|f| match faction {
-                        AiFaction::Alliance => f.side == crate::dat::Faction::Alliance,
-                        AiFaction::Empire => f.side == crate::dat::Faction::Empire,
-                    })
-            });
-
-            if !has_mfg {
-                continue;
-            }
-
-            let queue_len = mfg_state.queued_at(sys_key);
-
-            // Allow up to 3 items in queue (don't just wait for empty).
-            if queue_len >= 3 {
-                continue;
-            }
-
-            // Production priority: capital ships first (they create fleets),
-            // then fighters (fill carrier slots), then construction yards.
-            // Capital ships are the bottleneck — without them, no fleets.
-            if our_capship_count < config.production.capship_threshold {
-                if let Some((capship_key, capship_class)) = best_capship {
-                    actions.push(AIAction::EnqueueProduction {
-                        system: sys_key,
-                        kind: BuildableKind::CapitalShip(capship_key),
-                        work: capship_class.refined_material_cost,
-                    });
-                    continue;
-                }
-            }
-
-            // Build fighters: either to fill carrier capacity, or as primary
-            // combat units when no capital ship class is available.
-            let needs_fighters = if best_capship.is_some() {
-                our_fighter_count < our_capship_count * config.production.fighter_ratio
-            } else {
-                true // no capships available, fighters are our only option
-            };
-            if needs_fighters {
-                if let Some((fighter_key, fighter_class)) = best_fighter {
-                    actions.push(AIAction::EnqueueProduction {
-                        system: sys_key,
-                        kind: BuildableKind::Fighter(fighter_key),
-                        work: fighter_class.refined_material_cost,
-                    });
-                    continue;
-                }
-            }
-
-            // Build troops: controlled systems with < 2 friendly regiments get ground forces.
-            let friendly_troops = system
-                .ground_units
-                .iter()
-                .filter(|tk| {
-                    world
-                        .troops
-                        .get(**tk)
-                        .is_some_and(|t| t.is_alliance == is_alliance)
-                })
-                .count();
-            if friendly_troops < 2 {
-                if let Some(troop_key) = Self::find_troop_class(world, faction) {
-                    actions.push(AIAction::EnqueueProduction {
-                        system: sys_key,
-                        kind: BuildableKind::Troop(troop_key),
-                        work: crate::build_selection::unit_costs(
-                            world,
-                            BuildableKind::Troop(troop_key),
-                        )
-                        .map_or(0, |(refined, _)| refined),
-                    });
-                    continue;
-                }
-            }
-
-            // Build defense facilities: controlled systems with < 2 defenses.
-            let friendly_defenses = system
-                .defense_facilities
-                .iter()
-                .filter(|dk| {
-                    world
-                        .defense_facilities
-                        .get(**dk)
-                        .is_some_and(|d| d.side == crate::dat::Faction::of_alliance(is_alliance))
-                })
-                .count();
-            if friendly_defenses < 2 {
-                if let Some(def_key) = Self::find_defense_facility_class(world, faction) {
-                    actions.push(AIAction::EnqueueProduction {
-                        system: sys_key,
-                        kind: BuildableKind::DefenseFacility(def_key),
-                        work: crate::build_selection::unit_costs(
-                            world,
-                            BuildableKind::DefenseFacility(def_key),
-                        )
-                        .map_or(0, |(refined, _)| refined),
-                    });
-                    continue;
-                }
-            }
-
-            // Build more construction yards if below cap.
-            let yard_count = system.manufacturing_facilities.len();
-            if yard_count < config.ai.max_construction_yards {
-                if let Some(mfg_key) = Self::find_manufacturing_facility_class(world, faction) {
-                    actions.push(AIAction::EnqueueProduction {
-                        system: sys_key,
-                        kind: BuildableKind::ManufacturingFacility(mfg_key),
-                        work: crate::build_selection::unit_costs(
-                            world,
-                            BuildableKind::ManufacturingFacility(mfg_key),
-                        )
-                        .map_or(0, |(refined, _)| refined),
-                    });
-                    continue;
-                }
-            }
-
-            // Default: build more capital ships.
-            if let Some((capship_key, capship_class)) = best_capship {
-                actions.push(AIAction::EnqueueProduction {
-                    system: sys_key,
-                    kind: BuildableKind::CapitalShip(capship_key),
-                    work: capship_class.refined_material_cost,
-                });
-            }
-        }
-
-        // Manual p. 30: with too little maintenance capacity "you won't be
-        // able to build anything new except mines and refineries"; an order
-        // takes its maintenance at once (p. 81). hyp: the AI orders only what
-        // its unused capacity covers, in its own order of preference, so it
-        // does not overdraw and set off the scrap timer (`FUN_00530350`).
-        let mut surplus = crate::resources::maintenance_surplus(world, mfg_state, our_faction);
-        let mut index = first_order;
-        while index < actions.len() {
-            let cost = match &actions[index] {
-                AIAction::EnqueueProduction { kind, .. } => {
-                    crate::build_selection::unit_costs(world, *kind)
-                        .map_or(0, |(_, maintenance)| i64::from(maintenance))
-                }
-                _ => 0,
-            };
-            if cost > surplus {
-                actions.remove(index);
-            } else {
-                surplus -= cost;
-                index += 1;
-            }
-        }
-    }
-
-    /// Select the most advanced fighter class this faction has researched.
-    fn best_fighter_class<'w>(
-        world: &'w GameWorld,
-        research_state: &ResearchState,
-        faction: AiFaction,
-    ) -> Option<(FighterKey, &'w crate::world::FighterClass)> {
-        let is_alliance = matches!(faction, AiFaction::Alliance);
-        world
-            .fighter_classes
-            .iter()
-            .filter(|(key, _)| {
-                ResearchSystem::fighter_class_is_available(world, research_state, is_alliance, *key)
-            })
-            .max_by_key(|(_, fc)| fc.refined_material_cost)
-    }
-
-    /// Select the most advanced capital ship class this faction has researched.
-    /// Prefers higher hull (stronger ships) as the tiebreaker.
-    fn best_capital_ship_class<'w>(
-        world: &'w GameWorld,
-        research_state: &ResearchState,
-        faction: AiFaction,
-    ) -> Option<(CapitalShipKey, &'w crate::world::CapitalShipClass)> {
-        let is_alliance = matches!(faction, AiFaction::Alliance);
-        world
-            .capital_ship_classes
-            .iter()
-            .filter(|(key, _)| {
-                ResearchSystem::ship_class_is_available(world, research_state, is_alliance, *key)
-            })
-            .max_by_key(|(_, cs)| cs.hull)
-    }
-
-    /// Find a manufacturing facility key to use as a class reference for facility construction.
-    ///
-    /// In Living Galaxy scope we just pick any existing faction-owned facility
-    /// as the template for "build another like this".
-    fn find_manufacturing_facility_class(
-        world: &GameWorld,
-        faction: AiFaction,
-    ) -> Option<FacilityBuild> {
-        world
-            .manufacturing_facilities
-            .iter()
-            .find(|(_, f)| match faction {
-                AiFaction::Alliance => f.side == crate::dat::Faction::Alliance,
-                AiFaction::Empire => f.side == crate::dat::Faction::Empire,
-            })
-            .map(|(_, f)| FacilityBuild {
-                class: f.class_dat_id,
-                is_alliance: f.side == crate::dat::Faction::Alliance,
-            })
-    }
-
-    /// Find a troop unit key to use as a class reference for troop production.
-    fn find_troop_class(world: &GameWorld, faction: AiFaction) -> Option<DatId> {
-        world
-            .troops
-            .iter()
-            .find(|(_, t)| match faction {
-                AiFaction::Alliance => t.is_alliance,
-                AiFaction::Empire => !t.is_alliance,
-            })
-            .map(|(_, t)| t.class_dat_id)
-    }
-
-    /// Find a defense facility key to use as a class reference for defense construction.
-    fn find_defense_facility_class(world: &GameWorld, faction: AiFaction) -> Option<FacilityBuild> {
-        world
-            .defense_facilities
-            .iter()
-            .find(|(_, d)| match faction {
-                AiFaction::Alliance => d.side == crate::dat::Faction::Alliance,
-                AiFaction::Empire => d.side == crate::dat::Faction::Empire,
-            })
-            .map(|(_, d)| FacilityBuild {
-                class: d.class_dat_id,
-                is_alliance: d.side == crate::dat::Faction::Alliance,
-            })
-    }
-
-    // -----------------------------------------------------------------------
-    // Fleet deployment heuristics
-    // -----------------------------------------------------------------------
-
-    /// Move idle fleets toward high-value targets.
-    ///
-    /// - Fleets not already in a contested system → attack the enemy's weakest system
-    /// - Friendly systems with no fleet and high popularity → reinforce
-    ///
-    /// Compute a garrison strength score for a system.
-    /// Counts ships (hull total), troop regiments, and defense facilities.
-    /// Higher = more heavily defended.
+    /// port: ranks the reconnaissance targets above; the original's
+    /// per-system recommendation (`FUN_004b7150`) is traced
+    /// (`ai-mission-planning.md`) but not ported.
     #[expect(
         clippy::cast_possible_truncation,
         clippy::cast_sign_loss,
@@ -1359,398 +1028,24 @@ impl AISystem {
             .saturating_add(facility_count.saturating_mul(10))
     }
 
-    /// Combat strength available in one task force for target allocation.
-    #[expect(
-        clippy::cast_sign_loss,
-        reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
-    )]
-    fn fleet_strength(world: &GameWorld, fleet: &crate::world::Fleet) -> u32 {
-        let capital_strength = fleet
-            .capital_ships
-            .iter()
-            .filter(|ship| ship.alive)
-            .map(|ship| ship.hull_current.max(0) as u32)
-            .fold(0, u32::saturating_add);
-        let fighter_strength = fleet
-            .fighters
-            .iter()
-            .map(|entry| {
-                world
-                    .fighter_classes
-                    .get(entry.class)
-                    .map_or(1, |class| class.overall_attack_strength.max(1))
-                    .saturating_mul(entry.count)
-            })
-            .fold(0, u32::saturating_add);
-
-        capital_strength.saturating_add(fighter_strength)
-    }
-
-    /// Categorize all systems into strategic buckets for fleet deployment.
-    #[expect(
-        clippy::cast_precision_loss,
-        reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
-    )]
-    fn evaluate_galaxy_state(world: &GameWorld, faction: AiFaction) -> GalaxyState {
-        use crate::dat::Faction;
-        let our_faction = match faction {
-            AiFaction::Alliance => Faction::Alliance,
-            AiFaction::Empire => Faction::Empire,
-        };
-        let enemy_faction = match faction {
-            AiFaction::Alliance => Faction::Empire,
-            AiFaction::Empire => Faction::Alliance,
-        };
-        let is_alliance = matches!(faction, AiFaction::Alliance);
-
-        let mut state = GalaxyState::default();
-        for (key, sys) in &world.systems {
-            let has_our_fleet = sys.fleets.iter().any(|&fk| {
-                world
-                    .fleets
-                    .get(fk)
-                    .is_some_and(|f| f.is_alliance == is_alliance)
-            });
-            let has_enemy_fleet = sys.fleets.iter().any(|&fk| {
-                world
-                    .fleets
-                    .get(fk)
-                    .is_some_and(|f| f.is_alliance != is_alliance)
-            });
-
-            if has_enemy_fleet && !sys.is_destroyed {
-                state.enemy_fleet_systems.push(key);
-            }
-
-            match sys.control {
-                ControlKind::Controlled(f) if f == our_faction => {
-                    if has_enemy_fleet {
-                        state.contested.push(key);
-                    } else if sys.is_headquarters {
-                        state.our_hq = Some(key);
-                        state.our_controlled.push(key);
-                    } else {
-                        state.our_controlled.push(key);
-                        if !has_our_fleet {
-                            state.our_undefended.push(key);
-                        }
-                    }
-                }
-                ControlKind::Controlled(f) if f == enemy_faction => {
-                    if sys.is_headquarters {
-                        state.enemy_hq = Some(key);
-                    }
-                    state.enemy_controlled.push(key);
-                }
-                _ => {
-                    state.unoccupied.push(key);
-                }
-            }
-        }
-
-        // Sort attack targets by weakness (lowest enemy garrison first)
-        state.enemy_controlled.sort_by_key(|&k| {
-            world
-                .systems
-                .get(k)
-                .map_or(u32::MAX, |s| Self::system_strength(world, s, !is_alliance))
-        });
-        state.enemy_fleet_systems.sort();
-
-        // ── FUN_0053e190 port: ratio-based aggression scaling ──
-        let our = state.our_controlled.len() as f64;
-        let enemy = state.enemy_controlled.len() as f64;
-        let total = our + enemy;
-        state.control_ratio = if total > 0.0 { our / total } else { 0.5 };
-
-        // Aggression curve: weak → defensive, dominant → offensive.
-        // Linear interpolation with clamped floor/ceiling.
-        // 0% control → 0.1 aggression, 50% → 0.5, 100% → 0.9
-        state.aggression = (state.control_ratio * 0.8 + 0.1).clamp(0.1, 0.9);
-
-        state
-    }
-
-    /// Score an enemy system as an attack target for a specific fleet.
-    /// Higher score = better target. Considers weakness, proximity,
-    /// deconfliction (avoid piling), and battle freshness (avoid stagnation).
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "Keep the existing explicit simulation inputs; grouping them changes the API."
-    )]
-    #[expect(
-        clippy::cast_precision_loss,
-        reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
-    )]
-    fn score_attack_target(
-        world: &GameWorld,
-        fleet_location: SystemKey,
-        target: SystemKey,
-        is_alliance: bool,
-        targeted_counts: &HashMap<SystemKey, usize>,
-        battle_cooldowns: &HashMap<SystemKey, u64>,
-        current_tick: u64,
-        config: &GameConfig,
-    ) -> f64 {
-        let Some(target_sys) = world.systems.get(target) else {
-            return 0.0;
-        };
-        let Some(fleet_sys) = world.systems.get(fleet_location) else {
-            return 0.0;
-        };
-
-        // Weakness: inverse of enemy garrison strength
-        let strength = f64::from(Self::system_strength(world, target_sys, !is_alliance));
-        let weakness = 1.0 / (1.0 + strength);
-
-        // Proximity: inverse of Euclidean distance
-        let dx = f64::from(target_sys.x) - f64::from(fleet_sys.x);
-        let dy = f64::from(target_sys.y) - f64::from(fleet_sys.y);
-        let distance = (dx * dx + dy * dy).sqrt();
-        let proximity = 1.0 / (1.0 + distance / config.ai.proximity_divisor);
-
-        // AUGMENTATION: Deconfliction — avoid piling multiple fleets on same target
-        let pile_count = *targeted_counts.get(&target).unwrap_or(&0) as f64;
-        let deconfliction = 1.0 / (1.0 + pile_count);
-
-        // AUGMENTATION: Battle freshness — deprioritize recently-fought systems
-        let freshness = match battle_cooldowns.get(&target) {
-            Some(&last_tick) => {
-                let elapsed = current_tick.saturating_sub(last_tick) as f64;
-                (elapsed / config.ai.battle_cooldown_ticks).min(1.0)
-            }
-            None => 1.0,
-        };
-
-        weakness * config.ai.weight_weakness
-            + proximity * config.ai.weight_proximity
-            + deconfliction * config.ai.weight_deconfliction
-            + freshness * config.ai.weight_freshness
-    }
-
-    /// Redistribute troops from oversupplied to undersupplied friendly systems.
-    ///
-    /// Two-pass approach:
-    /// 1. **Frontline reinforcement**: controlled systems adjacent to enemy
-    ///    territory (any enemy-controlled neighbor) with below-minimum garrisons
-    ///    receive priority reinforcements.
-    /// 2. **General redistribution**: remaining undersupplied systems (HQ first)
-    ///    receive troops from donor systems.
-    ///
-    /// Donor threshold and receiver minimum are configurable via `AiConfig`.
-    #[expect(
-        clippy::too_many_lines,
-        reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
-    )]
-    fn evaluate_troop_deployment(
-        world: &GameWorld,
-        movement: &crate::movement::MovementState,
-        faction: AiFaction,
-        config: &GameConfig,
-        actions: &mut Vec<AIAction>,
-    ) {
-        let is_alliance = matches!(faction, AiFaction::Alliance);
-        let our_faction = if is_alliance {
-            crate::dat::Faction::Alliance
-        } else {
-            crate::dat::Faction::Empire
-        };
-        let enemy_faction = if is_alliance {
-            crate::dat::Faction::Empire
-        } else {
-            crate::dat::Faction::Alliance
-        };
-
-        // Build set of enemy-controlled system positions for adjacency detection.
-        let enemy_positions: Vec<(u16, u16)> = world
-            .systems
-            .iter()
-            .filter(|(_, s)| s.control.is_controlled_by(enemy_faction))
-            .map(|(_, s)| (s.x, s.y))
-            .collect();
-
-        // Collect garrison counts per controlled system.
-        let mut donors: Vec<(SystemKey, Vec<TroopKey>)> = Vec::new();
-        // (system, priority: 0=frontline HQ, 1=frontline, 2=HQ, 3=other)
-        let mut receivers: Vec<(SystemKey, u8)> = Vec::new();
-
-        for (sys_key, system) in &world.systems {
-            if !system.control.is_controlled_by(our_faction) {
-                continue;
-            }
-
-            let friendly_troops: Vec<TroopKey> = system
-                .ground_units
-                .iter()
-                .filter(|tk| {
-                    world
-                        .troops
-                        .get(**tk)
-                        .is_some_and(|t| t.is_alliance == is_alliance)
-                })
-                .copied()
-                .collect();
-
-            let count = friendly_troops.len();
-
-            // Check if this system is a frontline system (near enemy territory).
-            // "Near" = within 150 coordinate units of any enemy system.
-            let is_frontline = enemy_positions.iter().any(|&(ex, ey)| {
-                let dx = i32::from(system.x) - i32::from(ex);
-                let dy = i32::from(system.y) - i32::from(ey);
-                (dx * dx + dy * dy) < 150 * 150
-            });
-
-            if count > config.ai.troop_garrison_donor_threshold {
-                donors.push((sys_key, friendly_troops));
-            } else if count < config.ai.troop_garrison_min {
-                let priority = match (is_frontline, system.is_headquarters) {
-                    (true, true) => 0,   // frontline HQ — absolute priority
-                    (true, false) => 1,  // frontline — high priority
-                    (false, true) => 2,  // HQ — medium priority
-                    (false, false) => 3, // other — low priority
-                };
-                receivers.push((sys_key, priority));
-            }
-        }
-
-        // Sort receivers by priority (lowest number = highest priority).
-        receivers.sort_by_key(|(_, priority)| *priority);
-
-        // Fleet orders created by the deployment pass are the only legal way
-        // for troops to leave a planet. Fill attack transports first, leaving
-        // the configured minimum garrison behind. Friendly reinforcement
-        // orders carry one regiment when their destination needs it.
-        let mut reserved_troops = HashSet::new();
-        let mut moved_fleets = HashSet::new();
-        let mut reinforced_systems = HashSet::new();
-        for action in actions.iter_mut() {
-            let AIAction::MoveFleet {
-                fleet,
-                to_system,
-                reason,
-                troops,
-            } = action
-            else {
-                continue;
-            };
-            moved_fleets.insert(*fleet);
-
-            let Some(fleet_value) = world.fleets.get(*fleet) else {
-                continue;
-            };
-            let capacity = fleet_value
-                .capital_ships
-                .iter()
-                .filter(|ship| ship.alive)
-                .filter_map(|ship| world.capital_ship_classes.get(ship.class))
-                .map(|class| class.troop_capacity)
-                .sum::<u32>() as usize;
-            if capacity == 0 {
-                continue;
-            }
-
-            let Some(origin) = world.systems.get(fleet_value.location) else {
-                continue;
-            };
-            let mut available: Vec<_> = origin
-                .ground_units
-                .iter()
-                .copied()
-                .filter(|troop| !reserved_troops.contains(troop))
-                .filter(|troop| {
-                    world
-                        .troops
-                        .get(*troop)
-                        .is_some_and(|value| value.is_alliance == is_alliance)
-                })
-                .collect();
-            available.sort_unstable();
-
-            let limit = match reason {
-                FleetMoveReason::Attack => available
-                    .len()
-                    .saturating_sub(config.ai.troop_garrison_min)
-                    .min(capacity),
-                FleetMoveReason::Reinforce => {
-                    let needs_reinforcement =
-                        receivers.iter().any(|(receiver, _)| receiver == to_system);
-                    let donor_has_surplus =
-                        available.len() > config.ai.troop_garrison_donor_threshold;
-                    usize::from(needs_reinforcement && donor_has_surplus)
-                }
-            };
-            troops.extend(available.into_iter().rev().take(limit));
-            troops.sort_unstable();
-            reserved_troops.extend(troops.iter().copied());
-            if !troops.is_empty() && matches!(reason, FleetMoveReason::Reinforce) {
-                reinforced_systems.insert(*to_system);
-            }
-        }
-
-        // If strategic fleet deployment did not already cover a weak friendly
-        // system, pair it with an unused transport at an oversupplied donor.
-        for (receiver, _) in receivers {
-            if reinforced_systems.contains(&receiver) {
-                continue;
-            }
-            let Some((fleet, troop)) = donors.iter().find_map(|(donor, troops)| {
-                let troop = troops
-                    .iter()
-                    .rev()
-                    .copied()
-                    .find(|troop| !reserved_troops.contains(troop))?;
-                let fleet = world
-                    .systems
-                    .get(*donor)?
-                    .fleets
-                    .iter()
-                    .copied()
-                    .find(|fleet| {
-                        if moved_fleets.contains(fleet) || movement.is_in_transit(*fleet) {
-                            return false;
-                        }
-                        let Some(value) = world.fleets.get(*fleet) else {
-                            return false;
-                        };
-                        value.is_alliance == is_alliance
-                            && !value.is_empty()
-                            && value.capital_ships.iter().any(|ship| {
-                                ship.alive
-                                    && world
-                                        .capital_ship_classes
-                                        .get(ship.class)
-                                        .is_some_and(|class| class.troop_capacity > 0)
-                            })
-                    })?;
-                Some((fleet, troop))
-            }) else {
-                continue;
-            };
-
-            actions.push(AIAction::MoveFleet {
-                fleet,
-                to_system: receiver,
-                reason: FleetMoveReason::Reinforce,
-                troops: vec![troop],
-            });
-            moved_fleets.insert(fleet);
-            reserved_troops.insert(troop);
-        }
-    }
-
     /// Strategic: send diplomats to low-support controlled systems to prevent uprisings.
     ///
     /// Scans systems where our popularity < 0.4 and sends the Diplomacy
     /// planner's diplomat (`FUN_004815a0`) to the two lowest, to stabilize
     /// support before an uprising can trigger (uprising threshold is
-    /// popularity-dependent via UPRIS1TB).
-    fn evaluate_uprising_prevention(
+    /// popularity-dependent via UPRIS1TB). Each target is one Diplomacy's
+    /// own query takes (`sys+0x2c` bit `0x40`, `FUN_00481720.c:97-268`) and
+    /// the creation validator admits, and no Diplomacy of ours works it.
+    pub(crate) fn evaluate_uprising_prevention(
         planner: &mut Planner<'_>,
-        world: &GameWorld,
+        round: &Round<'_>,
+        missions: &MissionState,
         faction: AiFaction,
+        limit: usize,
         actions: &mut Vec<AIAction>,
     ) {
+        let world = round.inputs.world;
+        let stop = actions.len().saturating_add(limit);
         let is_alliance = matches!(faction, AiFaction::Alliance);
         let our_faction = if is_alliance {
             crate::dat::Faction::Alliance
@@ -1762,6 +1057,16 @@ impl AISystem {
         let mut at_risk: Vec<SystemKey> = Vec::new();
         for (sys_key, system) in &world.systems {
             if !system.control.is_controlled_by(our_faction) {
+                continue;
+            }
+            let candidate = round
+                .records
+                .get(&sys_key)
+                .is_some_and(|r| r.own && r.q & 0x40 != 0);
+            if !candidate
+                || Self::diplomacy_claimed(missions, faction, sys_key)
+                || !Self::admits(round, faction, MissionKind::Diplomacy, sys_key, None, None)
+            {
                 continue;
             }
             let support = if is_alliance {
@@ -1795,10 +1100,25 @@ impl AISystem {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
 
+        Self::trace_scored(world, "uprising_prevention_candidates", || {
+            at_risk
+                .iter()
+                .map(|&key| {
+                    let sys = &world.systems[key];
+                    let support = if is_alliance {
+                        sys.popularity_alliance
+                    } else {
+                        sys.popularity_empire
+                    };
+                    (key, f64::from(support))
+                })
+                .collect()
+        });
         // Limit to 2 uprising-prevention diplomats per cycle.
         for &target in at_risk.iter().take(2) {
             if !Self::dispatch_planned(
                 planner,
+                stop,
                 MissionKind::Diplomacy,
                 (target, None),
                 None,
@@ -1807,524 +1127,6 @@ impl AISystem {
                 break;
             }
         }
-    }
-
-    /// Strategic: ensure the Death Star fleet has an escort fleet at the same system.
-    /// Also handles DS retreat when outgunned (D3 enhancement).
-    ///
-    /// If a DS fleet exists and no other friendly fleet is co-located, route the
-    /// nearest idle fleet to the DS location as reinforcement. If the DS is at
-    /// a system where enemy strength exceeds friendly strength by the configured
-    /// ratio, retreat the DS to the nearest friendly system.
-    #[expect(
-        clippy::cast_sign_loss,
-        reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
-    )]
-    fn evaluate_ds_escort(
-        world: &GameWorld,
-        movement: &crate::movement::MovementState,
-        faction: AiFaction,
-        config: &GameConfig,
-        actions: &mut Vec<AIAction>,
-    ) {
-        let is_alliance = matches!(faction, AiFaction::Alliance);
-
-        // Find the Death Star fleet and its location.
-        let ds_info: Option<(FleetKey, SystemKey)> = world
-            .fleets
-            .iter()
-            .find(|(_, f)| f.has_death_star && f.is_alliance == is_alliance)
-            .map(|(fk, f)| (fk, f.location));
-
-        let Some((ds_fleet_key, ds_location)) = ds_info else {
-            return;
-        };
-
-        // A fleet already in hyperspace cannot be retasked until it arrives or
-        // its movement order is cancelled explicitly.
-        if movement.is_in_transit(ds_fleet_key) {
-            return;
-        }
-
-        // ── DS retreat logic ────────────────────────────────────────────────
-        // If the DS is at a system with overwhelming enemy presence, retreat
-        // to the nearest friendly system rather than risking destruction.
-        if let Some(ds_sys) = world.systems.get(ds_location) {
-            let friendly_strength = Self::system_strength(world, ds_sys, is_alliance);
-            let enemy_strength = Self::system_strength(world, ds_sys, !is_alliance);
-
-            if enemy_strength > 0
-                && f64::from(enemy_strength)
-                    > f64::from(friendly_strength) * config.ai.ds_retreat_strength_ratio
-            {
-                // Find the nearest friendly system to retreat to.
-                let our_faction = if is_alliance {
-                    crate::dat::Faction::Alliance
-                } else {
-                    crate::dat::Faction::Empire
-                };
-                let retreat_target = world
-                    .systems
-                    .iter()
-                    .filter(|(k, s)| {
-                        *k != ds_location
-                            && s.control.is_controlled_by(our_faction)
-                            && !s.is_destroyed
-                    })
-                    .min_by_key(|(_, s)| {
-                        let dx = i32::from(s.x) - i32::from(ds_sys.x);
-                        let dy = i32::from(s.y) - i32::from(ds_sys.y);
-                        (dx * dx + dy * dy) as u32
-                    })
-                    .map(|(k, _)| k);
-
-                if let Some(retreat_sys) = retreat_target {
-                    actions.push(AIAction::MoveFleet {
-                        fleet: ds_fleet_key,
-                        to_system: retreat_sys,
-                        reason: FleetMoveReason::Reinforce,
-                        troops: vec![],
-                    });
-                    return; // Don't also issue an escort — DS is retreating.
-                }
-            }
-        }
-
-        // ── Escort coordination ─────────────────────────────────────────────
-        // Check if any other friendly fleet is already at the DS location.
-        let has_escort = world.fleets.iter().any(|(fk, f)| {
-            fk != ds_fleet_key
-                && f.is_alliance == is_alliance
-                && f.location == ds_location
-                && !f.is_empty()
-        });
-
-        if has_escort {
-            return;
-        }
-
-        // Find the nearest idle fleet (not in transit, not the DS fleet itself).
-        let mut best: Option<(FleetKey, f64)> = None;
-        let ds_sys = &world.systems[ds_location];
-
-        for (fk, fleet) in &world.fleets {
-            if fk == ds_fleet_key || fleet.is_alliance != is_alliance || fleet.is_empty() {
-                continue;
-            }
-            // Skip fleets already in transit.
-            if movement.is_in_transit(fk) {
-                continue;
-            }
-            if fleet.location == ds_location {
-                continue; // already there but maybe empty — skip
-            }
-            let sys = &world.systems[fleet.location];
-            let dx = f64::from(sys.x) - f64::from(ds_sys.x);
-            let dy = f64::from(sys.y) - f64::from(ds_sys.y);
-            let dist = (dx * dx + dy * dy).sqrt();
-            if best.is_none() || dist < best.unwrap().1 {
-                best = Some((fk, dist));
-            }
-        }
-
-        if let Some((escort_key, _)) = best {
-            actions.push(AIAction::MoveFleet {
-                fleet: escort_key,
-                to_system: ds_location,
-                reason: FleetMoveReason::Reinforce,
-                troops: vec![],
-            });
-        }
-    }
-
-    /// Select the highest-value enemy system for Death Star targeting.
-    ///
-    /// Priority order:
-    /// 1. Enemy HQ (if it exists and isn't destroyed)
-    /// 2. Highest total enemy strength (most valuable target to destroy)
-    /// 3. Nearest enemy system (minimize transit time)
-    #[expect(
-        clippy::cast_sign_loss,
-        reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
-    )]
-    fn select_ds_target(
-        world: &GameWorld,
-        galaxy: &GalaxyState,
-        ds_location: SystemKey,
-        is_alliance: bool,
-    ) -> Option<SystemKey> {
-        // Priority 1: Enemy HQ — the classic win condition target.
-        if let Some(hq) = galaxy.enemy_hq {
-            if let Some(sys) = world.systems.get(hq) {
-                if !sys.is_destroyed {
-                    return Some(hq);
-                }
-            }
-        }
-
-        // Priority 2: Highest-value enemy system by total strength.
-        // The DS wants to destroy the enemy's most fortified position.
-        let ds_sys = world.systems.get(ds_location)?;
-        let best_value = galaxy
-            .enemy_controlled
-            .iter()
-            .filter_map(|&sys_key| {
-                let sys = world.systems.get(sys_key)?;
-                if sys.is_destroyed {
-                    return None;
-                }
-                let strength = Self::system_strength(world, sys, !is_alliance);
-                // Score: strength * 100 + proximity bonus (break ties by distance)
-                let dx = i32::from(sys.x) - i32::from(ds_sys.x);
-                let dy = i32::from(sys.y) - i32::from(ds_sys.y);
-                let dist_sq = (dx * dx + dy * dy) as u32;
-                let proximity_bonus = 10000u32.saturating_sub(dist_sq.min(10000));
-                Some((
-                    sys_key,
-                    u64::from(strength) * 100 + u64::from(proximity_bonus),
-                ))
-            })
-            .max_by_key(|&(_, score)| score)
-            .map(|(k, _)| k);
-
-        best_value
-    }
-
-    /// Two-pass fleet deployment — ports the original game's distributed targeting.
-    ///
-    /// Pass 1: Assign each fleet its own target using scoring function.
-    ///   - HQ garrison first, then per-fleet attack targeting.
-    ///
-    /// Pass 2: Redistribute any idle fleets (no valid target in pass 1).
-    #[expect(
-        clippy::too_many_lines,
-        reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
-    )]
-    #[expect(
-        clippy::cast_possible_truncation,
-        clippy::cast_precision_loss,
-        clippy::cast_sign_loss,
-        reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
-    )]
-    fn evaluate_fleet_deployment(
-        state: &AIState,
-        world: &GameWorld,
-        movement: &crate::movement::MovementState,
-        faction: AiFaction,
-        current_tick: u64,
-        config: &GameConfig,
-        actions: &mut Vec<AIAction>,
-    ) {
-        let is_alliance = matches!(faction, AiFaction::Alliance);
-        let enemy_faction = if is_alliance {
-            crate::dat::Faction::Empire
-        } else {
-            crate::dat::Faction::Alliance
-        };
-        let galaxy = Self::evaluate_galaxy_state(world, faction);
-
-        if galaxy.enemy_controlled.is_empty() && galaxy.enemy_fleet_systems.is_empty() {
-            return; // No enemy territory or fleets — nothing to attack
-        }
-
-        // Build transient deconfliction map from active movement orders.
-        let mut targeted_counts: HashMap<SystemKey, usize> = HashMap::new();
-        for order in movement.orders().values() {
-            if let Some(f) = world.fleets.get(order.fleet) {
-                if f.is_alliance == is_alliance {
-                    *targeted_counts.entry(order.destination).or_default() += 1;
-                }
-            }
-        }
-
-        // Check if HQ already has a fleet stationed.
-        let mut hq_defended = false;
-        if let Some(hq) = galaxy.our_hq {
-            if let Some(sys) = world.systems.get(hq) {
-                hq_defended = sys.fleets.iter().any(|&fk| {
-                    world
-                        .fleets
-                        .get(fk)
-                        .is_some_and(|f| f.is_alliance == is_alliance)
-                });
-            }
-        }
-
-        // Active movement orders and actions proposed by an earlier heuristic
-        // in this same evaluation both reserve a fleet. This prevents the
-        // deployment pass from retasking a Death Star or its chosen escort.
-        let mut reserved_fleets: HashSet<FleetKey> = movement.orders().keys().copied().collect();
-        reserved_fleets.extend(actions.iter().filter_map(|action| match action {
-            AIAction::MoveFleet { fleet, .. } => Some(*fleet),
-            _ => None,
-        }));
-
-        // Keep the weakest of multiple task forces, or a lone one-ship force,
-        // on the active HQ. A larger single fleet may launch as a wave; its
-        // departure lets later production establish a fresh defender instead
-        // of trapping every manufactured ship in one permanent garrison.
-        if let Some(hq) = galaxy.our_hq {
-            if let Some(system) = world.systems.get(hq) {
-                let mut defenders: Vec<_> = system
-                    .fleets
-                    .iter()
-                    .copied()
-                    .filter(|fleet_key| {
-                        world.fleets.get(*fleet_key).is_some_and(|fleet| {
-                            fleet.is_alliance == is_alliance
-                                && !fleet.has_death_star
-                                && !fleet.is_empty()
-                                && !movement.is_in_transit(*fleet_key)
-                        })
-                    })
-                    .collect();
-                defenders.sort_by_key(|fleet_key| {
-                    (
-                        world
-                            .fleets
-                            .get(*fleet_key)
-                            .map_or(u32::MAX, |fleet| Self::fleet_strength(world, fleet)),
-                        *fleet_key,
-                    )
-                });
-                let defender = match defenders.as_slice() {
-                    [only] if world.fleets[*only].ship_count() <= 1 => Some(*only),
-                    [first, _, ..] => Some(*first),
-                    _ => None,
-                };
-                if let Some(defender) = defender {
-                    reserved_fleets.insert(defender);
-                }
-            }
-        }
-
-        // Collect our idle fleets (not in combat, transit, or already assigned).
-        let mut idle_fleets: Vec<(FleetKey, SystemKey)> = Vec::new();
-        for (fleet_key, fleet) in &world.fleets {
-            let is_ours = if is_alliance {
-                fleet.is_alliance
-            } else {
-                !fleet.is_alliance
-            };
-            if !is_ours {
-                continue;
-            }
-            if reserved_fleets.contains(&fleet_key) {
-                continue;
-            }
-
-            // Skip fleets currently in combat (enemy present at their location).
-            let in_combat = world.systems.get(fleet.location).is_some_and(|s| {
-                s.fleets.iter().any(|&fk| {
-                    world
-                        .fleets
-                        .get(fk)
-                        .is_some_and(|f| f.is_alliance != fleet.is_alliance)
-                })
-            });
-            if in_combat {
-                continue;
-            }
-
-            idle_fleets.push((fleet_key, fleet.location));
-        }
-
-        // ── Pass 1: Assign each fleet its best target ───────────────
-
-        let mut pass2_idle: Vec<(FleetKey, SystemKey)> = Vec::new();
-
-        for (fleet_key, fleet_location) in &idle_fleets {
-            let Some(fleet) = world.fleets.get(*fleet_key) else {
-                continue;
-            };
-
-            // FUN_00508250 validators: fleet must be dispatchable
-            if !Self::can_dispatch_fleet(world, *fleet_key, faction) {
-                continue;
-            }
-
-            // Death Star targeting: select highest-value enemy system.
-            // Priority: (1) enemy HQ if reachable, (2) highest-strength enemy
-            // system (maximize destruction value), (3) nearest enemy system.
-            if fleet.has_death_star {
-                let ds_target =
-                    Self::select_ds_target(world, &galaxy, *fleet_location, is_alliance);
-                if let Some(target) = ds_target {
-                    if *fleet_location != target {
-                        actions.push(AIAction::MoveFleet {
-                            fleet: *fleet_key,
-                            to_system: target,
-                            reason: FleetMoveReason::Attack,
-                            troops: vec![],
-                        });
-                        *targeted_counts.entry(target).or_default() += 1;
-                    }
-                }
-                continue;
-            }
-
-            // A fleet already orbiting an enemy-controlled world is actively
-            // maintaining a blockade. Do not recall it as an HQ garrison or
-            // send it back through friendly systems on the next evaluation.
-            if world
-                .systems
-                .get(*fleet_location)
-                .is_some_and(|system| system.control.is_controlled_by(enemy_faction))
-            {
-                continue;
-            }
-
-            // HQ garrison: first available non-blockading fleet
-            if !hq_defended {
-                if let Some(hq) = galaxy.our_hq {
-                    if *fleet_location != hq {
-                        actions.push(AIAction::MoveFleet {
-                            fleet: *fleet_key,
-                            to_system: hq,
-                            reason: FleetMoveReason::Reinforce,
-                            troops: vec![],
-                        });
-                    }
-                    hq_defended = true;
-                    continue;
-                }
-            }
-
-            // Per-fleet attack targeting: score all enemy systems, pick best.
-            // Cap simultaneous attack fronts scaled by aggression and faction budget.
-            // FUN_00506ea0: Alliance evaluator (+0xc4) is more conservative than Empire (+0xc8).
-            let budget = if is_alliance {
-                config.ai.alliance_deploy_budget
-            } else {
-                config.ai.empire_deploy_budget
-            };
-            let aggression_fronts =
-                (galaxy.aggression * budget * config.ai.max_attack_fronts as f64).ceil() as usize;
-            let max_fronts = idle_fleets.len().min(aggression_fronts.max(1));
-            let distinct_targets = targeted_counts.values().filter(|&&v| v > 0).count();
-
-            // Faction asymmetry: Empire biases toward enemy HQ.
-            let mut candidates = galaxy.enemy_controlled.clone();
-            // An enemy task force remains a military target after local
-            // political control becomes neutral. Keep territorial raid targets
-            // too, so an outmatched fleet can avoid a suicidal interception.
-            for &system in &galaxy.enemy_fleet_systems {
-                if !candidates.contains(&system) {
-                    candidates.push(system);
-                }
-            }
-            // Faction asymmetry: Empire keeps the enemy HQ in consideration.
-            if matches!(faction, AiFaction::Empire) {
-                if let Some(hq) = galaxy.enemy_hq {
-                    if !candidates.contains(&hq) {
-                        candidates.insert(0, hq);
-                    }
-                }
-            }
-
-            if candidates.is_empty() {
-                continue;
-            }
-
-            // FUN_00508250: filter candidates by system-level validators
-            let available_strength = Self::fleet_strength(world, fleet);
-            let valid_candidates: Vec<SystemKey> = candidates
-                .iter()
-                .copied()
-                .filter(|&target| {
-                    if target == *fleet_location {
-                        return false;
-                    }
-                    if !Self::can_dispatch_to_system(world, faction, target) {
-                        return false;
-                    }
-                    let defender_strength = world.systems.get(target).map_or(u32::MAX, |system| {
-                        Self::system_strength(world, system, !is_alliance)
-                    });
-                    defender_strength == 0
-                        || defender_strength <= available_strength.saturating_mul(3)
-                })
-                .collect();
-
-            if valid_candidates.is_empty() {
-                continue;
-            }
-
-            // Score each candidate and pick the best
-            let best = valid_candidates
-                .iter()
-                .map(|&target| {
-                    let score = Self::score_attack_target(
-                        world,
-                        *fleet_location,
-                        target,
-                        is_alliance,
-                        &targeted_counts,
-                        &state.battle_cooldowns,
-                        current_tick,
-                        config,
-                    );
-                    (target, score)
-                })
-                .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
-
-            if let Some((target, _score)) = best {
-                if target != *fleet_location {
-                    // Only open a new front if we haven't hit the cap,
-                    // or if this target is already being attacked.
-                    let is_new_front = targeted_counts.get(&target).copied().unwrap_or(0) == 0;
-                    if !is_new_front || distinct_targets < max_fronts {
-                        actions.push(AIAction::MoveFleet {
-                            fleet: *fleet_key,
-                            to_system: target,
-                            reason: FleetMoveReason::Attack,
-                            troops: vec![],
-                        });
-                        *targeted_counts.entry(target).or_default() += 1;
-                        continue;
-                    }
-                }
-            }
-
-            pass2_idle.push((*fleet_key, *fleet_location));
-        }
-
-        // ── Pass 2: Redistribute idle fleets ────────────────────────
-        // High aggression: pile front-capped fleets onto an existing assault.
-        // Low-aggression fleets hold their present posts. Earlier code moved
-        // them among friendly systems every evaluation, creating hundreds of
-        // orders with no strategic effect.
-        for (fleet_key, fleet_location) in pass2_idle {
-            if galaxy.aggression > 0.5 {
-                // Offensive: reinforce the most-targeted enemy system (pile onto attack)
-                let best_attack = targeted_counts
-                    .iter()
-                    .filter(|(_, &count)| count > 0)
-                    .max_by(|(system_a, count_a), (system_b, count_b)| {
-                        count_a
-                            .cmp(count_b)
-                            // Prefer the lower stable key when counts tie.
-                            .then_with(|| system_b.cmp(system_a))
-                    })
-                    .map(|(&sys, _)| sys);
-                if let Some(target) = best_attack {
-                    if target != fleet_location {
-                        actions.push(AIAction::MoveFleet {
-                            fleet: fleet_key,
-                            to_system: target,
-                            reason: FleetMoveReason::Attack,
-                            troops: vec![],
-                        });
-                        *targeted_counts.entry(target).or_default() += 1;
-                    }
-                }
-            }
-        }
-    }
-
-    /// Record that combat occurred at a system (called by simulation after combat).
-    pub fn record_battle(state: &mut AIState, system: SystemKey, tick: u64) {
-        state.battle_cooldowns.insert(system, tick);
     }
 }
 
@@ -2335,15 +1137,12 @@ impl AISystem {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dat::SectorGroup;
+    use crate::dat::{ExplorationStatus, SectorGroup};
     use crate::ids::{DatId, SectorKey};
     use crate::manufacturing::ManufacturingState;
-    use crate::missions::MissionState;
-    use crate::tick::TickEvent;
     use crate::tuning::GameConfig;
     use crate::world::{
-        CapitalShipClass, Character, FighterClass, Fleet, GameWorld, Sector, ShipInstance,
-        SkillPair, System,
+        Character, ControlKind, FighterClass, Fleet, GameWorld, Sector, SkillPair, System,
     };
 
     #[test]
@@ -2452,223 +1251,9 @@ mod tests {
         })
     }
 
-    /// port: with no ship class to build, the AI orders regiments, then
-    /// defenses, then construction yards, naming the class of one it owns.
-    #[test]
-    fn the_ai_orders_ground_and_facility_classes_it_already_fields() {
-        let mut world = empty_world();
-        let sector = add_sector(&mut world);
-        let yard =
-            world
-                .manufacturing_facilities
-                .insert(crate::world::ManufacturingFacilityInstance {
-                    class_dat_id: DatId(0x2a00_0003),
-                    side: crate::dat::Faction::Empire,
-                    is_shipyard: false,
-                });
-        let sys_key = world.systems.insert(System {
-            dat_id: DatId(0),
-            name: "Coruscant".into(),
-            sector,
-            x: 0,
-            y: 0,
-            exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.1,
-            popularity_empire: 0.9,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![yard],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Controlled(crate::dat::Faction::Empire),
-        });
-        let trooper = |class| crate::world::TroopUnit {
-            class_dat_id: DatId(class),
-            is_alliance: false,
-            regiment_strength: 100,
-        };
-        // An Alliance regiment first, so the Empire's must be found by side.
-        world.troops.insert(crate::world::TroopUnit {
-            is_alliance: true,
-            ..trooper(0x1000_0001)
-        });
-        world.troops.insert(trooper(0x1000_0006));
-        world
-            .defense_facilities
-            .insert(crate::world::DefenseFacilityInstance {
-                class_dat_id: DatId(0x2200_0001),
-                side: crate::dat::Faction::Empire,
-            });
-        let ordered = |world: &GameWorld| {
-            AISystem::advance(
-                &mut AIState::new(AiFaction::Empire),
-                world,
-                &ManufacturingState::new(),
-                &MissionState::new(),
-                &crate::movement::MovementState::new(),
-                &ticks(7),
-                &GameConfig::default(),
-                &crate::research::ResearchState::new(),
-            )
-            .into_iter()
-            .find_map(|action| match action {
-                AIAction::EnqueueProduction { system, kind, .. } if system == sys_key => Some(kind),
-                _ => None,
-            })
-        };
-        let empire = |class| FacilityBuild {
-            class: DatId(class),
-            is_alliance: false,
-        };
-
-        assert_eq!(
-            ordered(&world),
-            Some(BuildableKind::Troop(DatId(0x1000_0006)))
-        );
-        for _ in 0..2 {
-            let key = world.troops.insert(trooper(0x1000_0006));
-            world.systems[sys_key].ground_units.push(key);
-        }
-        assert_eq!(
-            ordered(&world),
-            Some(BuildableKind::DefenseFacility(empire(0x2200_0001)))
-        );
-        for _ in 0..2 {
-            let key = world
-                .defense_facilities
-                .insert(crate::world::DefenseFacilityInstance {
-                    class_dat_id: DatId(0x2200_0001),
-                    side: crate::dat::Faction::Empire,
-                });
-            world.systems[sys_key].defense_facilities.push(key);
-        }
-        assert_eq!(
-            ordered(&world),
-            Some(BuildableKind::ManufacturingFacility(empire(0x2a00_0003)))
-        );
-    }
-
-    /// Manual p. 30: with too little maintenance capacity a side cannot
-    /// build. hyp: the AI orders only what its unused capacity covers, so it
-    /// never overdraws into the scrap timer (`FUN_00530350`).
-    #[test]
-    fn the_ai_orders_nothing_its_maintenance_cannot_cover() {
-        let mut world = empty_world();
-        let sector = add_sector(&mut world);
-        let yard =
-            world
-                .manufacturing_facilities
-                .insert(crate::world::ManufacturingFacilityInstance {
-                    class_dat_id: DatId(0x2a00_0003),
-                    side: crate::dat::Faction::Empire,
-                    is_shipyard: false,
-                });
-        let sys_key = world.systems.insert(System {
-            dat_id: DatId(0),
-            name: "Coruscant".into(),
-            sector,
-            x: 0,
-            y: 0,
-            exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.1,
-            popularity_empire: 0.9,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![yard],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Controlled(crate::dat::Faction::Empire),
-        });
-        // A regiment class costing 8 maintenance (TROOPSD maintenance_cost).
-        world.buildable_classes.insert(
-            DatId(0x1000_0006),
-            crate::world::BuildableClass {
-                maintenance_cost: 8,
-                ..crate::world::BuildableClass::default()
-            },
-        );
-        world.troops.insert(crate::world::TroopUnit {
-            class_dat_id: DatId(0x1000_0006),
-            is_alliance: false,
-            regiment_strength: 100,
-        });
-        let ordered = |world: &GameWorld| {
-            AISystem::advance(
-                &mut AIState::new(AiFaction::Empire),
-                world,
-                &ManufacturingState::new(),
-                &MissionState::new(),
-                &crate::movement::MovementState::new(),
-                &ticks(7),
-                &GameConfig::default(),
-                &crate::research::ResearchState::new(),
-            )
-            .into_iter()
-            .any(|action| matches!(action, AIAction::EnqueueProduction { system, .. } if system == sys_key))
-        };
-
-        // No mine and refinery pair: no capacity, so no order.
-        assert!(!ordered(&world));
-
-        // A pair adds 50 (FUN_0052d540, FUN_0052d100): the regiment fits.
-        for (class, is_mine) in [(0x2c00_0001, true), (0x2d00_0002, false)] {
-            let key = world
-                .production_facilities
-                .insert(crate::world::ProductionFacilityInstance {
-                    class_dat_id: DatId(class),
-                    side: crate::dat::Faction::Empire,
-                    is_mine,
-                });
-            world.systems[sys_key].production_facilities.push(key);
-        }
-        assert!(ordered(&world));
-    }
-
-    fn ticks(n: u64) -> Vec<TickEvent> {
-        (1..=n).map(|t| TickEvent { tick: t }).collect()
-    }
-
     // -----------------------------------------------------------------------
     // AIState tests
     // -----------------------------------------------------------------------
-
-    #[test]
-    fn should_evaluate_at_tick_zero() {
-        let state = AIState::new(AiFaction::Empire);
-        assert!(state.should_evaluate(0, AI_TICK_INTERVAL));
-    }
-
-    #[test]
-    fn should_not_evaluate_before_interval() {
-        let mut state = AIState::new(AiFaction::Empire);
-        state.last_eval_tick = 0;
-        // 3 days elapsed — interval is 5
-        assert!(!state.should_evaluate(3, AI_TICK_INTERVAL));
-    }
-
-    #[test]
-    fn should_evaluate_after_interval() {
-        let mut state = AIState::new(AiFaction::Empire);
-        state.last_eval_tick = 0;
-        assert!(state.should_evaluate(5, AI_TICK_INTERVAL));
-        assert!(state.should_evaluate(10, AI_TICK_INTERVAL));
-    }
 
     #[test]
     fn busy_character_can_be_marked_and_cleared() {
@@ -2704,17 +1289,48 @@ mod tests {
         })
     }
 
-    fn advance_once(state: &mut AIState, world: &GameWorld) -> Vec<AIAction> {
-        AISystem::advance(
-            state,
-            world,
-            &ManufacturingState::new(),
-            &MissionState::new(),
-            &crate::movement::MovementState::new(),
-            &ticks(7),
-            &GameConfig::default(),
-            &crate::research::ResearchState::new(),
-        )
+    /// One day at Fast for `state`'s side, its orders in issue order. Rate
+    /// 4 gives five in-day steps (`FUN_0051dea0.c:11-19, 30`), each running
+    /// one round (`AISystem::round`), which ends at the first module that
+    /// finishes with an order (`FUN_00485b40.c:53-67`); module 4 runs one
+    /// planner's pass a turn (`FUN_004d2490.c:26-46`). Between rounds the
+    /// applier's part: the team marked busy and the order accepted. Then
+    /// the day's end (`FUN_00485de0.c:7-11`). The world does not change.
+    fn day_of_rounds(state: &mut AIState, world: &GameWorld) -> Vec<AIAction> {
+        let manufacturing = ManufacturingState::new();
+        let movement = crate::movement::MovementState::new();
+        let config = GameConfig::default();
+        let research = crate::research::ResearchState::new();
+        let uprisings = crate::uprising::UprisingState::new();
+        let transport = crate::troop_transport::TroopTransportState::new();
+        let missions = crate::missions::MissionState::new();
+        let rate = config.ai.rounds_per_day.fast - 1;
+        let mut orders = Vec::new();
+        for round_in_day in 0..=rate {
+            let inputs = crate::ai_scheduler::AiInputs {
+                world,
+                manufacturing: &manufacturing,
+                movement: &movement,
+                config: &config,
+                research: &research,
+                uprisings: &uprisings,
+                transport: &transport,
+                missions: &missions,
+                tick: 7,
+                round_in_day,
+            };
+            if let Some(issued) = AISystem::round(state, &inputs) {
+                if let AIAction::DispatchMission { team, .. } = &issued.action {
+                    for character in team.iter().filter_map(|m| m.character()) {
+                        state.mark_busy(character);
+                    }
+                }
+                AISystem::settle(state, issued.kind, true);
+                orders.push(issued.action);
+            }
+        }
+        AISystem::end_day(state);
+        orders
     }
 
     #[test]
@@ -2723,7 +1339,10 @@ mod tests {
         // recruits from the side's unrecruited minor characters.
         let mut world = empty_world();
         let sector = add_sector(&mut world);
-        let _sys = add_system(&mut world, sector, 0.1, 0.9);
+        let sys = add_system(&mut world, sector, 0.1, 0.9);
+        // The Recruitment base is a system of ours (sys+0x2c bit 2,
+        // FUN_00433e40.c:845-849; FUN_0047dcc0.c:62).
+        world.systems[sys].control = ControlKind::Controlled(crate::dat::Faction::Empire);
         let recruiter = add_character(&mut world, false, true, 30);
         world.characters[recruiter].leadership.base = 80;
         let weaker = add_character(&mut world, false, true, 30);
@@ -2731,14 +1350,14 @@ mod tests {
         let mut state = AIState::new(AiFaction::Empire);
 
         assert_eq!(
-            team_of(&advance_once(&mut state, &world), MissionKind::Recruitment),
+            team_of(&day_of_rounds(&mut state, &world), MissionKind::Recruitment),
             None
         );
 
         let recruit = add_character(&mut world, false, false, 30);
         world.characters[recruit].recruited = false;
         let mut state = AIState::new(AiFaction::Empire);
-        let team = team_of(&advance_once(&mut state, &world), MissionKind::Recruitment);
+        let team = team_of(&day_of_rounds(&mut state, &world), MissionKind::Recruitment);
 
         assert_eq!(
             team,
@@ -2756,13 +1375,13 @@ mod tests {
         let mut state = AIState::new(AiFaction::Empire);
 
         assert_eq!(
-            team_of(&advance_once(&mut state, &world), MissionKind::Diplomacy),
+            team_of(&day_of_rounds(&mut state, &world), MissionKind::Diplomacy),
             None
         );
 
         let diplomat = add_character(&mut world, false, false, 69);
         let mut state = AIState::new(AiFaction::Empire);
-        let team = team_of(&advance_once(&mut state, &world), MissionKind::Diplomacy);
+        let team = team_of(&day_of_rounds(&mut state, &world), MissionKind::Diplomacy);
 
         assert_eq!(
             team,
@@ -2780,19 +1399,8 @@ mod tests {
         let _ = add_character(&mut world, false, false, 30);
 
         let mut state = AIState::new(AiFaction::Empire);
-        let mfg = ManufacturingState::new();
-        let missions = MissionState::new();
 
-        let actions = AISystem::advance(
-            &mut state,
-            &world,
-            &mfg,
-            &missions,
-            &crate::movement::MovementState::new(),
-            &ticks(7),
-            &GameConfig::default(),
-            &crate::research::ResearchState::new(),
-        );
+        let actions = day_of_rounds(&mut state, &world);
         let mission_count = actions
             .iter()
             .filter(|a| matches!(a, AIAction::DispatchMission { .. }))
@@ -2811,19 +1419,7 @@ mod tests {
         let mut state = AIState::new(AiFaction::Empire);
         state.mark_busy(diplomat);
 
-        let mfg = ManufacturingState::new();
-        let missions = MissionState::new();
-
-        let actions = AISystem::advance(
-            &mut state,
-            &world,
-            &mfg,
-            &missions,
-            &crate::movement::MovementState::new(),
-            &ticks(7),
-            &GameConfig::default(),
-            &crate::research::ResearchState::new(),
-        );
+        let actions = day_of_rounds(&mut state, &world);
         let mission_count = actions
             .iter()
             .filter(|a| matches!(a, AIAction::DispatchMission { .. }))
@@ -2834,208 +1430,6 @@ mod tests {
     // -----------------------------------------------------------------------
     // Production heuristics
     // -----------------------------------------------------------------------
-
-    #[test]
-    fn idle_system_with_mfg_gets_fighter_production() {
-        let mut world = empty_world();
-        let sector = add_sector(&mut world);
-
-        // Add an empire manufacturing facility
-        let mfg_key =
-            world
-                .manufacturing_facilities
-                .insert(crate::world::ManufacturingFacilityInstance {
-                    class_dat_id: DatId(1),
-                    side: crate::dat::Faction::Empire, // empire
-                    is_shipyard: false,
-                });
-
-        let sys_key = world.systems.insert(System {
-            dat_id: DatId(0),
-            name: "Coruscant".into(),
-            sector,
-            x: 0,
-            y: 0,
-            exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.1,
-            popularity_empire: 0.9,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![mfg_key],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Controlled(crate::dat::Faction::Empire),
-        });
-
-        // A mine and refinery pair gives the 50 maintenance capacity the
-        // fighter needs (manual p. 30; FUN_0052d540, FUN_0052d100).
-        for (class, is_mine) in [(0x2c00_0001, true), (0x2d00_0002, false)] {
-            let key = world
-                .production_facilities
-                .insert(crate::world::ProductionFacilityInstance {
-                    class_dat_id: DatId(class),
-                    side: crate::dat::Faction::Empire,
-                    is_mine,
-                });
-            world.systems[sys_key].production_facilities.push(key);
-        }
-
-        // Add a TIE fighter class
-        let _ = world.fighter_classes.insert(FighterClass {
-            dat_id: DatId(10),
-            name: "TIE Fighter".into(),
-            is_alliance: false,
-            is_empire: true,
-            refined_material_cost: 20,
-            maintenance_cost: 2,
-            squadron_size: 6,
-            torpedoes: 0,
-            overall_attack_strength: 10,
-            bombardment_defense: 0,
-            ..FighterClass::default()
-        });
-
-        let mut state = AIState::new(AiFaction::Empire);
-        let mfg = ManufacturingState::new(); // empty queue
-        let missions = MissionState::new();
-
-        let actions = AISystem::advance(
-            &mut state,
-            &world,
-            &mfg,
-            &missions,
-            &crate::movement::MovementState::new(),
-            &ticks(7),
-            &GameConfig::default(),
-            &crate::research::ResearchState::new(),
-        );
-
-        let has_fighter_enqueue = actions.iter().any(|a| {
-            matches!(
-                a,
-                AIAction::EnqueueProduction { system, kind: BuildableKind::Fighter(_), .. }
-                if *system == sys_key
-            )
-        });
-        assert!(
-            has_fighter_enqueue,
-            "expected fighter production at empire system"
-        );
-    }
-
-    /// Fighter the Empire AI enqueues at an idle shipyard system holding a
-    /// researched TIE Fighter (order 0) and a TIE Defender (FIGHTSD.DAT
-    /// research_order 8) at the given Ship research level.
-    fn empire_fighter_choice_at_ship_level(ship_level: u32) -> DatId {
-        let mut world = empty_world();
-        let sector = add_sector(&mut world);
-        let mfg_key =
-            world
-                .manufacturing_facilities
-                .insert(crate::world::ManufacturingFacilityInstance {
-                    class_dat_id: DatId(1),
-                    side: crate::dat::Faction::Empire,
-                    is_shipyard: false,
-                });
-        world.systems.insert(System {
-            dat_id: DatId(0),
-            name: "Coruscant".into(),
-            sector,
-            x: 0,
-            y: 0,
-            exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.1,
-            popularity_empire: 0.9,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![mfg_key],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Controlled(crate::dat::Faction::Empire),
-        });
-        for (id, name, cost, order) in [(5, "TIE Fighter", 20, 0), (8, "TIE Defender", 60, 8)] {
-            world.fighter_classes.insert(FighterClass {
-                dat_id: DatId(id),
-                name: name.into(),
-                is_empire: true,
-                refined_material_cost: cost,
-                squadron_size: 6,
-                research_order: order,
-                ..FighterClass::default()
-            });
-        }
-        let mut research = crate::research::ResearchState::new();
-        research.empire.ship = ship_level;
-
-        let actions = AISystem::advance(
-            &mut AIState::new(AiFaction::Empire),
-            &world,
-            &ManufacturingState::new(),
-            &MissionState::new(),
-            &crate::movement::MovementState::new(),
-            &ticks(7),
-            &GameConfig::default(),
-            &research,
-        );
-        actions
-            .iter()
-            .find_map(|a| match a {
-                AIAction::EnqueueProduction {
-                    kind: BuildableKind::Fighter(key),
-                    ..
-                } => Some(world.fighter_classes[*key].dat_id),
-                _ => None,
-            })
-            .expect("fighter production")
-    }
-
-    #[test]
-    fn ai_picks_its_strongest_researched_capital_ship() {
-        let mut world = empty_world();
-        // CAPSHPSD.DAT: order-0 classes start buildable; 9 is late-game.
-        for (id, hull, order) in [(131, 100, 0), (128, 900, 9)] {
-            world
-                .capital_ship_classes
-                .insert(crate::world::CapitalShipClass {
-                    dat_id: DatId(id),
-                    is_empire: true,
-                    hull,
-                    research_order: order,
-                    ..Default::default()
-                });
-        }
-        let mut research = crate::research::ResearchState::new();
-        let pick = |research: &crate::research::ResearchState| {
-            AISystem::best_capital_ship_class(&world, research, AiFaction::Empire)
-                .map(|(_, c)| c.dat_id)
-        };
-
-        assert_eq!(pick(&research), Some(DatId(131)));
-        research.empire.ship = 9;
-        assert_eq!(pick(&research), Some(DatId(128)));
-    }
-
-    #[test]
-    fn ai_builds_only_fighters_its_ship_research_has_reached() {
-        assert_eq!(empire_fighter_choice_at_ship_level(7), DatId(5));
-        assert_eq!(empire_fighter_choice_at_ship_level(8), DatId(8));
-    }
 
     #[test]
     fn uncontrolled_system_facility_cannot_produce_for_ai() {
@@ -3064,446 +1458,12 @@ mod tests {
         });
 
         let mut state = AIState::new(AiFaction::Empire);
-        let actions = AISystem::advance(
-            &mut state,
-            &world,
-            &ManufacturingState::new(),
-            &MissionState::new(),
-            &crate::movement::MovementState::new(),
-            &ticks(7),
-            &GameConfig::default(),
-            &crate::research::ResearchState::new(),
-        );
+        let actions = day_of_rounds(&mut state, &world);
 
         assert!(!actions.iter().any(|action| matches!(
             action,
             AIAction::EnqueueProduction { system, .. } if *system == sys_key
         )));
-    }
-
-    // -----------------------------------------------------------------------
-    // Fleet deployment heuristics
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn fleet_directed_to_attack_weak_enemy_system() {
-        let mut world = empty_world();
-        let sector = add_sector(&mut world);
-
-        // Empire fleet at a safe friendly system (Empire-controlled)
-        let home_sys = add_system(&mut world, sector, 0.1, 0.9);
-        world.systems[home_sys].control = ControlKind::Controlled(crate::dat::Faction::Empire);
-        // Enemy system controlled by Alliance (attack target)
-        let target_sys = add_system(&mut world, sector, 0.6, 0.15);
-        world.systems[target_sys].control = ControlKind::Controlled(crate::dat::Faction::Alliance);
-
-        // Fleet needs at least one ship to pass dispatch validation.
-        let class_key = world
-            .capital_ship_classes
-            .insert(CapitalShipClass::default());
-        let fleet_key = world.fleets.insert(Fleet {
-            location: home_sys,
-            capital_ships: ShipInstance::make(class_key, 100, false, 1),
-            fighters: vec![],
-            characters: vec![],
-            is_alliance: false, // empire fleet
-            has_death_star: false,
-        });
-
-        let mut state = AIState::new(AiFaction::Empire);
-        let mfg = ManufacturingState::new();
-        let missions = MissionState::new();
-
-        let actions = AISystem::advance(
-            &mut state,
-            &world,
-            &mfg,
-            &missions,
-            &crate::movement::MovementState::new(),
-            &ticks(7),
-            &GameConfig::default(),
-            &crate::research::ResearchState::new(),
-        );
-
-        let fleet_move = actions.iter().find(|a| {
-            matches!(
-                a,
-                AIAction::MoveFleet { fleet, to_system, reason: FleetMoveReason::Attack, .. }
-                if *fleet == fleet_key && *to_system == target_sys
-            )
-        });
-        assert!(
-            fleet_move.is_some(),
-            "expected fleet to be directed at weak enemy system"
-        );
-    }
-
-    #[test]
-    fn fleet_attacks_enemy_force_orbiting_neutral_system() {
-        let mut world = empty_world();
-        let sector = add_sector(&mut world);
-        let home_sys = add_system(&mut world, sector, 0.1, 0.9);
-        world.systems[home_sys].control = ControlKind::Controlled(crate::dat::Faction::Empire);
-        let target_sys = add_system(&mut world, sector, 0.5, 0.5);
-        world.systems[target_sys].control = ControlKind::Uncontrolled;
-
-        let class_key = world
-            .capital_ship_classes
-            .insert(CapitalShipClass::default());
-        let empire_fleet = world.fleets.insert(Fleet {
-            location: home_sys,
-            capital_ships: ShipInstance::make(class_key, 100, false, 1),
-            fighters: vec![],
-            characters: vec![],
-            is_alliance: false,
-            has_death_star: false,
-        });
-        world.systems[home_sys].fleets.push(empire_fleet);
-        let alliance_fleet = world.fleets.insert(Fleet {
-            location: target_sys,
-            capital_ships: ShipInstance::make(class_key, 100, true, 1),
-            fighters: vec![],
-            characters: vec![],
-            is_alliance: true,
-            has_death_star: false,
-        });
-        world.systems[target_sys].fleets.push(alliance_fleet);
-
-        let mut state = AIState::new(AiFaction::Empire);
-        let actions = AISystem::advance(
-            &mut state,
-            &world,
-            &ManufacturingState::new(),
-            &MissionState::new(),
-            &crate::movement::MovementState::new(),
-            &ticks(7),
-            &GameConfig::default(),
-            &ResearchState::new(),
-        );
-
-        assert!(actions.iter().any(|action| matches!(
-            action,
-            AIAction::MoveFleet {
-                fleet,
-                to_system,
-                reason: FleetMoveReason::Attack,
-                ..
-            } if *fleet == empire_fleet && *to_system == target_sys
-        )));
-    }
-
-    #[test]
-    fn outmatched_fleet_raids_weak_territory_instead_of_suicidal_interception() {
-        let mut world = empty_world();
-        let sector = add_sector(&mut world);
-        let home_sys = add_system(&mut world, sector, 0.1, 0.9);
-        world.systems[home_sys].control = ControlKind::Controlled(crate::dat::Faction::Empire);
-        let weak_target = add_system(&mut world, sector, 0.5, 0.5);
-        world.systems[weak_target].control = ControlKind::Controlled(crate::dat::Faction::Alliance);
-        let strong_target = add_system(&mut world, sector, 0.8, 0.2);
-        world.systems[strong_target].control = ControlKind::Uncontrolled;
-
-        let small_class = world.capital_ship_classes.insert(CapitalShipClass {
-            hull: 100,
-            ..CapitalShipClass::default()
-        });
-        let large_class = world.capital_ship_classes.insert(CapitalShipClass {
-            hull: 1000,
-            ..CapitalShipClass::default()
-        });
-        let empire_fleet = world.fleets.insert(Fleet {
-            location: home_sys,
-            capital_ships: ShipInstance::make(small_class, 100, false, 1),
-            fighters: vec![],
-            characters: vec![],
-            is_alliance: false,
-            has_death_star: false,
-        });
-        world.systems[home_sys].fleets.push(empire_fleet);
-        let alliance_fleet = world.fleets.insert(Fleet {
-            location: strong_target,
-            capital_ships: ShipInstance::make(large_class, 1000, true, 1),
-            fighters: vec![],
-            characters: vec![],
-            is_alliance: true,
-            has_death_star: false,
-        });
-        world.systems[strong_target].fleets.push(alliance_fleet);
-
-        let mut state = AIState::new(AiFaction::Empire);
-        let actions = AISystem::advance(
-            &mut state,
-            &world,
-            &ManufacturingState::new(),
-            &MissionState::new(),
-            &crate::movement::MovementState::new(),
-            &ticks(7),
-            &GameConfig::default(),
-            &ResearchState::new(),
-        );
-
-        assert!(actions.iter().any(|action| matches!(
-            action,
-            AIAction::MoveFleet {
-                fleet,
-                to_system,
-                reason: FleetMoveReason::Attack,
-                ..
-            } if *fleet == empire_fleet && *to_system == weak_target
-        )));
-    }
-
-    #[test]
-    fn blockading_fleet_holds_enemy_system() {
-        let mut world = empty_world();
-        let sector = add_sector(&mut world);
-        let hq_sys = add_system(&mut world, sector, 0.1, 0.9);
-        world.systems[hq_sys].control = ControlKind::Controlled(crate::dat::Faction::Empire);
-        world.systems[hq_sys].is_headquarters = true;
-        let blockaded_sys = add_system(&mut world, sector, 0.8, 0.2);
-        world.systems[blockaded_sys].control =
-            ControlKind::Controlled(crate::dat::Faction::Alliance);
-        let other_target = add_system(&mut world, sector, 0.7, 0.3);
-        world.systems[other_target].control =
-            ControlKind::Controlled(crate::dat::Faction::Alliance);
-
-        let class_key = world
-            .capital_ship_classes
-            .insert(CapitalShipClass::default());
-        let blockader = world.fleets.insert(Fleet {
-            location: blockaded_sys,
-            capital_ships: ShipInstance::make(class_key, 100, false, 1),
-            fighters: vec![],
-            characters: vec![],
-            is_alliance: false,
-            has_death_star: false,
-        });
-        world.systems[blockaded_sys].fleets.push(blockader);
-
-        let mut state = AIState::new(AiFaction::Empire);
-        let actions = AISystem::advance(
-            &mut state,
-            &world,
-            &ManufacturingState::new(),
-            &MissionState::new(),
-            &crate::movement::MovementState::new(),
-            &ticks(7),
-            &GameConfig::default(),
-            &ResearchState::new(),
-        );
-
-        assert!(!actions.iter().any(
-            |action| matches!(action, AIAction::MoveFleet { fleet, .. } if *fleet == blockader)
-        ));
-    }
-
-    #[test]
-    fn stationed_hq_defender_is_not_dispatched() {
-        let mut world = empty_world();
-        let sector = add_sector(&mut world);
-        let hq_sys = add_system(&mut world, sector, 0.1, 0.9);
-        world.systems[hq_sys].control = ControlKind::Controlled(crate::dat::Faction::Empire);
-        world.systems[hq_sys].is_headquarters = true;
-        let staging_sys = add_system(&mut world, sector, 0.2, 0.8);
-        world.systems[staging_sys].control = ControlKind::Controlled(crate::dat::Faction::Empire);
-        let target_sys = add_system(&mut world, sector, 0.8, 0.2);
-        world.systems[target_sys].control = ControlKind::Controlled(crate::dat::Faction::Alliance);
-
-        let class_key = world
-            .capital_ship_classes
-            .insert(CapitalShipClass::default());
-        let defender = world.fleets.insert(Fleet {
-            location: hq_sys,
-            capital_ships: ShipInstance::make(class_key, 100, false, 1),
-            fighters: vec![],
-            characters: vec![],
-            is_alliance: false,
-            has_death_star: false,
-        });
-        world.systems[hq_sys].fleets.push(defender);
-        let attacker = world.fleets.insert(Fleet {
-            location: staging_sys,
-            capital_ships: ShipInstance::make(class_key, 100, false, 1),
-            fighters: vec![],
-            characters: vec![],
-            is_alliance: false,
-            has_death_star: false,
-        });
-        world.systems[staging_sys].fleets.push(attacker);
-
-        let mut state = AIState::new(AiFaction::Empire);
-        let actions = AISystem::advance(
-            &mut state,
-            &world,
-            &ManufacturingState::new(),
-            &MissionState::new(),
-            &crate::movement::MovementState::new(),
-            &ticks(7),
-            &GameConfig::default(),
-            &ResearchState::new(),
-        );
-
-        assert!(!actions.iter().any(
-            |action| matches!(action, AIAction::MoveFleet { fleet, .. } if *fleet == defender)
-        ));
-        assert!(actions.iter().any(|action| matches!(
-            action,
-            AIAction::MoveFleet {
-                fleet,
-                to_system,
-                reason: FleetMoveReason::Attack,
-                ..
-            } if *fleet == attacker && *to_system == target_sys
-        )));
-    }
-
-    #[test]
-    fn assembled_hq_wave_can_launch_and_leave_future_production_to_defend() {
-        let mut world = empty_world();
-        let sector = add_sector(&mut world);
-        let hq_sys = add_system(&mut world, sector, 0.1, 0.9);
-        world.systems[hq_sys].control = ControlKind::Controlled(crate::dat::Faction::Alliance);
-        world.systems[hq_sys].is_headquarters = true;
-        let target_sys = add_system(&mut world, sector, 0.8, 0.2);
-        world.systems[target_sys].control = ControlKind::Controlled(crate::dat::Faction::Empire);
-
-        let class_key = world
-            .capital_ship_classes
-            .insert(CapitalShipClass::default());
-        let wave = world.fleets.insert(Fleet {
-            location: hq_sys,
-            capital_ships: ShipInstance::make(class_key, 100, true, 2),
-            fighters: vec![],
-            characters: vec![],
-            is_alliance: true,
-            has_death_star: false,
-        });
-        world.systems[hq_sys].fleets.push(wave);
-
-        let mut state = AIState::new(AiFaction::Alliance);
-        let actions = AISystem::advance(
-            &mut state,
-            &world,
-            &ManufacturingState::new(),
-            &MissionState::new(),
-            &crate::movement::MovementState::new(),
-            &ticks(7),
-            &GameConfig::default(),
-            &ResearchState::new(),
-        );
-
-        assert!(actions.iter().any(|action| matches!(
-            action,
-            AIAction::MoveFleet {
-                fleet,
-                to_system,
-                reason: FleetMoveReason::Attack,
-                ..
-            } if *fleet == wave && *to_system == target_sys
-        )));
-    }
-
-    #[test]
-    fn fleet_in_transit_is_not_redispatched() {
-        let mut world = empty_world();
-        let sector = add_sector(&mut world);
-        let home_sys = add_system(&mut world, sector, 0.1, 0.9);
-        world.systems[home_sys].control = ControlKind::Controlled(crate::dat::Faction::Empire);
-        let target_sys = add_system(&mut world, sector, 0.8, 0.1);
-        world.systems[target_sys].control = ControlKind::Controlled(crate::dat::Faction::Alliance);
-
-        let class_key = world
-            .capital_ship_classes
-            .insert(CapitalShipClass::default());
-        let fleet_key = world.fleets.insert(Fleet {
-            location: home_sys,
-            capital_ships: ShipInstance::make(class_key, 100, false, 1),
-            fighters: vec![],
-            characters: vec![],
-            is_alliance: false,
-            has_death_star: false,
-        });
-        world.systems[home_sys].fleets.push(fleet_key);
-
-        let mut movement = crate::movement::MovementState::new();
-        assert!(movement.order(fleet_key, home_sys, target_sys, 10));
-        crate::movement::MovementSystem::advance(&mut movement, &ticks(3));
-        let before = movement.get(fleet_key).unwrap().clone();
-
-        let mut state = AIState::new(AiFaction::Empire);
-        let actions = AISystem::advance(
-            &mut state,
-            &world,
-            &ManufacturingState::new(),
-            &MissionState::new(),
-            &movement,
-            &ticks(7),
-            &GameConfig::default(),
-            &ResearchState::new(),
-        );
-
-        assert!(!actions.iter().any(
-            |action| matches!(action, AIAction::MoveFleet { fleet, .. } if *fleet == fleet_key)
-        ));
-        assert_eq!(movement.get(fleet_key), Some(&before));
-    }
-
-    #[test]
-    fn fleet_receives_at_most_one_move_action_per_evaluation() {
-        let mut world = empty_world();
-        let sector = add_sector(&mut world);
-        let home_sys = add_system(&mut world, sector, 0.1, 0.9);
-        world.systems[home_sys].control = ControlKind::Controlled(crate::dat::Faction::Empire);
-        let staging_sys = add_system(&mut world, sector, 0.1, 0.9);
-        world.systems[staging_sys].control = ControlKind::Controlled(crate::dat::Faction::Empire);
-        world.systems[staging_sys].x = 25;
-        let target_sys = add_system(&mut world, sector, 0.8, 0.1);
-        world.systems[target_sys].control = ControlKind::Controlled(crate::dat::Faction::Alliance);
-        world.systems[target_sys].x = 100;
-
-        let class_key = world
-            .capital_ship_classes
-            .insert(CapitalShipClass::default());
-        let death_star = world.fleets.insert(Fleet {
-            location: home_sys,
-            capital_ships: ShipInstance::make(class_key, 100, false, 1),
-            fighters: vec![],
-            characters: vec![],
-            is_alliance: false,
-            has_death_star: true,
-        });
-        world.systems[home_sys].fleets.push(death_star);
-        let escort = world.fleets.insert(Fleet {
-            location: staging_sys,
-            capital_ships: ShipInstance::make(class_key, 100, false, 1),
-            fighters: vec![],
-            characters: vec![],
-            is_alliance: false,
-            has_death_star: false,
-        });
-        world.systems[staging_sys].fleets.push(escort);
-
-        let mut state = AIState::new(AiFaction::Empire);
-        let actions = AISystem::advance(
-            &mut state,
-            &world,
-            &ManufacturingState::new(),
-            &MissionState::new(),
-            &crate::movement::MovementState::new(),
-            &ticks(7),
-            &GameConfig::default(),
-            &ResearchState::new(),
-        );
-
-        for fleet in [death_star, escort] {
-            let move_count = actions
-                .iter()
-                .filter(|action| {
-                    matches!(action, AIAction::MoveFleet { fleet: moved, .. } if *moved == fleet)
-                })
-                .count();
-            assert!(move_count <= 1, "fleet received {move_count} move actions");
-        }
     }
 
     // -----------------------------------------------------------------------
@@ -3571,6 +1531,8 @@ mod tests {
                 is_alliance,
                 skills,
                 on_mission: false,
+                en_route: false,
+                on_hidden_mission: false,
             },
         ))
     }
@@ -3630,19 +1592,8 @@ mod tests {
         let spy = add(&mut world, alliance_ai);
 
         let mut state = AIState::new(side);
-        let mfg = ManufacturingState::new();
-        let missions = MissionState::new();
 
-        let actions = AISystem::advance(
-            &mut state,
-            &world,
-            &mfg,
-            &missions,
-            &crate::movement::MovementState::new(),
-            &ticks(7),
-            &GameConfig::default(),
-            &crate::research::ResearchState::new(),
-        );
+        let actions = day_of_rounds(&mut state, &world);
 
         let sabotage = actions.iter().find(|a| {
             matches!(
@@ -3719,19 +1670,8 @@ mod tests {
         let _ = add_spy(&mut world, false, false, 20, 20);
 
         let mut state = AIState::new(AiFaction::Empire);
-        let mfg = ManufacturingState::new();
-        let missions = MissionState::new();
 
-        let actions = AISystem::advance(
-            &mut state,
-            &world,
-            &mfg,
-            &missions,
-            &crate::movement::MovementState::new(),
-            &ticks(7),
-            &GameConfig::default(),
-            &crate::research::ResearchState::new(),
-        );
+        let actions = day_of_rounds(&mut state, &world);
 
         let covert = actions
             .iter()
@@ -3754,18 +1694,19 @@ mod tests {
     }
 
     #[test]
-    fn ai_dispatches_espionage_on_unexplored_system() {
+    fn ai_dispatches_espionage_on_an_enemy_system() {
+        // FUN_004b1bf0.c:31-52: an explored enemy system (sys+0x2c bit
+        // 0x200, FUN_00433e40) is an Espionage target.
         let mut world = empty_world();
         let sector = add_sector(&mut world);
 
-        // Unexplored system — worth investigating.
-        let unexplored = world.systems.insert(System {
+        let enemy = world.systems.insert(System {
             dat_id: DatId(0),
             name: "Dark System".into(),
             sector,
             x: 50,
             y: 50,
-            exploration_status: crate::dat::ExplorationStatus::Unexplored,
+            exploration_status: crate::dat::ExplorationStatus::Explored,
             popularity_alliance: 0.0,
             popularity_empire: 0.0,
             is_populated: false,
@@ -3781,26 +1722,15 @@ mod tests {
             production_facilities: vec![],
             is_headquarters: false,
             is_destroyed: false,
-            control: ControlKind::Uncontrolled,
+            control: ControlKind::Controlled(crate::dat::Faction::Empire),
         });
 
         // FUN_004808c0 takes special forces only.
         let spy = add_commando(&mut world, true, 75, 40);
 
         let mut state = AIState::new(AiFaction::Alliance);
-        let mfg = ManufacturingState::new();
-        let missions = MissionState::new();
 
-        let actions = AISystem::advance(
-            &mut state,
-            &world,
-            &mfg,
-            &missions,
-            &crate::movement::MovementState::new(),
-            &ticks(7),
-            &GameConfig::default(),
-            &crate::research::ResearchState::new(),
-        );
+        let actions = day_of_rounds(&mut state, &world);
 
         let intel = actions.iter().find(|a| {
             matches!(
@@ -3811,12 +1741,12 @@ mod tests {
                     target_system,
                     ..
                 }
-                if *team == [spy] && *target_system == unexplored
+                if *team == [spy] && *target_system == enemy
             )
         });
         assert!(
             intel.is_some(),
-            "expected intelligence mission on unexplored system"
+            "expected an espionage mission on the enemy system"
         );
     }
 
@@ -3825,11 +1755,14 @@ mod tests {
         clippy::cast_possible_truncation,
         reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
     )]
-    fn covert_ops_capped_at_max_per_eval() {
+    fn a_day_at_fast_sends_at_most_one_covert_op() {
+        // A round issues at most one order (FUN_00485b40.c:53-67), and module
+        // 4 runs one planner's pass a turn (FUN_004d2490.c:26-46): in five
+        // rounds the planner list reaches the Espionage pseudo-planner once.
         let mut world = empty_world();
         let sector = add_sector(&mut world);
 
-        // Create 5 enemy manufacturing systems — more than MAX_COVERT_OPS_PER_EVAL.
+        // Five enemy manufacturing systems: more targets than turns.
         for i in 0..5u32 {
             let mfg_key = world.manufacturing_facilities.insert(
                 crate::world::ManufacturingFacilityInstance {
@@ -3870,19 +1803,8 @@ mod tests {
         }
 
         let mut state = AIState::new(AiFaction::Empire);
-        let mfg = ManufacturingState::new();
-        let missions = MissionState::new();
 
-        let actions = AISystem::advance(
-            &mut state,
-            &world,
-            &mfg,
-            &missions,
-            &crate::movement::MovementState::new(),
-            &ticks(7),
-            &GameConfig::default(),
-            &crate::research::ResearchState::new(),
-        );
+        let actions = day_of_rounds(&mut state, &world);
 
         let covert_count = actions
             .iter()
@@ -3900,488 +1822,8 @@ mod tests {
             .count();
 
         assert!(
-            covert_count <= MAX_COVERT_OPS_PER_EVAL,
-            "expected at most {MAX_COVERT_OPS_PER_EVAL} covert ops, got {covert_count}",
-        );
-    }
-
-    #[test]
-    fn interval_gates_repeated_evaluation() {
-        let mut world = empty_world();
-        let sector = add_sector(&mut world);
-        let _ = add_system(&mut world, sector, 0.5, 0.5);
-
-        let mut state = AIState::new(AiFaction::Alliance);
-        let mfg = ManufacturingState::new();
-        let missions = MissionState::new();
-
-        // First evaluation at tick 7
-        let _first = AISystem::advance(
-            &mut state,
-            &world,
-            &mfg,
-            &missions,
-            &crate::movement::MovementState::new(),
-            &[TickEvent { tick: 7 }],
-            &GameConfig::default(),
-            &crate::research::ResearchState::new(),
-        );
-        assert_eq!(state.last_eval_tick, 7);
-
-        // Tick 10 — only 3 days elapsed, should skip
-        let second = AISystem::advance(
-            &mut state,
-            &world,
-            &mfg,
-            &missions,
-            &crate::movement::MovementState::new(),
-            &[TickEvent { tick: 10 }],
-            &GameConfig::default(),
-            &crate::research::ResearchState::new(),
-        );
-        assert!(
-            second.is_empty(),
-            "expected no actions before interval elapses"
-        );
-        assert_eq!(state.last_eval_tick, 7); // unchanged
-
-        // Tick 14 — 7 days elapsed, should evaluate again
-        let third = AISystem::advance(
-            &mut state,
-            &world,
-            &mfg,
-            &missions,
-            &crate::movement::MovementState::new(),
-            &[TickEvent { tick: 14 }],
-            &GameConfig::default(),
-            &crate::research::ResearchState::new(),
-        );
-        assert_eq!(state.last_eval_tick, 14);
-        let _ = third; // just checking it ran
-    }
-
-    // -----------------------------------------------------------------------
-    // Knesset Shamash-Bet #R11 — killed characters are invisible to dispatch
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn can_dispatch_rejects_killed_character() {
-        let mut world = empty_world();
-        let ck = add_character(&mut world, /*alliance*/ false, /*major*/ true, 50);
-        let character = world.characters.get(ck).unwrap();
-        let state = AIState::new(AiFaction::Empire);
-        assert!(AISystem::can_dispatch(
-            &state,
-            AiFaction::Empire,
-            ck,
-            character
-        ));
-
-        // Kill and re-check.
-        world.characters.get_mut(ck).unwrap().mark_killed();
-        let character = world.characters.get(ck).unwrap();
-        assert!(
-            !AISystem::can_dispatch(&state, AiFaction::Empire, ck, character),
-            "killed character must not pass dispatch gate"
-        );
-    }
-
-    // -----------------------------------------------------------------------
-    // D1: Enhanced dispatch validator tests
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn can_dispatch_to_system_rejects_destroyed_system() {
-        let mut world = empty_world();
-        let sector = add_sector(&mut world);
-        let sys = add_system(&mut world, sector, 0.5, 0.5);
-        world.systems[sys].is_destroyed = true;
-
-        assert!(
-            !AISystem::can_dispatch_to_system(&world, AiFaction::Empire, sys),
-            "destroyed system must not pass dispatch gate"
-        );
-    }
-
-    #[test]
-    fn can_dispatch_to_system_allows_hostile_enemy_population() {
-        let mut world = empty_world();
-        let sector = add_sector(&mut world);
-        let sys = add_system(&mut world, sector, 0.0, 1.0);
-        world.systems[sys].control = ControlKind::Controlled(crate::dat::Faction::Alliance);
-
-        assert!(
-            AISystem::can_dispatch_to_system(&world, AiFaction::Empire, sys),
-            "population hostility must not prevent a military attack"
-        );
-    }
-
-    #[test]
-    fn can_dispatch_fleet_rejects_no_alive_ships() {
-        let mut world = empty_world();
-        let sector = add_sector(&mut world);
-        let sys = add_system(&mut world, sector, 0.5, 0.5);
-
-        let class_key = world
-            .capital_ship_classes
-            .insert(CapitalShipClass::default());
-        // Create a fleet where all ships are dead.
-        let mut ships = ShipInstance::make(class_key, 100, false, 2);
-        for s in &mut ships {
-            s.alive = false;
-        }
-
-        let fleet_key = world.fleets.insert(Fleet {
-            location: sys,
-            capital_ships: ships,
-            fighters: vec![],
-            characters: vec![],
-            is_alliance: false,
-            has_death_star: false,
-        });
-
-        assert!(
-            !AISystem::can_dispatch_fleet(&world, fleet_key, AiFaction::Empire),
-            "fleet with only dead ships must not pass dispatch gate"
-        );
-    }
-
-    #[test]
-    fn can_dispatch_to_system_does_not_turn_strength_score_into_a_hard_gate() {
-        let mut world = empty_world();
-        let sector = add_sector(&mut world);
-        let sys = add_system(&mut world, sector, 0.5, 0.5);
-        world.systems[sys].control = ControlKind::Controlled(crate::dat::Faction::Alliance);
-
-        // Add a massive Alliance fleet (enemy from Empire perspective).
-        let class_key = world.capital_ship_classes.insert(CapitalShipClass {
-            hull: 500,
-            ..CapitalShipClass::default()
-        });
-        let enemy_fleet = world.fleets.insert(Fleet {
-            location: sys,
-            capital_ships: ShipInstance::make(class_key, 500, true, 10),
-            fighters: vec![],
-            characters: vec![],
-            is_alliance: true,
-            has_death_star: false,
-        });
-        world.systems[sys].fleets.push(enemy_fleet);
-
-        // Add a tiny Empire fleet (friendly from Empire perspective).
-        let small_class = world.capital_ship_classes.insert(CapitalShipClass {
-            hull: 10,
-            ..CapitalShipClass::default()
-        });
-        let friendly_fleet = world.fleets.insert(Fleet {
-            location: sys,
-            capital_ships: ShipInstance::make(small_class, 10, false, 1),
-            fighters: vec![],
-            characters: vec![],
-            is_alliance: false,
-            has_death_star: false,
-        });
-        world.systems[sys].fleets.push(friendly_fleet);
-
-        // FUN_0050b8e0 writes strength-derived readiness state in the original;
-        // it does not make the system invalid as a destination. Strategic
-        // scoring can still deprioritize this target.
-        assert!(
-            AISystem::can_dispatch_to_system(&world, AiFaction::Empire, sys),
-            "strength mismatch must remain a scoring concern, not a destination gate"
-        );
-    }
-
-    // -----------------------------------------------------------------------
-    // D2: Troop deployment tests
-    // -----------------------------------------------------------------------
-
-    #[test]
-    #[expect(
-        clippy::too_many_lines,
-        reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
-    )]
-    fn troop_deployment_prioritizes_frontline_systems() {
-        let mut world = empty_world();
-        let sector = add_sector(&mut world);
-        let config = GameConfig::default();
-
-        // Donor system: 5 empire troops.
-        let donor_sys = world.systems.insert(System {
-            dat_id: DatId(0),
-            name: "Donor".into(),
-            sector,
-            x: 0,
-            y: 0,
-            exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.1,
-            popularity_empire: 0.9,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Controlled(crate::dat::Faction::Empire),
-        });
-        for _ in 0..5 {
-            let tk = world.troops.insert(crate::world::TroopUnit {
-                class_dat_id: DatId(0),
-                is_alliance: false,
-                regiment_strength: 100,
-            });
-            world.systems[donor_sys].ground_units.push(tk);
-        }
-        let transport_class = world.capital_ship_classes.insert(CapitalShipClass {
-            troop_capacity: 1,
-            ..CapitalShipClass::default()
-        });
-        let transport = world.fleets.insert(Fleet {
-            location: donor_sys,
-            capital_ships: ShipInstance::make(transport_class, 100, false, 1),
-            fighters: vec![],
-            characters: vec![],
-            is_alliance: false,
-            has_death_star: false,
-        });
-        world.systems[donor_sys].fleets.push(transport);
-
-        // Frontline receiver: 0 troops, near enemy territory.
-        let frontline_sys = world.systems.insert(System {
-            dat_id: DatId(1),
-            name: "Frontline".into(),
-            sector,
-            x: 100,
-            y: 0, // close to enemy
-            exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.1,
-            popularity_empire: 0.9,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Controlled(crate::dat::Faction::Empire),
-        });
-
-        // Interior receiver: 0 troops, far from enemy.
-        let _interior_sys = world.systems.insert(System {
-            dat_id: DatId(2),
-            name: "Interior".into(),
-            sector,
-            x: 0,
-            y: 500, // far from enemy
-            exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.1,
-            popularity_empire: 0.9,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Controlled(crate::dat::Faction::Empire),
-        });
-
-        // Enemy system at x=120 (near frontline_sys).
-        let _ = world.systems.insert(System {
-            dat_id: DatId(3),
-            name: "Enemy".into(),
-            sector,
-            x: 120,
-            y: 0,
-            exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.9,
-            popularity_empire: 0.1,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Controlled(crate::dat::Faction::Alliance),
-        });
-
-        let mut actions = Vec::new();
-        AISystem::evaluate_troop_deployment(
-            &world,
-            &crate::movement::MovementState::new(),
-            AiFaction::Empire,
-            &config,
-            &mut actions,
-        );
-
-        // Should dispatch at least one troop move.
-        assert!(!actions.is_empty(), "expected troop deployment actions");
-
-        // First troop move should go to the frontline system (higher priority).
-        if let AIAction::MoveFleet {
-            fleet,
-            to_system,
-            reason: FleetMoveReason::Reinforce,
-            troops,
-        } = &actions[0]
-        {
-            assert_eq!(*fleet, transport);
-            assert_eq!(
-                *to_system, frontline_sys,
-                "first troop deployment should target frontline system"
-            );
-            assert_eq!(troops.len(), 1);
-        } else {
-            panic!("expected transport-backed MoveFleet action");
-        }
-    }
-
-    // -----------------------------------------------------------------------
-    // D3: Death Star multi-target and retreat tests
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn death_star_targets_highest_value_when_no_hq() {
-        let mut world = empty_world();
-        let sector = add_sector(&mut world);
-
-        // DS fleet at a friendly system.
-        let home_sys = add_system(&mut world, sector, 0.1, 0.9);
-        world.systems[home_sys].control = ControlKind::Controlled(crate::dat::Faction::Empire);
-
-        // Two enemy systems: one weak, one strong (but no HQ).
-        let weak_sys = add_system(&mut world, sector, 0.8, 0.1);
-        world.systems[weak_sys].control = ControlKind::Controlled(crate::dat::Faction::Alliance);
-        world.systems[weak_sys].x = 50;
-
-        let strong_sys = add_system(&mut world, sector, 0.8, 0.1);
-        world.systems[strong_sys].control = ControlKind::Controlled(crate::dat::Faction::Alliance);
-        world.systems[strong_sys].x = 100;
-        // Add a large fleet to the strong system.
-        let big_class = world.capital_ship_classes.insert(CapitalShipClass {
-            hull: 200,
-            ..CapitalShipClass::default()
-        });
-        let big_fleet = world.fleets.insert(Fleet {
-            location: strong_sys,
-            capital_ships: ShipInstance::make(big_class, 200, true, 5),
-            fighters: vec![],
-            characters: vec![],
-            is_alliance: true,
-            has_death_star: false,
-        });
-        world.systems[strong_sys].fleets.push(big_fleet);
-
-        // DS fleet with one ship + death star flag.
-        let ds_class = world
-            .capital_ship_classes
-            .insert(CapitalShipClass::default());
-        let ds_fleet = world.fleets.insert(Fleet {
-            location: home_sys,
-            capital_ships: ShipInstance::make(ds_class, 100, false, 1),
-            fighters: vec![],
-            characters: vec![],
-            is_alliance: false,
-            has_death_star: true,
-        });
-        world.systems[home_sys].fleets.push(ds_fleet);
-
-        let galaxy = AISystem::evaluate_galaxy_state(&world, AiFaction::Empire);
-        let target = AISystem::select_ds_target(&world, &galaxy, home_sys, false);
-
-        // Should pick the strong system (higher value) since no HQ exists.
-        assert_eq!(
-            target,
-            Some(strong_sys),
-            "DS should target highest-value enemy system when no HQ"
-        );
-    }
-
-    #[test]
-    fn death_star_retreats_when_outgunned() {
-        let mut world = empty_world();
-        let sector = add_sector(&mut world);
-        let config = GameConfig::default();
-
-        // DS at a system with overwhelming enemy presence.
-        let danger_sys = add_system(&mut world, sector, 0.8, 0.2);
-        world.systems[danger_sys].control = ControlKind::Controlled(crate::dat::Faction::Alliance);
-
-        // Safe retreat system.
-        let safe_sys = add_system(&mut world, sector, 0.2, 0.8);
-        world.systems[safe_sys].control = ControlKind::Controlled(crate::dat::Faction::Empire);
-        world.systems[safe_sys].x = 50;
-
-        // Big enemy fleet at danger_sys.
-        let big_class = world.capital_ship_classes.insert(CapitalShipClass {
-            hull: 500,
-            ..CapitalShipClass::default()
-        });
-        let enemy_fleet = world.fleets.insert(Fleet {
-            location: danger_sys,
-            capital_ships: ShipInstance::make(big_class, 500, true, 10),
-            fighters: vec![],
-            characters: vec![],
-            is_alliance: true,
-            has_death_star: false,
-        });
-        world.systems[danger_sys].fleets.push(enemy_fleet);
-
-        // DS fleet (tiny, outgunned).
-        let ds_class = world
-            .capital_ship_classes
-            .insert(CapitalShipClass::default());
-        let ds_fleet = world.fleets.insert(Fleet {
-            location: danger_sys,
-            capital_ships: ShipInstance::make(ds_class, 100, false, 1),
-            fighters: vec![],
-            characters: vec![],
-            is_alliance: false,
-            has_death_star: true,
-        });
-        world.systems[danger_sys].fleets.push(ds_fleet);
-
-        let movement = crate::movement::MovementState::new();
-        let mut actions = Vec::new();
-        AISystem::evaluate_ds_escort(&world, &movement, AiFaction::Empire, &config, &mut actions);
-
-        // DS should retreat because enemy strength >> friendly strength.
-        let retreat = actions.iter().find(|a| {
-            matches!(
-                a,
-                AIAction::MoveFleet { fleet, to_system, reason: FleetMoveReason::Reinforce, .. }
-                if *fleet == ds_fleet && *to_system == safe_sys
-            )
-        });
-        assert!(
-            retreat.is_some(),
-            "Death Star should retreat when outgunned"
+            covert_count <= 1,
+            "expected at most 1 covert op, got {covert_count}",
         );
     }
 
@@ -4393,7 +1835,6 @@ mod tests {
     fn reconnaissance_targets_explored_enemy_systems() {
         let mut world = empty_world();
         let sector = add_sector(&mut world);
-        let config = GameConfig::default();
 
         // Explored enemy system — a recon target.
         let enemy_sys = world.systems.insert(System {
@@ -4424,15 +1865,17 @@ mod tests {
         // Empire special force for recon.
         let spy = add_commando(&mut world, false, 70, 40);
 
-        let mut planner = Planner::new(&world, &MissionState::new(), &HashSet::new(), false, 7);
+        let mut planner = Planner::new(&world, &HashSet::new(), false, 7, [false; 3]);
         let mut actions = Vec::new();
-        AISystem::evaluate_reconnaissance(
-            &mut planner,
-            &world,
-            AiFaction::Empire,
-            &config,
-            &mut actions,
-        );
+        with_round(&world, AiFaction::Empire, |round| {
+            AISystem::evaluate_reconnaissance(
+                &mut planner,
+                round,
+                AiFaction::Empire,
+                usize::MAX,
+                &mut actions,
+            );
+        });
 
         let recon = actions.iter().find(|a| {
             matches!(
@@ -4461,11 +1904,36 @@ mod tests {
     fn planner_for(world: &GameWorld, faction: AiFaction) -> Planner<'_> {
         Planner::new(
             world,
-            &MissionState::new(),
             &HashSet::new(),
             faction == AiFaction::Alliance,
             7,
+            [false; 3],
         )
+    }
+
+    /// `f` over a round of `faction`'s AI on `world`, every other state
+    /// empty.
+    fn with_round<R>(world: &GameWorld, faction: AiFaction, f: impl FnOnce(&Round<'_>) -> R) -> R {
+        let manufacturing = ManufacturingState::new();
+        let transport = crate::troop_transport::TroopTransportState::new();
+        let uprisings = crate::uprising::UprisingState::new();
+        let research = crate::research::ResearchState::new();
+        let movement = crate::movement::MovementState::new();
+        let marks = crate::ai_records::Marks::default();
+        let inputs = crate::ai_production::RoundInputs {
+            world,
+            manufacturing: &manufacturing,
+            transport: &transport,
+            uprisings: &uprisings,
+            research: &research,
+            movement: &movement,
+            marks: &marks,
+            side: faction.as_mission_faction().into(),
+            tick: 7,
+            round_in_day: 0,
+        };
+        let round = Round::new(&crate::ai_production::ProductionState::default(), &inputs);
+        f(&round)
     }
 
     /// Each `kind` order as (team, target system, target character).
@@ -4500,28 +1968,32 @@ mod tests {
     }
 
     #[test]
-    fn each_diplomat_goes_to_another_system_below_the_cap_least_popular_first() {
-        // port: the targets are the port's; FUN_004815a0 picks the best
+    fn each_diplomat_goes_to_another_system_least_popular_first() {
+        // A populated neutral system with no foreign fleet is a Diplomacy
+        // target at any support (sys+0x2c bit 0x40, FUN_00433e40.c:617-620);
+        // port: the least popular goes first. FUN_004815a0 picks the best
         // diplomat for each.
         let mut world = empty_world();
         let sector = add_sector(&mut world);
         let warmer = add_system(&mut world, sector, 0.1, 0.3);
         let coldest = add_system(&mut world, sector, 0.1, 0.1);
-        let _capped = add_system(&mut world, sector, 0.1, 0.8);
+        let warmest = add_system(&mut world, sector, 0.1, 0.8);
         let best = add_character(&mut world, false, false, 90);
         let next = add_character(&mut world, false, false, 80);
-        // A third diplomat is left idle: the capped system is no target.
-        let _idle = add_character(&mut world, false, false, 70);
+        let third = add_character(&mut world, false, false, 70);
         let mut planner = planner_for(&world, AiFaction::Empire);
         let mut actions = Vec::new();
 
-        AISystem::evaluate_officers(
-            &mut planner,
-            &world,
-            AiFaction::Empire,
-            &GameConfig::default(),
-            &mut actions,
-        );
+        with_round(&world, AiFaction::Empire, |round| {
+            AISystem::evaluate_officers(
+                &mut planner,
+                round,
+                &MissionState::new(),
+                AiFaction::Empire,
+                usize::MAX,
+                &mut actions,
+            );
+        });
 
         let character = MissionMember::Character;
         assert_eq!(
@@ -4529,6 +2001,7 @@ mod tests {
             vec![
                 (vec![character(best)], coldest, None),
                 (vec![character(next)], warmer, None),
+                (vec![character(third)], warmest, None),
             ]
         );
     }
@@ -4539,7 +2012,10 @@ mod tests {
         // recruited its last (FUN_0052f590), no Recruitment goes out.
         let mut world = empty_world();
         let sector = add_sector(&mut world);
-        let _ = add_system(&mut world, sector, 0.1, 0.9);
+        let base = add_system(&mut world, sector, 0.1, 0.9);
+        // The Recruitment base is a system of ours (sys+0x2c bit 2,
+        // FUN_00433e40.c:845-849; FUN_0047dcc0.c:62).
+        world.systems[base].control = ControlKind::Controlled(crate::dat::Faction::Empire);
         for _ in 0..3 {
             let recruiter = add_character(&mut world, false, true, 30);
             world.characters[recruiter].leadership.base = 90;
@@ -4551,13 +2027,16 @@ mod tests {
         let run = |world: &GameWorld| {
             let mut planner = planner_for(world, AiFaction::Empire);
             let mut actions = Vec::new();
-            AISystem::evaluate_officers(
-                &mut planner,
-                world,
-                AiFaction::Empire,
-                &GameConfig::default(),
-                &mut actions,
-            );
+            with_round(world, AiFaction::Empire, |round| {
+                AISystem::evaluate_officers(
+                    &mut planner,
+                    round,
+                    &MissionState::new(),
+                    AiFaction::Empire,
+                    usize::MAX,
+                    &mut actions,
+                );
+            });
             orders(&actions, MissionKind::Recruitment).len()
         };
 
@@ -4594,13 +2073,15 @@ mod tests {
         let mut planner = planner_for(&world, AiFaction::Empire);
         let mut actions = Vec::new();
 
-        AISystem::evaluate_espionage(
-            &mut planner,
-            &world,
-            AiFaction::Empire,
-            &GameConfig::default(),
-            &mut actions,
-        );
+        with_round(&world, AiFaction::Empire, |round| {
+            AISystem::evaluate_espionage(
+                &mut planner,
+                round,
+                AiFaction::Empire,
+                usize::MAX,
+                &mut actions,
+            );
+        });
 
         let targets: Vec<SystemKey> = orders(&actions, MissionKind::Sabotage)
             .into_iter()
@@ -4611,9 +2092,10 @@ mod tests {
     }
 
     #[test]
-    fn an_assassination_goes_where_a_free_enemy_major_stands_up_to_the_covert_cap() {
+    fn an_assassination_goes_where_each_free_enemy_major_stands() {
         // FUN_004bd0a0 sends the order to the target's system; a character
-        // in a fleet stands at the fleet's system.
+        // in a fleet stands at the fleet's system. The original caps no
+        // pass: each of the four free majors gets a team while teams last.
         let mut world = empty_world();
         let sector = add_sector(&mut world);
         let here = add_system(&mut world, sector, 0.8, 0.1);
@@ -4646,16 +2128,18 @@ mod tests {
         let mut planner = planner_for(&world, AiFaction::Empire);
         let mut actions = Vec::new();
 
-        AISystem::evaluate_espionage(
-            &mut planner,
-            &world,
-            AiFaction::Empire,
-            &GameConfig::default(),
-            &mut actions,
-        );
+        with_round(&world, AiFaction::Empire, |round| {
+            AISystem::evaluate_espionage(
+                &mut planner,
+                round,
+                AiFaction::Empire,
+                usize::MAX,
+                &mut actions,
+            );
+        });
 
         let sent = orders(&actions, MissionKind::Assassination);
-        assert_eq!(sent.len(), GameConfig::default().ai.max_covert_ops_per_eval);
+        assert_eq!(sent.len(), 4);
         assert!(sent.iter().any(|(_, _, c)| *c == Some(target)));
         assert!(sent.iter().any(|(_, _, c)| *c == Some(aboard)));
         for (_, system, character) in &sent {
@@ -4668,9 +2152,10 @@ mod tests {
     }
 
     #[test]
-    fn abduction_takes_the_weakest_enemy_first_up_to_the_covert_cap() {
+    fn abduction_takes_the_weakest_enemy_first() {
         // port: the port orders abduction targets by combat, base plus half
-        // the variance, weakest first.
+        // the variance, weakest first. The original caps no pass, so each
+        // free enemy gets a team while teams last.
         let mut world = empty_world();
         let sector = add_sector(&mut world);
         let here = add_system(&mut world, sector, 0.8, 0.1);
@@ -4683,7 +2168,7 @@ mod tests {
         let middle = enemy(&mut world, 20, 6); // 23
         let weakest = enemy(&mut world, 22, 0);
         let strongest = enemy(&mut world, 24, 0);
-        let _spare = enemy(&mut world, 30, 0);
+        let toughest = enemy(&mut world, 30, 0);
         let prisoner = enemy(&mut world, 1, 0);
         world.characters[prisoner].is_captive = true;
         let own = add_character(&mut world, false, false, 30);
@@ -4692,48 +2177,75 @@ mod tests {
         let mut planner = planner_for(&world, AiFaction::Empire);
         let mut actions = Vec::new();
 
-        AISystem::evaluate_espionage(
-            &mut planner,
-            &world,
-            AiFaction::Empire,
-            &GameConfig::default(),
-            &mut actions,
-        );
+        with_round(&world, AiFaction::Empire, |round| {
+            AISystem::evaluate_espionage(
+                &mut planner,
+                round,
+                AiFaction::Empire,
+                usize::MAX,
+                &mut actions,
+            );
+        });
 
         let targets: Vec<_> = orders(&actions, MissionKind::Abduction)
             .into_iter()
             .map(|(_, _, character)| character.unwrap())
             .collect();
-        assert_eq!(targets, vec![weakest, middle, strongest]);
+        assert_eq!(targets, vec![weakest, middle, strongest, toughest]);
     }
 
     #[test]
-    fn espionage_goes_to_unexplored_systems_up_to_the_covert_cap() {
+    fn espionage_goes_to_enemy_systems_then_our_own() {
+        // FUN_004b1bf0.c:31-52: an enemy system with sys+0x2c bit 0x200
+        // first, then any system with it; FUN_00433e40 sets the bit on an
+        // explored system the side or its enemy holds, so neither a neutral
+        // nor an unexplored system is a target.
         let mut world = empty_world();
         let sector = add_sector(&mut world);
-        for _ in 0..5 {
-            let system = add_system(&mut world, sector, 0.0, 0.0);
-            world.systems[system].exploration_status = ExplorationStatus::Unexplored;
-        }
+        let held = |world: &mut GameWorld, control| {
+            let system = add_system(world, sector, 0.5, 0.5);
+            world.systems[system].control = control;
+            system
+        };
+        let ours = held(
+            &mut world,
+            ControlKind::Controlled(crate::dat::Faction::Alliance),
+        );
+        let first_enemy = held(
+            &mut world,
+            ControlKind::Controlled(crate::dat::Faction::Empire),
+        );
+        let _neutral = held(&mut world, ControlKind::Uncontrolled);
+        let unexplored = held(
+            &mut world,
+            ControlKind::Controlled(crate::dat::Faction::Empire),
+        );
+        world.systems[unexplored].exploration_status = ExplorationStatus::Unexplored;
+        let second_enemy = held(
+            &mut world,
+            ControlKind::Controlled(crate::dat::Faction::Empire),
+        );
         for _ in 0..10 {
             add_commando(&mut world, true, 80, 0);
         }
         let mut planner = planner_for(&world, AiFaction::Alliance);
         let mut actions = Vec::new();
 
-        AISystem::evaluate_espionage(
-            &mut planner,
-            &world,
-            AiFaction::Alliance,
-            &GameConfig::default(),
-            &mut actions,
-        );
+        with_round(&world, AiFaction::Alliance, |round| {
+            AISystem::evaluate_espionage(
+                &mut planner,
+                round,
+                AiFaction::Alliance,
+                usize::MAX,
+                &mut actions,
+            );
+        });
 
-        let sent = orders(&actions, MissionKind::Espionage);
-        assert_eq!(sent.len(), GameConfig::default().ai.max_covert_ops_per_eval);
-        let mut targets: Vec<_> = sent.iter().map(|(_, system, _)| *system).collect();
-        targets.dedup();
-        assert_eq!(targets.len(), sent.len());
+        let targets: Vec<_> = orders(&actions, MissionKind::Espionage)
+            .into_iter()
+            .map(|(_, system, _)| system)
+            .collect();
+        assert_eq!(targets, vec![first_enemy, second_enemy, ours]);
     }
 
     #[test]
@@ -4757,7 +2269,15 @@ mod tests {
         let mut planner = planner_for(&world, AiFaction::Alliance);
         let mut actions = Vec::new();
 
-        AISystem::evaluate_rescue(&mut planner, &world, AiFaction::Alliance, &mut actions);
+        with_round(&world, AiFaction::Alliance, |round| {
+            AISystem::evaluate_rescue(
+                &mut planner,
+                round,
+                AiFaction::Alliance,
+                usize::MAX,
+                &mut actions,
+            );
+        });
 
         let sent: Vec<_> = orders(&actions, MissionKind::Rescue)
             .into_iter()
@@ -4796,13 +2316,15 @@ mod tests {
         let mut planner = planner_for(&world, AiFaction::Empire);
         let mut actions = Vec::new();
 
-        AISystem::evaluate_reconnaissance(
-            &mut planner,
-            &world,
-            AiFaction::Empire,
-            &GameConfig::default(),
-            &mut actions,
-        );
+        with_round(&world, AiFaction::Empire, |round| {
+            AISystem::evaluate_reconnaissance(
+                &mut planner,
+                round,
+                AiFaction::Empire,
+                usize::MAX,
+                &mut actions,
+            );
+        });
 
         let mut targets: Vec<_> = orders(&actions, MissionKind::Espionage)
             .into_iter()
@@ -4835,12 +2357,16 @@ mod tests {
         let mut planner = planner_for(&world, AiFaction::Alliance);
         let mut actions = Vec::new();
 
-        AISystem::evaluate_uprising_prevention(
-            &mut planner,
-            &world,
-            AiFaction::Alliance,
-            &mut actions,
-        );
+        with_round(&world, AiFaction::Alliance, |round| {
+            AISystem::evaluate_uprising_prevention(
+                &mut planner,
+                round,
+                &MissionState::new(),
+                AiFaction::Alliance,
+                usize::MAX,
+                &mut actions,
+            );
+        });
 
         let targets: Vec<_> = orders(&actions, MissionKind::Diplomacy)
             .into_iter()
@@ -4859,123 +2385,18 @@ mod tests {
         let mut planner = planner_for(&world, AiFaction::Alliance);
         let mut actions = Vec::new();
 
-        AISystem::evaluate_uprising_prevention(
-            &mut planner,
-            &world,
-            AiFaction::Alliance,
-            &mut actions,
-        );
+        with_round(&world, AiFaction::Alliance, |round| {
+            AISystem::evaluate_uprising_prevention(
+                &mut planner,
+                round,
+                &MissionState::new(),
+                AiFaction::Alliance,
+                usize::MAX,
+                &mut actions,
+            );
+        });
 
         assert!(orders(&actions, MissionKind::Diplomacy).is_empty());
-    }
-
-    #[test]
-    fn the_best_free_designer_of_each_tree_researches_it() {
-        // port: research is the port's own dispatch, not a mission; it
-        // takes the highest base plus half the variance, of 30 or more, and
-        // leaves characters the planners sent.
-        let mut world = empty_world();
-        let sector = add_sector(&mut world);
-        let _ = add_system(&mut world, sector, 0.5, 0.5);
-        let designer = |world: &mut GameWorld, tech: TechType, base, variance| {
-            let key = add_character(world, true, false, 30);
-            let pair = SkillPair { base, variance };
-            let c = &mut world.characters[key];
-            match tech {
-                TechType::Ship => c.ship_design = pair,
-                TechType::Troop => c.troop_training = pair,
-                TechType::Facility => c.facility_design = pair,
-            }
-            key
-        };
-        let ship = designer(&mut world, TechType::Ship, 30, 21); // 40
-        let _ = designer(&mut world, TechType::Ship, 39, 0);
-        let troop = designer(&mut world, TechType::Troop, 30, 21);
-        let _ = designer(&mut world, TechType::Troop, 39, 0);
-        let facility = designer(&mut world, TechType::Facility, 30, 21);
-        let _ = designer(&mut world, TechType::Facility, 39, 0);
-        let _below = designer(&mut world, TechType::Facility, 29, 0);
-        let state = AIState::new(AiFaction::Alliance);
-        let planner = planner_for(&world, AiFaction::Alliance);
-        let mut actions = Vec::new();
-
-        AISystem::evaluate_research(
-            &state,
-            &planner,
-            &world,
-            &ResearchState::new(),
-            AiFaction::Alliance,
-            &mut actions,
-        );
-
-        let researchers: Vec<_> = actions
-            .iter()
-            .filter_map(|a| match a {
-                AIAction::DispatchResearch {
-                    character,
-                    tech_type,
-                    ..
-                } => Some((*tech_type, *character)),
-                _ => None,
-            })
-            .collect();
-        assert_eq!(
-            researchers,
-            vec![
-                (TechType::Ship, ship),
-                (TechType::Troop, troop),
-                (TechType::Facility, facility),
-            ]
-        );
-    }
-
-    #[test]
-    fn research_reads_half_the_variance() {
-        // base 30 + 4 / 2 = 32 loses to a flat 33 in every tree.
-        let mut world = empty_world();
-        let sector = add_sector(&mut world);
-        let _ = add_system(&mut world, sector, 0.5, 0.5);
-        let mut expected = Vec::new();
-        for tech in [TechType::Ship, TechType::Troop, TechType::Facility] {
-            for (base, variance) in [(30, 4), (33, 0)] {
-                let key = add_character(&mut world, true, false, 30);
-                let pair = SkillPair { base, variance };
-                let c = &mut world.characters[key];
-                match tech {
-                    TechType::Ship => c.ship_design = pair,
-                    TechType::Troop => c.troop_training = pair,
-                    TechType::Facility => c.facility_design = pair,
-                }
-                if base == 33 {
-                    expected.push((tech, key));
-                }
-            }
-        }
-        let state = AIState::new(AiFaction::Alliance);
-        let planner = planner_for(&world, AiFaction::Alliance);
-        let mut actions = Vec::new();
-
-        AISystem::evaluate_research(
-            &state,
-            &planner,
-            &world,
-            &ResearchState::new(),
-            AiFaction::Alliance,
-            &mut actions,
-        );
-
-        let researchers: Vec<_> = actions
-            .iter()
-            .filter_map(|a| match a {
-                AIAction::DispatchResearch {
-                    character,
-                    tech_type,
-                    ..
-                } => Some((*tech_type, *character)),
-                _ => None,
-            })
-            .collect();
-        assert_eq!(researchers, expected);
     }
 
     #[test]
@@ -5008,80 +2429,20 @@ mod tests {
         let mut planner = planner_for(&world, AiFaction::Empire);
         let mut actions = Vec::new();
 
-        AISystem::evaluate_reconnaissance(
-            &mut planner,
-            &world,
-            AiFaction::Empire,
-            &GameConfig::default(),
-            &mut actions,
-        );
+        with_round(&world, AiFaction::Empire, |round| {
+            AISystem::evaluate_reconnaissance(
+                &mut planner,
+                round,
+                AiFaction::Empire,
+                usize::MAX,
+                &mut actions,
+            );
+        });
 
         let targets: Vec<_> = orders(&actions, MissionKind::Espionage)
             .into_iter()
             .map(|(_, system, _)| system)
             .collect();
         assert_eq!(targets, vec![garrisoned, empty]);
-    }
-
-    #[test]
-    fn research_skips_a_tree_the_side_already_researches_and_anyone_a_planner_sent() {
-        let mut world = empty_world();
-        let sector = add_sector(&mut world);
-        let _ = add_system(&mut world, sector, 0.1, 0.5);
-        let busy = add_character(&mut world, true, false, 90);
-        world.characters[busy].ship_design = SkillPair {
-            base: 90,
-            variance: 0,
-        };
-        let spare = add_character(&mut world, true, false, 0);
-        world.characters[spare].ship_design = SkillPair {
-            base: 40,
-            variance: 0,
-        };
-        world.characters[spare].troop_training = SkillPair {
-            base: 40,
-            variance: 0,
-        };
-        let mut research = ResearchState::new();
-        research.projects.push(crate::research::ResearchProject {
-            tech_type: TechType::Troop,
-            character: busy,
-            faction_is_alliance: true,
-            ticks_remaining: 5,
-            total_ticks: 5,
-        });
-        research.projects.push(crate::research::ResearchProject {
-            tech_type: TechType::Ship,
-            character: busy,
-            faction_is_alliance: false,
-            ticks_remaining: 5,
-            total_ticks: 5,
-        });
-        let state = AIState::new(AiFaction::Alliance);
-        let mut planner = planner_for(&world, AiFaction::Alliance);
-        assert!(planner.plan(MissionKind::Diplomacy).is_some());
-        let mut actions = Vec::new();
-
-        AISystem::evaluate_research(
-            &state,
-            &planner,
-            &world,
-            &research,
-            AiFaction::Alliance,
-            &mut actions,
-        );
-
-        let researchers: Vec<_> = actions
-            .iter()
-            .filter_map(|a| match a {
-                AIAction::DispatchResearch {
-                    character,
-                    tech_type,
-                    ..
-                } => Some((*tech_type, *character)),
-                _ => None,
-            })
-            .collect();
-        assert_eq!(researchers, vec![(TechType::Ship, spare)]);
     }
 }

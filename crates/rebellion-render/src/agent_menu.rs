@@ -224,6 +224,7 @@ pub fn draw_agent_menu(
             children: &[],
         })
         .collect();
+    crate::control_registry::name_next_menu("AgentMenu");
     match draw_game_menu(
         ctx,
         egui::Id::new(AGENT_MENU_ID),

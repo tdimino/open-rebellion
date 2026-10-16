@@ -2,9 +2,10 @@
 title: "Strategic Window Modality and Focus"
 description: "Design for recovering the original strategic-window contract, introducing a renderer-independent windowing crate, and migrating the existing strategic surfaces to one focus and input authority"
 type: feat
-status: draft
+status: active
+progress: "44% — workstreams 1-2 done; workstream 3 has the egui adapter and Fleet (PR #45, 9533b516); Sector, System, Defenses and Missions remain"
+updated: 2026-10-15
 created: 2026-10-10
-updated: 2026-10-10
 tags: [interface, parity, windowing, focus, modality, input, architecture]
 ---
 
@@ -408,6 +409,10 @@ No renderer integration belongs in this workstream.
 Integrate Sector, System, Fleet, Defenses, Missions, and any other recovered
 modeless strategic family. Preserve content and appearance. Remove private
 global-focus meaning and per-family layer raising as each family migrates.
+**In progress:** the egui adapter and coordinator landed with toolkit tasks
+5A-5B (`d174b9be`). PR #45 (`9533b516`) migrated Fleet, including drag
+capture cancelled on modal, hold and focus loss (browser and macOS) and
+per-key Rename routing. Sector, System, Defenses and Missions remain.
 
 ### Workstream 4: migrate strategic modals
 

@@ -107,9 +107,9 @@ CRebObject (base)
 │   │      Family bytes: 0x14-0x1b (CAPSHPSD 0x14; the Death Star is CAPSHPSD record 136, family 0x18)
 │   │      Factories: 0x14 FUN_004fffe0 (vtable 0x0065d650), 0x18 FUN_005002a0 (vtable 0x0065d930)
 │   │      +0x60  int   hull_current             — current hull damage value
-│   │      +0x64  uint  shield_weapon_packed      — bits 0-3: shield_recharge_allocated
-│   │                                               bits 4-7: weapon_recharge_allocated
-│   │                                               bits 8-31: unknown (preserved)
+│   │      +0x64  uint  shield_weapon_packed      — bits 0-3: shield damage counter
+│   │                                               bits 4-7: weapon damage counter
+│   │                                               bits 8-23: four more counters (ship-damage-repair.md)
 │   │      Virtual:
 │   │        +0x248 GetMaxHullValue()             → error "Invalid_HullValueDamage_value_"
 │   │        +0x26c / +0x270  fighter / regiment capacity (FUN_00502020)
@@ -236,7 +236,7 @@ Consolidated struct layout for the shared base. Fields confirmed across multiple
 | `+0x50` | `uint` | status_flags | many | bit0=active |
 | `+0x58` | `uint` | flag word | see below | meaning per class |
 | `+0x60` | `int`  | hull_current / squad_size_current | FUN_00501490, FUN_005032c0 | Polymorphic: hull for ships and facilities, size for squadrons |
-| `+0x64` | `uint` | shield_weapon_packed | FUN_00501510, FUN_005015a0 | bits 0-3: shield_recharge_alloc; bits 4-7: weapon_recharge_alloc |
+| `+0x64` | `uint` | shield_weapon_packed | FUN_00501510, FUN_005015a0 | bits 0-3: shield damage counter; bits 4-7: weapon damage counter; bits 8-23: four more (`ship-damage-repair.md`) |
 
 ### The `+0x58` Flag Word
 

@@ -8,6 +8,7 @@
 //!   cargo run -p rebellion-playtest -- data/base --seed 42 --ticks 5000 --output playtest.jsonl
 
 mod logger;
+mod staging;
 
 use std::path::PathBuf;
 use std::time::Instant;
@@ -83,6 +84,77 @@ struct Args {
     /// If omitted, uses built-in defaults.
     #[arg(long)]
     config: Option<PathBuf>,
+
+    /// Record decision traces for these subsystems (comma-separated:
+    /// missions, ai, research, blockade, combat, control, or all). Traces
+    /// join the event stream as `trace` records.
+    #[arg(long)]
+    trace: Option<String>,
+
+    /// Start from a save in the game's own format instead of a new
+    /// campaign. The save's RNG, AI sides and config continue, so --seed,
+    /// --ai-faction and --config (unless given) do not apply.
+    #[arg(long)]
+    load: Option<PathBuf>,
+
+    /// Write a save in the game's own format when the run ends.
+    #[arg(long)]
+    save_out: Option<PathBuf>,
+
+    /// Game speed: very-slow, slow, medium or fast. It sets the rounds the
+    /// AI runs a day (the per-day count, FUN_0051dea0). A new campaign
+    /// starts at fast; --load keeps the save's speed unless given.
+    #[arg(long, value_enum)]
+    speed: Option<Speed>,
+}
+
+/// A game speed the `--speed` flag names.
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+enum Speed {
+    VerySlow,
+    Slow,
+    Medium,
+    Fast,
+}
+
+impl From<Speed> for GameSpeed {
+    fn from(speed: Speed) -> Self {
+        match speed {
+            Speed::VerySlow => Self::VerySlow,
+            Speed::Slow => Self::Slow,
+            Speed::Medium => Self::Medium,
+            Speed::Fast => Self::Fast,
+        }
+    }
+}
+
+/// Advance the clock one day and return the day's tick event.
+fn next_day(states: &mut SimulationStates) -> Vec<rebellion_core::tick::TickEvent> {
+    states.clock.tick += 1;
+    vec![rebellion_core::tick::TickEvent {
+        tick: states.clock.tick,
+    }]
+}
+
+/// Write the `--save-out` save, if one was asked for.
+fn write_save_out(
+    args: &Args,
+    world: &rebellion_core::world::GameWorld,
+    states: &SimulationStates,
+    rng: &Xoshiro256PlusPlus,
+    game_config: &rebellion_core::tuning::GameConfig,
+    player_is_alliance: bool,
+) -> anyhow::Result<()> {
+    if let Some(path) = &args.save_out {
+        let fingerprint =
+            staging::save_out(path, world, states, rng, game_config, player_is_alliance)?;
+        eprintln!(
+            "Saved day {} to {} (fingerprint {fingerprint})",
+            states.clock.tick,
+            path.display()
+        );
+    }
+    Ok(())
 }
 
 /// Dispatch a single command against the current world/simulation state.
@@ -207,8 +279,8 @@ fn dispatch_command(
                 .trim_end_matches('s')
                 .parse()
                 .unwrap_or(1);
-            for t in 1..=n {
-                let tick_events = vec![rebellion_core::tick::TickEvent { tick: t }];
+            for _ in 0..n {
+                let tick_events = next_day(states);
                 let rolls: Vec<f64> = (0..1024).map(|_| rng.gen::<f64>()).collect();
                 let wall_ms = start.elapsed().as_millis() as u64;
                 let evts =
@@ -230,6 +302,48 @@ fn dispatch_command(
         }
         _ => format!("Unknown command: '{cmd}'. Use --exec list for available commands."),
     }
+}
+
+/// The state readouts the native dev channel shares
+/// (`rebellion_data::readouts`): `list characters [side]`, `list missions
+/// [side]`, `show research`, `list production [side]` and `show side <side>`.
+/// They see through fog of war: dev truth, not a player's view. `None` for
+/// any other command.
+fn readout(
+    cmd: &str,
+    world: &rebellion_core::world::GameWorld,
+    states: &SimulationStates,
+    tick: u64,
+) -> Option<String> {
+    use rebellion_data::readouts;
+    let lower = cmd.trim().to_ascii_lowercase();
+    let side = |prefix: &str| readouts::parse_side(&lower[prefix.len()..]);
+    let text = if lower.starts_with("list characters") {
+        side("list characters")
+            .map(|side| readouts::list_characters(world, &states.missions, &states.movement, side))
+    } else if lower.starts_with("list missions") {
+        side("list missions")
+            .map(|side| readouts::list_missions(world, &states.missions, tick, side))
+    } else if lower.starts_with("list production") {
+        side("list production")
+            .map(|side| readouts::list_production(world, &states.manufacturing, tick, side))
+    } else if lower == "show research" {
+        Ok(readouts::show_research(world, &states.research))
+    } else if lower.starts_with("show side") {
+        side("show side").and_then(|side| {
+            let side = side.ok_or_else(|| "show side takes alliance or empire".to_owned())?;
+            Ok(readouts::show_side(
+                world,
+                &states.stockpiles,
+                &states.manufacturing,
+                &states.missions,
+                side,
+            ))
+        })
+    } else {
+        return None;
+    };
+    Some(text.unwrap_or_else(|why| why))
 }
 
 #[expect(
@@ -266,13 +380,26 @@ fn main() -> anyhow::Result<()> {
         }
     }
 
-    // Load game data with deterministic seed options
-    eprintln!("Loading game data from {}...", args.data_dir.display());
-    let seed_options = SeedOptions {
-        rng_seed: Some(args.seed),
-        ..SeedOptions::default()
+    if let Some(spec) = &args.trace {
+        let mask =
+            rebellion_core::trace::TraceMask::parse(spec).map_err(|why| anyhow::anyhow!(why))?;
+        rebellion_core::trace::set_mask(mask);
+    }
+
+    // Load game data with deterministic seed options, or stage from a save
+    let (mut world, mut staged) = if let Some(path) = &args.load {
+        eprintln!("Loading save {}...", path.display());
+        let (world, staged) = staging::load(path)?;
+        (world, Some(staged))
+    } else {
+        eprintln!("Loading game data from {}...", args.data_dir.display());
+        let seed_options = SeedOptions {
+            rng_seed: Some(args.seed),
+            ..SeedOptions::default()
+        };
+        let world = rebellion_data::load_game_data_with_options(&args.data_dir, &seed_options)?;
+        (world, None)
     };
-    let mut world = rebellion_data::load_game_data_with_options(&args.data_dir, &seed_options)?;
     eprintln!(
         "Loaded: {} systems, {} characters, {} fleets",
         world.systems.len(),
@@ -281,7 +408,10 @@ fn main() -> anyhow::Result<()> {
     );
 
     // Initialize RNG
-    let mut rng = Xoshiro256PlusPlus::seed_from_u64(args.seed);
+    let mut rng = staged.as_ref().map_or_else(
+        || Xoshiro256PlusPlus::seed_from_u64(args.seed),
+        |staged| staged.rng.clone(),
+    );
     eprintln!("Seed: {}", args.seed);
 
     // Load game config (tuning parameters for AI, movement, production)
@@ -290,6 +420,8 @@ fn main() -> anyhow::Result<()> {
             .map_err(|e| anyhow::anyhow!("Failed to read config {}: {}", path.display(), e))?;
         serde_json::from_str(&text)
             .map_err(|e| anyhow::anyhow!("Failed to parse config {}: {}", path.display(), e))?
+    } else if let Some(staged) = &staged {
+        staged.game_config.clone()
     } else {
         rebellion_core::tuning::GameConfig::default()
     };
@@ -298,12 +430,18 @@ fn main() -> anyhow::Result<()> {
     }
 
     // Determine AI faction
-    let ai_faction = if args.ai_faction.to_lowercase() == "alliance" {
+    let ai_faction = if let Some(staged) = &staged {
+        staged.ai_faction
+    } else if args.ai_faction.to_lowercase() == "alliance" {
         AiFaction::Alliance
     } else {
         AiFaction::Empire
     };
-    let player_is_alliance = ai_faction != AiFaction::Alliance;
+    let player_is_alliance = staged
+        .as_ref()
+        .map_or(ai_faction != AiFaction::Alliance, |staged| {
+            staged.player_is_alliance
+        });
     let fog_faction = if player_is_alliance {
         Faction::Alliance
     } else {
@@ -366,14 +504,28 @@ fn main() -> anyhow::Result<()> {
         campaign_config: rebellion_core::world::CampaignConfig::default(),
     };
 
-    // Seed fog
-    FogSystem::seed(&mut states.fog, &world);
+    if let Some(staged) = staged.take() {
+        // A save carries its own fog, story events and clock.
+        states = staged.states;
+        if args.dual_ai && states.ai2.is_none() {
+            states.ai2 = Some(AIState::new(match ai_faction {
+                AiFaction::Empire => AiFaction::Alliance,
+                AiFaction::Alliance => AiFaction::Empire,
+            }));
+        }
+    } else {
+        // Seed fog
+        FogSystem::seed(&mut states.fog, &world);
 
-    // Register story events
-    rebellion_core::story_events::define_story_events(&mut states.events, &world);
+        // Register story events
+        rebellion_core::story_events::define_story_events(&mut states.events, &world);
 
-    // Set clock to maximum speed for headless
-    states.clock.set_speed(GameSpeed::Fast);
+        // Set clock to maximum speed for headless
+        states.clock.set_speed(GameSpeed::Fast);
+    }
+    if let Some(speed) = args.speed {
+        states.clock.set_speed(speed.into());
+    }
 
     let mut logger = EventLogger::new();
     let mut victory_reached = false;
@@ -391,6 +543,14 @@ fn main() -> anyhow::Result<()> {
             &game_config,
         );
         println!("{output}");
+        write_save_out(
+            &args,
+            &world,
+            &states,
+            &rng,
+            &game_config,
+            player_is_alliance,
+        )?;
         return Ok(());
     }
 
@@ -398,8 +558,8 @@ fn main() -> anyhow::Result<()> {
     if args.repl {
         eprintln!("REPL mode. Type commands (one per line). 'quit' to exit, 'help' for commands.");
         let stdin = std::io::stdin();
-        let mut tick_counter: u64 = 0;
         loop {
+            let tick_counter = states.clock.tick;
             let mut line = String::new();
             match stdin.read_line(&mut line) {
                 Ok(0) => break, // EOF
@@ -422,6 +582,10 @@ fn main() -> anyhow::Result<()> {
                     println!("  {:30} [{}] {}", c.id, c.category, c.description);
                 }
                 println!("  {:30} Advance simulation and print events", "tick [N]");
+                println!(
+                    "  {:30} State readouts (dev truth, no fog of war)",
+                    "list characters|missions|production [side], show research|side <side>"
+                );
                 println!("  {:30} Exit REPL", "quit");
                 continue;
             }
@@ -430,8 +594,7 @@ fn main() -> anyhow::Result<()> {
                 let n: u64 = cmd.trim_start_matches("tick").trim().parse().unwrap_or(1);
                 let pre_count = logger.len();
                 for _ in 0..n {
-                    tick_counter += 1;
-                    let tick_events = vec![rebellion_core::tick::TickEvent { tick: tick_counter }];
+                    let tick_events = next_day(&mut states);
                     let rolls: Vec<f64> = (0..1024).map(|_| rng.gen::<f64>()).collect();
                     let wall_ms = start.elapsed().as_millis() as u64;
                     let evts = run_simulation_tick(
@@ -446,7 +609,7 @@ fn main() -> anyhow::Result<()> {
                 }
                 let new_events = logger.len() - pre_count;
                 let json = serde_json::json!({
-                    "tick": tick_counter,
+                    "tick": states.clock.tick,
                     "advanced": n,
                     "new_events": new_events,
                     "victory": states.victory.resolved,
@@ -455,6 +618,10 @@ fn main() -> anyhow::Result<()> {
                 continue;
             }
             // REPL-only inspection commands (not in shared command registry)
+            if let Some(text) = readout(cmd, &world, &states, tick_counter) {
+                println!("{text}");
+                continue;
+            }
             if cmd == "systems" {
                 let mut alliance = Vec::new();
                 let mut empire = Vec::new();
@@ -549,13 +716,21 @@ fn main() -> anyhow::Result<()> {
             );
             let json = serde_json::json!({
                 "command": cmd,
-                "tick": tick_counter,
+                "tick": states.clock.tick,
                 "result": output,
                 "victory": states.victory.resolved,
                 "events_total": logger.len(),
             });
             println!("{json}");
         }
+        write_save_out(
+            &args,
+            &world,
+            &states,
+            &rng,
+            &game_config,
+            player_is_alliance,
+        )?;
         return Ok(());
     }
 
@@ -563,7 +738,7 @@ fn main() -> anyhow::Result<()> {
 
     for tick_num in 1..=args.ticks {
         // Generate tick events (force 1 tick per iteration in headless)
-        let tick_events = vec![rebellion_core::tick::TickEvent { tick: tick_num }];
+        let tick_events = next_day(&mut states);
         let wall_ms = start.elapsed().as_millis() as u64;
 
         // Generate rolls for this tick
@@ -587,7 +762,7 @@ fn main() -> anyhow::Result<()> {
 
         // Check victory
         if states.victory.resolved {
-            eprintln!("Victory condition reached at tick {tick_num}!");
+            eprintln!("Victory condition reached at tick {}!", states.clock.tick);
             victory_reached = true;
             break;
         }
@@ -602,6 +777,15 @@ fn main() -> anyhow::Result<()> {
             );
         }
     }
+
+    write_save_out(
+        &args,
+        &world,
+        &states,
+        &rng,
+        &game_config,
+        player_is_alliance,
+    )?;
 
     // Export results
     if let Some(ref output_path) = args.output {

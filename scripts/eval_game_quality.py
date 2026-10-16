@@ -69,10 +69,15 @@ def evaluate(events: list[dict]) -> dict:
             system = e.get("details", {}).get("system", "unknown")
             combat_locations[system] += 1
 
+    # An AI order counts when it applied; a record without an outcome is an
+    # applied one.
+    def applied(e: dict) -> bool:
+        return e.get("details", {}).get("outcome", "applied") == "applied"
+
     # Faction activity (use explicit faction field, not dual_ai flag)
     faction_actions = Counter()
     for e in events:
-        if e["event_type"] == "ai_action":
+        if e["event_type"] == "ai_action" and applied(e):
             d = e.get("details", {})
             faction = d.get("faction", "Empire" if not d.get("dual_ai") else "Alliance")
             faction_actions[faction] += 1
@@ -82,7 +87,7 @@ def evaluate(events: list[dict]) -> dict:
     reinforce_orders = 0
     attack_targets = Counter()
     for e in events:
-        if e["event_type"] == "ai_action":
+        if e["event_type"] == "ai_action" and applied(e):
             d = e.get("details", {})
             if d.get("type") == "MoveFleet":
                 if d.get("reason") == "Attack":

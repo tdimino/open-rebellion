@@ -1,54 +1,28 @@
-//! Research system: tech tree progression driven by character skill assignments.
+//! Research: each side's points pools and levels for the three trees
+//! (`ghidra/notes/research.md`).
 //!
-//! # Design
-//!
-//! Follows the same stateless `advance()` pattern as manufacturing and missions:
-//! - `ResearchState` holds all active research projects and per-faction tech levels.
-//! - `ResearchSystem::advance(state, world, tick_events) -> Vec<ResearchResult>`
-//! - Results are pure data; the caller applies them to `ResearchState` and logs messages.
-//!
-//! # Research Trees
-//!
-//! Three independent tech trees per faction (from `rebellion2/Faction.cs`):
-//! - **Ship** (`TechType::Ship`) — driven by `ship_design` skill
-//! - **Troop** (`TechType::Troop`) — driven by `troop_training` skill
-//! - **Facility** (`TechType::Facility`) — driven by `facility_design` skill
-//!
-//! Each tree has an integer level. When a character completes a research project,
-//! the corresponding tree level advances by 1. Classes with `research_order <= level`
-//! become buildable by the manufacturing system.
-//!
-//! # Tick Cost
-//!
-//! The base cost in ticks for advancing from level N to N+1 is the maximum
-//! `research_difficulty` among all classes at `research_order == N + 1`.
-//! Minimum cost is `RESEARCH_MIN_TICKS`. If no classes are at that order, cost
-//! falls back to `RESEARCH_DEFAULT_TICKS`.
-//!
-//! # Dispatch
-//!
-//! The caller creates a `ResearchProject` and inserts it via `ResearchState::dispatch`.
-//! Only one project per (faction × `TechType`) is active at a time — a new dispatch
-//! replaces the previous one.
+//! Points come from the Research missions (`missions.rs`: 1-7 for each
+//! member whose roll succeeds) and from timer `0x381`, which adds one point
+//! for each working yard. Every write spends the pool on the next research
+//! order that has a class (`FUN_00567ba0`), so one large pool can buy several
+//! levels. Classes with `research_order <= level` are unlocked.
 
 use serde::{Deserialize, Serialize};
 
-use crate::ids::{CharacterKey, FighterKey};
+use crate::dat::Faction;
+use crate::ids::{FighterKey, SystemKey};
+use crate::mission_detection::MissionRng;
 use crate::tick::TickEvent;
+use crate::uprising::{Draws, UprisingState};
 use crate::world::GameWorld;
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-/// Minimum ticks for any research project (prevents instantaneous unlocks).
-pub const RESEARCH_MIN_TICKS: u32 = 10;
-
-/// Fallback ticks when no classes exist at the next research order.
-pub const RESEARCH_DEFAULT_TICKS: u32 = 30;
-
-/// Maximum research level per tree (matches REBEXE.EXE's tech tier range).
-pub const RESEARCH_MAX_LEVEL: u32 = 15;
+/// GNPRTB 7169 and 7170: timer `0x381`'s minimum delay and spread in days
+/// (side record `+0xd4`, armed by `FUN_00532350`; shipped 30 and 30).
+const GNPRTB_PASSIVE_MIN: u16 = 7169;
+/// GNPRTB 7170, the spread (`FUN_00532350`).
+const GNPRTB_PASSIVE_SPREAD: u16 = 7170;
+/// `DAT_00661a88`: the divisor of the cost scale (`FUN_0053e150`).
+const COST_DIVISOR: u64 = 100;
 
 // ---------------------------------------------------------------------------
 // TechType
@@ -57,45 +31,51 @@ pub const RESEARCH_MAX_LEVEL: u32 = 15;
 /// The three independently-progressing tech trees.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum TechType {
-    /// Capital ship research — driven by `ship_design` skill.
+    /// Ship Design Research, `0x53000020`: ship design skill.
     Ship,
-    /// Troop regiment research — driven by `troop_training` skill.
+    /// Troop Training Research, `0x53000022`: troop training skill.
     Troop,
-    /// Facility / construction research — driven by `facility_design` skill.
+    /// Facility Design Research, `0x53000021`: facility design skill.
     Facility,
 }
 
-// ---------------------------------------------------------------------------
-// ResearchProject
-// ---------------------------------------------------------------------------
+impl TechType {
+    /// The trees in the order timer `0x381` credits them (`FUN_00530460`:
+    /// side `+0x90`, `+0x94`, `+0x98`).
+    pub const ALL: [TechType; 3] = [TechType::Ship, TechType::Troop, TechType::Facility];
 
-/// An active research project assigned to a character.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ResearchProject {
-    /// Which tech tree is being advanced.
-    pub tech_type: TechType,
-    /// The character doing the research.
-    pub character: CharacterKey,
-    /// True = Rebel Alliance project; false = Empire.
-    pub faction_is_alliance: bool,
-    /// Ticks remaining until this level completes.
-    pub ticks_remaining: u32,
-    /// Original duration (for progress display).
-    pub total_ticks: u32,
-}
-
-impl ResearchProject {
-    /// Progress fraction [0.0, 1.0].
-    #[must_use]
-    #[expect(
-        clippy::cast_precision_loss,
-        reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
-    )]
-    pub fn progress(&self) -> f32 {
-        if self.total_ticks == 0 {
-            return 1.0;
+    /// The tree's slot in the side's pools, side `+0x90`, `+0x94`, `+0x98`
+    /// (`FUN_00530460`).
+    pub(crate) const fn index(self) -> usize {
+        match self {
+            TechType::Ship => 0,
+            TechType::Troop => 1,
+            TechType::Facility => 2,
         }
-        1.0 - (self.ticks_remaining as f32 / self.total_ticks as f32)
+    }
+
+    /// The skill a Research member rolls against (`FUN_005337f0`: slot
+    /// `+0x1e4` ships, `+0x1e8` troops, `+0x1ec` facilities).
+    #[must_use]
+    pub const fn skill(self) -> crate::world::Skill {
+        match self {
+            TechType::Ship => crate::world::Skill::ShipDesign,
+            TechType::Troop => crate::world::Skill::TroopTraining,
+            TechType::Facility => crate::world::Skill::FacilityDesign,
+        }
+    }
+
+    /// The producer family whose classes make up the tree and whose yards
+    /// feed it: shipyards `0x28`, training facilities `0x29`, construction
+    /// yards `0x2a` (`FUN_005326f0`, `FUN_005327f0`, `FUN_005328f0`; a class
+    /// belongs when its producer range `+0x24` holds the family).
+    #[must_use]
+    pub const fn producer_family(self) -> u8 {
+        match self {
+            TechType::Ship => 0x28,
+            TechType::Troop => 0x29,
+            TechType::Facility => 0x2a,
+        }
     }
 }
 
@@ -103,12 +83,21 @@ impl ResearchProject {
 // ResearchLevels
 // ---------------------------------------------------------------------------
 
-/// Per-faction research levels across all three trees.
+/// One side's research: levels (side `+0x9c`, `+0xa0`, `+0xa4`), points by
+/// tree, and timer `0x381`. The exhausted flags are the world's
+/// ([`GameWorld::research_exhausted`]), beside the side's other flags the
+/// mission validators read.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ResearchLevels {
     pub ship: u32,
     pub troop: u32,
     pub facility: u32,
+    /// Side `+0x90`, `+0x94`, `+0x98`: points not yet spent, by tree in
+    /// [`TechType::ALL`] order.
+    pub points: [u32; 3],
+    /// The tick timer `0x381` next fires. hyp: the timer is armed on the
+    /// first day and first fires one delay later.
+    pub passive_due: Option<u64>,
 }
 
 impl ResearchLevels {
@@ -122,14 +111,18 @@ impl ResearchLevels {
         }
     }
 
-    /// Increment the level for a specific tech tree (capped at `RESEARCH_MAX_LEVEL`).
-    pub fn advance(&mut self, tech: TechType) {
-        let v = match tech {
+    fn level_mut(&mut self, tech: TechType) -> &mut u32 {
+        match tech {
             TechType::Ship => &mut self.ship,
             TechType::Troop => &mut self.troop,
             TechType::Facility => &mut self.facility,
-        };
-        *v = (*v + 1).min(RESEARCH_MAX_LEVEL);
+        }
+    }
+
+    /// The points the side holds for `tech`.
+    #[must_use]
+    pub fn points(&self, tech: TechType) -> u32 {
+        self.points[tech.index()]
     }
 }
 
@@ -140,12 +133,10 @@ impl ResearchLevels {
 /// Persistent research state for both factions.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ResearchState {
-    /// Tech levels for the Alliance.
+    /// The Alliance's research.
     pub alliance: ResearchLevels,
-    /// Tech levels for the Empire.
+    /// The Empire's research.
     pub empire: ResearchLevels,
-    /// Active research projects (at most 6: 2 factions × 3 trees).
-    pub projects: Vec<ResearchProject>,
 }
 
 impl ResearchState {
@@ -154,31 +145,28 @@ impl ResearchState {
         Self::default()
     }
 
-    /// Dispatch a research project. Replaces any existing project for the same
-    /// (faction × `tech_type`) combination.
-    pub fn dispatch(&mut self, project: ResearchProject) {
-        self.projects.retain(|p| {
-            !(p.faction_is_alliance == project.faction_is_alliance
-                && p.tech_type == project.tech_type)
-        });
-        self.projects.push(project);
+    /// One side's research.
+    #[must_use]
+    pub fn side(&self, faction_is_alliance: bool) -> &ResearchLevels {
+        if faction_is_alliance {
+            &self.alliance
+        } else {
+            &self.empire
+        }
     }
 
-    /// Cancel a project for a given faction + tech type.
-    pub fn cancel(&mut self, faction_is_alliance: bool, tech_type: TechType) {
-        self.projects.retain(|p| {
-            !(p.faction_is_alliance == faction_is_alliance && p.tech_type == tech_type)
-        });
+    fn side_mut(&mut self, faction_is_alliance: bool) -> &mut ResearchLevels {
+        if faction_is_alliance {
+            &mut self.alliance
+        } else {
+            &mut self.empire
+        }
     }
 
     /// Return the current research level for a faction + tech tree.
     #[must_use]
     pub fn level(&self, faction_is_alliance: bool, tech: TechType) -> u32 {
-        if faction_is_alliance {
-            self.alliance.level(tech)
-        } else {
-            self.empire.level(tech)
-        }
+        self.side(faction_is_alliance).level(tech)
     }
 
     /// True if `class_research_order <= current level` — i.e. the class is
@@ -198,14 +186,14 @@ impl ResearchState {
 // ResearchResult
 // ---------------------------------------------------------------------------
 
-/// A completed research project — emitted by `ResearchSystem::advance`.
+/// A level bought from a side's points.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ResearchResult {
-    /// A tech tree advanced one level.
+    /// A tech tree reached a new level.
     TechUnlocked {
         faction_is_alliance: bool,
         tech_type: TechType,
-        /// The new level (old level + 1).
+        /// The new level: the order of the class it bought.
         new_level: u32,
     },
 }
@@ -218,105 +206,355 @@ pub enum ResearchResult {
 pub struct ResearchSystem;
 
 impl ResearchSystem {
-    /// Advance all active research projects by one tick per `TickEvent`.
-    ///
-    /// Returns a `ResearchResult::TechUnlocked` for each project that completes.
-    ///
-    /// **IMPORTANT**: As of v0.6.0, this function no longer applies level-ups internally.
-    /// The caller must apply each `TechUnlocked` result:
-    /// ```ignore
-    /// for result in &results {
-    ///     let ResearchResult::TechUnlocked { faction_is_alliance, tech_type, .. } = result;
-    ///     if *faction_is_alliance { state.alliance.advance(*tech_type); }
-    ///     else { state.empire.advance(*tech_type); }
-    /// }
-    /// ```
-    #[expect(
-        clippy::cast_possible_truncation,
-        reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
-    )]
+    /// Run timer `0x381` for each tick in `tick_events`. `rolls` holds one
+    /// roll per tick (padded with 1.0 by the caller), which seeds that tick's
+    /// draws.
     pub fn advance(
         state: &mut ResearchState,
-        _world: &GameWorld,
+        world: &mut GameWorld,
+        uprisings: &UprisingState,
         tick_events: &[TickEvent],
+        rolls: &[f64],
     ) -> Vec<ResearchResult> {
-        if tick_events.is_empty() {
-            return Vec::new();
-        }
-
-        let ticks_elapsed = tick_events.len() as u32;
         let mut results = Vec::new();
-
-        for project in &mut state.projects {
-            if project.ticks_remaining == 0 {
-                continue;
-            }
-            project.ticks_remaining = project.ticks_remaining.saturating_sub(ticks_elapsed);
-
-            if project.ticks_remaining == 0 {
-                // Determine new level and emit result.
-                let current_level = if project.faction_is_alliance {
-                    state.alliance.level(project.tech_type)
-                } else {
-                    state.empire.level(project.tech_type)
-                };
-
-                let new_level = (current_level + 1).min(RESEARCH_MAX_LEVEL);
-
-                results.push(ResearchResult::TechUnlocked {
-                    faction_is_alliance: project.faction_is_alliance,
-                    tech_type: project.tech_type,
-                    new_level,
-                });
+        for (index, tick) in tick_events.iter().enumerate() {
+            let roll = rolls.get(index).copied().unwrap_or(1.0);
+            let mut draws = MissionRng::seeded(roll, tick.tick);
+            let min = world
+                .gnprtb
+                .value(GNPRTB_PASSIVE_MIN, world.difficulty_index);
+            let spread = world
+                .gnprtb
+                .value(GNPRTB_PASSIVE_SPREAD, world.difficulty_index);
+            for faction_is_alliance in [true, false] {
+                let mut delay = || u64::try_from(min + draws.draw(spread)).unwrap_or(0);
+                let side = state.side_mut(faction_is_alliance);
+                let due = *side.passive_due.get_or_insert_with(|| tick.tick + delay());
+                if due > tick.tick {
+                    continue;
+                }
+                side.passive_due = Some(tick.tick + delay());
+                for tech in TechType::ALL {
+                    let points = Self::working_yards(world, uprisings, faction_is_alliance, tech);
+                    results.extend(Self::add_points(
+                        world,
+                        state,
+                        faction_is_alliance,
+                        tech,
+                        points,
+                    ));
+                }
             }
         }
-
-        // Remove completed projects.
-        state.projects.retain(|p| p.ticks_remaining > 0);
-
         results
     }
 
-    /// Compute the tick cost to advance a tech tree from its current level to
-    /// the next level.
-    ///
-    /// Uses the maximum `research_difficulty` among all classes at
-    /// `research_order == current_level + 1`. Falls back to `RESEARCH_DEFAULT_TICKS`
-    /// if no classes exist at that order.
-    ///
-    /// Currently only `TechType::Ship` has DAT-backed difficulty values
-    /// (from `CapitalShipClass::research_difficulty`). Troop and Facility trees
-    /// fall back to `RESEARCH_DEFAULT_TICKS` until those class types expose
-    /// `research_difficulty` in the world model.
+    /// Whether yards at `system` work: the system is neither in uprising
+    /// nor blockaded (yard `+0x60` bit 0, which `FUN_0050bbb0` sets from
+    /// system `+0x88 & 0x24`). Timer `0x381` counts only working yards, and
+    /// the Research validator needs one (`FUN_00528100`).
     #[must_use]
-    pub fn ticks_for_next_level(
+    pub fn yards_work(world: &GameWorld, uprisings: &UprisingState, system: SystemKey) -> bool {
+        world.systems.get(system).is_some_and(|sys| {
+            !uprisings.is_uprising(system)
+                && !crate::blockade::BlockadeSystem::system_is_blockaded(world, sys)
+        })
+    }
+
+    /// The side's yards of `tech`'s producer family at `system` (the yards
+    /// `FUN_0052bde0` accepts: the manager's kind, the side's).
+    fn yards_at(
+        world: &GameWorld,
+        system: &crate::world::System,
+        side: Faction,
+        tech: TechType,
+    ) -> usize {
+        system
+            .manufacturing_facilities
+            .iter()
+            .filter_map(|key| world.manufacturing_facilities.get(*key))
+            .filter(|yard| {
+                yard.side == side && yard.class_dat_id.family() == tech.producer_family()
+            })
+            .count()
+    }
+
+    /// Whether `system` holds a working yard of `side` for `tech`
+    /// (`FUN_00509670(target, kind)`, `FUN_00528100`), the Research
+    /// validator's yard test.
+    #[must_use]
+    pub fn has_working_yard(
+        world: &GameWorld,
+        uprisings: &UprisingState,
+        system: SystemKey,
+        side: Faction,
+        tech: TechType,
+    ) -> bool {
+        Self::yards_work(world, uprisings, system)
+            && world
+                .systems
+                .get(system)
+                .is_some_and(|sys| Self::yards_at(world, sys, side, tech) > 0)
+    }
+
+    /// Timer `0x381`'s count for one tree (`FUN_00530460`, `FUN_00528040`):
+    /// the side's working yards of the tree's producer family in the systems
+    /// it holds. hyp: every system has all three production managers; every
+    /// yard instance is active (yard `+0x50` bit 0).
+    #[must_use]
+    pub fn working_yards(
+        world: &GameWorld,
+        uprisings: &UprisingState,
+        faction_is_alliance: bool,
+        tech: TechType,
+    ) -> u32 {
+        let side = Faction::of_alliance(faction_is_alliance);
+        let count: usize = world
+            .systems
+            .iter()
+            .filter(|(key, system)| {
+                system.control.is_controlled_by(side) && Self::yards_work(world, uprisings, *key)
+            })
+            .map(|(_, system)| Self::yards_at(world, system, side, tech))
+            .sum();
+        u32::try_from(count).unwrap_or(u32::MAX)
+    }
+
+    /// Add `points` to the side's pool for `tech` and spend it
+    /// (`FUN_00530600`, then the side's slot `+0x1e0`-`+0x1e8` and
+    /// `FUN_00567ba0`): while a higher order has a class and the points cover
+    /// that class's scaled cost, the level becomes the order and the cost is
+    /// deducted (`FUN_0052f280`, `FUN_0052f130`). With no higher class the
+    /// tree is exhausted (`FUN_0052f440`).
+    pub fn add_points(
+        world: &mut GameWorld,
+        state: &mut ResearchState,
+        faction_is_alliance: bool,
+        tech: TechType,
+        points: u32,
+    ) -> Vec<ResearchResult> {
+        let mut results = Vec::new();
+        let side = state.side_mut(faction_is_alliance);
+        let index = tech.index();
+        let level_before = side.level(tech);
+        side.points[index] = side.points[index].saturating_add(points);
+        crate::trace::record(crate::trace::TraceMask::RESEARCH, "points_added", || {
+            serde_json::json!({
+                "faction": if faction_is_alliance { "alliance" } else { "empire" },
+                "tech": format!("{tech:?}"),
+                "added": points,
+                "pool": side.points[index],
+                "level": level_before,
+            })
+        });
+        loop {
+            let Some((order, difficulty)) =
+                Self::next_order(world, faction_is_alliance, tech, side.level(tech))
+            else {
+                crate::trace::record(crate::trace::TraceMask::RESEARCH, "tree_exhausted", || {
+                    serde_json::json!({
+                        "faction": if faction_is_alliance { "alliance" } else { "empire" },
+                        "tech": format!("{tech:?}"),
+                        "level": side.level(tech),
+                    })
+                });
+                world.set_research_exhausted(Faction::of_alliance(faction_is_alliance), tech);
+                break;
+            };
+            let cost = Self::scaled_cost(world, difficulty);
+            crate::trace::record(crate::trace::TraceMask::RESEARCH, "level_threshold", || {
+                serde_json::json!({
+                    "faction": if faction_is_alliance { "alliance" } else { "empire" },
+                    "tech": format!("{tech:?}"),
+                    "next_order": order,
+                    "difficulty": difficulty,
+                    "cost": cost,
+                    "pool": side.points[index],
+                    "unlocks": side.points[index] >= cost,
+                })
+            });
+            if side.points[index] < cost {
+                break;
+            }
+            side.points[index] -= cost;
+            *side.level_mut(tech) = order;
+            results.push(ResearchResult::TechUnlocked {
+                faction_is_alliance,
+                tech_type: tech,
+                new_level: order,
+            });
+        }
+        results
+    }
+
+    /// Credit the Research missions' points among `effects`
+    /// ([`crate::missions::MissionEffect::ResearchPoints`]) to their sides'
+    /// pools and spend them.
+    pub fn apply_mission_points(
+        world: &mut GameWorld,
+        state: &mut ResearchState,
+        effects: &[crate::missions::MissionEffect],
+    ) -> Vec<ResearchResult> {
+        let mut results = Vec::new();
+        for effect in effects {
+            if let crate::missions::MissionEffect::ResearchPoints {
+                faction,
+                tech,
+                points,
+            } = effect
+            {
+                let faction_is_alliance = *faction == crate::missions::MissionFaction::Alliance;
+                results.extend(Self::add_points(
+                    world,
+                    state,
+                    faction_is_alliance,
+                    *tech,
+                    *points,
+                ));
+            }
+        }
+        results
+    }
+
+    /// A class's research cost in points (`FUN_0055bf80` → `FUN_0053e190`):
+    /// its `research_difficulty` (class `+0x54`) times side `+0xc0` / 100,
+    /// truncated. `+0xc0` is the number of systems the galaxy was created
+    /// with (`FUN_005305c0` from `FUN_00519d00`): 100, 150 or 200.
+    #[must_use]
+    pub fn scaled_cost(world: &GameWorld, difficulty: u32) -> u32 {
+        let systems = u64::try_from(world.systems.len()).unwrap_or(u64::MAX);
+        u32::try_from(u64::from(difficulty) * systems / COST_DIVISOR).unwrap_or(u32::MAX)
+    }
+
+    /// The next order above `level` that has a class in the side's tree, and
+    /// that class's `research_difficulty` (`FUN_00567ba0`, `FUN_00567a90`).
+    /// The tree's classes are those of the producer family that serve the
+    /// side and cost refined material (`FUN_00567880`, `FUN_0053b860`).
+    /// hyp: among several classes at one order the first, by class id, is
+    /// the one priced.
+    #[must_use]
+    pub fn next_order(
         world: &GameWorld,
         faction_is_alliance: bool,
-        tech_type: TechType,
-        current_level: u32,
-    ) -> u32 {
-        let target_order = current_level + 1;
-
-        let max_difficulty = match tech_type {
+        tech: TechType,
+        level: u32,
+    ) -> Option<(u32, u32)> {
+        let serves = |alliance: bool, empire: bool| {
+            if faction_is_alliance {
+                alliance
+            } else {
+                empire
+            }
+        };
+        // (order, class id, difficulty) of each class in the tree.
+        let classes: Vec<(u32, u32, u32)> = match tech {
             TechType::Ship => world
                 .capital_ship_classes
                 .values()
-                .filter(|c| {
-                    c.research_order == target_order
-                        && if faction_is_alliance {
-                            c.is_alliance
-                        } else {
-                            c.is_empire
-                        }
+                .filter(|c| serves(c.is_alliance, c.is_empire) && c.refined_material_cost != 0)
+                .map(|c| {
+                    (
+                        c.research_order,
+                        0x1400_0000 | c.dat_id.index(),
+                        c.research_difficulty,
+                    )
                 })
-                .map(|c| c.research_difficulty)
-                .max(),
-            TechType::Troop | TechType::Facility => None,
+                .chain(
+                    world
+                        .fighter_classes
+                        .values()
+                        .filter(|c| {
+                            serves(c.is_alliance, c.is_empire) && c.refined_material_cost != 0
+                        })
+                        .map(|c| {
+                            (
+                                c.research_order,
+                                0x1c00_0000 | c.dat_id.index(),
+                                c.research_difficulty,
+                            )
+                        }),
+                )
+                .collect(),
+            TechType::Troop | TechType::Facility => {
+                let families: &[std::ops::RangeInclusive<u8>] = if tech == TechType::Troop {
+                    &[0x10..=0x13, 0x30..=0x3f]
+                } else {
+                    &[0x22..=0x2d]
+                };
+                world
+                    .buildable_classes
+                    .iter()
+                    .filter(|(id, c)| {
+                        families.iter().any(|range| range.contains(&id.family()))
+                            && serves(c.is_alliance, c.is_empire)
+                            && c.refined_material_cost != 0
+                    })
+                    .map(|(id, c)| (c.research_order, id.raw(), c.research_difficulty))
+                    .collect()
+            }
         };
+        classes
+            .into_iter()
+            .filter(|(order, _, _)| *order > level)
+            .min_by_key(|(order, id, _)| (*order, *id))
+            .map(|(order, _, difficulty)| (order, difficulty))
+    }
 
-        max_difficulty
-            .unwrap_or(RESEARCH_DEFAULT_TICKS)
-            .max(RESEARCH_MIN_TICKS)
+    /// Whether the side has finished `tech`'s tree: its level has reached
+    /// the highest research order (class `+0x24`) among the tree's classes,
+    /// as `FUN_0042dd00` takes it: the side's capital ship and fighter
+    /// classes for ships, its regiment classes (families `0x10`-`0x13`) for
+    /// troops, and every facility class (families `0x22`-`0x2b`) for
+    /// facilities.
+    ///
+    /// port: the original latches a bit when a level-change event
+    /// (`FUN_004198a0`, `FUN_00419870`, `FUN_004197b0`) brings the level to
+    /// that order; the port reads the level each time. Levels start at 0
+    /// and only rise (`add_points` sets the next order's level), so a tree
+    /// whose highest order is 0 is never reached by an event and stays
+    /// unfinished.
+    #[must_use]
+    pub fn tree_exhausted(
+        world: &GameWorld,
+        state: &ResearchState,
+        faction_is_alliance: bool,
+        tech: TechType,
+    ) -> bool {
+        let side = |alliance: bool, empire: bool| {
+            if faction_is_alliance {
+                alliance
+            } else {
+                empire
+            }
+        };
+        let buildable = |families: std::ops::RangeInclusive<u8>, sided: bool| {
+            world
+                .buildable_classes
+                .iter()
+                .filter(move |(id, c)| {
+                    families.contains(&id.family()) && (!sided || side(c.is_alliance, c.is_empire))
+                })
+                .map(|(_, c)| c.research_order)
+                .max()
+        };
+        let highest = match tech {
+            TechType::Ship => world
+                .capital_ship_classes
+                .values()
+                .filter(|c| side(c.is_alliance, c.is_empire))
+                .map(|c| c.research_order)
+                .chain(
+                    world
+                        .fighter_classes
+                        .values()
+                        .filter(|c| side(c.is_alliance, c.is_empire))
+                        .map(|c| c.research_order),
+                )
+                .max(),
+            TechType::Troop => buildable(0x10..=0x13, true),
+            TechType::Facility => buildable(0x22..=0x2b, false),
+        };
+        highest.is_some_and(|order| order > 0 && state.level(faction_is_alliance, tech) >= order)
     }
 
     /// True if a capital ship class is available for this faction at the given
@@ -374,42 +612,7 @@ impl ResearchSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ids::CharacterKey;
-    use crate::tick::TickEvent;
-    use crate::world::{CapitalShipClass, Character, GameWorld, SkillPair};
-
-    fn ticks(n: u32) -> Vec<TickEvent> {
-        (1..=u64::from(n)).map(|t| TickEvent { tick: t }).collect()
-    }
-
-    fn make_char_key(world: &mut GameWorld) -> CharacterKey {
-        world.characters.insert(Character {
-            name: "Researcher".into(),
-            is_alliance: true,
-            ship_design: SkillPair {
-                base: 60,
-                variance: 0,
-            },
-            troop_training: SkillPair {
-                base: 50,
-                variance: 0,
-            },
-            facility_design: SkillPair {
-                base: 50,
-                variance: 0,
-            },
-            leadership: SkillPair {
-                base: 30,
-                variance: 0,
-            },
-            loyalty: SkillPair {
-                base: 70,
-                variance: 0,
-            },
-            can_be_commander: true,
-            ..Default::default()
-        })
-    }
+    use crate::world::{CapitalShipClass, GameWorld};
 
     fn add_ship_class(
         world: &mut GameWorld,
@@ -443,122 +646,6 @@ mod tests {
     }
 
     #[test]
-    fn project_completes_after_ticks() {
-        let mut world = GameWorld::default();
-        let mut state = ResearchState::new();
-        let char_key = make_char_key(&mut world);
-
-        state.dispatch(ResearchProject {
-            tech_type: TechType::Ship,
-            character: char_key,
-            faction_is_alliance: true,
-            ticks_remaining: 20,
-            total_ticks: 20,
-        });
-
-        // 10 ticks — not done yet.
-        let r = ResearchSystem::advance(&mut state, &world, &ticks(10));
-        assert!(r.is_empty(), "should not complete after 10 of 20 ticks");
-        assert_eq!(state.projects[0].ticks_remaining, 10);
-
-        // 10 more — completes.
-        let r = ResearchSystem::advance(&mut state, &world, &ticks(10));
-        assert_eq!(r.len(), 1);
-        assert_eq!(
-            r[0],
-            ResearchResult::TechUnlocked {
-                faction_is_alliance: true,
-                tech_type: TechType::Ship,
-                new_level: 1,
-            }
-        );
-
-        // advance() no longer auto-applies level-ups — caller must apply.
-        assert_eq!(state.alliance.ship, 0, "advance() should NOT mutate state");
-        // Caller applies:
-        for result in &r {
-            let ResearchResult::TechUnlocked {
-                faction_is_alliance,
-                tech_type,
-                ..
-            } = result;
-            if *faction_is_alliance {
-                state.alliance.advance(*tech_type);
-            } else {
-                state.empire.advance(*tech_type);
-            }
-        }
-        assert_eq!(state.alliance.ship, 1);
-        // Project removed.
-        assert!(state.projects.is_empty());
-    }
-
-    #[test]
-    fn dispatch_replaces_existing_project() {
-        let mut world = GameWorld::default();
-        let mut state = ResearchState::new();
-        let char_key = make_char_key(&mut world);
-
-        state.dispatch(ResearchProject {
-            tech_type: TechType::Ship,
-            character: char_key,
-            faction_is_alliance: false,
-            ticks_remaining: 50,
-            total_ticks: 50,
-        });
-        assert_eq!(state.projects.len(), 1);
-
-        // Replace with a faster project.
-        state.dispatch(ResearchProject {
-            tech_type: TechType::Ship,
-            character: char_key,
-            faction_is_alliance: false,
-            ticks_remaining: 5,
-            total_ticks: 5,
-        });
-        assert_eq!(state.projects.len(), 1, "should replace, not append");
-        assert_eq!(state.projects[0].ticks_remaining, 5);
-    }
-
-    #[test]
-    fn cancel_removes_project() {
-        let mut world = GameWorld::default();
-        let mut state = ResearchState::new();
-        let char_key = make_char_key(&mut world);
-
-        state.dispatch(ResearchProject {
-            tech_type: TechType::Troop,
-            character: char_key,
-            faction_is_alliance: true,
-            ticks_remaining: 30,
-            total_ticks: 30,
-        });
-        assert_eq!(state.projects.len(), 1);
-
-        state.cancel(true, TechType::Troop);
-        assert!(state.projects.is_empty());
-    }
-
-    #[test]
-    fn ticks_for_next_level_uses_max_difficulty() {
-        let mut world = GameWorld::default();
-
-        // Two alliance ships at research_order = 1 with different difficulties.
-        add_ship_class(&mut world, 1, 20, true);
-        add_ship_class(&mut world, 1, 40, true);
-
-        let cost = ResearchSystem::ticks_for_next_level(&world, true, TechType::Ship, 0);
-        assert_eq!(cost, 40, "should use the highest research_difficulty");
-    }
-
-    #[test]
-    fn ticks_for_next_level_fallback_when_no_classes() {
-        let world = GameWorld::default();
-        let cost = ResearchSystem::ticks_for_next_level(&world, true, TechType::Ship, 5);
-        assert_eq!(cost, RESEARCH_DEFAULT_TICKS);
-    }
-
-    #[test]
     fn is_unlocked_respects_current_level() {
         let mut state = ResearchState::new();
 
@@ -572,90 +659,15 @@ mod tests {
             "order 1 needs level ≥ 1"
         );
 
-        state.alliance.advance(TechType::Ship);
+        state.alliance.ship = 1;
         assert!(
             state.is_unlocked(true, 1, TechType::Ship),
-            "order 1 unlocked after advance"
+            "order 1 unlocked at level 1"
         );
         assert!(
             !state.is_unlocked(true, 2, TechType::Ship),
             "order 2 still locked"
         );
-    }
-
-    #[test]
-    fn two_factions_advance_independently() {
-        let mut world = GameWorld::default();
-        let mut state = ResearchState::new();
-        let char_key = make_char_key(&mut world);
-
-        state.dispatch(ResearchProject {
-            tech_type: TechType::Facility,
-            character: char_key,
-            faction_is_alliance: true,
-            ticks_remaining: 5,
-            total_ticks: 5,
-        });
-        state.dispatch(ResearchProject {
-            tech_type: TechType::Facility,
-            character: char_key,
-            faction_is_alliance: false,
-            ticks_remaining: 10,
-            total_ticks: 10,
-        });
-
-        let r = ResearchSystem::advance(&mut state, &world, &ticks(5));
-        // Only alliance completes.
-        assert_eq!(r.len(), 1);
-        assert_eq!(
-            r[0],
-            ResearchResult::TechUnlocked {
-                faction_is_alliance: true,
-                tech_type: TechType::Facility,
-                new_level: 1,
-            }
-        );
-        // Caller applies results.
-        for result in &r {
-            let ResearchResult::TechUnlocked {
-                faction_is_alliance,
-                tech_type,
-                ..
-            } = result;
-            if *faction_is_alliance {
-                state.alliance.advance(*tech_type);
-            } else {
-                state.empire.advance(*tech_type);
-            }
-        }
-        assert_eq!(state.alliance.facility, 1);
-        assert_eq!(state.empire.facility, 0);
-
-        // Empire completes after 5 more ticks.
-        let r2 = ResearchSystem::advance(&mut state, &world, &ticks(5));
-        assert_eq!(r2.len(), 1);
-        for result in &r2 {
-            let ResearchResult::TechUnlocked {
-                faction_is_alliance,
-                tech_type,
-                ..
-            } = result;
-            if *faction_is_alliance {
-                state.alliance.advance(*tech_type);
-            } else {
-                state.empire.advance(*tech_type);
-            }
-        }
-        assert_eq!(state.empire.facility, 1);
-    }
-
-    #[test]
-    fn research_level_capped_at_max() {
-        let mut levels = ResearchLevels::default();
-        for _ in 0..=RESEARCH_MAX_LEVEL + 5 {
-            levels.advance(TechType::Ship);
-        }
-        assert_eq!(levels.ship, RESEARCH_MAX_LEVEL);
     }
 
     #[test]
@@ -701,34 +713,5 @@ mod tests {
         assert!(ResearchSystem::fighter_class_is_available(
             &world, &state, true, class_key
         ));
-    }
-
-    #[test]
-    fn advance_returns_correct_new_level() {
-        let mut world = GameWorld::default();
-        let mut state = ResearchState::new();
-        let char_key = make_char_key(&mut world);
-
-        // Pre-advance alliance ship to level 3.
-        state.alliance.ship = 3;
-
-        state.dispatch(ResearchProject {
-            tech_type: TechType::Ship,
-            character: char_key,
-            faction_is_alliance: true,
-            ticks_remaining: 5,
-            total_ticks: 5,
-        });
-
-        let r = ResearchSystem::advance(&mut state, &world, &ticks(5));
-        assert_eq!(r.len(), 1);
-        assert_eq!(
-            r[0],
-            ResearchResult::TechUnlocked {
-                faction_is_alliance: true,
-                tech_type: TechType::Ship,
-                new_level: 4,
-            }
-        );
     }
 }

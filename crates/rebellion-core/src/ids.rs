@@ -7,7 +7,7 @@ use slotmap::new_key_type;
 ///
 /// The family byte identifies the entity class (e.g. 0x90 = system, 0x92 = sector).
 /// The lower 24 bits are the sequential index within that family.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub struct DatId(pub u32);
 
 impl DatId {
@@ -24,12 +24,18 @@ impl DatId {
     }
 
     /// The high byte — identifies the entity class.
+    ///
+    /// src: `id >> 24`, as `FUN_00540500(id >> 24)` looks the family up
+    /// (`character-roster.md`, "Factories"; `annotated-functions.md` line 14).
     #[must_use]
     pub fn family(self) -> u8 {
         (self.0 >> 24) as u8
     }
 
     /// The lower 24 bits — sequential index within the family.
+    ///
+    /// src: `id & 0xffffff`, the index half of a DatId (`ai-production.md`,
+    /// "HQ/Coruscant (`id&0xffffff == 0x109`)").
     #[must_use]
     pub fn index(self) -> u32 {
         self.0 & 0x00FF_FFFF

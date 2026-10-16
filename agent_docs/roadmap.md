@@ -3,7 +3,7 @@ title: "Roadmap"
 description: "Development milestones from Galaxy Viewer through Release packaging"
 category: "agent-docs"
 created: 2026-03-11
-updated: 2026-10-14
+updated: 2026-10-16
 tags: [roadmap, planning, milestones, parity]
 ---
 
@@ -208,7 +208,7 @@ Delivered:
 Campaign results: VICTORY at tick 1188, 211 battles, eval score 0.59
 
 ## UI Rebuild — IN PROGRESS
-*v0.16.0 — Player-facing UI rebuild following `docs/plans/2026-03-22-001-feat-complete-game-ui-rebuild-plan.md`*
+*v0.16.0 — Player-facing UI rebuild following `docs/plans/archive/2026-03-22-001-feat-complete-game-ui-rebuild-plan.md`*
 
 ### Completed (2026-03-23/24)
 - Phase 1.1/1.2 prototype: custom text main menu and separate setup screen. These are now superseded by the authentic cockpit gate below.
@@ -271,13 +271,13 @@ Known gaps left for future work:
 - Only ~24% of advisor BINs (183 of ~752 per faction) match the simple `u16 count + u16 ids` shape. The other ~76% declare inconsistent lengths and are silently skipped — the game almost certainly uses one or more additional header variants (timing bytes, loop counts, control flags) that have not been decoded. The 24% that do parse now drive authored sequence length/variation; the rest fall through to the legacy path.
 - Victory/defeat cutscenes return directly to `MainMenu` rather than chaining through the existing egui victory modal.
 - Cutscene audio plays at fixed volume through the player's own quad-snd context rather than through `AudioVolumeState`.
-- Task #132 report in `docs/plans/2026-04-03-001-feat-knesset-resheph-final-sprint-plan.md` tracks these.
+- Task #132 report in `docs/plans/archive/2026-04-03-001-feat-knesset-resheph-final-sprint-plan.md` tracks these.
 
 ### Game Seeding Parity — CRITICAL GAP (~12% parity)
 
 *Discovered 2026-03-24 via audit against TheArchitect2018/Deep-Dive-into-SW-Rebellion-PC-Game-Internals/initial_game_seeding_logic*
 
-Full report: `.subdaimon-output/seeding-parity-audit.md`
+ExecPlan: `docs/plans/completed/2026-03-24-003-game-seeding-parity-execplan.md`
 
 **What works**: 9 seed table DAT parsing + dispatch, Coruscant fleet/garrison/facilities, Yavin garrison, army table distribution.
 
@@ -313,12 +313,12 @@ and full combat acceptance remain open under P23–P26.
 ## Knesset Resheph: historical implementation tranche delivered
 *Final parity sprint — 10 delivered tasks across combat, AI, WASM, UI, and eval*
 
-Plan: `docs/plans/2026-04-03-001-feat-knesset-resheph-final-sprint-plan.md`
+Plan: `docs/plans/archive/2026-04-03-001-feat-knesset-resheph-final-sprint-plan.md`
 
 Delivered:
 - Combat: per-weapon-type damage in `phase_weapon_fire()` now multiplies turbolaser, ion cannon, and laser cannon arcs by their class-specific `*_attack_strength` scalars using i64 math throughout. Zero attack strength falls back to raw arc count. 3 tests added.
 - Death Star docs: replaced "placeholder" / "not yet decompiled" wording with "best available approximation" after exhaustive GNPRTB search confirmed the current values are not parameterized.
-- AI parity: `AiConfig` now includes faction-specific deployment budgets (`alliance_deploy_budget = 0.6`, `empire_deploy_budget = 0.8`) and fleet deployment scales `max_fronts` per faction for `FUN_00506ea0` parity.
+- AI parity: `FUN_00506ea0` reads per-faction deployment budgets at `+0xc4` (Alliance) and `+0xc8` (Empire); their values are not recovered, and `AiConfig` carries no budget.
 - AI parity: dispatch validation advanced from 4/18 to 10/18 decoded gates via new `can_dispatch_to_system()` and `can_dispatch_fleet()` helpers, including strength comparison, loyalty gating, faction checks, and empty-fleet rejection.
 - AI behavior: `evaluate_uprising_prevention()` now sends diplomats to low-support controlled systems before they flip.
 - AI behavior: `evaluate_ds_escort()` now routes the nearest available fleet to the Death Star as an escort.
@@ -330,13 +330,13 @@ Delivered:
 ## Knesset Shamash-Bet Dabora 3: historical implementation tranche delivered
 *Story events + betrayal telemetry sprint — 8 R-tasks delivered*
 
-Plan: `docs/plans/2026-04-08-001-feat-knesset-shamash-bet-story-events-cutscene-plan.md`
+Plan: `docs/plans/archive/2026-04-08-001-feat-knesset-shamash-bet-story-events-cutscene-plan.md`
 
 Delivered:
 - R1: EVT_HAN_RESCUE (0x200) — telemetry twin of 0x383, fires same-tick via EventFired chaining. Silent (no actions). +19 lines.
 - R2: EVT_JABBA_PRISONERS (0x231) — consolidator for palace captures. Three OR-branch variants (one per capture ID: 0x385 Leia, 0x387 Chewie, 0x399 Luke). Self-guard via EventNotFired ensures exactly one fires per game. +36 lines.
 - R3: EVT_HAN_PERMANENT_FREEZE (0x39B) — 5-stage carbonite escape countdown (FAIL_1 through FAIL_5, ticks 145→205) using existing primitives only (EventFired + TickAtLeast + EventNotFired + CharacterIsCaptive). Terminal state when countdown completes without rescue or self-escape. 7 new constants in events.rs. +81 lines.
-- R4: Final Battle heritage gate — single 0x220 EVT_FINAL_BATTLE (no event split). 0x396 action flips `heritage_known` via SetHeritageKnown. Render layer branches BMP in `event_screen.rs`: offset 24 (Vader vs Student Luke) when unknown, offset 32 (Emperor & Vader vs Knight Luke) when known. +heritage_known parameter on event_id_to_resource + show_event_screen.
+- R4: Final Battle heritage gate — single 0x220 EVT_FINAL_BATTLE (no event split). 0x396 action flips `heritage_known` via SetHeritageKnown. Nothing reads the flag; the story chains' port is `or-port-story-research-c80`.
 - R5: Bounty Hunters real spawn — EVT_BOUNTY_ATTACK (0x212) now includes SpawnSpecialForce { at_character: han } + CharacterAssignedToFleet precondition (SF-#7). Test helper assign_han_to_fleet() added; 10 existing tests updated with fleet setup.
 - R9: EVT_TRAITOR_REVEALED (0x361) — emitted BEFORE faction flip in integrator with original_faction payload.
 - R10: EVT_SIDE_CHANGE (0x386) — emitted AFTER faction flip with DI-H2-compliant payload (char_name, not CharacterKey).
@@ -346,7 +346,7 @@ Delivered:
 ## Knesset Tammuz: historical implementation tranche delivered
 *Full parity sprint — 7 phases across combat, telemetry, cutscenes, AI, and advisor*
 
-Plan: `docs/plans/2026-04-12-001-feat-knesset-tammuz-full-parity-sprint-plan.md`
+Plan: `docs/plans/completed/2026-04-12-001-feat-knesset-tammuz-full-parity-sprint-plan.md`
 
 Delivered:
 - Phase 1: SpecialForceSpawned arena wiring (A2 — creates SpecialForceUnit in world). A1/A3-A6 already shipped in prior sprints.
@@ -633,8 +633,8 @@ acceptance. Their JSON ledgers provide stable finding and feature IDs.
 - [ ] Play the advisor's mission-refusal reactions (P34; the slots are in
   `ghidra/notes/mission-dialog.md`, "Refusal"), replacing the message-log
   stand-ins.
-- [ ] Add the original mission kinds the port lacks: Reconnaissance, Research,
-  Palace, Bounty, Jedi Training, and the leisure and movement kinds (F-040).
+- [ ] Add the original mission kinds the port lacks: Reconnaissance, Palace,
+  Bounty, Jedi Training, and the leisure and movement kinds (F-040).
 - [x] Gate uncited simulation rules with `tools/provenance-scan`; its baseline
   may only shrink (F-031; 130 items after F-032 transit).
 - [x] Port fleet transit time from `FUN_0055d8c0` (F-032 transit; bombardment

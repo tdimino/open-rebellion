@@ -3,7 +3,7 @@ title: "Story Events System"
 description: "Scripted story chains, telemetry twins, and event chaining mechanics"
 category: "agent-docs"
 created: 2026-04-12
-updated: 2026-04-12
+updated: 2026-10-16
 tags: [story-events, event-chains, jabba, final-battle, bounty-hunters, dagobah]
 ---
 
@@ -27,7 +27,7 @@ Events are registered in `EventState` by `define_story_events(&mut state, &world
 ### Chain 2: Final Battle
 `0x393` (Vader dispatched) → `0x394` (Vader en route) / `0x395` (alt: reports to Emperor) → `0x396` (Final Battle Imminent, **flips heritage_known**) → `EVT_FINAL_BATTLE` (0x220)
 
-Heritage gate (#R4): `0x396` action includes `SetHeritageKnown { character: luke }`. The render layer (`event_screen.rs`) branches on `heritage_known` to pick the correct BMP for 0x220 (Vader vs Student Luke or Emperor & Vader vs Knight Luke).
+Heritage gate (#R4): `0x396` action includes `SetHeritageKnown { character: luke }`. Nothing reads `heritage_known`. The port draws no story overlay of its own; the story chains' port to the original's rules is `or-port-story-research-c80`.
 
 ### Chain 3: Bounty Hunters → Jabba's Palace
 `0x397` (gate) → `EVT_BOUNTY_ATTACK` (0x212, **SpawnSpecialForce + CharacterAssignedToFleet**) → `0x398` (carbonite)

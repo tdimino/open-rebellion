@@ -1,0 +1,79 @@
+Original-game save library (Star Wars Rebellion, GOG build, this VM)
+To use one: copy it over a slot, e.g.
+  copy /y C:\Rebellion\SaveLibrary\NAME.sav C:\Rebellion\SaveGame\SAVEGAME.007
+then F1, Saved Games. Saved Games lists filled slots plus one empty row,
+so fill slots without gaps. Slot 5 holds empire-day488-late: leave it.
+Mac side: tools/original-capture/vm-game.sh save-in FILE SLOT does the same.
+
+alliance-day054-advice.sav
+  SHA-256 65de2c6bf0557e755ac58674fcd8bfff40a34859c80b64166a0a3e8ebba87709
+  Alliance, day 54, standard game. Briefing done; the nine opening advice topics in the Advice index; no other messages.
+
+alliance-day149-fleet1-to-coruscant.sav
+  SHA-256 7aa35bab3e1a5f258b56b9d8589678bdb8d0ea1aef7478656a8e415420599ed8
+  Alliance, day 149. Fleet 1 (Corellian Corvette, Medium Transport) in transit Ithor to Coruscant. About 400 s after load the Battle at Coruscant alert opens against Judicator and Tyrant.
+
+empire-day002-start.sav
+  SHA-256 d9da6a3bff71a70130ccd7aecb9ab4a98becf7bfef5e3fc7918c0970ea7cbc79
+  Empire, day 2, standard game. Briefing just ended, nothing ordered. Fleet 1 (ISD, Carrack, six TIE squadrons) at Coruscant.
+
+empire-day028-coruscant-fighters.sav
+  SHA-256 ea96c6ed2c388c8ad56a927808da158e7b054290a67ea82541a6c34039e184a9
+  Empire, day 28. One TIE squadron moved from Fleet 1 onto Coruscant; the planet's Fighter Squadrons tab lists TIE Fighters.
+
+empire-day030-yaga-alert.sav
+  SHA-256 8a7a992327c8af5aa6f2580a0220084741da1e37664d15e218c476c36a975636
+  Empire, day 30. Fleet 1 blockading Yaga Minor; the Battle at Yaga Minor alert (Alliance breaking the blockade) opens within 12 s of load. Unedited.
+
+empire-day030-yaga-alert-edited-isd-no-hyperdrive.sav
+  SHA-256 ac7022d01523ae701d31f3334046d29399a1e6f19d733a928cd2c6fdbb9ebd23
+  Empire, day 30. Same as empire-day030-yaga-alert but the ISD's hyperdrive was edited out. Same alert within 12 s.
+
+empire-day037-fleet1-to-yaga-minor.sav
+  SHA-256 871a3df1c9550968f177498baf2fc3406cd389e79004511300e403efb3c321cf
+  Empire, about day 37. Fleet 1 (with 3 Stormtrooper Regiments) in transit Coruscant to Alliance-held Yaga Minor; arrives about day 43 and blockades. No battle.
+
+empire-day053-assault-ready-yaga-minor.sav
+  SHA-256 d6a152894c96d449be26a28387b7b1a429c5afda68fcec887cee30ec4fdacef5
+  Empire, day 53. Fleet 1 in orbit of Alliance-held, ungarrisoned Yaga Minor with 3 Stormtrooper Regiments. Right-click Fleet 1, Planetary Assault: succeeds (ground-assault report flow).
+
+empire-day101-assault-ready-drall.sav
+  SHA-256 6af95cb4682e53009ed824b79f04468f33404a6d95d4893bd7446761c1111eb4
+  Empire, day 101. After Yaga Minor was taken, 1 Stormtrooper Regiment re-embarked on Fleet 1, now in orbit of Alliance-held Drall (Corellian). For a weak assault (failure or casualties).
+
+empire-day415-huge-sixteen-tie.sav
+  SHA-256 1f8381e59acf166390195bd5cc47e0811f66dd68065c4a2d7dfa29ad072f9baa
+  Empire, day 415, Huge galaxy, Easy. Fleet 1 holds all eight Imperial capitals and 16 TIE squadrons at Coruscant; a Battle Alert opens about 21 days later.
+
+empire-day488-late.sav
+  SHA-256 9b9774e54225a5fb893f08767b47842af1359a01270140ffd4e2933a51d2e7b0
+  Empire, day 488 (the game slot 5 held; keep this copy unchanged).
+
+empire-huge-deathstar-built.sav
+  SHA-256 5a9661fe503fbbf344e209babb32ae1bca54e38e36996d47fea9b2280894e48b
+  Empire, Huge galaxy. Edited (route 1): the Death Star order was set one short, and the original finished Death Star 1 into Fleet 6 at Coruscant.
+
+empire-day660-deathstar-pre-alert.sav
+  SHA-256 5973cf91e8ee5cd3684c1dc83966c2d049d456081b7623a09f64d7f43b778de1
+  Empire, day 660, Huge galaxy. Death Star fleet at Coruscant; the Battle at Coruscant alert opens on day 676, after a Carida alert on day 669.
+
+alliance-day731-imperial-deathstar-built.sav
+  SHA-256 502ac1cbdd49b9d46e2b340122f9b3565a49fa09f8e409fb0e6d8ae25ed67904
+  Alliance, about day 731. Edited: an Imperial ISD order converted to a Death Star; the original completed it as Devastator at Coruscant.
+
+alliance-day830-after-coruscant-battle.sav
+  SHA-256 abe0dc2d3cf4c38a9ba4765d0353dd3eaa4de17d28723cfdc9431021936dce32
+  Alliance, about day 830. Same game after withdrawing from the second Coruscant battle. The Imperial Death Star is at Coruscant but did not join Alliance-initiated battles there.
+
+empire-day128-assault-fails-selonia.sav
+  SHA-256 e96f481d2fd644f59f74ed8dfd77f7f67c3f6c51d1d39baf60acaed40bec9488
+  Empire day 128: Fleet 1 (1 Stormtrooper Regiment) over Alliance Selonia; assault fails, destroys 1 of 2 Alliance Army Regiments
+
+alliance-day1119-deathstar-at-coruscant.sav
+  SHA-256 5825d980881950daa22fb91e9e0ade5cc76f9a81f7daa41419d508f0585ea4c5
+  Alliance, day 1119; made and given by David Adams (github.com/davidadas, author of rebellion2). Fleet 1 reaches Imperial Coruscant on day 1123 against Fleets 16 (with Death Star 1), 190 and 192, 22 TIE squadrons; Fleet 2 at Delaya carries 30 X-wing squadrons.
+
+alliance-day1169-deathstar-trench-run.sav
+  SHA-256 ad68f6f4d049a74362e4b57c1573a960e12fd3d5b938d47d81babec7c45dd9a0
+  Alliance, day 1169; David Adams's Coruscant save played on. Fleet 2 (59 fighter squadrons) in transit to Coruscant; the Battle at Coruscant alert opens on day 1173 against Death Star 1 and 23-24 TIE squadrons, enough for Attack Death Star.
+

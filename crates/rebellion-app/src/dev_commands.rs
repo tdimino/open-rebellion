@@ -10,6 +10,12 @@
 //! compiled into a release browser build.
 
 #[cfg(not(target_arch = "wasm32"))]
+use rebellion_core::dat::Faction;
+#[cfg(not(target_arch = "wasm32"))]
+use rebellion_core::missions::MissionKind;
+#[cfg(not(target_arch = "wasm32"))]
+use rebellion_core::research::TechType;
+#[cfg(not(target_arch = "wasm32"))]
 use std::collections::VecDeque;
 
 /// True when the palette answers the backtick key.
@@ -167,6 +173,8 @@ pub enum DevCommand {
     /// Hold the queue until a condition holds, or refuse after
     /// `WAIT_UNTIL_FRAMES`.
     WaitUntil(WaitCondition),
+    /// `WaitUntil` refused after this many frames instead.
+    WaitUntilWithin(WaitCondition, u32),
     /// Click at a point of the 640×480 logical screen, Ctrl held when `ctrl`.
     Click {
         x: f32,
@@ -174,6 +182,13 @@ pub enum DevCommand {
         right: bool,
         ctrl: bool,
     },
+    /// Click the center of a named control of the last drawn frame
+    /// (`<window>/<control>`, `rebellion_render::control_registry`).
+    ClickControl { name: String, right: bool },
+    /// Report a named control's logical rect and center.
+    LocateControl(String),
+    /// Report the control names of the last drawn frame, or one window's.
+    ListControls(Option<String>),
     /// Press at one point, move, release at another.
     Drag { from: (f32, f32), to: (f32, f32) },
     /// Press at one point and move to another, leaving the button held.
@@ -188,10 +203,7 @@ pub enum DevCommand {
     /// with a row, show that message in mode 2.
     OpenMessageIndex { category: u16, row: Option<Row> },
     /// File a message class at a system, as the event that sends it would.
-    PostMessage {
-        class: MessageClass,
-        system: String,
-    },
+    PostMessage { class: MessageClass, system: String },
     /// Bring an idle fleet of each side missing from a system there; the
     /// next tick's combat check starts the battle.
     BattleAt(String),
@@ -203,6 +215,8 @@ pub enum DevCommand {
     KnockOutHyperdrive(usize),
     /// Mark the named Imperial fleet as carrying the Death Star.
     GiveDeathStar(String),
+    /// Halve the hull of the first capital ship in the player's named fleet.
+    DamageShip(String),
     /// The opening briefing's own skip.
     SkipBriefing,
     /// Post an advice code to the droids, as a game event does.
@@ -215,6 +229,40 @@ pub enum DevCommand {
     ListAdviceTopics,
     /// Report the game's state: mode, day, speed, open dialogs, side.
     Status,
+    /// Report every character, or one side's.
+    ListCharacters(Option<Faction>),
+    /// Report the active missions, or one side's.
+    ListMissions(Option<Faction>),
+    /// Report each side's research levels, points and next cost.
+    ShowResearch,
+    /// Report the production queues, or those at one side's systems.
+    ListProduction(Option<Faction>),
+    /// Report one side's top strip and counts.
+    ShowSide(Faction),
+    /// Save the campaign as `<evidence>/saves/<name>.reb`, through the game's
+    /// own save path.
+    Save(String),
+    /// Load `<evidence>/saves/<name>.reb`, through the game's own load path.
+    Load(String),
+    /// Dispatch a mission as the Create Mission dialog's Begin Mission does.
+    Mission {
+        team: Vec<String>,
+        kind: MissionKind,
+        system: String,
+        decoys: Vec<String>,
+    },
+    /// Apply the Recruitment mission's success effect to one character.
+    Recruit {
+        character: String,
+        side: Faction,
+        system: Option<String>,
+    },
+    /// Turn fast forward on or off: one game day each frame.
+    FastForward(bool),
+    /// What a wait does when a Battle Alert opens.
+    BattlePolicy(crate::dev_policy::BattlePolicy),
+    /// What a wait does when the Advice index opens.
+    AdvicePolicy(crate::dev_policy::AdvicePolicy),
 }
 
 /// What `Wait until` waits for.
@@ -229,6 +277,30 @@ pub enum WaitCondition {
     Battle,
     /// The galaxy view shows.
     Galaxy,
+    /// The player's side resolves a mission after the wait began: the
+    /// mission with this id, or the next one.
+    MissionResolved(Option<u64>),
+    /// A message is filed after the wait began in this Message Index
+    /// category (a `MESSAGE_CATEGORIES` command; All takes any).
+    Message(u16),
+    /// The pause alert ("Resume Game Play?") is up.
+    PauseAlert,
+    /// A side's research in a tree has reached this level.
+    Tech {
+        alliance: bool,
+        tech: rebellion_core::research::TechType,
+        level: u32,
+    },
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl WaitCondition {
+    /// Whether the wait is met only as game days pass, so fast forward may
+    /// run the clock for it.
+    #[must_use]
+    pub const fn needs_clock(self) -> bool {
+        !matches!(self, Self::Galaxy)
+    }
 }
 
 /// The longest a `Wait until` holds before it is refused: the
@@ -291,13 +363,26 @@ impl DevCommand {
             | Self::WaitMs(_)
             | Self::WaitFrames(_)
             | Self::WaitUntil(_)
+            | Self::WaitUntilWithin(..)
             | Self::Click { .. }
+            | Self::ClickControl { .. }
+            | Self::LocateControl(_)
+            | Self::ListControls(_)
             | Self::Drag { .. }
             | Self::HoldDrag { .. }
             | Self::Release { .. }
             | Self::Scroll { .. }
             | Self::Press(_)
             | Self::KnockOutHyperdrive(_)
+            | Self::FastForward(_)
+            | Self::BattlePolicy(_)
+            | Self::AdvicePolicy(_)
+            | Self::ListCharacters(_)
+            | Self::ListMissions(_)
+            | Self::ShowResearch
+            | Self::ListProduction(_)
+            | Self::ShowSide(_)
+            | Self::Load(_)
             | Self::Status => Readiness::Anywhere,
             _ => Readiness::Galaxy,
         }
@@ -330,8 +415,8 @@ pub fn parse_line(line: &str) -> Result<Option<DevCommand>, String> {
         return Err("capture takes `Capture` or `Capture: <name>`".into());
     }
     if let Some(what) = lower.strip_prefix("wait until ") {
-        let what = what.trim();
-        return match what.split_whitespace().collect::<Vec<_>>().as_slice() {
+        let (what, budget) = split_budget(what.trim())?;
+        let parsed = match what.split_whitespace().collect::<Vec<_>>().as_slice() {
             ["day", n] => n
                 .parse()
                 .map(|day| Some(DevCommand::WaitUntil(WaitCondition::Day(day))))
@@ -339,8 +424,43 @@ pub fn parse_line(line: &str) -> Result<Option<DevCommand>, String> {
             ["battle", "alert"] => Ok(Some(DevCommand::WaitUntil(WaitCondition::BattleAlert))),
             ["battle"] => Ok(Some(DevCommand::WaitUntil(WaitCondition::Battle))),
             ["galaxy"] => Ok(Some(DevCommand::WaitUntil(WaitCondition::Galaxy))),
-            _ => Err("wait until takes `day <n>`, `battle alert`, `battle` or `galaxy`".into()),
+            ["pause", "alert"] => Ok(Some(DevCommand::WaitUntil(WaitCondition::PauseAlert))),
+            ["mission", "resolved"] => Ok(Some(DevCommand::WaitUntil(
+                WaitCondition::MissionResolved(None),
+            ))),
+            ["mission", id, "resolved"] => id
+                .parse()
+                .map(|id| {
+                    Some(DevCommand::WaitUntil(WaitCondition::MissionResolved(Some(
+                        id,
+                    ))))
+                })
+                .map_err(|_| format!("mission id {id:?} is not a whole number")),
+            ["message", name @ ..] if !name.is_empty() => match message_index(&name.join(" "))? {
+                DevCommand::OpenMessageIndex {
+                    category,
+                    row: None,
+                } => Ok(Some(DevCommand::WaitUntil(WaitCondition::Message(
+                    category,
+                )))),
+                _ => Err("wait until message takes a category name".into()),
+            },
+            ["tech", side, tree, level] => wait_tech(side, tree, level).map(Some),
+            _ => Err(
+                "wait until takes `day <n>`, `battle alert`, `battle`, `galaxy`, \
+                      `pause alert`, `mission [<id>] resolved`, `message <category>` or \
+                      `tech <alliance|empire> <ship|troop|facility> <n>`"
+                    .into(),
+            ),
         };
+        return parsed.map(|command| {
+            command.map(|command| match (command, budget) {
+                (DevCommand::WaitUntil(condition), Some(frames)) => {
+                    DevCommand::WaitUntilWithin(condition, frames)
+                }
+                (command, _) => command,
+            })
+        });
     }
     if lower.starts_with("wait ") {
         let words: Vec<&str> = rest("wait ").split_whitespace().collect();
@@ -352,6 +472,33 @@ pub fn parse_line(line: &str) -> Result<Option<DevCommand>, String> {
             }
             _ => Err("wait takes `<n> ms` or `<n> frames`".into()),
         };
+    }
+    for (prefix, right) in [("right click control:", true), ("click control:", false)] {
+        if lower.starts_with(prefix) {
+            let name = rest(prefix);
+            if !name.contains('/') || name.starts_with('/') || name.ends_with('/') {
+                return Err(format!("{prefix} takes `<window>/<control>`"));
+            }
+            return Ok(Some(DevCommand::ClickControl {
+                name: name.to_owned(),
+                right,
+            }));
+        }
+    }
+    if lower.starts_with("locate ") {
+        let name = rest("locate ");
+        if !name.contains('/') || name.starts_with('/') || name.ends_with('/') {
+            return Err("locate takes `<window>/<control>`".into());
+        }
+        return Ok(Some(DevCommand::LocateControl(name.to_owned())));
+    }
+    if lower == "list controls" {
+        return Ok(Some(DevCommand::ListControls(None)));
+    }
+    if lower.starts_with("list controls ") {
+        return Ok(Some(DevCommand::ListControls(Some(
+            rest("list controls ").to_owned(),
+        ))));
     }
     if lower.starts_with("right click ") {
         let (x, y) = point(rest("right click "))?;
@@ -395,7 +542,10 @@ pub fn parse_line(line: &str) -> Result<Option<DevCommand>, String> {
     if lower.starts_with("scroll ") {
         let args = rest("scroll ");
         let parsed = args.rsplit_once(' ').and_then(|(at, n)| {
-            let notches = n.parse::<i32>().ok().filter(|n| *n != 0 && n.abs() <= 100)?;
+            let notches = n
+                .parse::<i32>()
+                .ok()
+                .filter(|n| *n != 0 && n.abs() <= 100)?;
             Some((at, notches))
         });
         let Some((at, notches)) = parsed else {
@@ -433,11 +583,83 @@ pub fn parse_line(line: &str) -> Result<Option<DevCommand>, String> {
         }
         return Ok(Some(DevCommand::GiveDeathStar(fleet.to_owned())));
     }
+    if lower.starts_with("damage ship:") {
+        let fleet = rest("damage ship:");
+        if fleet.is_empty() {
+            return Err("damage ship takes a fleet name".into());
+        }
+        return Ok(Some(DevCommand::DamageShip(fleet.to_owned())));
+    }
     if lower.starts_with("blockade ") {
         return Ok(Some(DevCommand::Blockade(rest("blockade ").to_owned())));
     }
     if lower == "status" {
         return Ok(Some(DevCommand::Status));
+    }
+    if lower.starts_with("fast forward:") {
+        return match rest("fast forward:").to_ascii_lowercase().as_str() {
+            "on" => Ok(Some(DevCommand::FastForward(true))),
+            "off" => Ok(Some(DevCommand::FastForward(false))),
+            _ => Err("fast forward takes `on` or `off`".into()),
+        };
+    }
+    if lower.starts_with("battle policy:") {
+        use crate::dev_policy::BattlePolicy;
+        return match rest("battle policy:").to_ascii_lowercase().as_str() {
+            "stop" => Ok(Some(DevCommand::BattlePolicy(BattlePolicy::Stop))),
+            "simulate" => Ok(Some(DevCommand::BattlePolicy(BattlePolicy::Simulate))),
+            "retreat" => Ok(Some(DevCommand::BattlePolicy(BattlePolicy::Retreat))),
+            _ => Err("battle policy takes `simulate`, `retreat` or `stop`".into()),
+        };
+    }
+    if lower.starts_with("advice policy:") {
+        use crate::dev_policy::AdvicePolicy;
+        return match rest("advice policy:").to_ascii_lowercase().as_str() {
+            "stop" => Ok(Some(DevCommand::AdvicePolicy(AdvicePolicy::Stop))),
+            "close" => Ok(Some(DevCommand::AdvicePolicy(AdvicePolicy::Close))),
+            _ => Err("advice policy takes `close` or `stop`".into()),
+        };
+    }
+    if let Some(side) = lower.strip_prefix("list characters") {
+        return side_filter(side).map(|side| Some(DevCommand::ListCharacters(side)));
+    }
+    if let Some(side) = lower.strip_prefix("list missions") {
+        return side_filter(side).map(|side| Some(DevCommand::ListMissions(side)));
+    }
+    if let Some(side) = lower.strip_prefix("list production") {
+        return side_filter(side).map(|side| Some(DevCommand::ListProduction(side)));
+    }
+    if lower == "show research" {
+        return Ok(Some(DevCommand::ShowResearch));
+    }
+    if let Some(side) = lower.strip_prefix("show side") {
+        return match side_filter(side)? {
+            Some(side) => Ok(Some(DevCommand::ShowSide(side))),
+            None => Err("show side takes alliance or empire".into()),
+        };
+    }
+    if lower.starts_with("save:") || lower.starts_with("load:") {
+        let name = rest("save:");
+        if name.is_empty()
+            || !name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+            || name.starts_with('.')
+        {
+            return Err(format!("save name {name:?}: use letters, digits, - _ ."));
+        }
+        let name = name.to_owned();
+        return Ok(Some(if lower.starts_with("save:") {
+            DevCommand::Save(name)
+        } else {
+            DevCommand::Load(name)
+        }));
+    }
+    if lower.starts_with("mission:") {
+        return mission(rest("mission:")).map(Some);
+    }
+    if lower.starts_with("recruit:") {
+        return recruit(rest("recruit:")).map(Some);
     }
     if lower == "list systems" {
         return Ok(Some(DevCommand::ListSystems));
@@ -449,13 +671,83 @@ pub fn parse_line(line: &str) -> Result<Option<DevCommand>, String> {
         return Ok(Some(DevCommand::SkipBriefing));
     }
     if lower.starts_with("advisor: post code ") {
-        return number(rest("advisor: post code ")).map(|code| Some(DevCommand::AdvisorPostCode(code)));
+        return number(rest("advisor: post code "))
+            .map(|code| Some(DevCommand::AdvisorPostCode(code)));
     }
     if lower.starts_with("release advice topic ") {
         return number(rest("release advice topic "))
             .map(|topic| Some(DevCommand::ReleaseAdviceTopic(topic)));
     }
     Ok(None)
+}
+
+/// A trailing `within <n> frames` on a `wait until` line: the line without
+/// it, and the frame budget.
+#[cfg(not(target_arch = "wasm32"))]
+fn split_budget(what: &str) -> Result<(&str, Option<u32>), String> {
+    let words: Vec<&str> = what.split_whitespace().collect();
+    let [.., "within", n, "frames" | "frame"] = words.as_slice() else {
+        return Ok((what, None));
+    };
+    match n.parse::<u32>() {
+        Ok(n) if n > 0 => {
+            let cut = what.rfind("within").unwrap_or(what.len());
+            Ok((what[..cut].trim(), Some(n.min(WAIT_UNTIL_FRAMES))))
+        }
+        _ => Err("within takes a frame count from 1".into()),
+    }
+}
+
+/// `<alliance|empire> <ship|troop|facility> <n>` after `wait until tech`.
+#[cfg(not(target_arch = "wasm32"))]
+fn wait_tech(side: &str, tree: &str, level: &str) -> Result<DevCommand, String> {
+    use rebellion_core::research::TechType;
+    let alliance = match side {
+        "alliance" => true,
+        "empire" => false,
+        _ => return Err(format!("tech side {side:?}: use alliance or empire")),
+    };
+    let tech = match tree {
+        "ship" => TechType::Ship,
+        "troop" => TechType::Troop,
+        "facility" => TechType::Facility,
+        _ => return Err(format!("tech tree {tree:?}: use ship, troop or facility")),
+    };
+    let level = level
+        .parse()
+        .map_err(|_| format!("tech level {level:?} is not a whole number"))?;
+    Ok(DevCommand::WaitUntil(WaitCondition::Tech {
+        alliance,
+        tech,
+        level,
+    }))
+}
+
+/// The rect a `<window>/<control>` name has in the last drawn frame, or the
+/// names registered under its window to choose from.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn control_rect(name: &str) -> Result<rebellion_render::control_registry::ControlRect, String> {
+    use rebellion_render::control_registry::{find, names};
+    find(name).ok_or_else(|| {
+        let window = name.split_once('/').map_or(name, |(window, _)| window);
+        let under = names(Some(window));
+        if under.is_empty() {
+            let mut windows: Vec<String> = names(None)
+                .iter()
+                .filter_map(|known| known.split_once('/').map(|(head, _)| head.to_owned()))
+                .collect();
+            windows.dedup();
+            format!(
+                "no control {name:?}; no controls under {window:?}, windows with controls: [{}]",
+                windows.join(", ")
+            )
+        } else {
+            format!(
+                "no control {name:?}; under {window}: [{}]",
+                under.join(", ")
+            )
+        }
+    })
 }
 
 /// `<x>,<y>` in the 640×480 logical screen.
@@ -537,6 +829,116 @@ fn post_message(args: &str) -> Result<DevCommand, String> {
     Ok(DevCommand::PostMessage {
         class,
         system: system.to_owned(),
+    })
+}
+
+/// The `[alliance|empire]` argument of a `List` command, or none.
+#[cfg(not(target_arch = "wasm32"))]
+fn side_filter(text: &str) -> Result<Option<Faction>, String> {
+    rebellion_data::readouts::parse_side(text)
+}
+
+/// A comma-separated list of character names.
+#[cfg(not(target_arch = "wasm32"))]
+fn names(text: &str) -> Vec<String> {
+    text.split(',')
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+/// The mission kinds `Mission:` names, by the dialog's own names (and
+/// `Research(Ship)` for each research tree), longest first. Sabotage, Death
+/// Star Sabotage, Assassination, Abduction and Rescue are absent: each needs
+/// a target object or character the line cannot name.
+#[cfg(not(target_arch = "wasm32"))]
+fn mission_kind_names() -> Vec<(String, MissionKind)> {
+    let mut named: Vec<(String, MissionKind)> = [
+        MissionKind::Diplomacy,
+        MissionKind::Recruitment,
+        MissionKind::Espionage,
+        MissionKind::InciteUprising,
+        MissionKind::SubdueUprising,
+        MissionKind::Move,
+    ]
+    .into_iter()
+    .chain(TechType::ALL.map(MissionKind::Research))
+    .map(|kind| {
+        let name = kind.name();
+        (name.to_ascii_lowercase(), kind)
+    })
+    .collect();
+    for (tree, tech) in [
+        ("ship", TechType::Ship),
+        ("troop", TechType::Troop),
+        ("facility", TechType::Facility),
+    ] {
+        named.push((format!("research({tree})"), MissionKind::Research(tech)));
+    }
+    named.sort_by_key(|(name, _)| std::cmp::Reverse(name.len()));
+    named
+}
+
+/// `<character>[, <character>...] <kind> at <system> [decoys <character>, ...]`.
+#[cfg(not(target_arch = "wasm32"))]
+fn mission(args: &str) -> Result<DevCommand, String> {
+    const USAGE: &str =
+        "mission takes `<character>[, ...] <kind> at <system> [decoys <character>, ...]`";
+    let lower = args.to_ascii_lowercase();
+    let (body, decoys) = match lower.find(" decoys ") {
+        Some(split) => (&args[..split], names(&args[split + " decoys ".len()..])),
+        None => (args, Vec::new()),
+    };
+    let Some(at) = body.to_ascii_lowercase().rfind(" at ") else {
+        return Err(USAGE.into());
+    };
+    let system = body[at + " at ".len()..].trim();
+    let head = body[..at].trim();
+    let head_lower = head.to_ascii_lowercase();
+    let (kind, team) = mission_kind_names()
+        .into_iter()
+        .find_map(|(name, kind)| {
+            let team = head_lower
+                .strip_suffix(&name)
+                .filter(|team| team.ends_with(char::is_whitespace))?;
+            Some((kind, names(&head[..team.len()])))
+        })
+        .ok_or_else(|| format!("{USAGE}; no mission kind ends {head:?}"))?;
+    if team.is_empty() || system.is_empty() {
+        return Err(USAGE.into());
+    }
+    Ok(DevCommand::Mission {
+        team,
+        kind,
+        system: system.to_owned(),
+        decoys,
+    })
+}
+
+/// `<character> for <alliance|empire> [at <system>]`.
+#[cfg(not(target_arch = "wasm32"))]
+fn recruit(args: &str) -> Result<DevCommand, String> {
+    const USAGE: &str = "recruit takes `<character> for <alliance|empire> [at <system>]`";
+    let Some(split) = args.to_ascii_lowercase().rfind(" for ") else {
+        return Err(USAGE.into());
+    };
+    let character = args[..split].trim();
+    let tail = args[split + " for ".len()..].trim();
+    let (side, system) = match tail.to_ascii_lowercase().find(" at ") {
+        Some(at) => (&tail[..at], Some(tail[at + " at ".len()..].trim())),
+        None => (tail, None),
+    };
+    let Some(side) = side_filter(side)? else {
+        return Err(USAGE.into());
+    };
+    if character.is_empty() || system.is_some_and(str::is_empty) {
+        return Err(USAGE.into());
+    }
+    Ok(DevCommand::Recruit {
+        character: character.to_owned(),
+        side,
+        system: system.map(str::to_owned),
     })
 }
 

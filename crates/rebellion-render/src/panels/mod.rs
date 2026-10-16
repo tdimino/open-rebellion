@@ -58,11 +58,12 @@ pub enum PanelAction {
     /// (`fleet_join::join_fleet`).
     JoinFleet { mover: FleetMover, target: FleetKey },
     /// Destination (`0x214`): `system`'s production areas, or the one
-    /// given, deliver to `destination` (`ManufacturingState::set_destination`).
+    /// given, deliver to `destination`, a planet or a fleet
+    /// (`ManufacturingState::set_destination`).
     SetDestination {
         system: SystemKey,
         area: Option<rebellion_core::manufacturing::ProductionArea>,
-        destination: SystemKey,
+        destination: rebellion_core::manufacturing::Destination,
     },
     /// Rename (`0x203`) issued from its edit: `FUN_004f6e60` sets a fleet's
     /// or, with `ship`, one of its capital ships' name.

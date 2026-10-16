@@ -2,9 +2,10 @@
 title: "plan: playtest logging and observability for balance diagnosis"
 description: "ExecPlan for richer headless playtest diagnostics, JSONL streaming, REPL observability, and zero-combat diagnosis"
 category: "plan"
-status: "planned"
+status: completed
+progress: "100% — shipped as v0.13.0 (rebellion-playtest JSONL telemetry)"
+updated: 2026-10-15
 created: 2026-03-20
-updated: 2026-03-20
 tags: ["playtest", "observability", "logging", "repl", "jsonl", "combat"]
 ---
 

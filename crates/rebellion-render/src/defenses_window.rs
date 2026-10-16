@@ -26,7 +26,8 @@ use rebellion_core::world::GameWorld;
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{CockpitFaction, CockpitLayout};
 use crate::fleet_window::{
-    control_side, faction_side, fleet_side, paint_native, DRAG_DISTANCE_SQUARED,
+    control_side, faction_side, fleet_side, mini_layers, paint_native, MiniObject,
+    DRAG_DISTANCE_SQUARED,
 };
 use crate::object_menu::MenuObject;
 use crate::panels::fleets::fighter_mini_id;
@@ -974,6 +975,11 @@ fn draw_defenses_window(
             let mut clicked = [false; 3];
             for (index, (normal, pressed, x, name)) in buttons.into_iter().enumerate() {
                 let rect = logical_rect(local, scale, x, 3.0, 14.0, 14.0);
+                crate::control_registry::register_screen(
+                    "Defenses",
+                    ["Sector", "Minimize", "Close"][index],
+                    rect,
+                );
                 let response = ui.interact(
                     rect,
                     ui.id().with((window.system, name)),
@@ -993,6 +999,7 @@ fn draw_defenses_window(
             for page in DefensesPage::ALL {
                 let rect = tab_rect(local, scale, page);
                 let empty = page_rows(world, fog, missions, player, window.system, page).is_empty();
+                crate::control_registry::register_screen("Defenses", page.name(), rect);
                 paint_native(
                     &painter,
                     ctx,
@@ -1074,7 +1081,8 @@ fn draw_defenses_window(
             let bar_left = LIST.0 + LIST.2 - bar.width();
             let on_bar = range.overflows()
                 && pointer.at.is_some_and(|(x, y)| {
-                    (bar_left..LIST.0 + LIST.2).contains(&x) && (LIST.1..LIST.1 + LIST.3).contains(&y)
+                    (bar_left..LIST.0 + LIST.2).contains(&x)
+                        && (LIST.1..LIST.1 + LIST.3).contains(&y)
                 });
             let list_painter = painter.with_clip_rect(list);
             // The list control under the rows (FUN_006083c0): a left or
@@ -1116,18 +1124,54 @@ fn draw_defenses_window(
                 .take(COLUMNS * VISIBLE_ROWS);
             for (cell_index, (index, row)) in shown.enumerate() {
                 let cell = cell_rect(local, scale, cell_index);
+                if let (DefensesItem::Character(key), true) =
+                    (row.item, crate::control_registry::enabled())
+                {
+                    if let Some(character) = world.characters.get(key) {
+                        crate::control_registry::register_screen(
+                            "Personnel",
+                            &character.name,
+                            cell.intersect(list),
+                        );
+                    }
+                }
                 let selected = window.selected == Some(row.item);
-                paint_native(
-                    &list_painter,
-                    ctx,
-                    cache,
-                    DllSource::Gokres,
-                    row.mini,
-                    cell,
-                    scale,
-                    0.0,
-                    0.0,
-                );
+                // The list image (`FUN_004a9ab0` -> `FUN_0042c3b0(.., 0, 1)`):
+                // the backdrop, a member's en route mark, then the mini.
+                let (object, en_route) = match row.item {
+                    DefensesItem::Character(key) => (
+                        MiniObject::Character,
+                        world.characters.get(key).is_some_and(|c| c.en_route),
+                    ),
+                    DefensesItem::SpecialForce(key) => world
+                        .special_forces
+                        .get(key)
+                        .map_or((MiniObject::Craft, false), |force| {
+                            (MiniObject::SpecialForce(force.class_dat_id), force.en_route)
+                        }),
+                    DefensesItem::Troop(key) => (
+                        world.troops.get(key).map_or(MiniObject::Craft, |troop| {
+                            MiniObject::Regiment(troop.class_dat_id)
+                        }),
+                        false,
+                    ),
+                    DefensesItem::Squadron { .. } | DefensesItem::Defense(_) => {
+                        (MiniObject::Craft, false)
+                    }
+                };
+                for (source, bitmap) in mini_layers(object, row.mini, en_route) {
+                    paint_native(
+                        &list_painter,
+                        ctx,
+                        cache,
+                        source,
+                        bitmap,
+                        cell,
+                        scale,
+                        0.0,
+                        0.0,
+                    );
+                }
                 if selected {
                     paint_native(
                         &list_painter,
@@ -1374,6 +1418,8 @@ mod tests {
             is_alliance: true,
             skills: [0; 8],
             on_mission: false,
+            en_route: false,
+            on_hidden_mission: false,
         });
         world.systems[system].special_forces.push(force);
         let mut missions = MissionState::new();

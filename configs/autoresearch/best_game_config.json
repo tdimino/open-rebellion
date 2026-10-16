@@ -1,18 +1,12 @@
 {
   "ai": {
-    "tick_interval": 7,
-    "diplomacy_skill_threshold": 60,
-    "espionage_skill_threshold": 50,
-    "max_construction_yards": 5,
-    "max_covert_ops_per_eval": 3
-  },
-  "movement": {
-    "distance_scale": 3,
-    "min_transit_ticks": 10
-  },
-  "production": {
-    "capship_threshold": 6,
-    "fighter_ratio": 3
+    "day_orders": 10,
+    "rounds_per_day": {
+      "very_slow": 601,
+      "slow": 61,
+      "medium": 13,
+      "fast": 5
+    }
   },
   "scoring": {
     "victory_center": 3000,

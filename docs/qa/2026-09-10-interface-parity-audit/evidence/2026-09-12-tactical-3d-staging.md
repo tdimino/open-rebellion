@@ -76,5 +76,5 @@ and its exact named texture inside the existing original tactical aperture.
 All semantic identities, original rendering rules, procedural-content removal,
 and complete tactical acceptance remain open.
 
-See the [tactical 3D asset plan](../../../plans/2026-09-12-feat-tactical-3d-asset-pipeline.md)
+See the [tactical 3D asset plan](../../../plans/archive/2026-09-12-feat-tactical-3d-asset-pipeline.md)
 and [space-battle asset inventory](../../../reference/asset-library/space-battle.md).

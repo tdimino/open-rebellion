@@ -80,8 +80,8 @@ pub(crate) enum MiniObject {
     SpecialForce(DatId),
 }
 
-/// The mark `FUN_0042c3b0(.., 0, 1)` draws over an en route object's `mini`
-/// (`+0x50` bit 4 set, bit 3 clear), at the mini's origin. Its default is the
+/// The mark `FUN_0042c3b0(.., 0, 1)` draws under an en route object's `mini`
+/// (`+0x50` bit 4 set, bit 3 clear), at the mini's origin ([`mini_layers`]). Its default is the
 /// object's own GOKRES mark `(class & 0xfff) + 0x5000`, the mini's id plus
 /// `0x1000`; it stays for craft, regiment classes `0x10000002` and
 /// `0x10000008`, and special force classes `0x3c000003` and `0x3c000005`.
@@ -104,13 +104,39 @@ pub(crate) fn en_route_mark(object: MiniObject, mini: u32) -> (DllSource, u32) {
     }
 }
 
+/// STRATEGY 11500 (`0x2cec`): the backdrop of a character's or special
+/// force's mini.
+const PERSONNEL_BACKDROP: u32 = 11500;
+/// STRATEGY 11513 (`0x2cf9`): the backdrop of a regiment's mini.
+const REGIMENT_BACKDROP: u32 = 11513;
+
+/// The bitmaps `FUN_0042c3b0(.., 0, 1)` stacks into `object`'s list image,
+/// bottom first: a character's or special force's backdrop (STRATEGY
+/// 11500) or a regiment's (11513), blitted plain; the en route mark when
+/// `en_route` ([`en_route_mark`]), keyed; then the object's own GOKRES
+/// `mini`, keyed last (`FUN_0042c3b0.c:442`), so the mark shows around the
+/// object, not over it.
+pub(crate) fn mini_layers(object: MiniObject, mini: u32, en_route: bool) -> Vec<(DllSource, u32)> {
+    let backdrop = match object {
+        MiniObject::Character | MiniObject::SpecialForce(_) => Some(PERSONNEL_BACKDROP),
+        MiniObject::Regiment(_) => Some(REGIMENT_BACKDROP),
+        MiniObject::Craft => None,
+    };
+    backdrop
+        .map(|id| (DllSource::Strategy, id))
+        .into_iter()
+        .chain(en_route.then(|| en_route_mark(object, mini)))
+        .chain(std::iter::once((DllSource::Gokres, mini)))
+        .collect()
+}
+
 /// A craft's GOKRES portrait (`FUN_0042c3b0(.., 1, ..)`: `class & 0xfff`),
 /// its mini less `0x4000`.
 const fn ship_portrait(mini: u32) -> u32 {
     mini - 0x4000
 }
 
-/// The en route mark `FUN_0042c3b0(.., 1, 1)` draws over a craft's
+/// The en route mark `FUN_0042c3b0(.., 1, 1)` draws under a craft's
 /// portrait: its own GOKRES mark, `(class & 0xfff) + 0x1000`.
 const fn en_route_portrait_mark(portrait: u32) -> u32 {
     portrait + 0x1000
@@ -2278,25 +2304,18 @@ fn draw_fleet_window(
                         // untraced, so its entry draws as unselected.
                         if let Some(class) = class {
                             if let Some(mini) = capital_ship_mini_id(class.dat_id) {
-                                paint_native(
-                                    &list_painter,
-                                    ctx,
-                                    cache,
-                                    DllSource::Gokres,
+                                let layers = mini_layers(
+                                    MiniObject::Craft,
                                     mini,
-                                    item,
-                                    scale,
-                                    5.0,
-                                    15.0,
+                                    movement.is_in_transit(fleet),
                                 );
-                                if movement.is_in_transit(fleet) {
-                                    let (source, mark) = en_route_mark(MiniObject::Craft, mini);
+                                for (source, bitmap) in layers {
                                     paint_native(
                                         &list_painter,
                                         ctx,
                                         cache,
                                         source,
-                                        mark,
+                                        bitmap,
                                         item,
                                         scale,
                                         5.0,
@@ -2409,10 +2428,12 @@ fn draw_fleet_window(
                         .and_then(|class| capital_ship_mini_id(class.dat_id));
                     if let Some(mini) = mini {
                         let portrait = ship_portrait(mini);
-                        let mut layers = vec![portrait];
+                        // The mark goes under the portrait (`mini_layers`).
+                        let mut layers = Vec::new();
                         if movement.is_in_transit(fleet) {
                             layers.push(en_route_portrait_mark(portrait));
                         }
+                        layers.push(portrait);
                         // The panel is a 125 by 49 bitmap; the 50-row
                         // portrait loses its last row.
                         let panel = painter.with_clip_rect(logical_rect(
@@ -2517,8 +2538,9 @@ fn draw_fleet_window(
                     RIGHT_LIST.3,
                 );
                 let right_painter = painter.with_clip_rect(right);
-                // Everything aboard a travelling fleet is en route
-                // (`FUN_004f8240`).
+                // Everything aboard a travelling fleet is en route, and so is
+                // a character still on its way aboard (`FUN_004f8240`: the
+                // container's bit 4 or its own bit 5).
                 let travelling = matches!(
                     selected,
                     Some(FleetWindowEntry::Fleet(fleet)) if movement.is_in_transit(fleet)
@@ -2547,25 +2569,19 @@ fn draw_fleet_window(
                         );
                     }
                     if let Some(mini) = item.mini {
-                        paint_native(
-                            &right_painter,
-                            ctx,
-                            cache,
-                            DllSource::Gokres,
-                            mini,
-                            cell,
-                            scale,
-                            28.0,
-                            4.0,
-                        );
-                        if travelling {
-                            let (source, mark) = en_route_mark(item.kind, mini);
+                        let own = match item.object {
+                            Some(ItemObject::Character(key)) => {
+                                world.characters.get(key).is_some_and(|c| c.en_route)
+                            }
+                            _ => false,
+                        };
+                        for (source, bitmap) in mini_layers(item.kind, mini, travelling || own) {
                             paint_native(
                                 &right_painter,
                                 ctx,
                                 cache,
                                 source,
-                                mark,
+                                bitmap,
                                 cell,
                                 scale,
                                 28.0,
@@ -4973,7 +4989,7 @@ pub(crate) mod tests {
         // FUN_004a37c0 draws 10423 at the entry's (5, 5) on +0x50 bit 4 and
         // FUN_004a5c00 10426 over the one selected fleet's picture. Its ships
         // are en route with it (FUN_004f8240), so FUN_0042c3b0 draws each
-        // mini's own mark (+0x1000) over the ship entry's mini at (5, 15)
+        // mini's own mark (+0x1000) under the ship entry's mini at (5, 15)
         // (FUN_004a3d40) and the right item's at (28, 4) (FUN_004a6e70).
         let (mut world, system) = world(ControlKind::Controlled(Faction::Alliance));
         let fleet = add_fleet(&mut world, system, true, 0);
@@ -5028,8 +5044,9 @@ pub(crate) mod tests {
         );
 
         // One ship selected: its portrait (FUN_0042c3b0(.., 1, 1), the mini
-        // less 0x4000) at the panel's origin, and its own mark (+0x1000)
-        // over it while en route.
+        // less 0x4000) at the panel's origin, with its own mark (+0x1000)
+        // under it while en route: FUN_0042c3b0.c:442 blits the object last
+        // (.artifacts/original-checks/2026-10-15-enroute-character, 06).
         if let Some(window) = state.window_mut(system) {
             window.selected = Some(FleetWindowEntry::Ship { fleet, index: 0 });
         }
@@ -5038,7 +5055,7 @@ pub(crate) mod tests {
         let panel = at(100.0, 42.0);
         assert!(ship.contains(&(portrait, panel)), "{ship:?}");
         assert!(ship.contains(&(portrait + 0x1000, panel)), "{ship:?}");
-        assert!(order(&ship, portrait) < order(&ship, portrait + 0x1000));
+        assert!(order(&ship, portrait + 0x1000) < order(&ship, portrait));
         let orbiting = paint(&mut state, &MovementState::default());
         assert!(orbiting.contains(&(portrait, panel)), "{orbiting:?}");
         assert!(!orbiting.iter().any(|(id, _)| *id == portrait + 0x1000));

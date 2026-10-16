@@ -78,7 +78,7 @@ pub const SAVE_MAGIC: &[u8; 8] = b"OPENREB\0";
 
 /// Current save format version. Increment when `SaveState` layout changes;
 /// saves of any other version are rejected.
-pub const SAVE_VERSION: u32 = 41;
+pub const SAVE_VERSION: u32 = 53;
 
 /// Current state-fingerprint algorithm version.
 ///
@@ -342,10 +342,6 @@ mod native {
     /// # Errors
     /// Returns an error if state serialization, fingerprinting, or creating/writing
     /// the save file fails.
-    #[expect(
-        clippy::cast_possible_truncation,
-        reason = "Keep the existing fixed-width save encoding; changing overflow handling is outside this lint cleanup."
-    )]
     pub fn save_slot(
         saves_dir: &Path,
         slot: usize,
@@ -353,13 +349,33 @@ mod native {
         state: &SaveState,
         active_mods: &[(String, String)],
     ) -> anyhow::Result<StateFingerprint> {
+        save_file(&slot_path(saves_dir, slot), name, state, active_mods)
+    }
+
+    /// Write `state` to the file `path`, in the slot format; the developer
+    /// commands' `Save:` names its file instead of a slot. Creates the
+    /// directory holding `path` if it does not exist.
+    ///
+    /// # Errors
+    /// Returns an error if state serialization, fingerprinting, or creating/writing
+    /// the save file fails.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Keep the existing fixed-width save encoding; changing overflow handling is outside this lint cleanup."
+    )]
+    pub fn save_file(
+        path: &Path,
+        name: &str,
+        state: &SaveState,
+        active_mods: &[(String, String)],
+    ) -> anyhow::Result<StateFingerprint> {
+        let saves_dir = path.parent().unwrap_or_else(|| Path::new("."));
         std::fs::create_dir_all(saves_dir)
             .with_context(|| format!("creating saves directory {}", saves_dir.display()))?;
 
         let encoded = bincode::serialize(state).context("serializing save state")?;
         let state_fingerprint = compute_state_fingerprint(state)?;
 
-        let path = slot_path(saves_dir, slot);
         let mut pending = tempfile::NamedTempFile::new_in(saves_dir)
             .with_context(|| format!("creating temporary save beside {}", path.display()))?;
         let file = pending.as_file_mut();
@@ -411,7 +427,7 @@ mod native {
             .with_context(|| format!("synchronizing temporary save for {}", path.display()))?;
 
         pending
-            .persist(&path)
+            .persist(path)
             .map_err(|error| error.error)
             .with_context(|| format!("replacing save file {}", path.display()))?;
 
@@ -445,8 +461,16 @@ mod native {
     /// Returns an error for unreadable, truncated, corrupt, or unsupported save data,
     /// including invalid text, deserialization failures, and fingerprint mismatches.
     pub fn load_slot(saves_dir: &Path, slot: usize) -> anyhow::Result<(SaveMeta, SaveState)> {
-        let path = slot_path(saves_dir, slot);
-        let mut file = std::fs::File::open(&path)
+        load_file(&slot_path(saves_dir, slot), slot)
+    }
+
+    /// Load `SaveState` from the file `path`; the metadata reports `slot`.
+    /// The developer commands' `Load:` names its file instead of a slot.
+    ///
+    /// # Errors
+    /// As [`load_slot`].
+    pub fn load_file(path: &Path, slot: usize) -> anyhow::Result<(SaveMeta, SaveState)> {
+        let mut file = std::fs::File::open(path)
             .with_context(|| format!("opening save file {}", path.display()))?;
 
         // ── Header ──────────────────────────────────────────────────────────
@@ -590,8 +614,8 @@ mod native {
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use native::{
-    default_saves_dir, delete_slot, list_saves, load_slot, save_slot, save_slot_no_mods,
-    slot_occupied, slot_path,
+    default_saves_dir, delete_slot, list_saves, load_file, load_slot, save_file, save_slot,
+    save_slot_no_mods, slot_occupied, slot_path,
 };
 
 // ---------------------------------------------------------------------------
@@ -919,9 +943,9 @@ pub use wasm_impl::{
 mod tests {
     use super::*;
     use rand::{RngCore, SeedableRng};
-    use rebellion_core::ids::SystemKey;
     use rebellion_core::ai::{AIState, AiFaction};
     use rebellion_core::dat::Faction;
+    use rebellion_core::ids::SystemKey;
     use rebellion_core::world::ControlKind;
 
     fn minimal_save_state() -> SaveState {
@@ -1075,9 +1099,9 @@ mod tests {
         let mut state = minimal_save_state();
         state.sim_rng = Xoshiro256PlusPlus::seed_from_u64(0x5eed);
         state.ai2 = Some(AIState::new(AiFaction::Alliance));
-        state.ai2.as_mut().unwrap().last_eval_tick = 77;
+        state.ai2.as_mut().unwrap().character_tasks.next_id = 77;
         let system = state.world.systems.keys().next().unwrap();
-        state.game_config.ai.tick_interval = 13;
+        state.game_config.scoring.victory_center = 13;
         state.campaign_config.galaxy_size = rebellion_core::dat::GalaxySize::Huge;
         state.campaign_config.difficulty = rebellion_core::world::SeedDifficulty::Hard;
         state.campaign_config.victory_conditions =
@@ -1117,7 +1141,9 @@ mod tests {
         let repair_events = rebellion_core::repair::RepairSystem::advance(
             &mut state.repair,
             &state.world,
+            &state.uprising,
             &[rebellion_core::tick::TickEvent { tick: 1 }],
+            &[],
         );
         assert!(!repair_events.is_empty());
         assert!(state.repair.is_repairing(fleet));
@@ -1145,8 +1171,8 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(loaded_rolls, expected_rolls);
-        assert_eq!(loaded.ai2.as_ref().unwrap().last_eval_tick, 77);
-        assert_eq!(loaded.game_config.ai.tick_interval, 13);
+        assert_eq!(loaded.ai2.as_ref().unwrap().character_tasks.next_id, 77);
+        assert_eq!(loaded.game_config.scoring.victory_center, 13);
         assert_eq!(loaded.campaign_config, state.campaign_config);
         assert!(loaded.repair.is_repairing(fleet));
         assert_eq!(loaded.troop_transport.cargo(fleet), &[troop]);
@@ -1188,10 +1214,10 @@ mod tests {
         let mut reverse = forward.clone();
         let system_keys = forward.world.systems.keys().collect::<Vec<_>>();
 
-        forward.ai.battle_cooldowns.insert(system_keys[0], 10);
-        forward.ai.battle_cooldowns.insert(system_keys[1], 20);
-        reverse.ai.battle_cooldowns.insert(system_keys[1], 20);
-        reverse.ai.battle_cooldowns.insert(system_keys[0], 10);
+        forward.ai.marks.last_seen.insert(system_keys[0], 10);
+        forward.ai.marks.last_seen.insert(system_keys[1], 20);
+        reverse.ai.marks.last_seen.insert(system_keys[1], 20);
+        reverse.ai.marks.last_seen.insert(system_keys[0], 10);
 
         assert_eq!(
             compute_state_fingerprint(&forward).unwrap(),
@@ -1205,7 +1231,7 @@ mod tests {
         let mut rng_changed = original.clone();
         rng_changed.sim_rng.next_u64();
         let mut config_changed = original.clone();
-        config_changed.game_config.ai.tick_interval += 1;
+        config_changed.game_config.scoring.victory_center += 1;
         let mut campaign_changed = original.clone();
         campaign_changed.campaign_config.victory_conditions =
             rebellion_core::world::VictoryConditions::HeadquartersOnly;
@@ -1421,10 +1447,17 @@ mod tests {
 
     /// A save holding a remote build order and a delivery en route, for the
     /// F-030 layout tests.
-    fn state_with_delivery() -> (SaveState, SystemKey, SystemKey) {
+    fn state_with_delivery() -> (
+        SaveState,
+        SystemKey,
+        rebellion_core::manufacturing::Destination,
+    ) {
         let mut state = minimal_save_state();
         let mut systems = state.world.systems.keys();
-        let (origin, destination) = (systems.next().unwrap(), systems.next().unwrap());
+        let (origin, destination) = (
+            systems.next().unwrap(),
+            rebellion_core::manufacturing::Destination::System(systems.next().unwrap()),
+        );
         let class = state
             .world
             .capital_ship_classes
@@ -1530,6 +1563,8 @@ mod tests {
             is_alliance: true,
             skills: [1, 2, 3, 4, 5, 6, 7, 8],
             on_mission: false,
+            en_route: false,
+            on_hidden_mission: false,
         });
         state.world.systems[system].special_forces.push(unit);
         state.world.mission_records.push(MissionRecord {
@@ -1540,10 +1575,20 @@ mod tests {
             hidden: false,
             detection_phases: true,
             can_resign: false,
+            // The shipped MISSNSD Diplomacy record 0x51000010's columns
+            // 11..21 = 1 1 1 1 1 0 0 1 0 0, which the creation validator reads
+            // (base rules, FUN_00523450).
             rules: rebellion_core::world::MissionTargetRules {
                 container_loss_ends: true,
+                needs_populated_container: true,
                 target_loss_ends: true,
-                ..Default::default()
+                own_side_target: true,
+                other_side_target: true,
+                opponent_target: false,
+                revolting_target: false,
+                calm_target: true,
+                prisoner_target: false,
+                free_target: false,
             },
             members: rebellion_core::world::MissionMemberRules {
                 alliance: true,
@@ -1567,7 +1612,11 @@ mod tests {
         };
         state
             .missions
-            .dispatch_guarded(request, &mut state.world)
+            .dispatch_validated(
+                request,
+                &mut state.world,
+                &rebellion_core::uprising::UprisingState::default(),
+            )
             .expect("the mission should dispatch");
         save_slot(&saves_dir, 0, "V17 Save", &state, &[]).unwrap();
 
@@ -1628,7 +1677,7 @@ mod tests {
     #[test]
     fn a_round_trip_keeps_mission_phases_and_members_in_transit() {
         use rebellion_core::missions::{
-            move_member, MissionEffect, MissionFaction, MissionKind, MissionMember, MissionRequest,
+            apply_advance_effects, MissionFaction, MissionKind, MissionMember, MissionRequest,
             MissionSystem, PHASE_TRANSIT,
         };
         use rebellion_core::tick::TickEvent;
@@ -1644,7 +1693,7 @@ mod tests {
         });
         state
             .missions
-            .dispatch_guarded(
+            .dispatch_validated(
                 MissionRequest::single(
                     MissionKind::Diplomacy,
                     MissionFaction::Alliance,
@@ -1654,6 +1703,7 @@ mod tests {
                     0,
                 ),
                 &mut state.world,
+                &rebellion_core::uprising::UprisingState::default(),
             )
             .expect("the mission should dispatch");
         let advance = MissionSystem::advance(
@@ -1663,11 +1713,7 @@ mod tests {
             &[TickEvent { tick: 1 }],
             &[],
         );
-        for effect in &advance.effects {
-            if let MissionEffect::MemberMoved { member, to } = effect {
-                move_member(&mut state.world, *member, *to);
-            }
-        }
+        apply_advance_effects(&mut state.world, &advance.effects);
         save_slot(&saves_dir, 0, "V18 Save", &state, &[]).unwrap();
 
         let (_, loaded) = load_slot(&saves_dir, 0).expect("the save should load");
@@ -1689,13 +1735,16 @@ mod tests {
         );
         assert_eq!(loaded.missions.en_route(), state.missions.en_route());
         assert!(loaded.missions.is_en_route(MissionMember::Character(envoy)));
-        assert_eq!(loaded.world.characters[envoy].current_system, None);
+        // The member stands at its destination, en route, from the order on
+        // (`move-order.md`, "Who reads the en route bit").
+        assert_eq!(loaded.world.characters[envoy].current_system, Some(to));
+        assert!(loaded.world.characters[envoy].en_route);
     }
 
     #[test]
     fn a_round_trip_keeps_a_mission_s_armed_timer_and_its_seen_loss() {
         use rebellion_core::missions::{
-            move_member, MissionEffect, MissionFaction, MissionKind, MissionRequest, MissionSystem,
+            apply_advance_effects, MissionFaction, MissionKind, MissionRequest, MissionSystem,
             PHASE_TIMER,
         };
         use rebellion_core::tick::TickEvent;
@@ -1711,7 +1760,7 @@ mod tests {
         });
         state
             .missions
-            .dispatch_guarded(
+            .dispatch_validated(
                 MissionRequest::single(
                     MissionKind::Diplomacy,
                     MissionFaction::Alliance,
@@ -1721,6 +1770,7 @@ mod tests {
                     0,
                 ),
                 &mut state.world,
+                &rebellion_core::uprising::UprisingState::default(),
             )
             .expect("the mission should dispatch");
         let step = |state: &mut SaveState, tick: u64| {
@@ -1731,11 +1781,7 @@ mod tests {
                 &[TickEvent { tick }],
                 &[],
             );
-            for effect in &advance.effects {
-                if let MissionEffect::MemberMoved { member, to } = effect {
-                    move_member(&mut state.world, *member, *to);
-                }
-            }
+            apply_advance_effects(&mut state.world, &advance.effects);
         };
         step(&mut state, 1);
         let arrival = state.missions.en_route()[0].arrival;
@@ -1812,7 +1858,7 @@ mod tests {
         let target = MissionTarget::ManufacturingFacility(yard);
         state
             .missions
-            .dispatch_guarded(
+            .dispatch_validated(
                 MissionRequest {
                     target_object: Some(target),
                     ..MissionRequest::single(
@@ -1825,6 +1871,7 @@ mod tests {
                     )
                 },
                 &mut state.world,
+                &rebellion_core::uprising::UprisingState::default(),
             )
             .expect("the sabotage should dispatch");
         save_slot(&saves_dir, 0, "Sabotage Save", &state, &[]).unwrap();

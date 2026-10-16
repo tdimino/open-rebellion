@@ -95,6 +95,25 @@ pub fn tag_ship(world: &mut GameWorld, fleet: FleetKey, index: usize) -> Option<
     Some(ship.tag)
 }
 
+/// Give every living untagged ship the next world tag, fleet by fleet. The
+/// AI keys its ship records by tag (`FUN_00484630`); port: the original's
+/// ships carry an object id from creation, these get one before each AI pass.
+pub fn tag_all(world: &mut GameWorld) {
+    let fleets: Vec<FleetKey> = world.fleets.keys().collect();
+    for fleet in fleets {
+        let untagged: Vec<usize> = world.fleets[fleet]
+            .capital_ships
+            .iter()
+            .enumerate()
+            .filter(|(_, ship)| ship.alive && ship.tag == 0)
+            .map(|(index, _)| index)
+            .collect();
+        for index in untagged {
+            let _ = tag_ship(world, fleet, index);
+        }
+    }
+}
+
 /// Put `count` squadrons of `class` aboard `fleet`, one at a time, each on
 /// the ship with the most room ([`ship_for_squadron`]). A squadron no ship
 /// has room for stays on the fleet (port: the original refuses the move).

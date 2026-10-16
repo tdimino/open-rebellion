@@ -91,10 +91,6 @@ pub enum GameEffect {
         system: SystemKey,
         new_requirement: u32,
     },
-    MaintenanceShortfall {
-        system: SystemKey,
-        deficit: u32,
-    },
 
     // ── Manufacturing (Phase 1) ──────────────────────────────────────
     BuildCompleted {
@@ -277,8 +273,7 @@ impl GameEffect {
         match self {
             Self::SupportDrifted { .. }
             | Self::CollectionRateChanged { .. }
-            | Self::GarrisonRequirementChanged { .. }
-            | Self::MaintenanceShortfall { .. } => EffectPhase::Economy,
+            | Self::GarrisonRequirementChanged { .. } => EffectPhase::Economy,
 
             Self::BuildCompleted { .. } => EffectPhase::Manufacturing,
 

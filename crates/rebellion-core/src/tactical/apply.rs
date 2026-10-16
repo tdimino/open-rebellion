@@ -19,6 +19,64 @@ pub struct BattleReturn {
     pub withdrawal: Option<SystemKey>,
 }
 
+/// Seat each side's morale before a battle (`FUN_00599c90.c:99-186`): its
+/// retreat permission (`side+0x80`) and its withdrawal threshold
+/// (`side+0x24`). A computer side takes `FUN_004e6110`'s threshold
+/// (`ai_records::battle_withdraw_threshold`), the human side `FUN_004865b0`'s
+/// 0.0 (only a strength of 0 withdraws it). `human_is_attacker` is the side
+/// a person commands, `None` when both are computer players.
+/// port: a retreat system exists (`FUN_00516730` through `FUN_005545e0`) when
+/// `post_battle::retreat_destination` finds a place for the side's fleet; it
+/// is the same chain `withdraw_fleet` sends the fleet by.
+pub fn seat_morale(
+    session: &mut BattleSession,
+    world: &GameWorld,
+    troop_transport: &TroopTransportState,
+    movement: &MovementState,
+    human_is_attacker: Option<bool>,
+) {
+    // port: the Death Star's fleet departs only with a capital ship that can
+    // enter hyperspace (`movement::fleet_speed`).
+    session.morale.death_star_departs = session.death_star.is_some_and(|death_star| {
+        world.systems.get(session.system).is_some_and(|system| {
+            system.fleets.iter().any(|&key| {
+                world.fleets.get(key).is_some_and(|fleet| {
+                    fleet.has_death_star
+                        && fleet.is_alliance == death_star.is_alliance
+                        && crate::movement::fleet_speed(fleet, world).is_some_and(|speed| speed > 0)
+                })
+            })
+        })
+    });
+    for is_attacker in [true, false] {
+        let side = usize::from(!is_attacker);
+        let is_alliance = session.attacker_is_alliance == is_attacker;
+        session.morale.retreat_permitted[side] = crate::post_battle::retreat_destination(
+            world,
+            troop_transport,
+            movement,
+            session.system,
+            is_alliance,
+        )
+        .is_some();
+        session.morale.threshold[side] = if human_is_attacker == Some(is_attacker) {
+            0.0
+        } else {
+            crate::ai_records::battle_withdraw_threshold(
+                world,
+                movement,
+                troop_transport,
+                session.system,
+                if is_alliance {
+                    Faction::Alliance
+                } else {
+                    Faction::Empire
+                },
+            )
+        };
+    }
+}
+
 /// Summarize a completed tactical session without mutating strategic state.
 /// Auto-resolve uses this after its result has already been integrated.
 pub fn summarize_results(session: &BattleSession) -> BattleReturn {
@@ -134,6 +192,13 @@ pub fn apply_results(
                         ship_inst.hull_current = 0;
                     }
                     if ship_inst.alive {
+                        // FUN_0040cfc0: the shield, weapon and two further
+                        // counters are written back with the drive counters.
+                        let hits = result.subsystem_damage;
+                        ship_inst.set_damage_counter(0, hits.shields);
+                        ship_inst.set_damage_counter(1, hits.weapons);
+                        ship_inst.set_damage_counter(2, hits.tractor);
+                        ship_inst.set_damage_counter(3, hits.engines);
                         if let Some(class) = world.capital_ship_classes.get(ship_inst.class) {
                             ship_inst.set_hyperdrive_damage_hits(
                                 class,
@@ -177,6 +242,13 @@ pub fn apply_results(
             crate::carriage::drop_lost_squadrons(fleet);
         }
 
+        // A Death Star that jumped with its side's retreat
+        // (`FUN_005d14d0.c:124-127`) takes its fleet along.
+        let ds_left = session.death_star_withdrew(is_attacker)
+            && world
+                .fleets
+                .get(fleet_key)
+                .is_some_and(|fleet| fleet.has_death_star);
         let is_empty = world
             .fleets
             .get(fleet_key)
@@ -217,7 +289,7 @@ pub fn apply_results(
                 }
             }
             world.fleets.remove(fleet_key);
-        } else if !withdrawn.is_empty() {
+        } else if !withdrawn.is_empty() || ds_left {
             // port: how the original's import splits a fleet whose ships
             // partly withdrew is untraced. The ships that withdrew (and the
             // squadrons aboard them) leave as a fleet of their own, as Create
@@ -258,9 +330,15 @@ pub fn apply_results(
         Some(CombatWinner::Defender) => Some(!session.attacker_is_alliance),
         Some(CombatWinner::Draw) | None => None,
     };
-    if let Some(winner_is_alliance) =
-        crate::post_battle::pass_winner(world, session.system, recorded)
-    {
+    let pass_winner = crate::post_battle::pass_winner(world, session.system, recorded);
+    crate::trace::record(crate::trace::TraceMask::COMBAT, "pass_winner", || {
+        serde_json::json!({
+            "system": session.system_name,
+            "winner": pass_winner.map(|alliance| if alliance { "alliance" } else { "empire" }),
+            "source": if recorded.is_some() { "recorded" } else { "holder_tie" },
+        })
+    });
+    if let Some(winner_is_alliance) = pass_winner {
         crate::post_battle::run_pass(
             world,
             movement,
@@ -332,7 +410,9 @@ fn withdraw_fleet(
         );
         log.push(format!(
             "[battle] withdrawal fleet={fleet:?} destination={destination:?} departed={}",
-            departed.is_ok()
+            departed
+                .as_ref()
+                .map_or_else(|error| format!("no ({error:?})"), |_| "yes".to_owned())
         ));
         if departed.is_ok() {
             return Some(destination);

@@ -44,21 +44,20 @@ Open Rebellion reads the original game data files, converts them to clean JSON, 
 
 | Layer | Implementation status | Release acceptance |
 |-------|-----------------------|--------------------|
-| **Core** | 15 simulation systems and config-driven AI implemented | Audit open |
+| **Core** | 15 simulation systems and the original's strategic AI modules implemented | Audit open |
 | **UI** | Original shuttle menu, bounded strategic windows, and practical tactical launcher | Original-interface audit failing |
 | **Combat** | Space and ground pipelines implemented | Audit open |
 
 Major implemented areas (each remains subject to the linked acceptance audit):
 
 - **Galaxy Viewer** — 200 star systems, pan/zoom/click, 51/51 DAT parsers with byte-level round-trip validation
-- **Living Galaxy** — Game clock, manufacturing, 9 mission types, AI manager, event system, mod loader
+- **Living Galaxy** — Game clock, manufacturing, missions, AI manager, event system, mod loader
 - **War Room** — Player faction selection, 5 UI panels, fleet movement, fog of war, encyclopedia, audio
 - **War Machine** — Space combat (7-phase pipeline), ground combat, orbital bombardment, blockade, uprising, Death Star, research, Jedi training, victory conditions, save/load
 - **Legacy Behavior Coverage** — 4 scripted story chains, Han Solo speed bonus, betrayal, decoy, escape, mission state flags
-- **Mod Workshop** — Sensor-radius fog, captivity, save migration, ModRuntime, Mod Manager panel
+- **Mod Workshop** — Sensor-radius fog, captivity, ModRuntime, Mod Manager panel
 - **Release Groundwork** — Story events, local release packaging, example mod
-- **AI Overhaul** — Distance-based transit, per-fleet targeting with deconfliction, ControlKind state machine, faction-asymmetric doctrine, role-based character AI
-- **AI Behavior Coverage** — Config-driven AI (16 tunable params), 18/18 dispatch validators, troop deployment, Death Star multi-target, reconnaissance
+- **Original AI modules** — Round scheduler, strategy controller, regional postures, fleet and character tasks, production budgets, Research planners
 - **UI Reconstruction** — Original shuttle menu verified; campaign and tactical replacements are cataloged for bitmap-driven reconstruction
 - **Story and Runtime Integration** — Cutscene state machine, Emperor combat modifier, original type-302 advisor idle frames, mission telemetry
 - **Ghidra RE corpus** — [5,127 functions decompiled](https://tdimino.github.io/open-rebellion/) from REBEXE.EXE, 111 GNPRTB parameters mapped, C++ class hierarchy reconstructed
@@ -184,13 +183,13 @@ These rows record delivered implementation work, not final parity or release acc
 | Milestone | Implementation status | What You Get |
 |-----------|-----------------------|-------------|
 | **Galaxy Viewer** | Implemented | Interactive star map, 51/51 DAT parsers, WASM build |
-| **Living Galaxy** | Implemented | Game clock, 9 missions, manufacturing, AI, events, mod loader |
+| **Living Galaxy** | Implemented | Game clock, missions, manufacturing, AI, events, mod loader |
 | **War Room** | Implemented | Player UI, fleet movement, fog of war, encyclopedia, audio |
 | **War Machine** | Implemented | Combat (space/ground/bombardment), blockade, uprising, Death Star, victory, save/load |
 | **Legacy Behavior Coverage** | Implemented | Story events, betrayal, decoys, escape, Han speed bonus, mission flags |
-| **Mod Workshop** | Implemented | Sensor fog, captivity, save migration, mod manager panel, ModRuntime |
+| **Mod Workshop** | Implemented | Sensor fog, captivity, versioned saves, mod manager panel, ModRuntime |
 | **Release Groundwork** | Implemented | Local release packaging, example mod, vendored WASM dependencies |
-| **AI Behavior Coverage** | Implemented | 18/18 dispatch validators, troop deployment, Death Star multi-target, reconnaissance |
+| **Original AI** | Implemented | Round scheduler, task modules 1-13, Research planners; the Alliance HQ move, Rename and Abort are not ported |
 | **UI Reconstruction** | In Progress | Shuttle menu verified; 43 original surface families and 370 references cataloged for exact reconstruction |
 | **Story and Runtime Integration** | Implemented | Cutscene state machine, Emperor modifier, type-302 advisor idle frames, mission telemetry |
 | **HD Visual Polish** | In Progress | Explicit original/HD profiles, reviewed manifests, and family-specific scaling |

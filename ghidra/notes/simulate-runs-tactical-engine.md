@@ -65,8 +65,8 @@ applies its groups' damage rates (`FUN_005d14d0`); task-force steering
 ## Shields
 
 The strategic `CCapitalShip` has no current-shield field: `+0x60` is hull
-damage and `+0x64` packs 4-bit fields (shield allocation bits 0–3, weapon
-allocation 4–7, then four more at 8–23 with change events at vtable
+damage and `+0x64` packs six 4-bit damage counters (shield bits 0–3, weapon
+4–7, then four more at 8–23 (`ship-damage-repair.md`) with change events at vtable
 `+0x2a8`…`+0x2b4`; `FUN_00501640`, `FUN_005016e0`, `FUN_00501780`,
 `FUN_00501820`). Shields exist only on the tactical ship, as a pool that
 lasts the whole battle and recharges each second; the port already models
@@ -75,7 +75,7 @@ rate − 0.25 × rate × shield-generator hits).
 
 After the battle `FUN_0040cfc0` writes back, per ship, hull (from the
 tactical hull fraction, through `FUN_00501ae0` / `FUN_00501b70` →
-`FUN_00501490`), the two allocations (`FUN_00501510`, `FUN_005015a0`) and the
+`FUN_00501490`), the shield and weapon damage counters (`FUN_00501510`, `FUN_005015a0`) and the
 four packed counters. No shield value is written back: every battle starts
 with full shields.
 

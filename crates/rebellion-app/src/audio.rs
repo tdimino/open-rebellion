@@ -765,7 +765,11 @@ impl AudioEngine {
             }
         };
         let Some(seconds) = riff_seconds(&bytes) else {
-            eprintln!("[audio] music track={} is not a RIFF WAVE: {}", track.index(), path.display());
+            eprintln!(
+                "[audio] music track={} is not a RIFF WAVE: {}",
+                track.index(),
+                path.display()
+            );
             return;
         };
         let sound = Sound::load(&self.ctx, &bytes);

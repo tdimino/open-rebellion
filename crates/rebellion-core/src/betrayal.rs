@@ -19,6 +19,9 @@ use crate::tick::TickEvent;
 use crate::world::{GameWorld, MstbTable};
 
 /// How often (in ticks) the betrayal check runs per character.
+///
+/// hyp: the original's per-character betrayal cadence is not recovered; 50 is
+/// the port's choice (`entity-system.md` records only the `not betray` string).
 pub const BETRAYAL_CHECK_INTERVAL: u64 = 50;
 
 // ---------------------------------------------------------------------------
@@ -65,6 +68,11 @@ pub struct BetrayalSystem;
 
 impl BetrayalSystem {
     /// Advance the betrayal system: check each character for possible defection.
+    ///
+    /// hyp: the `loyalty - 50` score and the table lookup are presumed from
+    /// `entity-system.md`; the uprising step tables are not a betrayal source.
+    /// The only recovered betrayal is the mission-member one, `FUN_00589f10`
+    /// (`decoy-roll.md`): a draw in 0..99 below `100 - loyalty`.
     ///
     /// # RNG contract
     ///

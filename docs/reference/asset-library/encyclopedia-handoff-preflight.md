@@ -22,7 +22,7 @@ family-qualified topic binding. Every retained PR idea below has one
 current-main owner, one adaptation destination, and one verification gate.
 
 The implementation order remains W1 through W8 from the
-[handoff adaptation plan](../../plans/2026-10-02-feat-will-forster-encyclopedia-handoff-adaptation.md).
+[handoff adaptation plan](../../plans/completed/2026-10-02-feat-will-forster-encyclopedia-handoff-adaptation.md).
 P66A is the only catalog and binding authority. P66B is still a future
 transport boundary; this preflight does not claim that its catalog namespace
 or installer has landed.
@@ -70,7 +70,7 @@ reference. They are not import destinations.
 |---|---|
 | `crates/rebellion-app/src/interface_test_fixture.rs` | Preserve current scenario IDs and registry. Add W3-W5 scenarios incrementally and delegate to production presenter/render functions. Do not replace it with PR `encyclopedia_test_fixture.rs` or renumber existing routes. |
 | `crates/rebellion-data/src/lib.rs` | Preserve the public P66A `encyclopedia_catalog` and `encyclopedia_topics` modules. W1 imports those APIs directly; it does not restore `pub mod encyclopedia` or PR-only model exports. |
-| `docs/plans/2026-09-27-design-encyclopedia-data-pipeline.md` | The upstream design remains canonical. This preflight and the handoff adaptation plan record provenance and sequencing only; PR design text cannot become a second contract. |
+| `docs/plans/completed/2026-09-27-design-encyclopedia-data-pipeline.md` | The upstream design remains canonical. This preflight and the handoff adaptation plan record provenance and sequencing only; PR design text cannot become a second contract. |
 | `tools/stage-ui-assets/cli.go` | Preserve the current `--encyclopedia-only`, `--encyclopedia-output`, and `--verify` surface. Publication hardening extends that path; PR-specific catalog/report modes are not imported. |
 
 ## PR compile and test evidence

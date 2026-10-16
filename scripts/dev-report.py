@@ -2,7 +2,7 @@
 """Show a native run as one timeline: each developer command, its result,
 and what the game did while it ran.
 
-    scripts/dev-report.py DIR [--all] [--no-status]
+    scripts/dev-report.py DIR [--all] [--no-status] [--no-telemetry]
 
 DIR is a `scripts/launch-native.sh --evidence` folder. The report reads
 DIR/commands.out (each command's JSON result) and DIR/game.log, which it
@@ -10,6 +10,15 @@ splits at the `[dev-command] run #N: <line>` marker each command logs as it
 starts. Under each command it lists the game's tagged lines up to the next
 command. Routine lines (droid sound and slot traces, `sent`/`done`
 bookkeeping) are hidden unless --all is given.
+
+When DIR/telemetry.jsonl exists, its records appear under the command (`seq`)
+they were written in, marked `~` (see scripts/telemetry.py for the format).
+A record with no `seq` follows the one before it in the file; records before
+the first command are skipped. Per-day heartbeats (economy, support drift,
+`*_check` and the like) are hidden unless --all is given, and each command
+shows at most 40 telemetry lines (--all lifts the cap). --no-telemetry leaves
+the file out. `[dev-policy]` lines in game.log, which the game writes when it
+handles a Battle Alert or advice window itself, are marked `*`.
 
 If the game is still running with its live channel open, the report ends
 with a fresh `Status` (mode, day, speed, open dialogs), so a run stuck behind
@@ -27,6 +36,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import telemetry  # noqa: E402
+
 RUN = re.compile(r"^\[dev-command\] run #(\S+): (.*)$")
 # Bookkeeping and per-frame droid traces: shown only with --all.
 ROUTINE = (
@@ -37,7 +49,18 @@ ROUTINE = (
 MARKS = (
     (re.compile(r"refused|unknown|cannot|error|panic", re.I), "!"),
     (re.compile(r"^\[capture\]"), "@"),
+    (re.compile(r"^\[dev-policy\]"), "*"),
 )
+# Telemetry that fires every day: shown only with --all.
+TELEMETRY_ROUTINE = frozenset(
+    {
+        "economy_tick", "support_drift", "collection_rate", "garrison_required",
+        "campaign_snapshot", "character_combat_rating", "uprising_check",
+        "betrayal_check", "death_star_status", "jedi_check", "victory_status",
+        "fog_revealed",
+    }
+)
+TELEMETRY_CAP = 40
 
 
 def results(path: Path) -> dict[str, dict]:
@@ -70,6 +93,27 @@ def sections(path: Path) -> tuple[list[str], list[tuple[str, str, list[str]]]]:
         else:
             prelude.append(line)
     return prelude, runs
+
+
+def telemetry_by_seq(directory: Path, everything: bool) -> tuple[dict[str, list[dict]], int]:
+    """Telemetry records grouped by the command they ran under, plus the
+    count of routine records hidden."""
+    path = directory / "telemetry.jsonl"
+    grouped: dict[str, list[dict]] = {}
+    hidden = 0
+    if not path.exists():
+        return grouped, hidden
+    current: str | None = None
+    for record in telemetry.load(path):
+        if record.get("seq") is not None:
+            current = str(record["seq"])
+        if current is None:
+            continue
+        if not everything and record.get("event_type") in TELEMETRY_ROUTINE:
+            hidden += 1
+            continue
+        grouped.setdefault(current, []).append(record)
+    return grouped, hidden
 
 
 def shown(line: str, everything: bool) -> bool:
@@ -122,6 +166,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("dir", type=Path, help="the run's evidence folder")
     parser.add_argument("--all", action="store_true", help="show routine lines too")
+    parser.add_argument("--no-telemetry", action="store_true", help="skip telemetry.jsonl")
     parser.add_argument("--no-status", action="store_true", help="skip the live Status")
     args = parser.parse_args()
     directory: Path = args.dir
@@ -140,6 +185,8 @@ def main() -> int:
         for line in startup:
             print(f"  ! {line}")
 
+    records, hidden = ({}, 0) if args.no_telemetry else telemetry_by_seq(directory, args.all)
+
     for seq, line, lines in runs:
         answer = answers.get(seq, {})
         state = answer.get("status", "script" if seq == "-" else "pending")
@@ -154,7 +201,14 @@ def main() -> int:
                 continue
             if shown(event, args.all):
                 print(f"  {mark(event)} {event}")
+        mine = records.get(seq, [])
+        for record in mine if args.all else mine[:TELEMETRY_CAP]:
+            print(f"  ~ {telemetry.render(record)}")
+        if len(mine) > TELEMETRY_CAP and not args.all:
+            print(f"  ~ ... {len(mine) - TELEMETRY_CAP} more telemetry records (--all)")
 
+    if hidden:
+        print(f"\n({hidden} routine telemetry records hidden; --all shows them)")
     if not args.no_status and (directory / "commands.in").exists() and live_pid(directory):
         now = status(directory)
         print(f"\nnow: {now}" if now else "\nnow: no answer to Status (busy or not live)")

@@ -20,7 +20,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::ids::{FleetKey, SystemKey};
+use crate::dat::Faction;
+use crate::ids::{FleetKey, SectorKey, SystemKey};
 use crate::world::{ControlKind, GameWorld};
 
 /// GNPRTB `parameter_id` 0x1400 (`DAT_006bb6e8`, value 5), which the original
@@ -203,6 +204,131 @@ impl BombardmentSystem {
 }
 
 // ---------------------------------------------------------------------------
+// Finalize (`FUN_0058e320`)
+// ---------------------------------------------------------------------------
+
+/// GNPRTB 7705 (`0x1e19`, `DAT_006bb47c`, `FUN_00558bb0.c:178`): the change
+/// to the bombarding side's support at the system (`FUN_0055a0e0`).
+const GNPRTB_SYSTEM_SHIFT: u16 = 0x1e19;
+/// GNPRTB `0x1401` (`DAT_006bb630`, `FUN_0055cb60.c:6`): the rim amount of
+/// the galaxy-wide shift after a Death Star kill (`FUN_0055da90`).
+const GNPRTB_RIM_AMOUNT: u16 = 0x1401;
+/// GNPRTB `0x1402` (`DAT_006bb5fc`, `FUN_0055cb60.c:7`): its rim gate limit.
+const GNPRTB_RIM_LIMIT: u16 = 0x1402;
+/// GNPRTB `0x1403` (`DAT_006bb694`, `FUN_0055cb60.c:8`): its core amount.
+const GNPRTB_CORE_AMOUNT: u16 = 0x1403;
+/// GNPRTB `0x1404` (`DAT_006bb628`, `FUN_0055cb60.c:9`): its core gate limit.
+const GNPRTB_CORE_LIMIT: u16 = 0x1404;
+/// SDPRTB `0x1408` by side (`DAT_006bb614`/`DAT_006bb5f4`,
+/// `FUN_0055cb60.c:36-37`): the rim amount of the sector-wide shift after
+/// any other bombardment (`FUN_0055d900`).
+const SDPRTB_RIM_AMOUNT: u16 = 0x1408;
+/// SDPRTB `0x1409` (`DAT_006bb6d0`/`DAT_006bb6c4`, `FUN_0055cb60.c:38-39`):
+/// its rim gate limit.
+const SDPRTB_RIM_LIMIT: u16 = 0x1409;
+/// SDPRTB `0x140a` (`DAT_006bb66c`/`DAT_006bb6a8`, `FUN_0055cb60.c:40-41`):
+/// its core amount.
+const SDPRTB_CORE_AMOUNT: u16 = 0x140a;
+/// SDPRTB `0x140b` (`DAT_006bb6c0`/`DAT_006bb624`, `FUN_0055cb60.c:42-43`):
+/// its core gate limit.
+const SDPRTB_CORE_LIMIT: u16 = 0x140b;
+/// The core system families a shift record names (`FUN_0055d900`,
+/// `FUN_0055da90`: `0x90`..`0x92`).
+const CORE_FAMILIES: std::ops::Range<u8> = 0x90..0x92;
+/// The rim system families (`FUN_0055d900`, `FUN_0055da90`: `0x92`..`0x94`).
+const RIM_FAMILIES: std::ops::Range<u8> = 0x92..0x94;
+
+/// What a bombardment run leaves its finalize (the state's `+0x28` and
+/// `+0x2c`, `FUN_0058d720`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct BombardmentRun {
+    /// `+0x28`: a civilian facility destroyed, or energy or raw material
+    /// lost (`FUN_0058ce70`, `FUN_0058cf20`, `FUN_0058cf50`), or the planet
+    /// destroyed (`FUN_0058d990`).
+    pub support_loss: bool,
+    /// `+0x2c`: the Death Star destroyed the planet (`FUN_0058d990` ->
+    /// `FUN_0058ce70`).
+    pub planet_destroyed: bool,
+}
+
+/// `FUN_0058e320`: the support shifts after `side` bombarded `system`. With
+/// `+0x28`, the side's support at the system changes by GNPRTB 7705
+/// (`FUN_0050c9f0`). Then, with `+0x2c`, every sector shifts against the
+/// side (`FUN_0055da90`, `FUN_00518a70`); with `+0x28` alone, the system's
+/// sector does (`FUN_0055d900`, `FUN_00518ac0`). Core systems shift before
+/// rim ones (`FUN_0058e320` passes 1, then 0).
+pub fn finalize(world: &mut GameWorld, system: SystemKey, side: Faction, run: BombardmentRun) {
+    let difficulty = world.difficulty_index;
+    let Some(sys) = world.systems.get(system) else {
+        return;
+    };
+    let sector = sys.sector;
+    // FUN_0050c9f0 does nothing on an unpopulated system.
+    if run.support_loss && sys.is_populated {
+        let delta = world.gnprtb.value(GNPRTB_SYSTEM_SHIFT, difficulty);
+        crate::uprising::apply_support_change(world, system, side, delta);
+    }
+    if run.planet_destroyed {
+        let core = (
+            world.gnprtb.value(GNPRTB_CORE_AMOUNT, difficulty),
+            world.gnprtb.value(GNPRTB_CORE_LIMIT, difficulty),
+        );
+        let rim = (
+            world.gnprtb.value(GNPRTB_RIM_AMOUNT, difficulty),
+            world.gnprtb.value(GNPRTB_RIM_LIMIT, difficulty),
+        );
+        let sectors: Vec<SectorKey> = world.sectors.keys().collect();
+        for (families, (amount, limit)) in [(CORE_FAMILIES, core), (RIM_FAMILIES, rim)] {
+            for &each in &sectors {
+                shift_sector(world, each, families.clone(), side, limit, amount);
+            }
+        }
+    } else if run.support_loss {
+        let core = (
+            world.sdprtb.value(SDPRTB_CORE_AMOUNT, difficulty, side),
+            world.sdprtb.value(SDPRTB_CORE_LIMIT, difficulty, side),
+        );
+        let rim = (
+            world.sdprtb.value(SDPRTB_RIM_AMOUNT, difficulty, side),
+            world.sdprtb.value(SDPRTB_RIM_LIMIT, difficulty, side),
+        );
+        for (families, (amount, limit)) in [(CORE_FAMILIES, core), (RIM_FAMILIES, rim)] {
+            shift_sector(world, sector, families, side, limit, amount);
+        }
+    }
+}
+
+/// `FUN_00518b20` -> `FUN_00518be0`: `side`'s support changes by `amount`
+/// (`FUN_0050c9f0`, through event `0x373`) at each populated system of
+/// `sector` whose family is in `families` and where `side`'s support is
+/// below `limit`. hyp: system `+0x88` bit 3, which also blocks a shift, is
+/// untraced and read as clear. port: the shift applies at once; the
+/// original posts it as event `0x373`.
+fn shift_sector(
+    world: &mut GameWorld,
+    sector: SectorKey,
+    families: std::ops::Range<u8>,
+    side: Faction,
+    limit: i32,
+    amount: i32,
+) {
+    let Some(systems) = world.sectors.get(sector).map(|s| s.systems.clone()) else {
+        return;
+    };
+    for system in systems {
+        let Some(sys) = world.systems.get(system) else {
+            continue;
+        };
+        if families.contains(&sys.dat_id.family())
+            && sys.is_populated
+            && crate::uprising::support_points(sys, side) < limit
+        {
+            crate::uprising::apply_support_change(world, system, side, amount);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -237,10 +363,12 @@ mod tests {
             defense_facility_classes: HashMap::new(),
             difficulty_index: 2,
             recruit_pool_empty: [false; 2],
+            research_exhausted: [[false; 3]; 2],
             fleet_names: crate::world::FleetNames::default(),
             last_ship_tag: 0,
             squadron_transits: Vec::new(),
             arrival_holders: std::collections::HashMap::new(),
+            death_star_sectors: std::collections::HashSet::new(),
         }
     }
 

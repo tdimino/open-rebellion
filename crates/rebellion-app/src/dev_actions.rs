@@ -1,5 +1,5 @@
 //! The world-changing developer commands: `Post message`, `Battle at`,
-//! `Blockade` and `Give Death Star`. Each one goes through the production
+//! `Blockade`, `Give Death Star`, `Damage ship`, `Mission:` and `Recruit:`. Each one goes through the production
 //! code that the event it stands for would run (the message builders,
 //! `apply_fleet_arrival` as the
 //! app's own arrival step calls it, the tick's own combat and blockade
@@ -8,9 +8,14 @@
 //! and is never faked. `agent_docs/dev-commands.md` lists them.
 
 use rebellion_core::dat::Faction;
-use rebellion_core::ids::{FleetKey, SystemKey};
+use rebellion_core::ids::{CharacterKey, FleetKey, SystemKey};
+use rebellion_core::missions::{
+    available_kinds, recruit_character, recruit_pool, MissionFaction, MissionKind, MissionMember,
+    MissionRequest, MissionState,
+};
 use rebellion_core::movement::{apply_fleet_arrival, ArrivalEvent, MovementState};
 use rebellion_core::troop_transport::TroopTransportState;
+use rebellion_core::uprising::UprisingState;
 use rebellion_core::world::GameWorld;
 use rebellion_data::text_templates::TextTemplates;
 use rebellion_render::message_log::{GameMessage, MessageLog};
@@ -30,7 +35,8 @@ pub fn find_system(world: &GameWorld, name: &str) -> Result<SystemKey, String> {
 /// Every system by name: its holder (`A`, `E`, `-` for neither) and, after
 /// a slash, the sides with fleets there; for choosing a `Battle at` or
 /// `Blockade` target. A system with squadrons adds the counts the system
-/// holds and its fleets carry, Alliance then Empire.
+/// holds and its fleets carry, Alliance then Empire; a populated one adds
+/// each side's support in points.
 pub fn list_systems(world: &GameWorld) -> String {
     let mut rows: Vec<String> = world
         .systems
@@ -41,7 +47,10 @@ pub fn list_systems(world: &GameWorld) -> String {
                 Some(false) => "E",
                 None => "-",
             };
-            let fleets = match (side_has_fleet(world, key, true), side_has_fleet(world, key, false)) {
+            let fleets = match (
+                side_has_fleet(world, key, true),
+                side_has_fleet(world, key, false),
+            ) {
                 (true, true) => "AE",
                 (true, false) => "A",
                 (false, true) => "E",
@@ -78,6 +87,13 @@ pub fn list_systems(world: &GameWorld) -> String {
                 .count();
             if yards > 0 {
                 row.push_str(&format!(" yards {yards}"));
+            }
+            if system.is_populated {
+                row.push_str(&format!(
+                    " support {}/{}",
+                    rebellion_core::uprising::support_points(system, Faction::Alliance),
+                    rebellion_core::uprising::support_points(system, Faction::Empire)
+                ));
             }
             row
         })
@@ -118,7 +134,9 @@ pub fn post_message(
             class == MessageClass::UprisingBegan,
             String::new(),
         ),
-        MessageClass::Blockade => crate::blockade_messages(world, templates, system, tick, String::new()),
+        MessageClass::Blockade => {
+            crate::blockade_messages(world, templates, system, tick, String::new())
+        }
         MessageClass::FleetArrival => {
             let (fleet, alliance) = fleet_at(world, system, player_is_alliance)
                 .ok_or_else(|| format!("no fleet orbits {name} to arrive"))?;
@@ -163,7 +181,11 @@ pub fn post_message(
 
 /// A fleet orbiting `system` and its side: the player's first, since only
 /// the arriving side files the message.
-fn fleet_at(world: &GameWorld, system: SystemKey, player_is_alliance: bool) -> Option<(FleetKey, bool)> {
+fn fleet_at(
+    world: &GameWorld,
+    system: SystemKey,
+    player_is_alliance: bool,
+) -> Option<(FleetKey, bool)> {
     let fleets: Vec<(FleetKey, bool)> = world
         .systems
         .get(system)?
@@ -218,17 +240,23 @@ pub fn blockade(
     let holder = holder_is_alliance(world, system)
         .ok_or_else(|| format!("{name} has no holder to blockade"))?;
     if side_has_fleet(world, system, holder) {
-        return Err(format!("the holder has a fleet at {name}; that is a battle"));
+        return Err(format!(
+            "the holder has a fleet at {name}; that is a battle"
+        ));
     }
-    Ok(bring_side(world, movement, troop_transport, system, !holder, tick)?
-        .unwrap_or_else(|| "the blockader already orbits it".into()))
+    Ok(
+        bring_side(world, movement, troop_transport, system, !holder, tick)?
+            .unwrap_or_else(|| "the blockader already orbits it".into()),
+    )
 }
 
 fn side_has_fleet(world: &GameWorld, system: SystemKey, alliance: bool) -> bool {
-    world.systems[system]
-        .fleets
-        .iter()
-        .any(|&key| world.fleets.get(key).is_some_and(|f| f.is_alliance == alliance))
+    world.systems[system].fleets.iter().any(|&key| {
+        world
+            .fleets
+            .get(key)
+            .is_some_and(|f| f.is_alliance == alliance)
+    })
 }
 
 /// Move one idle fleet of a side to `system` through `apply_fleet_arrival`:
@@ -285,7 +313,9 @@ fn bring_side(
         "[dev-command] moved {side} {fleet_name} from {origin_name} to {}",
         world.systems[system].name
     );
-    Ok(Some(format!("moved {side} {fleet_name} from {origin_name}")))
+    Ok(Some(format!(
+        "moved {side} {fleet_name} from {origin_name}"
+    )))
 }
 
 /// Mark the named Imperial fleet as carrying the Death Star, as a completed
@@ -296,7 +326,12 @@ pub fn give_death_star(
     death_star: &mut rebellion_core::death_star::DeathStarState,
     name: &str,
 ) -> Result<String, String> {
-    if let Some(holder) = world.fleets.iter().find(|(_, fleet)| fleet.has_death_star).map(|(key, _)| key) {
+    if let Some(holder) = world
+        .fleets
+        .iter()
+        .find(|(_, fleet)| fleet.has_death_star)
+        .map(|(key, _)| key)
+    {
         return Err(format!(
             "{} already carries the Death Star",
             world.fleet_name(holder).unwrap_or_default()
@@ -316,6 +351,243 @@ pub fn give_death_star(
         .ok_or_else(|| format!("no Imperial fleet named {name:?}"))?;
     world.fleets[fleet].has_death_star = true;
     death_star.death_star_fleet = Some(fleet);
-    let system = world.systems.get(world.fleets[fleet].location).map_or("", |s| s.name.as_str());
-    Ok(format!("{} at {system} carries the Death Star", world.fleet_name(fleet).unwrap_or_default()))
+    let system = world
+        .systems
+        .get(world.fleets[fleet].location)
+        .map_or("", |s| s.name.as_str());
+    Ok(format!(
+        "{} at {system} carries the Death Star",
+        world.fleet_name(fleet).unwrap_or_default()
+    ))
+}
+
+/// Halve the hull of the first live capital ship in the player's fleet
+/// named `name`, as a battle's damage import leaves a hit ship
+/// (`tactical/apply.rs`). Staging only: the repair timer arms on the next
+/// tick through the repair system's own rules, and the damage counters are
+/// left as they are.
+pub fn damage_ship(world: &mut GameWorld, alliance: bool, name: &str) -> Result<String, String> {
+    let fleet = world
+        .fleets
+        .iter()
+        .filter(|(_, fleet)| fleet.is_alliance == alliance)
+        .map(|(key, _)| key)
+        .find(|&key| {
+            world
+                .fleet_name(key)
+                .is_some_and(|fleet_name| fleet_name.eq_ignore_ascii_case(name.trim()))
+        })
+        .ok_or_else(|| format!("no fleet of yours named {name:?}"))?;
+    let fleet_name = world.fleet_name(fleet).unwrap_or_default().to_owned();
+    let system = world
+        .systems
+        .get(world.fleets[fleet].location)
+        .map_or_else(String::new, |s| s.name.clone());
+    let ship = world.fleets[fleet]
+        .capital_ships
+        .iter_mut()
+        .find(|ship| ship.alive)
+        .ok_or_else(|| format!("{fleet_name} has no capital ship"))?;
+    let before = ship.hull_current;
+    if before < 2 {
+        return Err(format!("{fleet_name}'s first ship has no hull to lose"));
+    }
+    ship.hull_current = before / 2;
+    Ok(format!(
+        "{fleet_name} at {system}: first capital ship hull {before} -> {}",
+        ship.hull_current
+    ))
+}
+
+/// The character called `name` (`<name>` or `<name> #<id>`, the id as
+/// `List characters` prints it), ignoring case.
+pub fn find_character(world: &GameWorld, name: &str) -> Result<CharacterKey, String> {
+    let name = name.trim();
+    let (name, id) = match name.rsplit_once('#') {
+        Some((head, id)) => (
+            head.trim(),
+            Some(
+                id.trim()
+                    .parse::<u32>()
+                    .map_err(|_| format!("{id:?} is not a character id"))?,
+            ),
+        ),
+        None => (name, None),
+    };
+    let found: Vec<(CharacterKey, u32)> = world
+        .characters
+        .iter()
+        .filter(|(_, c)| {
+            !c.is_killed
+                && (c.name.eq_ignore_ascii_case(name)
+                    || c.display_name().eq_ignore_ascii_case(name))
+        })
+        .map(|(key, c)| (key, c.dat_id.raw()))
+        .filter(|(_, raw)| id.is_none_or(|id| id == *raw))
+        .collect();
+    match found.as_slice() {
+        [(key, _)] => Ok(*key),
+        [] => Err(format!("no living character named {name:?}")),
+        many => Err(format!(
+            "{} characters are named {name:?}: add `#<id>`, one of {:?}",
+            many.len(),
+            many.iter().map(|(_, raw)| raw).collect::<Vec<_>>()
+        )),
+    }
+}
+
+/// A mission the Create Mission dialog would begin: what
+/// `MissionDialogAction::Begin` carries.
+pub struct MissionOrder {
+    pub kind: MissionKind,
+    pub team: Vec<MissionMember>,
+    pub decoys: Vec<MissionMember>,
+    pub target: SystemKey,
+}
+
+/// Resolve a `Mission:` line into the order the dialog would submit for
+/// `player`, refusing what the dialog would not offer: a character of the
+/// other side, a kind outside `available_kinds` (the refusal names the kinds
+/// it does offer), or an order `dispatch_validated` would refuse. The last
+/// check runs on copies, so a refusal leaves the campaign as it was.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The dialog's order is these inputs; a parameter struct would only restate them."
+)]
+pub fn mission_order(
+    world: &GameWorld,
+    uprisings: &UprisingState,
+    missions: &MissionState,
+    player: MissionFaction,
+    team: &[String],
+    decoys: &[String],
+    kind: MissionKind,
+    system: &str,
+    tick: u64,
+) -> Result<MissionOrder, String> {
+    let target = find_system(world, system)?;
+    let members = |names: &[String]| -> Result<Vec<MissionMember>, String> {
+        names
+            .iter()
+            .map(|name| {
+                let key = find_character(world, name)?;
+                let own = world.characters[key].is_alliance == (player == MissionFaction::Alliance);
+                if own {
+                    Ok(MissionMember::Character(key))
+                } else {
+                    Err(format!("{name} is not on the player's side"))
+                }
+            })
+            .collect()
+    };
+    let (team, decoys) = (members(team)?, members(decoys)?);
+    let offered = available_kinds(world, uprisings, player, &team, &decoys, target);
+    if !offered.contains(&kind) {
+        let names: Vec<&str> = offered.iter().map(|kind| kind.name()).collect();
+        return Err(format!(
+            "the Create Mission dialog does not offer {} for this team at {}; it offers [{}]",
+            kind.name(),
+            world.systems[target].name,
+            names.join(", ")
+        ));
+    }
+    let request = MissionRequest {
+        kind,
+        faction: player,
+        team: team.clone(),
+        decoys: decoys.clone(),
+        target_system: target,
+        target_character: None,
+        target_object: None,
+        tick,
+    };
+    if let Err(refusal) =
+        missions
+            .clone()
+            .dispatch_validated(request, &mut world.clone(), uprisings)
+    {
+        return Err(format!("the mission validator refuses it: {refusal:?}"));
+    }
+    Ok(MissionOrder {
+        kind,
+        team,
+        decoys,
+        target,
+    })
+}
+
+/// Apply Recruitment's success effect to `name` for `side`, as the mission's
+/// resolution does (`recruit_character`, `MissionEffect::CharacterRecruited`):
+/// the character joins at `system`, or at the side's headquarters. Refused
+/// for a character outside the side's recruit pool (`recruit_pool`), naming
+/// why.
+pub fn recruit(
+    world: &mut GameWorld,
+    name: &str,
+    side: Faction,
+    system: Option<&str>,
+) -> Result<String, String> {
+    let key = find_character(world, name)?;
+    let faction = match side {
+        Faction::Alliance => MissionFaction::Alliance,
+        Faction::Empire => MissionFaction::Empire,
+        Faction::Neutral => return Err("Neutral has no recruits".into()),
+    };
+    let character = &world.characters[key];
+    let label = character.display_name().to_owned();
+    if character.recruited {
+        return Err(format!("{label} is already recruited"));
+    }
+    if character.is_major {
+        return Err(format!(
+            "{label} is a major character: Recruitment takes minor ones"
+        ));
+    }
+    let pool = recruit_pool(world, side);
+    if !pool.contains(&key) {
+        return Err(format!(
+            "{label} is not in the {side:?} recruit pool (wrong side or captive)"
+        ));
+    }
+    let target = match system {
+        Some(system) => {
+            let target = find_system(world, system)?;
+            if !world.systems[target].control.is_controlled_by(side) {
+                return Err(format!(
+                    "{} is not held by the {side:?}; Recruitment places a recruit in one of its systems",
+                    world.systems[target].name
+                ));
+            }
+            target
+        }
+        None => world
+            .systems
+            .iter()
+            .find(|(_, s)| s.is_headquarters && s.control.is_controlled_by(side))
+            .or_else(|| {
+                world
+                    .systems
+                    .iter()
+                    .find(|(_, s)| s.control.is_controlled_by(side))
+            })
+            .map(|(key, _)| key)
+            .ok_or_else(|| format!("the {side:?} holds no system to recruit at"))?,
+    };
+    recruit_character(world, key, target, faction, pool.len() == 1);
+    Ok(format!(
+        "{label} recruited at {}",
+        world.systems[target].name
+    ))
+}
+
+/// The refusal the real `dispatch_validated` last gave a `PanelAction::DispatchMission`,
+/// as `<reason> (0x<a>/0x<b>)`, for the `Mission:` result that is waiting on it.
+pub static LAST_DISPATCH_REFUSAL: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+/// Where `Save: <name>` and `Load: <name>` keep a save: the evidence
+/// folder's `saves` directory, under the slot files' own extension.
+pub fn save_path(evidence: &std::path::Path, name: &str) -> std::path::PathBuf {
+    let slot_file = rebellion_data::save::slot_path(std::path::Path::new(""), 0);
+    let extension = slot_file.extension().unwrap_or_default().to_string_lossy();
+    evidence.join("saves").join(format!("{name}.{extension}"))
 }

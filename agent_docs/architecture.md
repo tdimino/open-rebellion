@@ -3,7 +3,7 @@ title: "Architecture"
 description: "Crate dependency graph and module structure for the Open Rebellion codebase"
 category: "agent-docs"
 created: 2026-03-11
-updated: 2026-10-14
+updated: 2026-10-16
 tags: [architecture, crate-graph, entity-identity, simulation]
 ---
 
@@ -42,8 +42,15 @@ crates/rebellion-core/src/
 ├── manufacturing.rs  — ProductionQueue, ManufacturingState, blockade-aware advance (520 LOC, 13 tests)
 ├── missions.rs       — 9 mission types, MSTB probability tables, 6 MissionEffect variants (880 LOC, 14 tests)
 ├── events.rs         — EventCondition (16 variants)/Action (10 variants), chaining, deterministic rng, 7 carbonite fail + permanent freeze constants (~780 LOC, 17 tests)
-├── ai.rs             — AISystem, per-fleet targeting, deconfliction, two-pass deployment, battle penalty, config-driven (1121 LOC, 13 tests)
-├── tuning.rs         — GameConfig: 16 externalized AI/movement/production parameters, parity/augmentation tagged (~160 LOC)
+├── ai.rs             — AISystem: the side's round over the modules below (ai_scheduler.rs), rate+1 rounds a day, plus the port's mission-target picks (systems/ai-parity-tracker.md)
+├── ai_records.rs     — The side AI's ship, fleet and system records, and the marks that persist between rounds
+├── ai_strategy.rs    — Module 13 and the strategy controller: the mode pick and the sector plan
+├── ai_regions.rs     — Module 8: the regional records and their postures
+├── fleet_tasks.rs    — Module 9: the fleet tasks that gather warships at headquarters systems
+├── character_tasks.rs — Module 12: the character tasks, classes G and I
+├── ai_research.rs    — The AI's Research planners, one persistent planner a tree (systems/research.md)
+├── ai_production.rs  — Production modules 1, 2, 3, 5, 6, 7, 10 and 11
+├── tuning.rs         — GameConfig: AiConfig mission caps and scoring targets
 ├── movement.rs       — MovementOrder, Euclidean distance-based transit, config-aware variant (625 LOC, 19 tests). `cancel_orders_to(system)` cancels all in-transit orders targeting a given system (used by Death Star cleanup).
 ├── fleet_join.rs     — Joining and splitting fleets: a move onto a fleet hands over its capital ships, Create Fleet, the join checks (FUN_004ffc90, FUN_004feca0; ghidra/notes/fleet-join-split.md)
 ├── troop_transport.rs — Fleet cargo for regiments: loading through the Fleet window, the hold, unloading by hand and regiments travelling on their own (FUN_00556390, FUN_00552300)
@@ -55,10 +62,10 @@ crates/rebellion-core/src/
 ├── tactical.rs       — The tactical battle engine: BattleSession, placement, engagement AI, weapons, fighters, Death Star, stalemate; played, simulated or headless (FUN_0040a050)
 ├── tactical/         — apply.rs (write-back: apply_results, withdraw_fleet, reconcile_death_star_result), resource_ids.rs (TACTICAL.DLL resource joins), test_support.rs, tests.rs
 ├── bombardment.rs    — Port bombardment: the transit-distance formula, not the original's (ghidra/notes/bombardment.md)
-├── blockade.rs       — Fleet-presence blockade, manufacturing halt, troop destruction
+├── blockade.rs       — Fleet-presence blockade, manufacturing halt, troop destruction, the blockader's support shift on timer `0x386` (ghidra/notes/support-shifts.md)
 ├── uprising.rs       — Recovered revolt lifecycle, uprising incident (UPRIS1TB/UPRIS2TB codes), Subdue gain, disaster
 ├── death_star.rs     — Construction countdown, planet destruction, nearby-warning scan. `cleanup_destroyed_system()` removes all entities (fleets, troops, facilities) and cancels in-transit orders to the destroyed system; the original keeps fleets (ghidra/notes/death-star-strategic.md).
-├── research.rs       — 3 tech trees (Ship/Troop/Facility), MSTB difficulty lookup
+├── research.rs       — per-side points pools, passive timer `0x381`, spending into levels (systems/research.md)
 ├── jedi.rs           — 4-tier Force progression (None→Aware→Training→Experienced), detection
 ├── victory.rs        — current HQ/Death Star outcome checks; parity divergences documented
 ├── betrayal.rs       — Loyalty-driven faction defection, UPRIS1TB threshold, immunity flag
@@ -66,8 +73,11 @@ crates/rebellion-core/src/
 ├── commands.rs       — Shared command registry (16 CommandDef entries) for GUI palette + CLI
 ├── game_events.rs    — GameEventRecord struct + 57 event type constants for JSONL telemetry
 ├── effects.rs        — GameEffect enum (39 variants), EffectPhase ordering, monoidal composition, inversion
-├── economy.rs        — Full 18-function economy tick (FUN_00508250, the community dump calls it adjust_and_deploy_each_system): resource caps, support drift, collection rate, KDY modifier, troop-based side resolution, garrison, troop/fleet summary (SystemSummary), incident state (IncidentFlags), uprising visibility. 17 GNPRTB indices. ~1200 LOC.
-└── repair.rs         — Ship repair framework: RepairSystem at shipyard systems, damage_control rate
+├── economy.rs        — Full 18-function economy tick (FUN_00508250, the community dump calls it adjust_and_deploy_each_system): resource caps, support drift, collection rate, KDY modifier, side resolution (regiments, else support; FUN_0050b610), garrison, troop/fleet summary (SystemSummary), incident state (IncidentFlags), uprising visibility. 17 GNPRTB indices. ~1200 LOC.
+├── repair.rs         — Ship repair, timer `0x380`: the damage counters, a repair every 30 days, or every 2 at the side's own working yard (ghidra/notes/ship-damage-repair.md)
+├── post_battle.rs    — The pass after a battle: the loser's fleets and squadrons withdraw or are lost (FUN_0051ddf0, FUN_00515480)
+├── scrap.rs          — Scrapping for half the refined cost, and the overdraft's candidates (FUN_00530270, FUN_0052e530)
+└── trace.rs          — Opt-in decision traces: the inputs a rule read and the choice it made, for telemetry
 ```
 
 ## Render Modules (rebellion-render)
@@ -81,6 +91,7 @@ crates/rebellion-render/src/
 ├── mission_dialog.rs   — The original mission dialog (FUN_0046a750), opened by targeting
 ├── system_window.rs / sector_window.rs — The original modeless system and sector windows
 ├── quadrant_icons.rs   — The four icons a sector window draws around each planet (FUN_00459e30): which rule shows each, and its art
+├── control_registry.rs — Named hit rects the developer commands click by name in a dev run
 ├── fleet_window.rs     — The Fleet window (type 4, FUN_004a2630): a system's fleets, their contents under four tabs, loading, unloading, joining and splitting
 ├── defenses_window.rs  — The System Defenses window (type 10, FUN_004a7790)
 ├── missions_window.rs  — The Missions window (type 11, FUN_0049f130)
@@ -99,7 +110,6 @@ crates/rebellion-render/src/
 ├── cockpit.rs          — Faction cockpit chrome (top/bottom bars), 9 control buttons, CockpitViewport
 ├── tactical_view.rs    — The battle window: drawing, input, HUD and panels over rebellion_core::tactical (re-exported)
 ├── ground_combat.rs    — Ground combat: regiment engagement, animated bars, win/loss results
-├── event_screen.rs     — Full-screen event overlays for story events. event_id_to_resource() maps story IDs to STRATEGY.DLL BMP offsets with heritage_known branching for Final Battle variants.
 ├── advisor.rs          — Droid advisors: the advice agent's slot table, both droids' players, voices and cockpit steps (`ghidra/notes/droid-advisor-triggers.md`)
 ├── advisor_script.rs   — Action records → droid commands (play, hold, turn), the agent's pass, skip and chatter
 ├── briefing_tour.rs    — Opening briefing tour: each cockpit step's galaxy display or highlight, per faction
@@ -119,8 +129,9 @@ crates/rebellion-render/src/
 
 ```
 crates/rebellion-app/src/
-├── main.rs   — Entry point, interactive loop, panel action handling (~7,300 LOC; no headless tests, see agent-tooling.md)
+├── main.rs   — Entry point, interactive loop, panel action handling (~13,000 LOC; no headless tests, see agent-tooling.md)
 ├── audio.rs  — quad-snd AudioEngine: load, play_sfx, play_music, volume sync, WASM audio base-path resolution
+├── dev_policy.rs — What a developer-command wait does when a modal screen stops the clock
 ├── dev_commands.rs — The command palette's gate (`OPEN_REBELLION_DEV`), and behind it the native command script (`OPEN_REBELLION_COMMANDS`) and campaign seed (`OPEN_REBELLION_SEED`)
 ├── interface_test_fixture.rs — Test-only interface fixture scenarios and the observations the browser gates in tools/interface-parity read
 ├── tactical_flow.rs / tactical_test_fixture.rs — The production tactical-battle entry and its test-only direct entry
@@ -137,8 +148,10 @@ crates/rebellion-data/src/
 ├── seeds.rs      — Game seeding: 3-system model, character stat rolling, named placement (~1200 LOC, 8 tests)
 ├── save.rs       — Save/load: bincode snapshots and save slots; only the current SAVE_VERSION loads, with no migrations (save-load.md). Native uses filesystem saves; WASM uses browser localStorage through the gl.js loader's imports, with separate metadata keys for fast slot listing.
 ├── mods.rs       — Mod loader + ModRuntime: TOML manifest, RFC 7396 merge patch, semver, hot reload
-├── simulation.rs — Tick orchestrator: SimulationStates bundle + run_simulation_tick() (~449 LOC)
-└── integrator.rs — PerceptionIntegrator: all world mutation + telemetry emission (~1,200 LOC, 17 apply methods). Betrayal emits reveal-before-flip (EVT_TRAITOR_REVEALED) + side-change-after-flip (EVT_SIDE_CHANGE).
+├── simulation.rs — Tick orchestrator: SimulationStates bundle + run_simulation_tick() (~1,900 LOC)
+├── telemetry.rs  — Telemetry payloads shared by the integrator and the native game, trace records, the native JSONL sink
+├── readouts.rs   — Plain-text state readouts for the developer commands and the playtest REPL
+└── integrator.rs — PerceptionIntegrator: all world mutation + telemetry emission (~4,100 LOC). Betrayal emits reveal-before-flip (EVT_TRAITOR_REVEALED) + side-change-after-flip (EVT_SIDE_CHANGE).
 ```
 
 ## Type System: Two Layers
@@ -187,9 +200,13 @@ macroquad drawing + egui panels
 ```
 
 ### Simulation Loop (rebellion-data/src/simulation.rs → integrator.rs)
+
+The full order with its sub-steps is in `simulation.md`, "Integration Order".
+
 ```
 run_simulation_tick():
   integrator = PerceptionIntegrator::new(tick, wall_ms)
+  death_star::refresh_sectors      (system bit 11; again after steps 2 and 3b)
   0. EconomySystem::advance       → integrator.apply_economy_events()
   1. ManufacturingSystem::advance  → integrator.apply_build_completions()
   2. MovementSystem::advance       → integrator.apply_arrivals()
@@ -198,13 +215,13 @@ run_simulation_tick():
   5. MissionSystem::advance        → integrator.apply_mission_result()
   5b. check_escapes()              → integrator.apply_escape_effects()
   6. EventSystem::advance          → integrator.apply_fired_events()
-  7. AISystem::advance             → integrator.apply_ai_actions()
   8. BlockadeSystem::advance       → integrator.apply_blockade_events()
   9. UprisingSystem::advance       → integrator.apply_uprising_events()
   10. BetrayalSystem::advance      → integrator.apply_betrayal_events()
   11. DeathStarSystem::advance     → integrator.apply_death_star_events()
   12. ResearchSystem::advance      → integrator.apply_research_results()
   13. JediSystem::advance          → integrator.apply_jedi_events()
+  13b. ai_step per in-day step     → integrator::apply_ai_order(), resolve_ai_strike()
   14. VictorySystem::check         → integrator.apply_victory()
   15. Campaign snapshot            → integrator.emit_campaign_snapshot()
   return integrator.finish()

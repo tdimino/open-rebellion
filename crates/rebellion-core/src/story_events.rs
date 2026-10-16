@@ -821,7 +821,7 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
     // system's field_0x88 are compared against neutral galaxy state; incidents
     // fire only when these bits differ (state change).
     //
-    // Maintenance shortfall fires every GNPRTB[7694]=30 ticks via event timer.
+    // A Maintenance Shortfall notice follows each overdraft scrap (event 0x304).
     // Saboteur/traitor are triggered by mission/loyalty systems, not random events.
     //
     // These will be wired into the economy tick in Phase 3b implementation.
@@ -835,8 +835,8 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::events::EVT_DESTROYED_AUTOSCRAP;
     use crate::events::EVT_INFORMANT_INTEL;
-    use crate::events::EVT_MAINTENANCE_SHORTFALL_EVENT;
     use crate::events::EVT_MANUFACTURING_IDLE;
     use crate::events::EVT_NATURAL_DISASTER;
     use crate::events::EVT_RESOURCE_DISCOVERY;
@@ -2067,14 +2067,14 @@ mod tests {
     #[test]
     fn notification_events_never_use_random() {
         let banned_ids: &[u32] = &[
-            EVT_SUPPORT_CHANGE,              // 0x100
-            EVT_INFORMANT_INTEL,             // 0x153
-            EVT_NATURAL_DISASTER,            // 0x154
-            EVT_RESOURCE_DISCOVERY,          // 0x155
-            EVT_MANUFACTURING_IDLE,          // 0x160
-            EVT_MAINTENANCE_SHORTFALL_EVENT, // 0x304
-            EVT_SABOTEUR_DETECTED,           // 0x305
-            EVT_TRAITOR_REVEALED,            // 0x361
+            EVT_SUPPORT_CHANGE,      // 0x100
+            EVT_INFORMANT_INTEL,     // 0x153
+            EVT_NATURAL_DISASTER,    // 0x154
+            EVT_RESOURCE_DISCOVERY,  // 0x155
+            EVT_MANUFACTURING_IDLE,  // 0x160
+            EVT_DESTROYED_AUTOSCRAP, // 0x304
+            EVT_SABOTEUR_DETECTED,   // 0x305
+            EVT_TRAITOR_REVEALED,    // 0x361
         ];
 
         let world = make_world_with_characters();

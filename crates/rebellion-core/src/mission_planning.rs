@@ -16,11 +16,12 @@
 
 use std::collections::HashSet;
 
-use crate::ids::CharacterKey;
+use crate::ids::{CharacterKey, SystemKey};
 use crate::mission_detection::MissionRng;
 use crate::missions::{
-    member_skill, members_allowed, members_together, MissionKind, MissionMember, MissionState,
+    member_location, member_skill, members_allowed, members_together, MissionKind, MissionMember,
 };
+use crate::research::TechType;
 use crate::uprising::Draws;
 use crate::world::{GameWorld, Skill};
 
@@ -36,12 +37,15 @@ const OTHER_SIDE: u32 = 0x4;
 /// One of the six main characters (`FUN_004025f0`).
 const MAIN_CHARACTER: u32 = 0x8;
 // 0x10, injured (`+0x94` != 0): the port has no injuries.
+/// The Emperor, `0x34000280`, marked in the leader branch
+/// (`FUN_00401d20`).
+pub(crate) const EMPEROR: u32 = 0x400;
 /// En route (`+0x50` bit 4, `FUN_00402230`).
-const EN_ROUTE: u32 = 0x20;
+pub(crate) const EN_ROUTE: u32 = 0x20;
 /// A prisoner (`+0xac` bit 0, `FUN_00401d20`).
-const PRISONER: u32 = 0x40;
+pub(crate) const PRISONER: u32 = 0x40;
 /// On a mission (role bit 7, `FUN_00402230`).
-const ON_MISSION: u32 = 0x80;
+pub(crate) const ON_MISSION: u32 = 0x80;
 /// On a mandatory mission (role bit 9, `FUN_00402230`).
 const MANDATORY: u32 = 0x40_0000;
 /// Set at construction; cleared when a planner takes the object
@@ -68,7 +72,10 @@ const CHARACTER: u32 = 0x2000_0000;
 const LEADER: u32 = 0x4000_0000;
 
 /// The flags an emitted member may not carry (`FUN_0047b360`).
-const NOT_SENT: u32 = 0x0740_00f1;
+pub(crate) const NOT_SENT: u32 = 0x0740_00f1;
+/// Any held officer rank: `0x4000000`, `0x1000000`, `0x2000000` from
+/// character `+0x96` (`FUN_00402230`).
+pub(crate) const RANKED: u32 = 0x0700_0000;
 
 /// The capability bit of each of the port's mission kinds (`FUN_00402720`).
 fn capability(kind: MissionKind) -> Option<u32> {
@@ -83,12 +90,15 @@ fn capability(kind: MissionKind) -> Option<u32> {
         MissionKind::DeathStarSabotage => 0x80,
         MissionKind::InciteUprising => 0x100,
         MissionKind::Recruitment => 0x400,
+        MissionKind::Research(TechType::Ship) => 0x800,
+        MissionKind::Research(TechType::Troop) => 0x1000,
+        MissionKind::Research(TechType::Facility) => 0x2000,
         MissionKind::Autoscrap | MissionKind::Move => return None,
     })
 }
 
 /// The port's agent kinds, in capability-bit order.
-pub(crate) const KINDS: [MissionKind; 10] = [
+pub(crate) const KINDS: [MissionKind; 13] = [
     MissionKind::Diplomacy,
     MissionKind::Rescue,
     MissionKind::Sabotage,
@@ -99,6 +109,9 @@ pub(crate) const KINDS: [MissionKind; 10] = [
     MissionKind::DeathStarSabotage,
     MissionKind::InciteUprising,
     MissionKind::Recruitment,
+    MissionKind::Research(TechType::Ship),
+    MissionKind::Research(TechType::Troop),
+    MissionKind::Research(TechType::Facility),
 ];
 
 /// The three Research records (`0x53000020`, `0x53000022`, `0x53000021`;
@@ -110,6 +123,13 @@ const MAIN_CHARACTERS: [u32; 6] = [0x240, 0x241, 0x242, 0x243, 0x280, 0x281];
 /// The four leaders (`FUN_004024d0`): `0x30000240`, `0x32000242`,
 /// `0x34000280`, and `0x35000281`.
 const LEADERS: [u32; 4] = [0x240, 0x242, 0x280, 0x281];
+/// The Emperor's record id, `0x34000280` (`FUN_00401d20`).
+const EMPEROR_ID: u32 = 0x280;
+
+/// Whether `c` is one of the four leaders (`FUN_004024d0`).
+pub(crate) fn is_leader(c: &crate::world::Character) -> bool {
+    c.is_major && LEADERS.contains(&c.dat_id.raw())
+}
 
 /// One AI record: `+0x30`, `+0x34`, and the skills at `+0x40`.
 #[derive(Debug, Clone)]
@@ -131,6 +151,13 @@ struct Query {
     forbid_caps: u32,
     skill: Skill,
     min: u32,
+    /// `FUN_004035d0`'s record test (`FUN_004035d0.c:40`): a record passes
+    /// only while unassigned (`+0x30 & 0x800000`) or claimed with a
+    /// priority (`+0x2c`) above the call's 0. Every claim the port makes
+    /// has priority 0, as a class A planner's (slot `+0x20` is
+    /// `FUN_005a5b60`, `return 0`; `FUN_0047b610.c:42-46`) and a character
+    /// task's do, so a claimed record never passes.
+    unclaimed: bool,
 }
 
 /// A planner class's selectors (`FUN_0042f830`).
@@ -167,6 +194,15 @@ const fn query(
         forbid_caps,
         skill,
         min,
+        unclaimed: false,
+    }
+}
+
+/// `q` as a `FUN_004035d0` query, which skips a claimed record.
+const fn unclaimed(q: Query) -> Query {
+    Query {
+        unclaimed: true,
+        ..q
     }
 }
 
@@ -183,23 +219,44 @@ const fn decoys(req_caps: u32, cap: DecoyCap) -> Option<(Query, DecoyCap)> {
 /// class for subtypes other than 6 (the posture `FUN_004b7150` names no
 /// subtype for it), and Abduction takes its default class.
 fn selectors(kind: MissionKind) -> Option<Selectors> {
-    use Skill::{Combat, Diplomacy, Espionage, Leadership};
-    const DIPLOMACY: &[Query] = &[query(0x2, 0x1, 0x0740_4051, 0, Diplomacy, 69)];
+    use Skill::{
+        Combat, Diplomacy, Espionage, FacilityDesign, Leadership, ShipDesign, TroopTraining,
+    };
+    const DIPLOMACY: &[Query] = &[unclaimed(query(0x2, 0x1, 0x0740_4051, 0, Diplomacy, 69))];
     const ESPIONAGE: &[Query] = &[query(0x1080_0002, 0x8, 0x0740_0051, 0, Espionage, 51)];
-    const RECRUITMENT: &[Query] = &[query(0x2, 0x400, 0x0740_0051, 0, Leadership, 80)];
-    const INCITE: &[Query] = &[query(0x2, 0x100, 0x4f40_0051, 0, Leadership, 49)];
-    const SUBDUE: &[Query] = &[query(0x2, 0x20, 0x0740_0051, 0, Leadership, 49)];
-    const RESCUE: &[Query] = &[query(0x2, 0x2, 0x4f40_0051, 0x700_0000, Combat, 51)];
-    const ABDUCTION: &[Query] = &[query(0x2, 0x10, 0x0f40_0051, 0x700_0000, Combat, 51)];
+    const RECRUITMENT: &[Query] = &[unclaimed(query(0x2, 0x400, 0x0740_0051, 0, Leadership, 80))];
+    const INCITE: &[Query] = &[unclaimed(query(0x2, 0x100, 0x4f40_0051, 0, Leadership, 49))];
+    const SUBDUE: &[Query] = &[unclaimed(query(0x2, 0x20, 0x0740_0051, 0, Leadership, 49))];
+    const RESCUE: &[Query] = &[unclaimed(query(
+        0x2,
+        0x2,
+        0x4f40_0051,
+        0x700_0000,
+        Combat,
+        51,
+    ))];
+    const ABDUCTION: &[Query] = &[unclaimed(query(
+        0x2,
+        0x10,
+        0x0f40_0051,
+        0x700_0000,
+        Combat,
+        51,
+    ))];
     const ASSASSINATION: &[Query] = &[query(0x1080_0002, 0x40, 0x4740_0051, 0, Combat, 51)];
     const SABOTAGE: &[Query] = &[
         query(0x80_0002, 0x4, 0x4f40_0051, 0, Combat, 51),
         query(0x80_0002, 0x4, 0x4f40_0051, 0, Espionage, 51),
     ];
     const DS_SABOTAGE: &[Query] = &[
-        query(0x2, 0x80, 0x4740_0051, 0, Combat, 51),
-        query(0x2, 0x80, 0x4740_0051, 0, Espionage, 51),
+        unclaimed(query(0x2, 0x80, 0x4740_0051, 0, Combat, 51)),
+        unclaimed(query(0x2, 0x80, 0x4740_0051, 0, Espionage, 51)),
     ];
+    // FUN_0047bcd0, FUN_0047c2b0, FUN_0047c900: the side's own records
+    // with skill 10 or more.
+    const SHIPS: &[Query] = &[query(0x2, 0x800, 0x0740_0051, 0, ShipDesign, 10)];
+    const TROOPS: &[Query] = &[query(0x2, 0x1000, 0x0740_0051, 0, TroopTraining, 10)];
+    const FACILITIES: &[Query] = &[query(0x2, 0x2000, 0x0740_0051, 0, FacilityDesign, 10)];
     let (team, team_size, decoys) = match kind {
         // FUN_004815a0; FUN_0047f500 takes no decoys.
         MissionKind::Diplomacy => (DIPLOMACY, 1, None),
@@ -221,6 +278,10 @@ fn selectors(kind: MissionKind) -> Option<Selectors> {
         MissionKind::Sabotage => (SABOTAGE, 2, decoys(0x4, DecoyCap::Posture)),
         // FUN_00482180, FUN_00482330 (cap 4).
         MissionKind::DeathStarSabotage => (DS_SABOTAGE, 2, decoys(0x80, DecoyCap::Fixed(4))),
+        // The Research selectors stop after one member; no decoys.
+        MissionKind::Research(TechType::Ship) => (SHIPS, 1, None),
+        MissionKind::Research(TechType::Troop) => (TROOPS, 1, None),
+        MissionKind::Research(TechType::Facility) => (FACILITIES, 1, None),
         MissionKind::Autoscrap | MissionKind::Move => return None,
     };
     Some(Selectors {
@@ -232,26 +293,29 @@ fn selectors(kind: MissionKind) -> Option<Selectors> {
 
 /// One side's planners for one AI evaluation.
 pub(crate) struct Planner<'a> {
-    world: &'a GameWorld,
+    pub(crate) world: &'a GameWorld,
     records: Vec<AgentRecord>,
     rng: MissionRng,
 }
 
 impl<'a> Planner<'a> {
     /// The side's records as `FUN_00402230` would refresh them now.
+    /// `exhausted` says which research trees, in the order of
+    /// [`RESEARCH_RECORDS`], the side has finished
+    /// ([`crate::research::ResearchSystem::tree_exhausted`]).
     ///
     /// port: the tie draws come from a stream seeded by the day and side;
     /// the original draws from its global generator (`FUN_0041cd80`).
     pub(crate) fn new(
         world: &'a GameWorld,
-        missions: &MissionState,
         busy: &HashSet<CharacterKey>,
         alliance: bool,
         tick: u64,
+        exhausted: [bool; 3],
     ) -> Self {
         Self {
             world,
-            records: records(world, missions, busy, alliance),
+            records: records(world, busy, alliance, exhausted),
             rng: MissionRng::seeded(0.0, tick.wrapping_mul(2) + u64::from(alliance)),
         }
     }
@@ -281,8 +345,8 @@ impl<'a> Planner<'a> {
             return None;
         }
         let decoys = match selectors.decoys {
-            // hyp: the posture that names +0xbc is not ported; a system
-            // with no recommended kind reads 0, which allows one decoy.
+            // hyp: the planner reads no regional record's +0xbc
+            // (ai_regions.rs); 0 allows one decoy.
             Some((decoy, DecoyCap::Posture)) => self.select(&[decoy], 1),
             Some((decoy, DecoyCap::Fixed(cap))) => self.select(&[decoy], cap),
             None => Vec::new(),
@@ -316,11 +380,141 @@ impl<'a> Planner<'a> {
         Some((team, decoys))
     }
 
-    /// Whether a plan in this evaluation sent `character`.
-    pub(crate) fn sent(&self, character: CharacterKey) -> bool {
+    /// The member a Research planner's selector takes while its team is
+    /// empty (`FUN_0047bcd0`, `FUN_0047c2b0`, `FUN_0047c900`): one record,
+    /// claimed. `None` for any other kind, or when no record qualifies.
+    ///
+    /// port: the selector queries do not test `UNASSIGNED`; a member that
+    /// another planner or a task holds is skipped here, as the claim test
+    /// of `FUN_0047ba40` (`+0x24` is this planner's id) skips it.
+    pub(crate) fn pick_research_member(&mut self, kind: MissionKind) -> Option<CharacterKey> {
+        let MissionKind::Research(_) = kind else {
+            return None;
+        };
+        let selectors = selectors(kind)?;
+        let queries: Vec<Query> = selectors
+            .team
+            .iter()
+            .map(|q| Query {
+                req_flags: q.req_flags | UNASSIGNED,
+                ..*q
+            })
+            .collect();
+        let taken = self.select(&queries, 1);
+        taken
+            .first()
+            .and_then(|&index| self.records[index].member.character())
+    }
+
+    /// The number of the side's characters capable of `kind`
+    /// (`FUN_0041bc10`), the limit on its live Research planners.
+    pub(crate) fn capable(&self, kind: MissionKind) -> usize {
+        let Some(bit) = capability(kind) else {
+            return 0;
+        };
         self.records
             .iter()
-            .any(|r| r.sent && r.member == MissionMember::Character(character))
+            .filter(|r| {
+                r.flags & OWN_SIDE != 0 && r.caps & bit != 0 && r.member.character().is_some()
+            })
+            .count()
+    }
+
+    /// The `+0x30` flags of `character`'s record; `None` when it has none.
+    pub(crate) fn record_flags(&self, character: CharacterKey) -> Option<u32> {
+        self.records
+            .iter()
+            .find(|r| r.member == MissionMember::Character(character))
+            .map(|r| r.flags)
+    }
+
+    /// Characters held by the AI's character tasks: a task's claim clears
+    /// the record's `0x800000` (`FUN_0047a5b0`, `FUN_00479c00`).
+    pub(crate) fn claim(&mut self, held: impl IntoIterator<Item = CharacterKey>) {
+        for character in held {
+            for record in &mut self.records {
+                if record.member == MissionMember::Character(character) {
+                    record.flags &= !UNASSIGNED;
+                }
+            }
+        }
+    }
+
+    /// The General a kind 1 task takes for `target` (`FUN_0047a5b0`): the
+    /// best Leadership of 50 or more (`FUN_00403460`) combined with the
+    /// nearest to the target (`FUN_00403750`).
+    pub(crate) fn take_general(&mut self, target: SystemKey) -> Option<CharacterKey> {
+        const GENERAL: Query = query(0x80_0002, 0x400_0000, 0x4f40_00f1, 0, Skill::Leadership, 50);
+        let best = ranked(&self.records, GENERAL, &mut self.rng);
+        let near = self.nearness(GENERAL, target);
+        self.take(vec![best, near])
+    }
+
+    /// The officer a class I task takes (`FUN_004bc6d0`, `FUN_0047a050`):
+    /// the capability `caps`, Leadership of 50 or more (`FUN_00403460`),
+    /// combined with the nearest to `staging` (`FUN_00403750`). A General
+    /// may be reserved (exclusion `0x474000f1`, else `0x4f4000f1`).
+    pub(crate) fn take_officer(&mut self, caps: u32, staging: SystemKey) -> Option<CharacterKey> {
+        let forbid = if caps == 0x400_0000 {
+            0x4740_00f1
+        } else {
+            0x4f40_00f1
+        };
+        let q = query(0x80_0002, caps, forbid, 0, Skill::Leadership, 50);
+        let best = ranked(&self.records, q, &mut self.rng);
+        let near = self.nearness(q, staging);
+        self.take(vec![best, near])
+    }
+
+    /// The Emperor a kind 6 task takes (`FUN_00479c00`): one query, flags
+    /// `0x402` with none of `0x74000f1`, any Leadership.
+    pub(crate) fn take_emperor(&mut self) -> Option<CharacterKey> {
+        const EMPEROR_QUERY: Query = query(0x402, 0, 0x0740_00f1, 0, Skill::Leadership, 0);
+        let only = ranked(&self.records, EMPEROR_QUERY, &mut self.rng);
+        self.take(vec![only])
+    }
+
+    /// Take the best common hit (`FUN_004357b0`) and claim it.
+    /// `FUN_004bc180` refuses a character standing in a system whose
+    /// record `+0x28` has bit 2. hyp: that bit is untraced and read as
+    /// clear, so the first pick is accepted.
+    fn take(&mut self, mut lists: Vec<Vec<usize>>) -> Option<CharacterKey> {
+        let best = pop_best(&mut lists)?;
+        self.records[best].flags &= !UNASSIGNED;
+        self.records[best].member.character()
+    }
+
+    /// `FUN_00403750`: the records that pass `q`'s masks, at a system,
+    /// keyed by the squared distance (`FUN_0041b7b0`) from that system to
+    /// `target`, the farthest first (order 2). hyp: the system records'
+    /// `+0x34` halves are read as the map position.
+    fn nearness(&mut self, q: Query, target: SystemKey) -> Vec<usize> {
+        let world = self.world;
+        let position = |system: SystemKey| {
+            world
+                .systems
+                .get(system)
+                .map(|s| (i64::from(s.x), i64::from(s.y)))
+        };
+        let Some((tx, ty)) = position(target) else {
+            return Vec::new();
+        };
+        let distance: Vec<Option<i64>> = self
+            .records
+            .iter()
+            .map(|record| {
+                let (x, y) = position(member_location(world, record.member)?)?;
+                Some((x - tx).pow(2) + (y - ty).pow(2))
+            })
+            .collect();
+        let mut list = Vec::new();
+        for (index, record) in self.records.iter().enumerate() {
+            if passes(record, q) && distance[index].is_some() {
+                let value_of = |i: usize| distance[i].unwrap_or(0);
+                insert_sorted(&mut list, index, value_of, true, &mut self.rng);
+            }
+        }
+        list
     }
 
     /// Run `queries` and take their best common hit until `size` are taken
@@ -351,33 +545,47 @@ impl<'a> Planner<'a> {
 /// (`FUN_0041c250`, `FUN_0041cd80(10) < 5`).
 fn ranked(records: &[AgentRecord], q: Query, rng: &mut MissionRng) -> Vec<usize> {
     let mut list: Vec<usize> = Vec::new();
+    let skill = |index: usize| i64::from(records[index].skills[q.skill as usize]);
     for (index, record) in records.iter().enumerate() {
-        let skill = record.skills[q.skill as usize];
-        let hit = !record.sent
-            && record.flags & q.req_flags == q.req_flags
-            && record.flags & q.forbid_flags == 0
-            && record.caps & q.req_caps == q.req_caps
-            && record.caps & q.forbid_caps == 0
-            && (q.min..=10_000).contains(&skill);
-        if !hit {
-            continue;
+        let hit = passes(record, q) && (i64::from(q.min)..=10_000).contains(&skill(index));
+        if hit {
+            insert_sorted(&mut list, index, skill, false, rng);
         }
-        // FUN_005f59f0 walks from the head and inserts before the first
-        // entry the comparator puts the new one ahead of.
-        let at = list
-            .iter()
-            .position(|&other| {
-                let theirs = records[other].skills[q.skill as usize];
-                match skill.cmp(&theirs) {
-                    std::cmp::Ordering::Less => true,
-                    std::cmp::Ordering::Greater => false,
-                    std::cmp::Ordering::Equal => rng.draw(9) < 5,
-                }
-            })
-            .unwrap_or(list.len());
-        list.insert(at, index);
     }
     list
+}
+
+/// The flag and capability tests every query applies (`FUN_00403460`,
+/// `FUN_00403750`).
+fn passes(record: &AgentRecord, q: Query) -> bool {
+    !record.sent
+        && (!q.unclaimed || record.flags & UNASSIGNED != 0)
+        && record.flags & q.req_flags == q.req_flags
+        && record.flags & q.forbid_flags == 0
+        && record.caps & q.req_caps == q.req_caps
+        && record.caps & q.forbid_caps == 0
+}
+
+/// `FUN_005f59f0` walks from the head and inserts before the first entry
+/// the comparator `FUN_0041c250` puts the new one ahead of: order 1 puts
+/// the lower value first, order 2 (`descending`) the higher.
+fn insert_sorted(
+    list: &mut Vec<usize>,
+    index: usize,
+    value_of: impl Fn(usize) -> i64,
+    descending: bool,
+    rng: &mut MissionRng,
+) {
+    let value = value_of(index);
+    let at = list
+        .iter()
+        .position(|&other| match value.cmp(&value_of(other)) {
+            std::cmp::Ordering::Less => !descending,
+            std::cmp::Ordering::Greater => descending,
+            std::cmp::Ordering::Equal => rng.draw(9) < 5,
+        })
+        .unwrap_or(list.len());
+    list.insert(at, index);
 }
 
 /// `FUN_004357b0`: each entry of the first list scores the sum of its
@@ -414,9 +622,9 @@ fn pop_best(lists: &mut [Vec<usize>]) -> Option<usize> {
 /// DatId, follow in arena order.
 fn records(
     world: &GameWorld,
-    missions: &MissionState,
     busy: &HashSet<CharacterKey>,
     alliance: bool,
+    exhausted: [bool; 3],
 ) -> Vec<AgentRecord> {
     let mut characters: Vec<_> = world
         .characters
@@ -458,6 +666,9 @@ fn records(
         // as clear, its constructor value.
         if c.is_major && LEADERS.contains(&id) {
             flags |= LEADER;
+            if id == EMPEROR_ID {
+                flags |= EMPEROR;
+            }
         }
         if c.is_captive {
             flags |= PRISONER;
@@ -473,11 +684,11 @@ fn records(
         if c.on_mandatory_mission {
             flags |= MANDATORY;
         }
-        if missions.is_en_route(member) {
+        if c.en_route {
             flags |= EN_ROUTE;
         }
         flags |= officer_rank_bit(c.command_kind);
-        records.push(agent_record(world, member, flags, caps));
+        records.push(agent_record(world, member, flags, caps, exhausted));
     }
     for (key, unit) in &world.special_forces {
         let member = MissionMember::SpecialForce(key);
@@ -490,10 +701,10 @@ fn records(
         if unit.on_mission {
             flags |= ON_MISSION;
         }
-        if missions.is_en_route(member) {
+        if unit.en_route {
             flags |= EN_ROUTE;
         }
-        records.push(agent_record(world, member, flags, 0));
+        records.push(agent_record(world, member, flags, 0, exhausted));
     }
     records
 }
@@ -505,6 +716,7 @@ fn agent_record(
     member: MissionMember,
     flags: u32,
     officer_caps: u32,
+    exhausted: [bool; 3],
 ) -> AgentRecord {
     let mut skills = [0; 8];
     for skill in Skill::ALL {
@@ -530,14 +742,15 @@ fn agent_record(
     let mut flags = flags;
     // FUN_00402230: an object legal for a Research record is reserved while
     // the side controller's matching +4 bit (0x2000000, 0x4000000,
-    // 0x8000000) is clear. hyp: those bits' writers (FUN_004198a0,
-    // FUN_00419870, FUN_004197b0) are untraced; they are read as clear,
-    // their constructor value. port: with no Research record there is no
-    // research to reserve for.
-    let research = RESEARCH_RECORDS.iter().any(|&raw| {
-        world
-            .mission_record(crate::ids::DatId::new(raw))
-            .is_some_and(|record| members_allowed(world, record.members, [member]))
+    // 0x8000000) is clear. FUN_004198a0, FUN_00419870 and FUN_004197b0 set
+    // a bit when the tree's level reaches its highest order, and nothing
+    // clears it. port: with no Research record there is no research to
+    // reserve for.
+    let research = RESEARCH_RECORDS.iter().zip(exhausted).any(|(&raw, done)| {
+        !done
+            && world
+                .mission_record(crate::ids::DatId::new(raw))
+                .is_some_and(|record| members_allowed(world, record.members, [member]))
     });
     // FUN_00402230: a Diplomacy-capable object with diplomacy above 79.
     if research || (caps & 0x1 != 0 && skills[Skill::Diplomacy as usize] > 79) {
@@ -618,11 +831,13 @@ mod tests {
             is_alliance: true,
             skills,
             on_mission: false,
+            en_route: false,
+            on_hidden_mission: false,
         }))
     }
 
     fn planner(world: &GameWorld) -> Planner<'_> {
-        Planner::new(world, &MissionState::new(), &HashSet::new(), true, 1)
+        Planner::new(world, &HashSet::new(), true, 1, [false; 3])
     }
 
     #[test]
@@ -818,15 +1033,10 @@ mod tests {
             c.combat = pair(70);
             c.espionage = pair(70);
         });
-        let mut missions = MissionState::new();
-        missions.push_transit(crate::missions::MemberTransit {
-            member: travelling,
-            mission_id: 1,
-            to: SystemKey::default(),
-            fleet: None,
-            arrival: 9,
-        });
-        let mut planner = Planner::new(&world, &missions, &HashSet::new(), true, 1);
+        if let MissionMember::Character(key) = travelling {
+            world.characters[key].en_route = true;
+        }
+        let mut planner = Planner::new(&world, &HashSet::new(), true, 1, [false; 3]);
 
         assert_eq!(
             planner.plan(MissionKind::DeathStarSabotage),
@@ -852,35 +1062,15 @@ mod tests {
         if let MissionMember::SpecialForce(key) = busy {
             world.special_forces[key].on_mission = false;
         }
-        let mut missions = MissionState::new();
-        missions.push_transit(crate::missions::MemberTransit {
-            member: busy,
-            mission_id: 1,
-            to: SystemKey::default(),
-            fleet: None,
-            arrival: 9,
-        });
-        let mut planner = Planner::new(&world, &missions, &HashSet::new(), true, 1);
+        if let MissionMember::SpecialForce(key) = busy {
+            world.special_forces[key].en_route = true;
+        }
+        let mut planner = Planner::new(&world, &HashSet::new(), true, 1, [false; 3]);
 
         assert_eq!(
             planner.plan(MissionKind::Sabotage),
             Some((vec![second], vec![third]))
         );
-    }
-
-    #[test]
-    fn a_planner_reports_which_characters_its_plans_sent() {
-        let mut world = world();
-        let diplomat = agent(&mut world, 1, |c| c.diplomacy = pair(90));
-        let idle = agent(&mut world, 2, |c| c.diplomacy = pair(10));
-        let mut planner = planner(&world);
-        let key = |m: MissionMember| m.character().unwrap();
-
-        assert!(!planner.sent(key(diplomat)));
-        planner.plan(MissionKind::Diplomacy);
-
-        assert!(planner.sent(key(diplomat)));
-        assert!(!planner.sent(key(idle)));
     }
 
     #[test]
@@ -894,8 +1084,7 @@ mod tests {
 
         let picked = (0..1000)
             .filter(|&tick| {
-                let mut planner =
-                    Planner::new(&world, &MissionState::new(), &HashSet::new(), true, tick);
+                let mut planner = Planner::new(&world, &HashSet::new(), true, tick, [false; 3]);
                 planner.plan(MissionKind::Diplomacy) == Some((vec![first], vec![]))
             })
             .count();

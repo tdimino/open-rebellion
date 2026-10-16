@@ -797,30 +797,24 @@ CRT startup. 572 Ghidra functions + 84 recovered.
 
 ### map-06-4ae150
 
-- The port has no posture engine. ai.rs is rule-based, and mission_planning.rs cites
-  `FUN_004b7150` (the slot-6 mission recommender) while noting that posture is not
-  ported. Porting the six posture classes would give the AI its regional behaviour.
-- Order codes Move 0x201, 0x220, 0x222, 0x223, 0x234 and Command: None 0x260 are the
-  posture engine's vocabulary; the port must support all of them for posture parity.
-- The character-relocation tasks (0x4bb9f0-0x4bca20) strip a character's command and
-  Move it for the mission planners; the port has no equivalent.
+- Module 8's postures are ported in `crates/rebellion-core/src/ai_regions.rs` (orders 0x201, 0x220, 0x222, 0x223, 0x234). The character-relocation tasks are ported in `crates/rebellion-core/src/character_tasks.rs`.
 
 ### map-07-4bca20
 
-- The AI budget modules (0xa, 0xb, module 13) and the task container/factory (`FUN_004bea20`) are not in the port. A save-compatible reimplementation needs the load/save order of each module, the 14 object sizes in the factory table, and the three container layouts.
+- The task container and factory (`FUN_004bea20`) have no save-compatible port. Modules 10, 11 and 13 are in `crates/rebellion-core/src/ai_production.rs` and `crates/rebellion-core/src/ai_strategy.rs`.
 - The advisor slot-per-refusal-code tables (Empire 86 slots, Alliance 88) are needed by `crates/rebellion-render/src/advisor_script.rs` for correct clip selection; the 4-byte slot-offset shift between sides must be checked.
 - The agent knowledge cache (Agent+0x3c) sector summaries are what `agent_automation.rs` garrison and production selection consults.
 - Message 300-tick expiry (`FUN_004c4fe0`) and category masks are visible behaviour for `crates/rebellion-render/src/message_log.rs`.
 
 ### map-08-4cfed0
 
-- None of the 14-type AI module family is ported. `crates/rebellion-core/src/ai.rs` `evaluate_production` picks a best fighter and capital ship from fleet counts; the original instead splits side funds by fixed weights and rotates a work token.
+- The production modules 1, 2, 3, 5, 6, 7, 10 and 11 are ported in `crates/rebellion-core/src/ai_production.rs` (`ai-production.md`): side funds split by fixed weights, a rotating goal token for facilities. Modules 8, 9 and 13 are in `ai_regions.rs`, `fleet_tasks.rs` and `ai_strategy.rs`, and module 4 is in `mission_planning.rs`. Module 14 (Rename) is not ported.
 - `crates/rebellion-core/src/fleet_name_bank.rs` and `fleet-names.md` need a note about the original's Rename 0x203 pass.
 - `crates/rebellion-core/src/mission_planning.rs` already follows ai-mission-planning.md for the type 4 module.
 
 ### map-09-4deba0
 
-- The port's AI mission planning lives in `crates/rebellion-core/src/mission_planning.rs` and `missions.rs`; nothing in `crates/` reimplements the type-2 or type-6 task phases or the sector-planner strategies. If the port wants original-style AI facility and troop building, the needed pieces are the task phases and orders (type 2 and 6), the strategy ready-ratio and 1.5 force-ratio selection, and the mission priority table at `FUN_004e8290`.
+- Modules 2 and 6 and the controller strategies are ported (`ai_production.rs`, `ai_strategy.rs`).
 
 ### map-10-4ed950
 

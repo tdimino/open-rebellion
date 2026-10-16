@@ -541,10 +541,8 @@ any code with the player-side Agent modules:
 | FUN_00508250 | Pre-deployment validation (18 sub-checks) |
 | FUN_00508660 | Entity dispatch by family type |
 
-The Rust port's `crates/rebellion-core/src/ai.rs` implements the AI-side
-logic (garrison_strength scoring, troop_garrison_min thresholds, AI fleet
-deployment).  It has **no equivalent** for the player-side Agent automation
-modules.
+The Rust port's AI, `crates/rebellion-core/src/ai.rs`, has **no equivalent**
+for the player-side Agent automation modules.
 
 ---
 

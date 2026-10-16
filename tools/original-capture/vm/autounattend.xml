@@ -8,7 +8,7 @@
   automatic logon, skips every OOBE page, and turns off sleep, screen saver,
   and display scaling so 640x480 captures are pixel-stable.
 
-  Path 1 of docs/plans/2026-09-14-feat-p59-parallel-gid-message-index-lane.md.
+  Path 1 of docs/plans/archive/2026-09-14-feat-p59-parallel-gid-message-index-lane.md.
   The account password below is a throwaway for an offline capture guest;
   the guest never joins a network with credentials of value.
 -->

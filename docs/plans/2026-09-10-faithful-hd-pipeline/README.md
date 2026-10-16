@@ -1,3 +1,11 @@
+---
+title: "Faithful HD Pipeline"
+created: 2026-09-10
+status: partial
+progress: "20% — parked until original parity closes; P45A landed (b7c9811c); P45C advisor family gates offline only (7ce3a4c7); P45B, P45D and P45E pending; no HD work since 2026-09-14"
+updated: 2026-10-15
+---
+
 # Faithful HD Pipeline
 
 Research cutoff: 2026-09-10. This plan supersedes the assumption that one
@@ -6,6 +14,15 @@ as the sole parity baseline and treats higher-resolution graphics as an optional
 enhancement.
 
 The machine-readable companion is [plan.json](plan.json).
+
+**Parked (2026-10-15).** HD is optional and outside the parity denominator, so
+P45B to P45E wait until original interface parity closes. The plan stays
+valid: the roadmap cites it as the replacement for the April upscale
+shootout, and the archived
+[Upscale All DLL BMPs](../archive/2026-03-25-003-upscale-all-dll-bmps-execplan.md)
+and [UI Parity](../archive/2026-03-23-002-feat-ui-parity-execplan.md) plans
+handed their HD work here. Sprite-track runtime wiring still needs Tom's
+approval.
 
 ## Decision
 

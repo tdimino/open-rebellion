@@ -300,7 +300,7 @@ texture links, original indexed pixels, the dynamic battle-palette rule, all
 converted stores remain ignored and must originate from an owned installation.
 Neither is included in the browser runtime pack yet. Browser transport,
 camera rules, and semantic entity identities remain in the subsequent passes
-of the [tactical 3D asset plan](../../docs/plans/2026-09-12-feat-tactical-3d-asset-pipeline.md).
+of the [tactical 3D asset plan](../../docs/plans/archive/2026-09-12-feat-tactical-3d-asset-pipeline.md).
 
 ## Development checks
 

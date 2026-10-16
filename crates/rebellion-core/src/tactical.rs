@@ -110,6 +110,9 @@ const ORIGINAL_TACTICAL_STEP_SECONDS: f32 = ORIGINAL_TACTICAL_STEP_MILLISECONDS 
 /// `_DAT_0066c3e0`: once neither side's strength has fallen to a new low for
 /// this many seconds, `FUN_005ae9c0` withdraws the weaker side.
 const ORIGINAL_STALEMATE_SECONDS: f32 = 1200.0;
+/// `_DAT_0066d0f0`, the Empire's strength while its Death Star is
+/// operational (`FUN_005d0ce0.c:83`).
+const ORIGINAL_DEATH_STAR_STRENGTH: f32 = 20_000_000.0;
 /// port: a ceiling on a battle run without its window, far beyond the
 /// stalemate (six hours of battle time).
 const SIMULATED_BATTLE_SECOND_LIMIT: u32 = 6 * 60 * 60;
@@ -1184,6 +1187,44 @@ pub struct TacticalStalemateWatch {
     pub quiet_seconds: [f32; 2],
 }
 
+/// A capital ship's hyperdrive works (`FUN_005b1b70`).
+fn ship_hyperdrive_works(ship: &TacticalShip) -> bool {
+    ship.subsystem_capacity.hyperdrive > 0 && ship.subsystem_condition.hyperdrive > 0
+}
+
+/// Each side's morale record for `FUN_005d19a0`: the withdrawal threshold
+/// (`side+0x24`), the retreat permission (`side+0x80`) and the latch
+/// `FUN_005d14d0` sets once the retreat has run (`side+0x84`). Index 0 is
+/// the attacker. The default permits no retreat, as a side the session
+/// builder has not configured.
+/// port: the gravity-well ships are the capital ships whose class has a
+/// projector (`gravity_well_projector`), as the tactical-unit flag `+0x150`
+/// is untraced (hyp); the entries index `BattleSession::ships`. The
+/// hyperdrive squadrons are those whose FIGHTSD class has a hyperdrive or
+/// damaged-hyperdrive rating (the fighter factory `FUN_0040be90` passes
+/// their count as the constructor's `+0x3ec`, which `FUN_005b1bc0` reads);
+/// they index `BattleSession::fighters`.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct TacticalMorale {
+    pub threshold: [f32; 2],
+    pub retreat_permitted: [bool; 2],
+    pub retreated: [bool; 2],
+    pub gravity_wells: Vec<usize>,
+    pub hyperdrive_squadrons: Vec<usize>,
+    /// A ship or squadron of the side jumped out (state 9,
+    /// `FUN_005af910`), by side.
+    pub jumped: [bool; 2],
+    /// The side's Death Star was operational when the side retreated and
+    /// was committed to the jump (`FUN_005d14d0.c:124-127`).
+    pub death_star_jumped: bool,
+    /// The fleet carrying the Death Star can enter hyperspace. port: the
+    /// Death Star adds no speed of its own (`fleet_speed` reads capital
+    /// ships only), so without a drive aboard its fleet cannot depart; the
+    /// source's rule for an object that cannot travel is destruction,
+    /// reason 5 (`FUN_00556390`, `system-squadrons-combat.md`).
+    pub death_star_departs: bool,
+}
+
 /// port: task-force slots tracked by the engagement AI: capital task forces
 /// 0–7, then fighter groups 0–4 (4 holds the unassigned squadrons). The
 /// source keeps each side's task forces in a list.
@@ -1309,6 +1350,8 @@ pub struct BattleSession {
     pub winner: Option<CombatWinner>,
     /// The 1200-second stalemate withdrawal (`FUN_005ae9c0`).
     pub stalemate: TacticalStalemateWatch,
+    /// The per-step morale withdrawal (`FUN_005d19a0`).
+    pub morale: TacticalMorale,
     pub engagement: TacticalEngagementState,
     /// The side holding the battle's system (`true` Alliance), `None` when
     /// neutral: `system[9] >> 6 & 3` in the result text builders.
@@ -3266,6 +3309,24 @@ impl BattleSession {
         Self::auto_place_ships(&mut ships);
         Self::auto_place_fighters(&mut fighters, &ships);
         let source_layout = Self::assign_original_world_positions(&mut ships, &mut fighters);
+        let gravity_wells = (0..ships.len())
+            .filter(|&index| {
+                let ship = &ships[index];
+                ship.fleet
+                    .and_then(|fleet| world.fleets.get(fleet))
+                    .and_then(|fleet| fleet.capital_ships.get(ship.fleet_ship_index))
+                    .and_then(|instance| world.capital_ship_classes.get(instance.class))
+                    .is_some_and(|class| class.gravity_well_projector > 0)
+            })
+            .collect();
+        let hyperdrive_squadrons = (0..fighters.len())
+            .filter(|&index| {
+                world
+                    .fighter_classes
+                    .get(fighters[index].class_key)
+                    .is_some_and(|class| class.hyperdrive > 0 || class.hyperdrive_if_damaged > 0)
+            })
+            .collect();
         let navigation_sets = original_navigation_point_sets(source_layout);
         Self::assign_original_task_forces(&mut ships);
         Self::assign_original_fighter_groups(&mut fighters);
@@ -3344,6 +3405,11 @@ impl BattleSession {
             step_accumulator: 0.0,
             winner: None,
             stalemate: TacticalStalemateWatch::default(),
+            morale: TacticalMorale {
+                gravity_wells,
+                hyperdrive_squadrons,
+                ..TacticalMorale::default()
+            },
             engagement: TacticalEngagementState::default(),
             holder_is_alliance,
             blockaded_at_start,
@@ -3696,9 +3762,16 @@ impl BattleSession {
                 hyperdrive: u8::from(class.hyperdrive > 0)
                     + u8::from(class.hyperdrive_if_damaged > 0),
             };
+            // hyp: a battle starts from the counters the strategic ship
+            // carries, as `FUN_0040cfc0` writes them back whole
+            // (`ship-damage-repair.md`); the shield, weapon, tractor and
+            // engine counters are strategic nibbles 0-3.
             let subsystem_damage = TacticalSubsystemDamage {
+                shields: ship.damage_counter(0),
+                weapons: ship.damage_counter(1),
+                tractor: ship.damage_counter(2),
+                engines: ship.damage_counter(3),
                 hyperdrive: ship.hyperdrive_damage_hits(class),
-                ..TacticalSubsystemDamage::default()
             };
             ships.push(TacticalShip {
                 class_key: ship.class,
@@ -4584,8 +4657,20 @@ impl BattleSession {
                 fighter.is_attacker == is_attacker && fighter.alive && fighter.squad_count > 0
             })
             || self.death_star.is_some_and(|death_star| {
-                death_star.is_attacker == is_attacker && !death_star.destroyed
+                death_star.is_attacker == is_attacker
+                    && !death_star.destroyed
+                    && !self.death_star_withdrew(is_attacker)
             })
+    }
+
+    /// The side's Death Star left with its retreat (`FUN_005d14d0.c:124-127`
+    /// sets its `+0x78`).
+    #[must_use]
+    pub fn death_star_withdrew(&self, is_attacker: bool) -> bool {
+        self.morale.death_star_jumped
+            && self
+                .death_star
+                .is_some_and(|death_star| death_star.is_attacker == is_attacker)
     }
 
     /// End the battle when one side (or both) has nothing left.
@@ -4612,11 +4697,15 @@ impl BattleSession {
     /// damage rate to its target (`FUN_005d14d0` through `FUN_005cb650` and
     /// `FUN_005b54d0`) and recharges shields (`FUN_005b6320`); the stalemate
     /// watch follows. Nothing moves and no battery fires.
-    /// port: the source steps `battle+0x250` before `+0x24c`, and which of
-    /// the port's sides that is is untraced; the defender goes first.
+    /// `FUN_005ae9c0:26-27` steps `battle+0x250` (the Empire) before
+    /// `+0x24c` (the Alliance), so the Empire's side goes first
+    /// (`ghidra/notes/morale-retreat.md`). Each side's morale check
+    /// (`morale_withdraws`, `FUN_005d19a0`) follows its damage and precedes
+    /// its recharge (`FUN_005d14d0:101`).
     fn headless_step(&mut self) -> bool {
         self.combat_tick += 4;
-        for is_attacker in [false, true] {
+        let empire_is_attacker = !self.attacker_is_alliance;
+        for is_attacker in [empire_is_attacker, !empire_is_attacker] {
             let groups = engagement_groups(self);
             for fighters_first in [false, true] {
                 assign_engagement_targets(self, &groups, is_attacker, fighters_first);
@@ -4635,6 +4724,9 @@ impl BattleSession {
                 let damage = engagement_group_damage(self, &group.members, target)
                     * ORIGINAL_HEADLESS_STEP_SECONDS;
                 self.apply_headless_damage(target, damage);
+            }
+            if self.morale_withdraws(is_attacker) {
+                self.retreat_side(is_attacker);
             }
             for ship in self
                 .ships
@@ -4707,7 +4799,10 @@ impl BattleSession {
     /// `FUN_005d0ce0`): the firepower (`FUN_005b7a80`) of its squadrons and
     /// of every capital ship whose attackers do not already out-damage its
     /// shield recharge.
-    /// port: the Death Star's addition (`_DAT_0066d0f0`) is not modeled.
+    /// An operational Death Star adds `_DAT_0066d0f0` (20000000.0, read from
+    /// the executable) to the Empire's strength (`FUN_005d0ce0.c:80-85`).
+    /// port: the term the Alliance side takes during a trench run
+    /// (`FUN_005d0ce0.c:86-103`, `FUN_005afcc0`) is not modeled.
     fn stalemate_strength(&self, is_attacker: bool) -> f32 {
         let groups = engagement_groups(self);
         let enemy_side = usize::from(is_attacker);
@@ -4736,7 +4831,144 @@ impl BattleSession {
             .filter(|index| self.fighters[*index].is_attacker == is_attacker)
             .map(|index| original_unit_firepower(self, EngagementUnit::Fighter(index)))
             .sum();
-        capitals + fighters
+        let death_star = self
+            .death_star
+            .filter(|death_star| {
+                death_star.is_attacker == is_attacker
+                    && !death_star.is_alliance
+                    && death_star.operational()
+            })
+            .map_or(0.0, |_| ORIGINAL_DEATH_STAR_STRENGTH);
+        capitals + fighters + death_star
+    }
+
+    /// Whether a capital ship or a squadron of the side has a working
+    /// hyperdrive (`FUN_005b1b70`, through `FUN_005d0f50.c:16-31`, which
+    /// walks the squadron list `+0x64` and the capital list `+0x58`).
+    /// port: a squadron's hyperdrive takes no hits (the damage path counts
+    /// them on capital ships), so its class rating decides.
+    fn side_has_working_hyperdrive(&self, is_attacker: bool) -> bool {
+        self.ships.iter().any(|ship| {
+            ship.is_attacker == is_attacker && ship.alive && ship_hyperdrive_works(ship)
+        }) || self.morale.hyperdrive_squadrons.iter().any(|&index| {
+            let fighter = &self.fighters[index];
+            fighter.is_attacker == is_attacker && fighter.alive && fighter.squad_count > 0
+        })
+    }
+
+    /// The Empire's Death Star lets its side retreat (`FUN_005d0f50.c:32-40`:
+    /// side id 1, the tactical Empire; the Death Star operational
+    /// (`FUN_005ba420`) or its `+0x74` set).
+    fn death_star_allows_retreat(&self, is_attacker: bool) -> bool {
+        self.death_star.is_some_and(|death_star| {
+            death_star.is_attacker == is_attacker
+                && !death_star.is_alliance
+                && (death_star.operational() || death_star.destroyed)
+                && self.morale.death_star_departs
+        })
+    }
+
+    /// `FUN_005d0f50`: the side may retreat when permitted and not yet
+    /// latched, no live opposing ship projects a gravity well, and it has a
+    /// way out (a hyperdrive unit or its Death Star).
+    /// hyp: `FUN_005c7e40`'s unit `+0x150` is the gravity-well flag.
+    fn may_retreat(&self, is_attacker: bool) -> bool {
+        let side = usize::from(!is_attacker);
+        self.morale.retreat_permitted[side]
+            && !self.morale.retreated[side]
+            && !self.morale.gravity_wells.iter().any(|&index| {
+                self.ships[index].alive && self.ships[index].is_attacker != is_attacker
+            })
+            && (self.side_has_working_hyperdrive(is_attacker)
+                || self.death_star_allows_retreat(is_attacker))
+    }
+
+    /// The retreat of `FUN_005d14d0.c:102-146`: units jump, dock or die
+    /// (`stalemate_resolve_side`), the latch is set (`+0x84 = 5`), and an
+    /// operational Death Star is committed (`+0x78`).
+    fn retreat_side(&mut self, is_attacker: bool) {
+        let side = usize::from(!is_attacker);
+        let death_star_jumps = self.death_star.is_some_and(|death_star| {
+            death_star.is_attacker == is_attacker
+                && !death_star.is_alliance
+                && death_star.operational()
+        });
+        self.stalemate_resolve_side(is_attacker);
+        self.morale.retreated[side] = true;
+        if death_star_jumps {
+            if let Some(death_star) = self.death_star.as_mut() {
+                death_star.action_committed = true;
+            }
+            self.morale.death_star_jumped = true;
+            self.morale.jumped[side] = true;
+        }
+    }
+
+    /// The stalemate loser (`FUN_005ae9c0.c:62-103`): a side that may
+    /// retreat is flagged (`+0xb0`) and retreats; one that may not has every
+    /// ship and squadron destroyed at once (`FUN_005af7a0`).
+    fn stalemate_withdraw(&mut self, is_attacker: bool) {
+        if self.may_retreat(is_attacker) {
+            self.retreat_side(is_attacker);
+            return;
+        }
+        for ship in self
+            .ships
+            .iter_mut()
+            .filter(|ship| ship.is_attacker == is_attacker && ship.alive)
+        {
+            ship.hull_current = 0;
+            ship.shield = 0;
+            ship.alive = false;
+            ship.retreating = false;
+            ship.selected = false;
+            ship.attack_target = None;
+        }
+        for fighter in self
+            .fighters
+            .iter_mut()
+            .filter(|fighter| fighter.is_attacker == is_attacker && fighter.alive)
+        {
+            fighter.squad_count = 0;
+            fighter.hull_current = 0.0;
+            fighter.alive = false;
+            fighter.selected = false;
+            fighter.attack_target = None;
+        }
+    }
+
+    /// A side counts as withdrawn when its latch is set and a unit of it
+    /// jumped or, for the Empire, its Death Star was committed
+    /// (`FUN_005ae9c0.c:117-141`). A ship that left on the player's own
+    /// Retreat order counts too.
+    #[must_use]
+    pub fn side_withdrew(&self, is_attacker: bool) -> bool {
+        let side = usize::from(!is_attacker);
+        self.ships
+            .iter()
+            .any(|ship| ship.is_attacker == is_attacker && ship.retreated)
+            || (self.morale.retreated[side] && self.morale.jumped[side])
+    }
+
+    /// `FUN_005d19a0` for one side: it withdraws when it may retreat
+    /// (`FUN_005d0f50`: permitted and not yet latched, no gravity-well ship
+    /// on the opposing side, a working hyperdrive) and its strength
+    /// (`stalemate_strength`, `FUN_005d0ce0`) is 0, or, with the opponent's
+    /// above 0, its ratio to the opponent's is below the side's threshold
+    /// (`morale.threshold`, `side+0x24`).
+    /// port: the stalemate flag (`+0xb0`, test 1) is the stalemate watch,
+    /// which resolves its own sides (`stalemate_withdraw`).
+    fn morale_withdraws(&self, is_attacker: bool) -> bool {
+        let side = usize::from(!is_attacker);
+        if !self.may_retreat(is_attacker) {
+            return false;
+        }
+        let own = self.stalemate_strength(is_attacker);
+        if own == 0.0 {
+            return true;
+        }
+        let opponent = self.stalemate_strength(!is_attacker);
+        opponent > 0.0 && own / opponent < self.morale.threshold[side]
     }
 
     /// `FUN_005ae9c0`: once neither side's strength has fallen to a new low
@@ -4782,7 +5014,7 @@ impl BattleSession {
             [(true, attacker <= defender), (false, defender <= attacker)]
         {
             if withdraws {
-                self.stalemate_resolve_side(is_attacker);
+                self.stalemate_withdraw(is_attacker);
             }
         }
         let winner = match (self.side_remains(true), self.side_remains(false)) {
@@ -4803,27 +5035,33 @@ impl BattleSession {
     /// The stalemate's loser. A side with a ship whose hyperdrive works
     /// (`FUN_005d0f50` through `FUN_005b1b70`) is flagged to retreat
     /// (`side+0xb0`), and `FUN_005d14d0`'s retreat branch then sends each
-    /// hyperdrive ship out (`FUN_005af910`, state 9), docks each squadron
-    /// with an escaping carrier (`FUN_005afe40`) and destroys the rest
-    /// (`FUN_005af7a0`: 100000 damage, state `0xb`). A side with no working
-    /// hyperdrive is destroyed outright.
-    /// port: a carrier takes as many squadrons as its fighter capacity.
+    /// hyperdrive ship or squadron out (`FUN_005af910`, state 9), docks each
+    /// other squadron with an escaping carrier (`FUN_005afe40`) and destroys
+    /// the rest (`FUN_005af7a0`: 100000 damage, state `0xb`). A side with no
+    /// working hyperdrive is destroyed outright.
+    /// port: a carrier takes as many squadrons as its fighter capacity. A
+    /// jumped squadron keeps its place in the strategic world; where
+    /// `FUN_005af910` sends it is untraced (hyp: it stays where the world
+    /// holds it, a fleet's squadron with its carrier).
     fn stalemate_resolve_side(&mut self, is_attacker: bool) {
-        let escapes = |ship: &TacticalShip| {
-            ship.subsystem_capacity.hyperdrive > 0 && ship.subsystem_condition.hyperdrive > 0
-        };
-        let can_retreat = self
-            .ships
-            .iter()
-            .any(|ship| ship.is_attacker == is_attacker && ship.alive && escapes(ship));
-        let mut berths: u32 = self
-            .ships
-            .iter()
-            .filter(|ship| {
-                can_retreat && ship.is_attacker == is_attacker && ship.alive && escapes(ship)
-            })
-            .map(|ship| ship.fighter_capacity)
-            .sum();
+        let side = usize::from(!is_attacker);
+        let escapes = ship_hyperdrive_works;
+        let can_retreat = self.side_has_working_hyperdrive(is_attacker);
+        // Each escaping carrier's berths, by fleet: a squadron docks in its
+        // own carrier first (`FUN_005afe40.c:17-45`, the unit's `+0x164`),
+        // then in any escaping carrier of the side (`:48-58`).
+        // port: the own carrier is its fleet's escaping carriers, as the
+        // session keeps no per-ship carrier; the Death Star's hangar
+        // (`:59-66`) is not modeled.
+        let mut berths: Vec<(Option<FleetKey>, u32)> = Vec::new();
+        for ship in self.ships.iter().filter(|ship| {
+            can_retreat && ship.is_attacker == is_attacker && ship.alive && escapes(ship)
+        }) {
+            match berths.iter_mut().find(|(fleet, _)| *fleet == ship.fleet) {
+                Some((_, count)) => *count += ship.fighter_capacity,
+                None => berths.push((ship.fleet, ship.fighter_capacity)),
+            }
+        }
         for ship in self
             .ships
             .iter_mut()
@@ -4831,6 +5069,7 @@ impl BattleSession {
         {
             if can_retreat && escapes(ship) {
                 ship.retreated = true;
+                self.morale.jumped[side] = true;
             } else {
                 ship.hull_current = 0;
                 ship.shield = 0;
@@ -4840,14 +5079,48 @@ impl BattleSession {
             ship.selected = false;
             ship.attack_target = None;
         }
-        for fighter in self
+        // A squadron with a working hyperdrive jumps out itself
+        // (`FUN_005af910`); the others dock or are destroyed.
+        let candidates: Vec<usize> = (0..self.fighters.len())
+            .filter(|&index| {
+                let fighter = &self.fighters[index];
+                fighter.is_attacker == is_attacker && fighter.alive
+            })
+            .collect();
+        let mut docking = Vec::new();
+        for index in candidates {
+            if can_retreat && self.morale.hyperdrive_squadrons.contains(&index) {
+                self.morale.jumped[side] = true;
+            } else {
+                docking.push(index);
+            }
+        }
+        let mut docked = vec![false; self.fighters.len()];
+        for &index in &docking {
+            let own = self.fighters[index].fleet;
+            if let Some((_, count)) = berths
+                .iter_mut()
+                .find(|(fleet, count)| own.is_some() && *fleet == own && *count > 0)
+            {
+                *count -= 1;
+                docked[index] = true;
+            }
+        }
+        for &index in &docking {
+            if !docked[index] {
+                if let Some((_, count)) = berths.iter_mut().find(|(_, count)| *count > 0) {
+                    *count -= 1;
+                    docked[index] = true;
+                }
+            }
+        }
+        for (index, fighter) in self
             .fighters
             .iter_mut()
-            .filter(|fighter| fighter.is_attacker == is_attacker && fighter.alive)
+            .enumerate()
+            .filter(|(_, fighter)| fighter.is_attacker == is_attacker && fighter.alive)
         {
-            if berths > 0 {
-                berths -= 1;
-            } else {
+            if docking.contains(&index) && !docked[index] {
                 fighter.squad_count = 0;
                 fighter.hull_current = 0.0;
             }
@@ -5812,14 +6085,8 @@ impl BattleSession {
             return;
         }
         let faction = self.player_voice_faction();
-        let player_withdrew = self
-            .ships
-            .iter()
-            .any(|ship| ship.is_attacker == self.player_is_attacker && ship.retreated);
-        let opponent_withdrew = self
-            .ships
-            .iter()
-            .any(|ship| ship.is_attacker != self.player_is_attacker && ship.retreated);
+        let player_withdrew = self.side_withdrew(self.player_is_attacker);
+        let opponent_withdrew = self.side_withdrew(!self.player_is_attacker);
         let cue = if player_won {
             TacticalVoiceCue::battle_won(faction, opponent_withdrew)
         } else if player_withdrew {

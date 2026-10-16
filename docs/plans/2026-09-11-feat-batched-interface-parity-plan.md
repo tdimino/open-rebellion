@@ -3,9 +3,10 @@ title: "Batched Interface Parity Execution Plan"
 description: "Current plan for restoring the original bitmap interface in coherent, independently accepted browser bundles"
 category: plan
 created: 2026-09-11
-updated: 2026-10-06
 tags: [interface, parity, bitmap, browser, qa]
 status: active
+progress: "2% — 1 of 43 families strictly complete (OBJ-01); 15 partial, 27 failing; 13 of 627 cells accepted; no UIP-B01 to B07 exit gate met"
+updated: 2026-10-15
 ---
 
 # Batched Interface Parity Execution Plan
@@ -15,11 +16,12 @@ turns the [interface audit](../qa/2026-09-10-interface-parity-audit/) into
 larger user-visible workflows so focused development can proceed without a
 full WASM build, browser review, commit, and push after every small control.
 
-The active
-[acceleration sidecar](2026-09-11-tooling-interface-parity-acceleration-sidecar.md)
-defines the permanent muted browser harness, deterministic test-only fixtures,
-visual comparisons, evidence-first browser review, generated status prose, and
-one-commit family gates used to execute this plan more quickly.
+The muted browser harness, test-only fixtures, visual comparisons and
+generated status prose that execute this plan are documented in
+[`tools/interface-parity/README.md`](../../tools/interface-parity/README.md).
+They came from the
+[acceleration sidecar](archive/2026-09-11-tooling-interface-parity-acceleration-sidecar.md),
+now archived; its remaining CMD-02 pilot is a UIP-B02 residual item below.
 
 ## Progress snapshot
 
@@ -34,8 +36,8 @@ The current CMD-02 GID catalog has 38 scenarios (29 baseline cells and nine addi
 | Practical interface scope remaining | approximately 75% |
 | Bounded practical space-battle launcher implementation | complete at P58-B22 |
 | Required surface families | 43 |
-| Family status | 0 complete, 15 partial, 28 fail |
-| Strictly accepted required cells | 0 of 627 |
+| Family status | 1 complete (OBJ-01), 15 partial, 27 fail |
+| Strictly accepted required cells | 13 of 627 |
 
 The practical percentage is a planning estimate based on scoped implementation
 checkpoints. It is not a release-parity score. A required cell passes only
@@ -46,7 +48,9 @@ P58-B22 is the latest tactical checkpoint. It closes the bounded practical
 launcher implementation with source-compatible tactical randomness, persisted
 power allocation, completion and destruction callbacks, and the timed
 source-derived trench-run producer. Deterministic A1 mapping is runnable at
-106/106; strict A0 acceptance remains 0/106.
+106/106. The tactical C6 comparison against A0 passes 11 of the 106 cells;
+the [106-cell acceptance train](2026-09-22-tooling-tactical-106-cell-acceptance.md)
+owns the rest.
 
 ## Working cadence
 
@@ -80,193 +84,56 @@ matrix passes.
 | Bundle | Original workflow | Included work | Exit gate |
 |---|---|---|---|
 | UIP-B01 | Strategic window navigation | Modeless sector windows, detailed system window and core tabs, double-click routing, focus and stacking, pointer occlusion, and first usable rail minimize/restore path | Both factions complete galaxy to sector to system to rail journeys without the invented sidebar |
-| UIP-B02 | Galaxy and Galactic Information Display | Original starfield, systems, sector hulls, markers, filters, legends, hover, pan, zoom, selection, and faction variants | Required GID and galaxy states use original resources and rules at both viewport classes |
+| UIP-B02 | Galaxy and Galactic Information Display | Original starfield, systems, sector hulls, markers, filters, legends, hover, pan, zoom, selection, and faction variants | Required GID and galaxy states use original resources and rules at both viewport classes; the residual items below close |
 | UIP-B03 | Command-center completion | Remaining bitmap controls, speed, messages, status, advisor chrome, authored actions, voice, and unobscured apertures | Both command centers contain no replacement strips, blank required apertures, or invented controls |
 | UIP-B04 | Strategic management windows | Finders, personnel, fleets, facilities, production, research, missions, object status, and their legal, disabled, empty, populated, transit, and damage states | Each original strategic management journey is usable through its native window graph |
 | UIP-B05 | Reports, events, encyclopedia, and endings | Dialog resources, event and battle reports, EData art, cutscenes, rare events, victory, defeat, skip, restart, and return routing | Every non-tactical campaign presentation family passes its required media and navigation matrix |
-| UIP-B06 | Space-battle interface | Both tactical HUDs, units, assignments, selection, targeting, navigation, maneuvers, tactics, missions, damage, recovery, retreat, Death Star, trench run, results, and strategic return. Use the [standalone test-launcher plan](2026-09-12-tooling-standalone-space-battle-launcher.md), [tactical 3D asset plan](2026-09-12-feat-tactical-3d-asset-pipeline.md), and [asset library](../reference/asset-library/README.md). | All 106 TAC-01 through TAC-07 baseline cells are implemented and accepted |
+| UIP-B06 | Space-battle interface | Both tactical HUDs, units, assignments, selection, targeting, navigation, maneuvers, tactics, missions, damage, recovery, retreat, Death Star, trench run, results, and strategic return. Executed by the [106-cell acceptance train](2026-09-22-tooling-tactical-106-cell-acceptance.md) and br epic `or-ep-tac-x15`; references in the [launcher reference](../reference/space-battle-launcher/README.md) and [asset library](../reference/asset-library/README.md). | All 106 TAC-01 through TAC-07 baseline cells are implemented and accepted |
 | UIP-B07 | Multiplayer and release acceptance | Original provider, host, join, ready, wait, sync, chat, pause, save/load, resign, disconnect, reconnect, errors, cross-browser, and A0 closure | Two real peers and every required interface cell pass the release matrix |
 
-## Current execution focus: P66A topic sources proven; topic window continues
+## Current state
 
-P62 closes the bounded native/browser Encyclopedia-artwork transport slice of
-UIP-B05. Source cross-checking corrects P63: its 470-by-331 faction index
-compositions, ten normal and held category controls, and modal pointer boundary
-belong to the Message Index under UIP-B03. Its 24 browser states and 3,733,680
-exact source-pixel comparisons remain valid for that corrected identity. Both
-fixtures are test-only and absent from production.
+The September P58 to P66 checkpoint narrative that stood here was retired on
+2026-10-15. Git history through a76109b8 and the evidence files under the
+[interface audit](../qa/2026-09-10-interface-parity-audit/) keep it. Since
+then, interface work has run through these owners rather than through this
+plan's bundles:
 
-P64 now proves the separate authentic Encyclopedia index shell from
-`FUN_0045d400` and `FUN_0045ddc0`: both faction compositions, seven selected
-category states, right-rail held states, native oversized-resource clipping,
-exclusive-edge and transparent-pixel rejection, opaque press capture, drag
-cancellation, and modal click-through blocking pass 32 exact comparisons and
-4,963,200 source pixels. The fixture remains test-only.
+- UIP-B01 and UIP-B04 window behavior: the
+  [modality and focus](2026-10-10-feat-strategic-window-modality-and-focus.md)
+  and [windowing toolkit](2026-10-10-strategic-windowing-toolkit-implementation.md)
+  plans (PR #24 to #45, last 9533b516).
+- Single surfaces: full-functionality audit features, among them F-007C move
+  orders, Build Selection and the Message Index (99d561ac).
+- UIP-B06: the
+  [106-cell acceptance train](2026-09-22-tooling-tactical-106-cell-acceptance.md)
+  and br epic `or-ep-tac-x15`.
 
-P65 originally counted 356 DAT records. P68 corrects the source-derived English
-visible index to 346 immutable entries after applying the original mission
-family and hidden-record predicate. It retains the seven recovered TEXTSTRA
-labels and family filters, alphabetical
-source ordering, stable compound-object selection, and nine-row scrolling.
-Twenty-two two-faction browser states, including the native selected-category
-no-op, preserve all 1,567,280 checked static shell pixels, and a separate
-regression run preserves every P64 state. Dynamic text
-and list regions are visibly populated and functionally exercised but remain
-outside exact A0 acceptance. The fixture remains test-only.
+This plan keeps the bundle queue, the cadence and the 627-cell denominator.
 
-P66A adds the strict local topic-source gate. The owned English profile yields
-348 ENCYTEXT prose resources and 191 ENCYBMAP mappings; source-derived ordinary,
-system-picture, and factional mission rules bind 346 complete topics per
-faction. The remaining ten internal/special mission records have neither prose
-nor artwork mapping and are retained as explicit missing entries. All 186
-mapped EDATA filenames exist; `EDATA.192` is the one owned image outside the
-lookup table. No proprietary prose or artwork enters Git.
+### UIP-B02 residual items
 
-UIP-B05 proceeds through browser-pack transport, topic composition, interactive
-previous and next navigation, contextual entry, visible missing-entry behavior,
-other localizations, exact font comparison, production routing,
-original-runtime comparison, and the complete faction and viewport matrix.
-Command `0x131` continues to fail closed, and no `OBJ-01` cell passes from P62,
-corrected P63, P64, P65, or P66A evidence.
+These came from the archived
+[acceleration sidecar](archive/2026-09-11-tooling-interface-parity-acceleration-sidecar.md)
+and [P59 lane](archive/2026-09-14-feat-p59-parallel-gid-message-index-lane.md).
 
-P46C established the first UIP-B01 checkpoint. Selecting a galaxy system opens
-the recovered 235x360 modeless sector window instead of the invented right
-sidebar. Original planet resources, placement, faction columns, controls,
-stacking, pointer boundaries, system double-click routing, the 226x304 system
-shell, and both faction rail geometries are active.
-
-P46D adds source-mapped GOKRES miniatures and displayed entity labels to all
-six system tabs, including personnel, fleets, defenses, manufacturing, troops,
-special forces, and production. Three-column overflow is bounded by the
-recovered STRATEGY scrollbar art. Selection, tab clearing, foreground focus,
-rail restoration, and coarse current-intelligence gating are preserved. Both
-checkpoints pass their scoped browser journeys for both factions at 640x480
-and a responsive viewport.
-
-UIP-B01 remains open for nested fleet and object compositions, drag and command
-behavior, exact hostile-intelligence semantics, active and inactive rail
-thumbnails, complete sector indicators, uncommon system states, and the A0
-matrix. No pending cell is promoted solely by these partial checkpoints.
-
-The evidence-blocked rail art and uncommon-state work remains queued inside
-UIP-B01. P47A starts `UIP-B02` with the original STRATEGY 902 bright galaxy.
-P47B proves that 902 is Display Off and restores the default active Popular
-Support view with STRATEGY 903, the exact faction GID control, compact 10168
-legend, native marker families, and recovered size thresholds. Synthetic map
-labels and primitives are withheld from this view. Renderer, workspace,
-packaged WASM, parity-ledger, and muted four-campaign browser gates pass with no
-product findings. See the
-[P47B evidence record](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-11-popular-support-gid.md).
-
-The next `UIP-B02` execution bundle completes the whole `CMD-02` GID family:
-the code-built menu, compact and expanded legends, every remaining filter and
-original overlay, all known and intelligence states, selection, pan, zoom,
-and both faction variants. The acceleration sidecar supplies deterministic
-fixtures and one browser-review bundle gate. No replacement marker, menu,
-or legend will be introduced.
-
-P48 now supplies a 38-scenario, 152-execution muted harness and the first
-source-mapped GID command tree. Independent source review withheld unproven
-special-marker compositions and an enlarged legend. The
-[checkpoint evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-gid-browser-harness.md)
-records the remaining original-capture, exact-filter, native, and keyboard
-gates. No `CMD-02` acceptance cell is marked passed.
-
-P49 also closes the blank resting-art gap on both Message Index side rails.
-All eighteen source-mapped faction BMPs render at their constructor rectangles,
-with exact 640x480 source-pixel checks in the muted harness. This is a UIP-B03
-visual slice, not a completed `CMD-08` workflow. The illuminated state,
-original index window, category routing, and interaction matrix remain open.
-See the [P49 rail evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-message-index-rail.md).
-
-P60 continues UIP-B03 with the original Game Speed control. The day readout
-opens the five-item STRATEGY speed menu, Pause holds at the next day behind the
-REBDLOG "Resume Game Play?" alert, and the TEXTCOMM accelerators step the
-speed. The replacement status bar is gone. The Message Index window and its
-Advice slowdown are recovered statically for the next CMD-08 slice. See the
-[game-speed recovery](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-24-game-speed-recovery.md).
-
-P50 replaces the GID root and submenu's synthetic gray stroke with the eight
-original STRATEGY frame tiles, drawn as four corners and four batched repeating
-edges. Both menus open without egui's non-native fade. The native-size harness
-checks every visible root-border pixel against the source BMPs; system-window
-occlusion remains a separate state, not a failed frame. The menu interior,
-typography, exact original geometry, remaining predicates, and A0 captures
-still gate `CMD-02`. See the
-[P50 frame evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-gid-menu-frame.md).
-
-P51 removes the unsupported row-hover wash while keeping menu routing active.
-The harness now confirms detailed-system-window overlap and checks the GID
-frame pixels that remain visible, rather than skipping the entire frame. The
-[P51 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-gid-hover-and-occlusion.md)
-keeps native hover/focus art and complete stacking acceptance open.
-
-P52 begins UIP-B06 with the original 640×480 TACTICAL 1000 shell and working
-bitmap pause, red Alliance and green Imperial highlight/dim states, and zoom
-controls. The permanent muted battle
-harness checks both factions at native and letterboxed sizes, strict pause
-outside edges, state changes, and unobscured source pixels. Procedural stars,
-ships, fighters, panel data, navigation, assignments, commands, effects,
-results, Death Star paths, and audio keep every tactical cell open. See the
-[P52 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-shell-controls.md).
-
-P53 makes the working tactical controls obey their original palette-key hit
-masks and renders the extracted zoom pressed states while held. The four-case
-muted harness proves transparent internal pixels are inert and zoom-in followed
-by zoom-out restores the exact paused screen. Drag, repeat, camera, original
-battle objects, and every tactical acceptance cell remain open. See the
-[P53 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-control-hit-states.md).
-
-P54 stages every original type-301 and type-303 tactical resource without
-tracking proprietary output. P55 converts all 87 meshes, 370 indexed images,
-and 27 palettes into deterministic runtime objects and checks the mesh corpus
-against Assimp 6.0.5 raw import. P56 packages and visibly renders resource
-`2560` with its source-linked texture in an isolated proof/control browser
-matrix. P57A packages resources `2560` through `2562`, binds both named
-textures, and applies the source-traced three-level LOD predicate. Each fixed
-fixture records exactly one initial family-load event. P57B1 now traces the
-original cached-slot cycle and proves a close-medium-far-medium-close journey
-with the bitmap zoom controls and no reload. P57B2A through P57B2B3 recover the
-source camera, selected-object target route, active-force extent, four lanes,
-stable DAT and fleet-roster identity, exact X slots, and selected source-world
-target. P57B2C1 removes inferred mesh normalization, preserves authored
-coordinates, and activates the complete system palette set. P57B2C2 recovers
-render state. P57B2C2A now restores the source directional and ambient
-light rig; P57B2C2B restores filtering, culling, depth, dither, shading,
-specular, and diffuse/emissive material behavior. P58A completes every
-DAT-to-tactical-resource join and full-corpus browser transport. P58B through
-P58E restore live capital ships, fighter details, projected interaction,
-production detail transitions, and original task-force and RGBY controls.
-P58F1 through P58F8 add the exact system-selected planet, impact effects,
-projectile and field effects, selected damage presentation, live subsystem
-damage and repair, mobility, and physical integration. P58F9 restores the
-original command panels and exact assignment codes. P58F10 executes the four
-recovered maneuver waypoints, Hold, and the first Recover carrier state.
-P58F11 adds source-rate turning, waypoint completion, and the Docking and
-Recovered fighter states while preserving strategic squadron counts. P58F12
-adds typed Attack Fighters and Attack Capital Ships acquisition for both
-capital and fighter owners. P58F13 adds stable same-class replacement when a
-capital or fighter target becomes invalid and clears exhausted target lists
-without random or cross-class fallback. The full muted tactical matrix passes
-92 of 92 cases. Exact weapon resolution, fighter combat, collision, formation,
-Death Star and outcome paths, campaign return, A0 comparison, and all 106
-strict tactical cells remain open. See the [P57A evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-3d-lod-family.md),
-[P57B1 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-live-lod-journey.md),
-[P57B2B3 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-participant-placement.md),
-[P57B2C1 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-transform-palette.md),
-[P57B2C2A evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-light-rig.md),
-[P57B2C2B evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-render-state.md),
-[P58A evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-resource-join.md),
-[P58B evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-production-participants.md),
-[P58C evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-fighters-selection.md),
-[P58F11 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-18-tactical-command-progression.md),
-the [P58F12 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-18-tactical-attack-targeting.md),
-and [P58F13 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-19-tactical-attack-target-lifecycle.md).
-
-The next `UIP-B06` implementation commit is a consolidated completion bundle.
-It closes the remaining production battle behavior before one final 106-cell
-muted browser run and independent evidence review. Browser review supplies A1
-acceptance, not missing A0 original-baseline proof.
+1. **GID claim table (P59B).** Recover the GID menu paint and layout
+   (`FUN_00607740`), the non-support marker thresholds (`FUN_00426d00`), the
+   caption and display-window construction with the 180x240 expanded legend
+   (`FUN_00427010`), and the filter predicates for commands `0x11..0x80`
+   (`FUN_00425d00`). Record them as a claim table in
+   `ghidra/notes/gid-menu-contract.md` (not yet written;
+   `ghidra/notes/gid-legend.md` covers the legend). Wire a resource only when
+   the table proves both its predicate and its paint site.
+2. **Fixture build guard (P59A0).** `scripts/build-interface-test-wasm.sh`
+   still runs the production `build-wasm.sh` first. Add
+   `OPEN_REBELLION_SKIP_PRODUCTION_WASM=1` so a fixture build leaves
+   `web/open-rebellion.wasm` unchanged.
+3. **CMD-02 family gate (ACC-06).** One gate over all 29 baseline cells:
+   galaxy, sector and system views, Display Off, every filter mode with its
+   legend, the intelligence states, and hover, selection, pan and zoom, for
+   both factions at 640x480 and the letterboxed viewport, native and packaged
+   WASM. The GID catalog's 38 scenarios are the browser input.
 
 ## Bundle acceptance record
 
