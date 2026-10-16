@@ -105,6 +105,7 @@ use rebellion_render::message_index::{MessageIndexAction, MessageIndexState};
 use rebellion_render::mission_dialog::{
     draw_mission_dialog, MissionDialogAction, MissionDialogState,
 };
+use rebellion_render::missions_window::{draw_managed_missions_windows, PreparedMissionsWindow};
 use rebellion_render::move_confirmation::{
     draw_move_confirmation, draw_scrap_confirmation, MoveConfirmation, MoveConfirmationAction,
     MoveConfirmationState, ScrapConfirmation, ScrapConfirmationAction, ScrapConfirmationState,
@@ -154,9 +155,9 @@ use rebellion_render::{
     SystemWindowAction, SystemWindowState, TacticalAction, TacticalState, TacticalTrenchRunOutcome,
     VideoError, VideoPlayer,
 };
-use rebellion_render::{draw_missions_windows, MissionsWindowAction, MissionsWindowState};
 use rebellion_render::{DefensesWindowAction, DefensesWindowState};
 use rebellion_render::{FleetWindowAction, FleetWindowState};
+use rebellion_render::{MissionsWindowAction, MissionsWindowState};
 #[cfg(not(target_arch = "wasm32"))]
 use rebellion_render::{MusicSelector, SfxKind};
 use strategic_windowing::{
@@ -4731,6 +4732,7 @@ async fn main() {
     let mut system_legacy_bridge_serial = 0_u64;
     let mut fleet_legacy_bridge_serial = 0_u64;
     let mut defenses_legacy_bridge_serial = 0_u64;
+    let mut missions_legacy_bridge_serial = 0_u64;
     let mut strategic_input_router = rebellion_render::windowing_input::FrameInputRouter::default();
     let mut retained_legacy_input_filter = RetainedLegacyInputFilter::default();
     let mut strategic_frame_number = 0_u64;
@@ -6855,6 +6857,7 @@ Some(RailAudience::side(*faction_is_alliance)),
             let mut reports = system_window_state.content_reports(&return_candidate, &world);
             reports.extend(fleet_window_state.content_reports(&return_candidate, &world));
             reports.extend(defenses_window_state.content_reports(&return_candidate, &world));
+            reports.extend(missions_window_state.content_reports(&return_candidate, &world));
             reports.extend(fleet_finder_state.content_reports(&return_candidate));
             reports.extend(encyclopedia_surface.content_reports(&return_candidate));
             reports.extend(message_index.content_reports(&return_candidate));
@@ -6874,6 +6877,7 @@ Some(RailAudience::side(*faction_is_alliance)),
             system_window_state.remove_content(&reconciliation.removed);
             fleet_window_state.remove_content(&reconciliation.removed);
             defenses_window_state.remove_content(&reconciliation.removed);
+            missions_window_state.remove_content(&reconciliation.removed);
             fleet_finder_state.remove_content(&reconciliation.removed);
             encyclopedia_surface.remove_content(&reconciliation.removed);
             status_window_state.remove_content(&reconciliation.removed);
@@ -6944,6 +6948,7 @@ Some(RailAudience::side(*faction_is_alliance)),
         let strategic_frame_boundary =
             strategic_windowing.begin_production_frame(strategic_locks, legacy_blockers);
         defenses_window_state.refresh_release_targets(strategic_frame_boundary.snapshot(), &world);
+        missions_window_state.refresh_release_targets(strategic_frame_boundary.snapshot(), &world);
         let fleet_keyboard_owner =
             fleet_window_state.keyboard_owner(strategic_frame_boundary.snapshot());
         let fleet_finder_keyboard_owner =
@@ -7611,7 +7616,11 @@ Some(RailAudience::side(*faction_is_alliance)),
                         cockpit_layout,
                         pointer,
                     )
-                    || missions_window_state.contains_screen_point(cockpit_layout, pointer)
+                    || missions_window_state.contains_visible_screen_point(
+                        strategic_frame_boundary.snapshot(),
+                        cockpit_layout,
+                        pointer,
+                    )
                     || fleet_window_state.is_dragging()
                     || defenses_window_state.is_dragging()
                     || mission_dialog_state.contains_screen_point(cockpit_layout, pointer)
@@ -7675,6 +7684,12 @@ Some(RailAudience::side(*faction_is_alliance)),
                                     top_layer,
                                 ));
                                 hits.extend(defenses_window_state.hit_window_ids(
+                                    strategic_frame_boundary.snapshot(),
+                                    cockpit_layout,
+                                    point,
+                                    top_layer,
+                                ));
+                                hits.extend(missions_window_state.hit_window_ids(
                                     strategic_frame_boundary.snapshot(),
                                     cockpit_layout,
                                     point,
@@ -8205,7 +8220,9 @@ Some(RailAudience::side(*faction_is_alliance)),
                                 logical_position,
                             } => {
                                 map_state.selected_system = Some(system);
-                                missions_window_state.open(
+                                enqueue_missions_window(
+                                    &mut strategic_windowing,
+                                    &missions_window_state,
                                     &world,
                                     fog_state,
                                     &mission_state,
@@ -8316,7 +8333,11 @@ Some(RailAudience::side(*faction_is_alliance)),
                                 ),
                             )
                         },
-                        &missions_window_state,
+                        visible_legacy_bridge_serial(
+                            missions_legacy_bridge_serial,
+                            missions_window_state
+                                .has_visible_content(strategic_frame_boundary.snapshot(), &world),
+                        ),
                     );
                     for action in with_retained_input(ctx, retained_window_input, || {
                         draw_managed_system_windows(
@@ -8390,17 +8411,17 @@ Some(RailAudience::side(*faction_is_alliance)),
                             }
                             SystemWindowAction::RestoreMissionsWindow {
                                 system,
-                                logical_position,
+                                logical_position: _,
                             } => {
-                                missions_window_state.open(
-                                    &world,
-                                    fog_state,
-                                    &mission_state,
-                                    system,
-                                    logical_position,
-                                    cockpit_state.faction,
-                                    cockpit_layout,
-                                );
+                                if let Some(window) = exact_minimized_missions_restore(
+                                    strategic_frame_boundary.snapshot(),
+                                    missions_window_state.window_id(system),
+                                    rebellion_render::windowing_policy::system_subject(
+                                        &world, system,
+                                    ),
+                                ) {
+                                    strategic_windowing.enqueue_missions_restore(window);
+                                }
                             }
                             SystemWindowAction::OpenObjectMenu {
                                 selection, point, ..
@@ -8870,7 +8891,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                     }
 
                     for action in with_retained_input(ctx, retained_window_input, || {
-                        draw_missions_windows(
+                        draw_managed_missions_windows(
                             ctx,
                             &world,
                             fog_state,
@@ -8879,6 +8900,9 @@ Some(RailAudience::side(*faction_is_alliance)),
                             cockpit_state.faction,
                             cockpit_layout,
                             &mut bmp_cache,
+                            strategic_frame_boundary.snapshot(),
+                            &strategic_pointer_routes,
+                            &mut strategic_input_router,
                             galaxy_front == GalaxyFront::Missions,
                         )
                     }) {
@@ -8894,6 +8918,19 @@ Some(RailAudience::side(*faction_is_alliance)),
                             MissionsWindowAction::SelectSystem(system) => {
                                 map_state.selected_system = Some(system);
                             }
+                            MissionsWindowAction::Activate(window) => strategic_windowing
+                                .enqueue(rebellion_windowing::WindowCommand::Activate(window)),
+                            MissionsWindowAction::Close(window) => strategic_windowing
+                                .enqueue(rebellion_windowing::WindowCommand::Close(window)),
+                            MissionsWindowAction::MinimizeManaged {
+                                window,
+                                system,
+                                logical_position,
+                            } => strategic_windowing.enqueue_missions_minimize(
+                                window,
+                                system,
+                                logical_position,
+                            ),
                             MissionsWindowAction::Minimize {
                                 system,
                                 logical_position,
@@ -9465,7 +9502,9 @@ Some(RailAudience::side(*faction_is_alliance)),
                                     system,
                                     rebellion_render::quadrant_icons::Quadrant::Missions,
                                 ) {
-                                    missions_window_state.open(
+                                    enqueue_missions_window_for_member(
+                                        &mut strategic_windowing,
+                                        &missions_window_state,
                                         &world,
                                         fog_state,
                                         &mission_state,
@@ -9473,10 +9512,6 @@ Some(RailAudience::side(*faction_is_alliance)),
                                         point,
                                         cockpit_state.faction,
                                         cockpit_layout,
-                                    );
-                                    missions_window_state.show_member(
-                                        &mission_state,
-                                        system,
                                         member,
                                     );
                                 }
@@ -11633,6 +11668,9 @@ Some(RailAudience::side(*faction_is_alliance)),
         strategic_content_reports.extend(
             defenses_window_state.content_reports(strategic_frame_boundary.snapshot(), &world),
         );
+        strategic_content_reports.extend(
+            missions_window_state.content_reports(strategic_frame_boundary.snapshot(), &world),
+        );
         strategic_content_reports
             .extend(fleet_finder_state.content_reports(strategic_frame_boundary.snapshot()));
         strategic_content_reports
@@ -11674,6 +11712,8 @@ Some(RailAudience::side(*faction_is_alliance)),
                 system_content_id,
                 prepared_defenses,
                 defenses_content_id,
+                prepared_missions,
+                missions_content_id,
                 prepared_fleet,
                 fleet_content_id,
                 prepared_fleet_finder,
@@ -11686,6 +11726,8 @@ Some(RailAudience::side(*faction_is_alliance)),
                 restored_system,
                 minimized_defenses,
                 restored_defenses,
+                minimized_missions,
+                restored_missions,
                 minimized_fleet,
                 restored_fleet,
             } = applied;
@@ -11703,6 +11745,11 @@ Some(RailAudience::side(*faction_is_alliance)),
                 command,
                 rebellion_windowing::WindowCommand::Activate(id)
                     if defenses_window_state.contains_window(id)
+            );
+            let activated_missions = matches!(
+                command,
+                rebellion_windowing::WindowCommand::Activate(id)
+                    if missions_window_state.contains_window(id)
             );
             let mut committed_system_open = false;
             let mut committed_defenses_open = false;
@@ -11777,6 +11824,15 @@ Some(RailAudience::side(*faction_is_alliance)),
                     }
                 }
             }
+            let (missions_committed, missions_rollback) = commit_missions_window_publication(
+                &mut strategic_windowing,
+                &mut missions_window_state,
+                prepared_missions,
+                missions_content_id,
+                &result,
+            );
+            let committed_missions_open = missions_committed;
+            removed_content.extend(missions_rollback);
             if let (Some(prepared), Some(id), Ok(commit)) =
                 (prepared_fleet, fleet_content_id, &result)
             {
@@ -11928,6 +11984,9 @@ Some(RailAudience::side(*faction_is_alliance)),
             if (activated_defenses && result.is_ok()) || committed_defenses_open {
                 defenses_legacy_bridge_serial = DefensesWindowState::next_legacy_bridge_serial();
             }
+            if (activated_missions && result.is_ok()) || committed_missions_open {
+                missions_legacy_bridge_serial = MissionsWindowState::next_legacy_bridge_serial();
+            }
             if let Some(window) = restored_system {
                 system_window_state.restore_system_window(window);
             }
@@ -11936,6 +11995,9 @@ Some(RailAudience::side(*faction_is_alliance)),
             }
             if restored_defenses.is_some() {
                 defenses_legacy_bridge_serial = DefensesWindowState::next_legacy_bridge_serial();
+            }
+            if restored_missions.is_some() {
+                missions_legacy_bridge_serial = MissionsWindowState::next_legacy_bridge_serial();
             }
             if let (Some((window, system, logical_position)), Ok(commit)) =
                 (minimized_system, &result)
@@ -11990,9 +12052,29 @@ Some(RailAudience::side(*faction_is_alliance)),
                     debug_assert!(defenses_window_state.contains_window(window));
                 }
             }
+            if let (Some((window, system, logical_position)), Ok(commit)) =
+                (minimized_missions, &result)
+            {
+                if matches!(
+                    &commit.transition,
+                    rebellion_windowing::WindowTransition::Minimized { .. }
+                ) {
+                    if let Some(evicted) =
+                        system_window_state.minimize_missions_window(system, logical_position)
+                    {
+                        strategic_input_router.cancel_window(evicted);
+                        fleet_window_state.cancel_pointer_capture(evicted);
+                        defenses_window_state.cancel_pointer_capture(evicted);
+                        removed_content
+                            .extend(strategic_windowing.rollback_detail_publication(evicted));
+                    }
+                    debug_assert!(missions_window_state.contains_window(window));
+                }
+            }
             system_window_state.remove_content(&removed_content);
             fleet_window_state.remove_content(&removed_content);
             defenses_window_state.remove_content(&removed_content);
+            missions_window_state.remove_content(&removed_content);
             fleet_finder_state.remove_content(&removed_content);
             encyclopedia_surface.remove_content(&removed_content);
             status_window_state.remove_content(&removed_content);
@@ -12039,6 +12121,7 @@ Some(RailAudience::side(*faction_is_alliance)),
         system_window_state.remove_content(&reconciliation.removed);
         fleet_window_state.remove_content(&reconciliation.removed);
         defenses_window_state.remove_content(&reconciliation.removed);
+        missions_window_state.remove_content(&reconciliation.removed);
         fleet_finder_state.remove_content(&reconciliation.removed);
         encyclopedia_surface.remove_content(&reconciliation.removed);
         status_window_state.remove_content(&reconciliation.removed);
@@ -14129,6 +14212,123 @@ fn enqueue_defenses_window(
     true
 }
 
+/// Publishes prepared Missions content only after the application observes an
+/// exact accepted Open/Existing receipt. A failed new publication compensates
+/// the manager identity allocated by that receipt and no preserved identity.
+fn commit_missions_window_publication(
+    strategic_windowing: &mut strategic_windowing::StrategicWindowing,
+    state: &mut MissionsWindowState,
+    prepared: Option<PreparedMissionsWindow>,
+    expected_id: Option<rebellion_windowing::WindowId>,
+    result: &Result<rebellion_windowing::WindowCommit, rebellion_windowing::WindowError>,
+) -> (bool, Vec<rebellion_windowing::WindowId>) {
+    let Some(prepared) = prepared else {
+        return (false, Vec::new());
+    };
+    let Ok(commit) = result else {
+        return (false, Vec::new());
+    };
+    let receipt_id = match &commit.transition {
+        rebellion_windowing::WindowTransition::Opened { id }
+        | rebellion_windowing::WindowTransition::Existing { id, .. } => Some(*id),
+        _ => None,
+    };
+    let Some(id) = expected_id.filter(|id| receipt_id == Some(*id)) else {
+        macroquad::logging::error!(
+            "[windowing] Missions content receipt mismatch expected={expected_id:?} actual={receipt_id:?}"
+        );
+        let removed = match &commit.transition {
+            rebellion_windowing::WindowTransition::Opened { id } => {
+                strategic_windowing.rollback_detail_publication(*id)
+            }
+            _ => Vec::new(),
+        };
+        return (false, removed);
+    };
+    if state.commit_open(prepared, &commit.transition) != Some(id) {
+        macroquad::logging::error!(
+            "[windowing] Missions content commit did not match identity={id:?}"
+        );
+        let removed = match &commit.transition {
+            rebellion_windowing::WindowTransition::Opened { id } => {
+                strategic_windowing.rollback_detail_publication(*id)
+            }
+            _ => Vec::new(),
+        };
+        return (false, removed);
+    }
+
+    let committed = strategic_windowing.has_content(id)
+        || strategic_windowing.acknowledge_missions_publication(id);
+    if committed {
+        return (true, Vec::new());
+    }
+    state.remove_content(&[id]);
+    (false, strategic_windowing.rollback_detail_publication(id))
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The lifecycle adapter carries the existing Missions opener's complete content context."
+)]
+fn enqueue_missions_window(
+    strategic_windowing: &mut strategic_windowing::StrategicWindowing,
+    state: &MissionsWindowState,
+    world: &GameWorld,
+    fog: &rebellion_core::fog::FogState,
+    missions: &rebellion_core::missions::MissionState,
+    system: SystemKey,
+    logical_position: (i16, i16),
+    faction: CockpitFaction,
+    layout: rebellion_render::CockpitLayout,
+) -> bool {
+    let Some(prepared) = state.prepare_open(
+        world,
+        fog,
+        missions,
+        system,
+        logical_position,
+        faction,
+        layout,
+    ) else {
+        return false;
+    };
+    strategic_windowing.enqueue_missions_open(prepared);
+    true
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Finder publication carries member selection in the same prepared Missions content."
+)]
+fn enqueue_missions_window_for_member(
+    strategic_windowing: &mut strategic_windowing::StrategicWindowing,
+    state: &MissionsWindowState,
+    world: &GameWorld,
+    fog: &rebellion_core::fog::FogState,
+    missions: &rebellion_core::missions::MissionState,
+    system: SystemKey,
+    logical_position: (i16, i16),
+    faction: CockpitFaction,
+    layout: rebellion_render::CockpitLayout,
+    member: rebellion_core::missions::MissionMember,
+) -> bool {
+    let Some(prepared) = state.prepare_open_for_member(
+        world,
+        fog,
+        missions,
+        system,
+        logical_position,
+        faction,
+        layout,
+        member,
+    ) else {
+        return false;
+    };
+    strategic_windowing.enqueue_missions_open(prepared);
+    true
+}
+
 #[expect(
     clippy::too_many_arguments,
     reason = "The lifecycle adapter carries the existing Fleet opener's complete content context."
@@ -14179,13 +14379,13 @@ fn galaxy_front(
     system_serial: u64,
     fleet_serial: u64,
     defenses_serial: u64,
-    missions: &MissionsWindowState,
+    missions_serial: u64,
 ) -> GalaxyFront {
     [
         (system_serial, GalaxyFront::System),
         (fleet_serial, GalaxyFront::Fleet),
         (defenses_serial, GalaxyFront::Defenses),
-        (missions.focus_serial(), GalaxyFront::Missions),
+        (missions_serial, GalaxyFront::Missions),
     ]
     .into_iter()
     .max_by_key(|&(serial, _)| serial)
@@ -14210,6 +14410,24 @@ fn exact_minimized_defenses_restore(
     .then_some(candidate)
 }
 
+/// Resolves the legacy system-keyed Missions rail action only when the exact
+/// candidate remains a minimized Missions identity for the same stable DAT
+/// subject in this frame's frozen manager snapshot.
+fn exact_minimized_missions_restore(
+    snapshot: &rebellion_windowing::RoutingSnapshot,
+    candidate: Option<rebellion_windowing::WindowId>,
+    expected_subject: Option<rebellion_windowing::SubjectId>,
+) -> Option<rebellion_windowing::WindowId> {
+    let candidate = candidate?;
+    let expected_subject = expected_subject?;
+    (snapshot.presentation_history().contains(&candidate)
+        && snapshot.key(candidate).is_some_and(|key| {
+            key.kind == rebellion_windowing::WindowKind::Missions
+                && key.subject == Some(expected_subject)
+        }))
+    .then_some(candidate)
+}
+
 const fn visible_legacy_bridge_serial(serial: u64, exact_content_visible: bool) -> u64 {
     if exact_content_visible {
         serial
@@ -14219,12 +14437,12 @@ const fn visible_legacy_bridge_serial(serial: u64, exact_content_visible: bool) 
 }
 
 #[cfg(test)]
-mod defenses_restore_guard_tests {
+mod detail_restore_guard_tests {
     use super::{
-        exact_minimized_defenses_restore, galaxy_front, visible_legacy_bridge_serial, GalaxyFront,
+        exact_minimized_defenses_restore, exact_minimized_missions_restore, galaxy_front,
+        visible_legacy_bridge_serial, GalaxyFront,
     };
     use rebellion_render::windowing_policy::contextual_spec;
-    use rebellion_render::MissionsWindowState;
     use rebellion_windowing::{
         SubjectId, WindowCommand, WindowKind, WindowManager, WindowOwner, WindowTransition,
     };
@@ -14295,15 +14513,361 @@ mod defenses_restore_guard_tests {
 
     #[test]
     fn defenses_bridge_serial_contributes_only_with_exact_visible_content() {
-        let missions = MissionsWindowState::default();
         assert_eq!(
-            galaxy_front(7, 6, visible_legacy_bridge_serial(99, false), &missions,),
+            galaxy_front(7, 6, visible_legacy_bridge_serial(99, false), 0),
             GalaxyFront::System
         );
         assert_eq!(
-            galaxy_front(7, 6, visible_legacy_bridge_serial(99, true), &missions,),
+            galaxy_front(7, 6, visible_legacy_bridge_serial(99, true), 0),
             GalaxyFront::Defenses
         );
+    }
+
+    #[test]
+    fn stale_missions_rail_does_not_retarget_a_visible_replacement() {
+        let expected = SubjectId::new(2, 100);
+        let mut manager = WindowManager::new();
+        let stale = open(&mut manager, WindowKind::Missions, expected);
+        manager.apply(WindowCommand::Minimize(stale)).unwrap();
+        assert_eq!(
+            exact_minimized_missions_restore(&manager.begin_frame(), Some(stale), Some(expected)),
+            Some(stale)
+        );
+
+        manager.apply(WindowCommand::Close(stale)).unwrap();
+        let replacement = open(&mut manager, WindowKind::Missions, expected);
+        assert_ne!(replacement, stale);
+        assert_eq!(
+            exact_minimized_missions_restore(
+                &manager.begin_frame(),
+                Some(replacement),
+                Some(expected),
+            ),
+            None,
+            "a system-keyed stale rail action cannot target visible replacement content"
+        );
+
+        let mut wrong_kind = WindowManager::new();
+        let defenses = open(&mut wrong_kind, WindowKind::Defenses, expected);
+        wrong_kind.apply(WindowCommand::Minimize(defenses)).unwrap();
+        assert_eq!(
+            exact_minimized_missions_restore(
+                &wrong_kind.begin_frame(),
+                Some(defenses),
+                Some(expected),
+            ),
+            None
+        );
+
+        let mut wrong_subject = WindowManager::new();
+        let other = SubjectId::new(2, 101);
+        let missions = open(&mut wrong_subject, WindowKind::Missions, other);
+        wrong_subject
+            .apply(WindowCommand::Minimize(missions))
+            .unwrap();
+        assert_eq!(
+            exact_minimized_missions_restore(
+                &wrong_subject.begin_frame(),
+                Some(missions),
+                Some(expected),
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn missions_bridge_serial_contributes_only_with_exact_visible_content() {
+        assert_eq!(
+            galaxy_front(7, 6, 5, visible_legacy_bridge_serial(99, false)),
+            GalaxyFront::System
+        );
+        assert_eq!(
+            galaxy_front(7, 6, 5, visible_legacy_bridge_serial(99, true)),
+            GalaxyFront::Missions
+        );
+    }
+}
+
+#[cfg(test)]
+mod missions_publication_tests {
+    use super::{
+        commit_missions_window_publication, enqueue_missions_window,
+        enqueue_missions_window_for_member,
+    };
+    use rebellion_core::dat::{ExplorationStatus, Faction};
+    use rebellion_core::fog::FogState;
+    use rebellion_core::ids::{CharacterKey, DatId, SystemKey};
+    use rebellion_core::missions::{
+        MissionFaction, MissionKind, MissionMember, MissionRequest, MissionState,
+    };
+    use rebellion_core::world::{Character, ControlKind, GameWorld, System};
+    use rebellion_render::cockpit::{CockpitFaction, CockpitLayout, CockpitViewport};
+    use rebellion_render::missions_window::MissionsWindowState;
+    use rebellion_render::windowing_policy::contextual_spec;
+    use rebellion_windowing::{
+        SubjectId, WindowCommand, WindowError, WindowKind, WindowManager, WindowOwner,
+        WindowTransition,
+    };
+
+    fn fixture() -> (GameWorld, SystemKey, MissionState, [CharacterKey; 2]) {
+        let mut world = GameWorld::default();
+        let system = world.systems.insert(System {
+            dat_id: DatId::new(100),
+            name: "Sluis Van".into(),
+            sector: Default::default(),
+            x: 320,
+            y: 250,
+            exploration_status: ExplorationStatus::Explored,
+            popularity_alliance: 0.5,
+            popularity_empire: 0.5,
+            is_populated: true,
+            total_energy: 0,
+            raw_materials: 0,
+            espionage_rating: 0.0,
+            fleets: Vec::new(),
+            ground_units: Vec::new(),
+            special_forces: Vec::new(),
+            fighters: Vec::new(),
+            defense_facilities: Vec::new(),
+            manufacturing_facilities: Vec::new(),
+            production_facilities: Vec::new(),
+            is_headquarters: false,
+            is_destroyed: false,
+            control: ControlKind::Controlled(Faction::Alliance),
+        });
+        let mut character = |name: &str| {
+            world.characters.insert(Character {
+                dat_id: DatId::new(832),
+                name: name.into(),
+                is_alliance: true,
+                current_system: Some(system),
+                recruited: true,
+                ..Default::default()
+            })
+        };
+        let first = character("Leia");
+        let second = character("Mon");
+        let mut missions = MissionState::new();
+        for (kind, member) in [
+            (MissionKind::Diplomacy, first),
+            (MissionKind::Espionage, second),
+        ] {
+            missions.dispatch(MissionRequest {
+                kind,
+                faction: MissionFaction::Alliance,
+                team: vec![MissionMember::Character(member)],
+                decoys: Vec::new(),
+                target_system: system,
+                target_character: None,
+                target_object: None,
+                tick: 0,
+            });
+        }
+        (world, system, missions, [first, second])
+    }
+
+    fn layout() -> CockpitLayout {
+        let viewport = CockpitViewport {
+            x: 0.0,
+            y: 0.0,
+            width: 640.0,
+            height: 480.0,
+        };
+        CockpitLayout {
+            canvas: viewport,
+            galaxy: viewport,
+            scale: 1.0,
+        }
+    }
+
+    fn unrelated_second_id() -> rebellion_windowing::WindowId {
+        let mut manager = WindowManager::new();
+        let open = |manager: &mut WindowManager, kind, subject| match manager
+            .apply(WindowCommand::Open(contextual_spec(
+                kind,
+                subject,
+                WindowOwner::StrategicRoot,
+            )))
+            .unwrap()
+            .transition
+        {
+            WindowTransition::Opened { id } => id,
+            transition => panic!("expected open, got {transition:?}"),
+        };
+        let _ = open(&mut manager, WindowKind::System, SubjectId::new(2, 900));
+        open(&mut manager, WindowKind::Defenses, SubjectId::new(2, 901))
+    }
+
+    #[test]
+    fn finder_publication_requires_exact_receipt_and_rolls_back_only_new_identity() {
+        let (world, system, missions, [first, second]) = fixture();
+        let fog = FogState::new(Faction::Alliance);
+        let mut coordinator = super::strategic_windowing::StrategicWindowing::new();
+        let mut state = MissionsWindowState::default();
+        assert!(enqueue_missions_window(
+            &mut coordinator,
+            &state,
+            &world,
+            &fog,
+            &missions,
+            system,
+            (20, 30),
+            CockpitFaction::Alliance,
+            layout(),
+        ));
+        assert!(
+            state.report(&world, &fog, &missions, system).is_none(),
+            "queued open intent is inert before the coordinator commit"
+        );
+        let mut opened = coordinator.apply_pending().pop().unwrap();
+        let id = opened.missions_content_id.unwrap();
+        let (committed, removed) = commit_missions_window_publication(
+            &mut coordinator,
+            &mut state,
+            opened.prepared_missions.take(),
+            opened.missions_content_id,
+            &opened.result,
+        );
+        assert!(committed);
+        assert!(removed.is_empty());
+        assert_eq!(
+            state
+                .report(&world, &fog, &missions, system)
+                .unwrap()
+                .selected,
+            Some(0)
+        );
+
+        assert!(enqueue_missions_window_for_member(
+            &mut coordinator,
+            &state,
+            &world,
+            &fog,
+            &missions,
+            system,
+            (300, 200),
+            CockpitFaction::Alliance,
+            layout(),
+            MissionMember::Character(second),
+        ));
+        assert_eq!(
+            state
+                .report(&world, &fog, &missions, system)
+                .unwrap()
+                .selected,
+            Some(0),
+            "Finder intent cannot mutate published selection before commit"
+        );
+        let mut existing = coordinator.apply_pending().pop().unwrap();
+        assert!(matches!(
+            existing.result.as_ref().unwrap().transition,
+            WindowTransition::Existing { id: existing, .. } if existing == id
+        ));
+        let prepared = existing.prepared_missions.take();
+        let wrong = unrelated_second_id();
+        assert_ne!(wrong, id);
+        let (committed, removed) = commit_missions_window_publication(
+            &mut coordinator,
+            &mut state,
+            prepared,
+            Some(wrong),
+            &existing.result,
+        );
+        assert!(!committed);
+        assert!(removed.is_empty());
+        assert_eq!(
+            state
+                .report(&world, &fog, &missions, system)
+                .unwrap()
+                .selected,
+            Some(0),
+            "wrong Existing identity must be rejected before Finder selection mutates"
+        );
+        let (committed, removed) = commit_missions_window_publication(
+            &mut coordinator,
+            &mut state,
+            prepared,
+            existing.missions_content_id,
+            &existing.result,
+        );
+        assert!(committed);
+        assert!(removed.is_empty());
+        assert_eq!(
+            state
+                .report(&world, &fog, &missions, system)
+                .unwrap()
+                .selected,
+            Some(1),
+            "the exact Existing receipt releases Finder selection"
+        );
+
+        let rejected = state
+            .prepare_open_for_member(
+                &world,
+                &fog,
+                &missions,
+                system,
+                (400, 250),
+                CockpitFaction::Alliance,
+                layout(),
+                MissionMember::Character(first),
+            )
+            .unwrap();
+        let rejection = Err(WindowError::UnknownWindow(id));
+        let (committed, removed) = commit_missions_window_publication(
+            &mut coordinator,
+            &mut state,
+            Some(rejected),
+            Some(id),
+            &rejection,
+        );
+        assert!(!committed);
+        assert!(removed.is_empty());
+        assert_eq!(
+            state
+                .report(&world, &fog, &missions, system)
+                .unwrap()
+                .selected,
+            Some(1),
+            "a rejected receipt leaves published content unchanged"
+        );
+
+        let mut rollback_coordinator = super::strategic_windowing::StrategicWindowing::new();
+        let mut occupied = MissionsWindowState::default();
+        assert!(occupied.open(
+            &world,
+            &fog,
+            &missions,
+            system,
+            (20, 30),
+            CockpitFaction::Alliance,
+            layout(),
+        ));
+        assert!(enqueue_missions_window(
+            &mut rollback_coordinator,
+            &occupied,
+            &world,
+            &fog,
+            &missions,
+            system,
+            (20, 30),
+            CockpitFaction::Alliance,
+            layout(),
+        ));
+        let mut opened = rollback_coordinator.apply_pending().pop().unwrap();
+        let opened_id = opened.missions_content_id.unwrap();
+        let (committed, removed) = commit_missions_window_publication(
+            &mut rollback_coordinator,
+            &mut occupied,
+            opened.prepared_missions.take(),
+            opened.missions_content_id,
+            &opened.result,
+        );
+        assert!(!committed);
+        assert_eq!(removed, [opened_id]);
+        assert!(rollback_coordinator.begin_frame().key(opened_id).is_none());
+        assert_eq!(occupied.window_count(), 1);
+        assert!(!occupied.contains_window(opened_id));
     }
 }
 

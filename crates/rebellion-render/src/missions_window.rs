@@ -17,6 +17,10 @@ use rebellion_core::missions::{
     ActiveMission, MissionFaction, MissionMember, MissionState, MissionTarget,
 };
 use rebellion_core::world::GameWorld;
+use rebellion_windowing::{
+    ContentReport, ContentStatus, RoutingSnapshot, SubjectId, WindowId, WindowKind, WindowOwner,
+    WindowSpec, WindowTransition,
+};
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{CockpitFaction, CockpitLayout};
@@ -31,6 +35,10 @@ use crate::system_window::{
     logical_rect, manufacturing_facility_mini, production_facility_mini, rect_contains,
     special_force_mini, troop_mini,
 };
+use crate::windowing_input::{
+    FrameInputRouter, InputEventId, InputRecipient, PointerButtonId, PointerPhase,
+};
+use crate::windowing_policy::{contextual_spec, system_subject};
 
 pub const MISSIONS_WINDOW_WIDTH: f32 = 235.0;
 pub const MISSIONS_WINDOW_HEIGHT: f32 = 304.0;
@@ -155,11 +163,46 @@ enum Target {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct OpenMissionsWindow {
+    /// Opaque session identity allocated by the shared window manager.
+    /// Fixture-only direct opens deliberately have no production identity.
+    id: Option<WindowId>,
+    subject: Option<SubjectId>,
     system: SystemKey,
     logical_position: (i16, i16),
     /// The selected mission row `+0x1c4`, by mission id.
     selected: Option<u64>,
     tab: MissionsTab,
+    /// Whether this exact content identity was admitted for release targeting
+    /// by the current frozen presentation snapshot.
+    release_target_visible: bool,
+}
+
+/// Validated Missions content held aside until the manager accepts its stable
+/// `(Missions, system DAT ID)` identity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PreparedMissionsWindow {
+    spec: WindowSpec,
+    faction: CockpitFaction,
+    system: SystemKey,
+    logical_position: (i16, i16),
+    selected: Option<u64>,
+    tab: MissionsTab,
+    /// Finder-only selection change released by an exact accepted receipt.
+    member_selection: Option<(u64, MissionsTab)>,
+}
+
+impl PreparedMissionsWindow {
+    /// Complete manager declaration for this content candidate.
+    #[must_use]
+    pub const fn spec(&self) -> WindowSpec {
+        self.spec
+    }
+
+    /// Runtime system identity retained beside the stable DAT subject.
+    #[must_use]
+    pub const fn system(&self) -> SystemKey {
+        self.system
+    }
 }
 
 /// The open Missions windows. The last is focused and paints on top.
@@ -182,10 +225,148 @@ impl Default for MissionsWindowState {
 }
 
 impl MissionsWindowState {
+    /// Allocates a temporary cross-family serial after the shared manager has
+    /// already accepted a Missions activation. The frozen routing snapshot,
+    /// not this bridge, remains the Missions family's order authority.
+    #[must_use]
+    pub fn next_legacy_bridge_serial() -> u64 {
+        crate::window_focus::next_serial()
+    }
+
     /// Whether any window of this kind is open.
     #[must_use]
     pub fn any_open(&self) -> bool {
         !self.windows.is_empty()
+    }
+
+    /// Validates and prepares Missions content without mutating the live
+    /// store. The stable subject is the system's original DAT identity.
+    #[must_use]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Opening selects the first row, which reads the mission and fog state."
+    )]
+    pub fn prepare_open(
+        &self,
+        world: &GameWorld,
+        fog: &FogState,
+        missions: &MissionState,
+        system: SystemKey,
+        logical_position: (i16, i16),
+        faction: CockpitFaction,
+        layout: CockpitLayout,
+    ) -> Option<PreparedMissionsWindow> {
+        let subject = system_subject(world, system)?;
+        let selected = mission_rows(world, fog, missions, cockpit_faction(faction), system)
+            .first()
+            .map(|row| row.mission);
+        Some(PreparedMissionsWindow {
+            spec: contextual_spec(WindowKind::Missions, subject, WindowOwner::StrategicRoot),
+            faction,
+            system,
+            logical_position: clamp_window_to_galaxy(
+                logical_position,
+                layout,
+                MISSIONS_WINDOW_WIDTH,
+                MISSIONS_WINDOW_HEIGHT,
+            ),
+            selected,
+            tab: MissionsTab::Agents,
+            member_selection: None,
+        })
+    }
+
+    /// Prepares the Finder's requested member selection as part of the same
+    /// atomic content candidate that accompanies the manager open.
+    #[must_use]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Finder preparation carries the existing opener's complete content context."
+    )]
+    pub fn prepare_open_for_member(
+        &self,
+        world: &GameWorld,
+        fog: &FogState,
+        missions: &MissionState,
+        system: SystemKey,
+        logical_position: (i16, i16),
+        faction: CockpitFaction,
+        layout: CockpitLayout,
+        member: MissionMember,
+    ) -> Option<PreparedMissionsWindow> {
+        let mut prepared = self.prepare_open(
+            world,
+            fog,
+            missions,
+            system,
+            logical_position,
+            faction,
+            layout,
+        )?;
+        let mission = missions
+            .missions()
+            .iter()
+            .find(|mission| mission.team.contains(&member) || mission.decoys.contains(&member))?;
+        prepared.selected = Some(mission.id);
+        prepared.tab = if mission.decoys.contains(&member) {
+            MissionsTab::Decoys
+        } else {
+            MissionsTab::Agents
+        };
+        prepared.member_selection = Some((mission.id, prepared.tab));
+        Some(prepared)
+    }
+
+    /// Publishes new Missions content, or confirms the exact preserved
+    /// content, only after a successful manager open commit.
+    pub fn commit_open(
+        &mut self,
+        prepared: PreparedMissionsWindow,
+        transition: &WindowTransition,
+    ) -> Option<WindowId> {
+        let subject = prepared.spec.key.subject?;
+        match *transition {
+            WindowTransition::Opened { id } => {
+                if self.windows.iter().any(|window| {
+                    window.id == Some(id)
+                        || window.subject == Some(subject)
+                        || window.system == prepared.system
+                }) {
+                    return None;
+                }
+                if self.windows.is_empty() {
+                    self.faction = prepared.faction;
+                } else if self.faction != prepared.faction {
+                    return None;
+                }
+                self.windows.push(OpenMissionsWindow {
+                    id: Some(id),
+                    subject: Some(subject),
+                    system: prepared.system,
+                    logical_position: prepared.logical_position,
+                    selected: prepared.selected,
+                    tab: prepared.tab,
+                    release_target_visible: false,
+                });
+                Some(id)
+            }
+            WindowTransition::Existing { id, .. } => {
+                if self.faction != prepared.faction {
+                    return None;
+                }
+                let window = self.windows.iter_mut().find(|window| {
+                    window.id == Some(id)
+                        && window.subject == Some(subject)
+                        && window.system == prepared.system
+                })?;
+                if let Some((selected, tab)) = prepared.member_selection {
+                    window.selected = Some(selected);
+                    window.tab = tab;
+                }
+                Some(id)
+            }
+            _ => None,
+        }
     }
 
     /// Open `system`'s Missions window at a logical point, clamped into the
@@ -219,6 +400,8 @@ impl MissionsWindowState {
             .map(|row| row.mission);
         self.focus_serial = crate::window_focus::next_serial();
         self.windows.push(OpenMissionsWindow {
+            id: None,
+            subject: None,
             system,
             logical_position: clamp_window_to_galaxy(
                 logical_position,
@@ -228,8 +411,95 @@ impl MissionsWindowState {
             ),
             selected,
             tab: MissionsTab::Agents,
+            release_target_visible: true,
         });
         true
+    }
+
+    /// Exact manager identity attached to `system`'s committed content.
+    #[must_use]
+    pub fn window_id(&self, system: SystemKey) -> Option<WindowId> {
+        self.windows
+            .iter()
+            .find(|window| window.system == system)
+            .and_then(|window| window.id)
+    }
+
+    /// Whether `system`'s exact content identity participates in this frozen
+    /// frame. Direct fixture content has no manager identity and stays visible.
+    #[must_use]
+    pub fn window_is_visible(&self, snapshot: &RoutingSnapshot, system: SystemKey) -> bool {
+        self.windows.iter().any(|window| {
+            window.system == system && window.id.is_none_or(|id| snapshot.is_visible(id))
+        })
+    }
+
+    /// Whether exact Missions content participates visibly in this frozen
+    /// frame. Manager-owned content must retain its committed kind and DAT
+    /// subject; direct fixture content remains visible while its system exists.
+    #[must_use]
+    pub fn has_visible_content(&self, snapshot: &RoutingSnapshot, world: &GameWorld) -> bool {
+        self.windows.iter().any(|window| match window.id {
+            Some(id) => {
+                snapshot.is_visible(id)
+                    && snapshot.key(id).is_some_and(|key| {
+                        key.kind == WindowKind::Missions && key.subject == window.subject
+                    })
+                    && system_subject(world, window.system) == window.subject
+            }
+            None => world.systems.contains_key(window.system),
+        })
+    }
+
+    /// Whether exact manager-owned Missions content remains attached.
+    #[must_use]
+    pub fn contains_window(&self, id: WindowId) -> bool {
+        self.windows.iter().any(|window| window.id == Some(id))
+    }
+
+    /// Removes only content named by manager teardown receipts.
+    pub fn remove_content(&mut self, removed: &[WindowId]) {
+        self.windows
+            .retain(|window| window.id.is_none_or(|id| !removed.contains(&id)));
+    }
+
+    /// Reports every active Missions identity in the frozen snapshot,
+    /// including minimized history entries whose content remains attached.
+    #[must_use]
+    pub fn content_reports(
+        &self,
+        snapshot: &RoutingSnapshot,
+        world: &GameWorld,
+    ) -> Vec<ContentReport> {
+        snapshot
+            .paint_order()
+            .iter()
+            .chain(snapshot.presentation_history())
+            .copied()
+            .filter(|&id| {
+                snapshot
+                    .key(id)
+                    .is_some_and(|key| key.kind == WindowKind::Missions)
+            })
+            .map(|id| {
+                let ready = self.windows.iter().any(|window| {
+                    window.id == Some(id)
+                        && snapshot
+                            .key(id)
+                            .is_some_and(|key| key.subject == window.subject)
+                        && world.systems.contains_key(window.system)
+                        && system_subject(world, window.system) == window.subject
+                });
+                ContentReport {
+                    window: id,
+                    status: if ready {
+                        ContentStatus::Ready
+                    } else {
+                        ContentStatus::Absent
+                    },
+                }
+            })
+            .collect()
     }
 
     #[must_use]
@@ -248,6 +518,52 @@ impl MissionsWindowState {
         self.windows
             .iter()
             .any(|window| rect_contains(window_screen_rect(window, layout), point))
+    }
+
+    /// Whether visible Missions content covers `point`. Minimized manager
+    /// content stays attached but cannot block the strategic root.
+    #[must_use]
+    pub fn contains_visible_screen_point(
+        &self,
+        snapshot: &RoutingSnapshot,
+        layout: CockpitLayout,
+        point: (f32, f32),
+    ) -> bool {
+        let point = egui::pos2(point.0, point.1);
+        self.windows.iter().any(|window| {
+            window.id.is_none_or(|id| snapshot.is_visible(id))
+                && rect_contains(window_screen_rect(window, layout), point)
+        })
+    }
+
+    /// Exact visible manager identity whose Missions rectangle covers
+    /// `point` when egui reports that content layer as topmost.
+    #[must_use]
+    pub fn hit_window_ids(
+        &self,
+        snapshot: &RoutingSnapshot,
+        layout: CockpitLayout,
+        point: (f32, f32),
+        top_layer: Option<egui::LayerId>,
+    ) -> std::collections::BTreeSet<WindowId> {
+        let point = egui::pos2(point.0, point.1);
+        self.windows
+            .iter()
+            .filter(|window| top_layer.is_some_and(|layer| layer.id == area_id(window)))
+            .filter_map(|window| {
+                window.id.filter(|id| {
+                    snapshot.is_visible(*id)
+                        && rect_contains(window_screen_rect(window, layout), point)
+                })
+            })
+            .collect()
+    }
+
+    /// The screen rect of `system`'s window.
+    #[must_use]
+    pub fn screen_rect(&self, layout: CockpitLayout, system: SystemKey) -> Option<egui::Rect> {
+        let window = self.windows.iter().find(|window| window.system == system)?;
+        Some(window_screen_rect(window, layout))
     }
 
     /// The screen rect of the `index`th mission row of `system`'s window.
@@ -348,8 +664,26 @@ impl MissionsWindowState {
     pub fn release_target(&self, layer: egui::LayerId) -> Option<SystemKey> {
         self.windows
             .iter()
-            .find(|window| area_id(window.system) == layer.id)
+            .find(|window| window.release_target_visible && area_id(window) == layer.id)
             .map(|window| window.system)
+    }
+
+    /// Refreshes which retained egui layers may resolve a gameplay release.
+    /// The application calls this immediately after freezing the frame so a
+    /// stale prior-frame area cannot retarget before Missions paints.
+    pub fn refresh_release_targets(&mut self, snapshot: &RoutingSnapshot, world: &GameWorld) {
+        for window in &mut self.windows {
+            window.release_target_visible = match window.id {
+                Some(id) => {
+                    snapshot.is_visible(id)
+                        && snapshot.key(id).is_some_and(|key| {
+                            key.kind == WindowKind::Missions && key.subject == window.subject
+                        })
+                        && system_subject(world, window.system) == window.subject
+                }
+                None => world.systems.contains_key(window.system),
+            };
+        }
     }
 
     pub fn clear(&mut self) {
@@ -455,9 +789,20 @@ pub enum MissionsWindowAction {
     /// (`FUN_00429ce0`).
     OpenSector(SystemKey),
     SelectSystem(SystemKey),
+    /// A manager-owned Missions window took pointer activation.
+    Activate(WindowId),
+    /// The close button or stale renderer content requests exact teardown.
+    Close(WindowId),
     /// The minimize button (`0x15`) posts `0x466`: the window goes to the
     /// galaxy view's rail.
     Minimize {
+        system: SystemKey,
+        logical_position: (i16, i16),
+    },
+    /// Production minimize intent for manager-owned Missions content. The
+    /// rail adapter observes it only after the manager accepts the command.
+    MinimizeManaged {
+        window: WindowId,
         system: SystemKey,
         logical_position: (i16, i16),
     },
@@ -806,8 +1151,8 @@ fn cockpit_faction(faction: CockpitFaction) -> Faction {
     }
 }
 
-fn area_id(system: SystemKey) -> egui::Id {
-    egui::Id::new(("original-missions-window", system))
+fn area_id(window: &OpenMissionsWindow) -> egui::Id {
+    egui::Id::new(("original-missions-window", window.system, window.id))
 }
 
 fn window_screen_rect(window: &OpenMissionsWindow, layout: CockpitLayout) -> egui::Rect {
@@ -870,6 +1215,32 @@ struct WindowDrawResult {
     open_sector: bool,
     select: Option<u64>,
     tab: Option<MissionsTab>,
+    /// Normalized physical phases that causally produced this frame's
+    /// mutations, in backend order with duplicates removed.
+    causal_pointer_phases: Vec<PointerPhase>,
+}
+
+impl WindowDrawResult {
+    fn note_pointer_phase(&mut self, phase: PointerPhase) {
+        if !self.causal_pointer_phases.contains(&phase) {
+            self.causal_pointer_phases.push(phase);
+        }
+    }
+}
+
+struct WindowPointerMutation(bool);
+
+fn draw_missions_windows_with_snapshot_pointer_mutation(
+    result: &WindowDrawResult,
+) -> WindowPointerMutation {
+    WindowPointerMutation(
+        result.focus
+            || result.close
+            || result.minimize
+            || result.open_sector
+            || result.select.is_some()
+            || result.tab.is_some(),
+    )
 }
 
 /// Draw every open Missions window.
@@ -892,7 +1263,101 @@ pub fn draw_missions_windows(
     cache: &mut BmpCache,
     front: bool,
 ) -> Vec<MissionsWindowAction> {
-    state.prepare_faction(faction);
+    draw_missions_windows_with_snapshot(
+        ctx,
+        world,
+        fog,
+        missions,
+        state,
+        faction,
+        layout,
+        cache,
+        None,
+        &[],
+        None,
+        front,
+    )
+}
+
+/// Draw manager-owned Missions content in the frozen bottom-to-top paint
+/// order and admit mutations only through routed pointer events.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Keep explicit state and rendering inputs at this UI boundary, as the Fleet window does."
+)]
+pub fn draw_managed_missions_windows(
+    ctx: &egui::Context,
+    world: &GameWorld,
+    fog: &FogState,
+    missions: &MissionState,
+    state: &mut MissionsWindowState,
+    faction: CockpitFaction,
+    layout: CockpitLayout,
+    cache: &mut BmpCache,
+    snapshot: &RoutingSnapshot,
+    pointer_events: &[(InputEventId, PointerPhase)],
+    router: &mut FrameInputRouter,
+    front: bool,
+) -> Vec<MissionsWindowAction> {
+    draw_missions_windows_with_snapshot(
+        ctx,
+        world,
+        fog,
+        missions,
+        state,
+        faction,
+        layout,
+        cache,
+        Some(snapshot),
+        pointer_events,
+        Some(router),
+        front,
+    )
+}
+
+fn claim_missions_pointer_event(
+    router: &mut FrameInputRouter,
+    events: &[(InputEventId, PointerPhase)],
+    window: WindowId,
+    phase: PointerPhase,
+) -> Option<InputEventId> {
+    events.iter().find_map(|(event, candidate)| {
+        (*candidate == phase
+            && router.pointer_recipient(*event) == InputRecipient::Window(window)
+            && router.claim(*event, InputRecipient::Window(window)))
+        .then_some(*event)
+    })
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Shared implementation for production snapshots and fixture-only direct content."
+)]
+fn draw_missions_windows_with_snapshot(
+    ctx: &egui::Context,
+    world: &GameWorld,
+    fog: &FogState,
+    missions: &MissionState,
+    state: &mut MissionsWindowState,
+    faction: CockpitFaction,
+    layout: CockpitLayout,
+    cache: &mut BmpCache,
+    snapshot: Option<&RoutingSnapshot>,
+    pointer_events: &[(InputEventId, PointerPhase)],
+    mut router: Option<&mut FrameInputRouter>,
+    front: bool,
+) -> Vec<MissionsWindowAction> {
+    if state.windows.iter().all(|window| window.id.is_none()) {
+        state.prepare_faction(faction);
+    }
+    if let Some(snapshot) = snapshot {
+        state.refresh_release_targets(snapshot, world);
+    } else {
+        for window in &mut state.windows {
+            window.release_target_visible =
+                window.id.is_none() && world.systems.contains_key(window.system);
+        }
+    }
     let player = cockpit_faction(faction);
     // FUN_004a0c20: a selected mission that leaves the list clears the
     // selection.
@@ -905,28 +1370,83 @@ pub fn draw_missions_windows(
             window.selected = None;
         }
     }
-    let windows = state.windows.clone();
-    let focused_system = windows.last().map(|window| window.system);
-    let mut actions = Vec::new();
+    let mut windows = Vec::new();
+    let mut stale_manager_windows = Vec::new();
+    if let Some(snapshot) = snapshot {
+        for &id in snapshot.paint_order() {
+            let Some(key) = snapshot
+                .key(id)
+                .filter(|key| key.kind == WindowKind::Missions)
+            else {
+                continue;
+            };
+            match state
+                .windows
+                .iter()
+                .find(|window| window.id == Some(id))
+                .cloned()
+            {
+                Some(window) if window.release_target_visible && key.subject == window.subject => {
+                    windows.push(window);
+                }
+                Some(_) | None => stale_manager_windows.push(id),
+            }
+        }
+    }
+    // Direct content exists only in renderer tests and explicit fixtures.
+    windows.extend(
+        state
+            .windows
+            .iter()
+            .filter(|window| window.id.is_none())
+            .cloned(),
+    );
+    let focused_manager = snapshot.and_then(|frame| frame.focused().map(|focus| focus.window));
+    let focused_fixture_system = windows
+        .last()
+        .filter(|window| window.id.is_none())
+        .map(|window| window.system);
+    let mut actions = stale_manager_windows
+        .into_iter()
+        .map(MissionsWindowAction::Close)
+        .collect::<Vec<_>>();
     for window in &windows {
+        let focused = front
+            && match window.id {
+                Some(id) => focused_manager == Some(id),
+                None => focused_fixture_system == Some(window.system),
+            };
         let result = draw_missions_window(
-            ctx,
-            world,
-            fog,
-            missions,
-            window,
-            front && focused_system == Some(window.system),
-            faction,
-            layout,
-            cache,
+            ctx, world, fog, missions, window, focused, faction, layout, cache,
         );
         let system = window.system;
-        if result.close || !world.systems.contains_key(system) {
-            state.close(system);
+        let pointer_mutation = draw_missions_windows_with_snapshot_pointer_mutation(&result).0;
+        let pointer_permitted = match (window.id, pointer_mutation, router.as_deref_mut()) {
+            (Some(id), true, Some(router)) => {
+                !result.causal_pointer_phases.is_empty()
+                    && result.causal_pointer_phases.iter().all(|&phase| {
+                        claim_missions_pointer_event(router, pointer_events, id, phase).is_some()
+                    })
+            }
+            (Some(_), true, None) => false,
+            _ => true,
+        };
+        if (result.close && pointer_permitted) || !world.systems.contains_key(system) {
+            if let Some(id) = window.id {
+                actions.push(MissionsWindowAction::Close(id));
+            } else {
+                state.close(system);
+            }
             continue;
         }
-        if result.minimize {
-            if let Some(closed) = state.close(system) {
+        if result.minimize && pointer_permitted {
+            if let Some(id) = window.id {
+                actions.push(MissionsWindowAction::MinimizeManaged {
+                    window: id,
+                    system,
+                    logical_position: window.logical_position,
+                });
+            } else if let Some(closed) = state.close(system) {
                 actions.push(MissionsWindowAction::Minimize {
                     system,
                     logical_position: closed.logical_position,
@@ -934,10 +1454,13 @@ pub fn draw_missions_windows(
             }
             continue;
         }
-        if result.open_sector {
+        if result.open_sector && pointer_permitted {
             actions.push(MissionsWindowAction::OpenSector(system));
         }
-        if let Some(open) = state.window_mut(system) {
+        if pointer_permitted {
+            let Some(open) = state.window_mut(system) else {
+                continue;
+            };
             // FUN_004a0c60: a different mission refreshes the details and
             // reselects the Agents tab (FUN_004a0ca0).
             if let Some(id) = result.select.filter(|&id| open.selected != Some(id)) {
@@ -948,8 +1471,12 @@ pub fn draw_missions_windows(
                 open.tab = tab;
             }
         }
-        if result.focus {
-            state.focus(system);
+        if result.focus && pointer_permitted {
+            if let Some(id) = window.id {
+                actions.push(MissionsWindowAction::Activate(id));
+            } else {
+                state.focus(system);
+            }
             actions.push(MissionsWindowAction::SelectSystem(system));
         }
     }
@@ -985,7 +1512,7 @@ fn draw_missions_window(
         .and_then(|id| rows.iter().find(|row| row.mission == id));
     let scale = layout.scale;
     let screen_rect = window_screen_rect(window, layout);
-    let id = area_id(window.system);
+    let id = area_id(window);
     if focused {
         ctx.move_to_top(egui::LayerId::new(egui::Order::Foreground, id));
     }
@@ -1305,6 +1832,9 @@ fn draw_missions_window(
     if area.response.clicked() {
         result.focus = true;
     }
+    if draw_missions_windows_with_snapshot_pointer_mutation(&result).0 {
+        result.note_pointer_phase(PointerPhase::Release(PointerButtonId::Primary));
+    }
     result
 }
 
@@ -1317,6 +1847,10 @@ mod tests {
     use rebellion_core::ids::DatId;
     use rebellion_core::missions::{MissionKind, MissionRequest};
     use rebellion_core::world::{Character, ControlKind, Sector, System};
+    use rebellion_windowing::{
+        ContentReport, ContentStatus, WindowCommand, WindowId, WindowKind, WindowManager,
+        WindowOwner, WindowTransition,
+    };
 
     fn world(control: ControlKind) -> (GameWorld, SystemKey) {
         let mut world = GameWorld::default();
@@ -1877,6 +2411,759 @@ mod tests {
 
     const ORIGIN: (i16, i16) = (20, 30);
 
+    fn commit_prepared_missions_window(
+        manager: &mut WindowManager,
+        state: &mut MissionsWindowState,
+        prepared: PreparedMissionsWindow,
+    ) -> (WindowId, WindowTransition) {
+        let commit = manager
+            .apply(WindowCommand::Open(prepared.spec()))
+            .expect("prepared Missions identity is accepted");
+        let id = state
+            .commit_open(prepared, &commit.transition)
+            .expect("matching manager receipt publishes Missions content");
+        (id, commit.transition)
+    }
+
+    fn content_area_id(state: &MissionsWindowState, system: SystemKey) -> egui::Id {
+        area_id(
+            state
+                .windows
+                .iter()
+                .find(|window| window.system == system)
+                .expect("test Missions content exists"),
+        )
+    }
+
+    #[test]
+    fn missions_window_shared_identity_preserves_content() {
+        let (world, system, missions, [_, _, decoy, _]) = busy();
+        let fog = unseen();
+        let mut manager = WindowManager::new();
+        let mut state = MissionsWindowState::default();
+        let prepared = state
+            .prepare_open(
+                &world,
+                &fog,
+                &missions,
+                system,
+                ORIGIN,
+                CockpitFaction::Alliance,
+                scaled(),
+            )
+            .expect("live system has a stable DAT subject");
+        assert_eq!(prepared.spec().key.kind, WindowKind::Missions);
+        assert_eq!(prepared.spec().owner, WindowOwner::StrategicRoot);
+        let (id, opened) = commit_prepared_missions_window(&mut manager, &mut state, prepared);
+        assert_eq!(opened, WindowTransition::Opened { id });
+        assert!(state.show_member(&missions, system, MissionMember::Character(decoy)));
+
+        let reopened = state
+            .prepare_open(
+                &world,
+                &fog,
+                &missions,
+                system,
+                (400, 300),
+                CockpitFaction::Alliance,
+                scaled(),
+            )
+            .unwrap();
+        let (reopened_id, transition) =
+            commit_prepared_missions_window(&mut manager, &mut state, reopened);
+        assert_eq!(reopened_id, id);
+        assert!(matches!(
+            transition,
+            WindowTransition::Existing { id: existing, .. } if existing == id
+        ));
+        assert_eq!(state.window_count(), 1);
+        let content = state.report(&world, &fog, &missions, system).unwrap();
+        assert_eq!(content.origin, ORIGIN);
+        assert_eq!(content.selected, Some(0));
+        assert_eq!(content.tab, MissionsTab::Decoys);
+
+        manager.apply(WindowCommand::Minimize(id)).unwrap();
+        assert!(!state.window_is_visible(&manager.begin_frame(), system));
+        let restored = state
+            .prepare_open(
+                &world,
+                &fog,
+                &missions,
+                system,
+                (500, 350),
+                CockpitFaction::Alliance,
+                scaled(),
+            )
+            .unwrap();
+        let (restored_id, transition) =
+            commit_prepared_missions_window(&mut manager, &mut state, restored);
+        assert_eq!(restored_id, id);
+        assert!(matches!(
+            transition,
+            WindowTransition::Existing { id: existing, .. } if existing == id
+        ));
+        assert!(state.window_is_visible(&manager.begin_frame(), system));
+        let content = state.report(&world, &fog, &missions, system).unwrap();
+        assert_eq!(content.origin, ORIGIN);
+        assert_eq!(content.selected, Some(0));
+        assert_eq!(content.tab, MissionsTab::Decoys);
+    }
+
+    #[test]
+    fn missions_commit_requires_each_exact_identity_component_independently() {
+        let (mut world, first) = world(ControlKind::Controlled(Faction::Alliance));
+        let mut duplicate_subject = world.systems[first].clone();
+        duplicate_subject.name = "Duplicate DAT subject".into();
+        let duplicate_subject = world.systems.insert(duplicate_subject);
+        let mut distinct_subject = world.systems[first].clone();
+        distinct_subject.dat_id = DatId::new(101);
+        distinct_subject.name = "Distinct DAT subject".into();
+        let distinct_subject = world.systems.insert(distinct_subject);
+        let fog = unseen();
+        let missions = MissionState::new();
+        let prepare = |system| {
+            MissionsWindowState::default()
+                .prepare_open(
+                    &world,
+                    &fog,
+                    &missions,
+                    system,
+                    ORIGIN,
+                    CockpitFaction::Alliance,
+                    scaled(),
+                )
+                .unwrap()
+        };
+        let first_prepared = prepare(first);
+        let duplicate_prepared = prepare(duplicate_subject);
+        let distinct_prepared = prepare(distinct_subject);
+        let first_subject = first_prepared.spec.key.subject;
+        let distinct_subject = distinct_prepared.spec.key.subject;
+        let mut manager = WindowManager::new();
+        let first_receipt = manager
+            .apply(WindowCommand::Open(first_prepared.spec()))
+            .unwrap();
+        let WindowTransition::Opened { id: first_id } = first_receipt.transition else {
+            panic!("the first subject must allocate an identity");
+        };
+        let distinct_receipt = manager
+            .apply(WindowCommand::Open(distinct_prepared.spec()))
+            .unwrap();
+        let WindowTransition::Opened { id: distinct_id } = distinct_receipt.transition else {
+            panic!("the distinct subject must allocate an identity");
+        };
+        let existing_receipt = manager
+            .apply(WindowCommand::Open(first_prepared.spec()))
+            .unwrap();
+        assert!(matches!(
+            &existing_receipt.transition,
+            WindowTransition::Existing { id, .. } if *id == first_id
+        ));
+        let state_with = |id, subject, system| MissionsWindowState {
+            faction: CockpitFaction::Alliance,
+            focus_serial: 0,
+            windows: vec![OpenMissionsWindow {
+                id: Some(id),
+                subject,
+                system,
+                logical_position: ORIGIN,
+                selected: None,
+                tab: MissionsTab::Agents,
+                release_target_visible: false,
+            }],
+        };
+
+        let mut id_conflict = state_with(first_id, first_subject, first);
+        assert_eq!(
+            id_conflict.commit_open(
+                distinct_prepared,
+                &WindowTransition::Opened { id: first_id }
+            ),
+            None,
+            "an ID collision alone must reject publication"
+        );
+
+        let mut subject_conflict = state_with(first_id, first_subject, first);
+        assert_eq!(
+            subject_conflict.commit_open(
+                duplicate_prepared,
+                &WindowTransition::Opened { id: distinct_id }
+            ),
+            None,
+            "a stable-subject collision alone must reject publication"
+        );
+
+        let mut system_conflict = state_with(first_id, distinct_subject, first);
+        assert_eq!(
+            system_conflict.commit_open(
+                first_prepared,
+                &WindowTransition::Opened { id: distinct_id }
+            ),
+            None,
+            "a runtime-system collision alone must reject publication"
+        );
+
+        let mut existing_subject_mismatch = state_with(first_id, distinct_subject, first);
+        assert_eq!(
+            existing_subject_mismatch.commit_open(first_prepared, &existing_receipt.transition),
+            None,
+            "an Existing receipt requires its ID, DAT subject, and runtime system"
+        );
+    }
+
+    #[test]
+    fn finder_member_intent_commits_only_after_exact_manager_receipt() {
+        let (world, system, missions, [_, _, _, spy]) = busy();
+        let fog = unseen();
+        let mut manager = WindowManager::new();
+        let mut state = MissionsWindowState::default();
+        let prepared = state
+            .prepare_open(
+                &world,
+                &fog,
+                &missions,
+                system,
+                ORIGIN,
+                CockpitFaction::Alliance,
+                scaled(),
+            )
+            .unwrap();
+        let (id, _) = commit_prepared_missions_window(&mut manager, &mut state, prepared);
+        assert_eq!(
+            state
+                .report(&world, &fog, &missions, system)
+                .unwrap()
+                .selected,
+            Some(0)
+        );
+
+        let finder = state
+            .prepare_open_for_member(
+                &world,
+                &fog,
+                &missions,
+                system,
+                (400, 300),
+                CockpitFaction::Alliance,
+                scaled(),
+                MissionMember::Character(spy),
+            )
+            .unwrap();
+        assert_eq!(
+            state
+                .report(&world, &fog, &missions, system)
+                .unwrap()
+                .selected,
+            Some(0),
+            "preparation alone cannot mutate published content"
+        );
+        assert_eq!(
+            state.commit_open(finder, &WindowTransition::Opened { id }),
+            None,
+            "a mismatched receipt cannot release Finder selection intent"
+        );
+        assert_eq!(
+            state
+                .report(&world, &fog, &missions, system)
+                .unwrap()
+                .selected,
+            Some(0)
+        );
+
+        let (reopened_id, transition) =
+            commit_prepared_missions_window(&mut manager, &mut state, finder);
+        assert_eq!(reopened_id, id);
+        assert!(matches!(transition, WindowTransition::Existing { .. }));
+        let report = state.report(&world, &fog, &missions, system).unwrap();
+        assert_eq!(report.selected, Some(1));
+        assert_eq!(report.tab, MissionsTab::Agents);
+    }
+
+    #[test]
+    fn missions_window_stale_subject_does_not_retarget() {
+        let (mut world, system, missions, _) = busy();
+        let fog = unseen();
+        let mut manager = WindowManager::new();
+        let mut state = MissionsWindowState::default();
+        let prepared = state
+            .prepare_open(
+                &world,
+                &fog,
+                &missions,
+                system,
+                ORIGIN,
+                CockpitFaction::Alliance,
+                scaled(),
+            )
+            .unwrap();
+        let (id, _) = commit_prepared_missions_window(&mut manager, &mut state, prepared);
+        let layer = egui::LayerId::new(egui::Order::Foreground, content_area_id(&state, system));
+        state.refresh_release_targets(&manager.begin_frame(), &world);
+        assert_eq!(state.release_target(layer), Some(system));
+
+        world.systems[system].dat_id = DatId::new(101);
+        world.systems[system].name = "Replacement".into();
+        state.refresh_release_targets(&manager.begin_frame(), &world);
+
+        assert_eq!(state.release_target(layer), None);
+        assert!(!state.has_visible_content(&manager.begin_frame(), &world));
+        assert_eq!(
+            state.content_reports(&manager.begin_frame(), &world),
+            [ContentReport {
+                window: id,
+                status: ContentStatus::Absent,
+            }]
+        );
+
+        let rendered = run_managed(
+            &world,
+            &missions,
+            &mut state,
+            &manager,
+            vec![(vec![egui::Event::PointerMoved(at(100.0, 100.0))], vec![])],
+        );
+        assert_eq!(rendered.actions, [MissionsWindowAction::Close(id)]);
+        assert!(
+            !rendered
+                .painted
+                .iter()
+                .any(|(resource, _)| *resource == BACKGROUND),
+            "stale content must close before it paints the replacement subject"
+        );
+    }
+
+    #[test]
+    fn missions_release_requires_the_exact_manager_subject_not_only_the_kind() {
+        let (world, system) = world(ControlKind::Controlled(Faction::Alliance));
+        let fog = unseen();
+        let missions = MissionState::new();
+        let mut manager = WindowManager::new();
+        let mut state = MissionsWindowState::default();
+        let prepared = state
+            .prepare_open(
+                &world,
+                &fog,
+                &missions,
+                system,
+                ORIGIN,
+                CockpitFaction::Alliance,
+                scaled(),
+            )
+            .unwrap();
+        let (original, _) = commit_prepared_missions_window(&mut manager, &mut state, prepared);
+        let mismatched = manager
+            .apply(WindowCommand::Open(contextual_spec(
+                WindowKind::Missions,
+                SubjectId::new(0xffff_fffe, 1),
+                WindowOwner::StrategicRoot,
+            )))
+            .unwrap();
+        let WindowTransition::Opened { id: mismatched } = mismatched.transition else {
+            panic!("the distinct subject must allocate a distinct identity");
+        };
+        state.windows[0].id = Some(mismatched);
+        let layer = egui::LayerId::new(egui::Order::Foreground, content_area_id(&state, system));
+        let snapshot = manager.begin_frame();
+
+        assert!(!state.has_visible_content(&snapshot, &world));
+        state.refresh_release_targets(&snapshot, &world);
+
+        assert_eq!(state.release_target(layer), None);
+        let reports = state.content_reports(&snapshot, &world);
+        assert_eq!(
+            reports,
+            [
+                ContentReport {
+                    window: original,
+                    status: ContentStatus::Absent,
+                },
+                ContentReport {
+                    window: mismatched,
+                    status: ContentStatus::Absent,
+                },
+            ],
+            "a live Missions ID for another DAT subject cannot retain misbound content"
+        );
+        let reconciliation = manager.reconcile(&snapshot, &reports);
+        assert_eq!(reconciliation.removed, [original, mismatched]);
+        state.remove_content(&reconciliation.removed);
+        assert_eq!(state.window_count(), 0);
+    }
+
+    #[test]
+    fn missions_content_report_requires_the_exact_committed_identity() {
+        let (world, system) = world(ControlKind::Controlled(Faction::Alliance));
+        let fog = unseen();
+        let missions = MissionState::new();
+        let mut manager = WindowManager::new();
+        let mut state = MissionsWindowState::default();
+        let prepared = state
+            .prepare_open(
+                &world,
+                &fog,
+                &missions,
+                system,
+                ORIGIN,
+                CockpitFaction::Alliance,
+                scaled(),
+            )
+            .unwrap();
+        let (id, _) = commit_prepared_missions_window(&mut manager, &mut state, prepared);
+        state.windows[0].id = None;
+
+        assert_eq!(
+            state.content_reports(&manager.begin_frame(), &world),
+            [ContentReport {
+                window: id,
+                status: ContentStatus::Absent,
+            }]
+        );
+    }
+
+    #[test]
+    fn direct_draw_entry_cannot_arm_manager_owned_release_content() {
+        let (world, system) = world(ControlKind::Controlled(Faction::Alliance));
+        let fog = unseen();
+        let missions = MissionState::new();
+        let mut manager = WindowManager::new();
+        let mut state = MissionsWindowState::default();
+        let prepared = state
+            .prepare_open(
+                &world,
+                &fog,
+                &missions,
+                system,
+                ORIGIN,
+                CockpitFaction::Alliance,
+                scaled(),
+            )
+            .unwrap();
+        let (_, _) = commit_prepared_missions_window(&mut manager, &mut state, prepared);
+        let layer = egui::LayerId::new(egui::Order::Foreground, content_area_id(&state, system));
+        let ctx = egui::Context::default();
+        let mut cache = BmpCache::new();
+
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            assert!(draw_missions_windows(
+                ctx,
+                &world,
+                &fog,
+                &missions,
+                &mut state,
+                CockpitFaction::Alliance,
+                scaled(),
+                &mut cache,
+                true,
+            )
+            .is_empty());
+        });
+
+        assert_eq!(state.release_target(layer), None);
+    }
+
+    #[test]
+    fn replacement_same_runtime_system_cannot_resolve_prior_lifetime_layer_before_paint() {
+        let (world, system) = world(ControlKind::Controlled(Faction::Alliance));
+        let fog = unseen();
+        let missions = MissionState::new();
+        let mut manager = WindowManager::new();
+        let mut state = MissionsWindowState::default();
+        let prepared = state
+            .prepare_open(
+                &world,
+                &fog,
+                &missions,
+                system,
+                ORIGIN,
+                CockpitFaction::Alliance,
+                scaled(),
+            )
+            .unwrap();
+        let (old, _) = commit_prepared_missions_window(&mut manager, &mut state, prepared);
+        let old_layer =
+            egui::LayerId::new(egui::Order::Foreground, content_area_id(&state, system));
+        state.refresh_release_targets(&manager.begin_frame(), &world);
+        assert_eq!(state.release_target(old_layer), Some(system));
+
+        manager.apply(WindowCommand::Close(old)).unwrap();
+        state.remove_content(&[old]);
+        let replacement = state
+            .prepare_open(
+                &world,
+                &fog,
+                &missions,
+                system,
+                ORIGIN,
+                CockpitFaction::Alliance,
+                scaled(),
+            )
+            .unwrap();
+        let (new, _) = commit_prepared_missions_window(&mut manager, &mut state, replacement);
+        let new_layer =
+            egui::LayerId::new(egui::Order::Foreground, content_area_id(&state, system));
+        assert_ne!(new, old);
+        assert_ne!(
+            new_layer, old_layer,
+            "a replacement lifetime must not reuse the retained egui layer"
+        );
+
+        let snapshot = manager.begin_frame();
+        state.refresh_release_targets(&snapshot, &world);
+        let inside = state.screen_rect(scaled(), system).unwrap().center();
+        assert_eq!(state.release_target(old_layer), None);
+        assert!(state
+            .hit_window_ids(&snapshot, scaled(), (inside.x, inside.y), Some(old_layer),)
+            .is_empty());
+        assert_eq!(state.release_target(new_layer), Some(system));
+        assert_eq!(
+            state.hit_window_ids(&snapshot, scaled(), (inside.x, inside.y), Some(new_layer),),
+            std::collections::BTreeSet::from([new])
+        );
+    }
+
+    #[test]
+    fn missions_window_manager_order_is_independent_of_content_vector() {
+        let (mut world, first_system) = world(ControlKind::Controlled(Faction::Alliance));
+        let mut second = world.systems[first_system].clone();
+        second.dat_id = DatId::new(101);
+        second.name = "Coruscant".into();
+        let second_system = world.systems.insert(second);
+        let systems = [first_system, second_system];
+        let fog = unseen();
+        let missions = MissionState::new();
+        let mut manager = WindowManager::new();
+        let mut state = MissionsWindowState::default();
+        let mut ids = Vec::new();
+        for system in systems {
+            let prepared = state
+                .prepare_open(
+                    &world,
+                    &fog,
+                    &missions,
+                    system,
+                    ORIGIN,
+                    CockpitFaction::Alliance,
+                    scaled(),
+                )
+                .unwrap();
+            ids.push(commit_prepared_missions_window(&mut manager, &mut state, prepared).0);
+        }
+        assert_eq!(
+            state
+                .windows
+                .iter()
+                .filter_map(|window| window.id)
+                .collect::<Vec<_>>(),
+            ids
+        );
+
+        manager.apply(WindowCommand::Activate(ids[0])).unwrap();
+
+        assert_eq!(
+            state
+                .windows
+                .iter()
+                .filter_map(|window| window.id)
+                .collect::<Vec<_>>(),
+            ids,
+            "local content order must not emulate a manager raise"
+        );
+        assert_eq!(manager.begin_frame().paint_order(), &[ids[1], ids[0]]);
+    }
+
+    #[test]
+    fn missions_visible_content_follows_exact_frozen_identity() {
+        let (mut world, system) = world(ControlKind::Controlled(Faction::Alliance));
+        let fog = unseen();
+        let missions = MissionState::new();
+        let mut manager = WindowManager::new();
+        let mut state = MissionsWindowState::default();
+        let prepared = state
+            .prepare_open(
+                &world,
+                &fog,
+                &missions,
+                system,
+                ORIGIN,
+                CockpitFaction::Alliance,
+                scaled(),
+            )
+            .unwrap();
+        let (id, _) = commit_prepared_missions_window(&mut manager, &mut state, prepared);
+        assert!(state.has_visible_content(&manager.begin_frame(), &world));
+
+        manager.apply(WindowCommand::Minimize(id)).unwrap();
+        assert!(!state.has_visible_content(&manager.begin_frame(), &world));
+
+        manager.apply(WindowCommand::Restore(id)).unwrap();
+        assert!(state.has_visible_content(&manager.begin_frame(), &world));
+
+        world.systems[system].dat_id = DatId::new(101);
+        assert!(
+            !state.has_visible_content(&manager.begin_frame(), &world),
+            "same-key replacement content is not the committed Missions subject"
+        );
+
+        world.systems[system].dat_id = DatId::new(100);
+        assert!(state.has_visible_content(&manager.begin_frame(), &world));
+        manager.apply(WindowCommand::Close(id)).unwrap();
+        assert!(
+            !state.has_visible_content(&manager.begin_frame(), &world),
+            "attached content stops contributing when its manager identity closes"
+        );
+    }
+
+    #[test]
+    fn missions_pointer_hits_only_its_visible_topmost_manager_layer() {
+        let (world, system) = world(ControlKind::Controlled(Faction::Alliance));
+        let fog = unseen();
+        let missions = MissionState::new();
+        let mut manager = WindowManager::new();
+        let mut state = MissionsWindowState::default();
+        let prepared = state
+            .prepare_open(
+                &world,
+                &fog,
+                &missions,
+                system,
+                ORIGIN,
+                CockpitFaction::Alliance,
+                scaled(),
+            )
+            .unwrap();
+        let (id, _) = commit_prepared_missions_window(&mut manager, &mut state, prepared);
+        let snapshot = manager.begin_frame();
+        let rect = state.screen_rect(scaled(), system).unwrap();
+        let inside = (rect.center().x, rect.center().y);
+        let outside = (rect.max.x + 1.0, rect.max.y + 1.0);
+        let own = egui::LayerId::new(egui::Order::Foreground, content_area_id(&state, system));
+        let other = egui::LayerId::new(egui::Order::Foreground, egui::Id::new("other-window"));
+
+        assert_eq!(
+            state.hit_window_ids(&snapshot, scaled(), inside, Some(own)),
+            std::collections::BTreeSet::from([id])
+        );
+        assert!(state
+            .hit_window_ids(&snapshot, scaled(), inside, Some(other))
+            .is_empty());
+        assert!(state
+            .hit_window_ids(&snapshot, scaled(), inside, None)
+            .is_empty());
+        assert!(state
+            .hit_window_ids(&snapshot, scaled(), outside, Some(own))
+            .is_empty());
+    }
+
+    #[test]
+    fn overlapping_missions_raw_click_routes_only_to_manager_top_layer() {
+        let (mut world, first_system) = world(ControlKind::Controlled(Faction::Alliance));
+        let mut second = world.systems[first_system].clone();
+        second.dat_id = DatId::new(101);
+        second.name = "Coruscant".into();
+        let second_system = world.systems.insert(second);
+        let systems = [first_system, second_system];
+        let fog = unseen();
+        let missions = MissionState::new();
+        let mut manager = WindowManager::new();
+        let mut state = MissionsWindowState::default();
+        let mut ids = Vec::new();
+        for system in systems {
+            let prepared = state
+                .prepare_open(
+                    &world,
+                    &fog,
+                    &missions,
+                    system,
+                    ORIGIN,
+                    CockpitFaction::Alliance,
+                    scaled(),
+                )
+                .unwrap();
+            ids.push(commit_prepared_missions_window(&mut manager, &mut state, prepared).0);
+        }
+        manager.apply(WindowCommand::Activate(ids[0])).unwrap();
+        assert_eq!(manager.begin_frame().paint_order(), &[ids[1], ids[0]]);
+
+        let ctx = egui::Context::default();
+        let mut cache = BmpCache::new();
+        let mut router = FrameInputRouter::default();
+        let point = at(50.0, 10.0);
+        let mut actions = Vec::new();
+        for frame in 1_u64..=5 {
+            let snapshot = manager.begin_frame();
+            router.begin_frame(frame, &snapshot);
+            let phase = match frame {
+                4 => Some(PointerPhase::Press(PointerButtonId::Primary)),
+                5 => Some(PointerPhase::Release(PointerButtonId::Primary)),
+                _ => None,
+            };
+            let mut routed = Vec::new();
+            if let Some(phase) = phase {
+                let top_layer = ctx
+                    .layer_id_at(point)
+                    .expect("warm managed paint leaves a retained top layer");
+                assert_eq!(
+                    top_layer.id,
+                    content_area_id(&state, first_system),
+                    "manager-top Missions content must reassert its egui layer"
+                );
+                let hits =
+                    state.hit_window_ids(&snapshot, scaled(), (point.x, point.y), Some(top_layer));
+                assert_eq!(
+                    hits,
+                    std::collections::BTreeSet::from([ids[0]]),
+                    "overlap routing must expose only the manager-top identity"
+                );
+                let event = InputEventId { frame, ordinal: 0 };
+                assert_eq!(
+                    router.collect_pointer(event, &hits, phase),
+                    InputRecipient::Window(ids[0])
+                );
+                routed.push((event, phase));
+            }
+            let events = match phase {
+                Some(PointerPhase::Press(PointerButtonId::Primary)) => vec![press(point, true)],
+                Some(PointerPhase::Release(PointerButtonId::Primary)) => vec![press(point, false)],
+                _ => vec![egui::Event::PointerMoved(point)],
+            };
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1400.0, 1000.0),
+                )),
+                time: Some(frame as f64 * 0.05),
+                events,
+                ..Default::default()
+            };
+            let output = ctx.run(input, |ctx| {
+                actions.extend(draw_managed_missions_windows(
+                    ctx,
+                    &world,
+                    &fog,
+                    &missions,
+                    &mut state,
+                    CockpitFaction::Alliance,
+                    scaled(),
+                    &mut cache,
+                    &snapshot,
+                    &routed,
+                    &mut router,
+                    true,
+                ));
+            });
+            drop(output);
+        }
+
+        assert_eq!(
+            actions,
+            [
+                MissionsWindowAction::Activate(ids[0]),
+                MissionsWindowAction::SelectSystem(first_system),
+            ],
+            "the lower overlapping window cannot mutate or activate"
+        );
+    }
+
     /// A logical point in the window opened at `ORIGIN` on [`scaled`].
     fn at(x: f32, y: f32) -> egui::Pos2 {
         egui::pos2(
@@ -1946,7 +3233,7 @@ mod tests {
         assert!(state.contains_screen_point(scaled(), point(at(234.0, 303.0))));
         assert!(!state.contains_screen_point(scaled(), point(at(235.5, 150.0))));
 
-        let layer = egui::LayerId::new(egui::Order::Foreground, area_id(system));
+        let layer = egui::LayerId::new(egui::Order::Foreground, content_area_id(&state, system));
         assert_eq!(state.release_target(layer), Some(system));
         let elsewhere = egui::LayerId::new(egui::Order::Foreground, egui::Id::new("elsewhere"));
         assert_eq!(state.release_target(elsewhere), None);
@@ -2036,6 +3323,353 @@ mod tests {
             }
         }
         result
+    }
+
+    /// Draw manager-owned content once per frame while feeding the exact
+    /// normalized pointer phases that produced each egui input batch.
+    fn run_managed(
+        world: &GameWorld,
+        missions: &MissionState,
+        state: &mut MissionsWindowState,
+        manager: &WindowManager,
+        frames: Vec<(Vec<egui::Event>, Vec<PointerPhase>)>,
+    ) -> Run {
+        let ctx = egui::Context::default();
+        let mut cache = BmpCache::new();
+        let fog = unseen();
+        let window = state
+            .windows
+            .iter()
+            .find_map(|window| window.id)
+            .expect("managed test content has an identity");
+        let mut router = FrameInputRouter::default();
+        let mut result = Run::default();
+        for (index, (events, phases)) in frames.into_iter().enumerate() {
+            let frame = u64::try_from(index + 1).unwrap();
+            let snapshot = manager.begin_frame();
+            router.begin_frame(frame, &snapshot);
+            let mut routed = Vec::new();
+            for (ordinal, phase) in phases.into_iter().enumerate() {
+                let event = InputEventId {
+                    frame,
+                    ordinal: u32::try_from(ordinal).unwrap(),
+                };
+                assert_eq!(
+                    router.collect_pointer(
+                        event,
+                        &std::collections::BTreeSet::from([window]),
+                        phase,
+                    ),
+                    InputRecipient::Window(window)
+                );
+                routed.push((event, phase));
+            }
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1400.0, 1000.0),
+                )),
+                time: Some(index as f64 * 0.05),
+                events,
+                ..Default::default()
+            };
+            PAINTED.with(|painted| painted.borrow_mut().clear());
+            let output = ctx.run(input, |ctx| {
+                result.actions.extend(draw_managed_missions_windows(
+                    ctx,
+                    world,
+                    &fog,
+                    missions,
+                    state,
+                    CockpitFaction::Alliance,
+                    scaled(),
+                    &mut cache,
+                    &snapshot,
+                    &routed,
+                    &mut router,
+                    true,
+                ));
+            });
+            result.painted = PAINTED.with(|painted| painted.take());
+            result.texts.clear();
+            for clipped in output.shapes {
+                if let egui::Shape::Text(text) = clipped.shape {
+                    let format = &text.galley.job.sections[0].format;
+                    result.texts.push(Text {
+                        text: text.galley.text().to_owned(),
+                        pos: text.pos,
+                        size: text.galley.size(),
+                        rect: text.galley.rect,
+                        font: format.font_id.size,
+                        wrap: text.galley.job.wrap.max_width,
+                    });
+                }
+            }
+        }
+        result
+    }
+
+    #[test]
+    fn missions_pointer_claim_requires_the_recorded_phase_as_well_as_the_recipient() {
+        let (world, system) = world(ControlKind::Controlled(Faction::Alliance));
+        let fog = unseen();
+        let missions = MissionState::new();
+        let mut manager = WindowManager::new();
+        let mut state = MissionsWindowState::default();
+        let prepared = state
+            .prepare_open(
+                &world,
+                &fog,
+                &missions,
+                system,
+                ORIGIN,
+                CockpitFaction::Alliance,
+                scaled(),
+            )
+            .unwrap();
+        let (id, _) = commit_prepared_missions_window(&mut manager, &mut state, prepared);
+        let snapshot = manager.begin_frame();
+        let event = InputEventId {
+            frame: 1,
+            ordinal: 0,
+        };
+        let press = PointerPhase::Press(PointerButtonId::Primary);
+        let release = PointerPhase::Release(PointerButtonId::Primary);
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(1, &snapshot);
+        assert_eq!(
+            router.collect_pointer(event, &std::collections::BTreeSet::from([id]), press),
+            InputRecipient::Window(id)
+        );
+
+        assert_eq!(
+            claim_missions_pointer_event(&mut router, &[(event, release)], id, press),
+            None,
+            "an exact recipient cannot turn a release record into a press claim"
+        );
+        assert_eq!(
+            claim_missions_pointer_event(&mut router, &[(event, press)], id, press),
+            Some(event),
+            "the rejected phase mismatch must leave the exact event unclaimed"
+        );
+    }
+
+    #[test]
+    fn every_missions_draw_signal_is_independently_a_pointer_mutation() {
+        assert!(
+            !draw_missions_windows_with_snapshot_pointer_mutation(&WindowDrawResult::default()).0
+        );
+
+        let mut results = Vec::new();
+        let mut focus = WindowDrawResult::default();
+        focus.focus = true;
+        results.push(focus);
+        let mut close = WindowDrawResult::default();
+        close.close = true;
+        results.push(close);
+        let mut minimize = WindowDrawResult::default();
+        minimize.minimize = true;
+        results.push(minimize);
+        let mut open_sector = WindowDrawResult::default();
+        open_sector.open_sector = true;
+        results.push(open_sector);
+        let mut select = WindowDrawResult::default();
+        select.select = Some(7);
+        results.push(select);
+        let mut tab = WindowDrawResult::default();
+        tab.tab = Some(MissionsTab::Decoys);
+        results.push(tab);
+
+        assert!(results
+            .iter()
+            .all(|result| draw_missions_windows_with_snapshot_pointer_mutation(result).0));
+    }
+
+    #[test]
+    fn managed_missions_mutation_fails_closed_without_a_router() {
+        let (world, system) = world(ControlKind::Controlled(Faction::Alliance));
+        let fog = unseen();
+        let missions = MissionState::new();
+        let mut manager = WindowManager::new();
+        let mut state = MissionsWindowState::default();
+        let prepared = state
+            .prepare_open(
+                &world,
+                &fog,
+                &missions,
+                system,
+                ORIGIN,
+                CockpitFaction::Alliance,
+                scaled(),
+            )
+            .unwrap();
+        let (_, _) = commit_prepared_missions_window(&mut manager, &mut state, prepared);
+        let snapshot = manager.begin_frame();
+        let ctx = egui::Context::default();
+        let mut cache = BmpCache::new();
+        let point = at(110.0, 290.0);
+        let frames = [
+            vec![egui::Event::PointerMoved(point)],
+            vec![egui::Event::PointerMoved(point)],
+            vec![press(point, true)],
+            vec![press(point, false)],
+        ];
+        let mut actions = Vec::new();
+
+        for (index, events) in frames.into_iter().enumerate() {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1400.0, 1000.0),
+                )),
+                time: Some(index as f64 * 0.05),
+                events,
+                ..Default::default()
+            };
+            let _ = ctx.run(input, |ctx| {
+                actions.extend(draw_missions_windows_with_snapshot(
+                    ctx,
+                    &world,
+                    &fog,
+                    &missions,
+                    &mut state,
+                    CockpitFaction::Alliance,
+                    scaled(),
+                    &mut cache,
+                    Some(&snapshot),
+                    &[],
+                    None,
+                    true,
+                ));
+            });
+        }
+
+        assert!(actions.is_empty());
+    }
+
+    #[test]
+    fn non_front_missions_does_not_reassert_over_a_raised_surface() {
+        let (world, system) = world(ControlKind::Controlled(Faction::Alliance));
+        let fog = unseen();
+        let missions = MissionState::new();
+        let mut manager = WindowManager::new();
+        let mut state = MissionsWindowState::default();
+        let prepared = state
+            .prepare_open(
+                &world,
+                &fog,
+                &missions,
+                system,
+                ORIGIN,
+                CockpitFaction::Alliance,
+                scaled(),
+            )
+            .unwrap();
+        let (_, _) = commit_prepared_missions_window(&mut manager, &mut state, prepared);
+        let snapshot = manager.begin_frame();
+        let rect = state.screen_rect(scaled(), system).unwrap();
+        let ctx = egui::Context::default();
+        let mut cache = BmpCache::new();
+        let mut router = FrameInputRouter::default();
+        let raised = egui::Id::new("raised-over-non-front-missions");
+
+        for frame in 1..=3 {
+            router.begin_frame(frame, &snapshot);
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1400.0, 1000.0),
+                )),
+                ..Default::default()
+            };
+            let _ = ctx.run(input, |ctx| {
+                ctx.move_to_top(egui::LayerId::new(egui::Order::Foreground, raised));
+                egui::Area::new(raised)
+                    .order(egui::Order::Foreground)
+                    .fixed_pos(rect.min)
+                    .show(ctx, |ui| {
+                        ui.allocate_response(rect.size(), egui::Sense::click());
+                    });
+                assert!(draw_managed_missions_windows(
+                    ctx,
+                    &world,
+                    &fog,
+                    &missions,
+                    &mut state,
+                    CockpitFaction::Alliance,
+                    scaled(),
+                    &mut cache,
+                    &snapshot,
+                    &[],
+                    &mut router,
+                    false,
+                )
+                .is_empty());
+            });
+        }
+
+        assert_eq!(
+            ctx.layer_id_at(rect.center()).map(|layer| layer.id),
+            Some(raised)
+        );
+    }
+
+    #[test]
+    fn managed_missions_mutations_require_the_exact_routed_release() {
+        let (world, system, missions, _) = busy();
+        let fog = unseen();
+        let mut manager = WindowManager::new();
+        let mut state = MissionsWindowState::default();
+        let prepared = state
+            .prepare_open(
+                &world,
+                &fog,
+                &missions,
+                system,
+                ORIGIN,
+                CockpitFaction::Alliance,
+                scaled(),
+            )
+            .unwrap();
+        let (id, _) = commit_prepared_missions_window(&mut manager, &mut state, prepared);
+        let point = at(170.0, 132.0);
+        let unrouted = vec![
+            (vec![egui::Event::PointerMoved(point)], vec![]),
+            (vec![egui::Event::PointerMoved(point)], vec![]),
+            (vec![press(point, true)], vec![]),
+            (vec![press(point, false)], vec![]),
+        ];
+        let blocked = run_managed(&world, &missions, &mut state, &manager, unrouted);
+        assert!(blocked.actions.is_empty());
+        assert_eq!(
+            state.report(&world, &fog, &missions, system).unwrap().tab,
+            MissionsTab::Agents
+        );
+
+        let routed = vec![
+            (vec![egui::Event::PointerMoved(point)], vec![]),
+            (vec![egui::Event::PointerMoved(point)], vec![]),
+            (
+                vec![press(point, true)],
+                vec![PointerPhase::Press(PointerButtonId::Primary)],
+            ),
+            (
+                vec![press(point, false)],
+                vec![PointerPhase::Release(PointerButtonId::Primary)],
+            ),
+        ];
+        let committed = run_managed(&world, &missions, &mut state, &manager, routed);
+        assert_eq!(
+            committed.actions,
+            [
+                MissionsWindowAction::Activate(id),
+                MissionsWindowAction::SelectSystem(system)
+            ]
+        );
+        assert_eq!(
+            state.report(&world, &fog, &missions, system).unwrap().tab,
+            MissionsTab::Decoys
+        );
     }
 
     fn hover(point: egui::Pos2) -> Vec<Vec<egui::Event>> {
