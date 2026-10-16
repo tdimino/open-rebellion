@@ -10,10 +10,14 @@
 //! 3.46).
 
 use egui_macroquad::egui;
-use rebellion_core::ids::CharacterKey;
+use rebellion_core::ids::{CharacterKey, FighterKey};
 use rebellion_core::missions::{MemberTransit, MissionMember};
 use rebellion_core::officer_rank::CommandPost;
 use rebellion_core::world::GameWorld;
+use rebellion_windowing::{
+    ContentReport, ContentStatus, ExistingEffect, RoutingSnapshot, SubjectId, WindowId, WindowKind,
+    WindowOwner, WindowSpec, WindowTransition,
+};
 
 use crate::bmp_cache::BmpCache;
 use crate::cockpit::{CockpitFaction, CockpitLayout};
@@ -129,10 +133,9 @@ pub fn character_rows(
     };
     let commanding = match character.command_post {
         Some(CommandPost::Fleet(fleet)) => fleet_label(world, fleet),
-        Some(CommandPost::System(system)) => world
-            .systems
-            .get(system)
-            .map(|system| system.name.clone()),
+        Some(CommandPost::System(system)) => {
+            world.systems.get(system).map(|system| system.name.clone())
+        }
         None => None,
     }
     .unwrap_or_else(|| "None".to_owned());
@@ -196,7 +199,14 @@ pub enum StatusWindowAction {
 
 #[derive(Debug, Clone, PartialEq)]
 struct OpenStatusWindow {
+    /// Exact manager identity, absent only for renderer fixture calls.
+    id: Option<WindowId>,
+    /// Per-logical-open context allocated by the app coordinator.
+    subject: Option<SubjectId>,
     object: StatusObject,
+    /// Stable facts captured when an index-backed object was prepared. Direct
+    /// fixture opens have no witness and retain their legacy behavior.
+    witness: Option<StatusWitness>,
     /// The list's scroll offset, in window pixels.
     scroll: f32,
 }
@@ -208,12 +218,232 @@ pub struct StatusWindowState {
     window: Option<OpenStatusWindow>,
 }
 
+/// Validated Status content. It remains inert until the manager accepts its
+/// contextual identity and returns an open or replacement receipt.
+#[derive(Debug, Clone, Copy)]
+pub struct PreparedStatusWindow {
+    subject: SubjectId,
+    object: StatusObject,
+    witness: StatusWitness,
+}
+
+/// Identity evidence for a committed Status object. Most object families use
+/// stable arena keys directly; the two fleet-vector families need an explicit
+/// witness so index compaction cannot silently retarget an open modal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StatusWitness {
+    Direct,
+    Ship { roster: u64, tag: u32 },
+    Fighter { class: FighterKey, carrier: u32 },
+}
+
+fn status_witness(sources: StatusSources<'_>, object: StatusObject) -> Option<StatusWitness> {
+    match object {
+        StatusObject::Ship { fleet, index } => {
+            let roster = rebellion_core::fleet_join::roster(sources.world, fleet)?;
+            let ship = sources.world.fleets.get(fleet)?.capital_ships.get(index)?;
+            ship.alive.then_some(StatusWitness::Ship {
+                roster,
+                tag: ship.tag,
+            })
+        }
+        StatusObject::Fighter { fleet, index } => {
+            let fighter = sources.world.fleets.get(fleet)?.fighters.get(index)?;
+            (fighter.count > 0).then_some(StatusWitness::Fighter {
+                class: fighter.class,
+                carrier: fighter.carrier,
+            })
+        }
+        _ => Some(StatusWitness::Direct),
+    }
+}
+
+fn status_view_if_current(
+    sources: StatusSources<'_>,
+    object: StatusObject,
+    witness: Option<StatusWitness>,
+) -> Option<crate::status_rows::StatusView> {
+    match (object, witness) {
+        (_, None | Some(StatusWitness::Direct)) => status_view(sources, object),
+        (StatusObject::Ship { fleet, index }, Some(StatusWitness::Ship { roster, tag })) => {
+            (rebellion_core::fleet_join::roster(sources.world, fleet) == Some(roster))
+                .then_some(())?;
+            let ship = sources.world.fleets.get(fleet)?.capital_ships.get(index)?;
+            (ship.alive && (tag == 0 || ship.tag == tag)).then_some(())?;
+            status_view(sources, object)
+        }
+        (
+            StatusObject::Fighter { fleet, index },
+            Some(StatusWitness::Fighter { class, carrier }),
+        ) => {
+            let fighter = sources.world.fleets.get(fleet)?.fighters.get(index)?;
+            (fighter.count > 0 && fighter.class == class && fighter.carrier == carrier)
+                .then_some(())?;
+            status_view(sources, object)
+        }
+        _ => None,
+    }
+}
+
+impl PreparedStatusWindow {
+    #[must_use]
+    pub const fn spec(self) -> WindowSpec {
+        crate::windowing_policy::contextual_spec(
+            WindowKind::Status,
+            self.subject,
+            WindowOwner::StrategicRoot,
+        )
+    }
+}
+
 impl StatusWindowState {
+    /// Validates a runtime object before any manager or published-content
+    /// mutation. A stale key therefore cannot replace or retarget an existing
+    /// Status context.
+    #[must_use]
+    pub fn prepare_open(
+        sources: StatusSources<'_>,
+        object: StatusObject,
+        subject: SubjectId,
+    ) -> Option<PreparedStatusWindow> {
+        status_view(sources, object)?;
+        let witness = status_witness(sources, object)?;
+        Some(PreparedStatusWindow {
+            subject,
+            object,
+            witness,
+        })
+    }
+
+    /// Publishes validated content only for the manager receipt that owns it.
+    /// Duplicate `NoOp` opens retain the prior object and scroll position;
+    /// replacement swaps content only after the manager transaction succeeds.
+    pub fn commit_open(
+        &mut self,
+        prepared: PreparedStatusWindow,
+        transition: &WindowTransition,
+    ) -> Option<WindowId> {
+        match *transition {
+            WindowTransition::Opened { id } if self.window.is_none() => {
+                self.window = Some(OpenStatusWindow {
+                    id: Some(id),
+                    subject: Some(prepared.subject),
+                    object: prepared.object,
+                    witness: Some(prepared.witness),
+                    scroll: 0.0,
+                });
+                Some(id)
+            }
+            WindowTransition::Replaced { old, new } if self.window_id() == Some(old) => {
+                self.window = Some(OpenStatusWindow {
+                    id: Some(new),
+                    subject: Some(prepared.subject),
+                    object: prepared.object,
+                    witness: Some(prepared.witness),
+                    scroll: 0.0,
+                });
+                Some(new)
+            }
+            WindowTransition::Existing {
+                id,
+                effect: ExistingEffect::NoOp,
+            } if self.window_id() == Some(id)
+                && self.window.as_ref().and_then(|window| window.subject)
+                    == Some(prepared.subject) =>
+            {
+                Some(id)
+            }
+            _ => None,
+        }
+    }
+
+    /// Exact manager identity currently owning the published content.
+    #[must_use]
+    pub fn window_id(&self) -> Option<WindowId> {
+        self.window.as_ref().and_then(|window| window.id)
+    }
+
+    /// Manager-owned Status hit for event-local pointer routing.
+    #[must_use]
+    pub fn hit_window(
+        &self,
+        frame: &RoutingSnapshot,
+        layout: CockpitLayout,
+        point: (f32, f32),
+    ) -> Option<WindowId> {
+        let id = self.window_id()?;
+        (frame
+            .key(id)
+            .is_some_and(|key| key.kind == WindowKind::Status)
+            && frame.allows_input(id)
+            && rect_contains(window_rect(layout), egui::pos2(point.0, point.1)))
+        .then_some(id)
+    }
+
+    /// Exact Status identity that owns this frame's keyboard lease.
+    #[must_use]
+    pub fn keyboard_owner(&self, frame: &RoutingSnapshot) -> Option<WindowId> {
+        let id = self.window_id()?;
+        matches!(
+            frame.keyboard_route().target,
+            rebellion_windowing::RouteTarget::Window(target) if target.window == id
+        )
+        .then_some(id)
+    }
+
+    /// Exact committed identity used by button, Escape, and recovery closes.
+    #[must_use]
+    pub fn request_close(&self) -> Option<WindowId> {
+        self.window_id()
+    }
+
+    /// Reports whether each manager-owned Status identity has paintable
+    /// content. Missing or stale content stays explicitly unpaintable so its
+    /// modal boundary remains fail-closed and recoverable.
+    #[must_use]
+    pub fn content_reports(
+        &self,
+        frame: &RoutingSnapshot,
+        sources: StatusSources<'_>,
+    ) -> Vec<ContentReport> {
+        frame
+            .paint_order()
+            .iter()
+            .copied()
+            .filter(|id| {
+                frame
+                    .key(*id)
+                    .is_some_and(|key| key.kind == WindowKind::Status)
+            })
+            .map(|id| ContentReport {
+                window: id,
+                status: if self.window_id() == Some(id)
+                    && self.window.as_ref().is_some_and(|window| {
+                        status_view_if_current(sources, window.object, window.witness).is_some()
+                    }) {
+                    ContentStatus::Ready
+                } else {
+                    ContentStatus::Unpaintable
+                },
+            })
+            .collect()
+    }
+
+    /// Releases only content named by manager close/replacement receipts.
+    pub fn remove_content(&mut self, removed: &[WindowId]) {
+        if self.window_id().is_some_and(|id| removed.contains(&id)) {
+            self.window = None;
+        }
+    }
+
     /// `FUN_0042a440` → the `0x468` handler: open on an object the player
     /// knows (`FUN_004f2d10`).
     pub fn open(&mut self, object: StatusObject) {
         self.window = Some(OpenStatusWindow {
+            id: None,
+            subject: None,
             object,
+            witness: None,
             scroll: 0.0,
         });
     }
@@ -324,18 +554,80 @@ pub fn draw_status_window(
     layout: CockpitLayout,
     cache: &mut BmpCache,
 ) -> Option<StatusWindowAction> {
-    let open = state.window.as_mut()?;
-    // The window closes once its object is gone.
-    let Some(view) = status_view(sources, open.object) else {
+    let object = state.window.as_ref()?.object;
+    // Direct renderer fixtures retain the legacy disappearance behavior.
+    // Production uses `draw_managed_status_window`, where stale committed
+    // content stays modal and exposes an explicit recovery close.
+    if status_view(sources, object).is_none() {
         state.window = None;
         return None;
-    };
+    }
+    let action = draw_status_window_surface(ctx, sources, state, viewer, layout, cache, true, true);
+    if action.is_some() {
+        state.window = None;
+    }
+    action
+}
+
+/// Draw manager-owned Status content against its exact immutable-frame
+/// identity. A control action names that identity and leaves content in place
+/// until the app supplies the manager's removal receipt.
+pub fn draw_managed_status_window(
+    ctx: &egui::Context,
+    sources: StatusSources<'_>,
+    state: &mut StatusWindowState,
+    viewer: CockpitFaction,
+    layout: CockpitLayout,
+    cache: &mut BmpCache,
+    frame: &RoutingSnapshot,
+) -> Option<(WindowId, StatusWindowAction)> {
+    let id = state.window_id()?;
+    if !frame
+        .key(id)
+        .is_some_and(|key| key.kind == WindowKind::Status)
+    {
+        return None;
+    }
+    draw_status_window_surface(
+        ctx,
+        sources,
+        state,
+        viewer,
+        layout,
+        cache,
+        frame.allows_input(id),
+        false,
+    )
+    .map(|action| (id, action))
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Shared implementation for production snapshots and fixture-only direct content."
+)]
+fn draw_status_window_surface(
+    ctx: &egui::Context,
+    sources: StatusSources<'_>,
+    state: &mut StatusWindowState,
+    viewer: CockpitFaction,
+    layout: CockpitLayout,
+    cache: &mut BmpCache,
+    input_enabled: bool,
+    raw_escape_enabled: bool,
+) -> Option<StatusWindowAction> {
+    let open = state.window.as_mut()?;
+    let view = status_view_if_current(sources, open.object, open.witness);
     let scale = layout.scale;
     let rect = window_rect(layout);
     let mut action = None;
 
     // Above the modeless windows, as the move confirmation is.
-    egui::Area::new(egui::Id::new("original-status-window"))
+    let area_id = egui::Id::new("original-status-window");
+    // Lower managed surfaces also reassert their persistent egui layers each
+    // frame. Reassert Status after they paint so the manager's immutable
+    // paint order is the actual visual and input order too.
+    ctx.move_to_top(egui::LayerId::new(egui::Order::Tooltip, area_id));
+    egui::Area::new(area_id)
         .fixed_pos(rect.min)
         .order(egui::Order::Tooltip)
         .show(ctx, |ui| {
@@ -343,122 +635,148 @@ pub fn draw_status_window(
             let painter = ui.painter().with_clip_rect(frame);
             let at = |(x, y, w, h): (f32, f32, f32, f32)| logical_rect(frame, scale, x, y, w, h);
 
-            paint(
-                &painter,
-                ctx,
-                cache,
-                background(view.side, viewer),
-                frame,
-                scale,
-            );
+            if let Some(view) = view {
+                paint(
+                    &painter,
+                    ctx,
+                    cache,
+                    background(view.side, viewer),
+                    frame,
+                    scale,
+                );
 
-            // The title and name take font 5 and the list font 10
-            // (FUN_0060eed0). The production manager's font 0x11 is the
-            // table's default, the same 16 pixels as font 5.
-            let title_font = game_font(5, scale);
-            let list_font = game_font(10, scale);
+                // The title and name take font 5 and the list font 10
+                // (FUN_0060eed0). The production manager's font 0x11 is the
+                // table's default, the same 16 pixels as font 5.
+                let title_font = game_font(5, scale);
+                let list_font = game_font(10, scale);
 
-            let title = at(TITLE);
-            painter.text(
-                title.center(),
-                egui::Align2::CENTER_CENTER,
-                view.title,
-                title_font.clone(),
-                egui::Color32::WHITE,
-            );
+                let title = at(TITLE);
+                painter.text(
+                    title.center(),
+                    egui::Align2::CENTER_CENTER,
+                    view.title,
+                    title_font.clone(),
+                    egui::Color32::WHITE,
+                );
 
-            // The picture, keyed (FUN_005fd0f0), centred with integer
-            // offsets on (307, 64).
-            if let Some((source, picture)) = view.picture {
-                if let Some([width, height]) = cache.original_resource_size(source, picture) {
-                    let (x, y) = picture_origin(width, height);
-                    paint_native(&painter, ctx, cache, source, picture, frame, scale, x, y);
+                // The picture, keyed (FUN_005fd0f0), centred with integer
+                // offsets on (307, 64).
+                if let Some((source, picture)) = view.picture {
+                    if let Some([width, height]) = cache.original_resource_size(source, picture) {
+                        let (x, y) = picture_origin(width, height);
+                        paint_native(&painter, ctx, cache, source, picture, frame, scale, x, y);
+                    }
                 }
-            }
 
-            let name = at(NAME);
-            let galley = painter.layout(
-                view.name.clone(),
-                title_font,
-                egui::Color32::WHITE,
-                name.width(),
-            );
-            let name_at = egui::pos2(
-                name.center().x - galley.size().x / 2.0,
-                name.center().y - galley.size().y / 2.0,
-            );
-            painter
-                .with_clip_rect(name)
-                .galley(name_at, galley, egui::Color32::WHITE);
+                let name = at(NAME);
+                let galley =
+                    painter.layout(view.name, title_font, egui::Color32::WHITE, name.width());
+                let name_at = egui::pos2(
+                    name.center().x - galley.size().x / 2.0,
+                    name.center().y - galley.size().y / 2.0,
+                );
+                painter
+                    .with_clip_rect(name)
+                    .galley(name_at, galley, egui::Color32::WHITE);
 
-            // The list. port: the wheel scrolls it; no scroll bar is drawn.
-            let list = at(LIST);
-            let (laid, height) = layout_rows(&painter, &view.rows, &list_font, COLUMN * scale);
-            let list_response =
-                ui.interact(list, ui.id().with("status-list"), egui::Sense::hover());
-            let wheel = if list_response.hovered() {
-                ui.ctx().input(|input| input.smooth_scroll_delta.y)
+                // The list. port: the wheel scrolls it; no scroll bar is drawn.
+                let list = at(LIST);
+                let (laid, height) = layout_rows(&painter, &view.rows, &list_font, COLUMN * scale);
+                let list_response =
+                    ui.interact(list, ui.id().with("status-list"), egui::Sense::hover());
+                let wheel = if input_enabled && list_response.hovered() {
+                    ui.ctx().input(|input| input.smooth_scroll_delta.y)
+                } else {
+                    0.0
+                };
+                open.scroll = scrolled(open.scroll, wheel, scale, height);
+                let list_painter = painter.with_clip_rect(list);
+                let top = list.min.y - open.scroll * scale;
+                for (label, value, label_y, value_y) in laid {
+                    list_painter.galley(
+                        egui::pos2(list.min.x, top + label_y),
+                        label,
+                        egui::Color32::WHITE,
+                    );
+                    list_painter.galley(
+                        egui::pos2(list.min.x + COLUMN * scale, top + value_y),
+                        value,
+                        egui::Color32::WHITE,
+                    );
+                }
+
+                if input_enabled
+                    && button(
+                        ui,
+                        cache,
+                        at(ENCYCLOPEDIA_RECT),
+                        "status-encyclopedia",
+                        ENCYCLOPEDIA,
+                        false,
+                        scale,
+                    )
+                {
+                    action = Some(StatusWindowAction::Encyclopedia);
+                }
             } else {
-                0.0
-            };
-            open.scroll = scrolled(open.scroll, wheel, scale, height);
-            let list_painter = painter.with_clip_rect(list);
-            let top = list.min.y - open.scroll * scale;
-            for (label, value, label_y, value_y) in laid {
-                list_painter.galley(
-                    egui::pos2(list.min.x, top + label_y),
-                    label,
-                    egui::Color32::WHITE,
-                );
-                list_painter.galley(
-                    egui::pos2(list.min.x + COLUMN * scale, top + value_y),
-                    value,
+                // Fail closed after a committed object's backing runtime row
+                // disappears. The dark recovery surface keeps the modal
+                // visible and gives the player an explicit close route.
+                painter.rect_filled(frame, 0.0, egui::Color32::from_rgb(24, 24, 24));
+                painter.text(
+                    frame.center(),
+                    egui::Align2::CENTER_CENTER,
+                    "Status unavailable",
+                    game_font(5, scale),
                     egui::Color32::WHITE,
                 );
             }
 
-            if button(
-                ui,
-                cache,
-                at(ENCYCLOPEDIA_RECT),
-                "status-encyclopedia",
-                ENCYCLOPEDIA,
-                false,
-                scale,
-            ) {
-                action = Some(StatusWindowAction::Encyclopedia);
-            }
-            if button(
-                ui,
-                cache,
-                at(CLOSE_RECT),
-                "status-close",
-                CLOSE,
-                false,
-                scale,
-            ) {
+            if input_enabled
+                && button(
+                    ui,
+                    cache,
+                    at(CLOSE_RECT),
+                    "status-close",
+                    CLOSE,
+                    false,
+                    scale,
+                )
+            {
                 action = Some(StatusWindowAction::Close);
             }
         });
 
-    // port: Escape closes; no key slot is traced.
-    if ctx.input(|input| input.key_pressed(egui::Key::Escape)) {
+    // Direct fixture path only. Production routes Escape through the frozen
+    // keyboard lease and asks the manager to close the exact identity.
+    if raw_escape_enabled && ctx.input(|input| input.key_pressed(egui::Key::Escape)) {
         action = Some(StatusWindowAction::Close);
-    }
-    if action.is_some() {
-        state.window = None;
     }
     action
 }
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use super::*;
     use crate::bmp_cache::DllSource;
     use crate::cockpit::CockpitViewport;
+    use crate::windowing_input::{
+        FrameInputRouter, InputDisposition, InputEventId, InputRecipient, PointerButtonId,
+        PointerPhase,
+    };
     use rebellion_core::dat::{ExplorationStatus, Faction, SectorGroup};
-    use rebellion_core::ids::{DatId, SystemKey};
-    use rebellion_core::world::{Character, ControlKind, ForceTier, Sector, SkillPair, System};
+    use rebellion_core::ids::{DatId, FleetKey, SystemKey};
+    use rebellion_core::world::{
+        CapitalShipClass, Character, ControlKind, FighterClass, FighterEntry, Fleet, ForceTier,
+        Sector, ShipInstance, SkillPair, System,
+    };
+    use rebellion_windowing::{
+        ContentReport, ContentStatus, ExistingEffect, RouteTarget, SubjectId, WindowCommand,
+        WindowManager, WindowTransition,
+    };
 
     fn skill(base: u32) -> SkillPair {
         SkillPair { base, variance: 0 }
@@ -553,6 +871,732 @@ mod tests {
         character.current_system = Some(yavin);
         let key = world.characters.insert(character);
         (world, key, yavin, hoth)
+    }
+
+    fn add_character(world: &mut GameWorld, name: &str) -> CharacterKey {
+        let mut character = luke();
+        character.name = name.into();
+        world.characters.insert(character)
+    }
+
+    fn world_with_indexed_fleet() -> (GameWorld, FleetKey) {
+        let mut world = GameWorld::default();
+        let system = add_system(&mut world, "Yavin");
+        let ships = [
+            (0x1400_0010, "Ship A", 101),
+            (0x1400_0011, "Ship B", 102),
+            (0x1400_0012, "Ship C", 103),
+        ]
+        .map(|(dat_id, name, tag)| {
+            let class = world.capital_ship_classes.insert(CapitalShipClass {
+                dat_id: DatId::new(dat_id),
+                name: name.into(),
+                hull: 100,
+                ..CapitalShipClass::default()
+            });
+            ShipInstance {
+                tag,
+                ..ShipInstance::new(class, 100, true)
+            }
+        })
+        .to_vec();
+        let fighters = [
+            (0x1c00_0010, "Fighter A", 101),
+            (0x1c00_0011, "Fighter B", 102),
+            (0x1c00_0012, "Fighter C", 103),
+        ]
+        .map(|(dat_id, name, carrier)| FighterEntry {
+            class: world.fighter_classes.insert(FighterClass {
+                dat_id: DatId::new(dat_id),
+                name: name.into(),
+                squadron_size: 12,
+                ..FighterClass::default()
+            }),
+            count: 1,
+            carrier,
+        })
+        .to_vec();
+        let fleet = world.insert_fleet(Fleet {
+            location: system,
+            capital_ships: ships,
+            fighters,
+            characters: Vec::new(),
+            is_alliance: true,
+            has_death_star: false,
+        });
+        world.systems[system].fleets.push(fleet);
+        (world, fleet)
+    }
+
+    fn context(value: u64) -> SubjectId {
+        SubjectId::new(crate::windowing_policy::SUBJECT_COMMAND_CONTEXT, value)
+    }
+
+    fn opened_status(
+        manager: &mut WindowManager,
+        state: &mut StatusWindowState,
+        sources: StatusSources<'_>,
+        object: StatusObject,
+        subject: SubjectId,
+    ) -> rebellion_windowing::WindowId {
+        let prepared = StatusWindowState::prepare_open(sources, object, subject)
+            .expect("valid Status object prepares content");
+        let commit = manager
+            .apply(WindowCommand::Open(prepared.spec()))
+            .expect("Status opens");
+        let id = match commit.transition {
+            WindowTransition::Opened { id } => id,
+            ref other => panic!("expected Status open, got {other:?}"),
+        };
+        assert_eq!(state.commit_open(prepared, &commit.transition), Some(id));
+        id
+    }
+
+    fn managed_status_content(
+        manager: &WindowManager,
+        state: &StatusWindowState,
+        sources: StatusSources<'_>,
+    ) -> ContentStatus {
+        state.content_reports(&manager.begin_frame(), sources)[0].status
+    }
+
+    #[test]
+    fn status_window_windowing_preserves_context() {
+        let (mut world, luke, ..) = world_with_luke();
+        let han = add_character(&mut world, "Han Solo");
+        let empty = Empty::new();
+        let mut manager = WindowManager::new();
+        let mut state = StatusWindowState::default();
+        let subject = context(41);
+        let id = opened_status(
+            &mut manager,
+            &mut state,
+            empty.sources(&world),
+            StatusObject::Character(luke),
+            subject,
+        );
+        state.window.as_mut().unwrap().scroll = 17.0;
+
+        let duplicate = StatusWindowState::prepare_open(
+            empty.sources(&world),
+            StatusObject::Character(han),
+            subject,
+        )
+        .unwrap();
+        let duplicate_commit = manager
+            .apply(WindowCommand::Open(duplicate.spec()))
+            .unwrap();
+        assert!(matches!(
+            duplicate_commit.transition,
+            WindowTransition::Existing {
+                id: existing,
+                effect: ExistingEffect::NoOp,
+            } if existing == id
+        ));
+        assert_eq!(
+            state.commit_open(duplicate, &duplicate_commit.transition),
+            Some(id)
+        );
+
+        let content = state.window.as_ref().unwrap();
+        assert_eq!(content.object, StatusObject::Character(luke));
+        assert_eq!(content.subject, Some(subject));
+        assert_eq!(content.scroll, 17.0);
+    }
+
+    #[test]
+    fn status_window_windowing_blocks_underlay() {
+        let (world, luke, ..) = world_with_luke();
+        let empty = Empty::new();
+        let mut manager = WindowManager::new();
+        let mut state = StatusWindowState::default();
+        let id = opened_status(
+            &mut manager,
+            &mut state,
+            empty.sources(&world),
+            StatusObject::Character(luke),
+            context(42),
+        );
+        let frame = manager.begin_frame();
+        let inside = window_rect(layout()).center();
+        let hits = state
+            .hit_window(&frame, layout(), (inside.x, inside.y))
+            .into_iter()
+            .collect::<BTreeSet<_>>();
+
+        assert_eq!(state.keyboard_owner(&frame), Some(id));
+        assert_eq!(state.request_close(), Some(id));
+        assert_eq!(
+            state.hit_window(&frame, layout(), (0.0, 0.0)),
+            None,
+            "geometry excludes points outside the Status rectangle"
+        );
+
+        assert_eq!(
+            frame.pointer_route(&hits).target,
+            RouteTarget::Window(rebellion_windowing::FocusTarget {
+                window: id,
+                control: None,
+            })
+        );
+        assert_eq!(
+            frame.pointer_route(&BTreeSet::new()).target,
+            RouteTarget::BlockedBy(id)
+        );
+        assert!(!frame.pointer_allows_root());
+        assert_eq!(
+            state.content_reports(&frame, empty.sources(&world)),
+            [ContentReport {
+                window: id,
+                status: ContentStatus::Ready,
+            }]
+        );
+
+        manager
+            .apply(WindowCommand::Open(
+                crate::windowing_policy::singleton_spec(
+                    WindowKind::FleetFinder,
+                    WindowOwner::StrategicRoot,
+                ),
+            ))
+            .unwrap();
+        let covered = manager.begin_frame();
+        assert_eq!(
+            state.hit_window(&covered, layout(), (inside.x, inside.y)),
+            None,
+            "a higher modal owns the point even inside Status geometry"
+        );
+        assert_eq!(state.keyboard_owner(&covered), None);
+        assert_eq!(
+            state.request_close(),
+            Some(id),
+            "the explicit recovery close remains exact while covered"
+        );
+    }
+
+    #[test]
+    fn status_window_windowing_close_keeps_lease() {
+        let (world, luke, ..) = world_with_luke();
+        let empty = Empty::new();
+        let mut manager = WindowManager::new();
+        let mut state = StatusWindowState::default();
+        let id = opened_status(
+            &mut manager,
+            &mut state,
+            empty.sources(&world),
+            StatusObject::Character(luke),
+            context(43),
+        );
+        let frame = manager.begin_frame();
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(7, &frame);
+        let escape = InputEventId {
+            frame: 7,
+            ordinal: 0,
+        };
+        assert_eq!(router.collect_keyboard(escape), InputRecipient::Window(id));
+
+        let close = manager.apply(WindowCommand::Close(id)).unwrap();
+        assert!(
+            state.is_open(),
+            "content waits for an exact removal receipt"
+        );
+        assert!(router.claim(escape, InputRecipient::Window(id)));
+        router.report_key(
+            escape,
+            InputRecipient::Window(id),
+            InputDisposition::Handled,
+        );
+        assert!(!router.root_may_handle(escape));
+
+        let removed = match close.transition {
+            WindowTransition::Closed { closed, .. } => closed,
+            ref other => panic!("expected Status close, got {other:?}"),
+        };
+        state.remove_content(&removed);
+        assert!(!state.is_open());
+    }
+
+    #[test]
+    fn status_window_context_replacement_is_atomic() {
+        let (mut world, luke, ..) = world_with_luke();
+        let han = add_character(&mut world, "Han Solo");
+        let empty = Empty::new();
+        let mut manager = WindowManager::new();
+        let mut state = StatusWindowState::default();
+        let old = opened_status(
+            &mut manager,
+            &mut state,
+            empty.sources(&world),
+            StatusObject::Character(luke),
+            context(44),
+        );
+        state.window.as_mut().unwrap().scroll = 9.0;
+        let replacement = StatusWindowState::prepare_open(
+            empty.sources(&world),
+            StatusObject::Character(han),
+            context(45),
+        )
+        .unwrap();
+
+        assert_eq!(
+            state.window.as_ref().unwrap().object,
+            StatusObject::Character(luke)
+        );
+        let commit = manager
+            .apply(WindowCommand::Replace {
+                old,
+                new: replacement.spec(),
+            })
+            .unwrap();
+        assert_eq!(
+            state.window.as_ref().unwrap().object,
+            StatusObject::Character(luke)
+        );
+        let new = match commit.transition {
+            WindowTransition::Replaced { old: removed, new } => {
+                assert_eq!(removed, old);
+                new
+            }
+            ref other => panic!("expected Status replacement, got {other:?}"),
+        };
+        assert_eq!(
+            state.commit_open(replacement, &commit.transition),
+            Some(new)
+        );
+        state.remove_content(&[old]);
+
+        let content = state.window.as_ref().unwrap();
+        assert_eq!(content.id, Some(new));
+        assert_eq!(content.subject, Some(context(45)));
+        assert_eq!(content.object, StatusObject::Character(han));
+        assert_eq!(content.scroll, 0.0);
+    }
+
+    #[test]
+    fn status_window_rejects_mismatched_publication_receipts() {
+        let (mut world, luke, ..) = world_with_luke();
+        let han = add_character(&mut world, "Han Solo");
+        let empty = Empty::new();
+        let mut manager = WindowManager::new();
+        let mut state = StatusWindowState::default();
+        let original_subject = context(56);
+        let original = opened_status(
+            &mut manager,
+            &mut state,
+            empty.sources(&world),
+            StatusObject::Character(luke),
+            original_subject,
+        );
+        state.window.as_mut().unwrap().scroll = 13.0;
+
+        let unrelated_open = StatusWindowState::prepare_open(
+            empty.sources(&world),
+            StatusObject::Character(han),
+            context(57),
+        )
+        .unwrap();
+        let opened = manager
+            .apply(WindowCommand::Open(unrelated_open.spec()))
+            .unwrap();
+        let unrelated = match opened.transition {
+            WindowTransition::Opened { id } => id,
+            ref other => panic!("expected unrelated Status open, got {other:?}"),
+        };
+        assert_eq!(state.commit_open(unrelated_open, &opened.transition), None);
+
+        let unrelated_replacement = StatusWindowState::prepare_open(
+            empty.sources(&world),
+            StatusObject::Character(han),
+            context(58),
+        )
+        .unwrap();
+        let replaced = manager
+            .apply(WindowCommand::Replace {
+                old: unrelated,
+                new: unrelated_replacement.spec(),
+            })
+            .unwrap();
+        let replacement = match replaced.transition {
+            WindowTransition::Replaced { new, .. } => new,
+            ref other => panic!("expected unrelated Status replacement, got {other:?}"),
+        };
+        assert_eq!(
+            state.commit_open(unrelated_replacement, &replaced.transition),
+            None
+        );
+
+        let wrong_subject = StatusWindowState::prepare_open(
+            empty.sources(&world),
+            StatusObject::Character(han),
+            context(59),
+        )
+        .unwrap();
+        assert_eq!(
+            state.commit_open(
+                wrong_subject,
+                &WindowTransition::Existing {
+                    id: original,
+                    effect: ExistingEffect::NoOp,
+                },
+            ),
+            None
+        );
+        let right_subject = StatusWindowState::prepare_open(
+            empty.sources(&world),
+            StatusObject::Character(han),
+            original_subject,
+        )
+        .unwrap();
+        assert_eq!(
+            state.commit_open(
+                right_subject,
+                &WindowTransition::Existing {
+                    id: replacement,
+                    effect: ExistingEffect::NoOp,
+                },
+            ),
+            None
+        );
+
+        let content = state.window.as_ref().unwrap();
+        assert_eq!(content.id, Some(original));
+        assert_eq!(content.subject, Some(original_subject));
+        assert_eq!(content.object, StatusObject::Character(luke));
+        assert_eq!(content.scroll, 13.0);
+    }
+
+    #[test]
+    fn status_window_outside_press_and_f_keys_do_not_reach_cockpit() {
+        let (world, luke, ..) = world_with_luke();
+        let empty = Empty::new();
+        let mut manager = WindowManager::new();
+        let mut state = StatusWindowState::default();
+        let id = opened_status(
+            &mut manager,
+            &mut state,
+            empty.sources(&world),
+            StatusObject::Character(luke),
+            context(46),
+        );
+        let frame = manager.begin_frame();
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(8, &frame);
+        let outside = InputEventId {
+            frame: 8,
+            ordinal: 0,
+        };
+        let f_key = InputEventId {
+            frame: 8,
+            ordinal: 1,
+        };
+
+        assert_eq!(
+            router.collect_pointer(
+                outside,
+                &BTreeSet::new(),
+                PointerPhase::Press(PointerButtonId::Primary),
+            ),
+            InputRecipient::Blocked
+        );
+        assert!(!router.claim_root(outside));
+        assert_eq!(router.collect_keyboard(f_key), InputRecipient::Window(id));
+        assert!(router.claim(f_key, InputRecipient::Window(id)));
+        router.report_key(
+            f_key,
+            InputRecipient::Window(id),
+            InputDisposition::Unhandled,
+        );
+        assert!(!router.root_may_handle(f_key));
+    }
+
+    #[test]
+    fn status_window_stale_subject_rejects_confirm_without_retargeting() {
+        let (mut world, luke, ..) = world_with_luke();
+        let stale = add_character(&mut world, "Stale Character");
+        let empty = Empty::new();
+        let mut manager = WindowManager::new();
+        let mut state = StatusWindowState::default();
+        let id = opened_status(
+            &mut manager,
+            &mut state,
+            empty.sources(&world),
+            StatusObject::Character(luke),
+            context(47),
+        );
+        world.characters.remove(stale);
+
+        assert!(StatusWindowState::prepare_open(
+            empty.sources(&world),
+            StatusObject::Character(stale),
+            context(48),
+        )
+        .is_none());
+        assert_eq!(state.window_id(), Some(id));
+        assert_eq!(
+            state.window.as_ref().unwrap().object,
+            StatusObject::Character(luke)
+        );
+    }
+
+    #[test]
+    fn committed_ship_index_compaction_is_unpaintable_without_retargeting() {
+        let (mut world, fleet) = world_with_indexed_fleet();
+        for ship in &mut world.fleets[fleet].capital_ships {
+            ship.tag = 0;
+        }
+        let empty = Empty::new();
+        let mut manager = WindowManager::new();
+        let mut state = StatusWindowState::default();
+        let id = opened_status(
+            &mut manager,
+            &mut state,
+            empty.sources(&world),
+            StatusObject::Ship { fleet, index: 1 },
+            context(50),
+        );
+        assert_eq!(
+            status_view(
+                empty.sources(&world),
+                StatusObject::Ship { fleet, index: 1 }
+            )
+            .unwrap()
+            .name,
+            "Ship B"
+        );
+        assert_eq!(
+            managed_status_content(&manager, &state, empty.sources(&world)),
+            ContentStatus::Ready
+        );
+
+        world.fleets[fleet].capital_ships.remove(0);
+        assert_eq!(
+            status_view(
+                empty.sources(&world),
+                StatusObject::Ship { fleet, index: 1 }
+            )
+            .unwrap()
+            .name,
+            "Ship C",
+            "the raw index demonstrates the stale-index retarget hazard"
+        );
+        let frame = manager.begin_frame();
+
+        assert_eq!(
+            state.content_reports(&frame, empty.sources(&world)),
+            [ContentReport {
+                window: id,
+                status: ContentStatus::Unpaintable,
+            }]
+        );
+        assert_eq!(
+            manager
+                .reconcile(
+                    &frame,
+                    &state.content_reports(&frame, empty.sources(&world))
+                )
+                .blocking_unpainted,
+            [id]
+        );
+        assert_eq!(state.window_id(), Some(id));
+    }
+
+    #[test]
+    fn committed_fighter_index_compaction_is_unpaintable_without_retargeting() {
+        let (mut world, fleet) = world_with_indexed_fleet();
+        let empty = Empty::new();
+        let mut manager = WindowManager::new();
+        let mut state = StatusWindowState::default();
+        let id = opened_status(
+            &mut manager,
+            &mut state,
+            empty.sources(&world),
+            StatusObject::Fighter { fleet, index: 1 },
+            context(51),
+        );
+        assert_eq!(
+            status_view(
+                empty.sources(&world),
+                StatusObject::Fighter { fleet, index: 1 }
+            )
+            .unwrap()
+            .name,
+            "Fighter B"
+        );
+        assert_eq!(
+            managed_status_content(&manager, &state, empty.sources(&world)),
+            ContentStatus::Ready
+        );
+
+        world.fleets[fleet].fighters.remove(0);
+        assert_eq!(
+            status_view(
+                empty.sources(&world),
+                StatusObject::Fighter { fleet, index: 1 }
+            )
+            .unwrap()
+            .name,
+            "Fighter C",
+            "the raw index demonstrates the stale-index retarget hazard"
+        );
+        let frame = manager.begin_frame();
+
+        assert_eq!(
+            state.content_reports(&frame, empty.sources(&world)),
+            [ContentReport {
+                window: id,
+                status: ContentStatus::Unpaintable,
+            }]
+        );
+        assert_eq!(
+            manager
+                .reconcile(
+                    &frame,
+                    &state.content_reports(&frame, empty.sources(&world))
+                )
+                .blocking_unpainted,
+            [id]
+        );
+        assert_eq!(state.window_id(), Some(id));
+    }
+
+    #[test]
+    fn committed_ship_requires_same_roster_living_hull_and_tag() {
+        let (mut world, fleet) = world_with_indexed_fleet();
+        let empty = Empty::new();
+        let mut manager = WindowManager::new();
+        let mut state = StatusWindowState::default();
+        opened_status(
+            &mut manager,
+            &mut state,
+            empty.sources(&world),
+            StatusObject::Ship { fleet, index: 1 },
+            context(52),
+        );
+
+        world.fleets[fleet].capital_ships[1].alive = false;
+        assert_eq!(
+            managed_status_content(&manager, &state, empty.sources(&world)),
+            ContentStatus::Unpaintable
+        );
+        world.fleets[fleet].capital_ships[1].alive = true;
+
+        let extra = world.fleets[fleet].capital_ships[2].clone();
+        world.fleets[fleet].capital_ships.push(extra);
+        assert_eq!(
+            managed_status_content(&manager, &state, empty.sources(&world)),
+            ContentStatus::Unpaintable,
+            "a changed roster invalidates even when the selected index is unchanged"
+        );
+        world.fleets[fleet].capital_ships.pop();
+
+        world.fleets[fleet].capital_ships[1].tag = 999;
+        assert_eq!(
+            managed_status_content(&manager, &state, empty.sources(&world)),
+            ContentStatus::Unpaintable
+        );
+    }
+
+    #[test]
+    fn committed_fighter_requires_positive_count_same_class_and_carrier() {
+        let (mut world, fleet) = world_with_indexed_fleet();
+        let empty = Empty::new();
+        let mut manager = WindowManager::new();
+        let mut state = StatusWindowState::default();
+        opened_status(
+            &mut manager,
+            &mut state,
+            empty.sources(&world),
+            StatusObject::Fighter { fleet, index: 1 },
+            context(53),
+        );
+
+        world.fleets[fleet].fighters[1].count = 0;
+        assert_eq!(
+            managed_status_content(&manager, &state, empty.sources(&world)),
+            ContentStatus::Unpaintable
+        );
+        world.fleets[fleet].fighters[1].count = 1;
+
+        let other_class = world.fleets[fleet].fighters[2].class;
+        let original_class = world.fleets[fleet].fighters[1].class;
+        world.fleets[fleet].fighters[1].class = other_class;
+        assert_eq!(
+            managed_status_content(&manager, &state, empty.sources(&world)),
+            ContentStatus::Unpaintable
+        );
+        world.fleets[fleet].fighters[1].class = original_class;
+
+        world.fleets[fleet].fighters[1].carrier = 999;
+        assert_eq!(
+            managed_status_content(&manager, &state, empty.sources(&world)),
+            ContentStatus::Unpaintable
+        );
+    }
+
+    #[test]
+    fn indexed_status_preflight_rejects_dead_or_empty_entries() {
+        let (mut world, fleet) = world_with_indexed_fleet();
+        let empty = Empty::new();
+        world.fleets[fleet].capital_ships[1].alive = false;
+        world.fleets[fleet].fighters[1].count = 0;
+
+        assert!(StatusWindowState::prepare_open(
+            empty.sources(&world),
+            StatusObject::Ship { fleet, index: 1 },
+            context(54),
+        )
+        .is_none());
+        assert!(StatusWindowState::prepare_open(
+            empty.sources(&world),
+            StatusObject::Fighter { fleet, index: 1 },
+            context(55),
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn committed_unpaintable_status_stays_modal_for_recovery_close() {
+        let (mut world, luke, ..) = world_with_luke();
+        let empty = Empty::new();
+        let mut manager = WindowManager::new();
+        let mut state = StatusWindowState::default();
+        let id = opened_status(
+            &mut manager,
+            &mut state,
+            empty.sources(&world),
+            StatusObject::Character(luke),
+            context(49),
+        );
+        world.characters.remove(luke);
+        let frame = manager.begin_frame();
+
+        assert_eq!(
+            state.content_reports(&frame, empty.sources(&world)),
+            [ContentReport {
+                window: id,
+                status: ContentStatus::Unpaintable,
+            }]
+        );
+        let reconciliation = manager.reconcile(
+            &frame,
+            &state.content_reports(&frame, empty.sources(&world)),
+        );
+        assert_eq!(reconciliation.blocking_unpainted, [id]);
+        assert!(state.is_open(), "recovery close remains available");
+        assert_eq!(
+            click_managed(
+                &world,
+                &mut state,
+                &frame,
+                (CLOSE_RECT.0 + 16.0, CLOSE_RECT.1 + 15.0),
+            ),
+            Some((id, StatusWindowAction::Close))
+        );
+        assert!(
+            state.is_open(),
+            "recovery close waits for the manager receipt"
+        );
     }
 
     fn pairs(rows: &[StatusRow]) -> Vec<(&str, &str)> {
@@ -813,6 +1857,107 @@ mod tests {
             point,
             vec![vec![press(pos, true)], vec![press(pos, false)]],
         )
+    }
+
+    fn click_managed(
+        world: &GameWorld,
+        state: &mut StatusWindowState,
+        frame: &RoutingSnapshot,
+        point: (f32, f32),
+    ) -> Option<(WindowId, StatusWindowAction)> {
+        let layout = layout();
+        let pos = window_rect(layout).min + egui::vec2(point.0, point.1);
+        let ctx = egui::Context::default();
+        let mut cache = BmpCache::new();
+        let empty = Empty::new();
+        let mut emitted = None;
+        for extra in [
+            vec![],
+            vec![],
+            vec![press(pos, true)],
+            vec![press(pos, false)],
+        ] {
+            let mut events = vec![egui::Event::PointerMoved(pos)];
+            events.extend(extra);
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(700.0, 520.0),
+                )),
+                events,
+                ..Default::default()
+            };
+            let _ = ctx.run(input, |ctx| {
+                if let Some(action) = draw_managed_status_window(
+                    ctx,
+                    empty.sources(world),
+                    state,
+                    CockpitFaction::Alliance,
+                    layout,
+                    &mut cache,
+                    frame,
+                ) {
+                    emitted = Some(action);
+                }
+            });
+        }
+        emitted
+    }
+
+    #[test]
+    fn managed_status_reasserts_its_layer_after_lower_surfaces_raise() {
+        let (world, key, ..) = world_with_luke();
+        let empty = Empty::new();
+        let mut manager = WindowManager::new();
+        let mut state = StatusWindowState::default();
+        opened_status(
+            &mut manager,
+            &mut state,
+            empty.sources(&world),
+            StatusObject::Character(key),
+            context(40),
+        );
+        let frame = manager.begin_frame();
+        let layout = layout();
+        let ctx = egui::Context::default();
+        let mut cache = BmpCache::new();
+        let lower = egui::Id::new("raising-lower-managed-surface");
+
+        for _ in 0..3 {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(700.0, 520.0),
+                )),
+                ..Default::default()
+            };
+            let _ = ctx.run(input, |ctx| {
+                // A lower managed surface reasserts itself before Status in
+                // the manager's bottom-to-top paint sequence.
+                ctx.move_to_top(egui::LayerId::new(egui::Order::Tooltip, lower));
+                egui::Area::new(lower)
+                    .order(egui::Order::Tooltip)
+                    .fixed_pos(window_rect(layout).min)
+                    .show(ctx, |ui| {
+                        ui.allocate_response(window_rect(layout).size(), egui::Sense::click());
+                    });
+                let _ = draw_managed_status_window(
+                    ctx,
+                    empty.sources(&world),
+                    &mut state,
+                    CockpitFaction::Alliance,
+                    layout,
+                    &mut cache,
+                    &frame,
+                );
+            });
+        }
+
+        assert_eq!(
+            ctx.layer_id_at(window_rect(layout).center())
+                .map(|layer| layer.id),
+            Some(egui::Id::new("original-status-window"))
+        );
     }
 
     #[test]
