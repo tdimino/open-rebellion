@@ -3,6 +3,8 @@
 use std::collections::BTreeSet;
 
 use rebellion_core::ids::SystemKey;
+use rebellion_data::encyclopedia_presenter::EncyclopediaEntryIntent;
+use rebellion_data::encyclopedia_session::EncyclopediaSession;
 use rebellion_render::{
     fleet_finder::{PreparedFleetFinder, FLEET_FINDER_NAME_CONTROL},
     fleet_window::PreparedFleetWindow,
@@ -13,6 +15,8 @@ use rebellion_windowing::{
     RoutingSnapshot, SubjectId, WindowCommand, WindowCommit, WindowError, WindowEvent, WindowId,
     WindowTransition,
 };
+
+use crate::encyclopedia_surface::{EncyclopediaSurfaceController, EncyclopediaWindowOpenError};
 
 /// Result of applying one queued command at the dispatch commit boundary.
 #[derive(Debug)]
@@ -37,6 +41,15 @@ pub struct AppliedWindowCommand {
     /// Exact temporary rail projection retired only after the caller also
     /// commits the returned Fleet content restore.
     pub restored_fleet: Option<WindowId>,
+}
+
+/// Exact Encyclopedia identity and ordered manager receipts committed together.
+#[derive(Debug)]
+pub struct CommittedEncyclopediaOpen {
+    /// Singleton identity accepted by the manager.
+    pub window_id: WindowId,
+    /// Capture/focus receipts emitted by the open and semantic-focus commits.
+    pub events: Vec<WindowEvent>,
 }
 
 #[derive(Debug)]
@@ -389,6 +402,25 @@ impl StrategicWindowing {
             minimized_fleet: None,
             restored_fleet: None,
         });
+    }
+
+    /// Commits a validated Encyclopedia singleton after this frame's routing
+    /// and painting have finished. Content becomes attached only with the
+    /// exact identity accepted by the manager.
+    pub fn commit_encyclopedia_open(
+        &mut self,
+        controller: &mut EncyclopediaSurfaceController,
+        session: &EncyclopediaSession,
+        intent: EncyclopediaEntryIntent,
+    ) -> Result<CommittedEncyclopediaOpen, EncyclopediaWindowOpenError> {
+        let id = controller.open(session, intent, &mut self.manager)?;
+        let events = controller.take_manager_events();
+        self.current_scene_mut().insert(id);
+        self.attached_content.insert(id);
+        Ok(CommittedEncyclopediaOpen {
+            window_id: id,
+            events,
+        })
     }
 
     /// Queues manager-owned Fleet minimization and its legacy rail projection

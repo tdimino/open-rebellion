@@ -31,6 +31,7 @@ use std::path::PathBuf;
 
 use egui_macroquad::egui::TextureOptions;
 use egui_macroquad::egui::{self, Color32, TextureHandle};
+use rebellion_windowing::ControlId;
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::bmp_cache::load_approved_hd_assets;
@@ -187,6 +188,12 @@ impl Default for EncyclopediaState {
 /// Native Galactic Encyclopedia window dimensions from `FUN_00429f30`.
 pub const ENCYCLOPEDIA_INDEX_WIDTH: f32 = 470.0;
 pub const ENCYCLOPEDIA_INDEX_HEIGHT: f32 = 330.0;
+/// Semantic focus identity for the source-ordered topic list.
+pub const ENCYCLOPEDIA_INDEX_CONTROL: ControlId = ControlId(1);
+/// Semantic focus identity for the title-search edit.
+pub const ENCYCLOPEDIA_SEARCH_CONTROL: ControlId = ControlId(2);
+/// Semantic focus identity for the topic text/navigation surface.
+pub const ENCYCLOPEDIA_TOPIC_CONTROL: ControlId = ControlId(3);
 
 const ORIGINAL_INDEX_VISIBLE_ROWS: usize = 9;
 const ORIGINAL_INDEX_ROW_HEIGHT: f32 = 18.0;
@@ -583,6 +590,7 @@ pub struct EncyclopediaSurfaceState {
     active_topic_key: Option<(u64, u32)>,
     topic_textures: Option<EncyclopediaTopicTextureCache<EguiEncyclopediaTextureBackend>>,
     last_texture_error: Option<String>,
+    pending_focus: Option<ControlId>,
 }
 
 impl Default for EncyclopediaSurfaceState {
@@ -600,6 +608,7 @@ impl Default for EncyclopediaSurfaceState {
             active_topic_key: None,
             topic_textures: None,
             last_texture_error: None,
+            pending_focus: None,
         }
     }
 }
@@ -608,6 +617,19 @@ impl EncyclopediaSurfaceState {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Takes one real child-focus request for the shared window manager.
+    pub fn take_focus_request(&mut self) -> Option<ControlId> {
+        self.pending_focus.take()
+    }
+
+    /// Aligns the next rendered mode with its stable semantic child.
+    pub fn request_mode_focus(&mut self, mode: EncyclopediaSurfaceMode) {
+        self.pending_focus = Some(match mode {
+            EncyclopediaSurfaceMode::Index => ENCYCLOPEDIA_INDEX_CONTROL,
+            EncyclopediaSurfaceMode::Topic => ENCYCLOPEDIA_TOPIC_CONTROL,
+        });
     }
 
     fn reconcile_active_topic(&mut self, generation: u64, object_id: Option<u32>) {
@@ -660,8 +682,50 @@ pub fn draw_encyclopedia_surface(
     state: &mut EncyclopediaSurfaceState,
     surface: &EncyclopediaSurface<'_>,
 ) -> Option<EncyclopediaSurfaceAction> {
+    let focused_control = if state.focused_mode == Some(surface.mode) {
+        None
+    } else {
+        state.focused_mode = Some(surface.mode);
+        Some(match surface.mode {
+            EncyclopediaSurfaceMode::Index => ENCYCLOPEDIA_INDEX_CONTROL,
+            EncyclopediaSurfaceMode::Topic => ENCYCLOPEDIA_TOPIC_CONTROL,
+        })
+    };
+    draw_encyclopedia_surface_focused(ctx, cache, origin, scale, state, surface, focused_control)
+}
+
+/// Paint one source-backed frame while honoring the manager's exact semantic
+/// child focus. Pointer interactions are reported back through
+/// [`EncyclopediaSurfaceState::take_focus_request`].
+pub fn draw_encyclopedia_surface_focused(
+    ctx: &egui::Context,
+    cache: &mut BmpCache,
+    origin: egui::Pos2,
+    scale: f32,
+    state: &mut EncyclopediaSurfaceState,
+    surface: &EncyclopediaSurface<'_>,
+    focused_control: Option<ControlId>,
+) -> Option<EncyclopediaSurfaceAction> {
     if scale <= 0.0 || surface.categories.is_empty() {
         return None;
+    }
+    let focus_id = match focused_control {
+        Some(ENCYCLOPEDIA_SEARCH_CONTROL) if surface.mode == EncyclopediaSurfaceMode::Index => {
+            Some(surface_search_focus_id())
+        }
+        Some(ENCYCLOPEDIA_INDEX_CONTROL) if surface.mode == EncyclopediaSurfaceMode::Index => {
+            Some(surface_keyboard_focus_id(EncyclopediaSurfaceMode::Index))
+        }
+        Some(ENCYCLOPEDIA_TOPIC_CONTROL) if surface.mode == EncyclopediaSurfaceMode::Topic => {
+            Some(surface_keyboard_focus_id(EncyclopediaSurfaceMode::Topic))
+        }
+        _ => None,
+    };
+    if focused_control.is_some() && focus_id.is_none() {
+        state.request_mode_focus(surface.mode);
+    }
+    if let Some(focus_id) = focus_id {
+        ctx.memory_mut(|memory| memory.request_focus(focus_id));
     }
     let faction = match surface.audience {
         EncyclopediaSurfaceAudience::Alliance => crate::cockpit::CockpitFaction::Alliance,
@@ -757,10 +821,6 @@ pub fn draw_encyclopedia_surface(
                 keyboard_focus_id,
                 egui::Sense::focusable_noninteractive(),
             );
-            if state.focused_mode != Some(surface.mode) {
-                ctx.memory_mut(|memory| memory.request_focus(keyboard_focus_id));
-                state.focused_mode = Some(surface.mode);
-            }
             ctx.memory_mut(|memory| {
                 memory.set_focus_lock_filter(
                     keyboard_focus_id,
@@ -869,6 +929,13 @@ pub fn draw_encyclopedia_surface(
             }
         });
 
+    // The semantic target may be registered for the first time by the area
+    // above. Repeat the manager-directed request after registration so an
+    // initial open and a restored context converge in the same frame.
+    if let Some(focus_id) = focus_id {
+        ctx.memory_mut(|memory| memory.request_focus(focus_id));
+    }
+
     if ctx.input(|input| input.pointer.primary_pressed())
         && surface_rect.is_some_and(|rect| {
             ctx.pointer_latest_pos()
@@ -880,6 +947,10 @@ pub fn draw_encyclopedia_surface(
         })
     {
         ctx.memory_mut(|memory| memory.request_focus(keyboard_focus_id));
+        state.pending_focus = Some(match surface.mode {
+            EncyclopediaSurfaceMode::Index => ENCYCLOPEDIA_INDEX_CONTROL,
+            EncyclopediaSurfaceMode::Topic => ENCYCLOPEDIA_TOPIC_CONTROL,
+        });
     }
 
     if ctx.input(|input| input.pointer.button_released(egui::PointerButton::Primary)) {
@@ -1104,6 +1175,9 @@ fn draw_surface_index(
         state.preserve_search_for_selection = search_action.is_some();
         *action = search_action;
     }
+    if search.gained_focus() {
+        state.pending_focus = Some(ENCYCLOPEDIA_SEARCH_CONTROL);
+    }
     if search.has_focus() {
         let list_key = if ui.input(|input| input.key_pressed(egui::Key::ArrowUp)) {
             Some(EncyclopediaSurfaceKey::Up)
@@ -1136,6 +1210,9 @@ fn draw_surface_index(
         *action = encyclopedia_title_search_match(&state.search_text, &surface.topics)
             .or(effective_selection)
             .map(EncyclopediaSurfaceAction::OpenTopic);
+    }
+    if search.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Tab)) {
+        state.pending_focus = Some(ENCYCLOPEDIA_INDEX_CONTROL);
     }
     ui.painter().text(
         encyclopedia_point(window_rect, scale, 40.0, 120.0),
@@ -1667,7 +1744,7 @@ fn draw_encyclopedia_index_layers(
                 }
             }
             if let Some(content) = content {
-                draw_original_index_content(ui, window_rect, scale, content, &mut outcome);
+                draw_original_index_content(ui, window_rect, scale, &content, &mut outcome);
             }
         });
     outcome
@@ -1677,7 +1754,7 @@ fn draw_original_index_content(
     ui: &mut egui::Ui,
     window_rect: egui::Rect,
     scale: f32,
-    content: OriginalIndexContent<'_>,
+    content: &OriginalIndexContent<'_>,
     outcome: &mut OriginalIndexOutcome,
 ) {
     let painter = ui.painter();
@@ -2322,9 +2399,89 @@ fn load_edata_texture(
 #[cfg(test)]
 mod tests {
     use std::cell::RefCell;
+    use std::collections::BTreeSet;
     use std::rc::Rc;
 
     use super::*;
+    use crate::windowing_policy::singleton_spec;
+    use rebellion_windowing::{
+        ExistingEffect, FocusTarget, RouteTarget, WindowCommand, WindowKind, WindowManager,
+        WindowOwner, WindowTransition,
+    };
+
+    fn open_managed_encyclopedia(manager: &mut WindowManager) -> rebellion_windowing::WindowId {
+        let commit = manager
+            .apply(WindowCommand::Open(singleton_spec(
+                WindowKind::Encyclopedia,
+                WindowOwner::StrategicRoot,
+            )))
+            .unwrap();
+        match commit.transition {
+            WindowTransition::Opened { id } => id,
+            transition => panic!("expected Encyclopedia open, got {transition:?}"),
+        }
+    }
+
+    #[test]
+    fn encyclopedia_windowing_preserves_context() {
+        let mut manager = WindowManager::new();
+        let id = open_managed_encyclopedia(&mut manager);
+        let search = FocusTarget {
+            window: id,
+            control: Some(ENCYCLOPEDIA_SEARCH_CONTROL),
+        };
+        manager.apply(WindowCommand::Focus(search)).unwrap();
+
+        let duplicate = manager
+            .apply(WindowCommand::Open(singleton_spec(
+                WindowKind::Encyclopedia,
+                WindowOwner::StrategicRoot,
+            )))
+            .unwrap();
+
+        assert_eq!(
+            duplicate.transition,
+            WindowTransition::Existing {
+                id,
+                effect: ExistingEffect::NoOp,
+            }
+        );
+        assert_eq!(manager.begin_frame().focused(), Some(search));
+    }
+
+    #[test]
+    fn encyclopedia_windowing_blocks_underlay() {
+        let mut manager = WindowManager::new();
+        let id = open_managed_encyclopedia(&mut manager);
+        let frame = manager.begin_frame();
+
+        assert_eq!(frame.active_modal(), Some(id));
+        assert_eq!(
+            frame.pointer_route(&BTreeSet::new()).target,
+            RouteTarget::BlockedBy(id)
+        );
+        assert!(!frame.pointer_allows_root());
+    }
+
+    #[test]
+    fn encyclopedia_windowing_close_keeps_lease() {
+        let mut manager = WindowManager::new();
+        let id = open_managed_encyclopedia(&mut manager);
+        let frozen = manager.begin_frame();
+
+        manager.apply(WindowCommand::Close(id)).unwrap();
+
+        assert_eq!(frozen.active_modal(), Some(id));
+        assert!(matches!(
+            frozen.keyboard_route().target,
+            RouteTarget::Window(target) if target.window == id
+        ));
+        assert_eq!(
+            frozen.pointer_route(&BTreeSet::new()).target,
+            RouteTarget::BlockedBy(id)
+        );
+        assert!(manager.begin_frame().paint_order().is_empty());
+    }
 
     const TEST_TOPIC_TITLES: [&str; 18] = [
         "A-wing",
@@ -2946,7 +3103,7 @@ mod tests {
                 topic_count: 1,
             },
         ];
-        let surface = EncyclopediaSurface {
+        let mut surface = EncyclopediaSurface {
             texture_generation: 7,
             title: "Galactic Encyclopedia",
             topic_label: "Topic",
@@ -3036,6 +3193,66 @@ mod tests {
         );
         assert!(!focused_key_remained);
 
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            draw_encyclopedia_surface_focused(
+                ctx,
+                &mut cache,
+                egui::Pos2::ZERO,
+                1.0,
+                &mut state,
+                &surface,
+                Some(ENCYCLOPEDIA_SEARCH_CONTROL),
+            );
+        });
+        assert_eq!(
+            state.take_focus_request(),
+            Some(ENCYCLOPEDIA_SEARCH_CONTROL)
+        );
+        surface.navigation.selected_object_id = None;
+        state.search_text.clear();
+        let mut search_action = None;
+        let _ = ctx.run(
+            surface_input(vec![egui::Event::Text("A".to_owned())], 1.0),
+            |ctx| {
+                search_action = draw_encyclopedia_surface_focused(
+                    ctx,
+                    &mut cache,
+                    egui::Pos2::ZERO,
+                    1.0,
+                    &mut state,
+                    &surface,
+                    Some(ENCYCLOPEDIA_SEARCH_CONTROL),
+                );
+            },
+        );
+        assert_eq!(state.search_text, "A");
+        assert_eq!(
+            search_action,
+            Some(EncyclopediaSurfaceAction::SelectTopic(11))
+        );
+        let tab = egui::RawInput {
+            events: vec![egui::Event::Key {
+                key: egui::Key::Tab,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            }],
+            ..Default::default()
+        };
+        let _ = ctx.run(tab, |ctx| {
+            draw_encyclopedia_surface_focused(
+                ctx,
+                &mut cache,
+                egui::Pos2::ZERO,
+                1.0,
+                &mut state,
+                &surface,
+                Some(ENCYCLOPEDIA_SEARCH_CONTROL),
+            );
+        });
+        assert_eq!(state.take_focus_request(), Some(ENCYCLOPEDIA_INDEX_CONTROL));
+
         let unselected_surface = EncyclopediaSurface {
             navigation: EncyclopediaSurfaceNavigation {
                 selected_object_id: None,
@@ -3044,6 +3261,7 @@ mod tests {
             },
             ..surface
         };
+        state.search_text.clear();
         let enter = egui::RawInput {
             events: vec![egui::Event::Key {
                 key: egui::Key::Enter,
@@ -3067,6 +3285,74 @@ mod tests {
             );
         });
         assert_eq!(unselected_action, None);
+    }
+
+    #[test]
+    fn focused_surface_waits_for_manager_topic_focus_authority() {
+        let surface = test_surface(EncyclopediaSurfaceMode::Topic, Some(1));
+        let ctx = egui::Context::default();
+        crate::theme::load_fonts(&ctx);
+        let mut state = EncyclopediaSurfaceState::new();
+        let mut cache = BmpCache::new();
+        let topic = surface_keyboard_focus_id(EncyclopediaSurfaceMode::Topic);
+
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            draw_encyclopedia_surface_focused(
+                ctx,
+                &mut cache,
+                egui::Pos2::ZERO,
+                1.0,
+                &mut state,
+                &surface,
+                None,
+            );
+        });
+        assert!(!ctx.memory(|memory| memory.has_focus(topic)));
+
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            draw_encyclopedia_surface_focused(
+                ctx,
+                &mut cache,
+                egui::Pos2::ZERO,
+                1.0,
+                &mut state,
+                &surface,
+                Some(ENCYCLOPEDIA_TOPIC_CONTROL),
+            );
+        });
+        assert!(ctx.memory(|memory| memory.has_focus(topic)));
+
+        let unrelated = egui::Id::new("unrelated-after-topic-focus-loss");
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            ctx.memory_mut(|memory| memory.request_focus(unrelated));
+            draw_encyclopedia_surface_focused(
+                ctx,
+                &mut cache,
+                egui::Pos2::ZERO,
+                1.0,
+                &mut state,
+                &surface,
+                None,
+            );
+        });
+        assert!(ctx.memory(|memory| memory.has_focus(unrelated)));
+
+        let mut rebound = EncyclopediaSurfaceState::new();
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            draw_encyclopedia_surface_focused(
+                ctx,
+                &mut cache,
+                egui::Pos2::ZERO,
+                1.0,
+                &mut rebound,
+                &surface,
+                Some(ENCYCLOPEDIA_INDEX_CONTROL),
+            );
+        });
+        assert_eq!(
+            rebound.take_focus_request(),
+            Some(ENCYCLOPEDIA_TOPIC_CONTROL)
+        );
     }
 
     #[test]

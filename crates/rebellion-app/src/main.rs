@@ -1214,6 +1214,7 @@ impl StrategicRootKeyBatch {
         handles_keyboard: bool,
         fleet: Option<(rebellion_windowing::WindowId, bool)>,
         fleet_finder: Option<rebellion_windowing::WindowId>,
+        encyclopedia: Option<rebellion_windowing::WindowId>,
     ) {
         for event in &self.events {
             let recipient = router.keyboard_recipient(event.id);
@@ -1225,6 +1226,13 @@ impl StrategicRootKeyBatch {
                 }),
                 InputRecipient::Window(window) if fleet_finder == Some(window) => {
                     Some(if event.key == KeyCode::Escape {
+                        InputDisposition::Handled
+                    } else {
+                        InputDisposition::Unhandled
+                    })
+                }
+                InputRecipient::Window(window) if encyclopedia == Some(window) => {
+                    Some(if handles_keyboard || event.key == KeyCode::Escape {
                         InputDisposition::Handled
                     } else {
                         InputDisposition::Unhandled
@@ -1579,6 +1587,48 @@ fn with_retained_input<T>(
     drawn
 }
 
+/// Manager-owned strategic surfaces in the exact immutable paint sequence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ManagedStrategicSurface {
+    Encyclopedia(rebellion_windowing::WindowId),
+    FleetFinder(rebellion_windowing::WindowId),
+}
+
+fn managed_strategic_surface_plan(
+    frame: &rebellion_windowing::RoutingSnapshot,
+    encyclopedia: Option<rebellion_windowing::WindowId>,
+    fleet_finder: Option<rebellion_windowing::WindowId>,
+) -> Vec<(ManagedStrategicSurface, bool)> {
+    frame
+        .paint_order()
+        .iter()
+        .filter_map(|id| {
+            let surface = if Some(*id) == encyclopedia {
+                ManagedStrategicSurface::Encyclopedia(*id)
+            } else if Some(*id) == fleet_finder {
+                ManagedStrategicSurface::FleetFinder(*id)
+            } else {
+                return None;
+            };
+            Some((surface, frame.allows_input(*id)))
+        })
+        .collect()
+}
+
+fn apply_capture_cancellation_events(
+    events: &[rebellion_windowing::WindowEvent],
+    router: &mut FrameInputRouter,
+    fleets: &mut FleetWindowState,
+) {
+    for event in events {
+        if let rebellion_windowing::WindowEvent::CaptureCancelled { window, .. } = event {
+            macroquad::logging::info!("[windowing] {:?}", event);
+            router.cancel_window(*window);
+            fleets.cancel_pointer_capture(*window);
+        }
+    }
+}
+
 #[cfg(test)]
 mod frame_input_tests {
     use super::{
@@ -1816,9 +1866,9 @@ mod frame_input_tests {
 #[cfg(test)]
 mod panel_toggle_tests {
     use super::{
-        panel_letters_open_panels, toggle_exclusive_panel, StrategicPointerBatch,
-        StrategicRawInputCollector, StrategicRawKeyCollector, StrategicRawKeyEvent,
-        StrategicRootKeyBatch,
+        managed_strategic_surface_plan, panel_letters_open_panels, toggle_exclusive_panel,
+        ManagedStrategicSurface, StrategicPointerBatch, StrategicRawInputCollector,
+        StrategicRawKeyCollector, StrategicRawKeyEvent, StrategicRootKeyBatch,
     };
     use macroquad::miniquad::{EventHandler, KeyMods, MouseButton};
     use macroquad::prelude::KeyCode;
@@ -1836,7 +1886,7 @@ mod panel_toggle_tests {
             repeat: false,
         }];
         let batch = StrategicRootKeyBatch::collect_from_raw(1, &mut router, &events);
-        batch.report_legacy_children(&mut router, false, None, None);
+        batch.report_legacy_children(&mut router, false, None, None, None);
 
         assert!(router.claim_root(batch.events[0].id));
         assert!(!router.claim_root(batch.events[0].id));
@@ -1861,7 +1911,7 @@ mod panel_toggle_tests {
             },
         ];
         let batch = StrategicRootKeyBatch::collect_from_raw(9, &mut router, &events);
-        batch.report_legacy_children(&mut router, false, None, None);
+        batch.report_legacy_children(&mut router, false, None, None, None);
 
         assert_eq!(batch.events.len(), 2);
         assert!(batch.events[0].alt);
@@ -1884,7 +1934,7 @@ mod panel_toggle_tests {
             repeat: false,
         }];
         let batch = StrategicRootKeyBatch::collect_from_raw(2, &mut router, &events);
-        batch.report_legacy_children(&mut router, true, None, None);
+        batch.report_legacy_children(&mut router, true, None, None, None);
 
         assert!(!router.claim_root(batch.events[0].id));
     }
@@ -1907,6 +1957,95 @@ mod panel_toggle_tests {
             WindowTransition::Opened { id } => id,
             ref transition => panic!("expected Fleet open, got {transition:?}"),
         }
+    }
+
+    fn opened_encyclopedia(
+        coordinator: &mut crate::strategic_windowing::StrategicWindowing,
+    ) -> rebellion_windowing::WindowId {
+        use rebellion_render::windowing_policy::singleton_spec;
+        use rebellion_windowing::{WindowCommand, WindowKind, WindowOwner, WindowTransition};
+
+        coordinator.enqueue(WindowCommand::Open(singleton_spec(
+            WindowKind::Encyclopedia,
+            WindowOwner::StrategicRoot,
+        )));
+        let applied = coordinator.apply_pending();
+        match applied[0].result.as_ref().unwrap().transition {
+            WindowTransition::Opened { id } => id,
+            ref transition => panic!("expected Encyclopedia open, got {transition:?}"),
+        }
+    }
+
+    #[test]
+    fn managed_modal_surfaces_follow_snapshot_order_and_input_eligibility() {
+        use rebellion_render::fleet_finder::FleetFinderState;
+        use rebellion_windowing::WindowCommand;
+
+        let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
+        coordinator.enqueue_fleet_finder_open(FleetFinderState::prepare_open(
+            rebellion_render::CockpitFaction::Alliance,
+        ));
+        let finder = match coordinator.apply_pending()[0]
+            .result
+            .as_ref()
+            .unwrap()
+            .transition
+        {
+            rebellion_windowing::WindowTransition::Opened { id } => id,
+            ref transition => panic!("expected Fleet Finder open, got {transition:?}"),
+        };
+        let encyclopedia = opened_encyclopedia(&mut coordinator);
+        let frame = coordinator.begin_frame();
+
+        assert_eq!(
+            managed_strategic_surface_plan(&frame, Some(encyclopedia), Some(finder)),
+            [
+                (ManagedStrategicSurface::FleetFinder(finder), false),
+                (ManagedStrategicSurface::Encyclopedia(encyclopedia), true,),
+            ]
+        );
+        assert_eq!(
+            frame
+                .pointer_route(&std::collections::BTreeSet::from([finder]))
+                .target,
+            rebellion_windowing::RouteTarget::BlockedBy(encyclopedia)
+        );
+
+        coordinator.enqueue(WindowCommand::Close(encyclopedia));
+        coordinator.apply_pending();
+        assert_eq!(
+            managed_strategic_surface_plan(&coordinator.begin_frame(), None, Some(finder)),
+            [(ManagedStrategicSurface::FleetFinder(finder), true)]
+        );
+
+        let mut reverse = crate::strategic_windowing::StrategicWindowing::new();
+        let encyclopedia = opened_encyclopedia(&mut reverse);
+        reverse.enqueue_fleet_finder_open(FleetFinderState::prepare_open(
+            rebellion_render::CockpitFaction::Alliance,
+        ));
+        let finder = match reverse.apply_pending()[0]
+            .result
+            .as_ref()
+            .unwrap()
+            .transition
+        {
+            rebellion_windowing::WindowTransition::Opened { id } => id,
+            ref transition => panic!("expected Fleet Finder open, got {transition:?}"),
+        };
+        let frame = reverse.begin_frame();
+        assert_eq!(
+            managed_strategic_surface_plan(&frame, Some(encyclopedia), Some(finder)),
+            [
+                (ManagedStrategicSurface::Encyclopedia(encyclopedia), false,),
+                (ManagedStrategicSurface::FleetFinder(finder), true),
+            ]
+        );
+        assert_eq!(
+            frame
+                .pointer_route(&std::collections::BTreeSet::from([encyclopedia]))
+                .target,
+            rebellion_windowing::RouteTarget::BlockedBy(finder)
+        );
     }
 
     fn key(key: KeyCode, alt: bool) -> StrategicRawKeyEvent {
@@ -1933,7 +2072,7 @@ mod panel_toggle_tests {
             InputRecipient::Window(fleet)
         );
 
-        batch.report_legacy_children(&mut router, false, Some((fleet, false)), None);
+        batch.report_legacy_children(&mut router, false, Some((fleet, false)), None, None);
 
         assert!(router.claim_root(batch.events[0].id));
         assert!(router.claim_root(batch.events[1].id));
@@ -1958,7 +2097,7 @@ mod panel_toggle_tests {
         router.begin_frame(4, &frame);
         let batch = StrategicRootKeyBatch::collect_from_raw(4, &mut router, &events);
 
-        batch.report_legacy_children(&mut router, false, Some((fleet, true)), None);
+        batch.report_legacy_children(&mut router, false, Some((fleet, true)), None, None);
 
         let bubbled: Vec<bool> = batch
             .events
@@ -1966,6 +2105,65 @@ mod panel_toggle_tests {
             .map(|event| router.claim_root(event.id))
             .collect();
         assert_eq!(bubbled, [false, true, false, true, false, true]);
+    }
+
+    #[test]
+    fn encyclopedia_search_handling_precedes_cockpit_shortcuts() {
+        use rebellion_render::{windowing_input::InputRecipient, ENCYCLOPEDIA_SEARCH_CONTROL};
+        use rebellion_windowing::{FocusTarget, WindowCommand};
+
+        let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
+        let encyclopedia = opened_encyclopedia(&mut coordinator);
+        coordinator.enqueue(WindowCommand::Focus(FocusTarget {
+            window: encyclopedia,
+            control: Some(ENCYCLOPEDIA_SEARCH_CONTROL),
+        }));
+        assert!(coordinator.apply_pending()[0].result.is_ok());
+        let frame = coordinator.begin_frame();
+        assert_eq!(
+            frame.focused(),
+            Some(FocusTarget {
+                window: encyclopedia,
+                control: Some(ENCYCLOPEDIA_SEARCH_CONTROL),
+            })
+        );
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(5, &frame);
+        let batch =
+            StrategicRootKeyBatch::collect_from_raw(5, &mut router, &[key(KeyCode::F, false)]);
+
+        assert_eq!(
+            router.keyboard_recipient(batch.events[0].id),
+            InputRecipient::Window(encyclopedia)
+        );
+        batch.report_legacy_children(&mut router, true, None, None, Some(encyclopedia));
+
+        assert!(!router.claim_root(batch.events[0].id));
+    }
+
+    #[test]
+    fn encyclopedia_escape_close_keeps_frame_keyboard_lease() {
+        use rebellion_render::windowing_input::InputRecipient;
+        use rebellion_windowing::WindowCommand;
+
+        let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
+        let encyclopedia = opened_encyclopedia(&mut coordinator);
+        let frozen = coordinator.begin_frame();
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(6, &frozen);
+        let batch =
+            StrategicRootKeyBatch::collect_from_raw(6, &mut router, &[key(KeyCode::Escape, false)]);
+
+        coordinator.enqueue(WindowCommand::Close(encyclopedia));
+        assert!(coordinator.apply_pending()[0].result.is_ok());
+        assert!(coordinator.begin_frame().paint_order().is_empty());
+        assert_eq!(
+            router.keyboard_recipient(batch.events[0].id),
+            InputRecipient::Window(encyclopedia)
+        );
+        batch.report_legacy_children(&mut router, false, None, None, Some(encyclopedia));
+
+        assert!(!router.claim_root(batch.events[0].id));
     }
 
     #[test]
@@ -4917,7 +5115,6 @@ Some(RailAudience::side(*faction_is_alliance)),
                 || troop_finder_state.is_open()
                 || personnel_finder_state.is_open()
                 || message_index.is_some()
-                || encyclopedia_surface.is_open()
                 || original_modal_fixture_open,
             focused_control: command_palette_open,
             transient_menu: object_menu.is_some()
@@ -4932,6 +5129,8 @@ Some(RailAudience::side(*faction_is_alliance)),
             fleet_window_state.keyboard_owner(strategic_frame_boundary.snapshot());
         let fleet_finder_keyboard_owner =
             fleet_finder_state.keyboard_owner(strategic_frame_boundary.snapshot());
+        let encyclopedia_keyboard_owner =
+            encyclopedia_surface.keyboard_owner(strategic_frame_boundary.snapshot());
         let mut legacy_restriction_latch = LegacyInputRestrictionLatch::new(legacy_blockers);
         let strategic_frame_sequence_valid =
             if let Some(next_frame) = strategic_frame_number.checked_add(1) {
@@ -4979,6 +5178,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                 strategic_input_router.set_application_hold(true);
                 false
             };
+        let mut pending_encyclopedia_open: Option<EncyclopediaEntryIntent> = None;
 
         // ── Rendering (mode-specific) ────────────────────────────────────────
 
@@ -5383,7 +5583,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                                     message_index = None;
                                     advice_saved_speed = None;
                                     bombardment_panel_state = BombardmentPanelState::default();
-                                    encyclopedia_surface.close();
+                                    encyclopedia_surface.reset();
                                     show_fleets = false;
                                     show_missions = false;
                                     show_bombardment = false;
@@ -5584,7 +5784,6 @@ Some(RailAudience::side(*faction_is_alliance)),
                         && rebellion_render::message_index::window_rect(cockpit_layout)
                             .contains(egui_macroquad::egui::pos2(pointer.0, pointer.1))
                     || cockpit_state.gid_ui.menu_open
-                    || encyclopedia_surface.is_open()
                     || original_modal_fixture_open
                     || game_speed_ui.menu_anchor.is_some()
                     || object_menu.is_some()
@@ -5627,6 +5826,14 @@ Some(RailAudience::side(*faction_is_alliance)),
                                 if let Some(window) = fleet_finder_state.hit_window(
                                     strategic_frame_boundary.snapshot(),
                                     cockpit_layout,
+                                    point,
+                                ) {
+                                    hits.insert(window);
+                                }
+                                if let Some(window) = encyclopedia_surface.hit_window(
+                                    strategic_frame_boundary.snapshot(),
+                                    screen_width(),
+                                    screen_height(),
                                     point,
                                 ) {
                                     hits.insert(window);
@@ -6851,21 +7058,12 @@ Some(RailAudience::side(*faction_is_alliance)),
                                     object_id: requested_object_id,
                                     caller: EncyclopediaContextCaller::Handler00486fb0Event100,
                                 };
-                                match encyclopedia_surface.open(&session, intent) {
-                                    Ok(()) => {
-                                        legacy_restriction_latch.note_start();
-                                        macroquad::logging::info!(
-                                            "[encyclopedia] production_route status=opened origin=contextual caller=FUN_00486fb0_event_0x100 requested={:#010x}",
-                                            requested_object_id
-                                        );
-                                    }
-                                    Err(error) => {
-                                        macroquad::logging::error!(
-                                            "[encyclopedia] production_route rejected origin=contextual error={}",
-                                            error
-                                        );
-                                    }
-                                }
+                                pending_encyclopedia_open.get_or_insert(intent);
+                                legacy_restriction_latch.note_start();
+                                macroquad::logging::info!(
+                                    "[encyclopedia] production_route status=queued origin=contextual caller=FUN_00486fb0_event_0x100 requested={:#010x}",
+                                    requested_object_id
+                                );
                             } else {
                                 macroquad::logging::warn!(
                                     "[encyclopedia] production_route unavailable origin=contextual reason=no_session"
@@ -7226,7 +7424,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                             tick: clock.tick,
                         }),
                         Some(MissionDialogAction::Encyclopedia) => {
-                            if let Some(session) = encyclopedia_session_store.current() {
+                            if encyclopedia_session_store.current().is_some() {
                                 let intent = EncyclopediaEntryIntent::Contextual {
                                     audience: encyclopedia_audience(player_faction),
                                     // The selected mission-kind-to-object join
@@ -7237,19 +7435,11 @@ Some(RailAudience::side(*faction_is_alliance)),
                                     caller:
                                         EncyclopediaContextCaller::MissionDialog0046c3c0Command67,
                                 };
-                                match encyclopedia_surface.open(&session, intent) {
-                                    Ok(()) => {
-                                        macroquad::logging::info!(
-                                            "[encyclopedia] production_route status=opened origin=contextual caller=FUN_0046c3c0_command_0x67 requested=unresolved"
-                                        );
-                                    }
-                                    Err(error) => {
-                                        macroquad::logging::error!(
-                                            "[encyclopedia] production_route rejected origin=mission_dialog error={}",
-                                            error
-                                        );
-                                    }
-                                }
+                                pending_encyclopedia_open.get_or_insert(intent);
+                                legacy_restriction_latch.note_start();
+                                macroquad::logging::info!(
+                                    "[encyclopedia] production_route status=queued origin=contextual caller=FUN_0046c3c0_command_0x67 requested=unresolved"
+                                );
                             } else {
                                 macroquad::logging::warn!(
                                     "[encyclopedia] production_route unavailable origin=mission_dialog reason=no_session"
@@ -7279,7 +7469,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                             count,
                         }),
                         Some(BuildSelectionAction::Encyclopedia) => {
-                            if let Some(session) = encyclopedia_session_store.current() {
+                            if encyclopedia_session_store.current().is_some() {
                                 let intent = EncyclopediaEntryIntent::Contextual {
                                     audience: encyclopedia_audience(player_faction),
                                     // Upstream recovered this caller while the
@@ -7289,19 +7479,11 @@ Some(RailAudience::side(*faction_is_alliance)),
                                     object_id: 0,
                                     caller: EncyclopediaContextCaller::Handler00438800Command67,
                                 };
-                                match encyclopedia_surface.open(&session, intent) {
-                                    Ok(()) => {
-                                        macroquad::logging::info!(
-                                            "[encyclopedia] production_route status=opened origin=contextual caller=FUN_00438800_command_0x67 requested=unresolved"
-                                        );
-                                    }
-                                    Err(error) => {
-                                        macroquad::logging::error!(
-                                            "[encyclopedia] production_route rejected origin=build_selection error={}",
-                                            error
-                                        );
-                                    }
-                                }
+                                pending_encyclopedia_open.get_or_insert(intent);
+                                legacy_restriction_latch.note_start();
+                                macroquad::logging::info!(
+                                    "[encyclopedia] production_route status=queued origin=contextual caller=FUN_00438800_command_0x67 requested=unresolved"
+                                );
                             } else {
                                 macroquad::logging::warn!(
                                     "[encyclopedia] production_route unavailable origin=build_selection reason=no_session"
@@ -7480,7 +7662,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                             }
                         );
                         if action == StatusWindowAction::Encyclopedia {
-                            if let Some(session) = encyclopedia_session_store.current() {
+                            if encyclopedia_session_store.current().is_some() {
                                 let intent = EncyclopediaEntryIntent::Contextual {
                                     audience: encyclopedia_audience(player_faction),
                                     // The Status window's selected-object
@@ -7489,19 +7671,11 @@ Some(RailAudience::side(*faction_is_alliance)),
                                     object_id: 0,
                                     caller: EncyclopediaContextCaller::Handler004443a0Command66,
                                 };
-                                match encyclopedia_surface.open(&session, intent) {
-                                    Ok(()) => {
-                                        macroquad::logging::info!(
-                                            "[encyclopedia] production_route status=opened origin=contextual caller=FUN_004443a0_command_0x66 requested=unresolved"
-                                        );
-                                    }
-                                    Err(error) => {
-                                        macroquad::logging::error!(
-                                            "[encyclopedia] production_route rejected origin=status_window error={}",
-                                            error
-                                        );
-                                    }
-                                }
+                                pending_encyclopedia_open.get_or_insert(intent);
+                                legacy_restriction_latch.note_start();
+                                macroquad::logging::info!(
+                                    "[encyclopedia] production_route status=queued origin=contextual caller=FUN_004443a0_command_0x66 requested=unresolved"
+                                );
                             } else {
                                 macroquad::logging::warn!(
                                     "[encyclopedia] production_route unavailable origin=status_window reason=no_session"
@@ -7763,59 +7937,6 @@ Some(RailAudience::side(*faction_is_alliance)),
                     // Droid advisor (floating window, bottom-right)
                     draw_advisor(ctx, &mut advisor_state);
 
-                    // Source-backed production Encyclopedia is modal over
-                    // every retained command-center window. The legacy
-                    // replacement panel remains fixture-only above.
-                    if encyclopedia_surface.is_open()
-                        && strategic_frame_boundary.legacy_surface_input_allowed()
-                        && strategic_root_keys.contains(KeyCode::Escape)
-                    {
-                        legacy_keyboard_handled = true;
-                        if let Some(session) = encyclopedia_session_store.current() {
-                            match encyclopedia_surface.apply_action(
-                                &session,
-                                rebellion_render::EncyclopediaSurfaceAction::Close,
-                            ) {
-                                Ok(Some(route)) => log_encyclopedia_return(route),
-                                Ok(None) => {}
-                                Err(error) => {
-                                    encyclopedia_surface.close();
-                                    macroquad::logging::error!(
-                                        "[encyclopedia] production_route close_failed error={}",
-                                        error
-                                    );
-                                }
-                            }
-                        } else {
-                            encyclopedia_surface.close();
-                        }
-                    }
-                    if encyclopedia_surface.is_open() {
-                        if let Some(session) = encyclopedia_session_store.current() {
-                            match encyclopedia_surface.draw(
-                                ctx,
-                                &mut bmp_cache,
-                                &session,
-                                &encyclopedia_hd,
-                            ) {
-                                Ok(Some(route)) => log_encyclopedia_return(route),
-                                Ok(None) => {}
-                                Err(error) => {
-                                    encyclopedia_surface.close();
-                                    macroquad::logging::error!(
-                                        "[encyclopedia] production_route draw_failed error={}",
-                                        error
-                                    );
-                                }
-                            }
-                        } else {
-                            encyclopedia_surface.close();
-                            macroquad::logging::warn!(
-                                "[encyclopedia] production_route unavailable reason=no_session"
-                            );
-                        }
-                    }
-
                     // Story event screen overlay (top-most, including the advisor). Preserve
                     // the pre-draw state so the click that dismisses an event cannot also
                     // activate a cockpit control underneath it in the same frame.
@@ -7850,19 +7971,105 @@ Some(RailAudience::side(*faction_is_alliance)),
                     if let Some(saved) = retained_legacy_input {
                         restore_egui_input(ctx, saved);
                     }
-                    pending_fleet_finder_action = draw_fleet_finder_focused(
-                        ctx,
-                        &world,
-                        &movement_state,
-                        fog_state,
-                        &mut fleet_finder_state,
-                        strategic_frame_boundary.snapshot().focused(),
-                        cockpit_layout,
-                        &mut bmp_cache,
+                    // Manager-owned surfaces paint in the manager's immutable
+                    // bottom-to-top order. Lower modals still paint, but their
+                    // input is muted; only the active modal receives this
+                    // frame's egui events and supplies the outside barrier.
+                    let mut encyclopedia_close_queued = false;
+                    let managed_surfaces = managed_strategic_surface_plan(
+                        strategic_frame_boundary.snapshot(),
+                        encyclopedia_surface.window_id(),
+                        fleet_finder_state.window_id(),
                     );
-                    if let Some(focus) = fleet_finder_state.take_focus_request() {
-                        strategic_windowing
-                            .enqueue(rebellion_windowing::WindowCommand::Focus(focus));
+                    for (surface, allows_input) in managed_surfaces {
+                        match surface {
+                            ManagedStrategicSurface::Encyclopedia(window) => {
+                                let focused_control = strategic_frame_boundary
+                                    .snapshot()
+                                    .focused()
+                                    .filter(|focus| focus.window == window)
+                                    .and_then(|focus| focus.control);
+                                with_retained_input(ctx, allows_input, || {
+                                    if let Some(session) = encyclopedia_session_store.current() {
+                                        match encyclopedia_surface.draw(
+                                            ctx,
+                                            &mut bmp_cache,
+                                            &session,
+                                            &encyclopedia_hd,
+                                            focused_control,
+                                        ) {
+                                            Ok(Some(route)) => {
+                                                if let Some((window, _)) =
+                                                    encyclopedia_surface.request_close()
+                                                {
+                                                    strategic_windowing.enqueue(
+                                                        rebellion_windowing::WindowCommand::Close(
+                                                            window,
+                                                        ),
+                                                    );
+                                                    encyclopedia_close_queued = true;
+                                                    log_encyclopedia_return(route);
+                                                }
+                                                encyclopedia_surface.mark_paintable();
+                                            }
+                                            Ok(None) => encyclopedia_surface.mark_paintable(),
+                                            Err(error) => {
+                                                encyclopedia_surface.mark_unpaintable();
+                                                macroquad::logging::error!(
+                                                    "[encyclopedia] production_route draw_failed error={}",
+                                                    error
+                                                );
+                                            }
+                                        }
+                                    } else {
+                                        encyclopedia_surface.mark_unpaintable();
+                                        macroquad::logging::warn!(
+                                            "[encyclopedia] production_route unavailable reason=no_session"
+                                        );
+                                    }
+                                });
+                                if allows_input && !encyclopedia_close_queued {
+                                    if let Some(focus) = encyclopedia_surface.take_focus_request() {
+                                        strategic_windowing.enqueue(
+                                            rebellion_windowing::WindowCommand::Focus(focus),
+                                        );
+                                    }
+                                }
+                            }
+                            ManagedStrategicSurface::FleetFinder(_) => {
+                                pending_fleet_finder_action =
+                                    with_retained_input(ctx, allows_input, || {
+                                        draw_fleet_finder_focused(
+                                            ctx,
+                                            &world,
+                                            &movement_state,
+                                            fog_state,
+                                            &mut fleet_finder_state,
+                                            strategic_frame_boundary.snapshot().focused(),
+                                            cockpit_layout,
+                                            &mut bmp_cache,
+                                        )
+                                    });
+                                if allows_input {
+                                    if let Some(focus) = fleet_finder_state.take_focus_request() {
+                                        strategic_windowing.enqueue(
+                                            rebellion_windowing::WindowCommand::Focus(focus),
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if !encyclopedia_close_queued
+                        && encyclopedia_keyboard_owner.is_some()
+                        && strategic_root_keys.contains(KeyCode::Escape)
+                    {
+                        if let Some((window, route)) = encyclopedia_surface.request_close() {
+                            strategic_windowing
+                                .enqueue(rebellion_windowing::WindowCommand::Close(window));
+                            log_encyclopedia_return(route);
+                            legacy_keyboard_handled = true;
+                        }
                     }
                     egui_claims_pointer = ctx.is_pointer_over_area() || ctx.wants_pointer_input();
                     egui_claims_keyboard = ctx.wants_keyboard_input();
@@ -7873,6 +8080,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                     egui_claims_keyboard || legacy_keyboard_handled,
                     fleet_keyboard_owner,
                     fleet_finder_keyboard_owner,
+                    encyclopedia_keyboard_owner,
                 );
 
                 // Child surfaces have now handled their input. Keep every
@@ -7891,7 +8099,6 @@ Some(RailAudience::side(*faction_is_alliance)),
                         || troop_finder_state.is_open()
                         || personnel_finder_state.is_open()
                         || message_index.is_some()
-                        || encyclopedia_surface.is_open()
                         || original_modal_fixture_open,
                     focused_control: command_palette_now_open,
                     transient_menu: object_menu.is_some()
@@ -7980,29 +8187,18 @@ Some(RailAudience::side(*faction_is_alliance)),
                             }
                         };
                         if btn == CockpitButton::Encyclopedia {
-                            if let Some(session) = encyclopedia_session_store.current() {
+                            if encyclopedia_session_store.current().is_some() {
                                 let intent = EncyclopediaEntryIntent::Cockpit {
                                     audience: encyclopedia_audience(player_faction),
                                 };
-                                match encyclopedia_surface.open(&session, intent) {
-                                    Ok(()) => {
-                                        strategic_dispatch_restricted = true;
-                                        strategic_input_router.set_application_hold(true);
-                                        macroquad::logging::info!(
-                                            "[interface] command=0x{:x} destination={} status=opened_original",
-                                            command,
-                                            destination
-                                        );
-                                    }
-                                    Err(error) => {
-                                        macroquad::logging::error!(
-                                            "[interface] command=0x{:x} destination={} status=rejected error={}",
-                                            command,
-                                            destination,
-                                            error
-                                        );
-                                    }
-                                }
+                                pending_encyclopedia_open.get_or_insert(intent);
+                                strategic_dispatch_restricted = true;
+                                strategic_input_router.set_application_hold(true);
+                                macroquad::logging::info!(
+                                    "[interface] command=0x{:x} destination={} status=queued",
+                                    command,
+                                    destination
+                                );
                             } else {
                                 macroquad::logging::warn!(
                                     "[interface] command=0x{:x} destination={} status=unavailable",
@@ -8980,7 +9176,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                             message_index = None;
                             advice_saved_speed = None;
                             bombardment_panel_state = BombardmentPanelState::default();
-                            encyclopedia_surface.close();
+                            encyclopedia_surface.reset();
                             show_fleets = false;
                             show_missions = false;
                             show_bombardment = false;
@@ -9371,6 +9567,8 @@ Some(RailAudience::side(*faction_is_alliance)),
             fleet_window_state.content_reports(strategic_frame_boundary.snapshot(), &world);
         strategic_content_reports
             .extend(fleet_finder_state.content_reports(strategic_frame_boundary.snapshot()));
+        strategic_content_reports
+            .extend(encyclopedia_surface.content_reports(strategic_frame_boundary.snapshot()));
 
         // Window intents commit only after input and painting have completed.
         // Fleet content is published only after the matching manager commit;
@@ -9464,19 +9662,15 @@ Some(RailAudience::side(*faction_is_alliance)),
             }
             fleet_window_state.remove_content(&removed_content);
             fleet_finder_state.remove_content(&removed_content);
+            encyclopedia_surface.remove_content(&removed_content);
 
             match &result {
                 Ok(commit) => {
-                    for event in &commit.events {
-                        if let rebellion_windowing::WindowEvent::CaptureCancelled {
-                            window, ..
-                        } = event
-                        {
-                            macroquad::logging::info!("[windowing] {:?}", event);
-                            strategic_input_router.cancel_window(*window);
-                            fleet_window_state.cancel_pointer_capture(*window);
-                        }
-                    }
+                    apply_capture_cancellation_events(
+                        &commit.events,
+                        &mut strategic_input_router,
+                        &mut fleet_window_state,
+                    );
                     if !removed_content.is_empty() {
                         macroquad::logging::info!(
                             "[windowing] released_content={:?}",
@@ -9501,12 +9695,12 @@ Some(RailAudience::side(*faction_is_alliance)),
         );
         fleet_window_state.remove_content(&reconciliation.removed);
         fleet_finder_state.remove_content(&reconciliation.removed);
-        for event in &reconciliation.events {
-            if let rebellion_windowing::WindowEvent::CaptureCancelled { window, .. } = event {
-                strategic_input_router.cancel_window(*window);
-                fleet_window_state.cancel_pointer_capture(*window);
-            }
-        }
+        encyclopedia_surface.remove_content(&reconciliation.removed);
+        apply_capture_cancellation_events(
+            &reconciliation.events,
+            &mut strategic_input_router,
+            &mut fleet_window_state,
+        );
         if !reconciliation.invalid_reports.is_empty()
             || !reconciliation.blocking_unpainted.is_empty()
         {
@@ -9515,6 +9709,36 @@ Some(RailAudience::side(*faction_is_alliance)),
                 reconciliation.invalid_reports,
                 reconciliation.blocking_unpainted
             );
+        }
+        if let Some(intent) = pending_encyclopedia_open {
+            if let Some(session) = encyclopedia_session_store.current() {
+                match strategic_windowing.commit_encyclopedia_open(
+                    &mut encyclopedia_surface,
+                    &session,
+                    intent,
+                ) {
+                    Ok(committed) => {
+                        macroquad::logging::info!(
+                            "[encyclopedia] production_route status=committed identity={:?}",
+                            committed.window_id
+                        );
+                        apply_capture_cancellation_events(
+                            &committed.events,
+                            &mut strategic_input_router,
+                            &mut fleet_window_state,
+                        );
+                    }
+                    Err(error) => {
+                        macroquad::logging::error!(
+                            "[encyclopedia] production_route status=rejected error={error}"
+                        );
+                    }
+                }
+            } else {
+                macroquad::logging::warn!(
+                    "[encyclopedia] production_route status=rejected reason=no_session"
+                );
+            }
         }
         next_frame().await;
     }
