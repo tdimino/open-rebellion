@@ -150,16 +150,16 @@ use rebellion_render::{
     draw_cockpit_chrome, draw_cockpit_egui_layer, draw_credits, draw_fleets, draw_galaxy_backdrop,
     draw_galaxy_map, draw_game_options, draw_game_setup, draw_ground_combat, draw_main_menu,
     draw_missions, draw_multiplayer_setup, draw_save_load, draw_tactical_view,
-    handle_cockpit_egui_input, set_cockpit_viewport_clip, show_event_screen, update_event_screen,
-    update_galaxy_map_input, AdvisorFaction, AdvisorState, AssetRenderProfile, AudioVolumeState,
-    BmpCache, CockpitButton, CockpitFaction, CockpitState, CreditsState, EventScreenState,
-    FleetsState, GalaxyMapState, GameMessage, GameOptionsAction, GameOptionsOrigin,
-    GameOptionsState, GameSetupAction, GameSetupState, GroundAction, GroundCombatState,
-    MainMenuAction, MainMenuState, MenuDestinationAction, MessageCategory, MessageDisplay,
-    MessageLog, MessageLogState, MessageRail, MessageTarget, MultiplayerSetupAction,
-    MultiplayerSetupState, OriginalEncyclopediaCatalog, OriginalEncyclopediaEntry, PanelAction,
-    RailAudience, SectorWindowAction, SectorWindowState, SystemWindowAction, SystemWindowState,
-    TacticalAction, TacticalState, TacticalTrenchRunOutcome, VideoError, VideoPlayer,
+    handle_cockpit_egui_input, set_cockpit_viewport_clip, update_galaxy_map_input, AdvisorFaction,
+    AdvisorState, AssetRenderProfile, AudioVolumeState, BmpCache, CockpitButton, CockpitFaction,
+    CockpitState, CreditsState, FleetsState, GalaxyMapState, GameMessage, GameOptionsAction,
+    GameOptionsOrigin, GameOptionsState, GameSetupAction, GameSetupState, GroundAction,
+    GroundCombatState, MainMenuAction, MainMenuState, MenuDestinationAction, MessageCategory,
+    MessageDisplay, MessageLog, MessageLogState, MessageRail, MessageTarget,
+    MultiplayerSetupAction, MultiplayerSetupState, OriginalEncyclopediaCatalog,
+    OriginalEncyclopediaEntry, PanelAction, RailAudience, SectorWindowAction, SectorWindowState,
+    SystemWindowAction, SystemWindowState, TacticalAction, TacticalState, TacticalTrenchRunOutcome,
+    VideoError, VideoPlayer,
 };
 use rebellion_render::{DefensesWindowAction, DefensesWindowState};
 use rebellion_render::{FleetWindowAction, FleetWindowState};
@@ -8066,9 +8066,8 @@ async fn main() {
                 pause_alert: clock.pause_requested(),
                 paused: clock.speed.seconds_per_day().is_none(),
                 briefing: advisor_state.holds_clock(),
-                advice_index: message_index
-                    .as_ref()
-                    .is_some_and(|index| index.category() == dev_commands::MESSAGE_CATEGORIES[9].1),
+                advice_index: message_index.is_open()
+                    && message_index.category() == dev_commands::MESSAGE_CATEGORIES[9].1,
             };
             // A wait for the alert or the battle itself must find it standing.
             let dev_waits_for_battle = matches!(
@@ -11749,12 +11748,6 @@ async fn main() {
 
                     // Droid advisor (floating window, bottom-right)
                     draw_advisor(ctx, &mut advisor_state);
-
-                    // Story event screen overlay (top-most, including the advisor). Preserve
-                    // the pre-draw state so the click that dismisses an event cannot also
-                    // activate a cockpit control underneath it in the same frame.
-                    let event_screen_was_active = event_screen_state.is_active();
-                    draw_event_screen(ctx, &mut event_screen_state, &mut bmp_cache);
 
                     // Under the battle window the command center takes no
                     // pointer input: this foreground layer absorbs it, so the

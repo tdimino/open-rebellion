@@ -2696,8 +2696,8 @@ fn draw_fleet_window(
                     }
                     if let Some(mini) = item.mini {
                         let own = match item.object {
-                            Some(ItemObject::Character(key)) => {
-                                world.characters.get(key).is_some_and(|c| c.en_route)
+                            Some(ItemObject::Character { character, .. }) => {
+                                world.characters.get(character).is_some_and(|c| c.en_route)
                             }
                             _ => false,
                         };
