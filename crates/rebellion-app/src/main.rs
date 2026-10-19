@@ -128,7 +128,9 @@ use rebellion_render::status_rows::{StatusObject, StatusSources};
 use rebellion_render::status_window::{
     draw_managed_status_window, StatusWindowAction, StatusWindowState,
 };
-use rebellion_render::system_window::{draw_managed_system_windows, fleet_label};
+use rebellion_render::system_window::{
+    draw_managed_system_windows, fleet_label, SystemWindowInputEvent,
+};
 use rebellion_render::tactical_view::{
     TacticalWindowEvent, TacticalWindowInput, TacticalWindowPhase,
 };
@@ -1432,6 +1434,17 @@ impl StrategicPointerBatch {
         self.events
             .iter()
             .map(|event| (event.id, event.phase))
+            .collect()
+    }
+
+    fn system_events(&self) -> Vec<SystemWindowInputEvent> {
+        self.events
+            .iter()
+            .map(|event| SystemWindowInputEvent {
+                id: event.id,
+                point: event.point,
+                phase: event.phase,
+            })
             .collect()
     }
 
@@ -3392,20 +3405,12 @@ mod frame_input_tests {
         };
         assert!(coordinator.attach_content(detail_child));
 
-        coordinator.enqueue_fleet_minimize(fleet_id, system, (40, 50));
+        coordinator.enqueue_fleet_minimize(fleet_id);
         let minimized = coordinator.apply_pending().remove(0);
-        assert_eq!(
-            minimized.minimized_fleet,
-            Some((fleet_id, system, (40, 50)))
-        );
-        assert_eq!(
-            system_windows.minimize_fleet_window(fleet_id, system, (40, 50)),
-            None
-        );
-        assert_eq!(
-            system_windows.rail_entries().collect::<Vec<_>>(),
-            [(system, "fleet")]
-        );
+        assert!(matches!(
+            minimized.result.as_ref().unwrap().transition,
+            WindowTransition::Minimized { id, .. } if id == fleet_id
+        ));
 
         coordinator.enqueue(WindowCommand::CapturePointer(system_id));
         assert!(coordinator.apply_pending()[0].result.is_ok());
@@ -3453,10 +3458,6 @@ mod frame_input_tests {
         assert_eq!(after.capture_owner(), Some(system_id));
         assert!(!after.is_visible(fleet_id));
         assert_eq!(after.presentation_history(), [fleet_id]);
-        assert_eq!(
-            system_windows.rail_entries().collect::<Vec<_>>(),
-            [(system, "fleet")]
-        );
     }
 
     #[test]
@@ -10140,6 +10141,7 @@ async fn main() {
                     }
                 }
                 let strategic_pointer_routes = strategic_pointer_events.router_events();
+                let system_pointer_routes = strategic_pointer_events.system_events();
                 let sector_pointer_routes = strategic_pointer_events.sector_events();
                 latch_map_pointer_from_strategic_batch(
                     &mut map_state,
@@ -10789,7 +10791,7 @@ async fn main() {
                             cockpit_layout,
                             &mut bmp_cache,
                             strategic_frame_boundary.snapshot(),
-                            &strategic_pointer_routes,
+                            &system_pointer_routes,
                             &mut strategic_input_router,
                             galaxy_front == GalaxyFront::System,
                         )
@@ -10814,54 +10816,12 @@ async fn main() {
                                 .enqueue(rebellion_windowing::WindowCommand::Activate(window)),
                             SystemWindowAction::Close(window) => strategic_windowing
                                 .enqueue(rebellion_windowing::WindowCommand::Close(window)),
-                            SystemWindowAction::MinimizeManaged {
-                                window,
-                                system,
-                                logical_position,
-                            } => strategic_windowing.enqueue_system_minimize(
-                                window,
-                                system,
-                                logical_position,
-                            ),
-                            SystemWindowAction::EvictManagedWindow(window) => strategic_windowing
-                                .enqueue(rebellion_windowing::WindowCommand::Close(window)),
-                            SystemWindowAction::RestoreSystemWindow {
-                                id,
-                                system: _,
-                                logical_position: _,
-                            } => strategic_windowing.enqueue_system_restore(id),
-                            SystemWindowAction::RestoreFleetWindow {
-                                id,
-                                system: _,
-                                logical_position: _,
-                            } => strategic_windowing.enqueue_fleet_restore(id),
-                            SystemWindowAction::RestoreDefensesWindow {
-                                system,
-                                logical_position: _,
-                            } => {
-                                if let Some(window) = exact_minimized_defenses_restore(
-                                    strategic_frame_boundary.snapshot(),
-                                    defenses_window_state.window_id(system),
-                                    rebellion_render::windowing_policy::system_subject(
-                                        &world, system,
-                                    ),
-                                ) {
-                                    strategic_windowing.enqueue_defenses_restore(window);
-                                }
+                            SystemWindowAction::MinimizeManaged { window, .. } => {
+                                strategic_windowing.enqueue_system_minimize(window)
                             }
-                            SystemWindowAction::RestoreMissionsWindow {
-                                system,
-                                logical_position: _,
-                            } => {
-                                if let Some(window) = exact_minimized_missions_restore(
-                                    strategic_frame_boundary.snapshot(),
-                                    missions_window_state.window_id(system),
-                                    rebellion_render::windowing_policy::system_subject(
-                                        &world, system,
-                                    ),
-                                ) {
-                                    strategic_windowing.enqueue_missions_restore(window);
-                                }
+                            SystemWindowAction::RestoreReferenceWindow(window) => {
+                                strategic_windowing
+                                    .enqueue(rebellion_windowing::WindowCommand::Restore(window))
                             }
                             SystemWindowAction::OpenObjectMenu {
                                 owner,
@@ -10936,27 +10896,14 @@ async fn main() {
                                 )),
                             FleetWindowAction::Close(window) => strategic_windowing
                                 .enqueue(rebellion_windowing::WindowCommand::Close(window)),
-                            FleetWindowAction::Minimize {
-                                system,
-                                logical_position,
-                            } => {
+                            FleetWindowAction::Minimize { system, .. } => {
                                 if let Some(window) = fleet_window_state.window_id(system) {
-                                    strategic_windowing.enqueue_fleet_minimize(
-                                        window,
-                                        system,
-                                        logical_position,
-                                    );
+                                    strategic_windowing.enqueue_fleet_minimize(window);
                                 }
                             }
-                            FleetWindowAction::MinimizeManaged {
-                                window,
-                                system,
-                                logical_position,
-                            } => strategic_windowing.enqueue_fleet_minimize(
-                                window,
-                                system,
-                                logical_position,
-                            ),
+                            FleetWindowAction::MinimizeManaged { window, .. } => {
+                                strategic_windowing.enqueue_fleet_minimize(window)
+                            }
                             // FUN_00422ce0: a drop from the Fleet window
                             // (type 4) moves the selection against the
                             // window under the point with 0x201.
@@ -11236,26 +11183,10 @@ async fn main() {
                                 )),
                             DefensesWindowAction::Close(window) => strategic_windowing
                                 .enqueue(rebellion_windowing::WindowCommand::Close(window)),
-                            DefensesWindowAction::Minimize {
-                                system,
-                                logical_position,
-                            } => {
-                                if let Some(window) = system_window_state
-                                    .minimize_defenses_window(system, logical_position)
-                                {
-                                    strategic_windowing
-                                        .enqueue(rebellion_windowing::WindowCommand::Close(window));
-                                }
+                            DefensesWindowAction::Minimize { .. } => {}
+                            DefensesWindowAction::MinimizeManaged { window, .. } => {
+                                strategic_windowing.enqueue_defenses_minimize(window)
                             }
-                            DefensesWindowAction::MinimizeManaged {
-                                window,
-                                system,
-                                logical_position,
-                            } => strategic_windowing.enqueue_defenses_minimize(
-                                window,
-                                system,
-                                logical_position,
-                            ),
                             DefensesWindowAction::OpenObjectMenu {
                                 owner,
                                 selection,
@@ -11404,26 +11335,10 @@ async fn main() {
                                 .enqueue(rebellion_windowing::WindowCommand::Activate(window)),
                             MissionsWindowAction::Close(window) => strategic_windowing
                                 .enqueue(rebellion_windowing::WindowCommand::Close(window)),
-                            MissionsWindowAction::MinimizeManaged {
-                                window,
-                                system,
-                                logical_position,
-                            } => strategic_windowing.enqueue_missions_minimize(
-                                window,
-                                system,
-                                logical_position,
-                            ),
-                            MissionsWindowAction::Minimize {
-                                system,
-                                logical_position,
-                            } => {
-                                if let Some(window) = system_window_state
-                                    .minimize_missions_window(system, logical_position)
-                                {
-                                    strategic_windowing
-                                        .enqueue(rebellion_windowing::WindowCommand::Close(window));
-                                }
+                            MissionsWindowAction::MinimizeManaged { window, .. } => {
+                                strategic_windowing.enqueue_missions_minimize(window)
                             }
+                            MissionsWindowAction::Minimize { .. } => {}
                         }
                     }
 
@@ -14128,6 +14043,7 @@ async fn main() {
                     request,
                     &world,
                     &interface_test_fixture::QuadrantWindows {
+                        snapshot: strategic_frame_boundary.snapshot(),
                         systems: &system_window_state,
                         defenses: &defenses_window_state,
                         missions_windows: &missions_window_state,
@@ -14282,14 +14198,6 @@ async fn main() {
                 status_content_id,
                 prepared_sector,
                 sector_content_id,
-                minimized_system,
-                restored_system,
-                minimized_defenses,
-                restored_defenses,
-                minimized_missions,
-                restored_missions,
-                minimized_fleet,
-                restored_fleet,
             } = applied;
             let pending_object_menu = pending_object_menu_publications
                 .iter()
@@ -14346,6 +14254,24 @@ async fn main() {
                 rebellion_windowing::WindowCommand::Activate(id)
                     if missions_window_state.contains_window(id)
             );
+            let restored_detail =
+                successful_restored_detail(command, &result, &strategic_windowing.begin_frame());
+            let restored_system = restored_detail.is_some_and(|(id, kind)| {
+                kind == rebellion_windowing::WindowKind::System
+                    && system_window_state.contains_window(id)
+            });
+            let restored_fleet = restored_detail.is_some_and(|(id, kind)| {
+                kind == rebellion_windowing::WindowKind::Fleet
+                    && fleet_window_state.contains_window(id)
+            });
+            let restored_defenses = restored_detail.is_some_and(|(id, kind)| {
+                kind == rebellion_windowing::WindowKind::Defenses
+                    && defenses_window_state.contains_window(id)
+            });
+            let restored_missions = restored_detail.is_some_and(|(id, kind)| {
+                kind == rebellion_windowing::WindowKind::Missions
+                    && missions_window_state.contains_window(id)
+            });
             let mut committed_system_open = false;
             let mut committed_defenses_open = false;
             let mut committed_fleet_open = false;
@@ -14741,101 +14667,23 @@ async fn main() {
                     world.systems.get(system).map_or("", |value| value.name.as_str())
                 );
             }
-            if (activated_fleet && result.is_ok()) || committed_fleet_open {
+            if (activated_fleet && result.is_ok()) || restored_fleet || committed_fleet_open {
                 fleet_legacy_bridge_serial = FleetWindowState::next_legacy_bridge_serial();
             }
-            if (activated_system && result.is_ok()) || committed_system_open {
+            if (activated_system && result.is_ok()) || restored_system || committed_system_open {
                 system_legacy_bridge_serial = SystemWindowState::next_legacy_bridge_serial();
             }
-            if (activated_defenses && result.is_ok()) || committed_defenses_open {
+            if (activated_defenses && result.is_ok())
+                || restored_defenses
+                || committed_defenses_open
+            {
                 defenses_legacy_bridge_serial = DefensesWindowState::next_legacy_bridge_serial();
             }
-            if (activated_missions && result.is_ok()) || committed_missions_open {
+            if (activated_missions && result.is_ok())
+                || restored_missions
+                || committed_missions_open
+            {
                 missions_legacy_bridge_serial = MissionsWindowState::next_legacy_bridge_serial();
-            }
-            if let Some(window) = restored_system {
-                system_window_state.restore_system_window(window);
-            }
-            if let Some(window) = restored_fleet {
-                system_window_state.restore_fleet_window(window);
-            }
-            if restored_defenses.is_some() {
-                defenses_legacy_bridge_serial = DefensesWindowState::next_legacy_bridge_serial();
-            }
-            if restored_missions.is_some() {
-                missions_legacy_bridge_serial = MissionsWindowState::next_legacy_bridge_serial();
-            }
-            if let (Some((window, system, logical_position)), Ok(commit)) =
-                (minimized_system, &result)
-            {
-                if matches!(
-                    &commit.transition,
-                    rebellion_windowing::WindowTransition::Minimized { .. }
-                ) {
-                    if let Some(evicted) =
-                        system_window_state.minimize_system_window(window, system, logical_position)
-                    {
-                        strategic_input_router.cancel_window(evicted);
-                        fleet_window_state.cancel_pointer_capture(evicted);
-                        removed_content
-                            .extend(strategic_windowing.rollback_detail_publication(evicted));
-                    }
-                }
-            }
-            if let (Some((window, system, logical_position)), Ok(commit)) =
-                (minimized_fleet, &result)
-            {
-                if matches!(
-                    &commit.transition,
-                    rebellion_windowing::WindowTransition::Minimized { .. }
-                ) {
-                    if let Some(evicted) =
-                        system_window_state.minimize_fleet_window(window, system, logical_position)
-                    {
-                        strategic_input_router.cancel_window(evicted);
-                        fleet_window_state.cancel_pointer_capture(evicted);
-                        removed_content
-                            .extend(strategic_windowing.rollback_detail_publication(evicted));
-                    }
-                }
-            }
-            if let (Some((window, system, logical_position)), Ok(commit)) =
-                (minimized_defenses, &result)
-            {
-                if matches!(
-                    &commit.transition,
-                    rebellion_windowing::WindowTransition::Minimized { .. }
-                ) {
-                    if let Some(evicted) =
-                        system_window_state.minimize_defenses_window(system, logical_position)
-                    {
-                        strategic_input_router.cancel_window(evicted);
-                        fleet_window_state.cancel_pointer_capture(evicted);
-                        defenses_window_state.cancel_pointer_capture(evicted);
-                        removed_content
-                            .extend(strategic_windowing.rollback_detail_publication(evicted));
-                    }
-                    debug_assert!(defenses_window_state.contains_window(window));
-                }
-            }
-            if let (Some((window, system, logical_position)), Ok(commit)) =
-                (minimized_missions, &result)
-            {
-                if matches!(
-                    &commit.transition,
-                    rebellion_windowing::WindowTransition::Minimized { .. }
-                ) {
-                    if let Some(evicted) =
-                        system_window_state.minimize_missions_window(system, logical_position)
-                    {
-                        strategic_input_router.cancel_window(evicted);
-                        fleet_window_state.cancel_pointer_capture(evicted);
-                        defenses_window_state.cancel_pointer_capture(evicted);
-                        removed_content
-                            .extend(strategic_windowing.rollback_detail_publication(evicted));
-                    }
-                    debug_assert!(missions_window_state.contains_window(window));
-                }
             }
             sector_window_state.remove_content(&removed_content);
             system_window_state.remove_content(&removed_content);
@@ -17563,40 +17411,35 @@ fn galaxy_front(
     .map_or(GalaxyFront::System, |(_, front)| front)
 }
 
-/// Resolves the legacy system-keyed Defenses rail action only when the exact
-/// candidate remains a minimized Defenses identity for the same stable DAT
-/// subject in this frame's frozen manager snapshot.
-fn exact_minimized_defenses_restore(
+fn successful_restored_detail(
+    command: rebellion_windowing::WindowCommand,
+    result: &Result<rebellion_windowing::WindowCommit, rebellion_windowing::WindowError>,
     snapshot: &rebellion_windowing::RoutingSnapshot,
-    candidate: Option<rebellion_windowing::WindowId>,
-    expected_subject: Option<rebellion_windowing::SubjectId>,
-) -> Option<rebellion_windowing::WindowId> {
-    let candidate = candidate?;
-    let expected_subject = expected_subject?;
-    (snapshot.presentation_history().contains(&candidate)
-        && snapshot.key(candidate).is_some_and(|key| {
-            key.kind == rebellion_windowing::WindowKind::Defenses
-                && key.subject == Some(expected_subject)
-        }))
-    .then_some(candidate)
-}
-
-/// Resolves the legacy system-keyed Missions rail action only when the exact
-/// candidate remains a minimized Missions identity for the same stable DAT
-/// subject in this frame's frozen manager snapshot.
-fn exact_minimized_missions_restore(
-    snapshot: &rebellion_windowing::RoutingSnapshot,
-    candidate: Option<rebellion_windowing::WindowId>,
-    expected_subject: Option<rebellion_windowing::SubjectId>,
-) -> Option<rebellion_windowing::WindowId> {
-    let candidate = candidate?;
-    let expected_subject = expected_subject?;
-    (snapshot.presentation_history().contains(&candidate)
-        && snapshot.key(candidate).is_some_and(|key| {
-            key.kind == rebellion_windowing::WindowKind::Missions
-                && key.subject == Some(expected_subject)
-        }))
-    .then_some(candidate)
+) -> Option<(
+    rebellion_windowing::WindowId,
+    rebellion_windowing::WindowKind,
+)> {
+    let rebellion_windowing::WindowCommand::Restore(requested) = command else {
+        return None;
+    };
+    let Ok(commit) = result else {
+        return None;
+    };
+    let rebellion_windowing::WindowTransition::Restored { id } = commit.transition else {
+        return None;
+    };
+    if id != requested {
+        return None;
+    }
+    let kind = snapshot.key(id)?.kind;
+    matches!(
+        kind,
+        rebellion_windowing::WindowKind::System
+            | rebellion_windowing::WindowKind::Fleet
+            | rebellion_windowing::WindowKind::Defenses
+            | rebellion_windowing::WindowKind::Missions
+    )
+    .then_some((id, kind))
 }
 
 const fn visible_legacy_bridge_serial(serial: u64, exact_content_visible: bool) -> u64 {
@@ -17610,75 +17453,40 @@ const fn visible_legacy_bridge_serial(serial: u64, exact_content_visible: bool) 
 #[cfg(test)]
 mod detail_restore_guard_tests {
     use super::{
-        exact_minimized_defenses_restore, exact_minimized_missions_restore, galaxy_front,
-        visible_legacy_bridge_serial, GalaxyFront,
+        galaxy_front, successful_restored_detail, visible_legacy_bridge_serial, GalaxyFront,
     };
-    use rebellion_render::windowing_policy::contextual_spec;
     use rebellion_windowing::{
         SubjectId, WindowCommand, WindowKind, WindowManager, WindowOwner, WindowTransition,
     };
 
-    fn open(
-        manager: &mut WindowManager,
-        kind: WindowKind,
-        subject: SubjectId,
-    ) -> rebellion_windowing::WindowId {
-        let spec = contextual_spec(kind, subject, WindowOwner::StrategicRoot);
-        match manager.apply(WindowCommand::Open(spec)).unwrap().transition {
-            WindowTransition::Opened { id } => id,
-            transition => panic!("expected open, got {transition:?}"),
-        }
-    }
-
     #[test]
-    fn stale_defenses_rail_does_not_retarget_a_visible_replacement() {
-        let expected = SubjectId::new(2, 100);
+    fn successful_restore_receipt_identifies_exact_detail_family() {
         let mut manager = WindowManager::new();
-        let stale = open(&mut manager, WindowKind::Defenses, expected);
-        manager.apply(WindowCommand::Minimize(stale)).unwrap();
-        assert_eq!(
-            exact_minimized_defenses_restore(&manager.begin_frame(), Some(stale), Some(expected)),
-            Some(stale)
-        );
-
-        manager.apply(WindowCommand::Close(stale)).unwrap();
-        let replacement = open(&mut manager, WindowKind::Defenses, expected);
-        assert_ne!(replacement, stale);
-        assert_eq!(
-            exact_minimized_defenses_restore(
-                &manager.begin_frame(),
-                Some(replacement),
-                Some(expected),
-            ),
-            None,
-            "a system-keyed stale rail action cannot target visible replacement content"
-        );
-
-        let mut wrong_kind = WindowManager::new();
-        let system = open(&mut wrong_kind, WindowKind::System, expected);
-        wrong_kind.apply(WindowCommand::Minimize(system)).unwrap();
-        assert_eq!(
-            exact_minimized_defenses_restore(
-                &wrong_kind.begin_frame(),
-                Some(system),
-                Some(expected),
-            ),
-            None
-        );
-
-        let mut wrong_subject = WindowManager::new();
-        let other = SubjectId::new(2, 101);
-        let defenses = open(&mut wrong_subject, WindowKind::Defenses, other);
-        wrong_subject
-            .apply(WindowCommand::Minimize(defenses))
+        let opened = manager
+            .apply(WindowCommand::Open(
+                rebellion_render::windowing_policy::contextual_spec(
+                    WindowKind::Defenses,
+                    SubjectId::new(2, 7),
+                    WindowOwner::StrategicRoot,
+                ),
+            ))
             .unwrap();
+        let WindowTransition::Opened { id } = opened.transition else {
+            panic!("expected detail open");
+        };
+        manager.apply(WindowCommand::Minimize(id)).unwrap();
+        let command = WindowCommand::Restore(id);
+        let restored = manager.apply(command);
+        let snapshot = manager.begin_frame();
+
         assert_eq!(
-            exact_minimized_defenses_restore(
-                &wrong_subject.begin_frame(),
-                Some(defenses),
-                Some(expected),
-            ),
-            None
+            successful_restored_detail(command, &restored, &snapshot),
+            Some((id, WindowKind::Defenses))
+        );
+        assert_eq!(
+            successful_restored_detail(WindowCommand::Close(id), &restored, &snapshot),
+            None,
+            "a receipt cannot be attributed to a different command"
         );
     }
 
@@ -17691,58 +17499,6 @@ mod detail_restore_guard_tests {
         assert_eq!(
             galaxy_front(7, 6, visible_legacy_bridge_serial(99, true), 0),
             GalaxyFront::Defenses
-        );
-    }
-
-    #[test]
-    fn stale_missions_rail_does_not_retarget_a_visible_replacement() {
-        let expected = SubjectId::new(2, 100);
-        let mut manager = WindowManager::new();
-        let stale = open(&mut manager, WindowKind::Missions, expected);
-        manager.apply(WindowCommand::Minimize(stale)).unwrap();
-        assert_eq!(
-            exact_minimized_missions_restore(&manager.begin_frame(), Some(stale), Some(expected)),
-            Some(stale)
-        );
-
-        manager.apply(WindowCommand::Close(stale)).unwrap();
-        let replacement = open(&mut manager, WindowKind::Missions, expected);
-        assert_ne!(replacement, stale);
-        assert_eq!(
-            exact_minimized_missions_restore(
-                &manager.begin_frame(),
-                Some(replacement),
-                Some(expected),
-            ),
-            None,
-            "a system-keyed stale rail action cannot target visible replacement content"
-        );
-
-        let mut wrong_kind = WindowManager::new();
-        let defenses = open(&mut wrong_kind, WindowKind::Defenses, expected);
-        wrong_kind.apply(WindowCommand::Minimize(defenses)).unwrap();
-        assert_eq!(
-            exact_minimized_missions_restore(
-                &wrong_kind.begin_frame(),
-                Some(defenses),
-                Some(expected),
-            ),
-            None
-        );
-
-        let mut wrong_subject = WindowManager::new();
-        let other = SubjectId::new(2, 101);
-        let missions = open(&mut wrong_subject, WindowKind::Missions, other);
-        wrong_subject
-            .apply(WindowCommand::Minimize(missions))
-            .unwrap();
-        assert_eq!(
-            exact_minimized_missions_restore(
-                &wrong_subject.begin_frame(),
-                Some(missions),
-                Some(expected),
-            ),
-            None
         );
     }
 

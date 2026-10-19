@@ -71,6 +71,82 @@ const COUNT_WIDTH: f32 = 46.0;
 /// A facility picture sits 1 by 2 into its 69 by 40 cell.
 const PICTURE_OFFSET: (f32, f32) = (1.0, 2.0);
 
+/// One immutable reference-rail slot projected from the manager's shared
+/// presentation history. Content stores supply presentation data but never
+/// own slot order or identity.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ReferenceRailSlot {
+    id: WindowId,
+    kind: WindowKind,
+    system: SystemKey,
+    rect: egui::Rect,
+}
+
+impl ReferenceRailSlot {
+    /// Exact manager identity restored by this slot.
+    #[must_use]
+    pub const fn id(self) -> WindowId {
+        self.id
+    }
+
+    /// Detail family used to choose the existing label/icon presenter.
+    #[must_use]
+    pub const fn kind(self) -> WindowKind {
+        self.kind
+    }
+
+    /// Runtime system resolved from the stable manager subject.
+    #[must_use]
+    pub const fn system(self) -> SystemKey {
+        self.system
+    }
+
+    /// Current faction-scaled slot rectangle.
+    #[must_use]
+    pub const fn rect(self) -> egui::Rect {
+        self.rect
+    }
+}
+
+/// Projects the manager's oldest-first minimized detail history into the
+/// faction-specific twelve-slot rail without creating a second history.
+#[must_use]
+pub fn reference_rail_slots(
+    snapshot: &RoutingSnapshot,
+    world: &GameWorld,
+    faction: CockpitFaction,
+    layout: CockpitLayout,
+) -> Vec<ReferenceRailSlot> {
+    snapshot
+        .presentation_history()
+        .iter()
+        .take(REFERENCE_RAIL_SLOTS)
+        .enumerate()
+        .filter_map(|(index, &id)| {
+            let key = snapshot.key(id)?;
+            if !matches!(
+                key.kind,
+                WindowKind::System
+                    | WindowKind::Fleet
+                    | WindowKind::Defenses
+                    | WindowKind::Missions
+            ) {
+                return None;
+            }
+            let subject = key.subject?;
+            let system = world.systems.iter().find_map(|(system, _)| {
+                (system_subject(world, system) == Some(subject)).then_some(system)
+            })?;
+            Some(ReferenceRailSlot {
+                id,
+                kind: key.kind,
+                system,
+                rect: cockpit_rect(layout, rail_slot_rect(faction, index)),
+            })
+        })
+        .collect()
+}
+
 /// The six tabs (`FUN_00455060`, command `0x70`, pages `0x67..0x6c`), in
 /// strip order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -213,80 +289,14 @@ impl PreparedSystemWindow {
     }
 }
 
-/// A minimized window on the galaxy view's rail.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum RailEntry {
-    System(OpenSystemWindow),
-    /// Temporary projection of manager-owned System content. The content
-    /// itself stays attached to its exact identity while minimized.
-    ManagedSystem {
-        id: WindowId,
-        system: SystemKey,
-        logical_position: (i16, i16),
-    },
-    /// A Fleet window (type 4); its icon comes from `FUN_004a76e0`.
-    Fleet {
-        id: WindowId,
-        system: SystemKey,
-        logical_position: (i16, i16),
-    },
-    /// A System Defenses window (type 10); its icon comes from
-    /// `FUN_004aa4a0`.
-    Defenses {
-        system: SystemKey,
-        logical_position: (i16, i16),
-    },
-    /// A Missions window (type 11); its icon comes from `FUN_004a21c0`.
-    Missions {
-        system: SystemKey,
-        logical_position: (i16, i16),
-    },
-}
-
-impl RailEntry {
-    const fn system(&self) -> SystemKey {
-        match self {
-            Self::System(window) => window.system,
-            Self::ManagedSystem { system, .. }
-            | Self::Fleet { system, .. }
-            | Self::Defenses { system, .. }
-            | Self::Missions { system, .. } => *system,
-        }
-    }
-
-    const fn is_system_window(&self) -> bool {
-        matches!(self, Self::System(_) | Self::ManagedSystem { .. })
-    }
-
-    /// One slot per window: the window type and its system.
-    fn same_window(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::ManagedSystem { id: left, .. }, Self::ManagedSystem { id: right, .. })
-            | (Self::Fleet { id: left, .. }, Self::Fleet { id: right, .. }) => left == right,
-            _ => {
-                self.system() == other.system()
-                    && std::mem::discriminant(self) == std::mem::discriminant(other)
-            }
-        }
-    }
-
-    const fn managed_id(&self) -> Option<WindowId> {
-        match self {
-            Self::ManagedSystem { id, .. } | Self::Fleet { id, .. } => Some(*id),
-            Self::System(_) | Self::Defenses { .. } | Self::Missions { .. } => None,
-        }
-    }
-}
-
-/// Mutable modeless-window and rail state. The last visible window is focused;
-/// the first rail entry occupies slot one and is the oldest minimized window.
+/// Mutable System-window content. Presentation history belongs exclusively to
+/// the shared manager and is projected by [`reference_rail_slots`].
 #[derive(Debug)]
 pub struct SystemWindowState {
     faction: CockpitFaction,
     /// When one of these windows last took focus (`window_focus`).
     focus_serial: u64,
     windows: Vec<OpenSystemWindow>,
-    rail: Vec<RailEntry>,
 }
 
 impl Default for SystemWindowState {
@@ -295,7 +305,6 @@ impl Default for SystemWindowState {
             faction: CockpitFaction::Alliance,
             focus_serial: 0,
             windows: Vec::new(),
-            rail: Vec::new(),
         }
     }
 }
@@ -404,9 +413,6 @@ impl SystemWindowState {
         if self.focus(system) {
             return true;
         }
-        if self.restore(system) {
-            return true;
-        }
         let logical_position = clamp_to_galaxy(logical_position, layout);
         self.focus_serial = crate::window_focus::next_serial();
         self.windows.push(OpenSystemWindow {
@@ -445,13 +451,10 @@ impl SystemWindowState {
         self.windows.iter().any(|window| window.id == Some(id))
     }
 
-    /// Removes only content and temporary rail projections named by manager
-    /// teardown receipts.
+    /// Removes only content named by manager teardown receipts.
     pub fn remove_content(&mut self, removed: &[WindowId]) {
         self.windows
             .retain(|window| window.id.is_none_or(|id| !removed.contains(&id)));
-        self.rail
-            .retain(|entry| entry.managed_id().is_none_or(|id| !removed.contains(&id)));
     }
 
     /// Reports every active System identity in the frozen snapshot, including
@@ -644,34 +647,8 @@ impl SystemWindowState {
             .map(|window| window.system)
     }
 
-    #[must_use]
-    pub fn rail_count(&self) -> usize {
-        self.rail.len()
-    }
-
-    /// Each rail entry, oldest first: its system and its window, "system",
-    /// "fleet", "defenses" or "missions".
-    pub fn rail_entries(&self) -> impl Iterator<Item = (SystemKey, &'static str)> + '_ {
-        self.rail.iter().map(|entry| {
-            let kind = match entry {
-                RailEntry::System(_) | RailEntry::ManagedSystem { .. } => "system",
-                RailEntry::Fleet { .. } => "fleet",
-                RailEntry::Defenses { .. } => "defenses",
-                RailEntry::Missions { .. } => "missions",
-            };
-            (entry.system(), kind)
-        })
-    }
-
-    /// The screen rect of the `index`th rail slot while it holds an entry.
-    #[must_use]
-    pub fn rail_slot_screen_rect(&self, layout: CockpitLayout, index: usize) -> Option<egui::Rect> {
-        (index < self.rail.len()).then(|| cockpit_rect(layout, rail_slot_rect(self.faction, index)))
-    }
-
     pub fn clear(&mut self) {
         self.windows.clear();
-        self.rail.clear();
     }
 
     fn prepare_faction(&mut self, faction: CockpitFaction) {
@@ -704,128 +681,6 @@ impl SystemWindowState {
 
     fn close(&mut self, system: SystemKey) {
         self.windows.retain(|window| window.system != system);
-    }
-
-    #[cfg(test)]
-    fn minimize(&mut self, system: SystemKey) -> bool {
-        self.minimize_with_eviction(system).0
-    }
-
-    fn minimize_with_eviction(&mut self, system: SystemKey) -> (bool, Option<WindowId>) {
-        let Some(index) = self
-            .windows
-            .iter()
-            .position(|window| window.system == system)
-        else {
-            return (false, None);
-        };
-        let window = self.windows.remove(index);
-        let evicted = self
-            .push_rail(RailEntry::System(window))
-            .and_then(|entry| entry.managed_id());
-        (true, evicted)
-    }
-
-    /// Put a manager-owned minimized System window on the temporary rail.
-    pub fn minimize_system_window(
-        &mut self,
-        id: WindowId,
-        system: SystemKey,
-        logical_position: (i16, i16),
-    ) -> Option<WindowId> {
-        self.push_rail(RailEntry::ManagedSystem {
-            id,
-            system,
-            logical_position,
-        })
-        .and_then(|entry| entry.managed_id())
-    }
-
-    /// Retire the exact temporary System rail projection after the manager
-    /// and content store have both committed a restore.
-    pub fn restore_system_window(&mut self, id: WindowId) -> bool {
-        let Some(index) = self.rail.iter().position(
-            |entry| matches!(entry, RailEntry::ManagedSystem { id: held, .. } if *held == id),
-        ) else {
-            return false;
-        };
-        self.rail.remove(index);
-        true
-    }
-
-    /// Put a minimized Fleet window on the rail (`0x466`).
-    pub fn minimize_fleet_window(
-        &mut self,
-        id: WindowId,
-        system: SystemKey,
-        logical_position: (i16, i16),
-    ) -> Option<WindowId> {
-        self.push_rail(RailEntry::Fleet {
-            id,
-            system,
-            logical_position,
-        })
-        .and_then(|entry| entry.managed_id())
-    }
-
-    /// Retire the exact temporary Fleet rail projection after the shared
-    /// manager and Fleet content have both committed a restore.
-    pub fn restore_fleet_window(&mut self, id: WindowId) -> bool {
-        let Some(index) = self
-            .rail
-            .iter()
-            .position(|entry| matches!(entry, RailEntry::Fleet { id: held, .. } if *held == id))
-        else {
-            return false;
-        };
-        self.rail.remove(index);
-        true
-    }
-
-    /// Put a minimized Defenses window on the rail (`0x466`).
-    pub fn minimize_defenses_window(
-        &mut self,
-        system: SystemKey,
-        logical_position: (i16, i16),
-    ) -> Option<WindowId> {
-        self.push_rail(RailEntry::Defenses {
-            system,
-            logical_position,
-        })
-        .and_then(|entry| entry.managed_id())
-    }
-
-    /// Put a minimized Missions window on the rail (`0x466`).
-    pub fn minimize_missions_window(
-        &mut self,
-        system: SystemKey,
-        logical_position: (i16, i16),
-    ) -> Option<WindowId> {
-        self.push_rail(RailEntry::Missions {
-            system,
-            logical_position,
-        })
-        .and_then(|entry| entry.managed_id())
-    }
-
-    fn push_rail(&mut self, entry: RailEntry) -> Option<RailEntry> {
-        self.rail.retain(|held| !held.same_window(&entry));
-        let evicted = (self.rail.len() == REFERENCE_RAIL_SLOTS).then(|| self.rail.remove(0));
-        self.rail.push(entry);
-        evicted
-    }
-
-    fn restore(&mut self, system: SystemKey) -> bool {
-        let Some(index) = self.rail.iter().position(
-            |entry| matches!(entry, RailEntry::System(window) if window.system == system),
-        ) else {
-            return false;
-        };
-        if let RailEntry::System(window) = self.rail.remove(index) {
-            self.focus_serial = crate::window_focus::next_serial();
-            self.windows.push(window);
-        }
-        true
     }
 
     fn window_mut(&mut self, system: SystemKey) -> Option<&mut OpenSystemWindow> {
@@ -876,8 +731,8 @@ pub enum SystemWindowAction {
         system: SystemKey,
         logical_position: (i16, i16),
     },
-    /// A legacy rail insertion displaced this exact manager-owned detail.
-    EvictManagedWindow(WindowId),
+    /// A click on the shared reference rail restores this exact manager ID.
+    RestoreReferenceWindow(WindowId),
     /// A right-button release on a band opens the object pop-up menu
     /// (`FUN_004ac5c0`) for the selection, at a 640 by 480 canvas point.
     OpenObjectMenu {
@@ -887,28 +742,15 @@ pub enum SystemWindowAction {
         selection: Option<MenuObject>,
         point: (i16, i16),
     },
-    /// A click on a minimized Fleet window's rail slot restores it.
-    RestoreFleetWindow {
-        id: WindowId,
-        system: SystemKey,
-        logical_position: (i16, i16),
-    },
-    /// A click on a minimized System window's rail slot restores the same ID.
-    RestoreSystemWindow {
-        id: WindowId,
-        system: SystemKey,
-        logical_position: (i16, i16),
-    },
-    /// A click on a minimized Defenses window's rail slot restores it.
-    RestoreDefensesWindow {
-        system: SystemKey,
-        logical_position: (i16, i16),
-    },
-    /// A click on a minimized Missions window's rail slot restores it.
-    RestoreMissionsWindow {
-        system: SystemKey,
-        logical_position: (i16, i16),
-    },
+}
+
+/// One ordered, position-bearing pointer event routed from the frozen frame
+/// snapshot to System content or the shared reference rail.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SystemWindowInputEvent {
+    pub id: InputEventId,
+    pub point: (f32, f32),
+    pub phase: PointerPhase,
 }
 
 #[derive(Default)]
@@ -998,7 +840,7 @@ pub fn draw_managed_system_windows(
     layout: CockpitLayout,
     cache: &mut BmpCache,
     snapshot: &RoutingSnapshot,
-    pointer_events: &[(InputEventId, PointerPhase)],
+    pointer_events: &[SystemWindowInputEvent],
     router: &mut FrameInputRouter,
     front: bool,
 ) -> Vec<SystemWindowAction> {
@@ -1023,15 +865,15 @@ pub fn draw_managed_system_windows(
 
 fn claim_system_pointer_event(
     router: &mut FrameInputRouter,
-    events: &[(InputEventId, PointerPhase)],
+    events: &[SystemWindowInputEvent],
     window: WindowId,
     phase: PointerPhase,
 ) -> Option<InputEventId> {
-    events.iter().rev().find_map(|(event, candidate)| {
-        (*candidate == phase
-            && router.pointer_recipient(*event) == InputRecipient::Window(window)
-            && router.claim(*event, InputRecipient::Window(window)))
-        .then_some(*event)
+    events.iter().rev().find_map(|event| {
+        (event.phase == phase
+            && router.pointer_recipient(event.id) == InputRecipient::Window(window)
+            && router.claim(event.id, InputRecipient::Window(window)))
+        .then_some(event.id)
     })
 }
 
@@ -1052,18 +894,29 @@ fn draw_system_windows_with_snapshot(
     layout: CockpitLayout,
     cache: &mut BmpCache,
     snapshot: Option<&RoutingSnapshot>,
-    pointer_events: &[(InputEventId, PointerPhase)],
+    pointer_events: &[SystemWindowInputEvent],
     mut router: Option<&mut FrameInputRouter>,
     front: bool,
 ) -> Vec<SystemWindowAction> {
     if state.windows.iter().all(|window| window.id.is_none()) {
         state.prepare_faction(faction);
     }
-    let mut actions: Vec<SystemWindowAction> = draw_reference_rail(
-        ctx, world, movement, fog, missions, state, faction, layout, cache,
-    )
-    .into_iter()
-    .collect();
+    let mut actions: Vec<SystemWindowAction> = match (snapshot, router.as_deref_mut()) {
+        (Some(snapshot), Some(router)) => draw_reference_rail(
+            ctx,
+            world,
+            movement,
+            fog,
+            missions,
+            faction,
+            layout,
+            cache,
+            snapshot,
+            pointer_events,
+            router,
+        ),
+        _ => Vec::new(),
+    };
     let sources = Sources {
         world,
         manufacturing,
@@ -1157,8 +1010,7 @@ fn draw_system_windows_with_snapshot(
                     logical_position: window.logical_position,
                 });
             } else {
-                let (_, evicted) = state.minimize_with_eviction(system);
-                actions.extend(evicted.map(SystemWindowAction::EvictManagedWindow));
+                state.close(system);
             }
             continue;
         }
@@ -1206,7 +1058,7 @@ fn draw_system_windows_with_snapshot(
 
 #[expect(
     clippy::too_many_arguments,
-    reason = "The rail's icons read the world, fog and mission state."
+    reason = "The shared rail presents four existing detail families and consumes the frame router's root lease."
 )]
 fn draw_reference_rail(
     ctx: &egui::Context,
@@ -1214,27 +1066,24 @@ fn draw_reference_rail(
     movement: &rebellion_core::movement::MovementState,
     fog: &FogState,
     missions: &MissionState,
-    state: &mut SystemWindowState,
     faction: CockpitFaction,
     layout: CockpitLayout,
     cache: &mut BmpCache,
-) -> Option<SystemWindowAction> {
-    let entries = state.rail.clone();
-    let mut restored = None;
-    for (index, entry) in entries.iter().enumerate() {
-        let Some(system) = world.systems.get(entry.system()) else {
-            continue;
-        };
-        let logical = rail_slot_rect(faction, index);
-        let screen_rect = cockpit_rect(layout, logical);
+    snapshot: &RoutingSnapshot,
+    pointer_events: &[SystemWindowInputEvent],
+    router: &mut FrameInputRouter,
+) -> Vec<SystemWindowAction> {
+    let mut actions = Vec::new();
+    for slot in reference_rail_slots(snapshot, world, faction, layout) {
+        let system = &world.systems[slot.system];
         let color = relationship_color(relationship(system.control, cockpit_faction(faction)));
-        egui::Area::new(egui::Id::new(("original-reference-rail", index)))
-            .fixed_pos(screen_rect.min)
+        egui::Area::new(egui::Id::new(("original-reference-rail", slot.id.get())))
+            .fixed_pos(slot.rect.min)
             .order(egui::Order::Middle)
             .show(ctx, |ui| {
                 let (slot_rect, response) =
-                    ui.allocate_exact_size(screen_rect.size(), egui::Sense::click());
-                if entry.is_system_window() {
+                    ui.allocate_exact_size(slot.rect.size(), egui::Sense::click());
+                if slot.kind == WindowKind::System {
                     paint_resource(ui.painter(), ctx, cache, WINDOW_BACKGROUND, slot_rect);
                     ui.painter().rect_filled(
                         slot_rect,
@@ -1249,25 +1098,25 @@ fn draw_reference_rail(
                         color,
                     );
                 } else {
-                    // A Fleet window's rail icon (`FUN_004a76e0`) sits at the
-                    // slot's corner with the system's name after it, as the
-                    // reference capture shows. port: a Defenses window's
-                    // (`FUN_004aa4a0`) and a Missions window's
-                    // (`FUN_004a21c0`) are laid out the same way.
-                    let icon = match entry {
-                        RailEntry::Defenses { system, .. } => {
-                            crate::defenses_window::rail_icon(world, *system)
-                        }
-                        RailEntry::Missions { system, .. } => crate::missions_window::rail_icon(
-                            world, fog, missions, faction, *system,
-                        ),
-                        _ => crate::fleet_window::rail_icon(
+                    let icon = match slot.kind {
+                        WindowKind::Fleet => crate::fleet_window::rail_icon(
                             world,
                             movement,
                             fog,
                             cockpit_faction(faction),
-                            entry.system(),
+                            slot.system,
                         ),
+                        WindowKind::Defenses => {
+                            crate::defenses_window::rail_icon(world, slot.system)
+                        }
+                        WindowKind::Missions => crate::missions_window::rail_icon(
+                            world,
+                            fog,
+                            missions,
+                            faction,
+                            slot.system,
+                        ),
+                        _ => unreachable!("reference rail projects only detail families"),
                     };
                     paint_native(
                         ui.painter(),
@@ -1288,55 +1137,19 @@ fn draw_reference_rail(
                         color,
                     );
                 }
-                if exact_clicked(&response, slot_rect) {
-                    restored = Some(*entry);
+                if exact_clicked(&response, slot_rect)
+                    && pointer_events.iter().rev().any(|event| {
+                        event.phase == PointerPhase::Release(PointerButtonId::Primary)
+                            && rect_contains(slot_rect, egui::pos2(event.point.0, event.point.1))
+                            && router.pointer_recipient(event.id) == InputRecipient::Root
+                            && router.claim_root(event.id)
+                    })
+                {
+                    actions.push(SystemWindowAction::RestoreReferenceWindow(slot.id));
                 }
             });
     }
-    match restored? {
-        RailEntry::System(window) => {
-            state.restore(window.system);
-            None
-        }
-        RailEntry::ManagedSystem {
-            id,
-            system,
-            logical_position,
-        } => Some(SystemWindowAction::RestoreSystemWindow {
-            id,
-            system,
-            logical_position,
-        }),
-        RailEntry::Fleet {
-            id,
-            system,
-            logical_position,
-        } => Some(SystemWindowAction::RestoreFleetWindow {
-            id,
-            system,
-            logical_position,
-        }),
-        entry @ RailEntry::Defenses {
-            system,
-            logical_position,
-        } => {
-            state.rail.retain(|held| !held.same_window(&entry));
-            Some(SystemWindowAction::RestoreDefensesWindow {
-                system,
-                logical_position,
-            })
-        }
-        entry @ RailEntry::Missions {
-            system,
-            logical_position,
-        } => {
-            state.rail.retain(|held| !held.same_window(&entry));
-            Some(SystemWindowAction::RestoreMissionsWindow {
-                system,
-                logical_position,
-            })
-        }
-    }
+    actions
 }
 
 #[expect(
@@ -1978,34 +1791,8 @@ mod tests {
         CapitalShipClass, ManufacturingFacilityInstance, ProductionFacilityInstance, Sector, System,
     };
     use rebellion_windowing::{
-        SubjectId, WindowCommand, WindowKind, WindowManager, WindowOwner, WindowTransition,
+        WindowCommand, WindowKind, WindowManager, WindowOwner, WindowTransition,
     };
-
-    fn fleet_window_ids(values: &[u64]) -> Vec<WindowId> {
-        let mut manager = WindowManager::new();
-        values
-            .iter()
-            .map(|value| {
-                let commit = manager
-                    .apply(WindowCommand::Open(
-                        crate::windowing_policy::contextual_spec(
-                            WindowKind::Fleet,
-                            SubjectId::new(2, *value),
-                            WindowOwner::StrategicRoot,
-                        ),
-                    ))
-                    .unwrap();
-                let WindowTransition::Opened { id } = commit.transition else {
-                    panic!("expected Fleet open");
-                };
-                id
-            })
-            .collect()
-    }
-
-    fn fleet_window_id(value: u64) -> WindowId {
-        fleet_window_ids(&[value])[0]
-    }
 
     fn layout(faction: CockpitFaction, scale: f32) -> CockpitLayout {
         let (x, width, height) = match faction {
@@ -2259,6 +2046,631 @@ mod tests {
         assert_eq!(manager.begin_frame().paint_order(), &[ids[1], ids[0]]);
     }
 
+    #[test]
+    fn reference_rail_displays_manager_history_across_detail_families() {
+        // FUN_00428b40/FUN_00429020: one oldest-first presentation history
+        // supplies the twelve-slot rail independently of the content stores.
+        let (world, systems) = fixture_world(4);
+        let mut manager = WindowManager::new();
+        let kinds = [
+            WindowKind::System,
+            WindowKind::Fleet,
+            WindowKind::Defenses,
+            WindowKind::Missions,
+        ];
+        let mut ids = Vec::new();
+        for (kind, system) in kinds.into_iter().zip(systems.iter().copied()) {
+            let subject = system_subject(&world, system).unwrap();
+            let opened = manager
+                .apply(WindowCommand::Open(
+                    crate::windowing_policy::contextual_spec(
+                        kind,
+                        subject,
+                        WindowOwner::StrategicRoot,
+                    ),
+                ))
+                .unwrap();
+            let WindowTransition::Opened { id } = opened.transition else {
+                panic!("expected detail open");
+            };
+            manager.apply(WindowCommand::Minimize(id)).unwrap();
+            ids.push(id);
+        }
+
+        let rail_layout = layout(CockpitFaction::Alliance, 2.0);
+        let snapshot = manager.begin_frame();
+        let slots = reference_rail_slots(&snapshot, &world, CockpitFaction::Alliance, rail_layout);
+        assert_eq!(
+            slots
+                .iter()
+                .map(|slot| (slot.id(), slot.kind(), slot.system()))
+                .collect::<Vec<_>>(),
+            ids.into_iter()
+                .zip(kinds)
+                .zip(systems.iter().copied())
+                .map(|((id, kind), system)| (id, kind, system))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            slots[0].rect(),
+            cockpit_rect(rail_layout, rail_slot_rect(CockpitFaction::Alliance, 0))
+        );
+        assert_eq!(
+            slots[3].rect(),
+            cockpit_rect(rail_layout, rail_slot_rect(CockpitFaction::Alliance, 3))
+        );
+
+        PAINTED.with(|painted| painted.borrow_mut().clear());
+        let ctx = egui::Context::default();
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(1, &snapshot);
+        let mut cache = BmpCache::new();
+        let movement = rebellion_core::movement::MovementState::default();
+        let fog = FogState::new(Faction::Alliance);
+        let missions = MissionState::new();
+        let mut actions = Vec::new();
+        let raw_input = || egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1400.0, 1000.0),
+            )),
+            ..egui::RawInput::default()
+        };
+        let _ = ctx.run(raw_input(), |ctx| {
+            let _ = draw_reference_rail(
+                ctx,
+                &world,
+                &movement,
+                &fog,
+                &missions,
+                CockpitFaction::Alliance,
+                rail_layout,
+                &mut cache,
+                &snapshot,
+                &[],
+                &mut router,
+            );
+        });
+        PAINTED.with(|painted| painted.borrow_mut().clear());
+        router.begin_frame(2, &snapshot);
+        let output = ctx.run(raw_input(), |ctx| {
+            actions = draw_reference_rail(
+                ctx,
+                &world,
+                &movement,
+                &fog,
+                &missions,
+                CockpitFaction::Alliance,
+                rail_layout,
+                &mut cache,
+                &snapshot,
+                &[],
+                &mut router,
+            );
+        });
+        assert!(actions.is_empty());
+        let painted = PAINTED.with(|painted| painted.take());
+        let defenses_icon = crate::defenses_window::rail_icon(&world, systems[2]);
+        assert!(
+            painted
+                .iter()
+                .any(|(resource, _)| *resource == defenses_icon),
+            "{painted:?}"
+        );
+        let missions_icon = crate::missions_window::rail_icon(
+            &world,
+            &fog,
+            &missions,
+            CockpitFaction::Alliance,
+            systems[3],
+        );
+        assert!(
+            painted
+                .iter()
+                .any(|(resource, _)| *resource == missions_icon),
+            "{painted:?}"
+        );
+        let labels = output
+            .shapes
+            .into_iter()
+            .filter_map(|shape| match shape.shape {
+                egui::Shape::Text(text) => Some((
+                    text.galley.text().to_owned(),
+                    text.galley.job.sections[0].format.font_id.size,
+                )),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            labels.contains(&("System 0".to_owned(), 14.0)),
+            "{labels:?}"
+        );
+        for name in ["System 1", "System 2", "System 3"] {
+            assert!(labels.contains(&(name.to_owned(), 18.0)), "{labels:?}");
+        }
+    }
+
+    #[test]
+    fn reference_rail_restore_removes_entry_without_recreating_content() {
+        let (world, systems) = fixture_world(1);
+        let system = systems[0];
+        let layout = layout(CockpitFaction::Alliance, 2.0);
+        let mut manager = WindowManager::new();
+        let mut state = SystemWindowState::default();
+        let prepared = state
+            .prepare_open(&world, system, ORIGIN, CockpitFaction::Alliance, layout)
+            .unwrap();
+        let (id, _) = commit_prepared_system_window(&mut manager, &mut state, prepared);
+        manager.apply(WindowCommand::Minimize(id)).unwrap();
+        assert_eq!(manager.begin_frame().presentation_history(), [id]);
+
+        let point = cockpit_rect(layout, rail_slot_rect(CockpitFaction::Alliance, 0)).center();
+        let pointer_button = |pressed| egui::Event::PointerButton {
+            pos: point,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::default(),
+        };
+        let frames = [
+            (
+                vec![egui::Event::PointerMoved(point)],
+                PointerPhase::Hover,
+                false,
+            ),
+            (
+                vec![egui::Event::PointerMoved(point)],
+                PointerPhase::Hover,
+                false,
+            ),
+            (
+                vec![pointer_button(true)],
+                PointerPhase::Press(PointerButtonId::Primary),
+                false,
+            ),
+            (
+                vec![pointer_button(false)],
+                PointerPhase::Release(PointerButtonId::Primary),
+                true,
+            ),
+            (
+                vec![egui::Event::PointerMoved(point)],
+                PointerPhase::Hover,
+                false,
+            ),
+            (
+                vec![egui::Event::PointerMoved(point)],
+                PointerPhase::Hover,
+                false,
+            ),
+            (
+                vec![pointer_button(true)],
+                PointerPhase::Press(PointerButtonId::Primary),
+                false,
+            ),
+            (
+                vec![pointer_button(false)],
+                PointerPhase::Release(PointerButtonId::Primary),
+                false,
+            ),
+        ];
+        let ctx = egui::Context::default();
+        let mut router = FrameInputRouter::default();
+        let mut actions = Vec::new();
+        let mut cache = BmpCache::new();
+        for (index, (events, phase, preclaimed)) in frames.into_iter().enumerate() {
+            let frame = u64::try_from(index + 1).unwrap();
+            let event = InputEventId { frame, ordinal: 0 };
+            let snapshot = manager.begin_frame();
+            router.begin_frame(frame, &snapshot);
+            assert_eq!(
+                router.collect_pointer(event, &std::collections::BTreeSet::new(), phase),
+                InputRecipient::Root
+            );
+            if preclaimed {
+                assert!(router.claim_root(event));
+            }
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1400.0, 1000.0),
+                )),
+                events,
+                ..egui::RawInput::default()
+            };
+            let movement = rebellion_core::movement::MovementState::default();
+            let fog = FogState::new(Faction::Alliance);
+            let missions = MissionState::new();
+            let manufacturing = ManufacturingState::new();
+            let deliveries = DeliveryState::new();
+            let mut frame_actions = Vec::new();
+            let _ = ctx.run(input, |ctx| {
+                frame_actions = draw_managed_system_windows(
+                    ctx,
+                    &world,
+                    &movement,
+                    &fog,
+                    &missions,
+                    &manufacturing,
+                    &deliveries,
+                    &mut state,
+                    CockpitFaction::Alliance,
+                    layout,
+                    &mut cache,
+                    &snapshot,
+                    &[SystemWindowInputEvent {
+                        id: event,
+                        point: (point.x, point.y),
+                        phase,
+                    }],
+                    &mut router,
+                    true,
+                );
+            });
+            actions.extend(frame_actions);
+        }
+
+        assert_eq!(
+            actions,
+            [SystemWindowAction::RestoreReferenceWindow(id)],
+            "one physical release may restore at most once"
+        );
+        let restored = manager.apply(WindowCommand::Restore(id)).unwrap();
+        assert_eq!(restored.transition, WindowTransition::Restored { id });
+        assert!(manager.begin_frame().presentation_history().is_empty());
+        assert_eq!(manager.begin_frame().paint_order(), [id]);
+        assert_eq!(state.window_id(system), Some(id));
+        assert_eq!(state.window_count(), 1);
+    }
+
+    #[test]
+    fn reference_rail_restore_claims_its_own_release_in_multi_release_frame() {
+        let (world, systems) = fixture_world(1);
+        let layout = layout(CockpitFaction::Alliance, 2.0);
+        let mut manager = WindowManager::new();
+        let opened = manager
+            .apply(WindowCommand::Open(
+                crate::windowing_policy::contextual_spec(
+                    WindowKind::System,
+                    system_subject(&world, systems[0]).unwrap(),
+                    WindowOwner::StrategicRoot,
+                ),
+            ))
+            .unwrap();
+        let WindowTransition::Opened { id } = opened.transition else {
+            panic!("expected detail open");
+        };
+        manager.apply(WindowCommand::Minimize(id)).unwrap();
+
+        let rail_point = cockpit_rect(layout, rail_slot_rect(CockpitFaction::Alliance, 0)).center();
+        let unrelated_point = egui::pos2(1300.0, 900.0);
+        let pointer_button = |point, pressed| egui::Event::PointerButton {
+            pos: point,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::default(),
+        };
+        let snapshot = manager.begin_frame();
+        let ctx = egui::Context::default();
+        let mut router = FrameInputRouter::default();
+        let mut cache = BmpCache::new();
+        let movement = rebellion_core::movement::MovementState::default();
+        let fog = FogState::new(Faction::Alliance);
+        let missions = MissionState::new();
+
+        for frame in 1..=2 {
+            router.begin_frame(frame, &snapshot);
+            let _ = ctx.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(1400.0, 1000.0),
+                    )),
+                    events: vec![egui::Event::PointerMoved(rail_point)],
+                    ..egui::RawInput::default()
+                },
+                |ctx| {
+                    assert!(draw_reference_rail(
+                        ctx,
+                        &world,
+                        &movement,
+                        &fog,
+                        &missions,
+                        CockpitFaction::Alliance,
+                        layout,
+                        &mut cache,
+                        &snapshot,
+                        &[],
+                        &mut router,
+                    )
+                    .is_empty());
+                },
+            );
+        }
+
+        let press = InputEventId {
+            frame: 3,
+            ordinal: 0,
+        };
+        router.begin_frame(3, &snapshot);
+        assert_eq!(
+            router.collect_pointer(
+                press,
+                &std::collections::BTreeSet::new(),
+                PointerPhase::Press(PointerButtonId::Primary),
+            ),
+            InputRecipient::Root
+        );
+        let _ = ctx.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1400.0, 1000.0),
+                )),
+                events: vec![pointer_button(rail_point, true)],
+                ..egui::RawInput::default()
+            },
+            |ctx| {
+                assert!(draw_reference_rail(
+                    ctx,
+                    &world,
+                    &movement,
+                    &fog,
+                    &missions,
+                    CockpitFaction::Alliance,
+                    layout,
+                    &mut cache,
+                    &snapshot,
+                    &[SystemWindowInputEvent {
+                        id: press,
+                        point: (rail_point.x, rail_point.y),
+                        phase: PointerPhase::Press(PointerButtonId::Primary),
+                    }],
+                    &mut router,
+                )
+                .is_empty());
+            },
+        );
+
+        let causal_release = InputEventId {
+            frame: 4,
+            ordinal: 0,
+        };
+        let unrelated_press = InputEventId {
+            frame: 4,
+            ordinal: 1,
+        };
+        let unrelated_release = InputEventId {
+            frame: 4,
+            ordinal: 2,
+        };
+        router.begin_frame(4, &snapshot);
+        for (event, phase) in [
+            (
+                causal_release,
+                PointerPhase::Release(PointerButtonId::Primary),
+            ),
+            (
+                unrelated_press,
+                PointerPhase::Press(PointerButtonId::Primary),
+            ),
+            (
+                unrelated_release,
+                PointerPhase::Release(PointerButtonId::Primary),
+            ),
+        ] {
+            assert_eq!(
+                router.collect_pointer(event, &std::collections::BTreeSet::new(), phase),
+                InputRecipient::Root
+            );
+        }
+        let mut actions = Vec::new();
+        let _ = ctx.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1400.0, 1000.0),
+                )),
+                events: vec![pointer_button(rail_point, false)],
+                ..egui::RawInput::default()
+            },
+            |ctx| {
+                actions = draw_reference_rail(
+                    ctx,
+                    &world,
+                    &movement,
+                    &fog,
+                    &missions,
+                    CockpitFaction::Alliance,
+                    layout,
+                    &mut cache,
+                    &snapshot,
+                    &[
+                        SystemWindowInputEvent {
+                            id: causal_release,
+                            point: (rail_point.x, rail_point.y),
+                            phase: PointerPhase::Release(PointerButtonId::Primary),
+                        },
+                        SystemWindowInputEvent {
+                            id: unrelated_press,
+                            point: (unrelated_point.x, unrelated_point.y),
+                            phase: PointerPhase::Press(PointerButtonId::Primary),
+                        },
+                        SystemWindowInputEvent {
+                            id: unrelated_release,
+                            point: (unrelated_point.x, unrelated_point.y),
+                            phase: PointerPhase::Release(PointerButtonId::Primary),
+                        },
+                    ],
+                    &mut router,
+                );
+            },
+        );
+
+        assert_eq!(actions, [SystemWindowAction::RestoreReferenceWindow(id)]);
+        assert!(
+            !router.claim_root(causal_release),
+            "the rail must claim the release inside its exact slot"
+        );
+        assert!(
+            router.claim_root(unrelated_release),
+            "an unrelated root release must remain available"
+        );
+    }
+
+    #[test]
+    fn reference_rail_modal_blocks_restore_and_hover_actions() {
+        let (world, systems) = fixture_world(1);
+        let layout = layout(CockpitFaction::Alliance, 2.0);
+        let mut manager = WindowManager::new();
+        let opened = manager
+            .apply(WindowCommand::Open(
+                crate::windowing_policy::contextual_spec(
+                    WindowKind::System,
+                    system_subject(&world, systems[0]).unwrap(),
+                    WindowOwner::StrategicRoot,
+                ),
+            ))
+            .unwrap();
+        let WindowTransition::Opened { id } = opened.transition else {
+            panic!("expected detail open");
+        };
+        manager.apply(WindowCommand::Minimize(id)).unwrap();
+        manager
+            .apply(WindowCommand::Open(
+                crate::windowing_policy::singleton_spec(
+                    WindowKind::SystemFinder,
+                    WindowOwner::StrategicRoot,
+                ),
+            ))
+            .unwrap();
+        let point = cockpit_rect(layout, rail_slot_rect(CockpitFaction::Alliance, 0)).center();
+        let pointer_button = |pressed| egui::Event::PointerButton {
+            pos: point,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::default(),
+        };
+        let frames = [
+            (vec![egui::Event::PointerMoved(point)], PointerPhase::Hover),
+            (vec![egui::Event::PointerMoved(point)], PointerPhase::Hover),
+            (
+                vec![pointer_button(true)],
+                PointerPhase::Press(PointerButtonId::Primary),
+            ),
+            (
+                vec![pointer_button(false)],
+                PointerPhase::Release(PointerButtonId::Primary),
+            ),
+        ];
+        let ctx = egui::Context::default();
+        let mut router = FrameInputRouter::default();
+        let mut actions = Vec::new();
+        let mut cache = BmpCache::new();
+        let movement = rebellion_core::movement::MovementState::default();
+        let fog = FogState::new(Faction::Alliance);
+        let missions = MissionState::new();
+        for (index, (events, phase)) in frames.into_iter().enumerate() {
+            let frame = u64::try_from(index + 1).unwrap();
+            let event = InputEventId { frame, ordinal: 0 };
+            let snapshot = manager.begin_frame();
+            router.begin_frame(frame, &snapshot);
+            assert_eq!(
+                router.collect_pointer(event, &std::collections::BTreeSet::new(), phase),
+                InputRecipient::Blocked
+            );
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1400.0, 1000.0),
+                )),
+                events,
+                ..egui::RawInput::default()
+            };
+            let mut frame_actions = Vec::new();
+            let _ = ctx.run(input, |ctx| {
+                frame_actions = draw_reference_rail(
+                    ctx,
+                    &world,
+                    &movement,
+                    &fog,
+                    &missions,
+                    CockpitFaction::Alliance,
+                    layout,
+                    &mut cache,
+                    &snapshot,
+                    &[SystemWindowInputEvent {
+                        id: event,
+                        point: (point.x, point.y),
+                        phase,
+                    }],
+                    &mut router,
+                );
+            });
+            actions.extend(frame_actions);
+        }
+
+        assert!(actions.is_empty(), "modal rail input leaked: {actions:?}");
+        assert_eq!(manager.begin_frame().presentation_history(), [id]);
+    }
+
+    #[test]
+    fn reference_rail_missing_art_does_not_delete_registered_detail() {
+        let (world, systems) = fixture_world(1);
+        let layout = layout(CockpitFaction::Alliance, 1.0);
+        let mut manager = WindowManager::new();
+        let opened = manager
+            .apply(WindowCommand::Open(
+                crate::windowing_policy::contextual_spec(
+                    WindowKind::Fleet,
+                    system_subject(&world, systems[0]).unwrap(),
+                    WindowOwner::StrategicRoot,
+                ),
+            ))
+            .unwrap();
+        let WindowTransition::Opened { id } = opened.transition else {
+            panic!("expected detail open");
+        };
+        manager.apply(WindowCommand::Minimize(id)).unwrap();
+        let snapshot = manager.begin_frame();
+        let ctx = egui::Context::default();
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(1, &snapshot);
+        let mut cache = BmpCache::new();
+        let _ = ctx.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(700.0, 500.0),
+                )),
+                ..egui::RawInput::default()
+            },
+            |ctx| {
+                assert!(draw_reference_rail(
+                    ctx,
+                    &world,
+                    &rebellion_core::movement::MovementState::default(),
+                    &FogState::new(Faction::Alliance),
+                    &MissionState::new(),
+                    CockpitFaction::Alliance,
+                    layout,
+                    &mut cache,
+                    &snapshot,
+                    &[],
+                    &mut router,
+                )
+                .is_empty());
+            },
+        );
+
+        let after = manager.begin_frame();
+        assert_eq!(after.presentation_history(), [id]);
+        assert!(after.key(id).is_some());
+        assert_eq!(
+            reference_rail_slots(&after, &world, CockpitFaction::Alliance, layout)[0].id(),
+            id
+        );
+    }
+
     /// A painted text's words, top-left corner, width and font size.
     type RailText = (String, egui::Pos2, f32, f32);
 
@@ -2325,17 +2737,6 @@ mod tests {
                 .collect();
         }
         run
-    }
-
-    fn run_rail(
-        world: &GameWorld,
-        state: &mut SystemWindowState,
-        frames: Vec<Vec<egui::Event>>,
-    ) -> (Vec<SystemWindowAction>, Vec<RailText>) {
-        let run = run_with(world, &ManufacturingState::new(), state, frames);
-        // The rail tests read the last frame's bitmaps from the record.
-        PAINTED.with(|painted| *painted.borrow_mut() = run.painted);
-        (run.actions, run.texts)
     }
 
     const ORIGIN: (i16, i16) = (100, 60);
@@ -2416,112 +2817,7 @@ mod tests {
     }
 
     #[test]
-    fn minimize_caps_at_twelve_and_evicts_oldest() {
-        let (world, systems) = fixture_world(13);
-        let mut state = SystemWindowState::default();
-        let layout = layout(CockpitFaction::Alliance, 1.0);
-        for system in &systems {
-            state.open(&world, *system, (100, 50), CockpitFaction::Alliance, layout);
-            assert!(state.minimize(*system));
-        }
-        assert_eq!(state.rail_count(), REFERENCE_RAIL_SLOTS);
-        assert_eq!(state.rail[0].system(), systems[1]);
-        assert_eq!(state.rail[11].system(), systems[12]);
-    }
-
-    #[test]
-    fn mixed_rail_overflow_returns_the_exact_managed_fleet_victim() {
-        let (_, systems) = fixture_world(13);
-        let mut manager = WindowManager::new();
-        let mut fleet_ids = Vec::new();
-        for index in 0..2 {
-            let commit = manager
-                .apply(WindowCommand::Open(
-                    crate::windowing_policy::contextual_spec(
-                        WindowKind::Fleet,
-                        SubjectId::new(2, 10_000 + index),
-                        WindowOwner::StrategicRoot,
-                    ),
-                ))
-                .unwrap();
-            let WindowTransition::Opened { id } = commit.transition else {
-                panic!("expected Fleet open");
-            };
-            fleet_ids.push(id);
-        }
-
-        let mut state = SystemWindowState::default();
-        assert_eq!(
-            state.minimize_fleet_window(fleet_ids[0], systems[0], (100, 80)),
-            None
-        );
-        for system in &systems[1..12] {
-            assert_eq!(state.minimize_defenses_window(*system, (90, 70)), None);
-        }
-        assert_eq!(state.rail_count(), REFERENCE_RAIL_SLOTS);
-        assert_eq!(
-            state.minimize_fleet_window(fleet_ids[1], systems[12], (120, 90)),
-            Some(fleet_ids[0]),
-        );
-        assert_eq!(state.rail_count(), REFERENCE_RAIL_SLOTS);
-        assert!(state.restore_fleet_window(fleet_ids[1]));
-        assert!(!state.restore_fleet_window(fleet_ids[0]));
-    }
-
-    #[test]
-    fn legacy_rail_overflow_returns_the_exact_managed_fleet_victim() {
-        let (_, systems) = fixture_world(13);
-        let fleet_id = fleet_window_id(10_100);
-        let mut state = SystemWindowState::default();
-        assert_eq!(
-            state.minimize_fleet_window(fleet_id, systems[0], (100, 80)),
-            None,
-        );
-        for system in &systems[1..12] {
-            assert_eq!(state.minimize_defenses_window(*system, (90, 70)), None);
-        }
-
-        assert_eq!(state.rail_count(), REFERENCE_RAIL_SLOTS);
-        assert_eq!(
-            state.minimize_missions_window(systems[12], (60, 40)),
-            Some(fleet_id),
-        );
-        assert_eq!(state.rail_count(), REFERENCE_RAIL_SLOTS);
-        assert!(!state.restore_fleet_window(fleet_id));
-    }
-
-    #[test]
-    fn restore_preserves_position_tab_and_selection() {
-        let (mut world, systems) = fixture_world(1);
-        let mine = add_mine(&mut world, systems[0]);
-        let mut state = SystemWindowState::default();
-        let layout = layout(CockpitFaction::Alliance, 1.0);
-        state.open(
-            &world,
-            systems[0],
-            (100, 60),
-            CockpitFaction::Alliance,
-            layout,
-        );
-        state.select_tab(systems[0], SystemWindowTab::Mines);
-        state.select_item(systems[0], Some(mine));
-        state.minimize(systems[0]);
-        assert!(state.restore(systems[0]));
-        assert_eq!(state.window_count(), 1);
-        assert_eq!(state.rail_count(), 0);
-        assert_eq!(state.windows[0].logical_position, (100, 60));
-        assert_eq!(state.windows[0].tab, SystemWindowTab::Mines);
-        assert_eq!(state.windows[0].selected_item, Some(mine));
-
-        // The same page keeps the selection; another clears it.
-        state.select_tab(systems[0], SystemWindowTab::Mines);
-        assert_eq!(state.windows[0].selected_item, Some(mine));
-        state.select_tab(systems[0], SystemWindowTab::Refineries);
-        assert_eq!(state.windows[0].selected_item, None);
-    }
-
-    #[test]
-    fn faction_change_clears_visible_and_minimized_windows() {
+    fn faction_change_clears_visible_windows() {
         let (world, systems) = fixture_world(2);
         let mut state = SystemWindowState::default();
         let alliance = layout(CockpitFaction::Alliance, 1.0);
@@ -2539,10 +2835,8 @@ mod tests {
             CockpitFaction::Alliance,
             alliance,
         );
-        state.minimize(systems[0]);
         state.prepare_faction(CockpitFaction::Empire);
         assert_eq!(state.window_count(), 0);
-        assert_eq!(state.rail_count(), 0);
     }
 
     #[test]
@@ -2890,11 +3184,11 @@ mod tests {
 
         let mut state = opened(&world, systems[0]);
         let _ = run_with(&world, &manufacturing, &mut state, click(at(201.0, 9.0)));
-        assert_eq!((state.window_count(), state.rail_count()), (0, 1));
+        assert_eq!(state.window_count(), 0);
 
         let mut state = opened(&world, systems[0]);
         let _ = run_with(&world, &manufacturing, &mut state, click(at(215.0, 9.0)));
-        assert_eq!((state.window_count(), state.rail_count()), (0, 0));
+        assert_eq!(state.window_count(), 0);
     }
 
     #[test]
@@ -2924,223 +3218,6 @@ mod tests {
         // The side 2 strip and tab art.
         assert!(run.painted.contains(&(10_294, at(55.0, 57.0))));
         assert!(run.painted.contains(&(10_314, at(0.0, 20.0))));
-    }
-
-    #[test]
-    fn a_minimized_defenses_window_keeps_its_own_rail_slot_and_restores_from_it() {
-        // FUN_004aa4a0: a Defenses window minimizes (0x466) to its own rail
-        // entry beside the same system's Fleet window, one per window.
-        let (world, systems) = fixture_world(1);
-        let layout = layout(CockpitFaction::Alliance, 2.0);
-        let mut state = SystemWindowState::default();
-        let _ = state.minimize_defenses_window(systems[0], (90, 70));
-        state.minimize_fleet_window(fleet_window_id(101), systems[0], (100, 80));
-        let _ = state.minimize_defenses_window(systems[0], (90, 70));
-        assert_eq!(state.rail_count(), 2);
-        assert_eq!(
-            state.rail_entries().collect::<Vec<_>>(),
-            [(systems[0], "fleet"), (systems[0], "defenses")]
-        );
-
-        let slot = cockpit_rect(layout, rail_slot_rect(CockpitFaction::Alliance, 1));
-        assert_eq!(state.rail_slot_screen_rect(layout, 1), Some(slot));
-        assert_eq!(state.rail_slot_screen_rect(layout, 2), None);
-        let point = slot.center();
-        let press = |pressed| egui::Event::PointerButton {
-            pos: point,
-            button: egui::PointerButton::Primary,
-            pressed,
-            modifiers: egui::Modifiers::default(),
-        };
-        crate::fleet_window::tests::PAINTED.with(|painted| painted.borrow_mut().clear());
-        let (actions, _) = run_rail(
-            &world,
-            &mut state,
-            vec![
-                vec![egui::Event::PointerMoved(point)],
-                vec![egui::Event::PointerMoved(point)],
-                vec![press(true)],
-                vec![press(false)],
-            ],
-        );
-        let painted = crate::fleet_window::tests::PAINTED.with(|painted| painted.take());
-        assert!(
-            painted.contains(&(
-                crate::defenses_window::rail_icon(&world, systems[0]),
-                slot.min
-            )),
-            "{painted:?}"
-        );
-        assert!(
-            actions.contains(&SystemWindowAction::RestoreDefensesWindow {
-                system: systems[0],
-                logical_position: (90, 70),
-            })
-        );
-        assert_eq!(state.rail_count(), 1);
-        assert!(matches!(state.rail[0], RailEntry::Fleet { .. }));
-    }
-
-    #[test]
-    fn a_minimized_missions_window_keeps_its_own_rail_slot_and_restores_from_it() {
-        // FUN_004a21c0: a Missions window minimizes (0x466) to its own rail
-        // entry beside the same system's Defenses window, one per window;
-        // with no mission there its icon is side 3's 11541.
-        let (world, systems) = fixture_world(1);
-        let layout = layout(CockpitFaction::Alliance, 2.0);
-        let mut state = SystemWindowState::default();
-        let _ = state.minimize_defenses_window(systems[0], (90, 70));
-        let _ = state.minimize_missions_window(systems[0], (60, 40));
-        let _ = state.minimize_missions_window(systems[0], (60, 40));
-        assert_eq!(
-            state.rail_entries().collect::<Vec<_>>(),
-            [(systems[0], "defenses"), (systems[0], "missions")]
-        );
-
-        let slot = cockpit_rect(layout, rail_slot_rect(CockpitFaction::Alliance, 1));
-        let point = slot.center();
-        let press = |pressed| egui::Event::PointerButton {
-            pos: point,
-            button: egui::PointerButton::Primary,
-            pressed,
-            modifiers: egui::Modifiers::default(),
-        };
-        crate::fleet_window::tests::PAINTED.with(|painted| painted.borrow_mut().clear());
-        let (actions, _) = run_rail(
-            &world,
-            &mut state,
-            vec![
-                vec![egui::Event::PointerMoved(point)],
-                vec![egui::Event::PointerMoved(point)],
-                vec![press(true)],
-                vec![press(false)],
-            ],
-        );
-        let painted = crate::fleet_window::tests::PAINTED.with(|painted| painted.take());
-        assert!(painted.contains(&(11541, slot.min)), "{painted:?}");
-        assert!(
-            actions.contains(&SystemWindowAction::RestoreMissionsWindow {
-                system: systems[0],
-                logical_position: (60, 40),
-            })
-        );
-        assert_eq!(state.rail_count(), 1);
-        assert!(matches!(state.rail[0], RailEntry::Defenses { .. }));
-    }
-
-    #[test]
-    fn a_minimized_fleet_window_keeps_one_rail_slot_beside_its_systems_window() {
-        // FUN_004a76e0: a Fleet window minimizes to the rail as its own
-        // entry; the rail holds one entry per window.
-        let (world, systems) = fixture_world(2);
-        let layout = layout(CockpitFaction::Alliance, 2.0);
-        let mut state = SystemWindowState::default();
-        let fleets = fleet_window_ids(&[201, 202]);
-        let [fleet0, fleet1] = fleets.as_slice() else {
-            panic!()
-        };
-        let (fleet0, fleet1) = (*fleet0, *fleet1);
-        state.minimize_fleet_window(fleet0, systems[0], (100, 80));
-        state.minimize_fleet_window(fleet0, systems[0], (100, 80));
-        assert_eq!(state.rail_count(), 1);
-        state.open(
-            &world,
-            systems[0],
-            (60, 40),
-            CockpitFaction::Alliance,
-            layout,
-        );
-        assert!(state.minimize(systems[0]));
-        state.minimize_fleet_window(fleet1, systems[1], (120, 90));
-        assert_eq!(state.rail_count(), 3);
-        assert_eq!(
-            state
-                .rail_entries()
-                .map(|(_, kind)| kind)
-                .collect::<Vec<_>>(),
-            ["fleet", "system", "fleet"]
-        );
-
-        // The first slot, the Fleet window's: its icon at the corner and the
-        // name at (12, 2), 9 points; a system window's name is 7 points.
-        let slot = cockpit_rect(layout, rail_slot_rect(CockpitFaction::Alliance, 0));
-        let away = egui::pos2(2.0, 2.0);
-        let (_, texts) = run_rail(
-            &world,
-            &mut state,
-            vec![
-                vec![egui::Event::PointerMoved(away)],
-                vec![egui::Event::PointerMoved(away)],
-            ],
-        );
-        let name = slot.min + egui::vec2(12.0, 2.0) * 2.0;
-        assert!(
-            texts
-                .iter()
-                .any(|(text, pos, _, size)| text == "System 0" && *pos == name && *size == 18.0),
-            "{texts:?}"
-        );
-        let second = cockpit_rect(layout, rail_slot_rect(CockpitFaction::Alliance, 1));
-        assert!(
-            texts
-                .iter()
-                .any(|(text, pos, width, size)| text == "System 0"
-                    && (pos.x + width / 2.0 - second.center().x).abs() < 0.01
-                    && *size == 14.0),
-            "{texts:?}"
-        );
-
-        let point = slot.center();
-        let press = |pressed| egui::Event::PointerButton {
-            pos: point,
-            button: egui::PointerButton::Primary,
-            pressed,
-            modifiers: egui::Modifiers::default(),
-        };
-        let (actions, _) = run_rail(
-            &world,
-            &mut state,
-            vec![
-                vec![egui::Event::PointerMoved(point)],
-                vec![egui::Event::PointerMoved(point)],
-                vec![press(true)],
-                vec![press(false)],
-            ],
-        );
-        assert!(actions.contains(&SystemWindowAction::RestoreFleetWindow {
-            id: fleet0,
-            system: systems[0],
-            logical_position: (100, 80),
-        }));
-        // Emitting the request is not a restore commit. If validation or the
-        // shared manager later rejects it, every projection stays intact.
-        assert_eq!(state.rail_count(), 3);
-        assert!(matches!(state.rail[0], RailEntry::Fleet { .. }));
-        assert_eq!(state.rail[0].system(), systems[0]);
-        assert!(state.rail[1].is_system_window());
-        assert_eq!(state.rail[1].system(), systems[0]);
-        assert_eq!(state.rail[2].system(), systems[1]);
-    }
-
-    #[test]
-    fn a_committed_fleet_restore_retires_only_its_exact_rail_projection() {
-        let (_, systems) = fixture_world(2);
-        let mut state = SystemWindowState::default();
-        let _ = state.minimize_defenses_window(systems[0], (90, 70));
-        let fleets = fleet_window_ids(&[301, 302]);
-        let [fleet0, fleet1] = fleets.as_slice() else {
-            panic!()
-        };
-        let (fleet0, fleet1) = (*fleet0, *fleet1);
-        state.minimize_fleet_window(fleet0, systems[0], (100, 80));
-        state.minimize_fleet_window(fleet1, systems[1], (120, 90));
-
-        assert!(state.restore_fleet_window(fleet0));
-        assert_eq!(
-            state.rail_entries().collect::<Vec<_>>(),
-            [(systems[0], "defenses"), (systems[1], "fleet")]
-        );
-        assert!(!state.restore_fleet_window(fleet0));
     }
 
     #[test]

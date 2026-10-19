@@ -28,11 +28,13 @@ use rebellion_render::game_speed::day_readout_rect;
 use rebellion_render::mission_dialog::{MissionDialogPage, MissionDialogState};
 use rebellion_render::object_menu::{ObjectMenuCommand, ObjectMenuState};
 use rebellion_render::quadrant_icons::Quadrant;
+use rebellion_render::system_window::reference_rail_slots;
 use rebellion_render::{
     strategic_primary_controls, CockpitButton, CockpitFaction, CockpitState, GalaxyMapState,
     GameMessage, GidMode, SectorWindowState, SystemWindowState,
 };
 use rebellion_render::{DefensesPage, DefensesWindowState, MissionsTab, MissionsWindowState};
+use rebellion_windowing::{RoutingSnapshot, WindowKind};
 use serde::Serialize;
 
 use crate::encyclopedia_surface::{CanonicalFixtureStart, FixtureStart};
@@ -1533,6 +1535,7 @@ struct QuadrantObservation {
 
 /// The windows and pages the quadrant observation reads.
 pub struct QuadrantWindows<'a> {
+    pub snapshot: &'a RoutingSnapshot,
     pub systems: &'a SystemWindowState,
     pub defenses: &'a DefensesWindowState,
     pub missions_windows: &'a MissionsWindowState,
@@ -1555,6 +1558,16 @@ fn missions_tab_name(tab: MissionsTab) -> &'static str {
     match tab {
         MissionsTab::Agents => "agents",
         MissionsTab::Decoys => "decoys",
+    }
+}
+
+fn reference_kind_name(kind: WindowKind) -> Option<&'static str> {
+    match kind {
+        WindowKind::System => Some("system"),
+        WindowKind::Fleet => Some("fleet"),
+        WindowKind::Defenses => Some("defenses"),
+        WindowKind::Missions => Some("missions"),
+        _ => None,
     }
 }
 
@@ -1659,16 +1672,13 @@ impl QuadrantWatch {
                 .collect(),
             defenses_windows,
             missions_windows,
-            rail: windows
-                .systems
-                .rail_entries()
-                .enumerate()
-                .filter_map(|(index, (system, kind))| {
-                    let rect = windows.systems.rail_slot_screen_rect(layout, index)?;
+            rail: reference_rail_slots(windows.snapshot, world, request.faction, layout)
+                .into_iter()
+                .filter_map(|slot| {
                     Some((
-                        world.systems.get(system)?.dat_id.raw(),
-                        kind,
-                        rect_array(rect),
+                        world.systems.get(slot.system())?.dat_id.raw(),
+                        reference_kind_name(slot.kind())?,
+                        rect_array(slot.rect()),
                     ))
                 })
                 .collect(),
@@ -2394,6 +2404,8 @@ fn fnv1a64(bytes: &[u8]) -> u64 {
 mod tests {
     use super::*;
     use rebellion_render::object_menu::{MenuObject, OrderGates};
+    use rebellion_render::windowing_policy::{contextual_spec, system_subject};
+    use rebellion_windowing::{WindowCommand, WindowManager, WindowOwner, WindowTransition};
 
     #[test]
     fn scenario_table_is_stable_and_complete() {
@@ -3811,13 +3823,16 @@ mod tests {
         let economy = EconomyState::default();
         let mut defenses = DefensesWindowState::default();
         let mut missions_windows = MissionsWindowState::default();
+        let mut manager = WindowManager::new();
         let mut watch = QuadrantWatch::default();
         macro_rules! next {
-            ($watch:expr) => {
+            ($watch:expr) => {{
+                let snapshot = manager.begin_frame();
                 $watch.next(
                     request,
                     &applied.world,
                     &QuadrantWindows {
+                        snapshot: &snapshot,
                         systems: &applied.systems,
                         defenses: &defenses,
                         missions_windows: &missions_windows,
@@ -3826,7 +3841,7 @@ mod tests {
                         economy: &economy,
                     },
                 )
-            };
+            }};
         }
         let first = next!(watch).unwrap();
         assert_eq!(first.status, "quadrant-observation");
@@ -3887,9 +3902,26 @@ mod tests {
         );
         assert_eq!(window.tabs.len(), 5);
 
-        applied.systems.minimize_defenses_window(primary, (200, 60));
+        let open_managed = |manager: &mut WindowManager, kind| {
+            let opened = manager
+                .apply(WindowCommand::Open(contextual_spec(
+                    kind,
+                    system_subject(&applied.world, primary).unwrap(),
+                    WindowOwner::StrategicRoot,
+                )))
+                .unwrap();
+            let WindowTransition::Opened { id } = opened.transition else {
+                panic!("expected managed detail open")
+            };
+            id
+        };
+        let defenses_id = open_managed(&mut manager, WindowKind::Defenses);
+        manager.apply(WindowCommand::Minimize(defenses_id)).unwrap();
         let railed = next!(watch).unwrap();
-        let slot = applied.systems.rail_slot_screen_rect(layout, 0).unwrap();
+        let snapshot = manager.begin_frame();
+        let slot =
+            reference_rail_slots(&snapshot, &applied.world, CockpitFaction::Alliance, layout)[0]
+                .rect();
         assert_eq!(railed.rail, [(dat, "defenses", super::rect_array(slot))]);
 
         // The primary system's Missions window: the player's Diplomacy
@@ -3937,7 +3969,8 @@ mod tests {
         );
         assert_eq!(window.tabs.len(), 2);
 
-        applied.systems.minimize_missions_window(primary, (150, 40));
+        let missions_id = open_managed(&mut manager, WindowKind::Missions);
+        manager.apply(WindowCommand::Minimize(missions_id)).unwrap();
         let railed = next!(watch).unwrap();
         assert_eq!(railed.rail.last().map(|entry| entry.1), Some("missions"));
 
@@ -3947,6 +3980,7 @@ mod tests {
                 other,
                 &applied.world,
                 &QuadrantWindows {
+                    snapshot: &manager.begin_frame(),
                     systems: &applied.systems,
                     defenses: &defenses,
                     missions_windows: &missions_windows,

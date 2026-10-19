@@ -2,7 +2,6 @@
 
 use std::collections::BTreeSet;
 
-use rebellion_core::ids::SystemKey;
 use rebellion_data::encyclopedia_presenter::EncyclopediaEntryIntent;
 use rebellion_data::encyclopedia_session::EncyclopediaSession;
 use rebellion_render::{
@@ -79,23 +78,6 @@ pub struct AppliedWindowCommand {
     pub prepared_sector: Option<PreparedSectorWindow>,
     /// Identity whose attachment is valid for `prepared_sector` after commit.
     pub sector_content_id: Option<WindowId>,
-    /// Temporary rail-adapter payload committed only with System minimize.
-    pub minimized_system: Option<(WindowId, SystemKey, (i16, i16))>,
-    /// Exact temporary System rail projection retired after restore commit.
-    pub restored_system: Option<WindowId>,
-    /// Temporary rail-adapter payload committed only with Defenses minimize.
-    pub minimized_defenses: Option<(WindowId, SystemKey, (i16, i16))>,
-    /// Exact Defenses identity restored from the temporary legacy rail.
-    pub restored_defenses: Option<WindowId>,
-    /// Temporary rail-adapter payload committed only with Missions minimize.
-    pub minimized_missions: Option<(WindowId, SystemKey, (i16, i16))>,
-    /// Exact Missions identity restored from the temporary legacy rail.
-    pub restored_missions: Option<WindowId>,
-    /// Temporary rail-adapter payload committed only with Fleet minimize.
-    pub minimized_fleet: Option<(WindowId, SystemKey, (i16, i16))>,
-    /// Exact temporary rail projection retired only after the caller also
-    /// commits the returned Fleet content restore.
-    pub restored_fleet: Option<WindowId>,
 }
 
 /// Exact Encyclopedia identity and ordered manager receipts committed together.
@@ -143,14 +125,6 @@ struct QueuedWindowCommand {
     prepared_message_index: Option<PreparedMessageIndex>,
     prepared_status: Option<PreparedStatusWindow>,
     prepared_sector: Option<PreparedSectorWindow>,
-    minimized_system: Option<(WindowId, SystemKey, (i16, i16))>,
-    restored_system: Option<WindowId>,
-    minimized_defenses: Option<(WindowId, SystemKey, (i16, i16))>,
-    restored_defenses: Option<WindowId>,
-    minimized_missions: Option<(WindowId, SystemKey, (i16, i16))>,
-    restored_missions: Option<WindowId>,
-    minimized_fleet: Option<(WindowId, SystemKey, (i16, i16))>,
-    restored_fleet: Option<WindowId>,
 }
 
 /// Application scene whose registered windows currently participate in routing.
@@ -496,14 +470,6 @@ impl StrategicWindowing {
             prepared_message_index: None,
             prepared_status: None,
             prepared_sector: None,
-            minimized_system: None,
-            restored_system: None,
-            minimized_defenses: None,
-            restored_defenses: None,
-            minimized_missions: None,
-            restored_missions: None,
-            minimized_fleet: None,
-            restored_fleet: None,
         });
     }
 
@@ -522,14 +488,6 @@ impl StrategicWindowing {
             prepared_message_index: None,
             prepared_status: None,
             prepared_sector: None,
-            minimized_system: None,
-            restored_system: None,
-            minimized_defenses: None,
-            restored_defenses: None,
-            minimized_missions: None,
-            restored_missions: None,
-            minimized_fleet: None,
-            restored_fleet: None,
         });
     }
 
@@ -550,14 +508,6 @@ impl StrategicWindowing {
             prepared_message_index: None,
             prepared_status: None,
             prepared_sector: None,
-            minimized_system: None,
-            restored_system: None,
-            minimized_defenses: None,
-            restored_defenses: None,
-            minimized_missions: None,
-            restored_missions: None,
-            minimized_fleet: None,
-            restored_fleet: None,
         });
     }
 
@@ -576,14 +526,6 @@ impl StrategicWindowing {
             prepared_message_index: None,
             prepared_status: None,
             prepared_sector: None,
-            minimized_system: None,
-            restored_system: None,
-            minimized_defenses: None,
-            restored_defenses: None,
-            minimized_missions: None,
-            restored_missions: None,
-            minimized_fleet: None,
-            restored_fleet: None,
         });
     }
 
@@ -610,14 +552,6 @@ impl StrategicWindowing {
             prepared_message_index: None,
             prepared_status: None,
             prepared_sector: Some(prepared),
-            minimized_system: None,
-            restored_system: None,
-            minimized_defenses: None,
-            restored_defenses: None,
-            minimized_missions: None,
-            restored_missions: None,
-            minimized_fleet: None,
-            restored_fleet: None,
         });
     }
 
@@ -668,14 +602,6 @@ impl StrategicWindowing {
             prepared_message_index: None,
             prepared_status: None,
             prepared_sector: None,
-            minimized_system: None,
-            restored_system: None,
-            minimized_defenses: None,
-            restored_defenses: None,
-            minimized_missions: None,
-            restored_missions: None,
-            minimized_fleet: None,
-            restored_fleet: None,
         });
     }
 
@@ -694,14 +620,6 @@ impl StrategicWindowing {
             prepared_message_index: None,
             prepared_status: None,
             prepared_sector: None,
-            minimized_system: None,
-            restored_system: None,
-            minimized_defenses: None,
-            restored_defenses: None,
-            minimized_missions: None,
-            restored_missions: None,
-            minimized_fleet: None,
-            restored_fleet: None,
         });
     }
 
@@ -721,14 +639,6 @@ impl StrategicWindowing {
             prepared_message_index: None,
             prepared_status: None,
             prepared_sector: None,
-            minimized_system: None,
-            restored_system: None,
-            minimized_defenses: None,
-            restored_defenses: None,
-            minimized_missions: None,
-            restored_missions: None,
-            minimized_fleet: None,
-            restored_fleet: None,
         });
     }
 
@@ -748,14 +658,6 @@ impl StrategicWindowing {
             prepared_message_index: None,
             prepared_status: None,
             prepared_sector: None,
-            minimized_system: None,
-            restored_system: None,
-            minimized_defenses: None,
-            restored_defenses: None,
-            minimized_missions: None,
-            restored_missions: None,
-            minimized_fleet: None,
-            restored_fleet: None,
         });
     }
 
@@ -775,14 +677,6 @@ impl StrategicWindowing {
             prepared_message_index: None,
             prepared_status: None,
             prepared_sector: None,
-            minimized_system: None,
-            restored_system: None,
-            minimized_defenses: None,
-            restored_defenses: None,
-            minimized_missions: None,
-            restored_missions: None,
-            minimized_fleet: None,
-            restored_fleet: None,
         });
     }
 
@@ -801,14 +695,6 @@ impl StrategicWindowing {
             prepared_message_index: None,
             prepared_status: None,
             prepared_sector: None,
-            minimized_system: None,
-            restored_system: None,
-            minimized_defenses: None,
-            restored_defenses: None,
-            minimized_missions: None,
-            restored_missions: None,
-            minimized_fleet: None,
-            restored_fleet: None,
         });
     }
 
@@ -827,14 +713,6 @@ impl StrategicWindowing {
             prepared_message_index: None,
             prepared_status: None,
             prepared_sector: None,
-            minimized_system: None,
-            restored_system: None,
-            minimized_defenses: None,
-            restored_defenses: None,
-            minimized_missions: None,
-            restored_missions: None,
-            minimized_fleet: None,
-            restored_fleet: None,
         });
     }
 
@@ -853,14 +731,6 @@ impl StrategicWindowing {
             prepared_message_index: Some(prepared),
             prepared_status: None,
             prepared_sector: None,
-            minimized_system: None,
-            restored_system: None,
-            minimized_defenses: None,
-            restored_defenses: None,
-            minimized_missions: None,
-            restored_missions: None,
-            minimized_fleet: None,
-            restored_fleet: None,
         });
     }
 
@@ -889,192 +759,22 @@ impl StrategicWindowing {
             prepared_message_index: None,
             prepared_status: Some(prepared),
             prepared_sector: None,
-            minimized_system: None,
-            restored_system: None,
-            minimized_defenses: None,
-            restored_defenses: None,
-            minimized_missions: None,
-            restored_missions: None,
-            minimized_fleet: None,
-            restored_fleet: None,
         });
     }
 
-    /// Queues manager-owned System minimization with its temporary rail
-    /// projection as one commit unit.
-    pub fn enqueue_system_minimize(
-        &mut self,
-        window: WindowId,
-        system: SystemKey,
-        logical_position: (i16, i16),
-    ) {
-        self.pending.push(QueuedWindowCommand {
-            command: WindowCommand::Minimize(window),
-            prepared_build_selection: None,
-            prepared_build_selection_confirm: None,
-            prepared_system: None,
-            prepared_defenses: None,
-            prepared_missions: None,
-            prepared_fleet: None,
-            prepared_fleet_finder: None,
-            prepared_troop_finder: None,
-            prepared_message_index: None,
-            prepared_status: None,
-            prepared_sector: None,
-            minimized_system: Some((window, system, logical_position)),
-            restored_system: None,
-            minimized_defenses: None,
-            restored_defenses: None,
-            minimized_missions: None,
-            restored_missions: None,
-            minimized_fleet: None,
-            restored_fleet: None,
-        });
+    /// Queues manager-owned System minimization.
+    pub fn enqueue_system_minimize(&mut self, window: WindowId) {
+        self.enqueue(WindowCommand::Minimize(window));
     }
 
-    /// Queues restoration of the exact manager-owned System identity retained
-    /// by the temporary rail adapter.
-    pub fn enqueue_system_restore(&mut self, window: WindowId) {
-        self.pending.push(QueuedWindowCommand {
-            command: WindowCommand::Restore(window),
-            prepared_build_selection: None,
-            prepared_build_selection_confirm: None,
-            prepared_system: None,
-            prepared_defenses: None,
-            prepared_missions: None,
-            prepared_fleet: None,
-            prepared_fleet_finder: None,
-            prepared_troop_finder: None,
-            prepared_message_index: None,
-            prepared_status: None,
-            prepared_sector: None,
-            minimized_system: None,
-            restored_system: Some(window),
-            minimized_defenses: None,
-            restored_defenses: None,
-            minimized_missions: None,
-            restored_missions: None,
-            minimized_fleet: None,
-            restored_fleet: None,
-        });
+    /// Queues manager-owned Defenses minimization.
+    pub fn enqueue_defenses_minimize(&mut self, window: WindowId) {
+        self.enqueue(WindowCommand::Minimize(window));
     }
 
-    /// Queues manager-owned Defenses minimization with its temporary legacy
-    /// rail projection as one commit unit.
-    pub fn enqueue_defenses_minimize(
-        &mut self,
-        window: WindowId,
-        system: SystemKey,
-        logical_position: (i16, i16),
-    ) {
-        self.pending.push(QueuedWindowCommand {
-            command: WindowCommand::Minimize(window),
-            prepared_build_selection: None,
-            prepared_build_selection_confirm: None,
-            prepared_system: None,
-            prepared_defenses: None,
-            prepared_missions: None,
-            prepared_fleet: None,
-            prepared_fleet_finder: None,
-            prepared_troop_finder: None,
-            prepared_message_index: None,
-            prepared_status: None,
-            prepared_sector: None,
-            minimized_system: None,
-            restored_system: None,
-            minimized_defenses: Some((window, system, logical_position)),
-            restored_defenses: None,
-            minimized_missions: None,
-            restored_missions: None,
-            minimized_fleet: None,
-            restored_fleet: None,
-        });
-    }
-
-    /// Queues restoration of the exact manager-owned Defenses identity kept
-    /// attached while the legacy rail projects its minimized state.
-    pub fn enqueue_defenses_restore(&mut self, window: WindowId) {
-        self.pending.push(QueuedWindowCommand {
-            command: WindowCommand::Restore(window),
-            prepared_build_selection: None,
-            prepared_build_selection_confirm: None,
-            prepared_system: None,
-            prepared_defenses: None,
-            prepared_missions: None,
-            prepared_fleet: None,
-            prepared_fleet_finder: None,
-            prepared_troop_finder: None,
-            prepared_message_index: None,
-            prepared_status: None,
-            prepared_sector: None,
-            minimized_system: None,
-            restored_system: None,
-            minimized_defenses: None,
-            restored_defenses: Some(window),
-            minimized_missions: None,
-            restored_missions: None,
-            minimized_fleet: None,
-            restored_fleet: None,
-        });
-    }
-
-    /// Queues manager-owned Missions minimization with its temporary legacy
-    /// rail projection as one commit unit.
-    pub fn enqueue_missions_minimize(
-        &mut self,
-        window: WindowId,
-        system: SystemKey,
-        logical_position: (i16, i16),
-    ) {
-        self.pending.push(QueuedWindowCommand {
-            command: WindowCommand::Minimize(window),
-            prepared_build_selection: None,
-            prepared_build_selection_confirm: None,
-            prepared_system: None,
-            prepared_defenses: None,
-            prepared_missions: None,
-            prepared_fleet: None,
-            prepared_fleet_finder: None,
-            prepared_troop_finder: None,
-            prepared_message_index: None,
-            prepared_status: None,
-            prepared_sector: None,
-            minimized_system: None,
-            restored_system: None,
-            minimized_defenses: None,
-            restored_defenses: None,
-            minimized_missions: Some((window, system, logical_position)),
-            restored_missions: None,
-            minimized_fleet: None,
-            restored_fleet: None,
-        });
-    }
-
-    /// Queues restoration of the exact manager-owned Missions identity kept
-    /// attached while the legacy rail projects its minimized state.
-    pub fn enqueue_missions_restore(&mut self, window: WindowId) {
-        self.pending.push(QueuedWindowCommand {
-            command: WindowCommand::Restore(window),
-            prepared_build_selection: None,
-            prepared_build_selection_confirm: None,
-            prepared_system: None,
-            prepared_defenses: None,
-            prepared_missions: None,
-            prepared_fleet: None,
-            prepared_fleet_finder: None,
-            prepared_troop_finder: None,
-            prepared_message_index: None,
-            prepared_status: None,
-            prepared_sector: None,
-            minimized_system: None,
-            restored_system: None,
-            minimized_defenses: None,
-            restored_defenses: None,
-            minimized_missions: None,
-            restored_missions: Some(window),
-            minimized_fleet: None,
-            restored_fleet: None,
-        });
+    /// Queues manager-owned Missions minimization.
+    pub fn enqueue_missions_minimize(&mut self, window: WindowId) {
+        self.enqueue(WindowCommand::Minimize(window));
     }
 
     /// Commits a validated Encyclopedia singleton after this frame's routing
@@ -1096,67 +796,13 @@ impl StrategicWindowing {
         })
     }
 
-    /// Queues manager-owned Fleet minimization and its legacy rail projection
-    /// as one commit unit. A rejected command never mutates the rail.
-    pub fn enqueue_fleet_minimize(
-        &mut self,
-        window: WindowId,
-        system: SystemKey,
-        logical_position: (i16, i16),
-    ) {
-        self.pending.push(QueuedWindowCommand {
-            command: WindowCommand::Minimize(window),
-            prepared_build_selection: None,
-            prepared_build_selection_confirm: None,
-            prepared_system: None,
-            prepared_defenses: None,
-            prepared_missions: None,
-            prepared_fleet: None,
-            prepared_fleet_finder: None,
-            prepared_troop_finder: None,
-            prepared_message_index: None,
-            prepared_status: None,
-            prepared_sector: None,
-            minimized_system: None,
-            restored_system: None,
-            minimized_defenses: None,
-            restored_defenses: None,
-            minimized_missions: None,
-            restored_missions: None,
-            minimized_fleet: Some((window, system, logical_position)),
-            restored_fleet: None,
-        });
-    }
-
-    /// Queues restoration of the exact manager-owned Fleet identity retained
-    /// by the shared rail. No renderer publication is needed: minimized Fleet
-    /// content remains attached while its manager record is hidden.
-    pub fn enqueue_fleet_restore(&mut self, window: WindowId) {
-        self.pending.push(QueuedWindowCommand {
-            command: WindowCommand::Restore(window),
-            prepared_build_selection: None,
-            prepared_build_selection_confirm: None,
-            prepared_system: None,
-            prepared_defenses: None,
-            prepared_missions: None,
-            prepared_fleet: None,
-            prepared_fleet_finder: None,
-            prepared_troop_finder: None,
-            prepared_message_index: None,
-            prepared_status: None,
-            prepared_sector: None,
-            minimized_system: None,
-            restored_system: None,
-            minimized_defenses: None,
-            restored_defenses: None,
-            minimized_missions: None,
-            restored_missions: None,
-            minimized_fleet: None,
-            restored_fleet: Some(window),
-        });
+    /// Queues manager-owned Fleet minimization.
+    pub fn enqueue_fleet_minimize(&mut self, window: WindowId) {
+        self.enqueue(WindowCommand::Minimize(window));
     }
 
     /// Applies queued commands in insertion order after input and painting finish.
+    #[cfg(test)]
     pub fn apply_pending(&mut self) -> Vec<AppliedWindowCommand> {
         let count = self.begin_apply_batch();
         (0..count)
@@ -1206,14 +852,6 @@ impl StrategicWindowing {
             prepared_message_index,
             prepared_status,
             prepared_sector,
-            minimized_system,
-            restored_system: queued_restored_system,
-            minimized_defenses,
-            restored_defenses: queued_restored_defenses,
-            minimized_missions,
-            restored_missions: queued_restored_missions,
-            minimized_fleet,
-            restored_fleet: queued_restored_fleet,
         } = queued;
         let result = self.manager.apply(command);
         let mut removed_content = Vec::new();
@@ -1228,14 +866,6 @@ impl StrategicWindowing {
         let mut message_index_content_id = None;
         let mut status_content_id = None;
         let mut sector_content_id = None;
-        let mut committed_minimized_system = None;
-        let mut committed_minimized_defenses = None;
-        let mut committed_minimized_missions = None;
-        let mut committed_minimized_fleet = None;
-        let mut restored_system = None;
-        let mut restored_defenses = None;
-        let mut restored_missions = None;
-        let mut restored_fleet = None;
         if let Ok(commit) = &result {
             self.record_transition(&commit.transition, &commit.events);
             removed_content = self.release_matching_content(&commit.events);
@@ -1259,44 +889,6 @@ impl StrategicWindowing {
                     confirmed_build_selection = Some(prepared);
                 }
             }
-            if matches!(commit.transition, WindowTransition::Minimized { .. }) {
-                committed_minimized_system = minimized_system;
-                committed_minimized_defenses = minimized_defenses;
-                committed_minimized_missions = minimized_missions;
-                committed_minimized_fleet = minimized_fleet;
-            }
-            if queued_restored_system.is_some_and(|window| {
-                matches!(
-                    commit.transition,
-                    WindowTransition::Restored { id, .. } if id == window
-                )
-            }) {
-                restored_system = queued_restored_system;
-            }
-            if queued_restored_defenses.is_some_and(|window| {
-                matches!(
-                    commit.transition,
-                    WindowTransition::Restored { id, .. } if id == window
-                )
-            }) {
-                restored_defenses = queued_restored_defenses;
-            }
-            if queued_restored_missions.is_some_and(|window| {
-                matches!(
-                    commit.transition,
-                    WindowTransition::Restored { id, .. } if id == window
-                )
-            }) {
-                restored_missions = queued_restored_missions;
-            }
-            if queued_restored_fleet.is_some_and(|window| {
-                matches!(
-                    commit.transition,
-                    WindowTransition::Restored { id, .. } if id == window
-                )
-            }) {
-                restored_fleet = queued_restored_fleet;
-            }
             if prepared_system.is_some() {
                 system_content_id = match &commit.transition {
                     WindowTransition::Opened { id } => Some(*id),
@@ -1305,17 +897,6 @@ impl StrategicWindowing {
                     }
                     _ => None,
                 };
-                if system_content_id.is_some()
-                    && matches!(
-                        commit.transition,
-                        WindowTransition::Existing {
-                            effect: ExistingEffect::RestoredAndRaised,
-                            ..
-                        }
-                    )
-                {
-                    restored_system = system_content_id;
-                }
             }
             if prepared_defenses.is_some() {
                 defenses_content_id = match &commit.transition {
@@ -1325,17 +906,6 @@ impl StrategicWindowing {
                     }
                     _ => None,
                 };
-                if defenses_content_id.is_some()
-                    && matches!(
-                        commit.transition,
-                        WindowTransition::Existing {
-                            effect: ExistingEffect::RestoredAndRaised,
-                            ..
-                        }
-                    )
-                {
-                    restored_defenses = defenses_content_id;
-                }
             }
             if prepared_missions.is_some() {
                 missions_content_id = match &commit.transition {
@@ -1345,17 +915,6 @@ impl StrategicWindowing {
                     }
                     _ => None,
                 };
-                if missions_content_id.is_some()
-                    && matches!(
-                        commit.transition,
-                        WindowTransition::Existing {
-                            effect: ExistingEffect::RestoredAndRaised,
-                            ..
-                        }
-                    )
-                {
-                    restored_missions = missions_content_id;
-                }
             }
             if prepared_fleet.is_some() {
                 fleet_content_id = match &commit.transition {
@@ -1365,17 +924,6 @@ impl StrategicWindowing {
                     }
                     _ => None,
                 };
-                if fleet_content_id.is_some()
-                    && matches!(
-                        commit.transition,
-                        WindowTransition::Existing {
-                            effect: ExistingEffect::RestoredAndRaised,
-                            ..
-                        }
-                    )
-                {
-                    restored_fleet = fleet_content_id;
-                }
             }
             if prepared_fleet_finder.is_some() {
                 fleet_finder_content_id = match &commit.transition {
@@ -1470,14 +1018,6 @@ impl StrategicWindowing {
             status_content_id,
             prepared_sector,
             sector_content_id,
-            minimized_system: committed_minimized_system,
-            restored_system,
-            minimized_defenses: committed_minimized_defenses,
-            restored_defenses,
-            minimized_missions: committed_minimized_missions,
-            restored_missions,
-            minimized_fleet: committed_minimized_fleet,
-            restored_fleet,
         }
     }
 
@@ -1983,7 +1523,7 @@ mod tests {
     use rebellion_core::delivery::DeliveryState;
     use rebellion_core::economy::EconomyState;
     use rebellion_core::fog::FogState;
-    use rebellion_core::ids::DatId;
+    use rebellion_core::ids::{DatId, SystemKey};
     use rebellion_core::manufacturing::{BuildableKind, ManufacturingState, ProductionArea};
     use rebellion_core::missions::{
         MissionFaction, MissionKind, MissionMember, MissionRequest, MissionState,
@@ -1998,7 +1538,7 @@ mod tests {
     use rebellion_render::fleet_window::FleetWindowEntry;
     use rebellion_render::fleet_window::FleetWindowReport;
     use rebellion_render::missions_window::MissionsWindowReport;
-    use rebellion_render::system_window::draw_managed_system_windows;
+    use rebellion_render::system_window::{draw_managed_system_windows, SystemWindowInputEvent};
     use rebellion_render::windowing_input::{
         FrameInputRouter, InputDisposition, InputEventId, InputRecipient, PointerButtonId,
         PointerPhase,
@@ -2644,7 +2184,11 @@ mod tests {
                         router.collect_pointer(event, &BTreeSet::from([window]), phase),
                         InputRecipient::Window(window)
                     );
-                    routed.push((event, phase));
+                    routed.push(SystemWindowInputEvent {
+                        id: event,
+                        point: (point.x, point.y),
+                        phase,
+                    });
                 }
                 let input = egui::RawInput {
                     screen_rect: Some(egui::Rect::from_min_size(
@@ -2907,10 +2451,10 @@ mod tests {
             rebellion_render::missions_window::MissionsTab::Decoys
         );
 
-        coordinator.enqueue_system_minimize(ids[0], fixture.system, (40, 50));
-        coordinator.enqueue_fleet_minimize(ids[1], fixture.system, (40, 50));
-        coordinator.enqueue_defenses_minimize(ids[2], fixture.system, (40, 50));
-        coordinator.enqueue_missions_minimize(ids[3], fixture.system, (40, 50));
+        coordinator.enqueue_system_minimize(ids[0]);
+        coordinator.enqueue_fleet_minimize(ids[1]);
+        coordinator.enqueue_defenses_minimize(ids[2]);
+        coordinator.enqueue_missions_minimize(ids[3]);
         let minimized = coordinator.apply_pending();
         assert_eq!(minimized.len(), 4);
         assert_eq!(coordinator.begin_frame().presentation_history(), ids);
@@ -2920,6 +2464,74 @@ mod tests {
         assert!(coordinator.begin_frame().presentation_history().is_empty());
         assert_eq!(coordinator.begin_frame().paint_order(), ids);
         assert_eq!(fixture.content_observation(&coordinator), before);
+    }
+
+    #[test]
+    fn reference_rail_thirteenth_entry_tears_down_oldest_content() {
+        let mut coordinator = StrategicWindowing::new();
+        let mut ids = Vec::new();
+        for value in 0..13 {
+            coordinator.enqueue(WindowCommand::Open(contextual_spec(
+                WindowKind::System,
+                SubjectId::new(2, 10_000 + value),
+                WindowOwner::StrategicRoot,
+            )));
+            let opened = coordinator.apply_pending().remove(0);
+            let id = opened_id(&opened);
+            assert!(coordinator.attach_content(id));
+            coordinator.enqueue(WindowCommand::Minimize(id));
+            let minimized = coordinator.apply_pending().remove(0);
+            if value < 12 {
+                assert!(minimized.removed_content.is_empty());
+            } else {
+                assert!(matches!(
+                    minimized.result.as_ref().unwrap().transition,
+                    WindowTransition::Minimized {
+                        id: minimized_id,
+                        ref evicted,
+                    } if minimized_id == id && evicted == &[ids[0]]
+                ));
+                assert_eq!(minimized.removed_content, [ids[0]]);
+            }
+            ids.push(id);
+        }
+
+        let snapshot = coordinator.begin_frame();
+        assert_eq!(snapshot.presentation_history(), &ids[1..]);
+        assert!(snapshot.key(ids[0]).is_none());
+        assert!(!coordinator.has_content(ids[0]));
+        assert!(ids[1..].iter().all(|id| coordinator.has_content(*id)));
+    }
+
+    #[test]
+    fn reference_rail_close_removes_only_matching_history_entry() {
+        let mut coordinator = StrategicWindowing::new();
+        let mut ids = Vec::new();
+        for value in 0..3 {
+            coordinator.enqueue(WindowCommand::Open(contextual_spec(
+                WindowKind::Fleet,
+                SubjectId::new(2, 20_000 + value),
+                WindowOwner::StrategicRoot,
+            )));
+            let opened = coordinator.apply_pending().remove(0);
+            let id = opened_id(&opened);
+            assert!(coordinator.attach_content(id));
+            coordinator.enqueue(WindowCommand::Minimize(id));
+            assert!(coordinator.apply_pending()[0].removed_content.is_empty());
+            ids.push(id);
+        }
+        assert_eq!(coordinator.begin_frame().presentation_history(), ids);
+
+        coordinator.enqueue(WindowCommand::Close(ids[1]));
+        let closed = coordinator.apply_pending().remove(0);
+        assert_eq!(closed.removed_content, [ids[1]]);
+        assert_eq!(
+            coordinator.begin_frame().presentation_history(),
+            [ids[0], ids[2]]
+        );
+        assert!(coordinator.has_content(ids[0]));
+        assert!(!coordinator.has_content(ids[1]));
+        assert!(coordinator.has_content(ids[2]));
     }
 
     #[test]
@@ -3081,19 +2693,15 @@ mod tests {
         assert!(coordinator.acknowledge_system_publication(id));
         assert_eq!(state.window_id(system), Some(id));
 
-        coordinator.enqueue_system_minimize(id, system, (40, 50));
+        coordinator.enqueue_system_minimize(id);
         let minimized = coordinator.apply_pending().remove(0);
-        assert_eq!(minimized.minimized_system, Some((id, system, (40, 50))));
-        assert_eq!(minimized.restored_system, None);
+        assert!(matches!(
+            minimized.result.as_ref().unwrap().transition,
+            WindowTransition::Minimized { id: minimized_id, .. } if minimized_id == id
+        ));
         assert!(coordinator.has_content(id));
         assert!(!coordinator.begin_frame().is_visible(id));
-        if let Some((window, system, logical_position)) = minimized.minimized_system {
-            state.minimize_system_window(window, system, logical_position);
-        }
-        assert_eq!(
-            state.rail_entries().collect::<Vec<_>>(),
-            [(system, "system")]
-        );
+        assert_eq!(coordinator.begin_frame().presentation_history(), [id]);
 
         let reopened = state
             .prepare_open(
@@ -3107,7 +2715,6 @@ mod tests {
         coordinator.enqueue_system_open(reopened);
         let mut restored = coordinator.apply_pending().remove(0);
         assert_eq!(restored.system_content_id, Some(id));
-        assert_eq!(restored.restored_system, Some(id));
         assert_eq!(
             state.commit_open(
                 restored.prepared_system.take().unwrap(),
@@ -3115,8 +2722,8 @@ mod tests {
             ),
             Some(id)
         );
-        assert!(state.restore_system_window(id));
         assert!(coordinator.begin_frame().is_visible(id));
+        assert!(coordinator.begin_frame().presentation_history().is_empty());
 
         coordinator.enqueue(WindowCommand::Close(id));
         let closed = coordinator.apply_pending().remove(0);
@@ -3127,7 +2734,7 @@ mod tests {
     }
 
     #[test]
-    fn fleet_commit_publishes_content_and_rail_only_after_manager_transition() {
+    fn fleet_commit_publishes_content_and_history_only_after_manager_transition() {
         let (world, system) = fleet_world();
         let mut state = FleetWindowState::default();
         let mut coordinator = StrategicWindowing::new();
@@ -3153,11 +2760,10 @@ mod tests {
         );
         assert!(!coordinator.has_content(id));
         assert!(coordinator.acknowledge_fleet_publication(id));
-        assert_eq!(opened.restored_fleet, None);
         assert!(coordinator.has_content(id));
         assert_eq!(state.window_id(system), Some(id));
 
-        coordinator.enqueue_fleet_minimize(id, system, (40, 50));
+        coordinator.enqueue_fleet_minimize(id);
         let minimized = coordinator.apply_pending().remove(0);
         assert!(matches!(
             minimized.result.as_ref().unwrap().transition,
@@ -3165,42 +2771,30 @@ mod tests {
                 id: minimized_id, ..
             } if minimized_id == id
         ));
-        assert_eq!(minimized.minimized_fleet, Some((id, system, (40, 50))));
-        assert_eq!(minimized.restored_fleet, None);
         assert!(coordinator.has_content(id));
         assert!(!coordinator.begin_frame().is_visible(id));
-        let mut rail = SystemWindowState::default();
-        if let Some((window, system, logical_position)) = minimized.minimized_fleet {
-            rail.minimize_fleet_window(window, system, logical_position);
-        }
-        assert_eq!(rail.rail_entries().collect::<Vec<_>>(), [(system, "fleet")]);
+        assert_eq!(coordinator.begin_frame().presentation_history(), [id]);
 
-        coordinator.enqueue_fleet_restore(id);
+        coordinator.enqueue(WindowCommand::Restore(id));
         let restored = coordinator.apply_pending().remove(0);
         assert_eq!(restored.fleet_content_id, None);
-        assert_eq!(restored.restored_fleet, Some(id));
-        assert_eq!(rail.rail_count(), 1);
         assert!(matches!(
             restored.result.as_ref().unwrap().transition,
             WindowTransition::Restored { id: restored_id, .. } if restored_id == id
         ));
-        assert!(rail.restore_fleet_window(restored.restored_fleet.unwrap()));
-        assert_eq!(rail.rail_count(), 0);
         assert!(coordinator.begin_frame().is_visible(id));
+        assert!(coordinator.begin_frame().presentation_history().is_empty());
 
         coordinator.enqueue(WindowCommand::Close(id));
         let closed = coordinator.apply_pending().remove(0);
         assert_eq!(closed.removed_content, [id]);
-        assert_eq!(closed.restored_fleet, None);
         state.remove_content(&closed.removed_content);
         assert!(!coordinator.has_content(id));
         assert_eq!(state.window_count(), 0);
 
-        coordinator.enqueue_fleet_minimize(id, system, (40, 50));
+        coordinator.enqueue_fleet_minimize(id);
         let rejected = coordinator.apply_pending().remove(0);
         assert!(rejected.result.is_err());
-        assert_eq!(rejected.minimized_fleet, None);
-        assert_eq!(rejected.restored_fleet, None);
     }
 
     #[test]
@@ -3232,18 +2826,19 @@ mod tests {
         assert!(coordinator.acknowledge_defenses_publication(id));
         assert_eq!(state.window_id(system), Some(id));
 
-        coordinator.enqueue_defenses_minimize(id, system, (40, 50));
+        coordinator.enqueue_defenses_minimize(id);
         let minimized = coordinator.apply_pending().remove(0);
-        assert_eq!(minimized.minimized_defenses, Some((id, system, (40, 50))));
-        assert_eq!(minimized.restored_defenses, None);
+        assert!(matches!(
+            minimized.result.as_ref().unwrap().transition,
+            WindowTransition::Minimized { id: minimized_id, .. } if minimized_id == id
+        ));
         assert!(coordinator.has_content(id));
         assert!(!coordinator.begin_frame().is_visible(id));
         assert!(state.contains_window(id));
 
-        coordinator.enqueue_defenses_restore(id);
+        coordinator.enqueue(WindowCommand::Restore(id));
         let restored = coordinator.apply_pending().remove(0);
         assert_eq!(restored.defenses_content_id, None);
-        assert_eq!(restored.restored_defenses, Some(id));
         assert!(matches!(
             restored.result.as_ref().unwrap().transition,
             WindowTransition::Restored { id: restored_id, .. } if restored_id == id
@@ -3292,18 +2887,19 @@ mod tests {
         assert!(coordinator.acknowledge_missions_publication(id));
         assert_eq!(state.window_id(system), Some(id));
 
-        coordinator.enqueue_missions_minimize(id, system, (40, 50));
+        coordinator.enqueue_missions_minimize(id);
         let minimized = coordinator.apply_pending().remove(0);
-        assert_eq!(minimized.minimized_missions, Some((id, system, (40, 50))));
-        assert_eq!(minimized.restored_missions, None);
+        assert!(matches!(
+            minimized.result.as_ref().unwrap().transition,
+            WindowTransition::Minimized { id: minimized_id, .. } if minimized_id == id
+        ));
         assert!(coordinator.has_content(id));
         assert!(!coordinator.begin_frame().is_visible(id));
         assert!(state.contains_window(id));
 
-        coordinator.enqueue_missions_restore(id);
+        coordinator.enqueue(WindowCommand::Restore(id));
         let restored = coordinator.apply_pending().remove(0);
         assert_eq!(restored.missions_content_id, None);
-        assert_eq!(restored.restored_missions, Some(id));
         assert!(matches!(
             restored.result.as_ref().unwrap().transition,
             WindowTransition::Restored { id: restored_id, .. } if restored_id == id
