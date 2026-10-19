@@ -3,6 +3,7 @@ title: "Game Seeding Pipeline"
 description: "Initial galaxy state generation — character placement, fleet distribution, support initialization"
 category: "agent-docs"
 created: 2026-03-25
+updated: 2026-10-16
 tags: [seeding, initialization, GNPRTB, SDPRTB, seeds]
 ---
 
@@ -43,9 +44,9 @@ pub struct SeedOptions {
 
 Threaded from Game Setup screen → `load_game_data()` → `apply_seeds_with_rng()`.
 
-## Parity Status (~95%)
+## Milestones
 
-**All 8 milestones complete (M1-M8):**
+**M1-M8:**
 - M1: SeedOptions threading, GNPRTB/SDPRTB load ordering
 - M2: System struct extended (is_populated, total_energy, raw_materials)
 - M3: 3-system model (Coruscant/Yavin/random Rebel HQ)
@@ -58,7 +59,7 @@ Threaded from Game Setup screen → `load_game_data()` → `apply_seeds_with_rng
 
 **Facility sides.** Every seeded facility takes its system's holder once
 control is final (`seeds::assign_facility_sides`, load step 8b'); a neutral
-system's facilities serve nobody, and facilities no longer count toward
+system's facilities serve nobody, and facilities do not count toward
 control inference. Family `0x2c` is the mine and `0x2d` the refinery. A later
 control change hands each facility to the new holder or removes it when its
 class cannot serve that side (`GameWorld::hand_over_facilities`). Source:
@@ -72,10 +73,18 @@ CMUNALTB/CMUNEMTB groups picked by a 1–100 roll against each group's key,
 costs every item by its class maintenance, and stops at the first group it
 cannot afford; so it never takes a side below zero. The garrisons run before
 it, and the classes load before seeding so it can price them. CMUNALTB and
-CMUNEMTB feed nothing else: the old step that placed every group at the
-capitals had no original. A side holding few systems (Easy, or Hard as the
+CMUNEMTB feed nothing else. A side holding few systems (Easy, or Hard as the
 Empire: 3) can still start overdrawn, from its fixed seeds and rolled yards
 alone. Source: `ghidra/notes/starting-forces-seeding.md`.
+
+**Support.** `initialize_support` seeds one 0-100 value per system: a held
+system's holder gets it and the other side 100 minus it; a neutral system's
+value is the Alliance's and the Empire's is 100 minus it (`FUN_00559700`
+returns one value, system `+0x58`). Held core systems roll SDPRTB
+7682 + rand 7683 (strong) or 7684 + rand 7685 (weak), core neutral systems
+rand(GNPRTB 7764) + 50 − 7764/2 (`FUN_00559700` case 3), populated rim
+systems rand(GNPRTB 7765) + 50, unpopulated systems 50; the three special
+systems start at 100 for their holder (`initialize_special_systems`).
 
 **System squadrons (2026-10-10).** A seed group's squadrons board its lead
 when the lead is a capital ship and otherwise stay on the system
@@ -84,8 +93,7 @@ gives Coruscant 10 TIEs, CMUNYVTB Yavin 2, CMUNHQTB the HQ 6; lone budget
 squadrons land on their system too. A finished squadron also lands on its
 system (`FUN_0052bee0`); no fighter-only fleet is made.
 
-ExecPlan: `docs/plans/2026-03-24-003-game-seeding-parity-execplan.md`
-Audit: `.subdaimon-output/seeding-parity-audit.md`
+ExecPlan: `docs/plans/completed/2026-03-24-003-game-seeding-parity-execplan.md`
 
 ## Seed Tables
 

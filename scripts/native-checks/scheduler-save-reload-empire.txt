@@ -1,0 +1,34 @@
+# AI round scheduler, native step 4: a mid-day save and reload at Slow. Player:
+# Empire (AI side: Alliance).
+#
+#   E=.artifacts/native-checks/<date>-scheduler-save-reload-empire
+#   launch-native.sh --live --seed 42 --telemetry --evidence $E    (on the Mini)
+#   scripts/dev-run.sh $E scripts/native-checks/scheduler-save-reload-empire.txt --keep-going --timeout 60
+#   scripts/native-checks/check-scheduler.py $E --save-reload
+#
+# Slow is rate 60: 61 rounds over about 15 s a day. Fast forward lands on a day
+# boundary, so 7 s of real time puts the clock near the middle of the day, with
+# about half its rounds run (rounds_in_day > 0). The save is that moment.
+Start game: Empire
+Wait 3000 ms
+Skip briefing
+Include: scripts/stages/unattended.txt
+
+Game Speed: Slow
+Fast forward: on
+Wait until day 8
+Fast forward: off
+Wait 7000 ms
+Status
+Save: midday
+Status
+Load: midday
+Status
+# Finish the saved day (about 8 s) and run a few more in real time.
+Wait 40000 ms
+Status
+Fast forward: on
+Wait until day 14
+Fast forward: off
+Status
+List systems

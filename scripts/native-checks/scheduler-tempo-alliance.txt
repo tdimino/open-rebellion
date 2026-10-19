@@ -1,0 +1,38 @@
+# AI round scheduler, native step 4: tempo at Fast, then Medium. Player: Alliance
+# (the AI that runs is the Empire side, so its ai_day records are the ones read).
+#
+#   E=.artifacts/native-checks/<date>-scheduler-tempo-alliance
+#   launch-native.sh --live --seed 42 --telemetry --evidence $E    (on the Mini)
+#   scripts/dev-run.sh $E scripts/native-checks/scheduler-tempo-alliance.txt --keep-going
+#   scripts/native-checks/check-scheduler.py $E
+#
+# Fast is rate 4 (5 rounds a day, at most 5 orders); Medium is rate 12 (13
+# rounds, at most 10 orders). The real-time stretches (fast forward off) run the
+# in-day rounds spread over a day's frames; the fast-forward stretches run a day
+# a frame, where the whole day's rounds run in the tick prologue.
+Start game: Alliance
+Wait 3000 ms
+Skip briefing
+Include: scripts/stages/unattended.txt
+
+Game Speed: Fast
+Status
+# About ten Fast days in real time (1.2 s each).
+Wait 12000 ms
+Status
+Fast forward: on
+Wait until day 40
+Fast forward: off
+List systems
+Capture: day40-fast
+
+Game Speed: Medium
+Status
+# About five Medium days in real time (3.2 s each); the speed change lands mid-day.
+Wait 16000 ms
+Fast forward: on
+Wait until day 60
+Fast forward: off
+Status
+List systems
+Capture: day60-medium

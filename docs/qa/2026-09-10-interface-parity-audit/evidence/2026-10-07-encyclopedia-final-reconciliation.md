@@ -30,7 +30,7 @@ separate tooling/repository scope rather than an Encyclopedia release blocker.
 
 | Plan phase | Bead result | Implementation commit(s) | Durable evidence |
 |---|---|---|---|
-| W0 provenance and preflight | `orlocal-818.57` closed | `7e280c3e` is already in upstream history | [Approved handoff plan](../../../plans/2026-10-02-feat-will-forster-encyclopedia-handoff-adaptation.md) |
+| W0 provenance and preflight | `orlocal-818.57` closed | `7e280c3e` is already in upstream history | [Approved handoff plan](../../../plans/completed/2026-10-02-feat-will-forster-encyclopedia-handoff-adaptation.md) |
 | W1 current-schema corpus | `orlocal-818.58` closed | `0d4a5273` | [Canonical publication](2026-10-06-encyclopedia-canonical-publication.md), [technical acceptance](2026-10-07-encyclopedia-technical-acceptance.md) |
 | W2 immutable atomic session | `orlocal-818.59` closed | `2e67c313` | [Content session](2026-10-06-encyclopedia-content-session.md) |
 | W3 pure presenter and routes | `orlocal-818.60` closed | `72604ee1` | [Presenter](2026-10-06-encyclopedia-presenter.md) |

@@ -1,7 +1,7 @@
 # Encyclopedia authentic topic-surface checkpoint
 
 Date: 2026-10-06
-Plan: `docs/plans/2026-10-02-feat-will-forster-encyclopedia-handoff-adaptation.md`, W4
+Plan: `docs/plans/completed/2026-10-02-feat-will-forster-encyclopedia-handoff-adaptation.md`, W4
 Bead: `orlocal-818.61`
 Pre-W4 branch checkpoint: `72604ee14280df81d1be2b61582d10c026330032`
 

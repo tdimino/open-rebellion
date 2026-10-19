@@ -44,10 +44,11 @@
 //!   `FUN_0055a020(ships, fighters)` =
 //!   `max(0, 100 - ships * GNPRTB[7684] - fighters * GNPRTB[7685])`, counting
 //!   every active fleet's capital ships and fighters at the system.
-//! - A regiment added to a system copies that value (`FUN_00514a60` calls the
-//!   system's `+0xd0` slot `FUN_00508660`, which calls `FUN_0050c540` then
-//!   `FUN_00504470`). Later changes to the system value are not pushed to
-//!   regiments already there: the system's `+0x1ec` slot is `FUN_00524b10`,
+//! - A regiment that becomes usable in a system copies that value (event
+//!   0x301's `FUN_00514510` calls the system's `+0xc8` slot `FUN_00508660`,
+//!   which calls `FUN_0050c540` then `FUN_00504470`). Later changes to the
+//!   system value are not pushed to regiments already there: the system's
+//!   `+0x1e4` slot is `FUN_00524b10`,
 //!   which only returns 1.
 //! - Activating a regiment resets it to 100 (`FUN_004f7410` calls slot `+0x110`
 //!   `FUN_00504960`).
@@ -56,6 +57,12 @@
 //!   (`FUN_0053e2f0`). Otherwise `FUN_00504400` marks it destroyed, which
 //!   raises `TroopRegDestroyedRunningBlockade` (`FUN_00504a00`, event `0x340`)
 //!   and removes it through slot `+0x1f0` (`FUN_005049e0`).
+//!
+//! The blockade support shift, timer `0x386` (`timer-scheduler.md`, "Timer
+//! `0x386`"): while a system's blockade bit is set, a per-system timer fires
+//! every GNPRTB 7694 (30) days and moves the blockading side's support by +1
+//! (7693) when that side holds the majority of support, else by -1 (7695)
+//! (`FUN_0050cb20`), through the support setter `FUN_0050c9f0`.
 
 use std::collections::{HashMap, HashSet};
 
@@ -73,9 +80,11 @@ use crate::world::GameWorld;
 // ---------------------------------------------------------------------------
 
 /// `SystemBlockadeNotif` event ID — fires when blockade state changes.
+/// `FUN_005122d0` (`annotated-functions.md`, "System Blockade Notification").
 pub const EV_BLOCKADE: u32 = 0x14e; // 334
 
-/// `TroopRegDestroyedRunningBlockade` event ID.
+/// `TroopRegDestroyedRunningBlockade` event ID, registered by `FUN_00504a00`
+/// through `FUN_0053fe40` (`blockade-troop-withdrawal.md`).
 pub const EV_TROOP_BLOCKADE_KILL: u32 = 0x340; // 832
 
 /// DEFFACSD record 1, the KDY-150 (TEXTSTRA 8704, family `0x22`). An active one
@@ -93,6 +102,18 @@ pub const GNPRTB_WITHDRAW_PENALTY_PER_FIGHTER: u16 = 7685;
 /// `DAT_00661a88`, the constant 100: the full withdraw percent and the bound of
 /// the survival roll.
 pub const FULL_WITHDRAW_PERCENT: u8 = 100;
+
+/// GNPRTB 7693: timer `0x386`'s shift for a blockader that holds the
+/// majority of support (`FUN_0050cb20.c:15-21`).
+const GNPRTB_SHIFT_WITH_MAJORITY: u16 = 7693;
+/// GNPRTB 7694: timer `0x386`'s delay when the blockader holds the majority;
+/// also the record's minimum at creation (`FUN_0050e200.c:50`).
+const GNPRTB_DELAY_WITH_MAJORITY: u16 = 7694;
+/// GNPRTB 7695: the shift for a blockader without the majority.
+const GNPRTB_SHIFT_WITHOUT_MAJORITY: u16 = 7695;
+/// GNPRTB 7696: the delay when the blockader lacks the majority
+/// (`FUN_005109f0.c:37-47`).
+const GNPRTB_DELAY_WITHOUT_MAJORITY: u16 = 7696;
 
 // ---------------------------------------------------------------------------
 // BlockadeEvent
@@ -123,6 +144,17 @@ pub enum BlockadeEvent {
         troop: TroopKey,
         tick: u64,
     },
+
+    /// Timer `0x386` fired (`FUN_00565d90` -> `FUN_0050cb20`): `side`, the
+    /// blockader, takes `delta` points of support (GNPRTB 7693 or 7695),
+    /// before the setter's Death Star halving and clamp. Only a populated
+    /// system shifts (`FUN_0050c9f0.c:11`). It raises no event or notice.
+    SupportShift {
+        system: SystemKey,
+        side: crate::dat::Faction,
+        delta: i32,
+        tick: u64,
+    },
 }
 
 impl BlockadeEvent {
@@ -131,7 +163,8 @@ impl BlockadeEvent {
         match self {
             BlockadeEvent::BlockadeStarted { tick, .. }
             | BlockadeEvent::BlockadeEnded { tick, .. }
-            | BlockadeEvent::TroopDestroyed { tick, .. } => *tick,
+            | BlockadeEvent::TroopDestroyed { tick, .. }
+            | BlockadeEvent::SupportShift { tick, .. } => *tick,
         }
     }
 }
@@ -163,6 +196,26 @@ pub struct BlockadeState {
         deserialize_with = "crate::serde_ordered::deserialize_hash_map"
     )]
     embarked: HashMap<TroopKey, EmbarkedRegiment>,
+    /// Each system's timer `0x386` record (system `+0x54`+`0x30`). A system
+    /// without an entry has the creation minimum, disarmed. The record keeps
+    /// its minimum across blockades.
+    #[serde(
+        default,
+        serialize_with = "crate::serde_ordered::serialize_hash_map",
+        deserialize_with = "crate::serde_ordered::deserialize_hash_map"
+    )]
+    support_shift: HashMap<SystemKey, SupportShiftTimer>,
+}
+
+/// Timer `0x386`'s record and its pending fire.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SupportShiftTimer {
+    /// The record's minimum, the delay: GNPRTB 7694 at creation
+    /// (`FUN_0050e200.c:50`), then what the support hook last wrote while
+    /// blockaded (`FUN_005109f0.c:37-48`). No spread (`FUN_00586130.c:7-8`).
+    pub min_delay: u32,
+    /// The tick the timer fires; `None` while the blockade bit is clear.
+    pub due_tick: Option<u64>,
 }
 
 /// An embarked regiment's last observed orbit and its withdraw percent.
@@ -189,6 +242,7 @@ impl BlockadeState {
         BlockadeState {
             blockaded: HashSet::new(),
             embarked: HashMap::new(),
+            support_shift: HashMap::new(),
         }
     }
 
@@ -201,6 +255,15 @@ impl BlockadeState {
     /// Remove blockade state for a system (used when system is destroyed).
     pub fn clear_blockade(&mut self, system: SystemKey) {
         self.blockaded.remove(&system);
+        // hyp: a destroyed system's pending timer goes with it; slot `+0x1c`
+        // (`0x00586290`) is not read.
+        self.support_shift.remove(&system);
+    }
+
+    /// The system's timer `0x386` record, if it was ever armed.
+    #[must_use]
+    pub fn support_shift_timer(&self, system: SystemKey) -> Option<SupportShiftTimer> {
+        self.support_shift.get(&system).copied()
     }
 
     /// Returns `true` if `system` is currently blockaded.
@@ -272,6 +335,7 @@ impl BlockadeSystem {
 
         // New blockades (entered this tick)
         for sys_key in newly_blockaded {
+            Self::trace_transition(world, sys_key, "started");
             events.push(BlockadeEvent::BlockadeStarted {
                 system: sys_key,
                 tick,
@@ -286,6 +350,7 @@ impl BlockadeSystem {
             .collect();
         cleared.sort_unstable();
         for sys_key in cleared {
+            Self::trace_transition(world, sys_key, "ended");
             events.push(BlockadeEvent::BlockadeEnded {
                 system: sys_key,
                 tick,
@@ -293,7 +358,118 @@ impl BlockadeSystem {
         }
 
         state.blockaded = now_blockaded;
+        Self::advance_support_shift(state, world, tick, &mut events);
         events
+    }
+
+    /// Timer `0x386` over the blockaded systems, in key order: disarmed when
+    /// the bit clears and armed with the record's minimum when it sets
+    /// (`FUN_00511300.c:106`, `FUN_0053fa60`), the minimum rewritten by the
+    /// majority (`FUN_005109f0.c:36-48`, a changed value restarting the
+    /// timer, `FUN_0053fab0.c:12`), then fired when due, the delay added
+    /// to the due day (`FUN_005862a0.c:25-30`). port: the original rewrites the
+    /// minimum at each support change; the port checks once a tick, after
+    /// the last tick's support writes (7694 = 7696 = 30 in shipped data).
+    /// port: a delay of 0 or less (no GNPRTB) never arms. port: every due
+    /// day one call covers takes that call's majority and delta; the
+    /// shipped delays (30) leave at most one due day in a call. hyp: a blockade
+    /// standing when a game starts arms at its first tick; the original's
+    /// hooks do not run during setup (`DAT_006b90e0`).
+    fn advance_support_shift(
+        state: &mut BlockadeState,
+        world: &GameWorld,
+        tick: u64,
+        events: &mut Vec<BlockadeEvent>,
+    ) {
+        let value = |id| world.gnprtb.value(id, world.difficulty_index);
+        let creation = value(GNPRTB_DELAY_WITH_MAJORITY);
+        let mut systems: Vec<SystemKey> = state
+            .support_shift
+            .keys()
+            .copied()
+            .chain(state.blockaded.iter().copied())
+            .collect();
+        systems.sort_unstable();
+        systems.dedup();
+        for system in systems {
+            let blockaded = state.blockaded.contains(&system);
+            let Some(sys) = world.systems.get(system) else {
+                continue;
+            };
+            let timer = state
+                .support_shift
+                .entry(system)
+                .or_insert(SupportShiftTimer {
+                    min_delay: u32::try_from(creation).unwrap_or(0),
+                    due_tick: None,
+                });
+            if !blockaded {
+                timer.due_tick = None;
+                continue;
+            }
+            if timer.due_tick.is_none() && timer.min_delay > 0 {
+                timer.due_tick = Some(tick + u64::from(timer.min_delay));
+            }
+            let Some(blockader) = Self::blockader(world, sys) else {
+                continue;
+            };
+            let with_majority = Self::support_majority(sys) == Some(blockader);
+            let want = u32::try_from(value(if with_majority {
+                GNPRTB_DELAY_WITH_MAJORITY
+            } else {
+                GNPRTB_DELAY_WITHOUT_MAJORITY
+            }))
+            .unwrap_or(0);
+            if want != timer.min_delay {
+                timer.min_delay = want;
+                timer.due_tick = (want > 0).then(|| tick + u64::from(want));
+            }
+            // A frame can cover several days: each due day in it fires, and
+            // the next is due a delay after it.
+            while let Some(due) = timer
+                .due_tick
+                .filter(|&due| due <= tick && timer.min_delay > 0)
+            {
+                timer.due_tick = Some(due + u64::from(timer.min_delay));
+                let delta = value(if with_majority {
+                    GNPRTB_SHIFT_WITH_MAJORITY
+                } else {
+                    GNPRTB_SHIFT_WITHOUT_MAJORITY
+                });
+                if sys.is_populated && delta != 0 {
+                    events.push(BlockadeEvent::SupportShift {
+                        system,
+                        side: blockader,
+                        delta,
+                        tick: due,
+                    });
+                }
+            }
+        }
+    }
+
+    /// The blockading side: the side of the system's active fleets
+    /// (`FUN_00509890.c:19-26`); a blockaded system holds one side's only.
+    fn blockader(world: &GameWorld, sys: &crate::world::System) -> Option<crate::dat::Faction> {
+        use crate::dat::Faction;
+        match Self::presence(world, sys) {
+            (true, false) => Some(Faction::Alliance),
+            (false, true) => Some(Faction::Empire),
+            _ => None,
+        }
+    }
+
+    /// The side holding the majority of support (`FUN_00509930`: the
+    /// Alliance's support at `+0x58` against 100 minus it; 1 Alliance,
+    /// 2 Empire, 3 a tie, here `None`).
+    fn support_majority(sys: &crate::world::System) -> Option<crate::dat::Faction> {
+        use crate::dat::Faction;
+        let alliance = crate::uprising::support_points(sys, Faction::Alliance);
+        match alliance.cmp(&(100 - alliance)) {
+            std::cmp::Ordering::Greater => Some(Faction::Alliance),
+            std::cmp::Ordering::Less => Some(Faction::Empire),
+            std::cmp::Ordering::Equal => None,
+        }
     }
 
     /// The chance in percent that a regiment carried into `system` now survives
@@ -415,6 +591,14 @@ impl BlockadeSystem {
                     reason = "roll is in [0, 1], so the floored product fits in i32"
                 )]
                 let draw = 99 - (roll * 100.0).floor() as i32;
+                crate::trace::record(crate::trace::TraceMask::BLOCKADE, "running_roll", || {
+                    serde_json::json!({
+                        "troop": format!("{:?}", regiment.troop),
+                        "withdraw_percent": regiment.withdraw_percent,
+                        "draw": draw,
+                        "destroyed": draw >= i32::from(regiment.withdraw_percent),
+                    })
+                });
                 (draw >= i32::from(regiment.withdraw_percent)).then_some(
                     BlockadeEvent::TroopDestroyed {
                         system: regiment.system,
@@ -427,6 +611,48 @@ impl BlockadeSystem {
     }
 
     // ── Private ───────────────────────────────────────────────────────────
+
+    /// The systems blockaded now (`+0x88` bit `0x20`), read from the world.
+    #[must_use]
+    pub fn blockaded_now(world: &GameWorld) -> HashSet<SystemKey> {
+        world
+            .systems
+            .iter()
+            .filter(|(_, value)| Self::system_is_blockaded(world, value))
+            .map(|(key, _)| key)
+            .collect()
+    }
+
+    /// Trace a blockade starting or ending with the inputs of the rule.
+    fn trace_transition(world: &GameWorld, system: SystemKey, transition: &'static str) {
+        crate::trace::record(crate::trace::TraceMask::BLOCKADE, "transition", || {
+            let sys = world.systems.get(system);
+            let (alliance, empire) = sys.map_or((false, false), |sys| Self::presence(world, sys));
+            serde_json::json!({
+                "system": sys.map(|sys| sys.name.clone()),
+                "transition": transition,
+                "control": sys.map(|sys| format!("{:?}", sys.control)),
+                "populated": sys.map(|sys| sys.is_populated),
+                "alliance_present": alliance,
+                "empire_present": empire,
+                "withdraw_percent": Self::withdraw_percent(world, system),
+            })
+        });
+    }
+
+    /// Whether the Alliance and the Empire each have a fleet or held
+    /// squadrons at the system.
+    fn presence(world: &GameWorld, sys: &crate::world::System) -> (bool, bool) {
+        sys.fleets
+            .iter()
+            .filter_map(|&fk| world.fleets.get(fk))
+            .fold(
+                (sys.squadron_count(true) > 0, sys.squadron_count(false) > 0),
+                |(alliance, empire), fleet| {
+                    (alliance || fleet.is_alliance, empire || !fleet.is_alliance)
+                },
+            )
+    }
 
     /// The system's blockade bit (`+0x88` `0x20`), as `FUN_0050b8e0` writes
     /// it (`ghidra/notes/blockade-bit.md`). Both sides present is a battle
@@ -442,16 +668,7 @@ impl BlockadeSystem {
     pub(crate) fn system_is_blockaded(world: &GameWorld, sys: &crate::world::System) -> bool {
         use crate::dat::Faction;
 
-        let (alliance, empire) = sys
-            .fleets
-            .iter()
-            .filter_map(|&fk| world.fleets.get(fk))
-            .fold(
-                (sys.squadron_count(true) > 0, sys.squadron_count(false) > 0),
-                |(alliance, empire), fleet| {
-                    (alliance || fleet.is_alliance, empire || !fleet.is_alliance)
-                },
-            );
+        let (alliance, empire) = Self::presence(world, sys);
         if alliance && empire {
             return false;
         }
@@ -1015,5 +1232,225 @@ mod tests {
         assert!(run.transport.cargo(run.fleet).is_empty());
         assert!(!run.world.troops.contains_key(run.troop));
         assert!(!run.transport.destroy_embarked(&mut run.world, run.troop));
+    }
+
+    // ── Timer 0x386: the blockader's support shift ────────────────────────
+
+    /// The system from `make_world`, held by the side `blockader` fights, at
+    /// support `alliance`/`empire` with one `blockader` fleet over it.
+    /// GNPRTB 7693-7696 carry the shipped +1, 30, -1, 30.
+    fn shift_world(blockader: Faction, alliance: f32, empire: f32) -> (GameWorld, SystemKey) {
+        let (mut world, sys) = make_world();
+        world.gnprtb = GnprtbParams::new(vec![
+            gnprtb_entry(u32::from(GNPRTB_SHIFT_WITH_MAJORITY), 1),
+            gnprtb_entry(u32::from(GNPRTB_DELAY_WITH_MAJORITY), 30),
+            gnprtb_entry(u32::from(GNPRTB_SHIFT_WITHOUT_MAJORITY), -1),
+            gnprtb_entry(u32::from(GNPRTB_DELAY_WITHOUT_MAJORITY), 30),
+        ]);
+        let held_by = if blockader == Faction::Alliance {
+            Faction::Empire
+        } else {
+            Faction::Alliance
+        };
+        let held = &mut world.systems[sys];
+        held.control = ControlKind::Controlled(held_by);
+        held.popularity_alliance = alliance;
+        held.popularity_empire = empire;
+        add_fleet(&mut world, sys, blockader == Faction::Alliance);
+        (world, sys)
+    }
+
+    /// The shifts timer `0x386` raises over `ticks`, as (tick, side, delta).
+    fn shifts(
+        state: &mut BlockadeState,
+        world: &GameWorld,
+        ticks: std::ops::RangeInclusive<u64>,
+    ) -> Vec<(u64, Faction, i32)> {
+        ticks
+            .flat_map(|n| BlockadeSystem::advance(state, world, &[tick(n)]))
+            .filter_map(shift_of)
+            .collect()
+    }
+
+    fn shift_of(event: BlockadeEvent) -> Option<(u64, Faction, i32)> {
+        match event {
+            BlockadeEvent::SupportShift {
+                side, delta, tick, ..
+            } => Some((tick, side, delta)),
+            _ => None,
+        }
+    }
+
+    /// `FUN_0050cb20.c:15-21` adds 7693 when the blockader holds the
+    /// majority, and `FUN_005862a0.c:25-30` fires again 7694 days on.
+    #[test]
+    fn a_blockader_with_the_majority_gains_one_point_every_30_days() {
+        for (blockader, alliance) in [(Faction::Empire, 0.3), (Faction::Alliance, 0.7)] {
+            let (world, _) = shift_world(blockader, alliance, 1.0 - alliance);
+            let mut state = BlockadeState::new();
+            assert_eq!(
+                shifts(&mut state, &world, 1..=61),
+                vec![(31, blockader, 1), (61, blockader, 1)],
+                "{blockader:?}"
+            );
+        }
+    }
+
+    /// `FUN_005109f0.c:36-48` rewrites the minimum to 7696 when the blockader
+    /// lacks the majority, and the changed value restarts the timer
+    /// (`FUN_0053fab0.c:12`): with 7696 = 20 the shifts fall on days 21 and
+    /// 41. port: a delay of 0 never arms, at creation or by a rewrite.
+    #[test]
+    fn a_changed_delay_restarts_the_timer_and_a_zero_delay_never_arms() {
+        let params = |with, without| {
+            GnprtbParams::new(vec![
+                gnprtb_entry(u32::from(GNPRTB_SHIFT_WITH_MAJORITY), 1),
+                gnprtb_entry(u32::from(GNPRTB_DELAY_WITH_MAJORITY), with),
+                gnprtb_entry(u32::from(GNPRTB_SHIFT_WITHOUT_MAJORITY), -1),
+                gnprtb_entry(u32::from(GNPRTB_DELAY_WITHOUT_MAJORITY), without),
+            ])
+        };
+        for (blockader, alliance) in [(Faction::Empire, 0.7), (Faction::Alliance, 0.3)] {
+            let (mut world, sys) = shift_world(blockader, alliance, 1.0 - alliance);
+            world.gnprtb = params(30, 20);
+            let mut state = BlockadeState::new();
+            assert_eq!(
+                shifts(&mut state, &world, 1..=41),
+                vec![(21, blockader, -1), (41, blockader, -1)],
+                "{blockader:?}"
+            );
+
+            for (with, without) in [(0, 0), (30, 0)] {
+                world.gnprtb = params(with, without);
+                let mut state = BlockadeState::new();
+                assert!(
+                    shifts(&mut state, &world, 1..=5).is_empty(),
+                    "{blockader:?}"
+                );
+                assert_eq!(
+                    state
+                        .support_shift_timer(sys)
+                        .and_then(|timer| timer.due_tick),
+                    None,
+                    "{blockader:?} {with}/{without}"
+                );
+            }
+        }
+    }
+
+    /// `FUN_005862a0.c:25-30` adds the delay to the due day, so a frame that
+    /// covers several days fires on the due day and keeps the 30-day period.
+    #[test]
+    fn a_frame_covering_several_days_fires_on_the_due_day() {
+        for (blockader, alliance) in [(Faction::Empire, 0.3), (Faction::Alliance, 0.7)] {
+            let (world, _) = shift_world(blockader, alliance, 1.0 - alliance);
+            let mut state = BlockadeState::new();
+            let mut fired = shifts(&mut state, &world, 1..=28);
+            let frame: Vec<TickEvent> = (29..=33).map(tick).collect();
+            fired.extend(
+                BlockadeSystem::advance(&mut state, &world, &frame)
+                    .into_iter()
+                    .filter_map(shift_of),
+            );
+            fired.extend(shifts(&mut state, &world, 34..=61));
+            assert_eq!(
+                fired,
+                vec![(31, blockader, 1), (61, blockader, 1)],
+                "{blockader:?}"
+            );
+        }
+    }
+
+    /// `FUN_0050cb20.c:15-21` adds 7695 without the majority, every 7696 days
+    /// (`FUN_005109f0.c:37-47`).
+    #[test]
+    fn a_blockader_without_the_majority_loses_one_point_every_30_days() {
+        for (blockader, alliance) in [(Faction::Empire, 0.7), (Faction::Alliance, 0.3)] {
+            let (world, _) = shift_world(blockader, alliance, 1.0 - alliance);
+            let mut state = BlockadeState::new();
+            assert_eq!(
+                shifts(&mut state, &world, 1..=61),
+                vec![(31, blockader, -1), (61, blockader, -1)],
+                "{blockader:?}"
+            );
+        }
+    }
+
+    /// `FUN_00509930` returns 3 on a tie, which matches neither blockader.
+    #[test]
+    fn a_tie_counts_as_no_majority() {
+        for blockader in [Faction::Empire, Faction::Alliance] {
+            let (world, _) = shift_world(blockader, 0.5, 0.5);
+            let mut state = BlockadeState::new();
+            assert_eq!(
+                shifts(&mut state, &world, 1..=31),
+                vec![(31, blockader, -1)],
+                "{blockader:?}"
+            );
+        }
+    }
+
+    /// `FUN_00509930` weighs the Alliance's support at `+0x58` against 100
+    /// minus it; the port's neutral seeding can leave both fractions equal.
+    #[test]
+    fn the_majority_weighs_alliance_support_against_its_complement() {
+        for (blockader, support) in [(Faction::Alliance, 0.54), (Faction::Empire, 0.46)] {
+            let (world, _) = shift_world(blockader, support, support);
+            let mut state = BlockadeState::new();
+            assert_eq!(
+                shifts(&mut state, &world, 1..=31),
+                vec![(31, blockader, 1)],
+                "{blockader:?}"
+            );
+        }
+    }
+
+    /// Clearing the blockade bit disarms the timer and setting it arms a
+    /// full period from that day (`FUN_00511300.c:106`, `FUN_0053fa60`).
+    #[test]
+    fn ending_the_blockade_disarms_the_shift_and_a_new_one_restarts_it() {
+        for blockader in [Faction::Empire, Faction::Alliance] {
+            let (mut world, sys) = shift_world(blockader, 0.5, 0.5);
+            let mut state = BlockadeState::new();
+            assert!(shifts(&mut state, &world, 1..=20).is_empty());
+            let fleets = std::mem::take(&mut world.systems[sys].fleets);
+            assert!(
+                shifts(&mut state, &world, 21..=40).is_empty(),
+                "{blockader:?}"
+            );
+            assert_eq!(
+                state
+                    .support_shift_timer(sys)
+                    .and_then(|timer| timer.due_tick),
+                None
+            );
+            world.systems[sys].fleets = fleets;
+            assert_eq!(
+                shifts(&mut state, &world, 41..=71),
+                vec![(71, blockader, -1)],
+                "{blockader:?}"
+            );
+        }
+    }
+
+    /// `FUN_0050c9f0.c:11` shifts only a populated system's support; the
+    /// timer still runs.
+    #[test]
+    fn an_unpopulated_system_takes_no_shift() {
+        for blockader in [Faction::Empire, Faction::Alliance] {
+            let (mut world, sys) = shift_world(blockader, 0.5, 0.5);
+            world.systems[sys].is_populated = false;
+            let mut state = BlockadeState::new();
+            assert!(
+                shifts(&mut state, &world, 1..=61).is_empty(),
+                "{blockader:?}"
+            );
+            assert_eq!(
+                state
+                    .support_shift_timer(sys)
+                    .and_then(|timer| timer.due_tick),
+                Some(91)
+            );
+        }
     }
 }

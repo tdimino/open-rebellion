@@ -116,49 +116,11 @@ binary hash, and record each check as an agent check, never a human one.
 
 ### Reach a state with commands
 
-The developer command palette (backtick) skips the clicks that lead to the
-state under test. It is on in debug builds and, in release builds, when
-`OPEN_REBELLION_DEV` is 1, true, yes or on. Release browser builds never
-compile it. Beside the simulation commands (advance days, game speed, reveal
-all), it lists for every system by name:
-
-- `Open sector window: <system>`;
-- `Open System|Defenses|Fleet|Missions window: <system>`, which opens the
-  window at its icon, as a double click there does;
-- `Open system|defenses|fleet|missions icon menu: <system>`, which selects
-  the icon (it paints its selected art) and opens its pop-up menu, as a right
-  click does.
-
-A window or menu behind a hidden icon is refused. Only the System window
-opens without one, as a double click on the planet opens it.
-
-For a native run, write the commands one per line (`#` starts a comment)
-and pass the file with `scripts/launch-native.sh --commands FILE`. A script
-also takes `Start game: Alliance` or `Start game: Empire`, which runs from
-the main menu through the menu's own faction control; the palette lists no
-start, since it draws only in the galaxy. The launcher sets
-`OPEN_REBELLION_COMMANDS` and `OPEN_REBELLION_DEV=1`; without the dev switch
-a release build ignores the script. The game runs one line per frame, once
-it reaches the main menu or the galaxy and the last line's commands have
-run, and waits in between while a start is setting up. Each line logs
-`[dev-command] sent` or `unknown` to `game.log`; a `refused: <why>` line
-belongs to the command sent just before it, and a sent line with no refusal
-after it ran. `[dev-command] done` follows once the last command has run.
-Every new campaign takes a fresh random seed. Add `--seed N`
-(`OPEN_REBELLION_SEED`, which also needs the dev switch; the launcher sets
-it) so the script meets the same galaxy each run, and record the seed with
-the evidence.
-
-cua-driver's `press_key` cannot send the backtick (it takes letters, digits
-and named keys; "`" arrives as another key), so drive the palette itself by
-hand or through a script.
-
-State commands (`Start game`, `Open … window`, `Battle at`, `Post message`)
-reach a state; they do not test the input that leads to it. Drive the step
-under test with the input commands (`Click`, `Drag`, `Press`), which do, or
-with `cua-driver`. Say in the evidence summary which steps a command took.
-For the live channel, the full command list and how to add one, see
-[dev-commands.md](dev-commands.md).
+The developer commands skip the clicks that lead to the state under test:
+the palette (backtick), command scripts and the live channel are described in
+[dev-commands.md](dev-commands.md), with the full command list, how to add
+one, and the rule that a state command is not a test of the input leading to
+it.
 
 ### Compare against the original
 
@@ -208,15 +170,21 @@ Open Rebellion's Ghidra workflow is project-native rather than a general skill:
 
 ## Test Quality Gates
 
-`cargo-mutants` is a local CLI (`cargo install --locked cargo-mutants`), not a
-workspace dependency. It changes small pieces of code and reports each change
-the tests fail to notice. A surviving mutant is either a missing test or code
-no test can reach; close it or record why it stays.
+`cargo-mutants` is a CLI installed on the Mini (`cargo install --locked
+cargo-mutants`), not a workspace dependency, and runs there like any Cargo
+command. It changes small pieces of code and reports each change the tests
+fail to notice. A surviving mutant is either a missing test or code no test
+can reach; close it or record why it stays (the commit message carries the
+equivalents).
 
 ```bash
-env PATH=/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/Users/tomdimino/.cargo/bin \
-  cargo mutants -p rebellion-core --file crates/rebellion-core/src/tick.rs
+scripts/mini-cargo.sh -- mutants -p rebellion-core \
+  --file crates/rebellion-core/src/tick.rs --re 'advance'
 ```
+
+`--re` limits a run to the touched functions. The output stays on the Mini in
+`~/or-native/open-rebellion/mutants.out/` (`missed.txt`, `timeout.txt`);
+delete it and `mutants.out.old` before a rerun.
 
 Scope every run to the files a change touches; whole-workspace runs are slow.
 The mutant copy includes the ignored `data/base`, but tests that need original

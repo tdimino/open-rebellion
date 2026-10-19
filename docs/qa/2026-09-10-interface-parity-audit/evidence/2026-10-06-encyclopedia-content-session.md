@@ -1,7 +1,7 @@
 # Encyclopedia immutable content-session checkpoint
 
 Date: 2026-10-06
-Plan: `docs/plans/2026-10-02-feat-will-forster-encyclopedia-handoff-adaptation.md`, W2
+Plan: `docs/plans/completed/2026-10-02-feat-will-forster-encyclopedia-handoff-adaptation.md`, W2
 Bead: `orlocal-818.59`
 Pre-W2 branch checkpoint: `0d4a52734fe88de3e9d453e947afa6bf065f0777`
 

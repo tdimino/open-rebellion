@@ -39,11 +39,13 @@ pub mod encyclopedia_session;
 pub mod encyclopedia_topics;
 pub mod integrator;
 pub mod mods;
+pub mod readouts;
 pub mod replay;
 pub mod replay_fixture;
 pub mod save;
 pub mod seeds;
 pub mod simulation;
+pub mod telemetry;
 pub mod text_templates;
 
 /// Load selected named `WAVE` resources from an original Win32 DLL.
@@ -174,10 +176,12 @@ pub fn load_game_data_with_options(
         buildable_classes: std::collections::HashMap::new(),
         difficulty_index: seed_options.gnprtb_index(),
         recruit_pool_empty: [false; 2],
+        research_exhausted: [[false; 3]; 2],
         fleet_names: rebellion_core::world::FleetNames::default(),
         last_ship_tag: 0,
         squadron_transits: Vec::new(),
         arrival_holders: std::collections::HashMap::new(),
+        death_star_sectors: std::collections::HashSet::new(),
     };
 
     // ── 1. Sectors ───────────────────────────────────────────────────────────
@@ -926,6 +930,7 @@ fn convert_character(
         is_captive: false,
         current_system: None,
         current_fleet: None,
+        en_route: false,
         heritage_known: false,
         is_killed: false,
         recruited: false,

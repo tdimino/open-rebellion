@@ -3,13 +3,13 @@ title: "Blockade System"
 description: "Fleet-presence blockade mechanics: manufacturing halt and regiments lost running the blockade"
 category: "agent-docs"
 created: 2026-03-14
-updated: 2026-09-26
+updated: 2026-10-16
 tags: [blockade, manufacturing, fleet, simulation]
 ---
 
 # Blockade System
 
-`blockade.rs` — Fleet-presence blockade halts manufacturing; regiments carried into a blockaded system roll to survive leaving it.
+`blockade.rs` — Fleet-presence blockade halts manufacturing, shifts the blockader's support every 30 days, and makes regiments carried into a blockaded system roll to survive leaving it.
 
 ## Types
 
@@ -17,7 +17,8 @@ tags: [blockade, manufacturing, fleet, simulation]
 |------|---------|
 | `BlockadeState` | Blockaded systems, plus each embarked regiment's orbit and withdraw percent (not saved) |
 | `RunningRegiment` | A regiment whose fleet just left a system with withdraw percent below 100 |
-| `BlockadeEvent` | BlockadeStarted / BlockadeEnded / TroopDestroyed |
+| `SupportShiftTimer` | Timer `0x386` of one blockaded system: its minimum delay and due tick (saved) |
+| `BlockadeEvent` | BlockadeStarted / BlockadeEnded / TroopDestroyed / SupportShift |
 
 ## API
 
@@ -42,6 +43,10 @@ Neutral/uncontrolled systems cannot be blockaded.
 ## Integration: Blockade → Manufacturing
 
 `BlockadeState::blockaded_systems()` is passed to `ManufacturingSystem::advance_with_blockade()` to skip production at blockaded systems. This is the primary gameplay effect.
+
+## Support Shift (timer `0x386`)
+
+A blockade arms timer `0x386` at the system (`BlockadeState::support_shift`); its end disarms it. Every GNPRTB 7694/7696 days (30) the blockader's support moves by 7693 (+1) when it holds the majority, the Alliance's points against 100 minus them (`FUN_00509930`), else by 7695 (-1); a tie counts as no majority. A changed delay restarts the timer. Only a populated system shifts. Apply `SupportShift` with `uprising::apply_support_change`, which halves a change toward the Alliance with a Death Star in the sector. Telemetry: `blockade_support_shift`. Full chain: `ghidra/notes/timer-scheduler.md`, "Timer `0x386`".
 
 ## Troop Destruction
 

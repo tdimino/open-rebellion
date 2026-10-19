@@ -64,47 +64,88 @@ use crate::world::{ForceTier, GameWorld};
 // Ghidra RE event IDs (from annotated-functions.md)
 // ---------------------------------------------------------------------------
 
+// FUN_00532f40, SideRecruitmentDoneNotif (annotated-functions.md event table).
 pub const EVT_RECRUITMENT_DONE: u32 = 0x12c; // 300
+                                             // FUN_00512280, SystemBattleNotif (annotated-functions.md event table).
 pub const EVT_SYSTEM_BATTLE: u32 = 0x14d; // 333
+                                          // FUN_005122d0, SystemBlockadeNotif (annotated-functions.md event table).
 pub const EVT_SYSTEM_BLOCKADE: u32 = 0x14e; // 334
+                                            // FUN_00512580, SystemUprisingIncidentNotif (annotated-functions.md event table).
 pub const EVT_UPRISING_INCIDENT: u32 = 0x152; // 338
+                                              // FUN_004ff7a0, FleetBattleNotif (entity-system.md).
 pub const EVT_FLEET_BATTLE: u32 = 0x180; // 384
+                                         // FUN_004f1e00, CharacterForce (annotated-functions.md event table).
 pub const EVT_CHARACTER_FORCE: u32 = 0x1e1; // 481
+                                            // FUN_004f1ea0, CharacterForceTraining (annotated-functions.md event table).
 pub const EVT_FORCE_TRAINING: u32 = 0x1e5; // 485
+                                           // FUN_0056fc70, DagobahCompleted (annotated-functions.md event table).
 pub const EVT_DAGOBAH_COMPLETED: u32 = 0x210; // 528
+                                              // FUN_00572b40, BountyAttack (annotated-functions.md event table).
 pub const EVT_BOUNTY_ATTACK: u32 = 0x212; // 530
+                                          // FUN_0054ba00 registers 0x220 through FUN_0053fdd0 (mission-event-cookbook.md).
 pub const EVT_FINAL_BATTLE: u32 = 0x220; // 544
+                                         // FUN_0054b7b0, LukeDagobah (annotated-functions.md event table).
 pub const EVT_LUKE_DAGOBAH: u32 = 0x221; // 545
+                                         // FUN_004fc080, GameObjDestroyedNotif (entity-system.md).
 pub const EVT_GAME_OBJ_DESTROYED: u32 = 0x302; // 770
+                                               // FUN_00504a00, TroopRegDestroyedRunningBlockade (annotated-functions.md).
 pub const EVT_TROOP_BLOCKADE_KILL: u32 = 0x340; // 832
+                                                // FUN_004f20e0, CharacterForceUserDiscoveredKeyNotif (entity-system.md).
 pub const EVT_FORCE_DISCOVERED: u32 = 0x362; // 866
+                                             // FUN_005738f0, MissionEspionageExtraSystem (annotated-functions.md).
 pub const EVT_ESPIONAGE_EXTRA: u32 = 0x370; // 880
 
 // Phase 3 additions — from community disassembly cross-reference
-pub const EVT_SUPPORT_CHANGE: u32 = 0x100; // 256 — popular support shift
+// FUN_00499760 raises the loyalty-joins message on 0x100 (message-display.md).
+pub const EVT_SUPPORT_CHANGE: u32 = 0x100; // 256 — a system changes allegiance ("Loyalty joins", "Declares neutrality")
+                                           // FUN_004981c0 case 1 raises the fleet-arrives message on 0x105 (message-display.md).
 pub const EVT_FLEET_ARRIVE: u32 = 0x105; // 261 — fleet arrived at system
+                                         // port: invented id; absent from entity-system.md section 6.
 pub const EVT_CHARACTER_HEALTH: u32 = 0x106; // 262 — character health change
+                                             // port: invented id; the original's "units arrive" message rides 0x105 case 3 (FUN_004981c0, message-display.md).
 pub const EVT_UNITS_DEPLOYED: u32 = 0x107; // 263 — units deployed to system
+                                           // 0x128 raises the HQ and Coruscant messages, FUN_0048e5a0 and FUN_0048f790 (movies.md).
 pub const EVT_HQ_CAPTURED: u32 = 0x128; // 296 — headquarters captured
+                                        // FUN_005125d0, SystemInformantIncidentNotif (economy-systems.md).
 pub const EVT_INFORMANT_INTEL: u32 = 0x153; // 339 — informant intelligence
 pub const EVT_NATURAL_DISASTER: u32 = 0x154; // 340 — event mapping unverified (FUN_00511810 raises 0x304, not 0x154)
 pub const EVT_RESOURCE_DISCOVERY: u32 = 0x155; // 341 — event mapping unverified (FUN_00511860 shows no 0x155)
+                                               // port: invented id; absent from the notes.
 pub const EVT_MANUFACTURING_IDLE: u32 = 0x160; // 352 — manufacturing queue empty
+                                               // port: invented id; 0x200 occurs in the notes only as a flag or mask value.
 pub const EVT_HAN_RESCUE: u32 = 0x200; // 512 — Han Solo rescue variant
+                                       // port: invented story event (story-missions.md, "Port").
 pub const EVT_EMPEROR_ARRIVAL: u32 = 0x230; // 560 — Emperor arrives at system
+                                            // FUN_005624a0, PickupInProgress, "Jabba Delivers Prisoners" (story-encounters.md, row 4b).
 pub const EVT_JABBA_PRISONERS: u32 = 0x231; // 561 — Jabba's prisoner events
-pub const EVT_MAINTENANCE_SHORTFALL_EVENT: u32 = 0x304; // 772 — maintenance budget shortfall
+                                            // FUN_004fc080, GameObjDestroyedAutoscrapNotif on 0x304 (entity-system.md): the original raises it
+                                            // once per autoscrapped object, e.g. each overdraft scrap; its notice is Maintenance Shortfall (FUN_00498970).
+pub const EVT_DESTROYED_AUTOSCRAP: u32 = 0x304; // 772 — an object autoscrapped
+                                                // FUN_004fc080, GameObjDestroyedSabotage on 0x305 (entity-system.md): an object destroyed by
+                                                // sabotage. port: the "saboteur detected" meaning is the port's.
 pub const EVT_SABOTEUR_DETECTED: u32 = 0x305; // 773 — saboteur detected
+                                              // FUN_004fc080, GameObjDestroyedAssassinationNotif on 0x306 (entity-system.md): the assassination
+                                              // destroy reason, narrower than killed in action.
 pub const EVT_CHARACTER_KILLED: u32 = 0x306; // 774 — character killed in action
+                                             // port: invented id; absent from the notes (0x362 is ForceUserDiscovered).
 pub const EVT_TRAITOR_REVEALED: u32 = 0x361; // 865 — traitor revealed
+                                             // port: invented id; absent from the notes.
 pub const EVT_LEIA_FORCE: u32 = 0x363; // 867 — Leia-specific Force discovery (distinct from 0x362 generic)
+                                       // port: invented id; collides with timer 0x386, the blockade support shift (timer-scheduler.md).
 pub const EVT_SIDE_CHANGE: u32 = 0x386; // 902 — character changes faction
+                                        // port: invented story event; 0x387 is the original's object transit-arrival event.
 pub const EVT_JABBA_CAPTURES_CHEWIE: u32 = 0x387; // 903 — Chewie captured at Jabba's palace
+                                                  // port: invented story event (story-missions.md, "Port").
 pub const EVT_HAN_PERMANENT_FREEZE: u32 = 0x39B; // 923 — Han permanently frozen in carbonite
+                                                 // port: invented carbonite failure event (story-missions.md, "Port").
 pub const EVT_HAN_CARBONITE_FAIL_1: u32 = 0x39C; // 924 — escape countdown stage 1
+                                                 // port: invented carbonite failure event (story-missions.md, "Port").
 pub const EVT_HAN_CARBONITE_FAIL_2: u32 = 0x39D; // 925 — escape countdown stage 2
+                                                 // port: invented carbonite failure event (story-missions.md, "Port").
 pub const EVT_HAN_CARBONITE_FAIL_3: u32 = 0x39E; // 926 — escape countdown stage 3
+                                                 // port: invented carbonite failure event (story-missions.md, "Port").
 pub const EVT_HAN_CARBONITE_FAIL_4: u32 = 0x39F; // 927 — escape countdown stage 4
+                                                 // port: invented carbonite failure event (story-missions.md, "Port").
 pub const EVT_HAN_CARBONITE_FAIL_5: u32 = 0x3A0; // 928 — escape countdown stage 5 (terminal)
 
 // ---------------------------------------------------------------------------
@@ -337,9 +378,8 @@ pub enum EventAction {
     ///
     /// Applied by `0x396 "Final Battle Imminent"` — the event whose
     /// narration already introduces the Luke–Vader paternity reveal ("father
-    /// and son"). Triggers the `EVENT_EMPEROR_AND_VADER_VS_KNIGHT_LUKE` BMP
-    /// branch in `event_screen::event_id_to_resource` on subsequent
-    /// Final Battle overlays (see `#R4` in the Knesset Shamash-Bet plan).
+    /// and son"). Nothing reads the flag; the story chains' port to the
+    /// original's rules is `or-port-story-research-c80`.
     ///
     /// Does NOT create a new story event — this replaces the deleted
     /// `0x222 EVT_FINAL_BATTLE_KNOWN` split per SIMP-H5 + ARCH-#9 + SF-#11.
@@ -723,11 +763,13 @@ fn evaluate_condition(
             // Knesset Shamash-Bet Fix A/#R11: a killed character's
             // `current_fleet` is cleared by `mark_killed()`, so this
             // condition correctly rejects dead characters without needing
-            // an explicit `is_killed` check.
+            // an explicit `is_killed` check. A character en route aboard
+            // the fleet is not free (story "free character" test, `+0x50`
+            // bit 0, `FUN_005439e0`; `move-order.md`).
             world
                 .characters
                 .get(*character)
-                .is_some_and(|c| !c.is_killed && c.current_fleet.is_some())
+                .is_some_and(|c| !c.is_killed && !c.en_route && c.current_fleet.is_some())
         }
 
         EventCondition::CharacterIsKilled { character } => {

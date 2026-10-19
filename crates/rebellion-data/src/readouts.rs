@@ -1,0 +1,472 @@
+//! State readouts for the developer commands and the playtest REPL: plain
+//! text for `List characters`, `List missions`, `Show research`,
+//! `List production` and `Show side`.
+//!
+//! Each function reads the world and its states and changes nothing. They
+//! see through fog of war: they are dev truth, not the player's view. Rows
+//! are one per line, so the result of a command carries them joined by `\n`.
+
+use rebellion_core::dat::Faction;
+use rebellion_core::manufacturing::{
+    BuildableKind, Destination, ManufacturingState, ProductionArea, QueueItem,
+};
+use rebellion_core::missions::{
+    member_skill, ActiveMission, MissionFaction, MissionKind, MissionMember, MissionState,
+    PHASE_END, PHASE_OUTCOME, PHASE_TIMER, PHASE_TRANSIT,
+};
+use rebellion_core::movement::MovementState;
+use rebellion_core::research::{ResearchState, ResearchSystem, TechType};
+use rebellion_core::resources::{maintenance_capacity, maintenance_used};
+use rebellion_core::stockpiles::StockpileState;
+use rebellion_core::world::{Character, GameWorld, Skill};
+
+/// The side a `[alliance|empire]` argument names; `None` for no argument.
+///
+/// # Errors
+/// Returns the usage text for any other word.
+pub fn parse_side(text: &str) -> Result<Option<Faction>, String> {
+    match text.trim().to_ascii_lowercase().as_str() {
+        "" => Ok(None),
+        "alliance" => Ok(Some(Faction::Alliance)),
+        "empire" => Ok(Some(Faction::Empire)),
+        other => Err(format!("{other:?} is not a side: use alliance or empire")),
+    }
+}
+
+fn side_name(side: Faction) -> &'static str {
+    match side {
+        Faction::Alliance => "Alliance",
+        Faction::Empire => "Empire",
+        Faction::Neutral => "Neutral",
+    }
+}
+
+/// A list's first row: its count, the side it is limited to, and what it lists.
+fn heading(count: usize, side: Option<Faction>, noun: &str) -> String {
+    side.map_or_else(
+        || format!("{count} {noun}"),
+        |side| format!("{count} {} {noun}", side_name(side)),
+    )
+}
+
+/// A kind's name; `MissionKind::name` is empty for Autoscrap.
+fn kind_label(kind: MissionKind) -> &'static str {
+    match kind.name() {
+        "" => "Autoscrap",
+        name => name,
+    }
+}
+
+fn system_name(world: &GameWorld, system: rebellion_core::ids::SystemKey) -> &str {
+    world.systems.get(system).map_or("?", |s| s.name.as_str())
+}
+
+const fn phase_label(phase: u8) -> &'static str {
+    match phase {
+        PHASE_TRANSIT => "transit",
+        PHASE_TIMER => "timer",
+        PHASE_OUTCOME => "outcome",
+        PHASE_END => "end",
+        _ => "step",
+    }
+}
+
+fn member_name(world: &GameWorld, member: MissionMember) -> String {
+    match member {
+        MissionMember::Character(key) => world
+            .characters
+            .get(key)
+            .map_or_else(|| "?".to_owned(), |c| c.display_name().to_owned()),
+        MissionMember::SpecialForce(key) => world
+            .special_forces
+            .get(key)
+            .and_then(|unit| world.buildable_classes.get(&unit.class_dat_id))
+            .map_or_else(|| "special force".to_owned(), |class| class.name.clone()),
+    }
+}
+
+fn member_list(world: &GameWorld, members: &[MissionMember]) -> String {
+    members
+        .iter()
+        .map(|&member| member_name(world, member))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// Whether `character` belongs to `side` by allegiance (a captive keeps its own).
+fn character_is_side(character: &Character, side: Faction) -> bool {
+    match side {
+        Faction::Alliance => character.is_alliance,
+        Faction::Empire => character.is_empire,
+        Faction::Neutral => !character.is_alliance && !character.is_empire,
+    }
+}
+
+/// Where a character stands: a fleet and its system, a system, in transit,
+/// captive, or not placed.
+fn character_location(
+    world: &GameWorld,
+    movement: &MovementState,
+    character: &Character,
+) -> String {
+    if character.is_killed {
+        return "dead".to_owned();
+    }
+    if let Some(fleet) = character.current_fleet {
+        let name = world.fleet_name(fleet).unwrap_or("?");
+        if let Some(order) = movement.orders().get(&fleet) {
+            return format!(
+                "{name} in transit {} to {} ({} days)",
+                system_name(world, order.origin),
+                system_name(world, order.destination),
+                order.ticks_remaining()
+            );
+        }
+        let at = world
+            .fleets
+            .get(fleet)
+            .map_or("?", |f| system_name(world, f.location));
+        return format!("{name} at {at}");
+    }
+    match character.current_system {
+        Some(system) if character.en_route => {
+            format!("en route to {}", system_name(world, system))
+        }
+        Some(system) => format!("at {}", system_name(world, system)),
+        None if character.recruited => "not placed".to_owned(),
+        None => "not placed (recruit pool)".to_owned(),
+    }
+}
+
+fn character_status(character: &Character) -> String {
+    if character.is_killed {
+        "killed".to_owned()
+    } else if character.is_captive {
+        format!(
+            "captive of {}",
+            character.captured_by.map_or("?", side_name)
+        )
+    } else {
+        "free".to_owned()
+    }
+}
+
+/// Every character, or one side's: name and `#<dat id>`, side, location,
+/// current mission, the skills that gate missions (Diplomacy, Espionage,
+/// Combat, Leadership for the kinds, ship, troop and facility design for
+/// Research), officer rank and status. The port keeps no health or injury
+/// for a character: status is free, captive or killed.
+#[must_use]
+pub fn list_characters(
+    world: &GameWorld,
+    missions: &MissionState,
+    movement: &MovementState,
+    side: Option<Faction>,
+) -> String {
+    let mut rows: Vec<(String, String)> = world
+        .characters
+        .iter()
+        .filter(|(_, c)| side.is_none_or(|side| character_is_side(c, side)))
+        .map(|(key, c)| {
+            let allegiance = if c.is_alliance {
+                "Alliance"
+            } else if c.is_empire {
+                "Empire"
+            } else {
+                "Neutral"
+            };
+            let mission = missions
+                .missions()
+                .iter()
+                .find(|m| {
+                    m.members()
+                        .any(|member| member == MissionMember::Character(key))
+                })
+                .map_or_else(
+                    || "none".to_owned(),
+                    |m| {
+                        format!(
+                            "{} at {} (#{} {})",
+                            kind_label(m.kind),
+                            system_name(world, m.target_system),
+                            m.id,
+                            phase_label(m.phase)
+                        )
+                    },
+                );
+            let skill = |label: &str, skill: Skill| {
+                format!(
+                    "{label} {}",
+                    member_skill(world, MissionMember::Character(key), skill).unwrap_or(0)
+                )
+            };
+            let skills = [
+                skill("dip", Skill::Diplomacy),
+                skill("esp", Skill::Espionage),
+                skill("com", Skill::Combat),
+                skill("lead", Skill::Leadership),
+                skill("ship", Skill::ShipDesign),
+                skill("troop", Skill::TroopTraining),
+                skill("fac", Skill::FacilityDesign),
+            ]
+            .join(" ");
+            let row = format!(
+                "{} #{} {}{} | {} | mission {} | {} | rank {:?} | {}",
+                c.display_name(),
+                c.dat_id.raw(),
+                allegiance,
+                if c.is_major { " major" } else { "" },
+                character_location(world, movement, c),
+                mission,
+                skills,
+                c.command_kind,
+                character_status(c)
+            );
+            (format!("{allegiance}{}", c.name), row)
+        })
+        .collect();
+    rows.sort();
+    let mut out = vec![heading(rows.len(), side, "characters")];
+    out.extend(rows.into_iter().map(|(_, row)| row));
+    out.join("\n")
+}
+
+fn mission_row(world: &GameWorld, missions: &MissionState, tick: u64, m: &ActiveMission) -> String {
+    let days = m
+        .days_left(tick, missions.last_arrival(m.id))
+        .map_or_else(|| "-".to_owned(), |days| days.to_string());
+    let decoys = if m.decoys.is_empty() {
+        String::new()
+    } else {
+        format!(" decoys [{}]", member_list(world, &m.decoys))
+    };
+    format!(
+        "#{} {:?} {} team [{}]{decoys} target {} phase {} ({}) days left {days}",
+        m.id,
+        m.faction,
+        kind_label(m.kind),
+        member_list(world, &m.team),
+        system_name(world, m.target_system),
+        m.phase,
+        phase_label(m.phase),
+    )
+}
+
+/// The active missions, or one side's: kind, team, decoys, target, phase and
+/// days left in the transit or timer wait.
+#[must_use]
+pub fn list_missions(
+    world: &GameWorld,
+    missions: &MissionState,
+    tick: u64,
+    side: Option<Faction>,
+) -> String {
+    let rows: Vec<String> = missions
+        .missions()
+        .iter()
+        .filter(|m| {
+            side.is_none_or(|side| {
+                (m.faction == MissionFaction::Alliance) == (side == Faction::Alliance)
+            })
+        })
+        .map(|m| mission_row(world, missions, tick, m))
+        .collect();
+    let mut out = vec![heading(rows.len(), side, "missions")];
+    out.extend(rows);
+    out.join("\n")
+}
+
+/// Each side's three research trees: level, points held, and the next class's
+/// order and cost in points (`ResearchSystem::next_order`, `scaled_cost`).
+#[must_use]
+pub fn show_research(world: &GameWorld, research: &ResearchState) -> String {
+    let mut rows = Vec::new();
+    for side in [Faction::Alliance, Faction::Empire] {
+        let alliance = side == Faction::Alliance;
+        let levels = research.side(alliance);
+        for tech in TechType::ALL {
+            let tree = match tech {
+                TechType::Ship => "ship",
+                TechType::Troop => "troop",
+                TechType::Facility => "facility",
+            };
+            let level = levels.level(tech);
+            let next = ResearchSystem::next_order(world, alliance, tech, level).map_or_else(
+                || "none (tree exhausted)".to_owned(),
+                |(order, difficulty)| {
+                    format!(
+                        "order {order} cost {}",
+                        ResearchSystem::scaled_cost(world, difficulty)
+                    )
+                },
+            );
+            rows.push(format!(
+                "{} {tree} level {level} points {} next {next}",
+                side_name(side),
+                levels.points(tech)
+            ));
+        }
+    }
+    rows.join("\n")
+}
+
+const fn area_label(area: ProductionArea) -> &'static str {
+    match area {
+        ProductionArea::Shipyard => "shipyard",
+        ProductionArea::TrainingFacility => "training",
+        ProductionArea::ConstructionYard => "construction",
+    }
+}
+
+fn product_name(world: &GameWorld, kind: BuildableKind) -> String {
+    let named = match kind {
+        BuildableKind::CapitalShip(key) => world.capital_ship_classes.get(key).map(|c| &c.name),
+        BuildableKind::Fighter(key) => world.fighter_classes.get(key).map(|c| &c.name),
+        _ => kind
+            .class_dat_id()
+            .and_then(|class| world.buildable_classes.get(&class))
+            .map(|c| &c.name),
+    };
+    named
+        .filter(|name| !name.is_empty())
+        .cloned()
+        .or_else(|| {
+            kind.class_dat_id()
+                .map(|class| format!("class #{}", class.raw()))
+        })
+        .unwrap_or_else(|| "?".to_owned())
+}
+
+fn destination_label(world: &GameWorld, destination: Destination) -> String {
+    match destination {
+        Destination::System(system) => system_name(world, system).to_owned(),
+        Destination::Fleet(fleet) => {
+            let at = world
+                .fleets
+                .get(fleet)
+                .map_or("?", |f| system_name(world, f.location));
+            format!("{} at {at}", world.fleet_name(fleet).unwrap_or("?"))
+        }
+    }
+}
+
+fn queue_row(
+    world: &GameWorld,
+    index: usize,
+    item: &QueueItem,
+    eta: Option<u64>,
+    area_destination: Option<Destination>,
+) -> String {
+    let destination = item
+        .destination
+        .or(area_destination)
+        .map_or_else(|| "stays".to_owned(), |d| destination_label(world, d));
+    let eta = eta.map_or_else(|| "no yard".to_owned(), |day| format!("day {day}"));
+    format!(
+        "  [{}] {} {}/{} eta {eta} -> {destination}",
+        index + 1,
+        product_name(world, item.kind),
+        item.work_done,
+        item.total_cost
+    )
+}
+
+/// Every production queue, or those at one side's systems: per system and
+/// area, each item with its progress, the day it completes with the yards
+/// working and materials on hand (the Status window's best case,
+/// `ProductionQueue::completion_days`) and its destination.
+#[must_use]
+pub fn list_production(
+    world: &GameWorld,
+    manufacturing: &ManufacturingState,
+    tick: u64,
+    side: Option<Faction>,
+) -> String {
+    let mut systems: Vec<_> = world
+        .systems
+        .iter()
+        .filter(|(_, s)| side.is_none_or(|side| s.control.is_controlled_by(side)))
+        .map(|(key, s)| (s.name.clone(), key))
+        .collect();
+    systems.sort();
+    let mut out = Vec::new();
+    for (name, system) in systems {
+        let holder = world.systems[system].control.faction();
+        for area in ProductionArea::ALL {
+            let Some(queue) = manufacturing.queue(system, area).filter(|q| !q.is_empty()) else {
+                continue;
+            };
+            let periods = holder.map_or_else(Vec::new, |holder| {
+                rebellion_core::build_selection::yard_periods(
+                    world,
+                    system,
+                    area,
+                    holder == Faction::Alliance,
+                )
+            });
+            let etas = queue.completion_days(tick, &periods);
+            let side = holder.map_or("-", |h| if h == Faction::Alliance { "A" } else { "E" });
+            out.push(format!(
+                "{name} ({side}) {}: {} items",
+                area_label(area),
+                queue.len()
+            ));
+            for (index, item) in queue.items().iter().enumerate() {
+                out.push(queue_row(
+                    world,
+                    index,
+                    item,
+                    etas.get(index).copied().flatten(),
+                    manufacturing.destination(system, area),
+                ));
+            }
+        }
+    }
+    if out.is_empty() {
+        out.push("no production queues".to_owned());
+    }
+    out.join("\n")
+}
+
+/// One side's top strip and counts: raw and refined stock, maintenance
+/// capacity and use, systems held, fleets, characters and active missions.
+#[must_use]
+pub fn show_side(
+    world: &GameWorld,
+    stockpiles: &StockpileState,
+    manufacturing: &ManufacturingState,
+    missions: &MissionState,
+    side: Faction,
+) -> String {
+    let alliance = side == Faction::Alliance;
+    let stock = stockpiles.side(side);
+    let systems = world
+        .systems
+        .values()
+        .filter(|s| s.control.is_controlled_by(side))
+        .count();
+    let fleets = world
+        .fleets
+        .values()
+        .filter(|f| f.is_alliance == alliance)
+        .count();
+    let characters = world
+        .characters
+        .values()
+        .filter(|c| !c.is_killed && character_is_side(c, side))
+        .count();
+    let active = missions
+        .missions()
+        .iter()
+        .filter(|m| (m.faction == MissionFaction::Alliance) == alliance)
+        .count();
+    format!(
+        "{} raw {} refined {} maintenance used {} of {} systems {systems} fleets {fleets} \
+         characters {characters} missions {active}",
+        side_name(side),
+        stock.raw,
+        stock.refined,
+        maintenance_used(world, manufacturing, side),
+        maintenance_capacity(world, side),
+    )
+}

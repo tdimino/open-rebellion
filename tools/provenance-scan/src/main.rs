@@ -6,7 +6,8 @@
 //! parameter, a DAT file or table name, or an explicit `src:` tag. `port:` and
 //! `Augmentation` mark port-owned design. `hyp:` and "Inferred" mark a guess
 //! that still awaits recovery; a hypothesis is counted, never treated as
-//! cited.
+//! cited. A `port:` or `hyp:` tag decides first: a tagged comment that also names
+//! a source it departs from is tagged, not cited.
 //!
 //! An uncited item with hits (numeric literals other than 0 and 1, or roll
 //! draws) is a finding. `check` fails when a finding is missing from the
@@ -69,8 +70,26 @@ struct Baseline {
     items: BTreeMap<String, usize>,
 }
 
+/// Whether `tag` appears as its own word, so `port:` does not match `support:`.
+fn has_tag(comments: &str, tag: &str) -> bool {
+    comments.match_indices(tag).any(|(at, _)| {
+        comments[..at]
+            .chars()
+            .next_back()
+            .is_none_or(|c| !c.is_ascii_alphanumeric() && c != '_')
+    })
+}
+
 fn classify(comments: &str) -> Provenance {
     let has = |needle: &str| comments.contains(needle);
+    // A `port:` or `hyp:` tag decides first: a tagged comment may name the
+    // table or function it departs from without that making it cited.
+    if has_tag(comments, "port:") {
+        return Provenance::Port;
+    }
+    if has_tag(comments, "hyp:") {
+        return Provenance::Hyp;
+    }
     let cited = comments
         .split(|c: char| !c.is_ascii_alphanumeric() && c != '_' && c != '.')
         .any(|word| {
@@ -88,9 +107,9 @@ fn classify(comments: &str) -> Provenance {
         || has("src:");
     if cited {
         Provenance::Cited
-    } else if has("port:") || has("Augmentation") {
+    } else if has("Augmentation") {
         Provenance::Port
-    } else if has("hyp:") || has("Inferred") || has("inferred") {
+    } else if has("Inferred") || has("inferred") {
         Provenance::Hyp
     } else {
         Provenance::Uncited

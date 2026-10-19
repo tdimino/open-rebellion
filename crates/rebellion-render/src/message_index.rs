@@ -421,6 +421,37 @@ pub fn window_button_specs(
     buttons
 }
 
+/// A category control's name, as the dev commands spell the category.
+fn category_name(command_id: u16) -> &'static str {
+    match command_id {
+        0x79 => "All",
+        0x7a => "Popular Support",
+        0x7b => "Fleet",
+        0x7c => "Mission",
+        0x7d => "Resource",
+        0x7e => "Manufacturing",
+        0x7f => "Defense",
+        0x80 => "Conflict",
+        0x81 => "Chat",
+        0x82 => "Advice",
+        _ => "Category",
+    }
+}
+
+/// A window button's name for the dev commands' control registry.
+fn window_button_name(command_id: u16) -> String {
+    match command_id {
+        0x28 => "Close".to_owned(),
+        0x65 => "DisplayMessage".to_owned(),
+        0x66 => "Silently".to_owned(),
+        0x67 => "Display".to_owned(),
+        0x68 => "ComposeChat".to_owned(),
+        0x90 => "SelectAll".to_owned(),
+        0x91 => "Delete".to_owned(),
+        other => format!("Button {other:#x}"),
+    }
+}
+
 /// Paint the window's buttons and return the one clicked.
 fn draw_window_buttons(
     ctx: &egui::Context,
@@ -455,6 +486,13 @@ fn draw_window_buttons(
                     f32::from(button.width),
                     f32::from(button.height),
                 );
+                if crate::control_registry::enabled() {
+                    crate::control_registry::register_screen(
+                        "MessageIndex",
+                        &window_button_name(button.command_id),
+                        rect,
+                    );
+                }
                 let response = ui.interact(
                     rect,
                     ui.id().with(("message-index-button", button.command_id)),
@@ -552,6 +590,11 @@ pub fn draw_message_index_shell(
                     INDEX_CONTROLS_Y,
                     f32::from(control.width),
                     41.0,
+                );
+                crate::control_registry::register_screen(
+                    "MessageIndex",
+                    category_name(control.command_id),
+                    rect,
                 );
                 let response = ui.interact(
                     rect,

@@ -14,8 +14,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::ids::SystemKey;
-use crate::manufacturing::{BuildableKind, CompletionEvent, Departure};
+use crate::ids::{FleetKey, SystemKey};
+use crate::manufacturing::{BuildableKind, CompletionEvent, Departure, Destination};
 use crate::movement::{capital_ship_speed, default_speed, fighter_speed, transit_ticks_between};
 use crate::tick::TickEvent;
 use crate::world::GameWorld;
@@ -25,8 +25,13 @@ use crate::world::GameWorld;
 pub struct Delivery {
     /// The manufacturing system it left.
     pub origin: SystemKey,
-    /// Where it goes (`DestinationLocationAtDeparture`, object `+0x3c`).
+    /// Where it goes (`DestinationLocationAtDeparture`, object `+0x3c`):
+    /// a destination fleet's system when it left.
     pub destination: SystemKey,
+    /// The destination fleet, whose container holds the object while it
+    /// travels and keeps it on arrival.
+    #[serde(default)]
+    pub fleet: Option<FleetKey>,
     /// The game-day it arrives (`DestinationCount`, object `+0x44`).
     pub arrival_tick: u64,
     /// What was built.
@@ -44,6 +49,9 @@ pub struct DeliveryState {
 pub struct DeliveryAdvance {
     /// Deliveries that arrived, as completions at their destination.
     pub arrivals: Vec<CompletionEvent>,
+    /// Deliveries to a fleet that arrived: the completion at the fleet's
+    /// system, for the fleet to take aboard.
+    pub boarded: Vec<(FleetKey, CompletionEvent)>,
     /// Deliveries whose destination no longer exists
     /// (`GameObjDestroyedOnArrivalNotif`, event `0x303`, `FUN_004fc080`).
     pub lost: Vec<Delivery>,
@@ -106,16 +114,29 @@ impl DeliveryState {
     /// destination (`FUN_00556430`: `+0x44 = clock + ticks`).
     pub fn depart(&mut self, world: &GameWorld, departures: &[Departure]) {
         for departure in departures {
+            let (destination, fleet) = match departure.destination {
+                Destination::System(system) => (system, None),
+                // A fleet already gone leaves the object at its facility,
+                // lost on arrival.
+                Destination::Fleet(fleet) => (
+                    world
+                        .fleets
+                        .get(fleet)
+                        .map_or(departure.origin, |f| f.location),
+                    Some(fleet),
+                ),
+            };
             let position = |key: SystemKey| world.systems.get(key).map_or((0, 0), |s| (s.x, s.y));
             let ticks = transit_ticks_between(
                 world,
                 position(departure.origin),
-                position(departure.destination),
+                position(destination),
                 product_speed(world, departure.kind),
             );
             self.en_route.push(Delivery {
                 origin: departure.origin,
-                destination: departure.destination,
+                destination,
+                fleet,
                 arrival_tick: departure.tick + u64::from(ticks),
                 kind: departure.kind,
             });
@@ -133,6 +154,20 @@ impl DeliveryState {
         for delivery in std::mem::take(&mut self.en_route) {
             if delivery.arrival_tick > now {
                 remaining.push(delivery);
+            } else if let Some(fleet) = delivery.fleet {
+                // The fleet's container held the object all along; it is
+                // aboard wherever the fleet now is.
+                match world.fleets.get(fleet) {
+                    Some(f) => result.boarded.push((
+                        fleet,
+                        CompletionEvent {
+                            system: f.location,
+                            tick: delivery.arrival_tick,
+                            kind: delivery.kind,
+                        },
+                    )),
+                    None => result.lost.push(delivery),
+                }
             } else if world
                 .systems
                 .get(delivery.destination)
@@ -210,7 +245,7 @@ mod tests {
     ) -> Departure {
         Departure {
             origin,
-            destination,
+            destination: Destination::System(destination),
             tick,
             kind,
         }

@@ -169,10 +169,14 @@ battle.
 `steer_engagement_group` and `original_windowed_damage_rolls`; and
 `stalemate_resolve_side`.
 
+## Morale retreat
+
+Step 3's flag is vtable `+0x2c` = `FUN_005d19a0`: a side withdraws when its
+strength is 0.0 or below its threshold `side+0x24` times the enemy's, if
+`side+0x80` permits. See [morale-retreat.md](morale-retreat.md). The headless
+step runs `battle+0x250` (the Empire) before `battle+0x24c` (the Alliance)
+(`FUN_005ae9c0.c:26-27`); the port steps the Empire's side first.
+
 ## Open
 
-- Which of `battle+0x24c` / `+0x250` is stepped first in the port's terms;
-  the port steps the defender first.
 - The priority list's terms beyond the policy value.
-- The morale retreat in `FUN_005d19a0` (side strength below 0.33 of its
-  start, `side+0x24`) and when `side+0x80` permits it.

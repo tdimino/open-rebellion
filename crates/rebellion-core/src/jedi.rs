@@ -48,21 +48,45 @@ use crate::world::{ForceTier, GameWorld};
 // ---------------------------------------------------------------------------
 
 /// Experience points required to advance from Aware → Training.
+///
+/// port: the tier model is the port's; the original keeps no tier field, trains by
+/// R10 and detects with `FUN_0055e4d0` (`force-users.md`, Answer 1 and R10;
+/// discovery timer 0x389, `story-missions.md`).
 pub const XP_TO_TRAINING: u32 = 50;
 
 /// Experience points required to advance from Training → Experienced.
+///
+/// port: the tier model is the port's; the original keeps no tier field, trains by
+/// R10 and detects with `FUN_0055e4d0` (`force-users.md`, Answer 1 and R10;
+/// discovery timer 0x389, `story-missions.md`).
 pub const XP_TO_EXPERIENCED: u32 = 150;
 
 /// How often (in ticks) the detection check runs for each active Jedi.
+///
+/// port: the tier model is the port's; the original keeps no tier field, trains by
+/// R10 and detects with `FUN_0055e4d0` (`force-users.md`, Answer 1 and R10;
+/// discovery timer 0x389, `story-missions.md`).
 pub const DETECTION_CHECK_INTERVAL: u64 = 30;
 
 /// Base detection probability per detection check for an Aware Jedi (0.0–1.0).
+///
+/// port: the tier model is the port's; the original keeps no tier field, trains by
+/// R10 and detects with `FUN_0055e4d0` (`force-users.md`, Answer 1 and R10;
+/// discovery timer 0x389, `story-missions.md`).
 pub const DETECT_PROB_AWARE: f64 = 0.05;
 
 /// Detection probability for a Training-tier Jedi.
+///
+/// port: the tier model is the port's; the original keeps no tier field, trains by
+/// R10 and detects with `FUN_0055e4d0` (`force-users.md`, Answer 1 and R10;
+/// discovery timer 0x389, `story-missions.md`).
 pub const DETECT_PROB_TRAINING: f64 = 0.15;
 
 /// Detection probability for an Experienced Jedi.
+///
+/// port: the tier model is the port's; the original keeps no tier field, trains by
+/// R10 and detects with `FUN_0055e4d0` (`force-users.md`, Answer 1 and R10;
+/// discovery timer 0x389, `story-missions.md`).
 pub const DETECT_PROB_EXPERIENCED: f64 = 0.30;
 
 // ---------------------------------------------------------------------------
@@ -182,6 +206,8 @@ impl JediSystem {
         clippy::cast_possible_truncation,
         reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
     )]
+    // port: the XP, tier and detection model is the port's; the original trains by R10 and
+    // detects with `FUN_0055e4d0` (`force-users.md`, Answer 1 and R10).
     pub fn advance(
         state: &mut JediState,
         world: &GameWorld,

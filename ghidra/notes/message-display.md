@@ -3,7 +3,7 @@ title: "Message display: TEXTSTRA formatter, mode-2 layout, message classes"
 description: "How a game message gets its title, body, picture and sound, and how the Message Index draws it full-size; with the Battle Alert's summary choice"
 category: "ghidra"
 created: 2026-10-09
-updated: 2026-10-09
+updated: 2026-10-16
 tags: [message-index, textstra, formatter, notifications, battle-alert]
 ---
 
@@ -101,7 +101,7 @@ Empire where two).
 | HQ arrives | case 4 | `0x707c`/`0x707d` | `0x3fe` | — | 6 | not ported |
 | Loyalty joins | `FUN_00499760`, `0x100` | joining side `0x7038`/`0x703b`, other `0x7039`/`0x703c` | `0x3ed` | `0x450` | 1 / 2 | both sides |
 | Declares neutrality | `FUN_00499760` | `0x703a`/`0x703d` | `0x3ed` | `0x451` | none | both sides |
-| Maintenance | `FUN_00498970` + `FUN_0048bbf0` | lists destroyed units | `0x3f5` Alliance, `0x3f6` Empire | `0x456` | `0xc` | not ported (the event lacks the unit list) |
+| Maintenance | `FUN_00498970` + `FUN_0048bbf0` | lists destroyed units | `0x3f5` Alliance, `0x3f6` Empire | `0x456` | `0xc` | one notice per overdraft scrap (`maintenance_shortfall_message`) |
 | Construction | `FUN_004c5000` | — | `(id & 0xfff) + 0x1000` | — | — | not ported |
 
 hyp: the port files loyalty where economy control resolution changes the

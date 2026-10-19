@@ -96,7 +96,8 @@ pub enum CommandRefusal {
     OtherSide,
     /// Not recruited (`+0x50` bit 2).
     Unrecruited,
-    /// Travelling (`+0x50` bit 4): off the map between places.
+    /// Travelling (`+0x50` bit 4): standing at its destination until it
+    /// arrives.
     EnRoute,
     /// On a mission (`+0x78` bit 7).
     OnMission,
@@ -135,7 +136,7 @@ pub fn command_refusal(
     if c.is_captive {
         return Some(CommandRefusal::Prisoner);
     }
-    if command_post(c).is_none() {
+    if c.en_route || command_post(c).is_none() {
         return Some(CommandRefusal::EnRoute);
     }
     let eligible = match kind {

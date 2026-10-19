@@ -2,6 +2,7 @@
   "schema_version": 1,
   "research_cutoff": "2026-09-10",
   "status": "foundation_complete",
+  "progress": "20% — P45A foundation landed; P45B through P45E pending",
   "decision": "Separate exact original parity from optional faithful HD and experimental remastering.",
   "profiles": {
     "original-parity": {

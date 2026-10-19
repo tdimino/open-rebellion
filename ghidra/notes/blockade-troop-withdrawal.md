@@ -32,12 +32,14 @@ function named here has a `FUN_<address>.c` note in this directory.
      `DAT_006bb3cc` from `0x1e05` (7685) via `FUN_0053e390`. Shipped values: 5, 2.
    - Family `0x22` is DEFFACSD record 1, the KDY-150 (TEXTSTRA 8704).
 2. **Regiment copy** (`regiment +0x60`, `WithdrawPercent`, default 100 in the
-   constructor `FUN_00504150`). `FUN_00514a60` moves an object between
-   containers and calls `old_system->+0xd0(obj, 0)` and
-   `new_system->+0xd0(obj, 1)`. The system's `+0xd0` slot is `FUN_00508660`;
-   for troop type codes `0x10..0x13` with `param_2 != 0` it calls
-   `FUN_0050c540`, which calls `FUN_00504470(regiment, system +0x74)`.
-   The system's `+0x1ec` change slot is `FUN_00524b10` (returns 1), so a later
+   constructor `FUN_00504150`). When an object's usable bit changes, event
+   `0x301` runs `FUN_00514510`, which calls the system's slot `+0xc8`,
+   `FUN_00508660` (`FUN_00514510.c:67`; system vtable `0x0065e640`, stored by
+   `FUN_00507130`). For troop type codes `0x10..0x13` with the flag set it
+   calls `FUN_0050c540`, which calls `FUN_00504470(regiment, system +0x74)`.
+   `FUN_00514a60`, which moves an object between containers, calls the
+   system's `+0xc4`, `FUN_00508440`.
+   The system's `+0x1e4` change slot is `FUN_00524b10` (returns 1), so a later
    change to `+0x74` does not reach regiments already present.
 3. **Reset.** `FUN_004f7410` sets `+0x50` bit 0 (active) and calls slot
    `+0x110`; the regiment override `FUN_00504960` calls `FUN_00504470(100)`
@@ -61,7 +63,7 @@ function named here has a `FUN_<address>.c` note in this directory.
 | Class | Constructor | Vtable | Slots used |
 |-------|-------------|--------|------------|
 | Troop regiment | `FUN_00504150` | `0x0065e438` (secondary at `+0x30`: `0x0065e430`) | `+0x110` `FUN_00504960`, `+0x124` `FUN_00504990`, `+0x1f0` `FUN_005049e0`, `+0x1f8` `FUN_00504a00`, `+0x1fc` `FUN_00504af0` (`TroopRegWithdrawPercentNotif`) |
-| System | `FUN_00504c40` | `0x0065e638` | `+0xcc` `FUN_00508440`, `+0xd0` `FUN_00508660`, `+0x1ec` `FUN_00524b10`, `+0x228` `FUN_00511300` |
+| System | `FUN_00507130` | `0x0065e640` (secondary at `+0x30`: `0x0065e63c`) | `+0xc4` `FUN_00508440`, `+0xc8` `FUN_00508660`, `+0x1e4` `FUN_00524b10`, `+0x220` `FUN_00511300` |
 | Fleet | `FUN_004fd650` | `0x0065d438` | `+0x204` `FUN_004ff7f0` (`FleetBlockadeNotif`, event `0x181`) |
 
 ## Corrections to earlier readings

@@ -4,8 +4,6 @@
 //! `FUN_00515480`). `ghidra/notes/system-squadrons-combat.md`, sections 3
 //! and 3b.
 
-use std::collections::HashSet;
-
 use crate::blockade::BlockadeSystem;
 use crate::combat::side_present;
 use crate::dat::Faction;
@@ -26,6 +24,24 @@ pub fn pass_winner(world: &GameWorld, system: SystemKey, recorded: Option<bool>)
     }
     (side_present(world, system, true) && side_present(world, system, false))
         .then(|| world.arrival_holders.get(&system) != Some(&true))
+}
+
+/// Trace what the pass did with one object, and for which winner.
+fn trace_relocation(
+    world: &GameWorld,
+    system: SystemKey,
+    object: &str,
+    outcome: &dyn std::fmt::Debug,
+    winner_is_alliance: bool,
+) {
+    crate::trace::record(crate::trace::TraceMask::COMBAT, "relocation", || {
+        serde_json::json!({
+            "system": world.systems.get(system).map(|sys| sys.name.clone()),
+            "object": object,
+            "outcome": format!("{outcome:?}"),
+            "winner": if winner_is_alliance { "alliance" } else { "empire" },
+        })
+    });
 }
 
 /// What became of one object the pass handled.
@@ -99,12 +115,20 @@ pub fn run_pass(
             .fleets
             .iter()
             .copied()
-            .filter(|&fleet| world.fleets.get(fleet).is_some_and(|f| f.is_alliance == loser))
+            .filter(|&fleet| {
+                world
+                    .fleets
+                    .get(fleet)
+                    .is_some_and(|f| f.is_alliance == loser)
+            })
             .collect()
     });
     for fleet in fleets {
         let outcome = relocate_fleet(world, movement, troop_transport, system, fleet, tick, log);
-        log.push(format!("[battle] post-battle fleet={fleet:?} outcome={outcome:?}"));
+        trace_relocation(world, system, "fleet", &outcome, winner_is_alliance);
+        log.push(format!(
+            "[battle] post-battle fleet={fleet:?} outcome={outcome:?}"
+        ));
     }
     for class in squadron_classes(world, system, loser) {
         let count = world.systems.get(system).map_or(0, |value| {
@@ -116,15 +140,9 @@ pub fn run_pass(
                 .sum()
         });
         for _ in 0..count {
-            let outcome = relocate_squadron(
-                world,
-                movement,
-                troop_transport,
-                system,
-                class,
-                loser,
-                tick,
-            );
+            let outcome =
+                relocate_squadron(world, movement, troop_transport, system, class, loser, tick);
+            trace_relocation(world, system, "squadron", &outcome, winner_is_alliance);
             log.push(format!(
                 "[battle] post-battle squadron class={class:?} outcome={outcome:?}"
             ));
@@ -166,6 +184,13 @@ fn check_winner_squadron(
         if let Some(value) = world.systems.get_mut(system) {
             value.take_squadron(class, is_alliance);
         }
+        trace_relocation(
+            world,
+            system,
+            "winner_squadron",
+            &"Destroyed(container)",
+            is_alliance,
+        );
         log.push(format!(
             "[battle] post-battle winner squadron class={class:?} outcome=Destroyed(container)"
         ));
@@ -183,6 +208,7 @@ fn check_winner_squadron(
         is_alliance,
         tick,
     );
+    trace_relocation(world, system, "winner_squadron", &outcome, is_alliance);
     log.push(format!(
         "[battle] post-battle winner squadron class={class:?} outcome={outcome:?}"
     ));
@@ -227,6 +253,13 @@ fn relocate_fleet(
                 {
                     Ok(_) => Relocation::Moved(destination),
                     Err(error) => {
+                        trace_relocation(
+                            world,
+                            system,
+                            "fleet",
+                            &format_args!("Refused({destination:?}, {error:?})"),
+                            !is_alliance,
+                        );
                         log.push(format!(
                             "[battle] post-battle fleet={fleet:?} destination={destination:?} refused={error:?}"
                         ));
@@ -274,7 +307,7 @@ fn relocate_squadron(
         Place::System(destination) => RegimentTarget::System(destination),
         Place::Fleet(fleet) => RegimentTarget::Fleet(fleet),
     };
-    let blockaded = blockaded_systems(world);
+    let blockaded = BlockadeSystem::blockaded_now(world);
     match troop_transport.move_squadron(
         world,
         movement,
@@ -342,18 +375,17 @@ fn place(
         return Some(Place::System(from));
     }
     let nearest = nearest_systems(world, from);
-    if let Some(&key) = nearest
-        .iter()
-        .find(|&&key| accepts(key) && !blockaded(key))
-    {
+    if let Some(&key) = nearest.iter().find(|&&key| accepts(key) && !blockaded(key)) {
         return Some(Place::System(key));
     }
     if squadron {
         for &key in &nearest {
-            let fleets = world.systems.get(key).map_or(&[][..], |value| &value.fleets);
+            let fleets = world
+                .systems
+                .get(key)
+                .map_or(&[][..], |value| &value.fleets);
             if let Some(&fleet) = fleets.iter().find(|&&fleet| {
-                troop_transport
-                    .squadron_fleet_accepts(world, movement, is_alliance, fleet)
+                troop_transport.squadron_fleet_accepts(world, movement, is_alliance, fleet)
             }) {
                 return Some(Place::Fleet(fleet));
             }
@@ -415,12 +447,16 @@ fn nearest_systems(world: &GameWorld, from: SystemKey) -> Vec<SystemKey> {
 /// living ship cannot travel.
 fn fleet_speed_is_zero(world: &GameWorld, fleet: FleetKey) -> bool {
     world.fleets.get(fleet).is_some_and(|value| {
-        value.capital_ships.iter().filter(|ship| ship.alive).any(|ship| {
-            world
-                .capital_ship_classes
-                .get(ship.class)
-                .is_none_or(|class| capital_ship_instance_speed(world, ship, class) == 0)
-        })
+        value
+            .capital_ships
+            .iter()
+            .filter(|ship| ship.alive)
+            .any(|ship| {
+                world
+                    .capital_ship_classes
+                    .get(ship.class)
+                    .is_none_or(|class| capital_ship_instance_speed(world, ship, class) == 0)
+            })
     })
 }
 
@@ -508,16 +544,6 @@ fn squadron_classes(world: &GameWorld, system: SystemKey, is_alliance: bool) -> 
     });
     classes.dedup();
     classes
-}
-
-/// The systems blockaded now (`+0x88` bit `0x20`).
-fn blockaded_systems(world: &GameWorld) -> HashSet<SystemKey> {
-    world
-        .systems
-        .iter()
-        .filter(|(_, value)| BlockadeSystem::system_is_blockaded(world, value))
-        .map(|(key, _)| key)
-        .collect()
 }
 
 const fn side(is_alliance: bool) -> Faction {

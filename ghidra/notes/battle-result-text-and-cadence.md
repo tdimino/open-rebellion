@@ -1,9 +1,9 @@
 # Battle Result Text and Re-Battle Cadence
 
-> **Corrected 2026-10-10:** `+0x58` is the player's side and `+0x5c` the
-> holder of a system already under blockade; the branch tables below read
-> consistently only that way ("defended" needs the holder to be the
-> player's side). The port follows `battle_result_summary_lines`.
+`+0x58` is the player's side and `+0x5c` the holder of a system already
+under blockade; the branch tables below read consistently only that way
+("defended" needs the holder to be the player's side). The port follows
+`battle_result_summary_lines`.
 
 Recovered 2026-10-10 from REBEXE.EXE with Homebrew Ghidra 12.1.3 (read-only,
 no analysis). Companion to `system-squadrons-combat.md`,

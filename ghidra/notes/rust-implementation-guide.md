@@ -148,14 +148,14 @@ second; the 1200 s stalemate rule ends every battle. See
 
 ### 2.1 Family Bytes
 
-`combat.rs` `CombatEntityKind::from_family_byte` classifies by DatId family byte with ranges that do not match the DAT headers (characters `0x08`-`0x0f`, troops `0x14`-`0x1b`, ships `0x30`-`0x3b`, a Death Star at `0x34`, fighters `0x71`-`0x72`). The headers give (`record-registry.md`, Appendix below):
+The DAT headers give these DatId family bytes (`record-registry.md`, Appendix below):
 
 - capital ships `0x14`-`0x1b` (CAPSHPSD), the Death Star by its record's family `0x18`;
 - fighters `0x1c`-`0x1f`, troops `0x10`-`0x13`, special forces `0x3c`-`0x3f`;
 - major characters `0x30`-`0x37` (`0x34` Palpatine), minor characters `0x38`-`0x3b`;
 - fleets `0x08`-`0x0f`; missions `0x40`-`0x7f` (`0x71` Dagobah, `0x73` Pickup).
 
-The original identifies a Death Star by a ship in `[0x18,0x1c)` (`FUN_005003d0`, `FUN_00582440`, `FUN_0058d440`; `death-star-strategic.md`). Task-graph node `or-port-death-star-family-qtde` moves the port's `is_death_star` and `CombatEntityKind` onto it.
+The original identifies a Death Star by a ship in `[0x18,0x1c)` (`FUN_005003d0`, `FUN_00582440`, `FUN_0058d440`; `death-star-strategic.md`). Task-graph node `or-port-death-star-family-qtde` moves the port's `is_death_star` onto it.
 
 `extract_difficulty` reads `+0x24 >> 4 & 3`, which `FUN_0054a1d0` (a story-flag broadcaster) passes to `FUN_004fd600` to pick the Alliance (1) or Empire (2) view; it is a side selector.
 

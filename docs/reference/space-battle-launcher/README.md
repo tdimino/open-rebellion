@@ -1,7 +1,7 @@
 # Space-battle launcher reference
 
 This is the operational reference for opening and verifying Open Rebellion's
-space-battle scene. The [implementation plan](../../plans/2026-09-12-tooling-standalone-space-battle-launcher.md)
+space-battle scene. The [implementation plan](../../plans/archive/2026-09-12-tooling-standalone-space-battle-launcher.md)
 owns future work. The [interface audit](../../qa/2026-09-10-interface-parity-audit/README.md)
 remains the acceptance authority.
 

@@ -72,7 +72,8 @@
 #   vm-game.sh load SLOT [FILE]  F1, load slot SLOT (1-6, the rows Saved Games
 #                                shows), confirm, wait out the load
 #   vm-game.sh save SLOT NAME    F1, save over filled slot SLOT as NAME
-#                                (lowercase letters, digits, space, hyphen)
+#                                (lowercase letters, digits, space, hyphen),
+#                                then back to the galaxy
 #   vm-game.sh resolve [FILE]    at a Battle Alert: auto-resolve, close the result
 #   vm-game.sh take-command [FILE]  at a Battle Alert: open the battlefield
 #                                (paused); launch fresh first (see below)
@@ -764,7 +765,8 @@ a0_audio() {
 ROWS=(113 166 218 270 323 376)
 NAME_X=245 LOAD_X=384
 YES=(350 377)       # the check mark of "Load without saving?" / "Save anyway?"
-SAVED_OK=(398 375)  # "Selected Game Saved Successfully"; closes Game Options
+SAVED_OK=(398 375)  # "Selected Game Saved Successfully"; Game Options stays open
+GALAXY=(228 490)    # Game Options' galaxy icon: back to the running galaxy
 row_y() {
   [[ $1 =~ ^[1-6]$ ]] || { echo "slot $1: Saved Games shows rows 1-6" >&2; exit 2; }
   echo "${ROWS[$1 - 1]}"
@@ -792,6 +794,11 @@ save_slot() {
   pointer click "${YES[@]}"
   vnc pause 2
   pointer click "${SAVED_OK[@]}"
+  # Game Options holds the clock: Escape leaves the name edit, then the
+  # galaxy icon closes the screen (2026-10-16).
+  vnc pause 1 key esc pause 1
+  pointer click "${GALAXY[@]}"
+  vnc pause 1
 }
 
 # Auto-resolve is the alert's middle button. The result box ignores an

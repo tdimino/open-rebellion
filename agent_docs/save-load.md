@@ -1,9 +1,9 @@
 ---
 title: "Save/Load System"
-description: "Native and browser save v41, canonical fingerprints, campaign setup, continuation state, troop cargo, embarked tracking, deliveries, and the no-migration rule"
+description: "Native and browser save v53, canonical fingerprints, campaign setup, continuation state, troop cargo, embarked tracking, deliveries, and the no-migration rule"
 category: "agent-docs"
 created: 2026-03-15
-updated: 2026-10-15
+updated: 2026-10-16
 tags: [save-load, bincode, migration, serialization, wasm, determinism]
 ---
 
@@ -11,14 +11,14 @@ tags: [save-load, bincode, migration, serialization, wasm, determinism]
 
 `crates/rebellion-data/src/save.rs` owns native files and browser storage.
 `crates/rebellion-app/src/main.rs` converts between a live campaign and the
-serializable snapshot. The current format is v41, and it is the only one
+serializable snapshot. The current format is v53, and it is the only one
 that loads.
 
-## Native format (v41)
+## Native format (v53)
 
 ```text
 [magic: 8 bytes "OPENREB\0"]
-[version: u32 LE]             — SAVE_VERSION = 41
+[version: u32 LE]             — SAVE_VERSION = 53
 [save_name: u32 len + UTF-8]
 [timestamp_secs: u64 LE]
 [mod_count: u32 LE]
@@ -86,17 +86,71 @@ ranked names (v39; `ghidra/notes/character-roster.md`), each system's
 side that last brought a fleet or squadron in (v40;
 `ghidra/notes/system-squadrons-combat.md`),
 `UprisingState`, queue destinations and en-route deliveries, missions with
-their member lists, phase, and timer, members travelling to a mission
-target and the fleet a Move's member boards there (v41; Move missions and
-their fleet targets, `ghidra/notes/move-order.md`), and the MISSNSD and
-SPECFCSD records.
+their member lists, phase, and timer, each travelling member's arrival day
+(v41; Move missions and their fleet targets, `ghidra/notes/move-order.md`),
+each AI side's character tasks and their counts (v42;
+`ghidra/notes/ai-order-emission.md`, "Character tasks (module 12)"), each side's research points pools, passive
+timer and exhausted trees, with Research missions in `MissionState` (v43;
+`ghidra/notes/research.md`), each AI side's production state (module
+phases and lists, goal token, targets and role bits) and production
+destinations that name a fleet (v44; `ghidra/notes/ai-production.md`,
+`ghidra/notes/production-destination.md`), each character's and special
+force's en route flag, set while it stands at its destination before
+arriving, and a special force's hidden-mission flag (v45,
+`ghidra/notes/move-order.md`, `ghidra/notes/decoy-roll.md`), each AI side's strategic
+state: the marks its records keep, module 13's mode and controller with its
+sector plan, the regional records with their postures and class I task
+counts, the fleet tasks, and the class I character tasks (v46;
+`ghidra/notes/ai-order-emission.md`), each side's Research planners with their
+claimed members (v47; `ghidra/notes/research.md`), and the MISSNSD and SPECFCSD
+records. Each capital ship carries its six damage counters (`ShipInstance::damage_counters`)
+and its repair timer `0x380` (`ShipInstance::repair_timer`: due tick and
+the fast-repair flag), added in v49 (`ghidra/notes/ship-damage-repair.md`).
+`game_config` carries the AI tempo, `AiConfig::day_orders` and
+`AiConfig::rounds_per_day` by speed (v52).
+Each production module keeps the orders of its last phase still to issue,
+one a round, and whether a bundled Destination and Build still owes its
+Build round, and each AI side's scheduler keeps its round-robin cursor, its
+priority scan start, each module's priority, the orders issued today, the
+last round's in-day step, whether the day ended since that round, and the
+order of its last round still to apply; the player's advisor agent keeps
+its round-robin cursor and the order of its last step still to apply (serde
+defaults); each mission keeps how many outcome passes it has run (v52,
+the AI round scheduler; `ghidra/notes/ai-order-emission.md`, "Scheduler and
+executor"). Each system's economy record keeps the side that last held it by
+support alone (`SupportHolder`, `FUN_0055a080`), and the blockade state keeps
+each blockaded system's timer `0x386`, its minimum delay and due tick (v52,
+`ghidra/notes/timer-scheduler.md`). System `+0x88` bit 11, a usable Death
+Star in the sector (`GameWorld::death_star_sectors`), is derived each tick
+and after a load, and saved nowhere; the economy record keeps no copy of it
+(v53). A native save taken mid-day keeps the clock's part of the day and
+each side's last in-day step, so a load resumes at the next due step and
+applies the pending order first. A headless save leaves the day open with its
+last step run, so the next tick's prologue only closes it.
+
+Each of the world's eleven slotmaps is written as `{slots, free}` (v48,
+`crates/rebellion-core/src/world/slot_order.rs`): `slots` is slotmap's own
+serde form, which keeps every vacant slot and its version, and `free` is the
+order in which inserts will take the vacant slots. slotmap rebuilds its free
+list in descending slot order on load, so without `free` a slot freed before
+the save would be reused in another order than in the uninterrupted game and
+anything walking a map in slot order would play on differently. Loading
+rebuilds each map with remove/insert cycles until every slot has its saved
+version, then frees the vacant ones in reverse pop order, and rejects a save
+whose `free` is not a permutation of its vacant slots. An arena with no live
+value is probed and rebuilt with `Default::default()` of its value type as the
+inserted placeholder (v51), so an emptied arena keeps its free order too.
+The free order is part of the canonical fingerprint.
 
 ## Deterministic fingerprints
 
 Unordered sets and maps use stable human-readable serialization for the
 fingerprint. Typed-key maps become sorted key/value sequences because JSON
 object keys must be strings. The adapters intentionally leave non-human
-serialization unchanged, preserving the historical bincode layout.
+serialization unchanged, preserving the historical bincode layout. Two saves
+of one state therefore differ in bytes (the header timestamp, and map entry
+order in the body, which follows each process's `HashMap` seed) while their
+fingerprints match.
 
 Sequence order that carries gameplay meaning remains ordered. A matching
 fingerprint proves only that one recorded logical snapshot matches. F-011B4

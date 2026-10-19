@@ -5310,10 +5310,7 @@ fn battle_result_summary_lines(session: &BattleSession) -> Vec<String> {
     let player_alliance = session.player_is_attacker == session.attacker_is_alliance;
     let withdrew = |alliance: bool| {
         let side_is_attacker = session.attacker_is_alliance == alliance;
-        session
-            .ships
-            .iter()
-            .any(|ship| ship.is_attacker == side_is_attacker && ship.retreated)
+        session.side_withdrew(side_is_attacker)
     };
     let fate = |alliance: bool| {
         if !withdrew(alliance) {
@@ -6343,6 +6340,14 @@ fn draw_original_battle_alert(
 
     for (index, tab) in BattleAlertTab::ALL.into_iter().enumerate() {
         let rect = skin.tab_rects[index];
+        crate::control_registry::register_logical(
+            "BattleAlert",
+            tab.label(),
+            BATTLE_ALERT_WINDOW_X + rect.x,
+            BATTLE_ALERT_WINDOW_Y + rect.y,
+            rect.width,
+            rect.height,
+        );
         let active = state.battle_alert_tab == tab
             || (mouse_down && rect.contains(local_mouse.0, local_mouse.1));
         draw_strategy_bitmap(
@@ -6374,6 +6379,14 @@ fn draw_original_battle_alert(
         .map(|(index, _)| button_controls[index]);
     for (index, rect) in button_rects.into_iter().enumerate() {
         let control = button_controls[index];
+        crate::control_registry::register_logical(
+            "BattleAlert",
+            ["Retreat", "Simulate", "Tactical"][index],
+            BATTLE_ALERT_WINDOW_X + rect.x,
+            BATTLE_ALERT_WINDOW_Y + rect.y,
+            rect.width,
+            rect.height,
+        );
         let enabled = control != BattleAlertControl::Retreat || retreat_enabled;
         let resource_state = if !enabled {
             2
@@ -6606,6 +6619,14 @@ fn draw_original_battle_results(
         BATTLE_RESULTS_WINDOW_X + BATTLE_RESULTS_RAIL_X,
         BATTLE_RESULTS_WINDOW_Y,
     );
+    crate::control_registry::register_logical(
+        "Results",
+        "Close",
+        BATTLE_RESULTS_WINDOW_X + skin.close_rect.x,
+        BATTLE_RESULTS_WINDOW_Y + skin.close_rect.y,
+        skin.close_rect.width,
+        skin.close_rect.height,
+    );
     let close_active = mouse_down
         && skin.close_rect.contains(
             mouse.0 - BATTLE_RESULTS_WINDOW_X,
@@ -6622,6 +6643,14 @@ fn draw_original_battle_results(
         let local_mouse = (
             mouse.0 - BATTLE_RESULTS_WINDOW_X,
             mouse.1 - BATTLE_RESULTS_WINDOW_Y,
+        );
+        crate::control_registry::register_logical(
+            "Results",
+            BattleResultTab::from_index(index).label(),
+            BATTLE_RESULTS_WINDOW_X + rect.x,
+            BATTLE_RESULTS_WINDOW_Y + rect.y,
+            rect.width,
+            rect.height,
         );
         let selected = state.battle_result_tab.index() == index;
         let active = selected || (mouse_down && rect.contains(local_mouse.0, local_mouse.1));

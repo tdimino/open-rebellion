@@ -969,6 +969,8 @@ fn dispatch_ground_item(
                 is_alliance,
                 skills: [0; 8],
                 on_mission: false,
+                en_route: false,
+                on_hidden_mission: false,
             };
             let key = world.special_forces.insert(unit);
             world.systems[system_key].special_forces.push(key);
@@ -1234,14 +1236,17 @@ fn initialize_population<R: Rng + ?Sized>(
 /// Mapping from original 0-100 support to our dual f32 popularity:
 /// - For faction-controlled systems, the controlling faction gets `support / 100.0`
 ///   and the opposing faction gets `(100 - support) / 100.0`.
-/// - For neutral/uncontrolled systems, both factions get `support / 100.0`
-///   (centered around 0.5).
+/// - For neutral/uncontrolled systems, the seeded value is the Alliance's
+///   support and the Empire's is `100 - support` (`FUN_00559700` returns one
+///   value, system `+0x58`).
 ///
 /// Original formulas:
 /// - Core controlled strong: `base(7682) + random(0..extra(7683))` → 60-90 range
 /// - Core controlled weak:   `base(7684) + random(0..extra(7685))` → 20-50 range
 /// - Core neutral:           `random(0..spread(7764)) + (50 - spread/2)` → ~41-59
-/// - Rim populated:          `random(0..spread(7765)) + 50` → 50 (7765=0 in stock)
+///   (`FUN_00559700` case 3)
+/// - Rim populated:          `random(0..spread(7765)) + 50` → 50 (7765=0 in stock;
+///   hyp: no recovered reader of GNPRTB 7765 besides the loader `FUN_00558bb0`)
 /// - Unpopulated:            50 (hard-coded neutral)
 #[expect(
     clippy::too_many_lines,
@@ -1353,7 +1358,7 @@ fn initialize_support<R: Rng + ?Sized>(
                     } else {
                         0.5
                     };
-                    (support, support)
+                    (support, 1.0 - support)
                 }
             },
             SectorGroup::RimInner | SectorGroup::RimOuter => {
@@ -1364,7 +1369,7 @@ fn initialize_support<R: Rng + ?Sized>(
                     } else {
                         0.5
                     };
-                    (support, support)
+                    (support, 1.0 - support)
                 } else {
                     (0.5, 0.5)
                 }
@@ -2112,6 +2117,8 @@ mod tests {
             is_alliance: true,
             skills: [0; 8],
             on_mission: false,
+            en_route: false,
+            on_hidden_mission: false,
         };
         let known = world.special_forces.insert(unit(class));
         let unknown = world.special_forces.insert(unit(DatId::new(0)));
@@ -2151,6 +2158,8 @@ mod tests {
             is_alliance: true,
             skills: [0; 8],
             on_mission: false,
+            en_route: false,
+            on_hidden_mission: false,
         });
         let mut rng = Xoshiro256PlusPlus::seed_from_u64(7);
         let untouched = rng.clone();
@@ -2207,6 +2216,83 @@ mod tests {
             is_destroyed: false,
             control,
         })
+    }
+
+    /// `FUN_00559700` returns one value, the Alliance's support (`+0x58`):
+    /// a neutral core system draws `rand(7764) + 50 - 7764/2` and a populated
+    /// rim system `rand(7765) + 50`, and the Empire holds 100 minus it.
+    #[test]
+    fn a_neutral_systems_support_is_the_alliances_and_the_empire_holds_the_rest() {
+        use rebellion_core::world::{GnprtbEntry, GnprtbParams, Sector};
+        let entry = |parameter_id, value| GnprtbEntry {
+            parameter_id,
+            development: value,
+            alliance_sp_easy: value,
+            alliance_sp_medium: value,
+            alliance_sp_hard: value,
+            empire_sp_easy: value,
+            empire_sp_medium: value,
+            empire_sp_hard: value,
+            multiplayer: value,
+        };
+        let mut world = GameWorld::default();
+        world.gnprtb = GnprtbParams::new(vec![entry(7764, 18), entry(7765, 10)]);
+        let mut sector = |group| {
+            world.sectors.insert(Sector {
+                dat_id: DatId::new(0x8000_0001),
+                name: "Here".into(),
+                group,
+                x: 0,
+                y: 0,
+                systems: vec![],
+            })
+        };
+        let core = sector(SectorGroup::Core);
+        let rim = sector(SectorGroup::RimOuter);
+        let special = bare_system(&mut world, ControlKind::Uncontrolled);
+        let mut systems = Vec::new();
+        for group_sector in [core, rim] {
+            for _ in 0..20 {
+                let key = bare_system(&mut world, ControlKind::Uncontrolled);
+                world.systems[key].sector = group_sector;
+                systems.push((group_sector, key));
+            }
+        }
+        let special = SpecialSystems {
+            coruscant: special,
+            yavin: special,
+            rebel_hq: special,
+            rebel_hq_seq_id: 0,
+        };
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
+
+        initialize_support(
+            &mut world,
+            &special,
+            &SeedOptions::default(),
+            &HashMap::new(),
+            &mut rng,
+        );
+
+        for (group_sector, key) in systems {
+            let sys = &world.systems[key];
+            let (low, high) = if group_sector == core {
+                (0.41, 0.58)
+            } else {
+                (0.50, 0.59)
+            };
+            assert!(
+                (low..=high).contains(&sys.popularity_alliance),
+                "{} out of {low}..={high}",
+                sys.popularity_alliance
+            );
+            assert!(
+                (sys.popularity_alliance + sys.popularity_empire - 1.0).abs() < 1e-6,
+                "support {}/{} should sum to 1",
+                sys.popularity_alliance,
+                sys.popularity_empire
+            );
+        }
     }
 
     #[test]
@@ -2738,6 +2824,18 @@ mod tests {
                     }
                 }
             }
+        }
+
+        // FUN_00559700 returns one value, the Alliance's support (+0x58);
+        // the Empire's is 100 minus it.
+        for (_, sys) in &world.systems {
+            assert!(
+                (sys.popularity_alliance + sys.popularity_empire - 1.0).abs() < 1e-6,
+                "'{}' support {}/{} should sum to 1",
+                sys.name,
+                sys.popularity_alliance,
+                sys.popularity_empire
+            );
         }
     }
 

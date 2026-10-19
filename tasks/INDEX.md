@@ -10,18 +10,18 @@ session keeps with [br](https://github.com/Dicklesworthstone/beads_rust);
 [agent_docs/task-graph.md](../agent_docs/task-graph.md) explains the node
 kinds and how work is claimed and closed.
 
-239 nodes: 2 in progress, 149 open, 1 deferred, 87 closed.
+262 nodes: 4 in progress, 164 open, 1 deferred, 93 closed.
 
 ## Pages
 
 | Page | Open | What |
 |---|---|---|
-| [Ports](ports.md) | 25 | Changing the port to match the original. |
+| [Ports](ports.md) | 32 | Changing the port to match the original. |
 | [Reviews](reviews.md) | 7 | Rereading a question's decompiles against our own Ghidra project. |
-| [Acceptance](acceptance.md) | 27 | Comparison regions, their diagnoses and fixtures, and A0 captures. |
+| [Acceptance](acceptance.md) | 28 | Comparison regions, their diagnoses and fixtures, and A0 captures. |
 | [Questions](questions.md) | 84 | Questions about the original, answered from the executable. |
-| [Other](other.md) | 5 | Decisions, chores and unlabelled nodes. |
-| [Closed](closed.md) | 87 closed | Finished work and how it closed. |
+| [Other](other.md) | 14 | Decisions, chores and unlabelled nodes. |
+| [Closed](closed.md) | 93 closed | Finished work and how it closed. |
 
 ## Epics
 
@@ -65,7 +65,9 @@ kinds and how work is claimed and closed.
 | Priority | Node | Title |
 |---|---|---|
 | P1 | [or-p-task-force-strip-07t](ports.md#or-p-task-force-strip-07t) | Port the task-force strip slots, headers and group selection |
+| P1 | [or-port-ai-round-scheduler-wz8g](ports.md#or-port-ai-round-scheduler-wz8g) | Port: the AI round scheduler (FUN_00485b40): rate+1 rounds a day, one order a round, 10 a side a day |
 | P1 | [or-port-headless-battles-tdl](ports.md#or-port-headless-battles-tdl) | Q: Replace combat.rs's resolver with the tactical engine's headless run for unplayed battles? |
+| P1 | [or-port-mission-creation-check-f4h2](ports.md#or-port-mission-creation-check-f4h2) | Port: refuse missions at creation (FUN_00542b60) and filter the AI's mission targets |
 
 ## Ready
 
@@ -91,11 +93,19 @@ Open, not deferred, and waiting on nothing open; highest priority first.
 | P1 | [or-q-port-support-shifts-y0y](ports.md#or-q-port-support-shifts-y0y) | Q: Port the support shifts and the Death Star sector bit? |
 | P1 | [or-q-port-victory-rules-ce9](ports.md#or-q-port-victory-rules-ce9) | Q: Port victory rules and endings to the original's flag word? |
 | P1 | [or-q-withdraw-destination-m8b](questions.md#or-q-withdraw-destination-m8b) | Q: Where does Withdraw send the fleet, and what result does the battle then report? |
+| P2 | [or-3ioq](other.md#or-3ioq) | Port the production modules' ascending kind order (FUN_005f4f10 tree, FUN_004be980) |
+| P2 | [or-3m5f](ports.md#or-3m5f) | Port module 4 states 2-3: posture-recommended mission planners |
+| P2 | [or-86pj](ports.md#or-86pj) | Port: remove facilities and mines over a system's capacity (FUN_0050ad80) |
+| P2 | [or-ahj2](other.md#or-ahj2) | A loaded save reuses freed slotmap slots in a different order than the uninterrupted game |
+| P2 | [or-alliance-hq-move-o9ms](ports.md#or-alliance-hq-move-o9ms) | Port the Alliance AI's headquarters move (module 13)? |
 | P2 | [or-c-gnd-alliance-qqg](acceptance.md#or-c-gnd-alliance-qqg) | Capture an Alliance-side planetary assault reference in the VM |
 | P2 | [or-d-missions-0rx](acceptance.md#or-d-missions-0rx) | Diagnose: mission buttons and laser control differ (9 cells) |
 | P2 | [or-f-alliance-transit-xxn](acceptance.md#or-f-alliance-transit-xxn) | A1 fixture reproducing alliance-transit-day149 |
 | P2 | [or-f-death-star-rdq](acceptance.md#or-f-death-star-rdq) | A1 fixtures reproducing the Death Star saves |
 | P2 | [or-f-sixteen-tie-c43](acceptance.md#or-f-sixteen-tie-c43) | A1 fixture reproducing empire-sixteen-tie |
+| P2 | [or-k1b8](other.md#or-k1b8) | Native Alliance opening: the day clock stalls during the droids' cockpit briefing with briefing=false |
+| P2 | [or-nn7x](other.md#or-nn7x) | Q: Does the original resolve every battle of a day before the day moves on, and the AI order again? |
+| P2 | [or-pfv4](ports.md#or-pfv4) | Port: a travelling character or special force is listed at its destination, drawn in hyperspace |
 | P2 | [or-port-character-move-7ba0](ports.md#or-port-character-move-7ba0) | Port: a character's Move order (0x201/0x202) for the player and the AI |
 | P2 | [or-port-death-star-family-qtde](ports.md#or-port-death-star-family-qtde) | Port: identify the Death Star by family 0x18 and drop the 0x34 clause and the fleet flag |
 | P2 | [or-port-galaxy-eval-6ih8](ports.md#or-port-galaxy-eval-6ih8) | Port: re-ground ai.rs evaluate_galaxy_state, which cites new-game stage 0xb |
@@ -122,13 +132,19 @@ Open, not deferred, and waiting on nothing open; highest priority first.
 | P2 | [or-q-system-flag-hooks-u99](questions.md#or-q-system-flag-hooks-u99) | Q: What does each star-system +0x88 flag bit mean, and which hook, notification and event fires when it changes? |
 | P2 | [or-q-tac-unit-messages-zgd](questions.md#or-q-tac-unit-messages-zgd) | Q: What are tactical message types 0x03-0x4a, unit states +0x170, and orders 1, 2, 3 and 6? |
 | P2 | [or-q-trench-run-timing-eub](questions.md#or-q-trench-run-timing-eub) | Q: When does the trench run launch after the order, and can the Death Star be selected? |
+| P2 | [or-spike-proxy-dll-orders-9au9](acceptance.md#or-spike-proxy-dll-orders-9au9) | Spike: a proxy DLL that logs the original's AI orders per day |
+| P3 | [or-9ia9](ports.md#or-9ia9) | Port module 14: the AI's ship renames (order 0x203) |
+| P3 | [or-a631](other.md#or-a631) | Re-source or retire eval_parity's golden-value oracle |
 | P3 | [or-acc-minor-eqh](acceptance.md#or-acc-minor-eqh) | Subsystem icons and in-battle Game Options match A0 |
 | P3 | [or-ai-progress-counters-tm4f](questions.md#or-ai-progress-counters-tm4f) | Q: What consumes the AI side object's +0x190/+0x194 progress counters? |
 | P3 | [or-bombard-command-timing-d1b2](questions.md#or-bombard-command-timing-d1b2) | Q: When does the bombard command (message 0x224, FUN_005637c0) execute? |
 | P3 | [or-ch-hyp-m04](other.md#or-ch-hyp-m04) | Turn the ~40 hyp:/port: markers into question nodes |
+| P3 | [or-chore-tooling-after-scheduler-qw7m](other.md#or-chore-tooling-after-scheduler-qw7m) | Chore: test tooling after the scheduler commit |
+| P3 | [or-chore-uprising-at-command-6q65](other.md#or-chore-uprising-at-command-6q65) | Chore: an Uprising at developer command for the rebelling-yard repair check |
 | P3 | [or-f-state-trace-nqa](acceptance.md#or-f-state-trace-nqa) | State-trace check: strategic state persists after battle |
 | P3 | [or-f-strategy-after-pwn](acceptance.md#or-f-strategy-after-pwn) | A1 frame of the strategy screen after a battle closes |
 | P3 | [or-hq-bombard-transit-4rh7](questions.md#or-hq-bombard-transit-4rh7) | Q: What is the Alliance HQ's bombardment value, and does an HQ in transit survive capture or Destroy System? |
+| P3 | [or-i7uo](other.md#or-i7uo) | Port: regiments of both sides keep the earlier troop side (FUN_0050b610 bits 4-5) |
 | P3 | [or-movie-window-close-3bo3](questions.md#or-movie-window-close-3bo3) | Q: Who sends 0x402-0x404 to the movie window, and what does Esc do there? |
 | P3 | [or-port-system-squadron-pass-oa3p](ports.md#or-port-system-squadron-pass-oa3p) | Port: the post-battle pass for system squadrons |
 | P3 | [or-q-advice-music-state-rkf2](questions.md#or-q-advice-music-state-rkf2) | Q: What writes the advice agents' +0x170 situation byte, and which battle-result tracks mean win? |
@@ -184,6 +200,7 @@ Open, not deferred, and waiting on nothing open; highest priority first.
 | P3 | [or-q-ungated-story-events-h0sr](questions.md#or-q-ungated-story-events-h0sr) | Q: Which story events bypass the FUN_005438a0 gate? |
 | P3 | [or-q-version-gate-ids-wusm](questions.md#or-q-version-gate-ids-wusm) | Q: What do TEXTSTRA ids 0x1a00, 0x87b0 and 0x4da0 hold under the version gate, and how wide may a label be? |
 | P3 | [or-q-window-caption-dialogs-qc4c](questions.md#or-q-window-caption-dialogs-qc4c) | Q: Which window does 'Rebellion' name, and which dialogs show REBDLOG and CDDERR text? |
+| P3 | [or-rhik](other.md#or-rhik) | Port persistent research planners (FUN_004bced0, FUN_004e8290) without the yard pre-test |
 | P4 | [or-q-audio-w4r](questions.md#or-q-audio-w4r) | Q: How does the audio system choose, mix and stop its sounds? |
 | P4 | [or-q-directdraw-2ln](questions.md#or-q-directdraw-2ln) | Q: How does the game set up and present through DirectDraw? |
 | P4 | [or-q-intro-credits-p68](questions.md#or-q-intro-credits-p68) | Q: How do the intro and credits play? |

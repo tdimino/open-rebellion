@@ -1,89 +1,58 @@
 # Open Rebellion plans
 
-The [Tactical 106-Cell Acceptance Train](2026-09-22-tooling-tactical-106-cell-acceptance.md)
-is the current space-battle completion plan. It defines the local commit set,
-authoritative A0 capture contract, deterministic A1 mapping, comparison gate,
-and single verified push required for an honest 106/106 result. The broader
-[Batched Interface Parity Execution Plan](2026-09-11-feat-batched-interface-parity-plan.md)
-remains the primary interface plan. Strategic shell, GID, system-window, and first
-tactical-shell checkpoints are in place. The first original three-LOD family,
-source predicate, and live no-reload slot journey pass the isolated browser
-matrix. Source camera, authored mesh coordinates, system palette selection,
-lighting, filtering, culling, depth, and material/device state also pass their
-bounded gates. P58A proves every ship/fighter DAT resource join and packs all
-87 meshes plus 397 textures. P58B renders live production capital ships from
-their joined families. P58C renders the original fighter detail resources and
-aligns capital interactions with projected mesh bounds. P58D proves the full
-fighter-detail journey. P58E restores all eight task-force and four RGBY
-fighter controls, selection, source-shaped input, keyboard routes, and selected
-fighter portraits. P58F1 through P58F13 restore system-selected planets,
-target impacts, projectiles, fields, selected-capital damage and subsystem
-condition, exact field-source identity, and source-derived live subsystem
-damage with tractor cancellation, repair, mobility, maneuver-state production,
-velocity, physical integration, authentic tactical command assignment,
-recovered maneuver waypoints, Hold execution, source-rate turning, waypoint completion,
-full fighter recovery states, typed attack target acquisition, and stable
-same-class target replacement when a target becomes invalid. P58-B06 passes
-the 120-case implementation gate, P58-B21 shares the post-battle campaign path,
-P58-B22 closes the bounded practical launcher implementation, and the
-deterministic A1 crosswalk maps all 106 cells through 87 journeys and 19
-snapshots. A0 references from the original cover 102 of the 106 cells, plus
-all eight ground-assault (TAC-08) cells
-([capture index](../qa/2026-09-10-interface-parity-audit/evidence/2026-10-13-tactical-a0-capture-index.md));
-strict acceptance remains 0 of 106. The final
-acceptance train captures and compares all 106 strict cells. Missing
-lossless original baselines remain explicit A0 blockers and cannot be accepted
-by browser evidence alone.
+## Frontmatter convention
 
-The active
-[Interface Parity Acceleration Sidecar](2026-09-11-tooling-interface-parity-acceleration-sidecar.md)
-implements the first permanent muted browser harness, deterministic test-only fixtures,
-visual comparisons, generated status summaries, and one independent browser
-gate per family.
+Every plan opens with YAML frontmatter carrying at least these keys:
 
-The [Standalone Space-Battle Test Launcher](2026-09-12-tooling-standalone-space-battle-launcher.md)
-is the active `UIP-B06` companion. It uses the production tactical scene,
-test-only fixtures, the P58-B21 shared campaign return, and the P58-B22 source-
-backed tactical completion bundle. Its
-[asset reference library](../reference/asset-library/README.md) records the current
-resource inventory and the original-mapping proof queue. Its
-[operational reference](../reference/space-battle-launcher/README.md) records the
-entry paths, fixture codes, harness commands, and current verified boundary.
+| Key | Meaning |
+|-----|---------|
+| `title` | Plan name |
+| `status` | `draft`, `planned`, `active`, `partial`, `superseded`, `completed`, or `archived` |
+| `progress` | `"<N>% — <one-line state>"`, N being the share of the plan's committed phases that have landed; a completed plan reads `"100% — <what landed, commit hashes>"` |
+| `superseded_by` | Only for `superseded` plans: the plan or audit that replaces it |
+| `created`, `updated` | ISO dates |
 
-The [Tactical 3D Asset Pipeline](2026-09-12-feat-tactical-3d-asset-pipeline.md)
-is the active battle-rendering companion. P54 reproducibly stages every
-original DirectX mesh and type-303 texture or palette resource. P55 now
-converts and independently verifies the complete corpus as a deterministic
-runtime store. P56 supplies the first isolated muted-browser render proof.
-P57A now supplies the first complete original three-LOD family and source
-selection rule. P57B1 proves live same-renderer switching without asset churn.
-P57B2 now includes the original camera, authored transform, system palette,
-retained-mode light rig, filtering, culling, depth, and material/device state.
-P58A owns the exact DAT resource join and complete browser pack. P58B completes
-the first production capital-family draw path. P58C through P58E add production
-fighter detail, the complete detail journey, and group presentation. P58F1
-through P58F13 add planets, effects, fields, selected-capital damage and
-subsystem condition, exact field-source identity, live subsystem damage,
-repair, mobility, maneuver-state production, velocity, physical integration,
-and tactical command assignment plus maneuver, Hold, turn, arrival, docking,
-recovered execution states, typed attack target acquisition, and stable
-same-class target replacement with exhausted-list clearing. Exact weapon arcs,
-ranges, availability, projectile events, recharge, fighter combat, collision,
-formations, the Death Star, and outcome transport are implemented within their
-recorded A1 bounds. Whole-process RNG continuity, strategic commander binding,
-native beam and media comparison, remaining rare audio paths, and A0
-acceptance remain open.
-Modern replacement models remain in a separate experimental profile.
+A `partial` plan has landed some phases and carries the rest in its progress
+line. Completed plans move to `completed/` and keep their `progress` line.
+An `archived` plan no longer drives work: its targets were removed, its
+direction was abandoned, or its remaining items moved to another plan, a
+roadmap milestone, an audit finding or a br node. It moves to `archive/`,
+keeps its `progress` line, and adds `archived` (date) and `archive_reason`.
+When its open items moved to one plan, `merged_into` names that plan.
+
+## Current plans
+
+- The [Batched Interface Parity Execution Plan](2026-09-11-feat-batched-interface-parity-plan.md)
+  is the umbrella for original interface parity: the UIP-B01 to B07 bundle
+  queue, the cadence, and the 627-cell denominator. Its harness tooling is
+  documented in [`tools/interface-parity/README.md`](../../tools/interface-parity/README.md).
+- The [Tactical 106-Cell Acceptance Train](2026-09-22-tooling-tactical-106-cell-acceptance.md)
+  is the space-battle completion plan and evidence record (UIP-B06). A0
+  references from the original cover all 106 cells plus the eight
+  ground-assault cells
+  ([capture index](../qa/2026-09-10-interface-parity-audit/evidence/2026-10-13-tactical-a0-capture-index.md)).
+  The C6 comparison passes 11 of 106; the fixes are br nodes under
+  `or-ep-tac-x15` ([task graph](../../agent_docs/task-graph.md)). Browser
+  evidence alone cannot accept a cell that lacks an original baseline. The
+  launcher and 3D asset plans it absorbed are archived; their references live
+  in [`docs/reference/space-battle-launcher/`](../reference/space-battle-launcher/README.md)
+  and the [asset library](../reference/asset-library/README.md).
+- The [modality and focus](2026-10-10-feat-strategic-window-modality-and-focus.md)
+  and [windowing toolkit](2026-10-10-strategic-windowing-toolkit-implementation.md)
+  plans carry the strategic window work.
+- The [Faithful HD Pipeline](2026-09-10-faithful-hd-pipeline/) is parked
+  until original parity closes; modern replacement models stay in a separate
+  experimental profile.
 
 See the [plans index](INDEX.md) for active, planned, and completed work. The
 [interface parity audit](../qa/2026-09-10-interface-parity-audit/) remains the
 strict acceptance authority.
 
 The
-[Will Forster Encyclopedia Handoff Adaptation](2026-10-02-feat-will-forster-encyclopedia-handoff-adaptation.md)
-is the active execution companion for P66. It credits and selectively adapts
-the strongest ideas from Will's PR #16 while preserving the current source,
-binding, packed-transport, and visual-acceptance authorities.
+[Will Forster Encyclopedia Handoff Adaptation](completed/2026-10-02-feat-will-forster-encyclopedia-handoff-adaptation.md)
+is complete (W0 through W7). It credits and selectively adapts the strongest
+ideas from Will's PR #16 while preserving the current source, binding,
+packed-transport, and visual-acceptance authorities.
 
 After original space-battle parity is implemented, a separate planning pass
 will define an optional X-Wing Alliance-style skirmish setup surface for ship

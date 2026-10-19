@@ -3,7 +3,7 @@
 Tooling for producing lossless 640x480 captures of the unmodified original
 `REBEXE.EXE` so the interface audit can register A0 references and the harness
 can create goldens. Path 1 of
-[the P59 plan](../../docs/plans/2026-09-14-feat-p59-parallel-gid-message-index-lane.md).
+[the P59 plan](../../docs/plans/archive/2026-09-14-feat-p59-parallel-gid-message-index-lane.md).
 
 Captures are copyrighted game output and are never committed. Only their
 SHA-256, metadata, and the accepted-original registration enter the repo.
@@ -111,6 +111,20 @@ sound, so after the VM exists, set one while it is stopped:
 plutil -replace Sound -json '[{"Hardware":"intel-hda"}]' \
   "$HOME/Library/Containers/com.utmapp.UTM/Data/Documents/Rebellion A0 Capture.utm/config.plist"
 ```
+
+The guest is Windows 11 Arm64, so the x86 `REBEXE.EXE` runs under Windows'
+own emulator (Prism). Outside tools see Arm64 state and translated code:
+QEMU's gdbstub and monitor, x64dbg and Cheat Engine cannot follow the game's
+x86 registers. Instrumentation has to run inside the game's process (a proxy
+DLL; [the logging and speed-up report](../../docs/reports/2026-10-16-original-game-logging-and-speedup.md)).
+The exe's image base is 0x00400000 and its file header has relocations
+stripped (Characteristics 0x10f), so a Ghidra address is the runtime address.
+Its clocks, waits and timers are imported: from WINMM `timeGetTime`,
+`timeSetEvent`, `timeKillEvent`, `timeBeginPeriod`, `timeEndPeriod` and
+`timeGetDevCaps`, from KERNEL32 `GetTickCount`, `QueryPerformanceCounter`,
+`QueryPerformanceFrequency`, `Sleep`, `SleepEx`, `WaitForSingleObject`,
+`WaitForMultipleObjects`, `GetLocalTime`, `GetSystemTime` and
+`GetTimeZoneInformation`, from USER32 `SetTimer` and `KillTimer`.
 
 Driving the guest: QEMU's VNC server does not synthesise the shift modifier,
 so `vncdo type` corrupts symbols (`:` arrives as `;`, `&` as `7`). Use
@@ -255,12 +269,23 @@ tools/original-capture/vm-game.sh a0-cell TAC-01-C003 original-save \
   that times out reconnects instead of ending the wait (`vm-wait.py`).
 - Game speed is the day readout's right-click menu (game coordinates on
   the 800×600 screen: readout 165,30; Pause 208,45, Very Slow 230,70,
-  Medium 220,120, Fast 208,145). Fast runs about 0.8 days a second, faster
+  Medium 220,120, Fast 208,145). Playing the Empire, the readout is at
+  645,30 and its menu opens to the right: Pause 668,45, Fast 695,137.
+  The game's own accelerators step the speed one notch (Alt+NumPad−
+  slower, Alt+NumPad+ faster) and Alt+P pauses (manual p. 64;
+  `docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-24-game-speed-recovery.md`,
+  "Speed keys"; verified 2026-10-16 in `.artifacts/vm/recheck-2026-10-16/README.md`).
+  VNC cannot send the keypad keys, so send them through QMP: copy the
+  helper once (`scp tools/original-capture/vm-qmp.py mac-mini-ts:/tmp/vm-qmp.py`),
+  then `ssh mac-mini-ts 'python3 /tmp/vm-qmp.py hmp "sendkey alt-kp_subtract"'`
+  (also `alt-kp_add`, `alt-p`). A battle result window holds the day, and a
+  step sent while it is up took effect once in three presses, so send one step
+  per call and check the day readout. Fast runs about 0.8 days a second, faster
   than `wait day` can sample: a 33-day wait ran 340 days. To cover a set
   number of days at Fast, sleep for the time and then pause. Pause opens
   "Resume Game Play?", whose check mark (398,373) resumes at the kept
-  speed. The `save` verb can leave Game Options open, which holds the
-  clock; its galaxy icon (228,495) returns to the game.
+  speed. Game Options holds the clock; the `save` verb closes it after
+  saving (Escape, then its galaxy icon at 228,490).
 - QEMU snapshots (`savevm`) are not possible on this VM. The Windows disk
   is on QEMU's NVMe controller, which cannot save its state ("State blocked
   by non-migratable device '0000:00:05.0/nvme'"). A state that cannot be
@@ -463,5 +488,8 @@ Driving the game over VNC:
   from a system's orbit view onto the destination; dragging the sector-map
   icon does nothing.
 - Escape steps through the opening briefing; the game opens the Message Index
-  when it ends. On the Game Options screen (F1) the left button returns to the
+  when it ends. Renaming `ALBRIEF.DLL` and `EMBRIEF.DLL` is reported to skip
+  the briefings (StarWarsRebellionEditor.NET README, "Fast game start"); it
+  is untested here, so compare a new game's starting state with and without
+  the rename before relying on it. On the Game Options screen (F1) the left button returns to the
   main menu and the middle one to the game.

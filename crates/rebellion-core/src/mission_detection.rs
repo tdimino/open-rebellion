@@ -11,8 +11,8 @@ use std::collections::HashSet;
 use crate::dat::Faction;
 use crate::ids::{CharacterKey, FleetKey, SystemKey, TroopKey};
 use crate::missions::{
-    member_location_kind, member_skill, running_end_code, ActiveMission, MemberTransit,
-    MissionEffect, MissionFaction, MissionMember,
+    member_location_kind, member_skill, running_end_code, ActiveMission, MissionEffect,
+    MissionFaction, MissionMember,
 };
 use crate::officer_rank::{rank_holder, CommandKind, CommandPost};
 use crate::uprising::{
@@ -259,9 +259,21 @@ fn walk(world: &GameWorld, location: SystemKey, flags: Flags, kinds: Kinds) -> V
 /// port: a present table always yields a row (`MstbTable::step_lookup`); an
 /// absent table is data the port was not given, reported as `None`.
 fn table_roll(world: &GameWorld, table: &str, x: i32, rng: &mut MissionRng) -> Option<bool> {
-    let table = world.mission_tables.get(table)?;
-    let value = i32::try_from(table.step_lookup(x)).unwrap_or(i32::MAX);
-    Some(rng.chance(value))
+    let rows = world.mission_tables.get(table)?;
+    let value = i32::try_from(rows.step_lookup(x)).unwrap_or(i32::MAX);
+    // `FUN_0053e2f0`: a draw over 0..=99 below the row's value.
+    let rolled = rng.draw(99);
+    crate::trace::record(crate::trace::TraceMask::MISSIONS, "table_roll", || {
+        serde_json::json!({
+            "table": table,
+            "input": x,
+            "threshold": rows.step_row(x).map(|row| row.threshold),
+            "chance": value,
+            "rolled": rolled,
+            "passed": rolled < value,
+        })
+    });
+    Some(rolled < value)
 }
 
 /// The officer backing `defender` (`FUN_005888f0`): its side's holder of
@@ -363,8 +375,9 @@ impl Run<'_> {
 
     /// The skill `skill` of the officer backing `defender`, 0 without one.
     fn officer_skill(&self, defender: Defender, skill: Skill) -> i32 {
-        officer(self.world, self.location, defender)
-            .map_or(0, |officer| self.skill(MissionMember::Character(officer), skill))
+        officer(self.world, self.location, defender).map_or(0, |officer| {
+            self.skill(MissionMember::Character(officer), skill)
+        })
     }
 
     /// `FUN_005888f0` / `FUN_005349e0`: the member rolls RLEVADTB on its
@@ -639,7 +652,6 @@ pub(crate) fn run(
     mission: &mut ActiveMission,
     world: &GameWorld,
     uprisings: &UprisingState,
-    en_route: &[MemberTransit],
     rng: &mut MissionRng,
     out: &mut Vec<MissionEffect>,
 ) {
@@ -658,7 +670,7 @@ pub(crate) fn run(
     };
     let validate = |mission: &mut ActiveMission| {
         if mission.end_code == 0 {
-            mission.end_code = running_end_code(mission, world, uprisings, en_route);
+            mission.end_code = running_end_code(mission, world, uprisings);
         }
     };
     first_pass(mission, world, location, rng, out, &validate);
@@ -1002,6 +1014,8 @@ mod tests {
             is_alliance: true,
             skills,
             on_mission: true,
+            en_route: false,
+            on_hidden_mission: false,
         });
         world.systems[at].special_forces.push(unit);
         MissionMember::SpecialForce(unit)
@@ -1013,10 +1027,11 @@ mod tests {
             capital_ships: vec![ShipInstance {
                 class: crate::ids::CapitalShipKey::default(),
                 hull_current: 1,
-                shield_weapon_packed: 0,
+                damage_counters: 0,
                 alive: true,
                 name: None,
                 tag: 0,
+                repair_timer: None,
             }],
             fighters: vec![],
             characters: vec![],
@@ -1032,7 +1047,6 @@ mod tests {
             mission,
             world,
             &UprisingState::default(),
-            &[],
             &mut rng,
             &mut out,
         );
@@ -1123,6 +1137,8 @@ mod tests {
             is_alliance: true,
             skills: [0; 8],
             on_mission: true,
+            en_route: false,
+            on_hidden_mission: false,
         });
         world.systems[here].special_forces.push(unit);
         let mut mission = sabotage(vec![MissionMember::SpecialForce(unit)], here, 2);
@@ -1275,12 +1291,12 @@ mod tests {
         let lead = agent(&mut world, here, 100);
         let mut mission = sabotage(vec![lead], here, 8);
         assert_eq!(
-            running_end_code(&mission, &world, &UprisingState::default(), &[]),
+            running_end_code(&mission, &world, &UprisingState::default()),
             0
         );
         mission.resigning = vec![lead];
         assert_eq!(
-            running_end_code(&mission, &world, &UprisingState::default(), &[]),
+            running_end_code(&mission, &world, &UprisingState::default()),
             5
         );
     }
@@ -1322,10 +1338,11 @@ mod tests {
         world.fleets[fleet].capital_ships.push(ShipInstance {
             class: crate::ids::CapitalShipKey::default(),
             hull_current: 0,
-            shield_weapon_packed: 0,
+            damage_counters: 0,
             alive: false,
             name: None,
             tag: 0,
+            repair_timer: None,
         });
         world.fleets[fleet]
             .fighters

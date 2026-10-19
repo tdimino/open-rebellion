@@ -458,6 +458,7 @@ pub(crate) fn apply(
     };
 
     let player_is_attacker = request.faction == CockpitFaction::Alliance;
+    rebellion_core::carriage::tag_all(world);
     tactical_flow::begin_player_battle(
         world,
         BattleEntry {

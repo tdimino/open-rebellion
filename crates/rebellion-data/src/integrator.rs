@@ -12,9 +12,9 @@
 
 use std::collections::HashMap;
 
-use rebellion_core::ai::{AIAction, AIState, AiFaction};
+use rebellion_core::ai::{AIAction, AIState};
 use rebellion_core::betrayal::BetrayalEvent;
-use rebellion_core::blockade::BlockadeEvent;
+use rebellion_core::blockade::{BlockadeEvent, BlockadeSystem};
 use rebellion_core::combat::{side_present, CombatForce, CombatSide, GroundCombatResult};
 use rebellion_core::death_star::DeathStarEvent;
 use rebellion_core::economy::{EconomyEvent, EconomyState};
@@ -22,16 +22,14 @@ use rebellion_core::events::{EventAction, FiredEvent, SkillField, SystemTag};
 use rebellion_core::fog::RevealEvent;
 use rebellion_core::game_events::{
     GameEventRecord, EVT_AI_ACTION, EVT_BETRAYAL_CHECK, EVT_BLOCKADE_ENDED, EVT_BLOCKADE_STARTED,
-    EVT_BLOCKADE_TROOP_DESTROYED, EVT_BOMBARDMENT, EVT_BUILD_COMPLETE, EVT_CAMPAIGN_SNAPSHOT,
-    EVT_CAPTURE, EVT_CHARACTER_HEALTH, EVT_CHARACTER_KILLED, EVT_COLLECTION_RATE,
+    EVT_BLOCKADE_SUPPORT_SHIFT, EVT_BLOCKADE_TROOP_DESTROYED, EVT_BOMBARDMENT, EVT_BUILD_COMPLETE,
+    EVT_CAMPAIGN_SNAPSHOT, EVT_CAPTURE, EVT_CHARACTER_HEALTH, EVT_CHARACTER_KILLED,
     EVT_COMBAT_GROUND, EVT_COMBAT_SPACE, EVT_CONTROL_CHANGED, EVT_DESTROYED_ON_ARRIVAL,
-    EVT_DS_CONSTRUCTION, EVT_DS_FIRED, EVT_DS_STATUS, EVT_ECONOMY_TICK, EVT_ESCAPE,
-    EVT_EVENT_FIRED, EVT_FLEET_ARRIVED, EVT_FOG_REVEALED, EVT_GARRISON_REQUIRED, EVT_HQ_CAPTURED,
-    EVT_INFORMANT_INTEL, EVT_JEDI_CHECK, EVT_JEDI_DISCOVERED, EVT_JEDI_TIER,
-    EVT_MAINTENANCE_SHORTFALL, EVT_MANUFACTURING_IDLE, EVT_MISSION_DISPATCHED,
-    EVT_MISSION_RESOLVED, EVT_NATURAL_DISASTER, EVT_RESEARCH_UNLOCKED, EVT_RESOURCE_DISCOVERY,
-    EVT_SABOTEUR_DETECTED, EVT_SHIP_REPAIRED, EVT_SHIP_REPAIR_STARTED, EVT_SIDE_CHANGE,
-    EVT_SUPPORT_CHANGE, EVT_SUPPORT_DRIFT, EVT_TRAITOR_REVEALED, EVT_TROOP_MOVED,
+    EVT_DS_CONSTRUCTION, EVT_DS_FIRED, EVT_DS_STATUS, EVT_ESCAPE, EVT_EVENT_FIRED,
+    EVT_FLEET_ARRIVED, EVT_FOG_REVEALED, EVT_HQ_CAPTURED, EVT_INFORMANT_INTEL, EVT_JEDI_CHECK,
+    EVT_JEDI_DISCOVERED, EVT_JEDI_TIER, EVT_MAINTENANCE_SHORTFALL, EVT_MANUFACTURING_IDLE,
+    EVT_MISSION_DISPATCHED, EVT_MISSION_RESOLVED, EVT_NATURAL_DISASTER, EVT_RESEARCH_UNLOCKED,
+    EVT_SABOTEUR_DETECTED, EVT_SIDE_CHANGE, EVT_TRAITOR_REVEALED, EVT_TROOP_MOVED,
     EVT_UNITS_DEPLOYED, EVT_UPRISING_BEGAN, EVT_UPRISING_CHECK, EVT_UPRISING_ENDED,
     EVT_UPRISING_INCIDENT, EVT_VICTORY, EVT_VICTORY_CHECK, SYS_AI, SYS_BETRAYAL, SYS_BLOCKADE,
     SYS_COMBAT, SYS_DEATH_STAR, SYS_ECONOMY, SYS_EVENTS, SYS_FOG, SYS_JEDI, SYS_MANUFACTURING,
@@ -41,17 +39,18 @@ use rebellion_core::ids::DatId;
 use rebellion_core::ids::{CharacterKey, FleetKey, SystemKey, TroopKey};
 use rebellion_core::jedi::{JediEvent, JediState};
 use rebellion_core::manufacturing::{
-    BuildableKind, CompletionEvent, ManufacturingState, QueueItem,
+    BuildableKind, CompletionEvent, ManufacturingState, ProductionArea, QueueItem,
 };
 use rebellion_core::missions::{
-    MissionEffect, MissionFaction, MissionKind, MissionMember, MissionRequest, MissionResult,
-    MissionState,
+    MissionEffect, MissionFaction, MissionMember, MissionRefusal, MissionRequest, MissionResult,
+    MissionState, MoveDestination,
 };
 use rebellion_core::movement::{
     apply_fleet_arrival, begin_fleet_transit, ArrivalEvent, MovementState,
 };
 use rebellion_core::repair::RepairEvent;
 use rebellion_core::research::{ResearchResult, ResearchState};
+use rebellion_core::stockpiles::StockpileState;
 use rebellion_core::tactical::apply::apply_results;
 use rebellion_core::tactical::BattleSession;
 use rebellion_core::troop_transport::{RegimentArrivals, RegimentLeg, TroopTransportState};
@@ -74,6 +73,20 @@ pub fn sys_name(world: &GameWorld, key: SystemKey) -> String {
         .systems
         .get(key)
         .map_or_else(|| format!("{key:?}"), |s| s.name.clone())
+}
+
+/// A production destination's name: its system's, or its fleet's.
+#[must_use]
+pub fn destination_name(
+    world: &GameWorld,
+    destination: rebellion_core::manufacturing::Destination,
+) -> String {
+    match destination {
+        rebellion_core::manufacturing::Destination::System(system) => sys_name(world, system),
+        rebellion_core::manufacturing::Destination::Fleet(fleet) => world
+            .fleet_name(fleet)
+            .map_or_else(|| format!("{fleet:?}"), str::to_string),
+    }
 }
 
 /// Resolve a `CharacterKey` to the character's name, or a fallback string.
@@ -147,24 +160,132 @@ pub fn ai_action_json(action: &AIAction, world: &GameWorld) -> serde_json::Value
                 "decoys": member_names(world, decoys),
             })
         }
-        AIAction::EnqueueProduction { system, kind, work } => {
+        AIAction::EnqueueProduction {
+            system,
+            kind,
+            work,
+            count,
+            destination,
+        } => {
             serde_json::json!({
                 "type": "EnqueueProduction",
                 "system": sys_name(world, *system),
                 "kind": format!("{:?}", kind),
                 "work": work,
+                "count": count,
+                "destination": destination.map(|d| destination_name(world, d)),
             })
         }
-        AIAction::DispatchResearch {
+        AIAction::Scrap { targets } => {
+            serde_json::json!({
+                "type": "Scrap",
+                "targets": targets.iter().map(|t| format!("{t:?}")).collect::<Vec<_>>(),
+            })
+        }
+        AIAction::MoveCharacter {
             character,
-            tech_type,
-            ticks,
+            to_system,
         } => {
             serde_json::json!({
-                "type": "DispatchResearch",
+                "type": "MoveCharacter",
                 "character": char_name(world, *character),
-                "tech_type": format!("{:?}", tech_type),
-                "ticks": ticks,
+                "to": sys_name(world, *to_system),
+            })
+        }
+        AIAction::MoveCharacterToFleet { character, fleet } => {
+            serde_json::json!({
+                "type": "MoveCharacterToFleet",
+                "character": char_name(world, *character),
+                "at": world
+                    .fleets
+                    .get(*fleet)
+                    .map_or_else(|| "unknown".into(), |f| sys_name(world, f.location)),
+            })
+        }
+        AIAction::CreateFleet {
+            fleet,
+            ships,
+            to_system,
+        } => {
+            let from = world
+                .fleets
+                .get(*fleet)
+                .map_or_else(|| "unknown".into(), |f| sys_name(world, f.location));
+            serde_json::json!({
+                "type": "CreateFleet",
+                "from": from,
+                "to": to_system.map(|s| sys_name(world, s)),
+                "ships": ships.len(),
+            })
+        }
+        AIAction::JoinFleet {
+            fleet,
+            ships,
+            target,
+        } => {
+            let at = |key: &FleetKey| {
+                world
+                    .fleets
+                    .get(*key)
+                    .map_or_else(|| "unknown".into(), |f| sys_name(world, f.location))
+            };
+            serde_json::json!({
+                "type": "JoinFleet",
+                "from": at(fleet),
+                "to": at(target),
+                "ships": ships.len(),
+            })
+        }
+        AIAction::MoveRegiments { troops, to } => {
+            serde_json::json!({
+                "type": "MoveRegiments",
+                "regiments": troops.len(),
+                "to": format!("{to:?}"),
+            })
+        }
+        AIAction::MoveSquadrons { squadrons, fleet } => {
+            let at = world
+                .fleets
+                .get(*fleet)
+                .map_or_else(|| "unknown".into(), |f| sys_name(world, f.location));
+            serde_json::json!({
+                "type": "MoveSquadrons",
+                "squadrons": squadrons.len(),
+                "at": at,
+            })
+        }
+        AIAction::MoveCharacters {
+            characters,
+            to_system,
+        } => {
+            serde_json::json!({
+                "type": "MoveCharacters",
+                "characters": characters.iter().map(|c| char_name(world, *c)).collect::<Vec<_>>(),
+                "to": sys_name(world, *to_system),
+            })
+        }
+        AIAction::Assault { fleet } => {
+            let at = world
+                .fleets
+                .get(*fleet)
+                .map_or_else(|| "unknown".into(), |f| sys_name(world, f.location));
+            serde_json::json!({ "type": "Assault", "at": at })
+        }
+        AIAction::Bombard { system, kind, .. } => {
+            serde_json::json!({
+                "type": "Bombard",
+                "at": sys_name(world, *system),
+                "kind": format!("{kind:?}"),
+            })
+        }
+        AIAction::DestroySystem { system, .. } => {
+            serde_json::json!({ "type": "DestroySystem", "at": sys_name(world, *system) })
+        }
+        AIAction::GiveCommand { character, kind } => {
+            serde_json::json!({
+                "type": "GiveCommand",
+                "character": char_name(world, *character),
+                "kind": format!("{:?}", kind),
             })
         }
     }
@@ -256,6 +377,15 @@ impl PerceptionIntegrator {
     #[must_use]
     pub fn finish(self) -> Vec<GameEventRecord> {
         self.events
+    }
+
+    /// The records `emit` writes, stamped `tick` in place of this
+    /// integrator's own: the AI rounds a tick's prologue finishes belong to
+    /// the day they ran in.
+    pub fn at_tick(&mut self, tick: u64, emit: impl FnOnce(&mut Self)) {
+        let own = std::mem::replace(&mut self.tick, tick);
+        emit(self);
+        self.tick = own;
     }
 
     // ── Step 1: Telemetry-only sections ──────────────────────────────────
@@ -382,10 +512,6 @@ impl PerceptionIntegrator {
     // ── Step 2: Economy section ───────────────────────────────────────────
 
     /// Apply economy events: world mutations (support drift, control) + telemetry.
-    #[expect(
-        clippy::too_many_lines,
-        reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
-    )]
     pub fn apply_economy_events(&mut self, world: &mut GameWorld, economy_events: &[EconomyEvent]) {
         for ev in economy_events {
             match ev {
@@ -400,51 +526,6 @@ impl PerceptionIntegrator {
                         sys.popularity_empire =
                             (sys.popularity_empire + empire_delta).clamp(0.0, 1.0);
                     }
-                    self.emit(
-                        SYS_ECONOMY,
-                        EVT_SUPPORT_DRIFT,
-                        serde_json::json!({
-                            "system": sys_name(world, *system),
-                            "alliance_delta": alliance_delta,
-                            "empire_delta": empire_delta,
-                        }),
-                    );
-                }
-                EconomyEvent::CollectionRateChanged { system, new_rate } => {
-                    self.emit(
-                        SYS_ECONOMY,
-                        EVT_COLLECTION_RATE,
-                        serde_json::json!({
-                            "system": sys_name(world, *system),
-                            "rate": new_rate,
-                        }),
-                    );
-                }
-                EconomyEvent::GarrisonRequirementChanged {
-                    system,
-                    new_requirement,
-                } => {
-                    self.emit(
-                        SYS_ECONOMY,
-                        EVT_GARRISON_REQUIRED,
-                        serde_json::json!({
-                            "system": sys_name(world, *system),
-                            "garrison_required": new_requirement,
-                        }),
-                    );
-                }
-                EconomyEvent::IncidentTriggered {
-                    system,
-                    incident_type,
-                } => {
-                    self.emit(
-                        SYS_ECONOMY,
-                        EVT_ECONOMY_TICK,
-                        serde_json::json!({
-                            "system": sys_name(world, *system),
-                            "incident": incident_type,
-                        }),
-                    );
                 }
                 EconomyEvent::ControlResolved {
                     system,
@@ -459,82 +540,41 @@ impl PerceptionIntegrator {
                     self.emit(
                         SYS_ECONOMY,
                         EVT_CONTROL_CHANGED,
-                        serde_json::json!({
-                            "system": sys_name(world, *system),
-                            "new_control": format!("{:?}", new_control),
-                        }),
+                        crate::telemetry::control_resolved_payload(world, *system, *new_control),
                     );
                 }
-                EconomyEvent::EnergyOvercapped {
-                    system,
-                    allocated,
-                    capacity,
-                } => {
-                    self.emit(
-                        SYS_ECONOMY,
-                        EVT_ECONOMY_TICK,
-                        serde_json::json!({
-                            "system": sys_name(world, *system),
-                            "energy_overcap": true,
-                            "allocated": allocated,
-                            "capacity": capacity,
-                        }),
-                    );
-                }
-                EconomyEvent::RawMaterialOvercapped {
-                    system,
-                    allocated,
-                    capacity,
-                } => {
-                    self.emit(
-                        SYS_ECONOMY,
-                        EVT_ECONOMY_TICK,
-                        serde_json::json!({
-                            "system": sys_name(world, *system),
-                            "raw_material_overcap": true,
-                            "allocated": allocated,
-                            "capacity": capacity,
-                        }),
-                    );
-                }
-                // ── Knesset Shamash-Bet Dabora 2 notification events ────────
-                EconomyEvent::SupportChanged { system, from, to } => {
-                    // K1: EVT_SUPPORT_CHANGE (0x100).
-                    self.emit(
-                        SYS_ECONOMY,
-                        EVT_SUPPORT_CHANGE,
-                        serde_json::json!({
-                            "system": sys_name(world, *system),
-                            "from": format!("{:?}", from),
-                            "to": format!("{:?}", to),
-                        }),
-                    );
-                }
-                EconomyEvent::ResourceDiscovered { system, new_output } => {
-                    // K3: EVT_RESOURCE_DISCOVERY (0x155).
-                    self.emit(
-                        SYS_ECONOMY,
-                        EVT_RESOURCE_DISCOVERY,
-                        serde_json::json!({
-                            "system": sys_name(world, *system),
-                            "new_output": new_output,
-                        }),
-                    );
-                }
-                EconomyEvent::MaintenanceShortfall {
-                    faction_is_alliance,
-                    deficit_system_count,
-                } => {
-                    // K4: EVT_MAINTENANCE_SHORTFALL_EVENT (0x304).
-                    self.emit(
-                        SYS_ECONOMY,
-                        EVT_MAINTENANCE_SHORTFALL,
-                        serde_json::json!({
-                            "faction": if *faction_is_alliance { "Alliance" } else { "Empire" },
-                            "deficit_systems": deficit_system_count,
-                        }),
-                    );
-                }
+                _ => {}
+            }
+            if let Some((event, details)) = crate::telemetry::economy_record(world, ev) {
+                self.emit(SYS_ECONOMY, event, details);
+            }
+        }
+    }
+
+    /// One record per unit the overdraft timer scraps (`FUN_00530350`),
+    /// the original's event `0x304` (`FUN_004fc080`, reason `0x15`) behind
+    /// the Maintenance Shortfall notice (`FUN_00498970`). Call it before
+    /// the scrap removes the units.
+    pub fn emit_maintenance_shortfall(
+        &mut self,
+        world: &GameWorld,
+        transport: &rebellion_core::troop_transport::TroopTransportState,
+        events: &[rebellion_core::stockpiles::StockpileEvent],
+    ) {
+        for event in events {
+            if let rebellion_core::stockpiles::StockpileEvent::OverdraftScrap { side, target } =
+                *event
+            {
+                let system = rebellion_core::scrap::target_system(world, transport, target);
+                self.emit(
+                    SYS_ECONOMY,
+                    EVT_MAINTENANCE_SHORTFALL,
+                    serde_json::json!({
+                        "faction": format!("{side:?}"),
+                        "system": system.map(|key| sys_name(world, key)),
+                        "unit": rebellion_core::scrap::target_name(world, target),
+                    }),
+                );
             }
         }
     }
@@ -571,6 +611,25 @@ impl PerceptionIntegrator {
                     "kind": format!("{:?}", c.kind),
                 }),
             );
+        }
+    }
+
+    /// Place products delivered to a fleet (`crate::delivery`), with the
+    /// same telemetry as [`Self::apply_build_completions`].
+    pub fn apply_boarded(
+        &mut self,
+        world: &mut GameWorld,
+        boarded: &[(FleetKey, CompletionEvent)],
+    ) {
+        for (fleet, c) in boarded {
+            apply_boarding_inner(*fleet, c, world);
+            let payload = serde_json::json!({
+                "system": sys_name(world, c.system),
+                "fleet": world.fleet_name(*fleet),
+                "kind": format!("{:?}", c.kind),
+            });
+            self.emit(SYS_MANUFACTURING, EVT_BUILD_COMPLETE, payload.clone());
+            self.emit(SYS_MANUFACTURING, EVT_UNITS_DEPLOYED, payload);
         }
     }
 
@@ -648,42 +707,10 @@ impl PerceptionIntegrator {
         world: &GameWorld,
         result: &SystemSpaceCombatResult,
     ) {
-        let winner_str = match result.winner {
-            CombatSide::Attacker => "alliance",
-            CombatSide::Defender => "empire",
-            CombatSide::Draw => "draw",
-        };
         self.emit(
             SYS_COMBAT,
             EVT_COMBAT_SPACE,
-            serde_json::json!({
-                "system": sys_name(world, result.system),
-                "winner": winner_str,
-                "seconds": result.seconds,
-                "alliance_fleets": result.alliance_fleets,
-                "empire_fleets": result.empire_fleets,
-                "alliance_before": {
-                    "capital_ships": result.alliance_before.capital_ships,
-                    "fighter_squadrons": result.alliance_before.fighter_squadrons,
-                    "hull": result.alliance_before.hull,
-                },
-                "alliance_after": {
-                    "capital_ships": result.alliance_after.capital_ships,
-                    "fighter_squadrons": result.alliance_after.fighter_squadrons,
-                    "hull": result.alliance_after.hull,
-                },
-                "empire_before": {
-                    "capital_ships": result.empire_before.capital_ships,
-                    "fighter_squadrons": result.empire_before.fighter_squadrons,
-                    "hull": result.empire_before.hull,
-                },
-                "empire_after": {
-                    "capital_ships": result.empire_after.capital_ships,
-                    "fighter_squadrons": result.empire_after.fighter_squadrons,
-                    "hull": result.empire_after.hull,
-                },
-                "stalemate": result.stalemate,
-            }),
+            crate::telemetry::combat_space_payload(world, result),
         );
     }
 
@@ -813,12 +840,7 @@ impl PerceptionIntegrator {
             self.emit(
                 SYS_COMBAT,
                 EVT_CONTROL_CHANGED,
-                serde_json::json!({
-                    "system": sys_name(world, system),
-                    "from": format!("{:?}", previous.unwrap_or_default()),
-                    "to": format!("{:?}", ControlKind::Controlled(winner)),
-                    "cause": "ground_occupation",
-                }),
+                crate::telemetry::control_occupation_payload(world, system, previous, winner),
             );
         }
 
@@ -903,9 +925,16 @@ impl PerceptionIntegrator {
         world: &mut GameWorld,
         result: &MissionResult,
         uprising_state: &mut UprisingState,
+        research_state: &mut ResearchState,
     ) {
         let ended =
             apply_mission_effects_inner(&result.effects, world, result.tick, uprising_state);
+        let research = rebellion_core::research::ResearchSystem::apply_mission_points(
+            world,
+            research_state,
+            &result.effects,
+        );
+        self.apply_research_results(&research);
         for event in &ended {
             if let UprisingEvent::UprisingEnded { system, tick } = event {
                 self.events.push(GameEventRecord::new(
@@ -920,28 +949,12 @@ impl PerceptionIntegrator {
         self.emit(
             SYS_MISSIONS,
             EVT_MISSION_RESOLVED,
-            serde_json::json!({
-                "kind": format!("{:?}", result.kind),
-                "outcome": format!("{:?}", result.outcome),
-                "target_system": sys_name(world, result.target_system),
-            }),
+            crate::telemetry::mission_resolved_payload(world, result),
         );
         // Covert missions are espionage operations — emit an Espionage wrapper
         // so the eval harness sees all 8 mission kinds.
-        if matches!(
-            result.kind,
-            MissionKind::Sabotage | MissionKind::Assassination | MissionKind::Abduction
-        ) {
-            self.emit(
-                SYS_MISSIONS,
-                EVT_MISSION_RESOLVED,
-                serde_json::json!({
-                    "kind": "Espionage",
-                    "outcome": format!("{:?}", result.outcome),
-                    "target_system": sys_name(world, result.target_system),
-                    "parent_kind": format!("{:?}", result.kind),
-                }),
-            );
+        if let Some(payload) = crate::telemetry::mission_espionage_payload(world, result) {
+            self.emit(SYS_MISSIONS, EVT_MISSION_RESOLVED, payload);
         }
         // R6/R7/R8/R11: Per-effect telemetry emissions.
         for effect in &result.effects {
@@ -1109,66 +1122,81 @@ impl PerceptionIntegrator {
 
     // ── Step 7: AI actions ────────────────────────────────────────────────
 
-    /// Apply AI actions: mission dispatch, production, movement + telemetry.
-    #[allow(clippy::too_many_arguments)]
-    pub fn apply_ai_actions(
+    /// One AI order's `ai_action` record, and for an applied dispatch its
+    /// `mission_dispatched` record.
+    pub fn emit_ai_order(
         &mut self,
-        actions: &[AIAction],
-        ai_state: &mut AIState,
-        mission_state: &mut MissionState,
-        mfg_state: &mut ManufacturingState,
-        movement_state: &mut MovementState,
-        troop_transport: &mut TroopTransportState,
-        research_state: &mut ResearchState,
-        world: &mut GameWorld,
-        tick: u64,
-        is_dual: bool,
+        world: &GameWorld,
+        action: &AIAction,
+        origin: &crate::telemetry::AiOrderOrigin<'_>,
+        outcome: &AiOutcome,
     ) {
-        let applied = apply_ai_actions_inner(
-            actions,
-            ai_state,
-            mission_state,
-            mfg_state,
-            movement_state,
-            troop_transport,
-            research_state,
-            world,
-            tick,
+        self.emit(
+            SYS_AI,
+            EVT_AI_ACTION,
+            crate::telemetry::ai_order_payload(world, action, origin, &outcome.view()),
         );
-        for (action, was_applied) in actions.iter().zip(applied) {
-            if !was_applied {
-                continue;
-            }
-            let mut payload = ai_action_json(action, world);
-            if is_dual {
-                if let Some(obj) = payload.as_object_mut() {
-                    obj.insert("dual_ai".into(), serde_json::json!(true));
-                }
-            }
-            self.emit(SYS_AI, EVT_AI_ACTION, payload);
-            if let AIAction::DispatchMission {
+        if let (
+            AIAction::DispatchMission {
                 kind,
                 team,
                 decoys,
                 target_system,
                 ..
-            } = action
-            {
-                let faction = ai_state
-                    .faction
-                    .map_or(MissionFaction::Empire, AiFaction::as_mission_faction);
-                self.emit(
-                    SYS_MISSIONS,
-                    EVT_MISSION_DISPATCHED,
-                    serde_json::json!({
-                        "kind": format!("{kind:?}"),
-                        "faction": format!("{faction:?}"),
-                        "team": member_names(world, team),
-                        "decoys": member_names(world, decoys),
-                        "target_system": sys_name(world, *target_system),
-                    }),
-                );
-            }
+            },
+            AiOutcome::Applied { mission },
+        ) = (action, outcome)
+        {
+            self.emit(
+                SYS_MISSIONS,
+                EVT_MISSION_DISPATCHED,
+                serde_json::json!({
+                    "mission_id": mission,
+                    "kind": format!("{kind:?}"),
+                    "faction": origin.faction,
+                    "team": member_names(world, team),
+                    "decoys": member_names(world, decoys),
+                    "target_system": sys_name(world, *target_system),
+                }),
+            );
+        }
+    }
+
+    /// The records of what an AI strike did: the bombardment, the planet
+    /// destroyed and the characters killed with it.
+    pub fn emit_strike(&mut self, world: &GameWorld, strike: &StrikeEffects) {
+        if let Some((system, damage, headquarters_destroyed)) = strike.bombardment {
+            self.emit_bombardment(world, system, damage, headquarters_destroyed);
+        }
+        if let Some(system) = strike.destroyed {
+            self.emit(
+                SYS_DEATH_STAR,
+                EVT_DS_FIRED,
+                serde_json::json!({ "system": sys_name(world, system) }),
+            );
+            self.emit_killed(world, system, &strike.killed);
+        }
+    }
+
+    /// One `EVT_CHARACTER_KILLED` record per character the Death Star
+    /// killed at `system`.
+    pub fn emit_killed(&mut self, world: &GameWorld, system: SystemKey, killed: &[CharacterKey]) {
+        let system_name = sys_name(world, system);
+        for &character in killed {
+            let (name, dat_id) = world.characters.get(character).map_or_else(
+                || (String::from("<unknown>"), 0),
+                |c| (c.name.clone(), c.dat_id.raw()),
+            );
+            self.emit(
+                SYS_MISSIONS,
+                rebellion_core::game_events::EVT_CHARACTER_KILLED,
+                serde_json::json!({
+                    "name": name,
+                    "dat_id": dat_id,
+                    "cause": "death_star",
+                    "system": system_name,
+                }),
+            );
         }
     }
 
@@ -1189,7 +1217,7 @@ impl PerceptionIntegrator {
                         self.wall_ms,
                         SYS_BLOCKADE,
                         EVT_BLOCKADE_STARTED,
-                        serde_json::json!({ "system": sys_name(world, *system) }),
+                        crate::telemetry::blockade_payload(world, *system),
                     ));
                 }
                 BlockadeEvent::BlockadeEnded { system, tick } => {
@@ -1198,7 +1226,7 @@ impl PerceptionIntegrator {
                         self.wall_ms,
                         SYS_BLOCKADE,
                         EVT_BLOCKADE_ENDED,
-                        serde_json::json!({ "system": sys_name(world, *system) }),
+                        crate::telemetry::blockade_payload(world, *system),
                     ));
                 }
                 BlockadeEvent::TroopDestroyed {
@@ -1213,9 +1241,26 @@ impl PerceptionIntegrator {
                             self.wall_ms,
                             SYS_BLOCKADE,
                             EVT_BLOCKADE_TROOP_DESTROYED,
-                            serde_json::json!({ "system": sys_name(world, *system) }),
+                            crate::telemetry::blockade_payload(world, *system),
                         ));
                     }
+                }
+                BlockadeEvent::SupportShift {
+                    system,
+                    side,
+                    delta,
+                    tick,
+                } => {
+                    // FUN_0050c9f0 through the port's setter (the Death Star
+                    // halving and the 0..100 clamp).
+                    rebellion_core::uprising::apply_support_change(world, *system, *side, *delta);
+                    self.events.push(GameEventRecord::new(
+                        *tick,
+                        self.wall_ms,
+                        SYS_BLOCKADE,
+                        EVT_BLOCKADE_SUPPORT_SHIFT,
+                        crate::telemetry::support_shift_payload(world, *system, *side, *delta),
+                    ));
                 }
             }
         }
@@ -1376,94 +1421,25 @@ impl PerceptionIntegrator {
 
     // ── Step 12: Research ─────────────────────────────────────────────────
 
-    /// Apply research results: level-ups + telemetry.
-    pub fn apply_research_results(
-        &mut self,
-        results: &[ResearchResult],
-        research_state: &mut ResearchState,
-    ) {
+    /// Research telemetry: the levels the sides bought this tick.
+    pub fn apply_research_results(&mut self, results: &[ResearchResult]) {
         for result in results {
-            let ResearchResult::TechUnlocked {
-                faction_is_alliance,
-                tech_type,
-                new_level,
-            } = result;
-            if *faction_is_alliance {
-                research_state.alliance.advance(*tech_type);
-            } else {
-                research_state.empire.advance(*tech_type);
-            }
             self.emit(
                 SYS_RESEARCH,
                 EVT_RESEARCH_UNLOCKED,
-                serde_json::json!({
-                    "faction_is_alliance": faction_is_alliance,
-                    "tech_type": format!("{:?}", tech_type),
-                    "new_level": new_level,
-                }),
+                crate::telemetry::research_unlocked_payload(result),
             );
         }
     }
 
     // ── Step 12b: Repair ───────────────────────────────────────────────────
 
-    /// Apply repair events: hull restoration + telemetry.
+    /// Apply repair events: hull, counters and timers, plus telemetry.
     pub fn apply_repair_events(&mut self, world: &mut GameWorld, events: &[RepairEvent]) {
         for evt in events {
-            match evt {
-                RepairEvent::ShipRepaired {
-                    fleet,
-                    ship_index,
-                    hull_before,
-                    hull_after,
-                } => {
-                    // Apply hull restoration to the ShipInstance.
-                    if let Some(f) = world.fleets.get_mut(*fleet) {
-                        if let Some(ship) = f.capital_ships.get_mut(*ship_index) {
-                            ship.hull_current = *hull_after;
-                        }
-                    }
-                    let fleet_name = world
-                        .fleets
-                        .get(*fleet)
-                        .map_or_else(|| "unknown".into(), |f| sys_name(world, f.location));
-                    self.emit(
-                        SYS_REPAIR,
-                        EVT_SHIP_REPAIRED,
-                        serde_json::json!({
-                            "fleet_location": fleet_name,
-                            "hull_before": hull_before,
-                            "hull_after": hull_after,
-                            "delta": hull_after - hull_before,
-                        }),
-                    );
-                }
-                RepairEvent::RepairCheckPerformed {
-                    system,
-                    fleet,
-                    ships_checked,
-                } => {
-                    let system_name = sys_name(world, *system);
-                    let fleet_commander = world
-                        .fleets
-                        .get(*fleet)
-                        .and_then(|f| {
-                            world
-                                .characters
-                                .get(*f.characters.first()?)
-                                .map(|c| c.name.as_str())
-                        })
-                        .unwrap_or("uncrewed");
-                    self.emit(
-                        SYS_REPAIR,
-                        EVT_SHIP_REPAIR_STARTED,
-                        serde_json::json!({
-                            "system": system_name,
-                            "fleet_commander": fleet_commander,
-                            "ships_checked": ships_checked,
-                        }),
-                    );
-                }
+            evt.apply(world);
+            if let Some((event_type, details)) = crate::telemetry::repair_payload(world, evt) {
+                self.emit(SYS_REPAIR, event_type, details);
             }
         }
     }
@@ -1559,6 +1535,8 @@ fn apply_mission_effects_inner(
                 skill,
                 amount,
             } => rebellion_core::missions::raise_skill(world, *character, *skill, *amount),
+            // Credited by ResearchSystem::apply_mission_points.
+            MissionEffect::ResearchPoints { .. } => {}
             MissionEffect::UprisingIncident(event) => {
                 rebellion_core::uprising::apply_uprising_event(world, event);
             }
@@ -1648,6 +1626,9 @@ fn apply_mission_effects_inner(
             }
             MissionEffect::MemberBoarded { member, fleet } => {
                 rebellion_core::missions::board_member(world, *member, *fleet);
+            }
+            MissionEffect::EnRoute { member, en_route } => {
+                rebellion_core::missions::set_en_route(world, *member, *en_route);
             }
             MissionEffect::CharacterEscaped {
                 character,
@@ -1921,6 +1902,8 @@ pub fn apply_event_action_to_world(
                             is_alliance: spawn_alliance,
                             skills: [0; 8],
                             on_mission: false,
+                            en_route: false,
+                            on_hidden_mission: false,
                         });
                         if let Some(sys) = world.systems.get_mut(at_system) {
                             sys.special_forces.push(sf_key);
@@ -1948,17 +1931,13 @@ pub fn apply_event_action_to_world(
                 }
             }
             EventAction::SetHeritageKnown { character } => {
-                // Dabora 3 #R4: flip heritage_known when 0x396 "Final Battle
-                // Imminent" fires. The render layer branches on this flag
-                // in `event_id_to_resource()` to pick between the "Student
-                // Luke" / "Knight Luke" / "Emperor + Vader vs Knight Luke"
-                // BMP variants for 0x220 EVT_FINAL_BATTLE (SIMP-H5 +
-                // ARCH-#9 + SF-#11 triple-collapse — we do NOT create
-                // 0x222).
+                // Flip heritage_known when 0x396 "Final Battle Imminent"
+                // fires. Nothing reads the flag; the story chains' port to
+                // the original's rules is `or-port-story-research-c80`.
                 //
                 // Fail loudly on missing character: a silently-dropped flip
-                // shows the wrong cutscene, which is a story-continuity bug
-                // that's extremely hard to diagnose after the fact. Matches
+                // is a story-continuity bug that's hard to diagnose after
+                // the fact. Matches
                 // the `SpawnSpecialForce` structured-warn pattern above.
                 if let Some(c) = world.characters.get_mut(*character) {
                     c.heritage_known = true;
@@ -1975,118 +1954,633 @@ pub fn apply_event_action_to_world(
     }
 }
 
-// ---------------------------------------------------------------------------
-// AI action helper (moved from simulation.rs)
-// ---------------------------------------------------------------------------
+/// Why the applier refused an AI order: the `refusal` of its `ai_action`
+/// record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AiRefusal {
+    Mission(MissionRefusal),
+    Command(rebellion_core::officer_rank::CommandRefusal),
+    Fleet(rebellion_core::fleet_join::FleetOrderError),
+    Troops(rebellion_core::troop_transport::TroopTransportError),
+    /// port: an Assault with no regiments aboard releases nothing.
+    NoCargo,
+    /// A strike's system is gone.
+    StrikeSystemMissing,
+    /// The Death Star cannot fire there (`DeathStarSystem::fire`).
+    DeathStarRefused,
+}
 
+impl AiRefusal {
+    /// The refusal's name, `family/Variant`.
+    #[must_use]
+    pub fn name(&self) -> String {
+        use rebellion_core::fleet_join::FleetOrderError as F;
+        use rebellion_core::movement::FleetDispatchError as D;
+        use rebellion_core::officer_rank::CommandRefusal as C;
+        use rebellion_core::troop_transport::TroopTransportError as T;
+        match self {
+            Self::Mission(refusal) => format!("mission/{}", mission_refusal_name(refusal)),
+            Self::Command(refusal) => format!(
+                "command/{}",
+                match refusal {
+                    C::OtherSide => "OtherSide",
+                    C::Unrecruited => "Unrecruited",
+                    C::EnRoute => "EnRoute",
+                    C::OnMission => "OnMission",
+                    C::Prisoner => "Prisoner",
+                    C::NotEligible => "NotEligible",
+                }
+            ),
+            Self::Fleet(error) => format!(
+                "fleet/{}",
+                match error {
+                    F::MissingFleet => "MissingFleet",
+                    F::MissingShip => "MissingShip",
+                    F::ShipsChanged => "ShipsChanged",
+                    F::WrongFaction => "WrongFaction",
+                    F::InTransit => "InTransit",
+                    F::IntoItself => "IntoItself",
+                    F::OtherSideDestination => "OtherSideDestination",
+                    F::DestinationInTransit => "DestinationInTransit",
+                    F::Dispatch(dispatch) => match dispatch {
+                        D::MissingFleet => "Dispatch/MissingFleet",
+                        D::MissingOrigin => "Dispatch/MissingOrigin",
+                        D::MissingDestination => "Dispatch/MissingDestination",
+                        D::DestinationDestroyed => "Dispatch/DestinationDestroyed",
+                        D::WrongFaction => "Dispatch/WrongFaction",
+                        D::AlreadyInTransit => "Dispatch/AlreadyInTransit",
+                        D::AlreadyAtDestination => "Dispatch/AlreadyAtDestination",
+                        D::NoHyperdrive => "Dispatch/NoHyperdrive",
+                        D::Blockaded => "Dispatch/Blockaded",
+                    },
+                }
+            ),
+            Self::Troops(error) => format!(
+                "troops/{}",
+                match error {
+                    T::MissingFleet => "MissingFleet",
+                    T::MissingSystem => "MissingSystem",
+                    T::NoTroops => "NoTroops",
+                    T::MissingTroop => "MissingTroop",
+                    T::WrongFaction => "WrongFaction",
+                    T::TroopNotAtFleetSystem => "TroopNotAtFleetSystem",
+                    T::AlreadyEmbarked => "AlreadyEmbarked",
+                    T::CapacityExceeded { .. } => "CapacityExceeded",
+                    T::FleetNotAtDestination => "FleetNotAtDestination",
+                    T::OtherSideDestination => "OtherSideDestination",
+                    T::DestinationDestroyed => "DestinationDestroyed",
+                    T::DestinationBlockaded => "DestinationBlockaded",
+                    T::DestinationInTransit => "DestinationInTransit",
+                    T::RegimentEnRoute => "RegimentEnRoute",
+                    T::MissingSquadron => "MissingSquadron",
+                    T::SquadronEnRoute => "SquadronEnRoute",
+                    T::NoSquadronRoom => "NoSquadronRoom",
+                }
+            ),
+            Self::NoCargo => "troops/NoCargo".into(),
+            Self::StrikeSystemMissing => "strike/MissingSystem".into(),
+            Self::DeathStarRefused => "strike/DeathStarRefused".into(),
+        }
+    }
+
+    /// The validator's two-word status of a mission refusal.
+    #[must_use]
+    pub fn status(&self) -> Option<[u32; 2]> {
+        match self {
+            Self::Mission(refusal) => {
+                let (w0, w1) = refusal.status();
+                Some([w0, w1])
+            }
+            _ => None,
+        }
+    }
+
+    /// The running end a creation refusal pre-empts.
+    #[must_use]
+    pub fn end_code(&self) -> Option<u8> {
+        match self {
+            Self::Mission(MissionRefusal::TargetRefused(refusal)) => refusal.end_code(),
+            _ => None,
+        }
+    }
+}
+
+/// A mission refusal's variant name; the target refusals as
+/// `TargetRefused/<variant>`.
+fn mission_refusal_name(refusal: &MissionRefusal) -> String {
+    use rebellion_core::missions::TargetRefusal as R;
+    match refusal {
+        MissionRefusal::EmptyTeam => "EmptyTeam".into(),
+        MissionRefusal::MemberUnavailable(_) => "MemberUnavailable".into(),
+        MissionRefusal::MembersNotAllowed => "MembersNotAllowed".into(),
+        MissionRefusal::RecruiterNotMajor => "RecruiterNotMajor".into(),
+        MissionRefusal::NoResearchSkill => "NoResearchSkill".into(),
+        MissionRefusal::DestinationRefused(_) => "DestinationRefused".into(),
+        MissionRefusal::TargetRefused(target) => format!(
+            "TargetRefused/{}",
+            match target {
+                R::TargetMissing => "TargetMissing",
+                R::ContainerDestroyed => "ContainerDestroyed",
+                R::TargetWrongSide => "TargetWrongSide",
+                R::TargetDestroyed => "TargetDestroyed",
+                R::TargetEnRoute => "TargetEnRoute",
+                R::TargetElsewhere => "TargetElsewhere",
+                R::ContainerUnpopulated => "ContainerUnpopulated",
+                R::UprisingState => "UprisingState",
+                R::PrisonerTarget => "PrisonerTarget",
+                R::FreeTarget => "FreeTarget",
+                R::TargetIsDeathStar => "TargetIsDeathStar",
+                R::TargetNotDeathStar => "TargetNotDeathStar",
+                R::SupportFull => "SupportFull",
+                R::RecruitPoolEmpty => "RecruitPoolEmpty",
+                R::NoYard => "NoYard",
+                R::TreeExhausted => "TreeExhausted",
+            }
+        ),
+    }
+}
+
+/// What became of one AI order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AiOutcome {
+    /// Applied; a dispatch names the mission it created.
+    Applied {
+        mission: Option<u64>,
+    },
+    Refused(AiRefusal),
+    /// The order touches a system with an open battle (native only).
+    Held {
+        system: SystemKey,
+    },
+}
+
+impl AiOutcome {
+    #[must_use]
+    pub const fn is_applied(&self) -> bool {
+        matches!(self, Self::Applied { .. })
+    }
+
+    /// The outcome as the `ai_action` record reads it.
+    #[must_use]
+    pub fn view(&self) -> crate::telemetry::AiOutcomeView {
+        match self {
+            Self::Applied { mission } => crate::telemetry::AiOutcomeView {
+                outcome: "applied",
+                mission_id: *mission,
+                ..Default::default()
+            },
+            Self::Refused(refusal) => crate::telemetry::AiOutcomeView {
+                outcome: "refused",
+                refusal: Some(refusal.name()),
+                status: refusal.status(),
+                end_code: refusal.end_code(),
+                ..Default::default()
+            },
+            Self::Held { system } => crate::telemetry::AiOutcomeView {
+                outcome: "held",
+                held_at: Some(*system),
+                ..Default::default()
+            },
+        }
+    }
+}
+
+/// Apply one AI order to the world: the side's order executed in phase 5
+/// (`FUN_0051df30`). Strikes go to [`resolve_ai_strike`].
 #[expect(
     clippy::too_many_arguments,
     reason = "Keep the existing explicit simulation state inputs at this integration boundary."
 )]
-fn apply_ai_actions_inner(
-    actions: &[AIAction],
+pub fn apply_ai_order(
+    action: &AIAction,
     ai_state: &mut AIState,
     mission_state: &mut MissionState,
     mfg_state: &mut ManufacturingState,
     movement_state: &mut MovementState,
     troop_transport: &mut TroopTransportState,
-    research_state: &mut ResearchState,
+    stockpiles: &mut StockpileState,
     world: &mut GameWorld,
+    uprisings: &UprisingState,
     tick: u64,
-) -> Vec<bool> {
+) -> AiOutcome {
     let mission_faction = ai_state.faction.map_or(
         MissionFaction::Empire,
         rebellion_core::ai::AiFaction::as_mission_faction,
     );
-
-    let mut applied = Vec::with_capacity(actions.len());
-    for action in actions {
-        let was_applied = match action {
-            AIAction::DispatchMission {
-                kind,
-                team,
-                decoys,
-                target_system,
-                target_character,
-                target_object,
-            } => {
-                let dispatched = mission_state
-                    .dispatch_guarded(
-                        MissionRequest {
-                            kind: *kind,
-                            faction: mission_faction,
-                            team: team.clone(),
-                            decoys: decoys.clone(),
-                            target_system: *target_system,
-                            target_character: *target_character,
-                            target_object: *target_object,
-                            tick,
-                        },
-                        world,
-                    )
-                    .is_ok();
-                if dispatched {
+    let applied = AiOutcome::Applied { mission: None };
+    let refused = |refusal| AiOutcome::Refused(refusal);
+    match action {
+        AIAction::DispatchMission {
+            kind,
+            team,
+            decoys,
+            target_system,
+            target_character,
+            target_object,
+        } => {
+            let dispatched = mission_state.dispatch_validated(
+                MissionRequest {
+                    kind: *kind,
+                    faction: mission_faction,
+                    team: team.clone(),
+                    decoys: decoys.clone(),
+                    target_system: *target_system,
+                    target_character: *target_character,
+                    target_object: *target_object,
+                    tick,
+                },
+                world,
+                uprisings,
+            );
+            match dispatched {
+                Ok(id) => {
                     for character in team.iter().chain(decoys).filter_map(|m| m.character()) {
                         ai_state.mark_busy(character);
                     }
+                    AiOutcome::Applied { mission: Some(id) }
                 }
-                dispatched
+                Err(refusal) => refused(AiRefusal::Mission(refusal)),
             }
-            AIAction::EnqueueProduction { system, kind, work } => {
+        }
+        AIAction::EnqueueProduction {
+            system,
+            kind,
+            work,
+            count,
+            destination,
+        } => {
+            if let Some(destination) = destination {
+                mfg_state.set_destination(*system, ProductionArea::of(*kind), *destination);
+            }
+            for _ in 0..*count {
                 mfg_state.enqueue(*system, QueueItem::new(*kind, *work));
-                true
             }
-            AIAction::DispatchResearch {
-                character,
-                tech_type,
-                ticks,
-            } => {
-                let is_alliance = ai_state
-                    .faction
-                    .is_some_and(|f| matches!(f, rebellion_core::ai::AiFaction::Alliance));
-                research_state.dispatch(rebellion_core::research::ResearchProject {
-                    tech_type: *tech_type,
-                    character: *character,
-                    faction_is_alliance: is_alliance,
-                    ticks_remaining: *ticks,
-                    total_ticks: *ticks,
-                });
-                ai_state.mark_busy(*character);
-                true
-            }
-            AIAction::MoveFleet {
-                fleet,
-                to_system,
-                troops,
-                ..
-            } => {
-                let transit = world.fleets.get(*fleet).and_then(|f| {
-                    rebellion_core::movement::fleet_transit_ticks(f, world, f.location, *to_system)
-                });
-                let embarked = if troops.is_empty() {
-                    true
-                } else {
-                    troop_transport.embark(world, *fleet, troops).is_ok()
-                };
-                if embarked {
-                    let departed = transit.is_some_and(|ticks| {
-                        begin_fleet_transit(movement_state, world, *fleet, *to_system, ticks)
-                    });
-                    if !departed && !troops.is_empty() {
-                        let origin = world.fleets.get(*fleet).map(|value| value.location);
-                        if let Some(origin) = origin {
-                            let _ = troop_transport.disembark_all(world, *fleet, origin);
-                        }
-                    }
-                    departed
-                } else {
-                    false
+            applied
+        }
+        AIAction::Scrap { targets } => {
+            rebellion_core::scrap::scrap_all(
+                world,
+                stockpiles,
+                troop_transport,
+                targets.iter().copied(),
+            );
+            applied
+        }
+        AIAction::MoveCharacter {
+            character,
+            to_system,
+        } => mission_state
+            .dispatch_move(
+                world,
+                movement_state,
+                uprisings,
+                mission_faction,
+                &[MissionMember::Character(*character)],
+                MoveDestination::System(*to_system),
+                tick,
+            )
+            .map_or_else(|refusal| refused(AiRefusal::Mission(refusal)), |_| applied),
+        AIAction::MoveCharacterToFleet { character, fleet } => mission_state
+            .dispatch_move(
+                world,
+                movement_state,
+                uprisings,
+                mission_faction,
+                &[MissionMember::Character(*character)],
+                MoveDestination::Fleet(*fleet),
+                tick,
+            )
+            .map_or_else(|refusal| refused(AiRefusal::Mission(refusal)), |_| applied),
+        AIAction::GiveCommand { character, kind } => {
+            let is_alliance = mission_faction == MissionFaction::Alliance;
+            match rebellion_core::officer_rank::command_refusal(
+                world,
+                *character,
+                is_alliance,
+                *kind,
+            ) {
+                Some(refusal) => refused(AiRefusal::Command(refusal)),
+                None => {
+                    rebellion_core::officer_rank::give_command(world, *character, *kind);
+                    applied
                 }
             }
-        };
-        applied.push(was_applied);
+        }
+        AIAction::JoinFleet {
+            fleet,
+            ships,
+            target,
+        } => {
+            let Some(mover) = rebellion_core::fleet_join::mover_of_tags(world, *fleet, ships)
+            else {
+                return refused(AiRefusal::Fleet(
+                    rebellion_core::fleet_join::FleetOrderError::MissingFleet,
+                ));
+            };
+            rebellion_core::fleet_join::join_fleet(
+                world,
+                movement_state,
+                troop_transport,
+                &mover,
+                *target,
+                mission_faction == MissionFaction::Alliance,
+            )
+            .map_or_else(|error| refused(AiRefusal::Fleet(error)), |_| applied)
+        }
+        AIAction::MoveRegiments { troops, to } => {
+            let blockaded = BlockadeSystem::blockaded_now(world);
+            let mut first_error = None;
+            let mut moved = false;
+            for troop in troops {
+                match troop_transport.move_regiment(
+                    world,
+                    movement_state,
+                    &blockaded,
+                    *troop,
+                    *to,
+                    tick,
+                ) {
+                    Ok(_) => moved = true,
+                    Err(error) => {
+                        first_error.get_or_insert(error);
+                    }
+                }
+            }
+            // port: the original issues one order per regiment; the port's
+            // order is applied when any of them moves.
+            if moved {
+                applied
+            } else {
+                refused(AiRefusal::Troops(first_error.unwrap_or(
+                    rebellion_core::troop_transport::TroopTransportError::NoTroops,
+                )))
+            }
+        }
+        AIAction::MoveSquadrons { squadrons, fleet } => {
+            let blockaded = BlockadeSystem::blockaded_now(world);
+            let mut first_error = None;
+            let mut moved = false;
+            for source in squadrons {
+                match troop_transport.move_squadron(
+                    world,
+                    movement_state,
+                    &blockaded,
+                    *source,
+                    rebellion_core::troop_transport::RegimentTarget::Fleet(*fleet),
+                    tick,
+                ) {
+                    Ok(_) => moved = true,
+                    Err(error) => {
+                        first_error.get_or_insert(error);
+                    }
+                }
+            }
+            if moved {
+                applied
+            } else {
+                refused(AiRefusal::Troops(first_error.unwrap_or(
+                    rebellion_core::troop_transport::TroopTransportError::NoTroops,
+                )))
+            }
+        }
+        AIAction::MoveCharacters {
+            characters,
+            to_system,
+        } => {
+            let members: Vec<MissionMember> = characters
+                .iter()
+                .map(|c| MissionMember::Character(*c))
+                .collect();
+            mission_state
+                .dispatch_move(
+                    world,
+                    movement_state,
+                    uprisings,
+                    mission_faction,
+                    &members,
+                    rebellion_core::missions::MoveDestination::System(*to_system),
+                    tick,
+                )
+                .map_or_else(|refusal| refused(AiRefusal::Mission(refusal)), |_| applied)
+        }
+        AIAction::Assault { fleet } => {
+            let carrying = troop_transport.carried_count(*fleet) > 0;
+            troop_transport.release(*fleet);
+            if carrying {
+                applied
+            } else {
+                refused(AiRefusal::NoCargo)
+            }
+        }
+        // The strikes go to resolve_ai_strike, which holds the victory and
+        // Death Star states.
+        AIAction::Bombard { .. } => refused(AiRefusal::StrikeSystemMissing),
+        AIAction::DestroySystem { .. } => refused(AiRefusal::DeathStarRefused),
+        AIAction::CreateFleet {
+            fleet,
+            ships,
+            to_system,
+        } => rebellion_core::fleet_join::create_fleet_of_tags(
+            world,
+            movement_state,
+            troop_transport,
+            *fleet,
+            ships,
+            *to_system,
+            mission_faction == MissionFaction::Alliance,
+        )
+        .map_or_else(|error| refused(AiRefusal::Fleet(error)), |_| applied),
+        AIAction::MoveFleet {
+            fleet,
+            to_system,
+            troops,
+            ..
+        } => {
+            use rebellion_core::fleet_join::FleetOrderError;
+            use rebellion_core::movement::FleetDispatchError;
+            let Some(f) = world.fleets.get(*fleet) else {
+                return refused(AiRefusal::Fleet(FleetOrderError::MissingFleet));
+            };
+            // FUN_004fda10: no speed, no hyperdrive.
+            let transit =
+                rebellion_core::movement::fleet_transit_ticks(f, world, f.location, *to_system);
+            if !troops.is_empty() {
+                if let Err(error) = troop_transport.embark(world, *fleet, troops) {
+                    return refused(AiRefusal::Troops(error));
+                }
+            }
+            let departed = transit.is_some_and(|ticks| {
+                begin_fleet_transit(movement_state, world, *fleet, *to_system, ticks)
+            });
+            if departed {
+                return applied;
+            }
+            if !troops.is_empty() {
+                let origin = world.fleets.get(*fleet).map(|value| value.location);
+                if let Some(origin) = origin {
+                    let _ = troop_transport.disembark_all(world, *fleet, origin);
+                }
+            }
+            refused(AiRefusal::Fleet(FleetOrderError::Dispatch(
+                if transit.is_none() {
+                    FleetDispatchError::NoHyperdrive
+                } else {
+                    FleetDispatchError::AlreadyInTransit
+                },
+            )))
+        }
     }
-    applied
+}
+
+/// What an AI strike did, for the caller's records and messages.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct StrikeEffects {
+    /// The bombarded system, the damage, and whether it destroyed the
+    /// Alliance headquarters.
+    pub bombardment: Option<(SystemKey, i32, bool)>,
+    /// The system the Death Star destroyed.
+    pub destroyed: Option<SystemKey>,
+    /// The characters that died with it.
+    pub killed: Vec<CharacterKey>,
+}
+
+/// Resolve an AI strike, a Bombard or a DestroySystem, against the world.
+/// It writes no record; the caller emits from the effects.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "A strike reaches the victory, Death Star, movement, production and blockade states."
+)]
+pub fn resolve_ai_strike(
+    action: &AIAction,
+    world: &mut GameWorld,
+    victory: &mut rebellion_core::victory::VictoryState,
+    death_star: &mut rebellion_core::death_star::DeathStarState,
+    movement: &mut MovementState,
+    manufacturing: &mut ManufacturingState,
+    blockade: &mut rebellion_core::blockade::BlockadeState,
+    tick: u64,
+) -> (AiOutcome, StrikeEffects) {
+    let mut effects = StrikeEffects::default();
+    let applied = AiOutcome::Applied { mission: None };
+    match action {
+        AIAction::Bombard { fleet, system, .. } => {
+            // port: the two bombardment orders resolve alike
+            // (`BombardmentSystem::resolve_bombardment`).
+            let Some(attacker_is_alliance) = world.fleets.get(*fleet).map(|f| f.is_alliance) else {
+                return (
+                    AiOutcome::Refused(AiRefusal::Fleet(
+                        rebellion_core::fleet_join::FleetOrderError::MissingFleet,
+                    )),
+                    effects,
+                );
+            };
+            if !world.systems.contains_key(*system) {
+                return (AiOutcome::Refused(AiRefusal::StrikeSystemMissing), effects);
+            }
+            let result = rebellion_core::bombardment::BombardmentSystem::resolve_bombardment(
+                world,
+                *fleet,
+                *system,
+                world.difficulty_index,
+                tick,
+            );
+            let attacker = if attacker_is_alliance {
+                rebellion_core::dat::Faction::Alliance
+            } else {
+                rebellion_core::dat::Faction::Empire
+            };
+            let headquarters_destroyed =
+                rebellion_core::victory::VictorySystem::apply_headquarters_bombardment(
+                    victory, world, &result, attacker,
+                );
+            effects.bombardment = Some((*system, result.damage, headquarters_destroyed));
+            // FUN_0058e320. +0x28 is set by a hit that destroys a civilian
+            // facility (FUN_0058ce70) or lowers energy or raw material
+            // (FUN_0058cf20, FUN_0058cf50). port: the port's bombardment
+            // rolls no hits, so the flag stays clear; once the hit loop
+            // (FUN_0058df60) is ported it only has to set it here.
+            rebellion_core::bombardment::finalize(
+                world,
+                *system,
+                attacker,
+                rebellion_core::bombardment::BombardmentRun::default(),
+            );
+            (applied, effects)
+        }
+        AIAction::DestroySystem { fleet, system } => {
+            let side = world
+                .fleets
+                .get(*fleet)
+                .map_or(rebellion_core::dat::Faction::Empire, |f| {
+                    if f.is_alliance {
+                        rebellion_core::dat::Faction::Alliance
+                    } else {
+                        rebellion_core::dat::Faction::Empire
+                    }
+                });
+            let fired =
+                rebellion_core::death_star::DeathStarSystem::fire(death_star, world, *system, tick);
+            if fired.is_none() {
+                return (AiOutcome::Refused(AiRefusal::DeathStarRefused), effects);
+            }
+            effects.killed = destroy_system(
+                world,
+                *system,
+                victory,
+                death_star,
+                movement,
+                manufacturing,
+                blockade,
+            );
+            effects.destroyed = Some(*system);
+            // FUN_0058e320 after a kill (FUN_0058d990 sets +0x28 and +0x2c).
+            rebellion_core::bombardment::finalize(
+                world,
+                *system,
+                side,
+                rebellion_core::bombardment::BombardmentRun {
+                    support_loss: true,
+                    planet_destroyed: true,
+                },
+            );
+            (applied, effects)
+        }
+        _ => (AiOutcome::Refused(AiRefusal::StrikeSystemMissing), effects),
+    }
+}
+
+/// A planet the Death Star destroyed: its flag, the victory record and the
+/// cleanup (`cleanup_destroyed_system`). Returns the characters killed.
+pub fn destroy_system(
+    world: &mut GameWorld,
+    system: SystemKey,
+    victory: &mut rebellion_core::victory::VictoryState,
+    death_star: &mut rebellion_core::death_star::DeathStarState,
+    movement: &mut MovementState,
+    manufacturing: &mut ManufacturingState,
+    blockade: &mut rebellion_core::blockade::BlockadeState,
+) -> Vec<CharacterKey> {
+    if let Some(sys) = world.systems.get_mut(system) {
+        sys.is_destroyed = true;
+    }
+    victory.death_star_location = Some(system);
+    let mut cleanup_effects: Vec<rebellion_core::effects::GameEffect> = Vec::new();
+    rebellion_core::death_star::cleanup_destroyed_system(
+        world,
+        system,
+        movement,
+        death_star,
+        manufacturing,
+        blockade,
+        &mut cleanup_effects,
+    );
+    cleanup_effects
+        .into_iter()
+        .filter_map(|effect| match effect {
+            rebellion_core::effects::GameEffect::CharacterKilled { character } => Some(character),
+            _ => None,
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -2094,7 +2588,7 @@ mod tests {
     use super::*;
     use rebellion_core::ai::{AiFaction, FleetMoveReason};
     use rebellion_core::dat::{ExplorationStatus, Faction, SectorGroup};
-    use rebellion_core::missions::MissionOutcome;
+    use rebellion_core::missions::{MissionKind, MissionOutcome};
     use rebellion_core::world::{CapitalShipClass, Sector, System};
 
     fn add_system(world: &mut GameWorld, name: &str) -> SystemKey {
@@ -2264,7 +2758,12 @@ mod tests {
                 }],
             };
             let mut integrator = PerceptionIntegrator::new(9, 0);
-            integrator.apply_mission_result(&mut world, &result, &mut uprisings);
+            integrator.apply_mission_result(
+                &mut world,
+                &result,
+                &mut uprisings,
+                &mut ResearchState::new(),
+            );
             assert_eq!(uprisings.is_uprising(system), !ends, "gain {support_gain}");
         }
     }
@@ -2303,7 +2802,12 @@ mod tests {
             }],
         };
         let mut integrator = PerceptionIntegrator::new(9, 0);
-        integrator.apply_mission_result(&mut world, &result, &mut uprisings);
+        integrator.apply_mission_result(
+            &mut world,
+            &result,
+            &mut uprisings,
+            &mut ResearchState::new(),
+        );
 
         assert!((world.systems[system].popularity_empire - 0.65).abs() < 1e-6);
         assert!(!uprisings.is_uprising(system));
@@ -2430,8 +2934,51 @@ mod tests {
         assert!((world.systems[system].popularity_empire - 0.75).abs() < 1e-6);
     }
 
+    /// Apply each order for the Empire AI and write its record, as the round
+    /// driver does (`simulation::ai_step`).
+    fn apply_empire_orders(
+        integrator: &mut PerceptionIntegrator,
+        world: &mut GameWorld,
+        movement: &mut MovementState,
+        troop_transport: &mut TroopTransportState,
+        actions: &[AIAction],
+    ) -> Vec<AiOutcome> {
+        let mut ai = AIState::new(AiFaction::Empire);
+        let mut missions = MissionState::new();
+        let mut manufacturing = ManufacturingState::new();
+        let mut stockpiles = StockpileState::new();
+        let origin = crate::telemetry::AiOrderOrigin {
+            faction: "Empire",
+            module: 0,
+            round: 0,
+            issued: 5,
+            dual: false,
+        };
+        actions
+            .iter()
+            .map(|action| {
+                let outcome = apply_ai_order(
+                    action,
+                    &mut ai,
+                    &mut missions,
+                    &mut manufacturing,
+                    movement,
+                    troop_transport,
+                    &mut stockpiles,
+                    world,
+                    &UprisingState::default(),
+                    5,
+                );
+                integrator.emit_ai_order(world, action, &origin, &outcome);
+                outcome
+            })
+            .collect()
+    }
+
+    /// Every AI order writes its outcome record (one `ai_action` per order,
+    /// applied, refused with its reason, or held).
     #[test]
-    fn duplicate_move_action_preserves_first_order_and_emits_once() {
+    fn a_second_move_of_a_departed_fleet_is_reported_refused() {
         let mut world = GameWorld::default();
         let origin = add_system(&mut world, "Origin");
         let first_target = add_system(&mut world, "First Target");
@@ -2465,49 +3012,50 @@ mod tests {
                 troops: vec![],
             },
         ];
-        let mut ai = AIState::new(AiFaction::Empire);
-        let mut missions = MissionState::new();
-        let mut manufacturing = ManufacturingState::new();
         let mut movement = MovementState::new();
         let mut troop_transport = TroopTransportState::default();
-        let mut research = ResearchState::new();
         let mut integrator = PerceptionIntegrator::new(5, 0);
 
-        integrator.apply_ai_actions(
-            &actions,
-            &mut ai,
-            &mut missions,
-            &mut manufacturing,
+        let outcomes = apply_empire_orders(
+            &mut integrator,
+            &mut world,
             &mut movement,
             &mut troop_transport,
-            &mut research,
-            &mut world,
-            5,
-            false,
+            &actions,
         );
 
         assert_eq!(movement.len(), 1);
         assert_eq!(movement.get(fleet).unwrap().destination, first_target);
+        assert_eq!(
+            outcomes[1],
+            AiOutcome::Refused(AiRefusal::Fleet(
+                rebellion_core::fleet_join::FleetOrderError::Dispatch(
+                    rebellion_core::movement::FleetDispatchError::AlreadyInTransit
+                )
+            ))
+        );
         let events = integrator.finish();
-        assert_eq!(events.len(), 1);
+        assert_eq!(events.len(), 2);
         assert_eq!(events[0].event_type, EVT_AI_ACTION);
         assert_eq!(events[0].details["to"], "First Target");
+        assert_eq!(events[0].details["outcome"], "applied");
+        assert_eq!(events[1].event_type, EVT_AI_ACTION);
+        assert_eq!(events[1].details["outcome"], "refused");
+        assert_eq!(
+            events[1].details["refusal"],
+            "fleet/Dispatch/AlreadyInTransit"
+        );
     }
 
     /// Apply `actions` for the Empire AI and return the telemetry.
     fn empire_ai_events(world: &mut GameWorld, actions: &[AIAction]) -> Vec<GameEventRecord> {
         let mut integrator = PerceptionIntegrator::new(5, 0);
-        integrator.apply_ai_actions(
-            actions,
-            &mut AIState::new(AiFaction::Empire),
-            &mut MissionState::new(),
-            &mut ManufacturingState::new(),
+        apply_empire_orders(
+            &mut integrator,
+            world,
             &mut MovementState::new(),
             &mut TroopTransportState::default(),
-            &mut ResearchState::new(),
-            world,
-            5,
-            false,
+            actions,
         );
         integrator.finish()
     }
@@ -2549,6 +3097,7 @@ mod tests {
         assert_eq!(
             events[1].details,
             serde_json::json!({
+                "mission_id": 0,
                 "kind": "Diplomacy",
                 "faction": "Empire",
                 "team": ["Envoy"],
@@ -2559,7 +3108,7 @@ mod tests {
     }
 
     #[test]
-    fn a_refused_ai_mission_reports_nothing() {
+    fn a_refused_ai_mission_is_reported_refused_and_not_dispatched() {
         let mut world = GameWorld::default();
         let target = add_system(&mut world, "Target");
         let rebel =
@@ -2582,7 +3131,11 @@ mod tests {
             }],
         );
 
-        assert!(events.is_empty());
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_type, EVT_AI_ACTION);
+        assert_eq!(events[0].details["outcome"], "refused");
+        assert_eq!(events[0].details["refusal"], "mission/MemberUnavailable");
+        assert_eq!(events[0].details["status"], serde_json::json!([0x40, 0x91]));
     }
 
     #[test]
@@ -2593,6 +3146,8 @@ mod tests {
             is_alliance: false,
             skills: [0; 8],
             on_mission: false,
+            en_route: false,
+            on_hidden_mission: false,
         });
 
         assert_eq!(
@@ -2635,25 +3190,16 @@ mod tests {
             reason: FleetMoveReason::Attack,
             troops: vec![troop],
         }];
-        let mut ai = AIState::new(AiFaction::Empire);
-        let mut missions = MissionState::new();
-        let mut manufacturing = ManufacturingState::new();
         let mut movement = MovementState::new();
         let mut troop_transport = TroopTransportState::default();
-        let mut research = ResearchState::new();
         let mut integrator = PerceptionIntegrator::new(5, 0);
 
-        integrator.apply_ai_actions(
-            &actions,
-            &mut ai,
-            &mut missions,
-            &mut manufacturing,
+        apply_empire_orders(
+            &mut integrator,
+            &mut world,
             &mut movement,
             &mut troop_transport,
-            &mut research,
-            &mut world,
-            5,
-            false,
+            &actions,
         );
 
         assert!(movement.is_in_transit(fleet));
@@ -2694,24 +3240,32 @@ mod tests {
         assert!(movement.order(fleet, origin, destination, 3));
         let mut troop_transport = TroopTransportState::default();
 
-        let applied = apply_ai_actions_inner(
-            &[AIAction::MoveFleet {
+        let outcome = apply_ai_order(
+            &AIAction::MoveFleet {
                 fleet,
                 to_system: destination,
                 reason: FleetMoveReason::Attack,
                 troops: vec![troop],
-            }],
+            },
             &mut AIState::new(AiFaction::Empire),
             &mut MissionState::new(),
             &mut ManufacturingState::new(),
             &mut movement,
             &mut troop_transport,
-            &mut ResearchState::new(),
+            &mut StockpileState::new(),
             &mut world,
+            &UprisingState::default(),
             5,
         );
 
-        assert_eq!(applied, vec![false]);
+        assert_eq!(
+            outcome,
+            AiOutcome::Refused(AiRefusal::Fleet(
+                rebellion_core::fleet_join::FleetOrderError::Dispatch(
+                    rebellion_core::movement::FleetDispatchError::AlreadyInTransit
+                )
+            ))
+        );
         assert!(troop_transport.cargo(fleet).is_empty());
         assert!(world.systems[origin].ground_units.contains(&troop));
     }
@@ -3063,7 +3617,7 @@ pub struct SystemSpaceCombatResult {
     pub log: Vec<String>,
 }
 
-fn orbiting_fleets_by_faction(
+pub(crate) fn orbiting_fleets_by_faction(
     world: &GameWorld,
     system: SystemKey,
 ) -> (Vec<FleetKey>, Vec<FleetKey>) {
@@ -3094,7 +3648,7 @@ fn orbiting_fleets_by_faction(
 }
 
 /// A side's fleets at `system` and the squadrons the system holds for it.
-fn summarize_space_force(
+pub(crate) fn summarize_space_force(
     world: &GameWorld,
     system: SystemKey,
     is_alliance: bool,
@@ -3138,10 +3692,50 @@ pub fn resolve_system_space_combat(
     rng_seed: u32,
     tick: u64,
 ) -> SystemSpaceCombatResult {
+    resolve_system_space_combat_for(
+        world,
+        troop_transport,
+        movement,
+        system,
+        rng_seed,
+        tick,
+        None,
+    )
+}
+
+/// [`resolve_system_space_combat`] with a person commanding a side
+/// (`human_is_alliance`): that side's withdrawal threshold is 0.0
+/// (`FUN_004865b0`), a computer side's `FUN_004e6110`'s.
+pub fn resolve_system_space_combat_for(
+    world: &mut GameWorld,
+    troop_transport: &mut TroopTransportState,
+    movement: &mut MovementState,
+    system: SystemKey,
+    rng_seed: u32,
+    tick: u64,
+    human_is_alliance: Option<bool>,
+) -> SystemSpaceCombatResult {
     let (initial_alliance, initial_empire) = orbiting_fleets_by_faction(world, system);
     let alliance_before = summarize_space_force(world, system, true, &initial_alliance);
     let empire_before = summarize_space_force(world, system, false, &initial_empire);
+    rebellion_core::trace::record(
+        rebellion_core::trace::TraceMask::COMBAT,
+        "pre_battle",
+        || {
+            serde_json::json!({
+                "system": sys_name(world, system),
+                "tick": tick,
+                "rng_seed": rng_seed,
+                "alliance_fleets": initial_alliance.len(),
+                "empire_fleets": initial_empire.len(),
+                "alliance": crate::telemetry::force_payload(&alliance_before),
+                "empire": crate::telemetry::force_payload(&empire_before),
+            })
+        },
+    );
 
+    // FUN_00433620 reads the fleets' ship tags; the AI tags them each pass.
+    rebellion_core::carriage::tag_all(world);
     let mut session = BattleSession::new_with_forces(
         world,
         system,
@@ -3156,6 +3750,14 @@ pub fn resolve_system_space_combat(
         false,
         tick,
         rng_seed,
+    );
+    // The Alliance is the session's attacker (see above).
+    rebellion_core::tactical::apply::seat_morale(
+        &mut session,
+        world,
+        troop_transport,
+        movement,
+        human_is_alliance,
     );
     session.simulate_to_end();
     let mut withdrawal_log = Vec::new();
@@ -3334,6 +3936,38 @@ pub fn apply_ground_combat_result_inner(result: &GroundCombatResult, world: &mut
 // Build completion helper (moved from simulation.rs)
 // ---------------------------------------------------------------------------
 
+/// A product delivered to `fleet`, whose container held it en route
+/// (`crate::delivery`): a capital ship joins the fleet and a squadron goes
+/// aboard (`board_squadrons`); any other product lands at the fleet's
+/// system. hyp: the fleet container's acceptance test is untraced, so the
+/// fleet takes every ship and squadron.
+pub fn apply_boarding_inner(fleet: FleetKey, completion: &CompletionEvent, world: &mut GameWorld) {
+    match completion.kind {
+        BuildableKind::CapitalShip(class_key) => {
+            let Some(class) = world.capital_ship_classes.get(class_key) else {
+                return;
+            };
+            let (hull, is_alliance, is_death_star) = (
+                class.hull.cast_signed(),
+                class.is_alliance,
+                class.is_death_star(),
+            );
+            let Some(value) = world.fleets.get_mut(fleet) else {
+                return;
+            };
+            value
+                .capital_ships
+                .push(ShipInstance::new(class_key, hull, is_alliance));
+            value.has_death_star |= is_death_star;
+            world.number_capital_ships();
+        }
+        BuildableKind::Fighter(class_key) => {
+            rebellion_core::carriage::board_squadrons(world, fleet, class_key, 1);
+        }
+        _ => apply_build_completion_inner(completion, world),
+    }
+}
+
 #[expect(
     clippy::too_many_lines,
     reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
@@ -3472,6 +4106,8 @@ pub fn apply_build_completion_inner(completion: &CompletionEvent, world: &mut Ga
                 is_alliance,
                 skills,
                 on_mission: false,
+                en_route: false,
+                on_hidden_mission: false,
             });
             if let Some(sys) = world.systems.get_mut(sys_key) {
                 sys.special_forces.push(key);

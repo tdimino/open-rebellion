@@ -147,8 +147,12 @@ that picks it destroys it with chance 1/10.
   clears `is_headquarters` on any Empire bombardment with damage above 0.
 - Destroy System is `PanelAction::FireDeathStar` (`death_star.rs`). It
   refuses Empire-held systems, which the original does not, and has no
-  support shifts and no character roll.
-- No AI order reaches bombardment (`ai-order-emission.md`).
+  character roll.
+- `bombardment::finalize` is the finalize: the GNPRTB 7705 change at the
+  system, then the galaxy-wide or the sector-wide shift. The AI's strikes
+  (`integrator::resolve_ai_strike`) call it, a Death Star kill with
+  `+0x28` and `+0x2c`. A bombardment passes neither flag, because the port
+  rolls no hits.
 
 ## Open
 

@@ -157,6 +157,8 @@ impl DeathStarSystem {
         clippy::cast_sign_loss,
         reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
     )]
+    // hyp: the nearby-warning scan and its radius are the port's reading (see
+    // `NEARBY_WARNING_RADIUS`); the original dispatcher carries no threshold.
     pub fn advance(
         state: &mut DeathStarState,
         world: &GameWorld,
@@ -288,13 +290,37 @@ impl DeathStarSystem {
 }
 
 // ---------------------------------------------------------------------------
-// Destroyed system cleanup
+// System bit 11: a Death Star in the sector
 // ---------------------------------------------------------------------------
 
 use crate::blockade::BlockadeState;
 use crate::effects::GameEffect;
 use crate::manufacturing::ManufacturingState;
 use crate::movement::MovementState;
+
+/// `FUN_005178b0`: mark the sectors holding a usable Death Star
+/// (`GameWorld::death_star_sectors`, system `+0x88` bit 11 through
+/// `FUN_0050a890`). A Death Star is usable (`+0x50` bit 0, written only by
+/// `FUN_004f7b80.c:8-12`) once complete and not en route; the port's fleet
+/// flag is set on completion, and a fleet in transit carries the en-route bit
+/// (`FUN_004f8240.c:17-31`). The sector is that of the fleet's system
+/// (`FUN_00518690.c:19-37`). port: the original reruns on event `0x301`
+/// (`FUN_00514510.c:149-158`); the port reruns at the start of each tick,
+/// after arrivals, after the battles, and after a load or a new game.
+pub fn refresh_sectors(world: &mut GameWorld, movement: &MovementState) {
+    let sectors = world
+        .fleets
+        .iter()
+        .filter(|(key, fleet)| fleet.has_death_star && !movement.is_in_transit(*key))
+        .filter_map(|(_, fleet)| world.systems.get(fleet.location))
+        .map(|sys| sys.sector)
+        .collect();
+    world.death_star_sectors = sectors;
+}
+
+// ---------------------------------------------------------------------------
+// Destroyed system cleanup
+// ---------------------------------------------------------------------------
 
 /// Remove all entities at a destroyed system and cancel in-transit orders.
 ///
@@ -710,5 +736,44 @@ mod tests {
             warning_count, 0,
             "distant system should not trigger NearbyWarning"
         );
+    }
+
+    /// `FUN_005178b0` sets bit 11 on every system of the usable Death Star's
+    /// sector and clears it elsewhere; one en route (`+0x50` bit 4) is not
+    /// usable (`FUN_004f7b80.c:8-12`), so it sets none.
+    #[test]
+    fn bit_11_covers_the_sector_of_a_death_star_that_is_not_travelling() {
+        let (mut world, sys) = make_world();
+        let home = world.systems[sys].sector;
+        let neighbour = world.systems.insert(System {
+            name: "Delaya".into(),
+            ..world.systems[sys].clone()
+        });
+        let far_sector = world.sectors.insert(Sector {
+            dat_id: DatId::new(0x9200_0001),
+            name: "Core".into(),
+            group: SectorGroup::Core,
+            x: 0,
+            y: 0,
+            systems: vec![],
+        });
+        let far = world.systems.insert(System {
+            name: "Coruscant".into(),
+            sector: far_sector,
+            ..world.systems[sys].clone()
+        });
+        let fleet = add_ds_fleet(&mut world, sys);
+        let mut movement = MovementState::new();
+
+        refresh_sectors(&mut world, &movement);
+        assert!(world.death_star_in_sector(&world.systems[sys]));
+        assert!(world.death_star_in_sector(&world.systems[neighbour]));
+        assert!(!world.death_star_in_sector(&world.systems[far]));
+        assert_eq!(world.death_star_sectors.len(), 1);
+        assert!(world.death_star_sectors.contains(&home));
+
+        assert!(movement.order(fleet, sys, far, 10));
+        refresh_sectors(&mut world, &movement);
+        assert!(world.death_star_sectors.is_empty());
     }
 }

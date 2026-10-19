@@ -49,7 +49,7 @@ pub struct TroopTransportState {
 
 /// Where a regiment's Move is released: the drop window's `+0x70` object
 /// (`ghidra/notes/regiment-unload.md`, "The order").
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RegimentTarget {
     System(SystemKey),
     Fleet(FleetKey),
@@ -84,7 +84,7 @@ pub struct RegimentTransit {
 
 /// A squadron a Move takes: one of a fleet's `fighters` entry `index`, or
 /// one of a system's own squadrons of a class and side.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SquadronSource {
     Fleet {
         fleet: FleetKey,
@@ -324,6 +324,24 @@ impl TroopTransportState {
     #[must_use]
     pub fn transits(&self) -> &[RegimentTransit] {
         &self.transit
+    }
+
+    /// The system a travelling regiment stands at: the original moves it
+    /// into its new container at once (`FUN_00556430`), so the planet it
+    /// lands on or the system of the fleet it boards.
+    #[must_use]
+    pub fn transit_system(&self, world: &GameWorld, troop: TroopKey) -> Option<SystemKey> {
+        let transit = self.transit.iter().find(|transit| transit.troop == troop)?;
+        match transit.leg {
+            RegimentLeg::Surface(system) => Some(system),
+            RegimentLeg::Fleet(fleet) => world.fleets.get(fleet).map(|fleet| fleet.location),
+        }
+    }
+
+    /// Drop a travelling regiment's transit, as when it is destroyed en
+    /// route (`FUN_00530270`).
+    pub fn forget_transit(&mut self, troop: TroopKey) {
+        self.transit.retain(|transit| transit.troop != troop);
     }
 
     /// Regiments travelling to board `fleet`. Each already holds its room,
@@ -1852,6 +1870,87 @@ mod tests {
         assert_eq!(state.advance_transit(&mut world, 30).arrived, vec![transit]);
         assert!(world.systems[destination].ground_units.contains(&troops[0]));
         assert!(state.transits().is_empty());
+    }
+
+    // FUN_00556430 moves the regiment into its new container at once, so
+    // the overdraft's notice (0x7081) names the system it travels to: the
+    // planet, or the system of the fleet it boards.
+    #[test]
+    fn a_regiment_scrapped_while_travelling_stands_at_its_destination() {
+        let (mut world, _, destination, _, troops) = alliance_world(2);
+        let fleet = add_fleet(&mut world, destination, 1);
+        let mut state = TroopTransportState::new();
+        for (troop, target) in [
+            (troops[0], RegimentTarget::System(destination)),
+            (troops[1], RegimentTarget::Fleet(fleet)),
+        ] {
+            assert!(matches!(
+                move_to(&mut state, &mut world, troop, target),
+                Ok(RegimentMove::Departed(_))
+            ));
+
+            assert_eq!(
+                crate::scrap::target_system(
+                    &world,
+                    &state,
+                    crate::scrap::ScrapTarget::Troop(troop)
+                ),
+                Some(destination)
+            );
+        }
+    }
+
+    // FUN_00530270 destroys the scrapped object, which sits in its new
+    // container while en route (FUN_00556430): it never lands, and the
+    // fleet it was boarding gets its room back. A regiment travelling with
+    // it still lands.
+    #[test]
+    fn a_regiment_scrapped_while_travelling_never_arrives() {
+        let (mut world, _, destination, _, troops) = alliance_world(3);
+        let fleet = add_fleet(&mut world, destination, 1);
+        let mut state = TroopTransportState::new();
+        let mut stockpiles = crate::stockpiles::StockpileState::new();
+        move_to(
+            &mut state,
+            &mut world,
+            troops[0],
+            RegimentTarget::System(destination),
+        )
+        .unwrap();
+        move_to(
+            &mut state,
+            &mut world,
+            troops[1],
+            RegimentTarget::Fleet(fleet),
+        )
+        .unwrap();
+        let Ok(RegimentMove::Departed(spared)) = move_to(
+            &mut state,
+            &mut world,
+            troops[2],
+            RegimentTarget::System(destination),
+        ) else {
+            panic!("the third regiment departs");
+        };
+
+        for troop in &troops[..2] {
+            crate::scrap::scrap(
+                &mut world,
+                &mut stockpiles,
+                &mut state,
+                crate::scrap::ScrapTarget::Troop(*troop),
+            );
+        }
+        let arrivals = state.advance_transit(&mut world, 30);
+
+        assert_eq!(arrivals.arrived, vec![spared]);
+        assert!(state.transits().is_empty());
+        assert_eq!(state.incoming_count(fleet), 0);
+        assert!(state.cargo(fleet).is_empty());
+        for troop in &troops[..2] {
+            assert!(!world.troops.contains_key(*troop));
+            assert!(!world.systems[destination].ground_units.contains(troop));
+        }
     }
 
     // FUN_004f9860: an en-route object cannot take a Move.

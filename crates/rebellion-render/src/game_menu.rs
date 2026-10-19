@@ -340,6 +340,7 @@ fn paint_menu(
     measured: &(Vec<(f32, f32)>, GameMenuGeometry),
     highlighted: Option<usize>,
     input_enabled: bool,
+    window: &'static str,
 ) -> PaintedMenu {
     let scale = layout.scale.max(0.5);
     let font = egui::FontId::proportional(MENU_FONT_HEIGHT * scale);
@@ -382,6 +383,7 @@ fn paint_menu(
                 } else {
                     egui::Sense::hover()
                 };
+                crate::control_registry::register_screen(window, entry.label, row);
                 let response = ui.interact(row, id.with(("entry", index)), sense);
                 let is_highlighted = entry.enabled && highlighted == Some(index);
                 let icon = if entry.submenu {
@@ -468,6 +470,7 @@ pub fn draw_game_menu(
         });
     memory.last_pass = pass;
 
+    let window = crate::control_registry::take_menu_window();
     let measured = measure(ctx, cache, entries, &font, scale);
     let geometry = &measured.1;
     let (x, y) = placement.origin((geometry.width, geometry.height));
@@ -530,6 +533,7 @@ pub fn draw_game_menu(
         &measured,
         memory.highlighted,
         input_enabled,
+        window,
     );
 
     let mut child_painted = None;
@@ -545,6 +549,7 @@ pub fn draw_game_menu(
             &child_measured,
             memory.child_highlighted,
             input_enabled,
+            window,
         ));
     }
 

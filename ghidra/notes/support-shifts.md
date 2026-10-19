@@ -2,6 +2,7 @@
 title: "Support Shifts: Capture, Battle, HQ Loss and the Death Star"
 description: "The sector-wide popular-support shifts (FUN_00518b20 records, event 0x373) after a control change, a blockade's end, the Alliance HQ's removal and a Death Star kill, with their GNPRTB/SDPRTB 0x1400-0x1445 values; system +0x88 bit 11 is the Death Star's presence in the sector"
 category: "ghidra"
+updated: 2026-10-16
 tags: [support, popularity, control, blockade, death-star, gnprtb, sdprtb]
 ---
 
@@ -177,12 +178,20 @@ sector-wide branch (`FUN_0055d900`, `FUN_00518ac0`, SDPRTB `0x1408`-`0x140b`:
 
 ## Port
 
-`crates/rebellion-core` has none of these shifts: no code reads GNPRTB or
-SDPRTB `0x1401`-`0x1445`, `0x1e19` or `0x1e01` as a support shift.
-`economy::is_strong_support` treats `+0x88` bit 11 as the holder's support
-above the drift threshold; it gates the halving in `uprising.rs`
-(`support_change`) and the Empire troop doubling in `economy.rs`. In the
-original that bit is the Death Star's presence in the sector.
+`crates/rebellion-core` has the bombardment and Death Star shifts only:
+`bombardment::finalize` reads GNPRTB `0x1e19` and `0x1401`-`0x1404` and
+SDPRTB `0x1408`-`0x140b`, and applies each through
+`uprising::apply_support_change` at once rather than through event
+`0x373`. The blockade shift is timer `0x386` in `blockade.rs`
+(`advance_support_shift`), applied through the same call. The
+control-change and HQ shifts are not ported. `+0x88` bit 11 is
+`GameWorld::death_star_sectors`, refreshed by `death_star::refresh_sectors`
+at the start of each tick, after arrivals, after the battles, and after a
+load or a new game: the sectors where a fleet
+carrying the Death Star sits at a system, not in transit (`FUN_005178b0`).
+It gates the halving in `uprising.rs` (`support_change`), the Empire's
+doubled regiments in the drift (`economy.rs`) and the uprising score, and
+the Empire's halved garrison.
 
 ## Open
 

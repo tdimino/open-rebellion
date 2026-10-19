@@ -20,8 +20,9 @@ functional. Do not repeat historical parity percentages as verified results.
   progress evidence synchronized.
 - After a feature passes its required gates, commit and push it before starting
   the next feature. Never mark a partial or inferred result complete.
-- Work directly on `main`; the repository intentionally carries no other local
-  or origin branches during this audit.
+- Work directly on `main`. Remote-tracking refs also hold contributor PR heads
+  (`pr-*`) and a few review or test branches; they are not work targets.
+  Do not create, delete or check out branches without Tom's say-so.
 - Run browser acceptance yourself with `agent-browser`, or through
   `codex-orchestrator` with Astra at medium effort. Either way, retain
   screenshots, network logs, console logs, and artifact hashes.
@@ -77,7 +78,10 @@ green until their dedicated findings close.
 - `crates/rebellion-render` — macroquad/egui rendering and interaction panels.
 - `crates/rebellion-app` — native/WASM entry point and interactive loop.
 - `crates/rebellion-playtest` — headless campaign runner and JSONL telemetry.
+- `crates/rebellion-windowing` — renderer-independent strategic window
+  identity, policy and routing vocabulary.
 - `tools/dat-dumper` — DAT codecs and TEXTSTRA extraction.
+- `tools/provenance-scan` — the citation gate for simulation rules (Testing).
 - `web` and `scripts` — browser shell, WASM build, packaging, and asset staging.
 
 ## Invariants
@@ -111,6 +115,9 @@ green until their dedicated findings close.
   `scripts/mini-cargo.sh -- run -q -p provenance-scan -- check`. New rules
   carry a source (`FUN_`, `DAT_`/`_DAT_`, GNPRTB, DAT) or a `port:`/`hyp:`
   tag; the baseline of uncited items may only shrink.
+- `scripts/gates.sh` runs every pre-commit gate (workspace tests, the
+  ignored replay golden, telemetry coverage, provenance, WASM, the task-graph
+  leak greps) in one Mini session; `agent_docs/test-tooling.md`.
 
 ## Git and Dependencies
 

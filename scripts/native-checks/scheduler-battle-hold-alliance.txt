@@ -1,0 +1,42 @@
+# AI round scheduler, native step 4: an open player battle holds the AI's
+# first round of the day, and a battle left for a later pass holds its orders
+# there. Player: Alliance (AI side: Empire).
+#
+#   E=.artifacts/native-checks/<date>-scheduler-battle-hold-alliance
+#   OPEN_REBELLION_TRACE=ai launch-native.sh --live --seed 42 --telemetry --evidence $E    (on the Mini)
+#   scripts/dev-run.sh $E scripts/native-checks/scheduler-battle-hold-alliance.txt --keep-going --timeout 600
+#   scripts/native-checks/check-scheduler.py $E --battle-hold
+#
+# Staged at day 1, when the Empire AI orders its first fleets (the Alliance
+# game starts paused, hence the speed line). Battle at takes each side's
+# first idle fleet by name, so the two systems are chosen to stay contested:
+# Coruscant keeps its Imperial squadrons when Imperial Fleet 1 leaves for
+# Ghorman. The tick that ends day 2 opens the alert at Coruscant and leaves
+# Ghorman for a later pass. Fast forward stays on through Simulate, so the
+# next frame ticks day 3 and its prologue runs all of day 2's 601 rounds,
+# with Ghorman held.
+Start game: Alliance
+Wait 3000 ms
+Skip briefing
+Battle policy: stop
+Advice policy: close
+Click control: MessageIndex/Close
+Game Speed: Very Slow
+Fast forward: on
+Wait until day 1
+Fast forward: off
+Battle at Coruscant
+Battle at Ghorman
+List systems
+Fast forward: on
+Wait until battle alert within 600 frames
+Status
+Capture: alert-open
+Wait 300 frames
+Status
+Click control: BattleAlert/Simulate
+Battle policy: simulate
+Wait until day 5
+Fast forward: off
+Status
+List systems

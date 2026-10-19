@@ -4,7 +4,7 @@
 
 Changing the port to match the original. Back to the [index](INDEX.md).
 
-2 in progress, 23 open.
+4 in progress, 28 open.
 
 <a id="or-p-task-force-strip-07t"></a>
 ### Port the task-force strip slots, headers and group selection
@@ -22,6 +22,17 @@ Unblocks: [or-acc-fighter-strip-239](acceptance.md#or-acc-fighter-strip-239), [o
 
 > 2026-10-14: geometry ported from FUN_0059be80/FUN_0059c030 (ghidra/notes/tactical-group-strips.md): task-force header (9,1), slots 60+29i; fighter header (296,1), slots 347+29i at 25x15 (bitmaps clipped to 15 rows). Native Mac Mini both factions: (360,10) selects Red Group. C6 2026-10-14T18-52-43-758Z: displacement 0 everywhere; fighter-group-strip SSIM 0.367 -> 0.997 (17 edge/corner pixels differ, likely the button bitmaps' transparent edge over the strip background); task-force-strip SSIM 0.942, 3.9% changed. Open: (1) the task-force number labels draw much larger in A0 than the port's 13 px label (size, not anti-aliasing); (2) the 17 edge pixels; (3) a native check that a task-force slot click and keys 1-8 select as FUN_0059b450/FUN_0059b730 do.
 
+<a id="or-port-ai-round-scheduler-wz8g"></a>
+### Port: the AI round scheduler (FUN_00485b40): rate+1 rounds a day, one order a round, 10 a side a day
+
+`or-port-ai-round-scheduler-wz8g` · **in progress** · P1 · port · updated 2026-10-16
+
+> Port the computer player's round scheduler (FUN_00485b40, FUN_004be980, FUN_004bede0; rounds FUN_004361a0; in-day steps FUN_0051dea0; day reset FUN_00485de0 via FUN_0041e500). The original runs rate+1 rounds a side a day (5 Fast, 13 Medium, 61 Slow, 601 Very Slow), at most one order a round, at most 10 counted orders a side a day (cap FUN_00485a50.c:35), the Alliance's round before the Empire's, each round's orders applied at the next step. The port ran three passes a day capped at 10 each: seed 9 over 1000 days issued a median 12 orders a day (max 20). Notes: ghidra/notes/ai-order-emission.md "Scheduler and executor". Steps: 1 module turns (8, 9, production, 12, 4), 2 AISystem::round and Scheduler (ai_scheduler.rs), 3 the headless day of rounds with the AI as the day's last stage, one shared applier and outcome records, playtest --speed (default Fast), 4 native rounds spread over the day. Done when seeds 1-20 stay within 5 orders a side a day at Fast and native runs on both sides pass scripts/native-checks.
+
+**Notes**
+
+> 2026-10-16: steps 1-2 done. Module turns for 8, 9, production, 12 and 4 (FUN_004cf630, FUN_004cf2c0, FUN_004c8ba0, FUN_004c8740, FUN_004d2490), Round::dirty at the original's record writers (FUN_004317d0, FUN_004184f0), ai_scheduler.rs (Scheduler, AISystem::round, settle, end_day; FUN_004bede0, FUN_004be980, orders counted at issue FUN_00485b40.c:39-48), the ai/round trace, the old per-day passes deleted, save v52. Steps 1a-1c and 2a0 leave seed 42's telemetry byte-identical (wall_ms removed). advance runs one round a day until step 3. Core 750 and data 156 pass with no assertion changed.
+
 <a id="or-port-headless-battles-tdl"></a>
 ### Q: Replace combat.rs's resolver with the tactical engine's headless run for unplayed battles?
 
@@ -36,6 +47,18 @@ Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX
 > 2026-10-14 progress (uncommitted): steps 1-5 done locally. (1) Engine moved to rebellion-core/src/tactical.rs (+ tactical/resource_ids.rs, test_support.rs, tests.rs: 71 engine tests moved, 20 UI tests stay in render); render seams: extension traits for rendered()/color()/order art, pending_log_lines queue drained by render. (2) apply_results/summarize_results/BattleReturn/withdraw_fleet/reconcile_death_star_result in core tactical::apply; app wrapper prints log lines. (3) integrator::resolve_system_space_combat runs BattleSession::new_with_forces + simulate_to_end + apply_results (seed from one roll); simulation.rs and main.rs fallback both call it. (4) combat.rs space resolver, CombatPhaseFlags, SpaceCombatResult and events removed with 26 tests; integrator apply_space_combat(_result_inner) and 4 tests removed (2 round-loop, 2 hand-built results); 2 kept tests' fixtures given CAPSHPSD-like recharge/range. (5) Replay golden regenerated: checkpoints 4-9, final v1:82d08c945db25ee2 -> v1:6ed0d186615a71d8. Playtests seeds 1-8 x 20000 ticks dual-AI: new 34 battles all decisive (17/17); old combat.rs produced up to 19,905 no-progress draws per run. Open: provenance-scan baseline (114 moved uncited items) needs Tom's call; native Mini checks running.
 > 2026-10-14 (provenance + docs): the 114 moved items are all classified (provenance-scan: tactical.rs 149 cited/10 port/4 hyp/0 uncited; resource_ids 12 cited; test_support 3 port). Scanner now accepts Ghidra's _DAT_ spelling; baseline shrank 114 -> 98 (16 cleared: retired combat.rs resolver, MAX_SYSTEM_COMBAT_ROUNDS, COMBAT_RETRY_TICKS, three _DAT_ citations). ORIGINAL_ENGAGEMENT_UNARMED_FAR set to FUN_005edf80's 0x497423f0 = 999999.0 (played-battle band only; replay golden unchanged). hyp left: 250 ms tactical step, disable_weapon_arcs on a fourth weapon hit, escort follow geometry, the major-character mini offset. Docs updated: agent_docs architecture/simulation/game-domain/systems/combat, docs/mechanics space-combat/bombardment/gnprtb/INDEX, ghidra notes simulate-runs-tactical-engine, system-squadrons-combat, battle-result-text-and-cadence, tactical-engagement-ai, tactical-weapon-loop, fleet-names, squadron-menu-and-transit, rust-implementation-guide, INDEX, ghidra/README. Native: Alliance Simulate passed; Empire played battle ran to correct Battle Results (.artifacts/native-checks/2026-10-14-headless-empire-played/07-superlaser.png). Workspace tests green; replay golden passes.
 > 2026-10-14 (native, both factions): all four runs pass on the Mini: Empire Simulate (.artifacts/native-checks/2026-10-14-headless-empire-sim, winner Defender in 39 s), Alliance played (2026-10-14-headless-alliance-played/04-result: Alliance fleet defeated, attack on Coruscant failed), Empire played, Alliance Simulate. White glows on the results screen are in the results bitmap (identical in 2026-10-10-ds-stalemate-empire/05-result). Builds now run on the Mini through scripts/mini-cargo.sh, which prunes target/ to the last build's units after each build.
+
+<a id="or-port-mission-creation-check-f4h2"></a>
+### Port: refuse missions at creation (FUN_00542b60) and filter the AI's mission targets
+
+`or-port-mission-creation-check-f4h2` · **in progress** · P1 · port · updated 2026-10-16
+
+> Refuse missions at creation as the original does (the mission order executes in FUN_0054d360 -> FUN_00542b60 -> FUN_0054c590, the class validator with creation checks on), and filter the AI's mission target pickers by the system-record bits the original's queries read (FUN_00433e40; FUN_004035d0's unassigned test; Diplomacy's per-system claim FUN_00481720). Seed 9 over 1000 days dispatched Diplomacy 9,052 times and resolved it 32 times; 8,380 dispatches re-sent the same character to the same target the next day, because dispatch_guarded accepted forbidden targets and the next day's validator ended them. Notes: ghidra/notes/mission-lifecycle.md, ai-mission-planning.md. Done when every dispatch goes through one validated creation path, the churn check on seed 9 shows no next-day same-target re-sends from refused targets, and both factions run natively.
+
+**Notes**
+
+> 2026-10-16: V1 done: missions.rs validate(.., Creation|Running) with TargetRefusal (status words from the class validators), running_end_code unchanged by construction, Research's yard and exhaustion checks folded in, dispatch_validated used by the headless AI. V2 (AI pickers on the round's system records, FUN_004035d0 unassigned test, Diplomacy per-system claim) in progress; the player, native AI and dev paths move to dispatch_validated in scheduler step 4.
+> 2026-10-16 V2 done: the AI pickers read the round's system records (FUN_00433e40 q bits) with validate(Creation) as a backstop; Diplomacy follows the original (own <70, neutral uncapped), the 0.8 cap field removed (v52). Seed 9, 1000 days: Diplomacy 5 dispatched / 55 resolved, no next-day re-sends (was 9,052 / 32 / 8,380). The remaining re-sends are detection-foiled Sabotage/Espionage teams (FOILTB 112, RLEVADTB 69). Left: steps 3-4 move every caller to dispatch_validated.
 
 <a id="or-p-results-window-5sn"></a>
 ### Port the Battle Results window placement, art and tabs
@@ -97,7 +120,7 @@ Unblocks: [or-acc-results-dlw](acceptance.md#or-acc-results-dlw)
 <a id="or-port-ai-orders-4zf"></a>
 ### Q: Which original AI orders should the port's AI issue, and in what order?
 
-`or-port-ai-orders-4zf` · **open** · P1 · port, question · updated 2026-10-14  
+`or-port-ai-orders-4zf` · **open** · P1 · port, question · updated 2026-10-15  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > ai-order-emission.md: the original computer player sends Destination, Scrap, Retire, Rename, Create Fleet, Command (Commander/Admiral/General/None), Planetary Assault, Destroy System, General Bombardment, Target Military Facilities, Abort, and Moves of fighters, lone regiments, characters, mission members and the Alliance HQ (module 13). ai.rs emits only DispatchMission, EnqueueProduction (heuristic, no module weights or goal token), MoveFleet and DispatchResearch; carried regiments land automatically and bombardment is player-only. Decide which orders to port first (likely posture assault/bombardment and character commands, then module budgets), both factions. Game-rule code: explain before changing. Done when the chosen orders are issued by both AI sides and verified e2e.
@@ -106,6 +129,8 @@ Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX
 
 > ghidra/notes/rebexe-map.md lists the computer-player machinery the port lacks: the regional posture engine (0x004ae150-0x004bca20; orders 0x220, 0x222, 0x223, 0x234, 0x260), the 14-type economy module family that splits side funds by fixed weights and rotates a work token (0x004cfed0-0x004deba0), the type-2 and type-6 task classes and the seven sector-planner strategies (0x004deba0-0x004ed950), and the budget modules with the task factory FUN_004bea20 (0x004bca20-0x004cfed0).
 > Task class 5 (FUN_004cfed0) trains special forces by four classes chosen by literal id (FUN_00402e80: 0x3c000001/5, 2/6, 3/7, 4/8; force 9 has none), counted per side by FUN_0041bc10 and picked round robin by FUN_004d0480 against max(ctx+0x2fc, 8) (ghidra/notes/record-registry.md). The port has no such classes.
+> 2026-10-15: ai.rs now also emits Create Fleet, Join Fleet, Move of regiments, squadrons and characters, Planetary Assault (port: releases the fleet's cargo to the automatic landing), General Bombardment / Target Military Facilities and Destroy System, from module 8's postures (ai_regions.rs); the invented fleet, troop and Death Star heuristics are gone. Bombard and Destroy System run through the player's own paths (simulation.rs after the AI step; PanelAction in the game). Still to port: module 9 fleet tasks, class I tasks (Command orders), module 13 (or-alliance-hq-move-o9ms).
+> 2026-10-15: ai.rs emits the original's orders through the ported modules: Create Fleet, Join Fleet, Move (fleet, character to fleet, regiments), Planetary Assault, the bombardments, Destroy System, Build, Destination, Scrap and the planner missions (ghidra/notes/ai-order-emission.md, Port). Module 8's posture engine (ai_regions.rs), module 9 (fleet_tasks.rs), module 13 (ai_strategy.rs) and class I tasks (character_tasks.rs) are ported. Unported orders: Move of the HQ (or-alliance-hq-move-o9ms), Rename 0x203, Abort 0x250. Native e2e on both sides pending; the headless playtest issues no fleet Move while or-pfrm starves both economies (or-glv7).
 
 <a id="or-port-destroy-system-cascade-imrv"></a>
 ### Port: destroy a system with the original cascade (fleets survive, minor-character roll, adrift, autoscrap)
@@ -130,10 +155,14 @@ Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX
 <a id="or-q-port-support-shifts-y0y"></a>
 ### Q: Port the support shifts and the Death Star sector bit?
 
-`or-q-port-support-shifts-y0y` · **open** · P1 · port, question · updated 2026-10-14  
+`or-q-port-support-shifts-y0y` · **open** · P1 · port, question · updated 2026-10-16  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > support-shifts.md: the port has no sector-wide support shifts (control change, blockade end, HQ removal, Death Star kill; GNPRTB/SDPRTB 0x1401-0x1445, 7705) and economy::is_strong_support reads +0x88 bit 11 as holder support above the drift threshold, though the original's bit 11 is the Death Star (family 0x18) in the system's sector (FUN_005178b0). That bit gates the pro-Alliance halving (uprising.rs support_change), Empire troop doubling in drift (economy.rs) and the uprising requirement/score. Game-rule code: explain before changing. Done when both factions' shifts follow the note, verified e2e.
+
+**Notes**
+
+> 2026-10-16: system bit 11 is the Death Star in the sector (GameWorld::death_star_sectors, death_star::refresh_sectors, FUN_005178b0), read by the support-change halving, the drift's Empire regiment weight, the uprising score and the Empire garrison; is_strong_support deleted. The blockade's periodic shift is timer 0x386 (blockade.rs advance_support_shift, FUN_0050cb20), checked natively on both sides (seed 42: Vagran 69 -> 70 without the Death Star, held at 69 with it; Denab 35 -> 32). The Death Star kill uses the original finalize (FUN_0058e320). Still open: the control-change, blockade-end and HQ-removal sector shifts.
 
 <a id="or-q-port-victory-rules-ce9"></a>
 ### Q: Port victory rules and endings to the original's flag word?
@@ -146,6 +175,29 @@ Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX
 **Notes**
 
 > 2026-10-14 (game-end-path.md): the HQ is removed by Destroy System's container cascade, a bombardment hit, or capture (control change, FUN_004f8680 +0xac(3)); the port's apply_headquarters_bombardment flag + Empire control is not the rule. After the ending movie the original returns to the main menu (FUN_004138a0 -> FUN_00414330(3)); the advisor plays ALSPRITE 10093/10094 or EMSPRITE 11093/11094 on the agent droid and sets ending codes 0x10-0x13. Destroying Coruscant sets CD (counts for the Alliance).
+
+<a id="or-3m5f"></a>
+### Port module 4 states 2-3: posture-recommended mission planners
+
+`or-3m5f` · **open** · P2 · port · updated 2026-10-16
+
+> Module 4 state 2 (FUN_004d2610) finds the next regional record whose +0xbc or +0xc4 is set, scanning from the cursor without wrapping. State 3 (FUN_004d2690) retires the planner named in +0xc4, creates one from +0xbc/+0xc0 (marking the round dirty), and registers class-1 planners with the record through FUN_00476ba0, which raises the record counters +0xa0.. (the port's `missions`, held at 0 under hyp:). These are the posture-recommended Recon, Espionage, Sabotage and Abduction/Assassination planners: traced, not ported. Follows the AI round scheduler (or-port-ai-round-scheduler-wz8g).
+
+<a id="or-86pj"></a>
+### Port: remove facilities and mines over a system's capacity (FUN_0050ad80)
+
+`or-86pj` · **open** · P2 · port · updated 2026-10-15
+
+> The original randomly removes facilities and mines when a system holds more than its capacity (FUN_0050ad80, removal reason 4 through FUN_004f8760). The port only reports the overcap: economy.rs calculate_resource_allocation leaves pruning to its caller, and no caller prunes.
+>
+> Done when: the removal runs where and when the original runs it, with its selection rule traced and cited, an over-capacity system loses the original's excess in the running game for both factions, and game-end-path.md's open question on whether it can reach the HQ is settled.
+
+<a id="or-alliance-hq-move-o9ms"></a>
+### Port the Alliance AI's headquarters move (module 13)?
+
+`or-alliance-hq-move-o9ms` · **open** · P2 · port · updated 2026-10-15
+
+> Module 13 (ai_strategy.rs) reads the Alliance headquarters object 0x20000005 and moves it: FUN_004bf3e0, FUN_004bf9e0, FUN_004bfe30, FUN_004c05e0 (spec-c2 in the C2-C4 work). The port's strategy cycle ports the modes, the controller, the plan and the sizing, but neither the HQ object nor its Move order: the Alliance AI never relocates its headquarters. Game-rule code: explain before changing.
 
 <a id="or-p-gnd-ykv"></a>
 ### Port the report-only ground assault and remove ground_combat.rs
@@ -184,6 +236,17 @@ Unblocks: [or-acc-laser-5x5](acceptance.md#or-acc-laser-5x5), [or-cell-tac-05-c0
 >
 > Cite the recovered functions in the code. Verify e2e in the running game (native dev commands and the battle runner), both factions; no new unit tests during parity QA.
 
+<a id="or-pfv4"></a>
+### Port: a travelling character or special force is listed at its destination, drawn in hyperspace
+
+`or-pfv4` · **open** · P2 · port · updated 2026-10-15
+
+> The original puts a moved member into its destination container at the order (FUN_00556390 slot +0xa8, move-order.md) and flags it en route until event 0x387: the destination's Personnel lists it from the order with the hyperspace backdrop, and its pop-up disables Move, Confirmed Move, Mission and Retire (original, 2026-10-15: Noghri Death Commandos Coruscant to Uvena, .artifacts/original-checks/2026-10-15-move-timer, 18-ordered, 20-menu-d24, 22-icons). The port takes a travelling member off the map (missions.rs depart, port: tag) and lists it only on arrival (native run .artifacts/native-checks/2026-10-15-move-timer-port, 03-day24-menu). Needs the en-route icon backdrop's resource and a check of every reader of current_system/current_fleet (occupation captures, system_members, mission validators). Original UI only; both factions.
+
+**Notes**
+
+> 2026-10-15: code done, uncommitted. Members stand in the destination container from the order with an en_route flag (Character, SpecialForceUnit); arrival clears it. Readers per move-order.md 'Who reads the en route bit': order gates and dispatch, rule 5, uprising incidents 3-5, AI records 0x20, AI Retire, the bounty's free-Han test skip it; Personnel lists, Status, Finder and the en-route marks (Missions, Fleet, Defenses) show it at the destination. Save v45, golden regenerated, workspace tests green. Open: native e2e on both sides against .artifacts/original-checks/2026-10-15-move-timer.
+
 <a id="or-port-character-move-7ba0"></a>
 ### Port: a character's Move order (0x201/0x202) for the player and the AI
 
@@ -197,14 +260,21 @@ Unblocks: [or-port-officer-rank-x4kn](#or-port-officer-rank-x4kn)
 > Ported: MissionKind::Move (missions.rs: move_order_enabled FUN_0053c100, move_destination_refusal, dispatch_move one mission per location, move_days, MemberBoarded onto a fleet); character and special force Move/Confirmed Move rows, Confirmed Move window (0x7056 when blockaded), drags from Defenses and Fleet window Personnel; save v41; replay golden regenerated for it. Trace: ghidra/notes/move-order.md, 'Characters and special forces (0x241)'. Pending: native e2e both factions.
 > Native e2e 2026-10-15 (evidence .artifacts/native-checks/2026-10-15-character-move-{a,a2,e}): Alliance - Move/Confirmed Move enabled on Luke; neutral planet refused (1,0x28) by menu and by Defenses drag; Luke to Ghorman 86 days; Han to Ghorman Fleet 3 43 days (Han speed) and aboard on arrival; Fleet window drag Han to Ghorman lands him on the surface; General Solo loses the rank on boarding. Empire - Vader Coruscant to Corellia 25 days, arrived day 27; plain Move from blockaded Corellia asks with 0x7056 and picture. Fixed during e2e: Han Solo speed compared the original object id 0x33000243 to the loaded record id 0x243; Defenses Personnel listed fleet crew as surface (system_members now excludes current_fleet).
 > Review fixes: move_refusal validates the whole order before any group starts (per-group free member, Move record masks); the release asks only for a blockaded own-side system, and a character aboard a fleet is in the fleet; occupation captures skip fleet crew. Open (hyp): a travelling Move ends the day after arrival, since a zero-delay phase-8 timer waits for the next tick; the original's same-tick handling of a 0-delay event is untraced.
+> Resolved: a travelling Move ends on its arrival day. The timer queue's head is due once its day is reached (FUN_0054edc0) and phase 5 of FUN_0041dff0 drains due items before the day advances, so phase 8's 0-day timer 0x38b fires the day it is armed (timer-scheduler.md). Original 2026-10-15 (.artifacts/original-checks/2026-10-15-move-timer): Noghri Coruscant to Uvena, 4 days, arrive day 27 with rows disabled, all enabled later that day. Port: MissionSystem::run sets the ready bit for a due phase-8 timer in the same pass; Vader Coruscant to Corellia is listed on arrival with every row enabled (.artifacts/native-checks/2026-10-15-move-timer-port, 07-day26-early). Display gap split out: or-pfv4.
+> Arrival-day end, final: the cause was timer_delay's 1-day floor (uprising.rs), a port clamp FUN_00586130 lacks; the 0-day Move timer became 1 day, and Personnel hides members with a mission key (FUN_00536e20). Without the floor (shipped uprising and disaster minimums are 30 and 1, so those timers are unchanged), Vader ordered day 0 for 25 days is listed at Corellia on day 25 with every row enabled (.artifacts/native-checks/2026-10-15-move-timer-port, 11-day25-menu; 07-day26-early was the clamped build). A repeating mission with a 0-day timer fires once a day (port: the original's drain would not end).
+> The AI now issues the character Move: module 12's class G tasks (AIAction::MoveCharacter, applied through dispatch_move in the app and the integrator).
 
 <a id="or-port-death-star-family-qtde"></a>
 ### Port: identify the Death Star by family 0x18 and drop the 0x34 clause and the fleet flag
 
-`or-port-death-star-family-qtde` · **open** · P2 · port, question · updated 2026-10-14  
+`or-port-death-star-family-qtde` · **open** · P2 · port, question · updated 2026-10-16  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > crates/rebellion-core/src/world/mod.rs:434 CapitalShipClass::is_death_star accepts family 0x34, which is the Emperor's family (FUN_005617b0 is the Emperor-at-Coruscant flag), and Fleet::has_death_star (mod.rs:853) is a stored flag said to enable a Death Star win check. The original keys every rule on the ship family range [0x18,0x1c) (FUN_005003d0, FUN_00582440, FUN_0058d440), computes 'fleet has a Death Star' from its ships, allows one such ship per system (FUN_00507ab0, literal 1 in FUN_0040f340), and reads the Death Star in victory only through the AD and CD bits (losing it ends nothing). Note ghidra/notes/death-star-strategic.md. Verify both factions.
+
+**Notes**
+
+> 2026-10-16: CombatEntityKind is deleted (dead code with a wrong mapping); only is_death_star remains to move onto [0x18,0x1c).
 
 <a id="or-port-galaxy-eval-6ih8"></a>
 ### Port: re-ground ai.rs evaluate_galaxy_state, which cites new-game stage 0xb
@@ -271,6 +341,7 @@ Waits on: [or-port-character-move-7ba0](#or-port-character-move-7ba0)
 > Ported (sim): rebellion-core/src/officer_rank.rs holds CommandKind (+0x96), CommandPost (+0xa8: the character's fleet, else its system, FUN_0055ed30), command_refusal (FUN_004f9860 + FUN_004ed750), give_command (FUN_00561bb0 -> FUN_004ef400: the held kind toggles off; another kind is given and the side's holder of it at the same post loses it), rank_holder (FUN_00509330, FUN_004fd790) and clear_lapsed_ranks (FUN_004eeed0, FUN_00560d50), swept after each tick. Characters carry their ranked TEXTSTRA names (FUN_004f17f0) and display_name(); save v39. Detection uses the officer: espionage x GNPRTB 3588/3589 / 100 in the decoy and FOILTB rolls, combat against RLEVADTB. port: no injury, no per-ship seats (the fleet is the post), captures record the side not the captor key. Open: the Command submenu and its order (the Game Menu Window has no submenus yet), the e2e run, and AI module 12 with FUN_00402230's held-rank record bits (rank 1 -> 0x4000000, 2 -> 0x1000000, 3 -> 0x2000000).
 > Ported (menu): the Game Menu Window opens submenus as FUN_004aab50 does (sticky highlight on enabled rows, the 500 ms timer shows the highlighted row's submenu, FUN_004ab3a0 placement, side arrows 10117/10118 and 10128/10129, a parent always enabled and inert on release, Escape hides a submenu then closes); Command lists None, Admiral, General, Commander, enabled by command_refusal and checked for the held rank (FUN_00580d80 -> FUN_004ed680, never None), and a choice runs give_command. The Status window's Commanding names the post and Fleet Status names its Admiral, General and Commander. The game clears lapsed ranks once a frame. The AI's mission records carry the held rank's bit (FUN_00402230), replacing the in-fleet stand-in. Verified e2e: .artifacts/native-checks/2026-10-15-rank-menu-alliance (Luke General, check, None clears, Han displaced, Leia all disabled, Escape hides then the timer reopens) and -rank-menu-empire (Admiral Vader, check, Emperor all disabled). Open: AI module 12 (spec in ai-order-emission.md) needs a character Move order: or-port-character-move-7ba0; class I also needs the posture kinds (or-q-ai-posture-planner-jta). Not yet seen e2e: a rank lapsing on a mission.
 > Views: the debug-only Officers, Research, Jedi and Loyalty panels are retired (invented UI); the egui encyclopedia browser that listed live names is removed. The Galactic Encyclopedia titles rows from the DAT record's name (FUN_00422620), as the original does, so a ranked character keeps its plain name there.
+> AI module 12 class G ported (crates/rebellion-core/src/character_tasks.rs; AIState::character_tasks, save v42): the controller's kind 1 (General at Coruscant while held, and at the Alliance's held HQ system) and kind 6 (the Emperor to Coruscant, Empire only) requests with never-decremented counts, the drop of the first task without a valid target, the target/character/order machine (FUN_004bbb00): Move 0x201 (AIAction::MoveCharacter -> MissionState::dispatch_move) until the character stands at the target, then Command General 0x263 (AIAction::GiveCommand -> command_refusal/give_command); release gives Command None. Claims clear the record's 0x800000. Traced (FUN_0042dd00, FUN_004198a0/FUN_00419870/FUN_004197b0): every character is reserved (0x8000000) until its side's three research trees reach their highest order (ResearchSystem::tree_exhausted), so the General query finds nobody before then; the port's research seldom gets there. Evidence: headless seed 42 with research maxed gives Command General to Grammel on day 63; without, no task order in 2000 days. Class I (Admiral/Commander/General of a regional record) still needs the postures: or-q-ai-posture-planner-jta.
 
 <a id="or-port-recruit-major-lead-8grm"></a>
 ### Port: Recruitment takes majors only, and a mission's lead is a major before leadership
@@ -295,6 +366,15 @@ Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX
 **Notes**
 
 > The invented Research panel is retired; the player has no research control until research is ported as the original team mission.
+> Research ported as the original Research missions (2026-10-15, uncommitted): MISSNSD 0x53000020-22 kinds, per-side points pools, passive timer 0x381, exhausted trees, validator FUN_0056c510 (end 0xc no working yard, 0xe exhausted), AI research planners FUN_0047bcd0/FUN_0047c2b0/FUN_0047c900; save v43, golden regenerated (cause: research missions). E2E: dual-AI playtest seed 42, Empire ship research levels 1-5 by tick 375; the Alliance's one scientist starts at a system with no yard in the headless galaxy (research.md, Open). Native Alliance: Ship Design Research at Yavin succeeded, Ship tech level 1 by day 60 (.artifacts/native-checks/2026-10-15-research-alliance). Native Empire check running (recruiting a scientist first).
+> Observed 2026-10-15 (native, seed 42, Alliance, .artifacts/native-checks/2026-10-15-pfv4-alliance captures 09-12): the port's EVT_LUKE_DAGOBAH (story_events.rs, tick >= 50, Luke Force-aware) sets Luke's on_mandatory_mission without moving him, so after a Move to Ghorman he stays there with Move, Confirmed Move and Mission disabled from then on, while his Status window reads 'Awaiting Orders'. No message is filed. The original's Dagobah mission (family 0x71, FUN_00544030 pulse) differs.
+
+<a id="or-9ia9"></a>
+### Port module 14: the AI's ship renames (order 0x203)
+
+`or-9ia9` · **open** · P3 · port · updated 2026-10-16
+
+> Module 14 (FUN_004d29b0) walks the side's ship list c+0x58 in ascending id, one ship a call, and issues a Rename (order 0x203) for each own unnamed ship (+0x24 & 0x4000, none of 0x8002800), up to 10 a cycle (+0x38). Renames are uncounted (FUN_00485b40.c:44-48), but a round ends at module 14 when the call that reaches the list end also renamed (FUN_00485b40.c:38,59). c+0x264 counts the unnamed ships (FUN_00418500.c:171-182). The port lacks the named bit (+0x24 & 0x8000000, hyp: set by the Rename's execution) and the Rename order, so ai_scheduler.rs keeps armed[13] = false (port:). Port both, then arm module 14 when the census count is > 0. Source: the scheduler open-items trace, 2026-10-16 (sched-open.md section 4).
 
 <a id="or-port-system-squadron-pass-oa3p"></a>
 ### Port: the post-battle pass for system squadrons

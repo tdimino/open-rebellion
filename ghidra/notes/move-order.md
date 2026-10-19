@@ -732,8 +732,12 @@ fires (`FUN_004f7fc0`, `FUN_004fb520` clear bits 5, 11 and 12). Arrival
 reaches the mission through `FUN_00515a50` → `FUN_00545820` →
 `FUN_00522280`, which refreshes the target location and sets the ready bit;
 phases 5 and 6 run the validator (6 clears each member's en route bit),
-phase 8's timer `0x38b` has delay `0 + rand(0..=0)`, and phase `0xb` ends with
-code 1 (hyp: all within the arrival day). The members stay in the container.
+phase 8's timer `0x38b` has delay `0 + rand(0..=0)`, which is due the day it
+is armed (`timer-scheduler.md`, `FUN_0054edc0`), and phase `0xb` ends with
+code 1, all within the arrival day. The original shows it: Noghri Death
+Commandos ordered from Coruscant to Uvena (4 days) arrive on day 27 with the
+pop-up rows still disabled, and later that day every row is enabled
+(`.artifacts/original-checks/2026-10-15-move-timer`). The members stay in the container.
 A same-system Move therefore lands the character on the day of the order, with
 no transit.
 
@@ -748,6 +752,33 @@ system after the order takes the character with it (the character is its
 content) and only a later phase check can end the mission. hyp: what happens
 to characters aboard a ship destroyed in hyperspace (the Death Star rule
 turns characters adrift, `death-star-strategic.md`).
+
+### Who reads the en route bit
+
+A moving member is a child of its destination container from the order,
+with `+0x50` bit 4 set while its leg lasts (`FUN_004f8240`: bit 5, set only
+by `FUN_004f7640`, or the container's bit 4). The child-list iterator
+`FUN_005131d0` (via `FUN_004f6b90`, `FUN_004f2640`, `FUN_00536e20`) has
+mode 1, usable (existing, completed and not en route; `0x004f7b80`), mode 2,
+en route only, mode 3, existing, and mode 4, all. Whether a reader sees the
+member depends on its mode or its own test:
+
+| Reader | Function | En route member |
+|---|---|---|
+| Personnel lists | `FUN_004a90d0`, `FUN_004a7f50`, `FUN_004a9ce0`, `FUN_00512700` (mode 3) | listed at the destination |
+| Personnel icon | `FUN_004a9ab0` → `FUN_0042c3b0` | STRATEGY 11501 under the mini, in place of its 11500 backdrop, while bit 4 is set (`fleet-window.md`, "En route marks"); a special force's portrait takes 11520 (classes `0x3c000003`, `0x3c000005` take the GOKRES craft marks) |
+| Move, Confirmed Move, Mission, Retire, Command | `FUN_00533ae0`, `FUN_004ed560` → `FUN_00533ce0`, `FUN_004ed750` → `FUN_004f9860` | disabled (status 1/4) |
+| Mission target, rule 5 | `FUN_00523450` | ends the mission (end 6) |
+| Container acceptance | `FUN_00553410` | refused, `0x21` |
+| AI agent records and tasks | `FUN_00402230` (flag `0x20`), `FUN_004bba90` | not used |
+| Uprising incidents 3-5, regiment counts, mission defenders, Pickup, Palace, Force discovery candidates, story "free character" tests | `FUN_0050d150`, `FUN_005091f0`, `FUN_00587640`, `FUN_005445d0`, `FUN_0056da80`, `FUN_00560a30`, `FUN_005439b0` (mode 1 or `+0x50` bit 0) | skipped |
+| The system changing hands | `FUN_00510820` → `FUN_004fae40` (mode 3) → slot `+0xb0`: `FUN_004ef260` character, `FUN_00503d90` special force | handled as present: skipped only on a mission or destroyed |
+| Its container destroyed | `FUN_004fb520` → slot `+0xb4`: `FUN_004ef2e0` character | handled as present |
+| Counter-intelligence officer by rank | `FUN_00509330`, `FUN_004fd790` → `FUN_005006f0` (mode 3) | counts at the destination |
+| Vader, Luke and the Emperor together | `FUN_00544a20`, `FUN_00544be0`, `FUN_00544fc0` (container ids) | counts at the destination |
+
+The retreat chain moves no character (`FUN_00515480` runs only the story
+hook `FUN_00545df0` for one).
 
 ### Travel time
 
@@ -767,9 +798,10 @@ location is its fleet's system). A ship's hyperdrive does not enter (the
 character's own `+0x9a` does), nor does a side factor or a skill. A special
 force travels at 100.
 The port's mission transit (`missions.rs`, `MemberTransit`,
-`GNPRTB_HAN_SOLO_SPEED`) is this rule; port: it takes the member off the map
-while it travels, where the original puts it in the destination container with
-bit 5 set.
+`GNPRTB_HAN_SOLO_SPEED`) is this rule. The member stands in its destination
+container from the order on, with its `en_route` flag (`Character`,
+`SpecialForceUnit`) set until the transit's arrival day clears it; the
+readers follow "Who reads the en route bit".
 
 ### Rank, flags
 
@@ -850,7 +882,8 @@ Decompiles added for this section: `FUN_004f5530`, `FUN_004f4700`,
 
 ## Supporting decompiles
 
-`FUN_00486fb0`, `FUN_00487c50`, `FUN_00487cc0`, `FUN_00487740`,
+`FUN_004ef260`, `FUN_00503d90`, `FUN_004ef5b0` (the character and special
+force slots `+0xb0` and `+0x218`), `FUN_00486fb0`, `FUN_00487c50`, `FUN_00487cc0`, `FUN_00487740`,
 `FUN_00488030`, `FUN_0048aa90`, `FUN_0048a340`, `FUN_0041cdf0`,
 `FUN_0041ce20`, `FUN_0041cee0`, `FUN_004360f0`, `FUN_0041d5e0`,
 `FUN_0041d7b0`, `FUN_0042a590`, `FUN_00422ce0`, `FUN_0051f4b0`,

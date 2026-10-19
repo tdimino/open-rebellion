@@ -13,11 +13,12 @@ use serde::{Deserialize, Serialize};
 ///
 /// Many unit/character records carry an alliance or empire flag rather than
 /// a richer ownership model — this enum captures that distinction cleanly.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum Faction {
     Alliance,
     Empire,
     /// Planets and some structures begin as neutral (no controlling faction).
+    #[default]
     Neutral,
 }
 
@@ -48,9 +49,10 @@ pub enum GalaxySize {
 ///
 /// Encodes where in the galaxy the sector sits; affects strategic context
 /// and initial population density.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum SectorGroup {
     /// Core worlds — high population, heavily contested.
+    #[default]
     Core = 1,
     /// Inner rim — moderate density.
     RimInner = 2,
@@ -61,10 +63,11 @@ pub enum SectorGroup {
 /// Exploration status derived from the SYSTEMSD `family_id` byte.
 ///
 /// Explored systems are fully visible; unexplored systems reveal name only.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum ExplorationStatus {
     /// `family_id` = 0x90 (144)
     Explored,
     /// `family_id` = 0x92 (146)
+    #[default]
     Unexplored,
 }

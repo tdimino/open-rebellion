@@ -1,7 +1,7 @@
 # Encyclopedia pure-presenter checkpoint
 
 Date: 2026-10-06
-Plan: `docs/plans/2026-10-02-feat-will-forster-encyclopedia-handoff-adaptation.md`, W3
+Plan: `docs/plans/completed/2026-10-02-feat-will-forster-encyclopedia-handoff-adaptation.md`, W3
 Bead: `orlocal-818.60`
 Pre-W3 branch checkpoint: `2e67c31311ed550ded26152f1d63e1d1e1e61fa9`
 

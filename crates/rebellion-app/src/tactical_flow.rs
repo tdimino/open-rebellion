@@ -143,7 +143,10 @@ pub(crate) fn begin_player_battle(
             }
             continue;
         };
-        let fleet = world.fleets.get(key).ok_or(BattleEntryError::MissingFleet)?;
+        let fleet = world
+            .fleets
+            .get(key)
+            .ok_or(BattleEntryError::MissingFleet)?;
         if fleet.location != entry.system || !system.fleets.contains(&key) {
             return Err(BattleEntryError::NotOrbitingSystem);
         }
@@ -165,6 +168,18 @@ pub(crate) fn begin_player_battle(
         entry.tick,
         entry.rng_seed,
     );
+    // A fleet's retreat place and a computer side's threshold read neither
+    // the transit nor the cargo state (squadrons alone do), so empty ones
+    // stand in; the player's own side withdraws only at strength 0.
+    if let Some(session) = tactical.session.as_mut() {
+        rebellion_core::tactical::apply::seat_morale(
+            session,
+            world,
+            &TroopTransportState::default(),
+            &MovementState::default(),
+            Some(entry.player_is_attacker),
+        );
+    }
     messages.push(GameMessage::at_system(
         entry.tick,
         format!("Battle at {} — entering tactical combat!", system.name),
@@ -185,12 +200,21 @@ pub(crate) fn apply_results(
     movement: &mut MovementState,
 ) -> BattleReturn {
     let mut log = Vec::new();
+    let before =
+        rebellion_data::telemetry::native_battle_begin(session.start_tick, world, session.system);
     let result = rebellion_core::tactical::apply::apply_results(
         session,
         world,
         troop_transport,
         movement,
         &mut log,
+    );
+    rebellion_data::telemetry::native_battle_end(
+        session.start_tick,
+        world,
+        session.system,
+        before,
+        session.combat_tick / 4,
     );
     for line in log {
         macroquad::logging::info!("{}", line);
@@ -379,6 +403,8 @@ pub(crate) fn land_faction_cargo(
 }
 
 /// Apply the campaign bombardment that follows an uncontested orbital win.
+/// port: no source of its own; the original's bombardment is the Bombard
+/// order (or-port-bombardment-8usw).
 pub(crate) fn apply_automatic_bombardment(
     world: &mut GameWorld,
     victory_state: &VictoryState,
@@ -403,6 +429,14 @@ pub(crate) fn apply_automatic_bombardment(
         BombardmentSystem::resolve_bombardment(world, fleet, system, world.difficulty_index, tick);
     let headquarters_destroyed =
         VictorySystem::apply_headquarters_bombardment(victory_state, world, &result, attacker);
+    // FUN_0058e320 ends a bombardment run, as for the player's and the AI's
+    // Bombard. port: the run rolls no hits, so +0x28 stays clear.
+    rebellion_core::bombardment::finalize(
+        world,
+        system,
+        attacker,
+        rebellion_core::bombardment::BombardmentRun::default(),
+    );
     let system_name = world
         .systems
         .get(system)
@@ -449,6 +483,7 @@ pub(crate) fn apply_system_occupation(
         value.control = ControlKind::Controlled(winner);
     }
     if previous != Some(ControlKind::Controlled(winner)) {
+        rebellion_data::telemetry::native_ground_occupation(tick, world, system, previous, winner);
         let name = world
             .systems
             .get(system)

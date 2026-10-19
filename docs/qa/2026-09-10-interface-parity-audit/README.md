@@ -38,7 +38,7 @@ and passes the complete comparison contract.
   for the final A0 capture, deterministic A1 mapping, comparison, and strict
   `TAC-01` through `TAC-07` completion push.
 - Use its
-  [acceleration sidecar](../../plans/2026-09-11-tooling-interface-parity-acceleration-sidecar.md)
+  [acceleration sidecar](../../plans/archive/2026-09-11-tooling-interface-parity-acceleration-sidecar.md)
   for the permanent muted harness, deterministic fixtures, visual comparisons,
   generated summaries, and complete-family GID pilot.
 - Choose a bounded surface and state from the
@@ -53,7 +53,7 @@ and passes the complete comparison contract.
   captures and known evidence gaps.
 - Use the [original graphic reference library](../../reference/asset-library/README.md)
   for every decoded entity, staged resource ID, battle-art gap, and Ghidra
-  proof route. The [standalone space-battle launcher plan](../../plans/2026-09-12-tooling-standalone-space-battle-launcher.md)
+  proof route. The [standalone space-battle launcher plan](../../plans/archive/2026-09-12-tooling-standalone-space-battle-launcher.md)
   scopes test-only tactical entry and the `TAC-01` through `TAC-07` gate.
 - Use the [space-battle launcher reference](../../reference/space-battle-launcher/README.md)
   for its production route, fixture codes, harness commands, and evidence chain.

@@ -684,6 +684,7 @@ pub fn draw_object_menu(
         owner: galaxy_owner(layout),
         point: open.point,
     };
+    crate::control_registry::name_next_menu("ContextMenu");
     match draw_game_menu(
         ctx,
         egui::Id::new(MENU_ID),

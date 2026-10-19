@@ -1,55 +1,51 @@
 ---
 title: "Research System"
-description: "Three independent tech trees per faction (Ship/Troop/Facility)"
+description: "Per-side points pools for the ship, troop and facility trees, fed by the passive timer and Research missions and spent into levels"
 category: "agent-docs"
 created: 2026-03-14
-updated: 2026-03-16
-tags: [research, tech-tree, ship-design, simulation]
+updated: 2026-10-16
+tags: [research, tech-tree, missions, simulation]
 ---
 
 # Research System
 
-`research.rs` — Three independent tech trees per faction (Ship/Troop/Facility).
+`crates/rebellion-core/src/research.rs`. The original's mechanism and its
+sources are in `ghidra/notes/research.md`; this page maps it onto the code.
 
 ## Types
 
-| Type | Purpose |
-|------|---------|
-| `ResearchState` | `alliance: ResearchLevels`, `empire: ResearchLevels`, `projects: Vec<ResearchProject>` |
-| `ResearchProject` | `{ tech_type, character, faction_is_alliance, ticks_remaining, total_ticks }` |
+| Type | Holds |
+|------|-------|
+| `ResearchState` | `alliance` and `empire` `ResearchLevels` |
+| `ResearchLevels` | `ship`, `troop`, `facility` levels, `points: [u32; 3]`, `passive_due` (timer `0x381`) |
+| `TechType` | `Ship`, `Troop`, `Facility`; `skill()`, `producer_family()` |
 | `ResearchResult` | `TechUnlocked { faction_is_alliance, tech_type, new_level }` |
-| `TechType` | Ship / Troop / Facility |
-| `ResearchLevels` | `{ ship: u32, troop: u32, facility: u32 }` |
+| `GameWorld::research_exhausted` | per side and tree, set when no higher class exists |
 
-## API
+## Flow
 
-```rust
-// Each tick: advance all active research projects
-let results = ResearchSystem::advance(&mut research_state, &world, &tick_events);
+- `ResearchSystem::advance` runs timer `0x381` per side: every working
+  yard in a held system adds one point to its tree.
+- A Research mission (`MissionKind::Research(tech)`, `missions.rs`) rolls
+  per member and returns `MissionEffect::ResearchPoints`; the integrator
+  credits them with `ResearchSystem::apply_mission_points`.
+- `add_points` spends the pool: while the next order with a class costs no
+  more than the points, the level moves to it. The cost is
+  `research_difficulty` × the galaxy's system count / 100.
+- `is_unlocked`, `ship_class_is_available` and
+  `fighter_class_is_available` gate production on the levels.
 
-// Query cost for next level:
-let cost = ResearchSystem::ticks_for_next_level(&world, true, TechType::Ship, current_level);
+## AI
 
-// Check if a ship class is available:
-ResearchSystem::ship_class_is_available(&world, &state, true, class_key); // -> bool
-
-// Dispatch a project (replaces existing for same faction + tech):
-state.dispatch(ResearchProject { ... });
-```
-
-## Tech Unlock Rule
-
-A class is buildable when `class.research_order <= faction_level_for_tech_type`. Level 0 units are always available.
-
-## Tick Cost Calculation
-
-`max(research_difficulty)` among all classes at `research_order == current_level + 1`, clamped to `RESEARCH_MIN_TICKS = 10`. Falls back to `RESEARCH_DEFAULT_TICKS = 30` when no classes exist at that order.
-
-## Known Deviation
-
-`advance()` both mutates `ResearchState` (applies level-ups internally) AND returns events. This breaks the pure advance() contract. Deferred fix (v0.5.0) — choose either pure results (caller applies) or stateful (return notifications only).
-
-## Source
-
-- `rebellion2/Faction.cs` — tech tree structure
-- `CapitalShipClass::research_order` and `research_difficulty` from DAT
+`ai_research.rs` keeps each side's Research planners in `AIState` (saved). A
+planner claims one scientist (`mission_planning.rs` selectors) and, at its
+module-4 turn, targets the member's own system, held and not blockaded, with
+no yard test of its own; it does not run while its mission flies
+(`FUN_004bda40`). The order then meets the creation-time refusal of
+`FUN_0056c510` (`research_target_refusal`, `missions.rs`): a target with no
+working yard of the tree (status `0x40`/`0x2c`, end code `0xc`) or an
+exhausted tree (`0x40`/`0x32`, end code `0xe`) sends no order, and the planner
+keeps its claim. The same function ends a running mission through
+`running_end_code`. A planner retires only on the controller's drop request
+(`FUN_004e8290`): the tree's exhausted bit with a live planner, or more
+planners than capable characters.

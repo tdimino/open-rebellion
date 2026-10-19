@@ -47,7 +47,19 @@ done
 
 cd "$repo"
 manifest="$(mktemp)"
-trap 'rm -f "$manifest"' EXIT
+# Two runs syncing at once would delete each other's files: one run's
+# deletions read the manifest while the other is still writing it. The sync,
+# up to the deletions, therefore holds a lock on the Mini (mkdir is atomic);
+# a lock older than ten minutes belongs to a dead run and is broken. The
+# owner token lets the exit trap release only its own lock.
+token="$$-$RANDOM-$(date +%s)"
+lock=".mini-cargo-sync.lock"
+release="[ \"\$(cat $lock/owner 2>/dev/null)\" = $token ] && rm -rf $lock; true"
+trap 'rm -f "$manifest"; ssh "$host" "cd $(printf %q "$dir") && $release" 2>/dev/null || true' EXIT
+ssh "$host" "cd $(printf '%q' "$dir") && \
+  until mkdir $lock 2>/dev/null; do \
+    [ -n \"\$(find $lock -maxdepth 0 -mmin +10 2>/dev/null)\" ] && rm -rf $lock; sleep 1; \
+  done && echo $token > $lock/owner"
 git ls-files -z --cached --others --exclude-standard \
   | tr '\0' '\n' | grep -v -E '^(mutants\.out|mutants\.out\.old)/' | while IFS= read -r f; do
       if [ -e "$f" ]; then printf '%s\n' "$f"; fi
@@ -82,6 +94,7 @@ status=0
 ssh "$host" "cd $(printf '%q' "$dir") && \
   { [ -f .mini-cargo-manifest ] && comm -23 <(sort .mini-cargo-manifest) <(sort .mini-cargo-manifest.new) | while IFS= read -r f; do rm -f -- \"\$f\"; done; true; } && \
   mv .mini-cargo-manifest.new .mini-cargo-manifest && \
+  { $release; } && \
   printf 'source=%s dirty_files=%s synced=%s\n' $commit $dirty \"\$(date -u +%Y-%m-%dT%H:%M:%SZ)\" > .build-source && \
   export PATH=\"\$HOME/.cargo/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin\" CARGO_TERM_COLOR=always && \
   rm -f .mini-cargo-units.json && \

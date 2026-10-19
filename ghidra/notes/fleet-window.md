@@ -206,9 +206,20 @@ The left list's ship entries (`FUN_004a3d40`), the right list's items
 (`FUN_004a6e70`) and the one-ship picture (`FUN_004a5c00`) draw their
 object through `FUN_0042c3b0(gokres, id, object, picture, 1)`: `picture` 0
 for a mini (GOKRES `(class & 0xfff) + 0x4000`), 1 for a portrait (`& 0xfff`).
-Its last argument draws the status marks. The en route mark needs `+0x50`
-bit 4 set and bit 3 (destroyed) clear, and goes at the image's origin
-(`FUN_005fd0f0(.., 0, 0)`, keyed):
+Its last argument draws the status marks. It builds the image on a fresh
+bitmap filled with the object's key colour (`FUN_005fbda0`, `FUN_005fcfe0`),
+bottom first:
+
+1. a backdrop, blitted plain (`FUN_005fcc30`): STRATEGY 11500 (`0x2cec`)
+   under a character's or special force's mini (`0x30..0x3f`, `picture`
+   0), and 11513 or 11514 (`0x2cf9 + picture`) under a regiment's
+   (`0x10..0x13`);
+2. the en route mark, when `+0x50` bit 4 is set and bit 3 (destroyed) is
+   clear, keyed at the origin (`FUN_005fd0f0(.., 0, 0)`);
+3. the object's own bitmap, keyed last (`FUN_0042c3b0.c:442`), so the mark
+   shows around the object, not over it.
+
+The marks:
 
 | Object (`id >> 24`) | Mini | Portrait |
 |---|---|---|
@@ -223,7 +234,11 @@ bit 4 set and bit 3 (destroyed) clear, and goes at the image's origin
 The excepted regiment and special force classes keep the GOKRES default,
 and GOKRES has exactly those four marks (21569, 21634, 21826, 21888). The
 craft marks are engine glows on the blue key; the STRATEGY marks and the
-four class marks are starfields with one key pixel, so they cover the mini.
+four class marks are opaque pictures with one key pixel (11501 is a ship's
+viewports onto hyperspace), so they replace the backdrop around the
+object. The original shows it: Emperor Palpatine, moved from Coruscant to
+Uvena, is drawn over 11501 while he travels and over 11500 once he arrives
+(`.artifacts/original-checks/2026-10-15-enroute-character`, 06 and 07).
 `FUN_004f8240` makes an object en route while its container is, so every
 ship, squadron, regiment and character aboard a travelling fleet carries
 its mark. The manual's "blue engine glow" (Fleet window, pp. 112-113) and

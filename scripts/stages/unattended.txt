@@ -1,0 +1,23 @@
+# Preamble every native new-game script needs to run unattended.
+# Include it AFTER `Start game: <side>` and the briefing skip, as in the
+# passing runs under .artifacts/native-checks:
+#   Start game: Empire
+#   Wait 3000 ms
+#   Skip briefing
+#   Include: scripts/stages/unattended.txt
+
+# A battle that opens during a wait is simulated and its Results closed, so
+# the galaxy returns and the wait goes on.
+Battle policy: simulate
+# The droids open the Advice Message Index after the briefing; a wait closes it
+# and answers the pause alert that follows.
+Advice policy: close
+# On day 0 the open Advice Message Index holds the clock, so close it by hand
+# before any day wait.
+Click control: MessageIndex/Close
+# A stray pause alert (Resume Game Play?) arrives on days 1-6; fast forward
+# reaches day 6 within the 300 frames, and stays on afterwards. The wait is
+# bounded because the alert may not come (run with --keep-going).
+Fast forward: on
+Wait until pause alert within 300 frames
+Click control: PauseAlert/Resume

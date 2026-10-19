@@ -9,7 +9,7 @@
     "original_interface_parity": "docs/qa/2026-09-10-interface-parity-audit/index.md",
     "original_interface_surface_ledger": "docs/qa/2026-09-10-interface-parity-audit/2026-10-06-surface-ledger.json",
     "original_interface_reference_ledger": "docs/qa/2026-09-10-interface-parity-audit/reference-ledger.json",
-    "tactical_3d_asset_plan": "docs/plans/2026-09-12-feat-tactical-3d-asset-pipeline.md",
+    "tactical_3d_asset_plan": "docs/plans/archive/2026-09-12-feat-tactical-3d-asset-pipeline.md",
     "tactical_3d_staging_evidence": "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-3d-staging.md",
     "tactical_3d_render_evidence": "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-3d-render-proof.md",
     "tactical_3d_lod_evidence": "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-3d-lod-family.md",
@@ -948,7 +948,7 @@
       "title": "Release quality gates are not enforced",
       "evidence": [
         "GitHub Actions workflow definitions intentionally untracked on 2026-09-08; verification is manual",
-        "docs/plans/2026-04-06-001-test-lint-build-infrastructure-execplan.md:13"
+        "docs/plans/archive/2026-04-06-001-test-lint-build-infrastructure-execplan.md:13"
       ],
       "acceptance": "CI enforces the versioned local acceptance commands and retains reproducible artifacts."
     },

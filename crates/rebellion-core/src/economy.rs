@@ -34,26 +34,45 @@ use crate::world::{ControlKind, GameWorld, GnprtbParams};
 // GNPRTB parameter IDs
 // ---------------------------------------------------------------------------
 
+// FUN_00558bb0 loads GNPRTB 0x1e06 (7686) into DAT_006bb3f4; FUN_00559c40 scales it.
 const GNPRTB_FLEET_INFLUENCE: u16 = 7686;
+// FUN_00558bb0 loads GNPRTB 0x1e07 (7687) into DAT_006bb3c0; FUN_00559c40 scales it.
 const GNPRTB_FIGHTER_INFLUENCE: u16 = 7687;
+// FUN_00558bb0 loads GNPRTB 0x1e08 (7688) into DAT_006bb3bc; FUN_00559c40 scales it.
 const GNPRTB_TROOP_INFLUENCE: u16 = 7688;
+// FUN_00558bb0 loads GNPRTB 0x1e34 (7732) into DAT_006bb478, the outer drift gate in FUN_00559c40.
 const GNPRTB_DRIFT_THRESHOLD: u16 = 7732;
+// FUN_00558bb0 loads GNPRTB 0x1e35 (7733) into DAT_006bb3f8, the base above the upper inner cut, up to the outer gate (support 31-40).
 const GNPRTB_DRIFT_BASE_MID: u16 = 7733;
+// FUN_00558bb0 loads GNPRTB 0x1e36 (7734) into DAT_006bb434, the upper inner cut in FUN_00559c40.
 const GNPRTB_DRIFT_THRESHOLD_2: u16 = 7734;
+// FUN_00558bb0 loads GNPRTB 0x1e37 (7735) into DAT_006bb4b0, the base between the two inner cuts (support 21-30).
 const GNPRTB_DRIFT_BASE_LOW_MID: u16 = 7735;
+// FUN_00558bb0 loads GNPRTB 0x1e38 (7736) into DAT_006bb438, the lower inner cut in FUN_00559c40.
 const GNPRTB_DRIFT_THRESHOLD_1: u16 = 7736;
+// FUN_00558bb0 loads GNPRTB 0x1e39 (7737) into DAT_006bb424, the base at or below the lower cut.
 const GNPRTB_DRIFT_BASE_LOW: u16 = 7737;
+// FUN_0055a050 (uprising-incident.md): the support below which the score term applies, GNPRTB 7761 (60).
 const GNPRTB_GARRISON_THRESHOLD: u16 = 7761;
+// FUN_0055a050 (uprising-incident.md): the score term's divisor, GNPRTB 7762 (-10).
 const GNPRTB_GARRISON_DIVISOR: u16 = 7762;
+// FUN_00559c10 (top-bar-resource-counters.md): collection rate = GNPRTB 7763 * 100 / max(support, 1).
 const GNPRTB_COLLECTION_RATE_BASE: u16 = 7763;
 
 // Phase 3b: new constants from source tree cross-reference
+// GNPRTB 7680 (0x1e00, DAT_006bb3dc): FUN_00559b60 multiplies the Empire's regiments by it and
+// FUN_00559fe0 divides the garrison requirement by it (support-shifts.md, bit 11).
 const GNPRTB_EMPIRE_TROOP_MULT: u16 = 7680; // =2: Empire troop doubling + garrison halving divisor
+
+// GNPRTB 7682 (0x1e02, DAT_006bb3e4): FUN_00559fe0 multiplies the requirement in an uprising.
 const GNPRTB_UPRISING_GARRISON_MULT: u16 = 7682; // =2: garrison doubles during uprising
-const GNPRTB_KDY_CAPSHIP_PENALTY: u16 = 7684; // =5: KDY production penalty per capital ship
-const GNPRTB_KDY_FIGHTER_PENALTY: u16 = 7685; // =2: KDY production penalty per fighter
-const GNPRTB_ENERGY_CONTROL_THRESHOLD: u16 = 7760; // =60: energy needed for control eligibility
-const GNPRTB_MAINTENANCE_RATE_CONTROLLED: u16 = 7694; // =30: ticks between maintenance checks (controlled)
+
+// GNPRTB 7684 (0x1e04, DAT_006bb458), read by FUN_00558bb0 (blockade-troop-withdrawal.md).
+const GNPRTB_KDY_CAPSHIP_PENALTY: u16 = 7684; // =5: per-capital-ship cut to a blockaded system's troop-withdrawal percentage
+
+// GNPRTB 7685 (0x1e05, DAT_006bb3cc), read by FUN_00558bb0 (blockade-troop-withdrawal.md).
+const GNPRTB_KDY_FIGHTER_PENALTY: u16 = 7685; // =2: per-fighter cut to a blockaded system's troop-withdrawal percentage
+const GNPRTB_SUPPORT_CONTROL_THRESHOLD: u16 = 7760; // =60: support a side needs to hold a system without troops (DAT_006bb4c0, FUN_00558bb0)
 
 // ---------------------------------------------------------------------------
 // Economy state
@@ -126,48 +145,40 @@ pub struct SystemSummary {
     pub fleet_posture: FleetPosture,
     /// Fighter posture.
     pub fighter_posture: FighterPosture,
-    /// Bit 11 of original `field_0x88`: "strong support" flag.
-    /// When true AND Empire-controlled, troop suppression is doubled (GNPRTB[7680]).
-    /// Set when controlling faction's support > drift threshold (GNPRTB[7732]=40).
-    pub strong_support: bool,
 }
 
-/// Discrete bands of the controlling faction's popular support.
-/// Used to detect `EVT_SUPPORT_CHANGE` (0x100) transitions without inventing
-/// new `GameWorld` state — the previous band is cached on `SystemEconomy`.
-///
-/// Matches the GNPRTB support thresholds already in use:
-///   Critical: support ≤ 20 (GNPRTB[7736])
-///   Low:      21–30          (GNPRTB[7734])
-///   Moderate: 31–40          (GNPRTB[7732])
-///   High:     41–60          (GNPRTB[7761] — garrison stable band)
-///   Secure:   > 60           (no drift, garrison = 0)
+/// Who holds a system by support alone (`FUN_0055a080`, threshold
+/// `DAT_006bb4c0` = GNPRTB 7760): the Alliance when its support reaches the
+/// threshold, the Empire when its own does, else neither.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[repr(u8)]
-pub enum SupportTier {
+pub enum SupportHolder {
+    /// `FUN_0055a080` returns 1.
+    Alliance,
+    /// `FUN_0055a080` returns 2.
+    Empire,
+    /// `FUN_0055a080` returns 3.
     #[default]
-    Critical = 0,
-    Low = 1,
-    Moderate = 2,
-    High = 3,
-    Secure = 4,
+    Neither,
 }
 
-impl SupportTier {
-    /// Compute the tier from integer support (0-100).
-    #[must_use]
-    pub fn from_support_int(support_int: i32) -> Self {
-        if support_int <= 20 {
-            Self::Critical
-        } else if support_int <= 30 {
-            Self::Low
-        } else if support_int <= 40 {
-            Self::Moderate
-        } else if support_int <= 60 {
-            Self::High
-        } else {
-            Self::Secure
-        }
+/// `FUN_0055a080` on the system's Alliance support (`+0x58`, 0-100).
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Support is a fraction of 1 and rounds to a whole percent."
+)]
+fn support_holder(
+    sys: &crate::world::System,
+    gnprtb: &GnprtbParams,
+    difficulty: u8,
+) -> SupportHolder {
+    let threshold = gnprtb.value(GNPRTB_SUPPORT_CONTROL_THRESHOLD, difficulty);
+    let support = (sys.popularity_alliance * 100.0).round() as i32;
+    if support >= threshold {
+        SupportHolder::Alliance
+    } else if 100 - support >= threshold {
+        SupportHolder::Empire
+    } else {
+        SupportHolder::Neither
     }
 }
 
@@ -208,12 +219,9 @@ pub struct SystemEconomy {
     /// System `+0x88` bit 9 (`FUN_0050bb00`): held, populated, in revolt, and
     /// not short of troops.
     pub uprising_visible: bool,
-    /// Previous-tick support band for the controlling faction. Drives
-    /// `EVT_SUPPORT_CHANGE` (0x100) transition detection. Persists across
-    /// save/load because it lives in `EconomyState` (see #F2) — not on
-    /// `world::System`. No `#[serde(default)]`: v8 is the migration
-    /// boundary (see Dabora 1 cleanup — bincode is positional).
-    pub last_support_tier: SupportTier,
+    /// The previous tick's holder by support (`FUN_0055a080`), for the
+    /// `SupportChanged` record.
+    pub last_support_holder: SupportHolder,
     /// True once the controlling faction has established this system in
     /// a prior tick. Suppresses `EVT_RESOURCE_DISCOVERY` (0x155) on the
     /// very first eval — the galaxy seed itself is not a "discovery".
@@ -234,7 +242,7 @@ impl Default for SystemEconomy {
             summary: SystemSummary::default(),
             incident_flags: IncidentFlags::default(),
             uprising_visible: false,
-            last_support_tier: SupportTier::default(),
+            last_support_holder: SupportHolder::default(),
             resource_discovery_armed: false,
         }
     }
@@ -243,12 +251,7 @@ impl Default for SystemEconomy {
 /// Economy state across all systems.
 ///
 /// Simulation state (not world state). Saved via `SaveState::economy`
-/// since Dabora 1 (#F2) to close the incident re-fire bug. The two
-/// `*_maintenance_cooldown` counters implement the per-faction 30-tick
-/// `EVT_MAINTENANCE_SHORTFALL_EVENT` (0x304) timer from the plan's #K4
-/// — they decrement each tick in `EconomySystem::advance` and emit +
-/// reset to `GNPRTB[7694]` when they reach zero **and** at least one
-/// controlled system has a garrison deficit.
+/// since Dabora 1 (#F2) to close the incident re-fire bug.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct EconomyState {
     #[serde(
@@ -256,11 +259,6 @@ pub struct EconomyState {
         deserialize_with = "crate::serde_ordered::deserialize_hash_map"
     )]
     pub per_system: HashMap<SystemKey, SystemEconomy>,
-    /// Ticks until the next Alliance maintenance-shortfall check fires.
-    /// Initialized lazily to `GNPRTB[7694]` (30) on the first tick.
-    pub alliance_maintenance_cooldown: u32,
-    /// Ticks until the next Empire maintenance-shortfall check fires.
-    pub empire_maintenance_cooldown: u32,
 }
 
 // ---------------------------------------------------------------------------
@@ -306,25 +304,19 @@ pub enum EconomyEvent {
         capacity: u32,
     },
     // ── Knesset Shamash-Bet notification events (Dabora 2) ──────────────
-    /// K1: `EVT_SUPPORT_CHANGE` (0x100) — controlling faction's popular
-    /// support crossed a tier boundary (see `SupportTier`).
+    /// `EVT_SUPPORT_CHANGE` (0x100): the holder by support changed
+    /// (`FUN_0055a080`). port: the original raises no event here; its
+    /// support-change hook reruns control (`FUN_005109f0`). Telemetry only.
     SupportChanged {
         system: SystemKey,
-        from: SupportTier,
-        to: SupportTier,
+        from: SupportHolder,
+        to: SupportHolder,
     },
     /// K3: `EVT_RESOURCE_DISCOVERY` (0x155) — a new mine came online at
     /// a previously-seeded system. Detected as a positive delta on
     /// `eco.raw_material_allocated` (after the `resource_discovery_armed`
     /// gate disarms the seed tick).
     ResourceDiscovered { system: SystemKey, new_output: u32 },
-    /// K4: `EVT_MAINTENANCE_SHORTFALL_EVENT` (0x304) — the per-faction
-    /// 30-tick timer fired AND the faction has at least one controlled
-    /// system with a garrison deficit.
-    MaintenanceShortfall {
-        faction_is_alliance: bool,
-        deficit_system_count: u32,
-    },
 }
 
 // ---------------------------------------------------------------------------
@@ -380,12 +372,6 @@ impl EconomySystem {
 
         let gnprtb = &world.gnprtb;
         let mut events = Vec::new();
-
-        // Per-faction maintenance-shortfall deficit tally (K4 intra-tick scratch).
-        // Counted during the per-system loop and checked against the 30-tick
-        // cooldown at the end of `advance`.
-        let mut alliance_deficit_systems: u32 = 0;
-        let mut empire_deficit_systems: u32 = 0;
 
         // Collect system keys first to avoid borrow issues.
         let system_keys: Vec<SystemKey> = world.systems.keys().collect();
@@ -445,13 +431,12 @@ impl EconomySystem {
             }
 
             // 1. Calculate and apply popular support drift.
-            // Pass previous tick's strong_support flag (bit 11 of field_0x88).
             let (alliance_delta, empire_delta) = calculate_support_drift(
                 sys,
                 &presence,
                 gnprtb,
                 difficulty,
-                eco.summary.strong_support,
+                world.death_star_in_sector(sys),
             );
 
             if alliance_delta.abs() > f32::EPSILON || empire_delta.abs() > f32::EPSILON {
@@ -474,7 +459,7 @@ impl EconomySystem {
             let new_garrison = calculate_garrison_requirement(
                 controlling_support,
                 sys.control,
-                eco.summary.strong_support,
+                world.death_star_in_sector(sys),
                 uprisings.is_uprising(sys_key),
                 gnprtb,
                 difficulty,
@@ -500,6 +485,19 @@ impl EconomySystem {
             // Both: keep existing (contested). Neither: uncontrolled.
             let resolved_control = resolve_system_control(sys, &presence, gnprtb, difficulty);
             if resolved_control != sys.control {
+                crate::trace::record(crate::trace::TraceMask::CONTROL, "control_resolved", || {
+                    serde_json::json!({
+                        "system": sys.name,
+                        "rule": "troop_presence",
+                        "from": format!("{:?}", sys.control),
+                        "to": format!("{resolved_control:?}"),
+                        "populated": sys.is_populated,
+                        "alliance_troops": presence.alliance_troops,
+                        "empire_troops": presence.empire_troops,
+                        "alliance_support": sys.popularity_alliance,
+                        "threshold": gnprtb.value(GNPRTB_SUPPORT_CONTROL_THRESHOLD, difficulty),
+                    })
+                });
                 events.push(EconomyEvent::ControlResolved {
                     system: sys_key,
                     new_control: resolved_control,
@@ -515,14 +513,7 @@ impl EconomySystem {
             eco.support_drift = support_drift_value(sys.control, alliance_delta, empire_delta);
 
             // 6. Troop/fleet summary propagation (FUN_0050b500 through FUN_0050b8e0).
-            eco.summary = compute_system_summary(
-                world,
-                sys,
-                &presence,
-                eco.garrison_requirement,
-                gnprtb,
-                difficulty,
-            );
+            eco.summary = compute_system_summary(world, sys, &presence, eco.garrison_requirement);
 
             // 7. Incident state + uprising visibility (FUN_0050bb00).
             // The uprising and disaster incidents are timer events that
@@ -553,43 +544,16 @@ impl EconomySystem {
                 && uprisings.is_uprising(sys_key)
                 && eco.summary.troop_surplus >= 0;
 
-            // K4 pre-tally: track per-faction controlled systems with a
-            // garrison deficit. The actual emission happens after the loop
-            // when the 30-tick cooldown fires.
-            if eco.summary.troop_surplus < 0 {
-                match sys.control {
-                    ControlKind::Controlled(crate::dat::Faction::Alliance) => {
-                        alliance_deficit_systems += 1;
-                    }
-                    ControlKind::Controlled(crate::dat::Faction::Empire) => {
-                        empire_deficit_systems += 1;
-                    }
-                    _ => {}
-                }
-            }
-
-            // K1: EVT_SUPPORT_CHANGE (0x100).
-            // Compare previous tier (cached in eco) against the freshly-
-            // computed current tier. Emit on any transition; update the
-            // cache unconditionally so the next tick sees the new band.
-            let current_support_int = match sys.control {
-                ControlKind::Controlled(crate::dat::Faction::Alliance) => {
-                    (sys.popularity_alliance * 100.0).round() as i32
-                }
-                ControlKind::Controlled(crate::dat::Faction::Empire) => {
-                    (sys.popularity_empire * 100.0).round() as i32
-                }
-                _ => -1, // Sentinel: uncontrolled/contested has no tier
-            };
-            if current_support_int >= 0 {
-                let new_tier = SupportTier::from_support_int(current_support_int);
-                if new_tier != eco.last_support_tier {
+            // EVT_SUPPORT_CHANGE (0x100): the holder by support changed.
+            if sys.is_populated {
+                let holder = support_holder(sys, gnprtb, difficulty);
+                if holder != eco.last_support_holder {
                     events.push(EconomyEvent::SupportChanged {
                         system: sys_key,
-                        from: eco.last_support_tier,
-                        to: new_tier,
+                        from: eco.last_support_holder,
+                        to: holder,
                     });
-                    eco.last_support_tier = new_tier;
+                    eco.last_support_holder = holder;
                 }
             }
 
@@ -606,47 +570,6 @@ impl EconomySystem {
                     new_requirement: new_garrison,
                 });
             }
-        }
-
-        // K4: EVT_MAINTENANCE_SHORTFALL_EVENT (0x304) per-faction 30-tick
-        // timer. Ticks elapsed this frame = tick_events.len(). If any of
-        // our counters reach zero AND the faction has at least one
-        // deficit system, emit and reset to GNPRTB[7694] (30).
-        let elapsed = tick_events.len() as u32;
-        let maintenance_rate = gnprtb
-            .value(GNPRTB_MAINTENANCE_RATE_CONTROLLED, difficulty)
-            .max(1) as u32;
-
-        // Initialize lazily on first tick — `EconomyState::default()`
-        // leaves cooldowns at 0, which is the "fire immediately on
-        // first eval" state. Arm to one full cycle so the first
-        // emission happens after `maintenance_rate` ticks.
-        if state.alliance_maintenance_cooldown == 0 && elapsed > 0 && alliance_deficit_systems == 0
-        {
-            state.alliance_maintenance_cooldown = maintenance_rate;
-        }
-        if state.empire_maintenance_cooldown == 0 && elapsed > 0 && empire_deficit_systems == 0 {
-            state.empire_maintenance_cooldown = maintenance_rate;
-        }
-
-        state.alliance_maintenance_cooldown =
-            state.alliance_maintenance_cooldown.saturating_sub(elapsed);
-        state.empire_maintenance_cooldown =
-            state.empire_maintenance_cooldown.saturating_sub(elapsed);
-
-        if state.alliance_maintenance_cooldown == 0 && alliance_deficit_systems > 0 {
-            events.push(EconomyEvent::MaintenanceShortfall {
-                faction_is_alliance: true,
-                deficit_system_count: alliance_deficit_systems,
-            });
-            state.alliance_maintenance_cooldown = maintenance_rate;
-        }
-        if state.empire_maintenance_cooldown == 0 && empire_deficit_systems > 0 {
-            events.push(EconomyEvent::MaintenanceShortfall {
-                faction_is_alliance: false,
-                deficit_system_count: empire_deficit_systems,
-            });
-            state.empire_maintenance_cooldown = maintenance_rate;
         }
 
         events
@@ -757,7 +680,7 @@ fn calculate_support_drift(
     presence: &MilitaryPresence,
     gnprtb: &GnprtbParams,
     difficulty: u8,
-    strong_support: bool,
+    death_star_in_sector: bool,
 ) -> (f32, f32) {
     // All computation in integer 0-100 to match original (FUN_00559c40).
     // Our popularity fields are f32 0.0-1.0; convert at boundary.
@@ -823,11 +746,9 @@ fn calculate_support_drift(
         base_mid // 31-40: mild drift (25)
     };
 
-    // Empire troop doubling via FUN_00559b60 (the community dump calls it adjust_value_for_strong_support):
-    // When side==Empire (side==2) AND strong_support bit (field_0x88 bit 11) is set,
-    // troop count is multiplied by GNPRTB[7680] (=2).
-    // This doubles troop suppression effectiveness for the Empire.
-    let adjusted_troops = if is_empire_controlled && strong_support {
+    // FUN_00559b60: for side 2 with system +0x88 bit 11 set (a usable Death
+    // Star in the sector), the regiment count is multiplied by GNPRTB 7680 (2).
+    let adjusted_troops = if is_empire_controlled && death_star_in_sector {
         let empire_mult = gnprtb.value(GNPRTB_EMPIRE_TROOP_MULT, difficulty).max(1);
         friendly_troops.cast_signed() * empire_mult
     } else {
@@ -894,19 +815,13 @@ pub fn calculate_resource_allocation(world: &GameWorld, sys: &crate::world::Syst
 // Troop-based side resolution (FUN_0050b610)
 // ---------------------------------------------------------------------------
 
-/// Resolve which faction controls a system based on troop presence.
+/// Resolve which faction controls a system (`FUN_0050b610`): the side
+/// whose regiments alone stand there; with no regiments, the side whose
+/// support reaches GNPRTB 7760 (`FUN_0055a080`), else neutral.
 ///
-/// Original logic (`FUN_0050b610`):
-/// - If system not populated: Uncontrolled
-/// - If only Alliance troops: Alliance controls
-/// - If only Empire troops: Empire controls
-/// - If both: keep existing control (Contested)
-/// - If neither: Uncontrolled
-#[expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
-)]
+/// port: an unpopulated system is uncontrolled even with regiments, and
+/// regiments of both sides make it contested; the original lets the troop
+/// side hold an unpopulated system and keeps the earlier troop side.
 fn resolve_system_control(
     sys: &crate::world::System,
     presence: &MilitaryPresence,
@@ -924,16 +839,11 @@ fn resolve_system_control(
         (true, false) => ControlKind::Controlled(crate::dat::Faction::Alliance),
         (false, true) => ControlKind::Controlled(crate::dat::Faction::Empire),
         (true, true) => ControlKind::Contested,
-        (false, false) => {
-            // No troops — original checks energy vs GNPRTB[7760] threshold.
-            // If system energy meets threshold, preserve existing control; else uncontrolled.
-            let threshold = gnprtb.value(GNPRTB_ENERGY_CONTROL_THRESHOLD, difficulty) as u8;
-            if sys.total_energy >= threshold {
-                sys.control
-            } else {
-                ControlKind::Uncontrolled
-            }
-        }
+        (false, false) => match support_holder(sys, gnprtb, difficulty) {
+            SupportHolder::Alliance => ControlKind::Controlled(crate::dat::Faction::Alliance),
+            SupportHolder::Empire => ControlKind::Controlled(crate::dat::Faction::Empire),
+            SupportHolder::Neither => ControlKind::Uncontrolled,
+        },
     }
 }
 
@@ -948,8 +858,6 @@ fn compute_system_summary(
     sys: &crate::world::System,
     presence: &MilitaryPresence,
     garrison_requirement: u32,
-    gnprtb: &GnprtbParams,
-    difficulty: u8,
 ) -> SystemSummary {
     let controlling_troops = match sys.control {
         ControlKind::Controlled(crate::dat::Faction::Alliance) => presence.alliance_troops,
@@ -991,41 +899,13 @@ fn compute_system_summary(
         empire_fighters: presence.empire_fighters,
     };
 
-    let strong_support = is_strong_support(sys, gnprtb, difficulty);
-
     SystemSummary {
         troop_surplus,
         total_controlling_troops,
         has_shipyard,
         fleet_posture,
         fighter_posture,
-        strong_support,
     }
-}
-
-/// Bit 11 of field_0x88: "strong support" — set when controlling faction's
-/// support exceeds the drift threshold. Controls Empire troop doubling in
-/// FUN_00559b60 (the community dump calls it adjust_value_for_strong_support).
-#[expect(
-    clippy::cast_possible_truncation,
-    reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
-)]
-pub(crate) fn is_strong_support(
-    sys: &crate::world::System,
-    gnprtb: &GnprtbParams,
-    difficulty: u8,
-) -> bool {
-    let drift_threshold = gnprtb.value(GNPRTB_DRIFT_THRESHOLD, difficulty);
-    let controlling_support = match sys.control {
-        ControlKind::Controlled(crate::dat::Faction::Alliance) => {
-            (sys.popularity_alliance * 100.0).round() as i32
-        }
-        ControlKind::Controlled(crate::dat::Faction::Empire) => {
-            (sys.popularity_empire * 100.0).round() as i32
-        }
-        _ => 0,
-    };
-    controlling_support > drift_threshold
 }
 
 // ---------------------------------------------------------------------------
@@ -1086,7 +966,7 @@ fn calculate_collection_rate(support: f32, gnprtb: &GnprtbParams, difficulty: u8
 fn calculate_garrison_requirement(
     support: f32,
     control: ControlKind,
-    strong_support: bool,
+    death_star_in_sector: bool,
     in_uprising: bool,
     gnprtb: &GnprtbParams,
     difficulty: u8,
@@ -1101,7 +981,7 @@ fn calculate_garrison_requirement(
     garrison_requirement(
         side,
         support_int,
-        strong_support,
+        death_star_in_sector,
         in_uprising,
         gnprtb,
         difficulty,
@@ -1110,18 +990,18 @@ fn calculate_garrison_requirement(
 }
 
 /// Troops a side must hold at a system (`FUN_00559fe0`): the uprising
-/// threshold, divided by GNPRTB 7680 for the Empire when support is strong
-/// (+0x88 bit 11), and multiplied by GNPRTB 7682 during an uprising.
+/// threshold, divided by GNPRTB 7680 for the Empire with a Death Star in the
+/// sector (+0x88 bit 11), and multiplied by GNPRTB 7682 during an uprising.
 pub(crate) fn garrison_requirement(
     side: crate::dat::Faction,
     support: i32,
-    strong_support: bool,
+    death_star_in_sector: bool,
     in_uprising: bool,
     gnprtb: &GnprtbParams,
     difficulty: u8,
 ) -> i32 {
     let mut requirement = uprising_threshold(support, gnprtb, difficulty);
-    if strong_support && side == crate::dat::Faction::Empire {
+    if death_star_in_sector && side == crate::dat::Faction::Empire {
         requirement /= gnprtb.value(GNPRTB_EMPIRE_TROOP_MULT, difficulty).max(1);
     }
     if in_uprising {
@@ -1359,7 +1239,7 @@ mod tests {
                 empire_sp_medium: 1,
                 empire_sp_hard: 1,
                 multiplayer: 1,
-            }, // Support delta favors controller
+            }, // Timer 0x386: a blockader with the majority gains
             GnprtbEntry {
                 parameter_id: 7694,
                 development: 30,
@@ -1370,7 +1250,7 @@ mod tests {
                 empire_sp_medium: 30,
                 empire_sp_hard: 30,
                 multiplayer: 30,
-            }, // Maintenance check rate (controlled)
+            }, // Timer 0x386 delay, the blockader with the majority
             GnprtbEntry {
                 parameter_id: 7695,
                 development: -1,
@@ -1381,7 +1261,7 @@ mod tests {
                 empire_sp_medium: -1,
                 empire_sp_hard: -1,
                 multiplayer: -1,
-            }, // Support delta opposes controller
+            }, // Timer 0x386: a blockader without the majority loses
             GnprtbEntry {
                 parameter_id: 7696,
                 development: 30,
@@ -1392,7 +1272,7 @@ mod tests {
                 empire_sp_medium: 30,
                 empire_sp_hard: 30,
                 multiplayer: 30,
-            }, // Maintenance check rate (neutral)
+            }, // Timer 0x386 delay, the blockader without the majority
             GnprtbEntry {
                 parameter_id: 7697,
                 development: -1,
@@ -1414,11 +1294,10 @@ mod tests {
                 empire_sp_medium: 60,
                 empire_sp_hard: 60,
                 multiplayer: 60,
-            }, // Energy-based control threshold
+            }, // Support a side needs to hold a system without troops
         ];
         GnprtbParams::new(entries)
     }
-
 
     // FUN_00559c40 negates the drift for side 2, and FUN_00509ec0 stores it
     // at system +0x6c; an unheld system stores 0.
@@ -1603,14 +1482,15 @@ mod tests {
     }
 
     #[test]
-    fn empire_garrison_is_halved_only_when_support_is_strong() {
+    fn empire_garrison_is_halved_only_with_a_death_star_in_the_sector() {
         // FUN_00559fe0 divides by GNPRTB 7680 only when param_3 (system
-        // +0x88 bit 11) is set and the side is 2.
+        // +0x88 bit 11, a usable Death Star in the sector, FUN_005178b0) is
+        // set and the side is 2.
         let gnprtb = stock_gnprtb();
         let alliance = ControlKind::Controlled(crate::dat::Faction::Alliance);
         let empire = ControlKind::Controlled(crate::dat::Faction::Empire);
-        let req = |control, strong| {
-            calculate_garrison_requirement(0.3, control, strong, false, &gnprtb, 2)
+        let req = |control, death_star| {
+            calculate_garrison_requirement(0.3, control, death_star, false, &gnprtb, 2)
         };
         assert_eq!(req(alliance, false), 3);
         assert_eq!(req(alliance, true), 3);
@@ -2490,17 +2370,17 @@ mod tests {
     }
 
     #[test]
-    fn side_resolution_no_troops_energy_above_threshold_preserves() {
+    fn side_resolution_no_troops_goes_to_the_side_whose_support_reaches_the_threshold() {
         let gnprtb = stock_gnprtb();
-        let sys = crate::world::System {
+        let mut sys = crate::world::System {
             dat_id: DatId(0),
             name: "Test".into(),
             sector: crate::ids::SectorKey::default(),
             x: 0,
             y: 0,
             exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
+            popularity_alliance: 0.6,
+            popularity_empire: 0.4,
             is_populated: true,
             total_energy: 60,
             raw_materials: 10,
@@ -2526,13 +2406,22 @@ mod tests {
             alliance_capships: 0,
             empire_capships: 0,
         };
+        // FUN_0055a080: Alliance support 60 reaches GNPRTB 7760, whatever
+        // the earlier holder; Imperial support 60 (Alliance 40) gives the
+        // Empire.
         let result = resolve_system_control(&sys, &presence, &gnprtb, 2);
-        // No troops but energy >= GNPRTB[7760](60) — preserves existing control
+        assert_eq!(
+            result,
+            ControlKind::Controlled(crate::dat::Faction::Alliance)
+        );
+        sys.popularity_alliance = 0.4;
+        sys.popularity_empire = 0.6;
+        let result = resolve_system_control(&sys, &presence, &gnprtb, 2);
         assert_eq!(result, ControlKind::Controlled(crate::dat::Faction::Empire));
     }
 
     #[test]
-    fn side_resolution_no_troops_low_energy_becomes_uncontrolled() {
+    fn side_resolution_no_troops_and_split_support_is_neutral() {
         let gnprtb = stock_gnprtb();
         let sys = crate::world::System {
             dat_id: DatId(0),
@@ -2569,7 +2458,7 @@ mod tests {
             empire_capships: 0,
         };
         let result = resolve_system_control(&sys, &presence, &gnprtb, 2);
-        // No troops and energy < GNPRTB[7760](60) — becomes uncontrolled
+        // FUN_0055a080: support 50 for each side reaches neither 60.
         assert_eq!(result, ControlKind::Uncontrolled);
     }
 
@@ -2746,6 +2635,135 @@ mod tests {
         );
     }
 
+    fn presence_of(
+        fleets: (u32, u32),
+        fighters: (u32, u32),
+        troops: (u32, u32),
+    ) -> MilitaryPresence {
+        MilitaryPresence {
+            alliance_fleets: fleets.0,
+            empire_fleets: fleets.1,
+            alliance_fighters: fighters.0,
+            empire_fighters: fighters.1,
+            alliance_troops: troops.0,
+            empire_troops: troops.1,
+            alliance_capships: 0,
+            empire_capships: 0,
+        }
+    }
+
+    /// `FUN_00559c40` with the shipped GNPRTB: below 7732 (40) and with no
+    /// friendly fleet, the holder's support drifts by 7737 (75) at or below
+    /// 7736 (20), 7735 (50) at or below 7734 (30), else 7733 (25), less 7687
+    /// (5) per friendly squadron and 7688 (2) per regiment, the Empire's
+    /// regiments doubled by 7680 with a Death Star in the sector
+    /// (`FUN_00559b60`); the drift moves support away from the holder.
+    #[test]
+    fn the_drift_takes_its_bracket_less_each_friendly_unit() {
+        use crate::dat::Faction::{Alliance, Empire};
+        let gnprtb = stock_gnprtb();
+        let none = || presence_of((0, 0), (0, 0), (0, 0));
+        // (holder, holder support %, presence, Death Star, drift away from the holder %)
+        let cases = [
+            (Alliance, 15, none(), false, 75),
+            (Alliance, 20, none(), false, 75),
+            (Alliance, 25, none(), false, 50),
+            (Alliance, 30, none(), false, 50),
+            (Alliance, 35, none(), false, 25),
+            (Alliance, 41, none(), false, 0),
+            (Alliance, 15, presence_of((0, 0), (2, 0), (3, 0)), false, 59),
+            (Empire, 15, presence_of((0, 0), (0, 2), (0, 3)), false, 59),
+            (Empire, 15, presence_of((0, 0), (0, 0), (0, 3)), true, 63),
+            (Alliance, 15, presence_of((0, 0), (0, 0), (3, 0)), true, 69),
+            (Alliance, 15, presence_of((1, 0), (0, 0), (0, 0)), false, 0),
+        ];
+        for (holder, support, presence, death_star, drift) in cases {
+            let held = f32::from(u8::try_from(support).unwrap()) / 100.0;
+            let sys = crate::world::System {
+                popularity_alliance: if holder == Alliance { held } else { 1.0 - held },
+                popularity_empire: if holder == Empire { held } else { 1.0 - held },
+                control: ControlKind::Controlled(holder),
+                ..crate::world::System::default()
+            };
+            let away = f32::from(u8::try_from(drift).unwrap()) / 100.0;
+            let expected = if holder == Alliance {
+                (-away, away)
+            } else {
+                (away, -away)
+            };
+            let (alliance, empire) =
+                calculate_support_drift(&sys, &presence, &gnprtb, 2, death_star);
+            assert!(
+                (alliance - expected.0).abs() < 1e-6 && (empire - expected.1).abs() < 1e-6,
+                "{holder:?} at {support} with {death_star}: {alliance}/{empire}, want {expected:?}"
+            );
+        }
+        let neutral = crate::world::System {
+            popularity_alliance: 0.1,
+            popularity_empire: 0.1,
+            control: ControlKind::Uncontrolled,
+            ..crate::world::System::default()
+        };
+        assert_eq!(
+            calculate_support_drift(&neutral, &none(), &gnprtb, 2, false),
+            (0.0, 0.0)
+        );
+    }
+
+    /// `FUN_0050ba90` counts the holder's regiments, the larger side's when
+    /// nobody holds the system; `FUN_0050b8e0` marks the fighters contested
+    /// when both sides have squadrons, and the fleets when both have two.
+    #[test]
+    fn the_summary_counts_the_holders_regiments_and_contests_only_shared_skies() {
+        use crate::dat::Faction::{Alliance, Empire};
+        let world = GameWorld::default();
+        let summary = |control, presence: &MilitaryPresence| {
+            let sys = crate::world::System {
+                control,
+                ..crate::world::System::default()
+            };
+            compute_system_summary(&world, &sys, presence, 0)
+        };
+        let mixed = presence_of((0, 0), (0, 0), (1, 3));
+        assert_eq!(
+            summary(ControlKind::Controlled(Alliance), &mixed).total_controlling_troops,
+            1
+        );
+        assert_eq!(
+            summary(ControlKind::Controlled(Empire), &mixed).total_controlling_troops,
+            3
+        );
+        let mixed = presence_of((0, 0), (0, 0), (3, 1));
+        assert_eq!(
+            summary(ControlKind::Controlled(Empire), &mixed).total_controlling_troops,
+            1
+        );
+        assert_eq!(
+            summary(ControlKind::Uncontrolled, &mixed).total_controlling_troops,
+            3
+        );
+        for (fighters, contested) in [((1, 1), true), ((1, 0), false), ((0, 1), false)] {
+            let presence = presence_of((0, 0), fighters, (0, 0));
+            assert_eq!(
+                summary(ControlKind::Uncontrolled, &presence)
+                    .fighter_posture
+                    .is_contested,
+                contested,
+                "{fighters:?}"
+            );
+        }
+        for (fleets, contested) in [((2, 2), true), ((2, 0), false), ((0, 2), false)] {
+            let presence = presence_of(fleets, (0, 0), (0, 0));
+            assert_eq!(
+                summary(ControlKind::Uncontrolled, &presence)
+                    .fleet_posture
+                    .is_contested,
+                contested,
+                "{fleets:?}"
+            );
+        }
+    }
+
     #[test]
     fn support_drift_at_exact_threshold() {
         let gnprtb = stock_gnprtb();
@@ -2841,8 +2859,7 @@ mod tests {
             alliance_capships: 0,
             empire_capships: 0,
         };
-        let gnprtb = stock_gnprtb();
-        let summary_1v1 = compute_system_summary(&world, &sys, &presence_1v1, 0, &gnprtb, 2);
+        let summary_1v1 = compute_system_summary(&world, &sys, &presence_1v1, 0);
         assert!(
             !summary_1v1.fleet_posture.is_contested,
             "1v1 fleets should NOT be contested"
@@ -2858,7 +2875,7 @@ mod tests {
             alliance_capships: 0,
             empire_capships: 0,
         };
-        let summary_2v2 = compute_system_summary(&world, &sys, &presence_2v2, 0, &gnprtb, 2);
+        let summary_2v2 = compute_system_summary(&world, &sys, &presence_2v2, 0);
         assert!(
             summary_2v2.fleet_posture.is_contested,
             "2v2 fleets should be contested"
@@ -2868,7 +2885,7 @@ mod tests {
     // -----------------------------------------------------------------------
     // Knesset Shamash-Bet Dabora 2 #K7: parameterized notification
     // idempotency tests for the state-transition events (K1
-    // SupportChanged, K3 ResourceDiscovered, K4 MaintenanceShortfall) —
+    // SupportChanged, K3 ResourceDiscovered) —
     // each must fire exactly ONCE per transition, not once per tick. K2's
     // support-based disaster was removed: the disaster is a galaxy timer
     // event (FUN_00556b50) that UprisingSystem raises.
@@ -2925,10 +2942,10 @@ mod tests {
     }
 
     #[test]
-    fn k1_support_change_fires_only_on_tier_transition() {
-        // Start in the Low band (0.25). First eval: default tier is
-        // Critical → Low is a transition, emit once. Second eval (no
-        // state change): no emission.
+    fn k1_support_change_fires_only_when_the_holder_changes() {
+        // Alliance support 25: the Empire's 75 reaches GNPRTB 7760, so the
+        // holder by support is the Empire (FUN_0055a080), a change from the
+        // default Neither: emit once. Second eval (no change): no emission.
         let (world, _sys) = make_singleton_world(
             0.25,
             0.75,
@@ -2951,7 +2968,7 @@ mod tests {
             .iter()
             .filter(|e| matches!(e, EconomyEvent::SupportChanged { .. }))
             .count();
-        assert_eq!(count2, 0, "K1: unchanged-tier second tick must not re-fire");
+        assert_eq!(count2, 0, "K1: an unchanged holder must not re-fire");
     }
 
     #[test]
@@ -3003,77 +3020,5 @@ mod tests {
             .filter(|e| matches!(e, EconomyEvent::ResourceDiscovered { .. }))
             .count();
         assert_eq!(count3, 0, "K3: stable resource count must not re-fire");
-    }
-
-    #[test]
-    fn k4_maintenance_shortfall_fires_on_30_tick_cooldown() {
-        // Garrison deficit condition (low support, no troops).
-        // Cooldown is 30 ticks (GNPRTB[7694]). First eval: the cooldown
-        // starts at 0 (EconomyState::default()), so the initial deficit
-        // fires immediately and then arms the 30-tick cooldown. The
-        // idempotency contract is that subsequent ticks within the
-        // cooldown window do NOT re-fire, and the next fire only
-        // happens after the full 30 ticks elapse.
-        let (world, _sys) = make_singleton_world(
-            0.3,
-            0.7,
-            ControlKind::Controlled(crate::dat::Faction::Alliance),
-            true,
-        );
-        let mut state = EconomyState::default();
-        // Tick 1: default cooldown=0, deficit present → immediate fire,
-        // cooldown armed to 30.
-        let events1 = EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 1 }], 2);
-        let count1 = events1
-            .iter()
-            .filter(|e| matches!(e, EconomyEvent::MaintenanceShortfall { .. }))
-            .count();
-        assert_eq!(
-            count1, 1,
-            "K4: first tick with deficit should emit exactly once"
-        );
-        assert_eq!(
-            state.alliance_maintenance_cooldown, 30,
-            "K4: cooldown should be armed to 30 after fire"
-        );
-
-        // Burn 29 ticks — cooldown 30 → 1, no fire.
-        let batch29: Vec<TickEvent> = (2..=30).map(|n| TickEvent { tick: n }).collect();
-        let events_batch = EconomySystem::advance(&mut state, &world, &batch29, 2);
-        let count_batch = events_batch
-            .iter()
-            .filter(|e| matches!(e, EconomyEvent::MaintenanceShortfall { .. }))
-            .count();
-        assert_eq!(
-            count_batch, 0,
-            "K4: partial-cooldown batch must not re-fire"
-        );
-        assert_eq!(
-            state.alliance_maintenance_cooldown, 1,
-            "K4: cooldown should have one tick left after 29-tick batch"
-        );
-
-        // One more tick drops the counter to 0 and fires again.
-        let events_fire = EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 31 }], 2);
-        let count_fire = events_fire
-            .iter()
-            .filter(|e| matches!(e, EconomyEvent::MaintenanceShortfall { .. }))
-            .count();
-        assert_eq!(
-            count_fire, 1,
-            "K4: cooldown expiry should re-emit exactly once"
-        );
-
-        // Immediately after firing, the cooldown resets — next tick
-        // must not re-fire.
-        let events_next = EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 32 }], 2);
-        let count_next = events_next
-            .iter()
-            .filter(|e| matches!(e, EconomyEvent::MaintenanceShortfall { .. }))
-            .count();
-        assert_eq!(
-            count_next, 0,
-            "K4: reset cooldown must not re-emit immediately"
-        );
     }
 }

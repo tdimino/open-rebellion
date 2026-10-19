@@ -4,7 +4,7 @@
 
 Comparison regions, their diagnoses and fixtures, and A0 captures. Back to the [index](INDEX.md).
 
-26 open, 1 deferred.
+27 open, 1 deferred.
 
 <a id="or-acc-control-h6c"></a>
 ### Control cluster matches A0
@@ -241,6 +241,13 @@ Epic: [Tactical parity: every TAC-01..07 A0 cell passes or is settled](INDEX.md#
 Unblocks: [or-acc-not-run-tdj](#or-acc-not-run-tdj)
 
 > Cells: TAC-02-C001 C003 C004 C005 C007.
+
+<a id="or-spike-proxy-dll-orders-9au9"></a>
+### Spike: a proxy DLL that logs the original's AI orders per day
+
+`or-spike-proxy-dll-orders-9au9` · **open** · P2 · verify · updated 2026-10-16
+
+> Spike: a proxy version.dll for the original REBEXE.EXE in the capture VM that logs each AI order (side, module kind, order id, validated or refused, day) as GameEventRecord JSONL with source "original", hooking the five bytes after the scheduler's validate call (0x485c47, FUN_00485b40), and optionally divides the 0.25 s step threshold (float 0x6588f0) to speed the strategy clock only. Built with zig cc -target x86-windows-gnu; patches only when the original bytes match; orhook.off disables it, and A0 captures require it absent or disabled. Done when one VM run of a library save writes order records that scripts/telemetry.py --orders reads, and the order counts per side per day are recorded as the original's calibration reference.
 
 <a id="or-acc-minor-eqh"></a>
 ### Subsystem icons and in-battle Game Options match A0

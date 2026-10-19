@@ -25,10 +25,21 @@ const DRAG_FRAMES: u16 = 8;
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Step {
     Move(f32, f32),
-    Down { x: f32, y: f32, right: bool },
+    Down {
+        x: f32,
+        y: f32,
+        right: bool,
+    },
     Drag(f32, f32),
-    Up { x: f32, y: f32, right: bool },
-    Key { code: u16, down: bool },
+    Up {
+        x: f32,
+        y: f32,
+        right: bool,
+    },
+    Key {
+        code: u16,
+        down: bool,
+    },
     /// Control pressed or released, as AppKit reports a modifier key.
     Ctrl(bool),
     /// One wheel line: positive away from the user (up), negative down.
@@ -121,13 +132,12 @@ impl DevInput {
         };
         let result = platform::post(step);
         if result.is_err() {
-            self.steps
-                .retain(|step| {
-                    matches!(
-                        step,
-                        Step::Up { .. } | Step::Key { down: false, .. } | Step::Ctrl(false)
-                    )
-                });
+            self.steps.retain(|step| {
+                matches!(
+                    step,
+                    Step::Up { .. } | Step::Key { down: false, .. } | Step::Ctrl(false)
+                )
+            });
         }
         result
     }
@@ -151,8 +161,8 @@ fn view_point(x: f32, y: f32, width: f32, height: f32) -> (f64, f64) {
 /// macOS virtual key codes (`kVK_*`, HIToolbox `Events.h`) by key name.
 fn key_code(name: &str) -> Option<u16> {
     const LETTERS: [u16; 26] = [
-        0, 11, 8, 2, 14, 3, 5, 4, 34, 38, 40, 37, 46, 45, 31, 35, 12, 15, 1, 17, 32, 9, 13, 7,
-        16, 6,
+        0, 11, 8, 2, 14, 3, 5, 4, 34, 38, 40, 37, 46, 45, 31, 35, 12, 15, 1, 17, 32, 9, 13, 7, 16,
+        6,
     ];
     const DIGITS: [u16; 10] = [29, 18, 19, 20, 21, 23, 22, 26, 28, 25];
     const F_KEYS: [u16; 12] = [122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111];
@@ -316,12 +326,7 @@ mod platform {
                     (event, sel!(flagsChanged:))
                 }
                 Step::Scroll(lines) => {
-                    let cg = CGEventCreateScrollWheelEvent(
-                        std::ptr::null(),
-                        SCROLL_LINE,
-                        1,
-                        lines,
-                    );
+                    let cg = CGEventCreateScrollWheelEvent(std::ptr::null(), SCROLL_LINE, 1, lines);
                     if cg.is_null() {
                         return Err("CoreGraphics made no scroll event".into());
                     }

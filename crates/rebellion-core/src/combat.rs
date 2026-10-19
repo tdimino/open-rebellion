@@ -215,7 +215,10 @@ impl CombatSystem {
                 if let Some(fleet) = world.fleets.get(fleet_key) {
                     if fleet.is_alliance == attacker_is_alliance {
                         for &char_key in &fleet.characters {
-                            if let Some(ch) = world.characters.get(char_key) {
+                            // A character en route aboard has not arrived.
+                            if let Some(ch) =
+                                world.characters.get(char_key).filter(|ch| !ch.en_route)
+                            {
                                 total += ch.combat.base;
                             }
                         }
@@ -364,52 +367,6 @@ impl CombatSystem {
     // or-port-bombardment-8usw).
 }
 
-// ---------------------------------------------------------------------------
-// Entity kind classification
-// ---------------------------------------------------------------------------
-
-/// `DatId` family-byte classification for combat dispatch.
-///
-/// port: no recovered source; only this module's tests use it. The DAT
-/// families are in `ghidra/notes/record-registry.md`, and the variant notes
-/// below give what each byte holds there; `or-q-port-family-checks-p00`
-/// decides what each port path should key on.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CombatEntityKind {
-    /// family 0x30-0x33, 0x35-0x3b: in the DATs, characters (majors 0x30-0x35, minors 0x38)
-    CapitalShip,
-    /// family 0x34: the Emperor's character family, not the Death Star (capital
-    /// ships 0x18; `or-port-death-star-family-qtde`).
-    DeathStar,
-    /// family 0x71: the Dagobah mission in the DATs; no shield path keys on it
-    FighterSquadron,
-    /// family 0x73-0x74: 0x73 is the Pickup mission; `FUN_00534640` is the resign request
-    SpecialCombatEntity,
-    /// family 0x14-0x1b: capital ships in the DATs; regiments are 0x10-0x13
-    Troop,
-    /// family 0x08-0x0f: fleets in the DATs
-    Character,
-    /// Unrecognized family byte
-    Unknown,
-}
-
-impl CombatEntityKind {
-    /// Classify by `DatId` family byte (`id >> 24`).
-    #[must_use]
-    pub fn from_family_byte(family: u8) -> Self {
-        match family {
-            0x08..=0x0f => Self::Character,
-            0x14..=0x1b => Self::Troop,
-            0x30..=0x33 | 0x35..=0x3b => Self::CapitalShip,
-            0x34 => Self::DeathStar,
-            0x71 => Self::FighterSquadron, // exact 0x71: the Dagobah mission family
-            // 0x72 is a different entity type, not alt-shield
-            0x73..=0x74 => Self::SpecialCombatEntity,
-            _ => Self::Unknown,
-        }
-    }
-}
-
 /// Extract bits 4-5 of a packed field. `FUN_0054a1d0` reads
 /// `*(uint *)((int)this + 0x24) >> 4 & 3` as the side it passes to
 /// `FUN_004fd600`, not a difficulty; nothing in the simulation calls this.
@@ -454,10 +411,12 @@ mod tests {
             defense_facility_classes: HashMap::new(),
             difficulty_index: 2,
             recruit_pool_empty: [false; 2],
+            research_exhausted: [[false; 3]; 2],
             fleet_names: crate::world::FleetNames::default(),
             last_ship_tag: 0,
             squadron_transits: Vec::new(),
             arrival_holders: std::collections::HashMap::new(),
+            death_star_sectors: std::collections::HashSet::new(),
         }
     }
 
@@ -518,30 +477,6 @@ mod tests {
             bombardment_modifier: 10,
             ..CapitalShipClass::default()
         })
-    }
-
-    #[test]
-    fn entity_kind_classifies_family_bytes_correctly() {
-        assert_eq!(
-            CombatEntityKind::from_family_byte(0x30),
-            CombatEntityKind::CapitalShip
-        );
-        assert_eq!(
-            CombatEntityKind::from_family_byte(0x34),
-            CombatEntityKind::DeathStar
-        );
-        assert_eq!(
-            CombatEntityKind::from_family_byte(0x14),
-            CombatEntityKind::Troop
-        );
-        assert_eq!(
-            CombatEntityKind::from_family_byte(0x08),
-            CombatEntityKind::Character
-        );
-        assert_eq!(
-            CombatEntityKind::from_family_byte(0x71),
-            CombatEntityKind::FighterSquadron
-        );
     }
 
     #[test]

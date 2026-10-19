@@ -18,6 +18,23 @@ pub struct GameEventRecord {
     pub event_type: &'static str,
     /// System-specific payload.
     pub details: serde_json::Value,
+    /// Which tick code produced the record: [`SOURCE_HEADLESS`] or
+    /// [`SOURCE_NATIVE`].
+    #[serde(default = "headless_source")]
+    pub source: &'static str,
+    /// The developer-channel sequence number of the command running when a
+    /// native record was emitted; absent from headless records.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seq: Option<u64>,
+}
+
+/// A record from `run_simulation_tick`.
+pub const SOURCE_HEADLESS: &str = "headless";
+/// A record from the interactive game's own tick.
+pub const SOURCE_NATIVE: &str = "native";
+
+fn headless_source() -> &'static str {
+    SOURCE_HEADLESS
 }
 
 impl GameEventRecord {
@@ -35,7 +52,18 @@ impl GameEventRecord {
             system,
             event_type,
             details,
+            source: SOURCE_HEADLESS,
+            seq: None,
         }
+    }
+
+    /// Mark the record as the interactive game's, optionally with the
+    /// developer-channel command running when it was emitted.
+    #[must_use]
+    pub fn native(mut self, seq: Option<u64>) -> Self {
+        self.source = SOURCE_NATIVE;
+        self.seq = seq;
+        self
     }
 }
 
@@ -73,12 +101,18 @@ pub const EVT_COMBAT_GROUND: &str = "combat_ground";
 pub const EVT_BOMBARDMENT: &str = "bombardment";
 pub const EVT_MISSION_DISPATCHED: &str = "mission_dispatched";
 pub const EVT_MISSION_RESOLVED: &str = "mission_resolved";
+/// A mission reached its last phase and was removed (`MissionAdvance::ended`).
+pub const EVT_MISSION_ENDED: &str = "mission_ended";
 pub const EVT_EVENT_FIRED: &str = "event_fired";
 pub const EVT_AI_ACTION: &str = "ai_action";
+/// One side's closed AI day: its speed, rounds and counted orders.
+pub const EVT_AI_DAY: &str = "ai_day";
 pub const EVT_BLOCKADE_STARTED: &str = "blockade_started";
 pub const EVT_BLOCKADE_ENDED: &str = "blockade_ended";
 /// A regiment was destroyed leaving a blockaded system (event `0x340`).
 pub const EVT_BLOCKADE_TROOP_DESTROYED: &str = "blockade_troop_destroyed";
+/// Timer `0x386` moved the blockader's support at a blockaded system.
+pub const EVT_BLOCKADE_SUPPORT_SHIFT: &str = "blockade_support_shift";
 pub const EVT_UPRISING_INCIDENT: &str = "uprising_incident";
 pub const EVT_UPRISING_BEGAN: &str = "uprising_began";
 /// A revolt ended (`FUN_0050b800` or `FUN_0050c910`).
@@ -108,6 +142,9 @@ pub const EVT_CHARACTER_COMBAT_RATING: &str = "character_combat_rating";
 pub const EVT_STORY_JABBA: &str = "story_jabba";
 pub const EVT_STORY_FINAL_BATTLE: &str = "story_final_battle";
 pub const EVT_MAINTENANCE_SHORTFALL: &str = "maintenance_shortfall";
+/// A decision trace (`rebellion_core::trace`): `system` names the subsystem
+/// and `details.kind` the decision.
+pub const EVT_TRACE: &str = "trace";
 
 // System heartbeat events — emitted each tick to ensure system tags appear in telemetry
 pub const EVT_UPRISING_CHECK: &str = "uprising_check";
@@ -184,11 +221,14 @@ mod tests {
             EVT_BOMBARDMENT,
             EVT_MISSION_DISPATCHED,
             EVT_MISSION_RESOLVED,
+            EVT_MISSION_ENDED,
             EVT_EVENT_FIRED,
             EVT_AI_ACTION,
+            EVT_AI_DAY,
             EVT_BLOCKADE_STARTED,
             EVT_BLOCKADE_ENDED,
             EVT_BLOCKADE_TROOP_DESTROYED,
+            EVT_BLOCKADE_SUPPORT_SHIFT,
             EVT_UPRISING_INCIDENT,
             EVT_UPRISING_BEGAN,
             EVT_UPRISING_ENDED,

@@ -3,7 +3,7 @@ title: "Uprising System"
 description: "Recovered revolt lifecycle, uprising incident, Subdue support gain, and natural disaster"
 category: "agent-docs"
 created: 2026-03-14
-updated: 2026-09-27
+updated: 2026-10-16
 tags: [uprising, incite, subdue, disaster, simulation]
 ---
 
@@ -51,8 +51,8 @@ let ended = end_if_garrisoned(&mut state, &world, system, tick);
    Empire's Stormtroopers, and the Incite and Subdue agents' leadership, then
    applies the UPRIS1TB and UPRIS2TB step-lookup codes: a lost facility or
    regiment, an injured character, or freed prisoners. An active Incite
-   mission then costs the holder 2 support points (halved for a strongly
-   supported Empire holder).
+   mission then costs the holder 2 support points (halved for an Empire
+   holder with a Death Star in the sector, system bit 11).
 
 ## Character picks
 
@@ -70,7 +70,8 @@ yet (F-030).
 ## Garrison
 
 `economy::garrison_requirement` (`FUN_00559fe0`) halves the requirement only
-for a strongly supported Empire system and doubles it only during a revolt.
+for an Empire system with a Death Star in the sector (bit 11,
+`GameWorld::death_star_in_sector`) and doubles it only during a revolt.
 
 ## Open
 

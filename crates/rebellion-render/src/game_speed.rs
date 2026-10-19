@@ -290,6 +290,7 @@ pub fn draw_pause_alert(
                 ALERT_TEXT_COLOR,
             );
             let button = local(ALERT_BUTTON_RECT);
+            crate::control_registry::register_screen("PauseAlert", "Resume", button);
             let response = ui.interact(
                 button,
                 ui.id().with("pause_alert_resume"),
@@ -538,6 +539,7 @@ pub fn draw_game_speed_menu(
         submenu: false,
         children: &[],
     });
+    crate::control_registry::name_next_menu("SpeedMenu");
     match draw_game_menu(
         ctx,
         egui::Id::new(SPEED_MENU_ID),

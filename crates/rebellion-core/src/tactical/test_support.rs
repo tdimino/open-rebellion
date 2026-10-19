@@ -186,6 +186,7 @@ pub fn test_session(
         step_accumulator: 0.0,
         winner: None,
         stalemate: TacticalStalemateWatch::default(),
+        morale: TacticalMorale::default(),
         engagement: TacticalEngagementState::default(),
         holder_is_alliance: None,
         blockaded_at_start: false,

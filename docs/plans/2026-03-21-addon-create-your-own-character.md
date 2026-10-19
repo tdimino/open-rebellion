@@ -2,6 +2,8 @@
 title: "Addon: Create Your Own Character (Demiurgos)"
 type: feat
 status: planned
+progress: "0% — design only, post-v1; must be revised against mod-surface rules 1-3 first (see Constraints); no homeworld field, Academy, creation UI, Force table or custom-portrait pipeline has landed"
+updated: 2026-10-15
 date: 2026-03-21
 project: open-rebellion
 designer: Nomos (soul architect subdaimon)
@@ -9,6 +11,35 @@ tags: [addon, character-creation, homeworld, portraits]
 ---
 
 # Create Your Own Character — First Addon
+
+## Constraints before implementation (2026-10-15)
+
+This addon is post-v1 (`agent_docs/roadmap.md`, "Roadmap: Addons"). The design
+below predates the full-parity rules and must be revised against
+[`agent_docs/mod-surface.md`](../../agent_docs/mod-surface.md) before any
+code lands:
+
+- **An unmodded game behaves exactly like the original** (rule 1). The
+  homeworld modifiers below (+10%/-5% mission odds, -15 loyalty) and the
+  "Universal — All Characters" homeworld field belong behind the addon or a
+  mod, never in the base game.
+- **Custom characters are MNCHARSD family-0x38 minor records**, joining the
+  recruit pool by their side flags as the original's minors do (mod-surface,
+  Character roster row). A mod adds ids only in families the original
+  registers (rule 2), so the `0xFF000000+` DatId scheme and `mods.rs`
+  `"action": "add"` sketch below are out.
+- **No invented UI without Tom's approval** (rule 3). The 7-step egui modal
+  and `panels/character_creation.rs` need an approved design built from the
+  original's assets.
+- **Force fields follow the original**: base `+0x8e`, training `+0x90`, and
+  the sensitive bit rolled against `jedi_probability` at creation
+  (`or-port-force-fields-2u0m` replaces ForceTier and force_experience).
+- **Mission odds hook the original tables** (RCRTMSTB and the others), not
+  flat percentages in `missions.rs`.
+- **No save migrations** pre-release: bump `SAVE_VERSION` (now 45) and reject
+  older saves.
+- **Reference portraits from EDATA/STRATEGY are original game data** and stay
+  out of Git.
 
 ## Design Philosophy
 
@@ -227,6 +258,33 @@ done
 ### Scaling to 128
 
 Run 6 additional batches with varied costumes per species. The manifest structure supports this directly. Each batch uses the same 14 references and prompt template.
+
+## Recruitment Mode
+
+Folded in on 2026-10-15 from the archived
+[Homeworld Recruitment Mode](archive/2026-03-22-design-homeworld-recruitment-mode.md)
+design. Instead of designing a character at game start, the player finds
+candidates in the galaxy: each sits at a homeworld system with a faction
+leaning, a hidden pre-rolled archetype and skills, and a condition (control
+the system, win a battle there, a popularity threshold, liberation, a day
+count, a named character's visit, or a Force discovery) that makes them
+recruitable. A mode choice at game start picks Academy or Recruitment.
+
+The original already has the core of this: the recruit pool draws minors by
+their side flags (mod-surface, Character roster row;
+`or-port-recruit-major-lead-8grm`). Candidates are therefore MNCHARSD minor
+records whose side flags express their leaning, not new
+`RecruitmentCandidate` or `FactionAffinity` types. The archived design's other
+assumptions need replacing before use:
+
+- Its map markers and mode-select modal are invented UI (rule 3).
+- Its "explored" gate assumes today's binary fog, which
+  `or-q-port-observation-levels-jgy` may replace with the original's
+  per-side observation levels.
+- Only the `TickReached` and `CharacterAtSystem` event conditions exist; the
+  control, battle, popularity and liberation conditions do not.
+- AI pursuit of candidates assumes the heuristic `ai.rs` dispatch that
+  `or-port-ai-orders-4zf` is replacing with the original's order set.
 
 ## Files to Modify
 

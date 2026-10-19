@@ -88,13 +88,13 @@ pub const fn force_ranking(value: u32) -> &'static str {
 }
 
 /// The Character Status rows (`FUN_004486f0`). `en_route` is the mission
-/// transits (`MissionState::en_route`).
+/// transits (`MissionState::en_route`), which give an en route character's
+/// arrival day.
 ///
 /// Commanding names the fleet or system the character's rank commands
 /// (`+0xa8`). port: "Injured" (`+0x94`) never shows: the port keeps no
-/// injury. A character is en route while its
-/// mission transit lasts; Attached then names the transit's destination,
-/// the container of an object in hyperspace (`FUN_00556390`).
+/// injury. An en route character stands in its destination container from
+/// the order on (`FUN_00556390`, `move-order.md`), so Attached names it.
 #[must_use]
 pub fn character_rows(
     world: &GameWorld,
@@ -104,15 +104,11 @@ pub fn character_rows(
     let character = world.characters.get(key)?;
     let transit = en_route
         .iter()
-        .find(|transit| transit.member == MissionMember::Character(key));
-    let attached = transit
-        .and_then(|transit| world.systems.get(transit.to))
-        .map(|system| system.name.clone())
-        .or_else(|| {
-            character
-                .current_fleet
-                .and_then(|fleet| fleet_label(world, fleet))
-        })
+        .find(|transit| transit.member == MissionMember::Character(key))
+        .filter(|_| character.en_route);
+    let attached = character
+        .current_fleet
+        .and_then(|fleet| fleet_label(world, fleet))
         .or_else(|| {
             character
                 .current_system
@@ -122,7 +118,7 @@ pub fn character_rows(
         .unwrap_or_default();
     // The first that holds: en route (+0x50 bit 4), captured (+0xac bit 0),
     // injured (+0x94), a mission that is not hidden (FUN_00520b70).
-    let status = if transit.is_some() {
+    let status = if character.en_route {
         "Enroute"
     } else if character.is_captive {
         "Captured"
@@ -819,6 +815,7 @@ mod tests {
             is_captive: false,
             current_system: None,
             current_fleet: None,
+            en_route: false,
             heritage_known: false,
             is_killed: false,
             recruited: true,
@@ -1653,15 +1650,15 @@ mod tests {
     fn a_character_on_its_way_is_enroute_with_its_destination_and_arrival_day() {
         // FUN_004486f0: +0x50 bit 4 first, then FUN_004fd2b0's "ETA
         // Destination:" and "Day " + the arrival; Attached names the
-        // container, the destination of an object in hyperspace.
+        // container, where an en route object already stands
+        // (move-order.md).
         let (mut world, key, _, hoth) = world_with_luke();
-        world.characters[key].current_system = None;
+        world.characters[key].current_system = Some(hoth);
+        world.characters[key].en_route = true;
         world.characters[key].on_mission = true;
         let transit = MemberTransit {
             member: MissionMember::Character(key),
             mission_id: 3,
-            to: hoth,
-            fleet: None,
             arrival: 42,
         };
         let rows = character_rows(&world, &[transit], key).expect("rows");

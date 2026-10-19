@@ -49,8 +49,9 @@ use crate::world::GameWorld;
 // Constants
 // -------------------------------------------------------------------------
 
-/// Maximum orders per agent cycle (`agent+0x18c`, `FUN_00439950`).
-/// FUN_00439a10: `orders_issued < orders_limit` gates dispatch.
+/// Maximum orders between resets of `agent+0x188` (`agent+0x18c`,
+/// `FUN_00439950`). FUN_00439a10: `orders_issued < orders_limit` gates
+/// dispatch.
 const ORDERS_LIMIT: u32 = 5; // FUN_00439950 line: param_1[99] = 5
 
 // -------------------------------------------------------------------------
@@ -153,7 +154,7 @@ impl AdvisorFlags {
 /// Train-Troops, 0x214 Build-Facility). The app enqueues these through the
 /// existing `ManufacturingState::enqueue` path, constructing a `QueueItem`
 /// from the fields here.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AgentOrder {
     /// Build a production facility (mine or refinery) at a system.
     /// Original orders: 0x214 (set destination) then 0x210 (start construction,
@@ -196,8 +197,9 @@ pub enum AgentOrder {
 /// Serializable for save/load. Default = both modules suspended (OFF),
 /// matching `FUN_00439950`.
 ///
-/// The app calls [`PlayerAgent::advance`] each game-day tick to get orders,
-/// then applies them through the existing `ManufacturingState::enqueue` path.
+/// The round driver calls [`PlayerAgent::step`] at each in-day step in the
+/// player's slot, and applies the order it left pending at the next step
+/// through [`apply_orders`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlayerAgent {
     /// Per-module state. FUN_00439950: all start `Suspended`.
@@ -215,9 +217,20 @@ pub struct PlayerAgent {
     /// FUN_00439d60 sets these; the app reads and clears them.
     pub advisor_flags: AdvisorFlags,
 
-    /// Orders issued this cycle (`agent+0x188`). Reset each cycle.
+    /// Orders issued since the last reset (`agent+0x188`, [`Self::end_day`]).
     /// FUN_00439a10 gates dispatch on `orders_issued < ORDERS_LIMIT`.
     orders_issued: u32,
+
+    /// The module the round-robin last took (`agent+0x18`'s cursor `+0x10`,
+    /// `FUN_0049df70`); `None` starts at the head.
+    #[serde(default)]
+    cursor: Option<AutomationModule>,
+
+    /// The order of the last step, executed at the next step's phase 5 as
+    /// the computer player's are (`FUN_004878f0` -> `FUN_0048aa90`,
+    /// `FUN_00436250`).
+    #[serde(default)]
+    pending: Option<AgentOrder>,
 
     /// Agent Advice (menu item 0x11e): `DAT_006b28b0` bit `0x8000` clear.
     /// `FUN_00439320` sets the bit, turning advice off, unless the game's
@@ -237,6 +250,8 @@ impl Default for PlayerAgent {
             toggle_counter: 0,
             advisor_flags: AdvisorFlags::default(),
             orders_issued: 0,
+            cursor: None,
+            pending: None,
             advice: false,
         }
     }
@@ -341,72 +356,88 @@ impl PlayerAgent {
     // Agent tick — FUN_00439a10
     // -----------------------------------------------------------------
 
-    /// Run one agent cycle. Called each game-day tick.
+    /// Run the agent's round of one in-day step (`FUN_00439a10`, which
+    /// phase 8 calls in the human player's slot, `FUN_00486500`). Phase 8
+    /// calls the slot until it returns 1 (`FUN_004361a0.c:8-13`), and
+    /// `FUN_00439a10` returns 1 only from state 4 after a module ran, none
+    /// was ready or the cap held, so one round takes the agent's calls:
+    /// 1. State 6 readies the modules one a call (`VT[4]`, `FUN_004cc990`),
+    ///    walking from `+0x34` to the list's end (`:73-87`).
+    /// 2. State 4 picks one ready module round-robin (`FUN_0049df70`,
+    ///    `:18-25`, a call of its own) and, while `orders_issued <
+    ///    ORDERS_LIMIT`, runs it; at the cap the module waits, still ready
+    ///    (`:29-30, 60-61`).
+    /// 3. A module that ran returns to state 0 unless suspended.
     ///
-    /// Ports the state-4/5/6 dispatch loop from `FUN_00439a10`:
-    /// 1. Ready all eligible modules (`VT[4]`, `FUN_004cc990`).
-    /// 2. Execute each ready module's decision logic.
-    /// 3. Collect orders, capped at [`ORDERS_LIMIT`] per cycle.
+    /// The order is left pending for the next step's phase 5 and returned.
+    /// port: the survey sweep (state 5, `FUN_0049cc80`) is not ported, and
+    /// the port's modules finish in one call, so a round runs one module.
+    /// port: every round readies every module; after a capped round the
+    /// original's walk starts at the capped pick (`+0x34` stays set), but
+    /// nothing ran, so the modules before it are still ready. The priority
+    /// pick (`FUN_0049e130`) never fires: the port's modules never raise
+    /// `+0x30`.
     ///
-    /// Returns a list of [`AgentOrder`] values for the app to apply through
-    /// the manufacturing enqueue path.
-    ///
-    /// port: one whole cycle per call, made once a day; the original spends
-    /// a tick on each of states 4, 5 and 6 and a call on each module phase.
-    ///
-    /// # Arguments
-    ///
-    /// - `world` — read-only game world for system/facility queries.
-    /// - `mfg` — current manufacturing state (to check queue lengths).
-    /// - `economy` — current economy state (for garrison requirements).
-    /// - `player_is_alliance` — which side the player controls.
-    ///
-    /// Evidence: `FUN_00439a10.c`, `FUN_004cc990.c`.
-    pub fn advance(
+    /// Evidence: `FUN_00439a10.c`, `FUN_0049df70.c`, `FUN_004cc990.c`.
+    pub fn step(
         &mut self,
         world: &GameWorld,
         mfg: &ManufacturingState,
         economy: &EconomyState,
         player_is_alliance: bool,
-    ) -> Vec<AgentOrder> {
-        // FUN_00439a10 state 6: ready all modules via VT[4] (FUN_004cc990).
-        // Promotes Disabled(0) → Ready(1); skips Ready(1) and Suspended(2).
+    ) -> Option<AgentOrder> {
         self.ready_modules();
+        let module = self.pick()?;
+        if self.orders_issued >= ORDERS_LIMIT {
+            return None;
+        }
+        let order = match module {
+            AutomationModule::Production => {
+                self.run_production(world, mfg, economy, player_is_alliance)
+            }
+            AutomationModule::Garrisons => {
+                self.run_garrisons(world, mfg, economy, player_is_alliance)
+            }
+        };
+        if order.is_some() {
+            self.orders_issued += 1;
+        }
+        let state = self.module_state_mut(module);
+        if *state != ModuleState::Suspended {
+            *state = ModuleState::Disabled;
+        }
+        self.pending.clone_from(&order);
+        order
+    }
 
-        // FUN_00439a10 state 4: execute each ready module.
+    /// The order the last step left for this step's phase 5.
+    pub fn take_pending(&mut self) -> Option<AgentOrder> {
+        self.pending.take()
+    }
+
+    /// The day's close: `FUN_00439bf0` clears `agent+0x188`. hyp: once a
+    /// day, with the computer player's count (`FUN_00485de0`); the caller of
+    /// `FUN_00439bf0` (a virtual slot) is untraced.
+    pub fn end_day(&mut self) {
         self.orders_issued = 0;
-        let mut orders = Vec::new();
+    }
 
-        // Production first (module 0x14), then Garrisons (0x15).
-        // port: original uses a BST iterator with round-robin; we use a
-        // fixed order since there are only two modules.
-        if self.production_state == ModuleState::Ready {
-            if let Some(order) = self.run_production(world, mfg, economy, player_is_alliance) {
-                if self.orders_issued < ORDERS_LIMIT {
-                    orders.push(order);
-                    self.orders_issued += 1;
-                }
-            }
-            // FUN_00439a10: after execution, if completed and state != Suspended,
-            // set state = Disabled. (Suspended modules stay Suspended.)
-            if self.production_state != ModuleState::Suspended {
-                self.production_state = ModuleState::Disabled;
-            }
-        }
-
-        if self.garrison_state == ModuleState::Ready {
-            if let Some(order) = self.run_garrisons(world, mfg, economy, player_is_alliance) {
-                if self.orders_issued < ORDERS_LIMIT {
-                    orders.push(order);
-                    self.orders_issued += 1;
-                }
-            }
-            if self.garrison_state != ModuleState::Suspended {
-                self.garrison_state = ModuleState::Disabled;
-            }
-        }
-
-        orders
+    /// The first ready module from the one after the cursor, wrapping once
+    /// (`FUN_0049df70`). The cursor moves to it, or with none ready to where
+    /// the lap began. The modules are listed by kind: Production (`0x14`),
+    /// then Garrisons (`0x15`).
+    fn pick(&mut self) -> Option<AutomationModule> {
+        const LIST: [AutomationModule; 2] =
+            [AutomationModule::Production, AutomationModule::Garrisons];
+        let start = match self.cursor {
+            Some(AutomationModule::Production) => 1,
+            Some(AutomationModule::Garrisons) | None => 0,
+        };
+        let picked = (0..LIST.len())
+            .map(|offset| LIST[(start + offset) % LIST.len()])
+            .find(|&module| self.module_state(module) == ModuleState::Ready);
+        self.cursor = Some(picked.unwrap_or(LIST[start]));
+        picked
     }
 
     // -----------------------------------------------------------------
@@ -495,7 +526,8 @@ impl PlayerAgent {
                             .manufacturing_facilities
                             .get(*facility)
                             .is_some_and(|value| {
-                                value.side == crate::dat::Faction::of_alliance(player_is_alliance) && !value.is_shipyard
+                                value.side == crate::dat::Faction::of_alliance(player_is_alliance)
+                                    && !value.is_shipyard
                             })
                     })
                     && mfg.queued_at(*key) < 3
@@ -624,7 +656,11 @@ pub fn apply_orders(orders: &[AgentOrder], mfg: &mut ManufacturingState) {
                 kind,
                 work,
             } => {
-                mfg.set_destination(system, ProductionArea::of(kind), destination);
+                mfg.set_destination(
+                    system,
+                    ProductionArea::of(kind),
+                    crate::manufacturing::Destination::System(destination),
+                );
                 mfg.enqueue(system, QueueItem::new(kind, work));
             }
             AgentOrder::TrainTroops {
@@ -634,7 +670,11 @@ pub fn apply_orders(orders: &[AgentOrder], mfg: &mut ManufacturingState) {
                 count,
                 work_per_unit,
             } => {
-                mfg.set_destination(training_system, ProductionArea::of(kind), target_system);
+                mfg.set_destination(
+                    training_system,
+                    ProductionArea::of(kind),
+                    crate::manufacturing::Destination::System(target_system),
+                );
                 for _ in 0..count {
                     mfg.enqueue(training_system, QueueItem::new(kind, work_per_unit));
                 }
@@ -701,7 +741,12 @@ fn queued_for(
         .queues()
         .iter()
         .flat_map(|((system, _), queue)| queue.items().iter().map(move |item| (*system, item)))
-        .filter(|(system, item)| item.destination.unwrap_or(*system) == site && wanted(item.kind))
+        .filter(|(system, item)| {
+            item.destination
+                .unwrap_or(crate::manufacturing::Destination::System(*system))
+                == crate::manufacturing::Destination::System(site)
+                && wanted(item.kind)
+        })
         .count();
     u32::try_from(count).unwrap_or(u32::MAX)
 }
@@ -814,10 +859,9 @@ fn find_training_system(
 
         // A training facility is a non-shipyard manufacturing facility.
         let has_training = sys.manufacturing_facilities.iter().any(|mfk| {
-            world
-                .manufacturing_facilities
-                .get(*mfk)
-                .is_some_and(|f| f.side == crate::dat::Faction::of_alliance(player_is_alliance) && !f.is_shipyard)
+            world.manufacturing_facilities.get(*mfk).is_some_and(|f| {
+                f.side == crate::dat::Faction::of_alliance(player_is_alliance) && !f.is_shipyard
+            })
         });
 
         if has_training {
@@ -857,7 +901,9 @@ fn find_production_facility_class(
     world
         .production_facilities
         .iter()
-        .find(|(_, f)| f.side == crate::dat::Faction::of_alliance(player_is_alliance) && f.is_mine == want_mine)
+        .find(|(_, f)| {
+            f.side == crate::dat::Faction::of_alliance(player_is_alliance) && f.is_mine == want_mine
+        })
         .map(|(_, facility)| FacilityBuild {
             class: facility.class_dat_id,
             is_alliance: player_is_alliance,
@@ -878,6 +924,23 @@ mod tests {
         ControlKind, GameWorld, ManufacturingFacilityInstance, ProductionFacilityInstance, System,
         TroopUnit,
     };
+
+    /// One step per running module: `FUN_00439a10` runs one module a step
+    /// (state 4 returns 1 after it), so each running module runs once.
+    fn run_modules(
+        agent: &mut PlayerAgent,
+        world: &GameWorld,
+        mfg: &ManufacturingState,
+        economy: &EconomyState,
+    ) -> Vec<AgentOrder> {
+        let running = [AutomationModule::Production, AutomationModule::Garrisons]
+            .into_iter()
+            .filter(|&module| agent.is_running(module))
+            .count();
+        (0..running)
+            .filter_map(|_| agent.step(world, mfg, economy, true))
+            .collect()
+    }
 
     // Helper: create a minimal GameWorld with one system.
     fn minimal_world(
@@ -1176,7 +1239,7 @@ mod tests {
         // FUN_00439a10: only dispatches Ready modules.
         let mut agent = PlayerAgent::new(); // both Suspended
         let (world, _sys_key, eco, mfg) = minimal_world(true);
-        let orders = agent.advance(&world, &mfg, &eco, true);
+        let orders = run_modules(&mut agent, &world, &mfg, &eco);
         assert!(orders.is_empty());
     }
 
@@ -1203,7 +1266,7 @@ mod tests {
         agent.toggle(AutomationModule::Production); // turn ON
         agent.advisor_flags.take();
 
-        let orders = agent.advance(&world, &mfg, &eco, true);
+        let orders = run_modules(&mut agent, &world, &mfg, &eco);
         assert_eq!(orders.len(), 1);
         match &orders[0] {
             AgentOrder::BuildFacility { kind, .. } => {
@@ -1240,7 +1303,7 @@ mod tests {
         agent.toggle(AutomationModule::Production);
         agent.advisor_flags.take();
 
-        let orders = agent.advance(&world, &mfg, &eco, true);
+        let orders = run_modules(&mut agent, &world, &mfg, &eco);
         assert_eq!(orders.len(), 1);
         match &orders[0] {
             AgentOrder::BuildFacility { kind, .. } => {
@@ -1271,7 +1334,7 @@ mod tests {
         let mut agent = PlayerAgent::new();
         agent.toggle(AutomationModule::Production);
 
-        let orders = agent.advance(&world, &mfg, &eco, true);
+        let orders = run_modules(&mut agent, &world, &mfg, &eco);
         let AgentOrder::BuildFacility {
             system,
             destination,
@@ -1282,13 +1345,10 @@ mod tests {
             panic!("expected BuildFacility order");
         };
         assert_eq!((system, destination), (sys_key, sys_key));
-        mfg.enqueue(
-            system,
-            crate::manufacturing::QueueItem::new(kind, work),
-        );
+        mfg.enqueue(system, crate::manufacturing::QueueItem::new(kind, work));
 
         // Three facilities, built or queued, fill the three energy slots.
-        assert!(agent.advance(&world, &mfg, &eco, true).is_empty());
+        assert!(run_modules(&mut agent, &world, &mfg, &eco).is_empty());
     }
 
     #[test]
@@ -1314,10 +1374,11 @@ mod tests {
             .iter()
             .map(|item| item.destination)
             .collect();
-        assert_eq!(queued, [Some(target), Some(target)]);
+        let to_target = crate::manufacturing::Destination::System(target);
+        assert_eq!(queued, [Some(to_target), Some(to_target)]);
         assert_eq!(
             mfg.destination(yard, crate::manufacturing::ProductionArea::TrainingFacility),
-            Some(target)
+            Some(to_target)
         );
     }
 
@@ -1337,7 +1398,7 @@ mod tests {
         );
         let mut agent = PlayerAgent::new();
         agent.toggle(AutomationModule::Garrisons);
-        let orders = agent.advance(&world, &mfg, &eco, true);
+        let orders = run_modules(&mut agent, &world, &mfg, &eco);
         let AgentOrder::TrainTroops {
             count,
             training_system,
@@ -1355,10 +1416,10 @@ mod tests {
                     BuildableKind::Troop(world.troops[troop].class_dat_id),
                     15,
                 )
-                .delivered_to(target_system),
+                .delivered_to(crate::manufacturing::Destination::System(target_system)),
             );
         }
-        assert!(agent.advance(&world, &mfg, &eco, true).is_empty());
+        assert!(run_modules(&mut agent, &world, &mfg, &eco).is_empty());
     }
 
     // -----------------------------------------------------------------
@@ -1428,7 +1489,7 @@ mod tests {
         agent.toggle(AutomationModule::Garrisons);
         agent.advisor_flags.take();
 
-        let orders = agent.advance(&world, &mfg, &eco, true);
+        let orders = run_modules(&mut agent, &world, &mfg, &eco);
         assert_eq!(orders.len(), 1);
         match &orders[0] {
             AgentOrder::TrainTroops {
@@ -1454,7 +1515,7 @@ mod tests {
         for mine in [true, true, false, false] {
             add_production_facility(&mut world, sys_key, true, mine);
         }
-        let orders = producing().advance(&world, &mfg, &eco, true);
+        let orders = run_modules(&mut producing(), &world, &mfg, &eco);
         assert_eq!(built(&orders), Some((sys_key, sys_key, false)));
     }
 
@@ -1480,7 +1541,7 @@ mod tests {
         for _ in 0..2 {
             mfg.enqueue(open, item());
         }
-        let orders = producing().advance(&world, &mfg, &eco, true);
+        let orders = run_modules(&mut producing(), &world, &mfg, &eco);
         assert_eq!(built(&orders), Some((open, site, false)));
     }
 
@@ -1505,10 +1566,10 @@ mod tests {
                 30,
             ),
         );
-        assert!(producing().advance(&world, &mfg, &eco, true).is_empty());
+        assert!(run_modules(&mut producing(), &world, &mfg, &eco).is_empty());
         world.systems[sys_key].raw_materials = 3;
         assert_eq!(
-            built(&producing().advance(&world, &mfg, &eco, true)),
+            built(&run_modules(&mut producing(), &world, &mfg, &eco)),
             Some((sys_key, sys_key, true))
         );
     }
@@ -1523,7 +1584,7 @@ mod tests {
         }
         world.systems[sys_key].raw_materials = 2;
         assert_eq!(
-            built(&producing().advance(&world, &mfg, &eco, true)),
+            built(&run_modules(&mut producing(), &world, &mfg, &eco)),
             Some((sys_key, sys_key, false))
         );
     }
@@ -1544,7 +1605,7 @@ mod tests {
                 15,
             ),
         );
-        assert!(built(&producing().advance(&world, &mfg, &eco, true)).is_some());
+        assert!(built(&run_modules(&mut producing(), &world, &mfg, &eco)).is_some());
     }
 
     /// FUN_004c7650 sorts by deficit: the larger wins wherever it is
@@ -1557,7 +1618,8 @@ mod tests {
         let second = add_system(&mut world, first);
         requires(&mut eco, first, 3);
         requires(&mut eco, second, 3);
-        let target = |eco: &EconomyState| match garrisoning().advance(&world, &mfg, eco, true)[..] {
+        let target = |eco: &EconomyState| match run_modules(&mut garrisoning(), &world, &mfg, eco)[..]
+        {
             [AgentOrder::TrainTroops { target_system, .. }] => target_system,
             ref other => panic!("expected one TrainTroops order: {other:?}"),
         };
@@ -1602,7 +1664,7 @@ mod tests {
         requires(&mut eco, destroyed, 5);
         requires(&mut eco, yard, 3);
 
-        let orders = garrisoning().advance(&world, &mfg, &eco, true);
+        let orders = run_modules(&mut garrisoning(), &world, &mfg, &eco);
         assert_eq!(
             orders,
             [AgentOrder::TrainTroops {
@@ -1619,9 +1681,12 @@ mod tests {
     // One cycle — FUN_00439a10, FUN_004cc990
     // -----------------------------------------------------------------
 
-    /// Each running module issues its order in a cycle, and a module that
-    /// ran returns to state 0 (FUN_00439a10). port: two modules of one order
-    /// each never reach the cycle's cap of 5, so the cap does not bind.
+    /// Each running module issues its order at its own step, and a module
+    /// that ran returns to state 0: state 4 runs one module a step
+    /// (FUN_00439a10.c:60-61), and the next step's state 6 readies every
+    /// module again (FUN_00439a10.c:73-87, FUN_004cc990), so each module is
+    /// checked after its own step. port: two modules of one order each never
+    /// reach the cap of 5, so the cap does not bind.
     #[test]
     fn each_running_module_issues_one_order_and_returns_to_state_zero() {
         let (mut world, sys_key, mut eco, mfg) = minimal_world(true);
@@ -1640,15 +1705,11 @@ mod tests {
         let mut agent = PlayerAgent::new();
         agent.toggle(AutomationModule::Production);
         agent.toggle(AutomationModule::Garrisons);
-        let orders = agent.advance(&world, &mfg, &eco, true);
-        assert!(matches!(
-            orders.as_slice(),
-            [
-                AgentOrder::BuildFacility { .. },
-                AgentOrder::TrainTroops { .. }
-            ]
-        ));
+        let first = agent.step(&world, &mfg, &eco, true);
+        assert!(matches!(first, Some(AgentOrder::BuildFacility { .. })));
         assert_eq!(agent.production_state, ModuleState::Disabled);
+        let second = agent.step(&world, &mfg, &eco, true);
+        assert!(matches!(second, Some(AgentOrder::TrainTroops { .. })));
         assert_eq!(agent.garrison_state, ModuleState::Disabled);
     }
 
@@ -1671,7 +1732,7 @@ mod tests {
 
         let mut agent = PlayerAgent::new();
         agent.toggle(AutomationModule::Garrisons);
-        let orders = agent.advance(&world, &mfg, &eco, true);
+        let orders = run_modules(&mut agent, &world, &mfg, &eco);
         assert!(matches!(
             orders.as_slice(),
             [AgentOrder::TrainTroops { .. }]
@@ -1686,7 +1747,7 @@ mod tests {
     /// The agent produces identical output given identical input.
     /// No RNG is involved in the decision logic.
     #[test]
-    fn advance_is_deterministic() {
+    fn a_step_is_deterministic() {
         let (mut world, sys_key, mut eco, mfg) = minimal_world(true);
         add_production_facility(&mut world, sys_key, true, true);
         add_production_facility(&mut world, sys_key, true, false);
@@ -1705,7 +1766,7 @@ mod tests {
             agent.toggle(AutomationModule::Production);
             agent.toggle(AutomationModule::Garrisons);
             agent.advisor_flags.take();
-            agent.advance(&world, &mfg, &eco, true)
+            run_modules(agent, &world, &mfg, &eco)
         };
 
         let mut a = PlayerAgent::new();

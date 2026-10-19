@@ -359,7 +359,7 @@ ready-signal, or screenshot timeout may retry once in another fresh process;
 the result retains both attempts and both cleanup records. Pixel, state,
 request, console, and other product assertions never retry.
 Tactical controls and images still have no lossless original-game baselines. See the
-[standalone battle plan](../../docs/plans/2026-09-12-tooling-standalone-space-battle-launcher.md).
+[standalone battle plan](../../docs/plans/archive/2026-09-12-tooling-standalone-space-battle-launcher.md).
 
 The PNG comparison directory contains *implementation regression* baselines,
 not original-game truth. `--update-goldens` creates only missing implementation
@@ -380,4 +380,4 @@ the initial frame once each state has its own reviewed original reference and
 implementation regression baseline. Until then their comparison is recorded as
 `unbaselined`, not an assertion of visual fidelity.
 See the [interface audit](../../docs/qa/2026-09-10-interface-parity-audit/README.md)
-and the [execution sidecar](../../docs/plans/2026-09-11-tooling-interface-parity-acceleration-sidecar.md).
+and the [execution sidecar](../../docs/plans/archive/2026-09-11-tooling-interface-parity-acceleration-sidecar.md).

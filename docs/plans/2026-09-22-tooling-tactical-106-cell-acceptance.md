@@ -3,19 +3,31 @@ title: "Tactical 106-Cell Acceptance Train"
 description: "Final local commit train for a runnable and honestly accepted TAC-01 through TAC-07 parity matrix"
 category: plan
 created: 2026-09-22
-updated: 2026-10-14
 tags: [interface, parity, tactical, browser, evidence, testing]
-status: in_progress
+status: active
+progress: "57% — C1, C2, C5 and C6 landed (A0 sourced for all 106; C6 pass 11, fail 66, not-run 28, settled 1); C3, C4 and C7 open; strict acceptance 11 of 106"
+updated: 2026-10-15
 ---
 
 # Tactical 106-Cell Acceptance Train
 
-This is the final acceptance companion to the
-[Standalone Space-Battle Test Launcher](2026-09-12-tooling-standalone-space-battle-launcher.md).
-It scopes the local commit set that makes every `TAC-01` through `TAC-07`
-acceptance cell executable, compares the reconstruction with authoritative
-original-game evidence, closes remaining production behavior, and produces one
-auditable 106-cell verdict before the commits are pushed together.
+This is the space-battle completion plan. It makes every `TAC-01` through
+`TAC-07` acceptance cell executable, compares the reconstruction with
+authoritative original-game evidence, closes remaining production behavior,
+and produces one auditable 106-cell verdict. It is the evidence record and the
+C6/C7 gate; the open fixes themselves are br nodes under epic `or-ep-tac-x15`
+(`agent_docs/task-graph.md`).
+
+On 2026-10-15 it absorbed two archived plans. The
+[Standalone Space-Battle Test Launcher](archive/2026-09-12-tooling-standalone-space-battle-launcher.md)
+built the launcher (T0 to T2, documented in the
+[launcher reference](../reference/space-battle-launcher/README.md)); its T3 to
+T5 were this plan's C3, C4 and C7. The
+[Tactical 3D Asset Pipeline](archive/2026-09-12-feat-tactical-3d-asset-pipeline.md)
+is implemented through P58-B22 (inventory in the
+[asset library](../reference/asset-library/space-battle.md)); its remaining A0
+view gates are `or-acc-aperture-z66`, `or-q-ship-texture-binding-auqo` and
+`or-q-tac-scene-effects-597`.
 
 The 640×480 original composition remains authoritative. Enhanced widescreen is
 a later modernization track and is not part of this denominator.
@@ -105,8 +117,8 @@ timestamp, and artifact SHA-256. The captured game client must be exactly
 
 ## Local commit set
 
-The commits remain local until the final push gate. Each commit is independently
-reviewable and must leave all existing focused tests green.
+Each commit is independently reviewable and must leave all existing focused
+tests green. The push rule below governs when they reach `main`.
 
 ### C1. Define and validate the 106-cell matrix
 
@@ -631,6 +643,13 @@ captured remains `reference-needed` and blocks the completion push.
 Gate: native tests and packaged-WASM journeys agree on state and action traces;
 no fixture-only mutation is credited as functioning behavior.
 
+Owners: the C6 failures behind this list are br acceptance nodes, which carry
+the current done-when: `or-acc-aperture-z66` (space view), `or-acc-control-h6c`,
+`or-acc-fighter-strip-239`, `or-acc-laser-5x5`, `or-acc-minor-eqh`,
+`or-acc-missions-bvi`, `or-acc-orders-4m8`, `or-acc-pause-1ol`,
+`or-acc-status-2ls`, `or-acc-taskforce-0oy` and `or-cell-tac-05-c023-in8`.
+Where a bullet here and a node disagree, the node wins.
+
 ### C4. Close `TAC-06` and `TAC-07` outcomes
 
 - Restore the authentic Game Options destination used from Battle Options.
@@ -646,6 +665,12 @@ no fixture-only mutation is credited as functioning behavior.
 
 Gate: both factions, victory/loss/draw/withdraw, partial and total losses,
 Death Star outcomes, and return destinations preserve exact strategic state.
+
+Owners: `or-acc-options-cn9`, `or-acc-results-dlw`, `or-f-state-trace-nqa`,
+`or-f-strategy-after-pwn` and `or-f-death-star-rdq`. The 28 not-run cells need
+their A1 fixtures: `or-acc-not-run-tdj`, `or-f-alliance-transit-xxn`,
+`or-f-sixteen-tie-c43` and `or-f-yaga-variants-4qf`. Audio comparison is
+`or-f-audio-rrp` (deferred).
 
 ### C5. Map deterministic A1 journeys to all 106 cells
 
@@ -734,7 +759,9 @@ findings, no missing authoritative evidence, and no open tactical release gate.
 
 ## Final command contract
 
-The implementation will expose one documented orchestration command that:
+Not built yet: `run.mjs`, `ingest-tactical-a0.mjs` and
+`tactical-a0-compare.mjs` still run as separate steps. The implementation will
+expose one documented orchestration command that:
 
 1. validates the local A0 manifest and exact 106-cell denominator;
 2. builds production and fixture artifacts;
@@ -750,14 +777,17 @@ Strict mode requires both `106/106 runnable` and `106/106 accepted`.
 
 ## Push rule
 
-The next tactical push may contain C1 through C7 as separate local commits.
-Push them together only after the strict command passes, documentation matches
-the generated result, the independent review has no P0/P1 finding, and
-`HEAD` contains no original-game media or fixture path in production artifacts.
+Tactical work pushes in verified batches with the repository's normal
+commit cadence; C1, C2, C5 and C6 already reached `main` (1a0eaeec, a76109b8)
+with 11 of 106 cells passing. Every push reports the measured C6 verdict as it
+stands, carries no original-game media or fixture path in production
+artifacts, and claims no cell the comparison did not pass.
 
-If any original state cannot be captured or any parity row fails, retain the
-local commits, leave that cell open, and report the exact blocker. Do not call
-the launcher 100% complete and do not push a fabricated 106/106 result.
+The completion claim is separate: call the space battle complete only after
+the strict command passes at 106/106, documentation matches the generated
+result, and the independent review has no P0/P1 finding. If any original state
+cannot be captured or any row fails, leave that cell open and report the exact
+blocker. Never push a fabricated 106/106 result.
 
 ## Definition of done
 
@@ -771,4 +801,4 @@ the launcher 100% complete and do not push a fabricated 106/106 result.
 - Test-only fixtures are absent from production HTML and WASM.
 - No proprietary original-game artifact is committed.
 - The audits and roadmap report 106/106 from generated evidence.
-- The complete local commit train is pushed to `main` as one verified batch.
+- The verdict that reaches `main` is the generated strict 106/106 result.

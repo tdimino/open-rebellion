@@ -1,3 +1,11 @@
+---
+title: "Strategic Windowing Toolkit Implementation Plan"
+created: 2026-10-10
+status: active
+progress: "44% — tasks 0-5B merged (d174b9be); PR #45 (9533b516) migrated the Fleet family: its share of 7A-7C, capture cancellation including focus loss; task 6 Sector next"
+updated: 2026-10-15
+---
+
 # Strategic Windowing Toolkit Implementation Plan
 
 > **For future implementers:** Execute the reviewed plan task-by-task using the applicable implementation workflow. This document does not authorize implementation or delegation. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -6,7 +14,12 @@
 2026-10-12 combined routing/coordinator slice implements Task 4 and the shared
 coordinator, router, holds, and legacy gate from Task 5B in one review unit.
 Backend event normalization finishes alongside feature-family migration,
-beginning with Task 6 after that gate lands.
+beginning with Task 6 after that gate lands. PR #45 (`9533b516`) migrated the
+Fleet family ahead of Task 6: stable kind/system identity, manager-committed
+content, rail restore by `WindowId`, drag capture with cancellation on modal,
+hold and focus loss (browser blur and macOS `isActive`), and per-key Rename
+routing. Sector, System, Defenses and Missions remain retained legacy windows,
+muted under strategic modals. Task 6 is next.
 
 **Baseline:** Inspected worktree `/data/tmp/open-rebellion-strategic-window-modality-focus`, commit `f0648ef0e6b1f832a9f7643ccd6321e9f7ea5b52`. Revalidate before execution.
 

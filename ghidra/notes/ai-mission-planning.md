@@ -38,6 +38,13 @@ The order's mission slots are:
   - `0x40/0x92` and `0x40/0x93` for target checks
   - `1/0x28` for a target on the wrong side
 
+Registry-B commands are a separate id list (`FUN_0054f140`, table
+`0x6b92f8`), so command `0x250` is not order `0x250` (Abort,
+`ai-order-emission.md`). The command's id getter sits at slot `+0x24`, not
+`+0xc`. The linker merged identical `mov eax,imm; ret` getters: `0x54cfb0`
+returns `0x250` for both the Abort order and this command, so only the
+vtable slot it occupies identifies the class.
+
 Command `0x250` executes in `FUN_0054d360`, which calls `FUN_00542b60` and
 then `FUN_0054bb90(src, team, decoys, ...)`. `FUN_0054c200` then adds the
 team with `as_decoy = 0` and the decoys with `as_decoy = 1`
@@ -122,7 +129,11 @@ The state is at `+0x1c` and the flags are at `+0x20`.
 - the team is taken from planner `+0x3c` (slot `+0x24`);
 - the decoys are taken from planner `+0x44` (into order `+0x58`, `FUN_004f43b0`);
 - each member is kept only when its record's `+0x30` has none of the bits `0x74000f1`, and it is then marked with `0x4000`;
-- the target is taken from planner `+0x2c`;
+- the target is taken from planner `+0x30` (the order's slot `+0x2c`,
+  `FUN_0047b360.c:48`);
+- the mission record id is taken from planner `+0x2c` into order `+0x4c`
+  (`:49`); each planner's constructor sets it, e.g. Diplomacy's `0x51000010`
+  (`FUN_00481460.c:16-18`);
 - planner `+0x18` is copied into order `+0x44`.
 
 The AI moves decoys to the target before it sends the order, the same as the
@@ -281,11 +292,28 @@ Bits `0x40`, `0x10` and the rank bits are set for characters only.
 `0x8000000` marks the object as reserved:
 - when it is legal for a Research record (capability `0x800`, `0x1000`,
   `0x2000`) and the controller's bit `0x2000000`, `0x4000000`, or
-  `0x8000000` is clear. Those bits start clear and are set by
-  `FUN_004198a0`, `FUN_00419870`, and `FUN_004197b0` when a callback's
-  argument matches the controller's research targets at `+0x140..+0x148`;
-  when that fires is untraced. The shipped Research records take every
-  character and no special force.
+  `0x8000000` is clear: the ship, troop and facility trees. The shipped
+  Research records take every character and no special force, so every
+  character is reserved until all three trees are finished.
+  - The bits start clear (constructor `FUN_004178f0`); a load restores them
+    (`FUN_00417cf0`), and nothing clears them.
+  - `FUN_004198a0` (ships), `FUN_00419870` (troops) and `FUN_004197b0`
+    (facilities) set one when a research level-change event (ids `0x125`,
+    `0x126`, `0x127`, registered in `FUN_0041e580`; param 1 the old level,
+    param 2 the new) brings the new level to the target at `+0x140`,
+    `+0x144` or `+0x148`. They are reached through thunks `0x485f20`,
+    `0x485f00` and `0x485ee0` (vtable `0x65abf0`, slots `+0xf4`, `+0xf0`,
+    `+0xec`). The events come from the level setters (`FUN_0052f280`
+    ships and its siblings) through `FUN_005400f0` and are delivered in the
+    scheduler's phase 5.
+  - The targets are fields of the sub-object at `+0x138` (constructor
+    `FUN_0042dc10` zeroes them). `FUN_0042dd00`, run from `FUN_00417cf0`,
+    sets each to the highest research order (class `+0x24`) among its
+    tree's classes: the side's families `0x14`-`0x1b` and `0x1c`-`0x1f`
+    for ships, the side's `0x10`-`0x13` for troops, and every class of
+    `0x22`-`0x2b` for facilities. They come from the DAT and are not saved.
+  - hyp: which listener receives an event (the owning side's controller
+    or both) is untraced; the event carries its side (`FUN_005400f0`).
 - when it is Diplomacy-capable and its diplomacy is above 79.
 
 **Skills at `+0x40`..`+0x5c`** are the eight effective skills, read through
@@ -392,10 +420,10 @@ original as follows:
   and the order keeps only the members standing with its first (the
   original gathers them in state 7);
 - port: a plan with no team keeps no decoys, and a member one plan sends is
-  not taken by the next in the same evaluation;
+  not taken by the next in the same round;
 - port: the tie draws come from a stream seeded by the day and the side;
-- hyp: the posture that sets `+0xbc` is not ported, so the four posture-cap
-  kinds take one decoy;
+- hyp: the planners read no regional record's `+0xbc` (posture slot 6 is
+  ported in `ai_regions.rs`), so the four posture-cap kinds take one decoy;
 - hyp: the controller's leader and research bits are read as clear, their
   constructor values, so the four leaders stay off Incite, Rescue, Sabotage,
   Assassination, and DS Sabotage teams, and every character legal for
@@ -408,8 +436,7 @@ original as follows:
 
 - What sets side `+0x318`/`+0x31c`, the strategic choice of mission.
 - The posture (`FUN_00478000`, `FUN_004b7150`) and its sector bits.
-- When the controller's research bits (`FUN_004198a0`, `FUN_00419870`,
-  `FUN_004197b0`) and leader bit (`FUN_004182a0`) are set.
+- When the controller's leader bit (`FUN_004182a0`) is set.
 - Whether the per-system record's `+0x34` is a DatId or coordinates.
 
 ## Supporting decompiles
@@ -431,4 +458,7 @@ original as follows:
 `FUN_004024d0`, `FUN_004025f0`, `FUN_00402e80`, `FUN_004ed1c0`,
 `FUN_004ed1e0`, `FUN_004ed200`, `FUN_005f4960`, `FUN_00478000`,
 `FUN_004b7150`, `FUN_004762b0`, `FUN_00419870`, `FUN_005830a0`,
-`FUN_00582fb0`, `FUN_00583320`, `FUN_00523450`.
+`FUN_00582fb0`, `FUN_00583320`, `FUN_00523450`, `FUN_004198a0`,
+`FUN_004197b0`, `FUN_0042dc10`, `FUN_0042dc80`, `FUN_0042dcc0`,
+`FUN_0042dd00`, `FUN_0042e3b0`, `FUN_0043e4c0`, `FUN_00417800`,
+`FUN_005400f0`, `FUN_0041e580`.

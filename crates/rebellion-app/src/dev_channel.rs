@@ -64,7 +64,11 @@ impl DevChannel {
             .map(PathBuf::from);
         let evidence = std::env::var_os("OPEN_REBELLION_EVIDENCE")
             .map(PathBuf::from)
-            .or_else(|| inbox.as_ref().and_then(|p| p.parent().map(Path::to_path_buf)))
+            .or_else(|| {
+                inbox
+                    .as_ref()
+                    .and_then(|p| p.parent().map(Path::to_path_buf))
+            })
             .unwrap_or_else(|| PathBuf::from("."));
         let out = inbox.as_ref().and_then(|inbox| {
             let path = inbox.with_extension("out");
@@ -131,7 +135,10 @@ impl DevChannel {
         };
         let len = file.metadata().map_or(0, |meta| meta.len());
         if len < self.offset {
-            eprintln!("[dev-channel] {} shrank; reading from its start", path.display());
+            eprintln!(
+                "[dev-channel] {} shrank; reading from its start",
+                path.display()
+            );
             self.offset = 0;
             self.partial.clear();
             self.discarding = false;
@@ -163,7 +170,13 @@ impl DevChannel {
             self.next_seq += 1;
             match std::str::from_utf8(raw) {
                 _ if raw.len() > MAX_LINE => {
-                    self.answer(seq, "", "refused", &format!("line over {MAX_LINE} bytes"), None);
+                    self.answer(
+                        seq,
+                        "",
+                        "refused",
+                        &format!("line over {MAX_LINE} bytes"),
+                        None,
+                    );
                 }
                 Err(_) => self.answer(seq, "", "refused", "line is not UTF-8", None),
                 Ok(line) => {
@@ -181,7 +194,13 @@ impl DevChannel {
             self.next_seq += 1;
             self.partial.clear();
             self.discarding = true;
-            self.answer(seq, "", "refused", &format!("line over {MAX_LINE} bytes"), None);
+            self.answer(
+                seq,
+                "",
+                "refused",
+                &format!("line over {MAX_LINE} bytes"),
+                None,
+            );
         }
         lines
     }

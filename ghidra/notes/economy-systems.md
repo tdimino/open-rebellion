@@ -219,34 +219,24 @@ Blockade ends when the hostile fleet is destroyed, withdraws, or the system chan
 
 ## 5. Combat Unit Repair
 
-### CombatUnitFastRepair
+Damage, the damaged and under-repair flags, the fast-repair flag, the repair
+timer `0x380` and its step are in `ship-damage-repair.md`. Summary:
 
-**Function**: `FUN_00512440`
-**Notif**: `SystemCombatUnitFastRepairNotif` / `CombatUnitFastRepair`
-**Pattern**: `FUN_004f8880` — 1-entity param, no event ID registered.
-
-This is a state toggle notification: it fires when a combat unit at a system transitions into or out of "fast repair" mode. No event ID means it is not visible to the scripted event system—it is a UI/production feedback notification only.
-
-### CombatUnitUnderRepair
-
-Not found as a separate notif function. `CombatUnitFastRepair` is likely the only repair-state notif, covering both entry into and exit from fast-repair. The distinction between "fast" and normal repair is:
-- **Normal repair**: happens automatically each turn at any system the unit is stationed at.
-- **Fast repair**: triggered when specific GNPRTB conditions are met, accelerating recovery.
-
-### Repair Rate and GNPRTB Parameters
-
-`FUN_00511300` (FUN_00511300.c) is the production/repair eligibility checker. It calls:
-- `FUN_0050c0b0`, `FUN_0050bbb0`, `FUN_0050c180`, `FUN_0050c1b0`, `FUN_0050c1e0` — five sequential checks, all must return non-zero.
-- `FUN_0050b310` — sixth check.
-- If all six pass AND `param_1 != 0` (repair mode active): additional manufacturing capacity checks via `FUN_0050ce20(this, 0, 1/2/3)` and `FUN_0050ce50(this, 0, 1/2/3)`.
-- Final gate: `*(byte*)(this + 0x88) & 0x20` — a specific flag at offset `+0x88`, bit 5. This is likely the "has shipyard" or "repair dock present" flag.
-- If shipyard present, `FUN_00509890` gets the GNPRTB repair parameter and `FUN_0050ce80` applies it.
-
-**Repair-related GNPRTB parameters** (IDs in the 0x0a00 range, general parameter table):
-- From `FUN_0053f9c0(0x305, ...)` and `FUN_0053fa60(0x386, ...)` called at the end of `FUN_00511300`: parameter `0x305` (773 decimal) and `0x386` (902 decimal) are repair or production rate modifiers. These are beyond the 26 documented general GNPRTB parameters—they belong to a higher ID range.
-
-**Which units can be repaired**:
-Not traced: which object families `FUN_00511300` repairs. The families are `CAPSHPSD` `0x14` (capital ships) and `0x18` (the Death Star), `FIGHTSD` `0x1c` (fighter squadrons) and `TROOPSD` `0x10` (regiments).
+- `sys+0x88` bit 10 (`0x400`) is set by `FUN_0050bb70` → `FUN_0050a820` when the
+  system's shipyard producer counts a yard (`FUN_00528040(producer, 0) != 0`);
+  hyp: the setter's notification slot `+0x234` is
+  `SystemCombatUnitFastRepairNotif` (`FUN_00512440`). `sys+0x88` bit 5 is the
+  blockade bit (`blockade-bit.md`).
+- A damaged usable capital ship carries `+0x5c` bit 0 (under repair,
+  `CombatUnitUnderRepairNotif`, `FUN_00557c60`); it carries bit 1 (fast repair,
+  `CombatUnitFastRepairNotif`, `FUN_00557ca0`) while its system has the flag and
+  the same side.
+- Timer `0x380` repairs every GNPRTB `0x805` (shipped 30) days, every GNPRTB
+  `0x804` (shipped 2) days with bit 1: one tenth of the maximum hull, and one
+  damage counter with probability damage control percent.
+- `FUN_00511300` calls `FUN_0053f9c0(0x305, ...)` and `FUN_0053fa60(0x386,
+  ...)`: `0x305` is an event id and `0x386` a timer id (`timer-scheduler.md`).
+  hyp: it is a permission check on a state change.
 
 ---
 
@@ -412,7 +402,8 @@ Consolidated from all setter functions:
 | `+0x70` | 112 | `int` | field (likely `smuggling_percent` or `troop_withdraw_percent`) |
 | `+0x74` | 116 | `int` | field (likely `troop_reg_surplus` or `base_loyalty_modifier`, 0–100) |
 | `+0x88` bit 0 | — | `bit` | `is_populated` (gate for loyalty changes) |
-| `+0x88` bit 5 | — | `bit` | `has_repair_dock` / `has_shipyard` (gate for fast repair) |
+| `+0x88` bit 5 | — | `bit` | blockade (`blockade-bit.md`) |
+| `+0x88` bit 10 | — | `bit` | the shipyard producer counts a yard: fast repair (`ship-damage-repair.md`) |
 
 **vtable entries for CStarSystem setters** (inferred from sequential layout):
 

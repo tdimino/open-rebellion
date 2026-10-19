@@ -1,150 +1,134 @@
 ---
 title: "AI Parity Tracker"
-description: "Comprehensive mapping of original REBEXE.EXE AI functions to Open Rebellion implementation status"
+description: "Module-by-module map of the original computer player (14 task modules and the strategy controller) to the port's code, with the port heuristics that still stand in for untraced original mechanisms"
 category: "agent-docs"
 created: 2026-03-21
-updated: 2026-09-10
-tags: [ai, parity, ghidra, fleet-deployment]
+updated: 2026-10-16
+tags: [ai, parity, ghidra, modules, controller, production, fleet-tasks, character-tasks]
 ---
 
 # AI Parity Tracker
 
-Maps every decompiled AI function from the original REBEXE.EXE to our Rust implementation. Each row documents: original behavior, our implementation, status, and whether we deviate/augment.
-
-Updated 2026-09-10. The function map is cross-referenced against Ghidra RE,
-the community disassembly report, and current Rust. F-007E keeps long-running
-campaign balance open even where an individual function mapping is complete.
+Maps the original REBEXE.EXE computer player to the port. Order-by-order
+detail lives in `ghidra/notes/ai-order-emission.md`; this page tracks status.
 
 ## Status Key
 
 | Status | Meaning |
 |--------|---------|
-| **DONE** | Faithfully ported, behavior matches original |
-| **FAITHFUL** | Intentionally matches original (even if the original was flawed) |
-| **AUGMENTED** | Ported + improved beyond original. Original behavior available via config. |
-| **PARTIAL** | Some aspects ported, others missing |
-| **MISSING** | Not yet implemented |
+| **DONE** | Ported from the notes; remaining untraced items are listed in the notes' "Open" sections |
+| **PARTIAL** | Ported in part; the gap is named in the row |
+| **MISSING** | No port |
 
-## Core AI Pipeline (6 Functions)
+Tags in code and notes: `hyp:` is a reading the decompile does not settle,
+`port:` is an invention or a simplification still to be replaced.
 
-| # | Original Function | Lines | Purpose | Our Code | Status | Notes |
-|---|---|---|---|---|---|---|
-| 1 | `FUN_00519d00` | 252 | Galaxy-wide system bucketing into 7 categories | `evaluate_galaxy_state()` ai.rs | DONE | 7 buckets + control_ratio + aggression scaling |
-| 2 | `FUN_00537180` | 381 | Primary system-level entity deployment | `evaluate_fleet_deployment()` ai.rs | PARTIAL | Per-fleet scoring and bounded dispatch work, but the five-seed F-007E gate still shows strong Empire bias and insufficient battle spread. |
-| 3 | `FUN_005385f0` | 252 | Secondary deployment pass (redistribution) | Pass 2 in `evaluate_fleet_deployment()` ai.rs | AUGMENTED | Original calls FUN_0052e970 (capacity check) + FUN_00506ea0 (faction evaluator). Our redistribution keeps the stronger aggression model but now honors faction-specific deploy budgets (Alliance 0.6, Empire 0.8). |
-| 4 | `FUN_00502020` | 897 | Garrison strength assessment (ships+troops+fac) | `system_strength()` ai.rs | PARTIAL | Saturating approximation covers ships, troops, and facilities. Exact weighting remains unverified. |
-| 5 | `FUN_00508250` | 139 | Action validation (18 AND-chained checks) | `can_dispatch()` + `can_dispatch_to_system()` + `can_dispatch_fleet()` ai.rs | AUGMENTED | 15 of 18 checks represented (Tammuz D1). Remaining 3 (#2, #3, #4) are C++ allocation budget tracking that our per-cycle caps replace. |
-| 6 | `FUN_00520580` | 9 | Movement order issuance (2-field struct setter) | `AIAction::MoveFleet` + simulation.rs | DONE | Original is just a command setter — `*(this) = cmd_type; *(this+4) = param`. |
+## Scheduling
 
-## AI Sub-Functions (All Decoded 2026-03-23)
+The computer player (`FUN_004857a0`) builds 14 task modules for either side
+(`FUN_00485a50`: ids 13, 2, 1, 3, 6, 7, 4, 5, 8, 9, 10, 11, 12, 14) into a
+tree keyed by id (`FUN_004ec940`, `FUN_005f4f10`), so the scheduler visits
+them in ascending id, 1 to 14 (`FUN_004be980`). The
+original steps one armed module per main-loop pass, the sides taking turns
+(`FUN_0041cf20` -> `FUN_004361a0`, `FUN_00485b40`; "Scheduler and executor" in
+`ai-order-emission.md`). The port runs that round (`AISystem::round`,
+`ai_scheduler.rs`, `FUN_00485b40`) once a side per in-day step, rate+1 steps
+a day by speed (`FUN_0051dea0.c:11-30`: 5 at Fast, 13, 61 and 601), the
+Alliance first (`FUN_004361a0`), and applies each round's order at the next
+step (`FUN_00436250`). `simulation::ai_step` drives both paths: headless runs a
+day's steps after its daily stages, native spreads them over the day's frames
+(`GameClock::in_day_step`). The human player's advisor agent takes that side's
+slot (`FUN_00486500`, `FUN_00439a10`). Message `0x1f0` is handled by `FUN_004927c0`, a session
+handler, not the computer player's turn (`ghidra/notes/timer-scheduler.md`,
+"`FUN_004927c0` and message `0x1f0`").
+`FUN_00519d00` is new-game stage `0xb`, which splits the created systems into
+side lists, and runs once at setup (`ghidra/notes/ai-behavior-analysis.md`,
+section 1).
 
-| Original Function | Lines | Purpose | Our Code | Status | Ghidra Notes |
-|---|---|---|---|---|---|
-| `FUN_005597e0` | — | Faction-specific system counts | `galaxy.our_controlled.len()` etc. | DONE | — |
-| `FUN_0053e190` | — | Ratio/percentage scoring | `GalaxyState.control_ratio` + `aggression` | DONE | — |
-| `FUN_005007a0` | — | Fleet unit counting | `fleet.capital_ships.iter()` | DONE | — |
-| `FUN_005039d0` | — | Facility iteration | `sys.defense_facilities.len()` | DONE | — |
-| `FUN_00504c40` | — | Troop iteration | `sys.ground_units.iter()` | DONE | — |
-| `FUN_0052e970` | 53 | **Secondary pass capacity check** | `score_attack_target()` | AUGMENTED | **Not a scoring function.** Checks if entity (family 0x10-0x3f) fits deployment budget (`this+0x58 - this+0x5c`). Calls FUN_0053b870 (reads +0x4c = capacity). Dispatches cmd 0xf3 if room. **Our 4-factor model is superior.** |
-| `FUN_00506ea0` | 13 | Faction-specific evaluator pointer | `AiConfig::{alliance_deploy_budget, empire_deploy_budget}` + `evaluate_fleet_deployment()` | DONE | Returns evaluator from global `DAT_006b2bb0`: Alliance at +0xc4, Empire at +0xc8. Rust now mirrors this with faction-specific deployment budgets. |
-| `FUN_00508660` | 304 | Entity dispatch (10+ type handlers) | `evaluate_officers()` + `evaluate_production()` + `evaluate_research()` | DONE | Routes by family byte: fleets (0x08-0x0f), troops (0x10), capital ships (0x14, Death Star 0x18), fighters (0x1c), defense facilities (0x22-0x25), characters (0x30-0x38), special forces (0x3c). Our split into 3 functions is cleaner. |
-| `FUN_005202d0` | 39 | System pre-validation wrapper | `can_dispatch()` | DONE | Exception-handling wrapper around FUN_00520580 + FUN_0051fcb0. |
-| `FUN_004927c0` | 2098 | Master turn processing | `AISystem::advance()` | DONE | **Event-driven via message 0x1f0 (day tick).** AI evaluates every game-day, not on an interval. Our AI_TICK_INTERVAL=7 is an augmentation. |
-| `FUN_0051ab20` | — | Uprising prevention / endangered-system stabilization | `evaluate_uprising_prevention()` | AUGMENTED | Cross-reference gap is now closed. Rust sends diplomats to low-support controlled systems instead of waiting for an uprising flip. |
-| `FUN_0053b870` | 7 | Entity capacity reader | Not separate — inlined | DONE | Returns `*(entity + 0x4c)` — the entity's capacity/count field. |
-| `FUN_0050ac80` | 49 | Character placement handler | Part of `evaluate_officers()` | DONE | Faction-conditioned placement with priority checking. |
-| `FUN_0050a1b0` | 28 | Faction-conditioned entity placement | Part of `evaluate_officers()` | DONE | Checks faction match before placing entity. |
-| `FUN_0050c9f0` | 32 | Ship placement handler | Part of `evaluate_production()` | DONE | Fleet capacity check before ship placement. |
-| `FUN_0050c6c0` | 69 | Facility placement handler | Part of `evaluate_production()` | DONE | Slot iteration + nested fleet check for facility placement. |
+## Modules
 
-## Dispatch Validators — FUN_00508250 (18 AND-Chained Checks)
-
-All 18 sub-functions decompiled 2026-03-23 via Ghidra MCP. Each returns bool; all must pass (AND chain).
-
-| # | Address | Lines | Decoded Purpose | Our Status |
-|---|---------|-------|----------------|------------|
-| 1 | `FUN_0051ebb0` | 7 | **Always returns 1** (no-op gate) | DONE (elided) |
-| 2 | `FUN_0050ad60` | 13 | Capacity check: `this+0x5c < this+0x64` → validate overflow | CLOSED — per-cycle caps (`max_covert_ops_per_eval`, `max_recon_per_eval`) are the Rust equivalent of C++ allocation budget tracking. No behavioral gap. |
-| 3 | `FUN_0050ad80` | 139 | Fleet entity count vs capacity at `+0x5c` (most complex validator) | CLOSED — fleet-level checks in `can_dispatch_fleet()` cover the fleet side; per-cycle evaluation limits prevent over-dispatch. |
-| 4 | `FUN_0050b0b0` | 65 | Entity count via vtable+0x1c8 vs budget at `+0x64` | CLOSED — global deployment budget replaced by per-cycle caps + faction-specific deploy budgets (`alliance_deploy_budget=0.6`, `empire_deploy_budget=0.8`). |
-| 5 | `FUN_0050b230` | 36 | Faction check (+0x24>>6&3) + status bits (+0x88>>11) + multi-param scoring | DONE (faction gate + is_busy/on_mission checks cover status bits) |
-| 6 | `FUN_0050b2c0` | 27 | Faction check + loyalty scoring via FUN_00559c10 | DONE for population-facing actions; not applied as a military target veto |
-| 7 | `FUN_0050b310` | 73 | Ship type compatibility: fleet count + facility count + bit5 of +0x88 | DONE (alive-ship check in can_dispatch_fleet approximates compatibility) |
-| 8 | `FUN_0050b610` | 77 | Troop deployment: +0x88 bit0, troop class via FUN_0055a080 | DONE (valid-location check in can_dispatch_fleet; troops are system-level) |
-| 9 | `FUN_0050b5a0` | 33 | Faction + status bits (+0x88 bits 0,2,11) + scoring | DONE (faction + captive/mission/busy flags cover all 3 status bits) |
-| 10 | `FUN_0050b500` | 42 | Fleet composition: troop count - allocation at +0x80 | FAITHFUL (always true; troops are system-level not fleet-level) |
-| 11 | `FUN_0050ba90` | 26 | Troop iterator + boolean availability | DONE (evaluate_troop_deployment checks per-system troop counts) |
-| 12 | `FUN_0050bb70` | 15 | Ship capacity check via FUN_00528040 | DONE (empty fleets rejected + alive-ship check) |
-| 13 | `FUN_0050bc60` | 87 | Character iteration (family 4) + faction match + counting | DONE (faction match) |
-| 14 | `FUN_0050be00` | 99 | Character iteration (family 4) + mandatory mission check | DONE (on_mandatory_mission) |
-| 15 | `FUN_0050c350` | 95 | Fleet/facility nested iteration + per-entity FUN_0050c580 check | FAITHFUL (faction-ownership guaranteed by construction) |
-| 16 | `FUN_0050b8e0` | 89 | Writes the system battle (`+0x88` 0x1000), blockade (0x20), and change (0x4000) bits from both sides' presence via FUN_00509710 (`ghidra/notes/blockade-bit.md`; corrected 2026-10-02, not strength scoring) | PARTIAL: Rust scores targets and applies a per-fleet 3× force-allocation bound; the blockade bit is `BlockadeSystem::system_is_blockaded` |
-| 17 | `FUN_0050b800` | 34 | Status bits (+0x88 bits 0,2) + position check (+0x7c ≥ 0) | DONE (captive/mission checks + valid-system check) |
-| 18 | `FUN_0050bb00` | 28 | Faction + status bits + position → deployment flag | DONE (faction + is_busy + location validity) |
-
-**Summary**: All 18 checks are resolved. 15 directly ported or faithfully approximated. #2/#3/#4 CLOSED — the C++ allocation budget tracking (`+0x58`, `+0x5c`, `+0x64`) is functionally replaced by our per-cycle caps (`max_covert_ops_per_eval`, `max_recon_per_eval`, per-fleet evaluation) + faction-specific deploy budgets.
-
-## AI Behavioral Properties
-
-| Property | Original (Decoded) | Ours | Status | Decision |
+| Id | Purpose | Original | Port | Status |
 |---|---|---|---|---|
-| Map visibility | Omniscient (no fog param in any AI fn) | Omniscient (no FogState param) | FAITHFUL | — |
-| Evaluation frequency | **Every game-day** (event 0x1f0 triggers per-day) | Every 7 ticks (`AI_TICK_INTERVAL`) | AUGMENTED | Keep throttled — per-tick with 200 systems is expensive. Config flag `ai.tick_interval` exists. |
-| Target selection scope | **Binary capacity check** (FUN_0052e970: fits budget?) | Per-fleet scoring (4 weighted factors) | AUGMENTED | **Our model is superior.** Original has no scoring — just checks if entity fits deployment budget. Keep our 4-factor model. |
-| Deployment passes | Two-pass with faction-specific budgets | Two-pass with aggression scaling and faction-specific budgets | AUGMENTED | Rust now mirrors the original Alliance/Empire budget split while keeping the stronger aggression model. |
-| Garrison scoring inputs | Ships + troops + facilities via vtable dispatch | Ships + troops + facilities (simplified) | DONE | — |
-| Faction ownership encoding | 2-bit field at entity+0x24 bits 6-7 | `ControlKind` enum (4 states) | AUGMENTED | We add Contested + Uprising states (original has 3). |
-| Fleet movement model | **FUN_00520580 is just a struct setter** (not transit calc) | Euclidean distance-based | AUGMENTED | Transit calc is elsewhere in event chain. Our model is intentional upgrade. |
-| Character assignment | Family-byte routing (FUN_00508660): fleets (0x08-0x0f), troops (0x10), capital ships (0x14), fighters (0x1c), defense facilities (0x22-0x25), characters (0x30-0x38), special forces (0x3c) | Role-based (Jedi, diplomat, espionage) + production priority | AUGMENTED | Original routes by entity type. Our skill-based dispatch is cleaner. |
-| Production priority | Implicit in entity handler routing order | Capital ships > fighters > yards > troops > defenses | AUGMENTED | Original doesn't have explicit priority — it handles whatever entity type the iterator yields. |
-| Faction-specific budgets | **Alliance +0xc4, Empire +0xc8** on evaluator object — different deployment budget thresholds | `alliance_deploy_budget=0.6`, `empire_deploy_budget=0.8` | DONE | `AiConfig` now mirrors the original asymmetric thresholds. |
-| Mission probability | Composite input formulas per mission type (wiki: sub_55ae50 etc.) | Composite input (ported 2026-03-23) | DONE | Diplomacy, recruitment, subdue, DS sabotage formulas ported from TheArchitect2018 wiki. |
+| 13 | Alliance HQ move, mode pick, strategy controller | `FUN_004bf320`, `FUN_004bf490`, `FUN_004e5440`, `FUN_004bf9e0`, `FUN_004c05e0` | `ai_strategy.rs` (`cycle`) | PARTIAL: the HQ move (`FUN_004bf3e0`) is missing (`or-alliance-hq-move-o9ms`); mode inputs A and B are untraced; port: one module-13 cycle per round instead of eight scheduler calls |
+| 8 | Regional records and postures | `FUN_004cf600`, `FUN_004774c0`, `FUN_004adb70` | `ai_regions.rs` | PARTIAL: the Create Fleet target queries (`FUN_004782a0`, `FUN_00478690`, `FUN_00478aa0`) are untraced |
+| 9 | Fleet tasks, one per headquarters system | `FUN_004cf290`, `FUN_00474070` | `fleet_tasks.rs` | DONE |
+| 12 | Character tasks: class G (General, Emperor), class I (Admiral, General, Commander) | `FUN_004c84a0`, `FUN_004bbb00`, `FUN_004bc480` | `character_tasks.rs` | PARTIAL: hyp: a kind 1 task takes the first free tagged system in id order (`FUN_0047a870` values untraced) |
+| 4 | Mission planners: team, decoys, Mission, Move, Abort | `FUN_004bced0`, `FUN_0047b360`, `FUN_004bd570`, `FUN_004be230`, `FUN_0047b250` | `mission_planning.rs`, `AISystem::dispatch_planned` | PARTIAL: side `+0x318`/`+0x31c` (which mission, which target) is untraced, so `ai.rs` picks them (below); the planner does not read the regional record's `+0xbc` (posture slot 6, `ai_regions.rs`); Abort has no port |
+| 11 | Capital ships | `FUN_004c8b30`, `FUN_004ca5e0`, `FUN_004cba90` | `ai_production.rs` (`Module::CapitalShips`) | DONE |
+| 10 | Fighters for fleets | `FUN_004cc9c0`, `FUN_004cd040` | `ai_production.rs` (`Module::FleetFighters`) | DONE |
+| 7 | Fighters for systems | `FUN_004d3100`, `FUN_004d4370` | `ai_production.rs` (`Module::SystemFighters`) | DONE: why it scraps fighters when no source is found is open |
+| 6 | Regiments | `FUN_004dd7a0`, `FUN_004df440` | `ai_production.rs` (`Module::Regiments`) | DONE |
+| 5 | Special forces | `FUN_004cfed0`, `FUN_004d0480`, `FUN_004d0610` | `ai_production.rs` (`Module::SpecialForces`) | DONE: the Retire arrives as a Scrap; the sort key of its pick is open |
+| 3 | Defences, mines, refineries | `FUN_004d6d30`, `FUN_004d76f0`, `FUN_004d8520` | `ai_production.rs` (`Module::Defences`) | DONE: the Coruscant case is open |
+| 1 | Construction yards, mines, refineries | `FUN_004dabe0`, `FUN_004dbd60` | `ai_production.rs` (`Module::Yards`) | DONE |
+| 2 | Deficit relief | `FUN_004e2120`, `FUN_004e2940` | `ai_production.rs` (`Module::DeficitRelief`) | DONE |
+| 14 | Rename: names for up to 10 capital ships per pass | `FUN_004d29b0`, `FUN_004d2b30` (`fleet-names.md`) | none | MISSING |
 
-## Strategic AI Behaviors Added In Resheph + Tammuz
+Budgets, class picks, goal bits and the per-module census are in
+`ghidra/notes/ai-production.md` and the "Production" section of
+`ai-order-emission.md`.
 
-| Behavior | Our Code | Status | Notes |
-|---|---|---|---|
-| Uprising prevention | `evaluate_uprising_prevention()` | AUGMENTED | Sends diplomats to low-support systems we already control, closing the "AI waits for uprisings" gap called out in the cross-reference report. |
-| Death Star escort + retreat | `evaluate_ds_escort()` | AUGMENTED | Routes the nearest available fleet to the DS; retreats the DS when outgunned (Tammuz D3). |
-| Death Star multi-target | `select_ds_target()` | AUGMENTED | DS targets highest-value enemy system (HQ > strength > proximity) instead of always-HQ (Tammuz D3). |
-| Troop deployment | `evaluate_troop_deployment()` | AUGMENTED | Frontline-aware redistribution: prioritizes systems adjacent to enemy territory. Config-driven thresholds (Tammuz D2). |
-| Reconnaissance | `evaluate_reconnaissance()` | AUGMENTED | Scouts explored enemy-controlled systems for intelligence updates, targeting highest-value systems first (Tammuz D5). |
+## Orders
 
-## Augmentations (Beyond Original — Justified Improvements)
+The "Port" section of `ghidra/notes/ai-order-emission.md` maps each original
+order to its `AIAction`. Orders with no port: Move of the HQ, Rename `0x203`,
+Abort `0x250`.
 
-| Feature | Original Behavior | Our Improvement | Why Keep | Config Flag |
-|---|---|---|---|---|
-| `ControlKind::Contested` + `Uprising` | 3 states (neutral/Alliance/Empire) | 4 states | More strategic depth | Always on |
-| Euclidean fleet transit | Struct setter (FUN_00520580), transit calc elsewhere | Distance-based with configurable scale | Tunable, realistic | `movement.distance_scale` |
-| 4-factor attack scoring | Binary capacity check (FUN_0052e970) | Weakness × proximity × deconfliction × freshness | **Strictly superior** — original has no target scoring | `weight_*` (4 config flags) |
-| Per-fleet targeting | Per-system iteration | Per-fleet scoring with deconfliction | Prevents fleet piling | `ai.per_fleet_targeting` |
-| Battle repeat penalty | Not in original | Freshness curve prevents stagnation | Better gameplay | `augmentation.battle_repeat_penalty` |
-| Target deconfliction | Not in original | Pile count tracking | Territorial spread | `augmentation.target_deconfliction` |
-| Throttled AI evaluation | Every game-day (event 0x1f0) | Every 7 ticks | Performance optimization | `ai.tick_interval` |
-| Role-based character AI | Family-byte type routing | Skill-based dispatch (diplomacy/espionage/combat) | More strategic | Always on |
-| Faction-asymmetric doctrine | Different evaluator objects (budget only) | Empire→HQ strike, Alliance→guerrilla | Clearer doctrinal difference | `ai.faction_asymmetry` |
-| Composite mission inputs | wiki: sub_55ae50 etc. (popularity + skill) | Same formulas ported | Faithful to original | N/A (parity) |
+## Port heuristics without an original counterpart
 
-## Validation Process
+These run as module 4's pseudo-planners after the Research planners, one
+pass a turn (`Pseudo`, `ai_research.rs`), and are `port:` until the original
+selection is traced and ported.
 
-1. **Run headless campaign**: `cargo run -p rebellion-playtest -- data/base --seed 42 --ticks 5000 --dual-ai --summary`
-2. **Check eval script**: `python3 scripts/eval_game_quality.py campaign.jsonl`
-3. **Verify non-degenerate**: Score > 0.0, battles at 3+ systems
-4. **Cross-reference matrix**: Every row in Core AI Pipeline must be DONE/FAITHFUL/AUGMENTED
-5. **Document deviations**: Every AUGMENTED row must explain why and have a config flag
+| Function | What it does now | Original mechanism it stands in for |
+|---|---|---|
+| `evaluate_officers` | The targets the original's queries take over the round's system records (`FUN_00433e40` `sys+0x2c` bits) and the creation validator admits: Incite at our most popular enemy system with our support above 50 (bit `0x100`); Diplomacy at our systems below support 70, then neutral ones (bit `0x40`), least popular first, skipping a system our Diplomacy works; Recruitment at our most popular calm, unblockaded system while its recruit pool holds anyone. The planner picks the members | Side `+0x318`/`+0x31c`, the strategic choice of mission and target among the candidates (untraced) |
+| `ResearchPlanners::turn` (`ai_research.rs`) | Persistent planners per tree, each holding one scientist and re-emitting the Research order at the member's own system with no yard test, skipped while its mission is in flight; module 13 requests an add while the tree is open and the count is below the capable characters, or a drop on the exhausted bit or an excess count, and module 4's next turn consumes it | The controller's Research requests and the planner's states (`FUN_004e8290`, `FUN_004e5710`, `FUN_004d2580`, `FUN_004bced0`, `FUN_004bda40`; `ghidra/notes/research.md`); the drop's choice among planners is hyp |
+| `evaluate_espionage` | Sabotage at enemy systems with the most manufacturing facilities, Assassination then Abduction of enemy characters, Espionage at explored systems the side or its enemy holds (`sys+0x2c` bit `0x200`), the enemy's first, galaxy-wide (`FUN_004b1bf0` asks within a regional record's sector) | Side `+0x318`/`+0x31c` |
+| `evaluate_rescue` | Rescue missions for characters the enemy holds captive; the Rescue planner (`FUN_0047e270`, `FUN_0047e3f0`) picks each team | Side `+0x318`/`+0x31c` |
+| `evaluate_reconnaissance` | Espionage missions at explored enemy systems, ranked by `system_strength` | None traced; `system_strength` is a port score of ship hulls, regiments and defence facilities and cites no source |
+| `evaluate_uprising_prevention` | Diplomacy to the two systems with own popularity below 0.4 | None traced |
 
-## Closed Gaps (2026-04-14)
+## Dispatch validators
 
-| Gap | Resolution |
-|-----|-----------|
-| **Dispatch validators #2/#3/#4** | CLOSED — per-cycle caps are the Rust equivalent of C++ allocation budget tracking. No behavioral gap. |
-| **Defense facility construction priority** | CLOSED — `FUN_00508660` is an entity-type dispatcher (routes by family byte), not a priority ordering function. Our `evaluate_production()` order (capships > fighters > yards > troops > defenses) produces correct gameplay. Status: FAITHFUL. |
-| **AI resource rebalancing (FUN_00559ee0)** | CLOSED — FUN_00559ee0 looks up RESRCTB (table 0x2b) with a random draw, a minor random perturbation. RESRCTB.DAT is parsed (4 IntTableEntry records) but not consumed. Impact: negligible random energy/material fluctuation that doesn't affect AI decision quality. |
-| **74 informational GNPRTB parameters** | CLOSED — all 111 mapped GNPRTB parameters that affect gameplay mechanics are implemented. The remaining 74 are decorative/informational (UI display values, tooltip text, unused balance knobs). No code change needed. |
+The original's checks before an order (`FUN_00508250`, `FUN_00508660`, the
+object checks per family) are in `ghidra/notes/ai-behavior-analysis.md`,
+sections 3, 4 and 6. `FUN_0050b8e0` writes the system's battle, blockade and
+change bits and is covered in `ghidra/notes/blockade-bit.md`.
+
+## Behavioral properties
+
+| Property | Original | Port |
+|---|---|---|
+| Map visibility | No fog parameter in the traced AI functions | PORT DIFFERENCE, open (br `or-q-port-observation-levels-jgy`, status open): whether the port's fog should follow the original's per-side observation levels (informants, espionage, mission ends, events, new-game reveals; `ghidra/notes/observation-levels.md`) and how a level maps onto `fog.rs` |
+| Cadence | One armed module per main-loop pass, sides alternating; rate+1 rounds a day | The same rounds, a whole round per call; at most `day_orders` (10) orders a side a day |
+| Side differences | The Death Star request (side 2), the shield flag, class side flags, module 13 (Alliance only); no traced production function reads a difficulty or GNPRTB value | The same modules for both sides; the HQ move is missing |
+
+## Augmentations
+
+`AiConfig` (`tuning.rs`, `--config`) holds the AI's tempo, defaulting to the
+original's values so it can be calibrated:
+
+| Field | Default | Reader |
+|---|---|---|
+| `day_orders` | 10 (`+0x428`, `FUN_00485a50.c:35`) | `ai_scheduler.rs` `round` |
+| `rounds_per_day` | 601 / 61 / 13 / 5 by speed (`FUN_0051dea0.c:11-30`) | `simulation.rs` `day_rate` |
+
+Each module-4 pseudo-planner turn sends at most one mission
+(`FUN_004d2490`, `FUN_00485b40`).
+
+## Validation process
+
+1. Run a headless campaign:
+   `scripts/mini-cargo.sh -- run --release -q -p rebellion-playtest --color never -- data/base --seed 42 --ticks 400 --dual-ai --summary`
+2. Add `--output campaign.jsonl` and score the log:
+   `python3 scripts/eval_game_quality.py campaign.jsonl`
+3. Confirm a non-degenerate run: score above 0.0 and battles at 3 or more systems.
+4. Run both sides: every change is checked for Empire and Alliance alike.
+5. After simulation changes, run `replay_manifest --ignored` and
+   `scripts/mini-cargo.sh -- run -q -p provenance-scan -- check`.
 
 ## Sources
 
-- Ghidra RE: 23 functions decompiled 2026-03-23 via GhidraMCP HTTP bridge
-- Community disassembly cross-reference: `docs/reports/2026-03-26-community-disassembly-cross-reference.md`
-- TheArchitect2018 wiki: mission probability formulas (sub_55ae50, sub_55aed0, sub_55ae90, sub_55af50, sub_55b0a0, sub_55cfb0)
-- Codex researcher comparison report (2026-03-23)
+- `ghidra/notes/ai-order-emission.md`, `ai-production.md`, `ai-mission-planning.md`, `research.md`, `timer-scheduler.md`, `ai-behavior-analysis.md`, `blockade-bit.md`
+- `crates/rebellion-core/src/`: `ai.rs`, `ai_strategy.rs`, `ai_regions.rs`, `fleet_tasks.rs`, `character_tasks.rs`, `ai_production.rs`, `ai_records.rs`, `mission_planning.rs`, `tuning.rs`

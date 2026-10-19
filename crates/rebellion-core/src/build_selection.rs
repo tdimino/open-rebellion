@@ -174,7 +174,10 @@ pub fn estimate(
     is_alliance: bool,
 ) -> BuildEstimate {
     let (refined, maintenance) = unit_costs(world, kind).unwrap_or_default();
-    let destination = manufacturing.destination(system, area).unwrap_or(system);
+    let destination = manufacturing
+        .destination(system, area)
+        .and_then(|d| d.system(world))
+        .unwrap_or(system);
     BuildEstimate {
         refined_material: refined.saturating_mul(count),
         maintenance: maintenance.saturating_mul(count),
@@ -433,7 +436,11 @@ mod tests {
             }
         );
 
-        manufacturing.set_destination(home, ProductionArea::TrainingFacility, away);
+        manufacturing.set_destination(
+            home,
+            ProductionArea::TrainingFacility,
+            crate::manufacturing::Destination::System(away),
+        );
         let sent = estimate(
             &world,
             &manufacturing,
