@@ -305,8 +305,9 @@ fn dispatch_command(
 }
 
 /// The state readouts the native dev channel shares
-/// (`rebellion_data::readouts`): `list characters [side]`, `list missions
-/// [side]`, `show research`, `list production [side]` and `show side <side>`.
+/// (`rebellion_data::readouts`): `list characters [side]`, `list fleets
+/// [side]`, `list missions [side]`, `show research`, `list production
+/// [side]` and `show side <side>`.
 /// They see through fog of war: dev truth, not a player's view. `None` for
 /// any other command.
 fn readout(
@@ -321,6 +322,8 @@ fn readout(
     let text = if lower.starts_with("list characters") {
         side("list characters")
             .map(|side| readouts::list_characters(world, &states.missions, &states.movement, side))
+    } else if lower.starts_with("list fleets") {
+        side("list fleets").map(|side| readouts::list_fleets(world, &states.movement, side))
     } else if lower.starts_with("list missions") {
         side("list missions")
             .map(|side| readouts::list_missions(world, &states.missions, tick, side))
@@ -340,6 +343,8 @@ fn readout(
                 side,
             ))
         })
+    } else if lower.starts_with("show system") {
+        readouts::show_system(world, &lower["show system".len()..])
     } else {
         return None;
     };
@@ -448,25 +453,24 @@ fn main() -> anyhow::Result<()> {
         Faction::Empire
     };
 
-    // Find HQ systems for victory state
-    let a_hq = world
-        .systems
-        .iter()
-        .find(|(_, s)| s.is_headquarters && s.control.is_controlled_by(Faction::Alliance))
-        .map(|(k, _)| k);
-    let e_hq = world
-        .systems
-        .iter()
-        .find(|(_, s)| s.is_headquarters && s.control.is_controlled_by(Faction::Empire))
-        .map(|(k, _)| k);
-    let (victory_a, victory_e) = if let (Some(a), Some(e)) = (a_hq, e_hq) {
-        (a, e)
-    } else {
-        let mut keys = world.systems.keys();
-        let a = keys.next().expect("need at least 2 systems");
-        let e = keys.next().expect("need at least 2 systems");
-        (a, e)
-    };
+    // A save carries its own victory state; a freshly seeded world marks
+    // both headquarters or the seeding refuses the data.
+    let victory = staged.as_ref().map_or_else(
+        || {
+            let hq = |side: Faction| {
+                world
+                    .systems
+                    .iter()
+                    .find(|(_, s)| s.is_headquarters && s.control.is_controlled_by(side))
+                    .map(|(k, _)| k)
+            };
+            rebellion_core::victory::VictoryState::new(
+                hq(Faction::Alliance).expect("the seeding marks the Alliance headquarters"),
+                hq(Faction::Empire).expect("the seeding marks Coruscant"),
+            )
+        },
+        |staged| staged.states.victory.clone(),
+    );
 
     // Determine second AI faction for dual-AI mode
     let ai2 = if args.dual_ai {
@@ -491,10 +495,9 @@ fn main() -> anyhow::Result<()> {
         fog: FogState::new(fog_faction),
         blockade: rebellion_core::blockade::BlockadeState::new(),
         uprising: rebellion_core::uprising::UprisingState::new(),
-        death_star: rebellion_core::death_star::DeathStarState::default(),
         research: rebellion_core::research::ResearchState::new(),
         jedi: rebellion_core::jedi::JediState::new(),
-        victory: rebellion_core::victory::VictoryState::new(victory_a, victory_e),
+        victory,
         betrayal: rebellion_core::betrayal::BetrayalState::new(),
         economy: rebellion_core::economy::EconomyState::default(),
         repair: rebellion_core::repair::RepairState::default(),
@@ -584,7 +587,7 @@ fn main() -> anyhow::Result<()> {
                 println!("  {:30} Advance simulation and print events", "tick [N]");
                 println!(
                     "  {:30} State readouts (dev truth, no fog of war)",
-                    "list characters|missions|production [side], show research|side <side>"
+                    "list characters|fleets|missions|production [side], show research|side <side>"
                 );
                 println!("  {:30} Exit REPL", "quit");
                 continue;

@@ -40,6 +40,25 @@ if [ ! -s "${DIST}/data/runtime.orpk" ]; then
     exit 1
 fi
 
+# Movies play from <video> elements, outside the runtime pack: each is
+# fetched only when it plays, and a missing one is skipped in the browser.
+# A dev package may lack some; any other version ships all of them.
+mkdir -p "${DIST}/data/movies"
+if [ "${VERSION}" = "dev" ]; then
+    bash "$ROOT/scripts/stage-web-movies.sh" \
+        || echo "WARNING: dev package without every movie; the browser skips the missing ones."
+    shopt -s nullglob
+    movies=(web/data/movies/*.webm)
+    shopt -u nullglob
+    if [ ${#movies[@]} -gt 0 ]; then
+        cp "${movies[@]}" "${DIST}/data/movies/"
+    fi
+else
+    bash "$ROOT/scripts/stage-web-movies.sh"
+    cp web/data/movies/*.webm "${DIST}/data/movies/"
+    bash "$ROOT/scripts/stage-web-movies.sh" --verify "${DIST}/data/movies"
+fi
+
 # Record hashes for every shipped runtime file so release and deployment
 # verification can prove which data and code the browser loaded.
 (

@@ -159,7 +159,11 @@ each list's window (`FUN_004ab3a0` attaches it, `FUN_004aba40` stores it at
 - **Arrows.** A row with a submenu draws an arrow at (6, row top): 10117
   highlighted and 10118 normal for side 1, else 10128 and 10129. A parent
   row with no icon reserves 20 pixels (`FUN_004abf60`).
-- **Parents** are always enabled: flags 8 leave `+0x58` set.
+- **Parents** are built with flags 8, then `FUN_00442380` runs
+  `FUN_00442c90` before the menu opens: it walks each row list (next row
+  `+8`) and sets a parent's `+0x58` to whether any row of its submenu is
+  enabled, recursively, so a parent is enabled exactly when one of its
+  orders is.
 
 ### The Command submenu
 
@@ -224,11 +228,18 @@ with Ctrl held, for window types 1, 4 and 10; type 9 issues `0x214`.
   stays highlighted; the menu's 500 ms timer shows the highlighted row's
   submenu (`GameMenuEntry::children`), placed by `submenu_origin`, with the
   side's arrows; a release on a parent does nothing; Escape hides a shown
-  submenu, else closes the menu; a press outside both closes them. A
-  character's Command lists None, Admiral, General and Commander, enabled
-  by `officer_rank::command_refusal` and checked for the held rank
-  (`object_menu::submenu_rows`); a choice gives the rank
-  (`officer_rank::give_command`). port: the timer ticks whatever input is
+  submenu, else closes the menu; a press outside both closes them. Every
+  parent, the Command parent included, is enabled when one of its rows is
+  (`FUN_00442c90`). A character's Command lists None, Admiral, General and
+  Commander, enabled by `officer_rank::command_refusal` and checked for the
+  held rank (`object_menu::submenu_rows`); a choice gives the rank
+  (`officer_rank::give_command`). A fleet's, or a sector fleet icon's,
+  Planetary Bombardment (`0x120`) lists Target Military Facilities, Target
+  Civilian Facilities, General Bombardment and Destroy System (`0x220`-`0x223`,
+  sort 202-208, TEXTSTRA 12314-12317), each always listed (`FUN_0040f340`)
+  and enabled by `bombardment::order_enabled` (`FUN_00581e80`) for the fleet
+  or the icon's fleets of the player's side (`FUN_00512700`); a row issues
+  the order through `strike_orders::issue` (`bombardment.md`, Port). port: the timer ticks whatever input is
   pending. hyp: the window fields `FUN_004ab3a0` reads are the parent's
   left, top, width and height.
 - 7b: a right press selects a list item and a right release on a
@@ -244,10 +255,8 @@ with Ctrl held, for window types 1, 4 and 10; type 9 issues `0x214`.
   A character's or special force's Move and Confirmed Move follow
   `MissionState::move_order_enabled` (`FUN_0053c100`) and target as a
   `0x241` (`move-order.md`, "Characters and special forces").
-  port: Retire is drawn disabled,
-  Planetary Bombardment is a disabled parent with no rows until its four
-  targets are menu orders, the other tabs' classes open no menu, and the
-  global gate `FUN_0051de80` is taken as clear.
+  port: Retire is drawn disabled, the other tabs' classes open no menu, and
+  the global gate `FUN_0051de80` is taken as clear.
 - 7c: Mission starts targeting (`targeting.rs`). The galaxy view takes the
   capture, so no window or cockpit control gets a press, and a press on the
   map selects nothing (`FUN_00422ce0` has no `WM_LBUTTONDOWN` case). Cursor

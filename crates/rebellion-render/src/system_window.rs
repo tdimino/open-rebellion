@@ -17,7 +17,8 @@ use rebellion_core::delivery::DeliveryState;
 use rebellion_core::fog::FogState;
 use rebellion_core::ids::{DatId, FleetKey, SystemKey};
 use rebellion_core::manufacturing::{ManufacturingState, ProductionArea};
-use rebellion_core::missions::MissionState;
+use rebellion_core::missions::{MissionState, MissionTarget};
+use rebellion_core::saved_interface::{SavedWindow, SavedWindowKind};
 use rebellion_core::world::{ControlKind, GameWorld};
 use rebellion_windowing::WindowId;
 
@@ -26,11 +27,12 @@ use crate::cockpit::{CockpitFaction, CockpitLayout};
 use crate::fleet_window::{control_side, paint_native};
 use crate::manufacturing_window::{
     band, band_strip, contents_visible, item_frame, page_cells, yard_count, yard_page,
-    FacilityItem, FacilityPage, BAND_AREAS, BAND_DESTINATION, BAND_FRAME, BAND_MINI, BAND_RECTS,
-    BAND_STATUS, BAND_TITLE, BAND_UNITS, CELL, COLUMNS, COUNT_ORIGINS, LIST, PROGRESS_RECTS,
-    YARD_COLUMN,
+    FacilityItem, FacilityPage, BAND_AREAS, BAND_DESTINATION, BAND_FRAME, BAND_PORTRAIT,
+    BAND_RECTS, BAND_STATUS, BAND_TITLE, BAND_UNITS, CELL, COLUMNS, COUNT_ORIGINS, LIST,
+    PROGRESS_RECTS, YARD_COLUMN,
 };
 use crate::object_menu::MenuObject;
+use crate::window_focus::GalaxyChild;
 
 pub const SYSTEM_WINDOW_CLIENT_WIDTH: f32 = 226.0;
 /// `FUN_0045aac0` creates type 9 at 226 by 304 (`0xe2` by `0x130`).
@@ -169,6 +171,8 @@ enum Relationship {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct OpenSystemWindow {
     system: SystemKey,
+    /// When this window last took focus (`window_focus`).
+    focus_serial: u64,
     logical_position: (i16, i16),
     tab: SystemWindowTab,
     /// A facility page's selected item.
@@ -193,11 +197,15 @@ enum RailEntry {
     Defenses {
         system: SystemKey,
         logical_position: (i16, i16),
+        /// Its place in the z-order, kept while hidden.
+        serial: u64,
     },
     /// A Missions window (type 11); its icon comes from `FUN_004a21c0`.
     Missions {
         system: SystemKey,
         logical_position: (i16, i16),
+        /// Its place in the z-order, kept while hidden.
+        serial: u64,
     },
 }
 
@@ -232,21 +240,57 @@ impl RailEntry {
 #[derive(Debug)]
 pub struct SystemWindowState {
     faction: CockpitFaction,
-    /// When one of these windows last took focus (`window_focus`).
-    focus_serial: u64,
     windows: Vec<OpenSystemWindow>,
     rail: Vec<RailEntry>,
+    /// Each window's facility-page cells as last painted, for the release
+    /// hit test.
+    painted: Vec<(SystemKey, Vec<FacilityItem>)>,
+    /// The band's name edit a Rename (0x215) opened, if any.
+    band_rename: Option<BandRename>,
+    /// A window drag in progress.
+    title_drag: Option<TitleDrag>,
 }
 
 impl Default for SystemWindowState {
     fn default() -> Self {
         Self {
             faction: CockpitFaction::Alliance,
-            focus_serial: 0,
             windows: Vec::new(),
             rail: Vec::new(),
+            painted: Vec::new(),
+            band_rename: None,
+            title_drag: None,
         }
     }
+}
+
+/// A band's in-place name edit (window `+0x170`, a CoolStringField), which
+/// the band menu's Rename opens over the band's product name
+/// (`FUN_00458b50` → `FUN_00458640`), the Rename order pending at `+0x268`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct BandRename {
+    system: SystemKey,
+    area: ProductionArea,
+    /// The name line's text when the edit opened (`FUN_00601b20`), which
+    /// the commit compares with (`FUN_00458780.c:27-34`).
+    original: String,
+    text: String,
+    /// The first frame selects the whole name and takes the focus
+    /// (`FUN_00605110(field, 0, -1)`, `SetFocus`).
+    fresh: bool,
+}
+
+/// What a frame did to an open band name edit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum BandRenameOutcome {
+    Typed(String),
+    /// Enter (the field's 0x407) or a press elsewhere in the window: the
+    /// edit closes, and its name applies when it changed (`FUN_00458780`).
+    Commit(String),
+    /// Escape closes the window: under Wine the route-1 Empire save's
+    /// Coruscant System window closed with its band's edit open, the name
+    /// unchanged (day 127 played on to day 140).
+    Escape,
 }
 
 impl SystemWindowState {
@@ -279,9 +323,9 @@ impl SystemWindowState {
             return true;
         }
         let logical_position = clamp_to_galaxy(logical_position, layout);
-        self.focus_serial = crate::window_focus::next_serial();
         self.windows.push(OpenSystemWindow {
             system,
+            focus_serial: crate::window_focus::next_serial(),
             logical_position,
             tab: SystemWindowTab::Overview,
             selected_item: None,
@@ -358,13 +402,28 @@ impl SystemWindowState {
 
     #[must_use]
     pub fn contains_screen_point(&self, layout: CockpitLayout, point: (f32, f32)) -> bool {
-        self.windows.iter().any(|window| {
-            let rect = window_screen_rect(*window, layout);
-            point.0 >= rect.min.x
-                && point.0 < rect.max.x
-                && point.1 >= rect.min.y
-                && point.1 < rect.max.y
-        })
+        self.contains_shown_screen_point(layout, point, &|_| true)
+    }
+
+    /// [`contains_screen_point`](Self::contains_screen_point) over the
+    /// windows `shown` passes.
+    #[must_use]
+    pub fn contains_shown_screen_point(
+        &self,
+        layout: CockpitLayout,
+        point: (f32, f32),
+        shown: &dyn Fn(GalaxyChild) -> bool,
+    ) -> bool {
+        self.windows
+            .iter()
+            .filter(|window| shown(GalaxyChild::System(window.system)))
+            .any(|window| {
+                let rect = window_screen_rect(*window, layout);
+                point.0 >= rect.min.x
+                    && point.0 < rect.max.x
+                    && point.1 >= rect.min.y
+                    && point.1 < rect.max.y
+            })
     }
 
     #[must_use]
@@ -403,6 +462,40 @@ impl SystemWindowState {
             .map(|window| window.system)
     }
 
+    /// The object a Mission order released over the system window egui
+    /// draws as `layer` names (`+0x68`, `FUN_00458b80`): on a facility page,
+    /// the facility in the cell under `point` (list `+0x174` at (8, 77),
+    /// `FUN_00609ae0`'s grid); `None` on the overview, off the cells, or on
+    /// a pending unit or empty deposit, where the window gives its system.
+    #[must_use]
+    pub fn release_object(
+        &self,
+        layout: CockpitLayout,
+        layer: egui::LayerId,
+        point: egui::Pos2,
+    ) -> Option<MissionTarget> {
+        let window = self
+            .windows
+            .iter()
+            .find(|window| area_id(window.system) == layer.id)?;
+        window.tab.page()?;
+        let rect = window_screen_rect(*window, layout);
+        let local = (
+            (point.x - rect.min.x) / layout.scale,
+            (point.y - rect.min.y) / layout.scale,
+        );
+        let index = grid_cell(local, LIST, CELL, COLUMNS)?;
+        let (_, cells) = self
+            .painted
+            .iter()
+            .find(|(system, _)| *system == window.system)?;
+        match cells.get(index)? {
+            FacilityItem::Manufacturing(key) => Some(MissionTarget::ManufacturingFacility(*key)),
+            FacilityItem::Production(key) => Some(MissionTarget::ProductionFacility(*key)),
+            FacilityItem::Pending(_) | FacilityItem::Deposit(_) => None,
+        }
+    }
+
     #[must_use]
     pub fn rail_count(&self) -> usize {
         self.rail.len()
@@ -431,6 +524,7 @@ impl SystemWindowState {
     pub fn clear(&mut self) {
         self.windows.clear();
         self.rail.clear();
+        self.painted.clear();
     }
 
     fn prepare_faction(&mut self, faction: CockpitFaction) {
@@ -440,11 +534,187 @@ impl SystemWindowState {
         }
     }
 
-    /// When one of this kind's windows last took focus; the newest kind
-    /// is in front (`window_focus`).
+    /// When the window in front took focus (`window_focus`); 0 with none
+    /// open. Each window keeps its own, so after a close the window behind
+    /// ranks where it took focus, as the original's z-order does.
     #[must_use]
     pub fn focus_serial(&self) -> u64 {
-        self.focus_serial
+        self.windows.last().map_or(0, |window| window.focus_serial)
+    }
+
+    /// The open windows as galaxy children, with their z serials; a
+    /// minimized window is on the rail, not among them.
+    pub fn children(&self) -> impl Iterator<Item = (u64, GalaxyChild)> + '_ {
+        self.windows
+            .iter()
+            .map(|window| (window.focus_serial, GalaxyChild::System(window.system)))
+    }
+
+    /// Bring `system`'s window to the top of the galaxy view's z-order, as
+    /// its activation does (`FUN_00422ce0` 0x467: `BringWindowToTop`).
+    /// False when it is not open.
+    pub fn raise(&mut self, system: SystemKey) -> bool {
+        self.focus(system)
+    }
+
+    /// Close `system`'s window, as its keyed close does (slot `+0x30`).
+    /// False when it is not open.
+    pub fn close_window(&mut self, system: SystemKey) -> bool {
+        let open = self.windows.iter().any(|window| window.system == system);
+        self.close(system);
+        open
+    }
+
+    /// The shown System windows as a save keeps them, each with its z
+    /// serial: the system by its DAT id (`FUN_00458ea0`) and the window's
+    /// top-left. Minimized windows are in [`Self::saved_rail`].
+    #[must_use]
+    pub fn saved_windows(&self, world: &GameWorld) -> Vec<(u64, SavedWindow)> {
+        self.windows
+            .iter()
+            .filter_map(|window| {
+                Some((
+                    window.focus_serial,
+                    SavedWindow {
+                        kind: SavedWindowKind::System {
+                            system: world.systems.get(window.system)?.dat_id,
+                        },
+                        position: window.logical_position,
+                        shown: true,
+                    },
+                ))
+            })
+            .collect()
+    }
+
+    /// The rail's windows as a save keeps them, each hidden (`+0x110` is 0
+    /// on the rail, `FUN_00607d30`) with its place in the z-order: a hidden
+    /// window stays in the view's child list, which the save walks bottom to
+    /// top (`FUN_00440ea0.c:19-24`). A Fleet window's tab and place come
+    /// from `fleet`.
+    #[must_use]
+    pub fn saved_rail(
+        &self,
+        world: &GameWorld,
+        fleet: impl Fn(WindowId) -> Option<(u32, u64)>,
+    ) -> Vec<(u64, SavedWindow)> {
+        self.rail
+            .iter()
+            .filter_map(|entry| {
+                let system = world.systems.get(entry.system())?.dat_id;
+                let (serial, kind, position) = match *entry {
+                    RailEntry::System(window) => (
+                        window.focus_serial,
+                        SavedWindowKind::System { system },
+                        window.logical_position,
+                    ),
+                    RailEntry::Fleet {
+                        id,
+                        logical_position,
+                        ..
+                    } => {
+                        let (tab, serial) = fleet(id)?;
+                        (
+                            serial,
+                            SavedWindowKind::Fleet { system, tab },
+                            logical_position,
+                        )
+                    }
+                    RailEntry::Defenses {
+                        logical_position,
+                        serial,
+                        ..
+                    } => (
+                        serial,
+                        SavedWindowKind::Defenses { system },
+                        logical_position,
+                    ),
+                    RailEntry::Missions {
+                        logical_position,
+                        serial,
+                        ..
+                    } => (
+                        serial,
+                        SavedWindowKind::Missions { system },
+                        logical_position,
+                    ),
+                };
+                Some((
+                    serial,
+                    SavedWindow {
+                        kind,
+                        position,
+                        shown: false,
+                    },
+                ))
+            })
+            .collect()
+    }
+
+    /// Rebuild a saved System window (`FUN_00441190` type 9,
+    /// `FUN_00452fc0`) at its saved place, above the windows rebuilt before
+    /// it, on the overview: the page is not saved (`FUN_00458ea0`), and
+    /// under Wine a window saved on Shipyards reopened on the overview
+    /// (Empire day-2 start, played on to day 6). A hidden one goes back on
+    /// the rail instead (slot `+0x08`, then `FUN_00428b40`), and so does a
+    /// hidden Defenses or Missions window, whose rail entry is all it is
+    /// while minimized. False for any other record, or a system not in the
+    /// world.
+    pub fn restore_saved(
+        &mut self,
+        world: &GameWorld,
+        faction: CockpitFaction,
+        saved: &SavedWindow,
+    ) -> bool {
+        let (SavedWindowKind::System { system }
+        | SavedWindowKind::Defenses { system }
+        | SavedWindowKind::Missions { system }) = saved.kind
+        else {
+            return false;
+        };
+        let Some(system) = system_by_dat_id(world, system) else {
+            return false;
+        };
+        self.prepare_faction(faction);
+        let position = saved.position;
+        match saved.kind {
+            SavedWindowKind::System { .. } => {
+                self.close(system);
+                self.rail
+                    .retain(|entry| !(entry.is_system_window() && entry.system() == system));
+                let window = OpenSystemWindow {
+                    system,
+                    focus_serial: crate::window_focus::next_serial(),
+                    logical_position: position,
+                    tab: SystemWindowTab::Overview,
+                    selected_item: None,
+                    selected_band: None,
+                };
+                if saved.shown {
+                    self.windows.push(window);
+                } else {
+                    self.push_rail(RailEntry::System(window));
+                }
+                true
+            }
+            SavedWindowKind::Defenses { .. } if !saved.shown => {
+                self.push_rail(RailEntry::Defenses {
+                    system,
+                    logical_position: position,
+                    serial: crate::window_focus::next_serial(),
+                });
+                true
+            }
+            SavedWindowKind::Missions { .. } if !saved.shown => {
+                self.push_rail(RailEntry::Missions {
+                    system,
+                    logical_position: position,
+                    serial: crate::window_focus::next_serial(),
+                });
+                true
+            }
+            _ => false,
+        }
     }
 
     fn focus(&mut self, system: SystemKey) -> bool {
@@ -455,14 +725,46 @@ impl SystemWindowState {
         else {
             return false;
         };
-        let window = self.windows.remove(index);
-        self.focus_serial = crate::window_focus::next_serial();
+        let mut window = self.windows.remove(index);
+        window.focus_serial = crate::window_focus::next_serial();
         self.windows.push(window);
         true
     }
 
     fn close(&mut self, system: SystemKey) {
         self.windows.retain(|window| window.system != system);
+        self.band_rename.take_if(|edit| edit.system == system);
+    }
+
+    /// Open the band's name edit over `area`'s product name in `system`'s
+    /// window, as the band menu's Rename does (`FUN_00458b50` →
+    /// `FUN_00458640`): the name selected, the window focused and the band
+    /// selected. Any edit already open closes unapplied. False when the
+    /// window is not open.
+    pub fn begin_band_rename(
+        &mut self,
+        system: SystemKey,
+        area: ProductionArea,
+        name: &str,
+    ) -> bool {
+        if !self.windows.iter().any(|window| window.system == system) {
+            return false;
+        }
+        self.select_band(system, area);
+        self.band_rename = Some(BandRename {
+            system,
+            area,
+            original: name.to_owned(),
+            text: name.to_owned(),
+            fresh: true,
+        });
+        true
+    }
+
+    /// Whether a band's name edit holds the keyboard.
+    #[must_use]
+    pub fn band_rename_open(&self) -> bool {
+        self.band_rename.is_some()
     }
 
     #[cfg(test)]
@@ -479,6 +781,7 @@ impl SystemWindowState {
             return (false, None);
         };
         let window = self.windows.remove(index);
+        self.band_rename.take_if(|edit| edit.system == system);
         let evicted = Self::evicted_fleet(self.push_rail(RailEntry::System(window)));
         (true, evicted)
     }
@@ -490,6 +793,14 @@ impl SystemWindowState {
         system: SystemKey,
         logical_position: (i16, i16),
     ) -> Option<WindowId> {
+        // A load's hidden Fleet window already holds its slot.
+        if self
+            .rail
+            .iter()
+            .any(|entry| matches!(entry, RailEntry::Fleet { id: held, .. } if *held == id))
+        {
+            return None;
+        }
         Self::evicted_fleet(self.push_rail(RailEntry::Fleet {
             id,
             system,
@@ -511,28 +822,110 @@ impl SystemWindowState {
         true
     }
 
-    /// Put a minimized Defenses window on the rail (`0x466`).
+    /// Put a minimized Defenses window on the rail (`0x466`), above every
+    /// window in the z-order.
     pub fn minimize_defenses_window(
         &mut self,
         system: SystemKey,
         logical_position: (i16, i16),
     ) -> Option<WindowId> {
+        self.minimize_defenses_window_at(
+            system,
+            logical_position,
+            crate::window_focus::next_serial(),
+        )
+    }
+
+    /// Put a minimized Defenses window on the rail (`0x466`), keeping its
+    /// place `serial` in the z-order: a hidden window stays where it was in
+    /// the view's child list, which a save walks (`FUN_00440ea0.c:19-24`).
+    pub fn minimize_defenses_window_at(
+        &mut self,
+        system: SystemKey,
+        logical_position: (i16, i16),
+        serial: u64,
+    ) -> Option<WindowId> {
         Self::evicted_fleet(self.push_rail(RailEntry::Defenses {
             system,
             logical_position,
+            serial,
         }))
     }
 
-    /// Put a minimized Missions window on the rail (`0x466`).
+    /// Put a minimized Missions window on the rail (`0x466`), above every
+    /// window in the z-order.
     pub fn minimize_missions_window(
         &mut self,
         system: SystemKey,
         logical_position: (i16, i16),
     ) -> Option<WindowId> {
+        self.minimize_missions_window_at(
+            system,
+            logical_position,
+            crate::window_focus::next_serial(),
+        )
+    }
+
+    /// Put a minimized Missions window on the rail (`0x466`), keeping its
+    /// place `serial` in the z-order (`FUN_00440ea0.c:19-24`).
+    pub fn minimize_missions_window_at(
+        &mut self,
+        system: SystemKey,
+        logical_position: (i16, i16),
+        serial: u64,
+    ) -> Option<WindowId> {
         Self::evicted_fleet(self.push_rail(RailEntry::Missions {
             system,
             logical_position,
+            serial,
         }))
+    }
+
+    /// Give `child`'s rail entry, a minimized System, Defenses or Missions
+    /// window, the next place at the top of the z-order: a load's hidden
+    /// window keeps its place among the windows rebuilt around it. False
+    /// when `child` has no such entry.
+    pub fn lift_hidden(&mut self, child: GalaxyChild) -> bool {
+        let serial = crate::window_focus::next_serial();
+        let entry = self.rail.iter_mut().find(|entry| match (child, &**entry) {
+            (GalaxyChild::System(system), RailEntry::System(window)) => window.system == system,
+            (GalaxyChild::Defenses(system), RailEntry::Defenses { system: held, .. })
+            | (GalaxyChild::Missions(system), RailEntry::Missions { system: held, .. }) => {
+                *held == system
+            }
+            _ => false,
+        });
+        match entry {
+            Some(RailEntry::System(window)) => window.focus_serial = serial,
+            Some(
+                RailEntry::Defenses { serial: held, .. } | RailEntry::Missions { serial: held, .. },
+            ) => {
+                *held = serial;
+            }
+            Some(RailEntry::Fleet { .. }) | None => return false,
+        }
+        true
+    }
+
+    /// Put a load's hidden Fleet window on the rail at `index`, its place
+    /// among the save's hidden windows: `FUN_00441190` appends each hidden
+    /// window to the rail as the loader meets it (`FUN_00428b40`). The port
+    /// commits Fleet windows after the others, so the slot is taken here
+    /// and the manager's minimize keeps it ([`Self::minimize_fleet_window`]).
+    pub fn insert_fleet_rail(
+        &mut self,
+        index: usize,
+        id: WindowId,
+        system: SystemKey,
+        logical_position: (i16, i16),
+    ) {
+        let entry = RailEntry::Fleet {
+            id,
+            system,
+            logical_position,
+        };
+        self.rail.retain(|held| !held.same_window(&entry));
+        self.rail.insert(index.min(self.rail.len()), entry);
     }
 
     fn evicted_fleet(entry: Option<RailEntry>) -> Option<WindowId> {
@@ -557,11 +950,30 @@ impl SystemWindowState {
         else {
             return false;
         };
-        if let RailEntry::System(window) = self.rail.remove(index) {
-            self.focus_serial = crate::window_focus::next_serial();
+        if let RailEntry::System(mut window) = self.rail.remove(index) {
+            window.focus_serial = crate::window_focus::next_serial();
             self.windows.push(window);
         }
         true
+    }
+
+    /// Carry a window drag one frame ([`TitleDrag`]): the window follows
+    /// the pointer while the button is down, and the release lets go.
+    fn update_title_drag(&mut self, ctx: &egui::Context, layout: CockpitLayout) {
+        if let Some(drag) = self.title_drag {
+            let window = self
+                .windows
+                .iter_mut()
+                .find(|window| area_id(window.system) == drag.area);
+            match (window, title_drag_step(ctx, layout, drag)) {
+                (Some(window), Ok(place)) => {
+                    if let Some(place) = place {
+                        window.logical_position = place;
+                    }
+                }
+                _ => self.title_drag = None,
+            }
+        }
     }
 
     fn window_mut(&mut self, system: SystemKey) -> Option<&mut OpenSystemWindow> {
@@ -597,7 +1009,7 @@ impl SystemWindowState {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SystemWindowAction {
     FocusSector(SystemKey),
     SelectSystem(SystemKey),
@@ -627,6 +1039,15 @@ pub enum SystemWindowAction {
         system: SystemKey,
         logical_position: (i16, i16),
     },
+    /// The band's name edit applied a new name: the band's Rename (0x215)
+    /// names the manager's current product (`FUN_0057e870` → manager
+    /// `+0x1f4` → `FUN_00529980`, whose notifier `FUN_0052ba00` renames the
+    /// product through `FUN_004f6e60`).
+    RenameProduct {
+        system: SystemKey,
+        area: ProductionArea,
+        name: String,
+    },
 }
 
 #[derive(Default)]
@@ -635,6 +1056,8 @@ pub enum SystemWindowAction {
     reason = "Each flag is one independent title-bar or list outcome of a frame."
 )]
 struct WindowDrawResult {
+    /// Where a press on the window's own surface took hold ([`TitleDrag`]).
+    drag_grab: Option<egui::Vec2>,
     focus: bool,
     close: bool,
     minimize: bool,
@@ -642,8 +1065,11 @@ struct WindowDrawResult {
     tab: Option<SystemWindowTab>,
     /// A press on a facility page's list: the item under it, or none.
     item: Option<Option<FacilityItem>>,
+    /// The facility page's cells as painted.
+    painted: Vec<FacilityItem>,
     band: Option<ProductionArea>,
     object_menu: Option<(Option<MenuObject>, (i16, i16))>,
+    rename: Option<BandRenameOutcome>,
 }
 
 /// What a frame's drawing reads.
@@ -677,6 +1103,7 @@ pub fn draw_system_windows(
     layout: CockpitLayout,
     cache: &mut BmpCache,
     front: bool,
+    shown: &dyn Fn(GalaxyChild) -> bool,
 ) -> Vec<SystemWindowAction> {
     state.prepare_faction(faction);
     let mut actions: Vec<SystemWindowAction> = draw_reference_rail(
@@ -690,19 +1117,64 @@ pub fn draw_system_windows(
         deliveries,
         fog,
     };
-    let windows = state.windows.clone();
+    state.update_title_drag(ctx, layout);
+    // A window the GID menu hides is neither painted nor live.
+    let windows: Vec<_> = state
+        .windows
+        .iter()
+        .filter(|window| shown(GalaxyChild::System(window.system)))
+        .cloned()
+        .collect();
     let focused_system = windows.last().map(|window| window.system);
     for window in windows {
         let system = window.system;
+        let rename = state
+            .band_rename
+            .clone()
+            .filter(|edit| edit.system == system);
         let result = draw_system_window(
             ctx,
             sources,
             window,
+            rename.as_ref(),
             front && focused_system == Some(system),
             faction,
             layout,
             cache,
         );
+        if let Some(grab) = result.drag_grab {
+            state.title_drag = Some(TitleDrag {
+                area: area_id(window.system),
+                grab,
+            });
+        }
+        match (result.rename.clone(), rename) {
+            (Some(BandRenameOutcome::Typed(text)), Some(_)) => {
+                if let Some(edit) = state.band_rename.as_mut() {
+                    edit.text = text;
+                    edit.fresh = false;
+                }
+            }
+            (Some(BandRenameOutcome::Commit(text)), Some(edit)) => {
+                state.band_rename = None;
+                // FUN_00458780: a changed, non-empty name applies; any other
+                // drops the order.
+                if !text.is_empty() && text != edit.original {
+                    actions.push(SystemWindowAction::RenameProduct {
+                        system,
+                        area: edit.area,
+                        name: text,
+                    });
+                }
+            }
+            (Some(BandRenameOutcome::Escape), Some(_)) => {
+                state.close(system);
+                continue;
+            }
+            _ => {}
+        }
+        state.painted.retain(|(painted, _)| *painted != system);
+        state.painted.push((system, result.painted));
         if result.close {
             state.close(system);
             continue;
@@ -847,6 +1319,7 @@ fn draw_reference_rail(
         entry @ RailEntry::Defenses {
             system,
             logical_position,
+            ..
         } => {
             state.rail.retain(|held| !held.same_window(&entry));
             Some(SystemWindowAction::RestoreDefensesWindow {
@@ -857,6 +1330,7 @@ fn draw_reference_rail(
         entry @ RailEntry::Missions {
             system,
             logical_position,
+            ..
         } => {
             state.rail.retain(|held| !held.same_window(&entry));
             Some(SystemWindowAction::RestoreMissionsWindow {
@@ -871,10 +1345,15 @@ fn draw_reference_rail(
     clippy::too_many_lines,
     reason = "Keep the window's ordered paint and input pass together, as the Defenses window does."
 )]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The window reads its sources, its edit and the frame's layout."
+)]
 fn draw_system_window(
     ctx: &egui::Context,
     sources: Sources<'_>,
     window: OpenSystemWindow,
+    rename: Option<&BandRename>,
     focused: bool,
     faction: CockpitFaction,
     layout: CockpitLayout,
@@ -1001,7 +1480,8 @@ fn draw_system_window(
                 }
             }
 
-            let font = egui::FontId::proportional((9.0 * scale).max(6.0));
+            let font = egui::FontId::proportional(OVERVIEW_FONT_EM * scale);
+            let mut rename_field = None;
             let (any_pressed, right_pressed) = ctx.input(|input| {
                 (
                     input.pointer.button_pressed(egui::PointerButton::Primary)
@@ -1049,28 +1529,52 @@ fn draw_system_window(
                             bx,
                             by,
                         );
-                        let line = |text: &str, (x, y): (f32, f32)| {
+                        let line_in = |text: &str, (x, y): (f32, f32), color| {
                             painter.text(
                                 logical_point(local, scale, bx + x, by + y),
                                 egui::Align2::LEFT_TOP,
                                 text,
                                 font.clone(),
-                                egui::Color32::WHITE,
+                                color,
                             );
                         };
-                        line(crate::manufacturing_window::band_title(area), BAND_TITLE);
-                        line(&shown.status, BAND_STATUS);
-                        if let Some(mini) = shown.mini {
+                        let line = |text: &str, at: (f32, f32)| {
+                            line_in(text, at, egui::Color32::WHITE);
+                        };
+                        // The title keeps the label's default colour, black
+                        // (no FUN_00601c90, FUN_00458080.c:76-78).
+                        line_in(
+                            crate::manufacturing_window::band_title(area),
+                            BAND_TITLE,
+                            egui::Color32::BLACK,
+                        );
+                        // The portrait, keyed, then the units, the name
+                        // and the destination over it (FUN_00457690.c:76-82).
+                        if let Some(portrait) = shown.portrait {
                             paint(
                                 cache,
                                 DllSource::Gokres,
-                                mini,
-                                bx + BAND_MINI.0,
-                                by + BAND_MINI.1,
+                                portrait,
+                                bx + BAND_PORTRAIT.0,
+                                by + BAND_PORTRAIT.1,
                             );
                         }
                         if let Some(units) = &shown.units {
                             line(units, BAND_UNITS);
+                        }
+                        match rename.filter(|edit| edit.area == area) {
+                            Some(edit) => {
+                                let field = band_rename_rect(
+                                    ui,
+                                    local,
+                                    scale,
+                                    (bx, by),
+                                    &edit.original,
+                                    &font,
+                                );
+                                rename_field = Some((field, edit));
+                            }
+                            None => line(&shown.status, BAND_STATUS),
                         }
                         line(&shown.destination, BAND_DESTINATION);
 
@@ -1112,6 +1616,22 @@ fn draw_system_window(
                             }
                         }
                     }
+                    // The edit lies over its band and takes the pointer
+                    // there. A press anywhere else in the window ends it as
+                    // Enter does (FUN_004534f0, 0x201 and 0x204 →
+                    // FUN_00458780).
+                    if let Some((field, edit)) = rename_field {
+                        result.rename = draw_band_rename(ui, field, edit, &font);
+                        let elsewhere = pointer.is_some_and(|point| {
+                            rect_contains(local, point) && !rect_contains(field, point)
+                        });
+                        if any_pressed && elsewhere {
+                            result.rename = Some(BandRenameOutcome::Commit(match result.rename {
+                                Some(BandRenameOutcome::Typed(ref text)) => text.clone(),
+                                _ => edit.text.clone(),
+                            }));
+                        }
+                    }
                 }
                 Some(_) => {
                     // The page label, then the list (FUN_004568a0).
@@ -1142,6 +1662,7 @@ fn draw_system_window(
                         result.item = Some(None);
                         result.focus = true;
                     }
+                    result.painted = cells.iter().map(|cell| cell.item).collect();
                     for (index, cell) in cells.iter().enumerate() {
                         let rect = cell_rect(local, scale, index);
                         if !rect.intersects(list) {
@@ -1191,6 +1712,7 @@ fn draw_system_window(
                 }
             }
 
+            result.drag_grab = surface_drag_grab(ctx, &window_response, local, scale, &[]);
             if window_response.clicked() || clicked.iter().any(|&value| value) {
                 result.focus = true;
             }
@@ -1216,6 +1738,28 @@ fn band_rect(window: egui::Rect, scale: f32, area: ProductionArea) -> egui::Rect
         .unwrap_or_default();
     let (x, y, width, height) = BAND_RECTS[index];
     logical_rect(window, scale, x, y, width, height)
+}
+
+/// The index of the grid cell (`FUN_00609ae0`) holding a window-local
+/// point: `list` is the list's rect, `cell` each cell's size, row-major
+/// with `columns` to a row from the list's corner. `None` off the list.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "The point lies inside the list, so the column and row are small and non-negative."
+)]
+pub(crate) fn grid_cell(
+    point: (f32, f32),
+    list: (f32, f32, f32, f32),
+    cell: (f32, f32),
+    columns: usize,
+) -> Option<usize> {
+    let (x, y) = (point.0 - list.0, point.1 - list.1);
+    if !(0.0..list.2).contains(&x) || !(0.0..list.3).contains(&y) {
+        return None;
+    }
+    let column = (x / cell.0) as usize;
+    (column < columns).then(|| (y / cell.1) as usize * columns + column)
 }
 
 /// The `index`th cell of a facility page (`FUN_00609ae0`): row-major from
@@ -1333,7 +1877,10 @@ pub(crate) fn troop_mini(dat_id: DatId) -> Option<(u32, &'static str)> {
     Some((resource_id, label))
 }
 
-pub(crate) fn special_force_mini(dat_id: DatId) -> Option<(u32, &'static str)> {
+/// A special force's GOKRES mini, `(TEXTSTRA id & 0xfff) + 0x4000`
+/// (`FUN_0042c3b0`, slot `+0x30` = `FUN_004f63d0`), and its class name.
+#[must_use]
+pub fn special_force_mini(dat_id: DatId) -> Option<(u32, &'static str)> {
     if dat_id.family() != 0x3c {
         return None;
     }
@@ -1373,6 +1920,147 @@ fn cockpit_faction(faction: CockpitFaction) -> Faction {
         CockpitFaction::Alliance => Faction::Alliance,
         CockpitFaction::Empire => Faction::Empire,
     }
+}
+
+/// Where a band's name edit lies: over the band's product-name line, as
+/// wide as its text plus 2 and 13 high (`FUN_00458640` takes the label's
+/// rect, `+0x14..+0x20`, two pixels wider). hyp (measured): under Wine the
+/// selected "Death Star 1" filled 61 by 13 pixels from the line's top-left
+/// (route-1 Empire save, day 123 played on).
+fn band_rename_rect(
+    ui: &egui::Ui,
+    local: egui::Rect,
+    scale: f32,
+    (bx, by): (f32, f32),
+    original: &str,
+    font: &egui::FontId,
+) -> egui::Rect {
+    let width = ui.fonts(|fonts| {
+        fonts
+            .layout_no_wrap(original.to_owned(), font.clone(), egui::Color32::WHITE)
+            .size()
+            .x
+    }) / scale;
+    logical_rect(
+        local,
+        scale,
+        bx + BAND_STATUS.0,
+        by + BAND_STATUS.1,
+        width + 2.0,
+        BAND_RENAME_HEIGHT,
+    )
+}
+
+/// The overview's text size: font 10 for the band labels (`FUN_00458080`,
+/// `FUN_00601c60(label, 10)`) and the yard counts, `FUN_0060eed0` case 10:
+/// Arial with a 14-pixel cell at weight 400. hyp (measured): under Wine its
+/// glyphs are Arial's hinted at an 11-pixel em ("No Troops in training"
+/// and "No Facilities are being built" 98 and 126 pixels of ink, route-1
+/// Empire save, day 123 played on), which egui's outline advances meet at
+/// 10.6.
+const OVERVIEW_FONT_EM: f32 = 10.6;
+
+/// The band name edit's height (hyp, measured; see [`band_rename_rect`]).
+const BAND_RENAME_HEIGHT: f32 = 13.0;
+
+/// Draw a band's name edit and read what the frame did to it. The field
+/// draws its text white on the band; the selected text shows black on
+/// white, and a whole selected name fills the field white: under Wine the
+/// field opened as a white box with "Death Star 1" in black, and the typed
+/// "Tarkin" showed white on the band (route-1 Empire save, day 123 played
+/// on).
+fn draw_band_rename(
+    ui: &mut egui::Ui,
+    field: egui::Rect,
+    edit: &BandRename,
+    font: &egui::FontId,
+) -> Option<BandRenameOutcome> {
+    let id = ui.id().with(("band-rename", edit.system, edit.area));
+    let count = edit.text.chars().count();
+    let selected = if edit.fresh {
+        Some(0..count)
+    } else {
+        egui::TextEdit::load_state(ui.ctx(), id)
+            .and_then(|state| state.cursor.char_range())
+            .map(|range| {
+                let [start, end] = range.sorted();
+                start.index..end.index
+            })
+            .filter(|range| !range.is_empty())
+    };
+    if count > 0 && selected == Some(0..count) {
+        ui.painter().rect_filled(field, 0.0, egui::Color32::WHITE);
+    }
+    let mut layouter = |ui: &egui::Ui, value: &str, _wrap: f32| {
+        let mut job = egui::text::LayoutJob::default();
+        for (index, character) in value.chars().enumerate() {
+            let color = if selected
+                .as_ref()
+                .is_some_and(|range| range.contains(&index))
+            {
+                egui::Color32::BLACK
+            } else {
+                egui::Color32::WHITE
+            };
+            job.append(
+                character.encode_utf8(&mut [0; 4]),
+                0.0,
+                egui::TextFormat::simple(font.clone(), color),
+            );
+        }
+        ui.fonts(|fonts| fonts.layout_job(job))
+    };
+    let mut text = edit.text.clone();
+    let response = ui
+        .scope(|ui| {
+            let visuals = ui.visuals_mut();
+            visuals.selection.bg_fill = egui::Color32::WHITE;
+            visuals.text_cursor.stroke.color = egui::Color32::WHITE;
+            ui.put(
+                field,
+                egui::TextEdit::singleline(&mut text)
+                    .id(id)
+                    .frame(false)
+                    .margin(egui::Margin::ZERO)
+                    .desired_width(field.width())
+                    .layouter(&mut layouter),
+            )
+        })
+        .inner;
+    if edit.fresh {
+        response.request_focus();
+        let mut state = egui::TextEdit::load_state(ui.ctx(), id).unwrap_or_default();
+        state
+            .cursor
+            .set_char_range(Some(egui::text::CCursorRange::two(
+                egui::text::CCursor::new(0),
+                egui::text::CCursor::new(count),
+            )));
+        state.store(ui.ctx(), id);
+        return Some(BandRenameOutcome::Typed(edit.text.clone()));
+    }
+    let (enter, escape) = ui.input(|input| {
+        (
+            input.key_pressed(egui::Key::Enter),
+            input.key_pressed(egui::Key::Escape),
+        )
+    });
+    if escape {
+        return Some(BandRenameOutcome::Escape);
+    }
+    if enter {
+        return Some(BandRenameOutcome::Commit(text));
+    }
+    response.changed().then_some(BandRenameOutcome::Typed(text))
+}
+
+/// The system whose DAT id is `id`: how a save names a window's subject.
+pub(crate) fn system_by_dat_id(world: &GameWorld, id: DatId) -> Option<SystemKey> {
+    world
+        .systems
+        .iter()
+        .find(|(_, system)| system.dat_id == id)
+        .map(|(key, _)| key)
 }
 
 fn clamp_to_galaxy(position: (i16, i16), layout: CockpitLayout) -> (i16, i16) {
@@ -1465,6 +2153,89 @@ pub(crate) fn exact_clicked(response: &egui::Response, rect: egui::Rect) -> bool
 
 pub(crate) fn rect_contains(rect: egui::Rect, point: egui::Pos2) -> bool {
     point.x >= rect.min.x && point.x < rect.max.x && point.y >= rect.min.y && point.y < rect.max.y
+}
+
+/// A drag of a movable detail window by its own surface (the title bar or
+/// any bare part of it): its area and where in the window, in logical
+/// pixels, the pointer took hold.
+///
+/// The System, Fleet, Defenses and Missions windows set the movable bit
+/// (`+0xb8 | 4` in `FUN_00452fc0`, `FUN_004a2630`, `FUN_004a7790` and
+/// `FUN_0049f130`); a sector window's base takes policy 0 (`FUN_004591d0` →
+/// `FUN_004ac120` → `FUN_00606380`) and stays put, as a title drag left
+/// the Dolomar sector window under Wine
+/// (alliance-day1169-deathstar-trench-run played on to day 1170). A left press the window
+/// passes to its base (`FUN_00606650` → `FUN_00606ee0`) captures the
+/// pointer, each move while the button is down sets the window's place at
+/// once (`FUN_006071e0`; `FUN_00606380` sets `+0xf4` to 1, the live mode),
+/// with no clamp, and the release ends it (`FUN_00607010`). Every press on
+/// the window's own surface reaches the base: the Missions (`FUN_0049f4b0`),
+/// Fleet (`FUN_004a29c0`) and Defenses (`FUN_004a86d0`) procedures pass it
+/// on, and the System procedure (`FUN_004534f0`) does unless it lands on an
+/// overview band; presses on child controls (buttons, tabs, lists) go to
+/// them.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct TitleDrag {
+    pub area: egui::Id,
+    pub grab: egui::Vec2,
+}
+
+/// The pointer as a 640 by 480 canvas point.
+fn canvas_pointer(layout: CockpitLayout, pointer: egui::Pos2) -> egui::Vec2 {
+    egui::vec2(
+        (pointer.x - layout.canvas.x) / layout.scale,
+        (pointer.y - layout.canvas.y) / layout.scale,
+    )
+}
+
+/// Where a primary press this frame takes hold of a movable window's own
+/// surface ([`TitleDrag`]), in window pixels: it landed on the window's
+/// background widget `window`, which lies under every control widget, and
+/// on none of `controls`, the child controls whose presses the port tests
+/// by rectangle (`x, y, width, height`).
+pub(crate) fn surface_drag_grab(
+    ctx: &egui::Context,
+    window: &egui::Response,
+    local: egui::Rect,
+    scale: f32,
+    controls: &[(f32, f32, f32, f32)],
+) -> Option<egui::Vec2> {
+    let (pressed, origin) = ctx.input(|input| {
+        (
+            input.pointer.button_pressed(egui::PointerButton::Primary),
+            input.pointer.press_origin(),
+        )
+    });
+    if !pressed || !window.is_pointer_button_down_on() {
+        return None;
+    }
+    let at = (origin? - local.min) / scale;
+    let on_control = controls.iter().any(|&(x, y, width, height)| {
+        (x..x + width).contains(&at.x) && (y..y + height).contains(&at.y)
+    });
+    (!on_control).then_some(at)
+}
+
+/// A held drag's frame: the window's new place, or `Err(())` once the
+/// button is up and the drag is over; `Ok(None)` with no pointer.
+pub(crate) fn title_drag_step(
+    ctx: &egui::Context,
+    layout: CockpitLayout,
+    drag: TitleDrag,
+) -> Result<Option<(i16, i16)>, ()> {
+    let (down, pointer) = ctx.input(|input| {
+        (
+            input.pointer.button_down(egui::PointerButton::Primary),
+            input.pointer.interact_pos(),
+        )
+    });
+    if !down {
+        return Err(());
+    }
+    Ok(pointer.map(|pointer| {
+        let at = canvas_pointer(layout, pointer) - drag.grab;
+        (at.x.round() as i16, at.y.round() as i16)
+    }))
 }
 
 fn paint_resource(
@@ -1627,7 +2398,13 @@ mod tests {
     struct Run {
         actions: Vec<SystemWindowAction>,
         texts: Vec<RailText>,
+        /// The last frame's filled rectangles and their colours.
+        rects: Vec<(egui::Rect, egui::Color32)>,
+        /// The last frame's texts and their colours.
+        colors: Vec<(String, egui::Color32)>,
         painted: Vec<(u32, egui::Pos2)>,
+        /// The last frame's shapes, bottom first.
+        shapes: Vec<egui::Shape>,
     }
 
     /// Draw the windows and rail on the Alliance's layout at scale 2, one
@@ -1639,12 +2416,48 @@ mod tests {
         state: &mut SystemWindowState,
         frames: Vec<Vec<egui::Event>>,
     ) -> Run {
-        let layout = layout(CockpitFaction::Alliance, 2.0);
+        run_as(
+            world,
+            manufacturing,
+            state,
+            frames,
+            CockpitFaction::Alliance,
+        )
+    }
+
+    fn run_as(
+        world: &GameWorld,
+        manufacturing: &ManufacturingState,
+        state: &mut SystemWindowState,
+        frames: Vec<Vec<egui::Event>>,
+        faction: CockpitFaction,
+    ) -> Run {
+        run_cached(
+            world,
+            manufacturing,
+            state,
+            frames,
+            faction,
+            BmpCache::new(),
+            &mut |_, _| {},
+        )
+    }
+
+    fn run_cached(
+        world: &GameWorld,
+        manufacturing: &ManufacturingState,
+        state: &mut SystemWindowState,
+        frames: Vec<Vec<egui::Event>>,
+        faction: CockpitFaction,
+        mut cache: BmpCache,
+        before: &mut dyn FnMut(usize, &mut SystemWindowState),
+    ) -> Run {
+        let layout = layout(faction, 2.0);
         let ctx = egui::Context::default();
-        let mut cache = BmpCache::new();
         let fog = FogState::new(Faction::Alliance);
         let mut run = Run::default();
-        for events in frames {
+        for (index, events) in frames.into_iter().enumerate() {
+            before(index, state);
             let input = egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(
                     egui::Pos2::ZERO,
@@ -1664,13 +2477,38 @@ mod tests {
                     manufacturing,
                     &DeliveryState::new(),
                     state,
-                    CockpitFaction::Alliance,
+                    faction,
                     layout,
                     &mut cache,
                     true,
+                    &|_| true,
                 ));
             });
             run.painted = PAINTED.with(|painted| painted.take());
+            run.shapes = output
+                .shapes
+                .iter()
+                .map(|clipped| clipped.shape.clone())
+                .collect();
+            run.rects = output
+                .shapes
+                .iter()
+                .filter_map(|clipped| match &clipped.shape {
+                    egui::Shape::Rect(rect) => Some((rect.rect, rect.fill)),
+                    _ => None,
+                })
+                .collect();
+            run.colors = output
+                .shapes
+                .iter()
+                .filter_map(|clipped| match &clipped.shape {
+                    egui::Shape::Text(text) => Some((
+                        text.galley.text().to_owned(),
+                        text.galley.job.sections[0].format.color,
+                    )),
+                    _ => None,
+                })
+                .collect();
             run.texts = output
                 .shapes
                 .into_iter()
@@ -1756,6 +2594,325 @@ mod tests {
             .unwrap_or_else(|| panic!("no {words:?} in {:?}", run.texts))
     }
 
+    fn key(key: egui::Key) -> egui::Event {
+        egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::default(),
+        }
+    }
+
+    /// `system`'s window with the ships band's name edit open on "Death
+    /// Star 1".
+    fn renaming(world: &GameWorld, system: SystemKey) -> SystemWindowState {
+        let mut state = opened(world, system);
+        assert!(state.begin_band_rename(system, ProductionArea::Shipyard, "Death Star 1"));
+        state
+    }
+
+    /// Two frames for the edit to appear and take the focus, then `frames`.
+    fn after_opening(frames: Vec<Vec<egui::Event>>) -> Vec<Vec<egui::Event>> {
+        let mut all = vec![vec![], vec![]];
+        all.extend(frames);
+        all
+    }
+
+    fn renamed(actions: &[SystemWindowAction]) -> Vec<(ProductionArea, &str)> {
+        actions
+            .iter()
+            .filter_map(|action| match action {
+                SystemWindowAction::RenameProduct { area, name, .. } => {
+                    Some((*area, name.as_str()))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_band_rename_opens_over_the_product_name_with_the_window_focused() {
+        // FUN_00458b50 → FUN_00458640: the edit lies over the band's name
+        // line (band (5, 16)), the band selected and the window focused.
+        let (world, systems) = fixture_world(2);
+        let mut state = opened(&world, systems[0]);
+        let layout = layout(CockpitFaction::Alliance, 2.0);
+        state.open(&world, systems[1], ORIGIN, CockpitFaction::Alliance, layout);
+        assert!(!state.begin_band_rename(SystemKey::default(), ProductionArea::Shipyard, "X"));
+        assert!(state.begin_band_rename(systems[0], ProductionArea::Shipyard, "Death Star 1"));
+        assert!(state.band_rename_open());
+        assert_eq!(state.windows.last().unwrap().system, systems[0]);
+        assert_eq!(
+            state.windows.last().unwrap().selected_band,
+            Some(ProductionArea::Shipyard)
+        );
+
+        let run = run_with(
+            &world,
+            &ManufacturingState::new(),
+            &mut state,
+            after_opening(Vec::new()),
+        );
+        let (x, y, _, _) = BAND_RECTS[0];
+        let field = text(&run, "Death Star 1");
+        assert!(
+            (field.1 - at(x + BAND_STATUS.0, y + BAND_STATUS.1)).length() < 4.0,
+            "{field:?}"
+        );
+        // The other window's ships band still shows its line.
+        assert_eq!(
+            run.texts
+                .iter()
+                .filter(|text| text.0 == "No Ships are being built")
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn enter_applies_a_typed_name_to_the_bands_product() {
+        // FUN_00458780: Enter (0x407) with a changed, non-empty name sets the
+        // pending Rename's name and submits it. Under Wine "Tarkin" typed
+        // over the selected "Death Star 1" renamed the unfinished ship
+        // (route-1 Empire save, day 123 played on).
+        let (world, systems) = fixture_world(1);
+        let mut state = renaming(&world, systems[0]);
+        let run = run_with(
+            &world,
+            &ManufacturingState::new(),
+            &mut state,
+            after_opening(vec![
+                vec![egui::Event::Text("Tarkin".into())],
+                vec![key(egui::Key::Enter)],
+            ]),
+        );
+        assert_eq!(
+            renamed(&run.actions),
+            [(ProductionArea::Shipyard, "Tarkin")]
+        );
+        assert!(!state.band_rename_open());
+        assert_eq!(state.windows.len(), 1);
+    }
+
+    /// The field where the band's name edit lies, at scale 2: the name's
+    /// width in the band's font plus 2, 13 high, at the name line.
+    fn band_field(name: &str) -> egui::Rect {
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput::default(), |_| {});
+        let width = ctx.fonts(|fonts| {
+            fonts
+                .layout_no_wrap(
+                    name.to_owned(),
+                    egui::FontId::proportional(OVERVIEW_FONT_EM * 2.0),
+                    egui::Color32::WHITE,
+                )
+                .size()
+                .x
+        });
+        let (x, y, _, _) = BAND_RECTS[0];
+        egui::Rect::from_min_size(
+            at(x + BAND_STATUS.0, y + BAND_STATUS.1),
+            egui::vec2(width + 4.0, BAND_RENAME_HEIGHT * 2.0),
+        )
+    }
+
+    #[test]
+    fn the_overview_bands_take_font_10_at_the_originals_size() {
+        // FUN_00458080 gives every band label font 10 (FUN_00601c60, lines
+        // 77, 91, 106 and 121): FUN_0060eed0 case 10, Arial with a 14-pixel
+        // cell at weight 400. The title (line 76-78) keeps the label's
+        // default colour, which shows black; the other lines are white
+        // (FUN_00601c90 0x2ffffff). hyp (measured): under Wine the idle
+        // lines' ink is 98 ("No Troops in training") and 126 ("No Facilities
+        // are being built") pixels wide, Arial's hinted advances at an
+        // 11-pixel em (route-1 Empire save, day 123 played on).
+        let (world, systems) = fixture_world(1);
+        let mut state = opened(&world, systems[0]);
+        let run = run_with(
+            &world,
+            &ManufacturingState::new(),
+            &mut state,
+            after_opening(Vec::new()),
+        );
+        for (line, original) in [
+            ("No Troops in training", 98.0),
+            ("No Facilities are being built", 126.0),
+        ] {
+            let width = text(&run, line).2 / 2.0;
+            assert!(
+                (width - original).abs() <= 4.0,
+                "{line:?} is {width} wide, the original {original}"
+            );
+        }
+        let color = |words: &str| {
+            run.colors
+                .iter()
+                .find(|(text, _)| text == words)
+                .map(|(_, color)| *color)
+        };
+        assert_eq!(color("Ship Construction"), Some(egui::Color32::BLACK));
+        assert_eq!(color("No Troops in training"), Some(egui::Color32::WHITE));
+    }
+
+    #[test]
+    fn the_whole_selected_name_fills_the_field_white_until_typing() {
+        // FUN_00458640 selects the whole name: under Wine "Death Star 1"
+        // showed black on a white box over the line, the label's rect two
+        // pixels wider; the typed "Tarkin" showed white on the band
+        // (route-1 Empire save, day 123 played on).
+        let (world, systems) = fixture_world(1);
+        let mut state = renaming(&world, systems[0]);
+        let field = band_field("Death Star 1");
+        let white = |run: &Run| {
+            // White, faded in with its new window (premultiplied: every
+            // channel equals alpha).
+            run.rects.iter().any(|(rect, fill)| {
+                fill.a() > 0
+                    && [fill.r(), fill.g(), fill.b()] == [fill.a(); 3]
+                    && (rect.min - field.min).length() < 0.01
+                    && (rect.size() - field.size()).length() < 0.01
+            })
+        };
+        let opened = run_with(
+            &world,
+            &ManufacturingState::new(),
+            &mut state,
+            after_opening(Vec::new()),
+        );
+        assert!(white(&opened), "{:?} not in {:?}", field, opened.rects);
+        let typed = run_with(
+            &world,
+            &ManufacturingState::new(),
+            &mut state,
+            vec![vec![egui::Event::Text("Tarkin".into())], vec![]],
+        );
+        assert!(!white(&typed));
+    }
+
+    #[test]
+    fn an_empty_name_opens_with_no_white_box() {
+        // Selecting the whole of an empty name selects nothing, so nothing
+        // shows selected. The edit selects the name on the frame it opens
+        // in, over a window already drawn, and keeps it after; a whole name
+        // shows its white box on both frames, an empty one on neither.
+        let (world, systems) = fixture_world(1);
+        let boxed = |name: &str, frames: usize| {
+            let mut state = opened(&world, systems[0]);
+            let run = run_cached(
+                &world,
+                &ManufacturingState::new(),
+                &mut state,
+                vec![Vec::new(); frames],
+                CockpitFaction::Alliance,
+                BmpCache::new(),
+                &mut |index, state| {
+                    if index == 2 {
+                        assert!(state.begin_band_rename(
+                            systems[0],
+                            ProductionArea::Shipyard,
+                            name
+                        ));
+                    }
+                },
+            );
+            let field = band_field(name);
+            run.rects.iter().any(|(rect, fill)| {
+                fill.a() > 0
+                    && [fill.r(), fill.g(), fill.b()] == [fill.a(); 3]
+                    && (rect.min - field.min).length() < 0.01
+            })
+        };
+        for frames in [3, 4] {
+            assert!(boxed("Death Star 1", frames), "{frames}");
+            assert!(!boxed("", frames), "{frames}");
+        }
+    }
+
+    #[test]
+    fn an_unchanged_or_emptied_name_applies_nothing() {
+        // FUN_00458780.c:33-37: an unchanged or empty name drops the order.
+        let (world, systems) = fixture_world(1);
+        for (frames, typed) in [
+            (Vec::new(), "Death Star 1"),
+            (vec![vec![key(egui::Key::Backspace)]], ""),
+        ] {
+            let mut state = renaming(&world, systems[0]);
+            run_with(
+                &world,
+                &ManufacturingState::new(),
+                &mut state,
+                after_opening(frames),
+            );
+            assert_eq!(
+                state.band_rename.as_ref().map(|edit| edit.text.as_str()),
+                Some(typed)
+            );
+            let run = run_with(
+                &world,
+                &ManufacturingState::new(),
+                &mut state,
+                vec![vec![key(egui::Key::Enter)]],
+            );
+            assert_eq!(renamed(&run.actions), []);
+            assert!(!state.band_rename_open());
+        }
+    }
+
+    #[test]
+    fn escape_in_the_band_rename_closes_the_window_unrenamed() {
+        // The field passes Escape to the window (FUN_00605160), whose
+        // FUN_00458980 closes it. Under Wine the Coruscant System window
+        // closed with the name unchanged (route-1 Empire save, day 127
+        // played on to day 140).
+        let (world, systems) = fixture_world(1);
+        let mut state = renaming(&world, systems[0]);
+        let run = run_with(
+            &world,
+            &ManufacturingState::new(),
+            &mut state,
+            after_opening(vec![
+                vec![egui::Event::Text("Tarkin".into())],
+                vec![key(egui::Key::Escape)],
+            ]),
+        );
+        assert_eq!(renamed(&run.actions), []);
+        assert!(state.windows.is_empty());
+        assert!(!state.band_rename_open());
+    }
+
+    #[test]
+    fn a_press_elsewhere_in_the_window_applies_the_typed_name() {
+        // FUN_004534f0: a press (0x201, 0x204) in the window ends the edit
+        // through FUN_00458780, as Enter does.
+        let (world, systems) = fixture_world(1);
+        let mut state = renaming(&world, systems[0]);
+        let mut frames = vec![vec![egui::Event::Text("Tarkin".into())]];
+        frames.extend(click(at(20.0, 100.0)));
+        let run = run_with(
+            &world,
+            &ManufacturingState::new(),
+            &mut state,
+            after_opening(frames),
+        );
+        assert_eq!(
+            renamed(&run.actions),
+            [(ProductionArea::Shipyard, "Tarkin")]
+        );
+        assert!(!state.band_rename_open());
+    }
+
+    #[test]
+    fn closing_or_minimizing_the_window_drops_its_band_rename() {
+        let (world, systems) = fixture_world(1);
+        let mut state = renaming(&world, systems[0]);
+        assert!(state.close_window(systems[0]));
+        assert!(!state.band_rename_open());
+        let mut state = renaming(&world, systems[0]);
+        assert!(state.minimize(systems[0]));
+        assert!(!state.band_rename_open());
+    }
+
     #[test]
     fn opening_clamps_to_faction_galaxy_and_deduplicates() {
         // FUN_0045aac0 clamps the 226 by 304 window into the galaxy view:
@@ -1774,6 +2931,349 @@ mod tests {
         assert_eq!(state.windows[0].tab, SystemWindowTab::Overview);
         assert!(state.open(&world, systems[0], (0, 0), CockpitFaction::Alliance, layout));
         assert_eq!(state.window_count(), 1);
+    }
+
+    #[test]
+    fn a_keyed_close_closes_that_window_and_leaves_the_rest_for_either_side() {
+        // FUN_004ac3a0: WM_KEYDOWN 0x1b calls slot +0x30 on the focused window.
+        let (world, systems) = fixture_world(2);
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            let mut state = SystemWindowState::default();
+            let layout = layout(faction, 1.0);
+            for system in &systems {
+                assert!(state.open(&world, *system, (100, 50), faction, layout));
+            }
+            assert!(state.close_window(systems[1]));
+            let open: Vec<_> = state.windows.iter().map(|window| window.system).collect();
+            assert_eq!(open, [systems[0]], "{faction:?}");
+            assert!(state.close_window(systems[0]));
+            assert!(!state.any_open());
+            assert!(!state.close_window(systems[0]));
+        }
+    }
+
+    #[test]
+    fn after_an_escape_the_window_behind_ranks_where_it_took_focus_for_either_side() {
+        // The keyed close posts 0x467(0,0), which activates the topmost
+        // remaining child in z-order (FUN_00422ce0); a window of another
+        // kind focused between this kind's two stays above the one behind.
+        let (world, systems) = fixture_world(2);
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            let mut state = SystemWindowState::default();
+            let layout = layout(faction, 1.0);
+            assert!(state.open(&world, systems[0], (100, 50), faction, layout));
+            let between = crate::window_focus::next_serial();
+            assert!(state.open(&world, systems[1], (100, 50), faction, layout));
+            assert!(state.focus_serial() > between, "{faction:?}");
+            assert!(state.close_window(systems[1]));
+            assert!(
+                state.focus_serial() < between,
+                "{faction:?}: the window behind keeps the place it took focus at"
+            );
+        }
+    }
+
+    #[test]
+    fn a_saved_system_window_comes_back_in_place_on_the_overview() {
+        // FUN_00458ea0 saves the system and no page; FUN_00441190 rebuilds
+        // type 9 at the saved x and y. Under Wine a System window switched
+        // to Shipyards and dragged to (322, 92) reopened there on the
+        // overview (Empire day-2 start, played on to day 6).
+        let (world, systems) = fixture_world(2);
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            let mut state = SystemWindowState::default();
+            let layout = layout(faction, 1.0);
+            state.open_tab(
+                &world,
+                systems[0],
+                SystemWindowTab::Shipyards,
+                (322, 92),
+                faction,
+                layout,
+            );
+            state.open(&world, systems[1], (150, 80), faction, layout);
+            let mut saved = state.saved_windows(&world);
+            saved.sort_by_key(|(z, _)| *z);
+            let placed: Vec<_> = state
+                .windows
+                .iter()
+                .map(|window| (window.system, window.logical_position))
+                .collect();
+
+            let mut restored = SystemWindowState::default();
+            let floor = crate::window_focus::next_serial();
+            for (_, window) in &saved {
+                assert!(
+                    restored.restore_saved(&world, faction, window),
+                    "{faction:?}"
+                );
+            }
+
+            let back: Vec<_> = restored
+                .windows
+                .iter()
+                .map(|window| (window.system, window.logical_position))
+                .collect();
+            assert_eq!(back, placed, "{faction:?}");
+            assert!(restored.windows.iter().all(
+                |window| window.tab == SystemWindowTab::Overview && window.focus_serial > floor
+            ));
+            assert_eq!(restored.faction, faction);
+        }
+    }
+
+    #[test]
+    fn a_saved_minimized_window_comes_back_on_the_rail_in_order() {
+        // Each rail window saves hidden (+0x110 is 0 there) at its place in
+        // the z-order (FUN_00440ea0.c:19-24), which it keeps from before it
+        // was minimized; FUN_00441190 appends each hidden window back to the
+        // rail as it meets it (FUN_00428b40). Under Wine a minimized System
+        // window came back on the rail (Empire day-2 start, played on to
+        // day 6).
+        let (world, systems) = fixture_world(3);
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            let mut state = SystemWindowState::default();
+            let layout = layout(faction, 1.0);
+            state.open(&world, systems[0], (120, 70), faction, layout);
+            assert!(state.minimize(systems[0]));
+            let opened_first = state.windows.is_empty();
+            assert!(opened_first);
+            state.minimize_defenses_window_at(systems[1], (130, 75), 7);
+            state.minimize_missions_window_at(systems[2], (140, 85), 3);
+            let mut saved = state.saved_rail(&world, |_| None);
+            assert!(saved.iter().all(|(_, window)| !window.shown));
+            let serials: Vec<u64> = saved.iter().map(|(serial, _)| *serial).collect();
+            assert_eq!(serials[1..], [7, 3], "{faction:?}");
+            saved.sort_by_key(|(serial, _)| *serial);
+
+            let mut restored = SystemWindowState::default();
+            for (_, window) in &saved {
+                assert!(
+                    restored.restore_saved(&world, faction, window),
+                    "{faction:?}"
+                );
+            }
+
+            assert!(restored.windows.is_empty(), "{faction:?}");
+            let back: Vec<_> = restored
+                .saved_rail(&world, |_| None)
+                .into_iter()
+                .map(|(_, window)| window)
+                .collect();
+            let order: Vec<_> = saved.iter().map(|(_, window)| *window).collect();
+            assert_eq!(back, order, "{faction:?}");
+        }
+    }
+
+    #[test]
+    fn a_loads_hidden_window_takes_the_next_place_in_the_z_order() {
+        // The save lists the windows bottom to top (FUN_00440ea0.c:19-24)
+        // and FUN_00441190 makes them in that order, hidden ones included,
+        // so a hidden System, Defenses or Missions window takes the next
+        // place when its turn comes.
+        let (world, systems) = fixture_world(3);
+        let mut state = SystemWindowState::default();
+        let layout = layout(CockpitFaction::Alliance, 1.0);
+        state.open(
+            &world,
+            systems[0],
+            (120, 70),
+            CockpitFaction::Alliance,
+            layout,
+        );
+        assert!(state.minimize(systems[0]));
+        // Both below the System window, which took a fresh serial.
+        state.minimize_defenses_window_at(systems[1], (130, 75), 0);
+        state.minimize_missions_window_at(systems[2], (140, 85), 0);
+        let top = |state: &SystemWindowState| {
+            state
+                .saved_rail(&world, |_| None)
+                .into_iter()
+                .max_by_key(|(serial, _)| *serial)
+                .map(|(_, window)| window.kind)
+        };
+        let dat = |index: usize| world.systems[systems[index]].dat_id;
+
+        // Only the window the child names lifts.
+        assert!(!state.lift_hidden(GalaxyChild::Defenses(systems[2])));
+        assert!(!state.lift_hidden(GalaxyChild::Missions(systems[1])));
+        assert!(!state.lift_hidden(GalaxyChild::System(systems[1])));
+        assert_eq!(
+            top(&state),
+            Some(SavedWindowKind::System { system: dat(0) })
+        );
+
+        assert!(state.lift_hidden(GalaxyChild::Missions(systems[2])));
+        assert_eq!(
+            top(&state),
+            Some(SavedWindowKind::Missions { system: dat(2) })
+        );
+        assert!(state.lift_hidden(GalaxyChild::Defenses(systems[1])));
+        assert_eq!(
+            top(&state),
+            Some(SavedWindowKind::Defenses { system: dat(1) })
+        );
+        assert!(state.lift_hidden(GalaxyChild::System(systems[0])));
+        assert_eq!(
+            top(&state),
+            Some(SavedWindowKind::System { system: dat(0) })
+        );
+    }
+
+    #[test]
+    fn a_loads_hidden_fleet_window_takes_its_saved_rail_slot() {
+        // FUN_00441190 appends each hidden window to the rail as it meets
+        // it (FUN_00428b40); the port commits Fleet windows last, so one
+        // goes back into its slot among the others.
+        let (world, systems) = fixture_world(3);
+        let mut state = SystemWindowState::default();
+        let layout = layout(CockpitFaction::Empire, 1.0);
+        state.open(
+            &world,
+            systems[0],
+            (120, 70),
+            CockpitFaction::Empire,
+            layout,
+        );
+        assert!(state.minimize(systems[0]));
+        state.minimize_defenses_window_at(systems[1], (130, 75), 7);
+        let fleets = fleet_window_ids(&[301]);
+        state.insert_fleet_rail(1, fleets[0], systems[2], (150, 90));
+        assert_eq!(
+            state.rail_entries().collect::<Vec<_>>(),
+            [
+                (systems[0], "system"),
+                (systems[2], "fleet"),
+                (systems[1], "defenses")
+            ]
+        );
+        // The same window again moves rather than doubles.
+        state.insert_fleet_rail(0, fleets[0], systems[2], (150, 90));
+        assert_eq!(
+            state.rail_entries().collect::<Vec<_>>(),
+            [
+                (systems[2], "fleet"),
+                (systems[0], "system"),
+                (systems[1], "defenses")
+            ]
+        );
+    }
+
+    #[test]
+    fn a_saved_window_names_its_system_by_dat_id() {
+        let (world, systems) = fixture_world(1);
+        let mut state = SystemWindowState::default();
+        let layout = layout(CockpitFaction::Empire, 1.0);
+        state.open(
+            &world,
+            systems[0],
+            (150, 80),
+            CockpitFaction::Empire,
+            layout,
+        );
+        assert_eq!(
+            state.saved_windows(&world)[0].1,
+            SavedWindow {
+                kind: SavedWindowKind::System {
+                    system: DatId::new(100),
+                },
+                position: (150, 80),
+                shown: true,
+            }
+        );
+        let fleet = fleet_window_id(7);
+        state.minimize_fleet_window(fleet, systems[0], (160, 90));
+        assert_eq!(state.saved_rail(&world, |_| None), []);
+        assert_eq!(
+            state.saved_rail(&world, |id| (id == fleet).then_some((0x68, 5))),
+            [(
+                5,
+                SavedWindow {
+                    kind: SavedWindowKind::Fleet {
+                        system: DatId::new(100),
+                        tab: 0x68,
+                    },
+                    position: (160, 90),
+                    shown: false,
+                }
+            )]
+        );
+        let elsewhere = SavedWindow {
+            kind: SavedWindowKind::System {
+                system: DatId::new(0x9000_ffff),
+            },
+            position: (150, 80),
+            shown: true,
+        };
+        let mut other = SystemWindowState::default();
+        assert!(!other.restore_saved(&world, CockpitFaction::Empire, &elsewhere));
+        let shown_defenses = SavedWindow {
+            kind: SavedWindowKind::Defenses {
+                system: DatId::new(100),
+            },
+            ..elsewhere
+        };
+        assert!(!other.restore_saved(&world, CockpitFaction::Empire, &shown_defenses));
+        let shown_missions = SavedWindow {
+            kind: SavedWindowKind::Missions {
+                system: DatId::new(100),
+            },
+            ..elsewhere
+        };
+        assert!(!other.restore_saved(&world, CockpitFaction::Empire, &shown_missions));
+        assert!(other.windows.is_empty() && other.rail.is_empty());
+    }
+
+    #[test]
+    fn a_restored_system_window_replaces_its_own_rail_entry() {
+        // One window per system (FUN_0045aac0): a System window restored
+        // while its system is on the rail leaves one copy, the restored one.
+        let (world, systems) = fixture_world(2);
+        let layout = layout(CockpitFaction::Alliance, 1.0);
+        let mut state = SystemWindowState::default();
+        state.open(
+            &world,
+            systems[0],
+            (120, 70),
+            CockpitFaction::Alliance,
+            layout,
+        );
+        assert!(state.minimize(systems[0]));
+        state.minimize_defenses_window(systems[0], (130, 75));
+        state.open(
+            &world,
+            systems[1],
+            (140, 80),
+            CockpitFaction::Alliance,
+            layout,
+        );
+        assert!(state.minimize(systems[1]));
+        let shown = SavedWindow {
+            kind: SavedWindowKind::System {
+                system: DatId::new(100),
+            },
+            position: (150, 90),
+            shown: true,
+        };
+        assert!(state.restore_saved(&world, CockpitFaction::Alliance, &shown));
+        assert_eq!(state.windows.len(), 1);
+        assert_eq!(state.windows[0].logical_position, (150, 90));
+        let rail: Vec<_> = state
+            .saved_rail(&world, |_| None)
+            .into_iter()
+            .map(|(_, window)| window.kind)
+            .collect();
+        assert_eq!(
+            rail,
+            [
+                SavedWindowKind::Defenses {
+                    system: DatId::new(100),
+                },
+                SavedWindowKind::System {
+                    system: DatId::new(101),
+                },
+            ]
+        );
     }
 
     #[test]
@@ -2070,7 +3570,10 @@ mod tests {
         let title = text(&run, "System 0");
         assert_eq!((title.1.x, title.3), (at(19.0, 0.0).x, 22.0));
         let heading = text(&run, "Ship Construction");
-        assert_eq!((heading.1, heading.3), (at(60.0, 58.0), 18.0));
+        assert_eq!(
+            (heading.1, heading.3),
+            (at(60.0, 58.0), OVERVIEW_FONT_EM * 2.0)
+        );
         assert_eq!(text(&run, "No Ships are being built").1, at(60.0, 73.0));
         assert_eq!(text(&run, "No Troops in training").1, at(60.0, 154.0));
         assert_eq!(
@@ -2097,8 +3600,8 @@ mod tests {
 
     #[test]
     fn a_building_band_shows_its_product_and_units() {
-        // FUN_00457c90: the product's name, mini at (40, 15) and units at
-        // (5, 47).
+        // FUN_00457c90: the product's name, portrait at (40, 15) and units
+        // at (5, 47).
         let (mut world, systems) = fixture_world(1);
         let class = world.capital_ship_classes.insert(CapitalShipClass {
             dat_id: DatId::new(0x1400_0040),
@@ -2115,12 +3618,83 @@ mod tests {
         let run = run_with(&world, &manufacturing, &mut state, hover(at(150.0, 10.0)));
         assert_eq!(text(&run, "Corellian Corvette").1, at(60.0, 73.0));
         assert_eq!(text(&run, "Building: 2").1, at(60.0, 104.0));
-        let mini = crate::panels::fleets::capital_ship_mini_id(DatId::new(0x1400_0040)).unwrap();
+        let portrait =
+            crate::panels::fleets::capital_ship_mini_id(DatId::new(0x1400_0040)).unwrap() - 0x4000;
         assert!(
-            run.painted.contains(&(mini, at(95.0, 72.0))),
+            run.painted.contains(&(portrait, at(95.0, 72.0))),
             "{:?}",
             run.painted
         );
+    }
+
+    #[test]
+    fn a_bands_name_lies_over_its_portrait() {
+        // FUN_00457690.c:76-82: the band blits the portrait keyed at
+        // (40, 15), then draws the units line, then the name and the
+        // destination, so the name stays readable over a wide portrait
+        // (under Wine the route-1 Empire save's "Death Star 1" reads whole
+        // over the Death Star).
+        let root = std::env::temp_dir().join(format!("band-portrait-{}", std::process::id()));
+        let dir = root.join("gokres-dll/BMP");
+        std::fs::create_dir_all(&dir).unwrap();
+        // A 122 by 50 portrait, its rows padded to 124 bytes.
+        let (width, height, stride, offset) = (122usize, 50usize, 124usize, 1078usize);
+        let mut bmp = vec![0u8; offset + stride * height];
+        bmp[..2].copy_from_slice(b"BM");
+        bmp[10..14].copy_from_slice(&u32::try_from(offset).unwrap().to_le_bytes());
+        bmp[14..18].copy_from_slice(&40u32.to_le_bytes());
+        bmp[18..22].copy_from_slice(&i32::try_from(width).unwrap().to_le_bytes());
+        bmp[22..26].copy_from_slice(&i32::try_from(height).unwrap().to_le_bytes());
+        bmp[26..28].copy_from_slice(&1u16.to_le_bytes());
+        bmp[28..30].copy_from_slice(&8u16.to_le_bytes());
+        bmp[offset..].fill(3);
+        let mini = crate::panels::fleets::capital_ship_mini_id(DatId::new(0x1400_0040)).unwrap();
+        std::fs::write(dir.join(format!("{}.bmp", mini - 0x4000)), &bmp).unwrap();
+        let mut cache = BmpCache::new();
+        cache.set_base_path(&root);
+
+        let (mut world, systems) = fixture_world(1);
+        let class = world.capital_ship_classes.insert(CapitalShipClass {
+            dat_id: DatId::new(0x1400_0040),
+            name: "Corellian Corvette".into(),
+            ..CapitalShipClass::default()
+        });
+        let mut manufacturing = ManufacturingState::new();
+        manufacturing.build(
+            systems[0],
+            &QueueItem::new(BuildableKind::CapitalShip(class), 10),
+            2,
+        );
+        let mut state = opened(&world, systems[0]);
+        let run = run_cached(
+            &world,
+            &manufacturing,
+            &mut state,
+            hover(at(150.0, 10.0)),
+            CockpitFaction::Alliance,
+            cache,
+            &mut |_, _| {},
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        let portrait = run
+            .shapes
+            .iter()
+            .position(|shape| {
+                matches!(shape, egui::Shape::Mesh(mesh)
+                    if mesh.calc_bounds().min == at(95.0, 72.0))
+            })
+            .unwrap_or_else(|| panic!("{:?}", run.painted));
+        let line = |words: &str| {
+            run.shapes
+                .iter()
+                .position(
+                    |shape| matches!(shape, egui::Shape::Text(text) if text.galley.text() == words),
+                )
+                .unwrap()
+        };
+        assert!(line("Building: 2") > portrait);
+        assert!(line("Corellian Corvette") > portrait);
+        assert!(line("Destination: System 0") > portrait);
     }
 
     #[test]
@@ -2182,6 +3756,32 @@ mod tests {
     }
 
     #[test]
+    fn a_mission_released_on_a_facility_cell_names_the_facility() {
+        // FUN_00458b80: on a facility page, the list item under the point
+        // (list +0x174 at (8, 77)); off an item, or on the overview, the
+        // system (move-order.md, "Hit tests").
+        let (mut world, systems) = fixture_world(1);
+        world.systems[systems[0]].raw_materials = 2;
+        let FacilityItem::Production(mine) = add_mine(&mut world, systems[0]) else {
+            panic!("a mine is a production facility");
+        };
+        let mut state = opened(&world, systems[0]);
+        let manufacturing = ManufacturingState::new();
+        let layer = egui::LayerId::new(egui::Order::Foreground, area_id(systems[0]));
+        let layout = layout(CockpitFaction::Alliance, 2.0);
+        assert_eq!(state.release_object(layout, layer, at(42.0, 97.0)), None);
+
+        let _ = run_with(&world, &manufacturing, &mut state, click(at(200.0, 30.0)));
+
+        assert_eq!(
+            state.release_object(layout, layer, at(42.0, 97.0)),
+            Some(MissionTarget::ProductionFacility(mine))
+        );
+        assert_eq!(state.release_object(layout, layer, at(111.0, 97.0)), None);
+        assert_eq!(state.release_object(layout, layer, at(4.0, 97.0)), None);
+    }
+
+    #[test]
     fn a_facility_page_shows_its_label_pictures_and_selected_frame() {
         // FUN_004568a0: the page label at (0, 58), centred; the list at
         // (8, 77) in 69 by 40 cells, each picture 1 by 2 in; a selected
@@ -2235,6 +3835,164 @@ mod tests {
             state.cell_screen_rect(layout(CockpitFaction::Alliance, 2.0), systems[0], 4),
             Some(egui::Rect::from_min_max(at(77.0, 117.0), at(146.0, 157.0)))
         );
+    }
+
+    /// Press at `from`, move through `to`'s midpoint to `to` with the
+    /// button held, and release there.
+    fn drag(from: egui::Pos2, to: egui::Pos2) -> Vec<Vec<egui::Event>> {
+        let button = |pos, pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::default(),
+        };
+        let mut frames = hover(from);
+        frames.extend([
+            vec![button(from, true)],
+            vec![egui::Event::PointerMoved(from.lerp(to, 0.5))],
+            vec![egui::Event::PointerMoved(to)],
+            vec![button(to, false)],
+            vec![egui::Event::PointerMoved(to + egui::vec2(30.0, 30.0))],
+        ]);
+        frames
+    }
+
+    #[test]
+    fn a_drag_on_the_title_moves_the_window_by_the_pointers_travel_for_either_side() {
+        // FUN_00452fc0 sets the movable bit (+0xb8 | 4): a press the window
+        // passes to its base (FUN_00606650 → FUN_00606ee0) takes hold, each
+        // move with the button down places it (FUN_006071e0, live as
+        // FUN_00606380 sets +0xf4 to 1) and the release lets go
+        // (FUN_00607010). Under Wine, on the Empire assassin-combat save at
+        // day 416, Carida's window moved 80 pixels left and Berchest's 120
+        // right, each by the pointer's travel, with no snap.
+        let (world, systems) = fixture_world(1);
+        let manufacturing = ManufacturingState::new();
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            let mut state = SystemWindowState::default();
+            assert!(state.open(&world, systems[0], ORIGIN, faction, layout(faction, 2.0)));
+            // The Empire's galaxy view starts further right, so the window
+            // opens clamped into it.
+            let (x, y) = state.windows[0].logical_position;
+            let _ = run_as(
+                &world,
+                &manufacturing,
+                &mut state,
+                drag(at(130.0, 9.0), at(170.0, -11.0)),
+                faction,
+            );
+            assert_eq!(
+                state.windows[0].logical_position,
+                (x + 40, y - 20),
+                "{faction:?}"
+            );
+        }
+    }
+
+    /// Whether a drag of 20 by 20 from window pixel `from` on `tab` moves
+    /// the window by that much, for `faction`.
+    fn surface_drag_moves(
+        world: &GameWorld,
+        system: SystemKey,
+        tab: SystemWindowTab,
+        from: (f32, f32),
+        faction: CockpitFaction,
+    ) -> bool {
+        let manufacturing = ManufacturingState::new();
+        let mut state = SystemWindowState::default();
+        assert!(state.open(world, system, ORIGIN, faction, layout(faction, 2.0)));
+        state.select_tab(system, tab);
+        let (x, y) = state.windows[0].logical_position;
+        let point = |dx: f32, dy: f32| {
+            egui::pos2(
+                10.0 + (f32::from(x) + from.0 + dx) * 2.0,
+                20.0 + (f32::from(y) + from.1 + dy) * 2.0,
+            )
+        };
+        let _ = run_as(
+            world,
+            &manufacturing,
+            &mut state,
+            drag(point(0.0, 0.0), point(20.0, 20.0)),
+            faction,
+        );
+        let moved = state.windows[0].logical_position;
+        assert!(moved == (x, y) || moved == (x + 20, y + 20), "{moved:?}");
+        moved != (x, y)
+    }
+
+    #[test]
+    fn a_press_on_the_windows_bare_surface_drags_it_but_not_on_a_band_or_the_list() {
+        // FUN_004534f0 passes a press to the base (FUN_00606ee0) unless it
+        // lands on an overview band; the facility list is a list control
+        // of its own.
+        let (world, systems) = fixture_world(1);
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            let surface = |tab, from| surface_drag_moves(&world, systems[0], tab, from, faction);
+            assert!(
+                surface(SystemWindowTab::Overview, (3.0, 150.0)),
+                "{faction:?}: bare"
+            );
+            assert!(
+                surface(SystemWindowTab::Overview, (100.0, 9.0)),
+                "{faction:?}: title"
+            );
+            assert!(
+                !surface(SystemWindowTab::Overview, (100.0, 100.0)),
+                "{faction:?}: band"
+            );
+            assert!(
+                !surface(SystemWindowTab::Shipyards, (100.0, 150.0)),
+                "{faction:?}: list"
+            );
+            assert!(
+                !surface(SystemWindowTab::Overview, (10.0, 30.0)),
+                "{faction:?}: tab"
+            );
+        }
+    }
+
+    #[test]
+    fn a_dragged_window_is_saved_and_restored_where_it_was_left() {
+        // FUN_00441190 rebuilds a System window at its saved x and y; under
+        // Wine a dragged System window came back in place.
+        let (world, systems) = fixture_world(1);
+        let manufacturing = ManufacturingState::new();
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            let mut state = SystemWindowState::default();
+            assert!(state.open(&world, systems[0], ORIGIN, faction, layout(faction, 2.0)));
+            let _ = run_as(
+                &world,
+                &manufacturing,
+                &mut state,
+                drag(at(130.0, 9.0), at(150.0, 59.0)),
+                faction,
+            );
+            let dragged = state.windows[0].logical_position;
+            let mut restored = SystemWindowState::default();
+            for (_, window) in state.saved_windows(&world) {
+                assert!(restored.restore_saved(&world, faction, &window));
+            }
+            assert_eq!(restored.windows[0].logical_position, dragged, "{faction:?}");
+        }
+    }
+
+    #[test]
+    fn a_press_off_the_title_strip_or_on_a_title_button_moves_nothing() {
+        // The title buttons and the tabs take their own presses
+        // (FUN_004534f0), so FUN_00606ee0 never sees them.
+        let (world, systems) = fixture_world(1);
+        let manufacturing = ManufacturingState::new();
+        for from in [at(201.0, 9.0), at(10.0, 30.0)] {
+            let mut state = opened(&world, systems[0]);
+            let _ = run_with(
+                &world,
+                &manufacturing,
+                &mut state,
+                drag(from, from + egui::vec2(80.0, 80.0)),
+            );
+            assert_eq!(state.windows[0].logical_position, ORIGIN, "{from:?}");
+        }
     }
 
     #[test]
@@ -2586,5 +4344,24 @@ mod tests {
         assert!(!state.contains_screen_point(layout, (210.0, 748.0)));
         let layer = egui::LayerId::new(egui::Order::Foreground, area_id(systems[0]));
         assert_eq!(state.release_target(layer), Some(systems[0]));
+    }
+
+    #[test]
+    fn the_view_raises_one_window_of_the_kind_above_the_rest_for_either_side() {
+        // FUN_00422ce0 0x467: BringWindowToTop on the window it activates.
+        let (world, systems) = fixture_world(3);
+        let (first, second, missing) = (systems[0], systems[1], systems[2]);
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            let mut state = SystemWindowState::default();
+            let layout = layout(faction, 1.0);
+            assert!(state.open(&world, first, (100, 50), faction, layout));
+            assert!(state.open(&world, second, (100, 50), faction, layout));
+            let raised = |state: &SystemWindowState| crate::window_focus::topmost(state.children());
+            assert_eq!(state.children().count(), 2, "{faction:?}");
+            assert_eq!(raised(&state), Some(GalaxyChild::System(second)));
+            assert!(state.raise(first), "{faction:?}");
+            assert_eq!(raised(&state), Some(GalaxyChild::System(first)));
+            assert!(!state.raise(missing), "{faction:?}");
+        }
     }
 }

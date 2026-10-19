@@ -111,9 +111,10 @@ impl ResearchPlanners {
     /// Creating a planner (`FUN_0042f640`), releasing a dropped one
     /// (`FUN_0047aff0` -> `FUN_0041b530`) and a selector's claim of a member
     /// (`FUN_004021b0`) mark the round dirty (`FUN_004184f0`). A planner
-    /// whose mission is in flight does not run (slot `+0x28`,
-    /// `FUN_004bda40`: planner flag `0x80000000`, set by `FUN_0047adf0` while
-    /// its mission exists and cleared by `FUN_0047b950` at its end). A
+    /// whose mission is in flight does not run (slot `+0x28`, the leaf at
+    /// `0x004bda40`, which tests planner `+0x20` bit 31: the flag
+    /// `0x80000000`, set by `FUN_0047adf0` while its mission exists and
+    /// cleared by `FUN_0047b950` at its end). A
     /// one-member planner's order ends its pass (`FUN_004bced0.c:50-56`), so
     /// no order resumes. port: states 2 and 3 (`FUN_004d2610`,
     /// `FUN_004d2690`), the regional records' Recon, Espionage, Sabotage and
@@ -123,7 +124,7 @@ impl ResearchPlanners {
         round: &mut Round<'_>,
         planner: &mut Planner<'w>,
         faction: AiFaction,
-        mut pseudo: impl FnMut(Pseudo, &mut Planner<'w>, &Round<'_>) -> Option<AIAction>,
+        mut pseudo: impl FnMut(Pseudo, &mut Planner<'w>, &mut Round<'_>) -> Option<AIAction>,
     ) -> Turn {
         let (world, uprisings) = (round.inputs.world, round.inputs.uprisings);
         planner.claim(self.held());

@@ -281,16 +281,21 @@ ports the roll and the in-roll outcomes above, re-read from the `.c` files.
 - **Diplomacy support `FUN_0055cac0`.** It is `G6183 + rand(0..=G6184)` only
   when the system's side equals the mission's, and `G6185 + rand(0..=G6186)`
   when it is neutral (side bits 3: `FUN_004f8c60` names 3 "Neutral"). At an
-  opposing system it is 0. The Subdue port read side 3 as the port's
-  `ControlKind::Contested`; it is the neutral system.
+  opposing system it is 0. Side 3 is the neutral system.
 - **Port choices:**
   - The draws come from the mission's seeded stream (`MissionRng`,
     `ROLLS_PER_MISSION` 3: two timers and the seed).
   - A target action runs once, however many members succeed: Rescue's
     release, Abduction's capture and Assassination's kill.
-  - The kill always destroys the target.
   - A member's incident reads the world before earlier members' effects
     apply.
+- **Assassination's kill** (`FUN_00576620` → slot `+0x2ec` `FUN_004ef690`):
+  with chance GNPRTB 2574 (shipped 100) a wound of `rand(G2574) +
+  rand(G2576) + G2575` (29 and 1, `FUN_0053eae0`); slot `+0x2f0`
+  (`FUN_004ef6d0`) destroys a wounded target only when slot `+0x2e0` holds:
+  never for a major (`FUN_006158b0`), a GNPRTB 2577 (25) percent roll for a
+  minor (`FUN_0056f160`, `FUN_0053eb30`). The result 3 and the combat raise
+  need the target destroyed (`victory-flag-word.md`).
 - **Still interim.** Espionage's revelation counts (`FUN_0055c940`).
 
 ### Ported (F-019 phase 4b)
@@ -540,6 +545,168 @@ creation-only checks are:
 At creation the running checks set the same statuses as while running
 (the table in "The running checks"), without an end code.
 
+## End-code messages (notification `0x1f1`, `FUN_00491500`)
+
+**The path.** `read`: `FUN_00521900` writes the end code `+0x64` on the
+master, then runs `FUN_00523ef0` on each side's copy (`FUN_00539fd0(this, 1)`
+and `(this, 2)`). Per copy it passes `FUN_0053a010` (a view copy),
+`FUN_005404d0(copy, ctx +8)` (the copy's event side mask), `FUN_004fd3d0` and
+`FUN_004fd600(ctx, copy side)` (the context's per-side flag, `+0xc`/`+0x10`),
+and a master value that differs from the copy's. It copies `+0x64` and calls
+slot `+0x238` = `FUN_00525070`, which posts notification `0x1f1` through
+`FUN_0053fcf0` with the old code at `+0x24` and the new code at `+0x28`
+(`FUN_00523ef0.c`, `FUN_00525070.c`, `FUN_0053fcf0.c`). `read`: the result
+`+0x60` takes the sibling path, `FUN_00521880` -> `FUN_00523e70` -> slot
+`+0x234` = `FUN_00525040` -> notification `0x1f0`, whose messages are the
+phase-10 Mission Reports (`FUN_004927c0`); end codes use `0x1f1` only.
+
+**The handler.** `read`: the mission message class (constructor
+`FUN_00491190`, vtable `0x0065b6c8`, slot `+0x14` = `FUN_00491500`) files for
+`param_1 == 0x1f1` (`FUN_00491500.c:66`). Its message object carries the
+player's side at `+0x20` and the file flag at `+0x40` (0 until set). The
+category mask `+0x34` is `FUN_0048af30()` = `0x10` (`FUN_00491190.c`), the
+Mission rail (icon `0x2a9e`/`0x2a9f`, `message-display.md`). So every
+end-code message below is a Mission-rail message; the "Enemy Mission Foiled"
+entry in a VM Alliance game sits on that rail beside "Leia Organa Escaped"
+and "Personnel Arrive at Yavin".
+
+Inputs (`:70-140`): the mission's copy for this side (`FUN_004f3000`, family
+`0x40..0x7f`), the leader's copy (`FUN_004f2d10(side, mission +0x7c)`), the
+target location's copy (`FUN_004f3220(side, mission +0x78)`, a system), and
+`bVar10`, true when the mission's owner bits (`+0x24 >> 6 & 3`) are this
+side's or are 0 or 3 (`:78-83`).
+
+**Not ours (the defending side).** `read`: with no leader copy, or a leader
+whose location key is not a system, and `!bVar10`, the handler files
+"Enemy Mission Foiled" for *any* new end code (`:87-105`):
+
+| Field | Value |
+|---|---|
+| Title | `0x713e` "Enemy Mission Foiled" |
+| Body | `0x713f` "An enemy {mission} mission to {system} has been foiled by our forces." Argument 1 the mission's name (`piVar3 + 0xc`), argument 2 the location's copy (`piVar9`; blank when that copy is null) |
+| Picture | background `0x431` Alliance, `0x432` Empire (`(side != 1) + 0x431`), no overlay; the bitmaps `1073.bmp`/`1074.bmp` are 400x200 |
+| Sound | `0x47c` Alliance, `0x47d` Empire (`:104`), STRATEGY WAVEs `1148`/`1149` |
+| Rail | Mission (`0x10`) |
+| Subject key `+0x5c` | the location (copied at `:84`) |
+
+`inf`: with a leader copy present and `!bVar10` the same `:124` branch leads
+to the same label, so the leader plays no part. When this message appears is
+set by the copy, not by the handler: `FUN_00547f60` (the detection manager,
+run after every phase change, `mission-lifecycle.md` "Phase stepping") enters
+only while the mission has no end code; when its own run (`FUN_005898f0`,
+which reaches `FUN_0058a1c0`, code 3 or 4) leaves one, it copies the mission
+into the opponent's view (`FUN_004f9510(mission, 2 for owner 1 / 1 for owner
+2, ctx +4 = 1, +8 = 3)`, `FUN_00547f60.c:71-95`), and the copy slot
+`FUN_00523a60` runs the field syncs in order, `FUN_00523e70` (result) then
+`FUN_00523ef0` (end code) then `FUN_00523f70` (phase). `inf`: an end code that
+no detection run set (1, 5, 6, 7, 8 and the rest) makes no copy, so the
+opponent's copy has owner bits 0, `bVar10` stays true and nothing is filed.
+So the defender hears "Enemy Mission Foiled" exactly when a detection ends the
+mission, end code 3 or 4. `hyp`: the same copy could be reached through
+`FUN_00521900` on an opponent copy that already exists; no read path makes
+one earlier.
+
+**Ours (the mission's side).** `read`: the handler continues only when the
+leader's copy exists and the target key is a system (`:109-124`), then sets
+`+0x40 = 1` (`:126`). The leader's id is copied into `+0x5c` (the subject key
+the Detail button opens) when the leader is a character, is not destroyed
+(`+0x50` bit 3) and is not a prisoner (`+0xac` bit 0); otherwise `+0x5c`
+stays the system (`:128-137`). `+0x28`, the advice code, is `0x15` for a minor
+character (`0x38..0x3b`, `:262-270`) and for a major one by record: Mon Mothma
+`0x240` -> `0x17`, Leia `0x241` -> `0x18`, Luke `0x242` -> `0x16`, Han `0x243`
+-> `0x19`, Palpatine `0x280` -> `0x1a`, Vader `0x281` -> `0x1b` (`:214-256`),
+each with a voice in `+0x32` drawn from a module 9 RCDATA list
+(`FUN_004c4990`: `0xf3`, `0xdf`, `0xcb` or `0xd5` by the leader's `+0xb0` bit
+3 for Luke, `0xe9`, `0x107`, `0xfd`). Base picture `+0x2e` = `0x412` Alliance,
+`0x413` Empire, base sound `+0x30` = `0x47c`/`0x47d` (`:273-274`). A
+character lead (family `0x30..0x3b`) puts its portrait in the overlay `+0x2c`
+(`FUN_004c5000` = `(slot +0x30 & 0xfff) + 0x1000`, `:276-284`; STRATEGY
+6208-6211, 6224, 6272-6273 for the majors, 6720 on for the minors, each its
+GOKRES mini less `0x3000`); any other lead puts its portrait in `+0x2e`
+(`:285-290`).
+A special-force lead's portrait is STRATEGY id `0x1540`-`0x1543` (5440-5443,
+SPECFCSD records 1-4) and `0x1580`-`0x1584` (5504-5508, records 5-9): slot
+`+0x30` is `FUN_004f63d0`, the class record's TEXTSTRA id (9536-9539,
+9600-9604) `& 0xfff`. `read`: STRATEGY.DLL's resource table holds no bitmap or
+RCDATA with those ids. The loader `FUN_0046a280` (`FUN_0046a280.c`) falls back
+to `FUN_0045f970(id, ENCYBMAP module)` when the STRATEGY bitmap is missing or
+invalid, and ENCYBMAP.DLL's RT_STRING table maps `0x1540`-`0x1543` to
+`EDATA.025`-`EDATA.028` and `0x1580`-`0x1584` to `EDATA.029`-`EDATA.033`
+(`inf`: the string is the file name `FUN_0045f970` loads from the EData
+directory). Those are the encyclopedia pictures of the nine special forces,
+400x200 8-bit, the size of the message picture; so the message shows the
+special force's encyclopedia picture as its background. Mon Mothma's `6208`
+resolves in STRATEGY itself; its ENCYBMAP entry is `EDATA.072`. A major character (`0x30..0x37`) speaks in the first person
+("My {mission} mission to {system}"), titled by its name (`|1`); any other
+lead in the third person ("The {mission} mission to {system}"), titled by
+the mission (`|2`). The end code at `+0x28` of the
+notification then picks the text (`:301`):
+
+| End code | Message | Title / body | Picture, sound |
+|---|---|---|---|
+| 0, 1, 2 | none (`+0x40 = 0`, `:302-306`) | | |
+| 3, 4, 5 | Mission Foiled | `0x7148` "{leader} Mission Foiled" / `0x7149` "My {mission} mission to {system} has been foiled by opposing forces."; `0x714a` "{mission} Mission Foiled" / `0x714b` "The ... foiled by opposing forces." | `+0x2e` = `0x416`/`0x417` unless a Reconnaissance (`0x54`) mission with a non-major leader keeps its portrait (`:307-313`, `:291-300`); sound `0x480` (`WAVE 1152`) |
+| 6, 7, 9, 10 | Mission Failed | `0x7138` "{leader} Mission Failed" / `0x7139` "My {mission} Mission to {system} has failed because the target was not found at that location."; `0x713a` / `0x713b` third person. None when the mission family is `0x53` (Research, `:376-386`) | base |
+| 8 | Mission Aborted | `0x7140` "{leader} Mission Aborted" / `0x7141` "... because the system has joined the {side}." or `0x7144` "... declared neutrality." when the system's owner bits are 3; `0x7142`-`0x7145` third person (`:452-563`). The side argument is the system's new holder, `FUN_004f3dd0(side, 1 or 2)` | base |
+| `0xc` | Mission Failed, no research facilities | `0x7138`/`0x713a` / `0x713c` "... has failed because we have no research facilities at that location." or `0x713d`; only for family `0x53`, none otherwise (`:569-640`) | base |
+| `0xb`, `0xd`, `0xe`, `0xf`, `0x10`, above | none (`default`, `:566-568`) | | |
+
+Every filed message in that table ends with a line appended to its body:
+`0x70e6` "\nPersonnel are returning to {place}." when a member in the mission's
+finished list (`+0x9c`) is still alive and its parent chain reaches a system
+(`0x90..0x97`) or a fleet-class container (`0x08..0x0f`), else `0x70e7`
+"\nAll personnel assigned to the mission have failed to return."
+(`:141-195`, `:641-650`; `FUN_0060b840` appends, it does not replace).
+
+**Per end code, the messages the original files:**
+
+| Code | Source (`FUN_00522480` and others) | Mission's side | Defending side |
+|---|---|---|---|
+| 1 | phase `0xb` with no code | none | none |
+| 3 | detected (`FUN_0058a1c0`) at or before phase 4 | Mission Foiled (`0x7148`..`0x714b`) | Enemy Mission Foiled (`0x713e`/`0x713f`) |
+| 4 | detected past phase 4 | Mission Foiled | Enemy Mission Foiled |
+| 5 | every member has a remove or resign request | Mission Foiled | none (`inf`, no copy made) |
+| 7 | the container destroyed past phase 6 (`FUN_00545240`), or the record's column 11 | Mission Failed, target not found (`0x7138`..`0x713b`), none for Research | none (`inf`) |
+
+`read`: in these two classes the first person is chosen by the leader's
+record, not by the side.
+
+**The class gate.** `read`: `FUN_00488de0`, which picks a notification's
+message class for `FUN_00489740` to build (`story-encounters.md`), gives
+`0x1f1` class `0x17`, this handler's, only with a non-zero code, a mission
+family outside `0x40..0x4f`, a non-null copy for the side, `FUN_00520b70`
+(record `+0x5c`, hidden) false and the result `+0x60` zero
+(`FUN_00488de0.c:317-330`); otherwise no message is built. Phase 10 leaves
+`+0x60` at 2 or 3 and entering phase 8 clears it (`FUN_00521880`), so a
+mission whose end follows its outcome files no end-code message.
+
+**Port.** `MissionEnded` carries the target system (`+0x78`), the lead
+(`+0x7c`, `ActiveMission::lead` at the end) and the result `+0x60`
+(`ActiveMission::result`, set by phase 10, cleared on entering phase 8, not
+saved). `mission_end_messages` (`crates/rebellion-app/src/main.rs`) applies
+the class gate, then files the table above on the Mission rail from TEXTSTRA
+alone:
+
+- the mission's side, from its lead: first person for a major; a character
+  lead's portrait as the overlay, a special force's as the background
+  (5440-5443, 5504-5508); advice from `personnel_advice`; the subject the
+  free lead (`MessageTarget::Personnel`), else the target system;
+- "Enemy Mission Foiled" to the defender for codes 3 and 4, which only a
+  detection sets in the port, its subject the target system.
+
+The Message Index's Display opens a lead as a Personnel Finder row does
+(`personnel_window`, `FUN_00429440` families `0x30`-`0x3f`), and its picture
+loader falls back to the ENCYBMAP EDATA file from the Encyclopedia session
+when STRATEGY lacks an id (`paint_message_picture`, `encyclopedia_picture`).
+`mission_returning_place` names the `0x70e6` place: the first team member
+still alive and free, at its queued Return's system, else its fleet, else
+its system. The lead's voice line (`+0x32`) comes from
+`mission_end_voice_list` (the six major records' lists) through
+`AdvisorState::voice_line` (`FUN_004c4990`), Luke's `+0xb0` bit 3 read as
+the port's story event `0x210` having fired. Not ported: Reconnaissance
+(`0x54`) has no port kind; the phase-10 messages (`0x1f0`, `FUN_004927c0`) are still the port's generic
+string, not the per-family titles and bodies (`0x7100`-`0x7135`).
+
 ## Still open
 
 - Which object a character mission stores as its target `+0x70` and
@@ -552,7 +719,8 @@ At creation the running checks set the same statuses as while running
 - What `+0x50` bit 2 of a recruit means, the `+0xc` test in
   `FUN_0056b370`, and its `FUN_0056b680`/`FUN_0056b550` rules.
 - `FUN_00548120` and `FUN_00548840` (run on every phase change).
-- What end codes 1, 3, 4, 5, and 7 are shown as.
+- The context side flags (`FUN_004fd600`, ctx `+0xc`/`+0x10`) a tick-time end-code write carries, and so whether the defender's copy is also synced at the write.
+- What sets end codes 9 and 10, and the module 9 voice lists' contents.
 
 ## Supporting decompiles
 

@@ -7,8 +7,10 @@
 //
 // The spec (scenarios/tactical-a0-compare.json) names each cell's A1 frame and
 // the regions the cell is about. A `state` region is compared only when the
-// A1 scenario reproduces the A0 capture's save (`state_matches`); otherwise it
-// is not-run, never a fail and never a pass.
+// A1 scenario reproduces the A0 capture's save (`state_matches`), or when the
+// pair names the state its A1 frame shares with the A0 frame (`state_match`,
+// a written justification); otherwise it is not-run, never a fail and never a
+// pass.
 
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -75,7 +77,13 @@ export function validateSpec(spec, cells) {
     for (const pair of cell.pairs) {
       assert.match(pair.a1, /^[a-z0-9-]+\/[a-z0-9-]+$/, `${id} A1 frame must be scenario/frame`);
       assert.ok(["original", "before", undefined].includes(pair.a0), `${id} has an unknown A0 frame`);
+      assert.ok(pair.state_match === undefined
+        || (typeof pair.state_match === "string" && pair.state_match.length > 20),
+      `${id} state_match needs a written justification`);
       assert.ok(pair.regions.length > 0, `${id} pair compares no region`);
+      for (const mask of pair.masks ?? []) {
+        assert.ok(spec.masks[mask], `${id} names unknown mask ${mask}`);
+      }
       for (const region of pair.regions) {
         assert.ok(spec.regions[region], `${id} names unknown region ${region}`);
       }
@@ -216,9 +224,21 @@ export function compareRegion(a0, a1, rect, masks, thresholds, radius = DEFAULT_
   const l1 = lumaBlock(a1, x, y, w, h);
   const e0 = edgeMask(l0, w, h);
   const e1 = edgeMask(l1, w, h);
+  // The Sobel kernel reads a pixel's eight neighbours, so an edge beside a
+  // masked pixel is the mask's content and is not compared either.
+  const edgeKept = (k) => {
+    const row = Math.floor(k / w), col = k % w;
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const r = row + dy, c = col + dx;
+        if (r >= 0 && c >= 0 && r < h && c < w && !keep[r * w + c]) return false;
+      }
+    }
+    return true;
+  };
   let both = 0, either = 0;
   for (let k = 0; k < w * h; k++) {
-    if (!keep[k]) continue;
+    if (!keep[k] || !edgeKept(k)) continue;
     if (e0[k] && e1[k]) both++;
     if (e0[k] || e1[k]) either++;
   }
@@ -297,9 +317,11 @@ export function compareCell({ id, spec, capture, a1Run, thresholds, frames = {},
     }
     const regions = pair.regions.map((name) => {
       const region = spec.regions[name];
-      const unmatched = regionVerdictForState(spec, name, capture, scenario);
+      const unmatched = pair.state_match ? null : regionVerdictForState(spec, name, capture, scenario);
       if (unmatched) return { region: name, class: region.class, status: "not-run", reason: unmatched };
-      const masks = (region.masks ?? []).map((mask) => spec.masks[mask].rect);
+      // A region's masks, then the pair's own (an A0 frame's pointer).
+      const names = [...(region.masks ?? []), ...(pair.masks ?? [])];
+      const masks = names.map((mask) => spec.masks[mask].rect);
       const result = compareRegion(a0, a1, region.rect, masks, thresholds,
         region.search_radius ?? DEFAULT_SEARCH_RADIUS);
       if (outDir && result.status === "fail") {
@@ -318,7 +340,7 @@ export function compareCell({ id, spec, capture, a1Run, thresholds, frames = {},
         PNG.bitblt(diff, sheet, 0, 0, w, h, 2 * w, 0);
         fs.writeFileSync(path.join(outDir, `${id}-${index}-${name}.png`), PNG.sync.write(sheet));
       }
-      return { region: name, class: region.class, masks: region.masks ?? [], ...result };
+      return { region: name, class: region.class, masks: names, ...result };
     });
     return {
       ...base,

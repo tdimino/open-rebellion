@@ -164,8 +164,11 @@ one of two slots with `FUN_0041cd80(2)`. Which clip and voice line each slot
 plays is not traced; that belongs to the droid advisors' authored behavior
 (audit P34).
 
-port: until P34 plays these reactions, the dispatch writes a message-log line
-for each refusal (`apply_panel_action`, `PanelAction::DispatchMission`).
+port: every refused order's status (missions, fleet, regiment and squadron
+moves) reaches `AdvisorState::refuse` (`advisor_script::AdviceAgent::refuse`),
+which keeps the repeat rows and gives any other status the generic reaction;
+the first-word sorting (`FUN_004c3bb0`, `FUN_004c19f0`) is not ported. No
+refusal files text.
 
 ## Ported (F-019 phase 5b)
 

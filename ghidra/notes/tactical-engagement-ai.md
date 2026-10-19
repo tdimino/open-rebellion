@@ -105,7 +105,7 @@ force's longest weapon reaches (`FUN_005b18d0`). Its near edge is at least
 5.0 (`DAT_0066daa8`). A force with no weapons holds from max(1.2 × the
 target's reach, 10.0) out to 1e6.
 
-## Stalemate, corrected
+## Stalemate
 
 `FUN_005ae9c0`'s 1200-second rule does not move units away. For the weaker
 side (both when equal) it checks vtable `+0xc` = `FUN_005d0f50`: does the
@@ -159,6 +159,34 @@ The windowed damage receivers (`FUN_005b5100` laser, `FUN_005b5750` ion,
 (manager `+0x9ec`), so the computer's units never lose subsystems in a played
 battle.
 
+## Subsystem repair
+
+`FUN_005b1490` (one repair roll against damage control) has one caller,
+`FUN_005b0330`, the capital-ship class's slot `+0x9c` (vtable `0x0066c140`,
+entry `0x0066c1dc`). It counts the unit's repair timer `+0x3f4` down and,
+at 0.0 or below, resets it to 50 s and repairs, only while `+0x124` is 0
+and `+0x158` is nonzero (`FUN_005b0330.c:19-24`). `+0x158` counts the
+unit's outstanding subsystem hits: the constructor seeds it from the carried
+engine, shield, hyperdrive and tractor hits, not the weapon hits
+(`FUN_005b05c0.c:150-157`), the hit `FUN_005b1970` (slot `+0xa0`) adds one
+for every hit, even past a family's cap of 4, and the repair `FUN_005b1ab0`
+(slot `+0xa4`) takes one off. The timer starts at 0 (`FUN_005b05c0.c:142`,
+`FUN_005b0f70`), so a unit with hits rolls on its first pass.
+
+Slot `+0x9c` is called only from `FUN_005a9de0` (`0x005a9e71`, the battle's
+slot `+0x88`, the per-frame unit pass that also recharges shields,
+`FUN_005b6320`) and `FUN_005aacb0` (`0x005aad71`, which calls the battle
+object's own slot `+0x9c`). The played frame `FUN_005bea30` (battle slot
+`+0x9c`, from `FUN_005aacb0` ← `FUN_0059a6a0` ← `FUN_0059a530`'s windowed
+branch) calls `+0x88` (`FUN_005bea30.c:121`) before the step `+0x98`
+(`FUN_005a9ec0`, `:157`). The unplayed branch of `FUN_0059a530`
+(engine `+0x668` = 1) calls only `FUN_005ae9c0`, whose side step
+`FUN_005d14d0` recharges shields (`FUN_005b6320`) but calls neither
+`FUN_005b0330` nor slot `+0x9c`. An unplayed battle repairs no subsystem.
+
+In a played battle `FUN_005c0170` sets `+0x124` on every unit not of the
+player's side, so only the player's ships repair.
+
 ## Port
 
 `rebellion-core` `tactical.rs`: `headless_step` and `apply_headless_damage` (Simulate),
@@ -167,7 +195,16 @@ battle.
 `advance_original_engagement` (called from `step` before movement),
 `engagement_band`, `engagement_kill_seconds`, `assign_engagement_targets`,
 `steer_engagement_group` and `original_windowed_damage_rolls`; and
-`stalemate_resolve_side`.
+`stalemate_resolve_side`. `headless_step` repairs no subsystem, as the
+unplayed branch does not. The played step's `advance_subsystem_repairs`
+runs `FUN_005b0330` once per source second (four steps) for the player's
+live ships only: `TacticalShip::outstanding_hits` is `+0x158` (seeded
+without the carried weapon hits, one more per hit, one less per repair) and
+`repair_timer_steps` is `+0x3f4` (0 at the start, 200 steps after a roll);
+`FUN_005b1490` draws its chance only with damage control and its hit only
+among two or more outstanding. port: the pass runs inside the step after
+the batteries fire, where `FUN_005bea30` runs the unit pass before the
+step (`:121`, `:157`).
 
 ## Morale retreat
 

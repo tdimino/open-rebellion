@@ -136,41 +136,68 @@ hyp: `DAT_006b28b0` is a global options word saved as part of the game state.
 The save path would include it alongside speed, side, and other global flags.
 The exact save/load offset is untraced.
 
-## Speed slowdown for Advice category
+## Speed hold for Advice and the Encyclopedia
 
-When the Message Index shows the Advice category (button `0x82`), the game
-drops to Very Slow to let the player read advice at leisure:
+Showing the Message Index's Advice category (button `0x82`) drops the rate
+to Very Slow so the player can read; hiding it puts the rate back:
 
 ```
-Category 0x82 (Advice):
-    FUN_0041d3f0 → FUN_004369f0 → FUN_00487ff0(+0xc, 1)
-
-All other categories:
-    FUN_0041d410 → FUN_00436a00 → FUN_00487ff0(+0xc, 0)
-
-Window close (FUN_0046a6a0):
-    FUN_0041d410 → restore
+Show Advice:   FUN_0041d3f0 -> FUN_004369f0 -> FUN_00487ff0(+0xc, 1)
+Hide / other:  FUN_0041d410 -> FUN_00436a00 -> FUN_00487ff0(+0xc, 0)
+Index close:   FUN_0046a6a0 -> FUN_0041d410
 ```
 
-### `FUN_00487ff0` (speed save/restore)
+`FUN_004697b0` calls the show thunk on category `0x82` and the hide thunk on
+every other category. The Encyclopedia holds the speed the same way: its
+layout `FUN_0045ddc0` ends with `FUN_0041d3f0()` (line 570) and its teardown
+`FUN_00460070` calls `FUN_0041d410()`.
 
-The game object's speed state lives at two offsets:
+### `FUN_00487ff0` and `FUN_00487eb0`
 
-- `+0x54`: current speed index (0 = Paused, 1 = Very Slow, 2 = Slow, 3 = Normal, 4 = Fast).
-- `+0x58`: saved speed (non-zero only while advice is being shown).
+The game object keeps the speed index at `+0x54` and the saved index at
+`+0x58` (0 means none saved). The index is 1 to 4 and has no Paused value:
+`FUN_00487eb0(index)` stores it at `+0x54` and posts message `0x280` with the
+rate 600, 60, 12 or 4 (Very Slow, Slow, Medium, Fast); any other index
+becomes rate 60 with index 1.
 
-When `param_1 = 1` (slow down):
-1. If `+0x58 == 0`: save `+0x54` → `+0x58`, set speed to 1 (Very Slow) via
-   `FUN_00487eb0(this, 1)`.
-2. If `+0x58 != 0`: already saved; no-op.
+- Show (`param_1 != 0`) with nothing saved: `+0x58 = +0x54`, then
+  `FUN_00487eb0(this, 1)`. A second show changes nothing.
+- Hide (`param_1 == 0`) with a saved index: `FUN_00487eb0(this, +0x58)`
+  with the saved index as stored, then `+0x58 = 0`. Nothing saved: no-op.
 
-When `param_1 = 0` (restore):
-1. If `+0x58 != 0`: restore speed from `+0x58` via
-   `FUN_00487eb0(this, +0x58 - 1)`, clear `+0x58`.
-2. If `+0x58 == 0`: nothing saved; no-op.
+Pause is not a speed. It is the stop day at `DAT_006b1218+0x10`
+(`FUN_0041d2f0` -> `FUN_00436890` -> `FUN_0041dba0` -> `FUN_0041e290`, which
+also calls `FUN_00401930` -> `FUN_00415e60`, the "Resume Game Play?" alert).
+`FUN_00487eb0` never touches the stop day, so showing or hiding Advice
+neither raises nor lifts a pause: a game held at the stop day stays held, and
+hiding raises no alert.
 
-The `- 1` on restore accounts for the 1-based encoding of the saved speed
-(0 means "no save active"). The guard prevents double-saves and double-restores.
+### What sets the speed or the pause
+
+A complete reference scan of `REBEXE.EXE` finds only these callers.
+
+| Effect | Callers |
+|---|---|
+| Pause (`FUN_0041d2f0`) | `FUN_00486fb0` (the Game Speed menu's Pause item), `FUN_00485030` (game-message type `0x15` with a non-zero `+0x20`; it also stores the day at `+0x48`), `FUN_00406b80` (creating the Game Options window) |
+| Speed index (`FUN_00487eb0`) | `FUN_00486fb0` (items 1 to 4), `FUN_00487ff0` (the Advice and Encyclopedia hold), `FUN_00486490` (index 2, Slow, after the `FUN_00439950` check; reached by no direct call) |
+
+No message-manager path (`FUN_0048a060` and the posters) and no Game Options
+control appears: a message posted to the Message Index, a kind-6 Death Star
+message (`0x6f`) and an Operation Report change neither the speed nor the
+pause. The original has no option for auto-pause or auto-slow on an alert
+(`game-options.md` lists every control).
+
+### Port
+
+`hold_speed_for_advice` (`crates/rebellion-render/src/game_speed.rs`) saves
+`clock.speed` once on show and drops to Very Slow, and on hide restores it
+with `GameClock::set_speed`; neither direction touches the stop day. The port
+models "no speed chosen yet" as `GameSpeed::Paused` with no stop day, the
+index 0 that `FUN_004861b0` builds at `+0x54`. Since 0 is also `+0x58`'s empty
+value, a show from it saves nothing and still drops to Very Slow, and the hide
+restores nothing, so a speed chosen during the hold stays.
+`hold_speed_while_open` applies the same hold to the Encyclopedia on its open
+and close edges, through the one saved slot that `+0x58` is in the original.
 
 ## Cited decompiles
 
@@ -183,6 +210,9 @@ The `- 1` on restore accounts for the 1-based encoding of the saved speed
 - `FUN_004697b0.c` — Category selection, advice slowdown trigger
 - `FUN_0041d3f0.c` — Advice slow: thunk → FUN_004369f0
 - `FUN_0041d410.c` — Advice restore: thunk → FUN_00436a00
+- `FUN_00487eb0.c`, `FUN_00487ff0.c`, `FUN_00486490.c` — speed index and hold
+- `FUN_00485030.c`, `FUN_00486fb0.c`, `FUN_0041d2f0.c`, `FUN_00415e60.c` — pause callers and alert
+- `FUN_0045ddc0.c`, `FUN_00460070.c` — Encyclopedia speed hold and release
 - `FUN_004369f0.c` — Calls FUN_00487ff0(+0xc, 1)
 - `FUN_00436a00.c` — Calls FUN_00487ff0(+0xc, 0)
 - `FUN_00487ff0.c` — Speed save/restore

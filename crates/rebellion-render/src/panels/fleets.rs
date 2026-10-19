@@ -178,7 +178,7 @@ pub fn draw_fleets(
                             if fighter_count > 0 {
                                 parts.push(format!("{fighter_count} sqns"));
                             }
-                            if fleet.has_death_star {
+                            if fleet.has_death_star(&world.capital_ship_classes) {
                                 parts.push("DS".to_string());
                             }
                             if !parts.is_empty() {
@@ -280,7 +280,7 @@ pub fn draw_fleets(
                             }
 
                             // ── Death Star ───────────────────────────────
-                            if fleet.has_death_star {
+                            if fleet.has_death_star(&world.capital_ship_classes) {
                                 ui.add_space(2.0);
                                 ui.label(
                                     RichText::new("DEATH STAR PRESENT")

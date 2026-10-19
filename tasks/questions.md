@@ -4,7 +4,7 @@
 
 Questions about the original, answered from the executable. Back to the [index](INDEX.md).
 
-84 open.
+83 open.
 
 <a id="or-q-results-window-yln"></a>
 ### Q: Where is the Battle Results window drawn, with which art, and how do its tabs switch?
@@ -141,15 +141,17 @@ Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX
 <a id="or-q-ground-resolution-nms"></a>
 ### Q: How does the original resolve a planetary assault?
 
-`or-q-ground-resolution-nms` · **open** · P2 · ghidra, question · updated 2026-10-14  
+`or-q-ground-resolution-nms` · **open** · P2 · ghidra, question · updated 2026-10-17  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)  
 Unblocks: [or-r-gnd-5hu](reviews.md#or-r-gnd-5hu)
 
-> Observed in the VM: the attacker never loses regiments; defender losses show under System Forces; the Empire cannot see an Alliance garrison; taking the troops off a captured system hands it back. Deliver as for every question node.
+> Observed in the VM: at Selonia the Empire's assault was repulsed with one Alliance regiment lost and no Imperial loss; at Ord Pardon and Drall, with no defender, the assaulting side took the system with no casualties. The trace kills attackers in defence fire (a KDY-150 or LNR always fires) and in an engagement roll of 4 or less (FUN_0055eb00); with no regiment of either side left, the holder is the support-derived side. Deliver as for every question node.
 
 **Notes**
 
 > map-15: Planetary Assault resolution FUN_0058c120, FUN_0058bec0, FUN_0055eb00 (thresholds DAT_006bb778..78c), order class owning FUN_00563390.
+> 2026-10-17 (plan Phase K items 1-3, 5-8): the assault is traced and ported. ghidra/notes/ground-assault.md answers the run (FUN_00563390 -> FUN_0058c120: defence fire, FUN_0055eb00 engagements, collateral, landing), the 0x234 enable test, and that a capture leaves enemy characters in place; assault::resolve runs it for both sides from the fleet menu (assault_orders.rs) and the AI (resolve_ai_assault), kills feed loss counter A, automatic landing and the occupation capture are gone, and the Assault Summary is filled from the run (fill_assaulted_system). The three VM runs (Selonia repulsed with one defender lost, Ord Pardon and Drall taken unopposed) are recorded in the note; a battery kill, the two-shield greying and a captured officer are still to stage (item 4).
+> 2026-10-17: remaining for this node: the VM run of plan Phase K item 4 (a battery killing a regiment, an enemy fleet present, a captured officer), the native assault on both sides, and the dual-AI batch re-measure since the automatic landing left (Phase K item 7).
 
 <a id="or-q-message-classes-uhu"></a>
 ### Q: What do game message classes 0x21-0x2d do, and what Message Index state survives a battle report?
@@ -199,14 +201,6 @@ Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > fog.rs keeps one visible-system set and per-system known facilities per side. The original copies state into each side's view by level (observation-levels.md): informants reveal a held system to its opponent at INFORMTB levels 1-4/7-10, espionage at 10, mission ends at 6, event 0x319 at 11 to both sides, timer 0x393 shows Han Solo's system to the Empire at 5, and new-game step 0x18 (FUN_0051b990) reveals Yavin (0x92000121) to the Empire at level 10, which fog.rs's seed does not do. Decide which of these the port needs for parity and how a level maps onto fog.rs's state; side encodings in side-numbering.md.
-
-<a id="or-q-regiment-combat-eaxn"></a>
-### Q: Where is regiment-versus-regiment ground combat resolved, and which class fields does it read?
-
-`or-q-regiment-combat-eaxn` · **open** · P2 · ghidra, question · updated 2026-10-14  
-Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
-
-> ground-unit-assets.md: FUN_00560d50 moves characters and capital ships; the regiment battle's resolution is not found. Start from FUN_00496f50, FUN_00512370, FUN_00445280 and the class fields +0x60/+0x64/+0x68. Done when a note gives the resolution with its formula for both sides.
 
 <a id="or-q-rng-float-c2x"></a>
 ### Q: Which game rules draw from the Lehmer RNG versus MSVC rand, and which formulas truncate through __ftol?
@@ -261,22 +255,6 @@ Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX
 
 > Start from FUN_004189b0, FUN_00418500, FUN_00485b40 and the AI posture classes 0x4ae150-0x4bca20 (game-end-path.md).
 
-<a id="or-bombard-command-timing-d1b2"></a>
-### Q: When does the bombard command (message 0x224, FUN_005637c0) execute?
-
-`or-bombard-command-timing-d1b2` · **open** · P3 · ghidra, question · updated 2026-10-14  
-Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
-
-> Start from FUN_005637c0, FUN_00563620, FUN_004fe020, FUN_004fec00, FUN_005820a0 (bombardment.md Open).
-
-<a id="or-hq-bombard-transit-4rh7"></a>
-### Q: What is the Alliance HQ's bombardment value, and does an HQ in transit survive capture or Destroy System?
-
-`or-hq-bombard-transit-4rh7` · **open** · P3 · ghidra, question · updated 2026-10-14  
-Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
-
-> Start from FUN_00520b60 (class +0x58), FUN_0055e970, FUN_00526860, FUN_004f7640; FUN_004f8710/FUN_004f8680 skip +0x50 bit 0x20 (game-end-path.md, bombardment.md).
-
 <a id="or-movie-window-close-3bo3"></a>
 ### Q: Who sends 0x402-0x404 to the movie window, and what does Esc do there?
 
@@ -297,10 +275,16 @@ Unblocks: [or-port-music-selector-v9nd](ports.md#or-port-music-selector-v9nd)
 <a id="or-q-ai-death-star-use-z9ow"></a>
 ### Q: Where do the AI's Destroy System inputs come from, and does the AI ever build or fire the Death Star?
 
-`or-q-ai-death-star-use-z9ow` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-ai-death-star-use-z9ow` · **open** · P3 · ghidra, question · updated 2026-10-19  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > ghidra/notes/death-star-strategic.md, AI: the posture emitter FUN_004b1070 issues 0x223 when the fleet record flag +0x38 & 0x10 (from object +0x50 bit 7 via FUN_00433780) and the target record +0x110 are set; trace +0x110's writers (FUN_004739b0 and the census) and whether the AI class flag 0x200000 (FUN_0042e960, FUN_0041b230) admits CAPSHPSD record 136. Also the refusal a second family-0x18 ship at one system raises (FUN_00550bd0, FUN_0054fd90) and what clears a destroyed system's populated bit (FUN_0050b760, FUN_0050a3c0, FUN_00508660).
+
+**Notes**
+
+> 2026-10-18: the module-11 budget is read (FUN_004ca5e0): the hull needs capacity 2223, and the module's budget is 0.27 x capacity - c+0x24c. Measured 2026-10-17 on the release playtest (dual AI, standard galaxy, medium difficulty, seeds 1-24): no Death Star build, no DestroySystem order and no death_star_fired in 1,500 or 5,000 days, and no game ended by victory. Capacity is not the gate (the Empire reaches 2,223 by day 1,500 in 17 seeds); the fielded capital-ship maintenance c+0x24c is, with budget median 35 at day 1,500, 15 at 3,000, 13 at 5,000. Of 240 samples three reach 600 (seeds 22, 7, 4), and the class is listed in all 240. Around seed 22's day 2,000 module 11 builds capital-ship keys 17 and 18 instead, so an earlier row of FUN_004ca5e0 holds the turn (hyp: which row is not traced). The budget mismatch is ported; no seed issues 0x223 yet.
+> 2026-10-18 (module 11's turn): the request rows run in a fixed order (FUN_004ca5e0.c:57-139) and a blocker lasts one request (FUN_004ca910.c:26 clears all, :67-68 sets only the failed row's), so a row whose class fits runs every pass. The troop-room row (rec+0x64 bit 4, R+0x74 < 0 after FUN_00477e80's takers) comes first and wins whenever one record holds the bit; its cheap transport classes (mask 0x100004, key 0x100) always fit, so the hull row (eighth) is never reached. The port's request and pick match the code (ai_production.rs ship_request, capital_ships). Measured on the port's seed 22 (dual AI, release playtest, trace in a private copy): the Empire's budget clears 600 from day 1,594 (603 to 872 by day 1,800); every request to day 1,904 takes the troop-room row with blockers 0 and builds class key 28 (maintenance 20), 41 transports between days 1,300 and 1,700, while fielded capital-ship maintenance falls from 736 (day 1,100) to 430 (day 1,552) and a record stays troop-short. No port change, so the 24-seed census needs no re-measure; the strict fleet rule did not touch the census inputs. Remaining scope: (1) why a record stays short of troop room while transports are built and lost: the takers of FUN_00477e80 (take_free, poach) and the troop-room counter of FUN_00477cb0 against the original, and where the transports go; (2) the 0x223 seed test with a ready hull fleet at an HQ system with regiments loaded.
+> 2026-10-18 (troop-room stall, item 1): line-by-line against the decompiles, no deviation. FUN_00477cb0's counters (troop room = fleet +0x84 sum) match sum_and_require; FUN_00477e80's short set, need bits and let-go test match shortfall_and_surplus; the kind-6 requirement FUN_004b6a60 (P+0x3c rises to the larger of sector +0x134 and c+0x170, never falls while the posture lasts) matches requirement(); take_free matches FUN_004782a0 (nearest fleets with 0x8005, ships with 0x20000 and none of 0xc03800, serving a shortfall); poach matches FUN_00478690 (0x8001, none of 0xf0000006, later plan entry, ships none of 0xc23800); repair_move matches FUN_004c8e90 except the port's hyp that a Move to the fleet's own system is not issued (the original issues 0x201 whenever the pick is a system). Seed 22 trace (private copy): the short record is kind 6 at Sumitra, troop room 3-5 below 18 from day 1,275; take_free finds nothing each pass because every free transport is en route (0x800) or damaged (0x1000); transports 13 and 47 stay free and damaged from day 1,425 and keep changing systems (Bortras, Coruscant, Yaga Minor); the Empire issues one repair move in the run (day 1,609, Bothawui to Orto); Empire fleet moves in that window (fleet 28v5, days 1,476 and 1,481) carry no AI order (hyp: post-battle retreats, unchecked). No port change, so no re-measure. Whether the original escapes the stall on a comparable game is a game-state question the code cannot settle; it needs an original-game observation (an Empire AI game soaked under Wine to the day its troop records go short). Remaining: the repair_move own-system hyp (minor), and that observation.
 
 <a id="or-q-ai-jedi-training-jfdh"></a>
 ### Q: Does any computer-player path order Jedi Training?
@@ -334,9 +318,20 @@ Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX
 ### Q: How does story timer 0x393 re-arm, and what do its bounty roll and experience scale read?
 
 `or-q-bounty-timer-zq5r` · **open** · P3 · ghidra, question · updated 2026-10-14  
-Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
+Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)  
+Unblocks: [or-port-bounty-and-abodes-lvee](ports.md#or-port-bounty-and-abodes-lvee)
 
 > story-encounters.md: timers 0x392 (GNPRTB 0x1802/0x1803) and 0x393 (0x1804/0x1805, bounty roll 0x1806) drive the bounty chain; the re-arm and the roll are hyp. Start from FUN_0053e290, FUN_0053e170 and the 0x393 handler. Done when a note gives the re-arm rule and the roll.
+
+<a id="or-q-carrier-ship-lost-en-route-hpxe"></a>
+### Q: What happens to a unit whose carrier ship is destroyed en route?
+
+`or-q-carrier-ship-lost-en-route-hpxe` · **open** · P3 · ghidra, question · updated 2026-10-18  
+Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
+
+> When a unit is moved by a carrier ship (R4: the carrier is chosen at order time, the one with most room counting units en route, else the order is refused with 1/0x27; followers are seeded onto the lead ship; `FUN_00556390`, `FUN_004fe160`, `FUN_0051aa50`), what happens to the unit if that ship is destroyed before the unit arrives?
+>
+> Known: the carrier is fixed at order time and every carrier-0 branch is removed in the port. Open: whether the unit dies, is rehomed to another ship of the fleet, or arrives regardless. Trace the carrier's destruction path against the units that name it, and the arrival handler's carrier lookup. Both sides where the code branches.
 
 <a id="or-q-char-flag-bits-gp95"></a>
 ### Q: What do character +0xac bits 6, 8, 10 and the +0xb0 flags mean?
@@ -382,7 +377,8 @@ Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX
 ### Q: What does Dagobah's vtable slot +0x1d8 (FUN_00544130) decide?
 
 `or-q-dagobah-slot-atny` · **open** · P3 · ghidra, question · updated 2026-10-14  
-Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
+Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)  
+Unblocks: [or-port-bounty-and-abodes-lvee](ports.md#or-port-bounty-and-abodes-lvee)
 
 > story-encounters.md: slot +0x1d8 of the Dagobah mission tests the current mission family of the story characters; its effect on the Dagobah chain is untraced. Done when a note says what it gates.
 
@@ -409,14 +405,6 @@ Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > galaxy-limits.md: saves hold about one 0xa0, 0xa2 and 0xa4 record per system; FUN_00537180 tests [0xa0,0xa2). Start from FUN_00537180, FUN_004f3220, FUN_0044acd0 and the 0xa0 object's constructor. Done when a note names each family and its owner.
-
-<a id="or-q-final-battle-jail-xkv9"></a>
-### Q: Where does each branch of the final battle send the loser?
-
-`or-q-final-battle-jail-xkv9` · **open** · P3 · ghidra, question · updated 2026-10-14  
-Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
-
-> story-encounters.md: FUN_0054b040 decides the Luke/Vader/Emperor final battle by Luke's Force against GNPRTB 0x1807; the jail moves per branch (slots +0x218/+0x20c) are hyp. Done when a note gives each branch's moves for both sides.
 
 <a id="or-q-force-detect-lists-xhlb"></a>
 ### Q: Which mission lists does Force detection flag, and whose side is each?
@@ -582,6 +570,16 @@ Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX
 
 > ground-unit-assets.md: FUN_0042c3b0 draws overlay ids 0x2cf1, 0x2cf5, 0x2cfb, 0x2ced, 0x2d32/34. Done when a note names each overlay and its condition.
 
+<a id="or-q-second-death-star-order-same-day-y2cw"></a>
+### Q: Is a second Death Star order refused on the same day as the first?
+
+`or-q-second-death-star-order-same-day-y2cw` · **open** · P3 · ghidra, question · updated 2026-10-18  
+Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
+
+> What does the original do when a second Death Star order is refused on the same day as the first?
+>
+> Known: a second family-0x18 ship at one system is refused at order time (FUN_00550bd0, FUN_0054fd90); native seed 42 shows the refusal {0x90,3} (advisor slot 18) on a later day. Unobserved: a second order on the same day as the first, and whether the first order's +0x50 bit 6 spare-fleet object is already visible to the mode 3 count within the day.
+
 <a id="or-q-ship-family-testers-psaz"></a>
 ### Q: What do the 47 capital-ship family testers do for a family past 0x1b?
 
@@ -697,6 +695,16 @@ Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > ground-unit-assets.md: FUN_0046d8d0 has ten literal troop ids; whether the column icons live in the STRATEGY finder backgrounds 10335/10336/10584/10588 is untraced. Done when a note names each column's art.
+
+<a id="or-q-unfinished-ship-owner-on-capture-y2nz"></a>
+### Q: Who owns an unfinished ship after its system changes hands?
+
+`or-q-unfinished-ship-owner-on-capture-y2nz` · **open** · P3 · ghidra, question · updated 2026-10-18  
+Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
+
+> Who owns an unfinished ship (an `unfinished` ShipInstance in a destination's spare fleet, Death Star family; death-star-product.md section 1) after its system changes hands by capture or control change?
+>
+> Known: the spare fleet and the unfinished Death Star carry +0x50 bit 6 from the order day, so the mode 3 census counts it, and Destroy System leaves a capital ship in the spare fleet untouched. Open: whether ownership follows the system's side, stays with the orderer, or the ship is destroyed or relocated, and whether the census still counts it for the old owner.
 
 <a id="or-q-ungated-story-events-h0sr"></a>
 ### Q: Which story events bypass the FUN_005438a0 gate?

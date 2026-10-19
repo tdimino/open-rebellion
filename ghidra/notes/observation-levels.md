@@ -44,6 +44,23 @@ from the master:
 | `FUN_0050f410` | `+0x5c` energy |
 | `FUN_0050f490` | `+0x64` raw material |
 
+### When a view copy follows its master
+
+A view copy's `+0x24` bits 0-3 are a mask, 1 (live) or 2 (not), recomputed by
+`FUN_004f9a60` (`FUN_004fae40`, `FUN_004fb310`, `FUN_004fb860`, `FUN_004fb920`): 1
+when the object's owner is the view's side, or its `+0x50` bit 7 (Alliance view) or
+8 (Empire view) is set with bit 2 set and bit 4 clear, else 2
+(`FUN_004f9a60.c`). The two bits are `GameObjObservedByAlliance` and
+`GameObjObservedByEmpire` (`build-delivery.md`); `FUN_0050ac80` sets them for a
+system from the side's owning it or having an active fleet there. The field-sync
+routines above (`FUN_004f9ca0` and the others) copy a change only when
+`FUN_005404d0(view, context +8)` passes: a default context has `+8` = 1
+(`FUN_004fd400`), so only live views follow; the full refresh paths use 3
+(`FUN_004f87b0`, `FUN_0054b040`). A view that turns from 2 to 1 is refreshed in
+full (view slot `+0x24`, `FUN_004f8340`); one that turns from 1 to 2 keeps its
+last values. The mask is the fog: a side that neither owns nor observes an object
+sees nothing of its changes (`bombardment.md`, `victory-flag-word.md`).
+
 ## FUN_0050d5a0(system, level, side, ctx)
 
 `side` must be 1 or 2, or nothing happens. The function fetches that side's

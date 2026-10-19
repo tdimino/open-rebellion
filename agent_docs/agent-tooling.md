@@ -96,7 +96,8 @@ checks for a newer release.
    on, in any case; set it yourself when launching another way. Without it,
    mute by hand: the main menu speaker mutes music only, so open the options
    screen from the main menu, click the left end of both the music and the
-   effects sliders, then press Escape.
+   effects sliders, then leave by Restart, which with no game running goes
+   straight back to the shuttle cockpit (the screen takes no Escape).
 2. The script prints the window id. Otherwise, find the window with
    `cua-driver call list_windows` (app `open-rebellion`).
 3. Pass the same `"session":"<name>"` on every call, or captures come back
@@ -264,14 +265,40 @@ built, so nothing is copied back except what `--pull` names. The copy has no
 `.git`; `.build-source` records the commit and dirty file count it was synced
 from, and `scripts/launch-native.sh` writes that into `binary.txt`.
 
+rsync keeps each file's modification time, so Cargo rebuilds a source only when
+its mtime changes. After a hand-applied break on the Mini copy (a mutant check),
+touch the local source file before the next `mini-cargo.sh` run, or the synced
+copy keeps the old mtime and the broken build stays fresh.
+
+`mini-cargo.sh` sets `CARGO_TERM_COLOR=always`, so its errors and test
+results start with ANSI escapes and a bare `grep '^error'` finds nothing.
+Strip them first (`sed 's/\x1b\[[0-9;]*m//g'`) or pass `--color never`
+before grepping a build or test log.
+
+A private copy for red runs or mutants (`OPEN_REBELLION_BUILD_DIR=or-native/wt-NAME`)
+starts as an APFS clone of the shared copy, never a plain `cp -R` or
+rsync: `ssh mac-mini-ts 'cd ~/or-native && cp -c -R open-rebellion wt-NAME'`.
+The shared copy is about 13.6 GB (`assets/references` 4.1 GB, the Mini's
+`.artifacts` 4.1 GB, `target/` 4.3 GB); a clone shares its blocks, so it
+takes about 8 s and 0.1 GB. Cargo and `mini-cargo.sh` then write only the
+units and files that change. Delete the copy when its run ends.
+In a private clone, run cargo-mutants with `--in-place`. Otherwise it
+copies the tree again (as clones, since 26.0) and builds every job's
+`target/` from nothing, about 3 GB each; in place it reuses the clone's
+build. Never use `--in-place` in the shared copy.
+
 After every build `scripts/prune-target.py` cuts the Mini's `target/` back
-to what that build used:
+to what the last six builds used:
 
 - **units**: the wrapper adds `--message-format=json-render-diagnostics`,
-  and every unit the build names, fresh or rebuilt, is kept; any other
-  entry of `deps/`, `.fingerprint/`, `build/` and `examples/` in the
-  profiles it built goes. A repeated build stays fresh. A different build
-  (another feature set, `-p` selection or profile) rebuilds what it needs.
+  and every unit those builds named, fresh or rebuilt, is kept
+  (`target/.prune-history.json`, `--keep-builds`); any other entry of
+  `deps/`, `.fingerprint/`, `build/` and `examples/` in their profiles goes.
+  Builds that alternate (workspace tests, a fixture feature, one crate)
+  stay fresh instead of deleting and rebuilding each other's units. Past
+  the size cap only the last build's units stay. The prune first takes
+  Cargo's build lock (`<profile>/.cargo-lock`) on every profile, without
+  waiting, and prunes nothing while another agent's build holds one.
 - **codegen objects**: Cargo's macOS dev default, split-debuginfo
   "unpacked", keeps every build's `*.rcgu.o` under a new name since rustc
   1.88 and never deletes the old ones (rust-lang/rust#161824, fix PR

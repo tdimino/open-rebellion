@@ -1,11 +1,9 @@
 //! Writing a finished battle back to the strategic world.
 
 use crate::dat::Faction;
-use crate::death_star::DeathStarState;
 use crate::ids::{FleetKey, SystemKey};
 use crate::movement::MovementState;
 use crate::troop_transport::TroopTransportState;
-use crate::victory::VictoryState;
 use crate::world::GameWorld;
 
 use super::{BattleSession, CombatWinner};
@@ -27,7 +25,7 @@ pub struct BattleReturn {
 /// a person commands, `None` when both are computer players.
 /// port: a retreat system exists (`FUN_00516730` through `FUN_005545e0`) when
 /// `post_battle::retreat_destination` finds a place for the side's fleet; it
-/// is the same chain `withdraw_fleet` sends the fleet by.
+/// is the same chain `post_battle::run_pass` sends the loser's fleets by.
 pub fn seat_morale(
     session: &mut BattleSession,
     world: &GameWorld,
@@ -35,30 +33,42 @@ pub fn seat_morale(
     movement: &MovementState,
     human_is_attacker: Option<bool>,
 ) {
-    // port: the Death Star's fleet departs only with a capital ship that can
-    // enter hyperspace (`movement::fleet_speed`).
-    session.morale.death_star_departs = session.death_star.is_some_and(|death_star| {
-        world.systems.get(session.system).is_some_and(|system| {
-            system.fleets.iter().any(|&key| {
-                world.fleets.get(key).is_some_and(|fleet| {
-                    fleet.has_death_star
-                        && fleet.is_alliance == death_star.is_alliance
-                        && crate::movement::fleet_speed(fleet, world).is_some_and(|speed| speed > 0)
-                })
-            })
-        })
-    });
     for is_attacker in [true, false] {
         let side = usize::from(!is_attacker);
         let is_alliance = session.attacker_is_alliance == is_attacker;
-        session.morale.retreat_permitted[side] = crate::post_battle::retreat_destination(
+        let death_stars = world.systems.get(session.system).map_or(0, |system| {
+            system
+                .fleets
+                .iter()
+                .filter_map(|&key| world.fleets.get(key))
+                .filter(|fleet| fleet.is_alliance == is_alliance)
+                .map(|fleet| crate::movement::death_stars_in(world, fleet))
+                .sum()
+        });
+        let refuge = crate::post_battle::retreat_destination(
             world,
             troop_transport,
             movement,
             session.system,
             is_alliance,
-        )
-        .is_some();
+            death_stars,
+        );
+        session.morale.retreat_permitted[side] = refuge.is_some();
+        // The windowed countdown starts at the transit there (p5,
+        // `FUN_00516730.c:185-196` through `FUN_0055d8a0` at the default
+        // speed), 0 with no retreat system (`FUN_00516730.c:46`).
+        let transit = refuge.map_or(0, |refuge| {
+            let at = |key: SystemKey| world.systems.get(key).map_or((0, 0), |s| (s.x, s.y));
+            crate::movement::transit_ticks_between(
+                world,
+                at(session.system),
+                at(refuge),
+                crate::movement::default_speed(world),
+            )
+        });
+        session.morale.withdrawal[side].countdown_milliseconds = transit as f32
+            * super::ORIGINAL_WITHDRAWAL_TRANSIT_SCALE
+            * super::ORIGINAL_WITHDRAWAL_TRANSIT_MILLISECONDS;
         session.morale.threshold[side] = if human_is_attacker == Some(is_attacker) {
             0.0
         } else {
@@ -96,86 +106,151 @@ pub fn summarize_results(session: &BattleSession) -> BattleReturn {
     }
 }
 
+/// Where each squadron goes after the battle (`FUN_0040d320.c:54-85`):
+/// `None` for one destroyed, `Some(None)` for one that becomes a child of
+/// the system, and `Some(Some((fleet, tag)))` for one docked in a ship of
+/// its side at the end ([`BattleSession::end_berths`]): a capital ship, or
+/// the station's Death Star ship (`FUN_005ba670.c:15-17`). A squadron
+/// docked in the other side's carrier falls to the system (the side bits
+/// `+0x24 & 0xc0` differ). Docked carriers without a tag get one
+/// ([`crate::carriage::tag_ship`]).
+pub(super) fn squadron_homes(
+    session: &BattleSession,
+    world: &mut GameWorld,
+) -> Vec<Option<Option<(FleetKey, u32)>>> {
+    let berths = session.end_berths();
+    session
+        .fighters
+        .iter()
+        .zip(berths)
+        .map(|(fighter, berth)| {
+            if fighter.squad_count == 0 {
+                return None;
+            }
+            let (fleet, index, is_alliance) = match berth {
+                Some(super::TacticalBerth::Ship(ship)) => {
+                    let ship = &session.ships[ship];
+                    (ship.fleet, ship.fleet_ship_index, ship.identity.is_alliance)
+                }
+                Some(super::TacticalBerth::Station) => {
+                    let Some(station) = session.death_star else {
+                        return Some(None);
+                    };
+                    let Some((fleet, index)) = station.ship else {
+                        return Some(None);
+                    };
+                    (Some(fleet), index, station.is_alliance)
+                }
+                None => return Some(None),
+            };
+            let fleet = fleet.filter(|_| is_alliance == fighter.identity.is_alliance);
+            Some(fleet.and_then(|fleet| {
+                crate::carriage::tag_ship(world, fleet, index).map(|tag| (fleet, tag))
+            }))
+        })
+        .collect()
+}
+
 /// Apply a finished battle session back to the strategic world: losses,
-/// surviving squadrons, captured characters, emptied fleets and withdrawals.
+/// surviving squadrons, captured characters and emptied fleets. The import
+/// (`FUN_0040c780`) moves no ship or fleet, so a ship that jumped stays in
+/// its fleet at the system; the loser's fleets leave through the
+/// post-battle pass (`FUN_00516ef0.c:142-180`).
 /// Played, simulated and unwatched battles all return through here. Log
-/// lines (`[battle] withdrawal ...`) are appended to `log`.
+/// lines (`[battle] withdrawal ...`) are appended to `log`. `products` is
+/// the room the squadron and regiment products hold aboard each ship
+/// (`crate::carriage::ProductRoom`), which a squadron the post-battle pass
+/// moves onto a fleet must leave.
 pub fn apply_results(
     session: &BattleSession,
     world: &mut GameWorld,
     troop_transport: &mut TroopTransportState,
     movement: &mut MovementState,
+    products: &crate::carriage::ProductRoom,
     log: &mut Vec<String>,
 ) -> BattleReturn {
-    let mut withdrawal = None;
-    // FUN_0040c780 -> FUN_0040d260 -> FUN_00503370 -> FUN_005032c0: the
-    // squadrons the system held lose craft as carried ones do; each surviving
-    // squadron returns to the system.
-    if let Some(system) = world.systems.get_mut(session.system) {
-        for (is_attacker, is_alliance) in [
-            (true, session.attacker_is_alliance),
-            (false, !session.attacker_is_alliance),
-        ] {
-            for entry in system
-                .fighters
-                .iter_mut()
-                .filter(|entry| entry.is_alliance == is_alliance)
-            {
-                entry.count = session
-                    .fighters
-                    .iter()
-                    .filter(|fighter| {
-                        fighter.held_by_system
-                            && fighter.is_attacker == is_attacker
-                            && fighter.class_key == entry.class
-                            && fighter.squad_count > 0
-                    })
-                    .count()
-                    .try_into()
-                    .unwrap_or(u32::MAX);
+    // FUN_00502840, each lost ship's hook +0x11c: its characters go adrift
+    // and take the injury roll that may destroy a minor (`crew_fates`),
+    // drawn once as the battle ended (`BattleSession::settle_crew`).
+    let settled = session
+        .settled_crew
+        .clone()
+        .unwrap_or_else(|| crate::battle_summary::settle_crew(session, world));
+    world.battle_rng = settled.rng;
+    for (member, fate) in &settled.members {
+        match fate {
+            crate::battle_summary::CrewFate::Aboard => {}
+            crate::battle_summary::CrewFate::Adrift => {
+                if let Some(character) = world.characters.get_mut(member.key) {
+                    character.adrift = true;
+                }
+            }
+            crate::battle_summary::CrewFate::Killed => {
+                if let Some(fleet) = world.fleets.get_mut(member.fleet) {
+                    fleet.characters.retain(|&key| key != member.key);
+                }
+                if let Some(character) = world.characters.get_mut(member.key) {
+                    character.mark_killed();
+                }
             }
         }
-        system.fighters.retain(|entry| entry.count > 0);
+    }
+    let homes = squadron_homes(session, world);
+    // FUN_0040c780 -> FUN_0040d260 -> FUN_00503370 -> FUN_005032c0: every
+    // squadron loses craft as it did in the battle; FUN_0040d320 then makes
+    // each surviving squadron left in no hangar a child of the system.
+    if let Some(system) = world.systems.get_mut(session.system) {
+        for is_alliance in [true, false] {
+            let mut entries: Vec<crate::world::SystemSquadrons> = system
+                .fighters
+                .iter()
+                .filter(|entry| entry.is_alliance == is_alliance)
+                .map(|entry| crate::world::SystemSquadrons { count: 0, ..entry.clone() })
+                .collect();
+            for (fighter, _) in session
+                .fighters
+                .iter()
+                .zip(&homes)
+                .filter(|(fighter, home)| fighter.identity.is_alliance == is_alliance && **home == Some(None))
+            {
+                match entries.iter_mut().find(|entry| entry.class == fighter.class_key) {
+                    Some(entry) => entry.count += 1,
+                    None => entries.push(crate::world::SystemSquadrons {
+                        class: fighter.class_key,
+                        count: 1,
+                        is_alliance,
+                    }),
+                }
+            }
+            system.fighters.retain(|entry| entry.is_alliance != is_alliance);
+            system.fighters.extend(entries.into_iter().filter(|entry| entry.count > 0));
+        }
     }
 
     // Every fleet of each side fought (FUN_0040b0e0), the lead fleet first.
-    let mut fleets: Vec<(FleetKey, bool)> = Vec::new();
-    for (fleet, is_attacker) in [
-        (session.attacker_fleet, true),
-        (session.defender_fleet, false),
-    ]
-    .into_iter()
-    .filter_map(|(fleet, is_attacker)| Some((fleet?, is_attacker)))
-    .chain(
-        session
-            .ships
-            .iter()
-            .filter_map(|ship| Some((ship.fleet?, ship.is_attacker))),
-    )
-    .chain(
-        session
-            .fighters
-            .iter()
-            .filter_map(|fighter| Some((fighter.fleet?, fighter.is_attacker))),
-    ) {
-        if !fleets.iter().any(|&(key, _)| key == fleet) {
-            fleets.push((fleet, is_attacker));
+    let mut fleets: Vec<FleetKey> = Vec::new();
+    for fleet in [session.attacker_fleet, session.defender_fleet]
+        .into_iter()
+        .flatten()
+        .chain(session.ships.iter().filter_map(|ship| ship.fleet))
+        .chain(session.fighters.iter().filter_map(|fighter| fighter.fleet))
+        .chain(session.death_star.and_then(|station| Some(station.ship?.0)))
+    {
+        if !fleets.contains(&fleet) {
+            fleets.push(fleet);
         }
     }
 
-    for (fleet_key, is_attacker) in fleets {
-        // Roster indices, after the losses are removed, of the ships that
-        // withdrew, and whether any survivor stayed to fight.
-        let mut withdrawn: Vec<usize> = Vec::new();
-        let mut any_stayed = false;
-        if let Some(fleet) = world.fleets.get_mut(fleet_key) {
-            if fleet.has_death_star {
-                fleet.has_death_star = session.death_star.is_some_and(|death_star| {
-                    death_star.is_attacker == is_attacker && !death_star.destroyed
-                });
-            }
+    // FUN_0040d170: the Death Star ship takes the station's remaining hull,
+    // truncated (`__ftol`); less is damage (`FUN_00501ae0`, reason 0xc),
+    // which destroys it at none, more is repair (`FUN_00501b70`).
+    let station = session.death_star.and_then(|station| {
+        let (fleet, index) = station.ship?;
+        Some((fleet, index, station.hull.max(0.0).trunc() as i32))
+    });
 
-            let mut left = vec![false; fleet.capital_ships.len()];
+    for fleet_key in fleets {
+        if let Some(fleet) = world.fleets.get_mut(fleet_key) {
             for (roster_index, ship_inst) in fleet.capital_ships.iter_mut().enumerate() {
                 if !ship_inst.alive {
                     continue;
@@ -183,8 +258,7 @@ pub fn apply_results(
                 if let Some(result) = session.ships.iter().find(|ship| {
                     ship.fleet == Some(fleet_key) && ship.fleet_ship_index == roster_index
                 }) {
-                    // A ship that withdrew (FUN_005af7a0) leaves with its hull.
-                    left[roster_index] = result.retreated;
+                    // A ship that jumped (state 9) keeps its hull.
                     ship_inst.hull_current = result.hull_current.clamp(0, result.hull_max);
                     ship_inst.alive =
                         (result.alive || result.retreated) && ship_inst.hull_current > 0;
@@ -208,75 +282,59 @@ pub fn apply_results(
                     }
                 }
             }
-            for (survivor_index, withdrew) in fleet
-                .capital_ships
-                .iter()
-                .zip(left)
-                .filter(|(ship, _)| ship.alive)
-                .map(|(_, withdrew)| withdrew)
-                .enumerate()
-            {
-                if withdrew {
-                    withdrawn.push(survivor_index);
-                } else {
-                    any_stayed = true;
+            if let Some((_, index, hull)) = station.filter(|&(fleet, ..)| fleet == fleet_key) {
+                if let Some(ship) = fleet.capital_ships.get_mut(index) {
+                    ship.hull_current = hull;
+                    ship.alive = hull > 0;
                 }
             }
             fleet.capital_ships.retain(|ship| ship.alive);
 
-            let mut survivors = vec![0_u32; fleet.fighters.len()];
-            for fighter in session
-                .fighters
-                .iter()
-                .filter(|fighter| fighter.fleet == Some(fleet_key))
-            {
-                if fighter.squad_count > 0 {
-                    if let Some(count) = survivors.get_mut(fighter.fleet_fighter_index) {
-                        *count = count.saturating_add(1);
-                    }
+            // FUN_0040d320.c:54-85: a squadron docked at the end becomes a
+            // child of its carrier's strategic ship, by the ship's tag.
+            for entry in &mut fleet.fighters {
+                entry.count = 0;
+            }
+            for (fighter, home) in session.fighters.iter().zip(&homes) {
+                let Some(Some((home_fleet, carrier))) = *home else {
+                    continue;
+                };
+                if home_fleet != fleet_key {
+                    continue;
+                }
+                match fleet
+                    .fighters
+                    .iter_mut()
+                    .find(|entry| entry.class == fighter.class_key && entry.carrier == carrier)
+                {
+                    Some(entry) => entry.count += 1,
+                    None => fleet.fighters.push(crate::world::FighterEntry {
+                        class: fighter.class_key,
+                        count: 1,
+                        carrier,
+                    }),
                 }
             }
-            for (entry, surviving_squadrons) in fleet.fighters.iter_mut().zip(survivors) {
-                entry.count = surviving_squadrons;
-            }
-            crate::carriage::drop_lost_squadrons(fleet);
+            fleet.fighters.retain(|entry| entry.count > 0);
         }
 
-        // A Death Star that jumped with its side's retreat
-        // (`FUN_005d14d0.c:124-127`) takes its fleet along.
-        let ds_left = session.death_star_withdrew(is_attacker)
-            && world
-                .fleets
-                .get(fleet_key)
-                .is_some_and(|fleet| fleet.has_death_star);
         let is_empty = world
             .fleets
             .get(fleet_key)
             .is_none_or(crate::world::Fleet::is_empty);
         if is_empty {
-            let is_loser = match session.winner {
-                Some(CombatWinner::Attacker) => !is_attacker,
-                Some(CombatWinner::Defender) => is_attacker,
-                Some(CombatWinner::Draw) | None => false,
-            };
-            let capture_data = is_loser
-                .then(|| {
-                    world.fleets.get(fleet_key).map(|fleet| {
-                        let captor = if fleet.is_alliance {
-                            Faction::Empire
-                        } else {
-                            Faction::Alliance
-                        };
-                        (fleet.characters.clone(), captor, fleet.location)
-                    })
-                })
-                .flatten();
-            if let Some((characters, captor, location)) = capture_data {
+            // The fleet's characters were children of its lost ships, set
+            // adrift by their hook (FUN_004ef2e0 -> FUN_00534790); no path
+            // takes them captive. With the fleet gone the system holds them
+            // for the adrift sweep (`death_star::sweep_adrift`).
+            let held = world
+                .fleets
+                .get(fleet_key)
+                .map(|fleet| (fleet.characters.clone(), fleet.location));
+            if let Some((characters, location)) = held {
                 for character_key in characters {
                     if let Some(character) = world.characters.get_mut(character_key) {
-                        character.is_captive = true;
-                        character.captured_by = Some(captor);
-                        character.capture_tick = Some(session.start_tick);
+                        character.adrift = true;
                         character.current_system = Some(location);
                         character.current_fleet = None;
                     }
@@ -288,38 +346,7 @@ pub fn apply_results(
                     system.fleets.retain(|&key| key != fleet_key);
                 }
             }
-            world.fleets.remove(fleet_key);
-        } else if !withdrawn.is_empty() || ds_left {
-            // port: how the original's import splits a fleet whose ships
-            // partly withdrew is untraced. The ships that withdrew (and the
-            // squadrons aboard them) leave as a fleet of their own, as Create
-            // Fleet makes one; the ships that stayed hold the system.
-            let leaving = if any_stayed {
-                let is_alliance = world.fleets[fleet_key].is_alliance;
-                crate::fleet_join::roster(world, fleet_key).and_then(|chosen| {
-                    crate::fleet_join::create_fleet(
-                        world,
-                        movement,
-                        troop_transport,
-                        fleet_key,
-                        &withdrawn,
-                        chosen,
-                        is_alliance,
-                    )
-                    .ok()
-                })
-            } else {
-                Some(fleet_key)
-            };
-            if let Some(leaving) = leaving {
-                let destination = withdraw_fleet(world, movement, troop_transport, leaving, log);
-                // The results name where the player's fleet went; an equal
-                // stalemate withdraws both sides, and the enemy's
-                // destination must not take its place.
-                if is_attacker == session.player_is_attacker {
-                    withdrawal = destination.or(withdrawal);
-                }
-            }
+            world.remove_fleet(fleet_key);
         }
     }
     // FUN_0051ddf0 → FUN_00516ef0: the winner's system squadrons are
@@ -338,28 +365,49 @@ pub fn apply_results(
             "source": if recorded.is_some() { "recorded" } else { "holder_tie" },
         })
     });
-    if let Some(winner_is_alliance) = pass_winner {
+    let relocations = pass_winner.map_or_else(Vec::new, |winner_is_alliance| {
         crate::post_battle::run_pass(
             world,
             movement,
             troop_transport,
+            products,
             session.system,
             winner_is_alliance,
             session.start_tick,
             log,
-        );
-    }
+        )
+    });
+    // The results name where the pass sent the player's fleet (`0x700d`).
+    let player_is_alliance = session.player_is_attacker == session.attacker_is_alliance;
+    let withdrawal = relocations.iter().find_map(|&(fleet, outcome)| match outcome {
+        crate::post_battle::Relocation::Moved(destination)
+            if world
+                .fleets
+                .get(fleet)
+                .is_some_and(|fleet| fleet.is_alliance == player_is_alliance) =>
+        {
+            Some(destination)
+        }
+        _ => None,
+    });
     troop_transport.destroy_untransportable_cargo(world);
+    // A Death Star the battle or its post-battle pass destroyed loses its
+    // usable bit (FUN_004f7b80 -> FUN_004f7410), whose event 0x301 reruns
+    // bit 11 (FUN_00514510).
+    crate::death_star::refresh_sectors(world);
     let mut result = BattleReturn {
         withdrawal,
         ..summarize_results(session)
     };
     // Every fleet a side has at the system fights, so the lead may be
-    // destroyed while another of the winner's fleets holds the system; the
-    // post-battle steps (bombardment, landing, occupation) follow that one.
+    // destroyed, or left with no usable ship, while another of the winner's
+    // fleets holds the system; the post-battle steps (bombardment, landing,
+    // occupation) follow the side's first usable one, as the original walks
+    // a system's fleets in mode 1 (FUN_00509530, FUN_004ffef0(system, 1,
+    // side)).
     if result
         .winner_fleet
-        .is_none_or(|fleet| !world.fleets.contains_key(fleet))
+        .is_none_or(|fleet| !world.fleets.get(fleet).is_some_and(crate::world::Fleet::usable))
     {
         let winner_is_alliance = match session.winner {
             Some(CombatWinner::Attacker) => Some(session.attacker_is_alliance),
@@ -372,76 +420,10 @@ pub fn apply_results(
                     world
                         .fleets
                         .get(fleet)
-                        .is_some_and(|fleet| fleet.is_alliance == winner_is_alliance)
+                        .is_some_and(|fleet| fleet.is_alliance == winner_is_alliance && fleet.usable())
                 })
             });
         }
     }
     result
-}
-
-/// Send a fleet that withdrew from a battle (manual p. 151, Withdraw from
-/// Battle; the Battle Alert's Retreat, p. 141) where the retreat chain
-/// places it (`post_battle::retreat_destination`). A fleet with no place,
-/// or a ship without a hyperdrive, stays.
-fn withdraw_fleet(
-    world: &mut GameWorld,
-    movement: &mut MovementState,
-    troop_transport: &TroopTransportState,
-    fleet: FleetKey,
-    log: &mut Vec<String>,
-) -> Option<SystemKey> {
-    let value = world.fleets.get(fleet)?;
-    let (is_alliance, origin) = (value.is_alliance, value.location);
-    let destination = crate::post_battle::retreat_destination(
-        world,
-        troop_transport,
-        movement,
-        origin,
-        is_alliance,
-    );
-    if let Some(destination) = destination {
-        let departed = crate::movement::begin_faction_fleet_transit(
-            movement,
-            world,
-            fleet,
-            destination,
-            is_alliance,
-        );
-        log.push(format!(
-            "[battle] withdrawal fleet={fleet:?} destination={destination:?} departed={}",
-            departed
-                .as_ref()
-                .map_or_else(|error| format!("no ({error:?})"), |_| "yes".to_owned())
-        ));
-        if departed.is_ok() {
-            return Some(destination);
-        }
-    }
-    None
-}
-
-/// Clear persistent Death Star pointers after either tactical or automatic
-/// combat has removed the manager-owned object from its fleet.
-pub fn reconcile_death_star_result(
-    world: &GameWorld,
-    death_star: &mut DeathStarState,
-    victory: &mut VictoryState,
-) -> bool {
-    let Some(fleet_key) = death_star.death_star_fleet else {
-        return false;
-    };
-    if world
-        .fleets
-        .get(fleet_key)
-        .is_some_and(|fleet| fleet.has_death_star)
-    {
-        return false;
-    }
-
-    death_star.death_star_fleet = None;
-    death_star.shield_generator_active = true;
-    victory.death_star_active = false;
-    victory.death_star_location = None;
-    true
 }

@@ -54,6 +54,7 @@ const PHASE_BETRAYAL: u8 = 9;
 /// and the phase 10 roll. The original draws each roll inline from its
 /// global generator; the port seeds a SplitMix64 per mission and tick from
 /// one caller roll, so the caller's budget stays fixed.
+#[cfg_attr(test, derive(Clone))]
 pub(crate) struct MissionRng {
     state: u64,
 }
@@ -589,7 +590,10 @@ impl Run<'_> {
 
     /// `FUN_0058a1c0`'s walks: every team character (families `0x30..0x37`,
     /// then `0x38..0x3b`), then every team special force, not decoying, faces
-    /// a random defender (`FUN_00588650`) until none is left.
+    /// a random defender (`FUN_00588650`) until none is left. The families
+    /// below `0x38` are the major characters (MJCHARSD) and the rest the
+    /// minor ones (MNCHARSD); a loaded character's id has no family byte,
+    /// so its file decides.
     ///
     /// port: a member holding a key at `+0x9c` takes `FUN_00588d30`, which is
     /// not read; the port holds no such key.
@@ -605,16 +609,14 @@ impl Run<'_> {
             team: true,
             decoys: false,
         };
-        let family = |member: &MissionMember| {
+        let major = |member: &MissionMember| {
             member
                 .character()
                 .and_then(|key| self.world.characters.get(key))
-                .map_or(0, |c| c.dat_id.raw() >> 24)
+                .is_some_and(|c| c.is_major)
         };
         let characters = self.members(mission, lists);
-        let (early, late): (Vec<_>, Vec<_>) = characters
-            .into_iter()
-            .partition(|member| family(member) < 0x38);
+        let (early, late): (Vec<_>, Vec<_>) = characters.into_iter().partition(major);
         let special_forces = self.members(
             mission,
             Lists {
@@ -887,6 +889,7 @@ mod tests {
             hidden: false,
             detection_phases: true,
             can_resign,
+            return_policy: 1,
             rules: MissionTargetRules {
                 own_side_target: true,
                 other_side_target: true,
@@ -957,14 +960,13 @@ mod tests {
         let key = world.troops.insert(TroopUnit {
             class_dat_id: class,
             is_alliance,
-            regiment_strength: 1,
         });
         world.systems[at].ground_units.push(key);
         key
     }
 
     /// A loyal Alliance agent of family `family` with the given espionage
-    /// and combat.
+    /// and combat: a major character (MJCHARSD) below family `0x38`.
     fn skilled(
         world: &mut GameWorld,
         at: SystemKey,
@@ -975,6 +977,7 @@ mod tests {
         let pair = |base| SkillPair { base, variance: 0 };
         MissionMember::Character(world.characters.insert(Character {
             dat_id: DatId::new(family << 24 | 1),
+            is_major: family < 0x38,
             name: "Agent".into(),
             is_alliance: true,
             loyalty: pair(100),
@@ -1029,14 +1032,16 @@ mod tests {
                 hull_current: 1,
                 damage_counters: 0,
                 alive: true,
+                completed: true,
                 name: None,
                 tag: 0,
                 repair_timer: None,
+                transit: None,
             }],
             fighters: vec![],
             characters: vec![],
             is_alliance,
-            has_death_star: false,
+            bombarding: false,
         })
     }
 
@@ -1340,9 +1345,11 @@ mod tests {
             hull_current: 0,
             damage_counters: 0,
             alive: false,
+            completed: true,
             name: None,
             tag: 0,
             repair_timer: None,
+            transit: None,
         });
         world.fleets[fleet]
             .fighters
@@ -1496,6 +1503,38 @@ mod tests {
             })
             .collect();
         assert_eq!(order, vec![early, late, unit]);
+    }
+
+    #[test]
+    fn loaded_major_characters_face_defenders_before_loaded_minor_ones() {
+        // FUN_0058a1c0 walks families 0x30..0x37 (MJCHARSD) before
+        // 0x38..0x3b (MNCHARSD); a loaded character's id is its record
+        // index alone (load_game_data), its file marked by is_major.
+        for (minor_id, major_id) in [(0x340, 0x240), (0x39b, 0x281)] {
+            let (mut world, here) = world_with(imperial());
+            imperial_regiment(&mut world, here);
+            table(&mut world, FOILTB, 100);
+            table(&mut world, RLEVADTB, 0);
+            let late = skilled(&mut world, here, 0x38, 0, 0);
+            let early = skilled(&mut world, here, 0x30, 0, 0);
+            for (member, raw) in [(late, minor_id), (early, major_id)] {
+                world.characters[character(member)].dat_id = DatId::new(raw);
+            }
+            let mut mission = sabotage(vec![late, early], here, 2);
+
+            let out = run_once(&mut mission, &world);
+
+            let order: Vec<MissionMember> = out
+                .iter()
+                .filter_map(|effect| match effect {
+                    MissionEffect::CharacterCaptured { character, .. } => {
+                        Some(MissionMember::Character(*character))
+                    }
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(order, vec![early, late], "{minor_id:#x} {major_id:#x}");
+        }
     }
 
     #[test]

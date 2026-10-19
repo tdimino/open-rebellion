@@ -1,11 +1,14 @@
 //! Test-only, versioned direct entry into the production tactical battle scene.
 
+use rebellion_core::carriage::{board_squadron, tag_ship, ProductRoom};
+use rebellion_core::dat::Faction;
 use rebellion_core::ids::{CapitalShipKey, FighterKey, FleetKey, SystemKey};
 use rebellion_core::missions::MissionFaction;
 use rebellion_core::troop_transport::TroopTransportState;
-use rebellion_core::world::{FighterEntry, Fleet, GameWorld, ShipInstance};
+use rebellion_core::world::{ControlKind, FighterEntry, Fleet, GameWorld, ShipInstance};
 use rebellion_render::tactical_view::{
-    tactical_character_content_resource, TacticalAttackTarget, WeaponKind,
+    tactical_character_content_resource, tactical_control_layout, TacticalAttackTarget,
+    TacticalControlRect, WeaponKind,
 };
 #[cfg(feature = "interface-test-fixtures")]
 use rebellion_render::TacticalLodView;
@@ -57,6 +60,13 @@ const TACTICAL_AUDIO_PRESENTATION_SCENARIO: u32 = 36;
 /// The original's day-30 Battle at Yaga Minor (`empire-day30-yaga-alert-control`),
 /// rebuilt unit for unit so the A0 comparison can judge battle-dependent regions.
 const YAGA_DAY30_SCENARIO: u32 = 37;
+/// The original's day-676 Battle at Coruscant (`empire-death-star-pre-alert`):
+/// the Empire's Death Star fleet attacks Alliance-held Coruscant.
+const CORUSCANT_DAY676_SCENARIO: u32 = 38;
+/// The original's day-1173 Battle at Coruscant
+/// (`alliance-day1169-deathstar-trench-run`): the Alliance's 59 squadrons
+/// attack the Imperial fleets holding Death Star 1.
+const CORUSCANT_DAY1173_SCENARIO: u32 = 39;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TacticalLodFixture {
@@ -132,6 +142,8 @@ pub(crate) struct TacticalFixtureRequest {
     pub death_star_laser_journey: bool,
     pub trench_run_outcome: Option<TacticalTrenchRunOutcome>,
     pub yaga_day30: bool,
+    pub coruscant_day676: bool,
+    pub coruscant_day1173: bool,
     /// Battles open with nothing selected; these gates read a selected ship.
     pub stage_player_selection: bool,
     lod_fixture: TacticalLodFixture,
@@ -349,7 +361,9 @@ fn decode(code: u32) -> Option<TacticalFixtureRequest> {
         | DETAIL_ESCORT_PRESENTATION_SCENARIO
         | BATTLE_ALERT_PRESENTATION_SCENARIO
         | TACTICAL_AUDIO_PRESENTATION_SCENARIO
-        | YAGA_DAY30_SCENARIO => (
+        | YAGA_DAY30_SCENARIO
+        | CORUSCANT_DAY676_SCENARIO
+        | CORUSCANT_DAY1173_SCENARIO => (
             false,
             true,
             false,
@@ -423,6 +437,8 @@ fn decode(code: u32) -> Option<TacticalFixtureRequest> {
             _ => None,
         },
         yaga_day30: scenario == YAGA_DAY30_SCENARIO,
+        coruscant_day676: scenario == CORUSCANT_DAY676_SCENARIO,
+        coruscant_day1173: scenario == CORUSCANT_DAY1173_SCENARIO,
         stage_player_selection: matches!(
             scenario,
             CAMERA_JOURNEY_SCENARIO | PRODUCTION_PARTICIPANTS_SCENARIO
@@ -453,14 +469,20 @@ pub(crate) fn apply(
 ) -> Result<(), String> {
     let (system, attacker, defender) = if request.yaga_day30 {
         yaga_day30_encounter(world, troop_transport)?
+    } else if request.coruscant_day676 {
+        coruscant_day676_encounter(world)?
+    } else if request.coruscant_day1173 {
+        coruscant_day1173_encounter(world)?
     } else {
         synthetic_encounter(request, world)?
     };
 
-    let player_is_attacker = request.faction == CockpitFaction::Alliance;
+    let player_is_alliance = request.faction == CockpitFaction::Alliance;
+    let player_is_attacker = world.fleets[attacker].is_alliance == player_is_alliance;
     rebellion_core::carriage::tag_all(world);
     tactical_flow::begin_player_battle(
         world,
+        None,
         BattleEntry {
             system,
             attacker: rebellion_core::combat::CombatForce::of_fleet(world, attacker),
@@ -600,7 +622,7 @@ pub(crate) fn apply(
             tactical.set_tactical_lod_fixture(view);
         }
     }
-    *player_faction = if player_is_attacker {
+    *player_faction = if player_is_alliance {
         MissionFaction::Alliance
     } else {
         MissionFaction::Empire
@@ -668,6 +690,20 @@ fn synthetic_encounter(
         })
         .map(|(key, class)| (key, class.hull))
         .ok_or("no Imperial capital-ship class")?;
+    // The Imperial fleet has the Death Star when it holds the family-0x18
+    // ship (`FUN_005003d0`); the battle raises the station from it.
+    let death_star_ship = if request.death_star_presentation {
+        Some(
+            world
+                .capital_ship_classes
+                .iter()
+                .find(|(_, class)| class.is_death_star())
+                .map(|(key, class)| (key, class.hull))
+                .ok_or("no Death Star class")?,
+        )
+    } else {
+        None
+    };
     let alliance_fighter = world
         .fighter_classes
         .iter()
@@ -739,7 +775,9 @@ fn synthetic_encounter(
         Fleet {
             location: system,
             capital_ships: (0..ship_count)
-                .map(|_| {
+                .map(|_| (ship, hull))
+                .chain(death_star_ship.filter(|_| !is_alliance))
+                .map(|(ship, hull)| {
                     ShipInstance::new(ship, i32::try_from(hull).unwrap_or(i32::MAX), is_alliance)
                 })
                 .collect(),
@@ -755,7 +793,7 @@ fn synthetic_encounter(
                 .unwrap_or_default(),
             characters: vec![],
             is_alliance,
-            has_death_star: request.death_star_presentation && !is_alliance,
+            bombarding: false,
         }
     };
     let attacker = world.fleets.insert(make_fleet(
@@ -848,7 +886,7 @@ fn yaga_day30_encounter(
         fighters: vec![],
         characters: vec![],
         is_alliance: true,
-        has_death_star: false,
+        bombarding: false,
     });
     let defender = world.fleets.insert(Fleet {
         location: system,
@@ -863,7 +901,7 @@ fn yaga_day30_encounter(
         }],
         characters: vec![vader],
         is_alliance: false,
-        has_death_star: false,
+        bombarding: false,
     });
     if let Some(previous) = world.characters[vader].current_fleet {
         if let Some(fleet) = world.fleets.get_mut(previous) {
@@ -898,8 +936,212 @@ fn yaga_day30_encounter(
     }
     world.systems[system].ground_units.extend(&stormtroopers);
     troop_transport
-        .load(world, defender, &stormtroopers)
+        .load(world, &ProductRoom::default(), defender, &stormtroopers)
         .map_err(|error| format!("Stormtroopers did not embark: {error:?}"))?;
+    Ok((system, attacker, defender))
+}
+
+/// A capital ship of an original save, as its master record holds it: the
+/// CAPSHPSD index (the record's class byte), its name, and the FIGHTSD index
+/// (class byte) of each squadron among its children, one per squadron.
+struct SavedShip {
+    class: u32,
+    name: &'static str,
+    squadrons: &'static [u32],
+}
+
+const fn saved(class: u32, name: &'static str, squadrons: &'static [u32]) -> SavedShip {
+    SavedShip {
+        class,
+        name,
+        squadrons,
+    }
+}
+
+/// The save's Coruscant: the seeded game's own fleets and squadrons there
+/// step off the system, so only the save's forces fight, and its holder is
+/// the save's.
+fn saved_coruscant(world: &mut GameWorld, holder: Faction) -> Result<SystemKey, String> {
+    let system = world
+        .systems
+        .iter()
+        .find(|(_, system)| system.name == "Coruscant" && !system.is_destroyed)
+        .map(|(key, _)| key)
+        .ok_or("no Coruscant system")?;
+    let coruscant = &mut world.systems[system];
+    coruscant.fleets.clear();
+    coruscant.fighters.clear();
+    coruscant.control = ControlKind::Controlled(holder);
+    Ok(system)
+}
+
+/// One fleet of the save at `system`, its ships in the save's order, each
+/// squadron boarded on the ship whose child it is.
+fn saved_fleet(
+    world: &mut GameWorld,
+    system: SystemKey,
+    is_alliance: bool,
+    ships: &[SavedShip],
+) -> Result<FleetKey, String> {
+    let mut capital_ships = Vec::with_capacity(ships.len());
+    for ship in ships {
+        let (class, hull) = world
+            .capital_ship_classes
+            .iter()
+            .find(|(_, class)| class.dat_id.index() == ship.class)
+            .map(|(key, class)| (key, i32::try_from(class.hull).unwrap_or(i32::MAX)))
+            .ok_or(format!("no capital-ship class {:#x}", ship.class))?;
+        let mut instance = ShipInstance::new(class, hull, is_alliance);
+        instance.name = Some(ship.name.into());
+        capital_ships.push(instance);
+    }
+    let fleet = world.fleets.insert(Fleet {
+        location: system,
+        capital_ships,
+        fighters: vec![],
+        characters: vec![],
+        is_alliance,
+        bombarding: false,
+    });
+    for (index, ship) in ships.iter().enumerate() {
+        let carrier = tag_ship(world, fleet, index).ok_or("fixture ship took no tag")?;
+        for &squadron in ship.squadrons {
+            let class = world
+                .fighter_classes
+                .iter()
+                .find(|(_, class)| class.dat_id.index() == squadron)
+                .map(|(key, _)| key)
+                .ok_or(format!("no fighter class {squadron}"))?;
+            board_squadron(world, fleet, class, carrier);
+        }
+    }
+    world.systems[system].fleets.push(fleet);
+    Ok(fleet)
+}
+
+/// The forces of the original's day-676 Battle at Coruscant, read from the
+/// master records of `empire-day660-deathstar-pre-alert.sav`, the save the
+/// A0 trace loads (its frames show the Empire's two task forces and one
+/// fighter group, and the Alliance's capitals in one cluster). The Empire's
+/// Fleet 6 attacks with Imperial Star Destroyer 1 (six TIE Fighter
+/// squadrons aboard), Galleon 2 and Death Star 1, completed, at full hull and
+/// with no Death Star Shield at Coruscant. Alliance-held Coruscant holds ten
+/// Alliance fleets, in the system's order, and seven class-1 squadrons of
+/// its own. The regiments aboard are left out: no A0 frame of this battle
+/// shows a ship's contents.
+fn coruscant_day676_encounter(
+    world: &mut GameWorld,
+) -> Result<(SystemKey, FleetKey, FleetKey), String> {
+    let system = saved_coruscant(world, Faction::Alliance)?;
+    let attacker = saved_fleet(
+        world,
+        system,
+        false,
+        &[
+            saved(0x85, "Imperial Star Destroyer 1", &[5; 6]),
+            saved(0x89, "Galleon 2", &[]),
+            saved(0x88, "Death Star 1", &[]),
+        ],
+    )?;
+    let defender = saved_fleet(world, system, true, &[saved(0x47, "Zephyrus", &[])])?;
+    for ships in [
+        &[saved(0x47, "Hawk", &[])][..],
+        &[
+            saved(0x46, "Haste", &[]),
+            saved(0x45, "Nimble", &[]),
+            saved(0x45, "Agile", &[]),
+            saved(0x47, "Race", &[]),
+            saved(0x44, "Wind", &[1; 6]),
+        ],
+        &[saved(0x47, "Shooting Star", &[])],
+        &[saved(0x40, "Liberty", &[1, 1, 2])],
+        &[saved(0x44, "Lightning", &[3, 1, 1, 1, 1, 1])],
+        &[saved(0x46, "Quick", &[])],
+        &[saved(0x45, "Swift", &[])],
+        &[saved(0x45, "Arrow", &[])],
+        &[saved(0x44, "Alliance Escort Carrier 7", &[1; 6])],
+    ] {
+        saved_fleet(world, system, true, ships)?;
+    }
+    let held = world
+        .fighter_classes
+        .iter()
+        .find(|(_, class)| class.dat_id.index() == 1)
+        .map(|(key, _)| key)
+        .ok_or("no fighter class 1")?;
+    world.systems[system].add_squadrons(held, 7, true);
+    Ok((system, attacker, defender))
+}
+
+/// The forces of the original's day-1173 Battle at Coruscant, read from the
+/// master records of `alliance-day1169-deathstar-trench-run.sav`: the
+/// Alliance's Fleet 2 attacks with 26 ships and 59 squadrons (Red Group is
+/// its 23 X-wing squadrons, as the A0 trace reads); Imperial-held Coruscant
+/// holds Fleet 16 (Punisher and Death Star 1, completed, at full hull and
+/// with no Death Star Shield there) and Fleet 193 (seven capitals): eight
+/// capitals and 23 TIE squadrons. The characters aboard and the regiments
+/// are left out, and Alliance Escort Carrier 8's damaged squadron (8 of 12
+/// craft) is whole: no A0 frame of this battle shows them.
+fn coruscant_day1173_encounter(
+    world: &mut GameWorld,
+) -> Result<(SystemKey, FleetKey, FleetKey), String> {
+    let system = saved_coruscant(world, Faction::Empire)?;
+    let attacker = saved_fleet(
+        world,
+        system,
+        true,
+        &[
+            saved(0x45, "Corellian Corvette 2", &[]),
+            saved(0x45, "Corellian Corvette 5", &[]),
+            saved(0x43, "Nebulon-B Frigate 1", &[3, 3]),
+            saved(0x46, "Medium Transport 4", &[]),
+            saved(0x46, "Medium Transport 5", &[]),
+            saved(0x44, "Alliance Escort Carrier 1", &[3; 6]),
+            saved(0x44, "Alliance Escort Carrier 2", &[3, 3, 3, 3, 4, 4]),
+            saved(0x40, "Mon Calamari Cruiser 2", &[3; 3]),
+            saved(0x47, "Bulk Transport 1", &[]),
+            saved(0x47, "Bulk Transport 2", &[]),
+            saved(0x47, "Bulk Transport 3", &[]),
+            saved(0x47, "Bulk Transport 4", &[]),
+            saved(0x44, "Alliance Escort Carrier 5", &[4; 6]),
+            saved(0x44, "Alliance Escort Carrier 6", &[2; 6]),
+            saved(0x44, "Alliance Escort Carrier 7", &[3, 3, 3, 1, 1, 1]),
+            saved(0x44, "Alliance Escort Carrier 8", &[1, 1, 1, 1, 1, 2]),
+            saved(0x40, "Mon Calamari Cruiser 4", &[4; 3]),
+            saved(0x40, "Mon Calamari Cruiser 5", &[2; 3]),
+            saved(0x48, "Corellian Gunship 1", &[]),
+            saved(0x48, "Corellian Gunship 2", &[]),
+            saved(0x42, "Assault Frigate 1", &[]),
+            saved(0x42, "Assault Frigate 2", &[]),
+            saved(0x44, "Alliance Escort Carrier 14", &[4, 3, 3, 3, 3, 3]),
+            saved(0x44, "Alliance Escort Carrier 15", &[4; 6]),
+            saved(0x4a, "CC-7700 Frigate 3", &[]),
+            saved(0x4a, "CC-7700 Frigate 5", &[]),
+        ],
+    )?;
+    let defender = saved_fleet(
+        world,
+        system,
+        false,
+        &[
+            saved(0x85, "Punisher", &[5; 6]),
+            saved(0x88, "Death Star 1", &[]),
+        ],
+    )?;
+    saved_fleet(
+        world,
+        system,
+        false,
+        &[
+            saved(0x84, "Dictator", &[5, 5]),
+            saved(0x84, "Despot", &[5]),
+            saved(0x8e, "Ruler", &[5]),
+            saved(0x8e, "Oppressor", &[5]),
+            saved(0x8d, "Bear", &[5; 6]),
+            saved(0x8d, "Cronos", &[5, 5, 5, 6, 6, 6]),
+            saved(0x82, "Lord", &[]),
+        ],
+    )?;
     Ok((system, attacker, defender))
 }
 
@@ -959,6 +1201,9 @@ struct FixtureRecord<'a> {
     defender_ships: usize,
     fighters: usize,
     source_layout: Option<FixtureSourceLayout>,
+    /// Every fixed control's rect by name, so the probes click and check
+    /// the game's own layout.
+    controls: Vec<TacticalControlRect>,
     participants: Vec<FixtureParticipant<'a>>,
     effects: Vec<FixtureEffect>,
     projectiles: Vec<FixtureProjectile>,
@@ -977,10 +1222,13 @@ struct FixtureDeathStar {
     resource_id: u32,
     opposing_resource_id: u32,
     operational: bool,
+    hull_max: f32,
     hull: f32,
     laser_charge: f32,
-    destroyed: bool,
+    shielded: bool,
+    not_completed: bool,
     action_committed: bool,
+    hangar_capacity: u32,
     source_position: [f32; 3],
 }
 
@@ -1128,18 +1376,10 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
         let (attack_target_kind, attack_target_index) = fixture_attack_target(ship.attack_target);
         let tactical_ordinal = ship
             .tactical_resource
-            .map(|resource| resource.tactical_ordinal)
-            .or_else(|| {
-                ship.death_star_resource
-                    .map(|resource| resource.tactical_ordinal)
-            });
+            .map(|resource| resource.tactical_ordinal);
         let resource_base = ship
             .tactical_resource
-            .map(|resource| resource.mesh_resource_base)
-            .or_else(|| {
-                ship.death_star_resource
-                    .map(|resource| resource.resource_base_without_flag)
-            });
+            .map(|resource| resource.mesh_resource_base);
         FixtureParticipant {
             kind: "capital-ship",
             name: &ship.name,
@@ -1152,9 +1392,7 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
             fleet_roster_index: ship.identity.fleet_roster_index,
             tactical_ordinal,
             resource_base,
-            opposing_resource_base: ship
-                .death_star_resource
-                .map(|resource| resource.resource_base_with_flag),
+            opposing_resource_base: None,
             initial_close_resource: None,
             initial_far_resource: None,
             initial_indicator_resource: None,
@@ -1390,10 +1628,13 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
         resource_id: death_star.resource_id(),
         opposing_resource_id: death_star.resource.resource_base_with_flag,
         operational: death_star.operational(),
+        hull_max: death_star.hull_max,
         hull: death_star.hull,
         laser_charge: death_star.laser_charge,
-        destroyed: death_star.destroyed,
+        shielded: death_star.shielded,
+        not_completed: death_star.not_completed,
         action_committed: death_star.action_committed,
+        hangar_capacity: death_star.hangar_capacity,
         source_position: [
             death_star.source_position.x,
             death_star.source_position.y,
@@ -1401,7 +1642,7 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
         ],
     });
     emit(&FixtureRecord {
-        schema_version: 37,
+        schema_version: 38,
         status: "battle-ready",
         family: "tactical",
         fixture_code: request.code,
@@ -1475,6 +1716,7 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
             inner_negative_z: layout.inner_negative_z,
             inner_positive_z: layout.inner_positive_z,
         }),
+        controls: tactical_control_layout(),
         participants,
         effects,
         projectiles,
@@ -1488,7 +1730,7 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
 
 pub(crate) fn emit_failed(request: TacticalFixtureRequest, error: &str) {
     emit(&FixtureRecord {
-        schema_version: 37,
+        schema_version: 38,
         status: "failed",
         family: "tactical",
         fixture_code: request.code,
@@ -1544,6 +1786,7 @@ pub(crate) fn emit_failed(request: TacticalFixtureRequest, error: &str) {
         defender_ships: 0,
         fighters: 0,
         source_layout: None,
+        controls: Vec::new(),
         participants: Vec::new(),
         effects: Vec::new(),
         projectiles: Vec::new(),
@@ -1642,9 +1885,70 @@ mod tests {
             TacticalLodFixture::CameraJourney
         );
         assert!(decode(0x10125).unwrap().yaga_day30);
+        assert!(decode(0x10226).unwrap().coruscant_day676);
+        assert!(!decode(0x10226).unwrap().coruscant_day1173);
+        assert!(decode(0x10127).unwrap().coruscant_day1173);
+        assert!(!decode(0x10127).unwrap().coruscant_day676);
+        assert!(decode(0x10127).unwrap().production_participants);
         assert!(decode(0x10100).is_none());
-        assert!(decode(0x10126).is_none());
+        assert!(decode(0x10128).is_none());
         assert!(decode(0x10301).is_none());
         assert!(decode(0x00101).is_none());
+    }
+
+    #[test]
+    fn a_saved_fleet_alone_holds_coruscant_with_each_squadron_aboard_its_own_ship() {
+        use rebellion_core::ids::DatId;
+        use rebellion_core::world::{CapitalShipClass, FighterClass, System};
+
+        let mut world = GameWorld::default();
+        let system = world.systems.insert(System {
+            name: "Coruscant".into(),
+            ..Default::default()
+        });
+        for index in [0x85, 0x88] {
+            world.capital_ship_classes.insert(CapitalShipClass {
+                dat_id: DatId::new(0x1400_0000 | index),
+                hull: 100,
+                ..Default::default()
+            });
+        }
+        let tie = world.fighter_classes.insert(FighterClass {
+            dat_id: DatId::new(0x1c00_0005),
+            ..Default::default()
+        });
+        let seeded = world.fleets.insert(Fleet {
+            location: system,
+            capital_ships: vec![],
+            fighters: vec![],
+            characters: vec![],
+            is_alliance: false,
+            bombarding: false,
+        });
+        world.systems[system].fleets.push(seeded);
+        world.systems[system].add_squadrons(tie, 2, false);
+
+        let coruscant = saved_coruscant(&mut world, Faction::Empire).unwrap();
+        let fleet = saved_fleet(
+            &mut world,
+            coruscant,
+            false,
+            &[
+                saved(0x88, "Death Star 1", &[]),
+                saved(0x85, "Punisher", &[5; 6]),
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(coruscant, system);
+        assert_eq!(world.systems[system].fleets, vec![fleet]);
+        assert!(world.systems[system].fighters.is_empty());
+        let ships = &world.fleets[fleet].capital_ships;
+        assert_eq!(ships[1].name.as_deref(), Some("Punisher"));
+        assert_ne!(ships[0].tag, ships[1].tag);
+        let fighters = &world.fleets[fleet].fighters;
+        assert_eq!(fighters.len(), 1);
+        assert_eq!((fighters[0].class, fighters[0].count), (tie, 6));
+        assert_eq!(fighters[0].carrier, ships[1].tag);
     }
 }

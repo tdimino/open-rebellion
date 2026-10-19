@@ -385,8 +385,9 @@ battles no window opens:
 1. Space: for each system where both sides are present,
    `integrator::resolve_system_space_combat(world, troop_transport,
    movement, system, rng_seed, tick)` runs one headless tactical session
-   seeded from one roll, then the caller reconciles a destroyed Death Star
-   (`tactical::apply::reconcile_death_star_result`).
+   seeded from one roll, then `tactical::apply::apply_results` writes the
+   result back, runs the post-battle pass and clears the usable bit of a
+   destroyed Death Star (`death_star::refresh_sectors`).
 2. Ground: `CombatSystem::resolve_ground(&world, system, alliance_attacks,
    &rolls, tick)`, applied by `apply_ground_combat_result_inner`; node
    `or-p-gnd-ykv` replaces it with the original's assault (§3).

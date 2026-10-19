@@ -12,7 +12,7 @@
     "task-force-strip": { "rect": [60, 2, 207, 17], "class": "state", "source": "tactical_view.rs TASK_FORCE_BUTTONS" },
     "task-force-1": { "rect": [60, 2, 25, 17], "class": "chrome", "source": "tactical_view.rs TASK_FORCE_BUTTONS[0]" },
     "fighter-group-strip": { "rect": [330, 2, 103, 17], "class": "state", "source": "tactical_view.rs FIGHTER_GROUP_BUTTONS" },
-    "laser-control": { "rect": [613, 2, 21, 20], "class": "chrome", "source": "tactical_view.rs DEATH_STAR_LASER_BUTTON_RECT" },
+    "laser-control": { "rect": [611, 2, 21, 20], "class": "chrome", "source": "tactical_view.rs DEATH_STAR_LASER_BUTTON_RECT (FUN_005c4ed0: (0x89, 2) in the gauge window at 474)" },
     "laser-gauge": { "rect": [508, 9, 95, 6], "class": "state", "source": "tactical_view.rs DEATH_STAR_LASER_FILL_RECT" },
     "status-panel": { "rect": [474, 28, 166, 236], "class": "state", "source": "tactical_view.rs panel 1306 at (482, 28), FUN_0059cac0, and selected panel 1302" },
     "ship-meters": { "rect": [514, 107, 110, 8], "class": "state", "source": "tactical_view.rs TACTICAL_SELECTED_SHIELD_METER, TACTICAL_SELECTED_HULL_METER" },
@@ -40,6 +40,14 @@
     "saved-game-names": {
       "rect": [115, 70, 165, 225],
       "justification": "The Saved Games names are the capture VM's own slot labels (transit3 day30, empire day488 late), not interface state; the slot buttons beside them stay compared."
+    },
+    "a0-pointer-task-force-1": {
+      "rect": [69, 5, 16, 14],
+      "justification": "A0 TAC-02-C009 and C010 hold the VM's mouse pointer resting on task force 1, over the label's right side; A1's headless screenshots draw no pointer. The rest of the button stays compared."
+    },
+    "a0-pointer-attack-capital": {
+      "rect": [522, 170, 22, 12],
+      "justification": "A0 TAC-05-C013 holds the VM's mouse pointer pressing Attack Capital Ships at the art's lower right; A1's headless screenshots draw no pointer. The rest of the button stays compared."
     }
   },
   "cells": {
@@ -71,8 +79,8 @@
     "TAC-02-C006": { "pairs": [{ "a1": "yaga-day30/nothing-selected", "regions": ["task-force-strip"] }] },
     "TAC-02-C007": { "pairs": [{ "a1": "production-participants/task-force-unassigned-released", "regions": ["task-force-strip"] }] },
     "TAC-02-C008": { "pairs": [{ "a1": "yaga-day30/nothing-selected", "regions": ["task-force-1"] }] },
-    "TAC-02-C009": { "pairs": [{ "a1": "yaga-day30-pointer/tf1-hover", "regions": ["task-force-1"] }] },
-    "TAC-02-C010": { "pairs": [{ "a1": "yaga-day30-pointer/tf1-held", "regions": ["task-force-1"] }] },
+    "TAC-02-C009": { "pairs": [{ "a1": "yaga-day30-pointer/tf1-hover", "regions": ["task-force-1"], "masks": ["a0-pointer-task-force-1"] }] },
+    "TAC-02-C010": { "pairs": [{ "a1": "yaga-day30-pointer/tf1-held", "regions": ["task-force-1"], "masks": ["a0-pointer-task-force-1"] }] },
     "TAC-02-C011": { "pairs": [{ "a1": "yaga-day30/tf1-selected", "regions": ["task-force-1", "status-panel", "aperture"] }] },
     "TAC-02-C012": { "pairs": [{ "a1": "yaga-day30/blank-task-force-3", "regions": ["task-force-strip"] }] },
     "TAC-02-C013": { "pairs": [{ "a1": "production-group-presentation/actual", "regions": ["task-force-strip", "fighter-group-strip"] }] },
@@ -124,21 +132,24 @@
     "TAC-05-C006": { "pairs": [{ "a1": "yaga-day30/maneuvers-open", "regions": ["maneuver-hammer", "maneuver-anvil", "maneuver-left-hook", "maneuver-right-hook", "maneuver-hold", "tactic-toggle"] }] },
     "TAC-05-C007": { "pairs": [{ "a1": "yaga-day30/attack-capital-chosen", "regions": ["mission-attack-capital", "mission-attack-fighters", "mission-recover", "mission-attack-death-star"] }] },
     "TAC-05-C008": { "pairs": [{ "a1": "yaga-day30-task-force-2/attack-fighters-chosen", "regions": ["mission-attack-capital", "mission-attack-fighters", "mission-recover", "mission-attack-death-star"] }] },
-    "TAC-05-C009": { "pairs": [{ "a1": "production-death-star-presentation/death-star-mission-selected", "regions": ["mission-attack-death-star", "orders-display"] }] },
+    "TAC-05-C009": { "pairs": [{ "a1": "coruscant-day1173/attack-death-star-chosen", "regions": ["mission-attack-death-star", "orders-display"] }] },
     "TAC-05-C010": { "pairs": [{ "a1": "yaga-day30/recover-chosen", "regions": ["mission-recover", "orders-display"] }] },
     "TAC-05-C011": { "pairs": [{ "a1": "yaga-day30/escort-isd", "regions": ["status-panel"] }] },
     "TAC-05-C012": { "pairs": [{ "a1": "yaga-day30/missions-open-capital", "regions": ["mission-attack-capital", "mission-attack-fighters", "mission-recover", "mission-attack-death-star"] }] },
-    "TAC-05-C013": { "pairs": [{ "a1": "yaga-day30-pointer/attack-capital-held", "regions": ["mission-attack-capital"] }] },
+    "TAC-05-C013": { "pairs": [{ "a1": "yaga-day30-pointer/attack-capital-held", "regions": ["mission-attack-capital"], "masks": ["a0-pointer-attack-capital"] }] },
     "TAC-05-C014": { "pairs": [{ "a1": "yaga-day30/attack-capital-chosen", "regions": ["mission-attack-capital"] }] },
     "TAC-05-C015": { "pairs": [{ "a1": "yaga-day30/recover-disabled-clicked", "regions": ["mission-recover", "mission-attack-death-star"] }] },
     "TAC-05-C016": { "pairs": [{ "a1": "production-command-assignment-presentation/missions-open-capital", "regions": ["mission-attack-capital", "mission-attack-fighters", "mission-recover", "mission-attack-death-star"] }] },
-    "TAC-05-C017": { "pairs": [{ "a1": "production-death-star-laser-journey/death-star-laser-armed", "regions": ["laser-control", "laser-gauge"] }] },
-    "TAC-05-C018": { "pairs": [{ "a1": "production-death-star-laser-journey/death-star-laser-committed", "regions": ["laser-control", "laser-gauge"] }] },
-    "TAC-05-C019": { "pairs": [{ "a1": "production-death-star-laser-journey/death-star-superlaser-beam", "regions": ["laser-control", "aperture"] }] },
-    "TAC-05-C020": { "pairs": [{ "a1": "production-death-star-laser-journey/death-star-superlaser-resolved", "regions": ["laser-gauge"] }] },
-    "TAC-05-C021": { "pairs": [{ "a1": "production-death-star-presentation/death-star-missions-open", "regions": ["mission-attack-death-star"] }] },
+    "TAC-05-C017": { "pairs": [{ "a1": "coruscant-day676/initial", "regions": ["laser-control", "laser-gauge"] }] },
+    "TAC-05-C018": { "pairs": [{ "a1": "coruscant-day676/laser-committed", "regions": ["laser-control", "laser-gauge"] }] },
+    "TAC-05-C019": { "pairs": [{ "a1": "coruscant-day676-strike/superlaser-strike", "regions": ["laser-control", "aperture"] }] },
+    "TAC-05-C020": { "pairs": [{ "a1": "coruscant-day676-charge/charge-refilling", "regions": ["laser-control", "laser-gauge"] }] },
+    "TAC-05-C021": { "pairs": [{ "a1": "coruscant-day1173/attack-death-star-enabled", "regions": ["mission-attack-death-star"] }] },
     "TAC-05-C022": { "pairs": [{ "a1": "yaga-day30/death-star-disabled-clicked", "regions": ["mission-attack-death-star"] }] },
-    "TAC-05-C023": { "pairs": [], "not_run_reason": "No A1 frame holds the committed order before the launch: A1 launches the trench run at the commit, the original about 61 s later (plan doc, session 7)." },
+    "TAC-05-C023": { "audio": true, "pairs": [
+      { "a1": "coruscant-day1173-launch/trench-run-launch", "regions": ["mission-attack-death-star", "fighter-group-strip", "orders-display"] },
+      { "a0": "before", "a1": "coruscant-day1173-launch/attack-death-star-committed", "regions": ["mission-attack-death-star", "fighter-group-strip", "orders-display"] }
+    ] },
 
     "TAC-06-C001": { "pairs": [{ "a1": "yaga-day30/options-open", "regions": ["options-panel"] }] },
     "TAC-06-C002": { "pairs": [
@@ -184,6 +195,11 @@
     "yaga-day30": ["empire-day30-yaga-alert-control"],
     "yaga-day30-options": ["empire-day30-yaga-alert-control"],
     "yaga-day30-pointer": ["empire-day30-yaga-alert-control"],
-    "yaga-day30-task-force-2": ["empire-day30-yaga-alert-control"]
+    "yaga-day30-task-force-2": ["empire-day30-yaga-alert-control"],
+    "coruscant-day676": ["empire-death-star-pre-alert"],
+    "coruscant-day676-strike": ["empire-death-star-pre-alert"],
+    "coruscant-day676-charge": ["empire-death-star-pre-alert"],
+    "coruscant-day1173": ["alliance-day1169-deathstar-trench-run"],
+    "coruscant-day1173-launch": ["alliance-day1169-deathstar-trench-run"]
   }
 }

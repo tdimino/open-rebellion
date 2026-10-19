@@ -1,8 +1,6 @@
 //! Battle fixtures shared by the engine tests and rebellion-render's view tests.
 
-use super::resource_ids::{
-    capital_ship_tactical_resource, death_star_tactical_resource, fighter_tactical_resource,
-};
+use super::resource_ids::{capital_ship_tactical_resource, fighter_tactical_resource};
 use super::*;
 
 /// port: test fixture values, not rules.
@@ -15,7 +13,6 @@ pub fn test_ship(dat_id: u32, roster: usize, is_alliance: bool, alive: bool) -> 
             is_alliance,
         },
         tactical_resource: capital_ship_tactical_resource(DatId::new(dat_id)),
-        death_star_resource: death_star_tactical_resource(DatId::new(dat_id)),
         source_position: TacticalWorldPosition::ORIGIN,
         source_forward: if is_alliance {
             TacticalWorldVector::SOURCE_FORWARD
@@ -89,6 +86,8 @@ pub fn test_ship(dat_id: u32, roster: usize, is_alliance: bool, alive: bool) -> 
         retreating: false,
         retreat_progress: 0.0,
         retreated: false,
+        outstanding_hits: 0,
+        repair_timer_steps: 0,
     }
 }
 
@@ -96,6 +95,9 @@ pub fn test_ship(dat_id: u32, roster: usize, is_alliance: bool, alive: bool) -> 
 pub fn test_fighter(dat_id: u32, is_alliance: bool) -> TacticalFighter {
     TacticalFighter {
         held_by_system: false,
+        off_field: false,
+        carrier: None,
+        docked: None,
         class_key: FighterKey::default(),
         identity: TacticalObjectIdentity {
             class_dat_id: DatId::new(dat_id),
@@ -160,9 +162,10 @@ pub fn test_session(
         trench_run_outcome: None,
         trench_run_remaining_ms: None,
         trench_run_group: None,
-        trench_run_success_rating: 1,
+        trench_run_commander: None,
         trench_run_pending_outcome: None,
         trench_run_participants: Vec::new(),
+        trench_run_snapshot: Vec::new(),
         trench_run_chatter: [ORIGINAL_TRENCH_RUN_SILENT_EVENT; 9],
         trench_run_chatter_cursor: 0,
         trench_run_cinematic_pending: false,
@@ -174,6 +177,8 @@ pub fn test_session(
         start_tick: 0,
         combat_tick: 0,
         tactical_rng: OriginalTacticalRng::new(0x5eed_ba77),
+        battle_rng: OriginalBattleRng::default(),
+        settled_crew: None,
         weapon_effects: Vec::new(),
         impact_effects: Vec::new(),
         pending_audio_cues: Vec::new(),
@@ -186,10 +191,32 @@ pub fn test_session(
         step_accumulator: 0.0,
         winner: None,
         stalemate: TacticalStalemateWatch::default(),
+        death_star_ai: TacticalDeathStarAi::default(),
+        hangars: TacticalHangars::default(),
         morale: TacticalMorale::default(),
         engagement: TacticalEngagementState::default(),
         holder_is_alliance: None,
+        arrival_holder_is_alliance: None,
         blockaded_at_start: false,
         withdrawal_destination: None,
+    }
+}
+
+/// port: an Imperial station of the side `is_attacker`, completed, with a
+/// 100-point hull, no charge, no shield and no hangar.
+pub fn test_death_star(is_attacker: bool) -> TacticalDeathStar {
+    TacticalDeathStar {
+        resource: DEATH_STAR_TACTICAL_RESOURCE,
+        is_attacker,
+        is_alliance: false,
+        source_position: TacticalWorldPosition::ORIGIN,
+        hull_max: 100.0,
+        hull: 100.0,
+        laser_charge: 0.0,
+        shielded: false,
+        not_completed: false,
+        action_committed: false,
+        hangar_capacity: 0,
+        ship: None,
     }
 }

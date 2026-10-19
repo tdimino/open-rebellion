@@ -3,7 +3,7 @@ title: "Death Star"
 description: "The Death Star as CAPSHPSD family 0x18: build, move, Destroy System, the destroy cascade, the sector bit and victory; and where the port's death_star.rs diverges"
 category: "mechanics"
 created: 2026-03-16
-updated: 2026-10-14
+updated: 2026-10-17
 game_system: "death-star"
 sources:
   - type: "ghidra"
@@ -58,34 +58,33 @@ destroys the system with reason `0x10` when the bombarder holds it, else
 | Characters at the system, not on a mission | Turn adrift |
 | Minor characters not in transit | Rolled against GNPRTB `0x606`; a hit kills |
 
-The owner stays. Victory reads the Death Star only through the AD bit
+No owner field is written; the populated bit clears, so the control word
+turns neutral (`support-shifts.md`, "Destroy System's kill"). Victory reads the Death Star only through the AD bit
 (Alliance HQ missing or destroyed) and the CD bit (Coruscant destroyed).
 
 ## Port
 
-`crates/rebellion-core/src/death_star.rs` diverges from the original:
+`crates/rebellion-core/src/death_star.rs` and the bombardment run:
 
-- **Identification.** `CapitalShipClass::is_death_star`
-  (`world/mod.rs`) also accepts family `0x34`, and `Fleet::has_death_star`
-  is a stored flag; the original computes it from the fleet's ships in
-  `[0x18,0x1c)` (`or-port-death-star-family-qtde`).
-- **Destroy cascade.** `cleanup_destroyed_system` removes every fleet at
-  the system, the Death Star's own included, and kills every character
-  aboard (`or-port-destroy-system-cascade-imrv`).
-- **Construction.** A separate countdown of 1,825 ticks
-  (`DEATH_STAR_CONSTRUCTION_TICKS`) has no source; the original builds the
-  ship on the ordinary build path from its DAT build time.
-- **Fire.** `DeathStarSystem::fire` refuses an Empire-held target and
-  needs an Empire fleet; the original allows any target not already
-  destroyed and tests no side.
-- **Nearby warning.** Alliance systems within 300 coordinate units
-  (`NEARBY_WARNING_RADIUS`) are warned; the original marks every system in
-  the sector instead (bit 11, `FUN_005178b0`; `or-q-port-support-shifts-y0y`).
+- **Destroy System** is order `0x223` and runs the original cascade
+  (`cleanup_destroyed_system`); the gate tests no side
+  (`ghidra/notes/bombardment.md`, Port).
+- **Construction.** The Death Star is a family-`0x18` capital ship on the
+  ordinary build path; Build Selection refuses it where one already is or
+  is queued (`{0x90, 3}`, `FUN_00507ab0`; `build_selection.rs`).
+- **The sector bit.** `refresh_sectors` (`FUN_005178b0`) marks every
+  system in a sector holding a usable Death Star
+  (`GameWorld::death_star_sectors`, bit 11).
+- **Adrift characters.** `sweep_battle_changes` and `sweep_adrift`
+  (`FUN_00548e90`, `FUN_00549230`) send the cascade's adrift characters on
+  hidden trips by side; one with no place of its side is captured and
+  tries the captor's places, and with none again is held in the captor's
+  jail (`strand`, `hold_in_jail`, `FUN_00549580`).
 
 ## Source Material
 
 - **Ghidra RE**: [death-star-strategic.md](../../ghidra/notes/death-star-strategic.md), [bombardment.md](../../ghidra/notes/bombardment.md), [tactical-death-star-path.md](../../ghidra/notes/tactical-death-star-path.md) (the battle)
-- **Code**: `crates/rebellion-core/src/death_star.rs` — `DeathStarSystem`, `DeathStarState`, `DeathStarConstruction`
+- **Code**: `crates/rebellion-core/src/death_star.rs` — `refresh_sectors`, `cleanup_destroyed_system`, `sweep_battle_changes`, `sweep_adrift`, `return_members`, `free_escapee`, `hold_in_jail`
 
 ## Related
 

@@ -77,3 +77,35 @@ alliance-day1169-deathstar-trench-run.sav
   SHA-256 ad68f6f4d049a74362e4b57c1573a960e12fd3d5b938d47d81babec7c45dd9a0
   Alliance, day 1169; David Adams's Coruscant save played on. Fleet 2 (59 fighter squadrons) in transit to Coruscant; the Battle at Coruscant alert opens on day 1173 against Death Star 1 and 23-24 TIE squadrons, enough for Attack Death Star.
 
+alliance-day817-orto-transit.sav
+  SHA-256 7080400818ffc71ce270285baa96e631f1f41bf3282c0ca0b30f97366c3ffc03
+  Alliance, day 817: Fleet 1 (two Alliance Fleet Regiments) in transit to Imperial-held Orto (three shields); arrives day 911 and blockades.
+
+alliance-day927-orto-orbit.sav
+  SHA-256 ce73d41eef5ea703ea125957fa2f4a31eda2fdcd69af4699fc735c3b5ba9df41
+  Alliance, day 927: Fleet 1 blockading Orto; Planetary Assault greyed (three shields), bombardment rows enabled.
+
+empire-day211-tralus-corellia-assaults.sav
+  SHA-256 c3c973433b50f8b379ca8b50e47e2ee91df1e64cece0ff737cf7781f0a8755e7
+  Empire, day 211: Tralus taken on day 189 (KDY-150 killed one regiment), the Corellia assault repulsed on day 210.
+
+empire-day220-talus-blockade.sav
+  SHA-256 f68320b547cca290f6c7c513e5d9cda9a052e8f234c390bdfb604090d93b02f0
+  Empire, day 220: Imperial Fleets 1 and 2 blockade Alliance-held Talus, which holds three Alliance officers and no regiment.
+
+empire-day277-talus-taken.sav
+  SHA-256 0afba5719269834c42177cd5877dc87dd22ef5c3ba76cc1ca5f4772c744f6aa7
+  Empire, day 277: Talus taken by assault on day 272; its three Alliance officers are at Corfai.
+
+empire-day660-trench-tieless.sav
+  SHA-256 6e399b3e114c44486ed8ba34f142593caa0e85c94e5d39af1fa48251191ee2ce
+  Empire, day 660, edited: Fleet 6 TIE squadrons emptied; at the day-676 Battle at Coruscant (Take Command) the Alliance AI runs the trench and destroys the Death Star.
+
+alliance-day731-leia-jailed.sav
+  SHA-256 97598719644f90493da659f8db8de4ad99b94e872f6f6eff6650ac0e88bc78dc
+  Alliance, about day 731, edited: Leia moved into the Empire Jail; she escapes within about 50 days and arrives at Yavin.
+
+empire-day660-palpatine-jailed.sav
+  SHA-256 6270d084541c58bd08f236a0d90bf85ebafaa14be0529f634a25f5549ac421e9
+  Empire, day 660, edited: Palpatine moved into the Alliance Jail; the Alliance wins the Standard game between days 682 and 692.
+

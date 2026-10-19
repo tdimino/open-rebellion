@@ -133,4 +133,4 @@ writers are the tactical import above (`FUN_00501490` ← `FUN_00501ae0` /
 - Who writes the local player's `+0x38` from the Battle Alert, and what
   slot `+0x48` (`FUN_00486650`) does against a remote human who chose to
   play.
-- How the import treats a withdrawn fleet on the strategic map.
+- Where a withdrawn loser goes and what the Battle Alert's Retreat writes: the departure is the loser's autoscrap request (`FUN_00516ef0.c:142-180`); a withdrawn winner stays (`morale-retreat.md`, "Squadrons without a hyperdrive, the winner, and the strategic aftermath").

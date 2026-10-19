@@ -36,16 +36,29 @@ use rebellion_core::troop_transport::TroopTransportState;
 use rebellion_core::world::GameWorld;
 
 use crate::bmp_cache::{resources, BmpCache, DllSource};
-use crate::scroll_bar::{ScrollBar, ScrollPointer, ScrollRange, LIST_BAR_29FC};
+use crate::operation_report::{cell_picture, ReportTab};
+use crate::scroll_bar::{ScrollBar, ScrollPointer, ScrollRange, LIST_BAR_29FC, TEXT_BAR_299D};
 #[cfg(feature = "interface-test-fixtures")]
 use crate::tactical_assets::TacticalLodView;
 use crate::tactical_assets::{
-    OriginalTacticalCamera, TacticalAssetRenderer, TacticalEffectRenderObject,
-    TacticalFighterRenderObject, TacticalProjectileRenderObject, TacticalRenderObject,
-    TacticalScreenProjection,
+    OriginalTacticalCamera, TacticalAssetRenderer, TacticalDecalRenderObject,
+    TacticalEffectRenderObject, TacticalFighterRenderObject, TacticalProjectileRenderObject,
+    TacticalRenderObject, TacticalScreenProjection,
 };
+use rebellion_core::battle_summary::{BattleRecord, BattleSummarySide, SummaryEntry};
 use rebellion_core::tactical::resource_ids::TacticalCapitalShipResource;
 pub use rebellion_core::tactical::*;
+
+/// `_DAT_0066d260` (double): the station decal is half the battle extent square.
+const ORIGINAL_STATION_DECAL_SIZE_SCALE: f32 = 0.5;
+/// `FUN_005d4d10` (`0x5d5650`-`0x5d5658`): SetDecalOrigin(64, 64) on the
+/// station decal.
+const ORIGINAL_STATION_DECAL_ORIGIN: Vec2 = Vec2::new(64.0, 64.0);
+/// `0x5d5409` doubles the extent: the planet decal stands at 2.0 battle
+/// extents on x.
+const ORIGINAL_PLANET_DECAL_X_SCALE: f32 = 2.0;
+/// `_DAT_0066d23c`: the planet decal's y and z offsets reach 0.1 extents.
+const ORIGINAL_PLANET_DECAL_JITTER: f32 = 0.1;
 
 /// The original TACTICAL.DLL background is a complete 640×480 composition.
 const TACTICAL_WIDTH: f32 = 640.0;
@@ -103,6 +116,7 @@ const TACTICAL_FIGHTER_COUNT_POINT: (f32, f32) = (505.0, 183.0);
 /// to panel-local (23, 59).
 const TACTICAL_FIGHTER_ART_X: f32 = 505.0;
 const TACTICAL_FIGHTER_ART_Y: f32 = 87.0;
+const TACTICAL_FIGHTER_ART_SIZE: (f32, f32) = (102.0, 107.0);
 /// TEXTTACT `0xddc5`-`0xddcc`, the count label for fighter types
 /// `0x1d`-`0x24` (`FUN_005e16a0`).
 const TACTICAL_FIGHTER_TYPE_LABELS: [&str; 8] = [
@@ -199,16 +213,6 @@ pub enum BattleResultTab {
     GoDirectlyTo,
 }
 
-/// Unit family selected inside an Alliance or Imperial force-detail tab.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum BattleResultCategory {
-    #[default]
-    CapitalShips,
-    Fighters,
-    Troops,
-    Personnel,
-}
-
 /// Original right-rail page inside the pre-battle Battle Alert window.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 enum BattleAlertTab {
@@ -254,6 +258,11 @@ enum TacticalCommandPanel {
     },
     Missions {
         pending_order: TacticalOrder,
+        /// The fighter group the panel was opened on. The panel keeps its
+        /// object and reads its kind once (`FUN_005df7a0` stores it at
+        /// `+0xc0`; kind 4 enables Recover), so it still answers for a group
+        /// the Attack Death Star commit deselected.
+        fighter_group: Option<u8>,
     },
 }
 
@@ -297,8 +306,15 @@ pub struct TacticalState {
     pub highlight_empire: bool,
     /// Active source tab in the post-battle Battle Results window.
     pub battle_result_tab: BattleResultTab,
-    /// Active force family in the Alliance or Imperial result tab.
-    pub battle_result_category: BattleResultCategory,
+    /// The Battle Summary's filter tab (`+0x180`, `0x65` at open,
+    /// `FUN_0046f140`).
+    battle_result_filter: ReportTab,
+    /// The first row of the forces list, and its bar's press.
+    battle_result_scroll: usize,
+    battle_result_scroll_drag: crate::scroll_bar::ScrollDrag,
+    /// The Battle Alert's record of what each side's fleets carried, taken
+    /// on the battle's first frame (`FUN_0049c0d0`).
+    battle_record: Option<BattleRecord>,
     /// The original strategic Battle Alert owns entry until the player takes
     /// command, simulates, or attempts to retreat.
     battle_alert_open: bool,
@@ -345,6 +361,11 @@ pub struct TacticalState {
     proof_resource_2560: bool,
     #[cfg(feature = "interface-test-fixtures")]
     proof_lod_follows_zoom: bool,
+    /// The Death Star laser journey ends a side's withdrawal countdown on
+    /// its next step, so the browser sees the departure without waiting
+    /// 150 s.
+    #[cfg(feature = "interface-test-fixtures")]
+    fixture_withdrawal_expires: bool,
 }
 
 impl Default for TacticalState {
@@ -361,10 +382,13 @@ impl Default for TacticalState {
             default_camera: None,
             memorized_camera: None,
             camera_follow: None,
-            highlight_alliance: true,
-            highlight_empire: true,
+            highlight_alliance: false,
+            highlight_empire: false,
             battle_result_tab: BattleResultTab::Summary,
-            battle_result_category: BattleResultCategory::CapitalShips,
+            battle_result_filter: ReportTab::CapitalShips,
+            battle_result_scroll: 0,
+            battle_result_scroll_drag: crate::scroll_bar::ScrollDrag::default(),
+            battle_record: None,
             battle_alert_open: false,
             battle_alert_tab: BattleAlertTab::Summary,
             battle_alert_scroll: 0,
@@ -395,6 +419,8 @@ impl Default for TacticalState {
             proof_resource_2560: false,
             #[cfg(feature = "interface-test-fixtures")]
             proof_lod_follows_zoom: false,
+            #[cfg(feature = "interface-test-fixtures")]
+            fixture_withdrawal_expires: false,
         }
     }
 }
@@ -475,10 +501,15 @@ impl TacticalState {
                 });
         self.memorized_camera = None;
         self.camera_follow = None;
-        self.highlight_alliance = true;
-        self.highlight_empire = true;
+        // Both highlights start off: the controller zeroes them
+        // (`FUN_0059eb70`, `+0x10c` and `+0x110`, toggled by `FUN_0059ef40`
+        // and `FUN_0059ef20`) and `FUN_0059c4d0` builds both buttons in
+        // their first state (1034, 1036).
+        self.highlight_alliance = false;
+        self.highlight_empire = false;
         self.battle_result_tab = BattleResultTab::Summary;
-        self.battle_result_category = BattleResultCategory::CapitalShips;
+        self.reset_battle_result_filter();
+        self.battle_record = None;
         self.battle_alert_open = true;
         macroquad::logging::info!("[battle_alert] opened");
         self.battle_alert_tab = BattleAlertTab::Summary;
@@ -773,6 +804,7 @@ impl TacticalState {
         session.paused = true;
         self.death_star_laser_pressed = false;
         self.death_star_targeting = false;
+        self.fixture_withdrawal_expires = true;
     }
 
     /// Drive the recovered state-5 producer to a deterministic source result
@@ -796,21 +828,19 @@ impl TacticalState {
         session.fighters[index].fighter_group = 0;
         session.fighters[index].order = TacticalOrder::AttackDeathStar;
         session.fighters[index].maneuverability = 9;
-        match outcome {
-            TacticalTrenchRunOutcome::Success => {
-                // Seed 15 yields a maneuver draw of 8 and a success draw of 6.
-                session.trench_run_success_rating = 9;
-                session.tactical_rng = OriginalTacticalRng::new(15);
-            }
-            TacticalTrenchRunOutcome::Failure => {
-                // Seed 1 yields a maneuver draw of 2 and a success draw of 68.
-                session.trench_run_success_rating = 1;
-                session.tactical_rng = OriginalTacticalRng::new(1);
-            }
+        // Seed 15 draws a maneuver of 8, which holds. A large torpedo load
+        // makes the first roll a certain success; none leaves only the
+        // rating's 0% and the squadron flies until it is lost.
+        session.tactical_rng = OriginalTacticalRng::new(15);
+        session.fighters[index].torpedo_strength = match outcome {
+            TacticalTrenchRunOutcome::Success => 1000,
+            TacticalTrenchRunOutcome::Failure => 0,
         };
-        if session.trench_run_remaining_ms.is_none() {
+        if session.trench_run_group.is_none() {
             begin_original_attack_order(session, &[], &[index], TacticalOrder::AttackDeathStar);
         }
+        session.fighters[index].source_position = session.trench_run_entry_point(true);
+        session.advance_trench_run_approach(ORIGINAL_TACTICAL_STEP_MILLISECONDS);
         session.advance_original_trench_run(ORIGINAL_TRENCH_RUN_DURATION_MILLISECONDS);
     }
 
@@ -875,7 +905,7 @@ impl TacticalState {
         session.selected_ship = None;
         session.selected_fighter_group = None;
         self.battle_result_tab = BattleResultTab::Summary;
-        self.battle_result_category = BattleResultCategory::CapitalShips;
+        self.reset_battle_result_filter();
         self.command_panel = TacticalCommandPanel::Display;
     }
 
@@ -1713,6 +1743,7 @@ impl TacticalState {
     /// result processing by the caller.
     pub fn end_battle(&mut self) -> Option<BattleSession> {
         self.dragging_ship = None;
+        self.battle_record = None;
         self.command_panel = TacticalCommandPanel::Display;
         self.session.take()
     }
@@ -1743,16 +1774,18 @@ impl TacticalState {
 
     /// The Battle Alert's Simulate: run the live session to its end without
     /// its window (`BattleSession::simulate_to_end`), then open the same
-    /// Battle Results a played battle shows. The caller applies the session
-    /// to the strategic world at once.
-    pub fn simulate_battle(&mut self) -> bool {
+    /// Battle Results a played battle shows. The crew pass is drawn now,
+    /// from `world` as the battle left it (`BattleSession::settle_crew`);
+    /// the caller applies the session to the strategic world at once.
+    pub fn simulate_battle(&mut self, world: &GameWorld) -> bool {
         let Some(session) = self.session.as_mut() else {
             return false;
         };
         session.simulate_to_end();
+        session.settle_crew(world);
         flush_engine_log(session);
         self.battle_result_tab = BattleResultTab::Summary;
-        self.battle_result_category = BattleResultCategory::CapitalShips;
+        self.reset_battle_result_filter();
         self.strategic_results_applied = true;
         true
     }
@@ -1761,6 +1794,14 @@ impl TacticalState {
     #[must_use]
     pub const fn strategic_results_applied(&self) -> bool {
         self.strategic_results_applied
+    }
+
+    /// The Battle Summary opens on the Capital Ships filter (`+0x180` =
+    /// `0x65`, `FUN_0046f140`) with its list at the top.
+    fn reset_battle_result_filter(&mut self) {
+        self.battle_result_filter = ReportTab::CapitalShips;
+        self.battle_result_scroll = 0;
+        self.battle_result_scroll_drag = crate::scroll_bar::ScrollDrag::default();
     }
 
     /// Returns true if a battle is currently active.
@@ -1791,7 +1832,7 @@ impl TacticalState {
         let player_alliance = player_is_alliance(session);
         Some(crate::audio::MdataTrack::battle_result(
             player_alliance,
-            winner_is_alliance(session) == Some(player_alliance),
+            session.winner_is_alliance() == Some(player_alliance),
         ))
     }
 
@@ -1923,8 +1964,6 @@ pub enum TacticalAction {
     TogglePause,
     /// Set combat speed multiplier.
     SetSpeed(u32),
-    /// Retreat selected ships.
-    RetreatSelected,
     /// Withdraw every eligible player hull after the Battle Options command.
     WithdrawFromBattle,
     /// Attempt an immediate retreat from the pre-battle Battle Alert.
@@ -2155,8 +2194,14 @@ const TACTICAL_WITHDRAW_CONFIRMATION_CONTROLS: [TacticalWithdrawConfirmationSpec
 ];
 
 const DEATH_STAR_LASER_GAUGE_RECT: NativeRect = NativeRect::new(474.0, 0.0, 166.0, 25.0);
-const DEATH_STAR_LASER_BUTTON_RECT: NativeRect = NativeRect::new(613.0, 2.0, 21.0, 20.0);
+/// `FUN_005c4ed0`: the gauge window's CoolStrobeButton at (0x89, 2),
+/// 0x15 by 0x14, and its CoolwinStatusBar at (0x22, 9), 0x5f by 6.
+const DEATH_STAR_LASER_BUTTON_RECT: NativeRect = NativeRect::new(611.0, 2.0, 21.0, 20.0);
 const DEATH_STAR_LASER_FILL_RECT: NativeRect = NativeRect::new(508.0, 9.0, 95.0, 6.0);
+/// The charge bar's fill and background, COLORREF `0x200ff00` and
+/// `0x2ff0000` (`FUN_0060e150` from `FUN_005c4ed0`).
+const DEATH_STAR_LASER_FILL_COLOR: Color = Color::new(0.0, 1.0, 0.0, 1.0);
+const DEATH_STAR_LASER_EMPTY_COLOR: Option<Color> = Some(Color::new(0.0, 0.0, 1.0, 1.0));
 
 // REBEXE FUN_0059be80 builds the task-force header 0xad01 at (9, 1) and the
 // eight slots 0xad02-0xad09 at x 0x3c + 0x1d * i, y 2, each 0x19 x 0x11.
@@ -2319,11 +2364,151 @@ fn tactical_command_spec(
     }
 }
 
+/// A fixed tactical control by name, in the 640×480 screen.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct TacticalControlRect {
+    pub name: String,
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
+impl TacticalControlRect {
+    fn named(name: String, rect: NativeRect) -> Self {
+        Self {
+            name,
+            x: rect.x,
+            y: rect.y,
+            width: rect.width,
+            height: rect.height,
+        }
+    }
+}
+
+/// Every fixed control of the tactical view by name: the task-force and
+/// fighter-group slots, the HUD buttons and the command panels' buttons,
+/// plus the art the probes check around them: the two strip headers and the
+/// fighter panel's count label as origins with an empty rect, and the
+/// fighter art at its full size. The browser probes click and check these
+/// rects rather than copies of them.
+#[must_use]
+pub fn tactical_control_layout() -> Vec<TacticalControlRect> {
+    let hud_name = |control| match control {
+        TacticalHudControl::TaskForce(index) => format!("task-force-{}", index + 1),
+        TacticalHudControl::FighterGroup(index) => format!("fighter-group-{}", index + 1),
+        TacticalHudControl::NavigationSet(index) => format!("navigation-set-{}", index + 1),
+        TacticalHudControl::Pause => "pause".into(),
+        TacticalHudControl::ZoomIn => "zoom-in".into(),
+        TacticalHudControl::ZoomOut => "zoom-out".into(),
+        TacticalHudControl::CameraTarget => "camera-target".into(),
+        TacticalHudControl::CameraLeft => "camera-left".into(),
+        TacticalHudControl::CameraRight => "camera-right".into(),
+        TacticalHudControl::CameraUp => "camera-up".into(),
+        TacticalHudControl::CameraDown => "camera-down".into(),
+        TacticalHudControl::CameraRecall => "camera-recall".into(),
+        TacticalHudControl::CameraMemorize => "camera-memorize".into(),
+        TacticalHudControl::HighlightAlliance => "highlight-alliance".into(),
+        TacticalHudControl::HighlightEmpire => "highlight-empire".into(),
+        TacticalHudControl::BattleOptions => "battle-options".into(),
+    };
+    let command_name = |control| match control {
+        TacticalCommandControl::PreviousCapital => "previous-capital",
+        TacticalCommandControl::NextCapital => "next-capital",
+        TacticalCommandControl::OpenManeuvers => "open-maneuvers",
+        TacticalCommandControl::OpenMissions => "open-missions",
+        TacticalCommandControl::LeftHook => "left-hook",
+        TacticalCommandControl::RightHook => "right-hook",
+        TacticalCommandControl::Hammer => "hammer",
+        TacticalCommandControl::Anvil => "anvil",
+        TacticalCommandControl::HoldPosition => "hold-position",
+        TacticalCommandControl::ToggleTactic => "toggle-tactic",
+        TacticalCommandControl::AttackCapitalShips => "attack-capital-ships",
+        TacticalCommandControl::AttackFighters => "attack-fighters",
+        TacticalCommandControl::Recover => "recover",
+        TacticalCommandControl::AttackDeathStar => "attack-death-star",
+        TacticalCommandControl::Confirm => "confirm",
+        TacticalCommandControl::Cancel => "cancel",
+    };
+    let mut layout = Vec::new();
+    // The count label's box top sits 9 above its baseline (A0 TAC-03-C019).
+    let count_label = (
+        TACTICAL_FIGHTER_COUNT_POINT.0,
+        TACTICAL_FIGHTER_COUNT_POINT.1 - 9.0,
+    );
+    for (name, (x, y)) in [
+        ("task-force-header", TASK_FORCE_HEADER_POINT),
+        ("fighter-group-header", FIGHTER_GROUP_HEADER_POINT),
+        ("fighter-count-label", count_label),
+    ] {
+        layout.push(TacticalControlRect::named(
+            name.into(),
+            NativeRect::new(x, y, 0.0, 0.0),
+        ));
+    }
+    layout.push(TacticalControlRect::named(
+        "fighter-art".into(),
+        NativeRect::new(
+            TACTICAL_FIGHTER_ART_X,
+            TACTICAL_FIGHTER_ART_Y,
+            TACTICAL_FIGHTER_ART_SIZE.0,
+            TACTICAL_FIGHTER_ART_SIZE.1,
+        ),
+    ));
+    for (index, rect) in (0u8..).zip(TASK_FORCE_BUTTONS) {
+        layout.push(TacticalControlRect::named(
+            hud_name(TacticalHudControl::TaskForce(index)),
+            rect,
+        ));
+    }
+    for (index, rect) in (0u8..).zip(FIGHTER_GROUP_BUTTONS) {
+        layout.push(TacticalControlRect::named(
+            hud_name(TacticalHudControl::FighterGroup(index)),
+            rect,
+        ));
+    }
+    for spec in TACTICAL_HUD_CONTROLS {
+        layout.push(TacticalControlRect::named(
+            hud_name(spec.control),
+            spec.rect,
+        ));
+    }
+    let panels = [
+        &DISPLAY_COMMAND_CONTROLS[..],
+        &MANEUVER_COMMAND_CONTROLS[..],
+        &MISSION_COMMAND_CONTROLS[..],
+    ];
+    for control in panels.into_iter().flatten().copied() {
+        let name = command_name(control);
+        if layout.iter().all(|known| known.name != name) {
+            let (rect, _) = tactical_command_spec(control, true);
+            layout.push(TacticalControlRect::named(name.into(), rect));
+        }
+    }
+    layout
+}
+
 fn tactical_command_controls(panel: TacticalCommandPanel) -> &'static [TacticalCommandControl] {
     match panel {
         TacticalCommandPanel::Display => &DISPLAY_COMMAND_CONTROLS,
         TacticalCommandPanel::Maneuvers { .. } => &MANEUVER_COMMAND_CONTROLS,
         TacticalCommandPanel::Missions { .. } => &MISSION_COMMAND_CONTROLS,
+    }
+}
+
+/// The selection a command panel answers for: Missions answers for the
+/// fighter group it was opened on (`FUN_005df7a0`), whatever is selected now.
+fn command_panel_selection(
+    panel: TacticalCommandPanel,
+    has_selection: bool,
+    selected_fighter: bool,
+) -> (bool, bool) {
+    match panel {
+        TacticalCommandPanel::Missions { fighter_group, .. } => (
+            has_selection || fighter_group.is_some(),
+            fighter_group.is_some(),
+        ),
+        _ => (has_selection, selected_fighter),
     }
 }
 
@@ -2346,6 +2531,8 @@ fn tactical_command_control_at(
     x: f32,
     y: f32,
 ) -> Option<TacticalCommandControl> {
+    let (has_selection, selected_fighter) =
+        command_panel_selection(panel, has_selection, selected_fighter);
     if !has_selection {
         return None;
     }
@@ -2385,6 +2572,8 @@ fn tactical_command_rect_control_at(
     x: f32,
     y: f32,
 ) -> Option<TacticalCommandControl> {
+    let (has_selection, selected_fighter) =
+        command_panel_selection(panel, has_selection, selected_fighter);
     if !has_selection {
         return None;
     }
@@ -2499,6 +2688,101 @@ fn tactical_withdraw_confirmation_control_at(
         })
 }
 
+/// The station decal of the scene surround: `FUN_005ab650` (`0x5ac59b`)
+/// passes `battle+0x8d4` (5010, or 5020 for an uncompleted station) through
+/// `FUN_005c10a0` and `FUN_005c1d30` to `FUN_005d4d10`, which gives the decal
+/// origin texel (64, 64) and size `0.5 * extent` (`_DAT_0066d260`) on the
+/// station's frame (`TacticalDeathStar::placed`). `FUN_005c1200` takes it off
+/// the frame (actor slot 1, `FUN_005d5950` -> slot 12, `0x5d59b0`) at state 6
+/// of a successful run (`FUN_005cfec0`, `0x5d0267`, after `FUN_005ba890`
+/// kills the station) and at the departure `FUN_005ba5e0` (`0x5ba611`, with
+/// `+0x78`); nothing shows it again.
+fn tactical_station_decal(session: &BattleSession) -> Option<TacticalDecalRenderObject> {
+    if tactical_station_decal_removal(session).is_some() {
+        return None;
+    }
+    session.death_star.map(|station| TacticalDecalRenderObject {
+        resource_id: station.resource_id(),
+        position: station.source_position.rendered(),
+        size: ORIGINAL_STATION_DECAL_SIZE_SCALE * session.source_layout.battle_extent,
+        origin: ORIGINAL_STATION_DECAL_ORIGIN,
+    })
+}
+
+/// Why `FUN_005c1200` took the station's decal off its frame, if it did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StationDecalRemoval {
+    /// State 6 of a successful trench run (`FUN_005cfec0`, `0x5d0267`).
+    TrenchRunSuccess,
+    /// The departure (`FUN_005ba5e0`, `0x5ba611`, `+0x78`).
+    Departure,
+}
+
+impl StationDecalRemoval {
+    const fn label(self) -> &'static str {
+        match self {
+            Self::TrenchRunSuccess => "trench_run_success",
+            Self::Departure => "departure",
+        }
+    }
+}
+
+/// The removal the station's decal has had, if the battle has a station.
+fn tactical_station_decal_removal(session: &BattleSession) -> Option<StationDecalRemoval> {
+    let station = session.death_star?;
+    if session.trench_run_outcome == Some(TacticalTrenchRunOutcome::Success) {
+        Some(StationDecalRemoval::TrenchRunSuccess)
+    } else if station.action_committed {
+        Some(StationDecalRemoval::Departure)
+    } else {
+        None
+    }
+}
+
+/// The planet decal's frame (`FUN_005d4d10`, `0x5d5372`-`0x5d5412`):
+/// `2.0 * extent` on x (`FADD ST0,ST0` at `0x5d5409`), off the face opposite the
+/// station's, with y and z each `rand(trunc(0.2 * extent)) - 0.1 * extent`
+/// (`_DAT_0066d23c`).
+/// port: the original draws them first from the surround's clock-seeded
+/// generator (`0x5d52ab`, `FUN_005f5750`); the port draws them from one
+/// seeded like the battle's, as the station's placement does.
+fn tactical_planet_decal_position(extent: f32) -> TacticalWorldPosition {
+    let mut rng = OriginalBattleRng::default();
+    TacticalWorldPosition {
+        x: ORIGINAL_PLANET_DECAL_X_SCALE * extent,
+        y: original_scene_surround_jitter(&mut rng, extent, ORIGINAL_PLANET_DECAL_JITTER),
+        z: original_scene_surround_jitter(&mut rng, extent, ORIGINAL_PLANET_DECAL_JITTER),
+    }
+}
+
+/// The target-attached impact frames submitted to the effect pass, keyed by
+/// target ship index + 1.
+fn tactical_effect_render_objects(
+    session: &BattleSession,
+    render_pyrotechnics: bool,
+) -> Vec<TacticalEffectRenderObject> {
+    if !render_pyrotechnics {
+        return Vec::new();
+    }
+    session
+        .impact_effects
+        .iter()
+        .filter_map(|effect| {
+            let ship = session.ships.get(effect.target)?;
+            let (source_width, source_height) = effect.sequence.source_size();
+            Some(TacticalEffectRenderObject {
+                object_id: u32::try_from(effect.target)
+                    .unwrap_or(u32::MAX)
+                    .saturating_add(1),
+                resource_id: effect.sequence.resource_base() + u32::from(effect.frame),
+                source_width,
+                source_height,
+                position: ship.source_position.rendered(),
+            })
+        })
+        .collect()
+}
+
 fn player_death_star(session: &BattleSession) -> Option<TacticalDeathStar> {
     session
         .death_star
@@ -2529,13 +2813,16 @@ fn tactical_death_star_laser_control_at(cache: &mut BmpCache, x: f32, y: f32) ->
 }
 
 fn tactical_withdraw_enabled(session: &BattleSession) -> bool {
-    session.ships.iter().any(|ship| {
-        ship.alive
-            && !ship.retreating
-            && ship.is_attacker == session.player_is_attacker
-            && ship.subsystem_capacity.hyperdrive > 0
-            && ship.subsystem_condition.hyperdrive > 0
-    })
+    // FUN_005d0f50.c:10: not once the side's controller has left state 0.
+    let side = usize::from(!session.player_is_attacker);
+    session.morale.withdrawal[side].state == TacticalWithdrawalState::Fighting
+        && session.ships.iter().any(|ship| {
+            ship.alive
+                && !ship.retreating
+                && ship.is_attacker == session.player_is_attacker
+                && ship.subsystem_capacity.hyperdrive > 0
+                && ship.subsystem_condition.hyperdrive > 0
+        })
 }
 
 /// What `FUN_005e16a0` puts on the fighter-group panel below the three
@@ -2624,14 +2911,8 @@ impl<'a> TacticalGroupHud<'a> {
                 task_forces[usize::from(ship.task_force.min(7))] = true;
             }
         }
-        for fighter in &session.fighters {
-            if fighter.alive
-                && fighter.squad_count > 0
-                && fighter.is_attacker == session.player_is_attacker
-                && fighter.fighter_group < 4
-            {
-                fighter_groups[usize::from(fighter.fighter_group)] = true;
-            }
+        for (group, held) in (0_u8..).zip(&mut fighter_groups) {
+            *held = fighter_group_slot_held(session, group);
         }
         let selected_task_force = selected_player_task_force(session);
         let selected_ship_name = session
@@ -2863,14 +3144,27 @@ fn assign_selected_to_task_force(session: &mut BattleSession, group: u8) -> usiz
     assigned
 }
 
+/// Whether the player's fighter group `group` holds its strip slot
+/// (controller `+0x154`, read by `FUN_005a0c20`; a slot without one draws
+/// state 2 and takes no click, `FUN_0059b620`): it has a live squadron and is
+/// not the group whose Attack Death Star order cleared its slot
+/// (`FUN_005ca530` -> `FUN_005a0320`) until the run's success gives it back
+/// (`FUN_005cfec0` state 6 -> `FUN_0059f680`).
+fn fighter_group_slot_held(session: &BattleSession, group: u8) -> bool {
+    let cleared = session.trench_run_group == Some(group)
+        && player_is_alliance(session)
+        && session.trench_run_outcome != Some(TacticalTrenchRunOutcome::Success);
+    !cleared
+        && session.fighters.iter().any(|fighter| {
+            fighter.alive
+                && fighter.squad_count > 0
+                && fighter.is_attacker == session.player_is_attacker
+                && fighter.fighter_group == group
+        })
+}
+
 fn select_fighter_group(session: &mut BattleSession, group: u8) -> bool {
-    let assigned = session.fighters.iter().any(|fighter| {
-        fighter.alive
-            && fighter.squad_count > 0
-            && fighter.is_attacker == session.player_is_attacker
-            && fighter.fighter_group == group
-    });
-    if !assigned {
+    if !fighter_group_slot_held(session, group) {
         return false;
     }
     for ship in &mut session.ships {
@@ -2885,6 +3179,42 @@ fn select_fighter_group(session: &mut BattleSession, group: u8) -> bool {
     session.selected_ship = None;
     session.selected_fighter_group = Some(group);
     true
+}
+
+/// The "Battle Paused" label's colour: `FUN_005c14d0` gives label `0xddf0`
+/// palette red (`0x020000ff`) on the Alliance side (`FUN_00595c40` 0) and
+/// palette green (`0x0200ff00`) on the Empire's.
+fn battle_paused_label_color(player_is_alliance: bool) -> Color {
+    if player_is_alliance {
+        Color::new(1.0, 0.0, 0.0, 1.0)
+    } else {
+        Color::new(0.0, 1.0, 0.0, 1.0)
+    }
+}
+
+/// The trench run launches at state 5, when the approach arrives and posts
+/// the 120 s timer (`FUN_005c6610.c:135-143` -> `FUN_005cfe80(result, 5)`,
+/// `FUN_005cfec0`), not at the order.
+fn log_trench_run_launch(session: &BattleSession) {
+    macroquad::logging::info!(
+        "[tactical_death_star] trench_run_launch status=launched fighter_members={} group={} remaining_ms={} rng_state={}",
+        session.trench_run_participants.len(),
+        session.trench_run_group.map_or(4, |group| group),
+        session.trench_run_remaining_ms.unwrap_or(0.0),
+        session.tactical_rng.state(),
+    );
+}
+
+/// Nothing selected: no ship, no fighter group.
+fn deselect_all(session: &mut BattleSession) {
+    for ship in &mut session.ships {
+        ship.selected = false;
+    }
+    for fighter in &mut session.fighters {
+        fighter.selected = false;
+    }
+    session.selected_ship = None;
+    session.selected_fighter_group = None;
 }
 
 fn cycle_selected_capital(session: &mut BattleSession, step: isize) -> Option<(usize, usize, u8)> {
@@ -3126,8 +3456,63 @@ fn draw_tactical_bitmap(cache: &mut BmpCache, id: u32, canvas: TacticalCanvas, x
     draw_original_bitmap(cache, DllSource::Tactical, id, canvas, x, y, None);
 }
 
+/// A tactical CoolStrobeButton (`FUN_00602150`): its bitmap keyed on the
+/// first stored pixel, as `FUN_00602d30` blits it over what lies behind
+/// ([`BmpCache::get_macroquad_button`]).
+fn draw_tactical_button(cache: &mut BmpCache, id: u32, canvas: TacticalCanvas, x: f32, y: f32) {
+    draw_tactical_button_clipped(cache, id, canvas, x, y, None);
+}
+
+/// [`draw_tactical_button`] showing only `source_rect` of the bitmap: the
+/// control's window clips the rest (`FUN_005fc140` at native size).
+fn draw_tactical_button_clipped(
+    cache: &mut BmpCache,
+    id: u32,
+    canvas: TacticalCanvas,
+    x: f32,
+    y: f32,
+    source_rect: Option<Rect>,
+) {
+    draw_original_button(cache, DllSource::Tactical, id, canvas, x, y, source_rect);
+}
+
+/// A CoolStrobeButton (`FUN_00602150`) of any DLL's art, keyed on its first
+/// stored pixel ([`BmpCache::get_macroquad_button`]) and clipped to
+/// `source_rect` as [`draw_tactical_button_clipped`] clips it.
+fn draw_original_button(
+    cache: &mut BmpCache,
+    source: DllSource,
+    id: u32,
+    canvas: TacticalCanvas,
+    x: f32,
+    y: f32,
+    source_rect: Option<Rect>,
+) {
+    let Some(texture) = cache.get_macroquad_button(source, id) else {
+        return;
+    };
+    let (screen_x, screen_y) = canvas.point(x, y);
+    let width = source_rect.map_or_else(|| texture.width(), |rect| rect.w);
+    let height = source_rect.map_or_else(|| texture.height(), |rect| rect.h);
+    draw_texture_ex(
+        texture,
+        screen_x,
+        screen_y,
+        WHITE,
+        DrawTextureParams {
+            dest_size: Some(vec2(width * canvas.scale, height * canvas.scale)),
+            source: source_rect,
+            ..Default::default()
+        },
+    );
+}
+
 fn draw_strategy_bitmap(cache: &mut BmpCache, id: u32, canvas: TacticalCanvas, x: f32, y: f32) {
     draw_original_bitmap(cache, DllSource::Strategy, id, canvas, x, y, None);
+}
+
+fn draw_strategy_button(cache: &mut BmpCache, id: u32, canvas: TacticalCanvas, x: f32, y: f32) {
+    draw_original_button(cache, DllSource::Strategy, id, canvas, x, y, None);
 }
 
 fn draw_original_bitmap(
@@ -3185,22 +3570,27 @@ fn prewarm_tactical_font_atlas(
         (18.0 * canvas.scale) as u16,
     ]);
     sizes.sort_unstable();
-    // The selected panel's labels draw in the result face; its sizes are
-    // keyed apart from the default face's.
-    let result_size = (TACTICAL_SELECTED_TEXT_EM * canvas.scale).max(1.0) as u16;
-    let result_key = result_size | 0x8000;
-    if sizes.iter().all(|size| warmed_sizes.contains(size)) && warmed_sizes.contains(&result_key) {
+    let result_keys = result_face_keys(canvas.scale);
+    if sizes
+        .iter()
+        .chain(&result_keys)
+        .all(|key| warmed_sizes.contains(key))
+    {
         return;
     }
 
     let mut characters: std::collections::BTreeSet<_> =
         Font::latin_character_list().into_iter().collect();
+    // Every printable ASCII character: the alert's and results' text comes
+    // from TextTemplates and the world's names.
+    characters.extend(' '..='~');
     for text in [
         "0123456789x#",
         "Task Force No Orders RETREAT Battle Paused.",
         "Red Group Blue Group Green Group Gold Group",
-        "Battle at Alliance Imperial Forces Capital Ships Fighters Troops Personnel",
-        "Operational Damaged Destroyed Go Directly To System Fleet victorious withdrawn",
+        "Battle at Alliance Imperial Forces Filters Capital Ships Fighter Squadrons",
+        "Trooper Regiments Personnel Operational Destroyed Survivors Captured Killed",
+        "None No Survivors No Casualties Go Directly To System Fleet victorious withdrawn",
         "Withdraw Confirmation Are you sure you wish to order a fleet withdraw?",
     ] {
         characters.extend(text.chars());
@@ -3221,9 +3611,76 @@ fn prewarm_tactical_font_atlas(
             previous = Some(size);
         }
     }
-    if warmed_sizes.insert(result_key) {
-        measure_text(&sample, result_font().as_ref(), result_size, 1.0);
+    let regular = result_font();
+    let bold = RESULT_BOLD_FONT.with(Clone::clone);
+    for key in result_keys {
+        if warmed_sizes.insert(key) {
+            let (is_bold, size) = result_face_size(key);
+            let font = if is_bold {
+                bold.as_ref().or(regular.as_ref())
+            } else {
+                regular.as_ref()
+            };
+            measure_text(&sample, font, size, 1.0);
+        }
     }
+}
+
+/// The warm key of a size in the result face; the default face's keys are
+/// bare sizes.
+const RESULT_FACE_KEY: u16 = 0x8000;
+/// The warm key of a size in the bold result face.
+const RESULT_BOLD_FACE_KEY: u16 = 0x4000;
+const RESULT_SIZE_MASK: u16 = 0x3fff;
+
+/// A result-face warm key's face (bold or not) and size.
+const fn result_face_size(key: u16) -> (bool, u16) {
+    (key & RESULT_BOLD_FACE_KEY != 0, key & RESULT_SIZE_MASK)
+}
+
+/// Every em the result face draws at: the selected panel, the Battle Alert
+/// and the Battle Results windows. The text helpers draw only these, so the
+/// prewarm caches each before a frame's first glyph is drawn.
+const RESULT_TEXT_EMS: [f32; 11] = [
+    TACTICAL_SELECTED_TEXT_EM,
+    BATTLE_RESULTS_TITLE_EM,
+    BATTLE_DESTINATION_LABEL_EM,
+    BATTLE_ALERT_TITLE_EM,
+    BATTLE_ALERT_SUMMARY_EM,
+    BATTLE_ALERT_HEADING_EM,
+    BATTLE_ALERT_ROW_EM,
+    crate::theme::game_font_size(4),
+    crate::theme::game_font_size(6),
+    crate::theme::game_font_size(10),
+    crate::theme::game_font_size(0xb),
+];
+/// The ems the bold result face draws at: the Battle Alert's fleet and ship
+/// rows.
+const RESULT_BOLD_TEXT_EMS: [f32; 1] = [BATTLE_ALERT_ROW_EM];
+
+/// The warm keys of the result faces at `scale`: each em's size truncated,
+/// as the text helpers draw it, and rounded, as the alert summary does.
+fn result_face_keys(scale: f32) -> Vec<u16> {
+    let face_keys = |ems: &'static [f32], face: u16| {
+        ems.iter().flat_map(move |em| {
+            let size = em * scale;
+            [size.max(1.0) as u16, size.round().max(1.0) as u16].map(|size| size | face)
+        })
+    };
+    let mut keys: Vec<u16> = face_keys(&RESULT_TEXT_EMS, RESULT_FACE_KEY)
+        .chain(face_keys(&RESULT_BOLD_TEXT_EMS, RESULT_BOLD_FACE_KEY))
+        .collect();
+    keys.sort_unstable();
+    keys.dedup();
+    keys
+}
+
+/// A result-face draw at `em`, which the prewarm must know.
+fn debug_assert_warmed_em(em: f32) {
+    debug_assert!(
+        RESULT_TEXT_EMS.contains(&em),
+        "result text em {em} is missing from the font-atlas prewarm"
+    );
 }
 
 #[expect(
@@ -3253,7 +3710,7 @@ fn draw_tactical_assignment_button(
     resource: u32,
 ) {
     let rect = tactical_command_spec(control, true).0;
-    draw_tactical_bitmap(cache, resource, canvas, rect.x, rect.y);
+    draw_tactical_button(cache, resource, canvas, rect.x, rect.y);
 }
 
 fn draw_tactical_assignment_panel(
@@ -3261,7 +3718,6 @@ fn draw_tactical_assignment_panel(
     canvas: TacticalCanvas,
     player_is_alliance: bool,
     panel: TacticalCommandPanel,
-    selected_fighter: bool,
     attack_death_star_enabled: bool,
     pressed: Option<TacticalCommandControl>,
 ) {
@@ -3345,7 +3801,10 @@ fn draw_tactical_assignment_panel(
                 );
             }
         }
-        TacticalCommandPanel::Missions { pending_order } => {
+        TacticalCommandPanel::Missions {
+            pending_order,
+            fighter_group,
+        } => {
             draw_tactical_bitmap(cache, art::MISSIONS_PANEL, canvas, 482.0, 28.0);
             draw_tactical_bitmap(
                 cache,
@@ -3400,7 +3859,9 @@ fn draw_tactical_assignment_panel(
                     pending_order == TacticalOrder::Recover,
                 ),
             ] {
-                let resource = if control == TacticalCommandControl::Recover && !selected_fighter {
+                let resource = if control == TacticalCommandControl::Recover
+                    && fighter_group.is_none()
+                {
                     if player_is_alliance {
                         art::BTN_RECOVER_ALLIANCE_DISABLED
                     } else {
@@ -3463,7 +3924,7 @@ fn draw_tactical_withdraw_confirmation(
 
     draw_tactical_bitmap(cache, art::WITHDRAW_CONFIRMATION_PANEL, canvas, 482.0, 28.0);
     for spec in TACTICAL_WITHDRAW_CONFIRMATION_CONTROLS {
-        draw_tactical_bitmap(
+        draw_tactical_button(
             cache,
             if pressed == Some(spec.control) {
                 spec.pressed_resource
@@ -3536,21 +3997,30 @@ fn draw_original_tactical_hud(
         );
         let fraction =
             (death_star.laser_charge / ORIGINAL_DEATH_STAR_LASER_FULL_CHARGE).clamp(0.0, 1.0);
+        let (x, y) = canvas.point(DEATH_STAR_LASER_FILL_RECT.x, DEATH_STAR_LASER_FILL_RECT.y);
+        if let Some(empty) = DEATH_STAR_LASER_EMPTY_COLOR {
+            draw_rectangle(
+                x,
+                y,
+                DEATH_STAR_LASER_FILL_RECT.width * canvas.scale,
+                DEATH_STAR_LASER_FILL_RECT.height * canvas.scale,
+                empty,
+            );
+        }
         if fraction > 0.0 {
-            let (x, y) = canvas.point(DEATH_STAR_LASER_FILL_RECT.x, DEATH_STAR_LASER_FILL_RECT.y);
             draw_rectangle(
                 x,
                 y,
                 DEATH_STAR_LASER_FILL_RECT.width * canvas.scale * fraction,
                 DEATH_STAR_LASER_FILL_RECT.height * canvas.scale,
-                Color::new(0.0, 0.82, 0.0, 1.0),
+                DEATH_STAR_LASER_FILL_COLOR,
             );
         }
         let ready = death_star.operational()
             && death_star.laser_charge >= ORIGINAL_DEATH_STAR_LASER_FULL_CHARGE;
         let active =
             death_star_laser_pressed || death_star_targeting || death_star.action_committed;
-        draw_tactical_bitmap(
+        draw_tactical_button(
             cache,
             if active {
                 art::DEATH_STAR_LASER_FIRED
@@ -3582,7 +4052,7 @@ fn draw_original_tactical_hud(
         let active = assigned
             && (groups.selected_task_force == Some(index)
                 || pressed_control == Some(TacticalHudControl::TaskForce(index)));
-        draw_tactical_bitmap(
+        draw_tactical_button(
             cache,
             if active {
                 art::BTN_TASK_FORCE_PRESSED
@@ -3628,9 +4098,8 @@ fn draw_original_tactical_hud(
         let active = assigned
             && (groups.selected_fighter_group == Some(index)
                 || pressed_control == Some(TacticalHudControl::FighterGroup(index)));
-        draw_original_bitmap(
+        draw_tactical_button_clipped(
             cache,
-            DllSource::Tactical,
             if active {
                 FIGHTER_GROUP_PRESSED_ART[usize::from(index)]
             } else if assigned {
@@ -3663,7 +4132,7 @@ fn draw_original_tactical_hud(
             } else {
                 spec.normal_resource
             };
-            draw_tactical_bitmap(cache, resource, canvas, spec.rect.x, spec.rect.y);
+            draw_tactical_button(cache, resource, canvas, spec.rect.x, spec.rect.y);
         }
     } else if command_panel != TacticalCommandPanel::Display {
         draw_tactical_assignment_panel(
@@ -3671,7 +4140,6 @@ fn draw_original_tactical_hud(
             canvas,
             player_is_alliance,
             command_panel,
-            groups.selected_fighter_group.is_some(),
             attack_death_star_enabled,
             pressed_command,
         );
@@ -3856,7 +4324,7 @@ fn draw_original_tactical_hud(
     for (index, x) in [485.0, 521.0, 560.0, 601.0].into_iter().enumerate() {
         let selected = navigation_sets_visible[index]
             || pressed_control == Some(TacticalHudControl::NavigationSet(index as u8));
-        draw_tactical_bitmap(
+        draw_tactical_button(
             cache,
             if selected {
                 art::BTN_NAVIGATION_SET_SELECTED[index]
@@ -3868,7 +4336,7 @@ fn draw_original_tactical_hud(
             272.0,
         );
     }
-    draw_tactical_bitmap(
+    draw_tactical_button(
         cache,
         if highlight_empire {
             art::HIGHLIGHT_EMPIRE_SHIPS
@@ -3879,7 +4347,7 @@ fn draw_original_tactical_hud(
         482.0,
         304.0,
     );
-    draw_tactical_bitmap(
+    draw_tactical_button(
         cache,
         if highlight_alliance {
             art::HIGHLIGHT_ALLIANCE_SHIPS
@@ -3890,7 +4358,7 @@ fn draw_original_tactical_hud(
         517.0,
         304.0,
     );
-    draw_tactical_bitmap(
+    draw_tactical_button(
         cache,
         if paused {
             art::BTN_PAUSE_PAUSED
@@ -3901,7 +4369,7 @@ fn draw_original_tactical_hud(
         560.0,
         307.0,
     );
-    draw_tactical_bitmap(
+    draw_tactical_button(
         cache,
         if pressed_control == Some(TacticalHudControl::BattleOptions) {
             art::BTN_BATTLE_OPTIONS_PRESSED
@@ -3913,7 +4381,7 @@ fn draw_original_tactical_hud(
         308.0,
     );
 
-    draw_tactical_bitmap(
+    draw_tactical_button(
         cache,
         if pressed_control == Some(TacticalHudControl::ZoomIn) {
             art::BTN_CAMERA_ZOOM_IN_PRESSED
@@ -3924,7 +4392,7 @@ fn draw_original_tactical_hud(
         486.0,
         343.0,
     );
-    draw_tactical_bitmap(
+    draw_tactical_button(
         cache,
         if pressed_control == Some(TacticalHudControl::ZoomOut) {
             art::BTN_CAMERA_ZOOM_OUT_PRESSED
@@ -3982,9 +4450,9 @@ fn draw_original_tactical_hud(
             379.0,
         ),
     ] {
-        draw_tactical_bitmap(cache, id, canvas, x, y);
+        draw_tactical_button(cache, id, canvas, x, y);
     }
-    draw_tactical_bitmap(
+    draw_tactical_button(
         cache,
         if pressed_control == Some(TacticalHudControl::CameraRecall) {
             art::BTN_CAMERA_RECALL_PRESSED
@@ -3995,7 +4463,7 @@ fn draw_original_tactical_hud(
         484.0,
         430.0,
     );
-    draw_tactical_bitmap(
+    draw_tactical_button(
         cache,
         if pressed_control == Some(TacticalHudControl::CameraMemorize) {
             art::BTN_CAMERA_MEMORIZE_PRESSED
@@ -4042,7 +4510,10 @@ fn activate_tactical_command(state: &mut TacticalState, control: TacticalCommand
         TacticalCommandControl::OpenMissions => {
             if let Some(session) = state.session.as_ref() {
                 let (pending_order, _) = selected_command_values(session);
-                state.command_panel = TacticalCommandPanel::Missions { pending_order };
+                state.command_panel = TacticalCommandPanel::Missions {
+                    pending_order,
+                    fighter_group: session.selected_fighter_group,
+                };
             }
         }
         TacticalCommandControl::LeftHook => {
@@ -4086,27 +4557,30 @@ fn activate_tactical_command(state: &mut TacticalState, control: TacticalCommand
             }
         }
         TacticalCommandControl::AttackCapitalShips => {
-            if let TacticalCommandPanel::Missions { pending_order } = &mut state.command_panel {
+            if let TacticalCommandPanel::Missions { pending_order, .. } = &mut state.command_panel {
                 *pending_order = TacticalOrder::AttackCapitalShips;
             }
         }
         TacticalCommandControl::AttackFighters => {
-            if let TacticalCommandPanel::Missions { pending_order } = &mut state.command_panel {
+            if let TacticalCommandPanel::Missions { pending_order, .. } = &mut state.command_panel {
                 *pending_order = TacticalOrder::AttackFighters;
             }
         }
         TacticalCommandControl::Recover => {
-            if let TacticalCommandPanel::Missions { pending_order } = &mut state.command_panel {
+            if let TacticalCommandPanel::Missions { pending_order, .. } = &mut state.command_panel {
                 *pending_order = TacticalOrder::Recover;
             }
         }
         TacticalCommandControl::AttackDeathStar => {
-            if let TacticalCommandPanel::Missions { pending_order } = &mut state.command_panel {
+            if let TacticalCommandPanel::Missions { pending_order, .. } = &mut state.command_panel {
                 *pending_order = TacticalOrder::AttackDeathStar;
             }
         }
         TacticalCommandControl::Confirm => {
             let panel = state.command_panel;
+            // The commit returns to the panel shown before this one
+            // (`FUN_005df4f0`, `FUN_005dd080` -> `FUN_005c5a50(0)`).
+            let mut next_panel = TacticalCommandPanel::Display;
             if let Some(session) = state.session.as_mut() {
                 let (_, previous_tactic) = selected_command_values(session);
                 let (kind, order, tactic) = match panel {
@@ -4114,7 +4588,7 @@ fn activate_tactical_command(state: &mut TacticalState, control: TacticalCommand
                         pending_order,
                         pending_tactic,
                     } => ("maneuvers", pending_order, Some(pending_tactic)),
-                    TacticalCommandPanel::Missions { pending_order } => {
+                    TacticalCommandPanel::Missions { pending_order, .. } => {
                         ("missions", pending_order, None)
                     }
                     TacticalCommandPanel::Display => return,
@@ -4130,10 +4604,13 @@ fn activate_tactical_command(state: &mut TacticalState, control: TacticalCommand
                     );
                 }
                 if order == TacticalOrder::AttackDeathStar {
+                    // The order makes the result object in state 2
+                    // (`FUN_005ca6d0` case 6, `FUN_005d0820`); the launch is
+                    // state 5, logged where the approach arrives.
                     macroquad::logging::info!(
-                        "[tactical_death_star] trench_run_launch status={} fighter_members={} group={} remaining_ms={} rng_state={}",
-                        if session.trench_run_pending_outcome.is_some() {
-                            "launched"
+                        "[tactical_death_star] trench_run_order status={} fighter_members={} group={} remaining_ms={} rng_state={}",
+                        if session.trench_run_group.is_some() {
+                            "accepted"
                         } else {
                             "rejected"
                         },
@@ -4142,6 +4619,30 @@ fn activate_tactical_command(state: &mut TacticalState, control: TacticalCommand
                         session.trench_run_remaining_ms.unwrap_or(0.0),
                         session.tactical_rng.state(),
                     );
+                    if let TacticalCommandPanel::Missions {
+                        fighter_group: Some(group),
+                        ..
+                    } = panel
+                    {
+                        // The group's mode answers order 6 with the
+                        // nothing-selected mode (`FUN_005a48d0`: refused, or
+                        // through the group's order setter `FUN_005ca530` ->
+                        // `FUN_005a0320`), which shows panel 0x15 and so
+                        // makes Missions the panel to return to
+                        // (`FUN_005c0e80`, `FUN_005c5760`). The return then
+                        // reopens Missions on the group with its order
+                        // (`FUN_005df7a0`, `FUN_00596b20`).
+                        // port: `FUN_005ca530` clears the slot and the
+                        // selection for Recover (order 2) too; that path is
+                        // not ported, as what returns a recovered group's
+                        // slot is untraced.
+                        let (group_order, _) = selected_command_values(session);
+                        deselect_all(session);
+                        next_panel = TacticalCommandPanel::Missions {
+                            pending_order: group_order,
+                            fighter_group: Some(group),
+                        };
+                    }
                 }
                 macroquad::logging::info!(
                     "[tactical_orders] panel={} event=commit order={} tactic={} capital_members={} fighter_members={}",
@@ -4152,7 +4653,7 @@ fn activate_tactical_command(state: &mut TacticalState, control: TacticalCommand
                     fighter_members,
                 );
             }
-            state.command_panel = TacticalCommandPanel::Display;
+            state.command_panel = next_panel;
         }
         TacticalCommandControl::Cancel => {
             macroquad::logging::info!("[tactical_orders] event=cancel");
@@ -4398,11 +4899,11 @@ fn handle_original_tactical_controls(
                 .as_ref()
                 .map_or((false, false, false, true), |session| {
                     let selected_fighter = session.selected_fighter_group.is_some();
+                    // `FUN_005df7a0.c:19-34`: the local side is the
+                    // Alliance (`FUN_00401060`) and `FUN_00596bb0` holds.
                     let attack_death_star_enabled = selected_fighter
-                        && session.death_star.is_some_and(|death_star| {
-                            death_star.operational()
-                                && death_star.is_attacker != session.player_is_attacker
-                        });
+                        && session.player_voice_faction() == TacticalVoiceFaction::Alliance
+                        && session.trench_run_order_available();
                     (
                         selected_fighter
                             || session.ships.iter().any(|ship| {
@@ -4656,19 +5157,6 @@ fn camera_offset_for_target(x: f32, y: f32) -> (f32, f32) {
     (x - ARENA_WIDTH * 0.5, y - ARENA_HEIGHT * 0.5)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum BattleResultCondition {
-    Operational,
-    Damaged,
-    Destroyed,
-}
-
-#[derive(Debug, Clone)]
-struct BattleResultEntry {
-    name: String,
-    condition: BattleResultCondition,
-}
-
 #[derive(Debug, Clone, Copy)]
 struct BattleResultSkin {
     frame: u32,
@@ -4894,155 +5382,8 @@ impl BattleResultTab {
     }
 }
 
-impl BattleResultCategory {
-    const ALL: [Self; 4] = [
-        Self::CapitalShips,
-        Self::Fighters,
-        Self::Troops,
-        Self::Personnel,
-    ];
-
-    const fn label(self) -> &'static str {
-        match self {
-            Self::CapitalShips => "Capital Ships",
-            Self::Fighters => "Fighters",
-            Self::Troops => "Troops",
-            Self::Personnel => "Personnel",
-        }
-    }
-}
-
 fn player_is_alliance(session: &BattleSession) -> bool {
     session.player_is_attacker == session.attacker_is_alliance
-}
-
-fn winner_is_alliance(session: &BattleSession) -> Option<bool> {
-    match session.winner {
-        Some(CombatWinner::Attacker) => Some(session.attacker_is_alliance),
-        Some(CombatWinner::Defender) => Some(!session.attacker_is_alliance),
-        Some(CombatWinner::Draw) | None => None,
-    }
-}
-
-fn winner_fleet(session: &BattleSession) -> Option<FleetKey> {
-    match session.winner {
-        Some(CombatWinner::Attacker) => session.attacker_fleet,
-        Some(CombatWinner::Defender) => session.defender_fleet,
-        Some(CombatWinner::Draw) | None => None,
-    }
-}
-
-fn result_fleet_for_faction(session: &BattleSession, alliance: bool) -> Option<FleetKey> {
-    if session.attacker_is_alliance == alliance {
-        session.attacker_fleet
-    } else {
-        session.defender_fleet
-    }
-}
-
-fn battle_result_entries(
-    session: &BattleSession,
-    world: &GameWorld,
-    troop_transport: &TroopTransportState,
-    alliance: bool,
-    category: BattleResultCategory,
-) -> Vec<BattleResultEntry> {
-    match category {
-        BattleResultCategory::CapitalShips => {
-            let mut entries = session
-                .ships
-                .iter()
-                .filter(|ship| ship.identity.is_alliance == alliance)
-                .map(|ship| BattleResultEntry {
-                    name: ship.name.clone(),
-                    condition: if !ship.alive || ship.hull_current <= 0 {
-                        BattleResultCondition::Destroyed
-                    } else if ship.hull_current < ship.hull_max
-                        || ship.subsystem_damage.total_hits() > 0
-                    {
-                        BattleResultCondition::Damaged
-                    } else {
-                        BattleResultCondition::Operational
-                    },
-                })
-                .collect::<Vec<_>>();
-            if let Some(death_star) = session
-                .death_star
-                .filter(|value| value.is_alliance == alliance)
-            {
-                entries.push(BattleResultEntry {
-                    name: "Death Star".into(),
-                    condition: if death_star.destroyed || death_star.hull <= 0.0 {
-                        BattleResultCondition::Destroyed
-                    } else if death_star.hull < ORIGINAL_DEATH_STAR_LASER_FULL_CHARGE {
-                        BattleResultCondition::Damaged
-                    } else {
-                        BattleResultCondition::Operational
-                    },
-                });
-            }
-            entries
-        }
-        BattleResultCategory::Fighters => session
-            .fighters
-            .iter()
-            .filter(|fighter| fighter.identity.is_alliance == alliance)
-            .map(|fighter| BattleResultEntry {
-                name: fighter.name.clone(),
-                condition: if !fighter.alive || fighter.squad_count == 0 {
-                    BattleResultCondition::Destroyed
-                } else if fighter.hull_current < fighter.hull_max {
-                    BattleResultCondition::Damaged
-                } else {
-                    BattleResultCondition::Operational
-                },
-            })
-            .collect(),
-        BattleResultCategory::Troops => {
-            let fleet_key = result_fleet_for_faction(session, alliance);
-            let surviving_capacity = session
-                .ships
-                .iter()
-                .filter(|ship| ship.identity.is_alliance == alliance && ship.alive)
-                .filter_map(|ship| world.capital_ship_classes.get(ship.class_key))
-                .map(|class| class.troop_capacity)
-                .fold(0_u32, u32::saturating_add) as usize;
-            fleet_key
-                .map_or(&[][..], |fleet| troop_transport.cargo(fleet))
-                .iter()
-                .enumerate()
-                .map(|(index, troop)| {
-                    let strength = world
-                        .troops
-                        .get(*troop)
-                        .map_or(0, |unit| unit.regiment_strength);
-                    BattleResultEntry {
-                        name: format!("Regiment {}", index + 1),
-                        condition: if index >= surviving_capacity || strength <= 0 {
-                            BattleResultCondition::Destroyed
-                        } else if strength < 100 {
-                            BattleResultCondition::Damaged
-                        } else {
-                            BattleResultCondition::Operational
-                        },
-                    }
-                })
-                .collect()
-        }
-        BattleResultCategory::Personnel => {
-            let fleet_key = result_fleet_for_faction(session, alliance);
-            fleet_key
-                .and_then(|fleet| world.fleets.get(fleet))
-                .into_iter()
-                .flat_map(|fleet| fleet.characters.iter())
-                .filter_map(|character| world.characters.get(*character))
-                .map(|character| BattleResultEntry {
-                    name: character.display_name().to_owned(),
-                    condition: BattleResultCondition::Operational,
-                })
-                .collect()
-        }
-    }
 }
 
 thread_local! {
@@ -5081,6 +5422,7 @@ fn draw_result_text(
     size: f32,
     color: Color,
 ) {
+    debug_assert_warmed_em(size);
     let (screen_x, screen_y) = canvas.point(x, baseline_y);
     let font = result_font();
     draw_text_ex(
@@ -5104,6 +5446,7 @@ fn draw_result_text_centered(
     size: f32,
     color: Color,
 ) {
+    debug_assert_warmed_em(size);
     let font = result_font();
     let font_size = (size * canvas.scale).max(1.0) as u16;
     let width = result_text_width(text, font.as_ref(), font_size);
@@ -5121,8 +5464,48 @@ fn draw_result_text_centered(
     );
 }
 
-/// Lines wrap at `max_width` and advance 1.35 sizes, the spacing of the
-/// Wine capture's body text.
+/// Lines wrap at `max_width` and advance one cell height (the em over
+/// 2048/2288, Arial's ascent plus descent), as `DrawText` steps a
+/// word-broken paragraph.
+/// The character cell a result line fills: its top and height in canvas
+/// pixels, the font entry's `lfHeight` as GDI lays it out (`tmHeight`,
+/// `FUN_0060eed0`), with the baseline `ARIAL_ASCENT` of an em below the top.
+fn result_line_cell(baseline_y: f32, size: f32) -> (f32, f32) {
+    (baseline_y - size * ARIAL_ASCENT, size * 2288.0 / 2048.0)
+}
+
+/// [`result_line_cell`] on the screen: the canvas's width across, the cell
+/// down, in device pixels.
+fn result_line_clip(canvas: TacticalCanvas, baseline_y: f32, size: f32) -> NativeRect {
+    let (top, height) = result_line_cell(baseline_y, size);
+    let (left, cell_top) = canvas.point(0.0, top);
+    NativeRect::new(
+        left,
+        cell_top,
+        TACTICAL_WIDTH * canvas.scale,
+        height * canvas.scale,
+    )
+}
+
+/// [`draw_result_text`] held to its character cell. GDI's Arial raster
+/// stays inside the cell its `lfHeight` asks for, and the original draws
+/// the summary body and its black copy with `DT_NOCLIP`
+/// (`FUN_00403e90(.., 0x110)`, `FUN_0046f360.c:232`). port: the face's
+/// unhinted descenders and filtered glyph quads can spill a fraction of a
+/// pixel below that cell, so the line is clipped to it.
+fn draw_result_text_in_cell(
+    canvas: TacticalCanvas,
+    text: &str,
+    x: f32,
+    baseline_y: f32,
+    size: f32,
+    color: Color,
+) {
+    set_tactical_aperture_clip(Some(result_line_clip(canvas, baseline_y, size)));
+    draw_result_text(canvas, text, x, baseline_y, size, color);
+    set_tactical_aperture_clip(None);
+}
+
 fn draw_result_wrapped_lines(
     canvas: TacticalCanvas,
     lines: &[String],
@@ -5134,7 +5517,7 @@ fn draw_result_wrapped_lines(
 ) {
     let font = result_font();
     let font_size = (size * canvas.scale).max(1.0) as u16;
-    let advance = size * 1.35;
+    let advance = size * 2288.0 / 2048.0;
     for line in lines {
         let mut current = String::new();
         for word in line.split_whitespace() {
@@ -5147,7 +5530,7 @@ fn draw_result_wrapped_lines(
                 && result_text_width(&candidate, font.as_ref(), font_size)
                     > max_width * canvas.scale
             {
-                draw_result_text(canvas, &current, x, baseline_y, size, color);
+                draw_result_text_in_cell(canvas, &current, x, baseline_y, size, color);
                 baseline_y += advance;
                 current = word.to_owned();
             } else {
@@ -5155,7 +5538,7 @@ fn draw_result_wrapped_lines(
             }
         }
         if !current.is_empty() {
-            draw_result_text(canvas, &current, x, baseline_y, size, color);
+            draw_result_text_in_cell(canvas, &current, x, baseline_y, size, color);
             baseline_y += advance;
         }
     }
@@ -5200,7 +5583,7 @@ fn battle_result_summary_lines(session: &BattleSession) -> Vec<String> {
     let blockaded_holder = session
         .holder_is_alliance
         .filter(|_| session.blockaded_at_start);
-    let Some(winner_alliance) = winner_is_alliance(session) else {
+    let Some(winner_alliance) = session.winner_is_alliance() else {
         let (player, enemy) = (player_alliance, !player_alliance);
         let mut lines = vec![
             format!("The battle at {system} is indecisive."),
@@ -5264,18 +5647,34 @@ fn battle_result_summary_lines(session: &BattleSession) -> Vec<String> {
     }
 }
 
+/// The Summary layer's picture (`FUN_0046f360.c:68-109`): with no victor
+/// (`+0x50` 0) `0x2d63`; when the Empire won, `0x2a05` if the Alliance
+/// withdrew (`+0x54` 1), else `0x2a08`; when the Alliance won, `0x2a06` if
+/// the Empire withdrew, else `0x2a07`; the same for either player. inf:
+/// `+0x50` holds the victor's side and `+0x54` the side that withdrew; the
+/// VM's Battle at Yaga Minor (the Empire won, the Alliance fleet withdrew)
+/// shows `0x2a05`.
+fn battle_result_picture(session: &BattleSession) -> u32 {
+    use resources::strategy as art;
+    let Some(winner_alliance) = session.winner_is_alliance() else {
+        return art::EVENT_BATTLE_MUTUAL_DESTRUCTION;
+    };
+    let loser_is_attacker = session.attacker_is_alliance != winner_alliance;
+    match (winner_alliance, session.side_withdrew(loser_is_attacker)) {
+        (false, true) => art::EVENT_BATTLE_ALLIANCE_DEFEATED,
+        (false, false) => art::EVENT_BATTLE_EMPIRE_VICTORY,
+        (true, true) => art::EVENT_BATTLE_EMPIRE_DEFEATED,
+        (true, false) => art::EVENT_BATTLE_ALLIANCE_VICTORY,
+    }
+}
+
 fn draw_battle_result_summary(
     cache: &mut BmpCache,
     canvas: TacticalCanvas,
     session: &BattleSession,
     text_color: Color,
 ) {
-    use resources::strategy as art;
-    let scene = match winner_is_alliance(session) {
-        Some(true) => art::EVENT_BATTLE_ALLIANCE_VICTORY,
-        Some(false) => art::EVENT_BATTLE_EMPIRE_VICTORY,
-        None => art::EVENT_BATTLE_MUTUAL_DESTRUCTION,
-    };
+    let scene = battle_result_picture(session);
     draw_strategy_bitmap(
         cache,
         scene,
@@ -5288,107 +5687,427 @@ fn draw_battle_result_summary(
         &format!("Battle at {}", session.system_name),
         BATTLE_RESULTS_WINDOW_X + 212.0,
         BATTLE_RESULTS_WINDOW_Y + 34.0,
-        18.0,
+        BATTLE_RESULTS_TITLE_EM,
         text_color,
     );
-    draw_result_wrapped_lines(
-        canvas,
-        &battle_result_summary_lines(session),
-        BATTLE_RESULTS_WINDOW_X + 25.0,
-        BATTLE_RESULTS_WINDOW_Y + 230.0,
-        350.0,
-        14.0,
-        text_color,
-    );
-}
-
-fn draw_battle_result_force_details(
-    cache: &mut BmpCache,
-    canvas: TacticalCanvas,
-    session: &BattleSession,
-    world: &GameWorld,
-    troop_transport: &TroopTransportState,
-    alliance: bool,
-    category: BattleResultCategory,
-    text_color: Color,
-) {
-    use resources::strategy as art;
-    draw_strategy_bitmap(
-        cache,
-        art::BATTLE_FORCE_DETAIL_THREE_COLUMN,
-        canvas,
-        BATTLE_RESULTS_WINDOW_X + BATTLE_RESULTS_SCENE_X,
-        BATTLE_RESULTS_WINDOW_Y + BATTLE_RESULTS_SCENE_Y,
-    );
-    let faction = if alliance { "Alliance" } else { "Imperial" };
+    // FUN_0046f360.c:226-244: the status line (+0x94) in font 0xb, centred
+    // in 400 at (0xc, 0xe1); the body (+0xa0) in font 6, left, wrapped in
+    // 0x160 at (0x18, 0xff) over a black copy at (0x19, 0x100).
+    let lines = battle_result_summary_lines(session);
+    let Some((status, body)) = lines.split_first() else {
+        return;
+    };
+    let (status_y, status_em) = result_cell_text(BATTLE_RESULTS_WINDOW_Y + 225.0, 0xb);
     draw_result_text_centered(
         canvas,
-        &format!("Battle at {}", session.system_name),
-        BATTLE_RESULTS_WINDOW_X + 212.0,
-        BATTLE_RESULTS_WINDOW_Y + 32.0,
-        18.0,
+        status,
+        BATTLE_RESULTS_WINDOW_X + 12.0 + 200.0,
+        status_y,
+        status_em,
         text_color,
     );
-    draw_result_text_centered(
-        canvas,
-        &format!("{faction} Forces"),
-        BATTLE_RESULTS_WINDOW_X + 212.0,
-        BATTLE_RESULTS_WINDOW_Y + 52.0,
-        16.0,
-        text_color,
-    );
-
-    for (index, item) in BattleResultCategory::ALL.into_iter().enumerate() {
-        let center = BATTLE_RESULTS_WINDOW_X + 62.0 + index as f32 * 96.0;
-        let color = if item == category { WHITE } else { text_color };
-        draw_result_text_centered(
+    let body = [body.join(" ")];
+    let (body_y, body_em) = result_cell_text(BATTLE_RESULTS_WINDOW_Y + 255.0, 6);
+    for (dx, color) in [(1.0, BLACK), (0.0, text_color)] {
+        draw_result_wrapped_lines(
             canvas,
-            item.label(),
-            center,
-            BATTLE_RESULTS_WINDOW_Y + 78.0,
-            10.0,
+            &body,
+            BATTLE_RESULTS_WINDOW_X + 24.0 + dx,
+            body_y + dx,
+            352.0,
+            body_em,
             color,
         );
     }
+}
 
-    for (index, label) in ["Operational", "Damaged", "Destroyed"]
-        .into_iter()
-        .enumerate()
-    {
+/// The Battle Summary's four filter tabs, `0x65`-`0x68`, with their art and
+/// families (`FUN_0046f360.c:626-735`, `FUN_004714e0.c:91-136`). The Death
+/// Star (family `0x18`) is a capital ship; there is no tab of its own.
+const BATTLE_SUMMARY_FILTERS: [ReportTab; 4] = [
+    ReportTab::CapitalShips,
+    ReportTab::FighterSquadrons,
+    ReportTab::TrooperRegiments,
+    ReportTab::Personnel,
+];
+/// The filter group at (0x82, 0x3b); its tabs at x 0, 0x31, 0x62 and 0x93,
+/// 0x31 by 0x2a in the Alliance art and 0x2c by 0x29 in the Empire's
+/// (`FUN_0046f360.c:617-724`).
+const BATTLE_SUMMARY_FILTERS_AT: (f32, f32) = (130.0, 59.0);
+const BATTLE_SUMMARY_FILTER_X: [f32; 4] = [0.0, 49.0, 98.0, 147.0];
+const BATTLE_SUMMARY_FILTER_SIZE: [(f32, f32); 2] = [(49.0, 42.0), (44.0, 41.0)];
+/// The list at (0x25, 0x88), 0x15b by 0xa6 (`FUN_0046f360.c:592`).
+const BATTLE_SUMMARY_LIST: (f32, f32, f32, f32) = (37.0, 136.0, 347.0, 166.0);
+
+/// One cell of the Battle Summary's list (`FUN_004724a0`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SummaryCell<'a> {
+    /// An object: its picture with its name under it.
+    Entry(&'a SummaryEntry),
+    /// The first empty cell of a column.
+    Text(&'static str),
+    Blank,
+}
+
+/// The list `FUN_004714e0` fills, row by row: the side's Operational
+/// (Survivors), on Personnel its Captured, and its Destroyed (Killed)
+/// lists, each cut to the filter's families, side by side. A column out of
+/// entries shows its empty text in its first row, then blanks: the first
+/// column "None" (`0x8526`) when the other columns are empty too, else "No
+/// Survivors" (`0x1940`); Captured "None"; the last "No Casualties"
+/// (`0x1941`) (`FUN_004714e0.c:315-392`).
+fn battle_summary_cells(summary: &BattleSummarySide, filter: ReportTab) -> Vec<SummaryCell<'_>> {
+    fn cut<'a>(list: &'a [SummaryEntry], families: &std::ops::Range<u8>) -> Vec<&'a SummaryEntry> {
+        list.iter()
+            .filter(|entry| families.contains(&entry.unit.family()))
+            .collect()
+    }
+    let families = filter.families();
+    let destroyed = cut(&summary.destroyed, &families);
+    let captured = if filter == ReportTab::Personnel {
+        cut(&summary.captured, &families)
+    } else {
+        Vec::new()
+    };
+    let first_empty = if destroyed.is_empty() && captured.is_empty() {
+        "None"
+    } else {
+        "No Survivors"
+    };
+    let mut columns = vec![(cut(&summary.operational, &families), first_empty)];
+    if filter == ReportTab::Personnel {
+        columns.push((captured, "None"));
+    }
+    columns.push((destroyed, "No Casualties"));
+    let rows = columns
+        .iter()
+        .map(|(entries, _)| entries.len().max(1))
+        .max()
+        .unwrap_or(1);
+    let mut cells = Vec::with_capacity(rows * columns.len());
+    for row in 0..rows {
+        for (entries, empty) in &columns {
+            cells.push(match entries.get(row) {
+                Some(entry) => SummaryCell::Entry(entry),
+                None if row == 0 => SummaryCell::Text(empty),
+                None => SummaryCell::Blank,
+            });
+        }
+    }
+    cells
+}
+
+/// Left and Right step to the neighbouring filter; Right past the last, or
+/// Left at the first, takes the group's first (`FUN_004710f0`).
+fn stepped_battle_summary_filter(filter: ReportTab, right: bool) -> ReportTab {
+    let index = BATTLE_SUMMARY_FILTERS
+        .iter()
+        .position(|&tab| tab == filter)
+        .unwrap_or(0);
+    let next = if right {
+        index + 1
+    } else {
+        index.wrapping_sub(1)
+    };
+    BATTLE_SUMMARY_FILTERS
+        .get(next)
+        .copied()
+        .unwrap_or(BATTLE_SUMMARY_FILTERS[0])
+}
+
+/// The baseline of text in the game's font `entry` whose cell top GDI
+/// places at `top`, and the font's em (`FUN_0060eed0`).
+fn result_cell_text(top: f32, entry: u8) -> (f32, f32) {
+    let em = crate::theme::game_font_size(entry);
+    (top + em * ARIAL_ASCENT, em)
+}
+
+/// A side's forces (rail `0x70` Alliance Forces, `0x71` Imperial Forces):
+/// layer 2 (`0x2a09`, two columns) or layer 3 (`0x2a0a`, Personnel's three)
+/// with its column headers and "Filters" (`0x1952`; `FUN_0046f360.c:305-368`),
+/// the overlay's filter and side names (`FUN_00471200`), the filter tabs and
+/// the list. The tab art is the player's side (`+0x118 + 0x9c`).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The window's state lives in TacticalState fields the caller borrows apart from the session."
+)]
+fn draw_battle_result_forces(
+    cache: &mut BmpCache,
+    canvas: TacticalCanvas,
+    session: &BattleSession,
+    summary: &BattleSummarySide,
+    alliance: bool,
+    player_alliance: bool,
+    filter: &mut ReportTab,
+    scroll: &mut usize,
+    drag: &mut crate::scroll_bar::ScrollDrag,
+    mouse: (f32, f32),
+    text_color: Color,
+) {
+    let (window_x, window_y) = (BATTLE_RESULTS_WINDOW_X, BATTLE_RESULTS_WINDOW_Y);
+    let side = usize::from(!player_alliance);
+    draw_strategy_bitmap(
+        cache,
+        filter.layer(),
+        canvas,
+        window_x + BATTLE_RESULTS_SCENE_X,
+        window_y + BATTLE_RESULTS_SCENE_Y,
+    );
+    draw_result_text_centered(
+        canvas,
+        &format!("Battle at {}", session.system_name),
+        window_x + 212.0,
+        window_y + 34.0,
+        BATTLE_RESULTS_TITLE_EM,
+        text_color,
+    );
+    // The headers, font 4 in white, centred in 0xa5 at x 0x25 and 0xcc,
+    // or in 0x6e at x 0x25, 0x95 and 0x104, at y 0x76; "Filters" at
+    // (0x56, 0x46), left.
+    let (header_y, header_em) = result_cell_text(window_y + 118.0, 4);
+    let headers: &[(&str, f32, f32)] = if *filter == ReportTab::Personnel {
+        &[
+            ("Survivors", 37.0, 110.0),
+            ("Captured", 149.0, 110.0),
+            ("Killed", 260.0, 110.0),
+        ]
+    } else {
+        &[("Operational", 37.0, 165.0), ("Destroyed", 204.0, 165.0)]
+    };
+    for &(text, x, width) in headers {
         draw_result_text_centered(
             canvas,
-            label,
-            BATTLE_RESULTS_WINDOW_X + 80.0 + index as f32 * 111.0,
-            BATTLE_RESULTS_WINDOW_Y + 99.0,
-            11.0,
-            text_color,
+            text,
+            window_x + x + width / 2.0,
+            header_y,
+            header_em,
+            WHITE,
         );
     }
+    let (filters_y, _) = result_cell_text(window_y + 70.0, 4);
+    draw_result_text(
+        canvas,
+        "Filters",
+        window_x + 86.0,
+        filters_y,
+        header_em,
+        WHITE,
+    );
+    // FUN_00471200: the filter's name at (0x25, 99), font 4, white; the
+    // side's centred in 400 at (0xc, 0x28), font 6, red for 0x70 and green
+    // for 0x71.
+    let (name_y, _) = result_cell_text(window_y + 99.0, 4);
+    draw_result_text(
+        canvas,
+        filter.label(),
+        window_x + 37.0,
+        name_y,
+        header_em,
+        WHITE,
+    );
+    let (side_y, side_em) = result_cell_text(window_y + 40.0, 6);
+    let (side_name, side_color) = if alliance {
+        ("Alliance Forces", Color::from_rgba(255, 0, 0, 255))
+    } else {
+        ("Imperial Forces", Color::from_rgba(0, 255, 0, 255))
+    };
+    draw_result_text_centered(
+        canvas,
+        side_name,
+        window_x + 12.0 + 200.0,
+        side_y,
+        side_em,
+        side_color,
+    );
 
-    let entries = battle_result_entries(session, world, troop_transport, alliance, category);
-    for (column, condition) in [
-        BattleResultCondition::Operational,
-        BattleResultCondition::Damaged,
-        BattleResultCondition::Destroyed,
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        for (row, entry) in entries
-            .iter()
-            .filter(|entry| entry.condition == condition)
-            .take(9)
-            .enumerate()
-        {
-            draw_result_text_centered(
-                canvas,
-                &entry.name,
-                BATTLE_RESULTS_WINDOW_X + 80.0 + column as f32 * 111.0,
-                BATTLE_RESULTS_WINDOW_Y + 122.0 + row as f32 * 20.0,
-                11.0,
-                WHITE,
-            );
+    // The filter tabs (group 100, a radio).
+    let local = (mouse.0 - window_x, mouse.1 - window_y);
+    let mouse_down = is_mouse_button_down(MouseButton::Left);
+    let mouse_released = is_mouse_button_released(MouseButton::Left);
+    let (tab_w, tab_h) = BATTLE_SUMMARY_FILTER_SIZE[side];
+    let mut chosen = None;
+    for (index, tab) in BATTLE_SUMMARY_FILTERS.into_iter().enumerate() {
+        let rect = NativeRect::new(
+            BATTLE_SUMMARY_FILTERS_AT.0 + BATTLE_SUMMARY_FILTER_X[index],
+            BATTLE_SUMMARY_FILTERS_AT.1,
+            tab_w,
+            tab_h,
+        );
+        crate::control_registry::register_logical(
+            "Results",
+            tab.label(),
+            window_x + rect.x,
+            window_y + rect.y,
+            rect.width,
+            rect.height,
+        );
+        let hovered = rect.contains(local.0, local.1);
+        let (normal, pressed) = tab.art(side);
+        let down = *filter == tab || (mouse_down && hovered);
+        // A button is a child window and paints inside its own rect: the
+        // Personnel art is 0x31 or 0x32 by 0x39, its lower rows and the
+        // Empire art's right edge fall outside the button.
+        let art = if down { pressed } else { normal };
+        let (art_w, art_h) = cache
+            .original_resource_size(DllSource::Strategy, art)
+            .map_or((tab_w, tab_h), |[w, h]| (w as f32, h as f32));
+        // A CoolStrobeButton (`FUN_0046f360.c:644-721`).
+        draw_original_button(
+            cache,
+            DllSource::Strategy,
+            art,
+            canvas,
+            window_x + rect.x,
+            window_y + rect.y,
+            Some(Rect::new(0.0, 0.0, art_w.min(tab_w), art_h.min(tab_h))),
+        );
+        if mouse_released && hovered {
+            chosen = Some(tab);
         }
+    }
+
+    // The list: rows of cells, each the object's picture centred with its
+    // name under it in font 10, white (`FUN_004724a0`, `FUN_00609950`).
+    let cells = battle_summary_cells(summary, *filter);
+    let (cell_w, cell_h) = filter.cell();
+    let columns = filter.columns();
+    let (list_x, list_y, list_w, list_h) = BATTLE_SUMMARY_LIST;
+    let range = ScrollRange {
+        first: *scroll,
+        visible: list_h / cell_h,
+        total: cells.len().div_ceil(columns),
+    };
+    *scroll = (*scroll).min(range.max_first());
+    let (clip_x, clip_y) = canvas.point(window_x + list_x, window_y + list_y);
+    set_tactical_aperture_clip(Some(NativeRect::new(
+        clip_x,
+        clip_y,
+        list_w * canvas.scale,
+        list_h * canvas.scale,
+    )));
+    let (_, name_em) = result_cell_text(0.0, 10);
+    let (_, empty_em) = result_cell_text(0.0, 6);
+    for (index, cell) in cells.iter().enumerate().skip(*scroll * columns) {
+        let row = index / columns - *scroll;
+        if row as f32 * cell_h >= list_h {
+            break;
+        }
+        let x = window_x + list_x + cell_w * (index % columns) as f32;
+        let y = window_y + list_y + cell_h * row as f32;
+        match cell {
+            SummaryCell::Entry(entry) => {
+                let mut layers = cell_picture(&entry.unit, *filter);
+                // FUN_0042c3b0.c:350-356: a damaged object's portrait takes
+                // its burn marks, GOKRES (id & 0xfff) + 0x2000 (manual
+                // p. 153, Fig. 4.18). hyp: the import sets +0x50 bit 0x200
+                // with any hull damage; the A0 Coruscant capture shows them
+                // on every destroyed ship and squadron.
+                if entry.burned && *filter != ReportTab::Personnel {
+                    if let Some(&(source, portrait)) = layers.first() {
+                        layers.push((source, portrait + 0x2000));
+                    }
+                }
+                let size = layers
+                    .first()
+                    .and_then(|&(source, id)| cache.original_resource_size(source, id))
+                    .map_or((0.0, 0.0), |[w, h]| (w as f32, h as f32));
+                let left = ((cell_w - size.0) / 2.0).floor();
+                let top = ((cell_h - size.1) / 2.0).floor();
+                for (source, id) in layers {
+                    draw_original_bitmap(cache, source, id, canvas, x + left, y + top, None);
+                }
+                let (baseline, _) = result_cell_text(y + top + size.1, 10);
+                draw_result_text_centered(
+                    canvas,
+                    &entry.unit.name,
+                    x + cell_w / 2.0,
+                    baseline,
+                    name_em,
+                    WHITE,
+                );
+            }
+            SummaryCell::Text(text) => {
+                let (baseline, _) = result_cell_text(y + 10.0, 6);
+                draw_result_text_centered(
+                    canvas,
+                    text,
+                    x + cell_w / 2.0,
+                    baseline,
+                    empty_em,
+                    WHITE,
+                );
+            }
+            SummaryCell::Blank => {}
+        }
+    }
+    set_tactical_aperture_clip(None);
+
+    // The list's bar, RCDATA 0x299d (`FUN_0046f360.c:603`), one row a step.
+    let bar = ScrollBar::new(TEXT_BAR_299D, list_x, list_y, list_w, list_h);
+    let pointer = ScrollPointer {
+        at: Some(local),
+        pressed: is_mouse_button_pressed(MouseButton::Left),
+        down: mouse_down,
+        released: mouse_released,
+    };
+    let range = ScrollRange {
+        first: *scroll,
+        ..range
+    };
+    *scroll = bar.update(drag, range, range.visible.floor() as usize, pointer);
+    for blit in bar.blits(
+        ScrollRange {
+            first: *scroll,
+            ..range
+        },
+        drag,
+        pointer,
+    ) {
+        draw_original_bitmap(
+            cache,
+            DllSource::Strategy,
+            blit.resource,
+            canvas,
+            window_x + blit.x,
+            window_y + blit.y,
+            Some(Rect::new(0.0, 0.0, 13.0, blit.height)),
+        );
+    }
+    let in_list = local.0 >= list_x
+        && local.0 < list_x + list_w
+        && local.1 >= list_y
+        && local.1 < list_y + list_h;
+    let wheel = mouse_wheel().1;
+    if in_list && wheel != 0.0 && range.overflows() {
+        *scroll = if wheel > 0.0 {
+            scroll.saturating_sub(1)
+        } else {
+            (*scroll + 1).min(range.max_first())
+        };
+    }
+
+    // FUN_004710f0: Left and Right step the filters.
+    if chosen.is_none() {
+        if is_key_pressed(KeyCode::Right) {
+            chosen = Some(stepped_battle_summary_filter(*filter, true));
+        } else if is_key_pressed(KeyCode::Left) {
+            chosen = Some(stepped_battle_summary_filter(*filter, false));
+        }
+    }
+    // FUN_004714e0(tab, 0): a new filter refills the list from its top.
+    if let Some(tab) = chosen.filter(|&tab| tab != *filter) {
+        *filter = tab;
+        *scroll = 0;
+        *drag = crate::scroll_bar::ScrollDrag::default();
+        macroquad::logging::info!(
+            "[tactical-results] tab={} category={}",
+            if alliance {
+                BattleResultTab::AllianceForces.label()
+            } else {
+                BattleResultTab::ImperialForces.label()
+            },
+            tab.label()
+        );
     }
 }
 
@@ -5415,7 +6134,7 @@ fn draw_battle_result_destinations(
         "Go Directly To...",
         BATTLE_RESULTS_WINDOW_X + 212.0,
         BATTLE_RESULTS_WINDOW_Y + 56.0,
-        18.0,
+        BATTLE_RESULTS_TITLE_EM,
         text_color,
     );
 
@@ -5431,16 +6150,17 @@ fn draw_battle_result_destinations(
         169.0,
         96.0,
     );
-    draw_strategy_bitmap(
+    // Both destinations are CoolStrobeButtons (`FUN_0046f360.c:801`, `:853`).
+    draw_strategy_button(
         cache,
         art::BATTLE_DESTINATION_SYSTEM,
         canvas,
         system_rect.x,
         system_rect.y,
     );
-    let winning_alliance = winner_is_alliance(session);
+    let winning_alliance = session.winner_is_alliance();
     if let Some(winning_alliance) = winning_alliance {
-        draw_strategy_bitmap(
+        draw_strategy_button(
             cache,
             if winning_alliance {
                 art::BATTLE_DESTINATION_ALLIANCE_FLEET
@@ -5468,7 +6188,7 @@ fn draw_battle_result_destinations(
         &session.system_name,
         system_rect.x + system_rect.width * 0.5,
         BATTLE_RESULTS_WINDOW_Y + 174.0,
-        14.0,
+        BATTLE_DESTINATION_LABEL_EM,
         WHITE,
     );
     if let Some(winning_alliance) = winning_alliance {
@@ -5481,7 +6201,7 @@ fn draw_battle_result_destinations(
             },
             fleet_rect.x + fleet_rect.width * 0.5,
             BATTLE_RESULTS_WINDOW_Y + 174.0,
-            14.0,
+            BATTLE_DESTINATION_LABEL_EM,
             WHITE,
         );
     }
@@ -5491,7 +6211,9 @@ fn draw_battle_result_destinations(
         return TacticalAction::OpenBattleSystem(session.system);
     }
     if mouse_released && fleet_rect.contains(mouse.0, mouse.1) {
-        if let Some(fleet) = winner_fleet(session) {
+        if let Some(fleet) =
+            rebellion_core::tactical::apply::summarize_results(session).winner_fleet
+        {
             macroquad::logging::info!("[tactical-results] destination=fleet");
             return TacticalAction::OpenBattleFleet(fleet);
         }
@@ -5649,6 +6371,10 @@ const BATTLE_ALERT_CENTRE_WIDTH: f32 = 241.0;
 /// does (`ghidra/notes/message-index-rows.md`).
 const BATTLE_ALERT_ROW_EM: f32 = 14.0 * 2048.0 / 2288.0;
 const BATTLE_ALERT_HEADING_EM: f32 = 20.5;
+/// The Battle Results windows' titles ("Battle at", "Go Directly To...").
+const BATTLE_RESULTS_TITLE_EM: f32 = 18.0;
+/// The destination choice's system and fleet names.
+const BATTLE_DESTINATION_LABEL_EM: f32 = 14.0;
 
 /// How a Battle Alert row draws (`FUN_00450e10`'s font and `+0x50`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -6082,7 +6808,7 @@ fn draw_original_battle_alert(
         );
         let active = state.battle_alert_tab == tab
             || (mouse_down && rect.contains(local_mouse.0, local_mouse.1));
-        draw_strategy_bitmap(
+        draw_strategy_button(
             cache,
             skin.tabs[index][usize::from(active)],
             canvas,
@@ -6141,7 +6867,9 @@ fn draw_original_battle_alert(
         } else {
             0
         };
-        draw_strategy_bitmap(
+        // Retreat, Simulate and Take Command are CoolStrobeButtons, as
+        // are the tabs (`FUN_0044f860.c:251-343`, `:371-433`).
+        draw_strategy_button(
             cache,
             skin.buttons[index][resource_state],
             canvas,
@@ -6191,7 +6919,6 @@ fn draw_original_battle_results(
     state: &mut TacticalState,
     cache: &mut BmpCache,
     world: &GameWorld,
-    troop_transport: &TroopTransportState,
 ) -> TacticalAction {
     let canvas = TacticalCanvas::new(screen_width(), screen_height());
     let session = state.session.as_ref().expect("active result session");
@@ -6223,28 +6950,24 @@ fn draw_original_battle_results(
             draw_battle_result_summary(cache, canvas, session, text_color);
             TacticalAction::None
         }
-        BattleResultTab::AllianceForces => {
-            draw_battle_result_force_details(
+        BattleResultTab::AllianceForces | BattleResultTab::ImperialForces => {
+            let alliance = state.battle_result_tab == BattleResultTab::AllianceForces;
+            let summary = state
+                .battle_record
+                .as_ref()
+                .map(|record| record.side(session, world, alliance))
+                .unwrap_or_default();
+            draw_battle_result_forces(
                 cache,
                 canvas,
                 session,
-                world,
-                troop_transport,
-                true,
-                state.battle_result_category,
-                text_color,
-            );
-            TacticalAction::None
-        }
-        BattleResultTab::ImperialForces => {
-            draw_battle_result_force_details(
-                cache,
-                canvas,
-                session,
-                world,
-                troop_transport,
-                false,
-                state.battle_result_category,
+                &summary,
+                alliance,
+                player_alliance,
+                &mut state.battle_result_filter,
+                &mut state.battle_result_scroll,
+                &mut state.battle_result_scroll_drag,
+                mouse,
                 text_color,
             );
             TacticalAction::None
@@ -6281,7 +7004,9 @@ fn draw_original_battle_results(
             mouse.0 - BATTLE_RESULTS_WINDOW_X,
             mouse.1 - BATTLE_RESULTS_WINDOW_Y,
         );
-    draw_strategy_bitmap(
+    // Close and the rail's views are CoolStrobeButtons
+    // (`FUN_0046f360.c:443-563`, `:762`).
+    draw_strategy_button(
         cache,
         skin.close[usize::from(close_active)],
         canvas,
@@ -6312,7 +7037,7 @@ fn draw_original_battle_results(
         );
         let selected = state.battle_result_tab.index() == index;
         let active = selected || (mouse_down && rect.contains(local_mouse.0, local_mouse.1));
-        draw_strategy_bitmap(
+        draw_strategy_button(
             cache,
             skin.tabs[index][usize::from(active)],
             canvas,
@@ -6320,42 +7045,19 @@ fn draw_original_battle_results(
             BATTLE_RESULTS_WINDOW_Y + rect.y,
         );
         if mouse_released && rect.contains(local_mouse.0, local_mouse.1) {
-            state.battle_result_tab = BattleResultTab::from_index(index);
+            let view = BattleResultTab::from_index(index);
+            // FUN_00471340: a new view refills the list from its top on the
+            // filter it had (`FUN_004714e0(.., +0x180, 1)`).
+            if view != state.battle_result_tab {
+                state.battle_result_scroll = 0;
+                state.battle_result_scroll_drag = crate::scroll_bar::ScrollDrag::default();
+            }
+            state.battle_result_tab = view;
             macroquad::logging::info!(
                 "[tactical-results] tab={} category={}",
                 state.battle_result_tab.label(),
-                state.battle_result_category.label()
+                state.battle_result_filter.label()
             );
-        }
-    }
-
-    if matches!(
-        state.battle_result_tab,
-        BattleResultTab::AllianceForces | BattleResultTab::ImperialForces
-    ) {
-        for (index, category) in BattleResultCategory::ALL.into_iter().enumerate() {
-            let rect = NativeRect::new(
-                BATTLE_RESULTS_WINDOW_X + 14.0 + index as f32 * 96.0,
-                BATTLE_RESULTS_WINDOW_Y + 58.0,
-                96.0,
-                25.0,
-            );
-            crate::control_registry::register_logical(
-                "Results",
-                category.label(),
-                rect.x,
-                rect.y,
-                rect.width,
-                rect.height,
-            );
-            if mouse_released && rect.contains(mouse.0, mouse.1) {
-                state.battle_result_category = category;
-                macroquad::logging::info!(
-                    "[tactical-results] tab={} category={}",
-                    state.battle_result_tab.label(),
-                    category.label()
-                );
-            }
         }
     }
     action
@@ -6385,6 +7087,14 @@ pub fn draw_tactical_view(
     if state.session.is_none() {
         return TacticalAction::ReturnToGalaxy;
     }
+    // The Battle Alert records each side's forces as the battle opens
+    // (FUN_0049c0d0); a simulated battle changes the world before its
+    // results show.
+    if state.battle_record.is_none() {
+        if let Some(session) = state.session.as_ref() {
+            state.battle_record = Some(BattleRecord::record(session, world, troop_transport));
+        }
+    }
 
     if state.battle_alert_open {
         return draw_original_battle_alert(state, bmp_cache, world, troop_transport);
@@ -6400,14 +7110,29 @@ pub fn draw_tactical_view(
             let dt = get_frame_time();
             session.advance_presentational_effects(dt);
             let ticks_per_sec = 4.0 * session.combat_speed as f32;
+            #[cfg(feature = "interface-test-fixtures")]
+            if state.fixture_withdrawal_expires {
+                for withdrawal in &mut session.morale.withdrawal {
+                    withdrawal.countdown_milliseconds = withdrawal.countdown_milliseconds.min(0.0);
+                }
+            }
             session.step_accumulator += dt * ticks_per_sec;
             while session.step_accumulator >= 1.0 {
                 session.step_accumulator -= 1.0;
+                let approaching = session.trench_run_remaining_ms.is_none();
                 session.step();
+                if approaching && session.trench_run_remaining_ms.is_some() {
+                    log_trench_run_launch(session);
+                }
                 if session.phase == BattlePhase::Results {
                     break;
                 }
             }
+        }
+        // The battle's end draws the import's crew pass once, before its
+        // results show and before the write-back reads it.
+        if session.phase == BattlePhase::Results {
+            session.settle_crew(world);
         }
         flush_engine_log(session);
     }
@@ -6417,7 +7142,7 @@ pub fn draw_tactical_view(
         .as_ref()
         .is_some_and(|session| session.phase == BattlePhase::Results)
     {
-        return draw_original_battle_results(state, bmp_cache, world, troop_transport);
+        return draw_original_battle_results(state, bmp_cache, world);
     }
 
     // 1. Paint the unscaled-source tactical shell first, then put the battle
@@ -6438,8 +7163,29 @@ pub fn draw_tactical_view(
     if state.render_original_starfield {
         state.asset_renderer.draw_backdrop(aperture_tuple);
     }
-    if state.render_original_planet {
-        state.asset_renderer.draw_planet(aperture_tuple);
+    if let Some(session) = state.session.as_ref() {
+        // `FUN_005d4d10` builds the planet decal only under Show Planet
+        // (`+0x680`); its size is the battle extent (0x5d54d1).
+        let extent = session.source_layout.battle_extent;
+        let station = tactical_station_decal(session);
+        if state.render_original_planet {
+            state.asset_renderer.draw_planet(
+                aperture_tuple,
+                tactical_planet_decal_position(extent).rendered(),
+                extent,
+            );
+        }
+        if let Some(station) = station {
+            state
+                .asset_renderer
+                .draw_station_decal(aperture_tuple, station);
+        } else if let (Some(removal), Some(death_star)) =
+            (tactical_station_decal_removal(session), session.death_star)
+        {
+            state
+                .asset_renderer
+                .note_station_decal_removed(death_star.resource_id(), removal.label());
+        }
     }
 
     // 2. Submit mapped production participants through their original 3D and
@@ -6468,7 +7214,7 @@ pub fn draw_tactical_view(
                         ship.tactical_resource.map(|resource| TacticalRenderObject {
                             object_id: u32::try_from(index).unwrap_or(u32::MAX).saturating_add(1),
                             resource_base: resource.mesh_resource_base,
-                            position: ship.source_position.rendered(),
+                            position: session.ship_display_position(index).rendered(),
                         })
                     })
                     .collect::<Vec<_>>();
@@ -6490,42 +7236,12 @@ pub fn draw_tactical_view(
                                     .grouped_far_resource(player_side, fighter.fighter_group),
                                 indicator_resource_id: resource
                                     .grouped_indicator_resource(player_side, fighter.fighter_group),
-                                position: fighter.source_position.rendered(),
+                                position: session.fighter_display_position(index).rendered(),
                             }
                         })
                     })
                     .collect::<Vec<_>>();
-                let mut effects = if render_pyrotechnics {
-                    session
-                        .impact_effects
-                        .iter()
-                        .filter_map(|effect| {
-                            let ship = session.ships.get(effect.target)?;
-                            let (source_width, source_height) = effect.sequence.source_size();
-                            Some(TacticalEffectRenderObject {
-                                object_id: u32::try_from(effect.target)
-                                    .unwrap_or(u32::MAX)
-                                    .saturating_add(1),
-                                resource_id: effect.sequence.resource_base()
-                                    + u32::from(effect.frame),
-                                source_width,
-                                source_height,
-                                position: ship.source_position.rendered(),
-                            })
-                        })
-                        .collect::<Vec<_>>()
-                } else {
-                    Vec::new()
-                };
-                if let Some(death_star) = session.death_star {
-                    effects.push(TacticalEffectRenderObject {
-                        object_id: 3001,
-                        resource_id: death_star.resource_id(),
-                        source_width: 128,
-                        source_height: 128,
-                        position: death_star.source_position.rendered(),
-                    });
-                }
+                let effects = tactical_effect_render_objects(session, render_pyrotechnics);
                 let fields = session
                     .field_effects
                     .iter()
@@ -7195,9 +7911,8 @@ pub fn draw_tactical_view(
             groups.selected_fighter_group.is_some() || groups.selected_ship_name.is_some();
         let attack_death_star_enabled = groups.selected_fighter_group.is_some()
             && state.session.as_ref().is_some_and(|session| {
-                session.death_star.is_some_and(|death_star| {
-                    death_star.operational() && death_star.is_attacker != session.player_is_attacker
-                })
+                session.player_voice_faction() == TacticalVoiceFaction::Alliance
+                    && session.trench_run_order_available()
             });
         let withdraw_enabled = state
             .session
@@ -7252,7 +7967,14 @@ pub fn draw_tactical_view(
         );
         if paused {
             let (x, y) = canvas.point(25.0, 48.0);
-            draw_text("Battle Paused.", x, y, 16.0 * canvas.scale, RED);
+            // TEXTTACT 0xddf0 reads " Battle Paused", with no full stop.
+            draw_text(
+                "Battle Paused",
+                x,
+                y,
+                16.0 * canvas.scale,
+                battle_paused_label_color(player_is_alliance),
+            );
         }
     }
 
@@ -7420,7 +8142,6 @@ fn draw_projected_frame(projection: TacticalScreenProjection, canvas_scale: f32,
 /// - Left-click: select a player ship.
 /// - Right-click on friendly: issue the original order-1 Escort command.
 /// - Right-click on enemy: issue focus-fire order to all selected player ships.
-/// - R key: retreat selected ships.
 fn handle_combat_input(
     session: &mut BattleSession,
     death_star_targeting: &mut bool,
@@ -7519,14 +8240,7 @@ fn handle_combat_input(
             );
         } else {
             // Clicked empty space — deselect all.
-            for s in &mut session.ships {
-                s.selected = false;
-            }
-            session.selected_ship = None;
-            session.selected_fighter_group = None;
-            for fighter in &mut session.fighters {
-                fighter.selected = false;
-            }
+            deselect_all(session);
         }
     }
 
@@ -7678,18 +8392,6 @@ fn handle_combat_input(
             }
         }
     }
-
-    // R key: retreat selected ships.
-    if is_key_pressed(KeyCode::R) {
-        for ship in &mut session.ships {
-            if ship.selected && ship.is_attacker == session.player_is_attacker && ship.alive {
-                ship.retreating = true;
-                ship.selected = false;
-            }
-        }
-        session.selected_ship = None;
-        session.selected_fighter_group = None;
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -7783,7 +8485,504 @@ fn handle_placement_input(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rebellion_core::tactical::test_support::{test_fighter, test_session, test_ship};
+    use rebellion_core::tactical::test_support::{
+        test_death_star, test_fighter, test_session, test_ship,
+    };
+
+    /// port: test fixture values, not rules.
+    fn entry(raw: u32, name: &str) -> SummaryEntry {
+        SummaryEntry {
+            unit: rebellion_core::operation_report::ReportUnit {
+                dat_id: rebellion_core::ids::DatId::new(raw),
+                name: name.into(),
+                major: false,
+                object: None,
+            },
+            burned: false,
+        }
+    }
+
+    fn cell_texts(summary: &BattleSummarySide, filter: ReportTab) -> Vec<String> {
+        battle_summary_cells(summary, filter)
+            .into_iter()
+            .map(|cell| match cell {
+                SummaryCell::Entry(entry) => entry.unit.name.clone(),
+                SummaryCell::Text(text) => format!("<{text}>"),
+                SummaryCell::Blank => String::new(),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_first_column_reads_none_with_nothing_lost_and_no_survivors_once_something_died() {
+        // FUN_004714e0.c:315-392: the first empty column shows 0x8526 when
+        // the destroyed and captured lists are empty too, else 0x1940; the
+        // last shows 0x1941.
+        for side in ["Alliance", "Imperial"] {
+            let ship = format!("{side} cruiser");
+            let mut summary = BattleSummarySide::default();
+            assert_eq!(
+                cell_texts(&summary, ReportTab::CapitalShips),
+                ["<None>", "<No Casualties>"]
+            );
+            summary.destroyed.push(entry(0x1400_0001, &ship));
+            assert_eq!(
+                cell_texts(&summary, ReportTab::CapitalShips),
+                ["<No Survivors>".to_owned(), ship.clone()]
+            );
+            // Each filter reads only its families.
+            assert_eq!(
+                cell_texts(&summary, ReportTab::FighterSquadrons),
+                ["<None>", "<No Casualties>"]
+            );
+        }
+    }
+
+    #[test]
+    fn the_death_star_lists_with_the_capital_ships_and_personnel_has_three_columns() {
+        // FUN_004714e0.c:91-136: tab 0x65 holds [0x14,0x1c), the Death Star's
+        // family 0x18 among them; tab 0x68 [0x30,0x40) in three columns,
+        // Survivors, Captured and Killed (FUN_0046f360.c:349-362).
+        for side in ["Alliance", "Imperial"] {
+            let officer = format!("{side} officer");
+            let summary = BattleSummarySide {
+                operational: vec![
+                    entry(0x1400_0001, "Cruiser 1"),
+                    entry(0x3000_0240, &officer),
+                ],
+                captured: vec![entry(0x3800_0340, "Prisoner"), entry(0x3800_0341, "Spy")],
+                destroyed: vec![
+                    entry(0x1400_0002, "Cruiser 2"),
+                    entry(0x1800_0001, "Death Star"),
+                ],
+            };
+            assert_eq!(
+                cell_texts(&summary, ReportTab::CapitalShips),
+                ["Cruiser 1", "Cruiser 2", "", "Death Star"]
+            );
+            assert_eq!(
+                cell_texts(&summary, ReportTab::Personnel),
+                [
+                    officer.as_str(),
+                    "Prisoner",
+                    "<No Casualties>",
+                    "",
+                    "Spy",
+                    ""
+                ]
+            );
+            assert_eq!(ReportTab::Personnel.columns(), 3);
+        }
+    }
+
+    #[test]
+    fn the_summary_picture_follows_the_victor_and_whether_the_loser_withdrew() {
+        // FUN_0046f360.c:68-109: no victor (+0x50 0) shows 0x2d63; else the
+        // victor's art by whether the loser withdrew (+0x54): the Empire's
+        // 0x2a05 or 0x2a08, the Alliance's 0x2a06 or 0x2a07, alike for
+        // either player. The VM's Battle at Yaga Minor (Empire player, the
+        // Alliance fleet withdrew) shows 0x2a05.
+        use resources::strategy as art;
+        for player_is_attacker in [true, false] {
+            let picture = |winner: Option<CombatWinner>, loser_withdrew: bool| {
+                let mut alliance = test_ship(64, 0, true, true);
+                let mut empire = test_ship(128, 0, false, true);
+                alliance.is_attacker = true;
+                empire.is_attacker = false;
+                // A ship that jumped is out of the battle (state 9).
+                let loser = match winner {
+                    Some(CombatWinner::Attacker) => Some(&mut empire),
+                    Some(CombatWinner::Defender) => Some(&mut alliance),
+                    _ => None,
+                };
+                let loser_side = loser.map(|loser| {
+                    loser.retreated = loser_withdrew;
+                    loser.alive = !loser_withdrew;
+                    usize::from(!loser.is_attacker)
+                });
+                let mut session = test_session(vec![alliance, empire], Vec::new(), player_is_attacker);
+                if let Some(side) = loser_side {
+                    session.morale.jumped[side] = loser_withdrew;
+                }
+                session.attacker_is_alliance = true;
+                session.winner = winner;
+                battle_result_picture(&session)
+            };
+            assert_eq!(picture(Some(CombatWinner::Defender), true), art::EVENT_BATTLE_ALLIANCE_DEFEATED);
+            assert_eq!(picture(Some(CombatWinner::Defender), false), art::EVENT_BATTLE_EMPIRE_VICTORY);
+            assert_eq!(picture(Some(CombatWinner::Attacker), true), art::EVENT_BATTLE_EMPIRE_DEFEATED);
+            assert_eq!(picture(Some(CombatWinner::Attacker), false), art::EVENT_BATTLE_ALLIANCE_VICTORY);
+            assert_eq!(picture(None, false), art::EVENT_BATTLE_MUTUAL_DESTRUCTION);
+            assert_eq!(picture(Some(CombatWinner::Draw), false), art::EVENT_BATTLE_MUTUAL_DESTRUCTION);
+        }
+    }
+
+    #[test]
+    fn a_side_whose_ship_died_while_its_squadrons_jumped_reads_as_withdrawn() {
+        // FUN_005a9ec0.c:245-273: no unit alive or in its jump and one in
+        // state 9 is a withdrawal, fighters included; FUN_0046f360.c:68-109
+        // then shows the victor's withdrawal art (Empire 0x2a05, Alliance
+        // 0x2a06) and the text says the fleet withdrew (0x700c).
+        use resources::strategy as art;
+        for loser_is_alliance in [true, false] {
+            let mut ship = test_ship(64, 0, loser_is_alliance, false);
+            ship.hull_current = 0;
+            let winner = test_ship(128, 0, !loser_is_alliance, true);
+            let mut squadron = test_fighter(1, loser_is_alliance);
+            squadron.alive = false;
+            let mut session = test_session(vec![ship, winner], vec![squadron], loser_is_alliance);
+            session.morale.jumped[usize::from(!loser_is_alliance)] = true;
+            session.winner = Some(if loser_is_alliance {
+                CombatWinner::Defender
+            } else {
+                CombatWinner::Attacker
+            });
+            let expected = if loser_is_alliance {
+                art::EVENT_BATTLE_ALLIANCE_DEFEATED
+            } else {
+                art::EVENT_BATTLE_EMPIRE_DEFEATED
+            };
+            assert_eq!(battle_result_picture(&session), expected, "{loser_is_alliance}");
+            let fleet = if loser_is_alliance { "Alliance" } else { "Imperial" };
+            let lines = battle_result_summary_lines(&session);
+            assert!(
+                lines.iter().any(|line| line == &format!("The {fleet} fleet has withdrawn.")),
+                "{lines:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_battle_summary_opens_on_capital_ships_at_the_top_of_its_list() {
+        // FUN_0046f140 sets the filter (+0x180) to 0x65; FUN_004714e0
+        // refills the list from its first row.
+        for player_is_attacker in [true, false] {
+            let mut state = TacticalState {
+                session: Some(test_session(Vec::new(), Vec::new(), player_is_attacker)),
+                battle_result_filter: ReportTab::Personnel,
+                battle_result_scroll: 3,
+                ..TacticalState::default()
+            };
+            assert!(state.simulate_battle(&GameWorld::default()));
+            assert_eq!(state.battle_result_filter, ReportTab::CapitalShips);
+            assert_eq!(state.battle_result_scroll, 0);
+        }
+    }
+
+    #[test]
+    fn left_and_right_step_the_four_filters_and_wrap_to_the_first() {
+        // FUN_004710f0: 0x25 takes the previous visible tab, 0x27 the next;
+        // with none, the group's first (FUN_005f5060).
+        use ReportTab::{CapitalShips, FighterSquadrons, Personnel, TrooperRegiments};
+        assert_eq!(
+            stepped_battle_summary_filter(CapitalShips, true),
+            FighterSquadrons
+        );
+        assert_eq!(
+            stepped_battle_summary_filter(FighterSquadrons, true),
+            TrooperRegiments
+        );
+        assert_eq!(
+            stepped_battle_summary_filter(TrooperRegiments, true),
+            Personnel
+        );
+        assert_eq!(stepped_battle_summary_filter(Personnel, true), CapitalShips);
+        assert_eq!(
+            stepped_battle_summary_filter(Personnel, false),
+            TrooperRegiments
+        );
+        assert_eq!(
+            stepped_battle_summary_filter(CapitalShips, false),
+            CapitalShips
+        );
+    }
+
+    #[test]
+    fn the_filter_tabs_carry_each_side_s_art_in_the_battle_summary_s_order() {
+        // FUN_0046f360.c:626-724: 0x65-0x68 with the normal and pressed
+        // bitmaps 0x286c/0x286b, 0x2872/0x2871, 0x2870/0x286f,
+        // 0x286a/0x2869 for side 1 and 0x2878/0x2877, 0x287c/0x287b,
+        // 0x287a/0x2879, 0x2876/0x2875 otherwise.
+        let art = |side| BATTLE_SUMMARY_FILTERS.map(|tab| tab.art(side));
+        assert_eq!(
+            art(0),
+            [
+                (0x286c, 0x286b),
+                (0x2872, 0x2871),
+                (0x2870, 0x286f),
+                (0x286a, 0x2869)
+            ]
+        );
+        assert_eq!(
+            art(1),
+            [
+                (0x2878, 0x2877),
+                (0x287c, 0x287b),
+                (0x287a, 0x2879),
+                (0x2876, 0x2875)
+            ]
+        );
+        assert_eq!(
+            BATTLE_SUMMARY_FILTERS.map(ReportTab::label),
+            [
+                "Capital Ships",
+                "Fighter Squadrons",
+                "Trooper Regiments",
+                "Personnel"
+            ]
+        );
+    }
+
+    #[test]
+    fn withdraw_is_disabled_once_the_players_side_withdraws() {
+        // FUN_005d0f50.c:10: a side may withdraw only while its controller's
+        // +0x84 is 0; FUN_005ad530 sets it to 2.
+        for player_is_attacker in [true, false] {
+            let mut ship = test_ship(0x1400_0001, 0, player_is_attacker, true);
+            ship.subsystem_capacity.hyperdrive = 1;
+            ship.subsystem_condition.hyperdrive = 1;
+            let mut session = test_session(vec![ship], Vec::new(), player_is_attacker);
+            assert!(tactical_withdraw_enabled(&session));
+            session.begin_side_withdrawal(player_is_attacker);
+            assert!(!tactical_withdraw_enabled(&session));
+        }
+    }
+
+    #[test]
+    fn withdraw_needs_a_ship_of_the_players_side_whose_hyperdrive_works() {
+        // FUN_005d0f50.c:17-31: Withdraw is offered when one of the side's
+        // units has a working hyperdrive (FUN_005b1b70 returns 1).
+        type Spoil = fn(&mut TacticalShip, bool);
+        let spoils: [(&str, Spoil); 5] = [
+            ("dead", |ship, _| ship.alive = false),
+            ("retreating", |ship, _| ship.retreating = true),
+            ("the other side's", |ship, attacker| ship.is_attacker = !attacker),
+            ("hyperdrive-less", |ship, _| ship.subsystem_capacity.hyperdrive = 0),
+            ("hyperdrive-wrecked", |ship, _| ship.subsystem_condition.hyperdrive = 0),
+        ];
+        for player_is_attacker in [true, false] {
+            let able = || {
+                let mut ship = test_ship(0x1400_0001, 0, player_is_attacker, true);
+                ship.subsystem_capacity.hyperdrive = 1;
+                ship.subsystem_condition.hyperdrive = 1;
+                ship
+            };
+            let session = test_session(vec![able()], Vec::new(), player_is_attacker);
+            assert!(tactical_withdraw_enabled(&session));
+            for (name, spoil) in spoils {
+                let mut ship = able();
+                spoil(&mut ship, player_is_attacker);
+                let session = test_session(vec![ship], Vec::new(), player_is_attacker);
+                assert!(
+                    !tactical_withdraw_enabled(&session),
+                    "a {name} ship offered Withdraw (attacker {player_is_attacker})"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_charge_bar_fills_green_over_blue() {
+        // FUN_005c4ed0 builds the bar with FUN_0060e150 (CoolwinStatusBar),
+        // fill COLORREF 0x200ff00 and background 0x2ff0000. A0 TAC-05-C018
+        // shows the empty bar (0, 0, 255), TAC-05-C017 the full one
+        // (0, 255, 0).
+        assert_eq!(DEATH_STAR_LASER_FILL_COLOR, Color::new(0.0, 1.0, 0.0, 1.0));
+        assert_eq!(
+            DEATH_STAR_LASER_EMPTY_COLOR,
+            Some(Color::new(0.0, 0.0, 1.0, 1.0))
+        );
+    }
+
+    #[test]
+    fn the_laser_control_stands_where_its_gauge_window_places_it() {
+        // FUN_005c4ed0 (message 1): the gauge window's progress bar at
+        // (0x22, 9), 0x5f by 6, and its CoolStrobeButton at (0x89, 2),
+        // 0x15 by 0x14. A0 TAC-05-C017-C020 show the control at x 611.
+        assert_eq!(
+            (DEATH_STAR_LASER_FILL_RECT.x, DEATH_STAR_LASER_FILL_RECT.y),
+            (DEATH_STAR_LASER_GAUGE_RECT.x + 34.0, 9.0)
+        );
+        assert_eq!(
+            (
+                DEATH_STAR_LASER_BUTTON_RECT.x,
+                DEATH_STAR_LASER_BUTTON_RECT.y,
+                DEATH_STAR_LASER_BUTTON_RECT.width,
+                DEATH_STAR_LASER_BUTTON_RECT.height,
+            ),
+            (DEATH_STAR_LASER_GAUGE_RECT.x + 137.0, 2.0, 21.0, 20.0)
+        );
+    }
+
+    // Source: FUN_005ab650 (0x5ac59b) hands the station's 5010/5020 to
+    // FUN_005c10a0 -> FUN_005c1d30 -> FUN_005d4d10, the scene surround,
+    // which makes it a decal of its own frame; the impact frames are
+    // FUN_005d3e90's, keyed by their target ship. A0 TAC-03-C020: neither
+    // side's battle shows a Death Star in the 3D view.
+    // Source: FUN_005d3e90 selects the target sprite state and FUN_005d39a0
+    // draws its frames from the state's resource base (Destroyed 3360,
+    // 64 x 64) on the target ship; the Pyrotechnics option gates the pass.
+    #[test]
+    fn the_impact_effect_pass_draws_each_frame_on_its_target_only_with_pyrotechnics() {
+        for player_is_alliance in [true, false] {
+            let player = test_ship(64, 0, player_is_alliance, true);
+            let mut enemy = test_ship(128, 0, !player_is_alliance, true);
+            enemy.source_position = TacticalWorldPosition {
+                x: 10.0,
+                y: 4.0,
+                z: 50.0,
+            };
+            let mut session = test_session(vec![player, enemy], Vec::new(), player_is_alliance);
+            queue_original_tactical_impact(
+                &mut session.impact_effects,
+                1,
+                WeaponKind::LaserCannon,
+                OriginalTacticalImpactStage::Destroyed,
+            );
+            session.impact_effects[0].frame = 2;
+
+            assert_eq!(
+                tactical_effect_render_objects(&session, true),
+                vec![TacticalEffectRenderObject {
+                    object_id: 2,
+                    resource_id: 3362,
+                    source_width: 64,
+                    source_height: 64,
+                    position: session.ships[1].source_position.rendered(),
+                }]
+            );
+            assert!(tactical_effect_render_objects(&session, false).is_empty());
+        }
+    }
+
+    // Source: FUN_005ab650 (0x5ac59b) passes battle+0x8d4 (5010, or 5020 for
+    // an uncompleted station) to FUN_005d4d10, which sets the decal's origin
+    // to texel (64, 64) and its size to 0.5 * extent (_DAT_0066d260) on the
+    // station's frame (0x5d5602-0x5d56c4). VM: alliance-day1169-deathstar-
+    // trench-run.sav, day 1173: the decal stands off one face of the box,
+    // about half a box-width across.
+    #[test]
+    fn the_station_decal_is_half_an_extent_square_on_its_centre_texel_for_either_side() {
+        for player_is_alliance in [true, false] {
+            for not_completed in [false, true] {
+                let mut session = test_session(Vec::new(), Vec::new(), player_is_alliance);
+                session.source_layout = OriginalTacticalLayout::from_active_counts(4, 0);
+                assert_eq!(tactical_station_decal(&session), None);
+                let mut station = test_death_star(!player_is_alliance);
+                station.not_completed = not_completed;
+                station.source_position = TacticalWorldPosition {
+                    x: -224.0,
+                    y: 7.0,
+                    z: -3.0,
+                };
+                session.death_star = Some(station);
+                assert_eq!(
+                    tactical_station_decal(&session),
+                    Some(TacticalDecalRenderObject {
+                        resource_id: if not_completed { 5020 } else { 5010 },
+                        position: station.source_position.rendered(),
+                        size: 56.0,
+                        origin: vec2(64.0, 64.0),
+                    })
+                );
+            }
+        }
+    }
+
+    // Source: FUN_005c1200 runs the station actor's slot 1 (FUN_005d5950),
+    // which takes the decal off its frame through slot 12 (0x5d59b0). It is
+    // called with the station id by state 6 of FUN_005cfec0 (0x5d0267, after
+    // FUN_005ba890 kills the station) and by the departure FUN_005ba5e0
+    // (0x5ba611, which sets +0x78); state 7 does not call it. VM:
+    // alliance-day1169-deathstar-trench-run.sav, day 1173: after a successful
+    // run's film the decal is gone.
+    #[test]
+    fn the_station_decals_removal_names_the_call_that_took_it_off() {
+        // Source as below: FUN_005c1200 at state 6 (0x5d0267) and at the
+        // departure (0x5ba611); state 7 leaves the decal.
+        let mut session = test_session(Vec::new(), Vec::new(), false);
+        assert_eq!(tactical_station_decal_removal(&session), None, "no station");
+        session.death_star = Some(test_death_star(false));
+        assert_eq!(tactical_station_decal_removal(&session), None);
+        session.trench_run_outcome = Some(TacticalTrenchRunOutcome::Failure);
+        assert_eq!(tactical_station_decal_removal(&session), None, "state 7");
+        session.trench_run_outcome = Some(TacticalTrenchRunOutcome::Success);
+        assert_eq!(
+            tactical_station_decal_removal(&session),
+            Some(StationDecalRemoval::TrenchRunSuccess)
+        );
+        session.trench_run_outcome = None;
+        session.death_star.as_mut().unwrap().action_committed = true;
+        assert_eq!(
+            tactical_station_decal_removal(&session),
+            Some(StationDecalRemoval::Departure)
+        );
+    }
+
+    #[test]
+    fn the_station_decal_leaves_the_scene_when_a_run_succeeds_or_the_station_departs() {
+        for player_is_alliance in [true, false] {
+            let mut session = test_session(Vec::new(), Vec::new(), player_is_alliance);
+            session.death_star = Some(test_death_star(!player_is_alliance));
+            assert!(tactical_station_decal(&session).is_some());
+            session.trench_run_outcome = Some(TacticalTrenchRunOutcome::Failure);
+            assert!(
+                tactical_station_decal(&session).is_some(),
+                "state 7 keeps it"
+            );
+            session.trench_run_outcome = Some(TacticalTrenchRunOutcome::Success);
+            assert_eq!(tactical_station_decal(&session), None, "state 6 removes it");
+            session.trench_run_outcome = None;
+            session.death_star.as_mut().unwrap().action_committed = true;
+            assert_eq!(
+                tactical_station_decal(&session),
+                None,
+                "the departure removes it"
+            );
+        }
+    }
+
+    // Source: FUN_005d4d10 (0x5d5372-0x5d54f2) puts the planet decal's frame
+    // at (2.0 * extent, rand(0.2E) - 0.1E, rand(0.2E) - 0.1E)
+    // (_DAT_0066d23c = 0.1), off the face opposite the station's. VM:
+    // alliance-day1169-deathstar-trench-run.sav, day 1173: rotating the
+    // zoomed-out view brings the larger planet in off the opposite face.
+    #[test]
+    fn the_planet_decal_stands_two_extents_out_on_positive_x() {
+        for extent in [100.0, 112.0] {
+            let mut rng = OriginalBattleRng::default();
+            assert_eq!(
+                tactical_planet_decal_position(extent),
+                TacticalWorldPosition {
+                    x: 2.0 * extent,
+                    y: original_scene_surround_jitter(&mut rng, extent, 0.1),
+                    z: original_scene_surround_jitter(&mut rng, extent, 0.1),
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn the_impact_effect_pass_never_carries_the_death_star_for_either_side() {
+        for player_is_alliance in [true, false] {
+            for not_completed in [false, true] {
+                let mut session = test_session(Vec::new(), Vec::new(), player_is_alliance);
+                let mut station = test_death_star(!player_is_alliance);
+                station.not_completed = not_completed;
+                session.death_star = Some(station);
+                for render_pyrotechnics in [true, false] {
+                    let effects = tactical_effect_render_objects(&session, render_pyrotechnics);
+                    assert!(
+                        effects
+                            .iter()
+                            .all(|effect| effect.resource_id != station.resource_id()),
+                        "player alliance {player_is_alliance}, uncompleted {not_completed}: \
+                         {effects:?}",
+                    );
+                }
+            }
+        }
+    }
 
     // Source: FUN_005a8f70 waypoint; FUN_005cf980 recovery executor.
     #[test]
@@ -8607,28 +9806,41 @@ mod tests {
             tactical_command_rect_control_at(maneuvers, true, false, false, 600.0, 170.0),
             Some(TacticalCommandControl::ToggleTactic)
         );
+        // FUN_005df7a0 reads the kind of the object the panel opened on:
+        // Recover answers only for a fighter group.
         let missions = TacticalCommandPanel::Missions {
             pending_order: TacticalOrder::None,
+            fighter_group: None,
+        };
+        let fighter_missions = TacticalCommandPanel::Missions {
+            pending_order: TacticalOrder::None,
+            fighter_group: Some(0),
         };
         assert_eq!(
             tactical_command_rect_control_at(missions, true, false, false, 575.0, 165.0),
             None
         );
         assert_eq!(
-            tactical_command_rect_control_at(missions, true, true, false, 575.0, 165.0),
+            tactical_command_rect_control_at(fighter_missions, true, true, false, 575.0, 165.0),
             Some(TacticalCommandControl::Recover)
         );
         assert_eq!(
-            tactical_command_rect_control_at(missions, true, true, false, 575.0, 195.0),
+            tactical_command_rect_control_at(fighter_missions, true, true, false, 575.0, 195.0),
             None
         );
         assert_eq!(
-            tactical_command_rect_control_at(missions, true, true, true, 575.0, 195.0),
+            tactical_command_rect_control_at(fighter_missions, true, true, true, 575.0, 195.0),
             Some(TacticalCommandControl::AttackDeathStar)
         );
         assert_eq!(
             tactical_command_rect_control_at(missions, false, true, false, 505.0, 165.0),
             None
+        );
+        // Reopened on its group after an Attack Death Star commit, the panel
+        // answers with nothing selected (FUN_005df4f0 -> FUN_005df7a0).
+        assert_eq!(
+            tactical_command_rect_control_at(fighter_missions, false, false, false, 575.0, 165.0),
+            Some(TacticalCommandControl::Recover)
         );
     }
 
@@ -8675,6 +9887,190 @@ mod tests {
                 TacticalVoiceFaction::Alliance,
                 0
             )]
+        );
+    }
+
+    // Source: FUN_005df4f0 commits order 6 through the group's mode
+    // (FUN_005a48d0); the group's order setter FUN_005ca530 clears its strip
+    // slot and drops the selection (FUN_005a0320 -> FUN_005a0c80, panel 0x15),
+    // so the commit's return reopens Missions on the group (FUN_005c5a50,
+    // FUN_005df7a0). A0 TAC-05-C023 (alliance-day1169-deathstar-trench-run,
+    // day 1173): after the check mark Attack Death Star and the Red slot grey.
+    // FUN_005cfec0 state 6 gives the slot back (FUN_0059f680).
+    #[test]
+    fn an_attack_death_star_commit_greys_the_slot_and_keeps_missions_open_on_the_group() {
+        let mut session = test_session(
+            Vec::new(),
+            vec![test_fighter(3, true), test_fighter(3, true)],
+            true,
+        );
+        session.death_star = Some(test_death_star(false));
+        assert!(select_fighter_group(&mut session, 0));
+        let mut state = TacticalState {
+            session: Some(session),
+            ..TacticalState::default()
+        };
+
+        activate_tactical_command(&mut state, TacticalCommandControl::OpenMissions);
+        activate_tactical_command(&mut state, TacticalCommandControl::AttackDeathStar);
+        activate_tactical_command(&mut state, TacticalCommandControl::Confirm);
+
+        assert_eq!(
+            state.command_panel,
+            TacticalCommandPanel::Missions {
+                pending_order: TacticalOrder::AttackDeathStar,
+                fighter_group: Some(0),
+            }
+        );
+        let session = state.session.as_mut().unwrap();
+        assert_eq!(session.trench_run_group, Some(0));
+        assert_eq!(session.selected_fighter_group, None);
+        assert!(session.fighters.iter().all(|fighter| !fighter.selected));
+        assert!(!TacticalGroupHud::from_session(session).fighter_groups[0]);
+        assert!(!select_fighter_group(session, 0));
+        session.trench_run_outcome = Some(TacticalTrenchRunOutcome::Success);
+        assert!(TacticalGroupHud::from_session(session).fighter_groups[0]);
+    }
+
+    // Macroquad 0.4.14 deletes a font's atlas texture the moment a new glyph
+    // grows it (text/atlas.rs), so a glyph first cached after the frame drew
+    // that face leaves earlier quads on a deleted texture. Each size the
+    // Battle Alert and results draw is warmed up front.
+    #[test]
+    fn the_atlas_prewarm_covers_every_size_the_alert_and_results_draw() {
+        for scale in [1.0, 800.0 / 480.0, 2.0] {
+            let keys = result_face_keys(scale);
+            let truncated = |em: f32| (em * scale).max(1.0) as u16;
+            for (size, face) in [
+                (truncated(TACTICAL_SELECTED_TEXT_EM), RESULT_FACE_KEY),
+                (truncated(BATTLE_ALERT_TITLE_EM), RESULT_FACE_KEY),
+                (
+                    (BATTLE_ALERT_SUMMARY_EM * scale).round().max(1.0) as u16,
+                    RESULT_FACE_KEY,
+                ),
+                (truncated(BATTLE_ALERT_HEADING_EM), RESULT_FACE_KEY),
+                (truncated(BATTLE_ALERT_ROW_EM), RESULT_FACE_KEY),
+                (truncated(BATTLE_ALERT_ROW_EM), RESULT_BOLD_FACE_KEY),
+                (truncated(BATTLE_RESULTS_TITLE_EM), RESULT_FACE_KEY),
+                (truncated(BATTLE_DESTINATION_LABEL_EM), RESULT_FACE_KEY),
+                (truncated(result_cell_text(0.0, 4).1), RESULT_FACE_KEY),
+                (truncated(result_cell_text(0.0, 6).1), RESULT_FACE_KEY),
+                (truncated(result_cell_text(0.0, 10).1), RESULT_FACE_KEY),
+                (truncated(result_cell_text(0.0, 0xb).1), RESULT_FACE_KEY),
+            ] {
+                assert!(
+                    keys.contains(&(size | face)),
+                    "scale {scale}: size {size} face {face:#x} is not warmed"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_warm_key_names_its_face_and_size() {
+        assert_eq!(result_face_size(21 | RESULT_FACE_KEY), (false, 21));
+        assert_eq!(result_face_size(12 | RESULT_BOLD_FACE_KEY), (true, 12));
+    }
+
+    #[test]
+    #[should_panic(expected = "missing from the font-atlas prewarm")]
+    fn a_result_text_em_the_prewarm_does_not_know_fails_its_check() {
+        debug_assert_warmed_em(17.0);
+    }
+
+    // FUN_0060eed0 gives font entry 6 an lfHeight of 18, so GDI lays each
+    // summary body line in an 18-pixel cell; FUN_0046f360.c:240-243 starts
+    // the body at 0xff, so its third line's cell ends at 0xff + 54.
+    #[test]
+    fn a_result_line_fills_the_cell_of_its_fonts_height() {
+        let (baseline, em) = result_cell_text(255.0, 6);
+        let advance = em * 2288.0 / 2048.0;
+        let (top, height) = result_line_cell(baseline + 2.0 * advance, em);
+        assert!((top - (255.0 + 36.0)).abs() < 1e-3, "{top}");
+        assert!((height - 18.0).abs() < 1e-3, "{height}");
+    }
+
+    // The clip is the line's cell on the letterboxed canvas: it scales with
+    // the window as the text does.
+    #[test]
+    fn a_result_lines_clip_scales_with_the_canvas() {
+        let canvas = TacticalCanvas {
+            x: 160.0,
+            y: 20.0,
+            scale: 1.25,
+        };
+        let (baseline, em) = result_cell_text(255.0, 6);
+        let clip = result_line_clip(canvas, baseline, em);
+        let close = |a: f32, b: f32| (a - b).abs() < 1e-3;
+        assert!(close(clip.x, 160.0) && close(clip.width, 800.0), "{clip:?}");
+        assert!(close(clip.y, 20.0 + 255.0 * 1.25), "{clip:?}");
+        assert!(close(clip.height, 18.0 * 1.25), "{clip:?}");
+    }
+
+    // Source: FUN_0059eb70 zeroes the highlight flags +0x10c and +0x110 and
+    // FUN_0059c4d0 builds both buttons in their first state (1034, 1036); A0
+    // TAC-05-C009 (Alliance) and TAC-05-C017 (Empire) open with both unlit.
+    #[test]
+    fn a_tactical_display_opens_with_both_highlights_off() {
+        let state = TacticalState::default();
+        assert!(!state.highlight_alliance);
+        assert!(!state.highlight_empire);
+    }
+
+    // Source: FUN_005a8d30 clears a slot once its group has no squadron left
+    // in the battle (FUN_005ad8d0); FUN_0059b620 selects only the members of
+    // an existing slot.
+    #[test]
+    fn a_slot_needs_a_live_squadron_of_the_players_side_and_selects_only_those() {
+        for player_is_alliance in [true, false] {
+            let (own, other) = if player_is_alliance { (3, 5) } else { (5, 3) };
+            let mut dead = test_fighter(own, player_is_alliance);
+            dead.alive = false;
+            let mut empty = test_fighter(own, player_is_alliance);
+            empty.squad_count = 0;
+            let enemy = test_fighter(other, !player_is_alliance);
+            let mut session =
+                test_session(Vec::new(), vec![dead, empty, enemy], player_is_alliance);
+            assert!(!fighter_group_slot_held(&session, 0));
+            assert!(!select_fighter_group(&mut session, 0));
+
+            session.fighters.push(test_fighter(own, player_is_alliance));
+            assert!(fighter_group_slot_held(&session, 0));
+            assert!(!fighter_group_slot_held(&session, 1));
+            assert!(select_fighter_group(&mut session, 0));
+            let selected: Vec<bool> = session.fighters.iter().map(|f| f.selected).collect();
+            assert_eq!(selected, [false, false, false, true]);
+        }
+    }
+
+    // Source: FUN_005ca530 clears a slot only for the local side's group
+    // (+0x50 == battle+0x9ec); an Alliance run leaves the Imperial player's
+    // strip alone.
+    #[test]
+    fn an_alliance_trench_run_leaves_the_imperial_players_slot_of_the_same_colour() {
+        let mut session = test_session(
+            Vec::new(),
+            vec![test_fighter(3, true), test_fighter(5, false)],
+            false,
+        );
+        session.death_star = Some(test_death_star(false));
+        session.trench_run_group = Some(0);
+        assert!(TacticalGroupHud::from_session(&session).fighter_groups[0]);
+        assert!(select_fighter_group(&mut session, 0));
+    }
+
+    // Source: FUN_005c14d0 colours label 0xddf0 0x020000ff (palette red) for
+    // side 0 and 0x0200ff00 (palette green) otherwise; A0 TAC-05-C009
+    // (Alliance) reads red and TAC-05-C017 (Empire) green.
+    #[test]
+    fn battle_paused_reads_red_for_the_alliance_and_green_for_the_empire() {
+        assert_eq!(
+            battle_paused_label_color(true),
+            Color::new(1.0, 0.0, 0.0, 1.0)
+        );
+        assert_eq!(
+            battle_paused_label_color(false),
+            Color::new(0.0, 1.0, 0.0, 1.0)
         );
     }
 
@@ -8730,5 +10126,49 @@ mod tests {
         );
         assert_eq!(camera_offset_for_target(120.0, 190.0), (-480.0, -210.0));
         assert_eq!(camera_offset_for_target(600.0, 400.0), (0.0, 0.0));
+    }
+
+    #[test]
+    fn the_control_layout_names_each_control_once_at_its_drawn_rect() {
+        let layout = tactical_control_layout();
+        let mut names: Vec<&str> = layout.iter().map(|control| control.name.as_str()).collect();
+        names.sort_unstable();
+        names.dedup();
+        assert_eq!(names.len(), layout.len());
+        assert_eq!(layout.len(), 4 + 8 + 4 + TACTICAL_HUD_CONTROLS.len() + 16);
+        let rect = |name: &str| {
+            let control = layout.iter().find(|control| control.name == name).unwrap();
+            NativeRect::new(control.x, control.y, control.width, control.height)
+        };
+        for (index, button) in TASK_FORCE_BUTTONS.into_iter().enumerate() {
+            assert_eq!(rect(&format!("task-force-{}", index + 1)), button);
+        }
+        for (index, button) in FIGHTER_GROUP_BUTTONS.into_iter().enumerate() {
+            assert_eq!(rect(&format!("fighter-group-{}", index + 1)), button);
+        }
+        assert_eq!(rect("pause"), TACTICAL_HUD_CONTROLS[4].rect);
+        assert_eq!(
+            rect("fighter-group-header"),
+            NativeRect::new(
+                FIGHTER_GROUP_HEADER_POINT.0,
+                FIGHTER_GROUP_HEADER_POINT.1,
+                0.0,
+                0.0
+            )
+        );
+        assert_eq!(
+            rect("attack-death-star"),
+            tactical_command_spec(TacticalCommandControl::AttackDeathStar, false).0
+        );
+        // On the fighter panel at (482, 28): FUN_005fcc30 copies the art to
+        // panel-local (23, 59), FUN_005e16a0 boxes the count label at (23, 146).
+        assert_eq!(
+            rect("fighter-art"),
+            NativeRect::new(505.0, 87.0, 102.0, 107.0)
+        );
+        assert_eq!(
+            rect("fighter-count-label"),
+            NativeRect::new(505.0, 174.0, 0.0, 0.0)
+        );
     }
 }

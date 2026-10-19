@@ -40,6 +40,16 @@ impl DatId {
     pub fn index(self) -> u32 {
         self.0 & 0x00FF_FFFF
     }
+
+    /// Whether this id and the original compound id `id` name one record:
+    /// their indexes match. A loaded system or character keeps the id its
+    /// file stores, with no family byte (`load_game_data`: SYSTEMSD,
+    /// MJCHARSD, MNCHARSD), where the original compares compound ids such
+    /// as Coruscant's `0x90000109` (`FUN_005180e0`).
+    #[must_use]
+    pub fn is_record(self, id: u32) -> bool {
+        self.index() == Self::new(id).index()
+    }
 }
 
 impl std::fmt::Display for DatId {

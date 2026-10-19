@@ -72,8 +72,8 @@ to `(iVar6, iVar7)` (Alliance `0x20` by `0x1f`, Empire `0x2a` by `0x29`):
 
 | Button | Value | Bitmaps | Label |
 |---|---|---|---|
-| SpecForces (tab 3) | 3 | Alliance 10542/10543, Empire 10544/10545 | `0x1899` "SpecForces" |
-| Characters (tab 2) | 2 | Alliance 10546/10547, Empire 10548/10549 | `0x1898` "Characters" |
+| SpecForces | 2 | Alliance 10542/10543, Empire 10544/10545 | `0x1899` "SpecForces" |
+| Characters | 3 | Alliance 10546/10547, Empire 10548/10549 | `0x1898` "Characters" |
 
 The Characters button is at y-offset `0x36` within the group. Both buttons
 have `FUN_00603150(button, 2, pressed_art)` for pressed-state art.
@@ -104,7 +104,7 @@ There are 4 icon-header bitmaps (10536-10539): two per side. The
 for the list, giving each tab view (Characters vs SpecForces) its own set of
 column header icons.
 
-## Characters view (view tab 2)
+## Characters view (view value 3)
 
 Built in `FUN_004637a0` after the tab group. Before opening, the code walks
 all characters via `FUN_004f3d50(side, {0x30, 0x3c}, 0)`:
@@ -115,20 +115,25 @@ all characters via `FUN_004f3d50(side, {0x30, 0x3c}, 0)`:
   `{0x30, 0x3c}` restricts to characters only.
 - Each character's name is taken from `character->+0x2c + 0x34`
   (`FUN_00583c40`), its record's name field.
-- `FUN_004edc80(character)` returns the character's rank: 0 = no rank,
-  1 = General (has `+0x40`, no `+0x44`), 2 = Admiral (has `+0x44`, no
-  `+0x40`). hyp: `+0x2c` is the class record, `+0x40`/`+0x44` are command
-  rank flags in the class data.
+- `FUN_004edc80(character)` returns the character's native side from its
+  class record (`+0x40` is_alliance, `+0x44` is_empire): Alliance-only 1,
+  Empire-only 2, otherwise 0. A prisoner's side bits (`+0x24`) are its
+  captor's (`jail.md`), but this list keeps the native side.
 - Each character is inserted into `+0x174` (the character sorted list) with
-  name and rank stored in the row at `+0x54`.
+  name and native side stored in the row at `+0x54`. A rebuild
+  (`FUN_00464e10.c:255-266`) builds the row of each entry whose object has
+  `+0x50` bit 1 and whose `+0x54` equals the side tab's side, so a captive
+  lists on its native side's tab.
 
 The list is rebuilt via `FUN_00464e10` when the view tab changes.
 
-### List population (`FUN_00464e10`, view tab 2)
+### List population (`FUN_00464e10`, view value 2: SpecForces)
 
 The current background is switched (`FUN_006075e0` with layer index 2 or 3).
 
-For each system (`FUN_004f31b0(side)`):
+For each system (`FUN_004f31b0(side)`), both levels taken by the side
+tab's side (a fleet tested on its current side bits, `+0x24` bits 6-7,
+`FUN_00464e10.c:149`):
 
 1. `FUN_005040c0(system, 3, tab_side)`: iterator for special forces (family
    `0x3c..0x3f`) at that system. If any exist (`FUN_00513180`), the system is
@@ -140,14 +145,14 @@ For each system (`FUN_004f31b0(side)`):
 
 Each row renders a 350 by 20 bitmap strip via `FUN_00465540`.
 
-### List population (`FUN_00464e10`, view tab 3: SpecForces)
+### List population (`FUN_00464e10`, view value 3: Characters)
 
-The same two-level walk (direct at system, then in fleets) but using
-`FUN_005040c0` (special forces `0x3c..0x3f`) instead of `FUN_00504cc0`
-(regiments `0x10..0x13`). hyp: the SpecForces view therefore lists all
-systems that contain special forces on the selected side, whether
-in a fleet or directly on the system. Fleets are not listed as
-separate rows; the system that contains the fleet is listed.
+No container walk: the view walks the list built at window creation
+(`FUN_00464e10.c:255-266`, `FUN_004637a0.c:565-596`), resolves each entry
+(`FUN_004f2ec0`) and builds its row (`FUN_00465bb0`) when the object has
+`+0x50` bit 1 and the entry's native side (`+0x54`) equals the side tab's
+side. A jailed character therefore lists on its native side's tab although
+no system holds it.
 
 ### The character row text (`FUN_00465bb0`)
 
@@ -229,7 +234,7 @@ The command slot (`FUN_00464c20`):
   `+0x178`. If no match, `+0x178` is zeroed.
 
 hyp: typing a system name in the name box matches against the character list
-(view tab 2) or the SpecForces list (view tab 3), depending on which sorted
+(view value 3) or the SpecForces list (view value 2), depending on which sorted
 list is in the active view. The SpecForces grid itself is not directly
 searchable by system name through the name box; the name box searches row
 names (character names or system names with special force counts).
@@ -277,6 +282,10 @@ separate Personnel window; kind 11 is the Missions window
   selected entity's family. A character goes through
   `personnel_finder::character_target`: its fleet, the Missions window
   (showing its mission, slot 27 `FUN_004a1e10`), or the Defenses window.
+- A character held in a jail abode (`Character::abode`) shows the abode's
+  name as its location and "Captured" (`FUN_004f62d0` of the container), and
+  its Display opens nothing, as `FUN_00429440` handles fleet and system
+  parents only (`death-star-strategic.md`, "Jail abodes").
 - port: the name box searches character names in Characters view, and system
   names in SpecForces view (hyp).
 - port: dead characters are listed; this differs from the Troop Finder which

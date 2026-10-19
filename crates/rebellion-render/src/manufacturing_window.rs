@@ -53,12 +53,12 @@ pub const PROGRESS_RECTS: [(f32, f32, f32, f32); 3] = [
 ];
 
 /// Inside a band (`FUN_00458080`): the title, the status line, the units
-/// line and the destination line, font 10; the product's mini.
+/// line and the destination line, font 10; the product's portrait.
 pub const BAND_TITLE: (f32, f32) = (5.0, 1.0);
 pub const BAND_STATUS: (f32, f32) = (5.0, 16.0);
 pub const BAND_UNITS: (f32, f32) = (5.0, 47.0);
 pub const BAND_DESTINATION: (f32, f32) = (5.0, 57.0);
-pub const BAND_MINI: (f32, f32) = (40.0, 15.0);
+pub const BAND_PORTRAIT: (f32, f32) = (40.0, 15.0);
 
 /// The facility pages' list (`FUN_00607ea0`, id 2) and its 69 by 40 cells.
 pub const LIST: (f32, f32, f32, f32) = (8.0, 77.0, 222.0, 225.0);
@@ -120,8 +120,8 @@ pub struct Band {
     pub area: ProductionArea,
     /// The product's name, or the band's idle text.
     pub status: String,
-    /// The product's GOKRES mini (class `+0x30 & 0xfff`).
-    pub mini: Option<u32>,
+    /// The product's GOKRES portrait (class `+0x30 & 0xfff`).
+    pub portrait: Option<u32>,
     /// "Building: N" or "Training: N", the units left, with a product.
     pub units: Option<String>,
     /// "Destination: " and the area's destination system.
@@ -166,7 +166,7 @@ pub fn band(
         return Band {
             area,
             status: band_idle_text(area).into(),
-            mini: None,
+            portrait: None,
             units: None,
             destination,
             progress: None,
@@ -175,7 +175,12 @@ pub fn band(
     let active = queue
         .active()
         .expect("a non-empty queue has an active unit");
-    let (name, mini) = product(world, active.kind);
+    // The manager's product name (+0x80) is the product's own
+    // (FUN_0052ad30 → FUN_004f62d0): an ordered capital ship's, once seated.
+    let (class_name, mini) = product(world, active.kind);
+    let name = rebellion_core::carriage::ship_of_tag(world, active.ship)
+        .and_then(|(fleet, index)| world.ship_name(fleet, index))
+        .map_or(class_name, str::to_owned);
     let verb = if area == ProductionArea::TrainingFacility {
         "Training"
     } else {
@@ -184,15 +189,17 @@ pub fn band(
     Band {
         area,
         status: name,
-        mini,
+        // FUN_00457c90.c:48-55: GOKRES class +0x30 & 0xfff, the portrait.
+        portrait: mini.map(crate::fleet_window::ship_portrait),
         units: Some(format!("{verb}: {}", queue.len())),
         destination,
         progress: Some(active.progress_fraction()),
     }
 }
 
-/// A product's name and GOKRES mini: its class's (`FUN_00437880`, class
-/// `+0x30 & 0xfff`).
+/// A product's name and GOKRES mini: `+ 0x4000` over its class's
+/// `+0x30 & 0xfff` portrait (`FUN_00437880`, `FUN_00457c90`), which
+/// `fleet_window::ship_portrait` recovers.
 #[must_use]
 pub fn product(world: &GameWorld, kind: BuildableKind) -> (String, Option<u32>) {
     match kind {
@@ -675,11 +682,11 @@ mod tests {
             .iter()
             .all(|band| band.destination == "Destination: Bortras"
                 && band.units.is_none()
-                && band.mini.is_none()
+                && band.portrait.is_none()
                 && band.progress.is_none()));
     }
 
-    // FUN_00457c90: a product's name, mini and units left, "Building: " for
+    // FUN_00457c90: a product's name, portrait and units left, "Building: " for
     // ships, and the area's destination.
     #[test]
     fn a_building_band_shows_its_product_units_progress_and_destination() {
@@ -707,8 +714,14 @@ mod tests {
             ProductionArea::Shipyard,
         );
         assert_eq!(shown.status, "Corellian Corvette");
-        assert_eq!(shown.mini, capital_ship_mini_id(DatId::new(0x1400_0040)));
-        assert!(shown.mini.is_some());
+        // FUN_00457c90.c:48-55 loads GOKRES class +0x30 & 0xfff, the
+        // portrait FUN_0042c3b0 draws with its picture flag: the mini less
+        // 0x4000 (fleet-window.md, "En route marks").
+        assert_eq!(
+            shown.portrait,
+            capital_ship_mini_id(DatId::new(0x1400_0040)).map(|mini| mini - 0x4000)
+        );
+        assert!(shown.portrait.is_some());
         assert_eq!(shown.units.as_deref(), Some("Building: 3"));
         assert_eq!(shown.destination, "Destination: Denab");
         assert_eq!(shown.progress, Some(0.0));
@@ -722,6 +735,59 @@ mod tests {
             ProductionArea::Shipyard,
         );
         assert_eq!(hidden.status, "No Ships are being built");
+    }
+
+    // FUN_00457c90 shows the manager's product name (+0x80), which
+    // FUN_0052ad30 copies from the product itself (FUN_004f62d0): an ordered
+    // capital ship's own name. Under Wine the route-1 Empire save's
+    // Coruscant ships band reads "Death Star 1" (day 123 played on), and
+    // "Tarkin" once the band's Rename named it.
+    #[test]
+    fn a_ships_band_shows_its_ordered_ships_own_name() {
+        for alliance in [true, false] {
+            let control = ControlKind::Controlled(Faction::of_alliance(alliance));
+            let mut world = GameWorld::default();
+            let system = add_system(&mut world, "Bortras", control);
+            let class = world.capital_ship_classes.insert(CapitalShipClass {
+                dat_id: DatId::new(0x1400_0040),
+                name: "Corellian Corvette".into(),
+                hull: 10,
+                is_alliance: alliance,
+                is_empire: !alliance,
+                ..CapitalShipClass::default()
+            });
+            let mut manufacturing = ManufacturingState::new();
+            manufacturing.build(
+                system,
+                &QueueItem::new(BuildableKind::CapitalShip(class), 10),
+                2,
+            );
+            rebellion_core::manufacturing::seat_ordered_ships(&mut world, &mut manufacturing);
+            let status = |world: &GameWorld| {
+                band(
+                    world,
+                    &manufacturing,
+                    true,
+                    system,
+                    ProductionArea::Shipyard,
+                )
+                .status
+            };
+            assert_eq!(
+                status(&world),
+                "Corellian Corvette 1",
+                "alliance {alliance}"
+            );
+
+            let tag = manufacturing
+                .queue(system, ProductionArea::Shipyard)
+                .and_then(|queue| queue.active())
+                .map(|item| item.ship)
+                .unwrap();
+            let (fleet, index) = rebellion_core::carriage::ship_of_tag(&world, tag).unwrap();
+            assert!(world.rename_ship(fleet, index, "Tarkin"));
+            assert_eq!(status(&world), "Tarkin", "alliance {alliance}");
+        }
     }
 
     // FUN_00457c90: troops say "Training: ".
@@ -780,6 +846,7 @@ mod tests {
                 destination: Destination::System(system),
                 tick: 0,
                 kind: BuildableKind::ManufacturingFacility(template),
+                carrier: 0,
             }],
         );
 

@@ -10,11 +10,13 @@
     save_edit.py stranded   SOURCE.sav OUTPUT.sav
     save_edit.py doomed     SOURCE.sav OUTPUT.sav
     save_edit.py squadron   SOURCE.sav OUTPUT.sav
+    save_edit.py trench     SOURCE.sav OUTPUT.sav
 
 hyperdrive and deathstar are pinned to `saves/empire-day2-start.sav`; damage,
 subsystems, engines, fragile, stranded and doomed to
 `saves/empire-day30-yaga-alert-control.sav`, where they edit the ships at the
-battle; squadron to `saves/alliance-deathstar-at-coruscant.sav`. They change bytes in place, refuse any other source, never overwrite, and prove that only the intended bytes changed. The layout
+battle; squadron to `saves/alliance-deathstar-at-coruscant.sav`; trench to
+`saves/empire-day660-deathstar-pre-alert.sav`. They change bytes in place, refuse any other source, never overwrite, and prove that only the intended bytes changed. The layout
 and the acceptance gates are in `agent_docs/original-save-editing.md`; an
 edit is a hypothesis until the original loads, re-saves and reloads it.
 """
@@ -188,11 +190,50 @@ def squadron(data):
     return changed
 
 
+# Fleet 6's six TIE Fighter squadrons (class 5), carried by Imperial Star
+# Destroyer 1 (0x140009f1) beside Death Star 1 on its way to the day-676
+# battle at Coruscant: full records (Empire graph 0x81, 17 payload words)
+# and short ones (0xa1, 10 words). The third copy (0x92) is the Alliance's
+# last sighting and is left alone, as in `squadron`.
+DAY660 = ("5973cf91e8ee5cd3684c1dc83966c2d049d456081b7623a09f64d7f43b778de1", 1_040_089)
+TIE_CLASS, TIE_SHIP = 5, 0x140009F1
+TIE_COPIES = tuple(
+    (ident, full, short)
+    for ident, full, short in zip(range(0x9F2, 0x9F8),
+                                  (0x4C4A0, 0x4C4FC, 0x4C558, 0x4C5B4, 0x4C610, 0x4C66C),
+                                  (0xBB01E, 0xBB05E, 0xBB09E, 0xBB0DE, 0xBB11E, 0xBB15E))
+)
+
+
+def trench(data):
+    """Empty the six Imperial squadrons coming to Coruscant (damage 12 of
+    12, FUN_005032c0), so the Alliance's squadrons outnumber the Empire's
+    in the battle. The Alliance AI orders the trench run (order 6,
+    FUN_005c8780) only while FUN_005ad930 holds: the station attackable
+    (FUN_005ba450: completed, hull left, no family 0x25 shield at the
+    system), no trench run yet, and strictly more Alliance squadrons than
+    Imperial ones. An emptied squadron as destroyed is untested."""
+    changed = set()
+    for ident, *copies in TIE_COPIES:
+        for start, graph, word in zip(copies, (0x80000081, 0x800000A1), (16, 9)):
+            found = struct.unpack_from("<6I", data, start)
+            require(found[1:] == (0x1C, ident, graph, TIE_CLASS, 0), (hex(start), found))
+            payload = start + 0x18
+            require(u32(data, payload) == 0x00030056)  # +0x50 flags, the same in both
+            if word == 16:
+                require(u32(data, payload + 9 * 4) == TIE_SHIP)  # aboard the ISD
+            damage = payload + word * 4
+            require(u32(data, damage) == 0)
+            struct.pack_into("<I", data, damage, 12)
+            changed.add(damage)
+    return changed
+
+
 RECIPES = {"hyperdrive": (hyperdrive, DAY2), "deathstar": (deathstar, DAY2),
            "damage": (damage, DAY30), "subsystems": (subsystems, DAY30),
            "engines": (engines, DAY30), "fragile": (fragile, DAY30),
            "stranded": (stranded, DAY30), "doomed": (doomed, DAY30),
-           "squadron": (squadron, CORUSCANT)}
+           "squadron": (squadron, CORUSCANT), "trench": (trench, DAY660)}
 
 
 def main():

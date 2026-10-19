@@ -127,15 +127,34 @@ code passes the empty id as the normal bitmap. Counts are of the shown side.
   Band n is manager `FUN_00509670(system, k)`, k = 0 ships, 2 troops,
   1 facilities. Each band paints, into a copy of the background under it,
   10290 keyed, then its title strip: 10291 selected / 10292 not (side 1),
-  10293/10294 (side 2), 10295/10296 (other). Then, font 10, white:
-  - title at (5, 1): 6185 "Ship Construction", 6193 "Troops in Training",
-    6195 "Facilities Under Construction";
+  10293/10294 (side 2), 10295/10296 (other). Then, in font 10
+  (`FUN_00601c60(label, 10)`, `FUN_00458080.c:77`, 91, 106, 121; Arial,
+  14-pixel cell, weight 400):
+  - title at (5, 1), in the label's default colour, black (no
+    `FUN_00601c90`): 6185 "Ship Construction", 6193 "Troops in Training",
+    6195 "Facilities Under Construction"; the lines below are white
+    (`0x2ffffff`);
   - at (5, 16): the product's name, or 6198 "No Ships are being built",
     6199 "No Troops in training", 6200 "No Facilities are being built";
-  - with a product: its GOKRES mini (class `+0x30 & 0xfff`) at (40, 15) and
-    6209 "Building: " (ships, facilities) or 6208 "Training: " with the
-    units left (`+0x58`) at (5, 47);
+  - with a product (`+0x178`): its GOKRES portrait, class `+0x30 & 0xfff`
+    (`FUN_00457c90.c:48-55`; the picture `FUN_0042c3b0` draws with flag 1,
+    the mini being `+ 0x4000`), blitted keyed at (40, 15), and 6209
+    "Building: " (ships, facilities) or 6208 "Training: " with the units
+    left (`+0x58`) at (5, 47);
   - at (5, 57): 6201 "Destination: " and the destination system's name.
+- The band paints the title, the portrait, the units line, the name and
+  the destination in that order (`FUN_00457690.c:76-82`), so the lines lie
+  over the portrait: under Wine the route-1 Empire save's ships band shows
+  the Death Star's portrait with "Death Star 1" whole across it. Port:
+  `manufacturing_window::band` gives the portrait and `system_window`
+  paints it at `BAND_PORTRAIT` before the lines.
+- hyp (measured): under Wine font 10 draws Arial's hinted glyphs at an
+  11-pixel em: the idle lines "No Troops in training" and "No Facilities
+  are being built" are 98 and 126 pixels of ink (route-1 Empire save, day
+  123 played on). Port: the overview's text at a 10.6 em
+  (`system_window::OVERVIEW_FONT_EM`), which egui's outline advances need
+  for the same widths: the yard counts, the three bands' titles and lines,
+  and the band name edit.
 - A progress bar per band (`FUN_004acec0`, ids `0x6d..0x6f`) at (56, 127),
   (56, 208), (56, 289), 160 by 4: position `+0x5c` of range `+0x68`.
 
@@ -154,9 +173,92 @@ Status from `FUN_0051d990`, in STRATEGY sort order:
 
 STRATEGY `RT_RCDATA`: `0x210..0x212` sort 100, TEXTSTRA 12288 "Build";
 `0x213` 110, 12289 "Stop"; `0x214` 120, 12290 "Destination"; `0x215` 500,
-12291 "Rename"; `0x216` 1002, 12294 "Reserved" (check mark 11902). A left
-release on a selected band's status text issues `0x215` there
-(`FUN_00528720`), the in-place rename the Fleet window uses.
+12291 "Rename"; `0x216` 1002, 12294 "Reserved" (check mark 11902).
+
+**An idle band greys Stop and Rename.** Both orders run the base enable
+`FUN_0051fe20`, which asks each command's `+0x18` through `FUN_00553770`.
+Each command resolves its manager (`1`/`0x12`) and calls a manager slot
+(vtables `0x0065fbf8` and `0x006629a0` agree):
+
+- Stop (order vtable `0x00661250`, command vtable `0x00669a80`): `+0x18`
+  `FUN_0057eaa0` → manager `+0x1cc` `FUN_00528270`. After the object check
+  `FUN_004f9860` it refuses `0xa0`/1 when `FUN_0052be30` finds no product:
+  the key at `+0x74` (`FUN_0040d760`) is unset or resolves to nothing
+  (`FUN_00528270.c:22-31`).
+- Rename (order vtable `0x00661098`, command vtable `0x00669a58`): `+0x18`
+  `FUN_0057e6a0` → manager `+0x1c4` `FUN_00527f40`. It refuses `0xa0`/1 in
+  the same case. When a product exists it returns the product's `+0x64`
+  for kind `0x203` (`FUN_00527f40.c:23-41`). The order's own `+0x18`
+  `FUN_00537c70` also refuses `1`/`0x15` when more than one band is
+  selected.
+
+Port: `order_gates` greys Stop on a band with an empty queue, and greys a
+band's Rename unless `band_rename_target` finds the product ship
+(`rebellion-app`).
+
+**Rename names the band's product.** The band shows its manager's
+product name (`+0x80`), which `FUN_0052ad30` copies from the current
+product (`FUN_004f62d0`): an ordered capital ship's own name. On the
+route-1 Empire save (day 123 played on) Coruscant's ships band reads "Ship
+Construction / Death Star 1 / Building: 1 / Destination: Fleet 6".
+
+- Enabled: the product's `+0x64` for `0x203` (`FUN_00527f40`). A capital
+  ship runs the object check `FUN_004f9860`, which passes an unfinished
+  ship of the side that is not en route (`0x203` is exempt from its
+  completed test); a squadron always refuses (`FUN_004f66a0`, `1`/`0x17`).
+  Rename was enabled on Coruscant's ships band building Death Star 1; no
+  band building fighters could be staged there, so the squadron case rests
+  on the code.
+- The menu row: `FUN_00486fb0` → `FUN_0041d600` → `FUN_00429350` →
+  `FUN_00458b50` keeps the order at window `+0x268` and calls
+  `FUN_00458640`, which builds a CoolStringField (`+0x170`) over the
+  band's name label: the label's rect (`+0x14..+0x20`) offset by the band,
+  two pixels wider, font 10, the label's text selected and focused. On the
+  route-1 save the selected "Death Star 1" showed black on a white box 61
+  by 13 pixels; typed text shows white on the band.
+- The commit `FUN_00458780` (Enter, which the field turns into `0x407`, or
+  any press in the window, `FUN_004534f0` `0x201`/`0x204`): a changed,
+  non-empty name goes into the order (`+0x44`) and `FUN_0041ce20` submits
+  it; an unchanged or empty one drops the order. The order runs
+  `FUN_0057e870` → manager `+0x1f4` (`FUN_00529b00`): `FUN_00529980` sets
+  `+0x80` on the master copy and both sides' copies (`FUN_0052b650`), and
+  the notifier `+0x22c` (`FUN_0052ba00`) renames the current product
+  through `FUN_004f6e60`. Typing "Tarkin" and Enter on the route-1 save
+  renamed the unfinished ship at once: the band and Fleet 6 read "Tarkin".
+- Escape in the field goes to the window, which closes (`FUN_00458980`):
+  on the route-1 save (day 127 played on to day 140) the Coruscant System
+  window closed and the name stayed unchanged.
+- A second click on a selected band's name label is the other path
+  (`FUN_004534f0`: a release with bit 4 set, armed by `FUN_00528720` on an
+  earlier release, calls `FUN_00458640`). Two clicks and a double-click on
+  "Death Star 1" opened no edit on the route-1 save (day 127 played on to
+  day 140). hyp: the release tests the window-relative cursor against the
+  label's band-relative rect, while the same branch needs the cursor inside
+  the bands' area (8, 57)-(230, 282), so no release reaches it.
+
+Port: `SystemWindowState::begin_band_rename` opens the edit for the band
+menu's Rename; Enter or a press elsewhere in the window sends
+`SystemWindowAction::RenameProduct`, which renames the product ship
+(`PanelAction::Rename`); Escape closes the window. The band's line reads
+the product ship's name (`manufacturing_window::band`). The click path is
+not ported.
+
+**Stop asks first.** `FUN_00487cc0` confirms `0x213` as it does Scrap, in
+the move confirmation window (`move-order.md`, "The confirmation window").
+`FUN_0049a350` case `0x213` fills it: TEXTSTRA `RT_RCDATA` `0x7053` "Are
+you sure you want to stop construction of the following?", then, for each
+band the order stops (each entry of the order's list, `FUN_004f2f60`),
+`0x7055`, `"\n|6  |5"`: the band's units, two spaces and its product's
+name ("1  Death Star"). The picture `+0x2e` is `0x40e` (1038, a Rebel
+soldier raising his hand) for side 1 and `0x40f` (1039, an Imperial one)
+otherwise; ship, troop and facility bands share it. The checkmark submits
+the Stop, the X destroys it, Enter and Escape press them.
+
+Port: `move_confirmation::StopConfirmation`, opened by the band menu's Stop
+(`rebellion-app`); the checkmark sends `PanelAction::StopProduction`. Seen
+in both sides' native runs against the original's Wine frame: same picture,
+window, line and font. The question wraps after "the" in both (the text
+field's font: `move-order.md`, "The confirmation window").
 
 **Facility pages** (`0x68..0x6c`, `FUN_004568a0`). The list (`FUN_00607ea0`,
 id 2) at (8, 77), 222 by 225, 69 by 40 cells. Each page lists the shown
@@ -182,9 +284,17 @@ manual's Build Selection figure. The class vtable is `PTR_FUN_00658db8`.
 `FUN_0052d720`, and filters it for the selected production manager through
 `FUN_00537ff0`. For each buildable class it:
 
-1. reads the class miniature resource from `class + 0x30 & 0xfff`;
-2. centers the miniature in a 195 by 63 buffer;
-3. attaches the class name; and
+1. reads the class's GOKRES portrait, resource `class + 0x30 & 0xfff`
+   (`FUN_005fbd20(.., id & 0xfff, 2)`, `FUN_00437880.c:94-102`), the
+   picture the manufacturing band shows, not the `+ 0x4000` mini;
+2. centers the portrait in a 195 by 63 buffer (`0xc3` by `0x3f`,
+   `:111-131`);
+3. attaches the class name, with the portrait's height as the item's text
+   offset (`+0x34`, `:138-139`): the box (`FUN_0060c210.c:60-74`) and the
+   list (`FUN_006083c0.c:124-127`) add it to the top of the text rect and
+   draw with `DT_CENTER | DT_NOCLIP` (`0x101`, `FUN_00437f80.c:55`), so the
+   name starts that far below the item's top, over the lower rows of the
+   centred portrait; and
 4. appends it to the drop-down list.
 
 `FUN_00537ff0` scans production-manager families `0xa0..0xaf`, observes their
@@ -302,9 +412,9 @@ order). Times come from the manager:
   (`FUN_00555f90` -> `FUN_00555d90` -> `FUN_00555b30`): ship speed
   `+0x6c` for families `0x14..0x1f`, else `DAT_006b9050`.
 - Several managers keep the largest (`FUN_0053e130` is `max`).
-- An invalid order (`param_5 +4 != -1`) shows 14358 "n/a" in all four
-  fields and disables Confirm; times read "N" + 14357 " Days", capped at
-  9999.
+- An invalid order shows 14358 "n/a" in all four fields and disables
+  Confirm; times read "N" + 14357 " Days", capped at 9999. Validity is the
+  status word below.
 
 **List** (`FUN_0052e580`): the classes of the manager's production family
 (`0x28` ships, `0x29` regiments and special forces, `0x2a` facilities) that
@@ -312,6 +422,124 @@ its side builds and has researched, the side's level at `+0x9c`, `+0xa0`,
 `+0xa4`. `FUN_00437f80` reopens on the class last confirmed by the same
 kind of manager (`DAT_006b289c` facilities, `DAT_006b28a0` troops,
 `DAT_006b28a4` ships), else the first.
+
+### Validity and refusals (2026-10-18)
+
+Recovered by Claude from `FUN_00439160`, `FUN_00538220`, the build order's
+vtable `0x006611a0` (slot 6 `+0x18` `FUN_0051fe20`, slot 7 `+0x1c`
+`FUN_0051ff30`, slot 20 `+0x50` `FUN_005385f0`), `FUN_00553960`,
+`FUN_0052e970`, `FUN_00438b60`, `FUN_00438980` and `FUN_0041ce20`.
+
+**The status word.** Every validator writes a two-word status through
+`FUN_00520580` (`[0]` the category, `[+4]` the code). It starts at
+`{1, -1}`; the order is valid while `[+4]` is -1. `FUN_00439160` builds the
+order from the window (class `+0x44`, quantity `+0x48`), calls
+`FUN_00538220(order, ..., status)`, and with `[+4] != -1` writes "n/a" into
+all four fields and disables Confirm (control `0x65`, slot `+0x10`; slot
+`+0xc` enables it).
+
+**What `FUN_00538220` checks,** in order; each step runs only while the
+status is still valid, and a step that fails without writing a status
+leaves `{1, 1}`:
+
+1. The order's validator, slot `+0x1c` (`FUN_0051ff30`), which needs the
+   order's `+0x1c` set and runs:
+   1. slot `+0x18` (`FUN_0051fe20`): slot `+0x4c` (`FUN_005201c0`) and
+      `FUN_00553770` over the order's producers (`+0x40`);
+   2. slot `+0x50`, the build order's own check (`FUN_005385f0`):
+      - `FUN_005202d0` and `FUN_00553b80`: the order and its producers'
+        side;
+      - per producer, its system through `FUN_00504e60` (that call's status
+        when it finds none), then `{1, 0x28}` when the system's side
+        (`+0x24 >> 6 & 3`) is not the order's and the class is not a capital
+        ship (family `0x14..0x1b`);
+      - the route (`FUN_00551190`, mode 3);
+      - maintenance, `FUN_0052e970`: `{0xf3, 1}` when the class's `+0x4c`
+        times the quantity is not 0 and exceeds the side's spare (`+0x58` −
+        `+0x5c`; equality passes; `death-star-product.md`, section 3);
+      - per producer, its manager's own products give their room back
+        (`FUN_00552210`), since the Build replaces them; then per unit, the
+        destination's room (`FUN_00551a20`): `{0x90, 3}` for a second family
+        `0x18..0x1b` ship at one system, either side's, other uncompleted
+        products included (`FUN_00507ab0`; `death-star-product.md`,
+        section 2);
+   3. `FUN_00553960`: each producer's own slot `+0x1c`.
+2. `FUN_00506e60` (`DAT_006b2bb0 +0xbc`) is not 0.
+3. Per producer, the completion time (`FUN_00555f00` -> `FUN_00529090`) and
+   the deployment trip (`FUN_00555f90` -> `FUN_00555d90`) both succeed.
+
+So a ship class whose maintenance exceeds the spare reads "n/a" with Confirm
+disabled, whatever the class; at a system holding a Death Star, built or in
+production, a second Death Star does too, unless the one in production is
+the ordering yard's own.
+
+**Enter still orders.** `FUN_00438b60` case `0xd` calls `FUN_00438980`
+without looking at Confirm, then closes the window (slot `+0x30`).
+`FUN_00438980` remembers the class for its kind of manager and calls
+`FUN_0041ce20(order, 0)` -> `FUN_00436050` -> `FUN_00487740`, which runs the
+same slot `+0x1c`; a refusal goes to `FUN_00487c90` and the side's advisor
+reacts (`mission-dialog.md`, "Refusal"): `{0xf3, 1}` table slot `+0x28` on
+both sides, `{0x90, 3}` the Empire's `+0x2c` (`death-star-product.md`).
+The Confirm button cannot reach this path while disabled; Enter can.
+
+### Drop-down list (2026-10-18)
+
+Recovered by Claude from `FUN_00437880`, `FUN_00437f80`, `FUN_0060bed0`,
+`FUN_0060c1f0`, `FUN_0060c210`, `FUN_0060cac0`, `FUN_0060cbf0`,
+`FUN_0060d020`, `FUN_00608280`,
+`FUN_00609ed0`, `FUN_006083c0`, `FUN_006094b0`, `FUN_00609500` and
+`FUN_0060c970`.
+
+**Geometry.** The class box (`CoolSelectionBoxClass`, `FUN_0060bed0`) has
+2 rows (`+0xa8`, `FUN_00437f80`'s argument) of 70 pixels (`+0xa4` = `0x46`,
+set after construction). Command `0x6c` posts 1000 to the box
+(`FUN_0060c1f0`), which opens a popup (`FUN_0060cac0`) at the box's left
+edge, under it, the box's 195 wide and 2 × 70 + 4 = 144 high: window
+(6, 85)-(201, 229). It opens above the box instead when it would pass the
+screen's bottom. The popup's list (`FUN_00607ea0`, id `0xbba`) sits at
+(2, 2) in it, 191 by 140, with flags `0x70000`, and shares the box's items
+(`FUN_00608280`). On creation `FUN_00609ed0` scrolls the list from 0 just
+far enough to show the box's current class, so a class past the second row
+ends up last. The popup covers the drop-down button (79, 90).
+
+**Capture.** The box opens the popup on command 1000 through `0x3ea`
+(`FUN_0060c210`): with a popup open it closes it, else it waits for the
+button's release and opens one. The popup takes the mouse capture
+(`FUN_0060d020`, `WM_CREATE`). A press outside it sends the box command
+`0x3e9`, which closes it (`FUN_0060cbf0`); a press on it goes only to its
+list, so no other control of the window sees either.
+
+**Picking.** A press on a row (`FUN_006083c0`, `WM_LBUTTONDOWN`) clears bit
+0 of every item's `+0x3c` (`FUN_006094b0`, flag `0x10000`), sets it on that
+row, and posts notification `0x29b`; on a row already picked the release
+does. The popup (`FUN_0060d020`) answers `0x29b` with the item holding bit
+0: `FUN_0060c970` makes it the box's class, repaints, posts `0x29b` to the
+window (which recomputes, `FUN_00439160`) and closes the popup. A press
+below the last row only clears bit 0.
+
+**Row colors** (`FUN_006083c0`, `WM_PAINT`). Each item built by
+`FUN_00437880` carries `+0x58` = 1 (own colors), `+0x5c` = white (picked),
+`+0x60` = `0x808080` (normal) and `+0x64` = white (under the pointer)
+(`FUN_0060ba00` defaults all three to white); font 10, its portrait centered
+in 195 by 63. A row's name takes `+0x5c` when its `+0x3c` bit 0 is set, else
+`+0x64` with bit 1, else `+0x60`. Only the name changes; the portrait does
+not.
+So every row is grey except the picked one and the one under the pointer.
+No availability test colors a row: an unbuildable class and a buildable one
+look alike.
+
+**Under the pointer.** With flag `0x40000` a mouse move over the list
+(`WM_MOUSEMOVE`) clears bit 1 on the row the list marked last (`+0x100`),
+then sets it on the row now under the pointer (`FUN_00609d10`) and remembers
+it; off every row, none. That move handler is the only code that clears
+bit 1, and the items outlive each popup, so a row hovered in an earlier
+popup stays white until a later popup marks it and moves off it. Bit 0
+also outlives the popup: the picked row stays white in the next one.
+
+Because the popup covers the drop-down button, the pointer that opened it
+rests on the first row, so its first move lights that row: with Carrack
+Light Cruiser first and Death Star second, Carrack shows white and the
+Death Star grey.
 
 ## Port contract
 
@@ -356,8 +584,6 @@ that area alone (manual p. 83); Build waits on the Build Selection window.
 - port: a facility's own menu (Encyclopedia, Status, Scrap) and the
   window's keys (`FUN_00458980`) are not ported; a facility list item is
   not a drag source.
-- port: the in-place rename on a selected band's status text (`0x215`,
-  `FUN_00528720`) is not ported.
 - hyp: the other side's bands and pages show nothing unless the player sees
   that side's objects there (`opposing_contents_visible`).
 - The counts' separator is ":" (`DAT_006a872c`), as manual Fig. 3.24
@@ -373,8 +599,21 @@ days from the yards (`unit_build_days`). Orders now name classes
 their builder's side), from `GameWorld::buildable_classes`. The invented
 Manufacturing side panel (M) is gone.
 
-- port: the drop-down shows one class at a time and scrolls with the
-  wheel; its scroll bar (`0x299a`) is not drawn.
+- The drop-down is the traced popup: two 70-pixel rows under the box,
+  scrolled to the class on opening, its names grey but for the picked row
+  and the rows marked under the pointer (both bits kept per class for the
+  window's life), a click on a row picking it, and a click elsewhere in the
+  window only closing it.
+- port: its scroll bar (`0x299a`) is not drawn; the wheel scrolls the rows.
+  The list's keys (arrows, Page Up/Down, Home, End, Enter) are not ported.
+  The capture covers the window only, and a press acts on its release.
+- An order reads "n/a" with Confirm disabled when no yard can build it or
+  `order_refusal` (`rebellion-core/src/build_selection.rs`) refuses it for
+  maintenance (`{0xf3, 1}`) or a second Death Star (`{0x90, 3}`); Enter
+  submits it anyway and the advisor reacts to the refusal.
+- port: the validator's other refusals (`{1, 0x28}`, the producers' side
+  and system, the route, the producers' own slot `+0x1c`, and
+  `FUN_00529090`'s and `FUN_00555d90`'s failures) are not modelled.
 - port: the close box sits 17 pixels in from the right, as the mission
   dialog's; the source chrome's placement is untraced.
 - port: a disabled Confirm keeps its rest art.
@@ -390,9 +629,11 @@ Manufacturing side panel (M) is gone.
 ## Open questions
 
 - Where 14356 "Day " is used (not by Build Selection's fields).
-- Trace the complete scroll and selection behavior of the drop-down list.
+- The drop-down list's scroll bar (`FUN_0060a490`, base `0x299a`) and its
+  keys (`FUN_006083c0`, `WM_KEYDOWN`).
 - Name every producer-manager field used by availability and time calculation.
-- Recover the exact disabled reasons and any user-facing rejection message.
+- The checks behind the generic `{1, 1}`: `FUN_005202d0`, `FUN_00553b80`,
+  `FUN_00504e60`, `FUN_005201c0`, `FUN_00553770`, `FUN_00529090`.
 - Capture every Manufacturing and Build Selection state from an owned English
   640 by 480 installation for A0 comparison.
 

@@ -11,6 +11,7 @@
 //! submenu (word 1) and its sort key (word 2).
 
 use egui_macroquad::egui;
+use rebellion_core::bombardment::BombardKind;
 use rebellion_core::ids::{
     CharacterKey, DefenseFacilityKey, FighterKey, FleetKey, SpecialForceKey, SystemKey, TroopKey,
 };
@@ -36,7 +37,10 @@ pub enum ObjectMenuCommand {
     Encyclopedia,
     Status,
     Retire,
+    /// The Planetary Bombardment submenu parent (`0x120`).
     Bombardment,
+    /// A Planetary Bombardment order (`0x220..0x223`).
+    Bombard(BombardKind),
     Assault,
     Rename,
     Scrap,
@@ -278,6 +282,43 @@ const BOMBARDMENT: ObjectMenuItem = item(
     "Planetary Bombardment",
     true,
 );
+/// The Planetary Bombardment submenu's orders: STRATEGY records
+/// `0x220..0x223`, parent `0x120`, sort keys 202 to 208
+/// (`ghidra/notes/move-order.md`, "The Fleet menu").
+const BOMBARD_TARGETS: [ObjectMenuItem; 4] = [
+    item(
+        0x220,
+        ObjectMenuCommand::Bombard(BombardKind::Military),
+        202,
+        12314,
+        "Target Military Facilities",
+        false,
+    ),
+    item(
+        0x221,
+        ObjectMenuCommand::Bombard(BombardKind::Civilian),
+        204,
+        12315,
+        "Target Civilian Facilities",
+        false,
+    ),
+    item(
+        0x222,
+        ObjectMenuCommand::Bombard(BombardKind::General),
+        206,
+        12316,
+        "General Bombardment",
+        false,
+    ),
+    item(
+        0x223,
+        ObjectMenuCommand::Bombard(BombardKind::DestroySystem),
+        208,
+        12317,
+        "Destroy System",
+        false,
+    ),
+];
 const ASSAULT: ObjectMenuItem = item(
     0x234,
     ObjectMenuCommand::Assault,
@@ -384,16 +425,17 @@ impl ObjectMenuRow {
 /// kind (`FUN_00507290` → `FUN_0050f2e0`): facilities Destination, Reserved
 /// and Scrap; defenses Move, Confirmed Move and Scrap; fleets Move, Confirmed
 /// Move, the bombardments, Assault and Scrap; missions Abort. Its object is a
-/// system, so Status stays disabled. The fleet icon's Move and Confirmed Move
-/// follow `gates.fleet_move` for the system's fleets of the player's side.
-/// port: the icons' other orders stay disabled until their system-wide forms
-/// (`FUN_00512700`) are ported.
+/// system, so Status stays disabled. The fleet icon's Move, Confirmed Move and
+/// Planetary Bombardment orders follow `gates.fleet_move` and
+/// `gates.bombard` for the system's fleets of the player's side
+/// (`FUN_00512700`). port: the icons' other orders stay disabled until their
+/// system-wide forms are ported.
 /// A Manufacturing window band offers its manager class's orders
 /// (`FUN_0052ae30`, `FUN_0055b580`, `FUN_0055b900`, `FUN_0055bd30`): Build,
-/// Stop, Destination and Reserved, and for ships Rename. Build, Stop and
-/// Destination follow `gates.build`, `gates.stop` and `gates.destination`;
-/// port: Rename and Reserved stay disabled until the band's in-place rename
-/// and the reserve bit are ported.
+/// Stop, Destination and Reserved, and for ships Rename. Build, Stop,
+/// Destination and Rename follow `gates.build`, `gates.stop`,
+/// `gates.destination` and `gates.rename`; port: Reserved stays disabled
+/// until the reserve bit is ported.
 /// An empty selection lists only Encyclopedia and Status, both disabled.
 ///
 /// - Mission is enabled when `gates.mission` says so
@@ -401,23 +443,25 @@ impl ObjectMenuRow {
 ///   `FUN_0051de80` is taken as clear.
 /// - A fleet's Move and Confirmed Move are enabled when `gates.fleet_move`
 ///   says so (`movement::fleet_move_enabled`, each order's `+0x18`).
-/// - A regiment's Move is enabled when `gates.troop_move` says so. port:
-///   its Confirmed Move stays disabled; loading onto a fleet in the same
-///   system needs no transit confirmation.
-/// - A squadron's Move is enabled when `gates.squadron_move` says so. port:
-///   its Confirmed Move stays disabled, as the regiment's does.
-/// - A capital ship's Move and Create Fleet are enabled when
-///   `gates.ship_move` says so (its fleet is the player's and in orbit).
-///   port: its Confirmed Move stays disabled.
+/// - A regiment's Move and Confirmed Move are enabled when
+///   `gates.troop_move` says so, and a squadron's when
+///   `gates.squadron_move` does: both orders' enable slot is
+///   `FUN_0053c100`, which runs the unit's `0x204`.
+/// - A capital ship's Move and Confirmed Move are enabled when
+///   `gates.ship_move` says so (`fleet_join::ship_move_enabled`): the two
+///   orders share the enable slot `FUN_0053c100`. Its Create Fleet follows
+///   `gates.create_fleet`.
 /// - Encyclopedia is enabled for a single selection.
 /// - Status is enabled for any single selection that is not a system
 ///   (`FUN_0051d990`, `ghidra/notes/status-window.md`).
-/// - A submenu parent row is always enabled (`FUN_00442590` builds it with
-///   flags 8 alone); its orders are [`submenu_rows`]. port: Planetary
-///   Bombardment stays disabled, with no rows under it, until its four
-///   targets are ported as menu orders.
+/// - A submenu parent row is enabled when one of its orders is
+///   (`FUN_00442590` builds it with flags 8, then `FUN_00442380` runs
+///   `FUN_00442c90` before the menu opens, which sets each parent's `+0x58`
+///   from its rows); its orders are [`submenu_rows`].
 /// - A character's or special force's Move and Confirmed Move are
 ///   enabled when `gates.member_move` says so (`FUN_0053c100`).
+/// - Planetary Assault, for a fleet or a fleet icon, is enabled when
+///   `gates.assault` says so (`FUN_005814d0`).
 /// - port: Retire and the other fleet orders stay disabled until their
 ///   windows and orders are ported.
 #[must_use]
@@ -491,16 +535,23 @@ pub fn object_menu_rows(selection: Option<MenuObject>, gates: OrderGates) -> Vec
                         || (ship && gates.ship_move)
                         || (member && gates.member_move)
                 }
-                ObjectMenuCommand::CreateFleet => ship && gates.ship_move,
-                ObjectMenuCommand::Rename => (fleet_entry || ship) && gates.rename,
+                ObjectMenuCommand::CreateFleet => ship && gates.create_fleet,
+                ObjectMenuCommand::Rename => (fleet_entry || ship || producer) && gates.rename,
                 ObjectMenuCommand::Destination => gates.destination,
                 ObjectMenuCommand::Stop => producer && gates.stop,
                 ObjectMenuCommand::Build => producer && gates.build,
                 ObjectMenuCommand::ConfirmedMove => {
-                    (fleet && gates.fleet_move) || (member && gates.member_move)
+                    (fleet && gates.fleet_move)
+                        || (troop && gates.troop_move)
+                        || (squadron && gates.squadron_move)
+                        || (ship && gates.ship_move)
+                        || (member && gates.member_move)
                 }
                 ObjectMenuCommand::Scrap => gates.scrap,
-                ObjectMenuCommand::Command => true,
+                ObjectMenuCommand::Assault => fleet && gates.assault,
+                ObjectMenuCommand::Command | ObjectMenuCommand::Bombardment => {
+                    submenu_rows(item, gates).iter().any(|row| row.enabled)
+                }
                 ObjectMenuCommand::Encyclopedia => selection.is_some(),
                 // FUN_0051d990: a single selection that is not a system.
                 ObjectMenuCommand::Status => {
@@ -518,9 +569,21 @@ pub fn object_menu_rows(selection: Option<MenuObject>, gates: OrderGates) -> Vec
 /// lists the four ranks (`FUN_004f2400`); each is listed always (`+0x10`,
 /// `FUN_0040f340`), enabled by `gates.command` (`+0x18`) and checked for the
 /// rank the character holds (`+0x14`, `FUN_00580d80` → `FUN_004ed680`:
-/// never None).
+/// never None). A fleet's Planetary Bombardment lists its four orders, each
+/// listed always (`FUN_0040f340`) and enabled by `gates.bombard`
+/// (`FUN_00581e80`). hyp: their `+0x14` never checks a row; it is not read.
 #[must_use]
 pub fn submenu_rows(parent: ObjectMenuItem, gates: OrderGates) -> Vec<ObjectMenuRow> {
+    if parent.command == ObjectMenuCommand::Bombardment {
+        return BOMBARD_TARGETS
+            .iter()
+            .map(|&item| ObjectMenuRow {
+                item,
+                enabled: matches!(item.command, ObjectMenuCommand::Bombard(kind) if gates.bombard.enabled(kind)),
+                checked: false,
+            })
+            .collect();
+    }
     if parent.command != ObjectMenuCommand::Command {
         return Vec::new();
     }
@@ -549,6 +612,10 @@ pub struct OrderGates {
     /// fleet) its fleet orbits a system (`TroopTransportState::move_squadron`).
     pub squadron_move: bool,
     pub ship_move: bool,
+    /// Create Fleet (0x270) on a capital ship: its Move's checks, and the
+    /// ship completed (`FUN_004f9860.c:45-50`;
+    /// `rebellion_core::fleet_join::create_fleet_enabled`).
+    pub create_fleet: bool,
     /// A character's or special force's Move and Confirmed Move
     /// (`MissionState::move_order_enabled`, `FUN_0053c100`).
     pub member_move: bool,
@@ -570,6 +637,34 @@ pub struct OrderGates {
     pub scrap: bool,
     /// The Command submenu's orders, for a character.
     pub command: CommandGates,
+    /// The Planetary Bombardment submenu's orders, for a fleet or a fleet
+    /// icon's fleets.
+    pub bombard: BombardGates,
+    /// Planetary Assault (0x234) for a fleet or a fleet icon's fleets: the
+    /// order's enable slot `FUN_005814d0`
+    /// (`rebellion_core::assault::order_enabled`).
+    pub assault: bool,
+}
+
+/// Whether each Planetary Bombardment order passes its enable slot
+/// (`FUN_00581e80`; `rebellion_core::bombardment::order_enabled`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct BombardGates {
+    /// In the order Target Military, Target Civilian, General, Destroy
+    /// System (`0x220..0x223`).
+    pub allowed: [bool; 4],
+}
+
+impl BombardGates {
+    #[must_use]
+    pub const fn enabled(self, kind: BombardKind) -> bool {
+        self.allowed[match kind {
+            BombardKind::Military => 0,
+            BombardKind::Civilian => 1,
+            BombardKind::General => 2,
+            BombardKind::DestroySystem => 3,
+        }]
+    }
 }
 
 /// The Command submenu orders' rules for the selected character.
@@ -724,6 +819,7 @@ mod tests {
         troop_move: false,
         squadron_move: false,
         ship_move: false,
+        create_fleet: false,
         member_move: false,
         rename: false,
         destination: false,
@@ -734,6 +830,10 @@ mod tests {
             allowed: [false; 4],
             held: CommandKind::None,
         },
+        bombard: BombardGates {
+            allowed: [false; 4],
+        },
+        assault: false,
     };
 
     fn labels(rows: &[ObjectMenuRow]) -> Vec<&'static str> {
@@ -865,6 +965,7 @@ mod tests {
             troop_move: true,
             squadron_move: true,
             ship_move: true,
+            create_fleet: true,
             member_move: true,
             rename: false,
             destination: false,
@@ -872,6 +973,8 @@ mod tests {
             build: false,
             scrap: false,
             command: CommandGates::default(),
+            bombard: BombardGates::default(),
+            assault: false,
         };
         assert_eq!(
             enabled(&object_menu_rows(fleet, gates)),
@@ -882,12 +985,12 @@ mod tests {
             ["Encyclopedia", "Status"]
         );
         // A character's two rows share its own rule (FUN_0053c100 over the
-        // 0x241, member_move); Command is a submenu parent, which
-        // FUN_00442590 builds enabled.
+        // 0x241, member_move); Command, a submenu parent, is enabled only
+        // with a rank enabled (FUN_00442380 -> FUN_00442c90), none here.
         let character = Some(MenuObject::Character(CharacterKey::default()));
         assert_eq!(
             enabled(&object_menu_rows(character, gates)),
-            ["Move", "Confirmed Move", "Command", "Encyclopedia", "Status"]
+            ["Move", "Confirmed Move", "Encyclopedia", "Status"]
         );
         assert_eq!(
             enabled(&object_menu_rows(
@@ -897,7 +1000,7 @@ mod tests {
                     ..gates
                 }
             )),
-            ["Command", "Encyclopedia", "Status"]
+            ["Encyclopedia", "Status"]
         );
     }
 
@@ -939,6 +1042,23 @@ mod tests {
             OrderGates::default()
         ))
         .contains(&"Destination"));
+    }
+
+    #[test]
+    fn a_ships_bands_rename_follows_its_rule() {
+        // 0x215 (TEXTSTRA 12291): FUN_0057e6a0 asks the manager's +0x1c4
+        // (FUN_00527f40); under Wine Rename was enabled on the route-1
+        // Empire save's ships band building Death Star 1.
+        let band = Some(MenuObject::Producer {
+            system: SystemKey::default(),
+            area: ProductionArea::Shipyard,
+        });
+        let gates = OrderGates {
+            rename: true,
+            ..OrderGates::default()
+        };
+        assert!(enabled(&object_menu_rows(band, gates)).contains(&"Rename"));
+        assert!(!enabled(&object_menu_rows(band, OrderGates::default())).contains(&"Rename"));
     }
 
     #[test]
@@ -1055,6 +1175,7 @@ mod tests {
             troop_move: true,
             squadron_move: true,
             ship_move: true,
+            create_fleet: true,
             member_move: true,
             rename: false,
             destination: false,
@@ -1062,6 +1183,8 @@ mod tests {
             build: true,
             scrap: false,
             command: CommandGates::default(),
+            bombard: BombardGates::default(),
+            assault: false,
         };
         assert_eq!(
             enabled(&object_menu_rows(icon(Quadrant::Fleets), every_gate)),
@@ -1129,8 +1252,11 @@ mod tests {
 
     #[test]
     fn a_capital_ships_move_and_create_fleet_follow_its_fleets_move_rule() {
-        // port: its fleet's side and orbit (FUN_004f9860); Confirmed Move
-        // stays disabled.
+        // port: its fleet's side and orbit (FUN_004f9860). Confirmed Move
+        // (0x202) shares Move's enable slot FUN_0053c100 (vtables
+        // 0x00661850 and 0x006618a8 differ only in the kind), so it follows
+        // the same gate. Create Fleet has its own gate, which adds the
+        // completed test (FUN_004f9860.c:45-50); here the ship passes both.
         let ship = Some(MenuObject::Ship {
             fleet: FleetKey::default(),
             index: 1,
@@ -1138,12 +1264,13 @@ mod tests {
         });
         let gates = OrderGates {
             ship_move: true,
+            create_fleet: true,
             member_move: true,
             ..OrderGates::default()
         };
         assert_eq!(
             enabled(&object_menu_rows(ship, gates)),
-            ["Move", "Create Fleet", "Encyclopedia", "Status"]
+            ["Move", "Confirmed Move", "Create Fleet", "Encyclopedia", "Status"]
         );
         assert_eq!(
             enabled(&object_menu_rows(ship, OrderGates::default())),
@@ -1153,6 +1280,48 @@ mod tests {
         assert_eq!(
             enabled(&object_menu_rows(fleet, gates)),
             ["Encyclopedia", "Status"]
+        );
+    }
+
+    // FUN_004f9860.c:45-50 refuses an object not completed for every order
+    // but 0x203, 0x204, 0x215 and 0x241: Create Fleet (0x270) and Scrap
+    // (0x200) grey while Move and Confirmed Move (each ship's 0x204) and
+    // Rename stay. The route-1 Empire save, its day-123 Death Star played
+    // on: the unfinished Death Star's menu kept Move, Confirmed Move,
+    // Rename, Encyclopedia and Status, and a completed ship's kept Create
+    // Fleet and Scrap too.
+    #[test]
+    fn an_unfinished_ships_menu_greys_create_fleet_and_scrap_but_keeps_both_moves_and_rename() {
+        let ship = Some(MenuObject::Ship {
+            fleet: FleetKey::default(),
+            index: 0,
+            roster: 0,
+        });
+        let unfinished = OrderGates {
+            ship_move: true,
+            rename: true,
+            ..OrderGates::default()
+        };
+        assert_eq!(
+            enabled(&object_menu_rows(ship, unfinished)),
+            ["Move", "Confirmed Move", "Rename", "Encyclopedia", "Status"]
+        );
+        let completed = OrderGates {
+            create_fleet: true,
+            scrap: true,
+            ..unfinished
+        };
+        assert_eq!(
+            enabled(&object_menu_rows(ship, completed)),
+            [
+                "Move",
+                "Confirmed Move",
+                "Create Fleet",
+                "Rename",
+                "Encyclopedia",
+                "Status",
+                "Scrap"
+            ]
         );
     }
 
@@ -1171,8 +1340,9 @@ mod tests {
     }
 
     #[test]
-    fn a_regiments_move_follows_its_gate_and_confirmed_move_stays_disabled() {
-        // port: only Move is ported for a regiment (loading onto a fleet).
+    fn a_regiments_move_and_confirmed_move_follow_its_gate() {
+        // Move (0x201) and Confirmed Move (0x202) share the enable slot
+        // FUN_0053c100, which runs the regiment's 0x204 (FUN_004f9860).
         let troop = Some(MenuObject::Troop(TroopKey::default()));
         let gates = OrderGates {
             troop_move: true,
@@ -1180,7 +1350,7 @@ mod tests {
         };
         assert_eq!(
             enabled(&object_menu_rows(troop, gates)),
-            ["Move", "Encyclopedia", "Status"]
+            ["Move", "Confirmed Move", "Encyclopedia", "Status"]
         );
         assert_eq!(
             enabled(&object_menu_rows(troop, OrderGates::default())),
@@ -1230,16 +1400,16 @@ mod tests {
     #[test]
     fn mission_follows_the_order_rule_and_encyclopedia_needs_one_selection() {
         // FUN_0051fe20 enables Mission; FUN_0051d990 enables Encyclopedia
-        // for a single selection; FUN_00442590 builds the Command submenu
-        // parent enabled.
+        // for a single selection; the Command parent follows its ranks
+        // (FUN_00442c90), none enabled here.
         let character = Some(MenuObject::Character(CharacterKey::default()));
         assert_eq!(
             enabled(&object_menu_rows(character, MISSION_GATE)),
-            ["Mission", "Command", "Encyclopedia", "Status"]
+            ["Mission", "Encyclopedia", "Status"]
         );
         assert_eq!(
             enabled(&object_menu_rows(character, OrderGates::default())),
-            ["Command", "Encyclopedia", "Status"]
+            ["Encyclopedia", "Status"]
         );
     }
 
@@ -1307,10 +1477,12 @@ mod tests {
                 scrap: true,
                 ..OrderGates::default()
             };
-            // port: Confirmed Move stays disabled, as the regiment's does.
+            // FUN_0053c100 is Confirmed Move's enable slot too. The
+            // original's Fleet 1 TIE Fighter squadron (empire-day2-start,
+            // day 3) offered Confirmed Move, which started targeting.
             assert_eq!(
                 enabled(&object_menu_rows(Some(selection), gates)),
-                ["Move", "Encyclopedia", "Status", "Scrap"],
+                ["Move", "Confirmed Move", "Encyclopedia", "Status", "Scrap"],
                 "{selection:?}"
             );
             assert_eq!(selection.mission_member(), None);
@@ -1362,10 +1534,17 @@ mod tests {
 
     #[test]
     fn a_row_becomes_a_menu_entry_without_an_icon() {
-        // The character records carry no icon (words 7 and 8 are zero).
+        // The character records carry no icon (words 7 and 8 are zero). One
+        // rank enabled enables the Command parent (FUN_00442c90).
         let rows = object_menu_rows(
             Some(MenuObject::Character(CharacterKey::default())),
-            MISSION_GATE,
+            OrderGates {
+                command: CommandGates {
+                    allowed: [true, false, false, false],
+                    held: CommandKind::None,
+                },
+                ..MISSION_GATE
+            },
         );
         let command = rows.iter().find(|row| row.item.label == "Command").unwrap();
         assert_eq!(
@@ -1380,6 +1559,201 @@ mod tests {
         );
         let mission = rows.iter().find(|row| row.item.label == "Mission").unwrap();
         assert!(mission.entry().enabled && !mission.entry().submenu);
+    }
+
+    fn bombard_gates(allowed: [bool; 4]) -> OrderGates {
+        OrderGates {
+            bombard: BombardGates { allowed },
+            ..OrderGates::default()
+        }
+    }
+
+    fn fleet_selections() -> [Option<MenuObject>; 2] {
+        [
+            Some(MenuObject::Fleet(FleetKey::default())),
+            icon(Quadrant::Fleets),
+        ]
+    }
+
+    #[test]
+    fn planetary_assault_follows_its_enable_slot_for_a_fleet_and_a_fleet_icon() {
+        // STRATEGY record 0x234 (sort 220, TEXTSTRA 12318); its row is
+        // enabled by the order's slot +0x18, FUN_005814d0.
+        let assault = OrderGates {
+            assault: true,
+            ..OrderGates::default()
+        };
+        for selection in fleet_selections() {
+            for (gates, expected) in [(assault, true), (OrderGates::default(), false)] {
+                let rows = object_menu_rows(selection, gates);
+                let row = rows
+                    .iter()
+                    .find(|row| row.item.command == ObjectMenuCommand::Assault)
+                    .unwrap();
+                assert_eq!(row.enabled, expected, "{selection:?}");
+            }
+        }
+        for quadrant in [Quadrant::System, Quadrant::Defenses] {
+            assert!(object_menu_rows(icon(quadrant), assault)
+                .iter()
+                .all(|row| row.item.command != ObjectMenuCommand::Assault));
+        }
+    }
+
+    #[test]
+    fn planetary_bombardment_lists_its_four_orders_from_the_strategy_records() {
+        // STRATEGY records 0x220..0x223: parent 0x120, sort 202..208, TEXTSTRA
+        // 12314..12317 (move-order.md, "The Fleet menu"); FUN_004ff8e0 and
+        // FUN_0050f2e0 kind 0x10 list all four, always listed (FUN_0040f340).
+        let parent = object_menu_rows(
+            Some(MenuObject::Fleet(FleetKey::default())),
+            OrderGates::default(),
+        )
+        .into_iter()
+        .find(|row| row.item.command == ObjectMenuCommand::Bombardment)
+        .unwrap();
+        let rows = submenu_rows(parent.item, OrderGates::default());
+        assert_eq!(
+            rows.iter()
+                .map(|row| (
+                    row.item.kind,
+                    row.item.sort_key,
+                    row.item.label_string_id,
+                    row.item.label
+                ))
+                .collect::<Vec<_>>(),
+            [
+                (0x220, 202, 12314, "Target Military Facilities"),
+                (0x221, 204, 12315, "Target Civilian Facilities"),
+                (0x222, 206, 12316, "General Bombardment"),
+                (0x223, 208, 12317, "Destroy System"),
+            ]
+        );
+        assert!(rows.iter().all(|row| !row.item.submenu && !row.checked));
+        assert_eq!(
+            rows.iter().map(|row| row.item.command).collect::<Vec<_>>(),
+            [
+                ObjectMenuCommand::Bombard(BombardKind::Military),
+                ObjectMenuCommand::Bombard(BombardKind::Civilian),
+                ObjectMenuCommand::Bombard(BombardKind::General),
+                ObjectMenuCommand::Bombard(BombardKind::DestroySystem),
+            ]
+        );
+    }
+
+    #[test]
+    fn each_bombardment_order_follows_its_own_enable_slot() {
+        // FUN_00581e80 per order: VM Selonia shows three rows enabled and
+        // Destroy System disabled; VM Yaga Minor all four.
+        let selonia = [true, true, true, false];
+        for selection in fleet_selections() {
+            let parent = object_menu_rows(selection, bombard_gates(selonia))
+                .into_iter()
+                .find(|row| row.item.command == ObjectMenuCommand::Bombardment)
+                .unwrap();
+            assert!(parent.enabled, "{selection:?}");
+            assert_eq!(
+                enabled(&submenu_rows(parent.item, bombard_gates(selonia))),
+                [
+                    "Target Military Facilities",
+                    "Target Civilian Facilities",
+                    "General Bombardment"
+                ],
+                "{selection:?}"
+            );
+            assert_eq!(
+                enabled(&submenu_rows(parent.item, bombard_gates([true; 4]))).len(),
+                4
+            );
+        }
+    }
+
+    #[test]
+    fn planetary_bombardment_is_disabled_when_every_order_is_refused() {
+        // FUN_00442380 -> FUN_00442c90 sets a parent's +0x58 from its rows
+        // before the menu opens (VM Ord Pardon: an Alliance fleet of
+        // strength 0 shows the parent disabled).
+        for selection in fleet_selections() {
+            let rows = object_menu_rows(selection, OrderGates::default());
+            let parent = rows
+                .iter()
+                .find(|row| row.item.command == ObjectMenuCommand::Bombardment)
+                .unwrap();
+            assert!(!parent.enabled, "{selection:?}");
+            for only in 0..4 {
+                let mut allowed = [false; 4];
+                allowed[only] = true;
+                let rows = object_menu_rows(selection, bombard_gates(allowed));
+                assert!(
+                    rows.iter().any(
+                        |row| row.item.command == ObjectMenuCommand::Bombardment && row.enabled
+                    ),
+                    "{selection:?} {only}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_command_submenu_checks_the_held_rank_and_never_none() {
+        // FUN_00580d80 -> FUN_004ed680: +0x14 is the held rank, never None.
+        let checked = |held| {
+            submenu_rows(
+                COMMAND,
+                OrderGates {
+                    command: CommandGates {
+                        allowed: [true; 4],
+                        held,
+                    },
+                    ..OrderGates::default()
+                },
+            )
+            .into_iter()
+            .filter(|row| row.checked)
+            .map(|row| row.item.label)
+            .collect::<Vec<_>>()
+        };
+        assert_eq!(checked(CommandKind::Admiral), ["Admiral"]);
+        assert_eq!(checked(CommandKind::General), ["General"]);
+        assert!(checked(CommandKind::None).is_empty());
+    }
+
+    #[test]
+    fn the_command_parent_is_enabled_only_with_a_rank_enabled() {
+        // FUN_00442c90 treats every submenu parent alike.
+        let character = Some(MenuObject::Character(CharacterKey::default()));
+        let command = |allowed| {
+            object_menu_rows(
+                character,
+                OrderGates {
+                    command: CommandGates {
+                        allowed,
+                        held: CommandKind::None,
+                    },
+                    ..OrderGates::default()
+                },
+            )
+            .into_iter()
+            .find(|row| row.item.command == ObjectMenuCommand::Command)
+            .unwrap()
+            .enabled
+        };
+        assert!(!command([false; 4]));
+        assert!(command([false, false, false, true]));
+    }
+
+    #[test]
+    fn a_bombardment_parent_opens_a_submenu_whose_rows_return_their_order() {
+        // ObjectMenuState::new builds each parent's rows (FUN_00442590).
+        let fleet = Some(MenuObject::Fleet(FleetKey::default()));
+        let menu = ObjectMenuState::new(fleet, bombard_gates([true; 4]), (100, 100));
+        let parent = menu.row_of(ObjectMenuCommand::Bombardment).unwrap();
+        assert_eq!(menu.submenus[parent].len(), 4);
+        assert!(menu
+            .submenus
+            .iter()
+            .enumerate()
+            .all(|(row, children)| row == parent || children.is_empty()));
     }
 
     fn galaxy_layout() -> CockpitLayout {

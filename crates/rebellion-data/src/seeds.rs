@@ -50,7 +50,7 @@ use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 use rand_xoshiro::Xoshiro256PlusPlus;
 use rebellion_core::dat::{ExplorationStatus, Faction, SectorGroup};
-use rebellion_core::ids::{CapitalShipKey, DatId, FighterKey, SystemKey};
+use rebellion_core::ids::{CapitalShipKey, DatId, FighterKey, FleetKey, SystemKey};
 use rebellion_core::world::{
     ControlKind, DefenseFacilityInstance, FighterEntry, Fleet, ForceTier, GameWorld,
     ManufacturingFacilityInstance, ProductionFacilityInstance, SeedOptions, ShipInstance,
@@ -74,13 +74,6 @@ use crate::read_dat_file;
 const CORUSCANT_SEQ_ID: u32 = 0x109;
 /// Alliance Yavin sequential system id.
 const YAVIN_SEQ_ID: u32 = 0x121;
-
-/// Number of starting systems for Empire (HQ + 9 nearest).
-/// Used by the legacy proximity model; kept for backward compatibility.
-const EMPIRE_STARTING_SYSTEMS: usize = 10;
-/// Number of starting systems for Alliance (HQ + 2 nearest).
-/// Used by the legacy proximity model; kept for backward compatibility.
-const ALLIANCE_STARTING_SYSTEMS: usize = 3;
 
 /// The three special systems that receive fixed seed table assets.
 #[derive(Debug, Clone, Copy)]
@@ -202,80 +195,6 @@ type CapShipIndex = HashMap<u32, CapitalShipKey>;
 /// Index built from the fighter arena: `dat_id.raw() → FighterKey`.
 type FighterIndex = HashMap<u32, FighterKey>;
 
-/// Select starting systems for each faction based on proximity to their HQ.
-///
-/// Empire: Coruscant + N nearest systems (`EMPIRE_STARTING_SYSTEMS` total).
-/// Alliance: Yavin + N nearest systems (`ALLIANCE_STARTING_SYSTEMS` total),
-/// excluding systems already claimed by the Empire.
-///
-/// Returns `(empire_systems, alliance_systems)` as sequential `DatId` arrays
-/// suitable for passing as `system_rotation` to the seed functions.
-#[must_use]
-#[expect(
-    clippy::implicit_hasher,
-    reason = "This API uses the same concrete map type as the loaded world and callers."
-)]
-///
-/// # Panics
-/// Panics if a candidate system has NaN popularity, which cannot be ordered.
-pub fn select_starting_systems(
-    world: &GameWorld,
-    system_key_map: &HashMap<u32, SystemKey>,
-) -> (Vec<u32>, Vec<u32>) {
-    // Get HQ coordinates
-    let coruscant_key = system_key_map.get(&CORUSCANT_SEQ_ID).copied();
-    let yavin_key = system_key_map.get(&YAVIN_SEQ_ID).copied();
-
-    let coruscant_pos = coruscant_key
-        .and_then(|k| world.systems.get(k))
-        .map_or((500.0, 500.0), |s| (f64::from(s.x), f64::from(s.y)));
-    let yavin_pos = yavin_key
-        .and_then(|k| world.systems.get(k))
-        .map_or((100.0, 200.0), |s| (f64::from(s.x), f64::from(s.y)));
-
-    // Sort all systems by distance to Coruscant
-    let mut empire_candidates: Vec<(u32, f64)> = system_key_map
-        .iter()
-        .filter_map(|(&seq, &key)| {
-            let sys = world.systems.get(key)?;
-            let dx = f64::from(sys.x) - coruscant_pos.0;
-            let dy = f64::from(sys.y) - coruscant_pos.1;
-            Some((seq, (dx * dx + dy * dy).sqrt()))
-        })
-        .collect();
-    empire_candidates.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
-
-    let empire_systems: Vec<u32> = empire_candidates
-        .iter()
-        .take(EMPIRE_STARTING_SYSTEMS)
-        .map(|(seq, _)| *seq)
-        .collect();
-
-    // Alliance: nearest to Yavin, excluding Empire starting systems
-    let empire_set: std::collections::HashSet<u32> = empire_systems.iter().copied().collect();
-    let mut alliance_candidates: Vec<(u32, f64)> = system_key_map
-        .iter()
-        .filter_map(|(&seq, &key)| {
-            if empire_set.contains(&seq) {
-                return None;
-            }
-            let sys = world.systems.get(key)?;
-            let dx = f64::from(sys.x) - yavin_pos.0;
-            let dy = f64::from(sys.y) - yavin_pos.1;
-            Some((seq, (dx * dx + dy * dy).sqrt()))
-        })
-        .collect();
-    alliance_candidates.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
-
-    let alliance_systems: Vec<u32> = alliance_candidates
-        .iter()
-        .take(ALLIANCE_STARTING_SYSTEMS)
-        .map(|(seq, _)| *seq)
-        .collect();
-
-    (empire_systems, alliance_systems)
-}
-
 /// Apply all 9 seed tables to the already-populated `world`.
 ///
 /// Missing files are silently ignored (stripped installs, test environments).
@@ -298,14 +217,21 @@ pub fn apply_seeds(
     apply_seeds_with_rng(gdata_path, world, system_key_map, seed_options, &mut rng)
 }
 
-/// Put each seeded fleet's squadrons aboard its ships. hyp: by the move's
-/// rule (`rebellion_core::carriage::board_squadrons`); the seeders place
-/// each squadron in a ship directly (`FUN_0051aa50`), by a choice that is
-/// untraced.
-fn board_seeded_squadrons(world: &mut GameWorld) {
-    let fleets: Vec<_> = world.fleets.keys().collect();
-    for fleet in fleets {
-        rebellion_core::carriage::board_held_squadrons(world, fleet);
+/// Create a seed group's squadrons aboard its lead, `fleet`'s ship at
+/// `lead`: `FUN_0051bf30` makes every follower with `FUN_004f7d50`, which
+/// reparents it into the lead with no room test and no choice of ship
+/// (`ghidra/notes/starting-forces-seeding.md`).
+fn board_lead(world: &mut GameWorld, fleet: FleetKey, lead: usize, fighters: Vec<FighterEntry>) {
+    if fighters.is_empty() {
+        return;
+    }
+    let Some(carrier) = rebellion_core::carriage::tag_ship(world, fleet, lead) else {
+        return;
+    };
+    for entry in fighters {
+        for _ in 0..entry.count {
+            rebellion_core::carriage::board_squadron(world, fleet, entry.class, carrier);
+        }
     }
 }
 
@@ -344,18 +270,10 @@ pub fn apply_seeds_with_rng<R: Rng + ?Sized>(
         .map(|(k, v)| (v.dat_id.raw(), k))
         .collect();
 
-    // Select the 3 special systems. If Coruscant or Yavin are missing from the
-    // data files, fall back to the legacy proximity model.
+    // Select the 3 special systems; the seeding has no form without Coruscant
+    // and Yavin.
     let Some(special) = select_special_systems(world, system_key_map, rng) else {
-        // Fallback: use old proximity model if special systems can't be resolved.
-        // This should only happen with incomplete data files.
-        return apply_seeds_legacy(
-            gdata_path,
-            world,
-            system_key_map,
-            &capship_index,
-            &fighter_index,
-        );
+        anyhow::bail!("the data has no Coruscant or no Yavin to seed the sides from");
     };
 
     // Mark special systems as populated, charted, and controlled.
@@ -454,282 +372,15 @@ pub fn apply_seeds_with_rng<R: Rng + ?Sized>(
     assign_facility_sides(world);
     seed_maintenance_budget_units(world, seed_options, cmunem.as_ref(), cmunal.as_ref(), rng);
 
-    board_seeded_squadrons(world);
     // Every seeded capital ship now exists; number them (FUN_00517760).
     world.number_capital_ships();
 
     // Every seeded special force now exists; roll their skills.
     roll_special_force_skills(world, rng);
 
-    Ok(())
-}
-
-/// Legacy seed application using proximity-based fleet spread.
-/// Used as fallback when Coruscant or Yavin can't be found in the data.
-fn apply_seeds_legacy(
-    gdata_path: &Path,
-    world: &mut GameWorld,
-    system_key_map: &HashMap<u32, SystemKey>,
-    capship_index: &CapShipIndex,
-    fighter_index: &FighterIndex,
-) -> anyhow::Result<()> {
-    let (empire_systems, alliance_systems) = select_starting_systems(world, system_key_map);
-
-    apply_fleet_seed(
-        load_seed(gdata_path, "CMUNEFTB.DAT")?.as_ref(),
-        system_key_map,
-        capship_index,
-        fighter_index,
-        &empire_systems,
-        false,
-        world,
-    );
-    apply_fleet_seed(
-        load_seed(gdata_path, "CMUNAFTB.DAT")?.as_ref(),
-        system_key_map,
-        capship_index,
-        fighter_index,
-        &alliance_systems,
-        true,
-        world,
-    );
-    apply_garrison_seed(
-        load_seed(gdata_path, "CMUNCRTB.DAT")?.as_ref(),
-        system_key_map,
-        CORUSCANT_SEQ_ID,
-        false,
-        world,
-    );
-    // NOTE: Legacy fallback collapses Alliance HQ to Yavin because the 3-system
-    // model (which randomizes Rebel HQ) requires Coruscant to be present.
-    // This fallback only runs when special systems can't be identified.
-    apply_garrison_seed(
-        load_seed(gdata_path, "CMUNHQTB.DAT")?.as_ref(),
-        system_key_map,
-        YAVIN_SEQ_ID,
-        true,
-        world,
-    );
-    apply_garrison_seed(
-        load_seed(gdata_path, "CMUNYVTB.DAT")?.as_ref(),
-        system_key_map,
-        YAVIN_SEQ_ID,
-        true,
-        world,
-    );
-    apply_facility_seed(
-        load_seed(gdata_path, "FACLCRTB.DAT")?.as_ref(),
-        system_key_map,
-        CORUSCANT_SEQ_ID,
-        false,
-        world,
-    );
-    apply_facility_seed(
-        load_seed(gdata_path, "FACLHQTB.DAT")?.as_ref(),
-        system_key_map,
-        YAVIN_SEQ_ID,
-        true,
-        world,
-    );
-
-    Ok(())
-}
-
-/// Apply seed tables from pre-loaded file bytes. Same logic as `apply_seeds` but
-/// reads from a `HashMap` instead of the filesystem.
-///
-/// # Errors
-/// Returns an error if a supplied seed table cannot be parsed.
-#[expect(
-    clippy::implicit_hasher,
-    reason = "This API uses the same concrete map type as the loaded world and callers."
-)]
-pub fn apply_seeds_from_files(
-    files: &std::collections::HashMap<String, Vec<u8>>,
-    world: &mut GameWorld,
-    system_key_map: &HashMap<u32, SystemKey>,
-    seed_options: &SeedOptions,
-) -> anyhow::Result<()> {
-    let mut rng = make_seed_rng(seed_options);
-    apply_seeds_from_files_with_rng(files, world, system_key_map, seed_options, &mut rng)
-}
-
-/// Apply seed tables from pre-loaded file bytes with an injected RNG.
-///
-/// # Errors
-/// Returns an error if a supplied seed table cannot be parsed.
-#[expect(
-    clippy::implicit_hasher,
-    reason = "This API uses the same concrete map type as the loaded world and callers."
-)]
-#[expect(
-    clippy::too_many_lines,
-    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
-)]
-pub fn apply_seeds_from_files_with_rng<R: Rng + ?Sized>(
-    files: &std::collections::HashMap<String, Vec<u8>>,
-    world: &mut GameWorld,
-    system_key_map: &HashMap<u32, SystemKey>,
-    seed_options: &SeedOptions,
-    rng: &mut R,
-) -> anyhow::Result<()> {
-    let capship_index: CapShipIndex = world
-        .capital_ship_classes
-        .iter()
-        .map(|(k, v)| (v.dat_id.raw(), k))
-        .collect();
-    let fighter_index: FighterIndex = world
-        .fighter_classes
-        .iter()
-        .map(|(k, v)| (v.dat_id.raw(), k))
-        .collect();
-
-    // Use 3-system model when possible.
-    let Some(special) = select_special_systems(world, system_key_map, rng) else {
-        // Fallback to proximity model for incomplete data
-        let (empire_systems, alliance_systems) = select_starting_systems(world, system_key_map);
-        apply_fleet_seed(
-            load_seed_from_files(files, "CMUNEFTB.DAT")?.as_ref(),
-            system_key_map,
-            &capship_index,
-            &fighter_index,
-            &empire_systems,
-            false,
-            world,
-        );
-        apply_fleet_seed(
-            load_seed_from_files(files, "CMUNAFTB.DAT")?.as_ref(),
-            system_key_map,
-            &capship_index,
-            &fighter_index,
-            &alliance_systems,
-            true,
-            world,
-        );
-        apply_garrison_seed(
-            load_seed_from_files(files, "CMUNCRTB.DAT")?.as_ref(),
-            system_key_map,
-            CORUSCANT_SEQ_ID,
-            false,
-            world,
-        );
-        // NOTE: WASM legacy fallback collapses Alliance HQ to Yavin (same as filesystem fallback).
-        apply_garrison_seed(
-            load_seed_from_files(files, "CMUNHQTB.DAT")?.as_ref(),
-            system_key_map,
-            YAVIN_SEQ_ID,
-            true,
-            world,
-        );
-        apply_garrison_seed(
-            load_seed_from_files(files, "CMUNYVTB.DAT")?.as_ref(),
-            system_key_map,
-            YAVIN_SEQ_ID,
-            true,
-            world,
-        );
-        apply_facility_seed(
-            load_seed_from_files(files, "FACLCRTB.DAT")?.as_ref(),
-            system_key_map,
-            CORUSCANT_SEQ_ID,
-            false,
-            world,
-        );
-        apply_facility_seed(
-            load_seed_from_files(files, "FACLHQTB.DAT")?.as_ref(),
-            system_key_map,
-            YAVIN_SEQ_ID,
-            true,
-            world,
-        );
-        return Ok(());
-    };
-
-    initialize_special_systems(world, &special);
-
-    apply_fleet_seed(
-        load_seed_from_files(files, "CMUNEFTB.DAT")?.as_ref(),
-        system_key_map,
-        &capship_index,
-        &fighter_index,
-        &[CORUSCANT_SEQ_ID],
-        false,
-        world,
-    );
-    apply_fleet_seed(
-        load_seed_from_files(files, "CMUNAFTB.DAT")?.as_ref(),
-        system_key_map,
-        &capship_index,
-        &fighter_index,
-        &[YAVIN_SEQ_ID, special.rebel_hq_seq_id],
-        true,
-        world,
-    );
-    apply_garrison_seed(
-        load_seed_from_files(files, "CMUNCRTB.DAT")?.as_ref(),
-        system_key_map,
-        CORUSCANT_SEQ_ID,
-        false,
-        world,
-    );
-    apply_garrison_seed(
-        load_seed_from_files(files, "CMUNHQTB.DAT")?.as_ref(),
-        system_key_map,
-        special.rebel_hq_seq_id,
-        true,
-        world,
-    );
-    apply_garrison_seed(
-        load_seed_from_files(files, "CMUNYVTB.DAT")?.as_ref(),
-        system_key_map,
-        YAVIN_SEQ_ID,
-        true,
-        world,
-    );
-    apply_facility_seed(
-        load_seed_from_files(files, "FACLCRTB.DAT")?.as_ref(),
-        system_key_map,
-        CORUSCANT_SEQ_ID,
-        false,
-        world,
-    );
-    apply_facility_seed(
-        load_seed_from_files(files, "FACLHQTB.DAT")?.as_ref(),
-        system_key_map,
-        special.rebel_hq_seq_id,
-        true,
-        world,
-    );
-
-    roll_character_stats(world, rng);
-    place_named_characters(world, &special);
-
-    // M5: Procedural control buckets, population, and support
-    let bucket_map = assign_control_buckets(world, &special, seed_options, rng);
-    initialize_population(world, seed_options, rng);
-    initialize_support(world, &special, seed_options, &bucket_map, rng);
-
-    // M6: Energy, raw materials, and procedural facilities
-    initialize_energy_and_raw_materials(world, seed_options, rng);
-    let syfccr = load_syfc_table_from_files(files, "SYFCCRTB.DAT")?;
-    let syfcrm = load_syfc_table_from_files(files, "SYFCRMTB.DAT")?;
-    generate_procedural_facilities(world, seed_options, syfccr.as_ref(), syfcrm.as_ref(), rng);
-
-    // M7: Maintenance-budget common unit seeding
-    let cmunem = load_seed_from_files(files, "CMUNEMTB.DAT")?;
-    let cmunal = load_seed_from_files(files, "CMUNALTB.DAT")?;
-    // FUN_0051aa50: the low-support garrisons come first and the budget
-    // last, measured against the facilities' sides.
-    seed_low_support_garrisons(world, seed_options, rng);
-    assign_facility_sides(world);
-    seed_maintenance_budget_units(world, seed_options, cmunem.as_ref(), cmunal.as_ref(), rng);
-
-    board_seeded_squadrons(world);
-    // Every seeded capital ship now exists; number them (FUN_00517760).
-    world.number_capital_ships();
-
-    // Every seeded special force now exists; roll their skills.
-    roll_special_force_skills(world, rng);
+    // Each placed regiment rebuilds its system's word (FUN_00508660 ->
+    // FUN_0050b610), troop bits included.
+    rebellion_core::support_shift::refresh_all_troop_bits(world);
 
     Ok(())
 }
@@ -770,20 +421,6 @@ fn load_seed(gdata_path: &Path, filename: &str) -> anyhow::Result<Option<SeedTab
     Ok(Some(file))
 }
 
-/// Load a seed table file from pre-loaded bytes, returning `Ok(None)` if not in the map.
-fn load_seed_from_files(
-    files: &std::collections::HashMap<String, Vec<u8>>,
-    filename: &str,
-) -> anyhow::Result<Option<SeedTableFile>> {
-    match files.get(filename) {
-        Some(data) => {
-            let file: SeedTableFile = crate::parse_dat_bytes(data, filename)?;
-            Ok(Some(file))
-        }
-        None => Ok(None),
-    }
-}
-
 /// Apply a fleet seed table.  Each `SeedGroup` becomes one `Fleet`.
 /// `system_rotation` lists the system `DatIds` to cycle through when assigning
 /// fleets; if there are more groups than systems the last system is reused.
@@ -811,10 +448,20 @@ fn apply_fleet_seed(
 
         let mut fleet_capital_ships: Vec<ShipInstance> = Vec::new();
         let mut fleet_fighters: Vec<FighterEntry> = Vec::new();
+        // As `deploy_bundle_to_system`: squadrons ride a capital-ship lead,
+        // and land on the system when the group has none.
+        let ship_lead = group
+            .items
+            .first()
+            .is_some_and(|lead| (lead.item_id >> 24) as u8 == FAM_CAPITAL_SHIP);
 
         for item in &group.items {
             if item.item_id == 0 {
                 continue; // null placeholder
+            }
+            if !ship_lead && (item.item_id >> 24) as u8 == FAM_FIGHTER {
+                dispatch_ground_item(item.item_id, system_key, is_alliance, world);
+                continue;
             }
             dispatch_fleet_item(
                 item.item_id,
@@ -827,20 +474,21 @@ fn apply_fleet_seed(
             );
         }
 
-        if fleet_capital_ships.is_empty() && fleet_fighters.is_empty() {
+        if fleet_capital_ships.is_empty() {
             continue; // Nothing to deploy.
         }
 
         let fleet = Fleet {
             location: system_key,
             capital_ships: fleet_capital_ships,
-            fighters: fleet_fighters,
+            fighters: Vec::new(),
             characters: Vec::new(),
             is_alliance,
-            has_death_star: false,
+            bombarding: false,
         };
         let fleet_key = world.insert_fleet(fleet);
         world.systems[system_key].fleets.push(fleet_key);
+        board_lead(world, fleet_key, 0, fleet_fighters);
     }
 }
 
@@ -958,7 +606,6 @@ fn dispatch_ground_item(
             let unit = TroopUnit {
                 class_dat_id,
                 is_alliance,
-                regiment_strength: 100,
             };
             let key = world.troops.insert(unit);
             world.systems[system_key].ground_units.push(key);
@@ -1398,20 +1045,6 @@ fn load_syfc_table(gdata_path: &Path, filename: &str) -> anyhow::Result<Option<S
     Ok(Some(file))
 }
 
-/// Load a SYFC table from pre-loaded bytes.
-fn load_syfc_table_from_files(
-    files: &std::collections::HashMap<String, Vec<u8>>,
-    filename: &str,
-) -> anyhow::Result<Option<SyfcTableFile>> {
-    match files.get(filename) {
-        Some(data) => {
-            let file: SyfcTableFile = crate::parse_dat_bytes(data, filename)?;
-            Ok(Some(file))
-        }
-        None => Ok(None),
-    }
-}
-
 /// Compute energy and raw materials for all populated systems.
 ///
 /// Original formulas from GNPRTB:
@@ -1647,8 +1280,7 @@ fn generate_procedural_facilities<R: Rng + ?Sized>(
 pub(crate) fn assign_facility_sides(world: &mut GameWorld) {
     let systems: Vec<SystemKey> = world.systems.keys().collect();
     for system in systems {
-        let holder = GameWorld::facility_holder(world.systems[system].control)
-            .unwrap_or(rebellion_core::dat::Faction::Neutral);
+        let holder = GameWorld::facility_holder(world.systems[system].control);
         for facility in world.facilities_at(system) {
             world.set_facility_side(facility, holder);
         }
@@ -1779,28 +1411,26 @@ fn deploy_bundle_to_system(
             .copied()
             .find(|&fleet| world.fleets.get(fleet).is_some_and(|f| f.is_alliance == is_alliance))
     });
-    if let Some(fleet) = existing.and_then(|fleet| world.fleets.get_mut(fleet)) {
-        fleet.capital_ships.extend(fleet_capital_ships);
-        for added in fleet_fighters {
-            match fleet.fighters.iter_mut().find(|entry| entry.class == added.class) {
-                Some(entry) => entry.count += added.count,
-                None => fleet.fighters.push(added),
-            }
-        }
+    if let Some(fleet) = existing {
+        let ships = &mut world.fleets[fleet].capital_ships;
+        let lead = ships.len();
+        ships.extend(fleet_capital_ships);
+        board_lead(world, fleet, lead, fleet_fighters);
         return;
     }
     let fleet = Fleet {
         location: system_key,
         capital_ships: fleet_capital_ships,
-        fighters: fleet_fighters,
+        fighters: Vec::new(),
         characters: Vec::new(),
         is_alliance,
-        has_death_star: false,
+        bombarding: false,
     };
     let fleet_key = world.insert_fleet(fleet);
     if let Some(sys) = world.systems.get_mut(system_key) {
         sys.fleets.push(fleet_key);
     }
+    board_lead(world, fleet_key, 0, fleet_fighters);
 }
 
 /// SDPRTB row holding each faction's starting maintenance-budget percentage
@@ -1970,7 +1600,6 @@ fn seed_low_support_garrisons<R: Rng + ?Sized>(
             let unit = TroopUnit {
                 class_dat_id,
                 is_alliance: info.is_alliance,
-                regiment_strength: 100,
             };
             let troop_key = world.troops.insert(unit);
             if let Some(sys) = world.systems.get_mut(info.key) {
@@ -2384,6 +2013,216 @@ mod tests {
         assert!(here.production_facilities.is_empty());
     }
 
+    /// A seed group of `items`, each a compound item id.
+    fn seed_group(items: &[u32]) -> dat_dumper::types::seed_table::SeedGroup {
+        dat_dumper::types::seed_table::SeedGroup {
+            entry: 1,
+            field2: 0,
+            entry_bis: 0,
+            field4: 0,
+            field5: 0,
+            items: items
+                .iter()
+                .map(|&item_id| dat_dumper::types::seed_table::SeedItem {
+                    field1: 0,
+                    field2: 0,
+                    item_id,
+                })
+                .collect(),
+        }
+    }
+
+    /// A world with one system and a capital ship class `0x14000001` that
+    /// holds one squadron, a roomier class `0x14000002` and a squadron class
+    /// `0x1c000001`.
+    fn carrier_world(is_alliance: bool) -> (GameWorld, SystemKey, FighterKey) {
+        let mut world = GameWorld::default();
+        let system = bare_system(&mut world, ControlKind::Uncontrolled);
+        for (id, fighter_capacity) in [(1, 1), (2, 10)] {
+            world
+                .capital_ship_classes
+                .insert(rebellion_core::world::CapitalShipClass {
+                    dat_id: DatId::new(id),
+                    is_alliance,
+                    is_empire: !is_alliance,
+                    fighter_capacity,
+                    hull: 100,
+                    ..Default::default()
+                });
+        }
+        let class = world
+            .fighter_classes
+            .insert(rebellion_core::world::FighterClass {
+                dat_id: DatId::new(1),
+                ..Default::default()
+            });
+        (world, system, class)
+    }
+
+    fn carried(world: &GameWorld, fleet: FleetKey) -> Vec<(u32, u32)> {
+        world.fleets[fleet]
+            .fighters
+            .iter()
+            .map(|entry| (entry.count, entry.carrier))
+            .collect()
+    }
+
+    // FUN_0051bf30 -> FUN_004f7d50: every follower of a group is created
+    // aboard the group's lead with no room test and no choice of ship, so
+    // two squadrons ride a lead that holds one, beside a roomier ship of the
+    // fleet they join.
+    #[test]
+    fn every_seeded_squadron_of_a_bundle_rides_its_groups_lead() {
+        for is_alliance in [false, true] {
+            let (mut world, system, _) = carrier_world(is_alliance);
+            deploy_bundle_to_system(&seed_group(&[0x1400_0002]), system, is_alliance, &mut world);
+            deploy_bundle_to_system(
+                &seed_group(&[0x1400_0001, 0x1c00_0001, 0x1c00_0001]),
+                system,
+                is_alliance,
+                &mut world,
+            );
+
+            let fleet = world.systems[system].fleets[0];
+            let lead = world.fleets[fleet].capital_ships[1].tag;
+            assert_ne!(lead, 0, "{is_alliance}");
+            assert_eq!(carried(&world, fleet), [(2, lead)], "{is_alliance}");
+        }
+    }
+
+    // FUN_0051bf30: a group without a capital-ship lead has a null lead,
+    // so its squadrons and regiments land on the system; a ship joins its
+    // own side's fleet there, never the other side's.
+    #[test]
+    fn a_bundle_without_a_ship_lead_lands_on_its_system_and_ships_join_their_sides_fleet() {
+        for is_alliance in [false, true] {
+            let (mut world, system, class) = carrier_world(is_alliance);
+            deploy_bundle_to_system(
+                &seed_group(&[0x1c00_0001, 0x1000_0001]),
+                system,
+                is_alliance,
+                &mut world,
+            );
+
+            let here = &world.systems[system];
+            assert!(here.fleets.is_empty(), "{is_alliance}");
+            assert_eq!(here.ground_units.len(), 1, "{is_alliance}");
+            assert_eq!(
+                here.fighters,
+                [rebellion_core::world::SystemSquadrons {
+                    class,
+                    count: 1,
+                    is_alliance
+                }],
+                "{is_alliance}"
+            );
+
+            deploy_bundle_to_system(
+                &seed_group(&[0x1400_0002]),
+                system,
+                !is_alliance,
+                &mut world,
+            );
+            deploy_bundle_to_system(&seed_group(&[0x1400_0002]), system, is_alliance, &mut world);
+            deploy_bundle_to_system(&seed_group(&[0x1400_0002]), system, is_alliance, &mut world);
+
+            let sides: Vec<(bool, usize)> = world.systems[system]
+                .fleets
+                .iter()
+                .map(|&fleet| {
+                    (
+                        world.fleets[fleet].is_alliance,
+                        world.fleets[fleet].capital_ships.len(),
+                    )
+                })
+                .collect();
+            assert_eq!(
+                sides,
+                [(!is_alliance, 1), (is_alliance, 2)],
+                "{is_alliance}"
+            );
+        }
+    }
+
+    // As a bundle: a fleet-seed group without a ship lead lands its
+    // squadrons on the system (FUN_0051bf30).
+    #[test]
+    fn a_fleet_group_without_a_ship_lead_lands_its_squadrons_on_its_system() {
+        for is_alliance in [false, true] {
+            let (mut world, system, class) = carrier_world(is_alliance);
+            let table = SeedTableFile {
+                field1: 1,
+                info: String::new(),
+                groups: vec![seed_group(&[0x1c00_0001, 0x1c00_0001])],
+            };
+
+            apply_fleet_seed(
+                Some(&table),
+                &HashMap::from([(7, system)]),
+                &HashMap::new(),
+                &HashMap::from([(1, class)]),
+                &[7],
+                is_alliance,
+                &mut world,
+            );
+
+            assert!(world.systems[system].fleets.is_empty(), "{is_alliance}");
+            assert_eq!(
+                world.systems[system].fighters,
+                [rebellion_core::world::SystemSquadrons {
+                    class,
+                    count: 2,
+                    is_alliance
+                }],
+                "{is_alliance}"
+            );
+        }
+    }
+
+    // FUN_0051aa50 seeds CMUNAFTB and CMUNEFTB groups the same way: the
+    // group's squadrons ride its lead (FUN_004f7d50).
+    #[test]
+    fn every_seeded_squadron_of_a_fleet_group_rides_its_groups_lead() {
+        for is_alliance in [false, true] {
+            let (mut world, system, _) = carrier_world(is_alliance);
+            let capship_index: CapShipIndex = world
+                .capital_ship_classes
+                .iter()
+                .map(|(key, class)| (class.dat_id.raw(), key))
+                .collect();
+            let fighter_index: FighterIndex = world
+                .fighter_classes
+                .iter()
+                .map(|(key, class)| (class.dat_id.raw(), key))
+                .collect();
+            let table = SeedTableFile {
+                field1: 1,
+                info: String::new(),
+                groups: vec![seed_group(&[
+                    0x1400_0001,
+                    0x1400_0002,
+                    0x1c00_0001,
+                    0x1c00_0001,
+                ])],
+            };
+
+            apply_fleet_seed(
+                Some(&table),
+                &HashMap::from([(7, system)]),
+                &capship_index,
+                &fighter_index,
+                &[7],
+                is_alliance,
+                &mut world,
+            );
+
+            let fleet = world.systems[system].fleets[0];
+            let lead = world.fleets[fleet].capital_ships[0].tag;
+            assert_ne!(lead, 0, "{is_alliance}");
+            assert_eq!(carried(&world, fleet), [(2, lead)], "{is_alliance}");
+        }
+    }
+
     fn gdata_path() -> PathBuf {
         // Relative to workspace root when running `cargo test`.
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -2392,6 +2231,109 @@ mod tests {
             .parent() // workspace root
             .unwrap()
             .join("data/base")
+    }
+
+    #[test]
+    #[ignore = "requires original data/base DAT files"]
+    fn every_facility_and_regiment_class_carries_its_dat_strengths() {
+        // (class, bombardment, uprising defense, attack, shield) as the DATs
+        // hold them. Regiments: TROOPSD bombardment_defense (DAT 0x38, slot
+        // +0x1d8, ghidra/notes/bombardment.md) and uprising_defense
+        // (support-shifts.md). Facilities: DEFFACSD, MANFACSD and PROFACSD
+        // bombardment_defense (DAT 0x30, slot +0x1c0 = FUN_00520b60),
+        // attack_strength (class +0x5c, FUN_00520b70) and shield_strength
+        // (class +0x60, FUN_00520b80; status-window.md).
+        let world = crate::load_game_data(&gdata_path()).expect("load_game_data failed");
+        let classes: [(u32, i32, i32, i32, i32); 24] = [
+            (0x1000_0001, 5, 5, 0, 0),
+            (0x1000_0002, 5, 5, 0, 0),
+            (0x1000_0003, 2, 3, 0, 0),
+            (0x1000_0004, 4, 6, 0, 0),
+            (0x1000_0005, 9, 5, 0, 0),
+            (0x1000_0006, 6, 6, 0, 0),
+            (0x1000_0007, 2, 5, 0, 0),
+            (0x1000_0008, 5, 5, 0, 0),
+            (0x1000_0009, 2, 5, 0, 0),
+            (0x1000_000a, 6, 8, 0, 0),
+            (0x2200_0001, 5, 0, 2000, 0),
+            (0x2300_0002, 4, 0, 800, 0),
+            (0x2300_0005, 3, 0, 5000, 0),
+            (0x2400_0003, 2, 0, 0, 40),
+            (0x2400_0006, 3, 0, 0, 80),
+            (0x2500_0004, 1, 0, 0, 0),
+            (0x2800_0001, 2, 0, 0, 0),
+            (0x2800_0004, 2, 0, 0, 0),
+            (0x2900_0002, 3, 0, 0, 0),
+            (0x2900_0005, 4, 0, 0, 0),
+            (0x2a00_0003, 3, 0, 0, 0),
+            (0x2a00_0006, 4, 0, 0, 0),
+            (0x2c00_0001, 5, 0, 0, 0),
+            (0x2d00_0002, 2, 0, 0, 0),
+        ];
+        for (id, bombardment, uprising, attack, shield) in classes {
+            let class = world
+                .buildable_classes
+                .get(&rebellion_core::ids::DatId::new(id))
+                .unwrap_or_else(|| panic!("class {id:#x}"));
+            let stats = &class.stats;
+            assert_eq!(
+                (
+                    stats.bombardment.cast_signed(),
+                    stats.uprising_defense.cast_signed(),
+                    stats.attack_strength.cast_signed(),
+                    stats.shield_strength.cast_signed(),
+                ),
+                (bombardment, uprising, attack, shield),
+                "{id:#x} {}",
+                class.name
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "requires original data/base DAT files"]
+    fn the_alliance_hq_bombardment_value_is_nine() {
+        // ALLFACSD 0x20000001 extra7 is the HQ's class +0x58, which
+        // FUN_00520b60 returns through slot +0x1c0; a hit on the HQ then
+        // succeeds only on a 10 of the 1-10 draw (ghidra/notes/bombardment.md).
+        let world = crate::load_game_data(&gdata_path()).expect("load_game_data failed");
+        let hq = world
+            .buildable_classes
+            .get(&rebellion_core::ids::DatId::new(0x2000_0001))
+            .expect("the HQ class ALLFACSD 0x20000001");
+
+        assert_eq!(hq.stats.bombardment, 9);
+    }
+
+    #[test]
+    #[ignore = "requires original data/base DAT files"]
+    fn a_new_campaigns_holders_follow_its_regiments_and_support() {
+        // FUN_00508250 (setup stage 0x17) runs FUN_0050b610 for every
+        // system, so each holder starts as its regiments, else its support
+        // (FUN_0055a080); the seeding must leave nothing for it to change.
+        for seed in [42, 7] {
+            let seed_options = SeedOptions {
+                rng_seed: Some(seed),
+                ..SeedOptions::default()
+            };
+            let world = crate::load_game_data_with_options(&gdata_path(), &seed_options)
+                .expect("load_game_data_with_options failed");
+            let mismatched: Vec<_> = world
+                .systems
+                .iter()
+                .filter(|&(key, sys)| {
+                    rebellion_core::economy::system_control(&world, key) != Some(sys.control)
+                })
+                .map(|(key, sys)| {
+                    (
+                        sys.name.clone(),
+                        sys.control,
+                        rebellion_core::economy::system_control(&world, key),
+                    )
+                })
+                .collect();
+            assert!(mismatched.is_empty(), "seed {seed}: {mismatched:?}");
+        }
     }
 
     // ── M3: Special system tests ────────────────────────────────────────────

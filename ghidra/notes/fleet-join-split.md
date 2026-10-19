@@ -28,6 +28,37 @@ characters ride aboard ships (the ship's room `FUN_00500b40`,
 `fleet-window.md`). A fleet's direct children are therefore its capital
 ships, and each carries its own cargo.
 
+**No cargo rides a fleet without a ship.** Every way a squadron, regiment,
+character or special force enters a fleet names a ship, and none tests the
+fleet's own room afterwards:
+
+- *A Move to a fleet* builds its leg in `FUN_0053d430` with route mode 3
+  (`FUN_0053d430.c:164-167`): `FUN_00552300` offers the fleet (which gives
+  "no room", status `1`/`0x27`, for any kind but a ship, `FUN_00550700.c:96-101`)
+  and then each of its ships, and keeps the ship with the most room
+  (`FUN_00552b10`, `FUN_0054fbb0`). A ship's room for squadrons is its class
+  `+0x26c` less its children in the walk's mode (`FUN_00500b40.c:37-40`), and
+  mode 3 counts every created, undestroyed child, so a unit already on its way
+  to the ship takes room. With no ship holding room the order is refused
+  with `1`/`0x27` at once. The unit is reparented into the chosen ship at the
+  order (`FUN_00556390` → slot `+0xa8`), so a fleet that fills while the unit
+  travels cannot refuse it: the room was taken at the order. There is no
+  acceptance test at arrival (`FUN_00556620` only starts further legs).
+- *A product ordered with a fleet as the build's destination* goes through
+  the same leg builder at order time (`FUN_005385f0`, `FUN_00551a20`,
+  `FUN_00552300`), so the unit is created aboard the chosen ship or the
+  build order is refused with `1`/`0x27`; capital ships go into the fleet
+  itself (it accepts the range).
+- *Seeding* creates every follower of a group aboard the group's lead object
+  with no room test (`starting-forces-seeding.md`).
+- *A squadron or regiment held by the system* is a child of the system, which
+  accepts them without limit (`FUN_00507750`); it is not a fleet's cargo.
+
+A carrier ship destroyed while a unit is on its way to it is outside these
+paths: `FUN_004f8710` gives the en route child the autoscrap request, and
+`FUN_00515480` runs the chain only for a child whose container is a system
+(`FUN_00515480.c:182-190`), so such a child's fate is not traced.
+
 The fleet's acceptance (slot `+0x74`, `FUN_004fe0d0`) is `FUN_00553410` with
 "needs completed" set when `+0x58` bits 1 and 2 are both clear: another
 side's fleet, an uncompleted or destroyed fleet, and one en route refuse as
@@ -54,6 +85,14 @@ destination (`FUN_005531b0`).
   in-transit bit and reparents at once (`regiment-unload.md`): the ship is a
   member of its new fleet at once and in hyperspace until it arrives, as
   the manual says.
+- **Unfinished ships join too.** The mode-3 expansion includes ships not
+  yet completed, and the per-object `0x204` is exempt from `FUN_004f9860`'s
+  completed test. In the route-1 Empire game, played on from its day-123
+  save, a ship Move into another fleet and a fleet-onto-fleet Join both
+  carry the unfinished Death Star, and the emptied fleet disbands
+  (`death-star-product.md`, "Play evidence"). `FUN_004feca0`'s
+  completed-only move is the fleet object's own reparent, which a Join does
+  not reach.
 - **Mover refusals** are the per-object ones of `FUN_00555920`: across
   systems a ship with no speed (`1`/`0x18`). A fleet or ship in hyperspace
   takes no orders (manual p. 121; `FUN_004f9860`).
@@ -98,10 +137,12 @@ Bit 0 means "has held ships", so an emptied fleet is disbanded. hyp: state
 - **Spare fleets.** Those fleets are spares that each system keeps.
   `FUN_0050be00` (bit 2) and `FUN_0050bc60` (bit 1), run from the system's
   slots `+0xc0`, `+0xc4` and `+0xc8` (`FUN_00508250`, `FUN_00508440`,
-  `FUN_00508660`), walk the system's fleets (mode 4). A spare that is
-  destroyed or holds anything loses its bit (`FUN_004fe310(0)`,
-  `FUN_004fe2a0(0)`). A side with no spare gets one from `FUN_00512d00`
-  (`FUN_0050be00.c:76-92`):
+  `FUN_00508660`), walk the system's fleets (mode 4). A bit-2 spare that is
+  destroyed or holds anything loses bit 2 (`FUN_004fe310(0)`,
+  `FUN_0050be00.c:46-61`); a bit-1 spare loses bit 1 only when destroyed
+  (`FUN_004fe2a0(0)`, `FUN_0050bc60.c:41-51`), so it goes on taking every
+  ship bound for the system. A side with no spare of a kind gets one from
+  `FUN_00512d00` (`FUN_0050be00.c:76-92`, `FUN_0050bc60.c:64-75`):
   - `FUN_004f7d50(system, 0x8000004, side, .., 0, 0)` makes an object of
     family `0x08` in the system through the class factory (`FUN_0053f100`),
     runs its side setup (slot `+0x94`, `FUN_004fe790` → `FUN_004fef10`) and
@@ -110,7 +151,16 @@ Bit 0 means "has held ships", so an emptied fleet is disbanded. hyp: state
   - clears bit 0 (`FUN_004fe230(0)`) and sets bit 1 or 2.
 
   A spare is not existing (`+0x50` bit 6 needs created), so no list shows
-  it. Create Fleet moves the selected ships into the side's bit-2 spare,
+  it. A spare turns real when its first ship enters. For a new product, the
+  product's event `0x300` calls the fleet's slot `+0xc4` (`FUN_005140c0.c:104`
+  → `FUN_004fe870` → `FUN_004fe630`). For a moved ship, event `0x320` calls
+  the same slot (`FUN_00514a60`). The fleet's own
+  `0x300` then calls the system's `+0xc4` (`FUN_00508440`), whose fleet
+  branch runs `FUN_0050bc60` and `FUN_0050be00` (`FUN_00508440.c:73-97`):
+  the fleet keeps bit 1, loses bit 2, and the side gets a new bit-2 spare
+  (`death-star-product.md` section 1). The
+  system's `+0xc0` runs at setup stage `0x17` and `+0xc8` on a child's usable
+  bit (`blockade-bit.md`, "When it runs"). Create Fleet moves the selected ships into the side's bit-2 spare,
   which becomes a fleet when its first ship sets bit 0, created and
   completed (`FUN_004fe630`); the system then makes a new spare.
 - **A ship's plain Move to a system** goes the same way into the bit-1
@@ -133,15 +183,10 @@ Fleet 2, etc."); untraced.
   its ship (`rebellion-core/src/carriage.rs`, `fleet-window.md` "Which
   ship"): a split takes those aboard the ships that leave, and the
   characters when the fleet's first living ship leaves (they ride it). A
-  join keeps every unit's ship. port: regiments held on the fleet itself
-  (no ship had room) that the staying ships cannot carry, counting
-  regiments on their way to board, go with the ships that leave, the last
-  in key order first, so `destroy_untransportable_cargo` loses none; a hold
-  goes with them.
-- port: a Death Star whose class is a capital ship's
-  (`CapitalShipClass::is_death_star`) carries the fleet's Death Star flag
-  with it in a split or join; a flag with no Death Star ship is the separate
-  tactical object and stays with its fleet.
+  join keeps every unit's ship.
+- A fleet has the Death Star when one of its ships is in family
+  `[0x18,0x1c)` (`FUN_005003d0`; `Fleet::has_death_star` asks its live
+  ships), so the Death Star goes wherever its ship goes in a split or join.
 - port: a ship order keeps the fleet's roster (`fleet_join::roster`, its
   ships' classes in order) from when the ship was chosen, and is refused
   ("the fleet's ships have changed") if a ship was lost or gained since:
@@ -150,7 +195,11 @@ Fleet 2, etc."); untraced.
 - A fleet's Move onto a fleet is checked as a move to a system is
   (`FUN_00487740`, `validate_join`) before anything asks; Confirmed Move
   asks, and Move asks when the fleet leaves a blockaded system of its side
-  (`FUN_00487cc0`, `join_confirms`). port: a ship's own Move never asks.
+  (`FUN_00487cc0`, `join_confirms`). A ship's Move never asks: its
+  container is its fleet, never a blockaded system. Its Confirmed Move
+  always asks once the validator passes, one line per ship
+  (`FUN_0053d200` → `FUN_00555d30`): no days for an unfinished ship,
+  which is not mobile, else its own leg's.
 - port: a fleet that joins on arrival comes in after the other arrivals of
   its pass, so a target arriving in the same pass is already there.
 - port: cargo that joins a fleet holding regiments loaded where it orbits
@@ -169,15 +218,22 @@ Fleet 2, etc."); untraced.
   fleet its move named (`MovementOrder.join`, save v26), and only when that
   fleet is still there, of its side and not in hyperspace; otherwise it
   stays a fleet of its own (hyp).
-- port: a fleet moved onto a fleet in another system departs whole (its
-  ships split first when only some move) and joins on arrival, where the
-  original reparents each ship at once and lets it travel (manual p. 122).
-  The Death Star stays with its fleet unless the whole fleet joins.
+- A Move of ships, or of a fleet onto a fleet, to another system: each
+  ship joins its container at once, the target fleet or the side's bit-1
+  spare at the destination (`GameWorld::spare_fleet_or_new`); a completed
+  ship travels on its own leg at its own speed (`ShipInstance::transit`),
+  an unfinished one has none, and a fleet left with no ship disbands
+  (`fleet_join::send_ships`). The route-1 Empire game, played on from its
+  day-123 save: Galleon 2 Moved alone to Averam was on the order day in a
+  new fleet there with its own en-route bit (`+0x50` `0x30876`), clear
+  days later in that fleet (`0x30147`); the unfinished Death Star Moved
+  there later joined the same fleet at once (`0x142`); Fleet 1 Moved onto
+  Fleet 7 at Averam left its ISD in Fleet 7 with its own en-route bit and
+  its cargo aboard, and Fleet 1 disbanded. A fleet Moved to a system goes
+  whole (`FUN_004feca0.c:54-76`).
 
 ## Still open
 
-- Who calls the system slots `+0xc0`, `+0xc4` and `+0xc8`, and so when a
-  spare appears.
 - The view handler for state `0x14` and whether a disbanded fleet's id is
   reused.
 - Where "Fleet N" comes from, and its counter.

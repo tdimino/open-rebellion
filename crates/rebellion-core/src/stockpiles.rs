@@ -20,7 +20,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::build_selection::area_family;
 use crate::dat::Faction;
-use crate::economy::EconomyState;
 use crate::ids::{ManufacturingFacilityKey, ProductionFacilityKey, SystemKey};
 use crate::manufacturing::{ManufacturingState, ProductionArea};
 use crate::mission_detection::MissionRng;
@@ -174,7 +173,6 @@ impl StockpileSystem {
         state: &mut StockpileState,
         world: &GameWorld,
         manufacturing: &mut ManufacturingState,
-        economy: &EconomyState,
         tick_events: &[TickEvent],
         blocked: &std::collections::HashSet<SystemKey>,
         rolls: &[f64],
@@ -187,7 +185,6 @@ impl StockpileSystem {
                 state,
                 world,
                 manufacturing,
-                economy,
                 tick.tick,
                 blocked,
                 &mut draws,
@@ -197,15 +194,10 @@ impl StockpileSystem {
         events
     }
 
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "one day over the stockpile, world, manufacturing and economy states"
-    )]
     fn day(
         state: &mut StockpileState,
         world: &GameWorld,
         manufacturing: &mut ManufacturingState,
-        economy: &EconomyState,
         tick: u64,
         blocked: &std::collections::HashSet<SystemKey>,
         draws: &mut impl Draws,
@@ -219,16 +211,7 @@ impl StockpileSystem {
         // A yard's unit of progress reassigns the yards at once
         // (`FUN_0052a430` → `FUN_00529dd0`), so surplus yards stop before
         // they draw again; new orders are assigned before anything starts.
-        finish_work(
-            state,
-            world,
-            manufacturing,
-            economy,
-            tick,
-            blocked,
-            draws,
-            events,
-        );
+        finish_work(state, world, manufacturing, tick, blocked, draws, events);
         assign_yards(state, world, manufacturing, blocked);
         start_work(state, world, tick, blocked, draws);
         for side in SIDES {
@@ -471,15 +454,10 @@ fn other(side: Faction) -> Faction {
 /// (`FUN_00516360`, `FUN_005166a0`); a yard adds one unit of work to its
 /// area's build (`FUN_00530950`). The facility then waits for its next
 /// input.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "one phase step over the stockpile, world, manufacturing and economy states"
-)]
 fn finish_work(
     state: &mut StockpileState,
     world: &GameWorld,
     manufacturing: &mut ManufacturingState,
-    economy: &EconomyState,
     tick: u64,
     blocked: &std::collections::HashSet<SystemKey>,
     draws: &mut impl Draws,
@@ -495,7 +473,7 @@ fn finish_work(
     for key in finished {
         let facility = &world.production_facilities[key];
         let system = production_system(world, key);
-        let diverted = system.is_some_and(|system| diversion(economy, system, draws));
+        let diverted = system.is_some_and(|system| diversion(world, system, draws));
         let to = if diverted {
             other(facility.side)
         } else {
@@ -545,11 +523,9 @@ fn finish_work(
 /// The chance, in percent, that a finished unit at `system` goes to the
 /// other side: the magnitude of its support drift (system `+0x6c`,
 /// `FUN_00559c40`), rolled with `FUN_0053e2f0`.
-fn diversion(economy: &EconomyState, system: SystemKey, draws: &mut impl Draws) -> bool {
-    let percent = economy
-        .per_system
-        .get(&system)
-        .map_or(0, |value| i32::from(value.support_drift).abs());
+fn diversion(world: &GameWorld, system: SystemKey, draws: &mut impl Draws) -> bool {
+    let percent =
+        i32::from(crate::economy::stored_support_values(world, system).support_drift).abs();
     percent != 0 && draws.chance(percent)
 }
 
@@ -760,7 +736,6 @@ mod tests {
 
     use super::*;
     use crate::dat::{ExplorationStatus, SectorGroup};
-    use crate::economy::SystemEconomy;
     use crate::ids::DatId;
     use crate::manufacturing::{BuildableKind, ManufacturingSystem, QueueItem};
     use crate::world::{
@@ -876,7 +851,6 @@ mod tests {
         let key = world.troops.insert(TroopUnit {
             class_dat_id: DatId::new(REGIMENT),
             is_alliance: true,
-            regiment_strength: 100,
         });
         world.systems[system].ground_units.push(key);
     }
@@ -885,7 +859,6 @@ mod tests {
     struct Run {
         state: StockpileState,
         manufacturing: ManufacturingState,
-        economy: EconomyState,
         blocked: HashSet<SystemKey>,
         events: Vec<StockpileEvent>,
     }
@@ -895,7 +868,6 @@ mod tests {
             Self {
                 state: StockpileState::new(),
                 manufacturing: ManufacturingState::new(),
-                economy: EconomyState::default(),
                 blocked: HashSet::new(),
                 events: Vec::new(),
             }
@@ -906,7 +878,6 @@ mod tests {
                 &mut self.state,
                 world,
                 &mut self.manufacturing,
-                &self.economy,
                 &[TickEvent { tick }],
                 &self.blocked,
                 &[0.5],
@@ -1067,11 +1038,11 @@ mod tests {
         let (mut world, system) = world();
         production(&mut world, system, true);
         let mut run = Run::new();
-        run.economy.per_system.insert(
+        world.support_values.insert(
             system,
-            SystemEconomy {
+            crate::economy::SupportValues {
                 support_drift: 100,
-                ..SystemEconomy::default()
+                ..crate::economy::SupportValues::default()
             },
         );
         run.days(&world, 1..=20);
@@ -1168,6 +1139,136 @@ mod tests {
         // Rates 2 and 4 from day 1: progress on days 3, 5 and 5.
         assert_eq!(completed_on, Some(5));
         assert_eq!(run.state.side(Faction::Alliance).refined, 7);
+    }
+
+    // FUN_0052cc90: a yard works its processing_rate days per unit. In the
+    // original, one Orbital Shipyard (MANFACSD rate 4) at Coruscant took a
+    // Death Star order (cost 584) from 2 on day 123 to 23 on day 206: one
+    // unit every 4 days.
+    #[test]
+    fn one_shipyard_adds_a_unit_of_work_every_four_days() {
+        for side in SIDES {
+            let (mut world, system) = world_held_by(side);
+            let key = yard(&mut world, system, SHIPYARD);
+            world.manufacturing_facilities[key].side = side;
+            let mut run = Run::new();
+            run.state.side_mut(side).refined = 100;
+            let mut ships: slotmap::SlotMap<crate::ids::CapitalShipKey, ()> =
+                slotmap::SlotMap::with_key();
+            run.manufacturing.enqueue(
+                system,
+                QueueItem::new(BuildableKind::CapitalShip(ships.insert(())), 584),
+            );
+            let work_left = |run: &Run| -> u32 {
+                run.manufacturing
+                    .queues()
+                    .values()
+                    .map(crate::manufacturing::ProductionQueue::work_left)
+                    .sum()
+            };
+            let mut progress_days = Vec::new();
+            let mut before = work_left(&run);
+            for tick in 1..=41 {
+                run.day(&world, tick);
+                let now = work_left(&run);
+                if now < before {
+                    progress_days.push(tick);
+                }
+                before = now;
+            }
+            assert_eq!(progress_days.len(), 10, "{side:?} {progress_days:?}");
+            assert!(
+                progress_days.windows(2).all(|pair| pair[1] - pair[0] == 4),
+                "{side:?} {progress_days:?}"
+            );
+        }
+    }
+
+    /// [`world`], its system held by `side` at full support.
+    fn world_held_by(side: Faction) -> (GameWorld, SystemKey) {
+        let (mut world, system) = world();
+        let held = &mut world.systems[system];
+        held.control = ControlKind::Controlled(side);
+        (held.popularity_alliance, held.popularity_empire) = if side == Faction::Alliance {
+            (1.0, 0.0)
+        } else {
+            (0.0, 1.0)
+        };
+        (world, system)
+    }
+
+    // FUN_005306b0 appends a refinery's request to its side's raw queue
+    // when it finds no raw; FUN_0052fbf0 pops the head, first in, first out
+    // (top-bar-resource-counters.md, "Waiting for input"). A refinery back
+    // from work asks again behind one already waiting.
+    #[test]
+    fn a_refinery_back_from_work_queues_behind_one_already_waiting() {
+        for side in SIDES {
+            let (mut world, system) = world_held_by(side);
+            let first = production(&mut world, system, false);
+            let mut run = Run::new();
+            run.state.side_mut(side).raw = 1;
+            run.day(&world, 1);
+            let stage = |run: &Run, key| run.state.production_cycle(key).unwrap().stage;
+            assert_eq!(stage(&run, first), CycleStage::Working, "{side:?}");
+            let second = production(&mut world, system, false);
+            let mut tick = 2;
+            run.day(&world, tick);
+            while stage(&run, first) == CycleStage::Working {
+                tick += 1;
+                assert!(tick < 200, "{side:?}");
+                run.day(&world, tick);
+            }
+            assert_eq!(stage(&run, second), CycleStage::Waiting, "{side:?}");
+            run.state.side_mut(side).raw = 1;
+            run.day(&world, tick + 1);
+            assert_eq!(stage(&run, second), CycleStage::Working, "{side:?}");
+            assert_eq!(stage(&run, first), CycleStage::Waiting, "{side:?}");
+        }
+    }
+
+    // FUN_00530820 appends a yard's request to its side's refined queue;
+    // FUN_0052fd30 pops the head, first in, first out
+    // (top-bar-resource-counters.md, "Waiting for input"). A yard back from
+    // its unit of work asks again behind one already waiting.
+    #[test]
+    fn a_yard_back_from_work_queues_behind_one_already_waiting() {
+        for side in SIDES {
+            let (mut world, system) = world_held_by(side);
+            let other = world.systems.insert(world.systems[system].clone());
+            let first = yard(&mut world, system, SHIPYARD);
+            let second = yard(&mut world, other, SHIPYARD);
+            for key in [first, second] {
+                world.manufacturing_facilities[key].side = side;
+            }
+            let mut ships: slotmap::SlotMap<crate::ids::CapitalShipKey, ()> =
+                slotmap::SlotMap::with_key();
+            let mut run = Run::new();
+            run.state.side_mut(side).refined = 1;
+            run.manufacturing.enqueue(
+                system,
+                QueueItem::new(BuildableKind::CapitalShip(ships.insert(())), 584),
+            );
+            run.day(&world, 1);
+            let stage = |run: &Run, key| run.state.yard_cycle(key).unwrap().stage;
+            assert_eq!(stage(&run, first), CycleStage::Working, "{side:?}");
+            run.manufacturing.enqueue(
+                other,
+                QueueItem::new(BuildableKind::CapitalShip(ships.insert(())), 584),
+            );
+            let mut tick = 2;
+            run.day(&world, tick);
+            while stage(&run, first) == CycleStage::Working {
+                tick += 1;
+                assert!(tick < 200, "{side:?}");
+                run.day(&world, tick);
+            }
+            assert_eq!(stage(&run, second), CycleStage::Waiting, "{side:?}");
+            run.state.side_mut(side).refined = 1;
+            run.day(&world, tick + 1);
+            assert_eq!(stage(&run, second), CycleStage::Working, "{side:?}");
+            assert_eq!(stage(&run, first), CycleStage::Waiting, "{side:?}");
+        }
     }
 
     // FUN_0052fbd0, FUN_0052fd30: a yard with no refined material waits and

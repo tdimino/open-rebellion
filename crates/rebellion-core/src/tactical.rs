@@ -13,6 +13,14 @@ pub mod resource_ids;
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support;
 #[cfg(test)]
+mod hangar_tests;
+#[cfg(test)]
+mod repair_tests;
+#[cfg(test)]
+mod station_tests;
+#[cfg(test)]
+mod withdrawal_tests;
+#[cfg(test)]
 mod tests;
 
 use crate::combat::CombatForce;
@@ -20,8 +28,7 @@ use crate::ids::{CapitalShipKey, DatId, FighterKey, FleetKey, SystemKey};
 use crate::world::GameWorld;
 
 use resource_ids::{
-    capital_ship_tactical_resource, death_star_tactical_resource, fighter_tactical_resource,
-    TacticalCapitalShipResource, TacticalDeathStarResource, TacticalFighterResource,
+    capital_ship_tactical_resource, fighter_tactical_resource, TacticalCapitalShipResource, TacticalDeathStarResource, TacticalFighterResource,
     DEATH_STAR_TACTICAL_RESOURCE,
 };
 
@@ -57,6 +64,9 @@ const ORIGINAL_PROJECTILE_DURATION_SHORT: f32 = 1.0;
 const ORIGINAL_PROJECTILE_DURATION_LONG: f32 = 2.0;
 /// `FUN_005b0330` resets the subsystem-repair timer to 50 * 1000 ms.
 const ORIGINAL_SUBSYSTEM_REPAIR_INTERVAL_TICKS: u32 = 200;
+/// Played steps in one source second, the unit pass's 1000 ms turn
+/// (`FUN_005bea30`, `+0x8a8`).
+const ORIGINAL_STEPS_PER_SECOND: u32 = 4;
 /// `FUN_005b05c0` converts the CAPSHPSD sublight rating by 0.4 * 0.6.
 const ORIGINAL_SUBLIGHT_ENGINE_SCALE: f32 = 0.24;
 /// `FUN_005b9c60` converts the FIGHTSD sublight rating by 0.4 without the
@@ -95,11 +105,9 @@ pub const ORIGINAL_FIGHTER_HULL_PER_CRAFT: f32 = 8.0;
 const ORIGINAL_FIGHTER_WEAPON_HULL_SCALE: f32 = 3.751;
 /// `FUN_005b9c30` scales live fighter hull into shield recharge per second.
 const ORIGINAL_FIGHTER_SHIELD_HULL_SCALE: f32 = 0.025;
-/// `_DAT_0066c4cc`: `FUN_005b23a0` weighs a fighter group's torpedo rating
-/// by this against an unshielded capital ship.
+/// `_DAT_0066c4cc` (0.53333336): `FUN_005b23a0` weighs a squadron's
+/// torpedoes (`+0x134`) by this.
 const ORIGINAL_FIGHTER_TORPEDO_FACTOR: f32 = f32::from_bits(0x3f08_8889);
-/// `FUN_005b23a0` applies this coefficient to the FIGHTSD torpedo rating.
-const ORIGINAL_FIGHTER_TORPEDO_STRENGTH: f32 = f32::from_bits(0x3f08_8889);
 /// `FUN_005d2490` and `FUN_005d24e0` target modifiers.
 const ORIGINAL_ION_VS_FIGHTER: f32 = 0.0;
 const ORIGINAL_LASER_VS_FIGHTER: f32 = 1.0;
@@ -123,10 +131,80 @@ const ORIGINAL_HEADLESS_STEP_SECONDS: f32 = 1.0;
 const ORIGINAL_DEATH_STAR_LASER_CHARGE_PER_SECOND: f32 = 1.0 / 3.0;
 /// `FUN_005ba7f0` caps the charge at `DAT_0066c71c` (100.0).
 pub const ORIGINAL_DEATH_STAR_LASER_FULL_CHARGE: f32 = 100.0;
+/// `FUN_005af5f0.c:38`: the headless battle generator's seed (`0xbc614e`).
+const ORIGINAL_BATTLE_RNG_SEED: i32 = 0x00bc_614e;
+/// `FUN_005f56b0`: the steps a seeding takes before the first draw.
+const ORIGINAL_BATTLE_RNG_WARM_UP: usize = 16;
+/// `_DAT_0066d248`: the station decal stands at -2.0 battle extents on x.
+const ORIGINAL_STATION_DECAL_X_SCALE: f32 = -2.0;
+/// `_DAT_0066d244`: the station decal's y and z offsets reach 0.2 extents.
+const ORIGINAL_STATION_DECAL_JITTER: f32 = 0.2;
+/// `_DAT_0066d258` (double): the superlaser frame rises 0.11 extents.
+const ORIGINAL_STATION_SUPERLASER_RISE: f64 = 0.11;
+/// `_DAT_0066d250` (double): the superlaser frame sits 0.09 extents back on z.
+const ORIGINAL_STATION_SUPERLASER_SETBACK: f64 = 0.09;
+/// `FUN_005ba7f0` adds `dt * (1/3) * 0.001` with `dt` in milliseconds; the
+/// headless side step passes `DAT_0066badc` = 1.0 (`FUN_005ae9c0`).
+const ORIGINAL_HEADLESS_LASER_SECONDS: f32 = 0.001;
+/// `FUN_005aefc0` (`CMP EDI,0x64; JA` at `0x5af047`): the hundredth visit
+/// is the last; the walk then destroys every member left.
+const ORIGINAL_HEADLESS_TRENCH_RUN_VISITS: u32 = 100;
 /// `FUN_005cfec0` arms the Death Star attack state with a 120,000 ms window.
 pub const ORIGINAL_TRENCH_RUN_DURATION_MILLISECONDS: f32 = 120_000.0;
-/// `_DAT_0066d078` scales the maneuver-failure damage draw (`FUN_005d04e0`).
+/// `_DAT_0066d078` (8.0, a craft's hull): `FUN_005d04e0` divides the hull
+/// by it for the craft count and scales the damage draw by it.
 const ORIGINAL_TRENCH_RUN_DAMAGE_SCALE: f32 = 8.0;
+/// `FUN_005d04e0`'s damage when a squadron of fewer than two craft misses
+/// its maneuver (`0x47c35000`).
+const ORIGINAL_TRENCH_RUN_FATAL_DAMAGE: f32 = 100_000.0;
+/// `FUN_005d04e0` leaves its loop for failure after this many pops
+/// (`CMP EAX,0x3e8; JA` at `0x5d06ee`: the 1001st runs in full).
+const ORIGINAL_TRENCH_RUN_POP_LIMIT: u32 = 1000;
+/// `FUN_005ad7e0` caps the commander rating at 9.0, and `FUN_005d04e0` caps
+/// it again (`_DAT_0066d0a0`).
+const ORIGINAL_TRENCH_RUN_RATING_MAX: f32 = 9.0;
+/// `_DAT_0066cb14`: the trench entry point lies at half the battle extent.
+const ORIGINAL_TRENCH_RUN_ENTRY_SCALE: f32 = 0.5;
+/// `FUN_005c6610` passes `0x3e4ccccd` (0.2) to the mover `FUN_005eb1a0`,
+/// which reports arrival within that distance.
+const ORIGINAL_TRENCH_RUN_ARRIVAL_DISTANCE: f32 = 0.2;
+/// `FUN_005eb1a0` moves at the unit's speed times 0.95.
+const ORIGINAL_TRENCH_RUN_SPEED_SCALE: f32 = 0.95;
+/// `FUN_005ad530`: a withdrawing side waits at least 30000.0 ms
+/// (`DAT_0066c240`).
+const ORIGINAL_WITHDRAWAL_COUNTDOWN_MILLISECONDS: f32 = 30_000.0;
+/// `FUN_005ad530`: side 1 with its station operational waits at least
+/// 150000.0 ms (`DAT_0066c234`).
+const ORIGINAL_STATION_WITHDRAWAL_COUNTDOWN_MILLISECONDS: f32 = 150_000.0;
+/// The countdown starts at the retreat system's transit ticks × 0.4
+/// (`FUN_00595d60`, `_DAT_0066babc`)...
+pub(crate) const ORIGINAL_WITHDRAWAL_TRANSIT_SCALE: f32 = 0.4;
+/// ... × 1000.0 (`FUN_005a8b10`, `_DAT_0066c288`).
+pub(crate) const ORIGINAL_WITHDRAWAL_TRANSIT_MILLISECONDS: f32 = 1_000.0;
+/// The withdrawal line lies at half `battle+0x8cc` on the side's own edge
+/// (`_DAT_0066cb14`, `_DAT_0066cffc`); the Withdraw executors pass the mover
+/// a tolerance of 1.0 (`FUN_005c6610.c:69`, `FUN_005cc300.c:75`).
+const ORIGINAL_WITHDRAWAL_LINE_SCALE: f32 = 0.5;
+const ORIGINAL_WITHDRAWAL_ARRIVAL_DISTANCE: f32 = 1.0;
+/// A unit within 8.0 of the line may jump (`_DAT_0066cb0c`, `_DAT_0066cff0`).
+const ORIGINAL_WITHDRAWAL_JUMP_DISTANCE: f32 = 8.0;
+/// A jump (state 7) lasts 4000.0 ms (`FUN_005a6b40`, `_DAT_0066c24c`).
+const ORIGINAL_JUMP_MILLISECONDS: f32 = 4_000.0;
+/// The jump's flight out, by variant: the distance (`DAT_0066c258`-`264`)
+/// covered by the time (4000.0 less `DAT_0066c270`-`278`, variant 0 none)
+/// from which the static initialisers at `0x005a69b0`-`0x005a6a7c` set the
+/// rates `DAT_006bc47c`, `488`, `484` and `494` (distance over seconds
+/// squared, `_DAT_0066c26c` = 0.001).
+const ORIGINAL_JUMP_FLIGHTS: [(f32, f32); 4] = [
+    (400.0, ORIGINAL_JUMP_MILLISECONDS),
+    (575.0, ORIGINAL_JUMP_MILLISECONDS - 250.0),
+    (650.0, ORIGINAL_JUMP_MILLISECONDS - 75.0),
+    (325.0, ORIGINAL_JUMP_MILLISECONDS - 275.0),
+];
+/// The object manager counts side 0's (the Alliance's) ids from 0 and side
+/// 1's from 1000000 (`FUN_005a6290.c:22-30`); each new unit takes the next
+/// (`FUN_005a6620`, through `FUN_005a6660`).
+const ORIGINAL_SIDE_1_OBJECT_ID_BASE: u32 = 1_000_000;
 /// `FUN_005d03f0` plays no voice for a slot holding `0x13d`.
 const ORIGINAL_TRENCH_RUN_SILENT_EVENT: u16 = 0x13d;
 /// `FUN_005d04e0` fills the nine slots at `+0x5c` with this sequence first.
@@ -380,6 +458,8 @@ pub enum TacticalOrder {
     /// friendly capital ship and keep autonomous opportunity fire enabled.
     Escort,
     Recover,
+    /// Order 3, given only by a side's withdrawal (`FUN_005ad530`).
+    Withdraw,
     AttackFighters,
     AttackCapitalShips,
     AttackDeathStar,
@@ -410,6 +490,7 @@ impl TacticalOrder {
             Self::None => 0,
             Self::Escort => 1,
             Self::Recover => 2,
+            Self::Withdraw => 3,
             Self::AttackFighters => 4,
             Self::AttackCapitalShips => 5,
             Self::AttackDeathStar => 6,
@@ -427,6 +508,8 @@ impl TacticalOrder {
             Self::None => "No Orders",
             Self::Escort => "Escort",
             Self::Recover => "Recover",
+            // TEXTTACT 0xdde3.
+            Self::Withdraw => "Withdraw",
             Self::AttackFighters => "Attack Fighters",
             Self::AttackCapitalShips => "Attack Capital Ships",
             Self::AttackDeathStar => "Attack Death Star",
@@ -484,8 +567,6 @@ pub struct TacticalShip {
     pub identity: TacticalObjectIdentity,
     /// Exact original tactical graphic identity, when this is an original class.
     pub tactical_resource: Option<TacticalCapitalShipResource>,
-    /// Separate original Death Star resource path, when applicable.
-    pub death_star_resource: Option<TacticalDeathStarResource>,
     /// Original retained-mode position at battle initialization.
     pub source_position: TacticalWorldPosition,
     /// Current retained-mode forward direction at offsets `+0x10` through `+0x18`.
@@ -580,12 +661,21 @@ pub struct TacticalShip {
     /// Personnel and troops assigned to this physical hull for the selected-
     /// ship contents monitor.
     pub contents: Vec<TacticalShipContent>,
-    /// True if this ship is retreating (moving off-screen).
+    /// The ship is in its jump (state 7, `FUN_005b1e40`): no longer alive
+    /// for `FUN_005ad870`, so it neither fires nor is a target.
     pub retreating: bool,
-    /// Retreat progress: 0.0 = just started, 1.0 = off-screen (removed from combat).
+    /// Milliseconds the jump has run; it ends at 4000.0 (`FUN_005a6b40`).
     pub retreat_progress: f32,
-    /// True if this ship successfully retreated (survived, not destroyed).
+    /// The ship has left the battle (state 8, `0x005aa2ad`).
     pub retreated: bool,
+    /// `+0x158`: outstanding subsystem hits. `FUN_005b05c0.c:150-157` seeds
+    /// it from the carried engine, shield, hyperdrive and tractor hits (not
+    /// the weapon hits), `FUN_005b1970` adds every new hit, even past a
+    /// family's cap, and a repair (`FUN_005b1ab0`) takes one off.
+    pub outstanding_hits: u32,
+    /// `+0x3f4`: steps until the next repair roll, 0 at the start
+    /// (`FUN_005b05c0.c:142`).
+    pub repair_timer_steps: u32,
 }
 
 /// Capital-ship collision volume consumed by `FUN_005b2e60`.
@@ -849,6 +939,7 @@ impl TacticalShip {
     /// [`TacticalSubsystemCapacity::hit_limits`]. Returns whether a tractor hit
     /// left no tractor power, which cancels the source's tractor command.
     fn add_subsystem_hit(&mut self, kind: TacticalSubsystemKind) -> bool {
+        self.outstanding_hits = self.outstanding_hits.saturating_add(1);
         match kind {
             TacticalSubsystemKind::Shields => {
                 self.subsystem_damage.shields =
@@ -1030,7 +1121,9 @@ pub struct TacticalFighter {
     pub weapon_arc: TacticalWeaponArc,
     /// Laser, ion, and turbolaser ranges promoted from FIGHTSD.DAT.
     pub weapon_ranges: TacticalWeaponRanges,
-    /// FIGHTSD torpedo rating and range. The rating is not consumed as ammo.
+    /// Source `+0x134`: the class's torpedoes times the squadron size
+    /// (`FUN_005030c0`, stored by `FUN_005b9c60.c:74`), and the FIGHTSD
+    /// torpedo range. Torpedoes are not consumed.
     pub torpedo_strength: u32,
     pub torpedo_range: f32,
     /// Raw FIGHTSD maneuverability consumed by the fighter damage ratio.
@@ -1041,6 +1134,17 @@ pub struct TacticalFighter {
     pub fighter_group: u8,
     /// Fighter groups are selected as a unit; individual fighters are not.
     pub selected: bool,
+    /// Source `+0x108`: off the field, flying a trench run (`FUN_005d08d0`
+    /// de-lists it, `FUN_005a93b0`); it neither fires nor is a target until
+    /// state 6 lists the survivors again.
+    pub off_field: bool,
+    /// Its carrier (`+0x164`): the hangar it docked in last, kept in
+    /// flight (`FUN_005b8570`, `FUN_005b84a0` write it).
+    pub carrier: Option<TacticalBerth>,
+    /// In its carrier's hangar (states 1 and 5); a docked squadron neither
+    /// fires nor is a target (`FUN_005ad870.c:13-21` accepts states 2, 4
+    /// and 6).
+    pub docked: Option<TacticalDock>,
     /// Unified source order code assigned through the command panel.
     pub order: TacticalOrder,
     /// Source Surround or Stand Off behavior assigned with a maneuver.
@@ -1060,8 +1164,36 @@ pub struct TacticalFighter {
 }
 
 impl TacticalFighter {
+    /// In its side's battle lists: neither flying a trench run (`+0x108`)
+    /// nor in a hangar (states 1 and 5, `FUN_005ad870.c:13-21`).
+    #[must_use]
+    pub fn listed(&self) -> bool {
+        !self.off_field && self.docked.is_none()
+    }
+
     fn effective_maneuverability(&self) -> f32 {
         (self.maneuverability as f32 + 1.0).clamp(1.0, ORIGINAL_CAPITAL_MANEUVERABILITY_MAX)
+    }
+
+    /// `FUN_005b23a0`: the torpedoes (`+0x134`) times `_DAT_0066c4cc`,
+    /// scaled by the remaining hull (`FUN_005b1770`: `hp * x / hp_max`).
+    fn torpedo_term(&self) -> f32 {
+        if self.hull_max <= 0.0 {
+            return 0.0;
+        }
+        self.hull_current.max(0.0) * (self.torpedo_strength as f32 * ORIGINAL_FIGHTER_TORPEDO_FACTOR)
+            / self.hull_max
+    }
+
+    /// `FUN_005ba270` (vtable `0x66c028` slot `+0xbc`): the maneuver the
+    /// trench run tests, 1.0 for a squadron with no sublight speed
+    /// (slot `+0x90`, `FUN_005ba190`), else `min(+0x3fc + 1, 9)`.
+    fn trench_maneuver(&self) -> f32 {
+        if self.sublight_engine_power == 0.0 {
+            1.0
+        } else {
+            (self.maneuverability as f32 + 1.0).min(ORIGINAL_CAPITAL_MANEUVERABILITY_MAX)
+        }
     }
 
     fn weapon_hull_factor(&self) -> f32 {
@@ -1074,12 +1206,25 @@ impl TacticalFighter {
             / ORIGINAL_FIGHTER_HULL_PER_CRAFT
     }
 
+    /// `FUN_005b2d20.c:20-43`, `FUN_005af7a0`: a squadron destroyed outright
+    /// (state `0xb`, no hull), in its hangar or out of it.
+    fn destroy(&mut self) {
+        self.hull_current = 0.0;
+        self.squad_count = 0;
+        self.alive = false;
+        self.shield = 0.0;
+        self.selected = false;
+        self.attack_target = None;
+    }
+
+    /// `FUN_005b8e00` (`0x5b8e29`-`0x5b8e56`): the craft count is
+    /// `max(1, ftol(strength / 8.0))`, 0 only once the squadron is gone.
     fn refresh_craft_count(&mut self) {
         self.hull_current = self.hull_current.clamp(0.0, self.hull_max.max(0.0));
         self.squad_count = if self.hull_current <= 0.0 {
             0
         } else {
-            (self.hull_current / ORIGINAL_FIGHTER_HULL_PER_CRAFT).ceil() as u32
+            ((self.hull_current / ORIGINAL_FIGHTER_HULL_PER_CRAFT) as u32).max(1)
         };
         if self.squad_count == 0 {
             self.alive = false;
@@ -1114,6 +1259,94 @@ impl TacticalFighter {
     }
 }
 
+/// A trench squadron's chance in percent (`FUN_005d04e0`, `0x5d0683`-
+/// `0x5d06e3`): `trunc((torpedo term + min(rating, 9)) * 0.5)`, the torpedo
+/// term `FUN_005b23a0`'s. `FUN_005b1770` and the sum run at double precision
+/// and the sum is stored as a float (`FSTP` at `0x5d06c0`).
+fn trench_run_success_chance(fighter: &TacticalFighter, rating: f32) -> u32 {
+    let torpedoes = fighter.torpedo_strength as f32 * ORIGINAL_FIGHTER_TORPEDO_FACTOR;
+    let term = if fighter.hull_max > 0.0 {
+        f64::from(fighter.hull_current) * f64::from(torpedoes) / f64::from(fighter.hull_max)
+    } else {
+        0.0
+    };
+    let sum = (term + f64::from(rating.min(ORIGINAL_TRENCH_RUN_RATING_MAX))) as f32;
+    (sum * 0.5).trunc() as u32
+}
+
+/// The Alliance Commander a trench run is rated by (`FUN_005ad7e0`): the
+/// effective combat (`FUN_004edc40`, short `+0x86`) and the fleet that
+/// carries the character; `None` for one the system holds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TacticalTrenchCommander {
+    pub combat: u32,
+    pub fleet: Option<FleetKey>,
+}
+
+impl TacticalTrenchCommander {
+    /// `FUN_005ad7e0`, `FUN_005afc00`: the slot `+0x50` plus one, within
+    /// 1..=9. `+0x50` is the combat over the integer 20 as a float
+    /// (`FUN_0040d680`: `FILD`, `FIDIV dword [DAT_006a80e8]`), so 70 rates
+    /// 4.5.
+    #[expect(clippy::cast_precision_loss, reason = "a skill well under 2^24")]
+    fn rating(self) -> f32 {
+        (self.combat as f32 / 20.0 + 1.0).clamp(1.0, ORIGINAL_TRENCH_RUN_RATING_MAX)
+    }
+
+    /// `FUN_0040b0e0.c:86-118`: the Alliance Commander field is
+    /// `FUN_00509530`'s, the system's rank-1 holder and then each fleet's,
+    /// the highest combat kept (ties keep the earlier). `side_fleets` is the
+    /// battle's fleets, the attacker's first; `attacker_is_alliance` names
+    /// the Alliance's row.
+    #[must_use]
+    pub fn of_battle(
+        world: &GameWorld,
+        system: SystemKey,
+        side_fleets: &[Vec<FleetKey>; 2],
+        attacker_is_alliance: bool,
+    ) -> Option<Self> {
+        use crate::officer_rank::{CommandKind, CommandPost, rank_holder};
+        let fleets = &side_fleets[usize::from(!attacker_is_alliance)];
+        std::iter::once((CommandPost::System(system), None))
+            .chain(
+                fleets
+                    .iter()
+                    .map(|&fleet| (CommandPost::Fleet(fleet), Some(fleet))),
+            )
+            .filter_map(|(post, fleet)| {
+                let holder = rank_holder(world, post, CommandKind::Commander, true)?;
+                // Slot `+0x1f0`, `FUN_004edc40`: the effective combat.
+                let combat = crate::missions::member_skill(
+                    world,
+                    crate::missions::MissionMember::Character(holder),
+                    crate::world::Skill::Combat,
+                )?;
+                Some(Self { combat, fleet })
+            })
+            .fold(None, |best: Option<Self>, candidate| match best {
+                Some(best) if best.combat >= candidate.combat => Some(best),
+                _ => Some(candidate),
+            })
+    }
+}
+
+/// The Death Star Shield's family (`0x25`), whose presence at a system sets
+/// the station's `+0x70` (`FUN_0040bcd0`).
+const DEATH_STAR_SHIELD_FAMILY: u8 = 0x25;
+
+/// Whether a Death Star Shield stands at `system` (`FUN_0040bcd0` counts
+/// the system's family-`0x25` children through `FUN_0051c270`, either side).
+fn death_star_shield_at(world: &GameWorld, system: SystemKey) -> bool {
+    world.systems.get(system).is_some_and(|value| {
+        value.defense_facilities.iter().any(|&key| {
+            world
+                .defense_facilities
+                .get(key)
+                .is_some_and(|facility| facility.class_dat_id.family() == DEATH_STAR_SHIELD_FAMILY)
+        })
+    })
+}
+
 /// The Death Star is a manager-owned tactical object rather than a member of
 /// the 29-entry capital mesh table. `FUN_005ab0e0` and `FUN_005ab650` select
 /// its 5010 or 5020 sprite independently from normal capital participants.
@@ -1123,14 +1356,32 @@ pub struct TacticalDeathStar {
     pub is_attacker: bool,
     pub is_alliance: bool,
     pub source_position: TacticalWorldPosition,
-    /// Source field `+0x68`; zero makes `FUN_005ba420` non-operational.
+    /// Source field `+0x64`: the class hull (`FUN_0040bcd0` passes slot
+    /// `+0x248` to `FUN_00595ef0`).
+    pub hull_max: f32,
+    /// Source field `+0x68`: the remaining hull, the class hull less the
+    /// ship's damage (`+0x248 - +0x274`, `FUN_0040bcd0`); zero makes
+    /// `FUN_005ba420` non-operational.
     pub hull: f32,
-    /// Source field `+0x6c`, filled by `FUN_005ba7f0` from zero to 100.
+    /// Source field `+0x6c`, seeded full (100.0) and refilled by
+    /// `FUN_005ba7f0` after a shot.
     pub laser_charge: f32,
-    /// Source field `+0x74`; selects resource 5020 when set.
-    pub destroyed: bool,
+    /// Source field `+0x70`: an active Death Star Shield (family `0x25`)
+    /// stands at the system (`FUN_0040bcd0` through `FUN_0051c270`). Only
+    /// `FUN_005ba450` reads it.
+    pub shielded: bool,
+    /// Source field `+0x74`: the station is not completed (its object's
+    /// `+0x50` bit 2 is clear, `FUN_0040bcd0`); selects resource 5020.
+    pub not_completed: bool,
     /// Source field `+0x78`; set when the Death Star action is committed.
     pub action_committed: bool,
+    /// Hangar capacity, source field `+0x2c`: the class's fighter capacity
+    /// (`FUN_0040bcd0`: slot `+0x26c` less the squadrons aboard `+0x23c`
+    /// plus the squadrons that are its children).
+    pub hangar_capacity: u32,
+    /// The strategic ship it was raised from, as its fleet and roster
+    /// index; `None` for a station still in production.
+    pub ship: Option<(FleetKey, usize)>,
 }
 
 /// One committed superlaser shot. The original keeps the Death Star action
@@ -1151,27 +1402,153 @@ pub struct TacticalDeathStarBeam {
 }
 
 impl TacticalDeathStar {
+    /// `FUN_005ba420`: completed, hull left and not committed.
     #[must_use]
     pub fn operational(self) -> bool {
-        !self.destroyed && self.hull > 0.0 && !self.action_committed
+        !self.not_completed && self.hull != 0.0 && !self.action_committed
+    }
+
+    /// `FUN_005ba450`: operational with no Death Star Shield at the system.
+    #[must_use]
+    pub fn attackable(self) -> bool {
+        self.operational() && !self.shielded
     }
 
     #[must_use]
     pub fn resource_id(self) -> u32 {
-        if self.destroyed {
+        if self.not_completed {
             self.resource.resource_base_with_flag
         } else {
             self.resource.resource_base_without_flag
         }
     }
 
+    /// The station `fleet_key`'s first live Death Star ship raises
+    /// (`FUN_005003d0`; `FUN_0040bcd0` → `FUN_00595ef0`), for the side
+    /// `is_attacker`.
+    #[must_use]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "The source stores the hulls as floats."
+    )]
+    pub fn of_fleet(
+        world: &GameWorld,
+        system: SystemKey,
+        fleet_key: FleetKey,
+        is_attacker: bool,
+        layout: OriginalTacticalLayout,
+    ) -> Option<Self> {
+        let fleet = world.fleets.get(fleet_key)?;
+        let (index, ship, class) =
+            fleet
+                .capital_ships
+                .iter()
+                .enumerate()
+                .find_map(|(index, ship)| {
+                    // Mode 1 (`FUN_005003d0(fleet, 1)`, `FUN_0040b0e0.c:175`).
+                    let class = world.capital_ship_classes.get(ship.class)?;
+                    (ship.usable() && class.is_death_star()).then_some((index, ship, class))
+                })?;
+        let mut station = Self::seated(world, system, fleet.is_alliance, is_attacker, layout);
+        station.hull_max = class.hull as f32;
+        station.hull = ship.hull_current.max(0) as f32;
+        station.hangar_capacity = class.fighter_capacity;
+        station.ship = Some((fleet_key, index));
+        Some(station)
+    }
+
+    /// A station of the side `is_alliance` at `system`, with no hull yet:
+    /// charge full, the shield from the system's Death Star Shield
+    /// (`FUN_0040bcd0`), completed, uncommitted and with no ship.
+    #[must_use]
+    pub fn seated(
+        world: &GameWorld,
+        system: SystemKey,
+        is_alliance: bool,
+        is_attacker: bool,
+        layout: OriginalTacticalLayout,
+    ) -> Self {
+        Self {
+            resource: DEATH_STAR_TACTICAL_RESOURCE,
+            is_attacker,
+            is_alliance,
+            source_position: TacticalWorldPosition::ORIGIN,
+            hull_max: 0.0,
+            hull: 0.0,
+            laser_charge: ORIGINAL_DEATH_STAR_LASER_FULL_CHARGE,
+            shielded: death_star_shield_at(world, system),
+            not_completed: false,
+            action_committed: false,
+            hangar_capacity: 0,
+            ship: None,
+        }
+        .placed(layout)
+    }
+
+    /// The station decal's frame (`FUN_005d4d10`, `0x5d5505`-`0x5d55a4`):
+    /// `-2.0` times the battle extent on x (`_DAT_0066d248`), off the face
+    /// opposite the planet's, whichever side owns it, with y and z each
+    /// `rand(trunc(0.4 * extent)) - 0.2 * extent` (`_DAT_0066d244` = 0.2).
+    /// port: the original draws them from a local generator (`0x5d52ab`)
+    /// that seeds itself from the clock (`FUN_005f5750`), after the planet's
+    /// two draws when Show Planet is on; the port draws them first from a
+    /// generator seeded like the battle's, so the placement is the same for
+    /// every call with the same extent.
+    #[must_use]
+    fn placed(mut self, layout: OriginalTacticalLayout) -> Self {
+        let extent = layout.battle_extent;
+        let mut rng = OriginalBattleRng::default();
+        self.source_position = TacticalWorldPosition {
+            x: ORIGINAL_STATION_DECAL_X_SCALE * extent,
+            y: original_scene_surround_jitter(&mut rng, extent, ORIGINAL_STATION_DECAL_JITTER),
+            z: original_scene_surround_jitter(&mut rng, extent, ORIGINAL_STATION_DECAL_JITTER),
+        };
+        self
+    }
+
+    /// Where the superlaser leaves the station: the decal frame's child
+    /// `+0x4c` at `(0, 0.11 * extent, -0.09 * extent)` from it
+    /// (`FUN_005d4d10`, `_DAT_0066d258`, `_DAT_0066d250`), on which
+    /// `FUN_005d59e0` builds the shot.
+    #[must_use]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "The source multiplies by double constants and stores floats."
+    )]
+    pub fn superlaser_source(self, extent: f32) -> TacticalWorldPosition {
+        TacticalWorldPosition {
+            x: self.source_position.x,
+            y: self.source_position.y
+                + (f64::from(extent) * ORIGINAL_STATION_SUPERLASER_RISE) as f32,
+            z: self.source_position.z
+                - (f64::from(extent) * ORIGINAL_STATION_SUPERLASER_SETBACK) as f32,
+        }
+    }
+
     fn advance_laser_charge(&mut self, seconds: f32) {
-        if self.hull > 0.0 && !self.destroyed && seconds > 0.0 {
+        if self.hull > 0.0 && !self.not_completed && seconds > 0.0 {
             self.laser_charge = (self.laser_charge
                 + seconds * ORIGINAL_DEATH_STAR_LASER_CHARGE_PER_SECOND)
                 .min(ORIGINAL_DEATH_STAR_LASER_FULL_CHARGE);
         }
     }
+}
+
+/// One offset of the scene surround (`FUN_005d4d10`):
+/// `rand(trunc(2 * extent * scale)) - half` with `half = extent * scale`
+/// stored as a float. The draw is `FUN_005f5700` (`[0, n)`, nothing for
+/// `n <= 1`) and `__ftol` truncates the unrounded product. The station uses
+/// 0.2 (`_DAT_0066d244`), the planet 0.1 (`_DAT_0066d23c`).
+#[must_use]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "The source truncates with __ftol and stores the offset as a float."
+)]
+pub fn original_scene_surround_jitter(rng: &mut OriginalBattleRng, extent: f32, scale: f32) -> f32 {
+    let product = f64::from(extent) * f64::from(scale);
+    let half = extent * scale;
+    let roll = rng.between(0, (2.0 * product) as i32);
+    (f64::from(roll) - f64::from(half)) as f32
 }
 
 // ---------------------------------------------------------------------------
@@ -1187,7 +1564,75 @@ pub struct TacticalStalemateWatch {
     pub quiet_seconds: [f32; 2],
 }
 
+/// The computer side's AI controller state `FUN_005c8780` reads for the
+/// Death Star: the countdown to its next decision pass (`param_1[0x10]`,
+/// less `_DAT_0066cbd4` = 1.0 per update, reset to `DAT_0066cba4` = 6.0 at
+/// 0) and whether the Alliance AI has ordered a trench run (`param_1[6]`).
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct TacticalDeathStarAi {
+    pub countdown: f32,
+    pub ordered_run: bool,
+}
+
+/// `DAT_0066cba4`: the AI controller's decision pass comes every sixth
+/// update.
+const ORIGINAL_AI_DECISION_UPDATES: f32 = 6.0;
+
+/// The hangar a docked squadron sits in, its carrier (`+0x164`, resolved by
+/// `FUN_005a6360`): a capital ship's (`+0x418`) or the station's (`+0x1c`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TacticalBerth {
+    Ship(usize),
+    Station,
+}
+
+/// A squadron in its carrier's hangar (`FUN_005b82a0.c:14-53`): ready to
+/// launch (state 1, list `+0x1c`) or recovered (state 5, list `+0x20`,
+/// which never launches again).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TacticalDock {
+    Ready,
+    Recovered,
+}
+
+/// The hangars' launch clock (`FUN_005b8800`). `step` is `battle+0x87c`,
+/// 3 from the battle's constructor (`FUN_005a7500.c:551`) and again at
+/// battle start (`FUN_005bea30.c:38`, `battle+0x8ac`), and
+/// raised once per 1000 ms step (`battle+0x8a8`, `FUN_005bea30.c:33,125`).
+/// Each hangar's launch step (`+0x14`) is absolute; 0.0 is unarmed
+/// (`_DAT_0066c690`).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct TacticalHangars {
+    pub step: u32,
+    pub elapsed_ms: f32,
+    /// Launch step of each capital ship's hangar, by ship index.
+    pub ships: Vec<f32>,
+    pub station: f32,
+}
+
+/// `battle+0x8ac`: the windowed battle's first step number (`FUN_005be160`,
+/// `MOV [ESI+0x8ac],3` at `0x5be233`).
+const ORIGINAL_HANGAR_FIRST_STEP: u32 = 3;
+/// `battle+0x8a8`: one battle step is 1000 ms (`FUN_005bea30.c:33`).
+const ORIGINAL_BATTLE_STEP_MILLISECONDS: f32 = 1000.0;
+/// `DAT_0066c68c` (hangar `+0x18`, `FUN_005b82a0.c:59`): the least steps
+/// between launches; `FUN_005b8800.c:28-37` adds `rand(0,8)`.
+const ORIGINAL_HANGAR_LAUNCH_STEPS: f32 = 5.0;
+/// `FUN_005b8800.c:30-33`: the launch spread is `FUN_005a8a70(0, 8)`.
+const ORIGINAL_HANGAR_LAUNCH_SPREAD: u32 = 8;
+
 /// A capital ship's hyperdrive works (`FUN_005b1b70`).
+/// How far a unit `elapsed` milliseconds into its jump has flown
+/// (`FUN_005a6b40`): the time, held at 4000.0 ms and in seconds, squared,
+/// times the rate of variant (`ordinal` + `object_id`) & 3.
+fn jump_flight(elapsed: f32, ordinal: u8, object_id: u32) -> f32 {
+    let (distance, by) =
+        ORIGINAL_JUMP_FLIGHTS[(u32::from(ordinal).wrapping_add(object_id) & 3) as usize];
+    let seconds = elapsed.min(ORIGINAL_JUMP_MILLISECONDS) * 0.001;
+    let by_seconds = by * 0.001;
+    seconds * seconds * distance / (by_seconds * by_seconds)
+}
+
 fn ship_hyperdrive_works(ship: &TacticalShip) -> bool {
     ship.subsystem_capacity.hyperdrive > 0 && ship.subsystem_condition.hyperdrive > 0
 }
@@ -1214,15 +1659,37 @@ pub struct TacticalMorale {
     /// A ship or squadron of the side jumped out (state 9,
     /// `FUN_005af910`), by side.
     pub jumped: [bool; 2],
-    /// The side's Death Star was operational when the side retreated and
-    /// was committed to the jump (`FUN_005d14d0.c:124-127`).
-    pub death_star_jumped: bool,
-    /// The fleet carrying the Death Star can enter hyperspace. port: the
-    /// Death Star adds no speed of its own (`fleet_speed` reads capital
-    /// ships only), so without a drive aboard its fleet cannot depart; the
-    /// source's rule for an object that cannot travel is destruction,
-    /// reason 5 (`FUN_00556390`, `system-squadrons-combat.md`).
-    pub death_star_departs: bool,
+    /// Each side's withdrawal in a played battle (side controller `+0x84`
+    /// and `+0x7c`), index 0 the attacker.
+    pub withdrawal: [TacticalWithdrawal; 2],
+    /// The squadrons in their jump (state 7) and the milliseconds it has
+    /// run (`FUN_005a6b40`).
+    pub squadron_jumps: Vec<(usize, f32)>,
+}
+
+/// A played battle's side withdrawal (`ghidra/notes/morale-retreat.md`,
+/// "Windowed withdrawal"): the side controller's state `+0x84` and its
+/// countdown `+0x7c` in milliseconds, which `apply::seat_morale` starts at
+/// the retreat system's transit (`FUN_00599c90.c:57-76`) and
+/// `FUN_005ad530` raises to its floor of 30 s or 150 s.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct TacticalWithdrawal {
+    pub state: TacticalWithdrawalState,
+    pub countdown_milliseconds: f32,
+}
+
+/// The side controller's `+0x84` states a withdrawal passes through.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum TacticalWithdrawalState {
+    /// 0: no withdrawal.
+    #[default]
+    Fighting,
+    /// 2: counting down (`FUN_005ad530`).
+    CountingDown,
+    /// 3: waiting for the side's hyperdrive units to leave.
+    Holding,
+    /// 4: the units left behind have been sent back to the fight.
+    Over,
 }
 
 /// port: task-force slots tracked by the engagement AI: capital task forces
@@ -1288,15 +1755,18 @@ pub struct BattleSession {
     pub trench_run_remaining_ms: Option<f32>,
     /// RGBY group that entered the active run and owns its ordered voice path.
     pub trench_run_group: Option<u8>,
-    /// Source `FUN_005ad7e0` commander-rating result, clamped to 1 through 9.
-    /// The current strategic model does not persist the original tactical
-    /// commander slot, so production uses the source's unassigned fallback 1.
-    pub trench_run_success_rating: u8,
+    /// The Alliance Commander `FUN_005ad7e0` rates the run by (slot
+    /// `+0x950`): of the rank-1 holders at the system and in the side's
+    /// fleets there, the one with the highest combat (`FUN_00509530`).
+    pub trench_run_commander: Option<TacticalTrenchCommander>,
     /// Result selected by `FUN_005d04e0` when state 5 begins. State 6 or 7
     /// applies it only after the two-minute presentation timer completes.
     pub trench_run_pending_outcome: Option<TacticalTrenchRunOutcome>,
     /// Stable fighter indices retained by the source result manager.
     pub trench_run_participants: Vec<usize>,
+    /// Each participant's hull at state 5 (`FUN_005d08d0`), in
+    /// `trench_run_participants` order.
+    pub trench_run_snapshot: Vec<f32>,
     /// Nine threshold slots selected by `FUN_005d04e0`; `0x13d` is silent.
     pub trench_run_chatter: [u16; 9],
     /// Next threshold slot consumed by `FUN_005d03f0`.
@@ -1322,6 +1792,13 @@ pub struct BattleSession {
     /// One source-compatible tactical random stream. The campaign contributes
     /// its seed at battle entry; every combat consumer advances it in order.
     pub tactical_rng: OriginalTacticalRng,
+    /// The headless battle's generator (`FUN_005af420`), taken from the
+    /// world and handed back to it ([`GameWorld::battle_rng`]).
+    pub battle_rng: OriginalBattleRng,
+    /// The import's crew pass, drawn once when the battle ends
+    /// ([`Self::settle_crew`]); the Battle Summary and the write-back
+    /// (`apply::apply_results`) both read it.
+    pub settled_crew: Option<crate::battle_summary::SettledCrew>,
     /// Active weapon fire visual effects (source ship idx -> target ship idx).
     pub weapon_effects: Vec<WeaponEffect>,
     /// Target-attached original type-303 hit, damage, and destruction sequences.
@@ -1350,12 +1827,21 @@ pub struct BattleSession {
     pub winner: Option<CombatWinner>,
     /// The 1200-second stalemate withdrawal (`FUN_005ae9c0`).
     pub stalemate: TacticalStalemateWatch,
+    /// The computer side's Death Star actions (`FUN_005c8780`).
+    pub death_star_ai: TacticalDeathStarAi,
+    /// The carriers' launch clock (`FUN_005b8800`).
+    pub hangars: TacticalHangars,
     /// The per-step morale withdrawal (`FUN_005d19a0`).
     pub morale: TacticalMorale,
     pub engagement: TacticalEngagementState,
     /// The side holding the battle's system (`true` Alliance), `None` when
     /// neutral: `system[9] >> 6 & 3` in the result text builders.
     pub holder_is_alliance: Option<bool>,
+    /// The side that arrived last at the battle's system (`true` Alliance),
+    /// `None` for none: the system's `+0x78` bits 6-7, which `FUN_00508660`
+    /// writes through `FUN_0050a1b0` with each arriving fleet's or
+    /// squadron's side (`GameWorld::arrival_holders`).
+    pub arrival_holder_is_alliance: Option<bool>,
     /// Whether the holder's system was under blockade when the battle began
     /// (a hostile fleet and no fleet of the holder's): the result object's
     /// `+0x5c` names the holder then.
@@ -1580,8 +2066,9 @@ pub enum WeaponKind {
 }
 
 /// The eight weapon audio events dispatched by `FUN_005a7500` through the
-/// original tactical sound manager. `FUN_005bae60` assigns each event a
-/// contiguous TACTICAL.DLL WAVE family.
+/// original tactical sound manager, and the two jump effects `FUN_005a6b40`
+/// plays. `FUN_005bae60` assigns each event a contiguous TACTICAL.DLL WAVE
+/// family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TacticalAudioEvent {
     LaserFire,
@@ -1592,13 +2079,18 @@ pub enum TacticalAudioEvent {
     IonImpact,
     TurbolaserImpact,
     TorpedoImpact,
+    SquadronJump,
+    CapitalShipJump,
 }
 
 impl TacticalAudioEvent {
-    /// Event indices 0x0d-0x14 in `FUN_005a7500`'s registration order.
+    /// Event indices 0x0d-0x14 in `FUN_005a7500`'s registration order; a
+    /// squadron's jump is 0x1d and a capital ship's 0x1f (`FUN_005a6b40`).
     #[must_use]
     pub const fn event_id(self) -> u8 {
         match self {
+            Self::SquadronJump => 0x1d,
+            Self::CapitalShipJump => 0x1f,
             Self::LaserFire => 0x0d,
             Self::TurbolaserFire => 0x0e,
             Self::IonFire => 0x0f,
@@ -1622,14 +2114,18 @@ impl TacticalAudioEvent {
             Self::IonImpact => 13_048,
             Self::TurbolaserImpact => 13_051,
             Self::TorpedoImpact => 13_054,
+            // Events 0x1d and 0x1f hold 0x3307 and 0x3309.
+            Self::SquadronJump => 13_063,
+            Self::CapitalShipJump => 13_065,
         }
     }
 
-    /// `FUN_005bae60`'s variant counts: 3 for events 0x0d-0x13, 1 for 0x14.
+    /// `FUN_005bae60`'s variant counts: 3 for events 0x0d-0x13, 1 for 0x14,
+    /// 0x1d and 0x1f.
     #[must_use]
     pub const fn variant_count(self) -> u8 {
         match self {
-            Self::TorpedoImpact => 1,
+            Self::TorpedoImpact | Self::SquadronJump | Self::CapitalShipJump => 1,
             _ => 3,
         }
     }
@@ -1714,6 +2210,7 @@ pub enum TacticalVoiceEvent {
     BattleWonDestroyed,
     BattleLost,
     DeathStarFiring,
+    DeathStarFireWarning,
     DeathStarReady,
     DeathStarUnderAttack,
     DeathStarAttackBrokenOff,
@@ -2041,6 +2538,13 @@ impl TacticalVoiceCue {
     #[must_use]
     pub const fn death_star_firing() -> Self {
         Self::from_source_event(TacticalVoiceEvent::DeathStarFiring, 0x111)
+    }
+
+    /// `FUN_005ba520.c:25-31` queues Alliance event 0x91, the "fire" line of
+    /// the Death Star warnings (WAVE 14114).
+    #[must_use]
+    pub const fn death_star_fire_warning() -> Self {
+        Self::from_source_event(TacticalVoiceEvent::DeathStarFireWarning, 0x91)
     }
 
     /// `FUN_005ba7f0` queues event 0x113.
@@ -2853,7 +3357,7 @@ impl OriginalTacticalRng {
 
     /// `FUN_0061a310`: state × `0x343fd` + `0x269ec3`, returning bits 16-30.
     fn next_u15(&mut self) -> u16 {
-        self.state = self.state.wrapping_mul(0x343f_d).wrapping_add(0x269e_c3);
+        self.state = self.state.wrapping_mul(0x0003_43fd).wrapping_add(0x0026_9ec3);
         ((self.state >> 16) & 0x7fff) as u16
     }
 
@@ -2864,14 +3368,64 @@ impl OriginalTacticalRng {
     }
 }
 
-/// `FUN_005b54d0` draws 0-100 (`FUN_005af420`) for a shield-generator hit
-/// when the ship had shields, and again for a hull subsystem hit when the
-/// damage overflows them.
+/// The headless battle's generator (`FUN_005f5700` on `battle+4`), which
+/// `FUN_005af420` draws from for the shield-first damage (`FUN_005b54d0`)
+/// and the headless trench run (`FUN_005aefc0`): a Lehmer step
+/// (`FUN_005f57a0`, multiplier `0xa18e`) seeded with 12345678 and sixteen
+/// warm-up steps (`FUN_005af5f0.c:38`, `FUN_005f56b0`).
+/// hyp: `FUN_00596f30` builds the battle object once and no traced code
+/// frees it, so the stream runs on across battles; a game held in memory
+/// keeps it ([`GameWorld::battle_rng`]) and a loaded one starts it afresh.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OriginalBattleRng {
+    state: i32,
+}
+
+impl Default for OriginalBattleRng {
+    fn default() -> Self {
+        let mut state = ORIGINAL_BATTLE_RNG_SEED;
+        for _ in 0..ORIGINAL_BATTLE_RNG_WARM_UP {
+            state = Self::step(state);
+        }
+        Self { state }
+    }
+}
+
+impl OriginalBattleRng {
+    /// `FUN_005f57a0`, in the source's wrapping 32-bit arithmetic.
+    fn step(x: i32) -> i32 {
+        let next = x
+            .wrapping_mul(0xa18e)
+            .wrapping_add((x / 0xcad4).wrapping_mul(-0x7fff_ffff));
+        if next < 0 {
+            next.wrapping_add(0x7fff_ffff)
+        } else {
+            next
+        }
+    }
+
+    /// `FUN_005af420(a, b)`: `a` plus a draw of `[0, b - a)`; a span of one
+    /// or less draws nothing (`FUN_005f5700`).
+    pub fn between(&mut self, minimum: i32, maximum: i32) -> i32 {
+        let span = maximum - minimum;
+        if span <= 1 {
+            return minimum;
+        }
+        self.state = Self::step(self.state);
+        minimum + self.state / (0x7fff_fffe / span)
+    }
+}
+
+/// A subsystem roll for a shield-generator hit when the ship had shields,
+/// and another for a hull subsystem hit when the damage overflows them,
+/// each `draw`n from 0-100: `FUN_005af420` on the battle generator in
+/// `FUN_005b54d0` (`[0, 99]`), the tactical stream in the played battle's
+/// receivers.
 fn original_tactical_damage_rolls(
     ships: &[TacticalShip],
     target: usize,
     damage: i32,
-    rng: &mut OriginalTacticalRng,
+    mut draw: impl FnMut() -> u32,
 ) -> OriginalTacticalDamageRolls {
     let Some(ship) = ships.get(target) else {
         return OriginalTacticalDamageRolls { shield: 0, hull: 0 };
@@ -2880,12 +3434,12 @@ fn original_tactical_damage_rolls(
         return OriginalTacticalDamageRolls { shield: 0, hull: 0 };
     }
     let shield = if ship.shield > 0 {
-        u8::try_from(rng.inclusive(0, 100)).unwrap_or(100)
+        u8::try_from(draw()).unwrap_or(100)
     } else {
         0
     };
     let hull = if ship.shield.saturating_sub(damage) < 0 {
-        u8::try_from(rng.inclusive(0, 100)).unwrap_or(100)
+        u8::try_from(draw()).unwrap_or(100)
     } else {
         0
     };
@@ -2913,7 +3467,7 @@ fn original_windowed_damage_rolls(
             hull: ORIGINAL_NO_SUBSYSTEM_ROLL,
         };
     }
-    original_tactical_damage_rolls(ships, target, damage, rng)
+    original_tactical_damage_rolls(ships, target, damage, || rng.inclusive(0, 100))
 }
 
 /// `FUN_005b54d0`'s score bands, `_DAT_0066c520` through `_DAT_0066c530`
@@ -3259,16 +3813,8 @@ impl BattleSession {
             .and_then(|system| system.control.faction())
             .map(|faction| faction == crate::dat::Faction::Alliance);
         let blockaded_at_start = holder_is_alliance.is_some_and(|holder| {
-            let fleets_of = |alliance: bool| {
-                world.systems.get(system).is_some_and(|value| {
-                    value.fleets.iter().any(|fleet| {
-                        world
-                            .fleets
-                            .get(*fleet)
-                            .is_some_and(|fleet| fleet.is_alliance == alliance)
-                    })
-                })
-            };
+            let fleets_of =
+                |alliance: bool| !crate::combat::fighting_fleets(world, system, alliance).is_empty();
             fleets_of(!holder) && !fleets_of(holder)
         });
 
@@ -3281,16 +3827,19 @@ impl BattleSession {
         let mut side_fleets: [Vec<FleetKey>; 2] = [Vec::new(), Vec::new()];
         for (force, is_attacker) in [(attacker_force, true), (defender_force, false)] {
             let fleets = &mut side_fleets[usize::from(!is_attacker)];
-            fleets.extend(force.fleet);
-            if let Some(value) = world.systems.get(system) {
-                fleets.extend(value.fleets.iter().copied().filter(|&key| {
-                    Some(key) != force.fleet
-                        && world
-                            .fleets
-                            .get(key)
-                            .is_some_and(|fleet| fleet.is_alliance == force.is_alliance)
-                }));
-            }
+            // Only usable fleets put children in the battle (FUN_0040b0e0
+            // exports a mode-1 walk, `crate::combat::fighting_fleets`), the
+            // lead first when it is one.
+            fleets.extend(
+                force
+                    .fleet
+                    .filter(|&key| world.fleets.get(key).is_some_and(crate::world::Fleet::usable)),
+            );
+            fleets.extend(
+                crate::combat::fighting_fleets(world, system, force.is_alliance)
+                    .into_iter()
+                    .filter(|&key| Some(key) != force.fleet),
+            );
             for &fleet in fleets.iter() {
                 Self::expand_fleet(world, fleet, is_attacker, &mut ships, &mut fighters);
             }
@@ -3303,12 +3852,47 @@ impl BattleSession {
             );
         }
 
+        let hyperdrive_squadrons: Vec<usize> = (0..fighters.len())
+            .filter(|&index| {
+                world
+                    .fighter_classes
+                    .get(fighters[index].class_key)
+                    .is_some_and(|class| class.hyperdrive > 0 || class.hyperdrive_if_damaged > 0)
+            })
+            .collect();
+        // The fleet loop exports a Death Star ship only as the station's
+        // short record (`FUN_0040b0e0.c:86-118`), so it is no capital
+        // participant (`expand_fleet`).
+        let death_star = side_fleets
+            .iter()
+            .zip([true, false])
+            .flat_map(|(fleets, is_attacker)| fleets.iter().map(move |&key| (key, is_attacker)))
+            .find_map(|(fleet_key, is_attacker)| {
+                TacticalDeathStar::of_fleet(
+                    world,
+                    system,
+                    fleet_key,
+                    is_attacker,
+                    OriginalTacticalLayout::default(),
+                )
+            });
+        // The squadrons dock (`FUN_005964c0.c:133-153`) before
+        // `FUN_005ab650` lays the battle out, which skips a docked one.
+        Self::seat_carried_squadrons(
+            world,
+            &ships,
+            &mut fighters,
+            &hyperdrive_squadrons,
+            death_star.map(|station| station.hangar_capacity),
+        );
+
         // Retain the working 2D fallback separately from the recovered source
         // world coordinates. P58 will replace each fallback only after its
         // DAT-to-tactical resource identity is proven.
         Self::auto_place_ships(&mut ships);
         Self::auto_place_fighters(&mut fighters, &ships);
         let source_layout = Self::assign_original_world_positions(&mut ships, &mut fighters);
+        let death_star = death_star.map(|station| station.placed(source_layout));
         let gravity_wells = (0..ships.len())
             .filter(|&index| {
                 let ship = &ships[index];
@@ -3319,42 +3903,9 @@ impl BattleSession {
                     .is_some_and(|class| class.gravity_well_projector > 0)
             })
             .collect();
-        let hyperdrive_squadrons = (0..fighters.len())
-            .filter(|&index| {
-                world
-                    .fighter_classes
-                    .get(fighters[index].class_key)
-                    .is_some_and(|class| class.hyperdrive > 0 || class.hyperdrive_if_damaged > 0)
-            })
-            .collect();
         let navigation_sets = original_navigation_point_sets(source_layout);
         Self::assign_original_task_forces(&mut ships);
         Self::assign_original_fighter_groups(&mut fighters);
-        let death_star = side_fleets
-            .iter()
-            .zip([true, false])
-            .flat_map(|(fleets, is_attacker)| fleets.iter().map(move |&key| (key, is_attacker)))
-            .find_map(|(fleet_key, is_attacker)| {
-                let fleet = world.fleets.get(fleet_key)?;
-                fleet.has_death_star.then_some(TacticalDeathStar {
-                    resource: DEATH_STAR_TACTICAL_RESOURCE,
-                    is_attacker,
-                    is_alliance: fleet.is_alliance,
-                    source_position: TacticalWorldPosition {
-                        x: 0.0,
-                        y: 0.0,
-                        z: if fleet.is_alliance {
-                            source_layout.outer_negative_z
-                        } else {
-                            source_layout.outer_positive_z
-                        },
-                    },
-                    hull: ORIGINAL_DEATH_STAR_LASER_FULL_CHARGE,
-                    laser_charge: 0.0,
-                    destroyed: false,
-                    action_committed: false,
-                })
-            });
 
         // The original Tactical Display opens with the battle paused and
         // nothing selected: the right-hand housing shows the idle seal panel,
@@ -3379,9 +3930,10 @@ impl BattleSession {
             trench_run_outcome: None,
             trench_run_remaining_ms: None,
             trench_run_group: None,
-            trench_run_success_rating: 1,
+            trench_run_commander: TacticalTrenchCommander::of_battle(world, system, &side_fleets, attacker_force.is_alliance),
             trench_run_pending_outcome: None,
             trench_run_participants: Vec::new(),
+            trench_run_snapshot: Vec::new(),
             trench_run_chatter: [ORIGINAL_TRENCH_RUN_SILENT_EVENT; 9],
             trench_run_chatter_cursor: 0,
             trench_run_cinematic_pending: false,
@@ -3393,6 +3945,8 @@ impl BattleSession {
             start_tick: tick,
             combat_tick: 0,
             tactical_rng: OriginalTacticalRng::new(rng_seed),
+            battle_rng: world.battle_rng,
+            settled_crew: None,
             weapon_effects: Vec::new(),
             impact_effects: Vec::new(),
             pending_audio_cues: Vec::new(),
@@ -3405,6 +3959,11 @@ impl BattleSession {
             step_accumulator: 0.0,
             winner: None,
             stalemate: TacticalStalemateWatch::default(),
+            death_star_ai: TacticalDeathStarAi::default(),
+            hangars: TacticalHangars {
+                step: ORIGINAL_HANGAR_FIRST_STEP,
+                ..TacticalHangars::default()
+            },
             morale: TacticalMorale {
                 gravity_wells,
                 hyperdrive_squadrons,
@@ -3412,6 +3971,7 @@ impl BattleSession {
             },
             engagement: TacticalEngagementState::default(),
             holder_is_alliance,
+            arrival_holder_is_alliance: world.arrival_holders.get(&system).copied(),
             blockaded_at_start,
             withdrawal_destination: None,
         }
@@ -3548,7 +4108,12 @@ impl BattleSession {
                             .map_or(TacticalWorldVector::ZERO, |next| {
                                 source_delta(next, ship.source_position).normalized()
                             });
-                        if ship.source_waypoint.is_none() && ship.order != TacticalOrder::Escort {
+                        if ship.source_waypoint.is_none()
+                            && !matches!(
+                                ship.order,
+                                TacticalOrder::Escort | TacticalOrder::Withdraw
+                            )
+                        {
                             ship.order = TacticalOrder::None;
                             if ship.is_attacker == self.player_is_attacker
                                 && matches!(
@@ -3666,6 +4231,12 @@ impl BattleSession {
                 }
                 TacticalFighterRecoveryState::Docking => {
                     fighter.recovery_state = TacticalFighterRecoveryState::Recovered;
+                    // `FUN_005b8630`: the hangar's recovered list (`+0x20`,
+                    // state 5) under the carrier's id (`+0x164`).
+                    if let Some(target) = fighter.recovery_target {
+                        fighter.carrier = Some(TacticalBerth::Ship(target));
+                    }
+                    fighter.docked = Some(TacticalDock::Recovered);
                     fighter.order = TacticalOrder::None;
                     fighter.selected = false;
                     fighter.alive = false;
@@ -3707,15 +4278,21 @@ impl BattleSession {
     ) {
         let fleet = &world.fleets[fleet_key];
         let first_fleet_ship = ships.len();
+        // Mode 1 (`FUN_005001b0(fleet, 1)`, `FUN_0040b0e0.c:164`): a ship
+        // still on its own leg from its yard stays out.
         for (ship_idx, ship) in fleet
             .capital_ships
             .iter()
             .enumerate()
-            .filter(|(_, ship)| ship.alive)
+            .filter(|(_, ship)| ship.usable())
         {
             let class = &world.capital_ship_classes[ship.class];
+            // The fleet loop exports a Death Star ship as the station's short
+            // record only (`FUN_0040b0e0.c:86-118`; `TacticalDeathStar`).
+            if class.is_death_star() {
+                continue;
+            }
             let tactical_resource = capital_ship_tactical_resource(class.dat_id);
-            let death_star_resource = death_star_tactical_resource(class.dat_id);
 
             let turbolaser_total = (class.turbolaser_fore
                 + class.turbolaser_aft
@@ -3781,7 +4358,6 @@ impl BattleSession {
                     is_alliance: fleet.is_alliance,
                 },
                 tactical_resource,
-                death_star_resource,
                 source_position: TacticalWorldPosition::ORIGIN,
                 source_forward: TacticalWorldVector::SOURCE_FORWARD,
                 source_desired_forward: TacticalWorldVector::ZERO,
@@ -3844,6 +4420,11 @@ impl BattleSession {
                 retreating: false,
                 retreat_progress: 0.0,
                 retreated: false,
+                outstanding_hits: u32::from(subsystem_damage.shields)
+                    + u32::from(subsystem_damage.tractor)
+                    + u32::from(subsystem_damage.engines)
+                    + u32::from(subsystem_damage.hyperdrive),
+                repair_timer_steps: 0,
             });
         }
 
@@ -3937,7 +4518,7 @@ impl BattleSession {
                     ion_cannon: class.ion_cannon_range as f32,
                     turbolaser: class.turbolaser_range as f32,
                 },
-                torpedo_strength: class.torpedoes,
+                torpedo_strength: class.torpedoes * squad_count,
                 torpedo_range: class.torpedoes_range as f32,
                 maneuverability: class.maneuverability,
                 is_attacker,
@@ -3945,6 +4526,9 @@ impl BattleSession {
                 // FUN_005c63f0 initializes color state to 4 (white/unassigned).
                 fighter_group: 4,
                 selected: false,
+                off_field: false,
+                carrier: None,
+                docked: None,
                 order: TacticalOrder::None,
                 tactic: TacticalTactic::StandOff,
                 attack_target: None,
@@ -3953,6 +4537,70 @@ impl BattleSession {
                 recovery_target: None,
                 held_by_system,
             });
+        }
+    }
+
+    /// `FUN_005964c0.c:133-219`: a fleet's squadron takes its carrier
+    /// (`+0x164`), resolved by `FUN_005a6360`: its capital ship in the
+    /// battle, else the station's hangar when there is a station (any side's
+    /// squadron, `FUN_005a6360.c:15-31`). Without a working hyperdrive
+    /// (`FUN_005b1b70`) it starts docked, ready (state 1, `FUN_005b69d0`),
+    /// in that hangar's launch list while the hangar has room
+    /// (`FUN_005b8570.c:13`, reserved `+0xc` below capacity `+0x10`); with no
+    /// room it stays in state 1 outside the list and never launches. A
+    /// squadron with a hyperdrive, or held by the system, starts in flight
+    /// (`FUN_005b69b0`, state 2).
+    /// port: a full hangar's squadron is kept as recovered, which never
+    /// launches.
+    fn seat_carried_squadrons(
+        world: &GameWorld,
+        ships: &[TacticalShip],
+        fighters: &mut [TacticalFighter],
+        hyperdrive_squadrons: &[usize],
+        station_capacity: Option<u32>,
+    ) {
+        let mut reserved = vec![0_u32; ships.len()];
+        let mut station_reserved = 0_u32;
+        for (index, fighter) in fighters.iter_mut().enumerate() {
+            let Some(fleet_key) = fighter.fleet else {
+                continue;
+            };
+            let Some(fleet) = world.fleets.get(fleet_key) else {
+                continue;
+            };
+            let tag = fleet
+                .fighters
+                .get(fighter.fleet_fighter_index)
+                .map_or(0, |entry| entry.carrier);
+            let ship = ships.iter().position(|ship| {
+                ship.fleet == Some(fleet_key)
+                    && fleet
+                        .capital_ships
+                        .get(ship.fleet_ship_index)
+                        .is_some_and(|instance| instance.tag == tag)
+            });
+            let carrier = match (ship, station_capacity) {
+                (Some(ship), _) => TacticalBerth::Ship(ship),
+                (None, Some(_)) => TacticalBerth::Station,
+                (None, None) => continue,
+            };
+            fighter.carrier = Some(carrier);
+            if hyperdrive_squadrons.contains(&index) {
+                continue;
+            }
+            let (count, capacity) = match carrier {
+                TacticalBerth::Ship(ship) => (&mut reserved[ship], ships[ship].fighter_capacity),
+                TacticalBerth::Station => (&mut station_reserved, station_capacity.unwrap_or(0)),
+            };
+            fighter.docked = Some(if *count < capacity {
+                *count += 1;
+                TacticalDock::Ready
+            } else {
+                TacticalDock::Recovered
+            });
+            // port: as a recovered squadron, a docked one is out of the
+            // battle's live units until it launches.
+            fighter.alive = false;
         }
     }
 
@@ -3991,6 +4639,9 @@ impl BattleSession {
 
     /// Bind every active battle participant to the source X-slot and Z-lane
     /// initialization performed by `FUN_005ab650` through `FUN_005a9030`.
+    /// A docked squadron (not `alive` until it launches) joins no placement
+    /// list and no count of the battle extent (`FUN_005ab650.c:148-153`,
+    /// `:196-210`, `FUN_005b69f0`).
     fn assign_original_world_positions(
         ships: &mut [TacticalShip],
         fighters: &mut [TacticalFighter],
@@ -4053,14 +4704,16 @@ impl BattleSession {
     /// Reproduce `FUN_005ae460`'s class-first red, blue, green, and gold
     /// fighter assignment independently for the Alliance and Empire. Empty
     /// colors split the first half of the largest group only when it contains
-    /// more than seven squadrons.
+    /// more than seven squadrons. It runs at setup, where every squadron
+    /// is in flight or docked, and a docked one is grouped too: the counts
+    /// and `FUN_005adfa0` walk every object (`mgr+0x9a0`) with no docked
+    /// test (`FUN_005ab650.c:297-320`, `:383-406`,
+    /// `FUN_005adfa0.c:22-26`).
     fn assign_original_fighter_groups(fighters: &mut [TacticalFighter]) {
         for is_alliance in [true, false] {
             let mut groups: [Vec<usize>; 4] = std::array::from_fn(|_| Vec::new());
             for (index, fighter) in fighters.iter().enumerate().filter(|(_, fighter)| {
-                fighter.alive
-                    && fighter.squad_count > 0
-                    && fighter.identity.is_alliance == is_alliance
+                fighter.squad_count > 0 && fighter.identity.is_alliance == is_alliance
             }) {
                 let Some(group) = fighter.tactical_resource.and_then(|resource| {
                     let base = if resource.tactical_ordinal < 33 {
@@ -4431,9 +5084,6 @@ impl BattleSession {
                         OriginalTacticalImpactStage::Destroyed,
                     );
                 }
-                if let Some(death_star) = self.death_star.as_mut() {
-                    death_star.action_committed = false;
-                }
                 self.pending_log_lines.push(format!(
                     "[tactical_death_star] superlaser_resolved target_object_id={}",
                     beam.target + 1
@@ -4443,34 +5093,55 @@ impl BattleSession {
     }
 
     pub fn commit_death_star_shot(&mut self, target: usize) -> bool {
+        self.commit_death_star_shot_for(self.player_is_attacker, target)
+    }
+
+    /// The side `is_attacker`'s station fires at the capital ship `target`
+    /// (`FUN_005ba720`): it must be operational and fully charged, the
+    /// target an enemy ship still fighting, and no beam in flight.
+    fn commit_death_star_shot_for(&mut self, is_attacker: bool, target: usize) -> bool {
         if self.death_star_beam.is_some()
             || self
                 .ships
                 .get(target)
-                .is_none_or(|ship| !ship.alive || ship.is_attacker == self.player_is_attacker)
+                .is_none_or(|ship| !ship.alive || ship.is_attacker == is_attacker)
         {
             return false;
         }
         let Some(death_star) = self.death_star.as_mut().filter(|death_star| {
-            death_star.is_attacker == self.player_is_attacker
+            death_star.is_attacker == is_attacker
                 && death_star.operational()
                 && death_star.laser_charge >= ORIGINAL_DEATH_STAR_LASER_FULL_CHARGE
         }) else {
             return false;
         };
         let target_position = self.ships[target].source_position;
-        death_star.action_committed = true;
+        // `FUN_005ba720` zeroes the charge and posts message 0x44; the
+        // shot (`FUN_005ba520`) leaves `+0x78` alone, which only the
+        // departure `FUN_005ba5e0` sets.
         death_star.laser_charge = 0.0;
         self.death_star_beam = Some(TacticalDeathStarBeam {
             target,
-            source_position: death_star.source_position,
+            source_position: death_star.superlaser_source(self.source_layout.battle_extent),
             target_position,
             elapsed: 0.0,
             duration: ORIGINAL_PROJECTILE_DURATION_SHORT,
             color_selector: u8::from(!death_star.is_alliance),
         });
-        self.pending_voice_cues
-            .push(TacticalVoiceCue::death_star_firing());
+        // `FUN_005a5740`, the player's targeting click, queues 0x111.
+        if is_attacker == self.player_is_attacker {
+            self.pending_voice_cues
+                .push(TacticalVoiceCue::death_star_firing());
+        }
+        // `FUN_005ba520.c:23-31`, whoever fired: event 0x14 (TACTICAL.DLL
+        // WAVE 13054) for either local side, and for a local Alliance
+        // (`battle+0x9ec == 0`) its warning 0x91.
+        self.pending_audio_cues
+            .push(TacticalAudioCue::from_variant(TacticalAudioEvent::TorpedoImpact, 0));
+        if self.player_voice_faction() == TacticalVoiceFaction::Alliance {
+            self.pending_voice_cues
+                .push(TacticalVoiceCue::death_star_fire_warning());
+        }
         self.pending_log_lines.push(format!(
             "[tactical_death_star] superlaser_committed target_object_id={} charge=0",
             target + 1
@@ -4490,21 +5161,7 @@ impl BattleSession {
         self.combat_tick += 1;
         self.subsystem_repairs.clear();
 
-        // Process retreating ships: advance retreat progress, move off-screen.
-        for ship in &mut self.ships {
-            if ship.retreating && ship.alive {
-                ship.retreat_progress += 0.05; // ~20 ticks to fully retreat
-                                               // Move ship toward the edge.
-                let retreat_dir = if ship.is_attacker { -1.0 } else { 1.0 };
-                ship.x += retreat_dir * 15.0;
-                if ship.retreat_progress >= 1.0 {
-                    // Ship has escaped — remove from combat but NOT destroyed.
-                    // It survives but doesn't participate further.
-                    ship.alive = false;
-                    ship.retreated = true;
-                }
-            }
-        }
+        self.advance_side_withdrawals(ORIGINAL_TACTICAL_STEP_MILLISECONDS);
         refresh_original_escort_targets(self);
         advance_original_escort_movement(self, ORIGINAL_TACTICAL_STEP_MILLISECONDS);
         advance_original_engagement(self, ORIGINAL_TACTICAL_STEP_MILLISECONDS);
@@ -4583,41 +5240,72 @@ impl BattleSession {
         self.fire_capitals_at_fighters(&mut new_effects);
         self.weapon_effects.extend(new_effects);
 
-        // FUN_005b0330 invokes FUN_005b1490 every 50,000 ms. Four combat
-        // steps represent one source second, so one repair attempt occurs per
-        // ship every 200 steps. Both draws advance the one recovered tactical
-        // manager stream in source call order.
-        if self
-            .combat_tick
-            .is_multiple_of(ORIGINAL_SUBSYSTEM_REPAIR_INTERVAL_TICKS)
-        {
-            for (ship_index, ship) in self.ships.iter_mut().enumerate() {
-                let hits = ship.subsystem_damage.total_hits();
-                if hits == 0 {
-                    continue;
-                }
-                let chance_roll = u8::try_from(self.tactical_rng.inclusive(1, 100)).unwrap_or(100);
-                let selection_roll =
-                    u16::try_from(self.tactical_rng.inclusive(1, u32::from(hits))).unwrap_or(hits);
-                if let Some(repair) =
-                    attempt_original_subsystem_repair(ship, ship_index, chance_roll, selection_roll)
-                {
-                    self.subsystem_repairs.push(repair);
-                }
-            }
-            refresh_original_subsystem_conditions(&mut self.ships, &self.field_effects);
-        }
+        self.advance_subsystem_repairs();
 
         // Fighter batteries use the same 250 ms source cadence as capital
         // batteries. Their own readiness and recharge record gates each shot.
         self.fighter_step();
+        self.advance_computer_controller();
+        self.advance_trench_run_approach(ORIGINAL_TACTICAL_STEP_MILLISECONDS);
         self.advance_original_trench_run(ORIGINAL_TACTICAL_STEP_MILLISECONDS);
+        self.advance_hangars(ORIGINAL_TACTICAL_STEP_MILLISECONDS);
+        self.destroy_squadrons_docked_in_lost_ships();
 
         if self.finish_if_decided() {
             return true;
         }
 
         self.advance_stalemate_watch(ORIGINAL_TACTICAL_STEP_SECONDS)
+    }
+
+    /// The played frame (`FUN_005bea30.c:121`) runs the unit pass (battle
+    /// slot `+0x88`, `FUN_005a9de0`) once per 1000 ms turn; for each live
+    /// capital ship it calls `FUN_005b0330` (slot `+0x9c`), whose repair
+    /// timer (`+0x3f4`) counts down only for a unit without `+0x124`
+    /// (`FUN_005c0170` sets it on every unit not of the player's side) and
+    /// with outstanding hits (`+0x158`) (`FUN_005b0330.c:19-24`). At 0 it is
+    /// reset to 50 s and `FUN_005b1490` rolls; both draws advance the one
+    /// recovered tactical manager stream. An unplayed battle repairs nothing
+    /// (`ghidra/notes/tactical-engagement-ai.md`, "Subsystem repair").
+    fn advance_subsystem_repairs(&mut self) {
+        if !self.combat_tick.is_multiple_of(ORIGINAL_STEPS_PER_SECOND) {
+            return;
+        }
+        let player = self.player_is_attacker;
+        for ship_index in 0..self.ships.len() {
+            let ship = &mut self.ships[ship_index];
+            if ship.is_attacker != player || !ship.alive || ship.outstanding_hits == 0 {
+                continue;
+            }
+            ship.repair_timer_steps = ship.repair_timer_steps.saturating_sub(ORIGINAL_STEPS_PER_SECOND);
+            if ship.repair_timer_steps > 0 {
+                continue;
+            }
+            ship.repair_timer_steps = ORIGINAL_SUBSYSTEM_REPAIR_INTERVAL_TICKS;
+            // FUN_005b1490: no draw without damage control (+0x3f0); the
+            // hit is drawn among the outstanding ones only when the
+            // chance passes and two or more are outstanding.
+            if ship.damage_control == 0 {
+                continue;
+            }
+            let chance_roll = u8::try_from(self.tactical_rng.inclusive(1, 100)).unwrap_or(100);
+            if chance_roll > ship.damage_control {
+                continue;
+            }
+            let outstanding = ship.outstanding_hits;
+            let selection_roll = if outstanding < 2 {
+                1
+            } else {
+                u16::try_from(self.tactical_rng.inclusive(1, outstanding)).unwrap_or(u16::MAX)
+            };
+            if let Some(repair) =
+                attempt_original_subsystem_repair(ship, ship_index, chance_roll, selection_roll)
+            {
+                ship.outstanding_hits -= 1;
+                self.subsystem_repairs.push(repair);
+            }
+        }
+        refresh_original_subsystem_conditions(&mut self.ships, &self.field_effects);
     }
 
     /// Developer command: put the player's `n`th living ship (1-based, in
@@ -4648,7 +5336,8 @@ impl BattleSession {
     }
 
     /// Whether a side still has a ship, a squadron with craft left, or its
-    /// Death Star.
+    /// operational Death Star (`FUN_005a9ec0.c:274-281` counts the Empire
+    /// empty only when `FUN_005ba420` fails).
     fn side_remains(&self, is_attacker: bool) -> bool {
         self.ships
             .iter()
@@ -4657,39 +5346,66 @@ impl BattleSession {
                 fighter.is_attacker == is_attacker && fighter.alive && fighter.squad_count > 0
             })
             || self.death_star.is_some_and(|death_star| {
-                death_star.is_attacker == is_attacker
-                    && !death_star.destroyed
-                    && !self.death_star_withdrew(is_attacker)
+                death_star.is_attacker == is_attacker && death_star.operational()
             })
     }
 
-    /// The side's Death Star left with its retreat (`FUN_005d14d0.c:124-127`
-    /// sets its `+0x78`).
+    /// The side the battle recorded as its winner (`true` Alliance), `None`
+    /// for no winner: what the Battle Summary and the battle's telemetry
+    /// both report.
     #[must_use]
-    pub fn death_star_withdrew(&self, is_attacker: bool) -> bool {
-        self.morale.death_star_jumped
-            && self
-                .death_star
-                .is_some_and(|death_star| death_star.is_attacker == is_attacker)
+    pub fn winner_is_alliance(&self) -> Option<bool> {
+        match self.winner {
+            Some(CombatWinner::Attacker) => Some(self.attacker_is_alliance),
+            Some(CombatWinner::Defender) => Some(!self.attacker_is_alliance),
+            Some(CombatWinner::Draw) | None => None,
+        }
     }
 
-    /// End the battle when one side (or both) has nothing left.
+    /// End the battle when one side (or both) has nothing left
+    /// (`FUN_005a9ec0.c:274-290`).
     fn finish_if_decided(&mut self) -> bool {
-        let atk_remaining = self.side_remains(true);
-        let def_remaining = self.side_remains(false);
+        if self.side_remains(true) && self.side_remains(false) {
+            return false;
+        }
+        let winner = self.decided_winner();
+        self.queue_battle_outcome_voice();
+        self.winner = Some(winner);
+        self.phase = BattlePhase::Results;
+        true
+    }
 
-        if !atk_remaining || !def_remaining {
-            let winner = match (atk_remaining, def_remaining) {
+    /// The winner `FUN_0040c780` records (`:60-101`). A side alone at
+    /// nothing has lost (`FUN_005a9ec0.c:274-286`); both at nothing clears
+    /// both losses (`:287-290`) and the side that withdrew wins (`:82-93`,
+    /// the flags `+0x27c` and `+0x27e` that `FUN_0059a530` copies to
+    /// `+0x66c`). Both withdrawn, the system's `+0x78` holder decides
+    /// (`:95-101`): holder 1, the Alliance, gives the Empire; holders 2 and
+    /// 0 give the Alliance. Neither withdrawn records no winner (0), and the
+    /// post-battle pass falls back to the holder (`FUN_00516ef0.c:95-112`,
+    /// `post_battle::pass_winner`).
+    /// port: holder 3, which gives winner 3 (both sides), has no
+    /// counterpart: `FUN_0050a1b0` writes an arriving fleet's or squadron's
+    /// own side, 1 or 2, and `GameWorld::arrival_holders` holds one side.
+    fn decided_winner(&self) -> CombatWinner {
+        let alliance_wins = |alliance: bool| {
+            if alliance == self.attacker_is_alliance {
+                CombatWinner::Attacker
+            } else {
+                CombatWinner::Defender
+            }
+        };
+        match (self.side_remains(true), self.side_remains(false)) {
+            (true, false) => CombatWinner::Attacker,
+            (false, true) => CombatWinner::Defender,
+            (true, true) => CombatWinner::Draw,
+            (false, false) => match (self.side_withdrew(true), self.side_withdrew(false)) {
                 (true, false) => CombatWinner::Attacker,
                 (false, true) => CombatWinner::Defender,
-                _ => CombatWinner::Draw,
-            };
-            self.queue_battle_outcome_voice(winner);
-            self.winner = Some(winner);
-            self.phase = BattlePhase::Results;
-            return true;
+                (true, true) => alliance_wins(self.arrival_holder_is_alliance != Some(true)),
+                (false, false) => CombatWinner::Draw,
+            },
         }
-        false
     }
 
     /// One second of a battle run without its window (`FUN_005ae9c0`). Each
@@ -4706,6 +5422,10 @@ impl BattleSession {
         self.combat_tick += 4;
         let empire_is_attacker = !self.attacker_is_alliance;
         for is_attacker in [empire_is_attacker, !empire_is_attacker] {
+            self.headless_death_star(is_attacker);
+            if is_attacker == empire_is_attacker {
+                self.launch_headless_hangars();
+            }
             let groups = engagement_groups(self);
             for fighters_first in [false, true] {
                 assign_engagement_targets(self, &groups, is_attacker, fighters_first);
@@ -4749,6 +5469,209 @@ impl BattleSession {
         self.advance_stalemate_watch(ORIGINAL_HEADLESS_STEP_SECONDS)
     }
 
+    /// The side's first fighter group (`+0x70`, kind 4), the squadrons a
+    /// headless trench run sends (`FUN_005d14d0.c:28-37`), by index.
+    /// port: the lowest fighter group with a live, listed squadron.
+    pub(crate) fn first_fighter_group(&self, is_attacker: bool) -> Vec<usize> {
+        let flying = |fighter: &TacticalFighter| {
+            fighter.is_attacker == is_attacker
+                && fighter.alive
+                && fighter.squad_count > 0
+                && fighter.listed()
+        };
+        let Some(group) = self
+            .fighters
+            .iter()
+            .filter(|fighter| flying(fighter))
+            .map(|fighter| fighter.fighter_group.min(4))
+            .min()
+        else {
+            return Vec::new();
+        };
+        (0..self.fighters.len())
+            .filter(|&index| {
+                let fighter = &self.fighters[index];
+                flying(fighter) && fighter.fighter_group.min(4) == group
+            })
+            .collect()
+    }
+
+    /// `FUN_005d14d0.c:20-60`, at the head of a side's headless step. The
+    /// Alliance side (slot `+4` 0), with the station attackable
+    /// (`FUN_005ba450`) and more listed squadrons than the Empire's
+    /// (`FUN_005c5eb0` on each side's `+0x64`, strict), sends its first
+    /// fighter group on the trench run ([`Self::headless_trench_run`]); it
+    /// tries again each step while the test holds. The Empire side, its
+    /// station operational (`FUN_005ba420`), charges it short of 100.0 by
+    /// one millisecond's worth (`FUN_005ba7f0`) and at exactly 100.0 fires
+    /// at the first capital ship of its ranked opponents (`FUN_005d1a70`):
+    /// the charge goes to 0 (`FUN_005ba710`, no message, voice or beam) and
+    /// the ship is destroyed outright with its hangar (`FUN_005af7a0`).
+    fn headless_death_star(&mut self, is_attacker: bool) {
+        let Some(station) = self.death_star else {
+            return;
+        };
+        if is_attacker == self.attacker_is_alliance {
+            if !station.attackable()
+                || self.listed_squadrons(is_attacker) <= self.listed_squadrons(!is_attacker)
+            {
+                return;
+            }
+            let members = self.first_fighter_group(is_attacker);
+            if !members.is_empty() {
+                self.headless_trench_run(members);
+            }
+            return;
+        }
+        if !station.operational() {
+            return;
+        }
+        if let Some(station) = self
+            .death_star
+            .as_mut()
+            .filter(|station| station.laser_charge != ORIGINAL_DEATH_STAR_LASER_FULL_CHARGE)
+        {
+            station.advance_laser_charge(ORIGINAL_HEADLESS_LASER_SECONDS);
+        }
+        if self.death_star.map(|station| station.laser_charge)
+            != Some(ORIGINAL_DEATH_STAR_LASER_FULL_CHARGE)
+        {
+            return;
+        }
+        let Some(target) = engagement_priorities(self, is_attacker, false)
+            .into_iter()
+            .find_map(|unit| match unit {
+                EngagementUnit::Capital(index) => Some(index),
+                EngagementUnit::Fighter(_) => None,
+            })
+        else {
+            return;
+        };
+        if let Some(station) = self.death_star.as_mut() {
+            station.laser_charge = 0.0;
+        }
+        let ship = &mut self.ships[target];
+        ship.hull_current = 0;
+        ship.alive = false;
+        ship.selected = false;
+        ship.attack_target = None;
+        for fighter in &mut self.fighters {
+            if fighter.carrier == Some(TacticalBerth::Ship(target)) && fighter.docked.is_some() {
+                fighter.destroy();
+            }
+        }
+    }
+
+    /// The side's squadrons in its list `+0x64`.
+    fn listed_squadrons(&self, is_attacker: bool) -> usize {
+        self.fighters
+            .iter()
+            .filter(|fighter| {
+                fighter.is_attacker == is_attacker
+                    && fighter.alive
+                    && fighter.squad_count > 0
+                    && fighter.listed()
+            })
+            .count()
+    }
+
+    /// `FUN_005aefc0`, the trench run of a battle run without its window.
+    /// The members are walked round in id order, survivors keeping their
+    /// place, for at most a hundred visits, after which every one left is
+    /// destroyed. Each visit draws `rand(1,10)` from the battle generator
+    /// ([`OriginalBattleRng`], so 1..=9) against the maneuver
+    /// (`FUN_005ba270`): above it, a squadron of fewer than two craft is
+    /// destroyed, else it takes `rand(1,n)` craft of its `n` through the
+    /// shield-first damage (`FUN_005b54d0`) and is destroyed at no hull. A
+    /// survivor rolls `rand(1,100)` (1..=99) against the success chance,
+    /// rated by the Alliance Commander when the object carrying it is one
+    /// of the battle's (`FUN_005afc00` -> `FUN_005a6340`), alive or not (no
+    /// `FUN_005ad870` state check), else 1. A success zeroes the station's hull and charge
+    /// (`FUN_005ba8a0`) and destroys every squadron in its hangar
+    /// (`0x5af38b-0x5af3f4`); the survivors keep their damage.
+    /// port: a squadron's place in `fighters` is its id order (`+0xec`).
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::cast_sign_loss,
+        reason = "The source truncates floats to ints (`__ftol`)."
+    )]
+    fn headless_trench_run(&mut self, mut members: Vec<usize>) {
+        let rating = self.headless_trench_rating();
+        let mut at = 0;
+        let mut visits = 0;
+        while !members.is_empty() {
+            visits += 1;
+            if visits > ORIGINAL_HEADLESS_TRENCH_RUN_VISITS {
+                for index in members {
+                    self.fighters[index].destroy();
+                }
+                return;
+            }
+            let index = members[at];
+            let maneuver = self.fighters[index].trench_maneuver().trunc() as i32;
+            if self.battle_rng.between(1, 10) > maneuver {
+                let craft =
+                    (self.fighters[index].hull_current / ORIGINAL_TRENCH_RUN_DAMAGE_SCALE).trunc() as i32;
+                if craft >= 2 {
+                    let damage = self.battle_rng.between(1, craft) as f32 * ORIGINAL_TRENCH_RUN_DAMAGE_SCALE;
+                    self.damage_squadron_shield_first(index, damage);
+                }
+                if craft < 2 || self.fighters[index].hull_current <= 0.0 {
+                    self.fighters[index].destroy();
+                    members.remove(at);
+                    if at >= members.len() {
+                        at = 0;
+                    }
+                    continue;
+                }
+            }
+            let chance = trench_run_success_chance(&self.fighters[index], rating);
+            if self.battle_rng.between(1, 100) as u32 <= chance {
+                if let Some(station) = self.death_star.as_mut() {
+                    station.hull = 0.0;
+                    station.laser_charge = 0.0;
+                }
+                for fighter in &mut self.fighters {
+                    if fighter.carrier == Some(TacticalBerth::Station) && fighter.docked.is_some() {
+                        fighter.destroy();
+                    }
+                }
+                return;
+            }
+            at = (at + 1) % members.len();
+        }
+    }
+
+    /// `FUN_005d14d0.c:62-82`: the Empire side's headless step, before its
+    /// targets and damage, takes every squadron docked at the start
+    /// (`FUN_005af4b0` lists them in `battle+0x58`) out of its hangar
+    /// (`FUN_005b8450`) into flight (state 2) and empties the list, so a
+    /// battle run without its window launches them all on its first step.
+    /// port: a squadron flies for its own side; the source lists an
+    /// Alliance one in the Empire side's list, which the shipped FIGHTSD
+    /// never stages (its four Alliance classes have hyperdrive 60, so none
+    /// docks).
+    fn launch_headless_hangars(&mut self) {
+        for index in 0..self.fighters.len() {
+            if self.fighters[index].squad_count == 0 || self.fighters[index].docked.is_none() {
+                continue;
+            }
+            let position = match self.fighters[index].carrier {
+                Some(TacticalBerth::Ship(ship)) => self.ships[ship].source_position,
+                Some(TacticalBerth::Station) => self
+                    .death_star
+                    .map_or(TacticalWorldPosition::ORIGIN, |station| station.source_position),
+                None => self.fighters[index].source_position,
+            };
+            let fighter = &mut self.fighters[index];
+            fighter.docked = None;
+            fighter.alive = true;
+            fighter.recovery_state = TacticalFighterRecoveryState::AwaitingCarrier;
+            fighter.source_position = position;
+        }
+    }
+
     /// `FUN_005b54d0` for the headless step: shield first, the overflow
     /// (at least one point) into hull, with the capital subsystem rolls.
     fn apply_headless_damage(&mut self, target: EngagementUnit, damage: f32) {
@@ -4768,12 +5691,10 @@ impl BattleSession {
                 }
                 carry[index] -= whole;
                 let points = whole as i32;
-                let rolls = original_tactical_damage_rolls(
-                    &self.ships,
-                    index,
-                    points,
-                    &mut self.tactical_rng,
-                );
+                let battle_rng = &mut self.battle_rng;
+                let rolls = original_tactical_damage_rolls(&self.ships, index, points, || {
+                    u32::try_from(battle_rng.between(0, 100)).unwrap_or(0)
+                });
                 apply_original_capital_damage(
                     &mut self.ships,
                     &mut self.field_effects,
@@ -4782,16 +5703,30 @@ impl BattleSession {
                     rolls,
                 );
             }
-            EngagementUnit::Fighter(index) => {
-                let fighter = &mut self.fighters[index];
-                fighter.shield -= damage;
-                if fighter.shield < 0.0 {
-                    let overflow = -fighter.shield;
-                    fighter.shield = 0.0;
-                    fighter.hull_current = (fighter.hull_current - overflow.max(1.0)).max(0.0);
-                    fighter.refresh_craft_count();
-                }
-            }
+            EngagementUnit::Fighter(index) => self.damage_squadron_shield_first(index, damage),
+        }
+    }
+
+    /// `FUN_005b54d0` on a squadron: nothing without hull; the shield takes
+    /// the damage first, with a draw for a shield hit while it had any, and
+    /// its overflow (at least one point) the hull, with a draw for the
+    /// subsystem roll. A squadron's hits (`FUN_005b1970`) only count, so the
+    /// draws keep the stream in step.
+    fn damage_squadron_shield_first(&mut self, index: usize, damage: f32) {
+        let fighter = &mut self.fighters[index];
+        if fighter.hull_current == 0.0 {
+            return;
+        }
+        let shielded = fighter.shield > 0.0;
+        fighter.shield -= damage;
+        let overflow = (fighter.shield < 0.0).then(|| -fighter.shield);
+        if let Some(overflow) = overflow {
+            fighter.shield = 0.0;
+            fighter.hull_current = (fighter.hull_current - overflow.max(1.0)).max(0.0);
+            fighter.refresh_craft_count();
+        }
+        for _ in 0..u8::from(shielded) + u8::from(overflow.is_some()) {
+            self.battle_rng.between(0, 100);
         }
     }
 
@@ -4800,9 +5735,10 @@ impl BattleSession {
     /// of every capital ship whose attackers do not already out-damage its
     /// shield recharge.
     /// An operational Death Star adds `_DAT_0066d0f0` (20000000.0, read from
-    /// the executable) to the Empire's strength (`FUN_005d0ce0.c:80-85`).
-    /// port: the term the Alliance side takes during a trench run
-    /// (`FUN_005d0ce0.c:86-103`, `FUN_005afcc0`) is not modeled.
+    /// the executable) to the Empire's strength (`FUN_005d0ce0.c:80-85`),
+    /// and to the Alliance's when the station is attackable and the
+    /// Alliance lists more squadrons than the Empire (`FUN_005afcc0`), or a
+    /// group of the Alliance has order 6 (`FUN_005d0ce0.c:86-103`).
     fn stalemate_strength(&self, is_attacker: bool) -> f32 {
         let groups = engagement_groups(self);
         let enemy_side = usize::from(is_attacker);
@@ -4834,12 +5770,31 @@ impl BattleSession {
         let death_star = self
             .death_star
             .filter(|death_star| {
-                death_star.is_attacker == is_attacker
-                    && !death_star.is_alliance
-                    && death_star.operational()
+                death_star.operational()
+                    && if death_star.is_attacker == is_attacker {
+                        !death_star.is_alliance
+                    } else {
+                        // The other side is the Alliance (side 0).
+                        !death_star.is_alliance
+                            && self.death_star_strengthens_its_attackers(*death_star)
+                    }
             })
             .map_or(0.0, |_| ORIGINAL_DEATH_STAR_STRENGTH);
         capitals + fighters + death_star
+    }
+
+    /// The Alliance's half of `FUN_005d0ce0.c:86-103`: `FUN_005afcc0` (the
+    /// station attackable and the Alliance's listed squadrons strictly
+    /// outnumbering the Empire's) or an Alliance group under order 6.
+    fn death_star_strengthens_its_attackers(&self, death_star: TacticalDeathStar) -> bool {
+        let attackers = !death_star.is_attacker;
+        (death_star.attackable()
+            && self.listed_squadrons(attackers) > self.listed_squadrons(death_star.is_attacker))
+            || self.fighters.iter().any(|fighter| {
+                fighter.is_attacker == attackers
+                    && fighter.alive
+                    && fighter.order == TacticalOrder::AttackDeathStar
+            })
     }
 
     /// Whether a capital ship or a squadron of the side has a working
@@ -4858,13 +5813,14 @@ impl BattleSession {
 
     /// The Empire's Death Star lets its side retreat (`FUN_005d0f50.c:32-40`:
     /// side id 1, the tactical Empire; the Death Star operational
-    /// (`FUN_005ba420`) or its `+0x74` set).
+    /// (`FUN_005ba420`) or not completed (`+0x74`)). The function tests no
+    /// fleet or drive: the retreat commits the station anyway
+    /// (`FUN_005d14d0.c:124-127`).
     fn death_star_allows_retreat(&self, is_attacker: bool) -> bool {
         self.death_star.is_some_and(|death_star| {
             death_star.is_attacker == is_attacker
                 && !death_star.is_alliance
-                && (death_star.operational() || death_star.destroyed)
-                && self.morale.death_star_departs
+                && (death_star.operational() || death_star.not_completed)
         })
     }
 
@@ -4886,27 +5842,488 @@ impl BattleSession {
     /// The retreat of `FUN_005d14d0.c:102-146`: units jump, dock or die
     /// (`stalemate_resolve_side`), the latch is set (`+0x84 = 5`), and an
     /// operational Death Star is committed (`+0x78`).
-    fn retreat_side(&mut self, is_attacker: bool) {
+    /// `FUN_005ad530`: the side withdraws. Its controller counts down at
+    /// least 30 s, or 150 s for side 1 (the Empire) with the station
+    /// operational (`:83-100`); every capital ship and every fighter group
+    /// whose first squadron has a hyperdrive rating is ordered to Withdraw
+    /// (3), a fighter group whose first squadron has none to Recover (2)
+    /// (`:32-81`); a group holding order 6 first breaks its run off
+    /// (`:43-46`, `break_off_trench_run`).
+    pub fn begin_side_withdrawal(&mut self, is_attacker: bool) {
         let side = usize::from(!is_attacker);
-        let death_star_jumps = self.death_star.is_some_and(|death_star| {
+        let empire = is_attacker != self.attacker_is_alliance;
+        let station_operational = self
+            .death_star
+            .is_some_and(|death_star| death_star.operational());
+        let floor = if empire && station_operational {
+            ORIGINAL_STATION_WITHDRAWAL_COUNTDOWN_MILLISECONDS
+        } else {
+            ORIGINAL_WITHDRAWAL_COUNTDOWN_MILLISECONDS
+        };
+        self.break_off_trench_run(is_attacker);
+        let withdrawal = &mut self.morale.withdrawal[side];
+        withdrawal.state = TacticalWithdrawalState::CountingDown;
+        withdrawal.countdown_milliseconds = withdrawal.countdown_milliseconds.max(floor);
+        let countdown = withdrawal.countdown_milliseconds;
+        self.pending_log_lines.push(format!(
+            "[tactical_withdrawal] side={} status=counting_down countdown_ms={countdown} source=FUN_005ad530",
+            if empire { "empire" } else { "alliance" },
+        ));
+        // The order setter drops the group's previous executor
+        // (FUN_005ca6d0, `+0x60`), its route with it.
+        for ship in self
+            .ships
+            .iter_mut()
+            .filter(|ship| ship.is_attacker == is_attacker && ship.alive)
+        {
+            ship.order = TacticalOrder::Withdraw;
+            ship.navigation_route.clear();
+            ship.source_waypoint = None;
+        }
+        let mut recovering = Vec::new();
+        for group in 0..=4_u8 {
+            let members: Vec<usize> = (0..self.fighters.len())
+                .filter(|&index| {
+                    let fighter = &self.fighters[index];
+                    fighter.is_attacker == is_attacker
+                        && fighter.alive
+                        && fighter.docked.is_none()
+                        && fighter.fighter_group == group
+                })
+                .collect();
+            let Some(&first) = members.first() else {
+                continue;
+            };
+            let order = if self.morale.hyperdrive_squadrons.contains(&first) {
+                TacticalOrder::Withdraw
+            } else {
+                recovering.extend(members.iter().copied());
+                TacticalOrder::Recover
+            };
+            for &index in &members {
+                self.fighters[index].order = order;
+            }
+        }
+        if !recovering.is_empty() {
+            begin_original_fighter_recovery(self, &recovering);
+        }
+    }
+
+    /// State 8 of a withdrawing side's trench run (`FUN_005ad530.c:43-46`,
+    /// `FUN_005cfec0.c:165-185`): past its approach, each participant takes
+    /// back its state-5 hull and its place in the battle; the group's new
+    /// order then drops the run (`FUN_005ca6d0`, `FUN_005d0950`), so no film
+    /// or outcome follows.
+    fn break_off_trench_run(&mut self, is_attacker: bool) {
+        let Some(group) = self.trench_run_group else {
+            return;
+        };
+        // A participant the roll emptied still flies the run until state 6
+        // or 7 (`FUN_005d04e0` only sets its hull).
+        if !self.fighters.iter().enumerate().any(|(index, fighter)| {
+            fighter.is_attacker == is_attacker
+                && (fighter.alive || self.trench_run_participants.contains(&index))
+                && fighter.fighter_group == group
+                && fighter.order == TacticalOrder::AttackDeathStar
+        }) {
+            return;
+        }
+        if self.trench_run_remaining_ms.is_some() {
+            let participants = std::mem::take(&mut self.trench_run_participants);
+            let snapshot = std::mem::take(&mut self.trench_run_snapshot);
+            for (index, hull) in participants.into_iter().zip(snapshot) {
+                // The roll's damage (state 9 or 10) is undone, a squadron
+                // it emptied included: state 2 puts every one back.
+                let fighter = &mut self.fighters[index];
+                fighter.hull_current = hull;
+                fighter.alive = hull > 0.0;
+                fighter.off_field = false;
+                fighter.refresh_craft_count();
+            }
+        }
+        self.trench_run_group = None;
+        self.trench_run_remaining_ms = None;
+        self.trench_run_pending_outcome = None;
+        self.trench_run_participants.clear();
+        self.trench_run_snapshot.clear();
+        self.trench_run_chatter_cursor = self.trench_run_chatter.len();
+        self.pending_log_lines.push(format!(
+            "[tactical_trench] group={group} state=8 status=broken_off source=FUN_005cfec0"
+        ));
+    }
+
+    /// The side controllers' withdrawal (`FUN_005c8780.c:28-125`), the
+    /// Withdraw executors (`FUN_005cc300.c:48-145`, `FUN_005c6610.c:44-110`)
+    /// and the units' jumps (`FUN_005a6b40`, `0x005aa29a`), for
+    /// `milliseconds` of battle.
+    pub fn advance_side_withdrawals(&mut self, milliseconds: f32) {
+        self.advance_jumps(milliseconds);
+        for is_attacker in [true, false] {
+            let side = usize::from(!is_attacker);
+            match self.morale.withdrawal[side].state {
+                TacticalWithdrawalState::Fighting | TacticalWithdrawalState::Over => continue,
+                TacticalWithdrawalState::CountingDown => {
+                    let withdrawal = &mut self.morale.withdrawal[side];
+                    withdrawal.countdown_milliseconds -= milliseconds;
+                    if withdrawal.countdown_milliseconds <= 0.0 {
+                        withdrawal.state = TacticalWithdrawalState::Holding;
+                        // Side 1 posts 0x45 for its operational station.
+                        let empire = is_attacker != self.attacker_is_alliance;
+                        let departed = empire && self.depart_death_star(is_attacker);
+                        self.pending_log_lines.push(format!(
+                            "[tactical_withdrawal] side={} status=holding station_departed={departed} source=FUN_005c8780",
+                            if empire { "empire" } else { "alliance" },
+                        ));
+                    }
+                }
+                TacticalWithdrawalState::Holding => {
+                    if !self.side_hyperdrive_units_in_play(is_attacker) {
+                        self.morale.withdrawal[side].state = TacticalWithdrawalState::Over;
+                        self.recall_units_left_behind(is_attacker);
+                        self.pending_log_lines.push(format!(
+                            "[tactical_withdrawal] side={} status=over source=FUN_005c8780",
+                            if is_attacker == self.attacker_is_alliance {
+                                "alliance"
+                            } else {
+                                "empire"
+                            },
+                        ));
+                        continue;
+                    }
+                }
+            }
+            self.advance_withdraw_orders(is_attacker);
+        }
+    }
+
+    /// `FUN_005ba5e0` (message `0x45`): an operational station departs
+    /// (`+0x78`), and `FUN_005b8d10` moves the squadrons still waiting to
+    /// launch from its hangar into its recovered list (state 5); squadrons
+    /// in flight are not recalled. Returns whether it departed.
+    fn depart_death_star(&mut self, is_attacker: bool) -> bool {
+        // An uncompleted station is not operational, so it never departs
+        // (`FUN_005ba5e0` tests `FUN_005ba420`).
+        let departs = self.death_star.is_some_and(|death_star| {
             death_star.is_attacker == is_attacker
                 && !death_star.is_alliance
                 && death_star.operational()
         });
-        self.stalemate_resolve_side(is_attacker);
-        self.morale.retreated[side] = true;
-        if death_star_jumps {
-            if let Some(death_star) = self.death_star.as_mut() {
-                death_star.action_committed = true;
-            }
-            self.morale.death_star_jumped = true;
-            self.morale.jumped[side] = true;
+        if !departs {
+            return false;
         }
+        if let Some(death_star) = self.death_star.as_mut() {
+            death_star.action_committed = true;
+        }
+        for fighter in &mut self.fighters {
+            if fighter.carrier == Some(TacticalBerth::Station)
+                && fighter.docked == Some(TacticalDock::Ready)
+            {
+                fighter.docked = Some(TacticalDock::Recovered);
+            }
+        }
+        true
+    }
+
+    /// `FUN_005c8780.c:72-101`: a capital ship or flying squadron of the
+    /// side with a working hyperdrive (`FUN_005b1b70`) still fights or is in
+    /// its jump.
+    /// hyp: a unit that has left (state 8) is off the side's lists once
+    /// `0x2e` is handled.
+    fn side_hyperdrive_units_in_play(&self, is_attacker: bool) -> bool {
+        let ships = self.ships.iter().any(|ship| {
+            ship.is_attacker == is_attacker && ship.alive && ship_hyperdrive_works(ship)
+        });
+        let squadrons = (0..self.fighters.len()).any(|index| {
+            let fighter = &self.fighters[index];
+            fighter.is_attacker == is_attacker
+                && fighter.alive
+                && fighter.docked.is_none()
+                && self.morale.hyperdrive_squadrons.contains(&index)
+        });
+        ships || squadrons
+    }
+
+    /// `FUN_005c8780.c:102-125` -> `0x2f` (`FUN_005b2720`): each unit of the
+    /// side without a working hyperdrive that is alive with hull above 0.0
+    /// drops its orders and fights on (state 2).
+    fn recall_units_left_behind(&mut self, is_attacker: bool) {
+        for ship in self.ships.iter_mut().filter(|ship| {
+            ship.is_attacker == is_attacker
+                && ship.alive
+                && !ship.retreating
+                && ship.hull_current > 0
+                && !ship_hyperdrive_works(ship)
+        }) {
+            ship.order = TacticalOrder::None;
+        }
+        for index in 0..self.fighters.len() {
+            let fighter = &self.fighters[index];
+            if fighter.is_attacker == is_attacker
+                && fighter.alive
+                && fighter.docked.is_none()
+                && fighter.hull_current > 0.0
+                && !self.morale.hyperdrive_squadrons.contains(&index)
+            {
+                self.fighters[index].order = TacticalOrder::None;
+            }
+        }
+    }
+
+    /// The side's withdrawal line: z at half the battle extent on its own
+    /// edge, the side's facing (`FUN_005a7490`: side 0 (0, 0, +1), side 1
+    /// (0, 0, -1), `FUN_005be160.c:27-45`) times -1.0.
+    fn withdrawal_line(&self, is_attacker: bool) -> (f32, f32) {
+        let facing = if is_attacker == self.attacker_is_alliance {
+            1.0
+        } else {
+            -1.0
+        };
+        (
+            facing,
+            -facing * ORIGINAL_WITHDRAWAL_LINE_SCALE * self.source_layout.battle_extent,
+        )
+    }
+
+    /// The Withdraw executors for the side's units. Each unit flies along z
+    /// to the line, x and y kept, and holds within 1.0 of it: a ship through
+    /// its movement (its waypoint), a squadron at its speed times 0.95
+    /// (`FUN_005eb1a0`);
+    /// with the countdown out, a squadron with a working hyperdrive within
+    /// 8.0 of the line jumps (`FUN_005c6610.c:76-108`), and of a task force
+    /// only its front ship, the first not yet left (`FUN_005c6070`), and
+    /// only when it is alive, can jump and is within 8.0 of the line; any
+    /// other front ship holds the rest back (`FUN_005cc300.c:77-145`).
+    /// port: the source moves the group's leader and the formation brings
+    /// the members along; the port moves each unit.
+    fn advance_withdraw_orders(&mut self, is_attacker: bool) {
+        let side = usize::from(!is_attacker);
+        let (facing, line) = self.withdrawal_line(is_attacker);
+        let countdown_out = self.morale.withdrawal[side].countdown_milliseconds <= 0.0;
+        // `-((line - z) * facing) <= 8.0`: the register holds the line's z,
+        // the stack copy the unit's (`FUN_005cc300.c:101`).
+        let near = |z: f32| (z - line) * facing <= ORIGINAL_WITHDRAWAL_JUMP_DISTANCE;
+        let seconds = ORIGINAL_TACTICAL_STEP_MILLISECONDS * 0.001;
+        let step = |position: &mut TacticalWorldPosition, power: f32| {
+            let distance = (line - position.z).abs();
+            if distance > ORIGINAL_WITHDRAWAL_ARRIVAL_DISTANCE {
+                let travel =
+                    (power.max(0.0) * ORIGINAL_TRENCH_RUN_SPEED_SCALE * seconds).min(distance);
+                position.z += (line - position.z).signum() * travel;
+            }
+        };
+        let mut fronts: Vec<u8> = Vec::new();
+        for index in 0..self.ships.len() {
+            let ship = &mut self.ships[index];
+            if ship.is_attacker != is_attacker
+                || !ship.alive
+                || ship.retreating
+                || ship.order != TacticalOrder::Withdraw
+            {
+                continue;
+            }
+            if (line - ship.source_position.z).abs() > ORIGINAL_WITHDRAWAL_ARRIVAL_DISTANCE {
+                ship.source_waypoint = Some(TacticalWorldPosition {
+                    z: line,
+                    ..ship.source_position
+                });
+            } else {
+                ship.source_waypoint = None;
+                ship.source_desired_forward = TacticalWorldVector::ZERO;
+            }
+            let task_force = ship.task_force;
+            if fronts.contains(&task_force) {
+                continue;
+            }
+            fronts.push(task_force);
+            let in_jump = self.ships.iter().any(|other| {
+                other.is_attacker == is_attacker
+                    && other.task_force == task_force
+                    && other.retreating
+            });
+            let ship = &mut self.ships[index];
+            if countdown_out
+                && !in_jump
+                && ship_hyperdrive_works(ship)
+                && near(ship.source_position.z)
+            {
+                ship.retreating = true;
+                ship.retreat_progress = 0.0;
+                ship.selected = false;
+                ship.attack_target = None;
+            }
+        }
+        for index in 0..self.fighters.len() {
+            let fighter = &mut self.fighters[index];
+            if fighter.is_attacker != is_attacker
+                || !fighter.alive
+                || fighter.docked.is_some()
+                || fighter.order != TacticalOrder::Withdraw
+                || self
+                    .morale
+                    .squadron_jumps
+                    .iter()
+                    .any(|&(jumping, _)| jumping == index)
+            {
+                continue;
+            }
+            step(&mut fighter.source_position, fighter.sublight_engine_power);
+            if countdown_out
+                && self.morale.hyperdrive_squadrons.contains(&index)
+                && near(fighter.source_position.z)
+            {
+                fighter.selected = false;
+                fighter.attack_target = None;
+                self.morale.squadron_jumps.push((index, 0.0));
+            }
+        }
+    }
+
+    /// State 7 (`FUN_005a6b40`): a unit in its jump plays its effect on the
+    /// first update and leaves after 4000.0 ms, when the battle's unit pass
+    /// sets state 8 (`0x005aa29a`-`0x005aa2e5`). Its flight out is drawn
+    /// (`ship_display_position`, `fighter_display_position`).
+    fn advance_jumps(&mut self, milliseconds: f32) {
+        let mut jumped = [false; 2];
+        for index in 0..self.ships.len() {
+            let ship = &self.ships[index];
+            if !ship.retreating || !ship.alive {
+                continue;
+            }
+            let id = self.original_object_id(ship.is_attacker, Some(index), None);
+            let started = ship.retreat_progress == 0.0;
+            if started {
+                self.pending_audio_cues.push(TacticalAudioCue::from_variant(
+                    TacticalAudioEvent::CapitalShipJump,
+                    0,
+                ));
+                self.log_jump(id, "jumping", 0.0);
+            }
+            let ship = &mut self.ships[index];
+            ship.retreat_progress += milliseconds;
+            if ship.retreat_progress >= ORIGINAL_JUMP_MILLISECONDS {
+                ship.alive = false;
+                ship.retreating = false;
+                ship.retreated = true;
+                jumped[usize::from(!ship.is_attacker)] = true;
+                let elapsed = ship.retreat_progress;
+                self.log_jump(id, "jumped", elapsed);
+            }
+        }
+        let mut still = Vec::new();
+        for (index, elapsed) in std::mem::take(&mut self.morale.squadron_jumps) {
+            let fighter = &self.fighters[index];
+            if !fighter.alive {
+                continue;
+            }
+            let id = self.original_object_id(fighter.is_attacker, None, Some(index));
+            if elapsed == 0.0 {
+                self.pending_audio_cues.push(TacticalAudioCue::from_variant(
+                    TacticalAudioEvent::SquadronJump,
+                    0,
+                ));
+                self.log_jump(id, "jumping", 0.0);
+            }
+            let elapsed = elapsed + milliseconds;
+            if elapsed >= ORIGINAL_JUMP_MILLISECONDS {
+                let fighter = &mut self.fighters[index];
+                fighter.alive = false;
+                jumped[usize::from(!fighter.is_attacker)] = true;
+                self.log_jump(id, "jumped", elapsed);
+            } else {
+                still.push((index, elapsed));
+            }
+        }
+        self.morale.squadron_jumps = still;
+        for (side, left) in self.morale.jumped.iter_mut().zip(jumped) {
+            *side |= left;
+        }
+    }
+
+    /// port: a unit's jump starting (state 7) and its leaving (state 8)
+    /// are logged by object id and the jump's milliseconds, for native runs.
+    fn log_jump(&mut self, id: u32, status: &str, elapsed: f32) {
+        self.pending_log_lines.push(format!(
+            "[tactical_withdrawal] unit={id} status={status} t_ms={elapsed} source=FUN_005a6b40"
+        ));
+    }
+
+    /// Where a ship is drawn: in its jump, moved against its side's facing
+    /// (`FUN_005a6b40`, `jump_flight`); else where it is.
+    #[must_use]
+    pub fn ship_display_position(&self, index: usize) -> TacticalWorldPosition {
+        let ship = &self.ships[index];
+        let mut position = ship.source_position;
+        if ship.retreating {
+            let ordinal = ship.tactical_resource.map_or(0, |resource| resource.tactical_ordinal);
+            position.z -= self.withdrawal_line(ship.is_attacker).0
+                * jump_flight(
+                    ship.retreat_progress,
+                    ordinal,
+                    self.original_object_id(ship.is_attacker, Some(index), None),
+                );
+        }
+        position
+    }
+
+    /// [`Self::ship_display_position`] for a squadron.
+    #[must_use]
+    pub fn fighter_display_position(&self, index: usize) -> TacticalWorldPosition {
+        let fighter = &self.fighters[index];
+        let mut position = fighter.source_position;
+        if let Some(&(_, elapsed)) = self
+            .morale
+            .squadron_jumps
+            .iter()
+            .find(|&&(jumping, _)| jumping == index)
+        {
+            let ordinal = fighter
+                .tactical_resource
+                .map_or(0, |resource| resource.tactical_ordinal);
+            position.z -= self.withdrawal_line(fighter.is_attacker).0
+                * jump_flight(
+                    elapsed,
+                    ordinal,
+                    self.original_object_id(fighter.is_attacker, None, Some(index)),
+                );
+        }
+        position
+    }
+
+    /// A unit's object id (`+0xec`): its side's count from the side's base
+    /// (`ORIGINAL_SIDE_1_OBJECT_ID_BASE`), one more for each unit created.
+    /// hyp: the battle creates each side's ships, then its squadrons, in
+    /// the session's order, and nothing else of the side takes an id first.
+    fn original_object_id(&self, is_attacker: bool, ship: Option<usize>, fighter: Option<usize>) -> u32 {
+        let is_alliance = is_attacker == self.attacker_is_alliance;
+        let ships_before = self
+            .ships
+            .iter()
+            .take(ship.unwrap_or(self.ships.len()))
+            .filter(|other| other.is_attacker == is_attacker)
+            .count();
+        let fighters_before = fighter.map_or(0, |index| {
+            self.fighters
+                .iter()
+                .take(index)
+                .filter(|other| other.is_attacker == is_attacker)
+                .count()
+        });
+        let base = if is_alliance { 0 } else { ORIGINAL_SIDE_1_OBJECT_ID_BASE };
+        base + u32::try_from(ships_before + fighters_before + 1).unwrap_or(u32::MAX)
+    }
+
+    fn retreat_side(&mut self, is_attacker: bool) {
+        self.stalemate_resolve_side(is_attacker);
+        self.morale.retreated[usize::from(!is_attacker)] = true;
+        // Only the side's own operational station departs
+        // (`depart_death_star`, `FUN_005ba5e0` tests `FUN_005ba420`).
+        self.depart_death_star(is_attacker);
     }
 
     /// The stalemate loser (`FUN_005ae9c0.c:62-103`): a side that may
     /// retreat is flagged (`+0xb0`) and retreats; one that may not has every
-    /// ship and squadron destroyed at once (`FUN_005af7a0`).
+    /// ship and squadron destroyed at once (`FUN_005af7a0`), the squadrons
+    /// docked in those ships with them (`tactical-death-star.md`, section 18).
     fn stalemate_withdraw(&mut self, is_attacker: bool) {
         if self.may_retreat(is_attacker) {
             self.retreat_side(is_attacker);
@@ -4935,19 +6352,32 @@ impl BattleSession {
             fighter.selected = false;
             fighter.attack_target = None;
         }
+        self.destroy_squadrons_docked_in_lost_ships();
     }
 
-    /// A side counts as withdrawn when its latch is set and a unit of it
-    /// jumped or, for the Empire, its Death Star was committed
-    /// (`FUN_005ae9c0.c:117-141`). A ship that left on the player's own
-    /// Retreat order counts too.
+    /// A side counts as withdrawn (`FUN_005a9ec0.c:245-273`) when no unit of
+    /// it is alive (`FUN_005ad870`: state 2, 4 or 6) or in its jump (states
+    /// 7 and 8), and a unit of it jumped out (state 9) or, for the Empire,
+    /// its station departed (`+0x78`). The original also requires the side's
+    /// controller out of the fight (`+0x84` 3, 4 or 5); the port jumps units
+    /// and departs the station only in that state (`advance_side_withdrawals`,
+    /// `retreat_side`), so the jump implies it.
     #[must_use]
     pub fn side_withdrew(&self, is_attacker: bool) -> bool {
         let side = usize::from(!is_attacker);
-        self.ships
+        let station_departed = self
+            .death_star
+            .is_some_and(|death_star| death_star.is_attacker == is_attacker && death_star.action_committed);
+        let left = self.morale.jumped[side] || station_departed;
+        let live = self
+            .ships
             .iter()
-            .any(|ship| ship.is_attacker == is_attacker && ship.retreated)
-            || (self.morale.retreated[side] && self.morale.jumped[side])
+            .any(|ship| ship.is_attacker == is_attacker && ship.alive)
+            || self
+                .fighters
+                .iter()
+                .any(|fighter| fighter.is_attacker == is_attacker && fighter.alive);
+        left && !live
     }
 
     /// `FUN_005d19a0` for one side: it withdraws when it may retreat
@@ -5017,16 +6447,12 @@ impl BattleSession {
                 self.stalemate_withdraw(is_attacker);
             }
         }
-        let winner = match (self.side_remains(true), self.side_remains(false)) {
-            (true, false) => CombatWinner::Attacker,
-            (false, true) => CombatWinner::Defender,
-            _ => CombatWinner::Draw,
-        };
+        let winner = self.decided_winner();
         self.pending_log_lines.push(format!(
             "[tactical_stalemate] attacker_strength={} defender_strength={} winner={:?}",
             attacker, defender, winner
         ));
-        self.queue_battle_outcome_voice(winner);
+        self.queue_battle_outcome_voice();
         self.winner = Some(winner);
         self.phase = BattlePhase::Results;
         true
@@ -5034,33 +6460,39 @@ impl BattleSession {
 
     /// The stalemate's loser. A side with a ship whose hyperdrive works
     /// (`FUN_005d0f50` through `FUN_005b1b70`) is flagged to retreat
-    /// (`side+0xb0`), and `FUN_005d14d0`'s retreat branch then sends each
-    /// hyperdrive ship or squadron out (`FUN_005af910`, state 9), docks each
-    /// other squadron with an escaping carrier (`FUN_005afe40`) and destroys
-    /// the rest (`FUN_005af7a0`: 100000 damage, state `0xb`). A side with no
-    /// working hyperdrive is destroyed outright.
-    /// port: a carrier takes as many squadrons as its fighter capacity. A
-    /// jumped squadron keeps its place in the strategic world; where
-    /// `FUN_005af910` sends it is untraced (hyp: it stays where the world
-    /// holds it, a fleet's squadron with its carrier).
+    /// (`side+0xb0`), and `FUN_005d14d0`'s retreat branch (`:102-146`)
+    /// takes its squadrons in flight first: one with a working hyperdrive
+    /// jumps out (`FUN_005af910`, state 9), any other docks
+    /// (`FUN_005afe40`) or is destroyed (`FUN_005af7a0`: 100000 damage,
+    /// state `0xb`). Its ships follow: a working hyperdrive jumps, any other
+    /// is destroyed. A side with no working hyperdrive is destroyed outright.
+    /// Squadrons already in a hangar stay there and share their carrier's
+    /// fate. hyp: where `FUN_005af910` sends a jumped squadron is untraced;
+    /// it ends the battle undocked ([`BattleSession::end_berths`]).
     fn stalemate_resolve_side(&mut self, is_attacker: bool) {
         let side = usize::from(!is_attacker);
         let escapes = ship_hyperdrive_works;
         let can_retreat = self.side_has_working_hyperdrive(is_attacker);
-        // Each escaping carrier's berths, by fleet: a squadron docks in its
-        // own carrier first (`FUN_005afe40.c:17-45`, the unit's `+0x164`),
-        // then in any escaping carrier of the side (`:48-58`).
-        // port: the own carrier is its fleet's escaping carriers, as the
-        // session keeps no per-ship carrier; the Death Star's hangar
-        // (`:59-66`) is not modeled.
-        let mut berths: Vec<(Option<FleetKey>, u32)> = Vec::new();
-        for ship in self.ships.iter().filter(|ship| {
-            can_retreat && ship.is_attacker == is_attacker && ship.alive && escapes(ship)
-        }) {
-            match berths.iter_mut().find(|(fleet, _)| *fleet == ship.fleet) {
-                Some((_, count)) => *count += ship.fighter_capacity,
-                None => berths.push((ship.fleet, ship.fighter_capacity)),
+        let flying: Vec<usize> = (0..self.fighters.len())
+            .filter(|&index| {
+                let fighter = &self.fighters[index];
+                fighter.is_attacker == is_attacker && fighter.alive && fighter.docked.is_none()
+            })
+            .collect();
+        for index in flying {
+            if self.morale.hyperdrive_squadrons.contains(&index) {
+                self.morale.jumped[side] = true;
+            } else if let Some(berth) = self.retreat_berth(index) {
+                self.fighters[index].carrier = Some(berth);
+                self.fighters[index].docked = Some(TacticalDock::Recovered);
+            } else {
+                self.fighters[index].squad_count = 0;
+                self.fighters[index].hull_current = 0.0;
             }
+            let fighter = &mut self.fighters[index];
+            fighter.alive = false;
+            fighter.selected = false;
+            fighter.attack_target = None;
         }
         for ship in self
             .ships
@@ -5079,54 +6511,124 @@ impl BattleSession {
             ship.selected = false;
             ship.attack_target = None;
         }
-        // A squadron with a working hyperdrive jumps out itself
-        // (`FUN_005af910`); the others dock or are destroyed.
-        let candidates: Vec<usize> = (0..self.fighters.len())
-            .filter(|&index| {
-                let fighter = &self.fighters[index];
-                fighter.is_attacker == is_attacker && fighter.alive
+        self.destroy_squadrons_docked_in_lost_ships();
+    }
+
+    /// `FUN_005afe40`: a retreating squadron in flight docks in its own
+    /// carrier (`+0x164`; the station only while operational, a ship only
+    /// in the battle, state 2, `FUN_005afc80`), else in the first ship of
+    /// its side in the battle, else, for the Empire, in its operational
+    /// station; each only with room (`FUN_005b84a0`: docked `+8` below
+    /// capacity `+0x10`).
+    fn retreat_berth(&self, index: usize) -> Option<TacticalBerth> {
+        let fighter = &self.fighters[index];
+        let station_open = self
+            .death_star
+            .is_some_and(|death_star| death_star.operational());
+        let ship_open = |ship: usize| {
+            self.ships
+                .get(ship)
+                .is_some_and(|ship| ship.alive && !ship.retreating && ship.is_attacker == fighter.is_attacker)
+        };
+        let own = fighter.carrier.filter(|&berth| match berth {
+            TacticalBerth::Station => station_open,
+            TacticalBerth::Ship(ship) => ship_open(ship),
+        });
+        own.filter(|&berth| self.hangar_has_room(berth))
+            .or_else(|| {
+                (0..self.ships.len())
+                    .filter(|&ship| ship_open(ship))
+                    .map(TacticalBerth::Ship)
+                    .find(|&berth| self.hangar_has_room(berth))
             })
+            .or_else(|| {
+                (!fighter.identity.is_alliance && station_open)
+                    .then_some(TacticalBerth::Station)
+                    .filter(|&berth| self.hangar_has_room(berth))
+            })
+    }
+
+    /// `FUN_005b84a0`: a hangar takes a squadron while its docked count
+    /// (`+8`) is below its capacity (`+0x10`).
+    fn hangar_has_room(&self, berth: TacticalBerth) -> bool {
+        self.hangar_count(berth) < self.hangar_capacity(berth)
+    }
+
+    fn hangar_count(&self, berth: TacticalBerth) -> u32 {
+        self.fighters
+            .iter()
+            .filter(|fighter| {
+                fighter.squad_count > 0
+                    && fighter.carrier == Some(berth)
+                    && fighter.docked.is_some()
+            })
+            .count()
+            .try_into()
+            .unwrap_or(u32::MAX)
+    }
+
+    fn hangar_capacity(&self, berth: TacticalBerth) -> u32 {
+        match berth {
+            TacticalBerth::Ship(ship) => self.ships.get(ship).map_or(0, |ship| ship.fighter_capacity),
+            TacticalBerth::Station => self
+                .death_star
+                .map_or(0, |death_star| death_star.hangar_capacity),
+        }
+    }
+
+    /// The carrier each squadron ends the battle with, `None` for one left
+    /// in no hangar. At the battle's end (`FUN_005bef90.c:72-96`, its
+    /// network twin `FUN_005c0b60.c:57-83`, headless `FUN_005aee90.c:20-47`)
+    /// every squadron still in the battle, docked or jumped docks again in
+    /// the first ship of its side still in the battle or jumped with room
+    /// (`FUN_005b84a0`, which adds to the count without leaving the old
+    /// hangar), else, for the Empire, in the station while it is operational
+    /// or departed (`+0x78`); a squadron that finds no room keeps the
+    /// carrier it docked in last if docked, and none in flight.
+    #[must_use]
+    pub fn end_berths(&self) -> Vec<Option<TacticalBerth>> {
+        let mut counts: Vec<u32> = (0..self.ships.len())
+            .map(|ship| self.hangar_count(TacticalBerth::Ship(ship)))
             .collect();
-        let mut docking = Vec::new();
-        for index in candidates {
-            if can_retreat && self.morale.hyperdrive_squadrons.contains(&index) {
-                self.morale.jumped[side] = true;
-            } else {
-                docking.push(index);
-            }
-        }
-        let mut docked = vec![false; self.fighters.len()];
-        for &index in &docking {
-            let own = self.fighters[index].fleet;
-            if let Some((_, count)) = berths
-                .iter_mut()
-                .find(|(fleet, count)| own.is_some() && *fleet == own && *count > 0)
-            {
-                *count -= 1;
-                docked[index] = true;
-            }
-        }
-        for &index in &docking {
-            if !docked[index] {
-                if let Some((_, count)) = berths.iter_mut().find(|(_, count)| *count > 0) {
-                    *count -= 1;
-                    docked[index] = true;
+        let mut station_count = self.hangar_count(TacticalBerth::Station);
+        let station_open = self.death_star.is_some_and(|death_star| {
+            death_star.operational() || death_star.action_committed
+        });
+        let mut berths = Vec::with_capacity(self.fighters.len());
+        for fighter in &self.fighters {
+            let mut berth = fighter.docked.and(fighter.carrier);
+            if fighter.squad_count > 0 {
+                let ship = (0..self.ships.len()).find(|&index| {
+                    let ship = &self.ships[index];
+                    ship.is_attacker == fighter.is_attacker
+                        && (ship.alive || ship.retreated)
+                        && counts[index] < ship.fighter_capacity
+                });
+                if let Some(ship) = ship {
+                    counts[ship] += 1;
+                    berth = Some(TacticalBerth::Ship(ship));
+                } else if !fighter.identity.is_alliance
+                    && station_open
+                    && station_count < self.hangar_capacity(TacticalBerth::Station)
+                {
+                    station_count += 1;
+                    berth = Some(TacticalBerth::Station);
                 }
             }
+            berths.push(berth);
         }
-        for (index, fighter) in self
-            .fighters
-            .iter_mut()
-            .enumerate()
-            .filter(|(_, fighter)| fighter.is_attacker == is_attacker && fighter.alive)
-        {
-            if docking.contains(&index) && !docked[index] {
-                fighter.squad_count = 0;
-                fighter.hull_current = 0.0;
-            }
-            fighter.alive = false;
-            fighter.selected = false;
-            fighter.attack_target = None;
+        berths
+    }
+
+    /// Draw the import's crew pass once, as the battle ends: the fates the
+    /// write-back applies and the Battle Summary files. The original
+    /// imports the battle (`FUN_0040c780`, state `0x16`/`0x17` of
+    /// `FUN_0040a050`) before the result event that builds the summary
+    /// (state 9). port: a played battle shows its summary before the
+    /// write-back, so both read this one draw.
+    pub fn settle_crew(&mut self, world: &GameWorld) {
+        if self.settled_crew.is_none() {
+            self.settled_crew = Some(crate::battle_summary::settle_crew(self, world));
         }
     }
 
@@ -5134,7 +6636,6 @@ impl BattleSession {
     /// Simulate does: the session state machine's state 8 steps the battle
     /// one second at a time through `FUN_005ae9c0` (`headless_step`;
     /// `ghidra/notes/simulate-runs-tactical-engine.md`).
-    /// port: the headless Death Star (`FUN_005aefc0`) is not modeled.
     pub fn simulate_to_end(&mut self) {
         self.phase = BattlePhase::Combat;
         self.paused = false;
@@ -5340,6 +6841,7 @@ impl BattleSession {
                 || !self.fighters.get(target).is_some_and(|fighter| {
                     fighter.alive
                         && fighter.squad_count > 0
+                        && fighter.listed()
                         && fighter.is_attacker != self.ships[source].is_attacker
                 })
             {
@@ -5499,7 +7001,9 @@ impl BattleSession {
         let Some(fighter) = self
             .fighters
             .get(source)
-            .filter(|fighter| fighter.alive && fighter.squad_count > 0 && fighter.weapon_arc.ready)
+            .filter(|fighter| {
+                fighter.alive && fighter.squad_count > 0 && fighter.listed() && fighter.weapon_arc.ready
+            })
         else {
             return 0.0;
         };
@@ -5518,6 +7022,7 @@ impl BattleSession {
                     opponent.alive
                         && opponent.squad_count > 0
                         && opponent.recovery_state != TacticalFighterRecoveryState::Recovered
+                        && opponent.listed()
                         && opponent.is_attacker != fighter.is_attacker
                 }) else {
                     return 0.0;
@@ -5563,7 +7068,7 @@ impl BattleSession {
             && fighter.torpedo_strength > 0
             && distance <= fighter.torpedo_range
         {
-            strength += fighter.torpedo_strength as f32 * ORIGINAL_FIGHTER_TORPEDO_STRENGTH;
+            strength += fighter.torpedo_term();
         }
         strength
     }
@@ -5695,10 +7200,6 @@ impl BattleSession {
                             continue;
                         };
                         death_star.hull = (death_star.hull - strength).max(0.0);
-                        if death_star.hull == 0.0 {
-                            death_star.destroyed = true;
-                            death_star.action_committed = false;
-                        }
                         let snapshot = *death_star;
                         queue_original_fighter_to_death_star_projectile(
                             &mut effects,
@@ -5738,8 +7239,7 @@ impl BattleSession {
                 && source_snapshot.torpedo_strength > 0
                 && distance <= source_snapshot.torpedo_range
             {
-                let strength =
-                    source_snapshot.torpedo_strength as f32 * ORIGINAL_FIGHTER_TORPEDO_STRENGTH;
+                let strength = source_snapshot.torpedo_term();
                 if let OriginalFighterTarget::Capital(index) = target {
                     let target_is_attacker = self.ships[index].is_attacker;
                     let target_group = self.ships[index].task_force;
@@ -5788,10 +7288,6 @@ impl BattleSession {
                         continue;
                     };
                     death_star.hull = (death_star.hull - strength).max(0.0);
-                    if death_star.hull == 0.0 {
-                        death_star.destroyed = true;
-                        death_star.action_committed = false;
-                    }
                     let snapshot = *death_star;
                     queue_original_fighter_to_death_star_projectile(
                         &mut effects,
@@ -5822,7 +7318,7 @@ impl BattleSession {
     fn has_active_trench_run(&self) -> bool {
         let Some(death_star) = self
             .death_star
-            .filter(|death_star| death_star.hull > 0.0 && !death_star.destroyed)
+            .filter(|death_star| death_star.operational())
         else {
             return false;
         };
@@ -5832,6 +7328,430 @@ impl BattleSession {
                 && fighter.is_attacker != death_star.is_attacker
                 && fighter.order == TacticalOrder::AttackDeathStar
         })
+    }
+
+    /// The computer side's AI controller pass (`FUN_005c8780.c:133-216`):
+    /// while the side fights (state 0), every sixth update it decides. Out
+    /// of strength (`computer_withdraws`) it withdraws (`:152-165`); then,
+    /// its station operational, the Empire (side 1) charged to exactly
+    /// 100.0 (`_DAT_0066cbd8`) fires at the first enemy capital ship of its
+    /// target list still in the battle (`FUN_005ad870`), and the Alliance,
+    /// once, with no run under way, gives its head group order 6 when
+    /// `FUN_005ad930` holds, or withdraws with no squadron left and
+    /// `FUN_005ad930` failing (`:187-197`).
+    /// port: the controller updates once per step; its target list is the
+    /// enemy ships in battle order, and its head group the lowest fighter
+    /// group with squadrons in the battle.
+    pub(crate) fn advance_computer_controller(&mut self) {
+        let computer_is_attacker = !self.player_is_attacker;
+        let side = usize::from(!computer_is_attacker);
+        if self.morale.withdrawal[side].state != TacticalWithdrawalState::Fighting {
+            return;
+        }
+        self.death_star_ai.countdown -= 1.0;
+        if self.death_star_ai.countdown > 0.0 {
+            return;
+        }
+        self.death_star_ai.countdown = ORIGINAL_AI_DECISION_UPDATES;
+        // A trench run exists (`FUN_005d0ae0`, `DAT_006bc978`).
+        let run_exists = self.trench_run_group.is_some() || self.trench_run_outcome.is_some();
+        if !run_exists && self.computer_withdraws(computer_is_attacker) {
+            self.begin_side_withdrawal(computer_is_attacker);
+        }
+        let Some(death_star) = self.death_star.filter(|death_star| death_star.operational())
+        else {
+            return;
+        };
+        let computer_is_alliance = computer_is_attacker == self.attacker_is_alliance;
+        if !computer_is_alliance {
+            if death_star.is_attacker == computer_is_attacker
+                && death_star.laser_charge == ORIGINAL_DEATH_STAR_LASER_FULL_CHARGE
+            {
+                if let Some(target) = self.ships.iter().position(|ship| {
+                    ship.alive && !ship.retreating && ship.is_attacker != computer_is_attacker
+                }) {
+                    self.commit_death_star_shot_for(computer_is_attacker, target);
+                }
+            }
+            return;
+        }
+        if self.death_star_ai.ordered_run || run_exists {
+            return;
+        }
+        if !self.trench_run_order_available() {
+            let squadrons = self
+                .fighters
+                .iter()
+                .any(|fighter| fighter.is_attacker == computer_is_attacker && fighter.alive);
+            if !squadrons && self.computer_may_withdraw(computer_is_attacker) {
+                self.begin_side_withdrawal(computer_is_attacker);
+            }
+            return;
+        }
+        let Some(group) = self
+            .fighters
+            .iter()
+            .filter(|fighter| {
+                fighter.is_attacker == computer_is_attacker
+                    && fighter.alive
+                    && fighter.squad_count > 0
+                    && fighter.fighter_group < 4
+            })
+            .map(|fighter| fighter.fighter_group)
+            .min()
+        else {
+            return;
+        };
+        self.death_star_ai.ordered_run = true;
+        let members = (0..self.fighters.len())
+            .filter(|&index| {
+                let fighter = &self.fighters[index];
+                fighter.is_attacker == computer_is_attacker && fighter.fighter_group == group
+            })
+            .collect::<Vec<_>>();
+        for &index in &members {
+            self.fighters[index].order = TacticalOrder::AttackDeathStar;
+        }
+        begin_original_attack_order(self, &[], &members, TacticalOrder::AttackDeathStar);
+    }
+
+    /// `FUN_005c8780.c:152-160`: the opponent's strength above 0.0 (through
+    /// `FUN_005a9610`), the side's own over it below the threshold
+    /// (`+0x24`) or exactly 0.0, and the side free to withdraw. The
+    /// windowed strength `FUN_005c7f70` is the headless `FUN_005d0ce0`
+    /// step for step (`stalemate_strength`), its station term
+    /// `_DAT_0066cba0` the same 20000000.0 as `_DAT_0066d0f0`.
+    fn computer_withdraws(&self, computer_is_attacker: bool) -> bool {
+        let side = usize::from(!computer_is_attacker);
+        let opponent = self.stalemate_strength(!computer_is_attacker);
+        if opponent <= 0.0 {
+            return false;
+        }
+        let ratio = self.stalemate_strength(computer_is_attacker) / opponent;
+        (ratio < self.morale.threshold[side] || ratio == 0.0)
+            && self.computer_may_withdraw(computer_is_attacker)
+    }
+
+    /// `FUN_005c7e80` (vtable `+0xc`), the windowed twin of `FUN_005d0f50`:
+    /// permitted and still in state 0, with a way out (`may_retreat`).
+    fn computer_may_withdraw(&self, computer_is_attacker: bool) -> bool {
+        let side = usize::from(!computer_is_attacker);
+        self.morale.withdrawal[side].state == TacticalWithdrawalState::Fighting
+            && self.may_retreat(computer_is_attacker)
+    }
+
+    /// `FUN_0040b0e0.c:184-203`: with no station raised from a fleet, the
+    /// system's production entry at queue position 0
+    /// (`FUN_00509670(system, 0)`) whose product is a Death Star (family
+    /// `[0x18,0x1c)`) not yet completed (`+0x50` bit 2 clear) is exported as
+    /// an uncompleted station (`+0x74 = 1`, `FUN_0040bcd0.c:62`): sprite
+    /// 5020, charge 100.0 that never advances, the system's shield, and the
+    /// class hull (hyp: the unbuilt object holds no damage).
+    /// port: the queue heads are read in [`ProductionArea::ALL`] order (the
+    /// order of the source's queue children is untraced); the station takes
+    /// no squadrons (`FUN_005b8570` docks none at an unfinished one in
+    /// practice, `ghidra/notes/tactical-death-star.md` section 9).
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "The source stores the hulls as floats."
+    )]
+    pub fn seat_unfinished_station(
+        &mut self,
+        world: &GameWorld,
+        manufacturing: &crate::manufacturing::ManufacturingState,
+    ) {
+        if self.death_star.is_some() {
+            return;
+        }
+        let Some(class) = crate::manufacturing::ProductionArea::ALL
+            .iter()
+            .find_map(|&area| manufacturing.queue(self.system, area)?.items().front())
+            .and_then(|item| match item.kind {
+                crate::manufacturing::BuildableKind::CapitalShip(class) => {
+                    world.capital_ship_classes.get(class)
+                }
+                _ => None,
+            })
+            .filter(|class| class.is_death_star())
+        else {
+            return;
+        };
+        let is_alliance = class.is_alliance;
+        let is_attacker = self.attacker_is_alliance == is_alliance;
+        let mut station =
+            TacticalDeathStar::seated(world, self.system, is_alliance, is_attacker, self.source_layout);
+        station.hull_max = class.hull as f32;
+        station.hull = station.hull_max;
+        station.not_completed = true;
+        self.death_star = Some(station);
+    }
+
+    /// `FUN_005b8570.c:13-30`: each squadron that docked into its carrier's
+    /// launch list at setup (`FUN_005964c0.c:149-153`) arms an unarmed
+    /// hangar at `5.0 + rand(0,8)` past the step, which the battle
+    /// constructor sets to 3 (`battle+0x87c`, `FUN_005a7500.c:551`), in
+    /// docking order; only a battle with its window does
+    /// (`FUN_005b8570.c:20-21`, engine `+0x668 == 0`).
+    /// port: the session exists before the Battle Alert's choice, so Take
+    /// Command arms it, with no draw of the stream before it.
+    pub fn arm_docked_hangars(&mut self) {
+        self.hangars.ships.resize(self.ships.len(), 0.0);
+        // FUN_005ab650.c:148-153: a docked squadron takes no slot and no
+        // share of the battle extent; it is out of the live units.
+        for side_alliance in [true, false] {
+            let docked = self
+                .fighters
+                .iter()
+                .filter(|f| f.identity.is_alliance == side_alliance && f.docked.is_some())
+                .count();
+            let live_docked = self
+                .fighters
+                .iter()
+                .filter(|f| f.identity.is_alliance == side_alliance && f.docked.is_some() && f.alive)
+                .count();
+            self.pending_log_lines.push(format!(
+                "[tactical_hangar] side={} status=seated docked={docked} live_docked={live_docked} source=FUN_005ab650.c:148-153",
+                if side_alliance { "alliance" } else { "empire" },
+            ));
+        }
+        for index in 0..self.fighters.len() {
+            let fighter = &self.fighters[index];
+            let Some(berth) = fighter.carrier else {
+                continue;
+            };
+            if fighter.docked != Some(TacticalDock::Ready) || self.launch_step(berth) != 0.0 {
+                continue;
+            }
+            let side = if fighter.identity.is_alliance { "alliance" } else { "empire" };
+            let armed = self.hangar_arm_step();
+            self.set_launch_step(berth, armed);
+            self.pending_log_lines.push(format!(
+                "[tactical_hangar] side={side} carrier={berth:?} status=armed launch_step={armed} step={} source=FUN_005b8570",
+                self.hangars.step,
+            ));
+        }
+    }
+
+    /// Hangar `+0x14`, the launch step of `berth`'s hangar.
+    fn launch_step(&self, berth: TacticalBerth) -> f32 {
+        match berth {
+            TacticalBerth::Station => self.hangars.station,
+            TacticalBerth::Ship(index) => self.hangars.ships.get(index).copied().unwrap_or(0.0),
+        }
+    }
+
+    fn set_launch_step(&mut self, berth: TacticalBerth, step: f32) {
+        match berth {
+            TacticalBerth::Station => self.hangars.station = step,
+            TacticalBerth::Ship(index) => {
+                self.hangars.ships.resize(self.ships.len(), 0.0);
+                self.hangars.ships[index] = step;
+            }
+        }
+    }
+
+    /// `FUN_005b8800.c:29-36`, `FUN_005b8570.c:22-29`: a hangar arms at
+    /// `+0x18` (5.0, `FUN_005b8b00`) plus `FUN_005a8a70(0, 8)` past the
+    /// step `battle+0x87c`.
+    fn hangar_arm_step(&mut self) -> f32 {
+        ORIGINAL_HANGAR_LAUNCH_STEPS
+            + self.tactical_rng.inclusive(0, ORIGINAL_HANGAR_LAUNCH_SPREAD) as f32
+            + self.hangars.step as f32
+    }
+
+    /// The carriers' launches, once per 1000 ms battle step
+    /// (`FUN_005bea30.c:121` calls `FUN_005a9de0` before raising the step
+    /// counter at `:125`). The station's hangar runs only for a local
+    /// Empire (`battle+0x9ec == 1`) and while it is operational
+    /// (`FUN_005a9de0.c:14-17`); every capital ship still in the battle runs
+    /// its own (`:34-36`).
+    /// port: the step accumulates the session's own step length.
+    fn advance_hangars(&mut self, delta_milliseconds: f32) {
+        self.hangars.elapsed_ms += delta_milliseconds.max(0.0);
+        while self.hangars.elapsed_ms >= ORIGINAL_BATTLE_STEP_MILLISECONDS {
+            self.hangars.elapsed_ms -= ORIGINAL_BATTLE_STEP_MILLISECONDS;
+            let local_is_alliance = self.player_is_attacker == self.attacker_is_alliance;
+            if !local_is_alliance
+                && self.death_star.is_some_and(|death_star| death_star.operational())
+            {
+                self.advance_hangar(TacticalBerth::Station);
+            }
+            for index in 0..self.ships.len() {
+                if self.ships[index].alive && !self.ships[index].retreating {
+                    self.advance_hangar(TacticalBerth::Ship(index));
+                }
+            }
+            self.hangars.step += 1;
+        }
+    }
+
+    /// `FUN_005b8800`: an empty launch list does nothing; an unarmed
+    /// hangar arms its launch step at `5.0 + rand(0,8)` past the current
+    /// step; once the step reaches it the front squadron launches (message
+    /// `0x19`, `FUN_005b8c70`: state 2) and the hangar re-arms.
+    /// port: the launch message takes effect at once, from the carrier's
+    /// position (hyp: the lockstep queue's delay and the launch point are
+    /// untraced).
+    fn advance_hangar(&mut self, berth: TacticalBerth) {
+        let Some(front) = (0..self.fighters.len()).find(|&index| {
+            let fighter = &self.fighters[index];
+            fighter.squad_count > 0
+                && fighter.carrier == Some(berth)
+                && fighter.docked == Some(TacticalDock::Ready)
+        }) else {
+            return;
+        };
+        let launch_step = self.launch_step(berth);
+        if launch_step != 0.0 {
+            if (self.hangars.step as f32) < launch_step {
+                return;
+            }
+            let position = match berth {
+                TacticalBerth::Station => self
+                    .death_star
+                    .map_or(TacticalWorldPosition::ORIGIN, |station| station.source_position),
+                TacticalBerth::Ship(index) => self.ships[index].source_position,
+            };
+            let fighter = &mut self.fighters[front];
+            fighter.docked = None;
+            fighter.alive = true;
+            fighter.source_position = position;
+            let side = if fighter.identity.is_alliance { "alliance" } else { "empire" };
+            self.pending_log_lines.push(format!(
+                "[tactical_hangar] side={side} carrier={berth:?} squadron={front} status=launched step={} source=FUN_005d0820",
+                self.hangars.step,
+            ));
+        }
+        let armed = self.hangar_arm_step();
+        self.set_launch_step(berth, armed);
+    }
+
+    /// hyp: a squadron docked in a capital ship destroyed in the battle is
+    /// lost with it, as the station's destruction destroys its hangar
+    /// (`FUN_005b8d80.c:8-19`); a ship's own loss of its hangar is untraced.
+    fn destroy_squadrons_docked_in_lost_ships(&mut self) {
+        for fighter in &mut self.fighters {
+            let Some(TacticalBerth::Ship(index)) = fighter.carrier else {
+                continue;
+            };
+            if fighter.docked.is_some()
+                && self
+                    .ships
+                    .get(index)
+                    .is_some_and(|ship| !ship.alive && !ship.retreated && !ship.retreating)
+            {
+                fighter.destroy();
+            }
+        }
+    }
+
+    /// `FUN_005ad930.c:15-49`, the test behind the Attack Death Star button
+    /// (`FUN_00596bb0`, `FUN_005df7a0.c:19-34`) and the Alliance AI's order 6:
+    /// the station attackable (`FUN_005ba450`), no run under way
+    /// (`DAT_006bc978`), the Alliance's listed squadrons strictly
+    /// outnumbering the Empire's, and no Alliance group under order 6.
+    #[must_use]
+    pub fn trench_run_order_available(&self) -> bool {
+        let Some(death_star) = self.death_star.filter(|death_star| death_star.attackable())
+        else {
+            return false;
+        };
+        let listed = |is_alliance: bool| {
+            self.fighters
+                .iter()
+                .filter(|fighter| {
+                    fighter.identity.is_alliance == is_alliance
+                        && fighter.alive
+                        && fighter.squad_count > 0
+                        && fighter.listed()
+                })
+                .count()
+        };
+        !death_star.is_alliance
+            && self.trench_run_group.is_none()
+            && self.trench_run_outcome.is_none()
+            && listed(true) > listed(false)
+            && !self.fighters.iter().any(|fighter| {
+                fighter.identity.is_alliance
+                    && fighter.alive
+                    && fighter.order == TacticalOrder::AttackDeathStar
+            })
+    }
+
+    /// The point a trench group flies to (`FUN_005c6610.c:112-132`): its
+    /// leader steers along `(-z, 0, 0)` of its side's facing
+    /// (`FUN_005a7490`; the Alliance, side 0, faces +z, the Empire -z) to
+    /// `0.5` (`_DAT_0066cb14`) times the battle extent (`battle+0x8cc`).
+    #[must_use]
+    pub fn trench_run_entry_point(&self, is_alliance: bool) -> TacticalWorldPosition {
+        let facing_z = if is_alliance { 1.0 } else { -1.0 };
+        TacticalWorldPosition {
+            x: -facing_z * ORIGINAL_TRENCH_RUN_ENTRY_SCALE * self.source_layout.battle_extent,
+            y: 0.0,
+            z: 0.0,
+        }
+    }
+
+    /// State 2 (`FUN_005c6610.c:112-145`): the group under order 6 flies to
+    /// its entry point at its engine speed times 0.95 (`FUN_005eb1a0`); once
+    /// its leader is within 0.2 of it (`0x3e4ccccd`, the arrival distance)
+    /// the result enters state 5 (`FUN_005cfe80(result, 5)` at `0x5c6924`):
+    /// the state-5 voice, the two-minute timer and the roll.
+    /// port: only the leader's steering is traced; the other squadrons of
+    /// the group fly the same way. hyp: a group lost before it arrives ends
+    /// the run as a failure.
+    pub fn advance_trench_run_approach(&mut self, delta_milliseconds: f32) {
+        let Some(group) = self.trench_run_group else {
+            return;
+        };
+        if self.trench_run_remaining_ms.is_some()
+            || self.trench_run_pending_outcome.is_some()
+            || self.trench_run_outcome.is_some()
+        {
+            return;
+        }
+        let members = (0..self.fighters.len())
+            .filter(|&index| {
+                let fighter = &self.fighters[index];
+                fighter.alive
+                    && fighter.squad_count > 0
+                    && fighter.identity.is_alliance
+                    && fighter.fighter_group == group
+                    && fighter.order == TacticalOrder::AttackDeathStar
+            })
+            .collect::<Vec<_>>();
+        let Some(&leader) = members.first() else {
+            self.record_trench_run_outcome(TacticalTrenchRunOutcome::Failure);
+            return;
+        };
+        let target = self.trench_run_entry_point(true);
+        let seconds = delta_milliseconds.max(0.0) * 0.001;
+        for &index in &members {
+            let fighter = &mut self.fighters[index];
+            let delta = source_delta(target, fighter.source_position);
+            let distance = delta.x.hypot(delta.y).hypot(delta.z);
+            if distance <= ORIGINAL_TRENCH_RUN_ARRIVAL_DISTANCE {
+                continue;
+            }
+            let travel = (fighter.sublight_engine_power.max(0.0)
+                * ORIGINAL_TRENCH_RUN_SPEED_SCALE
+                * seconds)
+                .min(distance);
+            let direction = delta.normalized();
+            fighter.source_position.x += direction.x * travel;
+            fighter.source_position.y += direction.y * travel;
+            fighter.source_position.z += direction.z * travel;
+        }
+        let delta = source_delta(target, self.fighters[leader].source_position);
+        if delta.x.hypot(delta.y).hypot(delta.z) > ORIGINAL_TRENCH_RUN_ARRIVAL_DISTANCE {
+            return;
+        }
+        self.trench_run_remaining_ms = Some(ORIGINAL_TRENCH_RUN_DURATION_MILLISECONDS);
+        if self.player_voice_faction() == TacticalVoiceFaction::Alliance {
+            self.pending_voice_cues
+                .push(TacticalVoiceCue::trench_run_committed(group));
+        }
+        self.prepare_original_trench_run();
     }
 
     /// Advance and resolve `TACTICALRESULT_UPDATE` state 5. `FUN_005cfec0`
@@ -5857,59 +7777,116 @@ impl BattleSession {
         }
     }
 
-    /// Run `FUN_005d04e0` when state 5 begins. The source consumes maneuver
-    /// and success draws immediately, then retains the selected result while
-    /// `FUN_005d03f0` advances the presentation chatter.
+    /// The headless run's rating (`FUN_005afc00`): the Alliance
+    /// Commander's while the object carrying it is one of the battle's
+    /// (`FUN_005a6340`), destroyed or not, else 1.
+    fn headless_trench_rating(&self) -> f32 {
+        self.trench_run_commander
+            .filter(|commander| {
+                commander
+                    .fleet
+                    .is_some_and(|fleet| self.ships.iter().any(|ship| ship.fleet == Some(fleet)))
+            })
+            .map_or(1.0, TacticalTrenchCommander::rating)
+    }
+
+    /// `FUN_005ad7e0(manager, 0)`: `combat / 20 + 1` of the Alliance
+    /// Commander, clamped to 1 through 9, while the ship carrying the
+    /// character is in the battle (`FUN_005ad870`); else 1.0.
+    /// port: a character rides a fleet, so a live ship of its fleet stands
+    /// for its carrying ship; one the system holds rides none.
+    #[must_use]
+    pub fn trench_run_rating(&self) -> f32 {
+        self.trench_run_commander
+            .filter(|commander| {
+                commander.fleet.is_some_and(|fleet| {
+                    self.ships
+                        .iter()
+                        .any(|ship| ship.fleet == Some(fleet) && ship.alive)
+                })
+            })
+            .map_or(1.0, TacticalTrenchCommander::rating)
+    }
+
+    /// `FUN_005d04e0`, run when state 5 begins. The participants are popped
+    /// lowest id first (`thunk_FUN_005f5060`); each tests its maneuver
+    /// (`rand(1,10) > trunc(m)` loses `rand(1,n)` of its n craft, or all
+    /// with fewer than two), then, alive, rolls `rand(1,100)` against half
+    /// the torpedo term plus the rating, truncated. A survivor goes back in
+    /// under the same id, so it pops again; the loop ends on a success, an
+    /// empty list or the 1001st pop. A success restores every participant's
+    /// hull from the state-5 snapshot (`FUN_005d08d0`, `0x5d07f0`).
+    /// port: the source keys the list by object id (`+0xec`); a squadron's
+    /// place in `fighters` is its order of creation.
     fn prepare_original_trench_run(&mut self) {
-        let Some(death_star) = self
-            .death_star
-            .filter(|death_star| death_star.hull > 0.0 && !death_star.destroyed)
+        let Some(death_star) = self.death_star.filter(|death_star| death_star.operational())
         else {
             return;
         };
-        let participants = self
-            .fighters
-            .iter()
-            .enumerate()
-            .filter(|(_, fighter)| {
+        let group = self.trench_run_group;
+        let participants = (0..self.fighters.len())
+            .filter(|&index| {
+                let fighter = &self.fighters[index];
                 fighter.alive
                     && fighter.squad_count > 0
                     && fighter.is_attacker != death_star.is_attacker
                     && fighter.order == TacticalOrder::AttackDeathStar
+                    && Some(fighter.fighter_group) == group
             })
-            .map(|(index, _)| index)
-            .take(1001)
             .collect::<Vec<_>>();
+        let snapshot = participants
+            .iter()
+            .map(|&index| self.fighters[index].hull_current)
+            .collect::<Vec<_>>();
+        for &index in &participants {
+            self.fighters[index].off_field = true;
+        }
+        let rating = self.trench_run_rating().min(ORIGINAL_TRENCH_RUN_RATING_MAX);
 
+        let mut list = participants.clone();
+        let mut pops = 0;
         let mut success = false;
         let mut maneuver_damage = false;
-        for &index in &participants {
-            let maneuverability = self.fighters[index]
-                .effective_maneuverability()
-                .round()
-                .clamp(0.0, 9.0) as u32;
-            if maneuverability < self.tactical_rng.inclusive(1, 10) {
+        while let Some(&index) = list.first() {
+            list.remove(0);
+            let fighter = &mut self.fighters[index];
+            let maneuver = fighter.trench_maneuver().trunc() as u32;
+            if self.tactical_rng.inclusive(1, 10) > maneuver {
                 maneuver_damage = true;
-                let damage = if maneuverability <= 1 {
-                    100_000.0
+                let craft = (fighter.hull_current / ORIGINAL_TRENCH_RUN_DAMAGE_SCALE).trunc() as u32;
+                let damage = if craft < 2 {
+                    ORIGINAL_TRENCH_RUN_FATAL_DAMAGE
                 } else {
-                    self.tactical_rng.inclusive(1, maneuverability) as f32
-                        * ORIGINAL_TRENCH_RUN_DAMAGE_SCALE
+                    self.tactical_rng.inclusive(1, craft) as f32 * ORIGINAL_TRENCH_RUN_DAMAGE_SCALE
                 };
-                self.fighters[index].hull_current -= damage;
-                self.fighters[index].refresh_craft_count();
+                fighter.hull_current = (fighter.hull_current - damage).max(0.0);
             }
-            if !self.fighters[index].alive {
-                continue;
+            let alive = fighter.hull_current > 0.0;
+            if alive {
+                let chance = trench_run_success_chance(fighter, rating);
+                if self.tactical_rng.inclusive(1, 100) <= chance {
+                    success = true;
+                    break;
+                }
             }
-            let success_rating = u32::from(self.trench_run_success_rating.clamp(1, 9));
-            if self.tactical_rng.inclusive(1, 100) <= success_rating {
-                success = true;
+            pops += 1;
+            if pops > ORIGINAL_TRENCH_RUN_POP_LIMIT {
                 break;
             }
+            if alive {
+                list.insert(0, index);
+            }
+        }
+        for (&index, &hull) in participants.iter().zip(&snapshot) {
+            let fighter = &mut self.fighters[index];
+            if success {
+                fighter.hull_current = hull;
+            }
+            fighter.refresh_craft_count();
         }
 
         self.trench_run_participants = participants;
+        self.trench_run_snapshot = snapshot;
         self.trench_run_pending_outcome = Some(if success {
             TacticalTrenchRunOutcome::Success
         } else {
@@ -5953,10 +7930,19 @@ impl BattleSession {
         let participants = self.trench_run_participants.clone();
 
         if outcome == TacticalTrenchRunOutcome::Success {
+            // `FUN_005ba890` zeroes the hull and the charge; `+0x74` and
+            // `+0x78` stay as they were.
             if let Some(death_star) = self.death_star.as_mut() {
                 death_star.hull = 0.0;
-                death_star.destroyed = true;
-                death_star.action_committed = false;
+                death_star.laser_charge = 0.0;
+            }
+            // `FUN_005ba890.c:5-7` -> `FUN_005b8d80.c:8-19`: every squadron
+            // in the station's launch and recovered lists is destroyed;
+            // those it launched fly on.
+            for fighter in &mut self.fighters {
+                if fighter.carrier == Some(TacticalBerth::Station) && fighter.docked.is_some() {
+                    fighter.destroy();
+                }
             }
             // State 6 removes the first bounded half of the participating list
             // before returning the survivors. Counts 0 and 1 lose none, 2 or
@@ -5969,6 +7955,10 @@ impl BattleSession {
             for &index in participants.iter().take(casualties) {
                 self.fighters[index].hull_current = 0.0;
                 self.fighters[index].refresh_craft_count();
+            }
+            // The survivors are listed again (`FUN_005a9380`, state 2).
+            for &index in &participants {
+                self.fighters[index].off_field = false;
             }
             self.record_trench_run_outcome(outcome);
         } else {
@@ -6011,6 +8001,7 @@ impl BattleSession {
         self.trench_run_remaining_ms = None;
         self.trench_run_pending_outcome = None;
         self.trench_run_participants.clear();
+        self.trench_run_snapshot.clear();
         self.trench_run_cinematic_pending = true;
         self.paused = true;
     }
@@ -6076,23 +8067,29 @@ impl BattleSession {
         }
     }
 
-    fn queue_battle_outcome_voice(&mut self, winner: CombatWinner) {
-        let player_won = matches!(
-            (winner, self.player_is_attacker),
-            (CombatWinner::Attacker, true) | (CombatWinner::Defender, false)
-        );
-        if winner == CombatWinner::Draw {
-            return;
-        }
+    /// The outcome voice (`FUN_005a9ec0.c:291-328`), from the battle's end
+    /// flags rather than the recorded winner: each side's loss (nothing
+    /// left, `:274-286`, both losses cleared together, `:287-290`) and its
+    /// withdrawal (`side_withdrew`). For the local side: the other side lost
+    /// and withdrew, "won, they withdrew" (0x97, 0x119); else the local side
+    /// withdrew, "withdrawal complete" (0x96, 0x118); else the other side
+    /// lost, "won" (0x98, 0x11a); else the local side lost (0x99, 0x11b);
+    /// else none.
+    fn queue_battle_outcome_voice(&mut self) {
+        let local = self.player_is_attacker;
+        let lost = [!self.side_remains(local), !self.side_remains(!local)];
+        let [local_lost, other_lost] = if lost[0] && lost[1] { [false; 2] } else { lost };
         let faction = self.player_voice_faction();
-        let player_withdrew = self.side_withdrew(self.player_is_attacker);
-        let opponent_withdrew = self.side_withdrew(!self.player_is_attacker);
-        let cue = if player_won {
-            TacticalVoiceCue::battle_won(faction, opponent_withdrew)
-        } else if player_withdrew {
+        let cue = if other_lost && self.side_withdrew(!local) {
+            TacticalVoiceCue::battle_won(faction, true)
+        } else if self.side_withdrew(local) {
             TacticalVoiceCue::withdrawal_complete(faction)
-        } else {
+        } else if other_lost {
+            TacticalVoiceCue::battle_won(faction, false)
+        } else if local_lost {
             TacticalVoiceCue::battle_lost(faction)
+        } else {
+            return;
         };
         self.pending_voice_cues.push(cue);
     }
@@ -6412,6 +8409,7 @@ fn tactical_attack_target_is_eligible(
                 fighter.alive
                     && fighter.squad_count > 0
                     && fighter.recovery_state != TacticalFighterRecoveryState::Recovered
+                    && fighter.listed()
                     && fighter.is_attacker != source_is_attacker
             })
         }
@@ -6433,6 +8431,7 @@ fn manual_attack_target_is_eligible(
                 fighter.alive
                     && fighter.squad_count > 0
                     && fighter.recovery_state != TacticalFighterRecoveryState::Recovered
+                    && fighter.listed()
                     && fighter.is_attacker != source_is_attacker
             })
         }
@@ -6461,6 +8460,7 @@ fn first_original_attack_target(
                 fighter.alive
                     && fighter.squad_count > 0
                     && fighter.recovery_state != TacticalFighterRecoveryState::Recovered
+                    && fighter.listed()
                     && fighter.is_attacker != source_is_attacker
             })
             .map(|(index, _)| TacticalAttackTarget::FighterGroup(index)),
@@ -6479,53 +8479,45 @@ pub fn begin_original_attack_order(
     order: TacticalOrder,
 ) {
     if order == TacticalOrder::AttackDeathStar {
+        // `FUN_005ca6d0` case 6 (`.c:141-156`): a fighter group (kind 4) of
+        // side 0, the Alliance, with no run in progress (`DAT_006bc978`);
+        // `FUN_005d0820` makes the result object in state 2.
         let Some(death_star) = session
             .death_star
-            .filter(|death_star| death_star.hull > 0.0 && !death_star.destroyed)
+            .filter(|death_star| death_star.operational())
         else {
             return;
         };
-        let Some((fighter_group, fighter_is_attacker)) =
-            selected_fighters.iter().find_map(|&index| {
-                session
-                    .fighters
-                    .get(index)
-                    .filter(|fighter| {
-                        fighter.alive
-                            && fighter.squad_count > 0
-                            && fighter.is_attacker != death_star.is_attacker
-                    })
-                    .map(|fighter| (fighter.fighter_group, fighter.is_attacker))
-            })
-        else {
+        let Some(fighter_group) = selected_fighters.iter().find_map(|&index| {
+            session
+                .fighters
+                .get(index)
+                .filter(|fighter| {
+                    fighter.alive
+                        && fighter.squad_count > 0
+                        && fighter.identity.is_alliance
+                        && fighter.is_attacker != death_star.is_attacker
+                })
+                .map(|fighter| fighter.fighter_group)
+        }) else {
             return;
         };
-        if session.trench_run_remaining_ms.is_some() || session.trench_run_outcome.is_some() {
+        if session.trench_run_group.is_some() || session.trench_run_outcome.is_some() {
             return;
         }
-        session.trench_run_remaining_ms = Some(ORIGINAL_TRENCH_RUN_DURATION_MILLISECONDS);
         session.trench_run_group = Some(fighter_group);
-        if session.player_voice_faction() == TacticalVoiceFaction::Alliance
-            && fighter_is_attacker == session.player_is_attacker
-        {
+        // State 2's first update speaks (`FUN_005d0340`): the attacking
+        // group's call to the Alliance player, the station's alarm to the
+        // Imperial one.
+        if session.player_voice_faction() == TacticalVoiceFaction::Alliance {
             session
                 .pending_voice_cues
                 .push(TacticalVoiceCue::trench_run_started(fighter_group));
-            session
-                .pending_voice_cues
-                .push(TacticalVoiceCue::trench_run_committed(fighter_group));
-        } else if session.player_voice_faction() == TacticalVoiceFaction::Empire
-            && death_star.is_attacker == session.player_is_attacker
-        {
+        } else if death_star.is_attacker == session.player_is_attacker {
             session
                 .pending_voice_cues
                 .push(TacticalVoiceCue::death_star_under_attack());
-        } else {
-            session.trench_run_remaining_ms = None;
-            session.trench_run_group = None;
-            return;
         }
-        session.prepare_original_trench_run();
         return;
     }
 
@@ -6649,6 +8641,7 @@ fn engagement_unit_live(session: &BattleSession, unit: EngagementUnit) -> bool {
             fighter.alive
                 && fighter.squad_count > 0
                 && fighter.recovery_state != TacticalFighterRecoveryState::Recovered
+                && fighter.listed()
         }),
     }
 }
@@ -6749,7 +8742,7 @@ fn original_unit_damage_rate(
         (EngagementUnit::Fighter(source), EngagementUnit::Capital(capital))
             if session.ships[capital].shield <= 0 =>
         {
-            session.fighters[source].torpedo_strength as f32 * ORIGINAL_FIGHTER_TORPEDO_FACTOR
+            session.fighters[source].torpedo_term()
         }
         _ => 0.0,
     };

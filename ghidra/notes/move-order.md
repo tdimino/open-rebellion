@@ -140,8 +140,8 @@ when all of the following hold:
   (`0x14..0x1b`);
 - and either some member is not a regiment (`0x10..0x13`), or the
   destination is not an existing (`+0x50` bit `0x40`) system whose `+0x88`
-  bit 0 (populated, `economy-systems.md`) is clear. (An earlier reading gave
-  this as `+0x88` bit 1; the test is `& 1`, `regiment-unload.md`.)
+  bit 0 (populated, `economy-systems.md`; the test is `& 1`,
+  `regiment-unload.md`) is clear.
 
 So fleets and capital ships may move to an enemy or neutral destination; a
 group holding anything else may not, except an all-regiment group landing on
@@ -194,6 +194,13 @@ destination at `+0x48`.
   set across systems, clear within one. Unless the object is destroyed
   (`+0x50` bit 3) it then changes container at once (slot `+0xa8`). An
   object that is not deployed changes container with no transit bit.
+  For a fleet, slot `+0x38` is `FUN_004fda10`, true only while one of its
+  ships is completed and not in transit. A fleet holding only unfinished
+  ships therefore skips `FUN_00555920`'s speed test
+  (`FUN_00555920.c:31-33`) and changes container at once, never en route.
+  In the route-1 Empire game, played on from its day-123 save, Fleet 6,
+  holding only the unfinished Death Star, moved from Coruscant to Averam
+  that way (`death-star-product.md`, "Play evidence").
   Arrival follows the per-object transit in `build-delivery.md`.
 
 So a fleet in hyperspace cannot take a new Move: `FUN_004f9860` refuses an
@@ -220,7 +227,7 @@ point in its client coordinates: `+0x68` (the object under the point) and
 |---|---|---|---|---|
 | 1 | Sector window, `FUN_004591d0` (opened by `FUN_00429ce0` from a click on a sector) | `0x00659f18` | `FUN_0045c830`: the item in list `+0x164` whose rectangle (`+0x40`) holds the point (`FUN_0045c660`), else no id | `FUN_0045c6b0`: the same item, or the overlay item in list `+0x174` (flag `0x10000`) whose bitmap pixel is hit (`FUN_005fca00`) |
 | 9 | System window, `FUN_00452fc0` | `0x00659e68` | `FUN_004aa470`: the window's system (`+0x144`) wherever the point is | `FUN_00458b80`: the list item under the point (list `+0x174`, offset (8, 77)), else the system; on page `0x67` always the system |
-| 4 | hyp: fleet window, `FUN_004a2630`, 235 by 304 | `0x0065bda0` | `FUN_004a3130`: the item under the point in the left list (4..95, 29..295, list `+0x160`) or, when `+0x194` is `0x66`, the right list (101..234, 127..291, list `+0x164`); elsewhere the window's subject `+0x144`, or the single selected item | `FUN_004a2f80` (not read) |
+| 4 | hyp: fleet window, `FUN_004a2630`, 235 by 304 | `0x0065bda0` | `FUN_004a3130`: the item under the point in the left list (4..95, 29..295, list `+0x160`) or, when `+0x194` is `0x66`, the right list (101..234, 127..291, list `+0x164`); elsewhere the window's subject `+0x144`, or the single selected item | `FUN_004a2f80`: left list: the entry under the point (fleet or capital ship id, `+0x6c`); right list (101..234, 127..291, any tab): the item under the point, else the left list's selected entry; elsewhere the subject (`FUN_004a2f80.c:28-58`) |
 | 10 | `FUN_004a7790` | `0x0065be30` | `FUN_004aa470`: the window's subject `+0x144` | `FUN_004aa380`: the item under the point (list `+0x164`, offset (7, 81)), else the subject |
 | 11 | `FUN_0049f130`, 235 by 304 | `0x0065bd10` | `FUN_004aa470`: the subject | `FUN_004a09a0`: the picture at (108, 37) gives `+0x1c8`, the list `+0x1c0` gives the item under the point, else the subject |
 
@@ -319,6 +326,49 @@ bytes, vtable `0x00659cd0`, `FUN_00606380` with size 0x1a8 by 0x14b, 424 by
 
 All these bitmaps are staged in `data/base/ui/strategy-dll/BMP/`.
 
+**The buttons' hit area** is their bitmaps' opaque pixels.
+`FUN_0044f180.c:129-130` creates both `CoolStrobeButton`s (`FUN_00602150`)
+without its last argument, which sets `+0xc4` bit `0x10`
+(`FUN_00602150.c:115-117`); the hit test `FUN_006035f0` then takes a point
+only where `FUN_005fca00` finds a pixel other than the key
+(`FUN_006035f0.c:28-31`), which it never does in the bitmap's first row or
+column (`sector-window-hit-test.md`). 10926 and 10929 are
+51 by 35, the control's own size, and opaque but for a few corner pixels
+(index 252), so the frame around the drawn face takes a click as the face
+does. Port: `move_confirmation`'s buttons keep their 51 by 35 rects and
+take a press and its release only on a pixel `BmpCache::is_resource_hit`
+keeps.
+
+**The text box's font** is font 4 (`FUN_0044f180.c:91`, `FUN_00420550` →
+`FUN_006002b0` → `FUN_0060eea0`): `FUN_0060eed0`'s default case, Arial
+(the table's face, `FUN_005ff830`) with `lfHeight` 16 and `lfWeight` 400.
+`FUN_0041fc30` selects it into the field's DC, and `FUN_0041fd00` lays the
+text out with `DrawTextA` format 0x2410 (`DT_WORDBREAK | DT_EDITCONTROL`,
+with `DT_CALCRECT`) across the field's full 322 pixels, no margin. The text
+is white (`+0xb4`, 0x2ffffff).
+
+- hyp (measured, Wine): the glyphs are Arial's at a 13-pixel em. The Stop
+  question's lines ("Are you sure you want to stop construction of the",
+  "following?", "1  Death Star") are 285, 56 and 77 pixels wide, Arial's
+  hinted advances at that size and not at the cell's 14.3. The lines are
+  16 pixels apart, the cell, and the first baseline sits 13 below the
+  field's top, the cell's ascent. The window lies at (148, 52) in a
+  640×480 frame of the galaxy view. From `empire-day2-start.sav` at day 3,
+  Fleet 1's Confirmed Move to Yaga Minor ("Transit time in days",
+  "Fleet 1:  6") measures 114 and 57, and the Scrap of Carrack Light
+  Cruiser 2 ("Are you sure you want to scrap the following units?" on one
+  line, "Carrack Light Cruiser 2") measures 295 and 131. The rows are the
+  same as Stop's.
+
+Port: `move_confirmation::text_job` and `text_origin` draw the text for
+Move, Scrap and Stop at a 13.4 em (egui lays out outline advances, which
+run about 3% narrower than the hinted ones). Lines are 16 apart and the
+first baseline is 13 down. The native Empire frames, mapped to 640×480,
+put the window at (148, 52). Their first lines start on the original's row
+at x 172: Move 113, Scrap 294 (one line) and Stop 281, against 114, 295 and
+285. The Stop question breaks after "the". At the native window's 5/3
+scale, later lines land within a pixel of the original's rows.
+
 The window's command slot `+0x48`, `FUN_0044f5e0`, handles the two controls:
 
 - Control `0x14` (the checkmark) calls `FUN_0041ce20(order, 1)`. The order
@@ -372,9 +422,11 @@ assigned by `FUN_00551630` (`FUN_005529a0`, `FUN_00552000`, `FUN_00552300`,
 The galaxy view's `WM_KEYDOWN` handles Tab and F1..F7 (`0x70..0x76`) but has
 no `VK_ESCAPE` case. The cancel command `0x15e` is posted only by
 `FUN_0042db70` (through `FUN_0041db60`), when the global gate
-(`FUN_0051de80`, `FUN_0041e390`, `FUN_0041e500`) stops orders. The manual says
-Escape cancels Move. hyp: a frame-level key handler maps Escape to `0x15e`;
-not found. The confirmation window's own Escape is recovered
+(`FUN_0051de80`, `FUN_0041e390`, `FUN_0041e500`) stops orders. The manual
+(p. 121) says Escape cancels Move; the game does not. In the VM
+(`alliance-day927-orto-orbit.sav`) Escape and a right-click leave the
+targeting cursor in place and open no menu; a left click on empty space ends
+targeting with no order. The confirmation window's own Escape is recovered
 (`FUN_0044f640`).
 
 ## Port notes
@@ -401,7 +453,8 @@ not found. The confirmation window's own Escape is recovered
   point (`sector-window-hit-test.md`), and the bare map nothing. Mission
   uses it too.
 - Phase 3b: a fleet's Move and Confirmed Move start targeting; the release
-  validates (refusals go to the message log, `port:`), then
+  validates (a refusal's status goes to the side's advisor, `FUN_00487c90`;
+  `main.rs` `fleet_dispatch_refusal_status`, `fleet_order_refusal_status`), then
   `movement::fleet_move_confirms` applies `FUN_00487cc0`, then the fleet
   departs. A move that asks for confirmation is dropped until the window
   (phase 4) is ported.
@@ -472,13 +525,17 @@ built:
 3. Iterates the commands (order `+0x40`, each object at command `+0x3c`,
    `FUN_004fa150`) and, for each object, its child list `FUN_00528820`,
    clearing a flag when any child is not a capital ship (`0x14..0x1b`).
-   `FUN_00528820` returns an empty static list for an object with a side
-   (`+0x24 & 0x30`) and `+0x54`→`+0x18` only for one without. A player's
-   fleet has a side, so the flag stays set.
+   `FUN_00528820` returns an empty static list for a view copy (`+0x24 &
+   0x30` holds the view number, `observation-levels.md`) and the object's
+   `+0x54`→`+0x18` list for the master. For a production manager that list
+   is its queued products (`death-star-product.md` section 7). What a
+   fleet's `+0x54` holds is not traced, so whether a fleet clears the flag
+   is open.
 4. Refuses `1`/`0x28` when the destination's side bits (`+0x24` bits 6..7)
    differ from the order's side and the flag was cleared. There is no
-   regiment exception, unlike `FUN_0053d430` for `0x204`, but for the reason
-   above it never refuses a sided fleet.
+   regiment exception, unlike `FUN_0053d430` for `0x204`. A manager whose
+   queue holds only capital ships keeps the flag, so it may name another
+   side's destination.
 5. Routes via `FUN_00551060`, `FUN_00551190`, `FUN_005513a0`.
 6. Per command whose object's `+0x58` is zero:
    - resolves the destination again through `FUN_00504e60` (`1`/`0x22`);
@@ -490,9 +547,9 @@ built:
      or a capital ship (`0x14..0x1c`), else `1`/`0x25`;
    - assigns the destination to the command's `+0x48` (`FUN_004f26d0`).
 7. Per command whose object's `+0x58` is non-zero: `FUN_00552210` asks
-   `FUN_005287f0` for the object's `+0x54`→`+0x18` list, which fails for an
-   object with a side, so the check returns 0 and the order is refused with
-   `1`/`1`. Otherwise `FUN_00552150` builds a leg per listed object
+   `FUN_005287f0` for the object's `+0x54`→`+0x18` list, which fails for a
+   view copy (`+0x24 & 0x30`), and the order is then refused with `1`/`1`.
+   Otherwise `FUN_00552150` builds a leg per listed object
    (`FUN_00552000`) and iterates them with `FUN_00551900` and
    `FUN_00583f50`. For a fleet, `+0x58` bit 5 is the system's blockade bit,
    copied by `FUN_0050c0b0` to every active fleet in the system
@@ -736,8 +793,10 @@ phase 8's timer `0x38b` has delay `0 + rand(0..=0)`, which is due the day it
 is armed (`timer-scheduler.md`, `FUN_0054edc0`), and phase `0xb` ends with
 code 1, all within the arrival day. The original shows it: Noghri Death
 Commandos ordered from Coruscant to Uvena (4 days) arrive on day 27 with the
-pop-up rows still disabled, and later that day every row is enabled
-(`.artifacts/original-checks/2026-10-15-move-timer`). The members stay in the container.
+pop-up rows still disabled, and later that day every row is enabled (save
+`empire-day2-start.sav`, Empire, ordered day 22-23 with a 4-day transit;
+rows disabled on days 24-26, enabled from day 27 on). The members stay in
+the container.
 A same-system Move therefore lands the character on the day of the order, with
 no transit.
 
@@ -876,7 +935,6 @@ Decompiles added for this section: `FUN_004f5530`, `FUN_004f4700`,
   (characters, capital ships) in a `0x214` team.
 - `FUN_0053efa0`'s class handlers (`+0x2c`) that turn a team id into moving
   objects.
-- Where Escape cancels targeting, if anywhere outside the frame.
 - The confirmation window's title text and the meaning of `+0x30`, both unused
   for moves.
 

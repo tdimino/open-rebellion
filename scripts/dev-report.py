@@ -54,9 +54,9 @@ MARKS = (
 # Telemetry that fires every day: shown only with --all.
 TELEMETRY_ROUTINE = frozenset(
     {
-        "economy_tick", "support_drift", "collection_rate", "garrison_required",
+        "economy_tick", "collection_rate", "garrison_required",
         "campaign_snapshot", "character_combat_rating", "uprising_check",
-        "betrayal_check", "death_star_status", "jedi_check", "victory_status",
+        "betrayal_check", "jedi_check", "victory_status",
         "fog_revealed",
     }
 )

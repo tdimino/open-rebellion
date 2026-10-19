@@ -54,7 +54,27 @@ overwrite/current-game confirmations, and that display options cannot change
 during a tactical battle. All five display options default on in the original.
 
 The manual describes Restart as abandoning the campaign and returning to the
-Shuttle, not replaying a battle. Return is unavailable from the Shuttle.
+Shuttle, not replaying a battle. `FUN_00407180` builds Restart (0x91) with
+its normal and pressed art (0x2733, 0x2734) and never disables it, in a
+battle too: its battle test (`bVar1`, `+0xa8` in 0x14-0x17) gates only the
+save and load rows and the display switches. `FUN_00406b80` sends Restart to
+state 3, the Shuttle, at once when no game runs (`+0xa8` = 0) and through the
+0x476 confirmation when one does, unless a row flag is set. Return (0x90) is
+disabled when no game runs and the window was not opened from state 4 or 5,
+so from the Shuttle Restart is the way back; Return sends states 4 and 5 to
+state 3 and any other state back to itself.
+
+The row flags (`+0xac`-`+0xc0`, one per row) record the rows this opening of
+the window saved. `FUN_00406950` zeroes them; after a save, `FUN_00415600`
+reports the result to the open window (application state 0xb or 0xc, child
+`+0xc0`), whose `FUN_00408240` shows alert 0x474 (TEXTSTRA 0x1217) and sets
+the row's flag on success, or shows 0x475 (0x1219) on failure. A set flag
+skips the overwrite confirmation (0x478) for its own row, and any set flag
+skips the Load (0x477) and Restart (0x476) confirmations. The alerts use
+the "Resume Game Play?" alert's class (`FUN_00417020` → `FUN_00416f80`):
+REBDLOG background 0x297e, the text in its message rectangle, the checkmark
+labelled REBDLOG 0x1300 ("Yes"); Enter works as the checkmark and Escape
+does nothing. port: `GameOptionsState::save_result` and `SaveAlert`.
 These are navigation operations; opening/closing options must not mutate a
 battle roster, apply results, advance simulation, or reset a paused state.
 
@@ -65,13 +85,28 @@ and (229,135), with bitmap pairs 10624/10625 and 10626/10627; both are 57 by
 
 ## Compatibility and evidence gaps
 
-- The authentic window has six rows. port: the galaxy's save shortcut (S)
-  opens this screen, as its cockpit button does; the stand-in ten-slot
-  save panel no longer opens from it, and F8 / F9 / Ctrl+L / Ctrl+S no
-  longer open the stand-in over it (2026-10-08).
+- The window addresses six saved games and no more. `FUN_00407180` builds
+  rows 1 to 6 (`local_ec` from 1, the loop continuing while `local_ec < 6`
+  before the increment); row `n` reads save file `n` (`FUN_00401860`) and
+  carries Save `0x6e + n` (0x6f-0x74), Load `0x78 + n` (0x79-0x7e) and its
+  name edit `0x82 + n` (0x83-0x88). `FUN_00406b80` maps a Save command back
+  to its file as `command - 0x6e`. No control or command names a seventh
+  file. port: `game_options.rs` `SAVE_ROWS` = 6, and the save layer's
+  `MAX_SAVE_SLOTS` = 6 to match; the galaxy's save shortcut
+  (S) opens this screen, as its cockpit button does.
 - No native delete button is present in this constructor or the inspected
-  manual pages. Do not invent one; existing legacy deletion remains separate
-  until its native gesture is recovered.
+  manual pages, and the port has none.
+- Escape: the window procedure `FUN_00406b80` (vtable `0x00658600` slot
+  `+0x14`, set in `FUN_00406950`) has no `WM_KEYDOWN` case; its default path
+  `FUN_005ff530` and that one's `FUN_006007b0` handle none either and end in
+  `DefWindowProcA`. Escape in the window therefore does nothing beyond what a
+  focused name edit does with it (`keyboard-shortcuts.md`, section 3).
+- The confirmation (vtable `0x00658950`, built by `FUN_00416b90`) takes keys:
+  its procedure is the base `FUN_00606650`, whose `WM_KEYDOWN` calls slot
+  `+0x4c`, `FUN_00416f30`. Enter answers Yes and Escape No through
+  `FUN_004011a0`, which posts `0x46a` (accepted, with the action code from
+  `DAT_006b1470`) or `0x46b` to the window; `FUN_00406b80` acts on `0x46a`
+  only. port: `GameOptionsState::key`.
 - Upstream display flags, including Holocube, are preserved. Their full original
   visual behavior remains outside this save/confirmation checkpoint.
 - Exact text metrics, slider transfer function, complete context identities,

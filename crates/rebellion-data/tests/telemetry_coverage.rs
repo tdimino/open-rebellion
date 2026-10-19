@@ -51,6 +51,10 @@ const ALL_SYSTEMS: &[&str] = &[
 /// games but are hard to trigger deterministically in a 393-tick test.
 const OPTIONAL_SYSTEMS: &[&str] = &[
     SYS_VICTORY,  // Requires HQ capture or DS fire at enemy HQ — not guaranteed
+    // Requires a Destroy System (order 0x223), which the AI orders only with a
+    // Death Star and a Coruscant or HQ target; the integrator's strike tests
+    // check its EVT_DS_FIRED record.
+    SYS_DEATH_STAR,
     SYS_UPRISING, // Needs UPRIS1TB table + specific RNG + control stability
     SYS_BETRAYAL, // Needs UPRIS1TB table + character survival + RNG alignment
 ];
@@ -124,7 +128,6 @@ fn telemetry_coverage_all_sys_constants_emit() {
         fog: FogState::new(Faction::Alliance),
         blockade: rebellion_core::blockade::BlockadeState::new(),
         uprising: rebellion_core::uprising::UprisingState::new(),
-        death_star: rebellion_core::death_star::DeathStarState::default(),
         research: rebellion_core::research::ResearchState::new(),
         jedi: rebellion_core::jedi::JediState::new(),
         victory: rebellion_core::victory::VictoryState::new(victory_a, victory_e),
@@ -167,20 +170,6 @@ fn telemetry_coverage_all_sys_constants_emit() {
             sys.popularity_alliance = 0.05; // loyalty if Alliance controls: -45
             break;
         }
-    }
-
-    // DEATH STAR: Start construction with 100 ticks remaining (enough time for
-    // uprising and betrayal to fire before DS completion triggers victory)
-    if let Some((sys_key, _)) = world
-        .systems
-        .iter()
-        .find(|(_, s)| s.control.is_controlled_by(Faction::Empire) && !s.is_headquarters)
-    {
-        states.death_star.under_construction =
-            Some(rebellion_core::death_star::DeathStarConstruction {
-                system: sys_key,
-                ticks_remaining: 100,
-            });
     }
 
     // BETRAYAL: Set several non-immune minor characters' loyalty very low.

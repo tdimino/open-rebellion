@@ -18,6 +18,12 @@
 //! characters, or frees prisoners it holds (`FUN_0050d150`). Active Incite
 //! Uprising missions then cut the holder's support (`FUN_0050c9f0`).
 //!
+//! The uprising bit's hook (`FUN_00510f20`) also arms timer `0x384`
+//! (`FUN_0053fa60(900, …)`): every GNPRTB 7698 days while the bit stays set
+//! (`FUN_005862a0`, the class's slot `+0x20`, vtable `0x00663510`) it moves
+//! the holder's support by GNPRTB 7697 (`FUN_00565730` -> `FUN_0050caa0` ->
+//! `FUN_0050c9f0`).
+//!
 //! # Disaster (system `+0x88` bit 18)
 //!
 //! A galaxy timer (event `0x38f`, `FUN_00556fa0`) fires every GNPRTB 7717 +
@@ -50,6 +56,12 @@ use crate::world::{Character, GameWorld, MstbTable, Skill, System};
 const GNPRTB_UPRISING_INCIDENT_MIN: u16 = 7701;
 /// 7702 (`DAT_006bb49c`) = 70: uprising incident timer spread.
 const GNPRTB_UPRISING_INCIDENT_SPREAD: u16 = 7702;
+/// 7697 (`DAT_006bb4c8`) = -1: the holder's support change each time timer
+/// `0x384` fires in revolt (`FUN_0050caa0`).
+const GNPRTB_REVOLT_SUPPORT_DELTA: u16 = 7697;
+/// 7698 (`DAT_006bb3c4`) = 30: timer `0x384`'s delay, system record
+/// `+0x54`+`0x20`, with no spread (`FUN_0050e200.c:48`).
+const GNPRTB_REVOLT_SUPPORT_DELAY: u16 = 7698;
 /// 7707 (`DAT_006bb39c`) = 1: base of each incident score draw.
 const GNPRTB_INCIDENT_DRAW_BASE: u16 = 7707;
 /// 7708 (`DAT_006bb418`) = 9: spread of each incident score draw.
@@ -145,6 +157,14 @@ pub enum UprisingEvent {
         /// Change to the holder's support, in points.
         support_delta: i32,
     },
+    /// Timer `0x384` fired in revolt (`FUN_0050caa0`): `side`, the holder,
+    /// loses `delta` points through the setter (`FUN_0050c9f0`).
+    RevoltSupportLoss {
+        system: SystemKey,
+        tick: u64,
+        side: Faction,
+        delta: i32,
+    },
     /// The disaster incident (event `0x38f`, `FUN_00511930`) struck.
     Disaster {
         system: SystemKey,
@@ -181,6 +201,10 @@ pub struct ActiveUprising {
     /// Tick the uprising incident (event `0x38d`) next fires; drawn on the
     /// next advance when absent.
     pub next_incident_tick: Option<u64>,
+    /// Tick timer `0x384` next fires; armed on the next advance when
+    /// absent. port: a delay of 0 or less (no GNPRTB) never arms.
+    #[serde(default)]
+    pub next_support_tick: Option<u64>,
 }
 
 impl UprisingState {
@@ -364,6 +388,7 @@ impl UprisingSystem {
                     ActiveUprising {
                         started_tick: tick,
                         next_incident_tick: None,
+                        next_support_tick: None,
                     },
                 );
                 events.push(UprisingEvent::UprisingBegan { system, tick });
@@ -406,6 +431,37 @@ impl UprisingSystem {
                 due += incident_delay(&mut rolls);
             }
             uprising.next_incident_tick = Some(due);
+        }
+
+        // Timer 0x384, armed with the bit (FUN_00510f20) and periodic.
+        let support_delay = u64::try_from(param(GNPRTB_REVOLT_SUPPORT_DELAY)).unwrap_or(0);
+        for (system, sys) in &world.systems {
+            let Some(uprising) = state.active_uprisings.get_mut(&system) else {
+                continue;
+            };
+            if support_delay == 0 {
+                continue;
+            }
+            let due = *uprising
+                .next_support_tick
+                .get_or_insert(tick + support_delay);
+            if due > tick {
+                continue;
+            }
+            uprising.next_support_tick = Some(due + support_delay);
+            // FUN_0050c9f0 moves nothing for a holder of side 3.
+            if let Some(side) = sys
+                .control
+                .faction()
+                .filter(|&side| side != Faction::Neutral)
+            {
+                events.push(UprisingEvent::RevoltSupportLoss {
+                    system,
+                    tick,
+                    side,
+                    delta: param(GNPRTB_REVOLT_SUPPORT_DELTA),
+                });
+            }
         }
 
         let disaster_delay = |rolls: &mut Rolls<'_>| {
@@ -907,7 +963,7 @@ pub(crate) fn incite_incident(
 /// requirement without the uprising doubling (`FUN_00559fb0`).
 pub fn end_if_garrisoned(
     state: &mut UprisingState,
-    world: &GameWorld,
+    world: &mut GameWorld,
     system: SystemKey,
     tick: u64,
 ) -> Option<UprisingEvent> {
@@ -918,6 +974,7 @@ pub fn end_if_garrisoned(
         return None;
     }
     state.active_uprisings.remove(&system);
+    world.revolting.remove(&system);
     Some(UprisingEvent::UprisingEnded { system, tick })
 }
 
@@ -928,18 +985,32 @@ pub fn end_if_garrisoned(
 /// `FUN_0050c9f0`: shift `side`'s support at `system` by `delta` points
 /// (a change toward the Alliance halved with a Death Star in the sector,
 /// `FUN_00559be0`), clamped to
-/// `0..=100`. The other side moves by the opposite amount.
+/// `0..=100`. The other side moves by the opposite amount. An unpopulated
+/// system (`+0x88` bit 0 clear) keeps its support (`FUN_0050c9f0.c:11`).
 pub fn apply_support_change(world: &mut GameWorld, system: SystemKey, side: Faction, delta: i32) {
-    let Some(sys) = world.systems.get(system) else {
+    let Some(sys) = world.systems.get(system).filter(|sys| sys.is_populated) else {
         return;
     };
     let change = support_change(world, sys, side, delta);
     shift_support(world, system, side, change);
 }
 
+/// `FUN_00509c30`: write the shift and, when support changed, run the
+/// setter's hook (`+0x1d0`, `crate::support_shift::support_changed`).
 fn shift_support(world: &mut GameWorld, system: SystemKey, side: Faction, points: i32) {
-    if let Some(sys) = world.systems.get_mut(system) {
-        shift_system(sys, side, points);
+    let Some(sys) = world.systems.get_mut(system) else {
+        return;
+    };
+    let bits = |sys: &System| {
+        (
+            sys.popularity_alliance.to_bits(),
+            sys.popularity_empire.to_bits(),
+        )
+    };
+    let before = bits(sys);
+    shift_system(sys, side, points);
+    if bits(sys) != before {
+        crate::support_shift::support_changed(world, system);
     }
 }
 
@@ -980,6 +1051,8 @@ pub fn apply_uprising_event(world: &mut GameWorld, event: &UprisingEvent) {
                             sys.ground_units.retain(|t| t != troop);
                         }
                         world.troops.remove(*troop);
+                        // Event 0x301 at the system (FUN_00508660).
+                        crate::support_shift::regiments_changed(world, *system);
                     }
                     IncidentLoss::CharacterInjured { .. } => {}
                     IncidentLoss::PrisonerFreed(character) => {
@@ -987,12 +1060,19 @@ pub fn apply_uprising_event(world: &mut GameWorld, event: &UprisingEvent) {
                             c.is_captive = false;
                             c.captured_by = None;
                             c.capture_tick = None;
+                            c.leave_abode();
                         }
                     }
                 }
             }
             shift_support(world, *system, *side, *support_delta);
         }
+        UprisingEvent::RevoltSupportLoss {
+            system,
+            side,
+            delta,
+            ..
+        } => apply_support_change(world, *system, *side, *delta),
         UprisingEvent::Disaster {
             system,
             total_energy,
@@ -1008,7 +1088,13 @@ pub fn apply_uprising_event(world: &mut GameWorld, event: &UprisingEvent) {
                 remove_facility(world, *system, *facility);
             }
         }
-        UprisingEvent::UprisingBegan { .. } | UprisingEvent::UprisingEnded { .. } => {}
+        // FUN_0050a130: system +0x88 bit 2.
+        UprisingEvent::UprisingBegan { system, .. } => {
+            world.revolting.insert(*system);
+        }
+        UprisingEvent::UprisingEnded { system, .. } => {
+            world.revolting.remove(system);
+        }
     }
 }
 
@@ -1028,24 +1114,32 @@ mod tests {
     use crate::missions::MissionFaction;
     use crate::missions::MissionRequest;
     use crate::world::{
-        Character, ControlKind, DefenseFacilityInstance, GnprtbEntry, GnprtbParams,
-        Fleet, ManufacturingFacilityInstance, MstbEntry, ProductionFacilityInstance, Sector,
-        SkillPair, TroopUnit,
+        Character, ControlKind, DefenseFacilityInstance, Fleet, GnprtbEntry, GnprtbParams,
+        ManufacturingFacilityInstance, MstbEntry, ProductionFacilityInstance, Sector, SkillPair,
+        TroopUnit,
     };
 
     /// A usable Death Star at `system`, setting `+0x88` bit 11 across its
     /// sector (`FUN_005178b0`).
     fn with_death_star(world: &mut GameWorld, system: SystemKey) {
+        let class = world
+            .capital_ship_classes
+            .insert(crate::world::CapitalShipClass {
+                family: 0x18,
+                is_empire: true,
+                hull: 100,
+                ..Default::default()
+            });
         let fleet = world.fleets.insert(Fleet {
             location: system,
-            capital_ships: vec![],
+            capital_ships: vec![crate::world::ShipInstance::new(class, 100, false)],
             fighters: vec![],
             characters: vec![],
             is_alliance: false,
-            has_death_star: true,
+            bombarding: false,
         });
         world.systems[system].fleets.push(fleet);
-        crate::death_star::refresh_sectors(world, &crate::movement::MovementState::new());
+        crate::death_star::refresh_sectors(world);
     }
 
     fn gnprtb_entry(parameter_id: u16, value: i32) -> GnprtbEntry {
@@ -1162,7 +1256,6 @@ mod tests {
         let troop = world.troops.insert(TroopUnit {
             class_dat_id: DatId::new(class),
             is_alliance: alliance,
-            regiment_strength: 1,
         });
         world.systems[system].ground_units.push(troop);
         troop
@@ -1201,6 +1294,7 @@ mod tests {
             ActiveUprising {
                 started_tick: 0,
                 next_incident_tick: Some(next_incident_tick),
+                next_support_tick: None,
             },
         );
         state
@@ -1344,6 +1438,46 @@ mod tests {
             state.active_uprisings[&system].next_incident_tick,
             Some(140)
         );
+    }
+
+    #[test]
+    fn a_system_in_revolt_loses_a_point_of_its_holders_support_every_thirty_days() {
+        // The uprising bit's hook FUN_00510f20 arms timer 0x384
+        // (FUN_0053fa60(900, …)) from system record +0x54+0x20, whose
+        // minimum is GNPRTB 7698 (30) and spread none (FUN_0050e200.c:48).
+        // The class's slot +0x20 is FUN_005862a0 (vtable 0x00663510), so it
+        // fires every 30 days; the fire (FUN_00565730 -> FUN_0050caa0)
+        // moves the holder's support by GNPRTB 7697 (-1) through
+        // FUN_0050c9f0 while bit 2 stays set.
+        let (mut world, system) = world_with(Faction::Empire, 0.7);
+        // GNPRTB 7760 (60): the Empire's 70 keeps the holder (FUN_0055a080)
+        // when the setter's hook reruns control.
+        world.gnprtb = GnprtbParams::new(vec![
+            gnprtb_entry(7697, -1),
+            gnprtb_entry(7698, 30),
+            gnprtb_entry(7760, 60),
+        ]);
+        let mut state = in_revolt(system, u64::MAX);
+        let economy = short_of_troops(system, -1);
+        let mut support = Vec::new();
+        for day in 1..=61 {
+            let events = UprisingSystem::advance(
+                &mut state,
+                &world,
+                &economy,
+                &MissionState::new(),
+                &at(day),
+                &[],
+            );
+            for event in &events {
+                apply_uprising_event(&mut world, event);
+            }
+            support.push(support_points(&world.systems[system], Faction::Empire));
+        }
+        assert_eq!(support[29], 70, "day 30");
+        assert_eq!(support[30], 69, "day 31");
+        assert_eq!(support[59], 69, "day 60");
+        assert_eq!(support[60], 68, "day 61");
     }
 
     #[test]
@@ -1608,12 +1742,12 @@ mod tests {
         for _ in 0..2 {
             add_regiment(&mut world, system, 0x1000_0002, true);
         }
-        assert_eq!(end_if_garrisoned(&mut state, &world, system, 7), None);
+        assert_eq!(end_if_garrisoned(&mut state, &mut world, system, 7), None);
         assert!(state.is_uprising(system));
 
         add_regiment(&mut world, system, 0x1000_0002, true);
         assert_eq!(
-            end_if_garrisoned(&mut state, &world, system, 7),
+            end_if_garrisoned(&mut state, &mut world, system, 7),
             Some(UprisingEvent::UprisingEnded { system, tick: 7 })
         );
         assert!(!state.is_uprising(system));
@@ -1639,6 +1773,25 @@ mod tests {
         with_death_star(&mut world, system);
         apply_support_change(&mut world, system, Faction::Alliance, 20);
         assert!((world.systems[system].popularity_alliance - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn an_unpopulated_system_keeps_its_support_for_either_side() {
+        // FUN_0050c9f0.c:11: the setter does nothing without +0x88 bit 0.
+        for side in [Faction::Alliance, Faction::Empire] {
+            let (mut world, system) = world_with(side, 0.5);
+            world.systems[system].is_populated = false;
+            apply_support_change(&mut world, system, side, 10);
+            apply_support_change(&mut world, system, side, -20);
+            assert!(
+                (world.systems[system].popularity_alliance - 0.5).abs() < 1e-6,
+                "{side:?}"
+            );
+            assert!(
+                (world.systems[system].popularity_empire - 0.5).abs() < 1e-6,
+                "{side:?}"
+            );
+        }
     }
 
     #[test]
@@ -2217,9 +2370,9 @@ mod tests {
 
     #[test]
     fn the_end_check_ignores_a_system_that_is_not_in_revolt() {
-        let (world, system) = world_with(Faction::Alliance, 0.3);
+        let (mut world, system) = world_with(Faction::Alliance, 0.3);
         let mut state = UprisingState::default();
-        assert_eq!(end_if_garrisoned(&mut state, &world, system, 1), None);
+        assert_eq!(end_if_garrisoned(&mut state, &mut world, system, 1), None);
     }
 
     #[test]

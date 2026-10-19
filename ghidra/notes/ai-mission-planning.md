@@ -261,8 +261,9 @@ a flag word (`FUN_005f4960`).
   side. A character prisoner counts on the side that holds it.
 - `0x40000000` marks the four leaders (`FUN_004024d0`: `0x30000240`,
   `0x32000242`, `0x34000280`, `0x35000281`) while the controller's bit `0x1` is
-  clear; `0x400` additionally marks `0x34000280`. The bit's only writer is
-  `FUN_004182a0`, from a game setting (`FUN_004fce50`), untraced.
+  clear; `0x400` additionally marks `0x34000280`. The bit is set by
+  `FUN_004182a0` case 1 when the settings record's `+8` (game type) equals 1, a
+  Headquarters Only game; Standard leaves it clear (`victory-flag-word.md`, 6).
 - `0x8` marks the six main characters (`FUN_004025f0`). Any other character
   gets capability bits in the record's `+0x34` word: `0x1000000`, `0x2000000`,
   `0x4000000` when its class record may be an admiral, commander, or general
@@ -436,7 +437,6 @@ original as follows:
 
 - What sets side `+0x318`/`+0x31c`, the strategic choice of mission.
 - The posture (`FUN_00478000`, `FUN_004b7150`) and its sector bits.
-- When the controller's leader bit (`FUN_004182a0`) is set.
 - Whether the per-system record's `+0x34` is a DatId or coordinates.
 
 ## Supporting decompiles

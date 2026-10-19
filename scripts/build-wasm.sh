@@ -165,7 +165,9 @@ else
         "$WEB_AUDIO/sfx/tactical_event_13_0.wav" \
         "$WEB_AUDIO/sfx/tactical_event_13_1.wav" \
         "$WEB_AUDIO/sfx/tactical_event_13_2.wav" \
-        "$WEB_AUDIO/sfx/tactical_event_14_0.wav"
+        "$WEB_AUDIO/sfx/tactical_event_14_0.wav" \
+        "$WEB_AUDIO/sfx/tactical_event_1d_0.wav" \
+        "$WEB_AUDIO/sfx/tactical_event_1f_0.wav"
     echo "WARNING: TACTICAL.DLL not found in $ORIGINAL_GAME_DIR; tactical event cues will remain silent."
 fi
 

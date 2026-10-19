@@ -4,16 +4,11 @@
 //! into a reusable function that returns structured `GameEventRecord`s
 //! instead of pushing to a `MessageLog`.
 
-use crate::integrator::{
-    apply_ground_combat_result_inner, resolve_system_space_combat_for, PerceptionIntegrator,
-};
+use crate::integrator::{resolve_system_space_combat_for, PerceptionIntegrator};
 use rebellion_core::ai::{AIAction, AIState, AISystem};
 use rebellion_core::betrayal::{BetrayalState, BetrayalSystem};
 use rebellion_core::blockade::{BlockadeState, BlockadeSystem};
-use rebellion_core::bombardment::BombardmentSystem;
-use rebellion_core::combat::{side_present, CombatSide, CombatSystem};
-use rebellion_core::dat::Faction;
-use rebellion_core::death_star::{DeathStarState, DeathStarSystem};
+use rebellion_core::combat::side_present;
 use rebellion_core::delivery::DeliveryState;
 use rebellion_core::economy::{EconomyState, EconomySystem};
 use rebellion_core::events::{EventState, EventSystem};
@@ -32,9 +27,6 @@ use rebellion_core::uprising::{UprisingState, UprisingSystem};
 use rebellion_core::victory::{VictoryState, VictorySystem};
 use rebellion_core::world::{CampaignConfig, GameWorld, MstbTable};
 
-// port: safety bound on repeated ground passes; the original assault (order 0x234) is untraced.
-const MAX_SYSTEM_GROUND_COMBAT_ROUNDS: u32 = 256;
-
 /// Bundles all mutable simulation state needed for a tick.
 ///
 /// Mirrors the set of `*State` locals in `rebellion-app/src/main.rs`.
@@ -50,7 +42,6 @@ pub struct SimulationStates {
     pub fog: FogState,
     pub blockade: BlockadeState,
     pub uprising: UprisingState,
-    pub death_star: DeathStarState,
     pub research: ResearchState,
     pub jedi: JediState,
     pub victory: VictoryState,
@@ -97,9 +88,9 @@ pub struct AiCtx<'a> {
     pub manufacturing: &'a mut ManufacturingState,
     pub movement: &'a mut MovementState,
     pub transport: &'a mut TroopTransportState,
+    pub deliveries: &'a mut DeliveryState,
     pub stockpiles: &'a mut StockpileState,
     pub victory: &'a mut VictoryState,
-    pub death_star: &'a mut DeathStarState,
     pub blockade: &'a mut BlockadeState,
     pub research: &'a ResearchState,
     pub uprising: &'a UprisingState,
@@ -115,6 +106,16 @@ pub struct AiOrderRecord {
     pub issued: rebellion_core::ai_scheduler::Issued,
     pub outcome: crate::integrator::AiOutcome,
     pub strike: crate::integrator::StrikeEffects,
+    pub assault: crate::integrator::AssaultEffects,
+    /// What phase 5 served after any other applied order: a moved
+    /// regiment's holder rerun (`FUN_00508660`) and its shifts.
+    pub fired: rebellion_core::support_shift::Fired,
+    /// The trips of the characters its holder changes sent off
+    /// (`integrator::sweep_requests`).
+    pub swept: Vec<(
+        rebellion_core::ids::SystemKey,
+        Vec<crate::integrator::AdriftTrip>,
+    )>,
 }
 
 impl AiOrderRecord {
@@ -176,7 +177,10 @@ pub fn ai_step(
     Vec<AiOrderRecord>,
     Vec<rebellion_core::blockade::BlockadeEvent>,
 ) {
-    use crate::integrator::{apply_ai_order, resolve_ai_strike, AiOutcome, StrikeEffects};
+    use crate::integrator::{
+        apply_ai_order, resolve_ai_assault, resolve_ai_strike, AiOutcome, AssaultEffects,
+        StrikeEffects,
+    };
     // FUN_004361a0 steps the Alliance (session +0x10) before the Empire.
     sides.sort_by_key(|(state, _)| {
         !matches!(state.faction, Some(rebellion_core::ai::AiFaction::Alliance))
@@ -203,34 +207,66 @@ pub fn ai_step(
         let Some(issued) = state.scheduler.pending.take() else {
             continue;
         };
+        let mut assault = AssaultEffects::default();
+        let mut fired = rebellion_core::support_shift::Fired::default();
+        let mut swept = Vec::new();
         let (outcome, strike) = if let Some(system) = held(ctx.world, ctx.transport, &issued.action)
         {
             (AiOutcome::Held { system }, StrikeEffects::default())
         } else if matches!(
             issued.action,
-            AIAction::Bombard { .. } | AIAction::DestroySystem { .. }
+            AIAction::Bombard { .. } | AIAction::DestroySystem { .. } | AIAction::Assault { .. }
         ) {
-            resolve_ai_strike(
-                &issued.action,
-                ctx.world,
-                ctx.victory,
-                ctx.death_star,
-                ctx.movement,
-                ctx.manufacturing,
-                ctx.blockade,
-                day,
-            )
+            let mut states = crate::integrator::StrikeStates {
+                movement: ctx.movement,
+                manufacturing: ctx.manufacturing,
+                transport: ctx.transport,
+                deliveries: ctx.deliveries,
+                missions: ctx.missions,
+                uprisings: ctx.uprising,
+                blockade: ctx.blockade,
+                tick: day,
+                step,
+            };
+            let mut roll = || rolls(1).first().copied().unwrap_or(0.0);
+            let side = state.faction.map_or(rebellion_core::dat::Faction::Empire, |faction| {
+                faction.as_mission_faction().into()
+            });
+            if matches!(issued.action, AIAction::Assault { .. }) {
+                let (outcome, effects) =
+                    resolve_ai_assault(&issued.action, side, ctx.world, &mut states, &mut roll);
+                assault = effects;
+                (outcome, StrikeEffects::default())
+            } else {
+                resolve_ai_strike(&issued.action, side, ctx.world, &mut states, &mut roll)
+            }
         } else {
             let outcome = apply_ai_order(
                 &issued.action,
                 state,
                 ctx.missions,
                 ctx.manufacturing,
+                ctx.deliveries,
                 ctx.movement,
                 ctx.transport,
                 ctx.stockpiles,
                 ctx.world,
                 ctx.uprising,
+                day,
+            );
+            // The order runs in this step's phase 5, which serves its events
+            // (FUN_0051df30).
+            fired = crate::integrator::fire_holder_changes(
+                ctx.world,
+                ctx.manufacturing,
+                rebellion_core::support_shift::step(day, step),
+            );
+            swept = crate::integrator::sweep_requests(
+                ctx.world,
+                ctx.missions,
+                ctx.transport,
+                ctx.movement,
+                ctx.blockade,
                 day,
             );
             (outcome, StrikeEffects::default())
@@ -243,6 +279,9 @@ pub fn ai_step(
             issued,
             outcome,
             strike,
+            assault,
+            fired,
+            swept,
         });
     }
     if !agent_first {
@@ -303,9 +342,9 @@ fn ai_step_emitting(
         manufacturing: &mut states.manufacturing,
         movement: &mut states.movement,
         transport: &mut states.troop_transport,
+        deliveries: &mut states.deliveries,
         stockpiles: &mut states.stockpiles,
         victory: &mut states.victory,
-        death_star: &mut states.death_star,
         blockade: &mut states.blockade,
         research: &states.research,
         uprising: &states.uprising,
@@ -325,7 +364,11 @@ fn ai_step_emitting(
         rolls,
     );
     let AiCtx {
-        world, transport, ..
+        world,
+        manufacturing,
+        transport,
+        blockade,
+        ..
     } = ctx;
     integrator.at_tick(day, |integrator| {
         for record in &records {
@@ -336,9 +379,31 @@ fn ai_step_emitting(
                 &record.outcome,
             );
             integrator.emit_strike(world, &record.strike);
+            integrator.emit_assault(world, &record.assault);
+            integrator.emit_fired(world, &record.fired.shifts, &record.fired.controls);
+            integrator.emit_swept(world, &record.swept);
         }
-        integrator.apply_blockade_events(world, transport, &runs);
+        integrator.apply_blockade_events(world, manufacturing, transport, blockade, &runs);
     });
+}
+
+/// The characters the operation's holder changes flagged leave (event
+/// `0x307`, `integrator::sweep_requests`), with their trips' records.
+fn sweep_requests_emitting(
+    world: &mut GameWorld,
+    states: &mut SimulationStates,
+    integrator: &mut PerceptionIntegrator,
+    tick: u64,
+) {
+    let swept = crate::integrator::sweep_requests(
+        world,
+        &mut states.missions,
+        &states.troop_transport,
+        &states.movement,
+        &states.blockade,
+        tick,
+    );
+    integrator.emit_swept(world, &swept);
 }
 
 /// The day's end for every side (`FUN_00485de0.c:7-11`): each side's
@@ -446,8 +511,6 @@ pub fn run_simulation_tick(
     // `MovementState` is authoritative while a fleet is in hyperspace. Repair
     // stale save/index state before economy and manufacturing inspect orbits.
     reconcile_fleet_orbits(&states.movement, world);
-    // System bit 11 before anything reads it (FUN_005178b0).
-    rebellion_core::death_star::refresh_sectors(world, &states.movement);
 
     // Helper: consume N rolls from the slice. A supplied buffer that runs
     // out is continued from a SplitMix64 stream keyed on the tick and the
@@ -489,13 +552,7 @@ pub fn run_simulation_tick(
     }
 
     // ── 0. Economy (runs BEFORE manufacturing — affects production) ──────
-    let economy_events = EconomySystem::advance_with_uprisings(
-        &mut states.economy,
-        world,
-        tick_events,
-        world.difficulty_index,
-        &states.uprising,
-    );
+    let economy_events = EconomySystem::advance(&mut states.economy, world, tick_events);
     integrator.apply_economy_events(world, &economy_events);
 
     // ── 0b. Stockpiles: facility cycles, yard work, overdraft scraps ─────
@@ -503,13 +560,12 @@ pub fn run_simulation_tick(
         &mut states.stockpiles,
         world,
         &mut states.manufacturing,
-        &states.economy,
         tick_events,
         states.blockade.blockaded_systems(),
         &take_rolls(tick_events.len()),
     );
     integrator.emit_maintenance_shortfall(world, &states.troop_transport, &stockpile_events);
-    rebellion_core::scrap::scrap_all(
+    let overdraft = rebellion_core::scrap::scrap_all_reporting(
         world,
         &mut states.stockpiles,
         &mut states.troop_transport,
@@ -518,6 +574,9 @@ pub fn run_simulation_tick(
             _ => None,
         }),
     );
+    integrator.emit_scrapped_aboard(world, &overdraft.losses);
+    // A scrapped regiment's holder rerun (FUN_00508660).
+    integrator.fire_support_shifts(world, &mut states.manufacturing);
 
     // ── 1. Manufacturing ─────────────────────────────────────────────────
     // Use advance_tracked so the K6 EVT_MANUFACTURING_IDLE telemetry is
@@ -527,14 +586,52 @@ pub fn run_simulation_tick(
         tick_events,
         states.blockade.blockaded_systems(),
     );
-    integrator.apply_build_completions(world, &mfg_advance.completions);
+    // An ordered capital ship completes in place in its fleet (FUN_0052bee0).
+    rebellion_core::manufacturing::finish_ships(
+        world,
+        &states.movement,
+        &mfg_advance.finished_ships,
+    );
+    integrator.apply_build_completions(
+        world,
+        &mut states.manufacturing,
+        &mfg_advance.completions,
+    );
     integrator.apply_manufacturing_idle(world, &mfg_advance.newly_idle);
-    // Remote products travel, then complete at their destination (F-030).
-    states.deliveries.depart(world, &mfg_advance.departures);
+    // Remote products travel, then complete at their destination (F-030);
+    // a capital ship travels on its own leg inside its destination fleet.
+    let travelling = crate::integrator::travelling_products(&mfg_advance.departures);
+    states.deliveries.depart(world, &travelling);
     let delivered = states.deliveries.advance(world, tick_events);
-    integrator.apply_build_completions(world, &delivered.arrivals);
-    integrator.apply_boarded(world, &delivered.boarded);
+    integrator.apply_build_completions(
+        world,
+        &mut states.manufacturing,
+        &delivered.arrivals,
+    );
+    integrator.apply_boarded(
+        world,
+        &mut states.manufacturing,
+        &mut states.troop_transport,
+        &delivered.boarded,
+    );
     integrator.apply_deliveries_lost(world, &delivered.lost);
+    let ships = rebellion_core::delivery::advance_ship_legs(world, &states.movement, tick_events);
+    integrator.apply_ship_arrivals(world, &ships);
+    for arrival in &delivered.arrivals {
+        if matches!(
+            arrival.kind,
+            rebellion_core::manufacturing::BuildableKind::SpecialForce(_)
+        ) {
+            rebellion_core::death_star::deploy_special_forces(
+                world,
+                &states.troop_transport,
+                &states.movement,
+                arrival.system,
+            );
+        }
+    }
+    // Ordered ships whose queue entries are gone.
+    rebellion_core::manufacturing::seat_ordered_ships(world, &mut states.manufacturing);
 
     // ── 2. Movement ──────────────────────────────────────────────────────
     let arrivals = MovementSystem::advance(&mut states.movement, tick_events);
@@ -547,8 +644,8 @@ pub fn run_simulation_tick(
     // Regiments travelling on their own (FUN_00556430, event 0x387).
     let regiments = states.troop_transport.advance_transit(world, current_tick);
     integrator.apply_regiment_arrivals(world, &regiments);
-    // An arriving Death Star sets bit 11 in its new sector (event 0x301).
-    rebellion_core::death_star::refresh_sectors(world, &states.movement);
+    integrator.fire_support_shifts(world, &mut states.manufacturing);
+    sweep_requests_emitting(world, states, &mut integrator, current_tick);
 
     // ── 3. Combat ────────────────────────────────────────────────────────
     // FUN_0051ddf0 -> FUN_00517270: a system fights on every
@@ -583,239 +680,19 @@ pub fn run_simulation_tick(
             seed,
             current_tick,
             human_is_alliance,
-        );
-        rebellion_core::tactical::apply::reconcile_death_star_result(
-            world,
-            &mut states.death_star,
-            &mut states.victory,
+            Some(&states.manufacturing),
+            &rebellion_core::carriage::ProductRoom::new(&states.manufacturing, &states.deliveries),
         );
 
         integrator.emit_system_space_combat(world, &space_result);
-
-        // Orbital bombardment follows a decisive space victory. Ground
-        // assault is resolved below after surviving transports have landed.
-        // port: this follow-up has no source of its own; the original's
-        // bombardment is the Bombard order (or-port-bombardment-8usw).
-        // Alliance is always coded as attacker, Empire as defender in the trigger above.
-        // The space combat winner gets to follow up with ground assault + orbital bombardment.
-        let winner_info = match (space_result.winner, space_result.winner_fleet) {
-            (CombatSide::Attacker, Some(fleet)) => Some((fleet, true)), // Alliance won
-            (CombatSide::Defender, Some(fleet)) => Some((fleet, false)), // Empire won
-            _ => None,
-        };
-        if let Some((winner_fleet, winner_is_alliance)) = winner_info {
-            let brd_result = BombardmentSystem::resolve_bombardment(
-                world,
-                winner_fleet,
-                sys_key,
-                world.difficulty_index,
-                current_tick,
-            );
-            let attacker = if winner_is_alliance {
-                Faction::Alliance
-            } else {
-                Faction::Empire
-            };
-            let headquarters_destroyed = VictorySystem::apply_headquarters_bombardment(
-                &states.victory,
-                world,
-                &brd_result,
-                attacker,
-            );
-            // FUN_0058e320 ends a bombardment run, as for the AI's Bombard.
-            // port: the run rolls no hits, so +0x28 stays clear.
-            rebellion_core::bombardment::finalize(
-                world,
-                sys_key,
-                attacker,
-                rebellion_core::bombardment::BombardmentRun::default(),
-            );
-            integrator.emit_bombardment(world, sys_key, brd_result.damage, headquarters_destroyed);
-        }
     }
 
     let destroyed_cargo = states.troop_transport.destroy_untransportable_cargo(world);
     integrator.emit_destroyed_transport_cargo(&destroyed_cargo);
 
-    // ── 3b. Troop landing, ground combat, and occupation ────────────────
-    // A fleet may land cargo only after it is the sole orbital faction. This
-    // also covers unopposed invasions, which do not create a space-combat
-    // trigger. Surface combat continues on later ticks until it is decisive.
-    let ground_systems: Vec<_> = world.systems.keys().collect();
-    for sys_key in ground_systems {
-        let orbiting: Vec<_> = world
-            .systems
-            .get(sys_key)
-            .map(|system| system.fleets.clone())
-            .unwrap_or_default();
-        let has_alliance_fleet = orbiting.iter().any(|fleet| {
-            world
-                .fleets
-                .get(*fleet)
-                .is_some_and(|value| value.is_alliance)
-        });
-        let has_empire_fleet = orbiting.iter().any(|fleet| {
-            world
-                .fleets
-                .get(*fleet)
-                .is_some_and(|value| !value.is_alliance)
-        });
-        let orbital_winner = match (has_alliance_fleet, has_empire_fleet) {
-            (true, false) => Some(Faction::Alliance),
-            (false, true) => Some(Faction::Empire),
-            _ => None,
-        };
-
-        if let Some(faction) = orbital_winner {
-            let landing_fleets: Vec<_> =
-                orbiting
-                    .iter()
-                    .copied()
-                    .filter(|fleet| {
-                        world.fleets.get(*fleet).is_some_and(|value| {
-                            value.is_alliance == (faction == Faction::Alliance)
-                        }) && !states.troop_transport.is_held(*fleet)
-                    })
-                    .collect();
-
-            // An unopposed Imperial invasion of the mobile Alliance HQ has no
-            // space battle to trigger the normal bombardment follow-up. Strike
-            // the HQ before landing, but only when a transport is actually
-            // carrying an invasion force. Occupation alone is not sufficient.
-            // port: no source of its own (or-port-bombardment-8usw).
-            if faction == Faction::Empire
-                && sys_key == states.victory.alliance_hq
-                && world
-                    .systems
-                    .get(sys_key)
-                    .is_some_and(|system| system.is_headquarters && !system.is_destroyed)
-            {
-                if let Some(bombardment_fleet) = landing_fleets
-                    .iter()
-                    .copied()
-                    .find(|fleet| states.troop_transport.carried_count(*fleet) > 0)
-                {
-                    let result = BombardmentSystem::resolve_bombardment(
-                        world,
-                        bombardment_fleet,
-                        sys_key,
-                        world.difficulty_index,
-                        current_tick,
-                    );
-                    let headquarters_destroyed = VictorySystem::apply_headquarters_bombardment(
-                        &states.victory,
-                        world,
-                        &result,
-                        Faction::Empire,
-                    );
-                    // FUN_0058e320, as above.
-                    rebellion_core::bombardment::finalize(
-                        world,
-                        sys_key,
-                        Faction::Empire,
-                        rebellion_core::bombardment::BombardmentRun::default(),
-                    );
-                    integrator.emit_bombardment(
-                        world,
-                        sys_key,
-                        result.damage,
-                        headquarters_destroyed,
-                    );
-                }
-            }
-
-            for fleet in landing_fleets {
-                integrator.apply_troop_landing(world, &mut states.troop_transport, fleet, sys_key);
-            }
-        }
-
-        let (alliance_troops, empire_troops) = world
-            .systems
-            .get(sys_key)
-            .map(|system| {
-                system
-                    .ground_units
-                    .iter()
-                    .fold((0_usize, 0_usize), |counts, troop| {
-                        match world.troops.get(*troop) {
-                            Some(value) if value.regiment_strength > 0 && value.is_alliance => {
-                                (counts.0 + 1, counts.1)
-                            }
-                            Some(value) if value.regiment_strength > 0 => (counts.0, counts.1 + 1),
-                            _ => counts,
-                        }
-                    })
-            })
-            .unwrap_or_default();
-
-        let occupying_faction = match (alliance_troops > 0, empire_troops > 0) {
-            (true, true) => {
-                let attacker_is_alliance =
-                    orbital_winner.is_none_or(|faction| faction == Faction::Alliance);
-                let ground_rolls = take_rolls(256);
-                let mut final_winner = CombatSide::Draw;
-                let mut total_engagements = 0;
-                let mut rounds = 0;
-                let mut stalemate = false;
-                while rounds < MAX_SYSTEM_GROUND_COMBAT_ROUNDS {
-                    let result = CombatSystem::resolve_ground(
-                        world,
-                        sys_key,
-                        attacker_is_alliance,
-                        world.difficulty_index,
-                        &ground_rolls,
-                        current_tick,
-                    );
-                    let made_progress = result
-                        .troop_damage
-                        .iter()
-                        .any(|event| event.strength_after < event.strength_before);
-                    final_winner = result.winner;
-                    total_engagements += result.troop_damage.len();
-                    rounds += 1;
-                    apply_ground_combat_result_inner(&result, world);
-                    if final_winner != CombatSide::Draw || !made_progress {
-                        stalemate = final_winner == CombatSide::Draw;
-                        break;
-                    }
-                }
-                if rounds == MAX_SYSTEM_GROUND_COMBAT_ROUNDS && final_winner == CombatSide::Draw {
-                    stalemate = true;
-                }
-                integrator.emit_system_ground_combat(
-                    world,
-                    sys_key,
-                    final_winner,
-                    total_engagements,
-                    rounds,
-                    stalemate,
-                );
-                match final_winner {
-                    CombatSide::Attacker => Some(if attacker_is_alliance {
-                        Faction::Alliance
-                    } else {
-                        Faction::Empire
-                    }),
-                    CombatSide::Defender => Some(if attacker_is_alliance {
-                        Faction::Empire
-                    } else {
-                        Faction::Alliance
-                    }),
-                    CombatSide::Draw => None,
-                }
-            }
-            (true, false) => Some(Faction::Alliance),
-            (false, true) => Some(Faction::Empire),
-            (false, false) => None,
-        };
-
-        if let Some(winner) = occupying_faction {
-            let control = world.systems.get(sys_key).map(|system| system.control);
-            if control != Some(rebellion_core::world::ControlKind::Controlled(winner)) {
-                integrator.apply_ground_occupation(world, sys_key, winner, current_tick);
-            }
-        }
-    }
+    // No regiment lands without an order: the assault (0x234) or a Move
+    // (0x201) puts one down (ghidra/notes/ground-assault.md, "Landing without
+    // the order").
 
     // Observe embarked regiments after arrivals and landings, so a fleet that
     // arrives and is ordered away again this tick still copies the arrival
@@ -831,15 +708,27 @@ pub fn run_simulation_tick(
         )
     };
 
-    // A Death Star lost in battle clears bit 11 before the blockade and
-    // uprising steps read it (event 0x301).
-    rebellion_core::death_star::refresh_sectors(world, &states.movement);
-
     // The blockade rule reruns as an arrival or a battle settles, before the
     // AI's orders take effect (`FUN_0050b8e0` through event 0x311,
     // `ghidra/notes/blockade-bit.md`, "When it runs"): a fleet the AI sends on
     // the day it arrives still blockades for that day.
     let mut blockade_events = BlockadeSystem::advance(&mut states.blockade, world, tick_events);
+    // The same rule writes the battle bit; each change sweeps the system's
+    // adrift characters (event 0x304, FUN_00548e90).
+    let adrift_trips = tick_events.last().map_or_else(Vec::new, |last| {
+        rebellion_core::death_star::sweep_battle_changes(
+            world,
+            &mut states.missions,
+            &mut states.blockade,
+            &states.troop_transport,
+            &states.movement,
+            last.tick,
+        )
+    });
+    for (system, started) in &adrift_trips {
+        integrator.emit_adrift_trips(world, &states.missions, *system, started);
+    }
+    sweep_requests_emitting(world, states, &mut integrator, current_tick);
 
     // ── 4. Fog of war ────────────────────────────────────────────────────
     let reveals = FogSystem::advance(&mut states.fog, world, &states.movement);
@@ -869,7 +758,13 @@ pub fn run_simulation_tick(
         ai2.free_mission_members(&mission_advance.effects);
     }
     for result in &mission_advance.results {
-        integrator.apply_mission_result(world, result, &mut states.uprising, &mut states.research);
+        integrator.apply_mission_result(
+            world,
+            &mut states.manufacturing,
+            result,
+            &mut states.uprising,
+            &mut states.research,
+        );
         // Knesset Shamash-Bet #R11: emit `EVT_CHARACTER_KILLED` telemetry for
         // mission-side assassinations. The integrator's `MissionEffect::CharacterKilled`
         // arm marks `is_killed = true` via `mark_killed()` instead of deleting
@@ -956,10 +851,47 @@ pub fn run_simulation_tick(
         }
     }
 
+    sweep_requests_emitting(world, states, &mut integrator, current_tick);
+
+    // ── 5a. Members going home from ended missions (FUN_00548120) ────────
+    for ended in &mission_advance.ended {
+        let started = rebellion_core::death_star::return_members(
+            world,
+            &mut states.missions,
+            &states.troop_transport,
+            &states.movement,
+            &states.blockade,
+            ended,
+            current_tick,
+        );
+        if let Some(system) = ended.origin {
+            integrator.emit_adrift_trips(world, &states.missions, system, &started);
+        }
+    }
+
     // ── 5b. Character escapes ────────────────────────────────────────────
-    let escape_rolls = take_rolls(world.characters.len());
-    let escape_effects = MissionSystem::check_escapes(world, &escape_rolls);
+    let escape_roll = take_rolls(1)[0];
+    let escape_effects = MissionSystem::escape_step(world, current_tick, escape_roll);
     integrator.apply_escape_effects(world, &escape_effects);
+    // Each release's autoscrap request sweeps the escapee's location at once
+    // (event 0x307, FUN_00548da0).
+    for effect in &escape_effects {
+        if let rebellion_core::missions::MissionEffect::CharacterEscaped { character, .. } = effect
+        {
+            let started = rebellion_core::death_star::free_escapee(
+                world,
+                &mut states.missions,
+                &states.troop_transport,
+                &states.movement,
+                &states.blockade,
+                *character,
+                current_tick,
+            );
+            if let Some(system) = world.characters.get(*character).and_then(|c| c.current_system) {
+                integrator.emit_adrift_trips(world, &states.missions, system, &started);
+            }
+        }
+    }
 
     // ── 6. Events ────────────────────────────────────────────────────────
     let event_rolls: Vec<f32> = take_rolls(16).iter().map(|&r| r as f32).collect();
@@ -987,7 +919,14 @@ pub fn run_simulation_tick(
             last.tick,
         ));
     }
-    integrator.apply_blockade_events(world, &mut states.troop_transport, &blockade_events);
+    integrator.apply_blockade_events(
+        world,
+        &mut states.manufacturing,
+        &mut states.troop_transport,
+        &states.blockade,
+        &blockade_events,
+    );
+    sweep_requests_emitting(world, states, &mut integrator, current_tick);
 
     // ── 9. Uprising ──────────────────────────────────────────────────────
     let uprising_rolls = take_rolls(UprisingSystem::roll_budget(
@@ -1004,7 +943,8 @@ pub fn run_simulation_tick(
         tick_events,
         &uprising_rolls,
     );
-    integrator.apply_uprising_events(world, &uprising_events);
+    integrator.apply_uprising_events(world, &mut states.manufacturing, &uprising_events);
+    sweep_requests_emitting(world, states, &mut integrator, current_tick);
 
     // ── 10. Betrayal ─────────────────────────────────────────────────────
     let betrayal_rolls = take_rolls(world.characters.len());
@@ -1017,27 +957,6 @@ pub fn run_simulation_tick(
         loyalty_tb,
     );
     integrator.apply_betrayal_events(world, &betrayal_events);
-
-    // ── 11. Death Star ───────────────────────────────────────────────────
-    let ds_events = DeathStarSystem::advance(&mut states.death_star, world, tick_events);
-    integrator.apply_death_star_events(world, &ds_events);
-    // Update victory state and clean up destroyed systems; each character
-    // killed gets an `EVT_CHARACTER_KILLED` record. Character-death story
-    // events are strictly next-tick reactive.
-    for evt in &ds_events {
-        if let rebellion_core::death_star::DeathStarEvent::PlanetDestroyed { system, .. } = evt {
-            let killed = crate::integrator::destroy_system(
-                world,
-                *system,
-                &mut states.victory,
-                &mut states.death_star,
-                &mut states.movement,
-                &mut states.manufacturing,
-                &mut states.blockade,
-            );
-            integrator.emit_killed(world, *system, &killed);
-        }
-    }
 
     // ── 12. Research ─────────────────────────────────────────────────────
     let research_results = ResearchSystem::advance(
@@ -1102,6 +1021,11 @@ pub fn run_simulation_tick(
 
     // ── 14. Victory check ────────────────────────────────────────────────
     integrator.emit_victory_check(&states.victory);
+    let word = (!tick_events.is_empty() && !states.victory.resolved)
+        .then(|| {
+            VictorySystem::word(&states.victory, world, states.campaign_config.victory_conditions)
+        })
+        .flatten();
     if let Some(outcome) = VictorySystem::check(
         &states.victory,
         world,
@@ -1109,6 +1033,10 @@ pub fn run_simulation_tick(
         states.campaign_config.victory_conditions,
     ) {
         integrator.apply_victory(&outcome, &mut states.victory, world);
+    }
+    // The word the next evaluation's tie reads (FUN_005180e0).
+    if let Some(word) = word {
+        states.victory.word = word;
     }
 
     // ── 15. Campaign snapshot (every 250 ticks) ────────────────────────
@@ -1128,18 +1056,18 @@ pub fn run_simulation_tick(
 mod tests {
     use super::*;
     use rebellion_core::ai::AiFaction;
+    use rebellion_core::carriage::ProductRoom;
     use rebellion_core::dat::Faction;
     use rebellion_core::fog::FogState;
     use rebellion_core::game_events::{
-        EVT_BOMBARDMENT, EVT_CAPTURE, EVT_COMBAT_GROUND, EVT_CONTROL_CHANGED, EVT_FLEET_ARRIVED,
-        EVT_TROOP_MOVED, EVT_VICTORY,
+        EVT_ASSAULT, EVT_BOMBARDMENT, EVT_CONTROL_CHANGED, EVT_FLEET_ARRIVED, EVT_VICTORY,
     };
     use rebellion_core::ids::SectorKey;
     use rebellion_core::ids::{DatId, FleetKey, TroopKey};
     use rebellion_core::movement::begin_fleet_transit;
     use rebellion_core::world::{
-        CapitalShipClass, Character, ControlKind, Fleet, ShipInstance, System, TroopClassDef,
-        TroopUnit, VictoryConditions,
+        CapitalShipClass, Character, ControlKind, Fleet, ShipInstance, System, TroopUnit,
+        VictoryConditions,
     };
 
     /// GNPRTB 7760 (60 at every difficulty), the support a side needs to
@@ -1222,7 +1150,6 @@ mod tests {
             fog: FogState::new(Faction::Alliance),
             blockade: BlockadeState::new(),
             uprising: UprisingState::new(),
-            death_star: DeathStarState::default(),
             research: ResearchState::new(),
             jedi: JediState::new(),
             victory: VictoryState::new(s1, s2),
@@ -1257,13 +1184,12 @@ mod tests {
             fighters: vec![],
             characters: vec![],
             is_alliance: true,
-            has_death_star: false,
+            bombarding: false,
         });
         world.systems[system].fleets.push(fleet);
         let troop = world.troops.insert(TroopUnit {
             class_dat_id: DatId::new(20),
             is_alliance: true,
-            regiment_strength: 100,
         });
         world.systems[system].ground_units.push(troop);
         (world, states, fleet, troop)
@@ -1281,33 +1207,21 @@ mod tests {
     }
 
     #[test]
-    fn a_regiment_loaded_by_order_stays_aboard_at_the_system_it_loaded_at() {
-        // port: the hold (ghidra/notes/fleet-window.md, "Port notes"); the
-        // original keeps a loaded regiment in its ship until a landing order.
+    fn a_regiment_aboard_stays_aboard_until_an_order_puts_it_down() {
+        // No landing without the order: the landing callback FUN_0058be10 is
+        // reached only from the assault (ghidra/notes/ground-assault.md,
+        // "Landing without the order").
         let (mut world, mut states, fleet, troop) = world_with_loading_fleet();
         let system = world.fleets[fleet].location;
         states
             .troop_transport
-            .load(&mut world, fleet, &[troop])
+            .load(&mut world, &ProductRoom::default(), fleet, &[troop])
             .unwrap();
 
         run_one_tick(&mut world, &mut states);
 
         assert_eq!(states.troop_transport.cargo(fleet), [troop]);
-        assert!(states.troop_transport.is_held(fleet));
         assert!(!world.systems[system].ground_units.contains(&troop));
-
-        // The control: cargo embarked for a departure lands here.
-        let (mut world, mut states, fleet, troop) = world_with_loading_fleet();
-        states
-            .troop_transport
-            .embark(&mut world, fleet, &[troop])
-            .unwrap();
-
-        run_one_tick(&mut world, &mut states);
-
-        assert!(states.troop_transport.cargo(fleet).is_empty());
-        assert!(world.systems[system].ground_units.contains(&troop));
     }
 
     #[test]
@@ -1322,6 +1236,55 @@ mod tests {
         run_one_tick(&mut world, &mut states);
 
         assert_eq!(world.fleet_name(fleet), Some("Rebel Command Fleet"));
+    }
+
+    /// A special-force product deployed into a destroyed system has no leg
+    /// (`FUN_005150c0.c:76` -> `FUN_00545180`); the presence check
+    /// `FUN_00556710` gives it the autoscrap request (`FUN_00503e20(0)`),
+    /// whose event `0x307` runs the adrift sweep: a system of its side takes
+    /// it, else `FUN_00549580.c:56-60` destroys it with reason 9
+    /// (`death-star-strategic.md`, "Arrival at a destroyed system").
+    #[test]
+    fn a_special_force_deployed_into_a_destroyed_system_leaves_it_the_same_day() {
+        let class = DatId::new(0x3c00_0001);
+        for is_alliance in [true, false] {
+            for refuge_is_own in [true, false] {
+                let (mut world, mut states) = make_test_states();
+                let systems: Vec<_> = world.systems.keys().collect();
+                let (refuge, target) = (systems[0], systems[1]);
+                let refuge_side = Faction::of_alliance(is_alliance == refuge_is_own);
+                world.systems[refuge].control = ControlKind::Controlled(refuge_side);
+                world.systems[target].is_destroyed = true;
+                world.buildable_classes.insert(
+                    class,
+                    rebellion_core::world::BuildableClass {
+                        is_alliance,
+                        ..Default::default()
+                    },
+                );
+                states.deliveries.depart(
+                    &world,
+                    &[rebellion_core::manufacturing::Departure {
+                        origin: refuge,
+                        destination: rebellion_core::manufacturing::Destination::System(target),
+                        tick: 1,
+                        kind: rebellion_core::manufacturing::BuildableKind::SpecialForce(class),
+                        carrier: 0,
+                    }],
+                );
+
+                run_one_tick(&mut world, &mut states);
+
+                let case = format!("{is_alliance} {refuge_is_own}");
+                assert!(world.systems[target].special_forces.is_empty(), "{case}");
+                assert_eq!(
+                    world.systems[refuge].special_forces.len(),
+                    usize::from(refuge_is_own),
+                    "{case}"
+                );
+                assert_eq!(world.special_forces.len(), usize::from(refuge_is_own), "{case}");
+            }
+        }
     }
 
     #[test]
@@ -1339,142 +1302,55 @@ mod tests {
         assert!(result.is_empty());
     }
 
-    #[test]
-    #[expect(
-        clippy::too_many_lines,
-        reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
-    )]
-    #[expect(
-        clippy::cast_possible_truncation,
-        reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
-    )]
-    fn surface_battle_continues_on_later_tick_after_transport_empties() {
-        let mut world = GameWorld::default();
-        let make_system = |dat_id, name: &str, control| System {
-            dat_id: DatId::new(dat_id),
-            name: name.into(),
-            sector: SectorKey::default(),
-            x: dat_id as u16 * 100,
-            y: 0,
-            exploration_status: rebellion_core::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control,
-            espionage_rating: 0.0,
+    /// The assault's landing limit, GNPRTB 7761 (60) and 7762 (-10):
+    /// `FUN_00559fe0(side, 0)` = 6, and its shield limit GNPRTB 0x1e03 (2,
+    /// `FUN_00507d00`); with `threshold`, also GNPRTB 7760 (60),
+    /// the support that holds a system without regiments (FUN_0055a080).
+    fn assault_gnprtb(threshold: bool) -> rebellion_core::world::GnprtbParams {
+        let entry = |id: u32, value: i32| rebellion_core::world::GnprtbEntry {
+            parameter_id: id,
+            development: value,
+            alliance_sp_easy: value,
+            alliance_sp_medium: value,
+            alliance_sp_hard: value,
+            empire_sp_easy: value,
+            empire_sp_medium: value,
+            empire_sp_hard: value,
+            multiplayer: value,
         };
-        let target = world.systems.insert(make_system(
-            1,
-            "Contested Surface",
-            ControlKind::Controlled(Faction::Empire),
-        ));
-        let other = world.systems.insert(make_system(
-            2,
-            "Other System",
-            ControlKind::Controlled(Faction::Alliance),
-        ));
-        let fleet = world.fleets.insert(Fleet {
-            location: target,
-            capital_ships: vec![],
-            fighters: vec![],
-            characters: vec![],
-            is_alliance: true,
-            has_death_star: false,
-        });
-        world.systems[target].fleets.push(fleet);
-        let troop_class = DatId::new(20);
-        world.troop_classes.insert(
-            troop_class,
-            TroopClassDef {
-                attack_strength: 0,
-                defense_strength: 10,
-                detection: 0,
+        let mut entries = vec![entry(7761, 60), entry(7762, -10), entry(0x1e03, 2)];
+        if threshold {
+            entries.push(entry(7760, 60));
+        }
+        rebellion_core::world::GnprtbParams::new(entries)
+    }
+
+    /// The player's Planetary Assault by `fleet` on the simulation's states
+    /// (`integrator::order_assault`).
+    fn assault(
+        world: &mut GameWorld,
+        states: &mut SimulationStates,
+        fleet: FleetKey,
+        side: Faction,
+    ) -> Vec<crate::integrator::AssaultEffects> {
+        crate::integrator::order_assault(
+            world,
+            &[fleet],
+            side,
+            &mut crate::integrator::StrikeStates {
+                movement: &mut states.movement,
+                manufacturing: &mut states.manufacturing,
+                transport: &mut states.troop_transport,
+                deliveries: &mut states.deliveries,
+                missions: &mut states.missions,
+                uprisings: &states.uprising,
+                blockade: &mut states.blockade,
+                tick: 1,
+                step: 0,
             },
-        );
-        let alliance_troop = world.troops.insert(TroopUnit {
-            class_dat_id: troop_class,
-            is_alliance: true,
-            regiment_strength: 1_000,
-        });
-        let empire_troop = world.troops.insert(TroopUnit {
-            class_dat_id: troop_class,
-            is_alliance: false,
-            regiment_strength: 1_000,
-        });
-        world.systems[target]
-            .ground_units
-            .extend([alliance_troop, empire_troop]);
-
-        let mut states = SimulationStates {
-            clock: GameClock::new(),
-            manufacturing: ManufacturingState::new(),
-            missions: MissionState::new(),
-            events: EventState::new(),
-            ai: AIState::new(AiFaction::Empire),
-            ai2: None,
-            movement: MovementState::new(),
-            fog: FogState::new(Faction::Alliance),
-            blockade: BlockadeState::new(),
-            uprising: UprisingState::new(),
-            death_star: DeathStarState::default(),
-            research: ResearchState::new(),
-            jedi: JediState::new(),
-            victory: VictoryState::new(other, target),
-            betrayal: BetrayalState::new(),
-            economy: EconomyState::default(),
-            repair: RepairState::default(),
-            troop_transport: TroopTransportState::default(),
-            deliveries: DeliveryState::default(),
-            stockpiles: StockpileState::default(),
-            campaign_config: CampaignConfig::default(),
-        };
-        let config = rebellion_core::tuning::GameConfig::default();
-
-        let first_events = run_simulation_tick(
-            &mut world,
-            &mut states,
-            &[TickEvent { tick: 1 }],
-            &[0.99; 2_048],
-            10,
-            &config,
-        );
-        let first_strength = world.troops[alliance_troop].regiment_strength;
-        assert_eq!(first_strength, 744);
-        assert!(states.troop_transport.is_empty());
-        assert!(first_events
-            .iter()
-            .any(|event| event.event_type == EVT_COMBAT_GROUND));
-
-        let second_events = run_simulation_tick(
-            &mut world,
-            &mut states,
-            &[TickEvent { tick: 2 }],
-            &[0.99; 2_048],
-            20,
-            &config,
-        );
-
-        assert!(world.troops[alliance_troop].regiment_strength < first_strength);
-        assert!(world.troops.contains_key(empire_troop));
-        assert!(states.troop_transport.is_empty());
-        assert!(second_events
-            .iter()
-            .any(|event| event.event_type == EVT_COMBAT_GROUND));
-        assert_ne!(
-            world.systems[target].control,
-            ControlKind::Controlled(Faction::Alliance)
-        );
+            &mut || 0.5,
+        )
+        .expect("the blockading fleet may assault")
     }
 
     #[test]
@@ -1486,7 +1362,7 @@ mod tests {
         clippy::cast_possible_truncation,
         reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
     )]
-    fn decisive_imperial_bombardment_destroys_the_alliance_hq_facility() {
+    fn a_decisive_imperial_space_win_bombards_nothing_without_the_order() {
         let mut world = GameWorld::default();
         world.gnprtb = support_control_threshold();
         // Each HQ's people back its holder, so it stays held without troops.
@@ -1562,7 +1438,7 @@ mod tests {
             fighters: vec![],
             characters: vec![],
             is_alliance: true,
-            has_death_star: false,
+            bombarding: false,
         });
         let empire_fleet = world.fleets.insert(Fleet {
             location: alliance_hq,
@@ -1570,7 +1446,7 @@ mod tests {
             fighters: vec![],
             characters: vec![],
             is_alliance: false,
-            has_death_star: false,
+            bombarding: false,
         });
         world.systems[alliance_hq]
             .fleets
@@ -1587,7 +1463,6 @@ mod tests {
             fog: FogState::new(Faction::Alliance),
             blockade: BlockadeState::new(),
             uprising: UprisingState::new(),
-            death_star: DeathStarState::default(),
             research: ResearchState::new(),
             jedi: JediState::new(),
             victory: VictoryState::new(alliance_hq, coruscant),
@@ -1612,16 +1487,13 @@ mod tests {
             &rebellion_core::tuning::GameConfig::default(),
         );
 
-        assert!(!world.systems[alliance_hq].is_headquarters);
-        assert!(
-            !states.victory.resolved,
-            "bombardment still requires occupation"
-        );
-        let bombardment = events
+        // FUN_0058d800's one caller is message 0x224 (FUN_005637c0): the
+        // original bombards only on the order, never after a won battle.
+        assert!(world.systems[alliance_hq].is_headquarters);
+        assert!(!states.victory.resolved);
+        assert!(events
             .iter()
-            .find(|event| event.event_type == EVT_BOMBARDMENT)
-            .expect("bombardment telemetry");
-        assert_eq!(bombardment.details["headquarters_destroyed"], true);
+            .all(|event| event.event_type != EVT_BOMBARDMENT));
     }
 
     #[test]
@@ -1633,8 +1505,11 @@ mod tests {
         clippy::cast_possible_truncation,
         reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
     )]
-    fn unopposed_imperial_invasion_bombards_before_occupying_alliance_hq() {
-        let mut world = GameWorld::default();
+    fn an_imperial_fleet_takes_the_alliance_hq_only_by_the_assault_order() {
+        let mut world = GameWorld {
+            gnprtb: assault_gnprtb(false),
+            ..GameWorld::default()
+        };
         let add_system = |world: &mut GameWorld, dat_id, name: &str, control, is_headquarters| {
             world.systems.insert(System {
                 dat_id: DatId::new(dat_id),
@@ -1698,13 +1573,12 @@ mod tests {
             fighters: vec![],
             characters: vec![],
             is_alliance: false,
-            has_death_star: false,
+            bombarding: false,
         });
         world.systems[origin].fleets.push(fleet);
         let troop = world.troops.insert(TroopUnit {
             class_dat_id: DatId::new(20),
             is_alliance: false,
-            regiment_strength: 100,
         });
         world.systems[origin].ground_units.push(troop);
 
@@ -1719,7 +1593,6 @@ mod tests {
             fog: FogState::new(Faction::Alliance),
             blockade: BlockadeState::new(),
             uprising: UprisingState::new(),
-            death_star: DeathStarState::default(),
             research: ResearchState::new(),
             jedi: JediState::new(),
             victory: VictoryState::new(alliance_hq, coruscant),
@@ -1736,7 +1609,7 @@ mod tests {
         };
         states
             .troop_transport
-            .embark(&mut world, fleet, &[troop])
+            .embark(&mut world, &ProductRoom::default(), fleet, &[troop])
             .unwrap();
         assert!(begin_fleet_transit(
             &mut states.movement,
@@ -1755,16 +1628,33 @@ mod tests {
             &rebellion_core::tuning::GameConfig::default(),
         );
 
-        assert!(!world.systems[alliance_hq].is_headquarters);
+        // The arrival lands nothing and bombards nothing: the landing and
+        // FUN_0058d800 run only on their orders.
+        assert_eq!(states.troop_transport.cargo(fleet), [troop]);
+        assert_eq!(
+            world.systems[alliance_hq].control,
+            ControlKind::Controlled(Faction::Alliance)
+        );
+        assert!(events
+            .iter()
+            .all(|event| event.event_type != EVT_BOMBARDMENT));
+
+        // The fleet blockades the HQ (FUN_0050b8e0), so the order passes and
+        // the landing takes the undefended system (FUN_0058c810,
+        // FUN_0050b610).
+        let runs = assault(&mut world, &mut states, fleet, Faction::Empire);
+        assert_eq!(runs[0].report.as_ref().unwrap().landed, [troop]);
         assert_eq!(
             world.systems[alliance_hq].control,
             ControlKind::Controlled(Faction::Empire)
         );
-        assert!(states.victory.resolved);
-        assert!(events.iter().any(|event| {
-            event.event_type == EVT_BOMBARDMENT && event.details["headquarters_destroyed"] == true
-        }));
-        assert!(events.iter().any(|event| event.event_type == EVT_VICTORY));
+        // The capture removes the HQ: the control write hands each object
+        // to the new holder or destroys it with reason 3 (FUN_00510d70 ->
+        // FUN_004f6f40 -> FUN_004f8680), and the HQ's class serves only the
+        // Alliance (game-end-path.md, "Control change"; FUN_00517cd0 then
+        // shifts its sector). Coruscant keeps its flag.
+        assert!(!world.systems[alliance_hq].is_headquarters);
+        assert!(world.systems[coruscant].is_headquarters);
     }
 
     #[test]
@@ -1776,9 +1666,11 @@ mod tests {
         clippy::cast_possible_truncation,
         reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
     )]
-    fn troop_transport_arrives_lands_occupies_and_captures() {
-        let mut world = GameWorld::default();
-        world.gnprtb = support_control_threshold();
+    fn an_alliance_fleet_takes_coruscant_by_the_assault_and_captures_nobody() {
+        let mut world = GameWorld {
+            gnprtb: assault_gnprtb(true),
+            ..GameWorld::default()
+        };
         let add_system = |world: &mut GameWorld, dat_id, name: &str, control, is_headquarters| {
             world.systems.insert(System {
                 dat_id: DatId::new(dat_id),
@@ -1827,6 +1719,13 @@ mod tests {
             ControlKind::Controlled(Faction::Empire),
             true,
         );
+        let refuge = add_system(
+            &mut world,
+            3,
+            "Imperial Refuge",
+            ControlKind::Controlled(Faction::Empire),
+            false,
+        );
         let transport_class = world.capital_ship_classes.insert(CapitalShipClass {
             dat_id: DatId::new(64),
             name: "Troop Transport".into(),
@@ -1842,22 +1741,35 @@ mod tests {
             fighters: vec![],
             characters: vec![],
             is_alliance: true,
-            has_death_star: false,
+            bombarding: false,
         });
         world.systems[origin].fleets.push(fleet);
         let troop = world.troops.insert(TroopUnit {
             class_dat_id: DatId::new(20),
             is_alliance: true,
-            regiment_strength: 100,
         });
         world.systems[origin].ground_units.push(troop);
-        let prisoner = world.characters.insert(Character {
+        let officer = world.characters.insert(Character {
             dat_id: DatId::new(4),
             name: "Imperial Leader".into(),
             is_empire: true,
             current_system: Some(target),
             ..Character::default()
         });
+        // FUN_005180e0 reads Coruscant and the four principal leaders by id.
+        world.systems[target].dat_id = DatId::new(rebellion_core::victory::CORUSCANT);
+        for id in [
+            rebellion_core::victory::LUKE,
+            rebellion_core::victory::MON_MOTHMA,
+            rebellion_core::victory::VADER,
+            rebellion_core::victory::PALPATINE,
+        ] {
+            world.characters.insert(Character {
+                dat_id: DatId::new(id),
+                current_system: Some(origin),
+                ..Character::default()
+            });
+        }
 
         let mut states = SimulationStates {
             clock: GameClock::new(),
@@ -1870,7 +1782,6 @@ mod tests {
             fog: FogState::new(Faction::Alliance),
             blockade: BlockadeState::new(),
             uprising: UprisingState::new(),
-            death_star: DeathStarState::default(),
             research: ResearchState::new(),
             jedi: JediState::new(),
             victory: VictoryState::new(origin, target),
@@ -1884,7 +1795,7 @@ mod tests {
         };
         states
             .troop_transport
-            .embark(&mut world, fleet, &[troop])
+            .embark(&mut world, &ProductRoom::default(), fleet, &[troop])
             .unwrap();
         states.campaign_config.victory_conditions = VictoryConditions::HeadquartersOnly;
         assert!(begin_fleet_transit(
@@ -1904,29 +1815,153 @@ mod tests {
             &rebellion_core::tuning::GameConfig::default(),
         );
 
+        // The arrival lands nothing (ground-assault.md, "Landing without
+        // the order").
+        assert_eq!(states.troop_transport.cargo(fleet), [troop]);
+        assert_eq!(
+            world.systems[target].control,
+            ControlKind::Controlled(Faction::Empire)
+        );
+        assert!(events
+            .iter()
+            .any(|event| event.event_type == EVT_FLEET_ARRIVED));
+
+        // The order lands the regiment and the holder turns; the owner
+        // change sends the officer at Coruscant, free, to the nearest
+        // Imperial system (FUN_004ef260, event 0x307; ground-assault.md,
+        // section 4).
+        let runs = assault(&mut world, &mut states, fleet, Faction::Alliance);
         assert!(states.troop_transport.is_empty());
         assert!(world.systems[target].ground_units.contains(&troop));
         assert_eq!(
             world.systems[target].control,
             ControlKind::Controlled(Faction::Alliance)
         );
-        assert!(world.characters[prisoner].is_captive);
-        assert_eq!(
-            world.characters[prisoner].captured_by,
-            Some(Faction::Alliance)
-        );
-        assert!(states.victory.resolved);
-        for event_type in [
-            EVT_FLEET_ARRIVED,
-            EVT_TROOP_MOVED,
-            EVT_CONTROL_CHANGED,
-            EVT_CAPTURE,
-            EVT_VICTORY,
-        ] {
+        assert!(!world.characters[officer].is_captive);
+        assert!(world.characters[officer].on_hidden_mission);
+        assert!(states.missions.missions().iter().any(|mission| {
+            mission.target_system == refuge
+                && mission.team == vec![rebellion_core::missions::MissionMember::Character(officer)]
+        }));
+        let mut integrator = PerceptionIntegrator::new(1, 0);
+        integrator.emit_assault(&world, &runs[0]);
+        let records = integrator.finish();
+        for event_type in [EVT_ASSAULT, EVT_CONTROL_CHANGED] {
             assert!(
-                events.iter().any(|event| event.event_type == event_type),
+                records.iter().any(|event| event.event_type == event_type),
                 "missing {event_type} telemetry"
             );
+        }
+        // One record of the capture, and the officer's trip (event 0x307).
+        let count = |event_type| {
+            records
+                .iter()
+                .filter(|event| event.event_type == event_type)
+                .count()
+        };
+        assert_eq!(count(EVT_CONTROL_CHANGED), 1);
+        assert!(records.iter().any(|event| {
+            event.event_type == rebellion_core::game_events::EVT_MISSION_DISPATCHED
+                && event.details["kind"] == "Adrift"
+                && event.details["target_system"] == "Imperial Refuge"
+        }));
+
+        // Coruscant held by the Alliance wins a Headquarters game (CA,
+        // FUN_005180e0) at the next check.
+        let events = run_simulation_tick(
+            &mut world,
+            &mut states,
+            &[TickEvent { tick: 2 }],
+            &[0.99; 2048],
+            10,
+            &rebellion_core::tuning::GameConfig::default(),
+        );
+        assert!(states.victory.resolved);
+        assert!(events.iter().any(|event| event.event_type == EVT_VICTORY));
+    }
+
+    #[test]
+    fn a_flagged_character_leaves_for_its_side_the_day_it_is_flagged() {
+        // Event 0x307 sweeps the flagged character's system at once
+        // (FUN_00515480 -> FUN_00545df0 -> FUN_00548da0): one at an enemy
+        // system leaves for the nearest system of its side (FUN_00543040).
+        for is_alliance in [true, false] {
+            let own = if is_alliance {
+                ControlKind::Controlled(Faction::Alliance)
+            } else {
+                ControlKind::Controlled(Faction::Empire)
+            };
+            let enemy = if is_alliance {
+                ControlKind::Controlled(Faction::Empire)
+            } else {
+                ControlKind::Controlled(Faction::Alliance)
+            };
+            let mut world = GameWorld {
+                gnprtb: support_control_threshold(),
+                ..GameWorld::default()
+            };
+            let system = |control, x, support: f32| System {
+                name: "System".into(),
+                x,
+                is_populated: true,
+                popularity_alliance: support,
+                popularity_empire: 1.0 - support,
+                control,
+                ..System::default()
+            };
+            let held = if is_alliance { 0.1 } else { 0.9 };
+            let at = world.systems.insert(system(enemy, 100, held));
+            let refuge = world.systems.insert(system(own, 300, 1.0 - held));
+            let character = world.characters.insert(Character {
+                is_alliance,
+                is_empire: !is_alliance,
+                current_system: Some(at),
+                adrift: true,
+                ..Character::default()
+            });
+            let mut states = SimulationStates {
+                clock: GameClock::new(),
+                manufacturing: ManufacturingState::new(),
+                missions: MissionState::new(),
+                events: EventState::new(),
+                ai: AIState::new(AiFaction::Empire),
+                ai2: None,
+                movement: MovementState::new(),
+                fog: FogState::new(Faction::Alliance),
+                blockade: BlockadeState::new(),
+                uprising: UprisingState::new(),
+                research: ResearchState::new(),
+                jedi: JediState::new(),
+                victory: VictoryState::new(refuge, at),
+                betrayal: BetrayalState::new(),
+                economy: EconomyState::default(),
+                repair: RepairState::default(),
+                troop_transport: TroopTransportState::default(),
+                deliveries: DeliveryState::default(),
+                stockpiles: StockpileState::default(),
+                campaign_config: CampaignConfig::default(),
+            };
+            let events = run_simulation_tick(
+                &mut world,
+                &mut states,
+                &[TickEvent { tick: 1 }],
+                &[0.99; 2_048],
+                10,
+                &rebellion_core::tuning::GameConfig::default(),
+            );
+            assert!(
+                world.characters[character].on_hidden_mission,
+                "{is_alliance}"
+            );
+            assert!(states
+                .missions
+                .missions()
+                .iter()
+                .any(|mission| mission.target_system == refuge));
+            assert!(events.iter().any(|event| {
+                event.event_type == rebellion_core::game_events::EVT_MISSION_DISPATCHED
+                    && event.details["kind"] == "Adrift"
+            }));
         }
     }
 }

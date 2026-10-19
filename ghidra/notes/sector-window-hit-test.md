@@ -104,8 +104,7 @@ If items overlap, the item added first to the list wins (append order from
 The headquarters overlay is a 37x37 icon (STRATEGY 0x388 = resource 904,
 verified 37x37: a gold disc on a mast). Created in `FUN_0045bbb0` via
 `FUN_00442130(alloc, 0x10000, object id)`, added to list `+0x174` by
-`FUN_005f59f0`. Corrected 2026-10-08: earlier revisions of this note called it
-a fleet-status overlay.
+`FUN_005f59f0`. It marks the headquarters, not a fleet's status.
 
 `FUN_005fca00` pixel test (`FUN_005fca00.c`):
 ```c
@@ -130,8 +129,13 @@ Two kinds of overlay in list `+0x174`:
 system (`FUN_004f3220` on galaxy view `+0x194` → `+0x9c`) and counts its
 objects of families `0x20..=0x22` (`FUN_00526cf0(out, view, 3)`, which fills
 `local_3c` and leaves the count at `local_20`). ALLFACSD `0x20000001`, family `0x20`, is the Alliance
-headquarters. A nonzero count sets status bit 8; a destroyed system
-(view `+0x50` bit 3) takes status `0x40` and the `0x2800` picture instead.
+headquarters. A nonzero count sets status bit 8. A destroyed system (view
+`+0x50` bit 3, read at `FUN_0045bbb0.c:51`) takes status `0x40` instead: the
+planet item's bitmap becomes STRATEGY `0x2800` (10240, a 37×37 asteroid
+field, `FUN_0060bd20`), its name colour `+0x60` = `0x2ffff00`, and the
+refresh exits (`:88-95`) before the HQ overlay (`:196-224`) and the status
+bars (`:228-269`). The ordinary picture (`FUN_0045c970`, selectors 1-26 to
+10212-10239) never gives `0x2800`.
 While bit 8 holds, the refresh creates the overlay once (bitmap `0x388`,
 `+0x54` = 1, `+0x3c` = 6), takes the object `FUN_0052bed0` found as its id, and
 copies the planet's rect into `+0x40..+0x4c`. When bit 8 clears it removes
@@ -183,7 +187,7 @@ These are NOT searched by `FUN_0045c6b0` (flag 0x10000 does not match
 `0x40003` etc.). They are the quadrant icons: a double click on one opens its
 window (`FUN_004593e0` case `0x203`). The right and bottom edges are
 exclusive, and each rect starts one pixel off the center on its far side
-(corrected 2026-10-04 from `FUN_00459e30:369-447`). See
+(`FUN_00459e30:369-447`). See
 `sector-quadrants.md` for their show rules, art and windows.
 
 ## Label rect: FUN_0045c1f0
@@ -202,7 +206,12 @@ label.bottom = label_top + 30
 ```
 
 100 pixels wide, 30 pixels tall, horizontally centered under the planet
-picture. The label rect is `UnionRect`'d with the hit rect to produce the
+picture. A destroyed system shows 10240 (`sector_window::planet_picture`)
+with no status bars, keyed on palette index 0, its only black entry
+(`bmp_cache::uses_black_transparency`; the native control keys the first
+stored pixel's index, `FUN_005fca00`); checked natively on a destroyed
+Vagran against the VM's Yaga Minor. Its name takes `0x2ffff00` through the
+side colour, since the Kill branch leaves the system neutral. The label rect is `UnionRect`'d with the hit rect to produce the
 invalidation area but is never checked by `PtInRect`.
 
 ## Port comparison

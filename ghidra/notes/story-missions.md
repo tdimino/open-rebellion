@@ -113,9 +113,10 @@ When Luke is on the Dagobah mission in state 8 as Han reaches the palace,
    - 100 or more: Luke's slot `+0x218` runs, Vader and the Emperor are
      captured (slot `+0x20c`) and lose bit 8.
 
-   The loser goes to jail by a Move mission (`FUN_00543040`,
-   `FUN_00547480`). Vader and the Emperor as prisoners are the DC and EC
-   bits of `victory-conditions.md`.
+   When the winner's container is of the other side, the three move
+   together by Move mission `FUN_00547480` to the winner's `FUN_00543040`
+   destination; no abode is involved (`jail.md`). Vader and the Emperor as
+   prisoners are the DC and EC bits of `victory-conditions.md`.
 6. **Force discovery.** Timer `0x389` (`FUN_00560a30`) runs for a character
    with `+0xac` bit 7. Same-side characters at its location that are free,
    have `+0xac` bit 5 and not bit 4 get bit 4 (`FUN_004ee950`) and `+0xa4`

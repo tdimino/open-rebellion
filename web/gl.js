@@ -24,9 +24,17 @@ var high_dpi = false;
 // if false, requestAnimationFrame will be called at the end of each frame
 var blocking_event_loop = false;
 
+// The original draws through DirectDraw and Direct3D Retained Mode's
+// software rasterizer, neither of which antialiases, so the canvas does not
+// either (browsers multisample a default WebGL canvas). Its DirectDraw
+// primary surface is opaque, so the canvas is too: with the default alpha,
+// a texel an antialiased glyph edge blends leaves the framebuffer's alpha
+// below 1 and the page background shows through it.
+var context_attributes = { antialias: false, alpha: false };
+
 function init_webgl(version) {
     if (version == 1) {
-        gl = canvas.getContext("webgl");
+        gl = canvas.getContext("webgl", context_attributes);
 
         function acquireVertexArrayObjectExtension(ctx) {
             // Extension available in WebGL 1 from Firefox 25 and WebKit 536.28/desktop Safari 6.0.3 onwards. Core feature in WebGL 2.
@@ -88,7 +96,7 @@ function init_webgl(version) {
             alert("Cant initialize WEBGL_depth_texture extension");
         }
     } else {
-        gl = canvas.getContext("webgl2");
+        gl = canvas.getContext("webgl2", context_attributes);
     }
     if (gl === null) {
         alert("Unable to initialize WebGL. Your browser or machine may not support it.");

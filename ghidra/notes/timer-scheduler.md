@@ -48,10 +48,17 @@ objects found in the corpus is this stage.
 `FUN_0051dea0` (`FUN_0051dea0.c`) increments the sub-tick count `+0xc` and
 the in-day count `+0x20`. When the previous step reached the per-day count, it
 clears `+0x20` and increments the day `+0x10` (`:18`). The per-day count `+0x1c`
-is the larger of the two sides' `+0xc4` (`:24`, `:27`). The game clock that
+is the larger of the two sides' `+0xc4` (`:23-28`), so a day runs that count
+plus one steps. `+0xc4` is the side's speed word (`FUN_00506ea0`: the side
+objects at game root `+0xc4` and `+0xc8`): 1 from the side's initializer
+(`FUN_00533300.c:53`), then message `0x280`'s word (`FUN_00628ff0` ->
+`FUN_005305e0`, which stores a non-zero word), which `FUN_00487eb0` sets to
+600, 60, 12 or 4 for speeds 1 to 4. The game clock that
 other code reads (`FUN_004fd340` -> `DAT_006b2b08` = `FUN_004fcf00`) returns
 this day `+0x10`. That resolves the open `DAT_006b2b08` item in
-`build-delivery.md`.
+`build-delivery.md`. The sub-tick `+0xc` keys the per-step control-change
+cap (`FUN_00518040`, `support-shifts.md`); the port keys each step by its
+day and in-day count (`support_shift::step`).
 
 `FUN_0040a050` message 9 calls `FUN_0041e270` -> `FUN_0051ddf0`. That runs
 `FUN_00516ef0` and `FUN_00517270` for one location (`+0xc0` object `+0x8c`),
@@ -147,7 +154,7 @@ it), slot `+0x2c` resolves the target's record, and slot `+0x30` acts.
 | `0x381` | `0x006694b8` | `FUN_005783b0` | `0xf3..0xf4` | `FUN_00530460`: sum `FUN_00528040` over three per-system lists of every same-side system, store side `+0x90/+0x94/+0x98` | `FUN_00532350` | `+0xd4`: min 7169 (30), spread 7170 (30) |
 | `0x382` | `0x00669480` | `FUN_00578060` | `0xf3..0xf4` | `FUN_00530350`: when side `+0x58` < `+0x70` or `+0x74`, set Locked (bit 13, `FUN_004f7950`) on one random same-side existing, completed object passing `FUN_004f2990` | `0x532a07` (unnamed) | `+0xcc`: min 7168 (10) (inference: `+0xcc` is the only other record `FUN_00532350` sets) |
 | `0x383` | `0x006634d8` | `FUN_00565400` | `0x90..0x98` | `FUN_0050ca80`: if system `+0x88` bit 2, clear it (`FUN_0050a4a0(0)`) | `0x5116f6` (unnamed) | not traced |
-| `0x384` | `0x00663510` | `FUN_00565730` | `0x90..0x98` | `FUN_0050caa0`: if `+0x88` bit 2, `FUN_0050c9f0(GNPRTB 7697 (-1), side)` | `FUN_00510f20` | system `+0x54`+`0x20`: min 7698 (30), set by `FUN_0050e200` |
+| `0x384` | `0x00663510` | `FUN_00565730` | `0x90..0x98` | `FUN_0050caa0`: if `+0x88` bit 2, `FUN_0050c9f0(GNPRTB 7697 (-1), side)`; periodic (slot `+0x20` `FUN_005862a0`); port `uprising.rs` | `FUN_00510f20` | system `+0x54`+`0x20`: min 7698 (30), no spread, set by `FUN_0050e200` |
 | `0x385` | `0x00663548` | `FUN_00565a60` | `0x90..0x98` | `FUN_0050cad0`: if `+0x88` bit 8, side bits = 2 and not bit 2, `FUN_0050c9f0(GNPRTB 7691 (0), side)` | `0x511690` (unnamed) | not traced |
 | `0x386` | `0x00663580` | `FUN_00565d90` | `0x90..0x98` | `FUN_0050cb20`: blockade support shift, below | `FUN_00511300` (blockade bit), `FUN_005109f0` (support) | system `+0x54`+`0x30`: min 7694 (30) or 7696 (30), no spread |
 | `0x387` | `0x00669838` | `FUN_0057bf80` | `0x01..0xff` | `FUN_004f7fc0`: arrival; if Autorouting, clear it and the arrival tick (`build-delivery.md`) | `FUN_004f8010`; cancelled by `FUN_004fba10` | object `+0x54`+`0x10`; delay = travel ticks |
@@ -327,8 +334,9 @@ The event factories' fire slots are not decompiled.
 - Target slot `+0x228` for `0x380`.
 - The meaning of side `+0x58/+0x70/+0x74` (`0x382`) and system `+0x88`
   bits 2 and 8.
-- Who calls the system field hooks `FUN_00510820` and `FUN_00511740`.
-  `FUN_005109f0` (slot `+0x1d0`) is the support-change hook (timer `0x386`,
-  above). These run support recalculation `FUN_0050b230` -> `FUN_00559c40`,
-  so support is recomputed when an input changes, not on a clock.
+- Who calls the system field hook `FUN_00511740`. It, the owner hook
+  `FUN_00510820` (slot `+0xf0`), the support hook `FUN_005109f0` (slot
+  `+0x1d0`), the unit hook `FUN_00508da0` and setup `FUN_00508250` rerun the
+  drift `FUN_0050b230` -> `FUN_00559c40`, which `FUN_00509ec0` stores at
+  `+0x6c` for the diversion roll (`FUN_005166a0`); no clock writes support.
 - The queue `+0xb0` producers, and the message that sends frame case 9.

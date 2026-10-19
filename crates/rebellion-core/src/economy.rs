@@ -9,7 +9,7 @@
 //! economy state + read-only `GameWorld` into a Vec of effects.
 //!
 //! GNPRTB parameters used:
-//!   7686 = 10 (fleet influence on support drift)
+//!   7686 = 10 (each usable capital ship's influence on support drift)
 //!   7687 = 5  (fighter influence on support drift)
 //!   7688 = 2  (troop influence on support drift)
 //!   7732 = 40 (support drift threshold)
@@ -34,8 +34,9 @@ use crate::world::{ControlKind, GameWorld, GnprtbParams};
 // GNPRTB parameter IDs
 // ---------------------------------------------------------------------------
 
-// FUN_00558bb0 loads GNPRTB 0x1e06 (7686) into DAT_006bb3f4; FUN_00559c40 scales it.
-const GNPRTB_FLEET_INFLUENCE: u16 = 7686;
+// FUN_00558bb0 loads GNPRTB 0x1e06 (7686) into DAT_006bb3f4; FUN_00559c40 scales
+// the holder's usable capital ships by it (p4, FUN_00509090).
+const GNPRTB_SHIP_INFLUENCE: u16 = 7686;
 // FUN_00558bb0 loads GNPRTB 0x1e07 (7687) into DAT_006bb3c0; FUN_00559c40 scales it.
 const GNPRTB_FIGHTER_INFLUENCE: u16 = 7687;
 // FUN_00558bb0 loads GNPRTB 0x1e08 (7688) into DAT_006bb3bc; FUN_00559c40 scales it.
@@ -114,7 +115,10 @@ pub struct FleetPosture {
     pub alliance_capships: u32,
     /// Number of Empire capital ship hulls at this system.
     pub empire_capships: u32,
-    /// True if both sides have fleets (2+ each) present.
+    /// True if both sides have two or more usable fleets present. port: a
+    /// telemetry flag only (the economy record); no recovered function
+    /// reads a fleet-contested state, and the threshold of two per side is
+    /// the port's.
     pub is_contested: bool,
 }
 
@@ -189,18 +193,8 @@ fn support_holder(
     reason = "These independent flags preserve the existing state and serialization model."
 )]
 pub struct SystemEconomy {
-    /// Resource collection rate, inversely proportional to support.
-    pub collection_rate: f32,
-    /// Number of troops required to prevent uprising.
-    pub garrison_requirement: u32,
     /// Production speed modifier from fleet/KDY presence (0-100).
     pub production_modifier: i8,
-    /// System `+0x6c` (`FUN_00509ec0` from `FUN_0050b230` →
-    /// `FUN_00559c40`): the support drift, positive while the Alliance
-    /// holds the system and negative for the Empire. Its magnitude is the
-    /// percent chance that a finished mine's or refinery's unit goes to the
-    /// other side (`FUN_005166a0`; `crate::stockpiles`).
-    pub support_drift: i8,
     /// Current energy output (sum of production facility outputs, capped at system capacity).
     /// `FUN_0050ad60`: if `energy_allocated` > `System.total_energy`, cap it.
     pub energy_allocated: u32,
@@ -231,10 +225,7 @@ pub struct SystemEconomy {
 impl Default for SystemEconomy {
     fn default() -> Self {
         Self {
-            collection_rate: 1.0,
-            garrison_requirement: 0,
             production_modifier: 0,
-            support_drift: 0,
             energy_allocated: 0,
             raw_material_allocated: 0,
             energy_overcapped: false,
@@ -246,6 +237,82 @@ impl Default for SystemEconomy {
             resource_discovery_armed: false,
         }
     }
+}
+
+/// What the support hook's three writers store on a system (`FUN_005109f0`):
+/// the garrison requirement (`+0x80`, `FUN_0050b5a0`), the support drift
+/// (`+0x6c`, `FUN_0050b230`) and the collection rate (`+0x70`,
+/// `FUN_0050b2c0`). Kept per system in `GameWorld::support_values`.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct SupportValues {
+    /// Resource collection rate, inversely proportional to support.
+    pub collection_rate: f32,
+    /// Number of troops required to prevent uprising.
+    pub garrison_requirement: u32,
+    /// The support drift (`FUN_00509ec0` from `FUN_0050b230` ->
+    /// `FUN_00559c40`), positive while the Alliance holds the system and
+    /// negative for the Empire. Its magnitude is the percent chance that a
+    /// finished mine's or refinery's unit goes to the other side
+    /// (`FUN_005166a0`; `crate::stockpiles`). Nothing adds it to support.
+    pub support_drift: i8,
+}
+
+impl Default for SupportValues {
+    fn default() -> Self {
+        Self {
+            collection_rate: 1.0,
+            garrison_requirement: 0,
+            support_drift: 0,
+        }
+    }
+}
+
+/// `FUN_0050b5a0`, `FUN_0050b230` and `FUN_0050b2c0` for `system` at
+/// `difficulty`: its garrison requirement (with `+0x88` bit 11, the Death
+/// Star, and bit 2, `GameWorld::revolting`), drift and collection rate.
+fn support_values(world: &GameWorld, system: SystemKey, difficulty: u8) -> Option<SupportValues> {
+    let sys = world.systems.get(system)?;
+    let gnprtb = &world.gnprtb;
+    let presence = count_military_presence(world, sys);
+    let death_star = world.death_star_in_sector(sys);
+    let (alliance_delta, empire_delta) =
+        calculate_support_drift(sys, &presence, gnprtb, difficulty, death_star);
+    let controlling_support = match sys.control {
+        ControlKind::Controlled(crate::dat::Faction::Alliance) => sys.popularity_alliance,
+        ControlKind::Controlled(crate::dat::Faction::Empire) => sys.popularity_empire,
+        _ => 0.5, // Neutral: baseline
+    };
+    Some(SupportValues {
+        collection_rate: calculate_collection_rate(controlling_support, gnprtb, difficulty),
+        garrison_requirement: calculate_garrison_requirement(
+            controlling_support,
+            sys.control,
+            death_star,
+            world.revolting.contains(&system),
+            gnprtb,
+            difficulty,
+        ),
+        support_drift: support_drift_value(sys.control, alliance_delta, empire_delta),
+    })
+}
+
+/// `FUN_0050b5a0`, `FUN_0050b230` and `FUN_0050b2c0` for `system`, as the
+/// support hook runs them (`FUN_005109f0.c:14-29`): store its garrison
+/// requirement, drift and collection rate in `GameWorld::support_values`.
+pub fn refresh_support_values(world: &mut GameWorld, system: SystemKey) {
+    if let Some(values) = support_values(world, system, world.difficulty_index) {
+        world.support_values.insert(system, values);
+    }
+}
+
+/// `system`'s stored [`SupportValues`], the defaults before any write.
+#[must_use]
+pub fn stored_support_values(world: &GameWorld, system: SystemKey) -> SupportValues {
+    world
+        .support_values
+        .get(&system)
+        .copied()
+        .unwrap_or_default()
 }
 
 /// Economy state across all systems.
@@ -268,23 +335,12 @@ pub struct EconomyState {
 /// Events produced by the economy tick.
 #[derive(Debug, Clone)]
 pub enum EconomyEvent {
-    /// Popular support shifted at a system.
-    SupportDrifted {
-        system: SystemKey,
-        alliance_delta: f32,
-        empire_delta: f32,
-    },
     /// Collection rate recalculated.
     CollectionRateChanged { system: SystemKey, new_rate: f32 },
     /// Garrison requirement recalculated.
     GarrisonRequirementChanged {
         system: SystemKey,
         new_requirement: u32,
-    },
-    /// System control resolved from troop presence (`FUN_0050b610`).
-    ControlResolved {
-        system: SystemKey,
-        new_control: ControlKind,
     },
     /// Incident state changed — fire the corresponding notification (`FUN_0050b800` + `FUN_0050e5b0`).
     IncidentTriggered {
@@ -326,28 +382,18 @@ pub enum EconomyEvent {
 pub struct EconomySystem;
 
 impl EconomySystem {
-    /// Run the per-system economy tick with no system in revolt. See
-    /// [`EconomySystem::advance_with_uprisings`].
-    pub fn advance(
-        state: &mut EconomyState,
-        world: &GameWorld,
-        tick_events: &[TickEvent],
-        difficulty: u8,
-    ) -> Vec<EconomyEvent> {
-        Self::advance_with_uprisings(
-            state,
-            world,
-            tick_events,
-            difficulty,
-            &crate::uprising::UprisingState::default(),
-        )
-    }
-
     /// Run the per-system economy tick. Mutates `EconomyState` in-place,
-    /// returns events for the integrator.
+    /// writes each system's [`SupportValues`] (`GameWorld::support_values`)
+    /// and returns events for the integrator. `GameWorld::revolting` is
+    /// system `+0x88` bit 2, which doubles the garrison requirement
+    /// (`FUN_0050b5a0`).
     ///
-    /// `uprisings` supplies system `+0x88` bit 2, which doubles the garrison
-    /// requirement (`FUN_0050b5a0`).
+    /// port: the original recomputes the [`SupportValues`] only from its
+    /// hooks (setup, support, holder, units, `FUN_00511740`); the pass also
+    /// does, once a day.
+    ///
+    /// The difficulty is the world's (`GameWorld::difficulty_index`), the
+    /// column the support hook reads too.
     ///
     /// Runs BEFORE manufacturing in the tick order (economy affects production).
     #[expect(
@@ -359,19 +405,19 @@ impl EconomySystem {
         clippy::cast_sign_loss,
         reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
     )]
-    pub fn advance_with_uprisings(
+    pub fn advance(
         state: &mut EconomyState,
-        world: &GameWorld,
+        world: &mut GameWorld,
         tick_events: &[TickEvent],
-        difficulty: u8,
-        uprisings: &crate::uprising::UprisingState,
     ) -> Vec<EconomyEvent> {
         if tick_events.is_empty() {
             return Vec::new();
         }
+        let difficulty = world.difficulty_index;
 
         let gnprtb = &world.gnprtb;
         let mut events = Vec::new();
+        let mut written = Vec::new();
 
         // Collect system keys first to avoid borrow issues.
         let system_keys: Vec<SystemKey> = world.systems.keys().collect();
@@ -430,40 +476,13 @@ impl EconomySystem {
                 });
             }
 
-            // 1. Calculate and apply popular support drift.
-            let (alliance_delta, empire_delta) = calculate_support_drift(
-                sys,
-                &presence,
-                gnprtb,
-                difficulty,
-                world.death_star_in_sector(sys),
-            );
-
-            if alliance_delta.abs() > f32::EPSILON || empire_delta.abs() > f32::EPSILON {
-                events.push(EconomyEvent::SupportDrifted {
-                    system: sys_key,
-                    alliance_delta,
-                    empire_delta,
-                });
-            }
-
-            // 2. Calculate collection rate.
-            let controlling_support = match sys.control {
-                ControlKind::Controlled(crate::dat::Faction::Alliance) => sys.popularity_alliance,
-                ControlKind::Controlled(crate::dat::Faction::Empire) => sys.popularity_empire,
-                _ => 0.5, // Neutral/contested: baseline
-            };
-            let new_rate = calculate_collection_rate(controlling_support, gnprtb, difficulty);
-
-            // 3. Calculate garrison requirement.
-            let new_garrison = calculate_garrison_requirement(
-                controlling_support,
-                sys.control,
-                world.death_star_in_sector(sys),
-                uprisings.is_uprising(sys_key),
-                gnprtb,
-                difficulty,
-            );
+            // 1-3. The drift (FUN_0050b230 -> FUN_00559c40, system +0x6c,
+            // read by the diversion roll alone: FUN_00509ec0, FUN_005166a0),
+            // the collection rate and the garrison requirement; support
+            // itself moves only through its setter (FUN_00509c30).
+            let old = stored_support_values(world, sys_key);
+            let values = support_values(world, sys_key, difficulty).unwrap_or_default();
+            let (new_rate, new_garrison) = (values.collection_rate, values.garrison_requirement);
 
             // 4. Blockade withdraw percent (FUN_0050b310 + FUN_0055a020).
             // Original formula: 100 unless the system is blockaded (+0x88 bit5)
@@ -479,41 +498,17 @@ impl EconomySystem {
                 (100 - total_capships * capship_penalty - total_fighters * fighter_penalty)
                     .clamp(0, 100) as i8;
 
-            // 5. Troop-based side resolution (FUN_0050b610).
-            // Original resolves controlling faction every tick from troop presence.
-            // If Alliance troops only: Alliance controls. Empire only: Empire controls.
-            // Both: keep existing (contested). Neither: uncontrolled.
-            let resolved_control = resolve_system_control(sys, &presence, gnprtb, difficulty);
-            if resolved_control != sys.control {
-                crate::trace::record(crate::trace::TraceMask::CONTROL, "control_resolved", || {
-                    serde_json::json!({
-                        "system": sys.name,
-                        "rule": "troop_presence",
-                        "from": format!("{:?}", sys.control),
-                        "to": format!("{resolved_control:?}"),
-                        "populated": sys.is_populated,
-                        "alliance_troops": presence.alliance_troops,
-                        "empire_troops": presence.empire_troops,
-                        "alliance_support": sys.popularity_alliance,
-                        "threshold": gnprtb.value(GNPRTB_SUPPORT_CONTROL_THRESHOLD, difficulty),
-                    })
-                });
-                events.push(EconomyEvent::ControlResolved {
-                    system: sys_key,
-                    new_control: resolved_control,
-                });
-            }
+            // 5. The holder (FUN_0050b610) is not the economy pass's: its
+            // hooks rebuild it as support, regiments or the populated bit
+            // change (`support_shift::rebuild_control`).
 
             // Update per-system economy state (eco already bound above in step 0a).
-            let old_rate = eco.collection_rate;
-            let old_garrison = eco.garrison_requirement;
-            eco.collection_rate = new_rate;
-            eco.garrison_requirement = new_garrison;
+            let (old_rate, old_garrison) = (old.collection_rate, old.garrison_requirement);
+            written.push((sys_key, values));
             eco.production_modifier = new_prod_mod;
-            eco.support_drift = support_drift_value(sys.control, alliance_delta, empire_delta);
 
             // 6. Troop/fleet summary propagation (FUN_0050b500 through FUN_0050b8e0).
-            eco.summary = compute_system_summary(world, sys, &presence, eco.garrison_requirement);
+            eco.summary = compute_system_summary(world, sys, &presence, new_garrison);
 
             // 7. Incident state + uprising visibility (FUN_0050bb00).
             // The uprising and disaster incidents are timer events that
@@ -541,7 +536,7 @@ impl EconomySystem {
             // FUN_0050bb00 sets system +0x88 bit 9 for a populated, held
             // system in revolt whose troop surplus is not negative.
             eco.uprising_visible = sys.control.faction().is_some()
-                && uprisings.is_uprising(sys_key)
+                && world.revolting.contains(&sys_key)
                 && eco.summary.troop_surplus >= 0;
 
             // EVT_SUPPORT_CHANGE (0x100): the holder by support changed.
@@ -571,6 +566,7 @@ impl EconomySystem {
                 });
             }
         }
+        world.support_values.extend(written);
 
         events
     }
@@ -581,50 +577,96 @@ impl EconomySystem {
 // ---------------------------------------------------------------------------
 
 /// Military presence at a system, used by support drift and KDY calculations.
+#[derive(Default)]
 struct MilitaryPresence {
+    /// The usable fleets at the system, the same mode-1 walk as the ships
+    /// (`FUN_0050b310.c:32-45`, `FUN_00509090.c:23`): a fleet holding only
+    /// unfinished ships or ships on their own legs is not counted. port:
+    /// only the fleet posture's telemetry flag reads it.
     alliance_fleets: u32,
     empire_fleets: u32,
+    /// The squadrons aboard the usable ships of the usable fleets and the
+    /// system's own (`FUN_0050b310.c:45,58`).
     alliance_fighters: u32,
     empire_fighters: u32,
     alliance_troops: u32,
     empire_troops: u32,
-    /// Total alive capital ship hulls (count of alive `ShipInstances` across all fleets).
-    /// Used by blockade withdraw percent (`FUN_0050b310`); production modifier use has no recovered source.
+    /// The usable capital ships of the usable fleets (`FUN_0050b310.c:38`;
+    /// `FUN_00509090`, the drift's ship term). Production modifier use has
+    /// no recovered source.
     alliance_capships: u32,
     empire_capships: u32,
+    /// The system's own squadrons, mode 1 (`FUN_00508fb0` ->
+    /// `FUN_00503a50`, `[0x1c,0x20)`): the drift's squadron term.
+    alliance_system_fighters: u32,
+    empire_system_fighters: u32,
+    /// The usable Death Stars of the usable fleets (`FUN_00509140` ->
+    /// `FUN_00500450`, `[0x18,0x1c)`, mode 1): the drift's gate.
+    alliance_death_stars: u32,
+    empire_death_stars: u32,
 }
 
 fn count_military_presence(world: &GameWorld, sys: &crate::world::System) -> MilitaryPresence {
-    let mut presence = MilitaryPresence {
-        alliance_fleets: 0,
-        empire_fleets: 0,
-        alliance_fighters: 0,
-        empire_fighters: 0,
-        alliance_troops: 0,
-        empire_troops: 0,
-        alliance_capships: 0,
-        empire_capships: 0,
-    };
+    let mut presence = MilitaryPresence::default();
 
+    // FUN_0050b310.c:32-45 and FUN_00509090.c:23,30 walk the usable fleets
+    // (mode 1), their usable ships and each usable ship's squadrons
+    // (FUN_005039d0(ship, 1)); a ship on its own leg or unfinished is not
+    // usable (0x004f7b80). port: a squadron with no carrier rides the
+    // fleet itself.
     for &fleet_key in &sys.fleets {
-        if let Some(fleet) = world.fleets.get(fleet_key) {
-            let capship_count: u32 = fleet.ship_count();
-            let fighter_count: u32 = fleet.fighters.iter().map(|f| f.count).sum();
+        if let Some(fleet) = world.fleets.get(fleet_key).filter(|fleet| fleet.usable()) {
+            let usable = |tag: u32| {
+                fleet
+                    .capital_ships
+                    .iter()
+                    .any(|ship| ship.usable() && ship.tag == tag)
+            };
+            let capship_count =
+                u32::try_from(fleet.capital_ships.iter().filter(|ship| ship.usable()).count())
+                    .unwrap_or(u32::MAX);
+            let fighter_count: u32 = fleet
+                .fighters
+                .iter()
+                .filter(|entry| entry.carrier == 0 || usable(entry.carrier))
+                .map(|f| f.count)
+                .sum();
+            // FUN_00509140 -> FUN_00500450: the usable children of family
+            // [0x18,0x1c).
+            let death_stars = u32::try_from(
+                fleet
+                    .capital_ships
+                    .iter()
+                    .filter(|ship| {
+                        ship.usable()
+                            && world
+                                .capital_ship_classes
+                                .get(ship.class)
+                                .is_some_and(crate::world::CapitalShipClass::is_death_star)
+                    })
+                    .count(),
+            )
+            .unwrap_or(u32::MAX);
             if fleet.is_alliance {
                 presence.alliance_fleets += 1;
                 presence.alliance_capships += capship_count;
                 presence.alliance_fighters += fighter_count;
+                presence.alliance_death_stars += death_stars;
             } else {
                 presence.empire_fleets += 1;
                 presence.empire_capships += capship_count;
                 presence.empire_fighters += fighter_count;
+                presence.empire_death_stars += death_stars;
             }
         }
     }
 
-    // The squadrons the system holds count with those aboard its fleets.
-    presence.alliance_fighters += sys.squadron_count(true);
-    presence.empire_fighters += sys.squadron_count(false);
+    // The squadrons the system holds count with those aboard its fleets
+    // (FUN_0050b310.c:58) and alone for the drift (FUN_00508fb0).
+    presence.alliance_system_fighters = sys.squadron_count(true);
+    presence.empire_system_fighters = sys.squadron_count(false);
+    presence.alliance_fighters += presence.alliance_system_fighters;
+    presence.empire_fighters += presence.empire_system_fighters;
 
     for &troop_key in &sys.ground_units {
         if let Some(troop) = world.troops.get(troop_key) {
@@ -661,13 +703,17 @@ fn support_drift_value(control: ControlKind, alliance_delta: f32, empire_delta: 
 
 /// Calculate support drift for a system based on military presence.
 ///
-/// From the decompiled `FUN_00559c40` (the community dump calls it calculate_adjusted_support_value):
+/// `FUN_0050b230` passes `FUN_00559c40` the holder's counts at the system,
+/// each in mode 1: p4 its capital ships in its fleets (`FUN_00509090`), p5
+/// the system's own squadrons (`FUN_00508fb0` -> `FUN_00503a50`), p6 its
+/// regiments (`FUN_00509020`) and p7 its Death Stars in its fleets
+/// (`FUN_00509140` -> `FUN_00500450`, `[0x18,0x1c)`):
 /// ```text
-/// if support <= 40 AND no_friendly_fleet:
-///     if support > 20 AND support <= 30: base = 50
-///     elif support > 20: base = 25
-///     else: base = 75
-///     drift = clamp(base - fighters*5 - troops*2 - fleet_presence*10, 0, 100)
+/// if support <= 7732 AND p7 == 0:
+///     if support <= 7736: base = 7737
+///     elif support <= 7734: base = 7735
+///     else: base = 7733
+///     drift = clamp(base - p4*7686 - p5*7687 - regiments(p6)*7688, 0, 100)
 /// if empire_controlled: drift = -drift
 /// ```
 #[expect(
@@ -684,7 +730,7 @@ fn calculate_support_drift(
 ) -> (f32, f32) {
     // All computation in integer 0-100 to match original (FUN_00559c40).
     // Our popularity fields are f32 0.0-1.0; convert at boundary.
-    let fleet_influence = gnprtb.value(GNPRTB_FLEET_INFLUENCE, difficulty).max(1);
+    let ship_influence = gnprtb.value(GNPRTB_SHIP_INFLUENCE, difficulty).max(1);
     let fighter_influence = gnprtb.value(GNPRTB_FIGHTER_INFLUENCE, difficulty).max(1);
     let troop_influence = gnprtb.value(GNPRTB_TROOP_INFLUENCE, difficulty).max(1);
     let drift_threshold = gnprtb.value(GNPRTB_DRIFT_THRESHOLD, difficulty); // 40
@@ -707,37 +753,36 @@ fn calculate_support_drift(
         return (0.0, 0.0);
     }
 
-    let (controlling_support_f32, friendly_fleets, friendly_fighters, friendly_troops) =
+    let (controlling_support_f32, friendly_ships, friendly_fighters, friendly_troops, death_stars) =
         if is_alliance_controlled {
             (
                 sys.popularity_alliance,
-                presence.alliance_fleets,
-                presence.alliance_fighters,
+                presence.alliance_capships,
+                presence.alliance_system_fighters,
                 presence.alliance_troops,
+                presence.alliance_death_stars,
             )
         } else {
             (
                 sys.popularity_empire,
-                presence.empire_fleets,
-                presence.empire_fighters,
+                presence.empire_capships,
+                presence.empire_system_fighters,
                 presence.empire_troops,
+                presence.empire_death_stars,
             )
         };
 
     // Convert f32 0.0-1.0 to integer 0-100 for computation
     let support = (controlling_support_f32 * 100.0).round() as i32;
 
-    // Only drift if support is below threshold AND no friendly fleet present.
-    // Original: if (support <= GNPRTB[7732]) && (fleet1 == 0)
-    if support > drift_threshold || friendly_fleets > 0 {
+    // Only drift at or below GNPRTB 7732 with no friendly usable Death
+    // Star (FUN_00559c40: p2 <= DAT_006bb478 && p7 == 0).
+    if support > drift_threshold || death_stars > 0 {
         return (0.0, 0.0);
     }
 
-    // Determine base drift rate based on support bracket.
-    // Original bracket logic from FUN_00559c40:
-    //   if threshold_1 < support <= threshold_2: base = base_low_mid (50)
-    //   elif support > threshold_1: base = base_mid (25)
-    //   else: base = base_low (75)
+    // The base by support bracket (FUN_00559c40): at most GNPRTB 7736 takes
+    // 7737, at most 7734 takes 7735, and the rest up to 7732 take 7733.
     let base = if support <= threshold_1 {
         base_low // ≤20: strong drift (75)
     } else if support <= threshold_2 {
@@ -756,10 +801,10 @@ fn calculate_support_drift(
     };
 
     // Military suppression: integer subtraction matching original exactly.
-    // Original: clamp(base - fighters*GNPRTB[7687] - troops_adj*GNPRTB[7688] - fleet*GNPRTB[7686], 0, 100)
+    // Original: clamp(base - ships*GNPRTB[7686] - squadrons*GNPRTB[7687] - troops_adj*GNPRTB[7688], 0, 100)
     let suppression = friendly_fighters.cast_signed() * fighter_influence
         + adjusted_troops * troop_influence
-        + friendly_fleets.cast_signed() * fleet_influence;
+        + friendly_ships.cast_signed() * ship_influence;
 
     let drift = (base - suppression).clamp(0, 100);
 
@@ -816,35 +861,51 @@ pub fn calculate_resource_allocation(world: &GameWorld, sys: &crate::world::Syst
 // ---------------------------------------------------------------------------
 
 /// Resolve which faction controls a system (`FUN_0050b610`): the side
-/// whose regiments alone stand there; with no regiments, the side whose
-/// support reaches GNPRTB 7760 (`FUN_0055a080`), else neutral.
-///
-/// port: an unpopulated system is uncontrolled even with regiments, and
-/// regiments of both sides make it contested; the original lets the troop
-/// side hold an unpopulated system and keeps the earlier troop side.
+/// whose regiments alone stand there (`.c:34-63`), populated or not; with
+/// both sides' regiments the troop bits keep their old value (`.c:45-61`),
+/// so a system whose earlier word had them (`troop_held`) keeps its holder;
+/// otherwise the side whose support reaches GNPRTB 7760 (`FUN_0055a080`),
+/// else neutral, and neutral for an unpopulated system (`.c:24-33`,
+/// `:64-70`).
 fn resolve_system_control(
     sys: &crate::world::System,
     presence: &MilitaryPresence,
+    troop_held: bool,
     gnprtb: &GnprtbParams,
     difficulty: u8,
 ) -> ControlKind {
-    if !sys.is_populated {
-        return ControlKind::Uncontrolled;
-    }
-
     let has_alliance = presence.alliance_troops > 0;
     let has_empire = presence.empire_troops > 0;
 
     match (has_alliance, has_empire) {
         (true, false) => ControlKind::Controlled(crate::dat::Faction::Alliance),
         (false, true) => ControlKind::Controlled(crate::dat::Faction::Empire),
-        (true, true) => ControlKind::Contested,
-        (false, false) => match support_holder(sys, gnprtb, difficulty) {
+        (true, true) if troop_held => sys.control,
+        _ if !sys.is_populated => ControlKind::Uncontrolled,
+        _ => match support_holder(sys, gnprtb, difficulty) {
             SupportHolder::Alliance => ControlKind::Controlled(crate::dat::Faction::Alliance),
             SupportHolder::Empire => ControlKind::Controlled(crate::dat::Faction::Empire),
             SupportHolder::Neither => ControlKind::Uncontrolled,
         },
     }
+}
+
+/// [`resolve_system_control`] for `system` as it stands: the holder
+/// `FUN_0050b610` rebuilds when a regiment there dies or lands (system hook
+/// `FUN_00508660` on events `0x301` and `0x320`), as after an assault. The
+/// troop bits read are the system's current ones (`GameWorld::troop_held`),
+/// the word before the rebuild.
+#[must_use]
+pub fn system_control(world: &GameWorld, system: SystemKey) -> Option<ControlKind> {
+    let sys = world.systems.get(system)?;
+    let presence = count_military_presence(world, sys);
+    Some(resolve_system_control(
+        sys,
+        &presence,
+        world.troop_held.contains(&system),
+        &world.gnprtb,
+        world.difficulty_index,
+    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -885,7 +946,10 @@ fn compute_system_summary(
             .is_some_and(|f| f.is_shipyard)
     });
 
-    // FUN_0050bc60/FUN_0050be00/FUN_0050c350: fleet posture (3 passes)
+    // FUN_0050bc60/FUN_0050be00/FUN_0050c350: fleet posture (3 passes).
+    // port: is_contested counts usable fleets (the presence walk above) and
+    // its threshold of two per side has no source; telemetry alone reads
+    // it.
     let fleet_posture = FleetPosture {
         alliance_capships: presence.alliance_capships,
         empire_capships: presence.empire_capships,
@@ -1345,6 +1409,7 @@ mod tests {
             empire_troops: 0,
             alliance_capships: 0,
             empire_capships: 0,
+            ..MilitaryPresence::default()
         };
         let (a_delta, e_delta) = calculate_support_drift(&sys, &presence, &gnprtb, 2, true);
         // Low alliance support (0.1 < 0.40 threshold), no fleet → should drift away
@@ -1353,7 +1418,10 @@ mod tests {
     }
 
     #[test]
-    fn support_drift_with_fleet_suppresses() {
+    fn support_drift_stops_for_a_friendly_usable_death_star_not_a_fleet() {
+        // FUN_0050b230 passes FUN_00559c40 its gate p7 from FUN_00509140,
+        // which counts the usable fleets' children of family [0x18,0x1c)
+        // (FUN_00500450, mode 1): a Death Star, not a fleet, stops the drift.
         let gnprtb = stock_gnprtb();
         let sys = crate::world::System {
             dat_id: DatId(0),
@@ -1388,16 +1456,20 @@ mod tests {
             empire_troops: 0,
             alliance_capships: 0,
             empire_capships: 0,
+            ..MilitaryPresence::default()
         };
         let (a_delta, e_delta) = calculate_support_drift(&sys, &presence, &gnprtb, 2, true);
-        // Fleet present → no drift
+        // A friendly fleet with no ship counted: support 10 drifts by 7737.
+        assert!((a_delta + 0.75).abs() < 1e-6, "a fleet does not stop it: {a_delta}");
+        assert!((e_delta - 0.75).abs() < 1e-6, "a fleet does not stop it: {e_delta}");
+        let presence = MilitaryPresence {
+            alliance_death_stars: 1,
+            ..presence
+        };
+        let (a_delta, e_delta) = calculate_support_drift(&sys, &presence, &gnprtb, 2, true);
         assert!(
-            a_delta.abs() < f32::EPSILON,
-            "should not drift with fleet: {a_delta}"
-        );
-        assert!(
-            e_delta.abs() < f32::EPSILON,
-            "should not drift with fleet: {e_delta}"
+            a_delta.abs() < f32::EPSILON && e_delta.abs() < f32::EPSILON,
+            "a friendly usable Death Star stops it: {a_delta}/{e_delta}"
         );
     }
 
@@ -1437,6 +1509,7 @@ mod tests {
             empire_troops: 0,
             alliance_capships: 0,
             empire_capships: 0,
+            ..MilitaryPresence::default()
         };
         let with_troops = MilitaryPresence {
             alliance_fleets: 0,
@@ -1447,6 +1520,7 @@ mod tests {
             empire_troops: 0,
             alliance_capships: 0,
             empire_capships: 0,
+            ..MilitaryPresence::default()
         };
         let (a_no, _) = calculate_support_drift(&sys, &no_troops, &gnprtb, 2, true);
         let (a_with, _) = calculate_support_drift(&sys, &with_troops, &gnprtb, 2, true);
@@ -1510,25 +1584,13 @@ mod tests {
         // (+0x7c) is not negative.
         let alliance = ControlKind::Controlled(crate::dat::Faction::Alliance);
         let visible = |support: f32, control, populated: bool, in_revolt: bool| {
-            let (world, sys) = make_singleton_world(support, 1.0 - support, control, populated);
-            let mut uprisings = crate::uprising::UprisingState::default();
+            let (mut world, sys) = make_singleton_world(support, 1.0 - support, control, populated);
             if in_revolt {
-                uprisings.active_uprisings.insert(
-                    sys,
-                    crate::uprising::ActiveUprising {
-                        started_tick: 0,
-                        next_incident_tick: None,
-                    },
-                );
+                world.revolting.insert(sys);
             }
             let mut state = EconomyState::default();
-            EconomySystem::advance_with_uprisings(
-                &mut state,
-                &world,
-                &[TickEvent { tick: 1 }],
-                2,
-                &uprisings,
-            );
+            world.difficulty_index = 2;
+            EconomySystem::advance(&mut state, &mut world, &[TickEvent { tick: 1 }]);
             state
                 .per_system
                 .get(&sys)
@@ -1544,28 +1606,62 @@ mod tests {
     }
 
     #[test]
-    fn a_system_no_side_holds_needs_no_garrison() {
-        // FUN_0050b5a0 stores 0 unless the side is 1 or 2.
-        let gnprtb = stock_gnprtb();
-        for control in [ControlKind::Uncontrolled, ControlKind::Contested] {
+    fn a_support_change_recomputes_the_garrison_drift_and_collection_rate_at_once() {
+        // FUN_00509c30 -> hook +0x1d0 (FUN_005109f0.c:14-29): after the
+        // control rebuild (FUN_0050b610) it reruns FUN_0050b5a0 (garrison,
+        // +0x80), FUN_0050b230 (drift, +0x6c) and FUN_0050b2c0 (collection
+        // rate, +0x70) before the setter returns, with no economy pass.
+        for side in [crate::dat::Faction::Alliance, crate::dat::Faction::Empire] {
+            let (mut world, sys) = make_singleton_world(0.5, 0.5, ControlKind::Controlled(side), true);
+            let unit = world.troops.insert(crate::world::TroopUnit {
+                class_dat_id: DatId(0x1000_0001),
+                is_alliance: side == crate::dat::Faction::Alliance,
+            });
+            world.systems[sys].ground_units.push(unit);
+            crate::support_shift::refresh_troop_bits(&mut world, sys);
+            crate::uprising::apply_support_change(&mut world, sys, side, -20);
+            // Support 30: ceil((60 - 30) / 10) = 3 (FUN_0055a050).
             assert_eq!(
-                calculate_garrison_requirement(0.1, control, false, true, &gnprtb, 2),
-                0
+                world.support_values.get(&sys).map(|v| v.garrison_requirement),
+                Some(3),
+                "{side:?}"
+            );
+            let mut pass = world.clone();
+            EconomySystem::advance(
+                &mut EconomyState::default(),
+                &mut pass,
+                &[TickEvent { tick: 1 }],
+            );
+            assert_eq!(
+                world.support_values.get(&sys),
+                pass.support_values.get(&sys),
+                "{side:?}"
             );
         }
     }
 
     #[test]
+    fn a_system_no_side_holds_needs_no_garrison() {
+        // FUN_0050b5a0 stores 0 unless the side is 1 or 2.
+        let gnprtb = stock_gnprtb();
+        assert_eq!(
+            calculate_garrison_requirement(0.1, ControlKind::Uncontrolled, false, true, &gnprtb, 2),
+            0
+        );
+    }
+
+    #[test]
     fn economy_advance_no_ticks_no_events() {
         // The same world emits a SupportChanged on its first tick.
-        let (world, _sys) = make_singleton_world(
+        let (mut world, _sys) = make_singleton_world(
             0.10,
             0.90,
             ControlKind::Controlled(crate::dat::Faction::Alliance),
             true,
         );
         let mut state = EconomyState::default();
-        let events = EconomySystem::advance(&mut state, &world, &[], 2);
+        world.difficulty_index = 2;
+        let events = EconomySystem::advance(&mut state, &mut world, &[]);
         assert!(events.is_empty());
     }
 
@@ -1601,7 +1697,8 @@ mod tests {
             control: ControlKind::Controlled(crate::dat::Faction::Alliance),
         });
         let tick_events = vec![TickEvent { tick: 1 }];
-        let events = EconomySystem::advance(&mut state, &world, &tick_events, 2);
+        world.difficulty_index = 2;
+        let events = EconomySystem::advance(&mut state, &mut world, &tick_events);
         // Destroyed system should be skipped entirely.
         assert!(
             events.is_empty(),
@@ -1643,7 +1740,7 @@ mod tests {
             }],
             characters: vec![],
             is_alliance: true,
-            has_death_star: false,
+            bombarding: false,
         });
         let sys_key = world.systems.insert(crate::world::System {
             dat_id: DatId(0),
@@ -1671,7 +1768,8 @@ mod tests {
         });
 
         let mut state = EconomyState::default();
-        EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 1 }], 2);
+        world.difficulty_index = 2;
+        EconomySystem::advance(&mut state, &mut world, &[TickEvent { tick: 1 }]);
 
         let eco = state.per_system.get(&sys_key).unwrap();
         // 3 capships * 5 (capship penalty) + 4 fighters * 2 (fighter penalty) = 15 + 8 = 23
@@ -1681,6 +1779,166 @@ mod tests {
             "production_modifier should be 100 - 3*5 - 4*2 = 77, got {}",
             eco.production_modifier
         );
+    }
+
+    // FUN_0050b310.c:32-45 (the withdraw percent) and FUN_0050b230 ->
+    // FUN_00509090.c:23,30 (the drift) walk the system's fleets in mode 1
+    // and their ships in mode 1, and FUN_005039d0(ship, 1) a usable ship's
+    // squadrons: a ship on its own leg from its yard (bit 5, FUN_00556430)
+    // is not usable (0x004f7b80), nor is a fleet holding only it
+    // (FUN_004fe540.c:20-35).
+    #[test]
+    fn a_ship_unfinished_or_on_its_own_leg_adds_no_military_presence_for_either_side() {
+        for is_alliance in [true, false] {
+            let (mut world, sys) = make_singleton_world(
+                0.5,
+                0.5,
+                ControlKind::Controlled(crate::dat::Faction::of_alliance(is_alliance)),
+                true,
+            );
+            let mut ship =
+                crate::world::ShipInstance::new(crate::ids::CapitalShipKey::default(), 100, is_alliance);
+            ship.tag = 7;
+            ship.transit = Some(crate::world::ShipTransit {
+                from: sys,
+                to: sys,
+                arrival_tick: 9,
+            });
+            let fleet = world.fleets.insert(crate::world::Fleet {
+                location: sys,
+                capital_ships: vec![ship],
+                fighters: vec![crate::world::FighterEntry {
+                    class: crate::ids::FighterKey::default(),
+                    count: 2,
+                    carrier: 7,
+                }],
+                characters: vec![],
+                is_alliance,
+                bombarding: false,
+            });
+            world.systems[sys].fleets.push(fleet);
+
+            let presence = count_military_presence(&world, &world.systems[sys]);
+            assert_eq!(
+                (
+                    presence.alliance_fleets + presence.empire_fleets,
+                    presence.alliance_capships + presence.empire_capships,
+                    presence.alliance_fighters + presence.empire_fighters,
+                ),
+                (0, 0, 0),
+                "{is_alliance}"
+            );
+
+            // Unfinished at its order (FUN_004f7d50(.., completed 0)): not
+            // usable either.
+            world.fleets[fleet].capital_ships[0].transit = None;
+            world.fleets[fleet].capital_ships[0].completed = false;
+            let presence = count_military_presence(&world, &world.systems[sys]);
+            assert_eq!(
+                presence.alliance_fleets + presence.empire_fleets + presence.alliance_capships
+                    + presence.empire_capships,
+                0,
+                "{is_alliance}"
+            );
+
+            world.fleets[fleet].capital_ships[0].completed = true;
+            let presence = count_military_presence(&world, &world.systems[sys]);
+            let own = |presence: &MilitaryPresence| {
+                if is_alliance {
+                    (presence.alliance_fleets, presence.alliance_capships, presence.alliance_fighters)
+                } else {
+                    (presence.empire_fleets, presence.empire_capships, presence.empire_fighters)
+                }
+            };
+            assert_eq!(own(&presence), (1, 1, 2), "{is_alliance}");
+
+            // Beside the usable ship, a second on its own leg: its 5
+            // squadrons stay out; 3 riding the fleet (port: no carrier) and
+            // the system's own 4 count.
+            let mut second =
+                crate::world::ShipInstance::new(crate::ids::CapitalShipKey::default(), 100, is_alliance);
+            second.tag = 8;
+            second.transit = Some(crate::world::ShipTransit {
+                from: sys,
+                to: sys,
+                arrival_tick: 9,
+            });
+            let value = &mut world.fleets[fleet];
+            value.capital_ships.push(second);
+            for (carrier, count) in [(8, 5), (0, 3)] {
+                value.fighters.push(crate::world::FighterEntry {
+                    class: crate::ids::FighterKey::default(),
+                    count,
+                    carrier,
+                });
+            }
+            world.systems[sys].add_squadrons(crate::ids::FighterKey::default(), 4, is_alliance);
+            let presence = count_military_presence(&world, &world.systems[sys]);
+            assert_eq!(own(&presence), (1, 1, 2 + 3 + 4), "{is_alliance}");
+        }
+    }
+
+    // FUN_0050b230's drift inputs: p7 FUN_00509140 counts the usable
+    // fleets' usable children of family [0x18,0x1c) (FUN_00500450, mode 1),
+    // the Death Stars; p5 FUN_00508fb0 counts the system's own squadrons
+    // (FUN_00503a50, mode 1), none aboard a fleet.
+    #[test]
+    fn the_drift_counts_usable_death_stars_and_the_systems_own_squadrons_for_either_side() {
+        for is_alliance in [true, false] {
+            let (mut world, sys) = make_singleton_world(
+                0.5,
+                0.5,
+                ControlKind::Controlled(crate::dat::Faction::of_alliance(is_alliance)),
+                true,
+            );
+            let death_star = world
+                .capital_ship_classes
+                .insert(crate::world::CapitalShipClass {
+                    dat_id: DatId::new(crate::world::DEATH_STAR_CLASS_ID),
+                    family: 0x18,
+                    ..Default::default()
+                });
+            let fleet = world.fleets.insert(crate::world::Fleet {
+                location: sys,
+                capital_ships: vec![crate::world::ShipInstance::new(death_star, 100, is_alliance)],
+                fighters: vec![crate::world::FighterEntry {
+                    class: crate::ids::FighterKey::default(),
+                    count: 2,
+                    carrier: 0,
+                }],
+                is_alliance,
+                ..crate::world::Fleet::default()
+            });
+            world.systems[sys].fleets.push(fleet);
+            world.systems[sys].add_squadrons(crate::ids::FighterKey::default(), 4, is_alliance);
+            let own = |presence: &MilitaryPresence| {
+                if is_alliance {
+                    (presence.alliance_death_stars, presence.alliance_system_fighters)
+                } else {
+                    (presence.empire_death_stars, presence.empire_system_fighters)
+                }
+            };
+
+            let presence = count_military_presence(&world, &world.systems[sys]);
+            assert_eq!(own(&presence), (1, 4), "{is_alliance}");
+            world.fleets[fleet].capital_ships[0].transit = Some(crate::world::ShipTransit {
+                from: sys,
+                to: sys,
+                arrival_tick: 9,
+            });
+            let presence = count_military_presence(&world, &world.systems[sys]);
+            assert_eq!(own(&presence), (0, 4), "{is_alliance}");
+            // A usable cruiser makes the fleet usable; neither it nor the
+            // Death Star on its own leg is a usable Death Star.
+            let cruiser = world
+                .capital_ship_classes
+                .insert(crate::world::CapitalShipClass::default());
+            world.fleets[fleet]
+                .capital_ships
+                .push(crate::world::ShipInstance::new(cruiser, 100, is_alliance));
+            let presence = count_military_presence(&world, &world.systems[sys]);
+            assert_eq!(own(&presence), (0, 4), "{is_alliance}");
+        }
     }
 
     #[test]
@@ -1713,7 +1971,7 @@ mod tests {
             }],
             characters: vec![],
             is_alliance: true,
-            has_death_star: false,
+            bombarding: false,
         });
         let sys_key = world.systems.insert(crate::world::System {
             dat_id: DatId(0),
@@ -1741,7 +1999,8 @@ mod tests {
         });
 
         let mut state = EconomyState::default();
-        EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 1 }], 2);
+        world.difficulty_index = 2;
+        EconomySystem::advance(&mut state, &mut world, &[TickEvent { tick: 1 }]);
 
         let eco = state.per_system.get(&sys_key).unwrap();
         // 10 capships * 5 + 30 fighters * 2 = 50 + 60 = 110 → max(100 - 110, 0) = 0
@@ -1829,7 +2088,8 @@ mod tests {
         });
 
         let mut state = EconomyState::default();
-        let events = EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 1 }], 2);
+        world.difficulty_index = 2;
+        let events = EconomySystem::advance(&mut state, &mut world, &[TickEvent { tick: 1 }]);
 
         // Should emit EnergyOvercapped (5 facilities > 2 capacity)
         assert!(
@@ -1904,7 +2164,8 @@ mod tests {
         });
 
         let mut state = EconomyState::default();
-        let events = EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 1 }], 2);
+        world.difficulty_index = 2;
+        let events = EconomySystem::advance(&mut state, &mut world, &[TickEvent { tick: 1 }]);
 
         // Should NOT emit overcap events
         assert!(
@@ -2000,7 +2261,8 @@ mod tests {
         });
 
         let mut state = EconomyState::default();
-        let events = EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 1 }], 2);
+        world.difficulty_index = 2;
+        let events = EconomySystem::advance(&mut state, &mut world, &[TickEvent { tick: 1 }]);
 
         assert!(
             events
@@ -2059,7 +2321,8 @@ mod tests {
         });
 
         let mut state = EconomyState::default();
-        let events = EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 1 }], 2);
+        world.difficulty_index = 2;
+        let events = EconomySystem::advance(&mut state, &mut world, &[TickEvent { tick: 1 }]);
         assert!(
             events.iter().any(|e| matches!(
                 e,
@@ -2094,12 +2357,10 @@ mod tests {
         let troop1 = world.troops.insert(crate::world::TroopUnit {
             class_dat_id: DatId(0x1400_0100),
             is_alliance: true,
-            regiment_strength: 100,
         });
         let troop2 = world.troops.insert(crate::world::TroopUnit {
             class_dat_id: DatId(0x1400_0100),
             is_alliance: true,
-            regiment_strength: 100,
         });
         let sys_key = world.systems.insert(crate::world::System {
             dat_id: DatId(0),
@@ -2127,7 +2388,8 @@ mod tests {
         });
 
         let mut state = EconomyState::default();
-        EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 1 }], 2);
+        world.difficulty_index = 2;
+        EconomySystem::advance(&mut state, &mut world, &[TickEvent { tick: 1 }]);
 
         let eco = state.per_system.get(&sys_key).unwrap();
         // Garrison = ceil(30/10) = 3, troops = 2, surplus = 2 - 3 = -1
@@ -2160,7 +2422,6 @@ mod tests {
                 world.troops.insert(crate::world::TroopUnit {
                     class_dat_id: DatId(0x1400_0100),
                     is_alliance,
-                    regiment_strength: 100,
                 })
             })
             .to_vec();
@@ -2190,7 +2451,9 @@ mod tests {
         });
         let surplus = |world: &GameWorld| {
             let mut state = EconomyState::default();
-            EconomySystem::advance(&mut state, world, &[TickEvent { tick: 1 }], 2);
+            let mut world = world.clone();
+            world.difficulty_index = 2;
+            EconomySystem::advance(&mut state, &mut world, &[TickEvent { tick: 1 }]);
             state.per_system[&sys_key].summary.troop_surplus
         };
         // Garrison ceil(30 / 10) = 3, three regiments of either side: 0.
@@ -2230,7 +2493,7 @@ mod tests {
             }],
             characters: vec![],
             is_alliance: true,
-            has_death_star: false,
+            bombarding: false,
         });
         let fleet2 = world.fleets.insert(crate::world::Fleet {
             location: crate::ids::SystemKey::default(),
@@ -2243,7 +2506,7 @@ mod tests {
             fighters: vec![],
             characters: vec![],
             is_alliance: false,
-            has_death_star: false,
+            bombarding: false,
         });
         let sys_key = world.systems.insert(crate::world::System {
             dat_id: DatId(0),
@@ -2271,7 +2534,8 @@ mod tests {
         });
 
         let mut state = EconomyState::default();
-        EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 1 }], 2);
+        world.difficulty_index = 2;
+        EconomySystem::advance(&mut state, &mut world, &[TickEvent { tick: 1 }]);
 
         let eco = state.per_system.get(&sys_key).unwrap();
         assert_eq!(eco.summary.fleet_posture.alliance_capships, 2);
@@ -2320,8 +2584,9 @@ mod tests {
             empire_troops: 0,
             alliance_capships: 0,
             empire_capships: 0,
+            ..MilitaryPresence::default()
         };
-        let result = resolve_system_control(&sys, &presence, &gnprtb, 2);
+        let result = resolve_system_control(&sys, &presence, false, &gnprtb, 2);
         assert_eq!(
             result,
             ControlKind::Controlled(crate::dat::Faction::Alliance)
@@ -2329,7 +2594,10 @@ mod tests {
     }
 
     #[test]
-    fn side_resolution_both_troops_contested() {
+    fn side_resolution_with_both_sides_troops_keeps_the_earlier_troop_holder() {
+        // FUN_0050b610.c:45-61: both sides' regiments keep the old troop
+        // bits; the holder is the troop side while they are set, else the
+        // support side (:64-70), as with no regiments at all.
         let gnprtb = stock_gnprtb();
         let sys = crate::world::System {
             dat_id: DatId(0),
@@ -2364,9 +2632,55 @@ mod tests {
             empire_troops: 3,
             alliance_capships: 0,
             empire_capships: 0,
+            ..MilitaryPresence::default()
         };
-        let result = resolve_system_control(&sys, &presence, &gnprtb, 2);
-        assert_eq!(result, ControlKind::Contested);
+        assert_eq!(
+            resolve_system_control(&sys, &presence, true, &gnprtb, 2),
+            ControlKind::Controlled(crate::dat::Faction::Empire)
+        );
+        let empty = MilitaryPresence {
+            alliance_troops: 0,
+            empire_troops: 0,
+            ..presence
+        };
+        assert_eq!(
+            resolve_system_control(&sys, &presence, false, &gnprtb, 2),
+            resolve_system_control(&sys, &empty, false, &gnprtb, 2)
+        );
+    }
+
+    #[test]
+    fn an_unpopulated_system_is_held_by_its_regiments_alone() {
+        // FUN_0050b610.c:24-33: an unpopulated system's support side is 3,
+        // whatever its support; one side's regiments still hold it
+        // (.c:34-70).
+        let gnprtb = stock_gnprtb();
+        let sys = crate::world::System {
+            popularity_alliance: 1.0,
+            popularity_empire: 0.0,
+            is_populated: false,
+            control: ControlKind::Controlled(crate::dat::Faction::Alliance),
+            ..crate::world::System::default()
+        };
+        let presence = |alliance_troops, empire_troops| MilitaryPresence {
+            alliance_fleets: 0,
+            empire_fleets: 0,
+            alliance_fighters: 0,
+            empire_fighters: 0,
+            alliance_troops,
+            empire_troops,
+            alliance_capships: 0,
+            empire_capships: 0,
+            ..MilitaryPresence::default()
+        };
+        assert_eq!(
+            resolve_system_control(&sys, &presence(0, 0), false, &gnprtb, 2),
+            ControlKind::Uncontrolled
+        );
+        assert_eq!(
+            resolve_system_control(&sys, &presence(0, 1), false, &gnprtb, 2),
+            ControlKind::Controlled(crate::dat::Faction::Empire)
+        );
     }
 
     #[test]
@@ -2405,18 +2719,19 @@ mod tests {
             empire_troops: 0,
             alliance_capships: 0,
             empire_capships: 0,
+            ..MilitaryPresence::default()
         };
         // FUN_0055a080: Alliance support 60 reaches GNPRTB 7760, whatever
         // the earlier holder; Imperial support 60 (Alliance 40) gives the
         // Empire.
-        let result = resolve_system_control(&sys, &presence, &gnprtb, 2);
+        let result = resolve_system_control(&sys, &presence, false, &gnprtb, 2);
         assert_eq!(
             result,
             ControlKind::Controlled(crate::dat::Faction::Alliance)
         );
         sys.popularity_alliance = 0.4;
         sys.popularity_empire = 0.6;
-        let result = resolve_system_control(&sys, &presence, &gnprtb, 2);
+        let result = resolve_system_control(&sys, &presence, false, &gnprtb, 2);
         assert_eq!(result, ControlKind::Controlled(crate::dat::Faction::Empire));
     }
 
@@ -2456,8 +2771,9 @@ mod tests {
             empire_troops: 0,
             alliance_capships: 0,
             empire_capships: 0,
+            ..MilitaryPresence::default()
         };
-        let result = resolve_system_control(&sys, &presence, &gnprtb, 2);
+        let result = resolve_system_control(&sys, &presence, false, &gnprtb, 2);
         // FUN_0055a080: support 50 for each side reaches neither 60.
         assert_eq!(result, ControlKind::Uncontrolled);
     }
@@ -2501,6 +2817,7 @@ mod tests {
             empire_troops: 0,
             alliance_capships: 0,
             empire_capships: 0,
+            ..MilitaryPresence::default()
         };
         let (a_delta_alliance, _) =
             calculate_support_drift(&sys_alliance, &presence_alliance, &gnprtb, 2, true);
@@ -2539,6 +2856,7 @@ mod tests {
             empire_troops: 2,
             alliance_capships: 0,
             empire_capships: 0,
+            ..MilitaryPresence::default()
         };
         let (_, e_delta_empire) =
             calculate_support_drift(&sys_empire, &presence_empire, &gnprtb, 2, true);
@@ -2588,7 +2906,8 @@ mod tests {
 
         let mut state = EconomyState::default();
         let tick = vec![TickEvent { tick: 1 }];
-        let events = EconomySystem::advance(&mut state, &world, &tick, 2);
+        world.difficulty_index = 2;
+        let events = EconomySystem::advance(&mut state, &mut world, &tick);
 
         // Unpopulated system should produce zero events and no economy entry
         assert!(
@@ -2649,13 +2968,17 @@ mod tests {
             empire_troops: troops.1,
             alliance_capships: 0,
             empire_capships: 0,
+            alliance_system_fighters: fighters.0,
+            empire_system_fighters: fighters.1,
+            ..MilitaryPresence::default()
         }
     }
 
     /// `FUN_00559c40` with the shipped GNPRTB: below 7732 (40) and with no
-    /// friendly fleet, the holder's support drifts by 7737 (75) at or below
-    /// 7736 (20), 7735 (50) at or below 7734 (30), else 7733 (25), less 7687
-    /// (5) per friendly squadron and 7688 (2) per regiment, the Empire's
+    /// friendly usable Death Star, the holder's support drifts by 7737 (75)
+    /// at or below 7736 (20), 7735 (50) at or below 7734 (30), else 7733
+    /// (25), less 7686 (10) per friendly usable capital ship, 7687 (5) per
+    /// friendly squadron of the system and 7688 (2) per regiment, the Empire's
     /// regiments doubled by 7680 with a Death Star in the sector
     /// (`FUN_00559b60`); the drift moves support away from the holder.
     #[test]
@@ -2675,7 +2998,74 @@ mod tests {
             (Empire, 15, presence_of((0, 0), (0, 2), (0, 3)), false, 59),
             (Empire, 15, presence_of((0, 0), (0, 0), (0, 3)), true, 63),
             (Alliance, 15, presence_of((0, 0), (0, 0), (3, 0)), true, 69),
-            (Alliance, 15, presence_of((1, 0), (0, 0), (0, 0)), false, 0),
+            // FUN_0050b230 -> FUN_00559c40: a fleet suppresses by its usable
+            // ships alone (p4, FUN_00509090 x 7686), the squadrons are the
+            // system's own (p5, FUN_00508fb0 x 7687), and only a friendly
+            // usable Death Star stops the drift (p7, FUN_00509140 ->
+            // FUN_00500450 [0x18,0x1c)).
+            (Alliance, 15, presence_of((1, 0), (0, 0), (0, 0)), false, 75),
+            (
+                Alliance,
+                15,
+                MilitaryPresence {
+                    alliance_capships: 2,
+                    empire_capships: 3,
+                    ..none()
+                },
+                false,
+                55,
+            ),
+            (
+                Empire,
+                15,
+                MilitaryPresence {
+                    alliance_capships: 3,
+                    empire_capships: 2,
+                    ..none()
+                },
+                false,
+                55,
+            ),
+            (
+                Alliance,
+                15,
+                MilitaryPresence {
+                    alliance_fighters: 2,
+                    ..none()
+                },
+                false,
+                75,
+            ),
+            (
+                Alliance,
+                15,
+                MilitaryPresence {
+                    alliance_death_stars: 1,
+                    ..none()
+                },
+                false,
+                0,
+            ),
+            (
+                Empire,
+                15,
+                MilitaryPresence {
+                    empire_death_stars: 1,
+                    ..none()
+                },
+                false,
+                0,
+            ),
+            (
+                Empire,
+                15,
+                MilitaryPresence {
+                    alliance_death_stars: 1,
+                    ..none()
+                },
+                false,
+                75,
+            ),
         ];
         for (holder, support, presence, death_star, drift) in cases {
             let held = f32::from(u8::try_from(support).unwrap()) / 100.0;
@@ -2801,6 +3191,7 @@ mod tests {
             empire_troops: 0,
             alliance_capships: 0,
             empire_capships: 0,
+            ..MilitaryPresence::default()
         };
         let (a_delta, e_delta) = calculate_support_drift(&sys, &presence, &gnprtb, 2, true);
         // At exactly threshold (40), integer comparison: 40 > 40 is false → drift occurs.
@@ -2858,6 +3249,7 @@ mod tests {
             empire_troops: 0,
             alliance_capships: 0,
             empire_capships: 0,
+            ..MilitaryPresence::default()
         };
         let summary_1v1 = compute_system_summary(&world, &sys, &presence_1v1, 0);
         assert!(
@@ -2874,6 +3266,7 @@ mod tests {
             empire_troops: 0,
             alliance_capships: 0,
             empire_capships: 0,
+            ..MilitaryPresence::default()
         };
         let summary_2v2 = compute_system_summary(&world, &sys, &presence_2v2, 0);
         assert!(
@@ -2946,14 +3339,15 @@ mod tests {
         // Alliance support 25: the Empire's 75 reaches GNPRTB 7760, so the
         // holder by support is the Empire (FUN_0055a080), a change from the
         // default Neither: emit once. Second eval (no change): no emission.
-        let (world, _sys) = make_singleton_world(
+        let (mut world, _sys) = make_singleton_world(
             0.25,
             0.75,
             ControlKind::Controlled(crate::dat::Faction::Alliance),
             true,
         );
         let mut state = EconomyState::default();
-        let events1 = EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 1 }], 2);
+        world.difficulty_index = 2;
+        let events1 = EconomySystem::advance(&mut state, &mut world, &[TickEvent { tick: 1 }]);
         let count1 = events1
             .iter()
             .filter(|e| matches!(e, EconomyEvent::SupportChanged { .. }))
@@ -2963,7 +3357,8 @@ mod tests {
             "K1: first tick should emit exactly one SupportChanged"
         );
 
-        let events2 = EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 2 }], 2);
+        world.difficulty_index = 2;
+        let events2 = EconomySystem::advance(&mut state, &mut world, &[TickEvent { tick: 2 }]);
         let count2 = events2
             .iter()
             .filter(|e| matches!(e, EconomyEvent::SupportChanged { .. }))
@@ -2983,7 +3378,8 @@ mod tests {
             true,
         );
         let mut state = EconomyState::default();
-        let events1 = EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 1 }], 2);
+        world.difficulty_index = 2;
+        let events1 = EconomySystem::advance(&mut state, &mut world, &[TickEvent { tick: 1 }]);
         let count1 = events1
             .iter()
             .filter(|e| matches!(e, EconomyEvent::ResourceDiscovered { .. }))
@@ -3003,7 +3399,8 @@ mod tests {
             });
         world.systems[sys_key].production_facilities.push(mine);
 
-        let events2 = EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 2 }], 2);
+        world.difficulty_index = 2;
+        let events2 = EconomySystem::advance(&mut state, &mut world, &[TickEvent { tick: 2 }]);
         let count2 = events2
             .iter()
             .filter(|e| matches!(e, EconomyEvent::ResourceDiscovered { .. }))
@@ -3014,7 +3411,8 @@ mod tests {
         );
 
         // Third tick (no change): should not re-fire.
-        let events3 = EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 3 }], 2);
+        world.difficulty_index = 2;
+        let events3 = EconomySystem::advance(&mut state, &mut world, &[TickEvent { tick: 3 }]);
         let count3 = events3
             .iter()
             .filter(|e| matches!(e, EconomyEvent::ResourceDiscovered { .. }))

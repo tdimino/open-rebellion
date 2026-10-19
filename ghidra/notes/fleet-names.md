@@ -56,7 +56,15 @@ fighter's is `FUN_005b9c60`) from the factory `FUN_00595f60`, which
 ## When it runs
 
 `FUN_005140c0` (an object's load) and `FUN_0051b7f0` (a pass over every
-object, `FUN_005136d0` state `0x17`) call it. Where a fleet made in play
+object, `FUN_005136d0` state `0x17`) call it. `FUN_005140c0` is also what
+event `0x300` fires for an object that becomes existing
+(`death-star-product.md`, section 1), so an ordered capital ship is numbered
+when that event is served, not by the order itself. The order (list `+0xa4`)
+raises the event into queue `+0xb0`, and `FUN_0051df30` runs one item per
+frame (phase 5 of `FUN_0041dff0`), so the ship shows its record's name for
+the frame between. The ds-b line (Wine, day 169): right after a Build at
+Coruscant the ships band read "Death Star"; by day 185 it read "Death
+Star 2", the replaced ship having been "Death Star 1". Where a fleet made in play
 (Create Fleet, a completed ship) is first numbered is untraced; next to read
 is the fleet's slot `+0x114` handler `FUN_004fc290`, reached from
 `FUN_004f7480` when a spare fleet becomes real (`FUN_004fe630`).
@@ -76,8 +84,11 @@ is the fleet's slot `+0x114` handler `FUN_004fc290`, reached from
   numbered again.
 - `GameWorld::number_capital_ships` gives each living ship with no name of
   its own "<class name> N" from its side's counter for that class (saved,
-  v38). hyp: it runs after seeding (`seeds.rs`) and after a ship completes
-  (`integrator.rs`), in fleet slot order, then roster order.
+  v38). It runs after seeding (`seeds.rs`), after an order seats its
+  ships (`manufacturing::seat_ordered_ships`) and after a ship completes
+  (`integrator.rs`), in fleet slot order, then roster order. port: the
+  original's one frame between an order and its ship's number has no
+  counterpart.
 - The tactical battle takes the world's name (`rebellion-core` `tactical.rs`,
   `BattleSession::new_with_forces`), so the
   panel and the Results window show it.

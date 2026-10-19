@@ -246,7 +246,12 @@ impl StrategicFrameBoundary {
     }
 
     /// Permit for a named legacy pointer owner itself. Unlike the strategic
-    /// underlay permit, this ignores legacy blockers so an active owner can close.
+    /// underlay permit, this ignores legacy blockers so an active owner can
+    /// close. The owners that hold the pointer themselves read it too: the
+    /// object popup menu, which tracks its own clicks (`FUN_00486fb0`), and
+    /// the target selection, whose capture brings `FUN_00422ce0` the left
+    /// release whichever window has the keyboard focus. Only application
+    /// locks and a modal hold them.
     #[must_use]
     pub fn legacy_owned_pointer_allowed(&self) -> bool {
         !self.locks.blocks_strategic_input() && self.snapshot.pointer_allows_root()
@@ -1073,6 +1078,64 @@ mod tests {
             assert!(frame(ApplicationInputLocks::default(), keeps_own_rules)
                 .retained_window_input_allowed());
         }
+    }
+
+    #[test]
+    fn a_focused_fleet_window_leaves_the_menu_and_the_target_release_their_pointer() {
+        // FUN_00422ce0 holds the capture while targeting, so its
+        // WM_LBUTTONUP arrives whichever window has the focus, and the
+        // popup menu tracks its own clicks (FUN_00486fb0); only an
+        // application lock or a modal holds them.
+        let mut coordinator = StrategicWindowing::new();
+        coordinator.enqueue(WindowCommand::Open(contextual_spec(
+            WindowKind::Fleet,
+            SubjectId::new(2, 100),
+            WindowOwner::StrategicRoot,
+        )));
+        let fleet = opened_id(&coordinator.apply_pending()[0]);
+        coordinator.enqueue(WindowCommand::Focus(FocusTarget {
+            window: fleet,
+            control: None,
+        }));
+        assert!(coordinator.apply_pending()[0].result.is_ok());
+        let none = LegacyInputBlockers::default();
+        for owner in [
+            LegacyInputBlockers {
+                root_gesture: true,
+                ..none
+            },
+            LegacyInputBlockers {
+                transient_menu: true,
+                ..none
+            },
+        ] {
+            let frame = coordinator.begin_production_frame(ApplicationInputLocks::default(), owner);
+            assert!(!frame.legacy_surface_input_allowed(), "{owner:?}");
+            assert!(frame.legacy_owned_pointer_allowed(), "{owner:?}");
+            let briefing = ApplicationInputLocks {
+                briefing: true,
+                ..ApplicationInputLocks::default()
+            };
+            assert!(
+                !coordinator
+                    .begin_production_frame(briefing, owner)
+                    .legacy_owned_pointer_allowed(),
+                "{owner:?}"
+            );
+        }
+        coordinator.enqueue(WindowCommand::Open(singleton_spec(
+            WindowKind::Encyclopedia,
+            WindowOwner::StrategicRoot,
+        )));
+        opened_id(&coordinator.apply_pending()[0]);
+        let modal = coordinator.begin_production_frame(
+            ApplicationInputLocks::default(),
+            LegacyInputBlockers {
+                root_gesture: true,
+                ..none
+            },
+        );
+        assert!(!modal.legacy_owned_pointer_allowed());
     }
 
     #[test]

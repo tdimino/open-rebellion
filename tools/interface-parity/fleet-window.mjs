@@ -404,7 +404,7 @@ async function loadRegiment(page, setup, directory) {
   const opened = await openFleetWindow(page, setup);
   await selectFleet(page, opened);
   const menu = await moveRegimentOntoFleet(page, setup, opened, directory);
-  const loaded = await until(page, "the regiment boards the fleet", (o) => o.aboard && o.held);
+  const loaded = await until(page, "the regiment boards the fleet", (o) => o.aboard);
   assert.equal(loaded.cargo, 1);
   assert.deepEqual(loaded.enabled, [true, false, true, false], "the Troops tab lights with a regiment aboard");
   return { opened, menu, loaded };
@@ -500,16 +500,17 @@ const cases = [
       const speed = await runFast(page, setup);
       await page.waitForTimeout(3_000);
       const held = await settle(page);
-      assert.ok(held.aboard && held.held, `the regiment landed where it loaded: ${JSON.stringify(held)}`);
+      assert.ok(held.aboard, `the regiment landed where it loaded: ${JSON.stringify(held)}`);
       assert.equal(held.in_transit, false);
       return { menu, loaded, troops, speed, held };
     },
   },
   {
-    name: "move-and-land",
+    name: "move-and-stay-aboard",
     code: FLEET_LOAD,
-    // The fleet's Move to the target; on arrival the regiment lands on the
-    // player's empty planet (apply_fleet_arrival releases the hold).
+    // The fleet's Move to the target; on arrival the regiment stays aboard:
+    // only a Move of the regiment or the Planetary Assault lands one
+    // (ghidra/notes/ground-assault.md, "Landing without the order").
     async run(page, faction, setup, directory) {
       const { loaded } = await loadRegiment(page, setup, directory);
       const origin = { x: loaded.origin[0], y: loaded.origin[1] };
@@ -523,11 +524,10 @@ const cases = [
       const departed = await until(page, "the fleet departs", (o) => o.in_transit);
       assert.ok(departed.aboard, "the regiment left the fleet before it departed");
       const speed = await runFast(page, setup);
-      const landed = await until(page, "the regiment lands at the target",
-        (o, target) => !o.aboard && !o.held && !o.in_transit && o.troop_system_dat_id === target,
-        setup.target_dat_id, 90_000);
-      assert.equal(landed.cargo, 0);
-      return { loaded, menu, departed, speed, landed };
+      const arrived = await until(page, "the fleet arrives with the regiment aboard",
+        (o) => o.aboard && !o.in_transit, null, 90_000);
+      assert.equal(arrived.cargo, 1);
+      return { loaded, menu, departed, speed, arrived };
     },
   },
   {
@@ -541,7 +541,7 @@ const cases = [
       const troops = await openTroopsTab(page, loaded);
       await dragItem(page, point(troops.first_item), point(setup.defenses_window));
       const unloaded = await until(page, "the regiment lands on its planet",
-        (o, primary) => !o.aboard && !o.held && !o.regiment_travelling && o.troop_system_dat_id === primary,
+        (o, primary) => !o.aboard && !o.regiment_travelling && o.troop_system_dat_id === primary,
         setup.primary_dat_id);
       assert.equal(unloaded.cargo, 0);
       assert.equal(unloaded.in_transit, false);
@@ -576,7 +576,7 @@ const cases = [
       await page.mouse.up();
       await frames(page);
       const held = await settle(page);
-      assert.ok(held.aboard && held.held, JSON.stringify(held));
+      assert.ok(held.aboard, JSON.stringify(held));
       return { loaded, gap, held };
     },
   },
@@ -585,19 +585,19 @@ const cases = [
     code: REGIMENT_UNLOAD_REFUSED,
     // FUN_0053d430: a regiment group's destination of another side, other
     // than an existing unpopulated system, is refused 1/0x28. The regiment
-    // starts aboard and held, and the Defenses window shows the other side's
+    // starts aboard, and the Defenses window shows the other side's
     // populated target (the Fleet window covers its planet).
     async run(page, faction, setup, directory) {
       const opened = await openFleetWindow(page, setup);
       const selected = await selectFleet(page, opened);
-      assert.ok(selected.aboard && selected.held, JSON.stringify(selected));
+      assert.ok(selected.aboard, JSON.stringify(selected));
       assert.deepEqual(selected.enabled, [true, false, true, false], "the Troops tab lights with a regiment aboard");
       const troops = await openTroopsTab(page, selected);
       await dragItem(page, point(troops.first_item), point(setup.defenses_window));
       const refusal = "Regiment move rejected: the destination belongs to another side";
       const refused = await until(page, "the other side's planet refuses the regiment",
         (o, text) => o.last_message === text, refusal);
-      assert.ok(refused.aboard && refused.held, JSON.stringify(refused));
+      assert.ok(refused.aboard, JSON.stringify(refused));
       assert.equal(refused.regiment_travelling, false);
       return { opened, selected, troops, refused };
     },

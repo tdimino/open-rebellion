@@ -3,7 +3,7 @@ title: "Open Rebellion Full Functionality Audit"
 description: "Repository status, verified evidence, release blockers, and feature-by-feature acceptance plan"
 category: qa
 created: 2026-09-08
-updated: 2026-10-06
+updated: 2026-10-17
 commit: fc25634be905839dfa6fb477d5fff0faa49d8ae9
 tags: [qa, audit, functionality, parity, bitmap, wasm, astra, fable]
 ---
@@ -721,7 +721,7 @@ cross-runtime proof remain open
 ### F-017: The Death Star can never fire
 
 - Severity: P1
-- Status: partially remediated; construction timing, sabotage, and browser fire pass remain
+- Status: partially remediated; construction and sabotage are ported in code (2026-10-17), and their VM and native checks, a Destroy System against an Alliance player, and the browser pass remain
 - Evidence: `DeathStarSystem::fire` (`crates/rebellion-core/src/death_star.rs`)
   refuses while `shield_generator_active` is true, and the only other writer
   (`crates/rebellion-app/src/tactical_flow.rs`) sets it to true;
@@ -772,6 +772,46 @@ cross-runtime proof remain open
   port's `add_sabotage_delay` has no source either. The superlaser, the
   1,825-tick timer, and sabotage stay open until the tactical fire path
   (`FUN_005a7500`) and the sabotage mission handler are decompiled.
+- Fix (2026-10-16): Destroy System is order `0x223`
+  (`ghidra/notes/death-star-strategic.md`, Port). The gate (`FUN_00582440`)
+  asks for a fleet with bombard strength and a ship of family `0x18`-`0x1b`;
+  the only target refusal is a destroyed system, so Imperial, neutral and
+  Alliance systems are all targets. The Kill branch runs the original cascade
+  (`FUN_005080d0`): fleets survive, the system's units die or take the
+  autoscrap request, characters go adrift, missions are validated at once.
+  `DeathStarSystem::fire`, its Empire-held refusal and the Death Star panel
+  are gone; the player fires from the Planetary Bombardment menu and the AI
+  through its Destroy System posture (`FUN_004b1070`). Native, seed 42, as
+  the Empire: at Vagran, with an Alliance fleet in orbit and two Alliance
+  minor characters on the surface, both fleets survived intact, 3 regiments
+  and 12 facilities died, both characters went adrift and the GNPRTB `0x606`
+  roll killed both, "Vagran Destroyed!" was filed for both sides, and a
+  second order was refused (`Destroyed`); at Hoth the HQ died, the system
+  reads neutral and destroyed, the rim sector did not shift and the core
+  took the kill's +10, as in the VM's Yaga Minor run. Integrator tests cover
+  Coruscant (CD), the Alliance HQ (AD) and the last system. Open: a
+  Destroy System against an Alliance player, the browser pass, and
+  construction and sabotage as above.
+- Fix (2026-10-17, plan Phase I): the Death Star is the shipyard product
+  CAPSHPSD record 136, built by the ordinary manufacturing path. The
+  invented construction is gone: `start_construction`, its 1,825-day
+  countdown, the 300-unit nearby warning and their messages,
+  `shield_generator_active`, `EVT_DS_STATUS` and `EVT_DS_CONSTRUCTION`. An
+  order where a Death Star already is or is queued is refused `{0x90, 3}`
+  (`FUN_00507ab0`; `a_death_star_order_is_refused_where_one_already_is_or_is_queued`),
+  an order past the side's spare maintenance `{0xf3, 1}` (`FUN_0052e970`),
+  and a finished capital ship forms its own fleet at its system
+  (`Fleet::product_day`;
+  `a_finished_capital_ship_joins_its_systems_spare_and_never_an_existing_fleet`).
+  Sabotage names an object and Death Star Sabotage the Death Star
+  (`FUN_00593500`); a success destroys the target, with no delay
+  (`sabotage_needs_an_object_other_than_the_death_star_and_ds_sabotage_needs_the_death_star`,
+  `ds_sabotage_destroys_only_the_fleet_s_death_star_hull`), and a sabotaged
+  Death Star plays movie `0x72` to both sides. The AI's sabotage planner
+  is the regional machine (`FUN_004bda60`, `ghidra/notes/ai-sabotage-target.md`).
+  Open: the VM and native checks of a build, the second-hull refusal and
+  Death Star Sabotage on both sides (Phase I item 9); no named dual-AI seed
+  yet shows the AI issuing `0x223`.
 
 ### F-018: Research never limits which ships can be built
 
@@ -1153,8 +1193,7 @@ cross-runtime proof remain open
     pixels each. The sixth also missed its tab click, because one-frame
     clicks were flaky; the gate now spreads a click over frames, and three
     runs in a row pass. The fixture WASM is `020a8010…cfa7853` and the runtime pack
-    `02244b24…cf7d90f4`. Evidence is kept under the ignored
-    `.artifacts/interface-parity/mission-dialog-2026-10-01T06-42-20-347Z-31048/`.
+    `02244b24…cf7d90f4`. Evidence: the 2026-10-01 06:42 UTC browser run, with its screenshots, network log, console log and the hashes above.
   - Finding: in the 1500-tick seed-42 dual-AI playtest, 372 dispatches
     (Diplomacy 220, Espionage 78, Recruitment 32, Sabotage 23, Incite 13,
     Assassination 6) carry one member and no decoys. The selectors picked
@@ -1181,7 +1220,7 @@ cross-runtime proof remain open
     staged and drawn with its hotspot on the pointer, and a release on a map
     system opens the dialog through `available_kinds`. port: only a map
     system is a target (no `+0x68` object hit test), Shift's pass-through is
-    not ported, and Escape cancels.
+    not ported; Escape leaves the targeting as the original does (VM).
   - 7d: the invented entry points are gone: Send Diplomat, Send Spy,
     `PanelAction::OpenMissionTo`, the missions panel's Dispatch tab, and
     `PanelAction::OpenMissionDialog`.
@@ -1199,8 +1238,7 @@ cross-runtime proof remain open
     of 378,406 checked pixels (dialog chrome and cursor 1002's 89 opaque
     pixels), 24 of 24 requests, zero console or page errors. Fixture WASM
     `b384974078a2…`, runtime pack `d1989cd84df5…`, cursor `d4196586faef…`.
-    Evidence: the ignored
-    `.artifacts/interface-parity/mission-dialog-2026-10-01T18-07-25-702Z-95298/`.
+    Evidence: the 2026-10-01 18:07 UTC browser run, with its screenshots, network log and console log; the hashes are above.
   - Open: a native check of the entry and of the speed menu's colors;
     character and object targets
     (Rescue, Assassination, and Abduction need them); the advisor's refusal
@@ -1297,7 +1335,7 @@ cross-runtime proof remain open
 ### F-025: Death Star combat checks key on the Empire major-character family
 
 - Severity: P2
-- Status: open
+- Status: remediated in code; the TAC-05 acceptance runs remain
 - Evidence: `combat.rs` derives `is_death_star` and `CombatEntityKind::DeathStar`
   from DatId family `0x34`. MJCHARSD and TEXTSTRA show `0x34000280` is Emperor
   Palpatine and `0x35000281` Darth Vader; `FUN_00560d50` routes family `0x34`
@@ -1305,6 +1343,23 @@ cross-runtime proof remain open
   never runs on real data.
 - Acceptance: Death Star detection uses the recovered class identity and the
   shield's battle role follows recovered code.
+- Fix (2026-10-16): `CapitalShipClass` keeps its CAPSHPSD family and
+  `is_death_star` tests families `0x18`-`0x1b` (`FUN_005003d0`); the gate,
+  the Kill branch, the AI's class flags and `Give Death Star` read it, and
+  `combat.rs` no longer reads family `0x34`. Fix (2026-10-17):
+  `Fleet::has_death_star` asks the fleet's live ships (`FUN_005003d0`), and a
+  Death Star destroyed in battle kills its ship (`tactical::apply`). Open: the
+  shield's battle role stays with the tactical cells (TAC-05).
+- Fix (2026-10-17, plan Phase J): the battle station is seeded from its
+  record (`FUN_0040bcd0`): the remaining strategic hull, charge 100, `+0x74`
+  for an uncompleted station and `+0x70` when a Death Star Shield (family
+  `0x25`) stands at the system, either side's. Only `FUN_005ba450` reads
+  `+0x70`: a shielded station offers no trench run (`station_tests.rs`). The
+  station leaves the capital-ship roster (`FUN_0040b0e0`), and the approach,
+  the roll (`FUN_005d04e0`), the hangar and the AI's actions follow
+  `ghidra/notes/tactical-death-star.md`. Open: the A1 fixtures, the C6 A0
+  compare of TAC-05-C009 and C017-C023, and native and VM trench runs on
+  both sides (Phase J item 12).
 
 ### F-026: The disaster and uprising incidents have no effect
 
@@ -1483,11 +1538,14 @@ cross-runtime proof remain open
 - Acceptance: each item is recovered and cited, or tagged `port:`/`hyp:` with a
   reason; `provenance-scan check` passes and the baseline shrinks to the
   port-owned remainder.
+- Fix (2026-10-17, plan Phase N): the proximity seeding fallback
+  (`apply_seeds_legacy`) is gone; seeding refuses data without Coruscant or
+  Yavin (`seeds.rs`). No test exercises the refusal yet.
 
 ### F-032: Fleet transit time and bombardment rest on an invented formula and a misread
 
 - Severity: P1
-- Status: partially remediated (transit)
+- Status: partially remediated (transit, bombardment); fog remains
 - Evidence:
   - movement.rs computes ceil(distance * DISTANCE_SCALE 2 / slowest
     hyperdrive) with MIN_TRANSIT_TICKS 10 and DEFAULT_FIGHTER_HYPERDRIVE 60,
@@ -1507,6 +1565,18 @@ cross-runtime proof remain open
     FUN_00500820, and the fleet speed FUN_004fd900. A fleet without a capital
     ship cannot enter hyperspace (FUN_004fda10). The per-ship damage nibble is
     not modelled. Bombardment and fog remain open.
+  - Bombardment remediated 2026-10-16: bombardment.rs is rebuilt on the
+    recovered orders 0x220-0x223 (gate FUN_00582440, run FUN_0058d800, defence
+    FUN_0058dc10, effect FUN_0058df60, finalize FUN_0058e320;
+    ghidra/notes/bombardment.md, Port). The transit-formula damage number,
+    victory.rs apply_headquarters_bombardment and the three post-battle
+    bombardments are gone; the original bombards only on the order. Native,
+    seed 42, both sides: Target Military, Target Civilian and General
+    Bombardment by the Empire at Vagran and the Alliance at Denab gave the defence
+    damage, hits, kills and support changes the formula gives, and the menu
+    rows issue the same order. Headless, 24 seeds of 1500 days with both
+    sides AI: 95 Alliance and 226 Empire AI strikes, every one 0x220
+    (FUN_004ae320). Fog remains open
 - Acceptance: Transit follows FUN_0055d8c0 per object with a failing-without
   test; bombardment.rs is removed or rebuilt on a recovered function; fog.rs
   is tagged port:.
@@ -1514,7 +1584,7 @@ cross-runtime proof remain open
 ### F-033: Strategic combat formulas are port-authored
 
 - Severity: P1
-- Status: open
+- Status: partially remediated; the ground caller is ported (2026-10-17), its VM, native and TAC-08 checks remain
 - Evidence:
   - combat.rs reads GNPRTB 5120 (0x1400) as a combat difficulty modifier in
     space and ground combat; 5120 is the transit distance divisor
@@ -1530,11 +1600,28 @@ cross-runtime proof remain open
 - Acceptance: The four slot handlers and the ground caller are decompiled and
   ported with citations, the 5120 misuse is removed, and each formula has a
   failing-without test.
+- Fix (2026-10-17, plan Phase K): `combat.rs` keeps only the battle types
+  the tactical engine shares; every space battle runs through the tactical
+  engine (`ghidra/notes/simulate-runs-tactical-engine.md`). The ground
+  caller is Planetary Assault, order `0x234` (`FUN_00563390` →
+  `FUN_0058c1e0` → `FUN_0058c120`, `assault::resolve`,
+  `ghidra/notes/ground-assault.md`): the defence facilities fire, each
+  attacking regiment fights one random defender once (`FUN_0055eb00`,
+  GNPRTB `0x200`-`0x204`), collateral hits, the landing and the cleanup, with
+  tests citing each function in `assault.rs`. `resolve_ground`,
+  `regiment_strength`, the round loop, the 5120 misread, the live ground
+  screen (`ground_combat.rs`) and the automatic landing are gone, and the
+  invented Death Star construction timer and warning radius with them
+  (F-017). The menu row and the AI order run through the one resolver
+  (`assault_orders.rs`, `resolve_ai_assault`). Open: the VM run with a
+  battery, an enemy fleet present and a captured officer (Phase K item 4),
+  native runs on both sides, the TAC-08 cells, and a dual-AI batch
+  re-measure since the automatic landing left (Phase K item 7).
 
 ### F-034: Mission resolution departs from the recovered phases
 
 - Severity: P1
-- Status: open
+- Status: partially remediated; escape follows its decompile (2026-10-17), the other items are not re-recorded here
 - Evidence:
   - Detection collapses into one defense score fed to a rebellion2 quadratic;
     the original rolls FOILTB per defender with a composite input
@@ -1550,6 +1637,22 @@ cross-runtime proof remain open
   - evidence/invention-review-r1/missions.md
 - Acceptance: Detection, escape, and effects follow their decompiles with
   failing-without tests; mission members become a roster (with F-019).
+- Fix (2026-10-17, plan Phase H): escape runs on timer `0x38a`, armed by the
+  prisoner bit for GNPRTB 2584 + rand(0..=2585) days and re-armed after each
+  roll; the ESCAPETB input is espionage plus combat, less the guards'
+  average combat and the captor's regiments there (`FUN_00561990`,
+  `MissionSystem::escape_step`;
+  `a_prisoners_timer_fires_its_escape_roll_and_rearms_with_a_fresh_delay`,
+  `guards_and_the_captors_regiments_lower_the_escape_input`). The daily
+  loyalty roll is gone. A freed escapee leaves through its autoscrap request
+  (`death_star::free_escapee`) and files "{name} Escaped" to both sides
+  (notification `0x1e0`). A stranded character goes to the other side's jail
+  abode (`FUN_00549580`, `death_star::strand`), a mission end returns its
+  members (`FUN_00548120`, `death_star::return_members`), and the Personnel
+  Finder lists a jail occupant by name and abode (`ghidra/notes/jail.md`).
+  Sabotage destroys its target object with no delay (F-017). Open: the VM
+  jail run (Phase H item 8) and the native finder row and Standard win with a
+  jailed leader on both sides (Phase H item 10).
 
 ### F-035: Manufacturing and repair use invented structure and rates
 
@@ -1592,7 +1695,7 @@ cross-runtime proof remain open
 ### F-037: Economy and research run on an invented cadence and miss recovered terms
 
 - Severity: P2
-- Status: open
+- Status: partially remediated (the shift hooks)
 - Evidence:
   - The port recomputes support every tick; the original runs FUN_00508250
     once at setup (stage 0x17) and then updates through field hooks
@@ -1608,6 +1711,36 @@ cross-runtime proof remain open
   - research.rs is taken from rebellion2 and cites nothing in REBEXE.EXE
   - evidence/invention-review-r1/economy.md (row 9 on Empire doubling is
     excluded; see the README)
+  - Shift hooks remediated 2026-10-16: a control change (FUN_00517aa0,
+    FUN_0055de50, with Coruscant's FUN_0055e010 and the per-step cap
+    FUN_00518040), a blockade's end (FUN_00517ee0, FUN_0055dbf0, loss
+    counters FUN_00508c60) and the Alliance HQ's removal (FUN_00517cd0) post
+    their sector shifts through event 0x373, fired at the end of each
+    operation; rim systems keep setup bit 3 until their holder changes;
+    uprising::apply_support_change is the one setter for them
+    (ghidra/notes/support-shifts.md, Port). Open: the per-tick support
+    recompute and the timer chain; EconomyEvent::SupportDrifted and
+    EventAction::ShiftPopularity bypass the setter; a native check of an
+    Imperial capture's shift. Loss counter A is fed by a planetary assault's
+    regiment kills (assault::resolve, reason 0xe, FUN_00508c60)
+  - Support writes remediated 2026-10-17: the drift (FUN_0050b230 ->
+    FUN_00559c40) goes through FUN_00509ec0 to system +0x6c, the output
+    diversion roll's odds (FUN_005166a0), and no longer to support
+    (EconomyEvent::SupportDrifted removed); EventAction::ShiftPopularity
+    removed (no producer); every support change runs the setter's hook
+    (FUN_00509c30 -> slot +0x1d0 FUN_005109f0 -> FUN_0050b610), which reruns
+    control at once and queues event 0x31b beside the shifts
+    (support_shift::support_changed, fire), so a kill's joins land in its
+    step; timer 0x384 costs a revolting holder GNPRTB 7697 (1) every 7698
+    (30) days (FUN_00510f20, FUN_0050caa0). Open: control after a regiment's
+    change outside an assault, an occupation or a Destroy System waits for
+    the next day's pass (FUN_00508660); a native check of an Imperial
+    capture's shift
+  - Regiment hook remediated 2026-10-17: every regiment joining or leaving a
+    system queues event 0x301/0x320, whose FUN_00508660 reruns FUN_0050b610
+    when the operation's phase 5 serves it (support_shift::regiments_changed,
+    fire); the daily control pass is retired. Open: a native check of an
+    Imperial capture's shift
 - Acceptance: Support follows the hook and timer chain with failing-without
   tests, and research is recovered or tagged.
 
@@ -1769,8 +1902,8 @@ and underlying state mutation are both demonstrated.
 | P23 | Core space combat | Seven phases, weapon classes, shields, ion effects, recharge, carriers, fighters, officers, Emperor, retreat, destruction, and result application. |
 | P24 | Tactical space combat | Placement, selection, formations, movement, focus fire, pause/speed, retreat, visual state, accepted formulas, and galaxy result application. [Per-hull/fighter result identity and shared entry](evidence/2026-09-12-tactical-result-identity.md) are verified partial tranches. P54 through P57B2C2B stage and decode the original 3D corpus and recover its camera, placement, transform, palette, light, and retained-mode state. [P58A](../2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-resource-join.md) joins every ship and fighter DAT identity to its original resources and transports all 87 meshes and 397 textures. P58B through P58F13 render live capital/fighter families and restore their interaction and command paths. The [P58-B06 checkpoint](../2026-09-10-interface-parity-audit/evidence/2026-09-22-tactical-completion-bundle.md) adds capital and fighter combat, collision, automatic groups, retained formations, the separate Death Star, original result/options panels, superlaser journey, both trench-run routes, and exact strategic roster, capture, and Death Star-state application. P58-B15 through P58-B21 restore Battle Alert, weapon and command voice banks, mixed-task-force rejection, recovery/withdrawal feedback, and shared post-battle orchestration. [P58-B22](../2026-09-10-interface-parity-audit/evidence/2026-09-28-tactical-source-completion.md) completes the bounded practical launcher with source-compatible tactical randomness, persisted power allocation, completion/destruction callbacks, and the timed source-derived trench-run producer. [P58-B07](../2026-09-10-interface-parity-audit/evidence/2026-09-22-tactical-106-matrix-contract.md) generates and validates the exact 106-cell denominator, and [P58-B08](../2026-09-10-interface-parity-audit/evidence/2026-09-22-tactical-a0-ingestion.md) adds fail-closed original-capture provenance and ingestion. Deterministic A1 mapping is runnable at 106/106, but owned lossless A0 coverage and acceptance remain 0/106. Exact native beam pixels, audible native playback and mixing, whole-process random-state continuity, strategic commander binding, exact planet framing, rare warning/ejection callers, and strict battle acceptance remain open. |
 | P25 | Ground combat | Troop attack/defense, facilities, officers/difficulty, selection, casualties, conquest, visuals, and parity between automatic and interactive paths. |
-| P26 | Bombardment | Eligibility, shields, losses, popularity, ownership, messages, persistence, and visual feedback. |
-| P27 | Death Star | Construction, sabotage, escort, retreat, shielding, targeting, firing, cooldown, destruction, cleanup, contribution to the Imperial HQ objective, and nonterminal Alliance destruction behavior. |
+| P26 | Bombardment | Eligibility, shields, losses, popularity, ownership, messages, persistence, and visual feedback. Partial (2026-10-16): the order's gate, defence and effect phases, finalize, persistence (the bombardment flag survives a save), the Planetary Bombardment menu and the Operation Report pass native checks on both sides (seed 42, F-032). The Operation Report window is ported in code (2026-10-17, `rebellion-render/src/operation_report.rs`, `ghidra/notes/operation-report-window.md`): its lists filled from the strike and assault reports, opened at once for the bombarder (`MessageLog::take_alerts`) and again from the Message Index. Its native checks (EVT-03, Empire at Vagran and, seed 3, Tralus; Alliance at Corfai) pass on both sides for C001-C003, C005-C008, C010, C011, C013, C014 and C015, and for the Empire only on this build for C004 and C009. Open: the browser OBJ-14 probe; the report window's browser checks, which every EVT-03 cell still needs; the Alliance's C004 and C009; C012's Destroyed column, whose damage art fails natively. Native on both sides (build ac90a418, seed 42, release): C012 Operational lists the damaged survivor with burn marks (Imperial Star Destroyer 1, 2250/2750, at Vagran; Alliance Escort Carrier 1, 300/900, at Corellia), and C015 Go To fleet opens the system's Fleet window with nothing selected (`FUN_0045aac0`). Each EVT-03 cell stays pending until its browser check. |
+| P27 | Death Star | Construction, sabotage, escort, retreat, shielding, targeting, firing, cooldown, destruction, cleanup, contribution to the Imperial HQ objective, and nonterminal Alliance destruction behavior. Partial (2026-10-16): targeting, firing, cleanup and the HQ objective follow the original order and cascade, checked natively as the Empire (F-017). Ported in code (2026-10-17): a destroyed system's galaxy marker takes the white cross except in the fleet and personnel modes (`gid_marker_for_system`, `FUN_0042b330`); the adrift flag has no display, as in the original (`death-star-strategic.md`, "Display"), and the System window has no destroyed branch (VM, Yaga Minor, days 240-315); Destroy System plays movie `0x6f` and a sabotaged Death Star `0x72` (`strike_orders::strike_movies`, `sabotage_movies`); construction, the one-per-system refusal and sabotage (F-017); the battle station, its shield, the trench run and retreat (F-025). Open: a Destroy System against an Alliance player; the construction and sabotage checks in the VM and natively on both sides; the TAC-05 acceptance; escort. |
 | P28 | Generic events | Every condition/action branch, one-shot behavior, simultaneous events, notification art, state changes, and save/load. |
 | P29 | Story and cutscenes | Every story chain, all eight cutscene mappings, heritage branches, queueing, audio/video sync, skip/end/error behavior, and replay prevention. |
 | P30 | Victory and defeat | Every win/loss condition for both player factions, simulation freeze, result screen, cutscene policy, Continue, and clean restart. |

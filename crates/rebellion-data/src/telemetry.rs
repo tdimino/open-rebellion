@@ -14,7 +14,7 @@ use rebellion_core::game_events::{
     EVT_BLOCKADE_SUPPORT_SHIFT, EVT_BLOCKADE_TROOP_DESTROYED, EVT_COLLECTION_RATE,
     EVT_COMBAT_SPACE, EVT_CONTROL_CHANGED, EVT_ECONOMY_TICK, EVT_GARRISON_REQUIRED,
     EVT_MISSION_ENDED, EVT_MISSION_RESOLVED, EVT_RESEARCH_UNLOCKED, EVT_RESOURCE_DISCOVERY,
-    EVT_SHIP_REPAIRED, EVT_SHIP_REPAIR_STARTED, EVT_SUPPORT_CHANGE, EVT_SUPPORT_DRIFT, EVT_TRACE,
+    EVT_SHIP_REPAIRED, EVT_SHIP_REPAIR_STARTED, EVT_SUPPORT_CHANGE, EVT_SUPPORT_SHIFT, EVT_TRACE,
     SYS_AI, SYS_BLOCKADE, SYS_COMBAT, SYS_ECONOMY, SYS_MISSIONS, SYS_REPAIR, SYS_RESEARCH,
 };
 use rebellion_core::ids::SystemKey;
@@ -228,6 +228,37 @@ pub fn blockade_payload(world: &GameWorld, system: SystemKey) -> serde_json::Val
     serde_json::json!({ "system": sys_name(world, system) })
 }
 
+/// The `details` of a `blockade_ended` record: the system, the blockader,
+/// each side's loss total and strength sum, and the record they make
+/// (`support_shift::blockade_end_record`); `blockader` and `shift` are null
+/// when no shift was evaluated.
+#[must_use]
+pub fn blockade_end_payload(
+    world: &GameWorld,
+    blockade: &rebellion_core::blockade::BlockadeState,
+    system: SystemKey,
+) -> serde_json::Value {
+    let losses = blockade.losses(system);
+    let total = |side| losses.map_or(0, |losses| losses.total(side));
+    let [alliance_strength, empire_strength] = rebellion_core::support_shift::strength(world);
+    let shift =
+        rebellion_core::support_shift::blockade_end_record(world, blockade, system).map(|record| {
+            serde_json::json!({
+                "direction": format!("{:?}", record.direction),
+                "amount": record.amount,
+            })
+        });
+    serde_json::json!({
+        "system": sys_name(world, system),
+        "blockader": losses.and_then(|losses| losses.blockader).map(|side| format!("{side:?}")),
+        "alliance_losses": total(rebellion_core::dat::Faction::Alliance),
+        "empire_losses": total(rebellion_core::dat::Faction::Empire),
+        "alliance_strength": alliance_strength,
+        "empire_strength": empire_strength,
+        "shift": shift,
+    })
+}
+
 /// The `details` of a `blockade_support_shift` record, read after the
 /// shift: the blockader, its points before the setter, and both sides'
 /// support now.
@@ -254,8 +285,7 @@ pub fn support_shift_payload(
     })
 }
 
-/// The record an economy event writes, its event type and `details`, for
-/// every event but a control change (`control_resolved_payload`).
+/// The record an economy event writes, its event type and `details`.
 #[must_use]
 pub fn economy_record(
     world: &GameWorld,
@@ -263,18 +293,6 @@ pub fn economy_record(
 ) -> Option<(&'static str, serde_json::Value)> {
     let name = |system: &SystemKey| sys_name(world, *system);
     Some(match event {
-        EconomyEvent::SupportDrifted {
-            system,
-            alliance_delta,
-            empire_delta,
-        } => (
-            EVT_SUPPORT_DRIFT,
-            serde_json::json!({
-                "system": name(system),
-                "alliance_delta": alliance_delta,
-                "empire_delta": empire_delta,
-            }),
-        ),
         EconomyEvent::CollectionRateChanged { system, new_rate } => (
             EVT_COLLECTION_RATE,
             serde_json::json!({ "system": name(system), "rate": new_rate }),
@@ -334,7 +352,6 @@ pub fn economy_record(
             EVT_RESOURCE_DISCOVERY,
             serde_json::json!({ "system": name(system), "new_output": new_output }),
         ),
-        EconomyEvent::ControlResolved { .. } => return None,
     })
 }
 
@@ -433,19 +450,64 @@ pub fn control_resolved_payload(
     })
 }
 
-/// The `details` of a `control_changed` record from a ground victory.
+/// The `details` of a `control_changed` record from a Planetary Assault,
+/// whose landing or losses rebuilt the holder (`FUN_0050b610`).
 #[must_use]
-pub fn control_occupation_payload(
+pub fn control_assault_payload(
     world: &GameWorld,
     system: SystemKey,
-    previous: Option<ControlKind>,
-    winner: rebellion_core::dat::Faction,
+    previous: ControlKind,
 ) -> serde_json::Value {
     serde_json::json!({
         "system": sys_name(world, system),
-        "from": format!("{:?}", previous.unwrap_or_default()),
-        "to": format!("{:?}", ControlKind::Controlled(winner)),
-        "cause": "ground_occupation",
+        "from": format!("{previous:?}"),
+        "to": format!(
+            "{:?}",
+            world.systems.get(system).map(|sys| sys.control).unwrap_or_default()
+        ),
+        "cause": "assault",
+    })
+}
+
+/// The `details` of an `assault` record: the run's sides, counts and
+/// losses (`rebellion_core::assault::AssaultReport`).
+#[must_use]
+pub fn assault_payload(
+    world: &GameWorld,
+    report: &rebellion_core::assault::AssaultReport,
+) -> serde_json::Value {
+    let side = |side: Option<rebellion_core::dat::Faction>| side.map(|side| format!("{side:?}"));
+    serde_json::json!({
+        "system": report.system.map(|system| sys_name(world, system)),
+        "assaulter": side(report.assaulter),
+        "holder_before": side(report.holder_before),
+        "holder_after": side(report.holder_after),
+        "attackers": report.attackers,
+        "defenders": report.defenders,
+        "shots_fired": report.shots.iter().filter(|shot| shot.fired).count(),
+        "engagements": report.engagements.len(),
+        "attackers_lost": report.attackers_lost.len(),
+        "defenders_lost": report.defenders_lost.len(),
+        "facilities_lost": report.facilities_lost.len(),
+        "energy": report.energy,
+        "raw_material": report.raw_material,
+        "landed": report.landed.len(),
+    })
+}
+
+/// The `details` of a `control_changed` record from a Death Star kill,
+/// which turns the system neutral.
+#[must_use]
+pub fn control_destroyed_payload(
+    world: &GameWorld,
+    system: SystemKey,
+    previous: ControlKind,
+) -> serde_json::Value {
+    serde_json::json!({
+        "system": sys_name(world, system),
+        "from": format!("{previous:?}"),
+        "to": format!("{:?}", ControlKind::Uncontrolled),
+        "cause": "planet_destroyed",
     })
 }
 
@@ -660,10 +722,10 @@ pub fn native_mission_resolved(world: &GameWorld, result: &MissionResult) {
 }
 
 /// The AI orders one native step applied, refused or held, written by the
-/// headless emitters (`PerceptionIntegrator::emit_ai_order`, `emit_strike`):
-/// each order's `ai_action`, an applied dispatch's `mission_dispatched`, and
-/// a strike's bombardment, Death Star shot and deaths. `tick` is the day the
-/// step ran.
+/// headless emitters (`PerceptionIntegrator::emit_ai_order`, `emit_strike`,
+/// `emit_assault`): each order's `ai_action`, an applied dispatch's
+/// `mission_dispatched`, a strike's bombardment, Death Star shot and deaths,
+/// and an assault's run and control change. `tick` is the day the step ran.
 pub fn native_ai_records(
     tick: u64,
     world: &GameWorld,
@@ -680,6 +742,9 @@ pub fn native_ai_records(
                 &record.outcome,
             );
             integrator.emit_strike(world, &record.strike);
+            integrator.emit_assault(world, &record.assault);
+            integrator.emit_fired(world, &record.fired.shifts, &record.fired.controls);
+            integrator.emit_swept(world, &record.swept);
         }
         for event in integrator.finish() {
             native_sink::write(event);
@@ -694,6 +759,42 @@ pub fn native_strike(tick: u64, world: &GameWorld, strike: &crate::integrator::S
         let mut integrator =
             crate::integrator::PerceptionIntegrator::new(tick, native_sink::wall_ms());
         integrator.emit_strike(world, strike);
+        for event in integrator.finish() {
+            native_sink::write(event);
+        }
+    }
+}
+
+/// The native game's trips of the characters a holder change sent off, as
+/// headless records them (`PerceptionIntegrator::emit_swept`).
+pub fn native_swept(
+    tick: u64,
+    world: &GameWorld,
+    swept: &[(SystemKey, Vec<crate::integrator::AdriftTrip>)],
+) {
+    if native_enabled() && !swept.is_empty() {
+        let mut integrator =
+            crate::integrator::PerceptionIntegrator::new(tick, native_sink::wall_ms());
+        integrator.emit_swept(world, swept);
+        for event in integrator.finish() {
+            native_sink::write(event);
+        }
+    }
+}
+
+/// The native game's adrift trips, as headless records them
+/// (`PerceptionIntegrator::emit_adrift_trips`).
+pub fn native_adrift_trips(
+    tick: u64,
+    world: &GameWorld,
+    missions: &rebellion_core::missions::MissionState,
+    system: SystemKey,
+    started: &[u64],
+) {
+    if native_enabled() && !started.is_empty() {
+        let mut integrator =
+            crate::integrator::PerceptionIntegrator::new(tick, native_sink::wall_ms());
+        integrator.emit_adrift_trips(world, missions, system, started);
         for event in integrator.finish() {
             native_sink::write(event);
         }
@@ -739,27 +840,30 @@ pub fn native_mission_ended(ended: &[MissionEnded]) {
     }
 }
 
-/// The blockades the native game started or ended.
-pub fn native_blockade_events(world: &GameWorld, events: &[BlockadeEvent]) {
+/// A blockade the native game started or ended. Call it as the event is
+/// applied, so an end's record reads the world its shift reads.
+pub fn native_blockade_event(
+    world: &GameWorld,
+    blockade: &rebellion_core::blockade::BlockadeState,
+    event: &BlockadeEvent,
+) {
     if !native_enabled() {
         return;
     }
-    for event in events {
-        match event {
-            BlockadeEvent::BlockadeStarted { system, tick } => emit_native(
-                *tick,
-                SYS_BLOCKADE,
-                EVT_BLOCKADE_STARTED,
-                blockade_payload(world, *system),
-            ),
-            BlockadeEvent::BlockadeEnded { system, tick } => emit_native(
-                *tick,
-                SYS_BLOCKADE,
-                EVT_BLOCKADE_ENDED,
-                blockade_payload(world, *system),
-            ),
-            BlockadeEvent::TroopDestroyed { .. } | BlockadeEvent::SupportShift { .. } => {}
-        }
+    match event {
+        BlockadeEvent::BlockadeStarted { system, tick } => emit_native(
+            *tick,
+            SYS_BLOCKADE,
+            EVT_BLOCKADE_STARTED,
+            blockade_payload(world, *system),
+        ),
+        BlockadeEvent::BlockadeEnded { system, tick } => emit_native(
+            *tick,
+            SYS_BLOCKADE,
+            EVT_BLOCKADE_ENDED,
+            blockade_end_payload(world, blockade, *system),
+        ),
+        BlockadeEvent::TroopDestroyed { .. } | BlockadeEvent::SupportShift { .. } => {}
     }
 }
 
@@ -778,6 +882,57 @@ pub fn native_support_shift(
             EVT_BLOCKADE_SUPPORT_SHIFT,
             support_shift_payload(world, system, side, delta),
         );
+    }
+}
+
+/// The `details` of a `support_shift` record: the system, what posted the
+/// shift, the posted Alliance amount, the points it moved and the support
+/// after it.
+#[must_use]
+pub fn applied_shift_payload(
+    world: &GameWorld,
+    shift: &rebellion_core::support_shift::AppliedShift,
+) -> serde_json::Value {
+    let support = |side| {
+        world
+            .systems
+            .get(shift.system)
+            .map(|sys| rebellion_core::uprising::support_points(sys, side))
+    };
+    serde_json::json!({
+        "system": sys_name(world, shift.system),
+        "cause": format!("{:?}", shift.cause),
+        "amount": shift.amount,
+        "delta": shift.delta,
+        "alliance_support": support(rebellion_core::dat::Faction::Alliance),
+    })
+}
+
+/// What the native game's phase 5 served (`support_shift::fire`): each
+/// control change the support hook made ([`control_resolved_payload`]),
+/// then each fired shift ([`applied_shift_payload`]).
+pub fn native_support_shifts(
+    tick: u64,
+    world: &GameWorld,
+    fired: &rebellion_core::support_shift::Fired,
+) {
+    if native_enabled() {
+        for change in &fired.controls {
+            emit_native(
+                tick,
+                SYS_ECONOMY,
+                EVT_CONTROL_CHANGED,
+                control_resolved_payload(world, change.system, change.control),
+            );
+        }
+        for shift in &fired.shifts {
+            emit_native(
+                tick,
+                SYS_ECONOMY,
+                EVT_SUPPORT_SHIFT,
+                applied_shift_payload(world, shift),
+            );
+        }
     }
 }
 
@@ -826,38 +981,16 @@ pub fn native_research_results(tick: u64, results: &[ResearchResult]) {
     }
 }
 
-/// A system whose holder the native economy's troop and support rule changed.
-pub fn native_control_resolved(
-    tick: u64,
-    world: &GameWorld,
-    system: SystemKey,
-    new_control: ControlKind,
-) {
+/// The records of the player's own assault, as `native_ai_records` writes
+/// an AI assault's.
+pub fn native_assault(tick: u64, world: &GameWorld, assault: &crate::integrator::AssaultEffects) {
     if native_enabled() {
-        emit_native(
-            tick,
-            SYS_ECONOMY,
-            EVT_CONTROL_CHANGED,
-            control_resolved_payload(world, system, new_control),
-        );
-    }
-}
-
-/// A system a ground victory handed to its winner in the native game.
-pub fn native_ground_occupation(
-    tick: u64,
-    world: &GameWorld,
-    system: SystemKey,
-    previous: Option<ControlKind>,
-    winner: rebellion_core::dat::Faction,
-) {
-    if native_enabled() {
-        emit_native(
-            tick,
-            SYS_COMBAT,
-            EVT_CONTROL_CHANGED,
-            control_occupation_payload(world, system, previous, winner),
-        );
+        let mut integrator =
+            crate::integrator::PerceptionIntegrator::new(tick, native_sink::wall_ms());
+        integrator.emit_assault(world, assault);
+        for event in integrator.finish() {
+            native_sink::write(event);
+        }
     }
 }
 
@@ -907,7 +1040,9 @@ pub fn native_battle_begin(
 }
 
 /// The `combat_space` record of a battle the native game has applied, from
-/// the strength `native_battle_begin` noted and the session's length.
+/// the strength `native_battle_begin` noted, the session's length and who
+/// holds the system after the post-battle pass, as an unwatched battle
+/// reports it (`crate::integrator::post_battle_outcome`).
 pub fn native_battle_end(
     tick: u64,
     world: &GameWorld,
@@ -915,22 +1050,29 @@ pub fn native_battle_end(
     before: Option<NativeBattleBefore>,
     seconds: u32,
 ) {
-    use rebellion_core::combat::{side_present, CombatSide};
     let Some(before) = before else {
         return;
     };
+    let result = native_battle_result(world, system, before, seconds);
+    emit_native(
+        tick,
+        SYS_COMBAT,
+        EVT_COMBAT_SPACE,
+        combat_space_payload(world, &result),
+    );
+}
+
+/// The applied battle's result as `native_battle_end` reports it.
+fn native_battle_result(
+    world: &GameWorld,
+    system: SystemKey,
+    before: NativeBattleBefore,
+    seconds: u32,
+) -> SystemSpaceCombatResult {
     let (alliance_fleets, empire_fleets) =
         crate::integrator::orbiting_fleets_by_faction(world, system);
-    let (alliance_present, empire_present) = (
-        side_present(world, system, true),
-        side_present(world, system, false),
-    );
-    let winner = match (alliance_present, empire_present) {
-        (true, false) => CombatSide::Attacker,
-        (false, true) => CombatSide::Defender,
-        _ => CombatSide::Draw,
-    };
-    let result = SystemSpaceCombatResult {
+    let (winner, stalemate) = crate::integrator::post_battle_outcome(world, system);
+    SystemSpaceCombatResult {
         system,
         winner,
         winner_fleet: None,
@@ -951,13 +1093,67 @@ pub fn native_battle_end(
             false,
             &empire_fleets,
         ),
-        stalemate: winner == CombatSide::Draw && alliance_present && empire_present,
+        stalemate,
         log: Vec::new(),
-    };
-    emit_native(
-        tick,
-        SYS_COMBAT,
-        EVT_COMBAT_SPACE,
-        combat_space_payload(world, &result),
-    );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rebellion_core::world::{CapitalShipClass, Fleet, ShipInstance, System};
+
+    /// A system holding a usable fleet of each side in `present`.
+    /// port: test fixture values, not rules.
+    fn with_fleets(present: &[bool]) -> (GameWorld, SystemKey) {
+        let mut world = GameWorld::default();
+        let system = world.systems.insert(System::default());
+        for &is_alliance in present {
+            let class = world.capital_ship_classes.insert(CapitalShipClass {
+                is_alliance,
+                is_empire: !is_alliance,
+                hull: 100,
+                ..CapitalShipClass::default()
+            });
+            let fleet = world.fleets.insert(Fleet {
+                location: system,
+                capital_ships: vec![ShipInstance::new(class, 100, is_alliance)],
+                is_alliance,
+                ..Fleet::default()
+            });
+            world.systems[system].fleets.push(fleet);
+        }
+        (world, system)
+    }
+
+    fn before() -> NativeBattleBefore {
+        NativeBattleBefore {
+            alliance: crate::integrator::SpaceForceSummary::default(),
+            empire: crate::integrator::SpaceForceSummary::default(),
+            alliance_fleets: 1,
+            empire_fleets: 1,
+        }
+    }
+
+    // After the post-battle pass FUN_00517270.c:79-93 checks who is present
+    // (fleets in mode 1 or system squadrons) and reports that side to the
+    // galaxy, FUN_0050a040 writing it to the system's +0x78 bits 0-1 and
+    // FUN_00517ee0 building the result; with both present it reports none
+    // and the system stays contested. FUN_0040c780's winner (+0x64) only
+    // steers the pass (FUN_00516ef0 through FUN_00509ad0). An applied
+    // battle's record reports the same as an unwatched one's.
+    #[test]
+    fn an_applied_battle_reports_who_holds_the_system_after_the_pass() {
+        for (present, winner, stalemate) in [
+            (vec![true], "alliance", false),
+            (vec![false], "empire", false),
+            (vec![true, false], "draw", true),
+        ] {
+            let (world, system) = with_fleets(&present);
+            let result = native_battle_result(&world, system, before(), 30);
+            let payload = combat_space_payload(&world, &result);
+            assert_eq!(payload["winner"], winner, "{present:?}");
+            assert_eq!(payload["stalemate"], stalemate, "{present:?}");
+        }
+    }
 }

@@ -21,7 +21,7 @@ Answers task-graph node `or-q-mod-scenario-mlpg` (epic `or-ep-mod-surface-vdch`)
 2. **Two systems are literals.** Coruscant `0x90000109` is the Empire's reserved capital, the Alliance's victory target and the Emperor's seat; Yavin `0x92000121` is the Alliance's reserved start system and the rebel-base anchor of the character seeding. Each is named by the control dealer, the seeding steps, the victory check, the AI and the advisor (tables below). The Alliance HQ's object id `0x20000005` and family range `0x20`-`0x21` are fixed too.
 3. **The tables that decide what starts where are DAT.** The CMUN*TB, FACL*TB and SYFC*TB seed tables, the SDPRTB percentages, the maintenance budget, and which minor characters exist for each side (class flags `+0x40` Alliance and `+0x44` Empire) all come from DAT files. A mod can replace those freely. The registry ids binding CMUN*TB to the seeding steps are in the executable.
 4. **Research is data-driven but tied to three fixed trees.** The ship tree reads producer family `0x28` and the facility tree `0x2a` (`FUN_0051cc30`, `FUN_0051cbd0`, `FUN_0051cc10`); the three trees are the MISSNSD ids `0x53000020`-`22` (`FUN_0056c460`). Orders, costs and per-side flags are class fields (DAT). Three milestones are named: the CC-7700 Frigate `0x1400004a` (Alliance), the Interdictor Cruiser `0x14000082` (Empire) and the Death Star Shield `0x25000004` raise an advisor flag (`FUN_004198a0`, `FUN_004197b0`).
-5. **The game type is read in one place** (victory, `FUN_005180e0`; Standard = 0, Headquarters Only = 1). No seeding or AI code branches on it among the functions swept (hyp: not exhaustive; see Open questions).
+5. **The game type is read by `FUN_005180e0`, `FUN_004182a0` (AI context bit 0) and the status window's Victory Conditions page (`FUN_0044b2d0`, `FUN_0044bb70`)** (Standard = 0, Headquarters Only = 1; `victory-flag-word.md`, 6).
 
 ### Victory (`FUN_005180e0`, `victory-conditions.md`)
 
@@ -174,7 +174,6 @@ Decompiles for the named functions are in `../assets/decompiles/FUN_xxxxxxxx.c`.
 ## Open questions
 
 - Does `FUN_0055fe70` returning false for an absent named character (a mod that removes Chewbacca or Needa) abort the new game? `FUN_0055f7b0` ANDs every result and returns it as the stage result, and `FUN_005136d0` stops on a stage failure. Settle by running a data set with one named minor removed, or by reading `FUN_005136d0`'s failure branch (`LAB_00513826` returns to `switchD_0051370f_default`).
-- Whether the game type (root `+0x60`) is read anywhere else. This sweep confirms only `FUN_005180e0` (the sweep of `0x00510000`-`0x00522000` for `+ 0x60]` found it, `FUN_00520b80` and two others in `0x005208b0`-`0x00521880`, whose object is the options record, not the root). A whole-binary operand search would settle it.
 - `FUN_00402720`'s mission list: which mission ids the AI is allowed to run.
 - The HQ instance id `0x20000005`: which table assigns instance ids (the second-to-last digit run is sequential for the singletons: `0xf2000003`, then `0x20000005`, `0xf8000006`...). Settle by reading the registry factory `FUN_0051ebf0`.
 - What `FUN_004c94c0`, `FUN_004d76f0` and `FUN_004e5870` do differently for Coruscant (the flags `+0x30 & 1`, `+0x28 & 2`, `+0xdc`).
@@ -195,6 +194,5 @@ Proposed follow-up questions:
 
 - **What happens when a named character is missing from MJCHARSD/MNCHARSD?** Start from `FUN_0055f7b0`, `FUN_0055fe70`, `FUN_005136d0` (stage failure) and `FUN_0053efa0`/`FUN_0053ef00` (lookup of a missing id). Settles whether a total-conversion can drop characters by data alone.
 - **Which mission ids may the AI run?** `FUN_00402720` in full and its callers: whether a new MISSNSD mission can ever be offered to the computer player.
-- **Where is the game type read?** A whole-binary search for reads of the game root's `+0x60`, then check the AI and seeding callers; start from `FUN_005180e0`'s callers and `FUN_0051c740`.
 - **Registry ids for the object classes.** `FUN_0051ebf0` and `FUN_0058b420`: which family bytes the loader accepts, which are the limit for new classes (this and `or-q-mod-*` nodes for ships and facilities).
 - **The CMUN registry binding.** `FUN_0055d520`-`FUN_0055d5e0`: whether a scenario can add a seed table or only replace the nine.

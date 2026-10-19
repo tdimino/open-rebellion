@@ -10,7 +10,7 @@
 
 use egui_macroquad::egui;
 use rebellion_core::ids::SystemKey;
-use rebellion_core::missions::{MissionFaction, MissionKind, MissionMember};
+use rebellion_core::missions::{MissionFaction, MissionKind, MissionMember, MissionTarget};
 use rebellion_core::research::TechType;
 use rebellion_core::world::GameWorld;
 
@@ -80,6 +80,8 @@ pub enum MissionDialogPage {
 pub struct MissionDialog {
     faction: MissionFaction,
     target: SystemKey,
+    /// The object the release found (`+0x68`), standing in `target`.
+    object: Option<MissionTarget>,
     /// The kinds `FUN_004f5380` listed when the dialog was built.
     kinds: Vec<MissionKind>,
     kind: usize,
@@ -173,14 +175,15 @@ pub struct MissionDialogState {
 }
 
 impl MissionDialogState {
-    /// Open the dialog for an order's team and target with the kinds the
-    /// team may undertake. With no kind the order is dropped and nothing
+    /// Open the dialog for an order's team and target (a system, or an
+    /// object standing in it) with the kinds the team may undertake. With no kind the order is dropped and nothing
     /// opens (`FUN_0042a320` -> `FUN_0041ce20(order, 0)`). The team starts as
     /// the agents and the decoys empty, as a fresh order `0x240` leaves them.
     pub fn open(
         &mut self,
         faction: MissionFaction,
         target: SystemKey,
+        object: Option<MissionTarget>,
         team: Vec<MissionMember>,
         kinds: Vec<MissionKind>,
     ) -> bool {
@@ -190,6 +193,7 @@ impl MissionDialogState {
         self.dialog = Some(MissionDialog {
             faction,
             target,
+            object,
             kinds,
             kind: 0,
             page: MissionDialogPage::Mission,
@@ -240,6 +244,7 @@ impl MissionDialogState {
             team: dialog.agents,
             decoys: dialog.decoys,
             target: dialog.target,
+            object: dialog.object,
         })
     }
 }
@@ -253,6 +258,7 @@ pub enum MissionDialogAction {
         team: Vec<MissionMember>,
         decoys: Vec<MissionMember>,
         target: SystemKey,
+        object: Option<MissionTarget>,
     },
     /// "Encylopedia" (`0x67` -> `FUN_00429f30`, window `0x19`). port: it opens
     /// the Encyclopedia; the entry for the selected kind is not bound yet
@@ -397,6 +403,33 @@ pub(crate) fn paint(
     }
 }
 
+/// A CoolStrobeButton's bitmap (`FUN_00602150`), keyed on its first stored
+/// pixel as `FUN_00602d30` blits it over the window behind
+/// ([`BmpCache::get_button`]), at native size clipped to the control.
+pub(crate) fn paint_button(
+    painter: &egui::Painter,
+    ctx: &egui::Context,
+    cache: &mut BmpCache,
+    resource_id: u32,
+    rect: egui::Rect,
+    scale: f32,
+) {
+    #[cfg(test)]
+    crate::fleet_window::tests::PAINTED.with(|painted| {
+        painted.borrow_mut().push((resource_id, rect.min));
+    });
+    if let Some(texture) = cache.get_button(ctx, DllSource::Strategy, resource_id) {
+        painter
+            .with_clip_rect(painter.clip_rect().intersect(rect))
+            .image(
+                texture.id(),
+                native(rect, texture.size_vec2(), scale),
+                egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+                egui::Color32::WHITE,
+            );
+    }
+}
+
 /// A two-state bitmap button (`FUN_00602150`): the second bitmap shows while
 /// it is held or, for a tab, while it is the current page.
 pub(crate) fn button(
@@ -416,7 +449,7 @@ pub(crate) fn button(
         )
     });
     let held = primary_down && pointer.is_some_and(|point| rect_contains(rect, point));
-    paint(
+    paint_button(
         ui.painter(),
         ui.ctx(),
         cache,
@@ -575,22 +608,28 @@ pub fn draw_mission_dialog(
                         scale,
                         &small,
                     );
-                    if let Some(system) = world.systems.get(dialog.target) {
+                    // A system's planet bitmap, or an object's
+                    // FUN_0042c3b0(.., 1, 1) portrait.
+                    let art = match dialog.object {
+                        Some(object) => crate::missions_window::object_view(world, object),
+                        None => world.systems.get(dialog.target).map(|system| {
+                            (
+                                DllSource::Strategy,
+                                Some(planet_resource_id(system.dat_id)),
+                                system.name.clone(),
+                            )
+                        }),
+                    };
+                    if let Some((source, id, label)) = art {
                         let (x, y, w, h) = TARGET_BOX;
-                        paint_centered(
-                            &painter,
-                            ctx,
-                            cache,
-                            DllSource::Strategy,
-                            planet_resource_id(system.dat_id),
-                            at(x, y, w, h),
-                            scale,
-                        );
+                        if let Some(id) = id {
+                            paint_centered(&painter, ctx, cache, source, id, at(x, y, w, h), scale);
+                        }
                         let (x, y, w) = TARGET_NAME;
                         painter.text(
                             at(x + w / 2.0, y, 0.0, 0.0).min,
                             egui::Align2::CENTER_TOP,
-                            &system.name,
+                            &label,
                             font.clone(),
                             egui::Color32::WHITE,
                         );
@@ -909,6 +948,7 @@ mod tests {
         assert!(state.open(
             MissionFaction::Alliance,
             SystemKey::default(),
+            None,
             team,
             vec![MissionKind::Diplomacy, MissionKind::Espionage],
         ));
@@ -923,6 +963,7 @@ mod tests {
         let opened = state.open(
             MissionFaction::Alliance,
             SystemKey::default(),
+            None,
             members(1),
             vec![],
         );
@@ -1014,6 +1055,7 @@ mod tests {
                 team: vec![team[0]],
                 decoys: vec![team[1]],
                 target,
+                object: None,
             })
         );
         assert!(!state.is_open());

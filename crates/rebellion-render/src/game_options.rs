@@ -4,10 +4,48 @@ use macroquad::prelude::*;
 
 use crate::audio::AudioVolumeState;
 use crate::bmp_cache::{resources, BmpCache, DllSource};
-use crate::panels::SaveSlotInfo;
 
 const LOGICAL_WIDTH: f32 = 640.0;
 const LOGICAL_HEIGHT: f32 = 480.0;
+
+/// The window's saved-game rows: `FUN_00407180` builds rows 1 to 6, each
+/// reading save file `n` (`FUN_00401860`), with Save `0x6e + n`, Load
+/// `0x78 + n` and the name edit `0x82 + n`; no command names a seventh file.
+pub const SAVE_ROWS: usize = 6;
+
+/// The alert a save from the window raises (`FUN_00408240` →
+/// `FUN_00417020`, codes 0x474 and 0x475), with its REBDLOG text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SaveAlert {
+    /// REBDLOG 0x1217.
+    Saved,
+    /// REBDLOG 0x1219.
+    Failed,
+}
+
+impl SaveAlert {
+    #[must_use]
+    pub const fn text(self) -> &'static str {
+        match self {
+            Self::Saved => "Selected Game Saved Successfully",
+            Self::Failed => "Selected Game Failed To Save",
+        }
+    }
+}
+
+/// Metadata about one saved game, from the caller (who holds
+/// `rebellion_data::save::SaveMeta`), for the window's rows. The caller
+/// bridges the two crates, which keeps `rebellion-render` free of the data
+/// layer.
+#[derive(Debug, Clone)]
+pub struct SaveSlotInfo {
+    /// The save layer's slot index; the window shows `0..SAVE_ROWS`.
+    pub slot: usize,
+    /// Human-readable save name.
+    pub name: String,
+    /// The side the player chose, when the save records it.
+    pub player_is_alliance: Option<bool>,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GameOptionsOrigin {
@@ -19,10 +57,6 @@ pub enum GameOptionsOrigin {
 impl GameOptionsOrigin {
     const fn has_live_campaign(self) -> bool {
         !matches!(self, Self::ShuttleCockpit)
-    }
-
-    const fn can_restart(self) -> bool {
-        matches!(self, Self::CommandCenter)
     }
 
     const fn tactical_toggles_enabled(self) -> bool {
@@ -57,7 +91,6 @@ pub enum GameOptionsAction {
     Exit,
     Save { slot: usize, name: String },
     Load { slot: usize },
-    Delete { slot: usize },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -264,8 +297,12 @@ impl OptionsCanvas {
 #[derive(Debug, Clone)]
 pub struct GameOptionsState {
     pub pending: Option<GameOptionsAction>,
-    pub occupied: [bool; 10],
-    pub names: [String; 6],
+    pub occupied: [bool; SAVE_ROWS],
+    pub names: [String; SAVE_ROWS],
+    /// Rows this opening of the window saved (`FUN_00408240`).
+    saved_rows: [bool; SAVE_ROWS],
+    /// The save alert on screen, if any.
+    alert: Option<SaveAlert>,
     pub error: Option<String>,
     origin: GameOptionsOrigin,
     pressed: Option<GameOptionsControl>,
@@ -282,8 +319,10 @@ impl Default for GameOptionsState {
     fn default() -> Self {
         Self {
             pending: None,
-            occupied: [false; 10],
+            occupied: [false; SAVE_ROWS],
             names: std::array::from_fn(|_| String::new()),
+            saved_rows: [false; SAVE_ROWS],
+            alert: None,
             error: None,
             origin: GameOptionsOrigin::ShuttleCockpit,
             pressed: None,
@@ -320,11 +359,13 @@ impl GameOptionsState {
                     && *slot < self.occupied.len()
                     && !name.trim().is_empty()
             }
-            GameOptionsAction::Load { slot } | GameOptionsAction::Delete { slot } => {
+            GameOptionsAction::Load { slot } => {
                 self.origin != GameOptionsOrigin::TacticalBattle
                     && self.occupied.get(*slot).copied().unwrap_or(false)
             }
-            GameOptionsAction::Restart => self.origin.can_restart(),
+            // FUN_00407180 never disables Restart (0x91): it is built with
+            // its normal and pressed art only, in every context.
+            GameOptionsAction::Restart => true,
             GameOptionsAction::Return | GameOptionsAction::Exit => true,
             GameOptionsAction::None => false,
         }
@@ -335,11 +376,15 @@ impl GameOptionsState {
             return GameOptionsAction::None;
         }
         let confirm = match &action {
-            GameOptionsAction::Save { slot, .. } => self.occupied[*slot],
-            GameOptionsAction::Load { .. } => self.origin.has_live_campaign(),
-            GameOptionsAction::Restart
-            | GameOptionsAction::Exit
-            | GameOptionsAction::Delete { .. } => true,
+            // FUN_00406b80 0x6f-0x74: overwrite a saved game only after the
+            // confirmation, unless this window saved that row.
+            GameOptionsAction::Save { slot, .. } => self.occupied[*slot] && !self.saved_rows[*slot],
+            // 0x79-0x7e and 0x91: with a game running, confirm unless this
+            // window has saved it.
+            GameOptionsAction::Load { .. } | GameOptionsAction::Restart => {
+                self.origin.has_live_campaign() && !self.saved_rows.contains(&true)
+            }
+            GameOptionsAction::Exit => true,
             _ => false,
         };
         self.error = None;
@@ -358,11 +403,27 @@ impl GameOptionsState {
             .unwrap_or(GameOptionsAction::None)
     }
 
-    pub fn escape(&mut self) -> GameOptionsAction {
-        if self.pending.take().is_some() {
-            GameOptionsAction::None
-        } else {
-            GameOptionsAction::Return
+    /// A key pressed in the window. The window itself handles no key: its
+    /// procedure `FUN_00406b80` and the base procedures behind it
+    /// (`FUN_005ff530`, `FUN_006007b0`) have no `WM_KEYDOWN` case, so a key
+    /// only reaches a focused name edit. A confirmation answers Enter with
+    /// Yes and Escape with No (`FUN_00416f30`, the dialog's key handler:
+    /// `FUN_004011a0` posts `0x46a` or `0x46b` to the window).
+    pub fn key(&mut self, key: egui_macroquad::egui::Key) -> GameOptionsAction {
+        use egui_macroquad::egui::Key;
+        // The alert's class takes Enter as its checkmark and has no Escape
+        // (keyboard-shortcuts.md, the "Resume Game Play?" alert's class).
+        if self.alert.is_some() && key == Key::Enter {
+            self.alert = None;
+            return GameOptionsAction::None;
+        }
+        if self.pending.is_none() {
+            return GameOptionsAction::None;
+        }
+        match key {
+            Key::Enter => self.confirm(true),
+            Key::Escape => self.confirm(false),
+            _ => GameOptionsAction::None,
         }
     }
 
@@ -379,6 +440,33 @@ impl GameOptionsState {
         self.pressed = None;
         self.pending = None;
         self.error = None;
+        // Each opening builds the window afresh (FUN_00406950 zeroes them).
+        self.saved_rows = [false; SAVE_ROWS];
+        self.alert = None;
+    }
+
+    /// A save from this window to `slot` ended: `FUN_00415600` reports it to
+    /// the open window, whose `FUN_00408240` raises the 0x474 alert and sets
+    /// the row's flag (`+0xac` + 4 × row) on success, or raises the 0x475
+    /// alert. Until the window closes, a saved row overwrites with no
+    /// confirmation, and Load and Restart ask nothing.
+    pub fn save_result(&mut self, slot: usize, saved: bool) {
+        if saved {
+            if let Some(row) = self.saved_rows.get_mut(slot) {
+                *row = true;
+            }
+        }
+        self.alert = Some(if saved {
+            SaveAlert::Saved
+        } else {
+            SaveAlert::Failed
+        });
+    }
+
+    /// The save alert on screen, if any.
+    #[must_use]
+    pub const fn alert(&self) -> Option<SaveAlert> {
+        self.alert
     }
 
     #[must_use]
@@ -411,7 +499,7 @@ fn load_rect(slot: usize) -> NativeRect {
 }
 
 fn control_at(origin: GameOptionsOrigin, x: f32, y: f32) -> Option<GameOptionsControl> {
-    for slot in 0..6 {
+    for slot in 0..SAVE_ROWS {
         if origin == GameOptionsOrigin::CommandCenter && save_rect(slot).contains(x, y) {
             return Some(GameOptionsControl::Save(slot));
         }
@@ -433,7 +521,7 @@ fn control_at(origin: GameOptionsOrigin, x: f32, y: f32) -> Option<GameOptionsCo
             return Some(GameOptionsControl::Tactical(index));
         }
     }
-    if origin.can_restart() && RESTART_RECT.contains(x, y) {
+    if RESTART_RECT.contains(x, y) {
         return Some(GameOptionsControl::Restart);
     }
     if origin.has_live_campaign() && RETURN_RECT.contains(x, y) {
@@ -655,7 +743,7 @@ pub fn draw_game_options(
         draw_bitmap(cache, canvas, resource, rect.x, rect.y);
     }
 
-    for slot in 0..6 {
+    for slot in 0..SAVE_ROWS {
         let occupied = saves.iter().find(|save| save.slot == slot);
         let save_resource = if state.origin != GameOptionsOrigin::CommandCenter {
             resources::common::OPTIONS_SAVE_DISABLED
@@ -690,9 +778,7 @@ pub fn draw_game_options(
     draw_bitmap(
         cache,
         canvas,
-        if !state.origin.can_restart() {
-            resources::common::BTN_RESTART_GAME_DISABLED
-        } else if held == Some(GameOptionsControl::Restart) {
+        if held == Some(GameOptionsControl::Restart) {
             resources::common::BTN_RESTART_GAME_PRESSED
         } else {
             resources::common::BTN_RESTART_GAME_NORMAL
@@ -807,7 +893,7 @@ pub fn draw_game_options_overlay(
         // 0x2ffffff). hyp: the window's font, entry 10.
         let name_font = crate::theme::game_font_on(ctx, 10, canvas.scale);
         // The area itself must not claim the entire canvas; only actual controls do.
-        for slot in 0..6 {
+        for slot in 0..SAVE_ROWS {
             let bounds = rect(NAME_FIELD_X, row_y(slot), NAME_FIELD_WIDTH, 20.0);
             if state.origin == GameOptionsOrigin::CommandCenter {
                 ui.add_enabled_ui(state.pending.is_none(), |ui| {
@@ -834,7 +920,6 @@ pub fn draw_game_options_overlay(
             let message = match action {
                 GameOptionsAction::Save { .. } => "Saving the selected game will destroy a previously saved game. Save anyway?",
                 GameOptionsAction::Load { .. } => "Loading the selected game will destroy unsaved changes. Load without saving?",
-                GameOptionsAction::Delete { .. } => "Delete the selected saved game?",
                 GameOptionsAction::Restart => "Returning to the shuttle cockpit will cause unsaved changes to be lost. Return without saving?",
                 GameOptionsAction::Exit => "Unsaved changes will be lost. Exit the game?",
                 _ => "Return?",
@@ -872,7 +957,31 @@ pub fn draw_game_options_overlay(
                 error, FontId::monospace(11.0 * canvas.scale), Color32::LIGHT_RED);
         }
     });
-    answer.map_or(GameOptionsAction::None, |accepted| state.confirm(accepted))
+    if let Some(alert) = state.alert {
+        // FUN_005ffeb0 centres the alert in the 640 by 480 window.
+        let (x, y) = crate::game_speed::pause_alert_origin();
+        let (x, y) = canvas.point(x, y);
+        if crate::game_speed::draw_alert_window(
+            ctx,
+            cache,
+            Pos2::new(x, y),
+            canvas.scale,
+            alert.text(),
+            ("game_options_save_alert", "SaveAlert", "Yes"),
+            true,
+        ) {
+            state.alert = None;
+        }
+    }
+    if let Some(accepted) = answer {
+        return state.confirm(accepted);
+    }
+    let key = ctx.input(|input| {
+        [egui::Key::Enter, egui::Key::Escape]
+            .into_iter()
+            .find(|key| input.key_pressed(*key))
+    });
+    key.map_or(GameOptionsAction::None, |key| state.key(key))
 }
 
 #[cfg(test)]
@@ -880,29 +989,38 @@ mod tests {
     use super::*;
 
     #[test]
-    fn occupied_legacy_slots_wait_for_confirmation_and_cancellation_preserves_them() {
+    fn the_last_row_loads_after_confirmation_and_saves_past_row_six_are_not_shown() {
+        // FUN_00407180 builds rows 1-6 only (Load 0x79-0x7e); a save the
+        // save layer holds past them names no row and cannot be loaded.
         let mut state = GameOptionsState::new(GameOptionsOrigin::CommandCenter);
-        state.refresh_saves(&[SaveSlotInfo {
-            slot: 9,
-            name: "Legacy".into(),
-            timestamp: String::new(),
-            game_tick: 0,
+        let save = |slot| SaveSlotInfo {
+            slot,
+            name: format!("Slot {slot}"),
             player_is_alliance: None,
-        }]);
-        let action = GameOptionsAction::Load { slot: 9 };
+        };
+        state.refresh_saves(&[save(5), save(9)]);
+        assert_eq!(state.names[5], "Slot 5");
+        assert!(state.names.iter().all(|name| name != "Slot 9"));
+        let action = GameOptionsAction::Load { slot: 5 };
         assert_eq!(state.request(action.clone()), GameOptionsAction::None);
         assert_eq!(state.pending, Some(action.clone()));
         assert_eq!(state.confirm(false), GameOptionsAction::None);
-        assert!(state.occupied[9]);
+        assert!(state.occupied[5]);
         assert_eq!(state.request(action.clone()), GameOptionsAction::None);
         assert_eq!(state.confirm(true), action);
         assert_eq!(state.confirm(true), GameOptionsAction::None);
+        assert_eq!(
+            state.request(GameOptionsAction::Load { slot: 9 }),
+            GameOptionsAction::None
+        );
+        assert!(state.pending.is_none());
     }
 
     #[test]
     fn saves_require_valid_names_and_slots_and_overwrites_require_confirmation() {
         let mut state = GameOptionsState::new(GameOptionsOrigin::CommandCenter);
-        for slot in [0, 9] {
+        // FUN_00407180: Save rows 1-6 (0x6f-0x74).
+        for slot in [0, SAVE_ROWS - 1] {
             let save = GameOptionsAction::Save {
                 slot,
                 name: "Campaign".into(),
@@ -915,7 +1033,7 @@ mod tests {
             state.request(save.clone());
             assert_eq!(state.confirm(true), save);
         }
-        for (slot, name) in [(10, "Name"), (usize::MAX, "Name"), (0, " ")] {
+        for (slot, name) in [(SAVE_ROWS, "Name"), (usize::MAX, "Name"), (0, " ")] {
             assert_eq!(
                 state.request(GameOptionsAction::Save {
                     slot,
@@ -931,12 +1049,45 @@ mod tests {
             GameOptionsAction::None
         );
         assert_eq!(state.pending, Some(GameOptionsAction::Exit));
-        assert_eq!(state.escape(), GameOptionsAction::None);
-        assert_eq!(state.escape(), GameOptionsAction::Return);
+        assert_eq!(state.confirm(false), GameOptionsAction::None);
+        assert!(state.pending.is_none());
     }
 
     #[test]
-    fn tactical_options_reject_save_load_delete_and_restart() {
+    fn escape_and_enter_answer_only_a_confirmation_and_otherwise_leave_the_window_open() {
+        // FUN_00406b80 → FUN_005ff530 → FUN_006007b0 handle no WM_KEYDOWN;
+        // the confirmation's FUN_00416f30 takes Enter as Yes, Escape as No.
+        use egui_macroquad::egui::Key;
+        for origin in [
+            GameOptionsOrigin::ShuttleCockpit,
+            GameOptionsOrigin::CommandCenter,
+            GameOptionsOrigin::TacticalBattle,
+        ] {
+            let mut state = GameOptionsState::new(origin);
+            for key in [Key::Escape, Key::Enter, Key::A] {
+                assert_eq!(
+                    state.key(key),
+                    GameOptionsAction::None,
+                    "{origin:?} {key:?}"
+                );
+                assert!(state.pending.is_none());
+            }
+            assert_eq!(
+                state.request(GameOptionsAction::Exit),
+                GameOptionsAction::None
+            );
+            assert_eq!(state.key(Key::A), GameOptionsAction::None);
+            assert_eq!(state.pending, Some(GameOptionsAction::Exit));
+            assert_eq!(state.key(Key::Escape), GameOptionsAction::None);
+            assert!(state.pending.is_none(), "{origin:?}: Escape answers No");
+            state.request(GameOptionsAction::Exit);
+            assert_eq!(state.key(Key::Enter), GameOptionsAction::Exit, "{origin:?}");
+            assert!(state.pending.is_none());
+        }
+    }
+
+    #[test]
+    fn tactical_options_reject_save_and_load() {
         // FUN_00407180: states 20–23 disable campaign save and load controls.
         let mut state = GameOptionsState::new(GameOptionsOrigin::TacticalBattle);
         state.occupied[0] = true;
@@ -946,15 +1097,105 @@ mod tests {
                 name: "Battle".into(),
             },
             GameOptionsAction::Load { slot: 0 },
-            GameOptionsAction::Delete { slot: 0 },
-            GameOptionsAction::Restart,
         ] {
             assert_eq!(state.request(action), GameOptionsAction::None);
             assert!(state.pending.is_none());
         }
-        assert!(!GameOptionsOrigin::TacticalBattle.can_restart());
-        assert!(!GameOptionsOrigin::ShuttleCockpit.can_restart());
-        assert!(GameOptionsOrigin::CommandCenter.can_restart());
+    }
+
+    #[test]
+    fn restart_is_offered_in_a_battle_and_asks_first() {
+        // FUN_00407180 builds Restart (0x91) with art 0x2733/0x2734 and never
+        // disables it, the battle states included (it reads bVar1 only for
+        // the save and load rows and the display switches); FUN_00406b80 0x91
+        // with a game running posts the 0x476 confirmation, then state 3.
+        assert_eq!(
+            control_at(GameOptionsOrigin::TacticalBattle, 80.0, 400.0),
+            Some(GameOptionsControl::Restart)
+        );
+        let mut state = GameOptionsState::new(GameOptionsOrigin::TacticalBattle);
+        assert_eq!(
+            state.request(GameOptionsAction::Restart),
+            GameOptionsAction::None
+        );
+        assert_eq!(state.pending, Some(GameOptionsAction::Restart));
+        assert_eq!(state.confirm(true), GameOptionsAction::Restart);
+    }
+
+    #[test]
+    fn a_save_raises_the_saved_or_failed_alert_until_its_checkmark_or_enter() {
+        // FUN_00408240: 0x474 (REBDLOG 0x1217) on success, 0x475 (0x1219) on
+        // failure, through FUN_00417020; the alert's class takes Enter as its
+        // checkmark and ignores Escape; a new window starts with none.
+        use egui_macroquad::egui::Key;
+        let mut state = GameOptionsState::new(GameOptionsOrigin::CommandCenter);
+        assert_eq!(state.alert(), None);
+        state.save_result(0, true);
+        assert_eq!(state.alert(), Some(SaveAlert::Saved));
+        assert_eq!(SaveAlert::Saved.text(), "Selected Game Saved Successfully");
+        assert_eq!(state.key(Key::Escape), GameOptionsAction::None);
+        assert_eq!(state.alert(), Some(SaveAlert::Saved));
+        assert_eq!(state.key(Key::Enter), GameOptionsAction::None);
+        assert_eq!(state.alert(), None);
+        state.occupied[1] = true;
+        state.save_result(1, false);
+        assert_eq!(state.alert(), Some(SaveAlert::Failed));
+        assert_eq!(SaveAlert::Failed.text(), "Selected Game Failed To Save");
+        let save = GameOptionsAction::Save {
+            slot: 1,
+            name: "Campaign".into(),
+        };
+        assert_eq!(state.request(save.clone()), GameOptionsAction::None);
+        assert_eq!(state.pending, Some(save), "a failed save marks no row");
+        state.set_origin(GameOptionsOrigin::CommandCenter);
+        assert_eq!(state.alert(), None);
+    }
+
+    #[test]
+    fn a_save_from_the_window_skips_its_confirmations_until_the_window_reopens() {
+        // FUN_00408240 sets row n's flag after a save from the window;
+        // FUN_00406b80 then overwrites row n (0x6f-0x74), loads (0x79-0x7e)
+        // and restarts (0x91) without asking. FUN_00406950 zeroes the flags.
+        let save = |slot| GameOptionsAction::Save {
+            slot,
+            name: "Campaign".into(),
+        };
+        let mut state = GameOptionsState::new(GameOptionsOrigin::CommandCenter);
+        state.occupied[0] = true;
+        state.occupied[1] = true;
+        state.save_result(0, true);
+        state.save_result(SAVE_ROWS, true);
+        assert_eq!(state.request(save(0)), save(0));
+        assert_eq!(state.request(save(1)), GameOptionsAction::None);
+        assert_eq!(state.confirm(false), GameOptionsAction::None);
+        let load = GameOptionsAction::Load { slot: 1 };
+        assert_eq!(state.request(load.clone()), load);
+        assert_eq!(
+            state.request(GameOptionsAction::Restart),
+            GameOptionsAction::Restart
+        );
+        state.set_origin(GameOptionsOrigin::CommandCenter);
+        assert_eq!(state.request(load.clone()), GameOptionsAction::None);
+        assert_eq!(state.pending, Some(load));
+    }
+
+    #[test]
+    fn restart_leaves_the_shuttle_options_at_once_and_asks_first_in_a_game() {
+        // FUN_00407180 never disables 0x91; FUN_00406b80 0x91 goes to state 3
+        // at once with no game (+0xa8 == 0) and confirms first with one.
+        let mut shuttle = GameOptionsState::new(GameOptionsOrigin::ShuttleCockpit);
+        assert_eq!(
+            shuttle.request(GameOptionsAction::Restart),
+            GameOptionsAction::Restart
+        );
+        assert!(shuttle.pending.is_none());
+        let mut galaxy = GameOptionsState::new(GameOptionsOrigin::CommandCenter);
+        assert_eq!(
+            galaxy.request(GameOptionsAction::Restart),
+            GameOptionsAction::None
+        );
+        assert_eq!(galaxy.pending, Some(GameOptionsAction::Restart));
+        assert_eq!(galaxy.confirm(true), GameOptionsAction::Restart);
     }
 
     #[test]
@@ -1084,8 +1325,6 @@ mod tests {
         let save = |slot, player_is_alliance| SaveSlotInfo {
             slot,
             name: format!("Campaign {slot}"),
-            timestamp: String::new(),
-            game_tick: 0,
             player_is_alliance,
         };
         state.refresh_saves(&[save(1, Some(true)), save(3, Some(false))]);
@@ -1134,9 +1373,15 @@ mod tests {
 
     #[test]
     fn shuttle_and_tactical_contexts_disable_original_controls() {
+        // FUN_00407180: Return (0x90) is disabled with no game; Restart
+        // (0x91) never is, so from the shuttle it is the way back.
+        assert_eq!(
+            control_at(GameOptionsOrigin::ShuttleCockpit, 175.0, 400.0),
+            None
+        );
         assert_eq!(
             control_at(GameOptionsOrigin::ShuttleCockpit, 80.0, 400.0),
-            None
+            Some(GameOptionsControl::Restart)
         );
         assert_eq!(
             control_at(GameOptionsOrigin::TacticalBattle, 370.0, 320.0),

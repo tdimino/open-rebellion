@@ -3,7 +3,7 @@ title: "Economy & Star System Reference — REBEXE.EXE"
 description: "Economy functions and star system management from Ghidra decompilation"
 category: "ghidra"
 created: 2026-03-13
-updated: 2026-10-14
+updated: 2026-10-17
 ---
 
 # Economy & Star System Reference — REBEXE.EXE
@@ -99,7 +99,7 @@ All five use the same `FUN_0053a010` validity check pattern. `BattleWon` and `Ba
 **Notif**: `SystemLoyaltyCausedCurrentControlKindNotif` / `LoyaltyCausedCurrentControlKind`
 **Pattern**: `FUN_004f8880` — 1-entity param, no event ID registered.
 
-This fires when system loyalty has drifted far enough to flip control. The function does not contain the threshold logic itself—it is the notification endpoint called by the loyalty system after thresholds are evaluated elsewhere. The implication: there is a periodic loyalty evaluation function (not yet decompiled) that monitors `system_base_loyalty` and triggers this notif when control changes.
+The notification endpoint for a control change caused by loyalty; it holds no threshold logic. Control is rebuilt by `FUN_0050b610` (support against GNPRTB 7760 through `FUN_0055a080` when no side's regiments stand there), which runs at setup (`FUN_00508250`), from the support setter's hook (`FUN_00509c30` -> slot `+0x1d0`, `FUN_005109f0`) on every change of `system_base_loyalty`, and from the regiment hook (`FUN_00508660`); no clock reruns it. The caller of `FUN_00512500` is not read.
 
 ### BattlePendingCausedCurrentBlockade
 

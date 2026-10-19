@@ -97,7 +97,8 @@ pub const EVT_BUILD_COMPLETE: &str = "manufacturing_complete";
 pub const EVT_FLEET_ARRIVED: &str = "fleet_arrived";
 pub const EVT_FLEET_DEPARTED: &str = "fleet_departed";
 pub const EVT_COMBAT_SPACE: &str = "combat_space";
-pub const EVT_COMBAT_GROUND: &str = "combat_ground";
+/// A Planetary Assault run (order `0x234`, `crate::assault`).
+pub const EVT_ASSAULT: &str = "assault";
 pub const EVT_BOMBARDMENT: &str = "bombardment";
 pub const EVT_MISSION_DISPATCHED: &str = "mission_dispatched";
 pub const EVT_MISSION_RESOLVED: &str = "mission_resolved";
@@ -113,11 +114,13 @@ pub const EVT_BLOCKADE_ENDED: &str = "blockade_ended";
 pub const EVT_BLOCKADE_TROOP_DESTROYED: &str = "blockade_troop_destroyed";
 /// Timer `0x386` moved the blockader's support at a blockaded system.
 pub const EVT_BLOCKADE_SUPPORT_SHIFT: &str = "blockade_support_shift";
+/// A posted support shift fired (event `0x373`): its cause, the posted
+/// amount and the points it moved.
+pub const EVT_SUPPORT_SHIFT: &str = "support_shift";
 pub const EVT_UPRISING_INCIDENT: &str = "uprising_incident";
 pub const EVT_UPRISING_BEGAN: &str = "uprising_began";
 /// A revolt ended (`FUN_0050b800` or `FUN_0050c910`).
 pub const EVT_UPRISING_ENDED: &str = "uprising_ended";
-pub const EVT_DS_CONSTRUCTION: &str = "death_star_construction";
 pub const EVT_DS_FIRED: &str = "death_star_fired";
 pub const EVT_RESEARCH_UNLOCKED: &str = "research_unlocked";
 pub const EVT_JEDI_TIER: &str = "jedi_tier_advanced";
@@ -126,22 +129,22 @@ pub const EVT_VICTORY: &str = "victory_check";
 pub const EVT_BETRAYAL: &str = "betrayal";
 pub const EVT_ESCAPE: &str = "character_escaped";
 pub const EVT_STORY: &str = "story_event";
-pub const EVT_CAPTURE: &str = "character_captured";
 pub const EVT_FOG_REVEALED: &str = "fog_revealed";
 pub const EVT_CONTROL_CHANGED: &str = "control_changed";
 pub const EVT_CAMPAIGN_SNAPSHOT: &str = "campaign_snapshot";
 pub const EVT_ECONOMY_TICK: &str = "economy_tick";
-pub const EVT_SUPPORT_DRIFT: &str = "support_drift";
 pub const EVT_COLLECTION_RATE: &str = "collection_rate";
 pub const EVT_GARRISON_REQUIRED: &str = "garrison_required";
 pub const EVT_SHIP_REPAIRED: &str = "ship_repaired";
 pub const EVT_SHIP_REPAIR_STARTED: &str = "ship_repair_started";
 pub const EVT_DECOY_TRIGGERED: &str = "decoy_triggered";
-pub const EVT_DS_SHIELD_STATUS: &str = "death_star_shield_status";
 pub const EVT_CHARACTER_COMBAT_RATING: &str = "character_combat_rating";
 pub const EVT_STORY_JABBA: &str = "story_jabba";
 pub const EVT_STORY_FINAL_BATTLE: &str = "story_final_battle";
 pub const EVT_MAINTENANCE_SHORTFALL: &str = "maintenance_shortfall";
+/// Squadrons and regiments destroyed aboard a scrapped capital ship
+/// (`FUN_004fb520` child walk, reason `0x14`/`0x15`).
+pub const EVT_SCRAPPED_ABOARD: &str = "scrapped_aboard";
 /// A decision trace (`rebellion_core::trace`): `system` names the subsystem
 /// and `details.kind` the decision.
 pub const EVT_TRACE: &str = "trace";
@@ -149,7 +152,6 @@ pub const EVT_TRACE: &str = "trace";
 // System heartbeat events — emitted each tick to ensure system tags appear in telemetry
 pub const EVT_UPRISING_CHECK: &str = "uprising_check";
 pub const EVT_BETRAYAL_CHECK: &str = "betrayal_check";
-pub const EVT_DS_STATUS: &str = "death_star_status";
 pub const EVT_JEDI_CHECK: &str = "jedi_check";
 pub const EVT_VICTORY_CHECK: &str = "victory_status";
 
@@ -163,6 +165,8 @@ pub const EVT_HQ_CAPTURED: &str = "hq_captured";
 pub const EVT_INFORMANT_INTEL: &str = "informant_intel";
 pub const EVT_RESOURCE_DISCOVERY: &str = "resource_discovery";
 pub const EVT_NATURAL_DISASTER: &str = "natural_disaster";
+/// Timer `0x384` in revolt (`FUN_0050caa0`): the holder's support loss.
+pub const EVT_REVOLT_SUPPORT_LOSS: &str = "revolt_support_loss";
 pub const EVT_MANUFACTURING_IDLE: &str = "manufacturing_idle";
 pub const EVT_SABOTEUR_DETECTED: &str = "saboteur_detected";
 pub const EVT_CHARACTER_KILLED: &str = "character_killed";
@@ -217,7 +221,7 @@ mod tests {
             EVT_FLEET_ARRIVED,
             EVT_FLEET_DEPARTED,
             EVT_COMBAT_SPACE,
-            EVT_COMBAT_GROUND,
+            EVT_ASSAULT,
             EVT_BOMBARDMENT,
             EVT_MISSION_DISPATCHED,
             EVT_MISSION_RESOLVED,
@@ -229,10 +233,10 @@ mod tests {
             EVT_BLOCKADE_ENDED,
             EVT_BLOCKADE_TROOP_DESTROYED,
             EVT_BLOCKADE_SUPPORT_SHIFT,
+            EVT_SUPPORT_SHIFT,
             EVT_UPRISING_INCIDENT,
             EVT_UPRISING_BEGAN,
             EVT_UPRISING_ENDED,
-            EVT_DS_CONSTRUCTION,
             EVT_DS_FIRED,
             EVT_RESEARCH_UNLOCKED,
             EVT_JEDI_TIER,
@@ -241,22 +245,20 @@ mod tests {
             EVT_BETRAYAL,
             EVT_ESCAPE,
             EVT_STORY,
-            EVT_CAPTURE,
             EVT_FOG_REVEALED,
             EVT_CONTROL_CHANGED,
             EVT_CAMPAIGN_SNAPSHOT,
             EVT_ECONOMY_TICK,
-            EVT_SUPPORT_DRIFT,
             EVT_COLLECTION_RATE,
             EVT_GARRISON_REQUIRED,
             EVT_SHIP_REPAIRED,
             EVT_SHIP_REPAIR_STARTED,
             EVT_DECOY_TRIGGERED,
-            EVT_DS_SHIELD_STATUS,
             EVT_CHARACTER_COMBAT_RATING,
             EVT_STORY_JABBA,
             EVT_STORY_FINAL_BATTLE,
             EVT_MAINTENANCE_SHORTFALL,
+            EVT_SCRAPPED_ABOARD,
             // Phase 3
             EVT_SUPPORT_CHANGE,
             EVT_UNITS_DEPLOYED,
@@ -264,6 +266,7 @@ mod tests {
             EVT_INFORMANT_INTEL,
             EVT_RESOURCE_DISCOVERY,
             EVT_NATURAL_DISASTER,
+            EVT_REVOLT_SUPPORT_LOSS,
             EVT_MANUFACTURING_IDLE,
             EVT_SABOTEUR_DETECTED,
             EVT_CHARACTER_KILLED,
@@ -278,7 +281,6 @@ mod tests {
             // Heartbeat events
             EVT_UPRISING_CHECK,
             EVT_BETRAYAL_CHECK,
-            EVT_DS_STATUS,
             EVT_JEDI_CHECK,
             EVT_VICTORY_CHECK,
         ];

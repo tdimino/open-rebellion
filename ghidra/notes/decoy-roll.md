@@ -361,8 +361,8 @@ if pool +0x38 holds a member:            // FUN_0048a640
 So a disloyal member betrays the mission before the decoys act. Setting
 detected skips the decoy phase and detection, and sends the whole team to
 `FUN_0058a1c0` (exposure). Each other member may learn the traitor
-(`+0xa0`); what `+0xa0` and the `+0x8c` short mean is inferred only. The
-earlier note reads `+0x8c` as a shared percent modifier. Which mission kinds
+(`+0xa0`); what `+0xa0` and the `+0x8c` short mean is inferred only
+(`+0x8c` may be a shared percent modifier). Which mission kinds
 answer true in slot `+0x1c8` is not traced.
 
 ### The detected outcome (`FUN_0058a1c0`) and mission slot `+0x1dc`
@@ -382,8 +382,8 @@ resign request (`+0x78 & 0xc`, `:40-52`, message `0x40`/`0x91`) and state 1
 when the current state `+0x68` is `0xb` (`:130-133`). `FUN_00545240.c:104`
 sets 7. So detection moves the mission to state 3 (4 for the later mission
 kinds) and exposes every team member. A non-zero end code ends the mission
-(`FUN_00520e40`), and the next phase step jumps to `0xb`. The names of end
-codes 1, 3, 4, 5, and 7 are not recovered.
+(`FUN_00520e40`), and the next phase step jumps to `0xb`. The messages for end
+codes 1, 3, 4, 5, and 7 are in `mission-lifecycle.md`, "End-code messages".
 
 ### Adding members (`FUN_00522b30`)
 
@@ -485,6 +485,28 @@ So for every mission except Adrift:
 The mode applies only when `+0x54 -> +0x18` is set, meaning no member is
 still autorouting. Mode 0 and the second pass skip, except that mode 3 runs
 the mode-2 body on the second pass. Adrift uses 3, 0, 1, 4.
+
+The mode of a phase is one nibble of the word (`FUN_00520e50.c:10-20`): phase 2
+the low nibble, phase 3 bits 4-7, phase 7 bits 8-11, phase 9 bits 12-15; so
+`0x4112` gives 2, 1, 1, 4 and `0x4103` gives 3, 0, 1, 4. `FUN_00589a40`
+(`.c:79-162`) switches on the mode with the manager's pass flag `+0x44` (set
+on the first pass, clear on the second):
+
+| Mode | First pass | Second pass |
+|---|---|---|
+| 0 | skip | skip |
+| 1 | body A: `+0x1c`; `+0x18` when the target differs from the location (`FUN_00520bb0`); the fleet filters `+0x24`, `+0x28`, `+0x2c` when the opponent has fleets there and the mission side has none | skip |
+| 2 | body B: `+0x18`; the system filters `+0x20`, `+0x30` when the system's side is the mission side's opponent | skip |
+| 3 | body A | body B |
+| 4 | body C (the target's container) | skip |
+
+So an Adrift trip runs at phase 2 what a Move runs at phase 3 (body A) and then
+what a Move runs at phase 2 (body B), and runs nothing at phase 3; phases 7
+and 9 are a Move's. Both trips run the same two bodies at the members'
+location in the same step (phases 2 and 3 share a step, `mission-lifecycle.md`);
+only the order of the two differs, which changes the order of the draws and
+which defender detects first when the system's holder and an enemy fleet are
+both present (`FUN_00589970` skips every later stage once an end code stands).
 
 ### Record flags (`+0x2c`)
 

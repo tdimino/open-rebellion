@@ -331,8 +331,30 @@ impl<'a> Planner<'a> {
         &mut self,
         kind: MissionKind,
     ) -> Option<(Vec<MissionMember>, Vec<MissionMember>)> {
+        self.plan_with(kind, None, None)
+    }
+
+    /// A regional Sabotage planner (`FUN_004bda60`): its staging system
+    /// (`FUN_004bdcd0`, planner `+0x38`) is set before the team and decoys
+    /// are picked, so the nearness query (`FUN_00403750`) joins both
+    /// selections, and the decoy cap is `(sys+0xbc + 2) / 2` of the target
+    /// system's record (`FUN_0047d720.c:36-53`).
+    pub(crate) fn plan_sabotage(
+        &mut self,
+        stack: i64,
+        staging: Option<SystemKey>,
+    ) -> Option<(Vec<MissionMember>, Vec<MissionMember>)> {
+        self.plan_with(MissionKind::Sabotage, Some(stack), staging)
+    }
+
+    fn plan_with(
+        &mut self,
+        kind: MissionKind,
+        stack: Option<i64>,
+        staging: Option<SystemKey>,
+    ) -> Option<(Vec<MissionMember>, Vec<MissionMember>)> {
         let selectors = selectors(kind)?;
-        let team = self.select(selectors.team, selectors.team_size);
+        let team = self.select_near(selectors.team, staging, selectors.team_size);
         // port: a plan that sends no one keeps no one. The original planner
         // holds its picks (they lost 0x800000) across ticks until it emits.
         if !team
@@ -345,10 +367,13 @@ impl<'a> Planner<'a> {
             return None;
         }
         let decoys = match selectors.decoys {
-            // hyp: the planner reads no regional record's +0xbc
-            // (ai_regions.rs); 0 allows one decoy.
-            Some((decoy, DecoyCap::Posture)) => self.select(&[decoy], 1),
-            Some((decoy, DecoyCap::Fixed(cap))) => self.select(&[decoy], cap),
+            // hyp: a planner with no target record reads +0xbc as 0, which
+            // allows one decoy.
+            Some((decoy, DecoyCap::Posture)) => {
+                let cap = usize::try_from((stack.unwrap_or(0) + 2) / 2).unwrap_or(0);
+                self.select_near(&[decoy], staging, cap)
+            }
+            Some((decoy, DecoyCap::Fixed(cap))) => self.select_near(&[decoy], staging, cap),
             None => Vec::new(),
         };
         let sent = |picked: Vec<usize>, records: &[AgentRecord]| -> Vec<MissionMember> {
@@ -517,14 +542,29 @@ impl<'a> Planner<'a> {
         list
     }
 
+    /// [`Self::select`], with the nearness query to `staging` joining the
+    /// lists when the planner has one (`FUN_00403750`).
+    fn select_near(&mut self, queries: &[Query], staging: Option<SystemKey>, size: usize) -> Vec<usize> {
+        let near = match (staging, queries.first()) {
+            (Some(staging), Some(&q)) => Some(self.nearness(q, staging)),
+            _ => None,
+        };
+        self.select_lists(queries, near, size)
+    }
+
     /// Run `queries` and take their best common hit until `size` are taken
     /// (`FUN_004357b0` in the selector loop). A taken record loses
     /// `UNASSIGNED`.
     fn select(&mut self, queries: &[Query], size: usize) -> Vec<usize> {
+        self.select_lists(queries, None, size)
+    }
+
+    fn select_lists(&mut self, queries: &[Query], near: Option<Vec<usize>>, size: usize) -> Vec<usize> {
         let mut lists: Vec<Vec<usize>> = queries
             .iter()
             .map(|q| ranked(&self.records, *q, &mut self.rng))
             .collect();
+        lists.extend(near);
         let mut taken = Vec::new();
         while taken.len() < size {
             let Some(best) = pop_best(&mut lists) else {
@@ -794,6 +834,7 @@ mod tests {
                 hidden: false,
                 detection_phases: false,
                 can_resign: false,
+                return_policy: 1,
                 rules: crate::world::MissionTargetRules::default(),
                 members: MissionMemberRules {
                     alliance: true,
@@ -875,8 +916,8 @@ mod tests {
     #[test]
     fn sabotage_decoys_are_special_forces_left_after_the_team() {
         // FUN_0047d720 queries 0x10800002: special forces still unassigned
-        // (a team member lost 0x800000 in FUN_0047b610). hyp: one decoy,
-        // the cap for a system whose posture recommends nothing.
+        // (a team member lost 0x800000 in FUN_0047b610). hyp: a planner
+        // with no target record reads sys+0xbc as 0, one decoy.
         let mut world = world();
         let first = unit(&mut world, 90, 90);
         let second = unit(&mut world, 80, 80);
@@ -886,6 +927,65 @@ mod tests {
         let plan = planner(&world).plan(MissionKind::Sabotage);
 
         assert_eq!(plan, Some((vec![first, second], vec![third])));
+    }
+
+    #[test]
+    fn a_sabotage_takes_half_its_targets_defence_plus_one_in_decoys() {
+        // FUN_0047d720.c:36-53 caps the decoys at (sys+0xbc + 2) / 2 of
+        // the target system's record.
+        let mut world = world();
+        for skill in (60..=99).rev().step_by(5) {
+            let _ = unit(&mut world, skill, skill);
+        }
+
+        for (stack, cap) in [(0, 1), (1, 1), (4, 3), (9, 5)] {
+            let (team, decoys) = planner(&world).plan_sabotage(stack, None).unwrap();
+
+            assert_eq!(team.len(), 2);
+            assert_eq!(decoys.len(), cap, "stack {stack}");
+        }
+    }
+
+    #[test]
+    fn a_sabotage_planner_takes_agents_near_its_staging_system_first() {
+        // FUN_004bdcd0 sets the staging system before FUN_0047d520 picks
+        // the team, so the nearness query (FUN_00403750, smallest squared
+        // distance last) joins the combat and espionage lists. All three
+        // tie without it and the first in the combat list, the weakest
+        // fighter, leads; nearness lifts the agent at the staging system.
+        let mut world = world();
+        let sector = world.sectors.insert(crate::world::Sector {
+            dat_id: crate::ids::DatId::new(0),
+            name: "Sector".into(),
+            group: crate::dat::SectorGroup::Core,
+            x: 0,
+            y: 0,
+            systems: vec![],
+        });
+        let at = |world: &mut GameWorld, x| {
+            world.systems.insert(crate::world::System {
+                sector,
+                x,
+                ..Default::default()
+            })
+        };
+        let staging = at(&mut world, 0);
+        let far = at(&mut world, 90);
+        let placed = |world: &mut GameWorld, system, espionage, combat| {
+            let member = unit(world, espionage, combat);
+            if let MissionMember::SpecialForce(key) = member {
+                world.systems[system].special_forces.push(key);
+            }
+            member
+        };
+        let near = placed(&mut world, staging, 60, 99);
+        let weakest = placed(&mut world, far, 99, 60);
+        let _ = placed(&mut world, far, 80, 80);
+
+        let lead = |staging| planner(&world).plan_sabotage(0, staging).unwrap().0[0];
+
+        assert_eq!(lead(None), weakest);
+        assert_eq!(lead(Some(staging)), near);
     }
 
     #[test]
@@ -1156,6 +1256,7 @@ mod tests {
             hidden: false,
             detection_phases: true,
             can_resign: true,
+            return_policy: 1,
             rules: crate::world::MissionTargetRules::default(),
             members: MissionMemberRules {
                 alliance: true,

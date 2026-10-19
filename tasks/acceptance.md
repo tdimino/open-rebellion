@@ -188,15 +188,6 @@ Waits on: [or-p-opening-view-xyu](ports.md#or-p-opening-view-xyu)
 >
 > Done when: `node tools/interface-parity/tactical-a0-compare.mjs --a1-run <run> --negative-controls` shows the region passing in every listed cell, both sides, with the negative controls failing their rows.
 
-<a id="or-c-gnd-alliance-qqg"></a>
-### Capture an Alliance-side planetary assault reference in the VM
-
-`or-c-gnd-alliance-qqg` · **open** · P2 · capture, ground-assault · updated 2026-10-14  
-Epic: [Ground assault (TAC-08): port the original's report-only flow](INDEX.md#or-ep-gnd-mmf)  
-Unblocks: [or-d-gnd-plan-glw](other.md#or-d-gnd-plan-glw)
-
-> The Alliance needs regiments: build them through C-3PO, Build Troops (a Talus game was never saved). A0 frames only from a0/a0-cell/up-a0; never overwrite slot 5.
-
 <a id="or-cell-tac-05-c023-in8"></a>
 ### Cell TAC-05-C023: the committed trench-run order before launch
 
@@ -227,11 +218,16 @@ Unblocks: [or-acc-not-run-tdj](#or-acc-not-run-tdj)
 <a id="or-f-death-star-rdq"></a>
 ### A1 fixtures reproducing the Death Star saves
 
-`or-f-death-star-rdq` · **open** · P2 · fixture, tactical · updated 2026-10-14  
+`or-f-death-star-rdq` · **open** · P2 · fixture, tactical · updated 2026-10-19  
 Epic: [Tactical parity: every TAC-01..07 A0 cell passes or is settled](INDEX.md#or-ep-tac-x15)  
 Unblocks: [or-acc-laser-5x5](#or-acc-laser-5x5), [or-acc-not-run-tdj](#or-acc-not-run-tdj)
 
 > empire-death-star-pre-alert (TAC-05-C017 C018 C019 C020) and alliance-day1169-deathstar-trench-run (TAC-05-C009).
+
+**Notes**
+
+> A1 fixtures coruscant-day676 (empire-death-star-pre-alert; laser, strike, charge journeys) and coruscant-day1173 (alliance-day1169-deathstar-trench-run; attack-death-star, launch journeys) rebuild both saves' forces, station and camera from the saves' master records and the A0 traces, and are mapped in the C6 spec. C6 results: TAC-05-C009, C017, C018, C020, C021 and C022 pass. Two cells fail. C019 fails on the aperture: no battle-box edges are drawn, and the capital layout runs below the aperture. C023 fails because the Confirm returns to the Display panel and leaves the Red slot active, where the original keeps Missions open with Attack Death Star greyed and greys the slot. The node stays open as the acceptance gate for C019 and C023.
+> Recover (order 2) takes the same path as Attack Death Star (FUN_005ca530 -> FUN_005a0320 clears the slot and the selection); the port leaves it out (port: note in tactical_view.rs) because what returns a recovered group's slot is untraced.
 
 <a id="or-f-sixteen-tie-c43"></a>
 ### A1 fixture reproducing empire-sixteen-tie
@@ -274,6 +270,16 @@ Epic: [Tactical parity: every TAC-01..07 A0 cell passes or is settled](INDEX.md#
 Epic: [Tactical parity: every TAC-01..07 A0 cell passes or is settled](INDEX.md#or-ep-tac-x15)
 
 > Cell TAC-01-C013.
+
+<a id="or-v-ai-record-mutants-d5c8"></a>
+### Verify: cover the FUN_00433e40 record body (178 surviving mutants)
+
+`or-v-ai-record-mutants-d5c8` · **open** · P3 · ground-assault, verify · updated 2026-10-19  
+Epic: [Ground assault (TAC-08): port the original's report-only flow](INDEX.md#or-ep-gnd-mmf)
+
+> `cargo mutants --re fill_system` on `crates/rebellion-core/src/ai_records.rs` (2026-10-19): 259 tested, 81 caught, 178 missed. Every mutant on the view test and its early return (the held, usable-fleet and core-family clause) is caught. The survivors lie in the rest of the `FUN_00433e40` record body: the S bits (`|` to `^` at the rim and side bits), the blockade and last-seen update, the installation and squadron counts, the regiment need and threat sums, the Q tail; plus struct-field deletions in `fleet_records` and `ship_record`.
+>
+> Done when: each surviving mutant in `fill_system`, `fleet_records` and `ship_record` is caught by a test citing the `FUN_00433e40` / `FUN_00433780` / `FUN_00484630` line it checks, or explained as equivalent, both factions.
 
 <a id="or-f-audio-rrp"></a>
 ### Audio comparison for A1 runs

@@ -6,7 +6,7 @@ use std::path::Path;
 use anyhow::Context;
 use dat_dumper::codec::ByteReader;
 use dat_dumper::dat_record::DatRecord;
-use dat_dumper::types::all_facilities::AllFacilitiesFile;
+use dat_dumper::types::all_facilities::{AllFacilitiesEntry, AllFacilitiesFile};
 use dat_dumper::types::capital_ships::CapitalShipsFile;
 use dat_dumper::types::defense_facilities::DefenseFacilitiesFile;
 use dat_dumper::types::fighters::FightersFile;
@@ -178,10 +178,20 @@ pub fn load_game_data_with_options(
         recruit_pool_empty: [false; 2],
         research_exhausted: [[false; 3]; 2],
         fleet_names: rebellion_core::world::FleetNames::default(),
+        spare_fleets: slotmap::SecondaryMap::new(),
         last_ship_tag: 0,
         squadron_transits: Vec::new(),
         arrival_holders: std::collections::HashMap::new(),
         death_star_sectors: std::collections::HashSet::new(),
+        system_families: HashMap::new(),
+        shift_excluded: std::collections::HashSet::new(),
+        troop_held: std::collections::HashSet::new(),
+        support_values: HashMap::new(),
+        revolting: std::collections::HashSet::new(),
+        support_events: Vec::new(),
+        manager_side_changes: Vec::new(),
+        control_change_cap: rebellion_core::support_shift::ControlChangeCap::default(),
+        battle_rng: rebellion_core::tactical::OriginalBattleRng::default(),
     };
 
     // ── 1. Sectors ───────────────────────────────────────────────────────────
@@ -277,6 +287,16 @@ pub fn load_game_data_with_options(
         };
         let key = world.systems.insert(system);
         system_key_map.insert(dat.id, key);
+        // The SYSTEMSD family is the system's class: the base class's slot
+        // `+0xbc` (`FUN_005081f0`) sets `+0x88` bit 3 on every system in
+        // setup, the core class's (`FUN_00566d40`, families `0x90`-`0x91`)
+        // clears it, the rim class's (`FUN_0056a550`) keeps it, and no hook
+        // runs during setup (`FUN_0051c010`).
+        let family = u8::try_from(dat.family_id).unwrap_or(0);
+        world.system_families.insert(key, family);
+        if !(0x90..0x92).contains(&family) {
+            world.shift_excluded.insert(key);
+        }
 
         // Register the system in its parent sector.
         world.sectors[sector_key].systems.push(key);
@@ -288,6 +308,7 @@ pub fn load_game_data_with_options(
     for dat in &capships_file.ships {
         let class = CapitalShipClass {
             dat_id: DatId::new(dat.id),
+            family: u8::try_from(dat.family_id).unwrap_or(0),
             name: lookup(dat.text_stra_dll_id, "CapShip"),
             is_alliance: dat.is_alliance != 0,
             is_empire: dat.is_empire != 0,
@@ -534,6 +555,7 @@ pub fn load_game_data_with_options(
             ];
             let stats = ClassStats {
                 bombardment: d.bombardment_defense,
+                uprising_defense: d.uprising_defense,
                 ..ClassStats::default()
             };
             buildable(d.family_id, d.id, d.text_stra_dll_id, head, 0, stats);
@@ -575,6 +597,7 @@ pub fn load_game_data_with_options(
                 bombardment: d.bombardment_defense,
                 attack_strength: d.attack_strength,
                 shield_strength: d.shield_strength,
+                ..ClassStats::default()
             };
             buildable(d.family_id, d.id, d.text_stra_dll_id, head, 0, stats);
         }
@@ -594,7 +617,7 @@ pub fn load_game_data_with_options(
                 d.text_stra_dll_id,
                 head,
                 0,
-                ClassStats::default(),
+                headquarters_stats(d),
             );
         }
     }
@@ -762,6 +785,8 @@ pub fn load_game_data_with_options(
         }
     }
 
+    // Bit 11 for a Death Star the seeding placed (FUN_005178b0).
+    rebellion_core::death_star::refresh_sectors(&mut world);
     Ok(world)
 }
 
@@ -786,10 +811,6 @@ pub fn init_mod_runtime(gdata_path: &Path) -> Option<crate::mods::ModRuntime> {
     }
 }
 
-/// A SPECFCSD record's class id and definition. Like TROOPSD, a sequential
-/// record id takes the header's family; the skill pairs are the class record's
-/// `+0x58..+0x94` and the mission mask its `+0x98`
-/// (ghidra/notes/mission-lifecycle.md, "The mission record").
 /// A class record's `DatId`: files store a sequential id (1..N) under the
 /// record's family byte, which the seeded instances carry compounded.
 fn class_dat_id(family_id: u32, id: u32) -> DatId {
@@ -800,6 +821,20 @@ fn class_dat_id(family_id: u32, id: u32) -> DatId {
     }
 }
 
+/// The HQ's bombardment value is ALLFACSD `extra7` (class `+0x58`, read by
+/// `FUN_00520b60` through slot `+0x1c0` on vtable `0x0065f280`;
+/// ghidra/notes/bombardment.md).
+fn headquarters_stats(dat: &AllFacilitiesEntry) -> ClassStats {
+    ClassStats {
+        bombardment: dat.extra7,
+        ..ClassStats::default()
+    }
+}
+
+/// A SPECFCSD record's class id and definition. Like TROOPSD, a sequential
+/// record id takes the header's family; the skill pairs are the class record's
+/// `+0x58..+0x94` and the mission mask its `+0x98`
+/// (ghidra/notes/mission-lifecycle.md, "The mission record").
 fn special_force_class(family_id: u32, dat: &SpecialForce) -> (DatId, SpecialForceClassDef) {
     let class_dat_id = if dat.id >> 24 == 0 {
         DatId::new((family_id << 24) | dat.id)
@@ -835,6 +870,7 @@ fn mission_record(m: &Mission) -> MissionRecord {
         hidden: m.hidden != 0,
         detection_phases: m.detection_phases != 0,
         can_resign: m.can_resign != 0,
+        return_policy: u8::try_from(m.return_policy).unwrap_or(0),
         rules: MissionTargetRules {
             container_loss_ends: m.container_loss_ends != 0,
             needs_populated_container: m.needs_populated_container != 0,
@@ -931,6 +967,9 @@ fn convert_character(
         current_system: None,
         current_fleet: None,
         en_route: false,
+        adrift: false,
+        abode: None,
+        escape_due: None,
         heritage_known: false,
         is_killed: false,
         recruited: false,
@@ -1038,6 +1077,7 @@ mod tests {
         record[13] = 0; // hidden
         record[14] = 2; // detection phases: any nonzero value is on
         record[15] = 1; // can resign
+        record[16] = 1; // return policy: home from another side's container
                         // Target rules, file 0x44..0x6c: the odd words 17..27 set, so each
                         // column lands in its own field (in-memory +0x6c..+0x94).
         for word in (17..28).step_by(2) {
@@ -1056,6 +1096,7 @@ mod tests {
                 hidden: false,
                 detection_phases: true,
                 can_resign: true,
+                return_policy: 1,
                 rules: MissionTargetRules {
                     container_loss_ends: true,
                     needs_populated_container: true,
@@ -1076,6 +1117,19 @@ mod tests {
                 },
             }
         );
+    }
+
+    #[test]
+    fn the_headquarters_bombardment_value_comes_from_extra7() {
+        // ALLFACSD 0x20000001 extra7 is the HQ's class +0x58, which
+        // FUN_00520b60 returns through slot +0x1c0. The bytes are the shipped
+        // record: id 1, family 0x20, text 9024 / field7 2, extra1 = 1,
+        // extra2..extra6 = 0, extra7 = 9.
+        let record = [1, 1, 0, 0, 0x20, 0x2_2340, 1, 0, 0, 0, 0, 0, 9];
+        let file: AllFacilitiesFile =
+            parse_dat_bytes(&one_record_file(0x20, &record), "ALLFACSD.DAT").unwrap();
+
+        assert_eq!(headquarters_stats(&file.entries[0]).bombardment, 9);
     }
 
     #[test]

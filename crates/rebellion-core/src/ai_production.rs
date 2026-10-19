@@ -117,6 +117,47 @@ impl YardFamily {
     }
 }
 
+/// The side's fleet figures module 11 weighs (`FUN_004ca5e0`), summed over
+/// its fleets (`FUN_0041ba80`) as `FUN_00433780` folds each ship into its
+/// fleet. hyp: over every own fleet (fleet+0x38 bit 4 untraced).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ShipFigures {
+    /// `c+0x260`, fleet `+0xbc`: the troop room of transports (node flag 4),
+    /// every ship (`FUN_00433780.c:110-112`, no guard).
+    pub transport: i64,
+    /// `c+0x268`, fleet `+0x98`: ships of node flag 1 free of `0x801000`,
+    /// damage (`FUN_00433780.c:59-62`), unfinished ones included.
+    pub flag1: usize,
+    /// `c+0x26c`, fleet `+0x9c`: the same for node flag 2 (`:63-65`).
+    pub flag2: usize,
+    /// `c+0x27c`, fleet `+0x78`: the hangar room, inside the `0x2000`
+    /// unfinished guard (`FUN_00433780.c:89-98`).
+    pub capacity: i64,
+}
+
+impl ShipFigures {
+    /// Sum the side's own ship records as `FUN_00433780` folds them
+    /// (`FUN_00433780.c:59-65`, `:89-98`, `:110-112`).
+    #[must_use]
+    pub fn of(round: &Round<'_>) -> Self {
+        use crate::ai_records::ship;
+        let mut figures = Self::default();
+        for s in round.ships.values().filter(|s| s.flags & ship::OWN != 0) {
+            if s.flags & 0x4 != 0 {
+                figures.transport += s.troop_room;
+            }
+            if s.flags & ship::NOT_READY == 0 {
+                figures.flag1 += usize::from(s.flags & 0x1 != 0);
+                figures.flag2 += usize::from(s.flags & 0x2 != 0);
+            }
+            if s.flags & ship::INCOMPLETE == 0 {
+                figures.capacity += s.hangar;
+            }
+        }
+        figures
+    }
+}
+
 /// The side context's counters the budgets read, as the census
 /// `FUN_00418500` case 5 and `FUN_004182a0` case 1 fill them. Maintenance
 /// is class `+0x4c` (`FUN_0053b870`).
@@ -136,7 +177,8 @@ pub struct Census {
     pub system_defences: i64,
     /// `c+0x1e0`: fighters in systems.
     pub system_fighters: i64,
-    /// `c+0x24c`: capital ships (fleet `+0x88`).
+    /// `c+0x24c`: capital ships, finished or in production (fleet
+    /// `+0x88`).
     pub capital_ships: i64,
     /// `c+0x250`: regiments aboard ships (fleet `+0x8c`).
     pub fleet_regiments: i64,
@@ -191,6 +233,12 @@ impl Census {
             .iter()
             .filter(|(_, f)| f.is_alliance == is_alliance)
         {
+            // Every existing ship, an ordered one too: it is an unfinished
+            // member of its fleet from the order (`death-star-product.md`
+            // section 1), and `FUN_00433780` adds its `+0x70` to fleet
+            // `+0x88` outside the `0x2000` unfinished guard. It keeps its
+            // class's side whoever holds the yard's system later (the
+            // fleet's slot `+0xb0`, `FUN_0051ebb0`).
             census.capital_ships += fleet
                 .capital_ships
                 .iter()
@@ -447,6 +495,10 @@ pub struct SystemRecord {
     pub fleet_squadrons: i64,
     /// `+0x110`: an enemy headquarters flag and enemy leaders present.
     pub hq_count: i64,
+    /// `+0xbc`: the defence figure, in units (`ai-sabotage-target.md`
+    /// section 2a): the foreign fleets' `+0xa4`, plus at a system the other
+    /// side holds its regiments and squadrons.
+    pub stack: i64,
 }
 
 /// `sys+0x28` bits the modules test (`ai-production.md`, "F1.2").
@@ -834,6 +886,7 @@ impl SystemRecord {
             0x19 => self.squadrons_active,
             0x1a => self.squadron_attack,
             0x1b => self.squadron_manoeuvre,
+            0x1d => self.stack,
             0x21 => self.yard_spend.iter().sum(),
             0x25 => self.defence_balance,
             0x26 => self.fighter_balance,
@@ -869,10 +922,10 @@ pub(crate) fn ds_shield_available(
 
 /// The side has a Death Star ship (`c+4 & 4`, `FUN_0041ba80`).
 fn own_death_star(world: &GameWorld, side: Faction) -> bool {
-    world
-        .fleets
-        .values()
-        .any(|f| f.is_alliance == (side == Faction::Alliance) && f.has_death_star)
+    world.fleets.values().any(|f| {
+        f.is_alliance == (side == Faction::Alliance)
+            && f.has_death_star(&world.capital_ship_classes)
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -1482,6 +1535,11 @@ pub struct Round<'a> {
     /// The need bits `rec+0x64` of the side's regional records (context
     /// `+0xd8`) after module 8's pass, which module 11 reads.
     pub record_needs: Vec<u32>,
+    /// The regional records whose posture recommends Sabotage (`+0xbc` is
+    /// `0x69`) with no Sabotage planner of theirs running (`+0xac` is 0):
+    /// each its id, sector and posture kind. Module 4 makes their planners
+    /// (`FUN_004d2690`).
+    pub sabotage: Vec<(u32, crate::ids::SectorKey, u8)>,
     /// Each held character's class G or I task id (character `+0x28`).
     pub task_of: HashMap<crate::ids::CharacterKey, u32>,
     /// The side's AI records changed since the census (`c+4 & 0x80000000`,
@@ -1691,6 +1749,7 @@ impl<'a> Round<'a> {
             spare,
             ctx: 0,
             record_needs: Vec::new(),
+            sabotage: Vec::new(),
             task_of: HashMap::new(),
             dirty: false,
         }
@@ -3254,8 +3313,10 @@ impl ProductionState {
     /// holds, else from one without the shipyard role, sends its mobile
     /// damaged ships (`0x1000` set, `0x800000` and `0x800` clear) to the
     /// nearest own unblockaded shipyard-role system, else to the nearest
-    /// own unblockaded system. hyp: a Move to the fleet's own system is
-    /// not issued.
+    /// own unblockaded system. The Move goes out whenever the pick is a
+    /// system, the fleet's own included (`FUN_004c8e90.c:189-201`), where
+    /// `FUN_00556390` changes the ships' container in place
+    /// (`fleet_join::move_ships_to_system`).
     fn repair_move(&mut self, round: &mut Round<'_>) -> Option<Order> {
         use crate::ai_records::{fleet, ship};
         // FUN_0041a4c0(c, 0x1005, 0x802, 0, largest): own, unadopted,
@@ -3340,7 +3401,7 @@ impl ProductionState {
                     },
                 )
             })?;
-        (target != location).then_some(Order::MoveShips {
+        Some(Order::MoveShips {
             fleet: chosen,
             ships: team,
             to: target,
@@ -3389,25 +3450,8 @@ impl ProductionState {
         if n800 >= 1 {
             return (0x10_0400, 0x1_0000, 0x4000_0000);
         }
-        let own_fleets: Vec<&crate::world::Fleet> = world
-            .fleets
-            .values()
-            .filter(|f| f.is_alliance == is_alliance)
-            .collect();
-        let node = |class| {
-            ClassNode::of(
-                world,
-                crate::manufacturing::BuildableKind::CapitalShip(class),
-            )
-        };
-        let ships = || {
-            own_fleets
-                .iter()
-                .flat_map(|f| f.capital_ships.iter().filter(|s| s.alive))
-                .filter_map(|s| node(s.class))
-        };
-        // c+0x260: troop capacity of transports (node flag 4).
-        let transport: i64 = ships().filter(|n| n.flags & 0x4 != 0).map(|n| n.n48).sum();
+        let figures = ShipFigures::of(round);
+        let transport = figures.transport;
         // c+0x20c: the largest threat at a system the side does not hold.
         let threat = round
             .records
@@ -3416,11 +3460,7 @@ impl ProductionState {
             .map(|r| r.threat)
             .max()
             .unwrap_or(0);
-        // c+0x268, c+0x26c, c+0x27c: hyp: over every own fleet (fleet+0x38
-        // bit 4 untraced).
-        let flag1 = ships().filter(|n| n.flags & 0x1 != 0).count();
-        let flag2 = ships().filter(|n| n.flags & 0x2 != 0).count();
-        let capacity: i64 = ships().map(|n| n.n44).sum();
+        let (flag1, flag2, capacity) = (figures.flag1, figures.flag2, figures.capacity);
         // c+0x16c: the best fighter capacity of a producible non-Death Star
         // capital ship class.
         let best_carrier = crate::build_selection::listed_classes(
@@ -3452,49 +3492,65 @@ impl ProductionState {
         }
     }
 
-    /// `FUN_004cab20`: scrap the cheapest ship of the own fleet with the
-    /// least ship maintenance. hyp: the fleet and ship flag filters
-    /// (`0x5`/`0x402`, `0x24000`/`0x2800`) admit every fleet and ship.
+    /// `FUN_004cab20`: scrap the cheapest ship of the cheapest fleet.
+    /// `FUN_0041a4c0(c, 5, 0x402, 0xe, 2)` takes the own fleets no record
+    /// or task has adopted, neither en route nor holding an unfinished ship,
+    /// least ship maintenance first (`fleet+0x88`, the sum of its ships'
+    /// `+0x70`, `FUN_00433780.c:107`); `FUN_00433450(0x24000, 0x2800, 0xb)`
+    /// takes that fleet's own free ships, neither en route nor unfinished,
+    /// least maintenance first; the ship must be of families `0x14`-`0x1b`.
+    /// A fleet a regional record or task holds is never scrapped. hyp: ship
+    /// `+0x70` is its class maintenance, which the census sums as
+    /// `c+0x24c`.
     fn scrap_ship(&mut self, round: &mut Round<'_>) -> Option<Order> {
+        use crate::ai_records::{fleet, ship};
         let world = round.inputs.world;
-        let is_alliance = round.inputs.side == Faction::Alliance;
-        let maintenance = |class| {
-            world
-                .capital_ship_classes
-                .get(class)
-                .map_or(0, |c: &crate::world::CapitalShipClass| {
-                    i64::from(c.maintenance_cost)
-                })
+        let maintenance = |tag: &u32| {
+            round
+                .ships
+                .get(tag)
+                .and_then(|s| world.fleets.get(s.fleet))
+                .and_then(|f| f.capital_ships.iter().find(|i| i.tag == *tag))
+                .and_then(|i| world.capital_ship_classes.get(i.class))
+                .map_or(0, |c| i64::from(c.maintenance_cost))
         };
         let fleets: Vec<(crate::ids::FleetKey, i64)> = world
             .fleets
-            .iter()
-            .filter(|(_, f)| f.is_alliance == is_alliance)
-            .map(|(k, f)| {
-                (
-                    k,
-                    f.capital_ships
-                        .iter()
-                        .filter(|s| s.alive)
-                        .map(|s| maintenance(s.class))
-                        .sum(),
-                )
+            .keys()
+            .filter_map(|key| round.fleets.get(&key))
+            .filter(|f| {
+                f.has(fleet::OWN | fleet::UNADOPTED)
+                    && f.flags & (fleet::EN_ROUTE | fleet::INCOMPLETE) == 0
             })
-            .filter(|&(_, m)| m > 0)
+            .map(|f| (f.key, f.ships.iter().map(maintenance).sum()))
             .collect();
-        let fleet = rank_pick(&[(fleets, Dir::Smallest)], &mut round.rng)?;
-        let ships: Vec<(usize, i64)> = world.fleets[fleet]
+        let chosen = rank_pick(&[(fleets, Dir::Smallest)], &mut round.rng)?;
+        let ships: Vec<(u32, i64)> = round.fleets[&chosen]
+            .ships
+            .iter()
+            .filter(|tag| {
+                round.ships.get(tag).is_some_and(|s| {
+                    s.flags & (ship::OWN | ship::FREE) == ship::OWN | ship::FREE
+                        && s.flags & (ship::EN_ROUTE | ship::INCOMPLETE) == 0
+                })
+            })
+            .map(|tag| (*tag, maintenance(tag)))
+            .collect();
+        let tag = rank_pick(&[(ships, Dir::Smallest)], &mut round.rng)?;
+        let index = world.fleets[chosen]
             .capital_ships
             .iter()
-            .enumerate()
-            .filter(|(_, s)| s.alive)
-            .map(|(i, s)| (i, maintenance(s.class)))
-            .collect();
-        let index = rank_pick(&[(ships, Dir::Smallest)], &mut round.rng)?;
-        Some(Order::Scrap(vec![crate::scrap::ScrapTarget::CapitalShip {
-            fleet,
-            index,
-        }]))
+            .position(|s| s.tag == tag)?;
+        let family = world
+            .capital_ship_classes
+            .get(world.fleets[chosen].capital_ships[index].class)?
+            .family;
+        (0x14..0x1c).contains(&family).then(|| {
+            Order::Scrap(vec![crate::scrap::ScrapTarget::CapitalShip {
+                fleet: chosen,
+                index,
+            }])
+        })
     }
 
     // -----------------------------------------------------------------------
@@ -4037,5 +4093,832 @@ impl ProductionState {
                 .is_some_and(|t| t.is_alliance == is_alliance)
         })?;
         Some(Order::Scrap(vec![crate::scrap::ScrapTarget::Troop(*troop)]))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::carriage::ProductRoom;
+    use super::*;
+    use crate::world::{CapitalShipClass, Fleet, ShipInstance};
+
+    #[test]
+    fn a_side_owns_a_death_star_only_through_its_own_fleets() {
+        // FUN_0041ba80 reads `c+4 & 4`, set from the side's own fleets'
+        // live family-0x18 ships (FUN_005003d0).
+        for owner in [Faction::Empire, Faction::Alliance] {
+            let other = if owner == Faction::Empire {
+                Faction::Alliance
+            } else {
+                Faction::Empire
+            };
+            let mut world = GameWorld::default();
+            let death_star = world.capital_ship_classes.insert(CapitalShipClass {
+                family: 0x18,
+                ..Default::default()
+            });
+            let frigate = world.capital_ship_classes.insert(CapitalShipClass {
+                family: 0x14,
+                ..Default::default()
+            });
+            for (side, class) in [(owner, death_star), (other, frigate)] {
+                let is_alliance = side == Faction::Alliance;
+                world.fleets.insert(Fleet {
+                    is_alliance,
+                    capital_ships: vec![ShipInstance::new(class, 100, is_alliance)],
+                    ..Default::default()
+                });
+            }
+            assert!(own_death_star(&world, owner));
+            assert!(!own_death_star(&world, other));
+        }
+    }
+
+    // FUN_00433780 adds each ship's +0x70, its class maintenance
+    // (FUN_00484630.c:108), to fleet +0x88 outside the 0x2000 unfinished
+    // guard, and FUN_0041ba80 sums +0x88 over the side's fleets into
+    // c+0x24c. An ordered capital ship is an unfinished member of its
+    // side's spare fleet at its destination from the order
+    // (death-star-product.md section 1), wherever the yard stands and
+    // whoever holds that system now (its fleet's slot +0xb0, FUN_0051ebb0,
+    // ignores the holder change); a finished one travelling to another
+    // system stays a member of its destination fleet, marked en route
+    // (FUN_0052bee0, build-delivery.md). A fleet holds only capital ships
+    // (FUN_004fe160), so a queued squadron adds nothing there.
+    #[test]
+    fn the_capital_ship_census_counts_the_sides_ships_in_production_or_transit_for_either_side() {
+        use crate::manufacturing::{BuildableKind, Destination, QueueItem};
+        use crate::world::{ControlKind, FighterClass, ShipTransit, System};
+        for side in [Faction::Alliance, Faction::Empire] {
+            let other = if side == Faction::Empire {
+                Faction::Alliance
+            } else {
+                Faction::Empire
+            };
+            let is_alliance = side == Faction::Alliance;
+            let mut world = GameWorld::default();
+            let class = |world: &mut GameWorld, owner, maintenance_cost| {
+                world.capital_ship_classes.insert(CapitalShipClass {
+                    family: 0x14,
+                    maintenance_cost,
+                    is_alliance: owner == Faction::Alliance,
+                    is_empire: owner == Faction::Empire,
+                    ..Default::default()
+                })
+            };
+            let cruiser = class(&mut world, side, 10);
+            let death_star = class(&mut world, side, 600);
+            let frigate = class(&mut world, side, 7);
+            let corvette = class(&mut world, side, 3);
+            let escort = class(&mut world, side, 40);
+            let raider = class(&mut world, other, 50);
+            let fighter = world.fighter_classes.insert(FighterClass {
+                maintenance_cost: 5,
+                ..Default::default()
+            });
+            let system = |world: &mut GameWorld, owner| {
+                world.systems.insert(System {
+                    control: ControlKind::Controlled(owner),
+                    ..System::default()
+                })
+            };
+            let (own, lost) = (system(&mut world, side), system(&mut world, other));
+            world.fleets.insert(Fleet {
+                location: own,
+                is_alliance,
+                capital_ships: vec![ShipInstance::new(cruiser, 100, is_alliance)],
+                ..Default::default()
+            });
+            let mut manufacturing = ManufacturingState::new();
+            let ship = |class| QueueItem::new(BuildableKind::CapitalShip(class), 1);
+            manufacturing.enqueue(own, ship(death_star));
+            manufacturing.enqueue(own, QueueItem::new(BuildableKind::Fighter(fighter), 1));
+            // A queue at a system the other side has since taken, and one
+            // sent elsewhere, still hold the side's ships; the other side's
+            // queue at the side's system holds none of them.
+            manufacturing.enqueue(lost, ship(frigate));
+            manufacturing.enqueue(own, ship(corvette).delivered_to(Destination::System(lost)));
+            manufacturing.enqueue(own, ship(raider));
+            // The orders seat their ships (FUN_0052a140 -> FUN_004f7d50).
+            crate::manufacturing::seat_ordered_ships(&mut world, &mut manufacturing);
+            // A finished ship on its way, already in its destination fleet:
+            // the side's escort counts, the other side's raider does not.
+            for (class, owner) in [(escort, is_alliance), (raider, !is_alliance)] {
+                let mut ship = ShipInstance::new(class, 100, owner);
+                ship.transit = Some(ShipTransit {
+                    from: own,
+                    to: lost,
+                    arrival_tick: 9,
+                });
+                world.fleets.insert(Fleet {
+                    location: lost,
+                    is_alliance: owner,
+                    capital_ships: vec![ship],
+                    ..Default::default()
+                });
+            }
+            let transport = TroopTransportState::new();
+            let census = Census::take(&world, &manufacturing, &transport, side);
+            assert_eq!(census.capital_ships, 660, "{side:?}");
+            assert_eq!(census.fleet_fighters, 0, "{side:?}");
+        }
+    }
+
+    // FUN_0041ba80 sums fleet +0x88 into c+0x24c, and FUN_00433780 adds an
+    // unfinished ship's +0x70 there once: the ordered ship is a member of
+    // its fleet from the order (FUN_0052a140 -> FUN_004f7d50; the route-1
+    // Empire game's day-115 save: the Death Star 0x42 in Fleet 6), so the
+    // queue adds nothing more.
+    #[test]
+    fn the_capital_ship_census_counts_each_ordered_ship_once_for_either_side() {
+        use crate::manufacturing::{BuildableKind, QueueItem};
+        use crate::world::{ControlKind, System};
+        for side in [Faction::Alliance, Faction::Empire] {
+            let is_alliance = side == Faction::Alliance;
+            let mut world = GameWorld::default();
+            let yard = world.systems.insert(System {
+                control: ControlKind::Controlled(side),
+                ..System::default()
+            });
+            let class = world.capital_ship_classes.insert(CapitalShipClass {
+                family: 0x14,
+                maintenance_cost: 600,
+                is_alliance,
+                is_empire: !is_alliance,
+                hull: 100,
+                ..Default::default()
+            });
+            let mut manufacturing = ManufacturingState::new();
+            manufacturing.build(
+                yard,
+                &QueueItem::new(BuildableKind::CapitalShip(class), 584),
+                1,
+            );
+            crate::manufacturing::seat_ordered_ships(&mut world, &mut manufacturing);
+
+            let census = Census::take(&world, &manufacturing, &TroopTransportState::new(), side);
+
+            assert_eq!(census.capital_ships, 600, "{side:?}");
+        }
+    }
+
+    // FUN_00433780 folds each ship into its fleet: the troop room of a
+    // transport into +0xbc with no guard (.c:110-112), the hangar into +0x78
+    // only outside the 0x2000 unfinished guard (.c:89-98), and ships of node
+    // flag 1 and 2 free of 0x801000 into +0x98 and +0x9c (.c:59-65);
+    // FUN_0041ba80 sums the side's fleets into c+0x260, c+0x27c, c+0x268 and
+    // c+0x26c. An ordered ship is unfinished (FUN_004f7d50(.., 1, 0); the
+    // route-1 day-115 save: 0x42).
+    #[test]
+    fn the_ship_modules_figures_count_an_unfinished_ship_but_not_its_hangar_nor_a_damaged_ship_for_either_side(
+    ) {
+        use crate::world::System;
+        for side in [Faction::Alliance, Faction::Empire] {
+            let is_alliance = side == Faction::Alliance;
+            let mut world = GameWorld::default();
+            let at = world.systems.insert(System::default());
+            let class = |world: &mut GameWorld, owner: bool, fighters, troops| {
+                world.capital_ship_classes.insert(CapitalShipClass {
+                    family: 0x14,
+                    is_alliance: owner,
+                    is_empire: !owner,
+                    fighter_capacity: fighters,
+                    troop_capacity: troops,
+                    hull: 100,
+                    ..Default::default()
+                })
+            };
+            let finished = class(&mut world, is_alliance, 2, 3);
+            let ordered = class(&mut world, is_alliance, 5, 7);
+            let theirs = class(&mut world, !is_alliance, 11, 13);
+            // Node flag 1 (turbolasers, no transport bit since 0x1 is set)
+            // and node flag 2 (lasers, no troop room).
+            let turbolasers = world.capital_ship_classes.insert(CapitalShipClass {
+                family: 0x14,
+                is_alliance,
+                is_empire: !is_alliance,
+                turbolaser_fore: 1,
+                troop_capacity: 17,
+                hull: 100,
+                ..Default::default()
+            });
+            let lasers = world.capital_ship_classes.insert(CapitalShipClass {
+                family: 0x14,
+                is_alliance,
+                is_empire: !is_alliance,
+                laser_cannon_fore: 1,
+                hull: 100,
+                ..Default::default()
+            });
+            let mut fleet = |owner: bool, ships: Vec<ShipInstance>| {
+                let key = world.fleets.insert(Fleet {
+                    location: at,
+                    is_alliance: owner,
+                    capital_ships: ships,
+                    ..Default::default()
+                });
+                world.systems[at].fleets.push(key);
+            };
+            fleet(
+                is_alliance,
+                vec![
+                    ShipInstance::new(finished, 100, is_alliance),
+                    ShipInstance::ordered(ordered, 100, is_alliance),
+                    ShipInstance::new(turbolasers, 100, is_alliance),
+                    ShipInstance::new(turbolasers, 40, is_alliance),
+                    ShipInstance::ordered(lasers, 100, is_alliance),
+                ],
+            );
+            fleet(
+                !is_alliance,
+                vec![ShipInstance::new(theirs, 100, !is_alliance)],
+            );
+            crate::carriage::tag_all(&mut world);
+            let state = ProductionState::default();
+            let manufacturing = ManufacturingState::new();
+            let transport = TroopTransportState::new();
+            let uprisings = crate::uprising::UprisingState::new();
+            let research = crate::research::ResearchState::new();
+            let movement = crate::movement::MovementState::new();
+            let marks = crate::ai_records::Marks::default();
+            let inputs = RoundInputs {
+                world: &world,
+                manufacturing: &manufacturing,
+                transport: &transport,
+                uprisings: &uprisings,
+                research: &research,
+                movement: &movement,
+                marks: &marks,
+                side,
+                tick: 7,
+                round_in_day: 0,
+            };
+            let round = Round::new(&state, &inputs);
+
+            let figures = ShipFigures::of(&round);
+
+            assert_eq!(
+                (figures.transport, figures.capacity),
+                (3 + 7, 2),
+                "{side:?}"
+            );
+            assert_eq!((figures.flag1, figures.flag2), (1, 1), "{side:?}");
+        }
+    }
+
+    /// Module 11's turn (`capital_ships`) for `side` over two shipyard
+    /// systems it holds and lists, a Death Star class of maintenance 600
+    /// that serves it, a capacity of 2,250 (45 mines and 45 refineries) and
+    /// a queued capital ship of maintenance `queued` (0 for none): the
+    /// orders and the module's blockers after it. port: test fixture
+    /// values, not rules.
+    fn hull_turn(side: Faction, queued: u32) -> (Vec<Order>, u32, crate::ids::CapitalShipKey) {
+        use crate::manufacturing::{BuildableKind, QueueItem};
+        use crate::world::{
+            ControlKind, ManufacturingFacilityInstance, ProductionFacilityInstance, System,
+        };
+        let is_alliance = side == Faction::Alliance;
+        let mut world = GameWorld::default();
+        let class = |world: &mut GameWorld, family, maintenance_cost| {
+            world.capital_ship_classes.insert(CapitalShipClass {
+                family,
+                maintenance_cost,
+                is_alliance,
+                is_empire: !is_alliance,
+                ..Default::default()
+            })
+        };
+        let death_star = class(&mut world, 0x18, 600);
+        let frigate = class(&mut world, 0x14, queued);
+        for is_mine in std::iter::repeat_n([true, false], 45).flatten() {
+            world.production_facilities.insert(ProductionFacilityInstance {
+                class_dat_id: crate::ids::DatId::new(0x2c00_0001),
+                side,
+                is_mine,
+            });
+        }
+        let mut systems = Vec::new();
+        for _ in 0..2 {
+            let yard = world
+                .manufacturing_facilities
+                .insert(ManufacturingFacilityInstance {
+                    class_dat_id: crate::ids::DatId::new(0x2800_0001),
+                    side,
+                    is_shipyard: true,
+                });
+            systems.push(world.systems.insert(System {
+                control: ControlKind::Controlled(side),
+                manufacturing_facilities: vec![yard],
+                ..System::default()
+            }));
+        }
+        let mut manufacturing = ManufacturingState::new();
+        if queued > 0 {
+            let item = QueueItem::new(BuildableKind::CapitalShip(frigate), 1);
+            manufacturing.enqueue(systems[1], item);
+            crate::manufacturing::seat_ordered_ships(&mut world, &mut manufacturing);
+        }
+        let mut state = ProductionState::default();
+        for &s in &systems {
+            state.roles.insert(s, role::SHIPYARD);
+        }
+        state.module(Module::CapitalShips).list = systems.clone();
+        let transport = TroopTransportState::new();
+        let uprisings = crate::uprising::UprisingState::new();
+        let research = crate::research::ResearchState::new();
+        let movement = crate::movement::MovementState::new();
+        let marks = crate::ai_records::Marks::default();
+        let inputs = RoundInputs {
+            world: &world,
+            manufacturing: &manufacturing,
+            transport: &transport,
+            uprisings: &uprisings,
+            research: &research,
+            movement: &movement,
+            marks: &marks,
+            side,
+            tick: 7,
+            round_in_day: 0,
+        };
+        let mut round = Round::new(&state, &inputs);
+        let orders = state.capital_ships(&mut round);
+        (orders, state.module(Module::CapitalShips).blockers, death_star)
+    }
+
+    // FUN_004ca5e0 (module 11's request, U5): with no regional shortfall,
+    // no troop row, more than one listed system and no own Death Star, the
+    // Empire asks for mask 0x80 (the Death Star class) by key 0x200,
+    // blocker 0x20000000. FUN_004ca910 takes the first class whose
+    // maintenance is at most the budget FUN_004cc220, 30% of the capacity
+    // times 90% less c+0x24c (607 here), else sets the blocker. A queued
+    // capital ship counts in c+0x24c (FUN_00433780, FUN_0041ba80), so one
+    // of maintenance 8 leaves 599 and the hull is refused. The Alliance
+    // has no hull row.
+    #[test]
+    fn module_eleven_orders_the_death_star_hull_for_the_empire_only_while_the_budget_admits_it() {
+        let (orders, blockers, death_star) = hull_turn(Faction::Empire, 0);
+        assert!(
+            matches!(
+                orders.as_slice(),
+                [Order::Build { kind, count: 1, .. }]
+                    if *kind == crate::manufacturing::BuildableKind::CapitalShip(death_star)
+            ),
+            "{orders:?}"
+        );
+        assert_eq!(blockers & 0x2000_0000, 0);
+
+        let (orders, blockers, _) = hull_turn(Faction::Empire, 8);
+        assert!(orders.is_empty(), "{orders:?}");
+        assert_eq!(blockers & 0x2000_0000, 0x2000_0000);
+
+        let (orders, _, _) = hull_turn(Faction::Alliance, 0);
+        assert!(orders.is_empty(), "{orders:?}");
+    }
+
+    /// A side's own system, alone in its sector and without the shipyard
+    /// role, and a class of hull 100 and hyperdrive 1 that serves the side.
+    /// port: test fixture values, not rules.
+    fn repair_world(
+        side: Faction,
+    ) -> (GameWorld, crate::ids::SystemKey, crate::ids::CapitalShipKey) {
+        use crate::dat::SectorGroup;
+        use crate::world::{ControlKind, Sector, System};
+        let is_alliance = side == Faction::Alliance;
+        let mut world = GameWorld::default();
+        let sector = world.sectors.insert(Sector {
+            dat_id: crate::ids::DatId::new(0x9200_0000),
+            name: "Sector".into(),
+            group: SectorGroup::Core,
+            x: 0,
+            y: 0,
+            systems: vec![],
+        });
+        let system = world.systems.insert(System {
+            sector,
+            control: ControlKind::Controlled(side),
+            ..System::default()
+        });
+        world.sectors[sector].systems.push(system);
+        let class = world.capital_ship_classes.insert(CapitalShipClass {
+            family: 0x14,
+            hull: 100,
+            hyperdrive: 1,
+            is_alliance,
+            is_empire: !is_alliance,
+            ..Default::default()
+        });
+        (world, system, class)
+    }
+
+    /// A fleet of the side at `system` holding `ships`.
+    fn repair_fleet(
+        world: &mut GameWorld,
+        system: crate::ids::SystemKey,
+        side: Faction,
+        ships: Vec<ShipInstance>,
+    ) -> crate::ids::FleetKey {
+        let fleet = world.fleets.insert(Fleet {
+            location: system,
+            capital_ships: ships,
+            is_alliance: side == Faction::Alliance,
+            ..Fleet::default()
+        });
+        world.systems[system].fleets.push(fleet);
+        fleet
+    }
+
+    /// Module 11's repair move (`repair_move`) for `side` over `world`.
+    fn repair_order(world: &GameWorld, side: Faction) -> Option<Order> {
+        let mut state = ProductionState::default();
+        let manufacturing = ManufacturingState::new();
+        let transport = TroopTransportState::new();
+        let uprisings = crate::uprising::UprisingState::new();
+        let research = crate::research::ResearchState::new();
+        let movement = crate::movement::MovementState::new();
+        let marks = crate::ai_records::Marks::default();
+        let inputs = RoundInputs {
+            world,
+            manufacturing: &manufacturing,
+            transport: &transport,
+            uprisings: &uprisings,
+            research: &research,
+            movement: &movement,
+            marks: &marks,
+            side,
+            tick: 7,
+            round_in_day: 0,
+        };
+        let mut round = Round::new(&state, &inputs);
+        state.repair_move(&mut round)
+    }
+
+    // FUN_004c8e90 (module 11, phase 0x3f8 step 2): a free own fleet
+    // holding a damaged ship at an own system without the shipyard role,
+    // where the side has no shipyard-role system, takes the nearest own
+    // system (FUN_00419b80 sector b 4, FUN_0041a400 own). That is its own
+    // system here, and the 0x201 still goes out: :189-201 issue it whenever
+    // the pick is a system, and FUN_00556390 changes the ships' container
+    // in place (move-order.md, "The move command 0x201").
+    #[test]
+    fn a_damaged_free_fleet_with_no_shipyard_to_reach_is_moved_into_its_own_system_for_either_side()
+    {
+        for side in [Faction::Alliance, Faction::Empire] {
+            let is_alliance = side == Faction::Alliance;
+            let (mut world, system, class) = repair_world(side);
+            let fleet = repair_fleet(
+                &mut world,
+                system,
+                side,
+                vec![ShipInstance::new(class, 50, is_alliance)],
+            );
+            crate::carriage::tag_all(&mut world);
+            let tag = world.fleets[fleet].capital_ships[0].tag;
+
+            assert_eq!(
+                repair_order(&world, side),
+                Some(Order::MoveShips {
+                    fleet,
+                    ships: vec![tag],
+                    to: system,
+                }),
+                "{side:?}"
+            );
+        }
+    }
+
+    // FUN_004c8e90 takes the largest of FUN_0041a4c0(c, 0x1005, 0x802):
+    // own, unadopted and holding a damaged ship that can jump (fleet 0x1000),
+    // with neither the fleet nor a ship of it in hyperspace (0x2, 0x800).
+    // Of its ships it sends those with 0x1000 and none of 0x800800: damaged,
+    // not both drives out, not en route (:110-111). A larger fleet without
+    // a damaged ship, and a larger one holding a ship on its own leg, are
+    // passed over; the drives-out and the sound ships stay.
+    #[test]
+    fn a_repair_move_sends_only_the_damaged_ships_that_can_jump_of_a_fleet_at_rest_for_either_side()
+    {
+        for side in [Faction::Alliance, Faction::Empire] {
+            let is_alliance = side == Faction::Alliance;
+            let (mut world, system, class) = repair_world(side);
+            let sound = || ShipInstance::new(class, 100, is_alliance);
+            let damaged = || ShipInstance::new(class, 50, is_alliance);
+            let mut drives_out = damaged();
+            drives_out.set_damage_counter(4, 1);
+            let fleet = repair_fleet(&mut world, system, side, vec![damaged(), sound(), drives_out]);
+            repair_fleet(&mut world, system, side, vec![sound(), sound(), sound(), sound()]);
+            let mut travelling = sound();
+            travelling.transit = Some(crate::world::ShipTransit {
+                from: system,
+                to: system,
+                arrival_tick: 30,
+            });
+            repair_fleet(
+                &mut world,
+                system,
+                side,
+                vec![damaged(), travelling, sound(), sound(), sound()],
+            );
+            crate::carriage::tag_all(&mut world);
+            let tag = world.fleets[fleet].capital_ships[0].tag;
+
+            assert_eq!(
+                repair_order(&world, side),
+                Some(Order::MoveShips {
+                    fleet,
+                    ships: vec![tag],
+                    to: system,
+                }),
+                "{side:?}"
+            );
+        }
+    }
+
+    // The census counters (FUN_00418500 case 5, FUN_004182a0 case 1): each
+    // sums the class maintenance (+0x4c, FUN_0053b870) of the side's own
+    // objects of its kind, so the other side's objects beside them add
+    // nothing; FUN_0041ba80 adds fleet +0x8c and +0x90 into c+0x250 and
+    // c+0x254, and FUN_00433e40 the yards' into sys+0xd0..+0xd8.
+    #[test]
+    fn the_census_counts_only_the_sides_own_objects_in_each_counter_for_either_side() {
+        use crate::ids::DatId;
+        use crate::world::{
+            BuildableClass, ControlKind, DefenseFacilityInstance, FighterClass, FighterEntry,
+            ManufacturingFacilityInstance, ProductionFacilityInstance, SpecialForceUnit, System,
+            SystemSquadrons, TroopUnit,
+        };
+        for side in [Faction::Alliance, Faction::Empire] {
+            let other = if side == Faction::Empire {
+                Faction::Alliance
+            } else {
+                Faction::Empire
+            };
+            let (mine, theirs) = (side == Faction::Alliance, side != Faction::Alliance);
+            let mut world = GameWorld::default();
+            for (id, maintenance_cost) in [
+                (0x1000_0001, 3),
+                (0x1000_0002, 100),
+                (0x3c00_0001, 11),
+                (0x3c00_0002, 37),
+                (0x2200_0001, 13),
+                (0x2200_0002, 29),
+                (0x2800_0001, 17),
+                (0x2900_0001, 19),
+                (0x2a00_0001, 23),
+                (0x2800_0002, 31),
+            ] {
+                let class = BuildableClass {
+                    maintenance_cost,
+                    ..BuildableClass::default()
+                };
+                world.buildable_classes.insert(DatId::new(id), class);
+            }
+            let fighter = |world: &mut GameWorld, maintenance_cost| {
+                world.fighter_classes.insert(FighterClass {
+                    maintenance_cost,
+                    ..Default::default()
+                })
+            };
+            let (wing, raider) = (fighter(&mut world, 5), fighter(&mut world, 7));
+            let carrier = world.capital_ship_classes.insert(CapitalShipClass {
+                troop_capacity: 1,
+                ..Default::default()
+            });
+            for (owner, is_mine) in [(side, true), (side, true), (side, false), (other, true)] {
+                world.production_facilities.insert(ProductionFacilityInstance {
+                    class_dat_id: DatId::new(0x2c00_0001),
+                    side: owner,
+                    is_mine,
+                });
+            }
+            let defence = |world: &mut GameWorld, id, side| {
+                world.defense_facilities.insert(DefenseFacilityInstance {
+                    class_dat_id: DatId::new(id),
+                    side,
+                })
+            };
+            let defences = vec![
+                defence(&mut world, 0x2200_0001, side),
+                defence(&mut world, 0x2200_0002, other),
+            ];
+            let yard = |world: &mut GameWorld, id, side| {
+                world.manufacturing_facilities.insert(ManufacturingFacilityInstance {
+                    class_dat_id: DatId::new(id),
+                    side,
+                    is_shipyard: false,
+                })
+            };
+            let yards = vec![
+                yard(&mut world, 0x2800_0001, side),
+                yard(&mut world, 0x2900_0001, side),
+                yard(&mut world, 0x2a00_0001, side),
+                yard(&mut world, 0x2800_0002, other),
+            ];
+            let troop = |world: &mut GameWorld, id, is_alliance| {
+                world.troops.insert(TroopUnit {
+                    class_dat_id: DatId::new(id),
+                    is_alliance,
+                    ..Default::default()
+                })
+            };
+            let aboard = troop(&mut world, 0x1000_0001, mine);
+            let ground_units = vec![
+                aboard,
+                troop(&mut world, 0x1000_0001, mine),
+                troop(&mut world, 0x1000_0002, theirs),
+            ];
+            let own = world.systems.insert(System {
+                control: ControlKind::Controlled(side),
+                ground_units,
+                fighters: vec![
+                    SystemSquadrons {
+                        class: wing,
+                        count: 3,
+                        is_alliance: mine,
+                    },
+                    SystemSquadrons {
+                        class: raider,
+                        count: 1,
+                        is_alliance: theirs,
+                    },
+                ],
+                defense_facilities: defences,
+                manufacturing_facilities: yards,
+                ..System::default()
+            });
+            let fleet = |world: &mut GameWorld, is_alliance, class| {
+                world.fleets.insert(Fleet {
+                    location: own,
+                    is_alliance,
+                    capital_ships: vec![ShipInstance::new(carrier, 100, is_alliance)],
+                    fighters: vec![FighterEntry {
+                        class,
+                        count: 2,
+                        carrier: 0,
+                    }],
+                    ..Default::default()
+                })
+            };
+            let ours = fleet(&mut world, mine, wing);
+            fleet(&mut world, theirs, raider);
+            let mut transport = TroopTransportState::new();
+            transport
+                .load(&mut world, &ProductRoom::default(), ours, &[aboard])
+                .expect("the regiment boards");
+            for (id, is_alliance) in [(0x3c00_0001, mine), (0x3c00_0002, theirs)] {
+                world.special_forces.insert(SpecialForceUnit {
+                    class_dat_id: DatId::new(id),
+                    is_alliance,
+                    ..Default::default()
+                });
+            }
+            let manufacturing = ManufacturingState::new();
+            let census = Census::take(&world, &manufacturing, &transport, side);
+            let capacity = crate::resources::maintenance_capacity(&world, side);
+            let load = crate::resources::maintenance_used(&world, &manufacturing, side);
+            assert!(capacity > 0 && load > 0, "{side:?}");
+            assert_eq!((census.capacity, census.load), (capacity, load), "{side:?}");
+            assert_eq!((census.mines, census.refineries), (2, 1), "{side:?}");
+            assert_eq!(census.fleet_fighters, 10, "{side:?}");
+            assert_eq!(census.fleet_regiments, 3, "{side:?}");
+            assert_eq!(census.system_regiments, 3, "{side:?}");
+            assert_eq!(census.system_fighters, 15, "{side:?}");
+            assert_eq!(census.system_defences, 13, "{side:?}");
+            assert_eq!(census.yards, HashMap::from([(own, [17, 19, 23])]), "{side:?}");
+            assert_eq!(census.special_forces, 11, "{side:?}");
+        }
+    }
+
+    /// The order module 11's scrap step (`FUN_004cab20`) gives `side` over
+    /// `world` with the fleet and ship `marks`, after `edit` on the round's
+    /// records.
+    fn scrap_order(
+        world: &GameWorld,
+        side: Faction,
+        marks: &crate::ai_records::Marks,
+        edit: impl FnOnce(&mut Round<'_>),
+    ) -> Option<Order> {
+        let manufacturing = ManufacturingState::new();
+        let transport = TroopTransportState::new();
+        let uprisings = crate::uprising::UprisingState::new();
+        let research = crate::research::ResearchState::new();
+        let movement = crate::movement::MovementState::new();
+        let inputs = RoundInputs {
+            world,
+            manufacturing: &manufacturing,
+            transport: &transport,
+            uprisings: &uprisings,
+            research: &research,
+            movement: &movement,
+            marks,
+            side,
+            tick: 7,
+            round_in_day: 0,
+        };
+        let mut round = Round::new(&ProductionState::default(), &inputs);
+        edit(&mut round);
+        ProductionState::default().scrap_ship(&mut round)
+    }
+
+    #[test]
+    fn the_scrap_step_takes_only_free_ships_of_unadopted_fleets() {
+        // FUN_004cab20: FUN_0041a4c0(c, 5, 0x402, 0xe, 2) admits own
+        // fleets no record or task has adopted (fleet+0x38 0x4), least
+        // ship maintenance first; FUN_00433450(0x24000, 0x2800, 0xb) admits
+        // its own free ships (+0x24 0x20000), least maintenance first.
+        use crate::ai_records::{fleet, ship, FleetMark, Marks, ShipMark};
+        use crate::scrap::ScrapTarget;
+        for side in [Faction::Empire, Faction::Alliance] {
+            let is_alliance = side == Faction::Alliance;
+            let mut world = GameWorld::default();
+            let system = world.systems.insert(crate::world::System::default());
+            let class = |world: &mut GameWorld, family, maintenance_cost| {
+                world.capital_ship_classes.insert(CapitalShipClass {
+                    family,
+                    maintenance_cost,
+                    ..Default::default()
+                })
+            };
+            let frigate = class(&mut world, 0x14, 1);
+            let cruiser = class(&mut world, 0x14, 10);
+            let death_star = class(&mut world, 0x18, 50);
+            let fleet = |world: &mut GameWorld, ships: &[(u32, _)]| {
+                world.fleets.insert(Fleet {
+                    location: system,
+                    is_alliance,
+                    capital_ships: ships
+                        .iter()
+                        .map(|&(tag, class)| {
+                            let mut ship = ShipInstance::new(class, 100, is_alliance);
+                            ship.tag = tag;
+                            ship
+                        })
+                        .collect(),
+                    ..Default::default()
+                })
+            };
+            let adopted = fleet(&mut world, &[(1, frigate)]);
+            let station = fleet(&mut world, &[(2, cruiser), (3, death_star)]);
+            let mut marks = Marks::default();
+            let adopt = FleetMark {
+                flags: 0,
+                ..FleetMark::default()
+            };
+            marks.fleets.insert(adopted, adopt);
+
+            // The adopted fleet's frigate is the cheapest ship, but only
+            // the unadopted fleet is a candidate.
+            assert_eq!(
+                scrap_order(&world, side, &marks, |_| {}),
+                Some(Order::Scrap(vec![ScrapTarget::CapitalShip {
+                    fleet: station,
+                    index: 0
+                }])),
+                "{side:?}"
+            );
+
+            // An en route ship is not taken (ship +0x24 0x800).
+            assert_eq!(
+                scrap_order(&world, side, &marks, |round| {
+                    round.ships.get_mut(&2).expect("tagged").flags |= ship::EN_ROUTE;
+                }),
+                Some(Order::Scrap(vec![ScrapTarget::CapitalShip {
+                    fleet: station,
+                    index: 1
+                }])),
+                "{side:?}"
+            );
+            // Nor a fleet en route (fleet+0x38 0x2) or holding an
+            // unfinished ship (0x400).
+            for flag in [fleet::EN_ROUTE, fleet::INCOMPLETE] {
+                assert_eq!(
+                    scrap_order(&world, side, &marks, |round| {
+                        round.fleets.get_mut(&station).expect("recorded").flags |= flag;
+                    }),
+                    None,
+                    "{side:?} {flag:#x}"
+                );
+            }
+
+            // A ship a record holds is not free (FUN_00484230 sets 0x20000
+            // only on a new ship); the free Death Star is the one left.
+            marks.ships.insert(
+                2,
+                ShipMark {
+                    flags: 0,
+                    ..ShipMark::default()
+                },
+            );
+            assert_eq!(
+                scrap_order(&world, side, &marks, |_| {}),
+                Some(Order::Scrap(vec![ScrapTarget::CapitalShip {
+                    fleet: station,
+                    index: 1
+                }])),
+                "{side:?}"
+            );
+
+            // With every fleet adopted nothing is scrapped.
+            marks.fleets.insert(station, adopt);
+            assert_eq!(scrap_order(&world, side, &marks, |_| {}), None, "{side:?}");
+        }
     }
 }

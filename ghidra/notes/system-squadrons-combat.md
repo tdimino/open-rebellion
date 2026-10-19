@@ -203,9 +203,12 @@ squadron of the losing side. It sets `+0x50` bit `0x1000` and calls slot
 (`FUN_004fba70`) both raise event `0x307` through `FUN_0053f9c0(0x307, obj,
 flag, ctx)`: `FUN_0053f950` builds the event (`FUN_0053ff90`, keys at
 `+0x3c` object and `+0x50` flag) and hands it to the dispatcher callback
-`DAT_006b2af8` (`FUN_004fd390`). The handler `FUN_0057b1f0` calls
-`FUN_00515480(obj id, flag, ctx)`. hyp: dispatch is synchronous, as the call
-chain has no queue; settle by breaking on `FUN_0057b1f0` in a battle.
+`DAT_006b2af8` (`FUN_004fd390`), which is `FUN_004fd010` and inserts the event
+into the event queue `+0xb0` (`FUN_0051d8f0`). The event is queued, not run
+inside the flagging call: its priority is `0x300` (`FUN_0057b260`), so it is
+served in the same frame step after the queued events of lower priority
+(`blockade-bit.md`, "The event queue and the order of work"). The handler
+`FUN_0057b1f0` calls `FUN_00515480(obj id, flag, ctx)`.
 
 The flag's other names: `GameObjAutoscrapRequestNotif` (`build-delivery.md`).
 The handler serves any object whose container no longer suits it, with the
@@ -295,14 +298,33 @@ Move order makes, `move-order.md`). The first accepted candidate is `D`.
 "Nearest first" is the nearness table at manager `+0x68` (`FUN_00554150` ->
 `FUN_0058afd0`, row `(id - 100) * 0x324`, 200 systems sorted by distance,
 `galaxy-limits.md`, `build-delivery.md`). Stage 3 to 7 candidates are
-tried one by one until one is accepted. A candidate system accepts a
-fleet (`0x204`) only when it is of the object's side (`FUN_00553410`:
-`0x24` otherwise), completed, not destroyed and not en route; the blockade
-refusal (`0x90`/4) is lifted for fleets and refuses a squadron
-(`FUN_005073d0`). hyp: stage 6 and 7 can accept only objects whose kind is
-accepted at a system of another side; the acceptance of fleets and
-squadrons at enemy systems is the unread part of `FUN_005073d0`
-(`FUN_00553410` alone refuses a system of another side).
+tried one by one until one is accepted. A candidate system's acceptance is
+`FUN_005073d0` over the type range of the moved object (route kind `0x204`;
+`0x241` for characters and special forces):
+
+- **Fleets** (`0x204`, range inside `[0x08,0x10]`) are exempt from the
+  destroyed refusal (`FUN_005073d0.c:94-102`), and every refusal
+  `FUN_00553410` records (another side `0x24`/`0x28`, not completed `0x20`,
+  destroyed `0x22`, en route `0x21`) is reset to accepted
+  (`FUN_005073d0.c:103-113`), as is the blockade refusal (`:126-141`). A
+  system of any side accepts a fleet, so stage 6 (neutral) and stage 7
+  (the other side) accept one whenever they are reached.
+- **Regiments** (`0x204`, `[0x10,0x14]`) keep every refusal, with one
+  exception: a system of side bits 3 with `+0x88` bit 1 set and bit 0 clear
+  accepts (`:114-123`, `regiment-unload.md`). The blockade refusal stands for
+  them: the lift list is fleets, kind `0x240`, kind `0x241` and `0x3f0`
+  (`:134`).
+- **Squadrons, capital ships, facilities and any other `0x204` kind** keep
+  every refusal, so only a completed, undestroyed, idle system of their own
+  side accepts, and a blockaded system refuses.
+- **Characters and special forces** (`0x241`): the destroyed and
+  `FUN_00553410` refusals stand and the blockade refusal is lifted; kind
+  `0x240` (a mission order) lifts all of them like a fleet.
+
+A fleet container (stage 4) accepts a kind only inside `[0x14,0x1c]`
+(`FUN_004fe160`), so only a capital ship joins a fleet there; squadrons,
+regiments and characters board a ship of it, and facilities find no place at
+stage 4.
 
 ### What a flagged object finally does
 
@@ -350,8 +372,7 @@ travel start (`COMBAT-SUMMARY.md`).
 
 ## Still open
 
-- Whether event `0x307` dispatches synchronously (section 3b) and whether a
-  flagged object that stays in its own system keeps bit `0x1000`.
+- Whether a flagged object that stays in its own system keeps bit `0x1000`.
 - The unread half of system acceptance for fleets and squadrons at enemy
   systems (`FUN_005073d0` per family) and `FUN_00517ee0`.
 - Where the engine places exported system squadrons (coordinates,
@@ -372,9 +393,24 @@ travel start (`COMBAT-SUMMARY.md`).
   `held_by_system`; they launch and return without a carrier, and
   `tactical::apply::apply_results` writes their survivors back to
   `System::fighters` (`FUN_0040d260` → `FUN_00503370`).
-- `resolve_system_space_combat` runs that session headless and reports the
-  winner by presence afterwards (`FUN_00517270`): a side left with only its
-  system squadrons keeps the system contested. A win by squadrons alone has
+- `combat::fighting_fleets` is a side's fleets that fight: the usable ones
+  (`Fleet::usable`, `FUN_004fe540`) in container order. `FUN_0040b0e0`
+  walks every existing fleet (`FUN_004ffe70`, mode 3) but exports only
+  each one's usable children (mode 1), and the Commander field
+  (`FUN_00509530`) and the post-battle pass (`FUN_00516ef0`) walk the
+  side's fleets in mode 1 (`FUN_004ffef0`), so a fleet whose only ship is
+  on its own leg neither fights, commands nor takes the post-battle chain.
+  port: the
+  original has no lead fleet; the live trigger (`main.rs`), the headless
+  battle (`resolve_system_space_combat_for`) and the session's fleet
+  gather (`BattleSession::new_with_forces`) take the first of these.
+- `resolve_system_space_combat` runs that session headless, and it and a
+  played battle's record report the winner by presence after the pass
+  (`integrator::post_battle_outcome`, `FUN_00517270.c:79-93`, which hands
+  that side to `FUN_0050a040` and `FUN_00517ee0`; the battle's own winner,
+  `FUN_0040c780`'s `+0x64`, is read only by `FUN_00516ef0` and
+  `FUN_0050c6c0`): a side left with only its system squadrons keeps the
+  system contested. A win by squadrons alone has
   no winning fleet, so no bombardment or landing follows.
   hyp: they start on their side's fighter line; the original placement is
   untraced (above).

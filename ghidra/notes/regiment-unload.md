@@ -42,8 +42,8 @@ its ship, so an unload never asks.
    ship, or every member is a regiment and the destination is an existing
    (`+0x50` bit `0x40`) system that is not populated (`+0x88 & 1` clear,
    `FUN_0053d430.c:140`). So regiments cannot be put down on an enemy or
-   neutral populated planet by hand. Earlier notes read the mask as "bit 1";
-   it is bit 0, populated (`economy-systems.md`).
+   neutral populated planet by hand. The mask is bit 0, populated
+   (`economy-systems.md`).
 3. **The command** (`FUN_00555920`). The checks run only for a deployed
    object (slot `+0x38` = `0x004f6410`, `+0x50` bit 16,
    `GameObjDeployedNotif`, `build-delivery.md`):
@@ -60,6 +60,8 @@ its ship, so an unload never asks.
    builder picks the container each regiment enters and stores it at the
    command's `+0x48`, so step 3's "destination" is that container, not the
    window's target. See "Choosing the container" below.
+
+The planetary assault (`FUN_0058c810`) is the only other path that lands regiments, up to six (`ground-assault.md`).
 
 ## Choosing the container
 
@@ -80,10 +82,18 @@ For a system (vtable `0x0065e640`):
   `FUN_00509650`/`FUN_00509660` (`0x90`/1, `0x90`/2).
 - **Acceptance** (`FUN_005073d0`) for a `0x204` regiment:
   - a destroyed system (`+0x50` bit 3) gives `1`/`0x22`;
-  - `FUN_00553410`: a system not of the order's side gives `1`/`0x24` or
+  - `FUN_00553410` (it always returns 1; the status carries the
+    refusal): a system not of the order's side gives `1`/`0x24` or
     `1`/`0x28`; not completed (`+0x50` bit 2 clear) `1`/`0x20`; destroyed
-    `1`/`0x22`; en route `1`/`0x21`. For a regiment the refusal stands,
-    unless the system has `+0x88` bit 1 set, side 3 and is unpopulated;
+    `1`/`0x22`; en route `1`/`0x21`. For a regiment (members in
+    `[0x10,0x14]`) the refusal stands unless the system has `+0x88` bit 1
+    set, side 3 and is unpopulated (`+0x88` bit 0 clear); then the status
+    is reset to accepted (`FUN_005073d0.c:118-127`). Bit 1 is set by every
+    system's Populate (`FUN_005081f0`, from both `FUN_00566d40` and the
+    rim class's `FUN_0056a550`, populated or not), so every unpopulated
+    side-3 system takes a regiment: the AI's Drop target
+    (`FUN_004ae440`). For a fleet (`[0x08,0x10]`) or a character
+    (`0x240`) the refusal is lifted outright;
   - a blockaded system (`+0x88` bit `0x20`) gives `0x90`/4. That is lifted
     for fleets and characters (`0x240`, `0x241`) and kind `0x3f0`, not for a
     regiment.
@@ -173,8 +183,10 @@ no source in this trace.
   way to it. A regiment bound for a fleet dies with the fleet and follows a
   merge. A destination planet destroyed, or a fleet gone, loses it on
   arrival. The save carries the transits (v25).
-- port: the leg builder's `+0x58` bit 1 fleet and the side-3, `+0x88` bit 1
-  planet are not modelled; a fleet's room is the whole fleet's.
+- port: the leg builder's `+0x58` bit 1 fleet is not modelled; a fleet's
+  room is the whole fleet's. The side-3 unpopulated planet takes a regiment
+  (`TroopTransportState::accept_planet`); port: side 3 is a control with no
+  Alliance or Empire holder, and bit 1 is taken as set on every system.
 - port: a regiment leaving a planet on its own takes no departure roll. Its
   withdraw percent is 100 unless it entered the planet while blockaded,
   which a Move cannot do (`FUN_005073d0`'s `0x90`/4).
@@ -184,8 +196,15 @@ no source in this trace.
 - The Fleet window's Troops tab is a drag source (`FUN_006083c0`'s distance
   and list rules); `main.rs` hit-tests the drop with the release windows'
   `+0x70` and issues the move. A surface regiment's pop-up Move does the
-  same. port: Ctrl's Confirmed Move (`0x202`) and the original's advisor
-  reaction are not ported; the refusal prints in the message log.
+  same. A refusal files no text: its status goes to the side's advisor
+  (`FUN_00487c90`; `main.rs` `transport_refusal_status`), as does a
+  squadron's. A Confirmed Move (`0x202`, the pop-up row or a drop with
+  Ctrl) runs the same checks first (`FUN_00487740`), then always asks; a
+  Move asks too when the unit stands in a blockaded system of its side,
+  under the evacuation warning (`FUN_00487cc0`, `FUN_0049a350` 0x7056).
+  The window's line is the unit's name and days (`FUN_0053d200`): its trip
+  at the default speed for a regiment, its class's for a squadron, none
+  within one system.
 - port: travelling regiments are not drawn (no Troops tab entry while en
   route, no map stream).
 - Gate: `tools/interface-parity/fleet-window.mjs` cases `unload` (a drop
@@ -223,8 +242,12 @@ port: a fleet's room is its whole hangar space less the squadrons bound for
 it. port: a travelling squadron, like a travelling regiment, is out of the
 world until it arrives, so upkeep and presence do not count it; the
 original's object sits in its new container with the en route bit.
-Checked e2e 2026-10-10 on both sides
-(`.artifacts/native-checks/2026-10-10-squadron-moves-*`).
+Checked e2e 2026-10-10 on both sides in native seed-42 games: an Alliance
+Y-wing sent from Fleet 1 at Yavin to Hoth leaves the fleet with none and
+Alliance upkeep at 284 (288 before) until it arrives by day 79, then 288; an Imperial
+squadron from Coruscant's defences to Corellia leaves Coruscant at 9 (10
+before) and arrives by day 33; a full fleet refuses with `NoSquadronRoom`
+and a neutral destination with `OtherSideDestination`.
 
 ## Still open
 

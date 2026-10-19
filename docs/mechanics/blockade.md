@@ -25,7 +25,7 @@ A blockade occurs when a hostile fleet is present at a system with no defending 
 ## What You See
 
 - A system under blockade stops all production queue advancement.
-- Garrisons are never destroyed by a blockade. A regiment that arrives aboard a fleet while the system is blockaded may be destroyed when the fleet leaves without landing it ("Troops destroyed by blockade").
+- Garrisons are never destroyed by a blockade. A regiment that arrives aboard a fleet while the system is blockaded may be destroyed when the fleet leaves without landing it; an "Evacuation Losses" message lists the regiments lost.
 - A KDY-150 at the system protects every departing regiment.
 - Sending a defending fleet to the system lifts the blockade.
 

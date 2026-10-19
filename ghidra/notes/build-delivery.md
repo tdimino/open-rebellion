@@ -40,6 +40,9 @@ So an object is en route while it travels itself, or while its container
   constructors `FUN_005279d0` and `FUN_0055b2f0`) keeps a queue of product
   objects in the list at `+0x54 -> +0x18`. The queued units are real game
   objects from the moment they are ordered.
+  A product enters the list on its own event `0x300`
+  (`FUN_005140c0.c:66-77` → `FUN_00529cf0` → `FUN_0052a710`), which removes
+  it again once `FUN_00528890` stops accepting it.
 - `FUN_0052aac0` chooses the current product: the first queued object that
   `FUN_00528890` accepts. `FUN_00529770` stores its key at manager `+0x74`
   (ProductKey: vtable slot `+0x24c`, notifier `FUN_0052bcb0`
@@ -303,9 +306,9 @@ Vtables were found through the shared side-key slot `+0xc` (`FUN_004f6a80`,
   which decides whether a move between two fleets in one system costs 0.
 - Who reads the nearness table at manager `+0x68`, and who uses
   `FUN_00555f90`'s estimate.
-- The order path that creates a queued product and places it in its
-  container, and the callers of object slots `+0x118` (deploy, event `0x308`)
-  and `+0x148` (container change, event `0x31a`).
+- The callers of object slots `+0x118` (deploy, event `0x308`) and
+  `+0x148` (container change, event `0x31a`). The order path that creates a
+  queued product in its container is in `death-star-product.md` section 1.
 - The `0x394` delay record at facility `+0x54` `+0x20`, which sets the build
   rate.
 - The meaning of ship `+0x64` bits 16..23 (hyperdrive damage, inference) and

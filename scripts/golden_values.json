@@ -1634,16 +1634,9 @@
       "shield_absorption_multiplier_ion": 2,
       "shield_recharge_nibble_max": 15,
       "weapon_recharge_nibble_max": 15,
-      "bombardment_divisor_param_id": 5120,
-      "bombardment_divisor_value": 5,
-      "bombardment_min_damage": 1,
-      "ground_combat_strength_loss_fraction": 0.25,
-      "ground_combat_min_damage": 1,
-      "ground_troop_family_min": 20,
-      "ground_troop_family_max": 27,
-      "death_star_family": 52,
+      "death_star_families": [24, 27],
       "death_star_shield_generator_family": 37,
-      "description": "Combat constants from FUN_00544130, FUN_00556430, and FUN_00560d50."
+      "description": "Combat constants. death_star_families: the family 0x18-0x1b test of FUN_005003d0; death_star_shield_generator_family: DEFFACSD family 0x25."
     },
     "economy": {
       "tick_pipeline_steps": 18,
@@ -1694,11 +1687,10 @@
       "description": "Research constants from mechanics docs and event mapping."
     },
     "death_star": {
-      "construction_ticks": 1825,
-      "nearby_warning_radius": 300,
+      "capital_ship_record": 136,
+      "families": [24, 27],
       "shield_generator_family": 37,
-      "death_star_family": 52,
-      "description": "Best-available approximation from docs/mechanics/death-star.md and RE notes."
+      "description": "CAPSHPSD record 136 (families 0x18-0x1b), built as an ordinary shipyard product with no countdown; the Death Star Shield is DEFFACSD family 0x25 (ghidra/notes/death-star-strategic.md)."
     },
     "ai": {
       "original_tick_interval_days": 1,

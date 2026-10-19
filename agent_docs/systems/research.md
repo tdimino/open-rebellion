@@ -41,7 +41,7 @@ sources are in `ghidra/notes/research.md`; this page maps it onto the code.
 planner claims one scientist (`mission_planning.rs` selectors) and, at its
 module-4 turn, targets the member's own system, held and not blockaded, with
 no yard test of its own; it does not run while its mission flies
-(`FUN_004bda40`). The order then meets the creation-time refusal of
+(the planner `+0x20` bit 31 test at `0x004bda40`). The order then meets the creation-time refusal of
 `FUN_0056c510` (`research_target_refusal`, `missions.rs`): a target with no
 working yard of the tree (status `0x40`/`0x2c`, end code `0xc`) or an
 exhausted tree (`0x40`/`0x32`, end code `0xe`) sends no order, and the planner

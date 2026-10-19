@@ -103,7 +103,9 @@ async function startServer() {
   return server;
 }
 
-function decodeIndexedBmp(bytes, expectedWidth, expectedHeight) {
+// `keyed` leaves transparent every pixel whose palette index is the first
+// stored pixel's, as FUN_005fd0f0 blits (the key byte FUN_005fd170 records).
+function decodeIndexedBmp(bytes, expectedWidth, expectedHeight, keyed = false) {
   assert.equal(bytes.toString("ascii", 0, 2), "BM", "source resource is not a BMP");
   const dataOffset = bytes.readUInt32LE(10);
   const headerSize = bytes.readUInt32LE(14);
@@ -115,6 +117,7 @@ function decodeIndexedBmp(bytes, expectedWidth, expectedHeight) {
   const paletteOffset = 14 + headerSize;
   const stride = (width + 3) & ~3;
   assert.ok(bytes.length >= dataOffset + stride * height);
+  const key = bytes[dataOffset];
   const png = new PNG({ width, height });
   for (let y = 0; y < height; y += 1) {
     const sourceY = signedHeight > 0 ? height - 1 - y : y;
@@ -125,21 +128,25 @@ function decodeIndexedBmp(bytes, expectedWidth, expectedHeight) {
       png.data[destination] = bytes[palette + 2];
       png.data[destination + 1] = bytes[palette + 1];
       png.data[destination + 2] = bytes[palette];
-      png.data[destination + 3] = 255;
+      png.data[destination + 3] = keyed && paletteIndex === key ? 0 : 255;
     }
   }
   return png;
 }
 
-function resource(source, id, width, height) {
-  return decodeIndexedBmp(fs.readFileSync(path.join(source, `${id}.bmp`)), width, height);
+function resource(source, id, width, height, keyed = false) {
+  return decodeIndexedBmp(fs.readFileSync(path.join(source, `${id}.bmp`)), width, height, keyed);
 }
 
+// Copies the source's opaque pixels; a keyed source's transparent ones
+// leave the destination as it was.
 function blit(destination, source, x, y) {
   for (let row = 0; row < source.height; row += 1) {
-    const start = row * source.width * 4;
-    const end = start + source.width * 4;
-    destination.data.set(source.data.subarray(start, end), ((y + row) * destination.width + x) * 4);
+    for (let column = 0; column < source.width; column += 1) {
+      const from = (row * source.width + column) * 4;
+      if (source.data[from + 3] === 0) continue;
+      destination.data.set(source.data.subarray(from, from + 4), ((y + row) * destination.width + x + column) * 4);
+    }
   }
 }
 
@@ -170,10 +177,18 @@ function sourceIdentity(source) {
   };
 }
 
+// FUN_004665f0.c:97-105: a zero-filled surface (FUN_005fbda0; index 0 is
+// black in the shell's palette), 10822 plain at (12, 13) (FUN_005fcc30),
+// then the shell and the rail keyed over it (FUN_005fd0f0). The shell's
+// bottom row is its key, so the window's last row shows the black; the
+// GDI probe of the Operation Report, which keys the same shell, shows that
+// row black across the window.
 function composeExpected(source, faction, pressedCommand = null) {
-  const expected = resource(source, faction.base, dimensions.width, dimensions.height);
-  blit(expected, resource(source, faction.rail, 58, 330), 412, 0);
+  const expected = new PNG({ width: dimensions.width, height: dimensions.height });
+  for (let offset = 0; offset < expected.data.length; offset += 4) expected.data.set([0, 0, 0, 255], offset);
   blit(expected, resource(source, 10822, 400, 306), 12, 13);
+  blit(expected, resource(source, faction.base, dimensions.width, dimensions.height, true), 0, 0);
+  blit(expected, resource(source, faction.rail, 58, 330, true), 412, 0);
   for (const control of controls) {
     const [normal, pressed] = resourcesFor(control, faction);
     const selected = control.command === pressedCommand ? pressed : normal;

@@ -17,7 +17,12 @@
 //! [fingerprint_version: u16]
 //! [state_fingerprint: u64]                  // canonical logical state
 //! [bincode-encoded SaveState]
+//! [bincode-encoded SavedInterface]          // GID mode and open windows
 //! ```
+//!
+//! The interface follows the state as the original writes it after the
+//! world (`rebellion_core::saved_interface`). The state fingerprint does not
+//! cover it, so window layout never changes a logical fingerprint.
 //!
 //! Only the current version loads. The port has no released saves, so a
 //! layout change bumps `SAVE_VERSION` and rejects older files instead of
@@ -40,9 +45,9 @@
 //!
 //! # Save slots
 //!
-//! Saves live at `<saves_dir>/<slot_index>.reb`. The UI manages up to
-//! `MAX_SAVE_SLOTS` named slots. `list_saves()` returns metadata for all
-//! occupied slots.
+//! Saves live at `<saves_dir>/<slot_index>.reb`. The Game Options window
+//! shows `MAX_SAVE_SLOTS` named slots. `list_saves()` returns metadata for
+//! all occupied slots.
 
 use rand_xoshiro::Xoshiro256PlusPlus;
 use serde::{Deserialize, Serialize};
@@ -50,7 +55,6 @@ use serde::{Deserialize, Serialize};
 use rebellion_core::ai::AIState;
 use rebellion_core::betrayal::BetrayalState;
 use rebellion_core::blockade::BlockadeState;
-use rebellion_core::death_star::DeathStarState;
 use rebellion_core::delivery::DeliveryState;
 use rebellion_core::economy::EconomyState;
 use rebellion_core::events::EventState;
@@ -61,6 +65,7 @@ use rebellion_core::missions::MissionState;
 use rebellion_core::movement::MovementState;
 use rebellion_core::repair::RepairState;
 use rebellion_core::research::ResearchState;
+pub use rebellion_core::saved_interface::{SavedInterface, SavedWindow, SavedWindowKind};
 use rebellion_core::stockpiles::StockpileState;
 use rebellion_core::tick::GameClock;
 use rebellion_core::troop_transport::TroopTransportState;
@@ -78,7 +83,7 @@ pub const SAVE_MAGIC: &[u8; 8] = b"OPENREB\0";
 
 /// Current save format version. Increment when `SaveState` layout changes;
 /// saves of any other version are rejected.
-pub const SAVE_VERSION: u32 = 53;
+pub const SAVE_VERSION: u32 = 63;
 
 /// Current state-fingerprint algorithm version.
 ///
@@ -88,8 +93,9 @@ pub const SAVE_VERSION: u32 = 53;
 /// and corruption signal, not a cryptographic authentication mechanism.
 pub const STATE_FINGERPRINT_VERSION: u16 = 1;
 
-/// Maximum number of named save slots.
-pub const MAX_SAVE_SLOTS: usize = 10;
+/// Named save slots: the Game Options window's six rows (`FUN_00407180`
+/// builds rows 1 to 6, row `n` reading save file `n`).
+pub const MAX_SAVE_SLOTS: usize = 6;
 
 // ---------------------------------------------------------------------------
 // Mod hash
@@ -220,7 +226,6 @@ pub struct SaveState {
     // ── v0.4.1: new simulation states ────────────────────────────────────
     pub blockade: BlockadeState,
     pub uprising: UprisingState,
-    pub death_star: DeathStarState,
     pub research: ResearchState,
     pub jedi: JediState,
     pub victory: VictoryState,
@@ -284,6 +289,36 @@ pub struct SaveMeta {
     pub player_is_alliance: Option<bool>,
 }
 
+/// Refuse a slot past the last row: the Load and Save dialogs list six
+/// (`FUN_00407180`, row n reading save file n), so a slot past them could
+/// be written but never listed.
+fn checked_slot(slot: usize) -> anyhow::Result<usize> {
+    anyhow::ensure!(
+        slot < MAX_SAVE_SLOTS,
+        "slot {slot} is past the last of {MAX_SAVE_SLOTS} rows"
+    );
+    Ok(slot)
+}
+
+/// Refuse a state holding raised events not yet served. Each operation
+/// that raises a support shift, a control rerun or a regiment's holder
+/// rerun serves it before it returns (`support_shift::fire`), and a holder
+/// change serves its managers' products with them
+/// (`manufacturing::serve_manager_sides`); neither queue is saved, so a
+/// save holding either would drop work the running game still does.
+fn ensure_served(state: &SaveState) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        state.world.support_events.is_empty(),
+        "{} raised events were not served before the save",
+        state.world.support_events.len()
+    );
+    anyhow::ensure!(
+        state.world.manager_side_changes.is_empty(),
+        "a holder change's products were not served before the save"
+    );
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // IO functions (native only)
 // ---------------------------------------------------------------------------
@@ -291,8 +326,9 @@ pub struct SaveMeta {
 #[cfg(not(target_arch = "wasm32"))]
 mod native {
     use super::{
-        compute_mod_hash, compute_state_fingerprint, SaveMeta, SaveState, StateFingerprint,
-        MAX_SAVE_SLOTS, SAVE_MAGIC, SAVE_VERSION, STATE_FINGERPRINT_VERSION,
+        checked_slot, compute_mod_hash, compute_state_fingerprint, ensure_served, SaveMeta,
+        SaveState, SavedInterface, StateFingerprint, MAX_SAVE_SLOTS, SAVE_MAGIC, SAVE_VERSION,
+        STATE_FINGERPRINT_VERSION,
     };
     use std::io::{Read, Write};
     use std::path::{Path, PathBuf};
@@ -349,7 +385,33 @@ mod native {
         state: &SaveState,
         active_mods: &[(String, String)],
     ) -> anyhow::Result<StateFingerprint> {
-        save_file(&slot_path(saves_dir, slot), name, state, active_mods)
+        save_file(
+            &slot_path(saves_dir, checked_slot(slot)?),
+            name,
+            state,
+            active_mods,
+        )
+    }
+
+    /// [`save_slot`] with the interface the game shows.
+    ///
+    /// # Errors
+    /// As [`save_slot`].
+    pub fn save_slot_with_interface(
+        saves_dir: &Path,
+        slot: usize,
+        name: &str,
+        state: &SaveState,
+        interface: &SavedInterface,
+        active_mods: &[(String, String)],
+    ) -> anyhow::Result<StateFingerprint> {
+        save_file_with_interface(
+            &slot_path(saves_dir, checked_slot(slot)?),
+            name,
+            state,
+            interface,
+            active_mods,
+        )
     }
 
     /// Write `state` to the file `path`, in the slot format; the developer
@@ -359,21 +421,38 @@ mod native {
     /// # Errors
     /// Returns an error if state serialization, fingerprinting, or creating/writing
     /// the save file fails.
-    #[expect(
-        clippy::cast_possible_truncation,
-        reason = "Keep the existing fixed-width save encoding; changing overflow handling is outside this lint cleanup."
-    )]
     pub fn save_file(
         path: &Path,
         name: &str,
         state: &SaveState,
         active_mods: &[(String, String)],
     ) -> anyhow::Result<StateFingerprint> {
+        save_file_with_interface(path, name, state, &SavedInterface::default(), active_mods)
+    }
+
+    /// [`save_file`] with the interface the game shows, written after the
+    /// state.
+    ///
+    /// # Errors
+    /// As [`save_file`].
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Keep the existing fixed-width save encoding; changing overflow handling is outside this lint cleanup."
+    )]
+    pub fn save_file_with_interface(
+        path: &Path,
+        name: &str,
+        state: &SaveState,
+        interface: &SavedInterface,
+        active_mods: &[(String, String)],
+    ) -> anyhow::Result<StateFingerprint> {
+        ensure_served(state)?;
         let saves_dir = path.parent().unwrap_or_else(|| Path::new("."));
         std::fs::create_dir_all(saves_dir)
             .with_context(|| format!("creating saves directory {}", saves_dir.display()))?;
 
-        let encoded = bincode::serialize(state).context("serializing save state")?;
+        let mut encoded = bincode::serialize(state).context("serializing save state")?;
+        encoded.extend(bincode::serialize(interface).context("serializing save interface")?);
         let state_fingerprint = compute_state_fingerprint(state)?;
 
         let mut pending = tempfile::NamedTempFile::new_in(saves_dir)
@@ -461,7 +540,18 @@ mod native {
     /// Returns an error for unreadable, truncated, corrupt, or unsupported save data,
     /// including invalid text, deserialization failures, and fingerprint mismatches.
     pub fn load_slot(saves_dir: &Path, slot: usize) -> anyhow::Result<(SaveMeta, SaveState)> {
-        load_file(&slot_path(saves_dir, slot), slot)
+        load_file(&slot_path(saves_dir, checked_slot(slot)?), slot)
+    }
+
+    /// [`load_slot`] with the interface the save shows.
+    ///
+    /// # Errors
+    /// As [`load_slot`].
+    pub fn load_slot_with_interface(
+        saves_dir: &Path,
+        slot: usize,
+    ) -> anyhow::Result<(SaveMeta, SaveState, SavedInterface)> {
+        load_file_with_interface(&slot_path(saves_dir, checked_slot(slot)?), slot)
     }
 
     /// Load `SaveState` from the file `path`; the metadata reports `slot`.
@@ -470,6 +560,17 @@ mod native {
     /// # Errors
     /// As [`load_slot`].
     pub fn load_file(path: &Path, slot: usize) -> anyhow::Result<(SaveMeta, SaveState)> {
+        load_file_with_interface(path, slot).map(|(meta, state, _)| (meta, state))
+    }
+
+    /// [`load_file`] with the interface the save shows.
+    ///
+    /// # Errors
+    /// As [`load_slot`].
+    pub fn load_file_with_interface(
+        path: &Path,
+        slot: usize,
+    ) -> anyhow::Result<(SaveMeta, SaveState, SavedInterface)> {
         let mut file = std::fs::File::open(path)
             .with_context(|| format!("opening save file {}", path.display()))?;
 
@@ -552,12 +653,14 @@ mod native {
         // ── Body ────────────────────────────────────────────────────────────
         let mut body = Vec::new();
         file.read_to_end(&mut body).context("reading save body")?;
-        let state: SaveState = bincode::deserialize(&body).context("deserializing save state")?;
+        let (mut state, interface) = super::decode_body(&body)?;
         let state_fingerprint = compute_state_fingerprint(&state)?;
         anyhow::ensure!(
             expected == state_fingerprint,
             "save state fingerprint mismatch: expected {expected}, computed {state_fingerprint}"
         );
+        // Bit 11 is not saved (FUN_005178b0 rebuilds it).
+        rebellion_core::death_star::refresh_sectors(&mut state.world);
 
         let meta = SaveMeta {
             slot,
@@ -570,7 +673,7 @@ mod native {
             player_is_alliance: Some(state.player_is_alliance),
         };
 
-        Ok((meta, state))
+        Ok((meta, state, interface))
     }
 
     /// Detect occupancy independently of save decoding, so corrupt saves still
@@ -597,26 +700,31 @@ mod native {
             })
             .collect()
     }
-
-    /// Delete a save slot file. No-op if the slot doesn't exist.
-    ///
-    /// # Errors
-    /// Returns an error if an existing save file cannot be deleted.
-    pub fn delete_slot(saves_dir: &Path, slot: usize) -> anyhow::Result<()> {
-        let path = slot_path(saves_dir, slot);
-        if path.exists() {
-            std::fs::remove_file(&path)
-                .with_context(|| format!("deleting save file {}", path.display()))?;
-        }
-        Ok(())
-    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use native::{
-    default_saves_dir, delete_slot, list_saves, load_file, load_slot, save_file, save_slot,
-    save_slot_no_mods, slot_occupied, slot_path,
+    default_saves_dir, list_saves, load_file, load_file_with_interface, load_slot,
+    load_slot_with_interface, save_file, save_file_with_interface, save_slot, save_slot_no_mods,
+    save_slot_with_interface, slot_occupied, slot_path,
 };
+
+/// A save body: the state, then the interface, and nothing after them (the
+/// fingerprint covers only the state).
+fn decode_body(body: &[u8]) -> anyhow::Result<(SaveState, SavedInterface)> {
+    use anyhow::Context;
+    let mut rest = body;
+    let state: SaveState =
+        bincode::deserialize_from(&mut rest).context("deserializing save state")?;
+    let interface: SavedInterface =
+        bincode::deserialize_from(&mut rest).context("deserializing save interface")?;
+    anyhow::ensure!(
+        rest.is_empty(),
+        "save body has {} bytes after its interface",
+        rest.len()
+    );
+    Ok((state, interface))
+}
 
 // ---------------------------------------------------------------------------
 // WASM browser storage
@@ -827,13 +935,34 @@ pub mod wasm_impl {
     }
 
     pub fn save_slot(
+        saves_dir: &Path,
+        slot: usize,
+        name: &str,
+        state: &SaveState,
+        active_mods: &[(String, String)],
+    ) -> anyhow::Result<StateFingerprint> {
+        save_slot_with_interface(
+            saves_dir,
+            slot,
+            name,
+            state,
+            &SavedInterface::default(),
+            active_mods,
+        )
+    }
+
+    pub fn save_slot_with_interface(
         _saves_dir: &Path,
         slot: usize,
         name: &str,
         state: &SaveState,
+        interface: &SavedInterface,
         _active_mods: &[(String, String)],
     ) -> anyhow::Result<StateFingerprint> {
-        let encoded = bincode::serialize(state)?;
+        let slot = super::checked_slot(slot)?;
+        super::ensure_served(state)?;
+        let mut encoded = bincode::serialize(state)?;
+        encoded.extend(bincode::serialize(interface)?);
         let state_fingerprint = compute_state_fingerprint(state)?;
         let b64 = b64_encode(&encoded);
 
@@ -866,19 +995,29 @@ pub mod wasm_impl {
         save_slot(saves_dir, slot, name, state, &[])
     }
 
-    pub fn load_slot(_saves_dir: &Path, slot: usize) -> anyhow::Result<(SaveMeta, SaveState)> {
+    pub fn load_slot(saves_dir: &Path, slot: usize) -> anyhow::Result<(SaveMeta, SaveState)> {
+        load_slot_with_interface(saves_dir, slot).map(|(meta, state, _)| (meta, state))
+    }
+
+    pub fn load_slot_with_interface(
+        _saves_dir: &Path,
+        slot: usize,
+    ) -> anyhow::Result<(SaveMeta, SaveState, SavedInterface)> {
+        let slot = super::checked_slot(slot)?;
         let Some((b64, meta_encoded)) = stored_save(slot)? else {
             anyhow::bail!("no save in slot {}", slot);
         };
         let bytes = b64_decode(&b64)?;
         let browser_meta = parse_meta(&meta_encoded)?;
         let expected = browser_meta.state_fingerprint.to_fingerprint()?;
-        let state: SaveState = bincode::deserialize(&bytes)?;
+        let (mut state, interface) = super::decode_body(&bytes)?;
         let state_fingerprint = compute_state_fingerprint(&state)?;
         anyhow::ensure!(
             expected == state_fingerprint,
             "save state fingerprint mismatch: expected {expected}, computed {state_fingerprint}"
         );
+        // Bit 11 is not saved (FUN_005178b0 rebuilds it).
+        rebellion_core::death_star::refresh_sectors(&mut state.world);
 
         let meta = SaveMeta {
             slot,
@@ -891,7 +1030,7 @@ pub mod wasm_impl {
             player_is_alliance: Some(state.player_is_alliance),
         };
 
-        Ok((meta, state))
+        Ok((meta, state, interface))
     }
 
     /// Metadata and payload keys both count as occupied, including partially
@@ -922,17 +1061,12 @@ pub mod wasm_impl {
             })
             .collect()
     }
-
-    pub fn delete_slot(_saves_dir: &Path, slot: usize) -> anyhow::Result<()> {
-        storage_remove(&slot_key(slot))?;
-        storage_remove(&meta_key(slot))
-    }
 }
 
 #[cfg(target_arch = "wasm32")]
 pub use wasm_impl::{
-    default_saves_dir, delete_slot, list_saves, load_slot, save_slot, save_slot_no_mods,
-    slot_occupied,
+    default_saves_dir, list_saves, load_slot, load_slot_with_interface, save_slot,
+    save_slot_no_mods, save_slot_with_interface, slot_occupied,
 };
 
 // ---------------------------------------------------------------------------
@@ -944,6 +1078,7 @@ mod tests {
     use super::*;
     use rand::{RngCore, SeedableRng};
     use rebellion_core::ai::{AIState, AiFaction};
+    use rebellion_core::carriage::ProductRoom;
     use rebellion_core::dat::Faction;
     use rebellion_core::ids::SystemKey;
     use rebellion_core::world::ControlKind;
@@ -1020,7 +1155,6 @@ mod tests {
             player_is_alliance: false,
             blockade: BlockadeState::new(),
             uprising: UprisingState::new(),
-            death_star: DeathStarState::default(),
             research: ResearchState::new(),
             jedi: JediState::new(),
             victory: rebellion_core::victory::VictoryState::new(sys_a, sys_b),
@@ -1135,7 +1269,7 @@ mod tests {
             fighters: vec![],
             characters: vec![],
             is_alliance: false,
-            has_death_star: false,
+            bombarding: false,
         });
         state.world.systems[system].fleets.push(fleet);
         let repair_events = rebellion_core::repair::RepairSystem::advance(
@@ -1151,13 +1285,19 @@ mod tests {
         let troop = state.world.troops.insert(rebellion_core::world::TroopUnit {
             class_dat_id: rebellion_core::ids::DatId::new(0x1000_0008),
             is_alliance: false,
-            regiment_strength: 100,
         });
         state.world.systems[system].ground_units.push(troop);
         state
             .troop_transport
-            .embark(&mut state.world, fleet, &[troop])
+            .embark(&mut state.world, &ProductRoom::default(), fleet, &[troop])
             .unwrap();
+        // The embarkation's holder rerun is served before any save, as the
+        // game serves it within the order (support_shift::fire).
+        crate::integrator::fire_holder_changes(
+            &mut state.world,
+            &mut state.manufacturing,
+            rebellion_core::support_shift::step(state.clock.tick, 0),
+        );
 
         save_slot(&saves_dir, 0, "Continuation", &state, &[]).unwrap();
         let mut uninterrupted_rng = state.sim_rng.clone();
@@ -1266,6 +1406,7 @@ mod tests {
         changed.clock.tick = 1;
         bytes.truncate(body_offset);
         bytes.extend(bincode::serialize(&changed).unwrap());
+        bytes.extend(bincode::serialize(&SavedInterface::default()).unwrap());
         std::fs::write(path, bytes).unwrap();
 
         let error = load_slot(&saves_dir, 0).expect_err("tampered body must be rejected");
@@ -1298,15 +1439,51 @@ mod tests {
     }
 
     #[test]
-    fn delete_slot_removes_file() {
-        let saves_dir = tmp_dir("delete_slot_v5");
-
+    fn the_slot_list_reads_the_six_rows_and_no_further() {
+        // FUN_00407180 builds rows 1 to 6, row n reading save file n.
+        let saves_dir = tmp_dir("six_rows");
         let state = minimal_save_state();
-        save_slot(&saves_dir, 1, "To Delete", &state, &[]).unwrap();
-        assert!(slot_path(&saves_dir, 1).exists());
+        save_slot(&saves_dir, MAX_SAVE_SLOTS - 1, "Last Row", &state, &[]).unwrap();
+        // No row reads a slot past the sixth, so none is written or read.
+        assert!(save_slot(&saves_dir, MAX_SAVE_SLOTS, "Past The Rows", &state, &[]).is_err());
+        assert!(!slot_path(&saves_dir, MAX_SAVE_SLOTS).exists());
+        assert!(load_slot(&saves_dir, MAX_SAVE_SLOTS).is_err());
+        let slots: Vec<usize> = list_saves(&saves_dir)
+            .into_iter()
+            .filter_map(std::result::Result::ok)
+            .map(|meta| meta.slot)
+            .collect();
+        assert_eq!(slots, [5]);
+    }
 
-        delete_slot(&saves_dir, 1).unwrap();
-        assert!(!slot_path(&saves_dir, 1).exists());
+    // Each operation that raises event 0x373, 0x31b or a regiment's holder
+    // rerun serves it before it returns (support_shift::fire), and each
+    // holder change serves its managers' products with them
+    // (manufacturing::serve_manager_sides, FUN_004f8680 -> FUN_0052b790);
+    // neither queue is saved, so a save holding either would drop work the
+    // running game still does. The save refuses it.
+    #[test]
+    fn a_save_holding_an_unserved_event_is_refused() {
+        let saves_dir = tmp_dir("unserved_event");
+        let state = minimal_save_state();
+        let system = state.world.systems.keys().next().unwrap();
+        let mut regiments = state.clone();
+        regiments
+            .world
+            .support_events
+            .push(rebellion_core::support_shift::QueuedEvent::Regiments(
+                system,
+            ));
+        let mut managers = state;
+        managers.world.manager_side_changes.push(system);
+
+        for (slot, held) in [(0, &regiments), (1, &managers)] {
+            assert!(
+                save_slot(&saves_dir, slot, "Unserved", held, &[]).is_err(),
+                "{slot}"
+            );
+            assert!(!slot_path(&saves_dir, slot).exists(), "{slot}");
+        }
     }
 
     // ── New tests (Tasks 3–5) ───────────────────────────────────────────────
@@ -1351,6 +1528,125 @@ mod tests {
         }
     }
 
+    /// An interface with every kind of window the save keeps, bottom first:
+    /// a sector, a minimized System window, a Fleet window on its Troops
+    /// tab, then Defenses and Missions windows.
+    /// port: test fixture values, not rules.
+    fn every_kind_of_window(gid_mode: u8) -> SavedInterface {
+        use rebellion_core::ids::DatId;
+        let window = |kind, position, shown| SavedWindow {
+            kind,
+            position,
+            shown,
+        };
+        SavedInterface {
+            gid_mode: Some(gid_mode),
+            windows: vec![
+                window(
+                    SavedWindowKind::Sector {
+                        sector: DatId::new(0x9200_0000),
+                    },
+                    (8, 40),
+                    true,
+                ),
+                window(
+                    SavedWindowKind::System {
+                        system: DatId::new(0x9000_0000),
+                    },
+                    (322, 92),
+                    false,
+                ),
+                window(
+                    SavedWindowKind::Fleet {
+                        system: DatId::new(0x9000_0000),
+                        tab: 0x68,
+                    },
+                    (120, 60),
+                    true,
+                ),
+                window(
+                    SavedWindowKind::Defenses {
+                        system: DatId::new(0x9000_0001),
+                    },
+                    (200, 70),
+                    true,
+                ),
+                window(
+                    SavedWindowKind::Missions {
+                        system: DatId::new(0x9000_0001),
+                    },
+                    (240, 80),
+                    true,
+                ),
+            ],
+        }
+    }
+
+    #[test]
+    fn a_save_brings_back_the_interface_it_was_saved_with() {
+        // FUN_00440ea0 writes the GID mode and the windows, bottom first;
+        // FUN_00440f80 reads them back in that order.
+        for player_is_alliance in [true, false] {
+            let saves_dir = tmp_dir(&format!("interface_round_trip_{player_is_alliance}"));
+            let mut state = minimal_save_state();
+            state.player_is_alliance = player_is_alliance;
+            let interface = every_kind_of_window(0x21);
+
+            save_slot_with_interface(&saves_dir, 0, "Windows", &state, &interface, &[]).unwrap();
+            let (_, _, loaded) = load_slot_with_interface(&saves_dir, 0).unwrap();
+
+            assert_eq!(loaded, interface, "alliance {player_is_alliance}");
+        }
+    }
+
+    #[test]
+    fn window_layout_leaves_the_state_fingerprint_alone() {
+        let saves_dir = tmp_dir("interface_fingerprint");
+        let state = minimal_save_state();
+        let bare = save_slot(&saves_dir, 0, "Bare", &state, &[]).unwrap();
+        let windows = save_slot_with_interface(
+            &saves_dir,
+            1,
+            "Windows",
+            &state,
+            &every_kind_of_window(0x11),
+            &[],
+        )
+        .unwrap();
+        assert_eq!(bare, windows);
+        assert_eq!(bare, compute_state_fingerprint(&state).unwrap());
+        assert_eq!(load_slot(&saves_dir, 1).unwrap().0.state_fingerprint, bare);
+    }
+
+    #[test]
+    fn a_save_made_without_an_interface_loads_none() {
+        let saves_dir = tmp_dir("interface_absent");
+        save_slot(&saves_dir, 0, "Bare", &minimal_save_state(), &[]).unwrap();
+        let (_, _, interface) = load_slot_with_interface(&saves_dir, 0).unwrap();
+        assert_eq!(interface, SavedInterface::default());
+    }
+
+    #[test]
+    fn bytes_after_the_interface_are_rejected() {
+        // The fingerprint covers the state only, so the decoder itself must
+        // refuse a body longer than the state and the interface.
+        let saves_dir = tmp_dir("interface_trailing");
+        save_slot_with_interface(
+            &saves_dir,
+            0,
+            "Windows",
+            &minimal_save_state(),
+            &every_kind_of_window(0x11),
+            &[],
+        )
+        .unwrap();
+        let path = slot_path(&saves_dir, 0);
+        let mut bytes = std::fs::read(&path).unwrap();
+        bytes.push(0);
+        std::fs::write(&path, bytes).unwrap();
+        assert!(load_slot(&saves_dir, 0).is_err());
+    }
+
     /// A save state with one regiment embarked on a fleet in orbit, already
     /// tracked by `BlockadeSystem::running_regiments` (F-021).
     fn state_with_tracked_regiment() -> (SaveState, rebellion_core::ids::TroopKey, SystemKey) {
@@ -1373,19 +1669,25 @@ mod tests {
             fighters: vec![],
             characters: vec![],
             is_alliance: false,
-            has_death_star: false,
+            bombarding: false,
         });
         state.world.systems[system].fleets.push(fleet);
         let troop = state.world.troops.insert(rebellion_core::world::TroopUnit {
             class_dat_id: rebellion_core::ids::DatId::new(0x1000_0008),
             is_alliance: false,
-            regiment_strength: 100,
         });
         state.world.systems[system].ground_units.push(troop);
         state
             .troop_transport
-            .embark(&mut state.world, fleet, &[troop])
+            .embark(&mut state.world, &ProductRoom::default(), fleet, &[troop])
             .unwrap();
+        // The embarkation's holder rerun is served before any save, as the
+        // game serves it within the order (support_shift::fire).
+        crate::integrator::fire_holder_changes(
+            &mut state.world,
+            &mut state.manufacturing,
+            rebellion_core::support_shift::step(state.clock.tick, 0),
+        );
         BlockadeSystem::running_regiments(
             &mut state.blockade,
             &state.world,
@@ -1432,6 +1734,7 @@ mod tests {
             rebellion_core::uprising::ActiveUprising {
                 started_tick: 3,
                 next_incident_tick: Some(45),
+                next_support_tick: None,
             },
         );
         state.uprising.next_disaster_tick = Some(250);
@@ -1443,6 +1746,54 @@ mod tests {
         assert_eq!(revolt.started_tick, 3);
         assert_eq!(revolt.next_incident_tick, Some(45));
         assert_eq!(loaded.uprising.next_disaster_tick, Some(250));
+    }
+
+    /// A fleet's bombardment flag (`+0x58` bit 6, `FUN_004fec00`) outlives a
+    /// run when both sides are flagged at one system, and a class's family
+    /// names the Death Star (0x18-0x1b, `FUN_00582440`); both survive a save.
+    #[test]
+    fn a_round_trip_keeps_a_fleets_bombardment_flag_and_a_class_family() {
+        for is_alliance in [true, false] {
+            let saves_dir = tmp_dir(&format!("bombardment_flag_round_trip_{is_alliance}"));
+            let mut state = minimal_save_state();
+            let system = state.world.systems.keys().next().unwrap();
+            let class =
+                state
+                    .world
+                    .capital_ship_classes
+                    .insert(rebellion_core::world::CapitalShipClass {
+                        dat_id: rebellion_core::ids::DatId::new(0x1400_0088),
+                        family: 0x18,
+                        hull: 100,
+                        is_alliance,
+                        is_empire: !is_alliance,
+                        ..Default::default()
+                    });
+            let fleet = state.world.fleets.insert(rebellion_core::world::Fleet {
+                location: system,
+                capital_ships: vec![rebellion_core::world::ShipInstance::new(
+                    class,
+                    100,
+                    is_alliance,
+                )],
+                fighters: vec![],
+                characters: vec![],
+                is_alliance,
+                bombarding: true,
+            });
+            state.world.systems[system].fleets.push(fleet);
+            save_slot(&saves_dir, 0, "Bombarding", &state, &[]).unwrap();
+
+            let (_, loaded) = load_slot(&saves_dir, 0).unwrap();
+
+            assert!(loaded.world.fleets[fleet].bombarding, "{is_alliance}");
+            assert_eq!(loaded.world.fleets[fleet].is_alliance, is_alliance);
+            assert!(
+                loaded.world.capital_ship_classes[class].is_death_star(),
+                "{is_alliance}"
+            );
+            assert!(loaded.world.fleet_has_death_star(fleet), "{is_alliance}");
+        }
     }
 
     /// A save holding a remote build order and a delivery en route, for the
@@ -1474,6 +1825,7 @@ mod tests {
                 destination,
                 tick: 7,
                 kind,
+                carrier: 0,
             }],
         );
         (state, origin, destination)
@@ -1575,6 +1927,7 @@ mod tests {
             hidden: false,
             detection_phases: true,
             can_resign: false,
+            return_policy: 1,
             // The shipped MISSNSD Diplomacy record 0x51000010's columns
             // 11..21 = 1 1 1 1 1 0 0 1 0 0, which the creation validator reads
             // (base rules, FUN_00523450).
@@ -1824,6 +2177,71 @@ mod tests {
         assert!(loaded.world.characters[recruit].recruited);
         assert!(loaded.world.recruit_pool_empty(Faction::Empire));
         assert!(!loaded.world.recruit_pool_empty(Faction::Alliance));
+    }
+
+    /// The adrift role bit (`+0x78` bit 6, `FUN_00534790`) waits for the
+    /// destroyed system's next battle-bit change (`FUN_00548e90`), so it
+    /// must survive a save, for either side.
+    #[test]
+    fn a_round_trip_keeps_an_adrift_character_adrift() {
+        use rebellion_core::world::Character;
+        let saves_dir = tmp_dir("adrift_round_trip");
+        let mut state = minimal_save_state();
+        let system = state.world.systems.keys().next().unwrap();
+        state.world.systems[system].is_destroyed = true;
+        let adrift: Vec<_> = [true, false]
+            .into_iter()
+            .map(|is_alliance| {
+                state.world.characters.insert(Character {
+                    is_alliance,
+                    is_empire: !is_alliance,
+                    current_system: Some(system),
+                    adrift: true,
+                    ..Default::default()
+                })
+            })
+            .collect();
+        save_slot(&saves_dir, 0, "Adrift Save", &state, &[]).unwrap();
+
+        let (_, loaded) = load_slot(&saves_dir, 0).expect("the save should load");
+
+        for key in adrift {
+            let character = &loaded.world.characters[key];
+            assert!(character.adrift);
+            assert_eq!(character.current_system, Some(system));
+        }
+        assert!(loaded.world.systems[system].is_destroyed);
+    }
+
+    /// A character the adrift sweep jailed (`FUN_00549580`) stays a child of
+    /// its side's jail abode, with no system, for either side
+    /// (`death-star-strategic.md`, "Held, shown, counted").
+    #[test]
+    fn a_round_trip_keeps_a_jailed_character_in_its_jail() {
+        use rebellion_core::world::{Abode, Character};
+        let saves_dir = tmp_dir("jail_round_trip");
+        let mut state = minimal_save_state();
+        let jailed: Vec<_> = [true, false]
+            .into_iter()
+            .map(|is_alliance| {
+                state.world.characters.insert(Character {
+                    is_alliance,
+                    is_empire: !is_alliance,
+                    is_captive: true,
+                    abode: Some(Abode::jail_of(!is_alliance)),
+                    ..Default::default()
+                })
+            })
+            .collect();
+        save_slot(&saves_dir, 0, "Jail Save", &state, &[]).unwrap();
+
+        let (_, loaded) = load_slot(&saves_dir, 0).expect("the save should load");
+
+        for (key, is_alliance) in jailed.into_iter().zip([true, false]) {
+            let character = &loaded.world.characters[key];
+            assert_eq!(character.abode, Some(Abode::jail_of(!is_alliance)));
+            assert!(character.is_captive && character.current_system.is_none());
+        }
     }
 
     /// A Sabotage order's object (`+0x4c`, read by `FUN_00521030`) must

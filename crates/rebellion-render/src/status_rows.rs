@@ -212,8 +212,10 @@ fn fleet_arrival(sources: StatusSources<'_>, fleet: FleetKey) -> Option<u64> {
 }
 
 /// The fleet's own Status word: 34628 "Enroute" or 34632 "Awaiting
-/// Orders". port: a fleet or ship exists only once complete, so "Under
-/// Construction" never shows.
+/// Orders". A fleet holding a ship is completed (`FUN_004fe630`; the
+/// day-115 save reads its `+0x50` as `0x10046`, death-star-product.md
+/// section 1), so "Under Construction" shows only for a ship
+/// ([`ship_rows`]).
 const fn moving_status(en_route: bool) -> &'static str {
     if en_route {
         "Enroute"
@@ -246,8 +248,9 @@ fn damaged(ship: &ShipInstance, class: &CapitalShipClass) -> bool {
 /// port: the fleet's squadrons, regiments and characters are kept on the
 /// fleet, so Embarked and Personnel sum them there. Personnel counts the
 /// fleet's characters; the port carries no special force aboard a fleet.
-/// hyp: Hyperdrive Rating reads Yes when an alive ship's class has a
-/// hyperdrive (`FUN_004fd900` is traced only to its walk).
+/// Hyperdrive Rating reads fleet slot `+0x34` (`FUN_00449200.c:303-316`),
+/// `FUN_004fd900`: Yes while the fleet's speed is non-zero
+/// ([`rebellion_core::movement::fleet_speed`]).
 #[must_use]
 pub fn fleet_rows(sources: StatusSources<'_>, key: FleetKey) -> Option<Vec<StatusRow>> {
     let world = sources.world;
@@ -293,7 +296,7 @@ pub fn fleet_rows(sources: StatusSources<'_>, key: FleetKey) -> Option<Vec<Statu
         ),
         row(
             "Hyperdrive Rating:",
-            yes_no(ships.iter().any(|(_, class)| class.hyperdrive != 0)),
+            yes_no(rebellion_core::movement::fleet_speed(fleet, world).is_some_and(|speed| speed != 0)),
         ),
     ]);
     Some(rows)
@@ -350,11 +353,26 @@ pub fn ship_rows(
     } else {
         0
     };
-    let arrival = fleet_arrival(sources, fleet_key);
+    // Its own leg (bit 5) sets en route bit 4 (FUN_004f8240.c:17-31), and
+    // the ETA row reads its own arrival day +0x44 (FUN_004fd2b0, set by
+    // FUN_00556430); else its fleet's.
+    let arrival = ship
+        .transit
+        .map(|leg| leg.arrival_tick)
+        .or_else(|| fleet_arrival(sources, fleet_key));
     let mut rows = vec![
         row("Class:", class.name.clone()),
         row("Fleet:", fleet_label(world, fleet_key).unwrap_or_default()),
-        row("Status:", moving_status(arrival.is_some())),
+        row(
+            "Status:",
+            // FUN_00446fd0: bit 4, else bit 2 clear 34647 "Under
+            // Construction" (status-window.md, "Capital Ship Status").
+            if arrival.is_none() && !ship.completed {
+                "Under Construction"
+            } else {
+                moving_status(arrival.is_some())
+            },
+        ),
     ];
     eta(&mut rows, arrival);
     let hyperdrive = if class.hyperdrive == 0 {
@@ -735,9 +753,11 @@ fn target_name(world: &GameWorld, mission: &rebellion_core::missions::ActiveMiss
                 .special_forces
                 .get(key)
                 .map(|value| class_name(world, value.class_dat_id)),
-            MissionTarget::DeathStar(fleet) | MissionTarget::Fleet(fleet) => {
-                fleet_label(world, fleet)
-            }
+            // FUN_004f6270: the ship's own name, else its class's.
+            MissionTarget::CapitalShip(tag) => rebellion_core::carriage::ship_of_tag(world, tag)
+                .and_then(|(fleet, index)| world.ship_name(fleet, index))
+                .map(str::to_owned),
+            MissionTarget::Fleet(fleet) => fleet_label(world, fleet),
         })
     });
     object
@@ -1166,7 +1186,7 @@ mod tests {
             }],
             characters: vec![character],
             is_alliance: true,
-            has_death_star: false,
+            bombarding: false,
         });
         world.systems[at].fleets.push(fleet);
         fleet
@@ -1267,7 +1287,10 @@ mod tests {
 
     #[test]
     fn a_fleet_without_a_hyperdrive_ship_reads_no() {
-        // FUN_00449200 34645 "No" when no ship can jump.
+        // FUN_00449200 34645 "No" when no ship can jump: fleet slot +0x34
+        // (FUN_004fd900.c:21-45) reads 0 when a usable ship's speed is 0,
+        // and FUN_00500820.c:10-19 gives 0 for a ship whose installed drive
+        // is out (`movement::capital_ship_instance_speed`).
         let mut world = GameWorld::default();
         let here = system(
             &mut world,
@@ -1275,7 +1298,10 @@ mod tests {
             ControlKind::Controlled(Faction::Alliance),
         );
         let fleet = carrier_fleet(&mut world, here);
-        world.fleets[fleet].capital_ships[1].alive = false;
+        world.fleets[fleet].capital_ships[0].alive = false;
+        let large = world.fleets[fleet].capital_ships[1].class;
+        let class = world.capital_ship_classes[large].clone();
+        world.fleets[fleet].capital_ships[1].set_hyperdrive_damage_hits(&class, 1);
         let states = States::new();
 
         let rows = fleet_rows(states.sources(&world), fleet).unwrap();
@@ -1284,6 +1310,139 @@ mod tests {
             super::tests::rows(&rows).last(),
             Some(&("Hyperdrive Rating:", "No"))
         );
+    }
+
+    #[test]
+    fn a_hyperdrive_ship_on_its_own_leg_gives_its_fleet_no_rating_for_either_side() {
+        // FUN_00449200 reads Hyperdrive Rating from fleet slot +0x34,
+        // FUN_004fd900.c:21-45, which walks only the completed ships not on
+        // their own legs (bit 5, FUN_00556430) (status-window.md, "Fleet
+        // Status"); the other ship is unfinished (FUN_004f7d50(..,
+        // completed 0)), so no ship gives a speed.
+        for is_alliance in [true, false] {
+            let mut world = GameWorld::default();
+            let here = system(
+                &mut world,
+                "Yavin",
+                ControlKind::Controlled(Faction::of_alliance(is_alliance)),
+            );
+            let fleet = carrier_fleet(&mut world, here);
+            world.fleets[fleet].is_alliance = is_alliance;
+            world.fleets[fleet].capital_ships[0].completed = false;
+            world.fleets[fleet].capital_ships[1].transit = Some(rebellion_core::world::ShipTransit {
+                from: here,
+                to: here,
+                arrival_tick: 9,
+            });
+            let states = States::new();
+
+            let rows = fleet_rows(states.sources(&world), fleet).unwrap();
+
+            assert_eq!(
+                super::tests::rows(&rows).last(),
+                Some(&("Hyperdrive Rating:", "No")),
+                "{is_alliance}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_ship_on_its_own_leg_is_enroute_with_its_arrival_day_for_either_side() {
+        // FUN_00446fd0: Status reads +0x50 bit 4, which a ship's own leg
+        // sets (bit 5, FUN_004f8240.c:17-31); the ETA row reads its arrival
+        // day +0x44 (FUN_004fd2b0, set by FUN_00556430).
+        for is_alliance in [true, false] {
+            let mut world = GameWorld::default();
+            let here = system(
+                &mut world,
+                "Yavin",
+                ControlKind::Controlled(Faction::of_alliance(is_alliance)),
+            );
+            let fleet = carrier_fleet(&mut world, here);
+            world.fleets[fleet].is_alliance = is_alliance;
+            world.fleets[fleet].capital_ships[1].transit = Some(rebellion_core::world::ShipTransit {
+                from: here,
+                to: here,
+                arrival_tick: 15,
+            });
+            let states = States::new();
+            let sources = states.sources(&world);
+            let status = |index| {
+                let rows = ship_rows(sources, fleet, index).unwrap();
+                super::tests::rows(&rows[2..])
+                    .into_iter()
+                    .take(2)
+                    .map(|(label, value)| (label.to_owned(), value.to_owned()))
+                    .collect::<Vec<_>>()
+            };
+
+            assert_eq!(
+                status(1),
+                [
+                    ("Status:".to_owned(), "Enroute".to_owned()),
+                    ("ETA Destination:".to_owned(), "Day 15".to_owned())
+                ],
+                "{is_alliance}"
+            );
+            assert_eq!(
+                status(0)[0],
+                ("Status:".to_owned(), "Awaiting Orders".to_owned()),
+                "{is_alliance}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_unfinished_ship_is_under_construction_for_either_side() {
+        // FUN_00446fd0 Status (status-window.md, "Capital Ship Status"):
+        // bit 4 34628 "Enroute", else bit 2 34632 "Awaiting Orders", else
+        // 34647 "Under Construction"; a ship is created at its order with
+        // bit 2 clear (FUN_004f7d50(.., completed 0)).
+        for is_alliance in [true, false] {
+            let mut world = GameWorld::default();
+            let here = system(
+                &mut world,
+                "Yavin",
+                ControlKind::Controlled(Faction::of_alliance(is_alliance)),
+            );
+            let fleet = carrier_fleet(&mut world, here);
+            world.fleets[fleet].is_alliance = is_alliance;
+            world.fleets[fleet].capital_ships[1].completed = false;
+            let states = States::new();
+            let sources = states.sources(&world);
+            let status = |index| ship_rows(sources, fleet, index).unwrap()[2].value.clone();
+
+            assert_eq!(status(1), "Under Construction", "{is_alliance}");
+            assert_eq!(status(0), "Awaiting Orders", "{is_alliance}");
+        }
+    }
+
+    #[test]
+    fn a_fleet_whose_ship_has_only_a_backup_hyperdrive_reads_yes_for_either_side() {
+        // FUN_00449200.c:303-316 reads Hyperdrive Rating from fleet slot
+        // +0x34, FUN_004fd900.c:21-45, the speed of the fleet's usable
+        // ships; FUN_00500820.c:10-19 gives a ship with no primary drive its
+        // backup's rating (class +0x70), 9 here, so the rating is Yes.
+        for is_alliance in [true, false] {
+            let mut world = GameWorld::default();
+            let here = system(
+                &mut world,
+                "Yavin",
+                ControlKind::Controlled(Faction::of_alliance(is_alliance)),
+            );
+            let fleet = carrier_fleet(&mut world, here);
+            world.fleets[fleet].is_alliance = is_alliance;
+            world.fleets[fleet].capital_ships[1].alive = false;
+            let states = States::new();
+
+            let rows = fleet_rows(states.sources(&world), fleet).unwrap();
+
+            assert_eq!(
+                super::tests::rows(&rows).last(),
+                Some(&("Hyperdrive Rating:", "Yes")),
+                "{is_alliance}"
+            );
+        }
     }
 
     #[test]
@@ -1380,7 +1539,6 @@ mod tests {
         let troop = world.troops.insert(TroopUnit {
             class_dat_id: class,
             is_alliance: true,
-            regiment_strength: 100,
         });
         world.systems[here].ground_units.push(troop);
         let states = States::new();
@@ -1451,6 +1609,7 @@ mod tests {
             bombardment: 2,
             attack_strength: 30,
             shield_strength: 40,
+            ..ClassStats::default()
         };
         let mut defense = |id| {
             let class = catalog(
@@ -1658,11 +1817,14 @@ mod tests {
 
     #[test]
     fn a_facility_takes_its_own_side_for_the_background() {
-        // FUN_00443130 picks the background by the object's side bits; a
-        // contested system's facility keeps its last holder
-        // (ghidra/notes/facility-ownership.md).
+        // FUN_00443130 picks the background by the object's side bits, not
+        // its system's (ghidra/notes/facility-ownership.md).
         let mut world = GameWorld::default();
-        let here = system(&mut world, "Hoth", ControlKind::Contested);
+        let here = system(
+            &mut world,
+            "Hoth",
+            ControlKind::Controlled(Faction::Alliance),
+        );
         let yard = world
             .manufacturing_facilities
             .insert(ManufacturingFacilityInstance {
@@ -1697,7 +1859,6 @@ mod tests {
         let troop = world.troops.insert(TroopUnit {
             class_dat_id: DatId::new(0x1000_0002),
             is_alliance: true,
-            regiment_strength: 100,
         });
         let mut states = States::new();
         states.transport = with_entry(
@@ -1707,7 +1868,9 @@ mod tests {
                 troop,
                 origin: here,
                 leg: RegimentLeg::Surface(there),
+                carrier: 0,
                 arrival_tick: 20,
+                via: None,
             },
         );
 

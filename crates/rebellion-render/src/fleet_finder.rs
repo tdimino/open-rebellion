@@ -854,7 +854,7 @@ mod tests {
             fighters: Vec::new(),
             characters: Vec::new(),
             is_alliance,
-            has_death_star: false,
+            bombarding: false,
         });
         world.systems[system].fleets.push(fleet);
         fleet
@@ -940,6 +940,34 @@ mod tests {
                 index: 1
             }
         );
+    }
+
+    // fleet-finder.md, "The list": an object needs +0x50 bit 6 (existing:
+    // created and not destroyed), which an unfinished ship has from its
+    // order (FUN_004f7d50(.., 1, 0); the route-1 day-115 save: Death Star
+    // 0x18000df5 +0x50 0x42), so the Ship Finder lists it.
+    #[test]
+    fn the_ship_finder_lists_an_unfinished_ship_for_either_side() {
+        let mut galaxy = galaxy();
+        galaxy.world.fleets[galaxy.own].capital_ships[1].completed = false;
+        galaxy.world.fleets[galaxy.seen].capital_ships[0].completed = false;
+        for player in [Faction::Alliance, Faction::Empire] {
+            let mut fog = FogState::new(player);
+            for &fleet in &[galaxy.own, galaxy.seen] {
+                fog.reveal(galaxy.world.fleets[fleet].location);
+            }
+            let rows = rows(
+                &galaxy.world,
+                &rebellion_core::movement::MovementState::default(),
+                &fog,
+                player,
+                FinderMode::Ships,
+                FinderTab::All,
+            );
+            for name in ["corellian Corvette", "Victory Star Destroyer"] {
+                assert!(names(&rows).contains(&name), "{player:?}: {name}");
+            }
+        }
     }
 
     #[test]

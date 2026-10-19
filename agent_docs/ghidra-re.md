@@ -23,7 +23,7 @@ for the active UI evidence queue.
 |------|--------|
 | Space battles | One resolver: the tactical engine `FUN_0040a050`, played or headless (`ghidra/notes/simulate-runs-tactical-engine.md`) |
 | Bombardment, Destroy System | Orders `0x220`-`0x223`, gate `FUN_00582440`, run `FUN_0058d800` (`ghidra/notes/bombardment.md`) |
-| Planetary assault | Open (`or-q-ground-resolution-nms`, `or-q-regiment-combat-eaxn`) |
+| Planetary assault | Order `0x234`, enable `FUN_005814d0`, run `FUN_00563390` -> `FUN_0058c120` (`ghidra/notes/ground-assault.md`) |
 | GNPRTB parameters | **111 mapped**: 34 general (28 base + 6 per-side) + 77 combat (25 base + 52 per-side) |
 | Game object layout | 10+ field offsets confirmed across all entity types |
 | C++ class hierarchy | Reconstructed by DAT family (`ghidra/notes/cpp-class-hierarchy.md`) |

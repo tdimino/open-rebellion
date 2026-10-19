@@ -35,6 +35,9 @@ const ORIGINAL_REDUCED_DETAIL_THRESHOLD: f32 = 20.0;
 const ORIGINAL_FIGHTER_CLOSE_THRESHOLD: f32 = 5.0;
 const ORIGINAL_FIGHTER_INDICATOR_THRESHOLD: f32 = 10.0;
 
+/// `FUN_005d4d10` (`0x5d5476`-`0x5d547b`): SetDecalOrigin(128, 128) on the
+/// planet decal.
+const ORIGINAL_PLANET_DECAL_ORIGIN: Vec2 = Vec2::new(128.0, 128.0);
 const ORIGINAL_CAMERA_DISTANCE_SCALE: f32 = 1.7;
 const ORIGINAL_CAMERA_FAR_SCALE: f32 = 2.5;
 const ORIGINAL_CAMERA_NEAR: f32 = 1.0;
@@ -923,6 +926,17 @@ pub(crate) struct TacticalEffectRenderObject {
     pub position: Vec3,
 }
 
+/// One world-sized Direct3D RM decal of the scene surround (`FUN_005d4d10`):
+/// a camera-facing texture `size` world units square whose texel `origin`
+/// (`SetDecalOrigin`) sits on `position`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct TacticalDecalRenderObject {
+    pub resource_id: u32,
+    pub position: Vec3,
+    pub size: f32,
+    pub origin: Vec2,
+}
+
 /// One source-traced retained projectile submitted by the live battle.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct TacticalProjectileRenderObject {
@@ -1012,6 +1026,8 @@ pub(crate) struct TacticalAssetRenderer {
     logged_field_scene: Option<String>,
     logged_projectile_scene: Option<String>,
     logged_planet_scene: Option<u32>,
+    logged_station_scene: Option<u32>,
+    logged_station_removal: Option<&'static str>,
     logged_backdrop_scene: bool,
     high_detail_models: bool,
 }
@@ -1054,6 +1070,8 @@ impl Default for TacticalAssetRenderer {
             logged_field_scene: None,
             logged_projectile_scene: None,
             logged_planet_scene: None,
+            logged_station_scene: None,
+            logged_station_removal: None,
             logged_backdrop_scene: false,
             high_detail_models: true,
         }
@@ -1103,6 +1121,8 @@ impl TacticalAssetRenderer {
             self.logged_field_scene = None;
             self.logged_projectile_scene = None;
             self.logged_planet_scene = None;
+            self.logged_station_scene = None;
+            self.logged_station_removal = None;
             self.logged_backdrop_scene = false;
         }
     }
@@ -1147,13 +1167,17 @@ impl TacticalAssetRenderer {
         true
     }
 
-    /// Draw the system-selected original tactical planet behind the retained
-    /// participant scene. The resource and palette identities are recovered
-    /// from `FUN_0059a850`, `FUN_00596ad0`, and `FUN_005c2e60`. Its provisional
-    /// left-edge placement follows the best available native screenshots and
-    /// remains outside strict A0 acceptance until the retained-frame transform
-    /// is recovered.
-    pub(crate) fn draw_planet(&mut self, aperture: (f32, f32, f32, f32)) -> bool {
+    /// Draw the system-selected planet as the scene surround's decal
+    /// (`FUN_005d4d10`, `0x5d5372`-`0x5d54f2`): origin texel (128, 128), size
+    /// `size` world units (the battle extent), transparent, on its frame at
+    /// `position`. The resource and palette are `FUN_0059a850`,
+    /// `FUN_00596ad0` and `FUN_005c2e60`'s.
+    pub(crate) fn draw_planet(
+        &mut self,
+        aperture: (f32, f32, f32, f32),
+        position: Vec3,
+        size: f32,
+    ) -> bool {
         let resource_id = 5500 + u32::from(self.palette_selector);
         if self.planet.as_ref().map(|planet| planet.resource_id) != Some(resource_id)
             && self.unavailable_planet != Some(resource_id)
@@ -1174,31 +1198,118 @@ impl TacticalAssetRenderer {
         else {
             return false;
         };
-        let source_scale = aperture.3 / 439.0;
-        let size = vec2(planet.texture.width(), planet.texture.height()) * source_scale;
-        let x = aperture.0 - size.x * 0.5;
-        let y = aperture.1;
-        draw_texture_ex(
-            &planet.texture,
-            x,
-            y,
-            WHITE,
-            DrawTextureParams {
-                dest_size: Some(size),
-                ..Default::default()
-            },
-        );
         if self.logged_planet_scene != Some(resource_id) {
             macroquad::logging::info!(
-                "[tactical_3d] planet_scene resource={} palette_resource_id={} dimensions={}x{} source_position=left_edge_provisional source=FUN_0059a850,FUN_00596ad0,FUN_005c2e60,FUN_00509610,FUN_0040b0e0",
+                "[tactical_3d] planet_scene resource={} palette_resource_id={} dimensions={}x{} source_position=world_decal position={:.3},{:.3},{:.3} size={:.3} origin=128,128 source=FUN_0059a850,FUN_00596ad0,FUN_005c2e60,FUN_005d4d10",
                 resource_id,
                 planet.palette_resource_id,
                 planet.texture.width(),
                 planet.texture.height(),
+                position.x,
+                position.y,
+                position.z,
+                size,
             );
             self.logged_planet_scene = Some(resource_id);
         }
-        true
+        let Some(source_camera) = self.source_camera else {
+            return false;
+        };
+        let decal = TacticalDecalRenderObject {
+            resource_id,
+            position,
+            size,
+            origin: ORIGINAL_PLANET_DECAL_ORIGIN,
+        };
+        let texels = vec2(planet.texture.width(), planet.texture.height());
+        let rect = decal_screen_rect(source_camera.pose(), aperture, decal, texels);
+        if let Some((min, dest_size)) = rect {
+            draw_texture_ex(
+                &planet.texture,
+                min.x,
+                min.y,
+                WHITE,
+                DrawTextureParams {
+                    dest_size: Some(dest_size),
+                    ..Default::default()
+                },
+            );
+        }
+        rect.is_some()
+    }
+
+    /// Log, once per cause, that `FUN_005c1200` has taken the station's
+    /// decal off its frame (actor slot 1, `FUN_005d5950` -> slot 12,
+    /// `0x5d59b0`); nothing draws it again.
+    pub(crate) fn note_station_decal_removed(&mut self, resource_id: u32, cause: &'static str) {
+        if self.logged_station_removal != Some(cause) {
+            macroquad::logging::info!(
+                "[tactical_3d] station_decal_removed resource={} cause={} source=FUN_005c1200,FUN_005d5950",
+                resource_id,
+                cause,
+            );
+            self.logged_station_removal = Some(cause);
+        }
+    }
+
+    /// Draw the Death Star station as the scene surround's decal
+    /// (`FUN_005d4d10`, `0x5d54f7`-`0x5d56d5`): resource 5010 or 5020,
+    /// transparent, origin texel (64, 64), half the battle extent square, on
+    /// its frame. It is not a pick target (`FUN_005c2d20` needs `+0x34`,
+    /// which the surround clears), so nothing reports its projection.
+    /// hyp: the effect decode's key, the first texel's index, is the decal's
+    /// default black.
+    pub(crate) fn draw_station_decal(
+        &mut self,
+        aperture: (f32, f32, f32, f32),
+        decal: TacticalDecalRenderObject,
+    ) -> bool {
+        if !self.effect_textures.contains_key(&decal.resource_id)
+            && !self
+                .unavailable_effect_textures
+                .contains(&decal.resource_id)
+        {
+            if let Err(error) = self.load_effect_texture(decal.resource_id) {
+                self.unavailable_effect_textures.insert(decal.resource_id);
+                macroquad::logging::warn!(
+                    "[tactical_3d] station resource={} unavailable: {}",
+                    decal.resource_id,
+                    error
+                );
+            }
+        }
+        let Some(asset) = self.effect_textures.get(&decal.resource_id) else {
+            return false;
+        };
+        if self.logged_station_scene != Some(decal.resource_id) {
+            macroquad::logging::info!(
+                "[tactical_3d] station_decal resource={} position={:.3},{:.3},{:.3} size={:.3} origin=64,64 pickable=false source=FUN_005ab650,FUN_005c1d30,FUN_005d4d10",
+                decal.resource_id,
+                decal.position.x,
+                decal.position.y,
+                decal.position.z,
+                decal.size,
+            );
+            self.logged_station_scene = Some(decal.resource_id);
+        }
+        let Some(source_camera) = self.source_camera else {
+            return false;
+        };
+        let texels = vec2(asset.texture.width(), asset.texture.height());
+        let rect = decal_screen_rect(source_camera.pose(), aperture, decal, texels);
+        if let Some((min, dest_size)) = rect {
+            draw_texture_ex(
+                &asset.texture,
+                min.x,
+                min.y,
+                WHITE,
+                DrawTextureParams {
+                    dest_size: Some(dest_size),
+                    ..Default::default()
+                },
+            );
+        }
+        rect.is_some()
     }
 
     #[cfg(feature = "interface-test-fixtures")]
@@ -2549,17 +2660,18 @@ impl TacticalAssetRenderer {
             (texture, palette)
         };
         let palette = decode_palette_object(&palette_payload, palette_resource_id)?;
-        let texture =
-            decode_indexed_texture_with_rule(&texture_payload, &palette, palette_resource_id, 2)?;
-        if texture.width() != 256.0 || texture.height() != 256.0 {
+        let (width, height, mut rgba) =
+            decode_indexed_rgba_with_rule(&texture_payload, &palette, palette_resource_id, 2)?;
+        if width != 256 || height != 256 {
             return Err(format!(
-                "tactical planet {resource_id} has invalid dimensions {}x{}",
-                texture.width(),
-                texture.height()
+                "tactical planet {resource_id} has invalid dimensions {width}x{height}"
             ));
         }
+        key_decal_black(&mut rgba);
+        let texture = Texture2D::from_rgba8(width, height, &rgba);
+        texture.set_filter(original_tactical_texture_filter());
         macroquad::logging::info!(
-            "[tactical_3d] planet_loaded resource={} palette_resource_id={} dimensions={}x{} texture_filter=nearest alpha=opaque source=FUN_0059a850,FUN_00596ad0,FUN_005c2e60",
+            "[tactical_3d] planet_loaded resource={} palette_resource_id={} dimensions={}x{} texture_filter=nearest alpha=decal_black_key source=FUN_0059a850,FUN_00596ad0,FUN_005c2e60,FUN_005d4d10",
             resource_id,
             palette_resource_id,
             texture.width(),
@@ -2573,6 +2685,36 @@ impl TacticalAssetRenderer {
         self.family_loads = self.family_loads.saturating_add(1);
         Ok(())
     }
+}
+
+/// The screen rectangle (top-left, size) of a decal of `texture_size`
+/// texels. `FUN_005d4d10` never calls SetDecalScale, so Direct3D RM scales a
+/// decal by its depth along the view axis: `size` world units span
+/// `size * height / (2 * depth * tan(fovy / 2))` pixels, with the origin
+/// texel on the frame's projection. The front and back planes clip it like
+/// the rest of the scene.
+fn decal_screen_rect(
+    pose: OriginalCameraPose,
+    aperture: (f32, f32, f32, f32),
+    decal: TacticalDecalRenderObject,
+    texture_size: Vec2,
+) -> Option<(Vec2, Vec2)> {
+    let forward = (pose.target - pose.position).normalize_or_zero();
+    let depth = (decal.position - pose.position).dot(forward);
+    if !(pose.near..=pose.far).contains(&depth) {
+        return None;
+    }
+    // `Camera3D::matrix` for the pose the participant passes draw with.
+    let camera_matrix = Mat4::perspective_rh_gl(
+        pose.fovy_radians,
+        aperture.2 / aperture.3,
+        pose.near,
+        pose.far,
+    ) * Mat4::look_at_rh(pose.position, pose.target, pose.up);
+    let centre = project_world_position(camera_matrix, decal.position, aperture)?;
+    let pixels = decal.size * aperture.3 / (2.0 * depth * (pose.fovy_radians * 0.5).tan());
+    let size = vec2(pixels, pixels);
+    Some((centre - decal.origin / texture_size * size, size))
 }
 
 fn project_world_position(
@@ -2924,12 +3066,12 @@ fn decode_indexed_effect_texture(
     Ok((texture, transparent_index))
 }
 
-fn decode_indexed_texture_with_rule(
+fn decode_indexed_rgba_with_rule(
     bytes: &[u8],
     palette: &[[u8; 4]; 256],
     expected_palette_id: u32,
     expected_palette_rule: u32,
-) -> Result<Texture2D, String> {
+) -> Result<(u16, u16, Vec<u8>), String> {
     let mut reader = Reader::new(bytes);
     reader.expect(TEXTURE_MAGIC)?;
     if reader.u32()? != 1 {
@@ -2965,9 +3107,31 @@ fn decode_indexed_texture_with_rule(
     for index in indices {
         rgba.extend_from_slice(&palette[usize::from(*index)]);
     }
-    let texture = Texture2D::from_rgba8(width as u16, height as u16, &rgba);
+    Ok((width as u16, height as u16, rgba))
+}
+
+fn decode_indexed_texture_with_rule(
+    bytes: &[u8],
+    palette: &[[u8; 4]; 256],
+    expected_palette_id: u32,
+    expected_palette_rule: u32,
+) -> Result<Texture2D, String> {
+    let (width, height, rgba) =
+        decode_indexed_rgba_with_rule(bytes, palette, expected_palette_id, expected_palette_rule)?;
+    let texture = Texture2D::from_rgba8(width, height, &rgba);
     texture.set_filter(original_tactical_texture_filter());
     Ok(texture)
+}
+
+/// Direct3D RM draws a transparent decal (`SetDecalTransparency(TRUE)`)
+/// without the texels of its transparent colour, black unless
+/// `SetDecalTransparentColor` changes it, which `FUN_005d4d10` never calls.
+fn key_decal_black(rgba: &mut [u8]) {
+    for texel in rgba.chunks_exact_mut(4) {
+        if texel[..3] == [0, 0, 0] {
+            texel[3] = 0;
+        }
+    }
 }
 
 fn load_tactical_material() -> Result<Material, String> {
@@ -3155,6 +3319,13 @@ fragment float4 fragmentShader(RasterizerData in [[stage_in]], constant Uniforms
 mod tests {
     use super::*;
 
+    fn assert_pixel(actual: f32, expected: f32) {
+        assert!(
+            (actual - expected).abs() < 1.0e-3,
+            "expected {expected}, got {actual}"
+        );
+    }
+
     fn assert_near(actual: f32, expected: f32) {
         assert!(
             (actual - expected).abs() < 1.0e-5,
@@ -3304,6 +3475,75 @@ mod tests {
         );
     }
 
+    fn indexed_texture(header: [u32; 7], body: &[u8]) -> Vec<u8> {
+        let mut bytes = Vec::from(TEXTURE_MAGIC.as_slice());
+        for value in header {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.extend_from_slice(body);
+        bytes
+    }
+
+    // Source: TACTICAL.DLL type-303 indexed texture format; FUN_005c2e60
+    // pairs planet 5500 + n with palette 5530 + n under rule 2.
+    #[test]
+    fn an_indexed_texture_decodes_only_with_its_exact_header_and_paired_palette() {
+        let mut palette = [[0_u8; 4]; 256];
+        palette[3] = [12, 34, 56, 255];
+        palette[4] = [0, 0, 0, 255];
+        let decode = |bytes: &[u8]| decode_indexed_rgba_with_rule(bytes, &palette, 5537, 2);
+        let good = [1, 2, 1, 5537, 2, 2, 0];
+        assert_eq!(
+            decode(&indexed_texture(good, &[3, 4])),
+            Ok((2, 1, vec![12, 34, 56, 255, 0, 0, 0, 255]))
+        );
+        let mut trailing = good;
+        trailing[6] = 4;
+        assert_eq!(
+            decode(&indexed_texture(trailing, &[3, 4, 9, 9, 9, 9])).map(|(w, h, _)| (w, h)),
+            Ok((2, 1))
+        );
+        let mut widest = good;
+        widest[1] = u32::from(u16::MAX);
+        widest[5] = u32::from(u16::MAX);
+        assert!(decode(&indexed_texture(widest, &vec![3; usize::from(u16::MAX)])).is_ok());
+        let mut tallest = widest;
+        (tallest[1], tallest[2]) = (1, u32::from(u16::MAX));
+        assert!(decode(&indexed_texture(tallest, &vec![3; usize::from(u16::MAX)])).is_ok());
+        for (field, value, body) in [
+            (0, 2, vec![3, 4]),
+            (1, 0, vec![]),
+            (2, 0, vec![]),
+            (1, 65_536, vec![3; 65_536]),
+            (2, 65_536, vec![3; 131_072]),
+            (3, 5538, vec![3, 4]),
+            (4, 1, vec![3, 4]),
+            (5, 1, vec![3]),
+            (6, 2, vec![3, 4, 9, 9]),
+        ] {
+            let mut header = good;
+            header[field] = value;
+            if field == 1 {
+                header[5] = value;
+            }
+            if field == 2 {
+                header[5] = value * 2;
+            }
+            assert!(
+                decode(&indexed_texture(header, &body)).is_err(),
+                "field {field} = {value}"
+            );
+        }
+        assert!(
+            decode(&indexed_texture(good, &[3, 4, 0])).is_err(),
+            "a trailing byte"
+        );
+        assert!(
+            decode(&indexed_texture(good, &[3])).is_err(),
+            "a short body"
+        );
+    }
+
     // Source: FUN_0059a850, FUN_00596ad0, FUN_005c2e60 planet resource
     // and palette identity.
     #[cfg(not(target_arch = "wasm32"))]
@@ -3357,6 +3597,106 @@ mod tests {
         assert_near(alliance.field, 0.2);
         assert_near(alliance.fovy_radians, 2.0 * 0.2_f32.atan());
         assert_near(alliance.up.length(), 1.0);
+    }
+
+    // Source: FUN_005d4d10 sets the decals' size (SetDecalSize) and origin
+    // (SetDecalOrigin) and never calls SetDecalScale, so Direct3D RM scales
+    // each by its depth: `size` world units span
+    // `size * height / (2 * depth * tan(fovy / 2))` pixels, and the origin
+    // texel lands on the frame's projection.
+    #[test]
+    fn a_decal_spans_its_world_size_at_its_depth_and_sits_on_its_origin_texel() {
+        let aperture = (18.0, 29.0, 444.0, 439.0);
+        for player_is_empire in [false, true] {
+            let pose = OriginalTacticalCamera::new(player_is_empire, 100.0).pose();
+            let decal = TacticalDecalRenderObject {
+                resource_id: 5010,
+                position: pose.target,
+                size: 50.0,
+                origin: vec2(64.0, 64.0),
+            };
+            let (min, size) = decal_screen_rect(pose, aperture, decal, vec2(128.0, 128.0))
+                .expect("the battle centre is in view");
+            let depth = (pose.target - pose.position).length();
+            let pixels = 50.0 * 439.0 / (2.0 * depth * (pose.fovy_radians * 0.5).tan());
+            assert_pixel(size.x, pixels);
+            assert_pixel(size.y, pixels);
+            let centre = vec2(18.0 + 222.0, 29.0 + 219.5);
+            assert_pixel(min.x, centre.x - pixels * 0.5);
+            assert_pixel(min.y, centre.y - pixels * 0.5);
+
+            let forward = (pose.target - pose.position).normalize();
+            let right = forward.cross(pose.up).normalize();
+            let beside = TacticalDecalRenderObject {
+                position: pose.target + right * 10.0,
+                ..decal
+            };
+            let (shifted, _) = decal_screen_rect(pose, aperture, beside, vec2(128.0, 128.0))
+                .expect("beside the battle centre is in view");
+            assert_pixel(shifted.x - min.x, 10.0 * pixels / 50.0);
+            assert_pixel(shifted.y, min.y);
+
+            let planet = TacticalDecalRenderObject {
+                size: 100.0,
+                origin: vec2(32.0, 64.0),
+                ..decal
+            };
+            let (min, size) =
+                decal_screen_rect(pose, aperture, planet, vec2(256.0, 256.0)).expect("in view");
+            assert_pixel(size.x, 2.0 * pixels);
+            assert_pixel(min.x, centre.x - size.x * 0.125);
+            assert_pixel(min.y, centre.y - size.y * 0.25);
+        }
+    }
+
+    // Source: FUN_005d4d10 sets SetDecalTransparency(TRUE) on the planet
+    // decal (0x5d5498) and never SetDecalTransparentColor, so only its black
+    // texels drop out.
+    #[test]
+    fn a_transparent_decal_drops_only_its_black_texels() {
+        let mut rgba = vec![0, 0, 0, 255, 0, 0, 1, 255, 12, 34, 56, 255, 0, 0, 0, 255];
+        key_decal_black(&mut rgba);
+        assert_eq!(
+            rgba,
+            vec![0, 0, 0, 0, 0, 0, 1, 255, 12, 34, 56, 255, 0, 0, 0, 0]
+        );
+    }
+
+    // Source: FUN_005c1080 clips the scene at the camera's front (1.0) and
+    // back (2.5 camera distances) planes; a decal outside them is not drawn.
+    #[test]
+    fn a_decal_behind_the_camera_or_past_the_back_plane_is_not_drawn() {
+        let aperture = (18.0, 29.0, 444.0, 439.0);
+        let pose = OriginalTacticalCamera::new(false, 100.0).pose();
+        let forward = (pose.target - pose.position).normalize();
+        let decal = |position| TacticalDecalRenderObject {
+            resource_id: 5010,
+            position,
+            size: 50.0,
+            origin: vec2(64.0, 64.0),
+        };
+        let texels = vec2(128.0, 128.0);
+        assert!(
+            decal_screen_rect(pose, aperture, decal(pose.position - forward), texels).is_none()
+        );
+        assert!(
+            decal_screen_rect(pose, aperture, decal(pose.position + forward * 0.5), texels)
+                .is_none()
+        );
+        assert!(decal_screen_rect(
+            pose,
+            aperture,
+            decal(pose.position + forward * 424.0),
+            texels
+        )
+        .is_some());
+        assert!(decal_screen_rect(
+            pose,
+            aperture,
+            decal(pose.position + forward * 426.0),
+            texels
+        )
+        .is_none());
     }
 
     // Source: FUN_005ab650 tactical layout and lane derivation.

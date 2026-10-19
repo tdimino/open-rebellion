@@ -263,15 +263,60 @@ function decodeIndexedBmp(bytes) {
   return {
     width,
     height,
+    // The palette index of the first stored pixel, the key a CoolStrobeButton
+    // blits on (FUN_00602d30).
+    keyIndex: bytes[dataOffset],
+    index(x, y) {
+      return bytes[dataOffset + (height - 1 - y) * stride + x];
+    },
     pixel(x, y) {
-      const index = bytes[dataOffset + (height - 1 - y) * stride + x];
-      const entry = paletteOffset + index * 4;
+      const entry = paletteOffset + this.index(x, y) * 4;
       return [bytes[entry + 2], bytes[entry + 1], bytes[entry]];
     },
   };
 }
 
-function verifyGidRootFrame(viewport, screenshotBytes, systemWindowOpen = false) {
+// A tactical-DLL bitmap as the battle window shows it: FUN_0059ae70
+// realizes entries 0-9 and 246-255 from the system palette
+// (GetSystemPaletteEntries), whose entry 254 is white (bmp_cache.rs,
+// TACTICAL_SYSTEM_PALETTE_254; A0 TAC-05-C007, C008, C009, C014).
+function decodeTacticalBmp(id) {
+  const bitmap = decodeIndexedBmp(fs.readFileSync(path.join(
+    root, `data/base/ui/tactical-dll/BMP/${id}.bmp`,
+  )));
+  const own = bitmap.pixel;
+  bitmap.pixel = function pixel(x, y) {
+    return this.index(x, y) === 254 ? [255, 255, 255] : own.call(this, x, y);
+  };
+  return bitmap;
+}
+
+// The System fixture's Manufacturing window, type 9, 226 by 304 at (225, 76).
+const SYSTEM_FIXTURE_WINDOW = { x: 225, y: 76, width: 226, height: 304 };
+
+// The pixels of a 640x480 logical rect in a screenshot of `viewport`.
+function cropPng(png, viewport, rect) {
+  const scale = Math.min(viewport.width / 640, viewport.height / 480);
+  const density = png.width / viewport.width;
+  const x0 = Math.round(((viewport.width - 640 * scale) / 2 + rect.x * scale) * density);
+  const y0 = Math.round(((viewport.height - 480 * scale) / 2 + rect.y * scale) * density);
+  const width = Math.round(rect.width * scale * density);
+  const height = Math.round(rect.height * scale * density);
+  const out = Buffer.alloc(width * height * 4);
+  for (let y = 0; y < height; y++) {
+    const start = ((y0 + y) * png.width + x0) * 4;
+    png.data.copy(out, y * width * 4, start, start + width * 4);
+  }
+  return out;
+}
+
+// FUN_00422ce0 0x132 builds the GID menu with FUN_00451130 at (370,233) for
+// side 1 and (420,233) for side 2, 160 by 160.
+function gidMenuOrigin(faction) {
+  return { x: faction === "alliance" ? 370 : 420, y: 233 };
+}
+
+function verifyGidRootFrame(viewport, screenshotBytes, faction, systemWindowOpen = false) {
   if (viewport.width !== 640 || viewport.height !== 480 || viewport.device_scale_factor !== 1) {
     return { status: "non-native-scale", pixels_checked: 0 };
   }
@@ -285,7 +330,7 @@ function verifyGidRootFrame(viewport, screenshotBytes, systemWindowOpen = false)
   let pixelsChecked = 0;
   let pixelsOccluded = 0;
   if (systemWindowOpen) {
-    const covered = (230 * screenshot.width + 425) * 4;
+    const covered = (gidMenuOrigin(faction).y * screenshot.width + gidMenuOrigin(faction).x) * 4;
     assert.notDeepEqual(
       Array.from(screenshot.data.subarray(covered, covered + 3)),
       resources.get(10100).pixel(0, 0),
@@ -309,23 +354,26 @@ function verifyGidRootFrame(viewport, screenshotBytes, systemWindowOpen = false)
     );
     pixelsChecked++;
   };
-  // The root rectangle is 158x159 at native 640x480, from the recovered
-  // GID anchor and seven rows. Check every visible painted border pixel.
+  // The root rectangle is 160x160 at native 640x480. Check every visible
+  // painted border pixel.
+  const { x: left, y: top } = gidMenuOrigin(faction);
+  const right = left + 159;
+  const bottom = top + 159;
   for (const [id, x, y] of [
-    [10100, 425, 230], [10101, 581, 230],
-    [10102, 425, 387], [10103, 581, 387],
+    [10100, left, top], [10101, right - 1, top],
+    [10102, left, bottom - 1], [10103, right - 1, bottom - 1],
   ]) {
     for (let by = 0; by < 2; by++) {
       for (let bx = 0; bx < 2; bx++) check(x + bx, y + by, id, bx, by);
     }
   }
-  for (let x = 427; x <= 580; x++) {
-    check(x, 230, 10104, (x - 427) % 2, 0);
-    check(x, 388, 10107, (x - 427) % 2, 0);
+  for (let x = left + 2; x <= right - 2; x++) {
+    check(x, top, 10104, (x - left - 2) % 2, 0);
+    check(x, bottom, 10107, (x - left - 2) % 2, 0);
   }
-  for (let y = 232; y <= 386; y++) {
-    check(425, y, 10105, 0, (y - 232) % 2);
-    check(582, y, 10106, 0, (y - 232) % 2);
+  for (let y = top + 2; y <= bottom - 2; y++) {
+    check(left, y, 10105, 0, (y - top - 2) % 2);
+    check(right, y, 10106, 0, (y - top - 2) % 2);
   }
   return {
     status: systemWindowOpen ? "source-bitmap-visible-partial" : "source-bitmap-exact",
@@ -397,23 +445,51 @@ async function probeGid(page, faction, scenario, viewport, folder, consoleLines,
   const opened = "command=0x132 destination=gid_menu status=opened_original";
   await performCommand(page, opened, () => page.mouse.up());
   const rootCapture = await page.screenshot({ path: path.join(folder, "menu-root.png"), animations: "disabled" });
-  const rootFrame = verifyGidRootFrame(viewport, rootCapture, scenario.slug === "system");
+  // FUN_00422ce0 0x132 hides every child window (slot +8 on the +0x6c
+  // registry) before it shows the menu, so nothing occludes the root frame.
+  const rootFrame = verifyGidRootFrame(viewport, rootCapture, faction);
+  // Menu points below were laid out on a (425,230) anchor; shift them.
+  const menu = gidMenuOrigin(faction);
+  const menuPoint = (x, y) => point(x + menu.x - 425, y + menu.y - 230);
+  if (scenario.slug === "system") {
+    assert.notEqual(
+      sha256(cropPng(PNG.sync.read(rootCapture), viewport, SYSTEM_FIXTURE_WINDOW)),
+      sha256(cropPng(PNG.sync.read(fs.readFileSync(path.join(folder, "actual.png"))),
+        viewport, SYSTEM_FIXTURE_WINDOW)),
+      `${faction}: the GID menu left the System window showing`,
+    );
+    probes.push({ type: "gid-hides-windows", window: SYSTEM_FIXTURE_WINDOW });
+  }
   probes.push({ type: "control-click", x: interior.x, y: interior.y, opened: true,
     screenshot_sha256: sha256(rootCapture), root_frame: rootFrame });
 
-  const closed = "command=0x132 destination=gid_menu status=closed";
-  await performCommand(page, closed, () => page.mouse.click(interior.x, interior.y));
-  const closedCapture = await page.screenshot({ path: path.join(folder, "control-closed.png"),
+  // The control is a child window beside the menu, so a second click sends
+  // 0x132 again; FUN_00422ce0 0x132 has no toggle and reuses the open menu,
+  // so the click changes nothing (under Wine, the Alliance game in slot 5 at
+  // day 1173; on the VM, the Empire Death Star game at day 677).
+  await performCommand(page, opened, () => page.mouse.click(interior.x, interior.y));
+  const reclickCapture = await page.screenshot({ path: path.join(folder, "control-reclick.png"),
     animations: "disabled" });
+  assert.equal(sha256(reclickCapture), sha256(rootCapture),
+    `${faction}: a second click on the GID control changed its open menu`);
+  probes.push({ type: "control-reclick", x: interior.x, y: interior.y, opened: true,
+    screenshot_sha256: sha256(reclickCapture) });
+  // A left release on the galaxy view closes the menu and shows the hidden
+  // windows again (FUN_00422ce0 WM_LBUTTONUP; under Wine, the Empire Death
+  // Star save at days 677-700).
+  const galaxyPoint = point(300, 60);
+  await page.mouse.click(galaxyPoint.x, galaxyPoint.y);
+  // The restored windows fade in as egui areas; wait for the settled frame.
+  const closedCapture = await stableInteractionFrame(page, folder, "galaxy-press-closed");
   assert.equal(sha256(closedCapture), sha256(fs.readFileSync(path.join(folder, "actual.png"))),
-    `${faction}: the GID control did not close its own menu cleanly`);
-  probes.push({ type: "control-click-close", x: interior.x, y: interior.y, opened: false,
+    `${faction}: a galaxy press did not close the GID menu and restore its windows`);
+  probes.push({ type: "galaxy-press-close", x: galaxyPoint.x, y: galaxyPoint.y, opened: false,
     screenshot_sha256: sha256(closedCapture) });
   await performCommand(page, opened, () => page.mouse.click(interior.x, interior.y));
 
   if (scenario.category !== null) {
     const alternate = scenario.mode === "Uprisings" ? "Popular Support" : "Uprisings";
-    const alternatePoint = point(470, 246);
+    const alternatePoint = menuPoint(470, 246);
     await page.mouse.move(alternatePoint.x, alternatePoint.y);
     await page.waitForTimeout(50);
     const hoveredRoot = await page.screenshot({ path: path.join(folder, "menu-root-hover.png"), animations: "disabled" });
@@ -425,7 +501,7 @@ async function probeGid(page, faction, scenario, viewport, folder, consoleLines,
       assert.deepEqual(pixel(after, 450, 245), pixel(before, 450, 245),
         "GID root added an unproven synthetic row hover wash");
     }
-    const alternateLeaf = point(222, 246 + (alternate === "Uprisings" ? 21 : 0));
+    const alternateLeaf = menuPoint(222, 246 + (alternate === "Uprisings" ? 21 : 0));
     await performCommand(page, `destination=gid status=selected label=${alternate}`,
       () => page.mouse.click(alternateLeaf.x, alternateLeaf.y));
     await page.waitForFunction((expected) => window.__openRebellionInterfaceSelection?.mode === expected,
@@ -433,7 +509,7 @@ async function probeGid(page, faction, scenario, viewport, folder, consoleLines,
     probes.push({ type: "alternate-mode", mode: alternate });
 
     await performCommand(page, opened, () => page.mouse.click(interior.x, interior.y));
-    const rootPoint = point(470, 246 + 21 * scenario.category);
+    const rootPoint = menuPoint(470, 246 + 21 * scenario.category);
     await page.mouse.move(rootPoint.x, rootPoint.y);
     await page.waitForTimeout(80);
     const submenuCapture = await page.screenshot({ path: path.join(folder, "menu-submenu.png"), animations: "disabled" });
@@ -441,9 +517,9 @@ async function probeGid(page, faction, scenario, viewport, folder, consoleLines,
       screenshot_sha256: sha256(submenuCapture) });
     assert.notEqual(sha256(rootCapture), sha256(submenuCapture),
       `${scenario.slug}: submenu did not change the root view`);
-    const submenuTop = Math.min(230 + 21 * scenario.category,
+    const submenuTop = Math.min(menu.y + 21 * scenario.category,
       470 - 21 * [2, 2, 2, 4, 6, 5][scenario.category]);
-    const leafPoint = point(222, submenuTop + 16 + 21 * scenario.leaf);
+    const leafPoint = point(222 + menu.x - 425, submenuTop + 16 + 21 * scenario.leaf);
     const expected = `destination=gid status=selected label=${scenario.mode}`;
     await performCommand(page, expected, () => page.mouse.click(leafPoint.x, leafPoint.y));
     await page.waitForFunction((mode) => window.__openRebellionInterfaceSelection?.mode === mode,
@@ -453,20 +529,116 @@ async function probeGid(page, faction, scenario, viewport, folder, consoleLines,
     const selectedCapture = await page.screenshot({ path: path.join(folder, "menu-selected.png"), animations: "disabled" });
     probes.push({ type: "submenu-selection", mode: scenario.mode,
       screenshot_sha256: sha256(selectedCapture) });
+  } else if (scenario.slug === "system") {
+    // A row choice (WM_COMMAND 0x140) shows the hidden windows again.
+    const displayOff = menuPoint(477, 372);
+    await performCommand(page, "destination=gid status=selected label=Display Off",
+      () => page.mouse.click(displayOff.x, displayOff.y));
+    const settled = await stableInteractionFrame(page, folder, "row-choice-restored");
+    assert.equal(
+      sha256(cropPng(PNG.sync.read(settled), viewport, SYSTEM_FIXTURE_WINDOW)),
+      sha256(cropPng(PNG.sync.read(fs.readFileSync(path.join(folder, "actual.png"))),
+        viewport, SYSTEM_FIXTURE_WINDOW)),
+      `${faction}: a row choice did not bring the System window back`,
+    );
+    probes.push({ type: "row-choice-restores-windows", window: SYSTEM_FIXTURE_WINDOW });
+    // The System window is movable (FUN_00452fc0 sets +0xb8 | 4): a press
+    // on its title strip takes hold (FUN_00606ee0), the window follows the
+    // pointer live (FUN_006071e0) and the release lets go (FUN_00607010).
+    const from = point(SYSTEM_FIXTURE_WINDOW.x + 100, SYSTEM_FIXTURE_WINDOW.y + 9);
+    const to = point(SYSTEM_FIXTURE_WINDOW.x + 60, SYSTEM_FIXTURE_WINDOW.y - 11);
+    await page.mouse.move(from.x, from.y);
+    await page.evaluate(() => new Promise((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(resolve));
+    }));
+    await page.mouse.down();
+    await page.evaluate(() => new Promise((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(resolve));
+    }));
+    await page.mouse.move(to.x, to.y, { steps: 4 });
+    await page.mouse.up();
+    const moved = { ...SYSTEM_FIXTURE_WINDOW, x: SYSTEM_FIXTURE_WINDOW.x - 40,
+      y: SYSTEM_FIXTURE_WINDOW.y - 20 };
+    const dragged = await stableInteractionFrame(page, folder, "title-dragged");
+    assert.equal(
+      sha256(cropPng(PNG.sync.read(dragged), viewport, moved)),
+      sha256(cropPng(PNG.sync.read(settled), viewport, SYSTEM_FIXTURE_WINDOW)),
+      `${faction}: a title drag did not carry the System window with the pointer`,
+    );
+    probes.push({ type: "title-drag-moves-window", from: SYSTEM_FIXTURE_WINDOW, to: moved });
+    // Any press on the window's bare surface takes hold too (FUN_004534f0
+    // passes it to the base unless it lands on a band); here the margin
+    // left of the facility list.
+    const bodyFrom = point(moved.x + 4, moved.y + 150);
+    const bodyTo = point(moved.x + 34, moved.y + 160);
+    await page.mouse.move(bodyFrom.x, bodyFrom.y);
+    await page.evaluate(() => new Promise((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(resolve));
+    }));
+    await page.mouse.down();
+    await page.evaluate(() => new Promise((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(resolve));
+    }));
+    await page.mouse.move(bodyTo.x, bodyTo.y, { steps: 4 });
+    await page.mouse.up();
+    const bodyMoved = { ...moved, x: moved.x + 30, y: moved.y + 10 };
+    const bodyDragged = await stableInteractionFrame(page, folder, "body-dragged");
+    assert.equal(
+      sha256(cropPng(PNG.sync.read(bodyDragged), viewport, bodyMoved)),
+      sha256(cropPng(PNG.sync.read(settled), viewport, SYSTEM_FIXTURE_WINDOW)),
+      `${faction}: a press on the bare surface did not carry the System window`,
+    );
+    probes.push({ type: "body-drag-moves-window", from: moved, to: bodyMoved });
   } else if (scenario.slug === "display-off") {
-    const displayOff = point(477, 372);
+    const displayOff = menuPoint(477, 372);
     await performCommand(page, "destination=gid status=selected label=Display Off",
       () => page.mouse.click(displayOff.x, displayOff.y));
     await page.waitForFunction(() => window.__openRebellionInterfaceSelection?.mode === "Display Off",
       null, { timeout: 2_000 });
     probes.push({ type: "root-selection", mode: "Display Off" });
   } else {
+    // Escape never closes the menu: its procedure (FUN_004aab50) posts 0x405
+    // for its own key, which the view has not registered (under Wine,
+    // alliance-day54-advice day 61 and empire-fleet-to-yaga-minor days 39-42).
+    await page.mouse.move(galaxyPoint.x, galaxyPoint.y);
+    const openCapture = await stableInteractionFrame(page, folder, "menu-open");
     await page.keyboard.press("Escape");
-    await page.waitForTimeout(80);
-    const dismissed = await page.screenshot({ path: path.join(folder, "menu-dismissed.png"), animations: "disabled" });
+    const escaped = await stableInteractionFrame(page, folder, "menu-escape");
+    assert.equal(sha256(escaped), sha256(openCapture),
+      `${faction} ${scenario.slug}: Escape changed the open GID menu`);
+    probes.push({ type: "menu-escape-stays-open", screenshot_sha256: sha256(escaped) });
+    // A rail light is a child window beside the menu (FUN_00427270, 0x13d):
+    // it opens the Message Index, and once that closes the menu is still open
+    // with the windows hidden (the original, alliance-day54-advice, day 61).
+    const rail = faction === "alliance" ? point(3 + 13, 284 + 11) : point(611 + 13, 285 + 11);
+    const railObserved = await performCommand(page,
+      "command=0x13d destination=message_index", () => page.mouse.click(rail.x, rail.y));
+    await page.keyboard.press("Escape");
+    await page.mouse.move(galaxyPoint.x, galaxyPoint.y);
+    const afterIndex = await stableInteractionFrame(page, folder, "rail-under-menu-closed");
+    assert.equal(sha256(afterIndex), sha256(openCapture),
+      `${faction} ${scenario.slug}: a rail light closed the GID menu or showed its windows`);
+    probes.push({ type: "rail-leaves-menu-open", observed: railObserved,
+      screenshot_sha256: sha256(afterIndex) });
+    if (scenario.slug === "galaxy") {
+      // The menu passes every key but Enter and Escape to the view
+      // (FUN_004aab50), so the display accelerators act while it is open.
+      const uprisings = await performCommand(page,
+        "label=Uprisings source=accelerator", () => page.keyboard.press("Alt+2"));
+      const support = await performCommand(page,
+        "label=Popular Support source=accelerator", () => page.keyboard.press("Alt+1"));
+      await page.mouse.move(galaxyPoint.x, galaxyPoint.y);
+      const afterKeys = await stableInteractionFrame(page, folder, "accelerators-under-menu");
+      assert.equal(sha256(afterKeys), sha256(openCapture),
+        `${faction}: the display accelerators closed the GID menu or left another display`);
+      probes.push({ type: "accelerators-under-menu", observed: [uprisings, support] });
+    }
+    // A press on the galaxy closes it (FUN_00422ce0 WM_LBUTTONUP).
+    await page.mouse.click(galaxyPoint.x, galaxyPoint.y);
+    const dismissed = await stableInteractionFrame(page, folder, "menu-dismissed");
     assert.equal(sha256(dismissed), sha256(fs.readFileSync(path.join(folder, "actual.png"))),
-      `${scenario.slug}: Escape left the original galaxy surface`);
-    probes.push({ type: "menu-escape", screenshot_sha256: sha256(dismissed) });
+      `${faction} ${scenario.slug}: a galaxy press left the original galaxy surface`);
+    probes.push({ type: "menu-dismissed", screenshot_sha256: sha256(dismissed) });
   }
 
   if (scenario.slug === "popular-support") {
@@ -475,13 +647,13 @@ async function probeGid(page, faction, scenario, viewport, folder, consoleLines,
           { slug: "game-options", rect: { x: 3, y: 355, width: 27, height: 41 },
             expected: "command=0x133 destination=game_options status=opened_original" },
           { slug: "encyclopedia", rect: { x: 394, y: 405, width: 27, height: 16 },
-            expected: "command=0x131 destination=encyclopedia status=pending_original_window" },
+            expected: "command=0x131 destination=encyclopedia status=opened_original" },
         ]
       : [
           { slug: "game-options", rect: { x: 79, y: 192, width: 35, height: 57 },
             expected: "command=0x133 destination=game_options status=opened_original" },
           { slug: "encyclopedia", rect: { x: 465, y: 434, width: 35, height: 24 },
-            expected: "command=0x131 destination=encyclopedia status=pending_original_window" },
+            expected: "command=0x131 destination=encyclopedia status=opened_original" },
         ];
     for (const command of commandControls) {
       const center = point(command.rect.x + command.rect.width / 2,
@@ -515,14 +687,23 @@ async function probeGid(page, faction, scenario, viewport, folder, consoleLines,
             { x: 22, y: 26, width: 596, height: 440 },
           ]),
         });
-        await page.keyboard.press("Escape");
+        // The window handles no key (FUN_00406b80); its Return (0x90) closes it.
+        const returnIcon = point(162 + 21, 382 + 21);
+        await page.mouse.click(returnIcon.x, returnIcon.y);
         const returned = await stableInteractionFrame(page, folder,
           `${command.slug}-returned-to-command-center`);
         assert.equal(sha256(returned), sha256(fs.readFileSync(path.join(folder, "actual.png"))),
           `${faction}: Game Options did not return to the authentic command center`);
       } else {
-        assert.equal(sha256(released), sha256(fs.readFileSync(path.join(folder, "actual.png"))),
-          `${faction}: ${command.slug} exposed a replacement destination`);
+        // The Encyclopedia (E32) opens its original window; Escape closes it
+        // (FUN_0045fe60) back onto the command center.
+        assert.notEqual(sha256(released), sha256(fs.readFileSync(path.join(folder, "actual.png"))),
+          `${faction}: the Encyclopedia control opened no window`);
+        await page.keyboard.press("Escape");
+        const returned = await stableInteractionFrame(page, folder,
+          `${command.slug}-returned-to-command-center`);
+        assert.equal(sha256(returned), sha256(fs.readFileSync(path.join(folder, "actual.png"))),
+          `${faction}: Escape did not close the Encyclopedia onto the command center`);
       }
       probes.push({ type: "physical-command", command: command.slug, expected: command.expected,
         observed, hover_sha256: sha256(hover), pressed_sha256: sha256(pressed),
@@ -531,7 +712,7 @@ async function probeGid(page, faction, scenario, viewport, folder, consoleLines,
 
     for (const [key, expected] of [
       ["F1", "command=0x133 destination=game_options status=opened_original"],
-      ["F7", "command=0x131 destination=encyclopedia status=pending_original_window"],
+      ["F7", "command=0x131 destination=encyclopedia status=opened_original"],
     ]) {
       const observed = await performCommand(page, expected, () => page.keyboard.press(key));
       probes.push({ type: "keyboard-command", key, expected, observed });
@@ -539,11 +720,20 @@ async function probeGid(page, faction, scenario, viewport, folder, consoleLines,
         const options = await stableInteractionFrame(page, folder, "keyboard-game-options-open");
         assert.notEqual(sha256(options), sha256(fs.readFileSync(path.join(folder, "actual.png"))),
           `${faction}: F1 did not open the original Game Options surface`);
-        await page.keyboard.press("Escape");
+        const returnIcon = point(162 + 21, 382 + 21); // Return (0x90)
+        await page.mouse.click(returnIcon.x, returnIcon.y);
         const returned = await stableInteractionFrame(page, folder,
           "keyboard-game-options-returned");
         assert.equal(sha256(returned), sha256(fs.readFileSync(path.join(folder, "actual.png"))),
           `${faction}: F1 Game Options did not return to the command center`);
+      } else {
+        const encyclopedia = await stableInteractionFrame(page, folder, "keyboard-encyclopedia-open");
+        assert.notEqual(sha256(encyclopedia), sha256(fs.readFileSync(path.join(folder, "actual.png"))),
+          `${faction}: F7 opened no Encyclopedia`);
+        await page.keyboard.press("Escape"); // FUN_0045fe60
+        const returned = await stableInteractionFrame(page, folder, "keyboard-encyclopedia-returned");
+        assert.equal(sha256(returned), sha256(fs.readFileSync(path.join(folder, "actual.png"))),
+          `${faction}: Escape did not close the F7 Encyclopedia onto the command center`);
       }
     }
 
@@ -604,40 +794,49 @@ async function probeGid(page, faction, scenario, viewport, folder, consoleLines,
   return probes;
 }
 
+// A tactical bitmap at (x0, y0), pixel-exact outside its blue matte,
+// `occluders` and `ignoredRects`. A button (`button: true`, or an occluder
+// that is one) is also keyed on its first stored pixel's palette index:
+// CoolStrobeButton (FUN_00602d30) blits through FUN_005fd0f0 on that index
+// unless its +0xc4 bit 0x80 is set, which FUN_00602150 leaves clear. The
+// key's pixels show what lies under the control, so they are not compared.
 function verifyTacticalBitmap(
-  viewport, screenshotBytes, id, x0, y0, occluders = [], ignoredRects = [],
+  viewport, screenshotBytes, id, x0, y0, occluders = [], ignoredRects = [], { button = false } = {},
 ) {
   if (viewport.width !== 640 || viewport.height !== 480 || viewport.device_scale_factor !== 1) {
     return { status: "non-native-scale", pixels_checked: 0 };
   }
   const screenshot = PNG.sync.read(screenshotBytes);
-  const source = decodeIndexedBmp(fs.readFileSync(path.join(
-    root, `data/base/ui/tactical-dll/BMP/${id}.bmp`,
-  )));
-  const decodedOccluders = occluders.map(({ id: overlayId, x, y }) => ({
+  const source = decodeTacticalBmp(id);
+  const decodedOccluders = occluders.map(({ id: overlayId, x, y, button: keyed = false }) => ({
     x,
     y,
-    source: decodeIndexedBmp(fs.readFileSync(path.join(
-      root, `data/base/ui/tactical-dll/BMP/${overlayId}.bmp`,
-    ))),
+    keyed,
+    source: decodeTacticalBmp(overlayId),
   }));
+  const blueMatte = (color) => color[0] < 32 && color[1] < 32 && color[2] > 192;
   let pixelsChecked = 0;
+  let keyedPixels = 0;
   for (let y = 0; y < source.height; y++) {
     for (let x = 0; x < source.width; x++) {
       if (ignoredRects.some((rect) => x >= rect.x && y >= rect.y
         && x < rect.x + rect.width && y < rect.y + rect.height)) continue;
       const color = source.pixel(x, y);
-      if (color[0] < 32 && color[1] < 32 && color[2] > 192) continue;
+      if (blueMatte(color)) continue;
+      if (button && source.index(x, y) === source.keyIndex) {
+        keyedPixels++;
+        continue;
+      }
       const screenX = x0 + x;
       const screenY = y0 + y;
-      const occluded = decodedOccluders.some(({ x: overlayX, y: overlayY, source: overlay }) => {
+      const occluded = decodedOccluders.some(({ x: overlayX, y: overlayY, keyed, source: overlay }) => {
         const localX = screenX - overlayX;
         const localY = screenY - overlayY;
         if (localX < 0 || localY < 0 || localX >= overlay.width || localY >= overlay.height) {
           return false;
         }
-        const overlayColor = overlay.pixel(localX, localY);
-        return !(overlayColor[0] < 32 && overlayColor[1] < 32 && overlayColor[2] > 192);
+        if (keyed && overlay.index(localX, localY) === overlay.keyIndex) return false;
+        return !blueMatte(overlay.pixel(localX, localY));
       });
       if (occluded) continue;
       const actualOffset = ((y0 + y) * screenshot.width + x0 + x) * 4;
@@ -648,7 +847,49 @@ function verifyTacticalBitmap(
       pixelsChecked++;
     }
   }
-  return { status: "source-bitmap-exact", resource_id: id, pixels_checked: pixelsChecked };
+  return {
+    status: "source-bitmap-exact", resource_id: id, pixels_checked: pixelsChecked,
+    ...(button ? { keyed_pixels: keyedPixels } : {}),
+  };
+}
+
+// A CoolStrobeButton's bitmap at (x0, y0), keyed (verifyTacticalBitmap).
+function verifyTacticalButton(viewport, screenshotBytes, id, x0, y0, occluders = [], ignoredRects = []) {
+  return verifyTacticalBitmap(viewport, screenshotBytes, id, x0, y0, occluders, ignoredRects, { button: true });
+}
+
+// The game's own rect for a fixed tactical control, by name: the fixture
+// reports them all (`ready.controls`, tactical_view::tactical_control_layout).
+function tacticalControl(ready, name) {
+  const control = ready.controls?.find((entry) => entry.name === name);
+  assert.ok(control, `the fixture did not report tactical control ${name}`);
+  return control;
+}
+
+// The page point at a tactical control's centre, or at `local` from its
+// origin, through the letterbox.
+function tacticalControlPoint(viewport, ready, name, local = null) {
+  const scale = Math.min(viewport.width / 640, viewport.height / 480);
+  const control = tacticalControl(ready, name);
+  const { x, y } = local ?? { x: control.width / 2, y: control.height / 2 };
+  return {
+    x: (viewport.width - 640 * scale) / 2 + (control.x + x) * scale,
+    y: (viewport.height - 480 * scale) / 2 + (control.y + y) * scale,
+  };
+}
+
+// A control's bitmap at the control's origin, checked only inside its rect
+// (a fighter-group slot shows the top 15 rows of its 25x17 bitmap) and
+// outside `ignoredRects`.
+function verifyTacticalControlBitmap(
+  viewport, screenshotBytes, id, ready, name, ignoredRects = [],
+) {
+  const control = tacticalControl(ready, name);
+  return verifyTacticalButton(viewport, screenshotBytes, id, control.x, control.y, [], [
+    ...ignoredRects,
+    { x: control.width, y: 0, width: Infinity, height: Infinity },
+    { x: 0, y: control.height, width: Infinity, height: Infinity },
+  ]);
 }
 
 function verifyGokresBitmap(viewport, screenshotBytes, id, x0, y0) {
@@ -759,7 +1000,10 @@ function verifyTacticalGreenBeam(viewport, beforeBytes, beamBytes) {
   return { status: "visible", changed_green_pixels: changedGreenPixels };
 }
 
-function verifyStrategyBitmap(viewport, screenshotBytes, id, x0, y0, ignoredRects = []) {
+// A strategy bitmap at (x0, y0), pixel-exact outside its blue matte and
+// `ignoredRects`; a button (`button: true`) is keyed on its first stored
+// pixel's palette index as verifyTacticalBitmap describes.
+function verifyStrategyBitmap(viewport, screenshotBytes, id, x0, y0, ignoredRects = [], { button = false } = {}) {
   if (viewport.width !== 640 || viewport.height !== 480 || viewport.device_scale_factor !== 1) {
     return { status: "non-native-scale", pixels_checked: 0 };
   }
@@ -768,12 +1012,17 @@ function verifyStrategyBitmap(viewport, screenshotBytes, id, x0, y0, ignoredRect
     root, `data/base/ui/strategy-dll/BMP/${id}.bmp`,
   )));
   let pixelsChecked = 0;
+  let keyedPixels = 0;
   for (let y = 0; y < source.height; y++) {
     for (let x = 0; x < source.width; x++) {
       if (ignoredRects.some((rect) => x >= rect.x && y >= rect.y
         && x < rect.x + rect.width && y < rect.y + rect.height)) continue;
       const color = source.pixel(x, y);
       if (color[0] < 32 && color[1] < 32 && color[2] > 192) continue;
+      if (button && source.index(x, y) === source.keyIndex) {
+        keyedPixels++;
+        continue;
+      }
       const actualOffset = ((y0 + y) * screenshot.width + x0 + x) * 4;
       assert.deepEqual(
         Array.from(screenshot.data.subarray(actualOffset, actualOffset + 3)), color,
@@ -782,7 +1031,40 @@ function verifyStrategyBitmap(viewport, screenshotBytes, id, x0, y0, ignoredRect
       pixelsChecked++;
     }
   }
-  return { status: "source-bitmap-exact", resource_id: id, pixels_checked: pixelsChecked };
+  return {
+    status: "source-bitmap-exact", resource_id: id, pixels_checked: pixelsChecked,
+    ...(button ? { keyed_pixels: keyedPixels } : {}),
+  };
+}
+
+// At least `minimum` pixels inside `rect` of the strategy bitmap drawn at
+// (x0, y0) differ from it: something, such as text the bitmap check masks,
+// is drawn there.
+function verifyStrategyDrawnOver(viewport, screenshotBytes, id, x0, y0, rect, minimum) {
+  if (viewport.width !== 640 || viewport.height !== 480 || viewport.device_scale_factor !== 1) {
+    return { status: "non-native-scale", differing_pixels: 0 };
+  }
+  const screenshot = PNG.sync.read(screenshotBytes);
+  const source = decodeIndexedBmp(fs.readFileSync(path.join(
+    root, `data/base/ui/strategy-dll/BMP/${id}.bmp`,
+  )));
+  let differing = 0;
+  for (let y = rect.y; y < rect.y + rect.height; y++) {
+    for (let x = rect.x; x < rect.x + rect.width; x++) {
+      const offset = ((y0 + y) * screenshot.width + x0 + x) * 4;
+      const color = source.pixel(x, y);
+      if (screenshot.data[offset] !== color[0] || screenshot.data[offset + 1] !== color[1]
+        || screenshot.data[offset + 2] !== color[2]) differing++;
+    }
+  }
+  assert.ok(differing >= minimum,
+    `strategy control ${id} shows ${differing} drawn pixels in its text rect, under ${minimum}`);
+  return { status: "drawn-over", resource_id: id, differing_pixels: differing, minimum };
+}
+
+// A CoolStrobeButton's strategy bitmap at (x0, y0), keyed (verifyStrategyBitmap).
+function verifyStrategyButton(viewport, screenshotBytes, id, x0, y0, ignoredRects = []) {
+  return verifyStrategyBitmap(viewport, screenshotBytes, id, x0, y0, ignoredRects, { button: true });
 }
 
 function verifyCommonBitmap(viewport, screenshotBytes, id, x0, y0, ignoredRects = []) {
@@ -815,9 +1097,7 @@ function verifyTacticalTransparentOverlay(viewport, screenshotBytes, id, x0, y0)
     return { status: "non-native-scale", pixels_checked: 0 };
   }
   const screenshot = PNG.sync.read(screenshotBytes);
-  const source = decodeIndexedBmp(fs.readFileSync(path.join(
-    root, `data/base/ui/tactical-dll/BMP/${id}.bmp`,
-  )));
+  const source = decodeTacticalBmp(id);
   let pixelsChecked = 0;
   for (let y = 0; y < source.height; y++) {
     for (let x = 0; x < source.width; x++) {
@@ -842,9 +1122,7 @@ function verifyTacticalShell(viewport, screenshotBytes) {
     return { status: "non-native-scale", pixels_checked: 0 };
   }
   const screenshot = PNG.sync.read(screenshotBytes);
-  const source = decodeIndexedBmp(fs.readFileSync(path.join(
-    root, "data/base/ui/tactical-dll/BMP/1000.bmp",
-  )));
+  const source = decodeTacticalBmp(1000);
   assert.equal(source.width, 640);
   assert.equal(source.height, 480);
   let pixelsChecked = 0;
@@ -1190,11 +1468,13 @@ async function probeTactical(page, viewport, folder, stable) {
   const capture = async (name) => stableInteractionFrame(page, folder, name);
   const probes = [{ type: "tactical-shell", ...verifyTacticalShell(viewport, stable.bytes) }];
   probes.push({ type: "paused-control-bitmap",
-    ...verifyTacticalBitmap(viewport, stable.bytes, 1061, 560, 307) });
-  probes.push({ type: "alliance-highlight-on",
-    ...verifyTacticalBitmap(viewport, stable.bytes, 1035, 517, 304) });
-  probes.push({ type: "empire-highlight-on",
-    ...verifyTacticalBitmap(viewport, stable.bytes, 1037, 482, 304) });
+    ...verifyTacticalButton(viewport, stable.bytes, 1061, 560, 307) });
+  // Both highlights start off (FUN_0059eb70 zeroes +0x10c and +0x110;
+  // FUN_0059c4d0 builds the buttons in their first state, 1034 and 1036).
+  probes.push({ type: "alliance-highlight-off",
+    ...verifyTacticalButton(viewport, stable.bytes, 1034, 517, 304) });
+  probes.push({ type: "empire-highlight-off",
+    ...verifyTacticalButton(viewport, stable.bytes, 1036, 482, 304) });
 
   const outside = point(558, 318);
   await page.mouse.click(outside.x, outside.y);
@@ -1216,11 +1496,11 @@ async function probeTactical(page, viewport, folder, stable) {
   await page.waitForTimeout(80);
   const resumed = await dynamicInteractionFrame(page, folder, "resumed");
   assert.notEqual(sha256(stable.bytes), sha256(resumed), "pause control did not resume battle");
-  probes.push({ type: "resume", ...verifyTacticalBitmap(viewport, resumed, 1060, 560, 307) });
+  probes.push({ type: "resume", ...verifyTacticalButton(viewport, resumed, 1060, 560, 307) });
   await page.mouse.click(pause.x, pause.y);
   await page.waitForTimeout(80);
   const pausedAgain = await capture("paused-again");
-  probes.push({ type: "pause", ...verifyTacticalBitmap(viewport, pausedAgain, 1061, 560, 307) });
+  probes.push({ type: "pause", ...verifyTacticalButton(viewport, pausedAgain, 1061, 560, 307) });
   await page.waitForTimeout(250);
   const pauseStable = await capture("pause-stable");
   assert.equal(sha256(pausedAgain), sha256(pauseStable), "battle continued after re-pause");
@@ -1230,38 +1510,38 @@ async function probeTactical(page, viewport, folder, stable) {
   const allianceHighlight = point(532, 317);
   await page.mouse.click(allianceHighlight.x, allianceHighlight.y);
   await page.waitForTimeout(80);
-  const highlightOff = await capture("alliance-highlight-off");
-  assert.notEqual(sha256(pausedAgain), sha256(highlightOff), "Alliance highlight did not toggle");
+  const highlightOn = await capture("alliance-highlight-on");
+  assert.notEqual(sha256(pausedAgain), sha256(highlightOn), "Alliance highlight did not toggle");
   assert.notEqual(tacticalApertureHash(viewport, pauseStable),
-    tacticalApertureHash(viewport, highlightOff), "Alliance battle wireframe did not dim");
-  probes.push({ type: "alliance-highlight-off",
-    ...verifyTacticalBitmap(viewport, highlightOff, 1034, 517, 304),
-    wireframe: verifyWireframeColor(viewport, pauseStable, highlightOff, "alliance") });
+    tacticalApertureHash(viewport, highlightOn), "Alliance battle wireframe did not light");
+  probes.push({ type: "alliance-highlight-on",
+    ...verifyTacticalButton(viewport, highlightOn, 1035, 517, 304),
+    wireframe: verifyWireframeColor(viewport, highlightOn, pauseStable, "alliance") });
   await page.mouse.click(allianceHighlight.x, allianceHighlight.y);
   await page.waitForTimeout(80);
   const allianceRestored = await capture("alliance-highlight-restored");
   assert.equal(sha256(pauseStable), sha256(allianceRestored),
     "Alliance highlight did not restore the paused display");
   probes.push({ type: "alliance-highlight-restored",
-    ...verifyTacticalBitmap(viewport, allianceRestored, 1035, 517, 304) });
+    ...verifyTacticalButton(viewport, allianceRestored, 1034, 517, 304) });
 
   const empireHighlight = point(497, 317);
   await page.mouse.click(empireHighlight.x, empireHighlight.y);
   await page.waitForTimeout(80);
-  const empireOff = await capture("empire-highlight-off");
-  assert.notEqual(sha256(allianceRestored), sha256(empireOff), "Empire highlight did not toggle");
+  const empireOn = await capture("empire-highlight-on");
+  assert.notEqual(sha256(allianceRestored), sha256(empireOn), "Empire highlight did not toggle");
   assert.notEqual(tacticalApertureHash(viewport, allianceRestored),
-    tacticalApertureHash(viewport, empireOff), "Empire battle wireframe did not dim");
-  probes.push({ type: "empire-highlight-off",
-    ...verifyTacticalBitmap(viewport, empireOff, 1036, 482, 304),
-    wireframe: verifyWireframeColor(viewport, allianceRestored, empireOff, "empire") });
+    tacticalApertureHash(viewport, empireOn), "Empire battle wireframe did not light");
+  probes.push({ type: "empire-highlight-on",
+    ...verifyTacticalButton(viewport, empireOn, 1037, 482, 304),
+    wireframe: verifyWireframeColor(viewport, empireOn, allianceRestored, "empire") });
   await page.mouse.click(empireHighlight.x, empireHighlight.y);
   await page.waitForTimeout(80);
   const highlightsRestored = await capture("highlights-restored");
   assert.equal(sha256(pauseStable), sha256(highlightsRestored),
     "Empire highlight did not restore the paused display");
   probes.push({ type: "empire-highlight-restored",
-    ...verifyTacticalBitmap(viewport, highlightsRestored, 1037, 482, 304) });
+    ...verifyTacticalButton(viewport, highlightsRestored, 1036, 482, 304) });
 
   const zoomInMatte = point(487.5, 344.5);
   await page.mouse.click(zoomInMatte.x, zoomInMatte.y);
@@ -1277,12 +1557,12 @@ async function probeTactical(page, viewport, folder, stable) {
   await page.waitForTimeout(80);
   const zoomInPressed = await capture("zoom-in-pressed");
   probes.push({ type: "zoom-in-pressed",
-    ...verifyTacticalBitmap(viewport, zoomInPressed, 1045, 486, 343) });
+    ...verifyTacticalButton(viewport, zoomInPressed, 1045, 486, 343) });
   await page.mouse.up({ button: "left" });
   await page.waitForTimeout(80);
   const zoomed = await capture("zoomed-in");
   assert.notEqual(sha256(highlightsRestored), sha256(zoomed), "zoom-in control did not redraw battle");
-  probes.push({ type: "zoom-in", ...verifyTacticalBitmap(viewport, zoomed, 1044, 486, 343),
+  probes.push({ type: "zoom-in", ...verifyTacticalButton(viewport, zoomed, 1044, 486, 343),
     aperture_isolation: verifyTacticalApertureIsolation(viewport, highlightsRestored, zoomed) });
 
   const zoomOutMatte = point(604.5, 344.5);
@@ -1299,13 +1579,13 @@ async function probeTactical(page, viewport, folder, stable) {
   await page.waitForTimeout(80);
   const zoomOutPressed = await capture("zoom-out-pressed");
   probes.push({ type: "zoom-out-pressed",
-    ...verifyTacticalBitmap(viewport, zoomOutPressed, 1047, 603, 343) });
+    ...verifyTacticalButton(viewport, zoomOutPressed, 1047, 603, 343) });
   await page.mouse.up({ button: "left" });
   await page.waitForTimeout(80);
   const zoomRestored = await capture("zoom-restored");
   assert.equal(sha256(highlightsRestored), sha256(zoomRestored),
     "zoom-out did not restore the original paused battlefield");
-  probes.push({ type: "zoom-out", ...verifyTacticalBitmap(viewport, zoomRestored, 1046, 603, 343),
+  probes.push({ type: "zoom-out", ...verifyTacticalButton(viewport, zoomRestored, 1046, 603, 343),
     aperture_isolation: verifyTacticalApertureIsolation(viewport, zoomed, zoomRestored) });
   return probes;
 }
@@ -1392,7 +1672,7 @@ async function probeTacticalCameraJourney(page, viewport, folder, stable) {
     await page.mouse.down({ button: "left" });
     await page.waitForTimeout(80);
     const pressed = await capture(`${name}-pressed`);
-    const bitmap = verifyTacticalBitmap(
+    const bitmap = verifyTacticalButton(
       viewport, pressed, resource, resourceX, resourceY, occluders,
     );
     await page.mouse.up({ button: "left" });
@@ -1405,9 +1685,9 @@ async function probeTacticalCameraJourney(page, viewport, folder, stable) {
   const transitions = [];
   transitions.push(await press("camera-zoom-in", point(498, 355), 1045, 486, 343));
   transitions.push(await press("camera-zoom-out", point(615, 355), 1047, 603, 343));
-  const up = { id: 1052, x: 537, y: 344 };
-  const down = { id: 1055, x: 537, y: 412 };
-  const target = { id: 1058, x: 538, y: 379 };
+  const up = { id: 1052, x: 537, y: 344, button: true };
+  const down = { id: 1055, x: 537, y: 412, button: true };
+  const target = { id: 1058, x: 538, y: 379, button: true };
   transitions.push(await press(
     "camera-left", point(520, 397), 1049, 511, 376, [up, down, target],
   ));
@@ -1445,10 +1725,6 @@ function parseTacticalScenePositions(line, label) {
 async function probeTacticalProductionParticipants(
   page, viewport, folder, stable, consoleLines, faction, ready,
 ) {
-  const scale = Math.min(viewport.width / 640, viewport.height / 480);
-  const offsetX = (viewport.width - 640 * scale) / 2;
-  const offsetY = (viewport.height - 480 * scale) / 2;
-  const point = (x, y) => ({ x: offsetX + x * scale, y: offsetY + y * scale });
   const probes = probeTacticalSelectedDamagePresentation(
     viewport,
     folder,
@@ -1471,7 +1747,7 @@ async function probeTacticalProductionParticipants(
     if (assignedTaskForces.has(index)) continue;
     unassignedTaskForces.push({
       slot: index + 1,
-      ...verifyTacticalBitmap(viewport, stable.bytes, 1007, 60 + index * 26, 2),
+      ...verifyTacticalControlBitmap(viewport, stable.bytes, 1007, ready, `task-force-${index + 1}`),
     });
   }
   const unassignedFighterGroups = [];
@@ -1479,13 +1755,17 @@ async function probeTacticalProductionParticipants(
     if (assignedFighterGroups.has(index)) continue;
     unassignedFighterGroups.push({
       slot: index + 1,
-      ...verifyTacticalBitmap(viewport, stable.bytes, 1020, 330 + index * 26, 2),
+      ...verifyTacticalControlBitmap(
+        viewport, stable.bytes, 1020, ready, `fighter-group-${index + 1}`,
+      ),
     });
   }
   assert.ok(unassignedTaskForces.length > 0 && unassignedFighterGroups.length > 0,
     "production participant fixture omitted unassigned group states");
   const unassignedTaskIndex = unassignedTaskForces[0].slot - 1;
-  const unassignedTask = point(72 + unassignedTaskIndex * 26, 10);
+  const unassignedTask = tacticalControlPoint(
+    viewport, ready, `task-force-${unassignedTaskIndex + 1}`,
+  );
   await page.mouse.move(unassignedTask.x, unassignedTask.y);
   await page.waitForTimeout(80);
   const hovered = await stableInteractionFrame(page, folder, "task-force-unassigned-hover");
@@ -1529,6 +1809,20 @@ async function probeTacticalProductionParticipants(
   const target = positions.get(targetObjectId);
   assert.ok(player && target, "production participant interaction positions are incomplete");
 
+  // Both highlights start off (FUN_0059eb70 zeroes +0x10c and +0x110;
+  // FUN_0059c4d0 builds both switches in their first state), so the
+  // selection journey turns them on first, as a player would to see the
+  // faction wireframes, and takes its baseline from that lit frame.
+  {
+    const scale = Math.min(viewport.width / 640, viewport.height / 480);
+    const offsetX = (viewport.width - 640 * scale) / 2;
+    const offsetY = (viewport.height - 480 * scale) / 2;
+    for (const [x, y] of [[532, 317], [497, 317]]) {
+      await page.mouse.click(offsetX + x * scale, offsetY + y * scale);
+      await page.waitForTimeout(80);
+    }
+  }
+  const lit = await stableInteractionFrame(page, folder, "production-highlights-on");
   await page.mouse.click(player.x - 80, player.y, { button: "left" });
   await page.waitForTimeout(80);
   const deselected = await stableInteractionFrame(page, folder, "production-deselection");
@@ -1538,9 +1832,9 @@ async function probeTacticalProductionParticipants(
   await page.mouse.click(target.x, target.y, { button: "right" });
   await page.waitForTimeout(80);
   const targeted = await stableInteractionFrame(page, folder, "production-target");
-  assert.notEqual(sha256(deselected), sha256(stable.bytes),
+  assert.notEqual(sha256(deselected), sha256(lit),
     "projected capital deselection produced no stable framebuffer change");
-  assert.equal(sha256(selected), sha256(stable.bytes),
+  assert.equal(sha256(selected), sha256(lit),
     "projected capital reselection did not restore the deterministic selection frame");
   assert.notEqual(sha256(targeted), sha256(selected),
     "projected capital targeting produced no stable framebuffer change");
@@ -2034,12 +2328,8 @@ function probeTacticalSelectedDamagePresentation(
       { x: 12, y: 183, width: 130, height: 24 },
       { x: 12, y: 210, width: 126, height: 22 },
     ]);
-    const portrait = decodeIndexedBmp(fs.readFileSync(path.join(
-      root, `data/base/ui/tactical-dll/BMP/${selected.hud_resource}.bmp`,
-    )));
-    const panel = decodeIndexedBmp(fs.readFileSync(path.join(
-      root, "data/base/ui/tactical-dll/BMP/1302.bmp",
-    )));
+    const portrait = decodeTacticalBmp(selected.hud_resource);
+    const panel = decodeTacticalBmp(1302);
     let opaquePixels = 0;
     let exactOpaquePixels = 0;
     for (let y = 0; y < portrait.height; y++) {
@@ -2261,30 +2551,28 @@ function probeTacticalManeuverMovementPresentation(viewport, folder, stable, rea
 async function probeTacticalCommandAssignmentPresentation(
   page, viewport, folder, stable, consoleLines, ready,
 ) {
-  const scale = Math.min(viewport.width / 640, viewport.height / 480);
-  const offsetX = (viewport.width - 640 * scale) / 2;
-  const offsetY = (viewport.height - 480 * scale) / 2;
-  const point = (x, y) => ({ x: offsetX + x * scale, y: offsetY + y * scale });
-  const click = async (x, y) => {
-    const target = point(x, y);
+  const click = async (name) => {
+    const target = tacticalControlPoint(viewport, ready, name);
     await page.mouse.click(target.x, target.y);
     await page.waitForTimeout(80);
   };
+  const control = (bytes, id, name) =>
+    verifyTacticalControlBitmap(viewport, bytes, id, ready, name);
   const capture = async (name) => stableInteractionFrame(page, folder, name);
   const probes = [
     // FUN_005e4110 draws 1107 on the left (Maneuvers and Tactics) and 1105
     // on the right (Missions), as the original opens them (A0 TAC-05-C006).
     {
       type: "maneuvers-button-initial",
-      ...verifyTacticalBitmap(viewport, stable.bytes, 1107, 494, 238),
+      ...control(stable.bytes, 1107, "open-maneuvers"),
     },
     {
       type: "missions-button-initial",
-      ...verifyTacticalBitmap(viewport, stable.bytes, 1105, 562, 238),
+      ...control(stable.bytes, 1105, "open-missions"),
     },
   ];
 
-  await click(520, 248);
+  await click("open-maneuvers");
   const maneuversOpen = await capture("maneuvers-open");
   probes.push({ type: "maneuvers-panel", ...verifyTacticalBitmap(
     viewport, maneuversOpen, 1309, 482, 28, [], [
@@ -2295,54 +2583,42 @@ async function probeTacticalCommandAssignmentPresentation(
       { x: 66, y: 202, width: 67, height: 25 },
     ],
   ) });
-  probes.push({ type: "stand-off-default", ...verifyTacticalBitmap(
-    viewport, maneuversOpen, 1117, 593, 160,
-  ) });
+  probes.push({ type: "stand-off-default", ...control(maneuversOpen, 1117, "toggle-tactic") });
 
-  await click(508, 170);
-  await click(604, 185);
+  await click("hammer");
+  await click("toggle-tactic");
   const hammerSurround = await capture("maneuvers-hammer-surround");
-  probes.push({ type: "hammer-selected", ...verifyTacticalBitmap(
-    viewport, hammerSurround, 1138, 495, 157,
-  ) });
-  probes.push({ type: "surround-selected", ...verifyTacticalBitmap(
-    viewport, hammerSurround, 1118, 593, 160,
-  ) });
+  probes.push({ type: "hammer-selected", ...control(hammerSurround, 1138, "hammer") });
+  probes.push({ type: "surround-selected", ...control(hammerSurround, 1118, "toggle-tactic") });
   probes.push({ type: "hammer-graphic", ...verifyTacticalTransparentOverlay(
     viewport, hammerSurround, 2103, 496, 42,
   ) });
-  await click(600, 241);
+  await click("cancel");
   const afterCancel = await capture("maneuvers-cancelled");
-  probes.push({ type: "cancel-restores-display", ...verifyTacticalBitmap(
-    viewport, afterCancel, 1105, 562, 238,
-  ) });
+  probes.push({ type: "cancel-restores-display",
+    ...control(afterCancel, 1105, "open-missions") });
 
-  await click(520, 248);
-  await click(508, 170);
-  await click(604, 185);
-  await click(560, 241);
+  await click("open-maneuvers");
+  await click("hammer");
+  await click("toggle-tactic");
+  await click("confirm");
   const maneuverCommitted = await capture("maneuvers-committed");
-  probes.push({ type: "maneuver-commit-restores-display", ...verifyTacticalBitmap(
-    viewport, maneuverCommitted, 1105, 562, 238,
-  ) });
+  probes.push({ type: "maneuver-commit-restores-display",
+    ...control(maneuverCommitted, 1105, "open-missions") });
 
-  await click(520, 248);
-  await click(538, 170);
-  await click(604, 185);
+  await click("open-maneuvers");
+  await click("anvil");
+  await click("toggle-tactic");
   const anvilStandOff = await capture("maneuvers-anvil-stand-off");
-  probes.push({ type: "anvil-selected", ...verifyTacticalBitmap(
-    viewport, anvilStandOff, 1140, 525, 157,
-  ) });
-  probes.push({ type: "stand-off-selected", ...verifyTacticalBitmap(
-    viewport, anvilStandOff, 1117, 593, 160,
-  ) });
+  probes.push({ type: "anvil-selected", ...control(anvilStandOff, 1140, "anvil") });
+  probes.push({ type: "stand-off-selected", ...control(anvilStandOff, 1117, "toggle-tactic") });
   probes.push({ type: "anvil-graphic", ...verifyTacticalTransparentOverlay(
     viewport, anvilStandOff, 2104, 496, 42,
   ) });
-  await click(560, 241);
+  await click("confirm");
   await capture("maneuvers-anvil-stand-off-committed");
 
-  await click(590, 248);
+  await click("open-missions");
   const missionsOpen = await capture("missions-open-capital");
   probes.push({ type: "missions-panel", ...verifyTacticalBitmap(
     viewport, missionsOpen, 1308, 482, 28, [], [
@@ -2351,43 +2627,40 @@ async function probeTacticalCommandAssignmentPresentation(
       { x: 66, y: 202, width: 67, height: 25 },
     ],
   ) });
-  probes.push({ type: "capital-recover-disabled", ...verifyTacticalBitmap(
-    viewport, missionsOpen, ready.faction === "alliance" ? 1172 : 1175, 568, 157,
+  probes.push({ type: "capital-recover-disabled", ...control(
+    missionsOpen, ready.faction === "alliance" ? 1172 : 1175, "recover",
   ) });
-  probes.push({ type: "death-star-disabled", ...verifyTacticalBitmap(
-    viewport, missionsOpen, 1178, 568, 187,
-  ) });
-  await click(522, 169);
+  probes.push({ type: "death-star-disabled",
+    ...control(missionsOpen, 1178, "attack-death-star") });
+  await click("attack-capital-ships");
   const capitalMission = await capture("missions-attack-capital-selected");
   const capitalButton = ready.faction === "alliance" ? 1180 : 1183;
   const capitalGraphic = ready.faction === "alliance" ? 2151 : 2155;
-  probes.push({ type: "attack-capital-selected", ...verifyTacticalBitmap(
-    viewport, capitalMission, capitalButton, 500, 157,
-  ) });
+  probes.push({ type: "attack-capital-selected",
+    ...control(capitalMission, capitalButton, "attack-capital-ships") });
   probes.push({ type: "attack-capital-graphic", ...verifyTacticalTransparentOverlay(
     viewport, capitalMission, capitalGraphic, 496, 42,
   ) });
-  await click(560, 241);
+  await click("confirm");
 
-  await click(342, 10);
+  await click("fighter-group-1");
   const fighterSelected = await capture("fighter-group-selected");
-  probes.push({ type: "fighter-group-selected", ...verifyTacticalBitmap(
-    viewport, fighterSelected, 1016, 330, 2,
-  ) });
-  await click(590, 248);
+  probes.push({ type: "fighter-group-selected",
+    ...control(fighterSelected, 1016, "fighter-group-1") });
+  await click("open-missions");
   const fighterMissions = await capture("missions-open-fighter");
-  probes.push({ type: "fighter-recover-enabled", ...verifyTacticalBitmap(
-    viewport, fighterMissions, ready.faction === "alliance" ? 1170 : 1173, 568, 157,
+  probes.push({ type: "fighter-recover-enabled", ...control(
+    fighterMissions, ready.faction === "alliance" ? 1170 : 1173, "recover",
   ) });
-  await click(590, 169);
+  await click("recover");
   const recoverSelected = await capture("missions-recover-selected");
-  probes.push({ type: "recover-selected", ...verifyTacticalBitmap(
-    viewport, recoverSelected, ready.faction === "alliance" ? 1171 : 1174, 568, 157,
+  probes.push({ type: "recover-selected", ...control(
+    recoverSelected, ready.faction === "alliance" ? 1171 : 1174, "recover",
   ) });
   probes.push({ type: "recover-graphic", ...verifyTacticalTransparentOverlay(
     viewport, recoverSelected, ready.faction === "alliance" ? 2153 : 2157, 496, 42,
   ) });
-  await click(560, 241);
+  await click("confirm");
   await capture("fighter-recover-committed");
 
   const orderLogs = consoleLines
@@ -2757,7 +3030,8 @@ async function probeTacticalDeathStarPresentation(
     operational: deathStar.operational,
     hull: deathStar.hull,
     laser_charge: deathStar.laser_charge,
-    destroyed: deathStar.destroyed,
+    shielded: deathStar.shielded,
+    not_completed: deathStar.not_completed,
     action_committed: deathStar.action_committed,
   }, {
     faction: "empire",
@@ -2766,66 +3040,79 @@ async function probeTacticalDeathStarPresentation(
     resource_id: 5010,
     opposing_resource_id: 5020,
     operational: true,
-    hull: 100,
-    laser_charge: 0,
-    destroyed: false,
+    // FUN_00595ef0: remaining hull = class hull less damage, charge seeded at 100.
+    hull: deathStar.hull_max,
+    laser_charge: 100,
+    shielded: false,
+    not_completed: false,
     action_committed: false,
   });
-  assert.deepEqual(deathStar.source_position,
-    [0, 0, ready.source_layout.outer_positive_z]);
+  assert.ok(deathStar.hull_max > 0, "Death Star station carried no class hull");
+  // FUN_005d4d10: the station decal's frame stands at -2.0 extents on x, its
+  // y and z within 0.2 extents of the axis.
+  const extent = ready.source_layout.battle_extent;
+  assert.equal(deathStar.source_position[0], -2 * extent);
+  assert.ok(deathStar.source_position.slice(1).every((value) => Math.abs(value) <= 0.2 * extent),
+    "the station decal's y or z left its 0.2-extent band");
 
-  const effectLoad = consoleLines.find(({ text }) =>
-    text.includes("[tactical_3d] effect_loaded resource=5010"));
-  assert.ok(effectLoad, "Death Star resource 5010 was not decoded into the tactical renderer");
-  const effectScene = consoleLines.find(({ text }) =>
-    text.includes("[tactical_3d] effect_scene") && text.includes("3001:5010:"));
-  assert.ok(effectScene, "Death Star resource 5010 was not submitted as object 3001");
+  // The station is a scene-surround decal, never an impact frame or a pick target.
+  const stationEffect = consoleLines.find(({ text }) =>
+    text.includes("[tactical_3d] effect_scene") && /(=|;)\d+:50[12]0:/.test(text));
+  assert.ok(!stationEffect, "the Death Star station was submitted as an impact effect");
+  const stationDecal = consoleLines.find(({ text }) =>
+    text.includes("[tactical_3d] station_decal resource=5010 ")
+      && text.includes(`size=${(0.5 * extent).toFixed(3)} origin=64,64`)
+      && text.includes("pickable=false"));
+  assert.ok(stationDecal, "the Death Star decal 5010 was not submitted to the scene surround");
   fs.writeFileSync(path.join(folder, "death-star-overview.png"), stable.bytes);
 
-  const scale = Math.min(viewport.width / 640, viewport.height / 480);
-  const offsetX = (viewport.width - 640 * scale) / 2;
-  const offsetY = (viewport.height - 480 * scale) / 2;
-  const click = async (x, y) => {
-    await page.mouse.click(offsetX + x * scale, offsetY + y * scale);
+  const click = async (name) => {
+    const target = tacticalControlPoint(viewport, ready, name);
+    await page.mouse.click(target.x, target.y);
     await page.waitForTimeout(80);
   };
   const capture = async (name) => stableInteractionFrame(page, folder, name);
 
-  await click(342, 10);
-  await click(590, 248);
-  const missions = await capture("death-star-missions-open");
   const enabled = ready.faction === "alliance";
+  // The Imperial squadron starts docked in the station's hangar
+  // (FUN_005964c0.c:149-153), so the Empire opens the Missions panel on its
+  // capital ship, as TAC-05-C022's original frame does.
+  await click(enabled ? "fighter-group-1" : "task-force-1");
+  await click("open-missions");
+  const missions = await capture("death-star-missions-open");
   const probes = [{
     type: enabled ? "attack-death-star-enabled" : "attack-death-star-disabled",
-    ...verifyTacticalBitmap(viewport, missions, enabled ? 1176 : 1178, 568, 187),
+    ...verifyTacticalControlBitmap(
+      viewport, missions, enabled ? 1176 : 1178, ready, "attack-death-star",
+    ),
   }];
-  if (ready.faction === "alliance") {
-    assert.equal(ready.tactical_rng_state, 0x5eedba77,
-      "idle Alliance Death Star journey changed its tactical RNG seed");
-  } else {
-    assert.notEqual(ready.tactical_rng_state, 0x5eedba77,
-      "Imperial station-under-attack entry did not consume the tactical RNG");
-  }
+  // Neither side's ready state has drawn: the Imperial fixture's Alliance
+  // group is in state 2, whose entry (FUN_005d0340) only voices 0x115; the
+  // first draw is the state-5 roll (FUN_005d04e0). port: the surround's
+  // clock reseed of the CRT stream (FUN_005f5750, srand(time)) is not
+  // ported, so the battle's seed stands.
+  assert.equal(ready.tactical_rng_state, 0x5eedba77,
+    `${ready.faction} Death Star journey changed its tactical RNG seed before state 5`);
   probes.push({
     type: "source-tactical-rng-entry",
     source: ["FUN_0061a310", "FUN_005a8a70"],
     rng_state: ready.tactical_rng_state,
   });
 
-  await click(590, 199);
+  await click("attack-death-star");
   const afterAttack = await capture(enabled
     ? "death-star-mission-selected"
     : "death-star-disabled-probe");
   if (enabled) {
     probes.push({
       type: "attack-death-star-selected",
-      ...verifyTacticalBitmap(viewport, afterAttack, 1177, 568, 187),
+      ...verifyTacticalControlBitmap(viewport, afterAttack, 1177, ready, "attack-death-star"),
     });
     probes.push({
       type: "attack-death-star-graphic",
       ...verifyTacticalTransparentOverlay(viewport, afterAttack, 2154, 496, 42),
     });
-    await click(560, 241);
+    await click("confirm");
   } else {
     assert.equal(sha256(afterAttack), sha256(missions),
       "friendly Death Star accepted the disabled attack control");
@@ -2838,16 +3125,24 @@ async function probeTacticalDeathStarPresentation(
     assert.ok(orderLogs.some((line) =>
       /panel=missions event=commit order=6 tactic=0 capital_members=0 fighter_members=1/.test(line)),
     "Alliance fighter group did not commit Attack Death Star");
-    const launchLog = consoleLines.find(({ text }) =>
-      text.includes("[tactical_death_star] trench_run_launch status=launched fighter_members=1")
+    // The order makes the result object in state 2 (FUN_005d0820): the
+    // group flies to its entry point first, and only its arrival posts
+    // state 5 with the 120 s timer and the roll (FUN_005c6610, 0x5c6924;
+    // the trench-run outcome cases cover that leg). State 2 draws nothing,
+    // and the launch is logged only at state 5.
+    const orderLog = consoleLines.find(({ text }) =>
+      text.includes("[tactical_death_star] trench_run_order status=accepted fighter_members=1")
         && text.includes("group=0")
-        && text.includes("remaining_ms=120000"));
-    assert.ok(launchLog,
+        && text.includes("remaining_ms=0 "));
+    assert.ok(orderLog,
     "Alliance fighter group did not enter the production trench-run lifecycle");
-    const launchRngState = Number(launchLog.text.match(/rng_state=(\d+)/)?.[1]);
-    assert.ok(Number.isInteger(launchRngState));
-    assert.notEqual(launchRngState, ready.tactical_rng_state,
-      "trench-run state entry did not consume the shared tactical RNG");
+    assert.ok(!consoleLines.some(({ text }) =>
+      text.includes("[tactical_death_star] trench_run_launch")),
+    "the trench run launched at the order rather than at the approach's arrival");
+    const orderRngState = Number(orderLog.text.match(/rng_state=(\d+)/)?.[1]);
+    assert.ok(Number.isInteger(orderRngState));
+    assert.equal(orderRngState, ready.tactical_rng_state,
+      "the trench run's state-2 entry drew from the shared tactical RNG");
   } else {
     assert.ok(!orderLogs.some((line) => /order=6/.test(line)),
       "Imperial fighter group committed an attack against its friendly Death Star");
@@ -2886,17 +3181,15 @@ async function probeTacticalDeathStarPresentation(
         && text.includes("routed=true")
         && text.includes("loaded=true")
         && text.includes("muted=true"));
-    assert.ok(committedVoice, "timed trench-run follow-up voice did not route");
+    // 0x13a is state 5's voice (FUN_005cfec0); the paused group has not
+    // reached its entry point, so it has not played.
+    assert.ok(!committedVoice, "the state-5 voice played before the group arrived");
     probes.push({
-      type: "trench-run-timed-state-entry",
-      source: "FUN_005cfec0",
+      type: "trench-run-state-2-entry",
+      source: ["FUN_005d0820", "FUN_005d0340"],
       group: 0,
-      remaining_ms: 120000,
-      source_event: "0x13a",
-      wave: 15161,
-      routed: true,
-      loaded: true,
-      muted: true,
+      remaining_ms: 0,
+      state_5_voice_routed: false,
     });
   }
   probes.push({
@@ -2904,12 +3197,62 @@ async function probeTacticalDeathStarPresentation(
     executable_functions: [
       "FUN_005ab0e0", "FUN_005ab650", "FUN_005ba420", "FUN_005ba7f0", "FUN_005df110",
     ],
-    object_id: 3001,
+    scene_surround_decal: { resource_id: 5010, size: 0.5 * extent, origin: [64, 64], pickable: false },
     manager: deathStar,
     attack_enabled: enabled,
     order_logs: orderLogs,
   });
   return probes;
+}
+
+// The player's side withdraws through Battle Options (FUN_0059fd40 ->
+// FUN_005ad530). The laser fixture ends the countdown on the next step, so
+// the controller's state 2 -> 3 (FUN_005c8780.c:28-47) follows at once: side
+// 1 posts 0x45 for its operational station (FUN_005ba5e0), and FUN_005c1200
+// takes the station's decal off its frame (0x5ba611); side 0's withdrawal
+// leaves the station where it is.
+async function probeTacticalWithdrawalDeparture(page, viewport, folder, consoleLines, faction) {
+  const scale = Math.min(viewport.width / 640, viewport.height / 480);
+  const offsetX = (viewport.width - 640 * scale) / 2;
+  const offsetY = (viewport.height - 480 * scale) / 2;
+  const point = (x, y) => ({ x: offsetX + x * scale, y: offsetY + y * scale });
+  const click = async (x, y) => {
+    const target = point(x, y);
+    await page.mouse.click(target.x, target.y);
+    await page.waitForTimeout(120);
+  };
+  const side = faction === "alliance" ? "alliance" : "empire";
+  await click(616, 318);
+  await click(521, 64);
+  await click(561, 242);
+  const counting = `[tactical_withdrawal] side=${side} status=counting_down countdown_ms=${side === "empire" ? 150000 : 30000} `;
+  assert.ok(consoleLines.some(({ text }) => text.includes(counting)),
+    `the ${side} withdrawal did not start its countdown: ${counting}`);
+  await click(574, 318);
+  const holding = `[tactical_withdrawal] side=${side} status=holding station_departed=${side === "empire"}`;
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline && !consoleLines.some(({ text }) => text.includes(holding))) {
+    await page.waitForTimeout(100);
+  }
+  assert.ok(consoleLines.some(({ text }) => text.includes(holding)),
+    `the ${side} countdown did not end as expected: ${holding}`);
+  await page.waitForTimeout(300);
+  const removed = consoleLines.find(({ text }) =>
+    text.includes("[tactical_3d] station_decal_removed resource=5010 cause=departure"));
+  if (side === "empire") {
+    assert.ok(removed, "the departing station's decal stayed in the scene");
+  } else {
+    assert.ok(!removed, "the Alliance withdrawal took the Imperial station's decal away");
+  }
+  const frame = await dynamicInteractionFrame(page, folder, "withdrawal-countdown-ended");
+  return {
+    type: "side-withdrawal-departure",
+    side,
+    source: ["FUN_005ad530", "FUN_005c8780", "FUN_005ba5e0", "FUN_005c1200"],
+    holding,
+    decal_removed: removed?.text ?? null,
+    frame_sha256: sha256(frame),
+  };
 }
 
 async function probeTacticalDeathStarLaserJourney(
@@ -2944,6 +3287,9 @@ async function probeTacticalDeathStarLaserJourney(
       faction_gate: "empire-owner-only",
       unchanged_sha256: sha256(rejected),
     });
+    probes.push(await probeTacticalWithdrawalDeparture(
+      page, viewport, folder, consoleLines, ready.faction,
+    ));
     return probes;
   }
 
@@ -2954,11 +3300,11 @@ async function probeTacticalDeathStarLaserJourney(
       { x: 0, y: 0, width: 1, height: 25 },
       { x: 163, y: 0, width: 3, height: 25 },
       { x: 34, y: 9, width: 95, height: 6 },
-      { x: 139, y: 2, width: 21, height: 20 },
+      { x: 137, y: 2, width: 21, height: 20 },
     ]),
   }, {
     type: "death-star-laser-ready",
-    ...verifyTacticalBitmap(viewport, stable.bytes, 1021, 613, 2),
+    ...verifyTacticalButton(viewport, stable.bytes, 1021, 611, 2),
   });
 
   await page.mouse.move(button.x, button.y);
@@ -2967,14 +3313,14 @@ async function probeTacticalDeathStarLaserJourney(
   const held = await stableInteractionFrame(page, folder, "death-star-laser-held");
   probes.push({
     type: "death-star-laser-held",
-    ...verifyTacticalBitmap(viewport, held, 1022, 613, 2),
+    ...verifyTacticalButton(viewport, held, 1022, 611, 2),
   });
   await page.mouse.up({ button: "left" });
   await page.waitForTimeout(80);
   const armed = await stableInteractionFrame(page, folder, "death-star-laser-armed");
   probes.push({
     type: "death-star-laser-armed",
-    ...verifyTacticalBitmap(viewport, armed, 1022, 613, 2),
+    ...verifyTacticalButton(viewport, armed, 1022, 611, 2),
   });
   assert.ok(consoleLines.some(({ text }) =>
     text.includes("[tactical_death_star] superlaser_targeting status=armed input=right_click")),
@@ -2992,10 +3338,12 @@ async function probeTacticalDeathStarLaserJourney(
   await page.mouse.click(target.x, target.y, { button: "right" });
   await page.waitForTimeout(80);
   const committed = await stableInteractionFrame(page, folder, "death-star-laser-committed");
+  // The commit resets the charge, so the control shows 1023, its loading
+  // state (FUN_005c4ed0; ghidra/notes/tactical-death-star-path.md).
   probes.push({
     type: "death-star-laser-committed",
     target_object_id: targetObjectId,
-    ...verifyTacticalBitmap(viewport, committed, 1022, 613, 2),
+    ...verifyTacticalButton(viewport, committed, 1023, 611, 2),
   });
   assert.ok(consoleLines.some(({ text }) =>
     text.includes(`[tactical_death_star] superlaser_committed target_object_id=${targetObjectId} charge=0`)),
@@ -3024,9 +3372,12 @@ async function probeTacticalDeathStarLaserJourney(
     beam_frame_sha256: sha256(beam),
     beam_visibility: beamVisibility,
     resolved_frame_sha256: sha256(resolved),
-    control: verifyTacticalBitmap(viewport, resolved, 1023, 613, 2),
+    control: verifyTacticalButton(viewport, resolved, 1023, 611, 2),
     executable_functions: ["FUN_005ba5e0", "FUN_005ba7f0", "FUN_005c4ed0", "FUN_005d4d10"],
   });
+  probes.push(await probeTacticalWithdrawalDeparture(
+    page, viewport, folder, consoleLines, ready.faction,
+  ));
   return probes;
 }
 
@@ -3063,9 +3414,28 @@ function probeTacticalTrenchRunOutcome(folder, stable, consoleLines, ready, expe
     })),
     `trench-run ${expected} did not preserve the recovered chatter order`,
   );
+  // FUN_005c1200 takes the station's decal off its frame at state 6
+  // (0x5d0267, after FUN_005ba890 kills the station); state 7 leaves it
+  // drawn at -2E on x (FUN_005d4d10).
+  const extent = ready.source_layout.battle_extent;
+  const decalDrawn = consoleLines.find(({ text }) =>
+    text.includes("[tactical_3d] station_decal resource=5010 ")
+      && text.includes(`position=${(-2 * extent).toFixed(3)},`));
+  const decalRemoved = consoleLines.find(({ text }) =>
+    text.includes("[tactical_3d] station_decal_removed resource=5010 cause=trench_run_success"));
+  if (expected === "success") {
+    assert.ok(decalRemoved, "the successful run did not take the station decal off the scene");
+    assert.ok(!consoleLines.some(({ text }) => text.includes("[tactical_3d] station_decal resource=")),
+      "the station decal was drawn after the successful run");
+  } else {
+    assert.ok(decalDrawn, "the failed run did not keep the station decal at -2E");
+    assert.ok(!consoleLines.some(({ text }) => text.includes("station_decal_removed")),
+      "the failed run removed the station decal");
+  }
   fs.writeFileSync(path.join(folder, `trench-run-${expected}-return.png`), stable.bytes);
   return [{
     type: `trench-run-${expected}-route`,
+    station_decal: (decalRemoved ?? decalDrawn).text,
     result_state: expected === "success" ? 6 : 7,
     movie,
     returned_to: "tactical-combat",
@@ -3087,10 +3457,10 @@ async function probeTacticalBattleResultsPresentation(
   const alliance = faction === "alliance";
   const resources = alliance ? {
     frame: 10335, close: 10370, tabs: [10729, 10731, 10733, 10792],
-    summary: 10759, detail: 10762, fleet: 10765,
+    summary: 10759, detail: 10761, fleet: 10765,
   } : {
     frame: 10336, close: 10376, tabs: [10739, 10741, 10743, 10521],
-    summary: 10760, detail: 10762, fleet: 10766,
+    summary: 10760, detail: 10761, fleet: 10766,
   };
   const tabX = alliance ? 523.5 : 533;
   const tabY = alliance ? [182.5, 236.5, 290.5, 344.5] : [183.5, 242.5, 301.5, 360.5];
@@ -3105,16 +3475,26 @@ async function probeTacticalBattleResultsPresentation(
     type: "battle-results-summary",
     ...verifyStrategyBitmap(viewport, stable.bytes, resources.summary, 97, 87, [
       { x: 0, y: 4, width: 400, height: 43 },
-      { x: 0, y: 202, width: 400, height: 94 },
+      // The status line, the body and its black copy at (0x19, 0x100)
+      // (FUN_0046f360.c:235-236), whose third 18-pixel font-6 cell
+      // (FUN_0060eed0) ends at window row 310, bitmap row 297.
+      { x: 0, y: 202, width: 400, height: 95 },
     ]),
   }, {
+    // The body, wrapped in 0x160 at (0x18, 0xff) of the window
+    // (FUN_0046f360.c:234-243), is drawn inside the masked rows: about 4,900
+    // pixels on either side in the reviewed run, so 1,000 proves it is there.
+    type: "battle-results-summary-body",
+    ...verifyStrategyDrawnOver(viewport, stable.bytes, resources.summary, 97, 87,
+      { x: 12, y: 242, width: 352, height: 55 }, 1000),
+  }, {
     type: "battle-results-close-rest",
-    ...verifyStrategyBitmap(
+    ...verifyStrategyButton(
       viewport, stable.bytes, resources.close, alliance ? 508 : 511, alliance ? 99 : 91,
     ),
   }, {
     type: "battle-results-summary-selected",
-    ...verifyStrategyBitmap(
+    ...verifyStrategyButton(
       viewport, stable.bytes, resources.tabs[0], alliance ? 503 : 511, alliance ? 162 : 163,
     ),
   }];
@@ -3128,26 +3508,30 @@ async function probeTacticalBattleResultsPresentation(
   let capture = await clickTab(1, "results-alliance-forces");
   probes.push({
     type: "battle-results-alliance-tab",
-    ...verifyStrategyBitmap(
+    ...verifyStrategyButton(
       viewport, capture, resources.tabs[1], alliance ? 503 : 511, alliance ? 216 : 222,
     ),
   }, {
     type: "battle-results-alliance-detail",
+    // Layer 2 (0x2a09) on Capital Ships: the title, side name, filter
+    // tabs, "Filters" and headers above y 123, the list and its bar below.
     ...verifyStrategyBitmap(viewport, capture, resources.detail, 97, 87, [
-      { x: 0, y: 0, width: 400, height: 100 },
-      // The result font of 99d561ac sets the Destroyed column's centred
-      // "Mon Calamari Cruiser" out to x 343.
-      { x: 0, y: 100, width: 350, height: 196 },
+      { x: 0, y: 0, width: 400, height: 123 },
+      { x: 24, y: 123, width: 350, height: 170 },
     ]),
   });
 
+  // The four filter tabs (FUN_0046f360.c:609-735): group (0x82, 0x3b),
+  // tabs 0x31 apart, 0x31 by 0x2a (Alliance art) or 0x2c by 0x29.
+  const filter = alliance ? { w: 49, h: 42 } : { w: 44, h: 41 };
   for (let category = 0; category < 4; category++) {
-    const location = point(85 + 62 + category * 96, 74 + 70);
+    const location = point(
+      85 + 130 + category * 49 + filter.w / 2, 74 + 59 + filter.h / 2);
     await page.mouse.click(location.x, location.y);
     capture = await stableInteractionFrame(page, folder, `results-category-${category + 1}`);
     probes.push({
       type: "battle-results-force-category",
-      category: ["capital-ships", "fighters", "troops", "personnel"][category],
+      category: ["capital-ships", "fighter-squadrons", "trooper-regiments", "personnel"][category],
       screenshot_sha256: sha256(capture),
     });
   }
@@ -3155,7 +3539,7 @@ async function probeTacticalBattleResultsPresentation(
   capture = await clickTab(2, "results-imperial-forces");
   probes.push({
     type: "battle-results-imperial-tab",
-    ...verifyStrategyBitmap(
+    ...verifyStrategyButton(
       viewport, capture, resources.tabs[2], alliance ? 503 : 511, alliance ? 270 : 281,
     ),
   });
@@ -3163,7 +3547,7 @@ async function probeTacticalBattleResultsPresentation(
   capture = await clickTab(3, "results-go-directly-to");
   probes.push({
     type: "battle-results-destination-tab",
-    ...verifyStrategyBitmap(
+    ...verifyStrategyButton(
       viewport, capture, resources.tabs[3], alliance ? 503 : 511, alliance ? 324 : 340,
     ),
   }, {
@@ -3176,10 +3560,10 @@ async function probeTacticalBattleResultsPresentation(
     ]),
   }, {
     type: "battle-results-system-destination",
-    ...verifyStrategyBitmap(viewport, capture, 10764, 114, 256),
+    ...verifyStrategyButton(viewport, capture, 10764, 114, 256),
   }, {
     type: "battle-results-fleet-destination",
-    ...verifyStrategyBitmap(viewport, capture, resources.fleet, 314, 256),
+    ...verifyStrategyButton(viewport, capture, resources.fleet, 314, 256),
   });
 
   const destination = alliance ? point(198.5, 304) : point(398.5, 304);
@@ -3195,12 +3579,10 @@ async function probeTacticalBattleResultsPresentation(
   const persistence = consoleLines.find(({ text }) =>
     text.includes("[tactical_results] strategic_persistence applied=true"));
   assert.ok(persistence, `${faction}: strategic result was not persisted before routing`);
-  const postBattle = consoleLines.find(({ text }) =>
-    text.includes("[post_battle] mode=interactive"));
-  assert.ok(postBattle, `${faction}: shared post-battle campaign path did not run`);
-  assert.match(postBattle.text,
-    /landed=0 bombardment_damage=1 headquarters_destroyed=false/,
-    `${faction}: shared post-battle fixture did not apply its expected bombardment`);
+  // No landing and no bombardment follow a battle: both run only on their
+  // orders (FUN_0058c810, FUN_0058d800; ghidra/notes/ground-assault.md).
+  assert.ok(!consoleLines.some(({ text }) => text.includes("[post_battle]")),
+    `${faction}: a post-battle landing ran`);
   assert.match(persistence.text, /attacker_capitals=3->2/,
     `${faction}: destroyed attacker capital was not removed from strategic state`);
   assert.match(persistence.text, /defender_capitals=3->2/,
@@ -3212,9 +3594,9 @@ async function probeTacticalBattleResultsPresentation(
   probes.push({ type: "battle-results-route", destination: route,
     screenshot_sha256: sha256(routed) });
   probes.push({ type: "strategic-result-persistence", log: persistence.text });
-  probes.push({ type: "shared-post-battle-campaign-path", log: postBattle.text });
+  probes.push({ type: "no-post-battle-landing", source: ["FUN_0058c810", "FUN_0058d800"] });
 
-  for (const category of ["Capital Ships", "Fighters", "Troops", "Personnel"]) {
+  for (const category of ["Capital Ships", "Fighter Squadrons", "Trooper Regiments", "Personnel"]) {
     assert.ok(consoleLines.some(({ text }) => text.includes(`category=${category}`)),
       `${faction}: missing ${category} result category transition`);
   }
@@ -3273,7 +3655,7 @@ async function probeTacticalBattleAlertEntry(
       })).concat([{ x: 0, y: 296, width: 2, height: 27 }])),
   }, {
     type: "battle-alert-summary-selected",
-    ...verifyStrategyBitmap(
+    ...verifyStrategyButton(
       viewport,
       stable.bytes,
       resources.tabs[0],
@@ -3282,13 +3664,13 @@ async function probeTacticalBattleAlertEntry(
     ),
   }, {
     type: "battle-alert-retreat-rest",
-    ...verifyStrategyBitmap(viewport, stable.bytes, resources.retreat[0], 77, 350),
+    ...verifyStrategyButton(viewport, stable.bytes, resources.retreat[0], 77, 350),
   }, {
     type: "battle-alert-simulate-rest",
-    ...verifyStrategyBitmap(viewport, stable.bytes, resources.simulate[0], 211, 350),
+    ...verifyStrategyButton(viewport, stable.bytes, resources.simulate[0], 211, 350),
   }, {
     type: "battle-alert-command-rest",
-    ...verifyStrategyBitmap(viewport, stable.bytes, resources.command[0], 345, 350),
+    ...verifyStrategyButton(viewport, stable.bytes, resources.command[0], 345, 350),
   }];
 
   const tabX = alliance ? 503.5 : 513;
@@ -3300,7 +3682,7 @@ async function probeTacticalBattleAlertEntry(
     probes.push({
       type: "battle-alert-tab",
       tab: ["alliance-forces", "imperial-forces", "system-summary"][index - 1],
-      ...verifyStrategyBitmap(
+      ...verifyStrategyButton(
         viewport,
         capture,
         resources.tabs[index],
@@ -3316,7 +3698,7 @@ async function probeTacticalBattleAlertEntry(
   const held = await dynamicInteractionFrame(page, folder, "battle-alert-command-held");
   probes.push({
     type: "battle-alert-command-held",
-    ...verifyStrategyBitmap(viewport, held, resources.command[1], 345, 350),
+    ...verifyStrategyButton(viewport, held, resources.command[1], 345, 350),
   });
   await page.mouse.up({ button: "left" });
   await page.waitForTimeout(100);
@@ -3423,7 +3805,7 @@ async function probeTacticalBattleOptionsPresentation(
   const openHeld = await stableInteractionFrame(page, folder, "battle-options-open-held");
   const probes = [{
     type: "battle-options-hud-pressed",
-    ...verifyTacticalBitmap(viewport, openHeld, 1039, 606, 308),
+    ...verifyTacticalButton(viewport, openHeld, 1039, 606, 308),
   }];
   await page.mouse.up();
   let panel = await stableInteractionFrame(page, folder, "battle-options-open");
@@ -3436,7 +3818,7 @@ async function probeTacticalBattleOptionsPresentation(
     probes.push({
       type: "battle-options-control",
       control: control.name,
-      ...verifyTacticalBitmap(viewport, panel, control.normal, control.x, control.y),
+      ...verifyTacticalButton(viewport, panel, control.normal, control.x, control.y),
     });
   }
 
@@ -3445,7 +3827,7 @@ async function probeTacticalBattleOptionsPresentation(
     const held = await captureHeld(withdraw, "battle-options-withdraw-held");
     probes.push({
       type: "battle-options-withdraw-pressed",
-      ...verifyTacticalBitmap(viewport, held, withdraw.pressed, withdraw.x, withdraw.y),
+      ...verifyTacticalButton(viewport, held, withdraw.pressed, withdraw.x, withdraw.y),
     });
     let confirmation = await stableInteractionFrame(
       page, folder, "battle-options-withdraw-confirmation",
@@ -3469,14 +3851,14 @@ async function probeTacticalBattleOptionsPresentation(
       probes.push({
         type: "withdraw-confirmation-control",
         control: control.name,
-        ...verifyTacticalBitmap(viewport, confirmation, control.normal, control.x, control.y),
+        ...verifyTacticalButton(viewport, confirmation, control.normal, control.x, control.y),
       });
     }
     const cancel = { x: 588, y: 230, width: 27, height: 25, pressed: 1116 };
     const cancelHeld = await captureHeld(cancel, "battle-options-withdraw-cancel-held");
     probes.push({
       type: "withdraw-confirmation-cancel-pressed",
-      ...verifyTacticalBitmap(viewport, cancelHeld, cancel.pressed, cancel.x, cancel.y),
+      ...verifyTacticalButton(viewport, cancelHeld, cancel.pressed, cancel.x, cancel.y),
     });
     await stableInteractionFrame(page, folder, "battle-options-withdraw-cancelled");
 
@@ -3490,7 +3872,7 @@ async function probeTacticalBattleOptionsPresentation(
     const confirmHeld = await captureHeld(confirm, "battle-options-withdraw-confirm-held");
     probes.push({
       type: "withdraw-confirmation-confirm-pressed",
-      ...verifyTacticalBitmap(viewport, confirmHeld, confirm.pressed, confirm.x, confirm.y),
+      ...verifyTacticalButton(viewport, confirmHeld, confirm.pressed, confirm.x, confirm.y),
     });
     await stableInteractionFrame(page, folder, "battle-options-withdraw-started");
     await page.mouse.click(openLocation.x, openLocation.y);
@@ -3545,25 +3927,25 @@ async function probeTacticalBattleOptionsPresentation(
   let held = await captureHeld(observe, "battle-options-observe-held");
   probes.push({
     type: "battle-options-observe-pressed",
-    ...verifyTacticalBitmap(viewport, held, observe.pressed, observe.x, observe.y),
+    ...verifyTacticalButton(viewport, held, observe.pressed, observe.x, observe.y),
   });
   panel = await stableInteractionFrame(page, folder, "battle-options-observing");
   probes.push({
     type: "battle-options-observe-selected",
-    ...verifyTacticalBitmap(viewport, panel, observe.pressed, observe.x, observe.y),
+    ...verifyTacticalButton(viewport, panel, observe.pressed, observe.x, observe.y),
   });
   await captureHeld(observe, "battle-options-take-command-held");
   panel = await stableInteractionFrame(page, folder, "battle-options-take-command");
   probes.push({
     type: "battle-options-take-command",
-    ...verifyTacticalBitmap(viewport, panel, observe.normal, observe.x, observe.y),
+    ...verifyTacticalButton(viewport, panel, observe.normal, observe.x, observe.y),
   });
 
   const gameOptions = controls[3];
   held = await captureHeld(gameOptions, "battle-options-game-options-held");
   probes.push({
     type: "battle-options-game-options-pressed",
-    ...verifyTacticalBitmap(viewport, held, gameOptions.pressed, gameOptions.x, gameOptions.y),
+    ...verifyTacticalButton(viewport, held, gameOptions.pressed, gameOptions.x, gameOptions.y),
   });
   await stableInteractionFrame(page, folder, "battle-options-game-options-route");
   assert.ok(consoleLines.some(({ text }) =>
@@ -3601,7 +3983,7 @@ async function probeTacticalBattleOptionsPresentation(
   held = await captureHeld(close, "battle-options-close-held");
   probes.push({
     type: "battle-options-close-pressed",
-    ...verifyTacticalBitmap(viewport, held, close.pressed, close.x, close.y),
+    ...verifyTacticalButton(viewport, held, close.pressed, close.x, close.y),
   });
   const closed = await stableInteractionFrame(page, folder, "battle-options-closed");
   assert.notEqual(sha256(panel), sha256(closed), "Battle Options close did not restore the display panel");
@@ -3612,7 +3994,7 @@ async function probeTacticalBattleOptionsPresentation(
   held = await captureHeld(simulate, "battle-options-simulate-held");
   probes.push({
     type: "battle-options-simulate-pressed",
-    ...verifyTacticalBitmap(viewport, held, simulate.pressed, simulate.x, simulate.y),
+    ...verifyTacticalButton(viewport, held, simulate.pressed, simulate.x, simulate.y),
   });
   const results = await stableInteractionFrame(page, folder, "battle-options-simulated-results");
   probes.push({
@@ -3776,6 +4158,207 @@ async function probeTacticalYagaDay30(page, viewport, folder, stable, ready, jou
   return [assertYaga, { type: "yaga-day30-journey", journey, captured }];
 }
 
+// The forces each Coruscant Death Star fixture rebuilds from its save
+// (tactical_test_fixture.rs), and the station as that save holds it:
+// completed, at full hull, charge full, no Death Star Shield at Coruscant.
+const CORUSCANT_DEATH_STAR_BATTLES = {
+  "empire-death-star-pre-alert": {
+    player: "empire", attacker_ships: 2, defender_ships: 14, fighters: 34,
+    station_is_attacker: true,
+  },
+  "alliance-day1169-deathstar-trench-run": {
+    player: "alliance", attacker_ships: 26, defender_ships: 8, fighters: 82,
+    station_is_attacker: false,
+  },
+};
+
+// Replay the A0 input traces of the original's two Death Star battles at
+// Coruscant against the fixtures that rebuild them. Like the Yaga journeys,
+// coordinates are the traces' own in the 640x480 game frame (the Empire
+// traces' 800x600 VM points divided by 1.25), and each frame is named after
+// the step it records. Where a trace right-clicks a ship, the journey
+// right-clicks the Alliance capital the port projects nearest that point.
+async function probeTacticalCoruscant(
+  page, viewport, folder, stable, consoleLines, ready, scenario,
+) {
+  const journey = scenario.death_star_journey;
+  const battle = CORUSCANT_DEATH_STAR_BATTLES[scenario.state_match];
+  assert.ok(battle, `no Coruscant battle for ${scenario.state_match}`);
+  const scale = Math.min(viewport.width / 640, viewport.height / 480);
+  const offsetX = (viewport.width - 640 * scale) / 2;
+  const offsetY = (viewport.height - 480 * scale) / 2;
+  const point = (x, y) => ({ x: offsetX + x * scale, y: offsetY + y * scale });
+  const settle = () => page.waitForTimeout(80);
+  const click = async (x, y, options = {}) => {
+    const target = point(x, y);
+    await page.mouse.click(target.x, target.y, options);
+    await settle();
+  };
+  const away = async () => {
+    const target = point(320, 470);
+    await page.mouse.move(target.x, target.y);
+    await settle();
+  };
+  const captured = [];
+  const capture = async (name) => {
+    await stableInteractionFrame(page, folder, name);
+    captured.push(name);
+  };
+  const forces = {
+    type: "coruscant-death-star-forces",
+    state_match: scenario.state_match,
+    system: ready.system,
+    attacker_ships: ready.attacker_ships,
+    defender_ships: ready.defender_ships,
+    fighters: ready.fighters,
+    death_star: ready.death_star,
+  };
+  assert.equal(ready.system, "Coruscant");
+  assert.equal(ready.attacker_ships, battle.attacker_ships);
+  assert.equal(ready.defender_ships, battle.defender_ships);
+  assert.equal(ready.fighters, battle.fighters);
+  assert.ok(ready.death_star, "the Coruscant fixture seated no Death Star");
+  assert.deepEqual({
+    faction: ready.death_star.faction,
+    is_attacker: ready.death_star.is_attacker,
+    operational: ready.death_star.operational,
+    hull: ready.death_star.hull,
+    laser_charge: ready.death_star.laser_charge,
+    shielded: ready.death_star.shielded,
+    not_completed: ready.death_star.not_completed,
+    action_committed: ready.death_star.action_committed,
+  }, {
+    faction: "empire",
+    is_attacker: battle.station_is_attacker,
+    operational: true,
+    hull: ready.death_star.hull_max,
+    laser_charge: 100,
+    shielded: false,
+    not_completed: false,
+    action_committed: false,
+  });
+  fs.writeFileSync(path.join(folder, "initial.png"), stable.bytes);
+  captured.push("initial");
+  if (ready.faction !== battle.player) {
+    return [forces, { type: "coruscant-death-star-journey", journey, captured,
+      skipped: `the A0 traces are the ${battle.player} player's` }];
+  }
+
+  // The Alliance capital whose projection lies nearest a trace point.
+  const fireOnAllianceCapital = async (x, y) => {
+    const scene = consoleLines.filter(({ text }) =>
+      text.includes("[tactical_3d] participant_scene")).at(-1);
+    const positions = parseTacticalScenePositions(scene, "Coruscant target scene");
+    const wanted = point(x, y);
+    const aperture = point(16, 28);
+    const target = ready.participants
+      .map((participant, index) => ({ participant, at: positions.get(index + 1) }))
+      .filter(({ participant, at }) => participant.kind === "capital-ship"
+        && participant.faction === "alliance" && at
+        && at.x >= aperture.x && at.y >= aperture.y
+        && at.x < aperture.x + 444 * scale && at.y < aperture.y + 439 * scale)
+      .sort((a, b) => Math.hypot(a.at.x - wanted.x, a.at.y - wanted.y)
+        - Math.hypot(b.at.x - wanted.x, b.at.y - wanted.y))[0];
+    assert.ok(target, "no projected Alliance capital to fire on");
+    await page.mouse.click(target.at.x, target.at.y, { button: "right" });
+    await settle();
+    assert.ok(consoleLines.some(({ text }) =>
+      text.includes("[tactical_death_star] superlaser_committed")),
+    "the superlaser shot was not committed");
+    return { name: target.participant.name, trace_point: [x, y], screen: target.at };
+  };
+  const pause = () => click(574, 318);
+  // The fire control acts on a press held across a frame, as the laser
+  // journey presses it.
+  const fire = async () => {
+    const target = point(619, 10);
+    await page.mouse.move(target.x, target.y);
+    await page.mouse.down();
+    await settle();
+    await page.mouse.up();
+    await settle();
+    assert.ok(consoleLines.some(({ text }) =>
+      text.includes("[tactical_death_star] superlaser_targeting status=armed")),
+    "the Death Star fire control did not arm");
+  };
+  const targets = [];
+
+  if (journey === "laser") {
+    await fire();
+    targets.push(await fireOnAllianceCapital(368, 174));
+    await away(); await capture("laser-committed");
+  } else if (journey === "strike") {
+    await fire();
+    targets.push(await fireOnAllianceCapital(396, 158));
+    // The burst's cell frame (28) is 5590 ms after its first, right after
+    // which the trace unpauses with the pointer resting on the control.
+    await pause();
+    await page.waitForTimeout(5_590);
+    await dynamicInteractionFrame(page, folder, "superlaser-strike");
+    captured.push("superlaser-strike");
+  } else if (journey === "charge") {
+    await fire();
+    targets.push(await fireOnAllianceCapital(368, 174));
+    // The A0 gauge shows 49 of its 95 columns green: battle runs until the
+    // port's does, then pauses with the pointer on the control.
+    const gaugeColumns = async () => {
+      const shot = PNG.sync.read(await page.screenshot({ animations: "disabled" }));
+      const row = Math.round(offsetY + 12 * scale);
+      let green = 0;
+      for (let x = Math.round(offsetX + 508 * scale); x < Math.round(offsetX + 603 * scale); x++) {
+        const i = (row * shot.width + x) * 4;
+        if (shot.data[i + 1] > 200 && shot.data[i] < 60 && shot.data[i + 2] < 60) green++;
+      }
+      return Math.round(green / scale);
+    };
+    const started = Date.now();
+    await pause();
+    let columns = await gaugeColumns();
+    while (columns < 49) {
+      assert.ok(Date.now() - started < 400_000, `charge gauge stalled at ${columns} columns`);
+      await page.waitForTimeout(columns < 46 ? 1_000 : 150);
+      columns = await gaugeColumns();
+    }
+    const elapsed = Date.now() - started;
+    await pause();
+    await capture("charge-refilling");
+    targets.push({ gauge_columns_at_pause: columns, gauge_columns_after: await gaugeColumns(),
+      unpaused_ms: elapsed });
+  } else if (journey === "attack-death-star") {
+    await click(370, 122);
+    await click(620, 64);
+    for (let i = 0; i < 10; i++) await click(494, 64);
+    await click(498, 316); await click(498, 316);
+    for (let i = 0; i < 3; i++) await click(617, 353);
+    for (let i = 0; i < 6; i++) await click(612, 404);
+    await click(360, 10);
+    await click(590, 248); await away(); await capture("attack-death-star-enabled");
+    await click(590, 199); await away(); await capture("attack-death-star-chosen");
+  } else if (journey === "launch") {
+    await click(360, 10); await click(590, 248); await click(590, 199);
+    await click(562, 242); await away(); await capture("attack-death-star-committed");
+    // The cell frame falls within about 3 s of the launch voice, about 61 s
+    // after the unpause.
+    await pause();
+    const unpaused = Date.now();
+    const launched = () => consoleLines.some(({ text }) =>
+      text.includes("[tactical_death_star] trench_run_launch"));
+    let launchSeenMs = null;
+    while (Date.now() - unpaused < 61_000) {
+      await page.waitForTimeout(Math.min(250, 61_000 - (Date.now() - unpaused)));
+      if (launchSeenMs === null && launched()) launchSeenMs = Date.now() - unpaused;
+    }
+    await dynamicInteractionFrame(page, folder, "trench-run-launch");
+    captured.push("trench-run-launch");
+    targets.push({ launch_seen_ms_after_unpause: launchSeenMs, trench_run: consoleLines
+      .filter(({ text }) => /\[tactical_death_star\] trench_run_(order|launch)/.test(text))
+      .map(({ text }) => text) });
+  } else {
+    throw new Error(`unknown Coruscant journey ${journey}`);
+  }
+  return [forces, { type: "coruscant-death-star-journey", journey, captured, targets }];
+}
+
 function probeTacticalSubsystemFieldCommandPresentation(viewport, folder, stable, ready) {
   const probes = probeTacticalSelectedDamagePresentation(viewport, folder, stable, ready);
   const selected = ready.selected_ship;
@@ -3831,7 +4414,6 @@ async function probeTacticalGroupPresentation(
   const scale = Math.min(viewport.width / 640, viewport.height / 480);
   const offsetX = (viewport.width - 640 * scale) / 2;
   const offsetY = (viewport.height - 480 * scale) / 2;
-  const point = (x, y) => ({ x: offsetX + x * scale, y: offsetY + y * scale });
   const capture = async (name) => stableInteractionFrame(page, folder, name);
   const labelMask = [{ x: 4, y: 2, width: 17, height: 14 }];
   const playerFighter = ready.participants.find((participant) =>
@@ -3841,91 +4423,96 @@ async function probeTacticalGroupPresentation(
   const portraitResource = 2030 + playerFighter.tactical_ordinal - 29;
   // Battles open with nothing selected (FUN_005c5800; A0 TAC-01-C002), so
   // every assigned task force starts raised.
+  const control = (bytes, id, name, ignoredRects = []) =>
+    verifyTacticalControlBitmap(viewport, bytes, id, ready, name, ignoredRects);
+  const slot = (name) => {
+    const { x, y } = tacticalControl(ready, name);
+    return { x, y };
+  };
   const taskButtons = Array.from({ length: 8 }, (_, index) => ({
-    id: 1005,
-    x: 60 + index * 26,
-    y: 2,
+    id: 1005, name: `task-force-${index + 1}`, button: true, ...slot(`task-force-${index + 1}`),
   }));
   const fighterButtons = [1012, 1013, 1014, 1015].map((id, index) => ({
-    id, x: 330 + index * 26, y: 2,
+    id, name: `fighter-group-${index + 1}`, button: true, ...slot(`fighter-group-${index + 1}`),
   }));
+  const taskHeader = slot("task-force-header");
+  const fighterHeader = slot("fighter-group-header");
   const probes = [];
   probes.push({
     type: "task-force-header",
     ...verifyTacticalBitmap(viewport, stable.bytes, faction === "alliance" ? 1001 : 1004,
-      10, 1, taskButtons),
+      taskHeader.x, taskHeader.y, taskButtons),
   });
   probes.push({
     type: "fighter-group-header",
     ...verifyTacticalBitmap(viewport, stable.bytes, faction === "alliance" ? 1008 : 1010,
-      275, 1, fighterButtons),
+      fighterHeader.x, fighterHeader.y, fighterButtons),
   });
-  for (const button of taskButtons) {
+  for (const [index, button] of taskButtons.entries()) {
     probes.push({
       type: "task-force-initial",
-      slot: (button.x - 60) / 26 + 1,
-      ...verifyTacticalBitmap(
-        viewport, stable.bytes, button.id, button.x, button.y, [], labelMask,
-      ),
+      slot: index + 1,
+      ...control(stable.bytes, button.id, button.name, labelMask),
     });
   }
   for (const [index, button] of fighterButtons.entries()) {
     probes.push({
       type: "fighter-group-initial",
       slot: index + 1,
-      ...verifyTacticalBitmap(viewport, stable.bytes, button.id, button.x, button.y),
+      ...control(stable.bytes, button.id, button.name),
     });
   }
 
-  const matte = point(330.1, 2.1);
+  const matte = tacticalControlPoint(viewport, ready, "fighter-group-1", { x: 0.1, y: 0.1 });
   await page.mouse.click(matte.x, matte.y);
   await page.waitForTimeout(80);
   const matteFrame = await capture("group-transparent-matte");
   assert.equal(sha256(matteFrame), sha256(stable.bytes),
     "transparent fighter-group matte changed the paused battle");
 
-  const taskEight = point(254, 10);
+  const taskEight = tacticalControlPoint(viewport, ready, "task-force-8");
   await page.mouse.move(taskEight.x, taskEight.y);
   await page.mouse.down({ button: "left" });
   await page.waitForTimeout(80);
   const taskEightHeld = await capture("task-force-8-held");
-  probes.push({ type: "task-force-8-held", ...verifyTacticalBitmap(
-    viewport, taskEightHeld, 1006, 242, 2, [], labelMask,
-  ) });
+  probes.push({ type: "task-force-8-held",
+    ...control(taskEightHeld, 1006, "task-force-8", labelMask) });
   await page.mouse.up({ button: "left" });
   await page.waitForTimeout(80);
   const taskEightSelected = await capture("task-force-8-selected");
-  probes.push({ type: "task-force-8-selected", ...verifyTacticalBitmap(
-    viewport, taskEightSelected, 1006, 242, 2, [], labelMask,
-  ) });
-  probes.push({ type: "task-force-1-released", ...verifyTacticalBitmap(
-    viewport, taskEightSelected, 1005, 60, 2, [], labelMask,
-  ) });
+  probes.push({ type: "task-force-8-selected",
+    ...control(taskEightSelected, 1006, "task-force-8", labelMask) });
+  probes.push({ type: "task-force-1-released",
+    ...control(taskEightSelected, 1005, "task-force-1", labelMask) });
 
-  const gold = point(420, 10);
+  const gold = tacticalControlPoint(viewport, ready, "fighter-group-4");
   await page.mouse.move(gold.x, gold.y);
   await page.mouse.down({ button: "left" });
   await page.waitForTimeout(80);
   const goldHeld = await capture("gold-group-held");
-  probes.push({ type: "gold-group-held", ...verifyTacticalBitmap(
-    viewport, goldHeld, 1019, 408, 2,
-  ) });
+  probes.push({ type: "gold-group-held", ...control(goldHeld, 1019, "fighter-group-4") });
   await page.mouse.up({ button: "left" });
   await page.waitForTimeout(80);
   const goldSelected = await capture("gold-group-selected");
-  probes.push({ type: "gold-group-selected", ...verifyTacticalBitmap(
-    viewport, goldSelected, 1019, 408, 2,
-  ) });
+  probes.push({ type: "gold-group-selected",
+    ...control(goldSelected, 1019, "fighter-group-4") });
+  // The panel (1307 at 482, 28) under the fighter art and its labels; the
+  // count line is drawn over the art (FUN_005e16a0), so the art is checked
+  // outside that line.
+  const art = slot("fighter-art");
+  const countLabel = slot("fighter-count-label");
+  const countLine = { x: countLabel.x - art.x, y: countLabel.y - art.y, width: 102, height: 12 };
   probes.push({ type: "selected-fighter-panel", ...verifyTacticalBitmap(
     viewport, goldSelected, 1307, 482, 28,
-    [{ id: portraitResource, x: 506, y: 77 }],
+    [{ id: portraitResource, x: art.x, y: art.y }],
     [
       { x: 8, y: 7, width: 145, height: 40 },
+      { x: countLabel.x - 482, y: countLabel.y - 28, width: 102, height: 12 },
       { x: 12, y: 210, width: 126, height: 22 },
     ],
   ) });
   probes.push({ type: "selected-fighter-portrait", ...verifyTacticalBitmap(
-    viewport, goldSelected, portraitResource, 506, 77,
+    viewport, goldSelected, portraitResource, art.x, art.y, [], [countLine],
   ) });
 
   const participantLine = consoleLines.find(({ text }) =>
@@ -4027,15 +4614,13 @@ async function probeTacticalGroupPresentation(
   await page.keyboard.press("F1");
   await page.waitForTimeout(80);
   const taskOneHotkey = await capture("task-force-1-hotkey");
-  probes.push({ type: "task-force-1-hotkey", ...verifyTacticalBitmap(
-    viewport, taskOneHotkey, 1006, 60, 2, [], labelMask,
-  ) });
+  probes.push({ type: "task-force-1-hotkey",
+    ...control(taskOneHotkey, 1006, "task-force-1", labelMask) });
   await page.keyboard.press("F12");
   await page.waitForTimeout(80);
   const goldHotkey = await capture("gold-group-hotkey");
-  probes.push({ type: "gold-group-f12-hotkey", ...verifyTacticalBitmap(
-    viewport, goldHotkey, 1019, 408, 2,
-  ) });
+  probes.push({ type: "gold-group-f12-hotkey",
+    ...control(goldHotkey, 1019, "fighter-group-4") });
 
   assert.ok(consoleLines.some(({ text }) =>
     text.includes("[tactical_groups] task_force_selected slot=8 members=1")),
@@ -4079,11 +4664,11 @@ async function probeTacticalSelectedNavigationPresentation(
   const probes = [
     {
       type: "previous-capital-rest",
-      ...verifyTacticalBitmap(viewport, stable.bytes, 1101, 489, 38),
+      ...verifyTacticalButton(viewport, stable.bytes, 1101, 489, 38),
     },
     {
       type: "next-capital-rest",
-      ...verifyTacticalBitmap(viewport, stable.bytes, 1103, 614, 38),
+      ...verifyTacticalButton(viewport, stable.bytes, 1103, 614, 38),
     },
   ];
   const press = async (name, location, pressedResource, pressedX) => {
@@ -4093,7 +4678,7 @@ async function probeTacticalSelectedNavigationPresentation(
     const held = await capture(`${name}-held`);
     probes.push({
       type: `${name}-held`,
-      ...verifyTacticalBitmap(viewport, held, pressedResource, pressedX, 38),
+      ...verifyTacticalButton(viewport, held, pressedResource, pressedX, 38),
     });
     await page.mouse.up({ button: "left" });
     await page.waitForTimeout(80);
@@ -4172,7 +4757,7 @@ async function probeTacticalNavigationCameraPresentation(
     await page.mouse.down({ button: "left" });
     await page.waitForTimeout(80);
     const held = await capture(`${name}-held`);
-    const bitmap = verifyTacticalBitmap(viewport, held, resource, resourceX, resourceY);
+    const bitmap = verifyTacticalButton(viewport, held, resource, resourceX, resourceY);
     await page.mouse.up({ button: "left" });
     await page.waitForTimeout(80);
     return { bitmap, released: await capture(`${name}-released`) };
@@ -4188,14 +4773,14 @@ async function probeTacticalNavigationCameraPresentation(
   for (const control of navControls) {
     probes.push({
       type: `navigation-set-${control.set}-rest`,
-      ...verifyTacticalBitmap(viewport, stable.bytes, control.normal, control.x, 272),
+      ...verifyTacticalButton(viewport, stable.bytes, control.normal, control.x, 272),
     });
     await page.mouse.click(point(control.x + 13, 285).x, point(control.x + 13, 285).y);
     await page.waitForTimeout(80);
     const selected = await capture(`navigation-set-${control.set}-selected`);
     probes.push({
       type: `navigation-set-${control.set}-selected`,
-      ...verifyTacticalBitmap(viewport, selected, control.selected, control.x, 272),
+      ...verifyTacticalButton(viewport, selected, control.selected, control.x, 272),
     });
   }
 
@@ -4372,6 +4957,8 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
         attacker_ships: ready.attacker_ships, defender_ships: ready.defender_ships,
         fighters: ready.fighters }, ...(scenario.yaga_journey
         ? await probeTacticalYagaDay30(page, viewport, folder, stable, ready, scenario.yaga_journey)
+        : scenario.death_star_journey
+        ? await probeTacticalCoruscant(page, viewport, folder, stable, consoleLines, ready, scenario)
         : scenario.camera_journey
         ? await probeTacticalCameraJourney(page, viewport, folder, stable)
         : scenario.lod_journey
@@ -4474,7 +5061,7 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
     // A state-matched scenario rebuilds an original battle instead of the
     // synthetic encounter; its probe asserts that battle's forces.
     if (battle && !scenario.state_match) {
-      assert.equal(ready.schema_version, 37);
+      assert.equal(ready.schema_version, 38);
       assert.equal(ready.family, "tactical");
       assert.equal(ready.faction, faction);
       assert.equal(ready.proof_enabled, scenario.tactical_proof);
@@ -4601,6 +5188,19 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
         outer_negative_z: -59,
         inner_negative_z: -39,
         inner_positive_z: 39,
+      } : scenario.death_star_presentation ? {
+        // The Imperial squadron has no ship of its own (carrier tag 0), so
+        // FUN_005a6360.c:15-31 resolves it to the station's hangar and,
+        // without a hyperdrive, it starts docked (FUN_005964c0.c:149-153);
+        // the layout skips a docked squadron (FUN_005ab650.c:148-153,
+        // FUN_005b69f0).
+        first_active_objects: 2,
+        second_active_objects: 1,
+        battle_extent: 106,
+        outer_positive_z: 53,
+        outer_negative_z: -53,
+        inner_negative_z: -33,
+        inner_positive_z: 33,
       } : {
         first_active_objects: 2,
         second_active_objects: 2,
@@ -4776,10 +5376,27 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
           position[2] === allianceShipZ));
         assert.ok(empireShips.every(({ source_position: position }) =>
           position[2] === ready.source_layout.outer_positive_z));
-        assert.ok(allianceFighters.every(({ source_position: position }) =>
-          position[2] === ready.source_layout.inner_negative_z));
-        assert.ok(empireFighters.every(({ source_position: position }) =>
-          position[2] === ready.source_layout.inner_positive_z));
+        if (scenario.trench_run_outcome) {
+          // The outcome fixture flies the group to the trench entry point,
+          // half the battle extent off the station's side
+          // (FUN_005c6610.c:112-145, _DAT_0066cb14 = 0.5), before the run.
+          const entry = [-0.5 * ready.source_layout.battle_extent, 0, 0];
+          assert.ok(allianceFighters.every(({ source_position: position }) =>
+            position.every((value, index) => value === entry[index])),
+          `the trench-run group is not at its entry point: ${JSON.stringify(allianceFighters.map(({ source_position }) => source_position))}`);
+        } else {
+          assert.ok(allianceFighters.every(({ source_position: position }) =>
+            position[2] === ready.source_layout.inner_negative_z));
+        }
+        if (scenario.death_star_presentation) {
+          // Docked in the station's hangar (FUN_005964c0.c:149-153): state 1
+          // is not alive for FUN_005ad870 (2, 4, 6), so it has no lane.
+          assert.ok(empireFighters.every(({ active }) => !active),
+            "the Imperial squadron did not start docked in the station hangar");
+        } else {
+          assert.ok(empireFighters.every(({ source_position: position }) =>
+            position[2] === ready.source_layout.inner_positive_z));
+        }
       } else if (scenario.battle_results_presentation) {
         const allianceShips = ready.participants.filter((participant) =>
           participant.kind === "capital-ship" && participant.faction === "alliance");
@@ -4867,19 +5484,19 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
         assert.match(planetLoadLogs[0]?.text || "",
           new RegExp(`resource=${ready.planet_resource_id} `
             + `palette_resource_id=${ready.palette_resource_id} dimensions=256x256 `
-            + "texture_filter=nearest alpha=opaque "
-            + "source=FUN_0059a850,FUN_00596ad0,FUN_005c2e60"),
+            + "texture_filter=nearest alpha=decal_black_key "
+            + "source=FUN_0059a850,FUN_00596ad0,FUN_005c2e60,FUN_005d4d10"),
         "tactical planet load used the wrong resource, palette, or source state");
         assert.match(planetSceneLogs[0]?.text || "",
           new RegExp(`resource=${ready.planet_resource_id} `
             + `palette_resource_id=${ready.palette_resource_id} dimensions=256x256 `
-            + "source_position=left_edge_provisional "),
-        "tactical planet scene used the wrong resource or provisional placement");
+            + `source_position=world_decal position=${(2 * ready.source_layout.battle_extent).toFixed(3)},`),
+        "tactical planet scene used the wrong resource or decal placement");
         probes.push({
           type: "system-selected-tactical-planet",
           executable_functions: [
             "FUN_0040b0e0", "FUN_00509610", "FUN_00595d60", "FUN_0059a850",
-            "FUN_00596ad0", "FUN_005c2e60",
+            "FUN_00596ad0", "FUN_005c2e60", "FUN_005d4d10",
           ],
           system_picture_id: ready.system_picture_id,
           planet_resource_id: ready.planet_resource_id,
@@ -5079,8 +5696,13 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
           assert.ok(fighterFamilyLogs.every(({ text }) =>
             /dimensions=32x32,16x16,2x2 .*texture_filter=nearest alpha=opaque source=FUN_005c63f0/.test(text)),
           "fighter family load did not preserve dimensions or source texture state");
-          assert.equal(fighterSceneLogs.length, scenario.fighter_detail_journey ? 9 : 1,
+          // With no squadron alive and in flight (a failed trench run's
+          // group is lost; the Imperial squadron sits docked in the station),
+          // the renderer submits no fighter scene.
+          assert.equal(fighterSceneLogs.length,
+            fighterParticipants.length === 0 ? 0 : scenario.fighter_detail_journey ? 9 : 1,
             "production participants emitted the wrong fighter scene count");
+          if (fighterSceneLogs.length > 0) {
           assert.match(fighterSceneLogs[0].text,
             new RegExp(`requested=${fighterParticipants.length} rendered=${fighterParticipants.length} `
               + ".*source_positions=true source=FUN_005ab650,FUN_005c63f0,0x005d4af0"),
@@ -5088,6 +5710,7 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
           const initialFighterResources = parseFighterSceneResources(fighterSceneLogs[0]);
           assert.deepEqual(initialFighterResources.map(({ resource_id }) => resource_id),
             fighterParticipants.map(({ active_indicator_resource }) => active_indicator_resource));
+          }
           if (scenario.navigation_camera_presentation) {
             assert.ok(cameraLogs.length >= 6,
               "navigation journey did not exercise the source tactical camera");
@@ -5154,10 +5777,32 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
       );
     }
 
-    const expectedRequests = ["/", "/gl.js", "/open-rebellion-test.wasm", "/data/runtime.orpk"];
+    // A trench run's result plays its film in the shell's <video> overlay
+    // (web/index.html, or_movie_play), which asks for data/movies/<n>.webm.
+    // The fixture site stages no movies, so the request is a 404 and the
+    // overlay skips the film on its error event.
+    const movieRequest = scenario.trench_run_outcome
+      ? `/data/movies/${scenario.trench_run_outcome === "success" ? 201 : 202}.webm`
+      : null;
+    const expectedRequests = ["/", "/gl.js", "/open-rebellion-test.wasm", "/data/runtime.orpk",
+      ...(movieRequest ? [movieRequest] : [])];
     assert.deepEqual(requests.map(({ url: pathname }) => pathname).sort(), expectedRequests.sort());
-    assert.ok(requests.every(({ status }) => status === 200), "startup has non-200 requests");
-    assert.deepEqual(errors, [], `browser diagnostics for ${id}: ${errors.join("; ")}`);
+    assert.ok(requests.every(({ url: pathname, status }) => status === (pathname === movieRequest ? 404 : 200)),
+      "startup has non-200 requests");
+    // The film's 404 (above) is the one console error Chrome logs for it;
+    // the <video> element may also cancel the 404 body it was still reading
+    // once its error event fires, which Chrome reports as ERR_ABORTED.
+    const filmMissing = "console:error:Failed to load resource: the server responded with a status of 404 (Not Found)";
+    const filmAborted = movieRequest
+      ? errors.find((error) => error.startsWith("requestfailed:")
+        && new URL(error.slice("requestfailed:".length).replace(/:net::ERR_ABORTED$/, "")).pathname === movieRequest
+        && error.endsWith(":net::ERR_ABORTED"))
+      : null;
+    const diagnostics = movieRequest
+      ? errors.filter((error, index) => !(error === filmMissing && errors.indexOf(filmMissing) === index)
+        && !(error === filmAborted && errors.indexOf(filmAborted) === index))
+      : errors;
+    assert.deepEqual(diagnostics, [], `browser diagnostics for ${id}: ${diagnostics.join("; ")}`);
     if (["mismatch", "mismatch_not_updated", "dimension_mismatch"].includes(comparison.status)) {
       fail(`pixel comparison failed for ${id}: ${comparison.different_pixels} pixels`);
     }
@@ -5259,11 +5904,17 @@ async function main() {
     // synthetic ones.
     const synthetic = catalog.scenarios.filter(({ state_match }) => !state_match);
     assert.deepEqual(catalog.scenarios.filter(({ state_match }) => state_match)
-      .map(({ slug, state_match, yaga_journey }) => [slug, state_match, yaga_journey]), [
+      .map(({ slug, state_match, yaga_journey, death_star_journey }) =>
+        [slug, state_match, yaga_journey ?? death_star_journey]), [
       ["yaga-day30", "empire-day30-yaga-alert-control", "master"],
       ["yaga-day30-options", "empire-day30-yaga-alert-control", "options"],
       ["yaga-day30-pointer", "empire-day30-yaga-alert-control", "pointer"],
       ["yaga-day30-task-force-2", "empire-day30-yaga-alert-control", "task-force-2"],
+      ["coruscant-day676", "empire-death-star-pre-alert", "laser"],
+      ["coruscant-day676-strike", "empire-death-star-pre-alert", "strike"],
+      ["coruscant-day676-charge", "empire-death-star-pre-alert", "charge"],
+      ["coruscant-day1173", "alliance-day1169-deathstar-trench-run", "attack-death-star"],
+      ["coruscant-day1173-launch", "alliance-day1169-deathstar-trench-run", "launch"],
     ]);
     assert.deepEqual(synthetic.map(({ slug }) => slug),
       ["battle-entry", "battle-entry-proof-off", "lod-close", "lod-medium", "lod-far",

@@ -268,7 +268,7 @@ shipped game it is unreachable.
 
 ### Port
 
-- Status: `System::control` (`ControlKind`). Contested maps to "Neutral".
+- Status: `System::control` (`ControlKind`).
 - General and Commander: the window is unreachable, so the port draws no
   System Status; `officer_rank::rank_holder` would answer the rows.
 - Loyalty: `popularity_alliance` and `popularity_empire`, as percentages.
@@ -404,9 +404,14 @@ no "Attached" row and no maintenance row. The rows, in order:
   carriage is kept per fleet, not per ship.
 - Damaged Ships: port: no flag (`+0x50` bit `0x200`). `hull_current < class
   hull` is the nearest field. That reading is unverified.
-- Hyperdrive Rating: port: `FUN_004fd900` is not traced past its walk. The
-  nearest field is any alive ship's class `hyperdrive` being non-zero
-  (unverified).
+- Hyperdrive Rating: `movement::fleet_speed` non-zero. `FUN_00449200.c:303-316`
+  reads fleet slot `+0x34`, `FUN_004fd900` (`build-delivery.md`, "Speed
+  (`+0x34`) and mobile (`+0x38`) per class"): the largest speed among the
+  fleet's completed ships not on their own legs, 0 when one of them reads 0
+  or none exists (`FUN_004fd900.c:21-45`). A ship's speed is its primary
+  rating, else its backup rating (`hyperdrive_if_damaged`), less drive
+  damage (`FUN_00500820.c:10-19`), so a ship with only a backup drive reads
+  Yes.
 
 ## Capital Ship Status (`FUN_00446fd0`)
 
@@ -581,9 +586,8 @@ The labels are 34418..34421, not the Character Status strings 34598..34601.
   object that is not a system (`FUN_0051d990`); System Status is not wired,
   since no shipped path opens it.
 - port: a facility's background follows its own side, which equals its
-  system's holder except in a contested system, where it keeps the last
-  holder (`facility-ownership.md`). A production manager's follows the
-  system's holder.
+  system's holder (`facility-ownership.md`). A production manager's follows
+  the system's holder.
 - port: the picture's marks (the regiment's 11514, en route, damage and
   unbuilt) are not drawn.
 - port: each family's own Port section lists the rows the port cannot hold

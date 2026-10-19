@@ -154,7 +154,7 @@ The sweep lists where a range test exists, not what each one does; the table of 
 
 ## Open questions
 
-- **`hyp:` ground-combat art.** No per-type picture was found for a regiment-versus-regiment battle; the strategic game resolves it without a regiment screen. The resolution function itself (where attack `class+0x64`, defense `+0x68`, bombardment defense `+0x60` are used) is not in the five functions of this packet; start from the status filler `FUN_00445280` (getters `+0x1d8..+0x1e0`) and event `0x150` (`FUN_00512370`, `FUN_00496f50`).
+- **`hyp:` ground-combat art.** No per-type picture was found for a regiment-versus-regiment battle; the strategic game resolves it without a regiment screen. `FUN_0058c120` and its steps resolve it, with attack `+0x64` and defence `+0x68` (`ground-assault.md`).
 - Whether the `GOKRES id + 0x1000` bitmaps (TROOPSD ord 2 and 8, SPECFCSD ord 3 and 5) are used for a variant in `FUN_0042c3b0`'s side path or are dead.
 - What ENCYBMAP resource a record's topic bitmap uses (`FUN_0045f970`); the DLL holds 31 string tables, the bitmaps are in `EData/`.
 - `FUN_00465540` (Personnel Finder special-force row) and `FUN_00497940`/`FUN_00545e90` were taken from the map pages, not re-read.
@@ -184,7 +184,7 @@ What a mod adding a regiment, special force or facility must do in REBEXE, by co
 
 **Proposed follow-up questions** (each settled by the executable):
 
-1. Where is regiment-against-regiment ground combat resolved, and which class fields (`+0x60`, `+0x64`, `+0x68`) does it read? Start from `FUN_00496f50`, `FUN_00512370`, `FUN_00445280`.
+1. Regiment-against-regiment ground combat is resolved by `FUN_0058c120` and its steps, with attack `+0x64` and defence `+0x68` (`ground-assault.md`).
 2. Does `FUN_0046d8d0`'s column bitmap (28 pixels wide, five columns) draw per-type icons that sit in the STRATEGY finder backgrounds (10335, 10336, 10584, 10588)? Settle by reading the background bitmaps; then a mod can recolour a column without code.
 3. What does each of the five `FUN_0042c3b0` overlay ids (`0x2cf1`, `0x2cf5`, `0x2cfb`, `0x2ced`, `0x2d32/34`) show, and is `+0x50` bit `0x200` the "on mission" bit? Start from `FUN_0042c3b0` and `object-state-flags.md`.
 4. How are DAT class tables registered (the list `thunk_FUN_005f5060` read by `FUN_0058ec90`): is there a cap on tables or records per table? Start from `FUN_00584150`, `FUN_005841a0`.

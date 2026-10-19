@@ -57,8 +57,9 @@ Evidence:
 - `FUN_00512700` returns them for kind 4 (facility icon), not for kind 8
   (defense) or 0x10 (fleet).
 - The Destination order and Reserved order both act on these objects.
-- The build-delivery note's manager keeps `+0x74` (DeploymentKey), `+0x5c`
-  (progress), `+0x68` (cost).
+- The build-delivery note's manager keeps `+0x74` (ProductKey), `+0x78`
+  (DeploymentKey), `+0x5c` (progress), `+0x68` (cost), and the Destination
+  order writes its `+0x7c` (below; `rebexe-map.md` names it TargetKey).
 - Family `0xa0..0xa4` appears in the vtable list alongside facility families
   (`0x20..0x2d`, `0x80`).
 
@@ -71,8 +72,9 @@ Evidence:
 3. hyp: the cursor changes to targeting crosshairs (the same targeting mode
    as Mission and Build orders, `FUN_00422ce0`'s `+0xc0` mode). The player
    clicks a system on the galaxy map or a system's Defense/Fleet window.
-4. The target system becomes the destination for all products currently
-   queued at that production area.
+4. The target becomes the manager's destination (`+0x7c`), and every
+   product the manager has queued moves into the container its new leg
+   chooses (below).
 
 ### From the Build Selection window
 
@@ -93,28 +95,61 @@ From `build-delivery.md`:
 When a product completes (`FUN_0052bee0`):
 ```c
 a = mgr->slot_0c();    // the manager's location key
-b = product->slot_0c();  // the product's destination key
+b = product->slot_0c();  // the product's location key (its container's system)
 set_deployed(product, 1);
 if (a != b && a && b) set_enroute_active(product, 1);  // starts transit
 set_completed(product, 1);
 ```
 
-hyp: the Destination order sets the manager's destination (or each queued
-product's `+0x3c` key) to the target system's key. New products queued after
-the Destination is set inherit the same destination. The product's
-`slot_0c()` returns this destination, and at completion the game compares it
-to the manager's location to decide whether transit is needed.
+The manager's destination is its `+0x7c`: `FUN_005298d0` writes it and
+notifies both side views, and `FUN_004c27b0` reads it. The product sits in
+its destination container from its order, so at completion `slot_0c()` gives
+the destination's system, and the comparison with the manager's location
+decides whether the product travels.
+
+## The order's checks and execute
+
+`FUN_00537180` (slot `+0x50`) checks each command's object:
+
+- **Remaining (`+0x58`) is zero** (`FUN_00537180.c:160-306`), and the object
+  is the facility manager (family `[0xa0,0xa2)`, `0xa0000005`,
+  `FUN_0050e200.c:24-38`): the destination goes through `FUN_00553410` and
+  must be a system, else `1`/`0x25` (`:194-212`).
+- **Remaining is zero, and the object is any other manager,** the ship
+  manager (`0xa2…`) or the troop manager (`0xa4…`): the destination must be
+  completed (`+0x50` bit 2), else `1`/`0x20`; not en route (bit 4), else
+  `1`/`0x21`; and not destroyed unless it is a system, else `1`/`0x22`
+  (`:214-256`). It must be a system (`0x90..0x97`), a fleet (`0x08..0x0f`) or
+  a capital ship (`0x14..0x1b`), else `1`/`0x25` (`:262-306`). The checked
+  destination is stored at command `+0x48`.
+- **Remaining is non-zero** (`:321-345`): `FUN_00552210` lists the manager's
+  products (`FUN_005287f0`), and each gets a new leg through `FUN_00551900` →
+  `FUN_00552300`. The pair (chosen container, product key) goes into the
+  command's list at `+0x50` (`FUN_00583f50`).
+
+The command's execute calls the manager's slot `+0x200`, `FUN_00529cd0` →
+`FUN_0052a380` (vtable `0x0065fbf8` slot 128). It stores the destination
+(`FUN_005298d0`), then reparents each listed product into its container
+(slot `+0xa8`). A queued capital ship therefore moves at once into the new
+destination system's spare fleet, or into a destination fleet. The fleet it
+leaves disbands when it holds no other ship (`FUN_004fe630`,
+`death-star-product.md` section 1).
+
+The facility icon's team is every family-`0xa0..0xaf` object of the system
+(`FUN_00512700`, kind 4), and in container order the facility manager comes
+first. So a fleet released from the icon meets that manager's `1`/`0x25`.
+The Manufacturing window's ship and troop bands each issue `0x214` for their
+own manager (`manufacturing-build-selection.md`, the band menus).
+In the route-1 Empire game played on from its day-123 save
+(`death-star-product.md`, "Play evidence"), the icon's Destination released
+on Fleet 1 changes nothing and shows no advisor line. The ships band's
+Destination released on the same fleet moves the queued Death Star into it,
+and the band then reads "Destination: Fleet 1". hyp: the icon's team holds
+all three managers; the iterator's filter arguments are not read.
 
 ## How new queued products inherit the destination
 
-hyp: when the player queues a new build order, the product object is created
-with its `+0x3c` (DestinationLocationAtDeparture) set to the current
-destination of the production area. This is either the system where the
-facility is located (default, no transit needed) or the target system the
-player selected with the Destination order.
-
-The manager's `+0x74` (DeploymentKey) may serve as the persistent per-area
-destination that new products copy.
+The ship is created at order time (`FUN_0057f890` → `FUN_00529ab0` → `FUN_0052a140` → `FUN_004f7d50`), and its `+0x38` holds the manager's key (`death-star-product.md`). Its leg goes to the manager's `+0x7c` (`FUN_005385f0.c:204-208` → `FUN_004c27b0`). The container is the destination system's bit-1 spare fleet, or for a fleet destination the fleet itself, which accepts capital ships (`FUN_004fe160`).
 
 ## "Best Time to Completion" and "Best Time to Deployment"
 
@@ -161,6 +196,13 @@ AI's Manage Production/Manage Garrisons agent skips reserved managers.
   targeting release on a planet or a fleet sets every area's destination
   (`PanelAction::SetDestination`), logged as `[interface] command=0x214
   destination=production_destination status=set`. Reserved stays disabled.
+- A squadron or regiment bound for a fleet rides the ship its Build chose
+  (`QueueItem::carrier`), and an order its fleet's ships lack room for is
+  refused with `1`/`0x27` (`FUN_005385f0` -> `FUN_00551a20` ->
+  `FUN_00552300`, `build_selection::order_refusal`). hyp: a Destination
+  order to a fleet moves the area's queued squadrons and regiments to its
+  ships the same way, and is refused, changing nothing, when they lack the
+  room (`build_selection::order_destination`).
 - Gate: `tools/interface-parity/fleet-window.mjs`, case `destination`
   (fixture code 54, a player shipyard at the primary system), both sides.
 - Best Time to Deployment = Best Time to Completion + transit time, where
@@ -171,16 +213,15 @@ AI's Manage Production/Manage Garrisons agent skips reserved managers.
 
 ## Open
 
-- The exact Destination order handler (which function processes `0x214`
-  after the player selects a target system). It likely updates the manager's
-  destination key and all its queued products' `+0x3c`.
 - Whether the Destination order fires a targeting mode or opens a dialog.
 - The `0xa0..0xaf` object's full field layout and vtable.
 - Whether the Build Selection window computes "Best Time to Deployment"
   at display time from the current destination, or stores it.
-- Which `FUN_0051f8f0` factory entry handles kind `0x214`.
 
 ## Supporting decompiles
 
 `FUN_0052c170`, `FUN_00512700`, `FUN_0052b960`, `FUN_0052bee0`,
-`FUN_0055d8c0`, `FUN_00429440`, `FUN_00604500`.
+`FUN_0055d8c0`, `FUN_00429440`, `FUN_00604500`, `FUN_00537180`,
+`FUN_00553410`, `FUN_00551900`, `FUN_00552210`, `FUN_005287f0`,
+`FUN_00583f50`, `FUN_00529cd0`, `FUN_0052a380`, `FUN_005298d0`,
+`FUN_004c27b0`.

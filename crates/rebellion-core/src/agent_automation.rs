@@ -40,7 +40,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::build_selection::unit_costs;
-use crate::economy::{EconomyState, SystemEconomy};
+use crate::economy::EconomyState;
 use crate::ids::{DatId, SystemKey};
 use crate::manufacturing::{BuildableKind, FacilityBuild, ManufacturingState};
 use crate::world::GameWorld;
@@ -396,7 +396,7 @@ impl PlayerAgent {
                 self.run_production(world, mfg, economy, player_is_alliance)
             }
             AutomationModule::Garrisons => {
-                self.run_garrisons(world, mfg, economy, player_is_alliance)
+                self.run_garrisons(world, mfg, player_is_alliance)
             }
         };
         if order.is_some() {
@@ -565,7 +565,6 @@ impl PlayerAgent {
         &self,
         world: &GameWorld,
         mfg: &ManufacturingState,
-        economy: &EconomyState,
         player_is_alliance: bool,
     ) -> Option<AgentOrder> {
         let our_faction = if player_is_alliance {
@@ -578,7 +577,7 @@ impl PlayerAgent {
         // Deficit = garrison_requirement - friendly_troops.
         // Original sorts by deficit (sort priority 0x19).
         let (target_system, deficit) =
-            find_most_undergarrisoned(world, economy, our_faction, player_is_alliance)?;
+            find_most_undergarrisoned(world, our_faction, player_is_alliance)?;
 
         // Phase 1 (FUN_004c7860): find a system with training capacity.
         // Original: queries for entities with flag 0x22000 referencing the
@@ -792,7 +791,6 @@ fn has_room(world: &GameWorld, mfg: &ManufacturingState, site: SystemKey, mine: 
 /// Evidence: `FUN_004c7650.c`, `FUN_004c79e0.c`.
 fn find_most_undergarrisoned(
     world: &GameWorld,
-    economy: &EconomyState,
     our_faction: crate::dat::Faction,
     player_is_alliance: bool,
 ) -> Option<(SystemKey, u32)> {
@@ -803,11 +801,8 @@ fn find_most_undergarrisoned(
             continue;
         }
 
-        // Get garrison requirement from economy state.
-        let requirement = economy
-            .per_system
-            .get(&sys_key)
-            .map_or(0, |eco: &SystemEconomy| eco.garrison_requirement);
+        // The system's garrison requirement (+0x80, FUN_0050b5a0).
+        let requirement = crate::economy::stored_support_values(world, sys_key).garrison_requirement;
 
         if requirement == 0 {
             continue;
@@ -917,7 +912,7 @@ fn find_production_facility_class(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::economy::{EconomyState, SystemEconomy};
+    use crate::economy::EconomyState;
     use crate::ids::{ManufacturingFacilityKey, ProductionFacilityKey, SystemKey, TroopKey};
     use crate::manufacturing::ManufacturingState;
     use crate::world::{
@@ -1038,7 +1033,6 @@ mod tests {
         let tk = world.troops.insert(TroopUnit {
             class_dat_id: crate::ids::DatId(0x2900_0001),
             is_alliance,
-            regiment_strength: 100,
         });
         world
             .systems
@@ -1095,12 +1089,12 @@ mod tests {
         agent
     }
 
-    fn requires(eco: &mut EconomyState, system: SystemKey, garrison_requirement: u32) {
-        eco.per_system.insert(
+    fn requires(world: &mut GameWorld, system: SystemKey, garrison_requirement: u32) {
+        world.support_values.insert(
             system,
-            SystemEconomy {
+            crate::economy::SupportValues {
                 garrison_requirement,
-                ..SystemEconomy::default()
+                ..crate::economy::SupportValues::default()
             },
         );
     }
@@ -1386,14 +1380,14 @@ mod tests {
     /// deficit (FUN_004c79e0's +0x84), so none are ordered twice.
     #[test]
     fn garrisons_do_not_order_regiments_already_in_training() {
-        let (mut world, sys_key, mut eco, mut mfg) = minimal_world(true);
+        let (mut world, sys_key, eco, mut mfg) = minimal_world(true);
         add_training_facility(&mut world, sys_key, true);
         let troop = add_troop(&mut world, sys_key, true);
-        eco.per_system.insert(
+        world.support_values.insert(
             sys_key,
-            SystemEconomy {
+            crate::economy::SupportValues {
                 garrison_requirement: 3,
-                ..SystemEconomy::default()
+                ..crate::economy::SupportValues::default()
             },
         );
         let mut agent = PlayerAgent::new();
@@ -1434,14 +1428,14 @@ mod tests {
     fn garrisons_targets_largest_deficit_and_caps_count() {
         // FUN_004c7650: finds most under-garrisoned system.
         // FUN_004c79e0: deficit = requirement - friendly_troops.
-        let (mut world, sys1, mut eco, mfg) = minimal_world(true);
+        let (mut world, sys1, eco, mfg) = minimal_world(true);
 
         // sys1: requirement=4, troops=1 → deficit=3
-        eco.per_system.insert(
+        world.support_values.insert(
             sys1,
-            SystemEconomy {
+            crate::economy::SupportValues {
                 garrison_requirement: 4,
-                ..SystemEconomy::default()
+                ..crate::economy::SupportValues::default()
             },
         );
         add_troop(&mut world, sys1, true);
@@ -1471,11 +1465,11 @@ mod tests {
             is_destroyed: false,
             control: ControlKind::Controlled(crate::dat::Faction::Alliance),
         });
-        eco.per_system.insert(
+        world.support_values.insert(
             sys2,
-            SystemEconomy {
+            crate::economy::SupportValues {
                 garrison_requirement: 2,
-                ..SystemEconomy::default()
+                ..crate::economy::SupportValues::default()
             },
         );
 
@@ -1612,24 +1606,24 @@ mod tests {
     /// listed, and a tie keeps the first.
     #[test]
     fn garrisons_take_the_larger_deficit_and_the_first_of_a_tie() {
-        let (mut world, first, mut eco, mfg) = minimal_world(true);
+        let (mut world, first, eco, mfg) = minimal_world(true);
         add_training_facility(&mut world, first, true);
         add_troop(&mut world, first, true);
         let second = add_system(&mut world, first);
-        requires(&mut eco, first, 3);
-        requires(&mut eco, second, 3);
-        let target = |eco: &EconomyState| match run_modules(&mut garrisoning(), &world, &mfg, eco)[..]
+        requires(&mut world, first, 3);
+        requires(&mut world, second, 3);
+        let target = |world: &GameWorld| match run_modules(&mut garrisoning(), world, &mfg, &eco)[..]
         {
             [AgentOrder::TrainTroops { target_system, .. }] => target_system,
             ref other => panic!("expected one TrainTroops order: {other:?}"),
         };
         assert_eq!(
-            target(&eco),
+            target(&world),
             second,
             "deficit 3 at the second beats 2 at the first"
         );
-        requires(&mut eco, first, 4);
-        assert_eq!(target(&eco), first, "a tie keeps the first");
+        requires(&mut world, first, 4);
+        assert_eq!(target(&world), first, "a tie keeps the first");
     }
 
     /// port: an unpopulated or destroyed system is neither garrisoned nor
@@ -1637,7 +1631,7 @@ mod tests {
     /// with a non-shipyard facility, as the player's own regiment class.
     #[test]
     fn regiments_train_at_a_standing_populated_yard_for_a_standing_populated_system() {
-        let (mut world, unpopulated, mut eco, mfg) = minimal_world(true);
+        let (mut world, unpopulated, eco, mfg) = minimal_world(true);
         world.systems[unpopulated].is_populated = false;
         add_training_facility(&mut world, unpopulated, true);
         let destroyed = add_system(&mut world, unpopulated);
@@ -1660,9 +1654,9 @@ mod tests {
                 ..crate::world::BuildableClass::default()
             },
         );
-        requires(&mut eco, unpopulated, 5);
-        requires(&mut eco, destroyed, 5);
-        requires(&mut eco, yard, 3);
+        requires(&mut world, unpopulated, 5);
+        requires(&mut world, destroyed, 5);
+        requires(&mut world, yard, 3);
 
         let orders = run_modules(&mut garrisoning(), &world, &mfg, &eco);
         assert_eq!(
@@ -1689,16 +1683,16 @@ mod tests {
     /// reach the cap of 5, so the cap does not bind.
     #[test]
     fn each_running_module_issues_one_order_and_returns_to_state_zero() {
-        let (mut world, sys_key, mut eco, mfg) = minimal_world(true);
+        let (mut world, sys_key, eco, mfg) = minimal_world(true);
         add_production_facility(&mut world, sys_key, true, true);
         add_production_facility(&mut world, sys_key, true, false);
         add_training_facility(&mut world, sys_key, true);
         add_troop(&mut world, sys_key, true);
-        eco.per_system.insert(
+        world.support_values.insert(
             sys_key,
-            SystemEconomy {
+            crate::economy::SupportValues {
                 garrison_requirement: 10,
-                ..SystemEconomy::default()
+                ..crate::economy::SupportValues::default()
             },
         );
 
@@ -1717,16 +1711,16 @@ mod tests {
     /// suspended while the other runs.
     #[test]
     fn a_suspended_module_stays_out_while_the_other_runs() {
-        let (mut world, sys_key, mut eco, mfg) = minimal_world(true);
+        let (mut world, sys_key, eco, mfg) = minimal_world(true);
         add_production_facility(&mut world, sys_key, true, true);
         add_production_facility(&mut world, sys_key, true, false);
         add_training_facility(&mut world, sys_key, true);
         add_troop(&mut world, sys_key, true);
-        eco.per_system.insert(
+        world.support_values.insert(
             sys_key,
-            SystemEconomy {
+            crate::economy::SupportValues {
                 garrison_requirement: 10,
-                ..SystemEconomy::default()
+                ..crate::economy::SupportValues::default()
             },
         );
 
@@ -1748,16 +1742,16 @@ mod tests {
     /// No RNG is involved in the decision logic.
     #[test]
     fn a_step_is_deterministic() {
-        let (mut world, sys_key, mut eco, mfg) = minimal_world(true);
+        let (mut world, sys_key, eco, mfg) = minimal_world(true);
         add_production_facility(&mut world, sys_key, true, true);
         add_production_facility(&mut world, sys_key, true, false);
         add_training_facility(&mut world, sys_key, true);
         add_troop(&mut world, sys_key, true);
-        eco.per_system.insert(
+        world.support_values.insert(
             sys_key,
-            SystemEconomy {
+            crate::economy::SupportValues {
                 garrison_requirement: 3,
-                ..SystemEconomy::default()
+                ..crate::economy::SupportValues::default()
             },
         );
 

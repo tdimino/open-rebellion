@@ -221,6 +221,7 @@ impl AdviceTopics {
                 background,
                 overlay: 0,
                 sound,
+                voice: 0,
             },
         })
     }

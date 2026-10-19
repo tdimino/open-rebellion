@@ -561,6 +561,71 @@
       "expected_status": "battle-ready",
       "audit_cells": [],
       "acceptance": "State-matched A1 reference frames for the A0 comparison (tools/interface-parity/tactical-a0-compare.mjs). It maps no cell itself; the comparison spec pairs its frames with the A0 cells captured from the same save."
+    },
+    {
+      "slug": "coruscant-day676",
+      "description": "The original's day-676 Battle at Coruscant rebuilt from the Death Star save, replaying the A0 laser trace: the control at rest, then armed and fired on an Alliance capital while paused",
+      "fixture_codes": { "alliance": 65830, "empire": 66086 },
+      "execution_kind": "journey",
+      "tactical_proof": false,
+      "production_participants": true,
+      "state_match": "empire-death-star-pre-alert",
+      "death_star_journey": "laser",
+      "expected_status": "battle-ready",
+      "audit_cells": [],
+      "acceptance": "State-matched A1 reference frames for the A0 comparison (tools/interface-parity/tactical-a0-compare.mjs). It maps no cell itself; the comparison spec pairs its frames with the A0 cells captured from the same save."
+    },
+    {
+      "slug": "coruscant-day676-strike",
+      "description": "The day-676 Coruscant battle's superlaser shot from the A0 burst trace: fired on an Alliance capital, unpaused, and captured at the burst's cell-frame offset",
+      "fixture_codes": { "alliance": 65830, "empire": 66086 },
+      "execution_kind": "journey",
+      "tactical_proof": false,
+      "production_participants": true,
+      "state_match": "empire-death-star-pre-alert",
+      "death_star_journey": "strike",
+      "expected_status": "battle-ready",
+      "audit_cells": [],
+      "acceptance": "State-matched A1 reference frames for the A0 comparison (tools/interface-parity/tactical-a0-compare.mjs). It maps no cell itself; the comparison spec pairs its frames with the A0 cells captured from the same save."
+    },
+    {
+      "slug": "coruscant-day676-charge",
+      "description": "The day-676 Coruscant battle after the superlaser shot: unpaused until the charge gauge shows the A0 frame's 49 of 95 columns, then paused",
+      "fixture_codes": { "alliance": 65830, "empire": 66086 },
+      "execution_kind": "journey",
+      "tactical_proof": false,
+      "production_participants": true,
+      "state_match": "empire-death-star-pre-alert",
+      "death_star_journey": "charge",
+      "expected_status": "battle-ready",
+      "audit_cells": [],
+      "acceptance": "State-matched A1 reference frames for the A0 comparison (tools/interface-parity/tactical-a0-compare.mjs). It maps no cell itself; the comparison spec pairs its frames with the A0 cells captured from the same save."
+    },
+    {
+      "slug": "coruscant-day1173",
+      "description": "The original's day-1173 Battle at Coruscant rebuilt from the trench-run save, replaying the A0 trace to Red Group's Missions panel and its Attack Death Star choice",
+      "fixture_codes": { "alliance": 65831, "empire": 66087 },
+      "execution_kind": "journey",
+      "tactical_proof": false,
+      "production_participants": true,
+      "state_match": "alliance-day1169-deathstar-trench-run",
+      "death_star_journey": "attack-death-star",
+      "expected_status": "battle-ready",
+      "audit_cells": [],
+      "acceptance": "State-matched A1 reference frames for the A0 comparison (tools/interface-parity/tactical-a0-compare.mjs). It maps no cell itself; the comparison spec pairs its frames with the A0 cells captured from the same save."
+    },
+    {
+      "slug": "coruscant-day1173-launch",
+      "description": "The day-1173 Coruscant battle's trench-run launch from the A0 trace: Red Group's Attack Death Star committed, unpaused, and captured 61 s later at the launch",
+      "fixture_codes": { "alliance": 65831, "empire": 66087 },
+      "execution_kind": "journey",
+      "tactical_proof": false,
+      "production_participants": true,
+      "state_match": "alliance-day1169-deathstar-trench-run",
+      "death_star_journey": "launch",
+      "expected_status": "battle-ready",
+      "audit_cells": [],
+      "acceptance": "State-matched A1 reference frames for the A0 comparison (tools/interface-parity/tactical-a0-compare.mjs). It maps no cell itself; the comparison spec pairs its frames with the A0 cells captured from the same save."
     }
   ]
 }

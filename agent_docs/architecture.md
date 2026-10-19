@@ -3,7 +3,7 @@ title: "Architecture"
 description: "Crate dependency graph and module structure for the Open Rebellion codebase"
 category: "agent-docs"
 created: 2026-03-11
-updated: 2026-10-16
+updated: 2026-10-17
 tags: [architecture, crate-graph, entity-identity, simulation]
 ---
 
@@ -51,20 +51,23 @@ crates/rebellion-core/src/
 ├── ai_research.rs    — The AI's Research planners, one persistent planner a tree (systems/research.md)
 ├── ai_production.rs  — Production modules 1, 2, 3, 5, 6, 7, 10 and 11
 ├── tuning.rs         — GameConfig: AiConfig mission caps and scoring targets
-├── movement.rs       — MovementOrder, Euclidean distance-based transit, config-aware variant (625 LOC, 19 tests). `cancel_orders_to(system)` cancels all in-transit orders targeting a given system (used by Death Star cleanup).
+├── movement.rs       — MovementOrder, Euclidean distance-based transit, config-aware variant (625 LOC, 19 tests).
 ├── fleet_join.rs     — Joining and splitting fleets: a move onto a fleet hands over its capital ships, Create Fleet, the join checks (FUN_004ffc90, FUN_004feca0; ghidra/notes/fleet-join-split.md)
-├── troop_transport.rs — Fleet cargo for regiments: loading through the Fleet window, the hold, unloading by hand and regiments travelling on their own (FUN_00556390, FUN_00552300)
+├── troop_transport.rs — Fleet cargo for regiments: loading through the Fleet window, unloading by hand and regiments travelling on their own (FUN_00556390, FUN_00552300)
 ├── delivery.rs       — En-route delivery of manufactured objects (F-030)
 ├── mission_detection.rs — The mission detection manager (FUN_00547f60): decoys, detection, betrayal, exposure
 ├── mission_planning.rs — The AI mission planners' team and decoy selectors
 ├── fog.rs            — FogState, visibility sets, dim rendering tiers (373 LOC, 9 tests)
-├── combat.rs         — Ground combat; side_present, CombatForce and CombatSide shared with the tactical engine
+├── combat.rs         — side_present, CombatForce and CombatSide, shared with the tactical engine
+├── assault.rs        — The Planetary Assault order `0x234`: enable (FUN_005814d0) and the run (FUN_00563390 -> FUN_0058c120: defence fire, engagements, collateral, landing); the integrator resolves each order (ghidra/notes/ground-assault.md)
 ├── tactical.rs       — The tactical battle engine: BattleSession, placement, engagement AI, weapons, fighters, Death Star, stalemate; played, simulated or headless (FUN_0040a050)
-├── tactical/         — apply.rs (write-back: apply_results, withdraw_fleet, reconcile_death_star_result), resource_ids.rs (TACTICAL.DLL resource joins), test_support.rs, tests.rs
-├── bombardment.rs    — Port bombardment: the transit-distance formula, not the original's (ghidra/notes/bombardment.md)
+├── tactical/         — apply.rs (write-back: apply_results, squadron_homes, seat_morale), resource_ids.rs (TACTICAL.DLL resource joins), test_support.rs, tests.rs, station_tests.rs, hangar_tests.rs
+├── bombardment.rs    — The Planetary Bombardment orders `0x220`-`0x223`: gate (FUN_00582440), per-hit run (FUN_0058d800), character roll and finalize (FUN_0058e320); the integrator resolves each order (ghidra/notes/bombardment.md)
+├── operation_report.rs — The Operation Report's six object lists, picture and fill walks (message kind `0xf`, FUN_00496770, FUN_00496f50; ghidra/notes/operation-report-window.md)
+├── support_shift.rs  — Sector support shifts (event `0x373`): control change with the troop bits and a stalemate's earlier holder, Coruscant, blockade end, HQ removal, bombardment and kill; the support setter's hook, which reruns control at once (`support_changed`, `FUN_005109f0`), and the queue that serves both (`fire`) (ghidra/notes/support-shifts.md)
 ├── blockade.rs       — Fleet-presence blockade, manufacturing halt, troop destruction, the blockader's support shift on timer `0x386` (ghidra/notes/support-shifts.md)
 ├── uprising.rs       — Recovered revolt lifecycle, uprising incident (UPRIS1TB/UPRIS2TB codes), Subdue gain, disaster
-├── death_star.rs     — Construction countdown, planet destruction, nearby-warning scan. `cleanup_destroyed_system()` removes all entities (fleets, troops, facilities) and cancels in-transit orders to the destroyed system; the original keeps fleets (ghidra/notes/death-star-strategic.md).
+├── death_star.rs     — Sector bit 11, the destroy cascade (`cleanup_destroyed_system`: fleets survive, the system's own units die, characters go adrift, uncompleted units autoscrap) and the adrift sweep (ghidra/notes/death-star-strategic.md).
 ├── research.rs       — per-side points pools, passive timer `0x381`, spending into levels (systems/research.md)
 ├── jedi.rs           — 4-tier Force progression (None→Aware→Training→Experienced), detection
 ├── victory.rs        — current HQ/Death Star outcome checks; parity divergences documented
@@ -73,7 +76,7 @@ crates/rebellion-core/src/
 ├── commands.rs       — Shared command registry (16 CommandDef entries) for GUI palette + CLI
 ├── game_events.rs    — GameEventRecord struct + 57 event type constants for JSONL telemetry
 ├── effects.rs        — GameEffect enum (39 variants), EffectPhase ordering, monoidal composition, inversion
-├── economy.rs        — Full 18-function economy tick (FUN_00508250, the community dump calls it adjust_and_deploy_each_system): resource caps, support drift, collection rate, KDY modifier, side resolution (regiments, else support; FUN_0050b610), garrison, troop/fleet summary (SystemSummary), incident state (IncidentFlags), uprising visibility. 17 GNPRTB indices. ~1200 LOC.
+├── economy.rs        — Full 18-function economy tick (FUN_00508250, the community dump calls it adjust_and_deploy_each_system): resource caps, support drift (system `+0x6c`, the output diversion roll's odds; never added to support), collection rate, KDY modifier, the holder rule `system_control` (regiments, else support; FUN_0050b610, run by `support_shift`'s hooks), garrison, troop/fleet summary (SystemSummary), incident state (IncidentFlags), uprising visibility. 17 GNPRTB indices. ~1200 LOC.
 ├── repair.rs         — Ship repair, timer `0x380`: the damage counters, a repair every 30 days, or every 2 at the side's own working yard (ghidra/notes/ship-damage-repair.md)
 ├── post_battle.rs    — The pass after a battle: the loser's fleets and squadrons withdraw or are lost (FUN_0051ddf0, FUN_00515480)
 ├── scrap.rs          — Scrapping for half the refined cost, and the overdraft's candidates (FUN_00530270, FUN_0052e530)
@@ -84,7 +87,7 @@ crates/rebellion-core/src/
 
 ```
 crates/rebellion-render/src/
-├── lib.rs              — Galaxy map (pan/zoom/click), system info panel
+├── lib.rs              — Galaxy map (pan/zoom/click) and its GID overlays
 ├── game_menu.rs        — The original Game Menu Window (FUN_00442860), shared by the speed menu and the object pop-up menu
 ├── object_menu.rs      — The right-click pop-up menu for a system window's characters, special forces, fleets and regiments, and the Fleet window's capital ships (FUN_004ac5c0)
 ├── targeting.rs        — The galaxy view's targeting mode after Mission: pointer capture and REBEXE cursor 1002
@@ -95,11 +98,12 @@ crates/rebellion-render/src/
 ├── fleet_window.rs     — The Fleet window (type 4, FUN_004a2630): a system's fleets, their contents under four tabs, loading, unloading, joining and splitting
 ├── defenses_window.rs  — The System Defenses window (type 10, FUN_004a7790)
 ├── missions_window.rs  — The Missions window (type 11, FUN_0049f130)
+├── operation_report.rs — The Operation Report window (type 0x1c, FUN_0044c410): Summary, the fleet side's and the system's forces under six tabs, Display
 ├── fleet_finder.rs     — The Fleet and Ship Finder (type 0x15, FUN_00461750), opened by the cockpit control or F3
 ├── move_confirmation.rs — The Confirmed Move window (FUN_0044f060)
 ├── game_speed.rs       — The cockpit's day readout and its speed menu (FUN_00422ce0)
 ├── main_menu.rs        — Title screen with New Game / Load Game / Quit
-├── video_player.rs     — Native cutscene playback from decoded PNG frame sequences + WAV sidecars; wasm32 stub returns finished immediately
+├── video_player.rs     — Movie playback: native from decoded PNG frame sequences + WAV sidecars; in the browser through the shell's `<video>` overlay (`or_movie_play`, `or_movie_stop`, `or_movie_ended`)
 ├── theme.rs            — Star Wars egui theme: dark space bg, gold/amber accents, Liberation Sans font
 ├── message_log.rs      — Scrollable egui event feed, 7 color-coded categories (380 LOC)
 ├── fleet_movement.rs   — Diamond fleet icons, dashed route lines, ETA labels, fleet hover detection
@@ -109,8 +113,7 @@ crates/rebellion-render/src/
 ├── bmp_cache.rs        — DllSource enum, BMP/PNG texture cache with HD fallback, WASM path rebasing, named DLL resource ID catalog
 ├── cockpit.rs          — Faction cockpit chrome (top/bottom bars), 9 control buttons, CockpitViewport
 ├── tactical_view.rs    — The battle window: drawing, input, HUD and panels over rebellion_core::tactical (re-exported)
-├── ground_combat.rs    — Ground combat: regiment engagement, animated bars, win/loss results
-├── advisor.rs          — Droid advisors: the advice agent's slot table, both droids' players, voices and cockpit steps (`ghidra/notes/droid-advisor-triggers.md`)
+├── advisor.rs          — Droid advisors: the advice agent's slot table, both droids' players, voices, cockpit steps and the ending slot (`ghidra/notes/droid-advisor-triggers.md`)
 ├── advisor_script.rs   — Action records → droid commands (play, hold, turn), the agent's pass, skip and chatter
 ├── briefing_tour.rs    — Opening briefing tour: each cockpit step's galaxy display or highlight, per faction
 └── panels/
@@ -118,9 +121,6 @@ crates/rebellion-render/src/
     ├── game_setup.rs    — Galaxy size, difficulty, faction selection (replaces faction_select)
     ├── fleets.rs         — Fleet roster: composition and officers (characters board by Move)
     ├── missions.rs       — Active missions with progress and cancel; missions start from the object pop-up menu
-    ├── bombardment.rs    — Orbital bombardment targeting: fleet selection, damage forecast, fire
-    ├── death_star.rs     — Death Star: construction progress, superlaser targeting, movement orders
-    ├── save_load.rs      — Save/load UI: 10 slots, auto-save
     ├── mod_manager.rs    — Mod Manager: discover, enable/disable, reload, dependency display
     └── command_palette.rs — developer command palette: simulation and per-system interface commands (debug or native builds)
 ```
@@ -132,6 +132,8 @@ crates/rebellion-app/src/
 ├── main.rs   — Entry point, interactive loop, panel action handling (~13,000 LOC; no headless tests, see agent-tooling.md)
 ├── audio.rs  — quad-snd AudioEngine: load, play_sfx, play_music, volume sync, WASM audio base-path resolution
 ├── dev_policy.rs — What a developer-command wait does when a modal screen stops the clock
+├── movies.rs — Movie ids to MDATA files (`FUN_00421ba0`), the application states' movies (intro `0x65` then `0x66`, the side's start movie `0x68`/`0x69`, Credits `0x6e`) and where each movie's end leads (`FUN_004138a0`), the kind-6 message movies and the ending: the clock stop, the code by winner and viewer, its movie (systems/victory.md)
+├── strike_orders.rs — The object menu's Planetary Bombardment orders (`0x220`-`0x223`) through `integrator::order_strike`, the messages a strike files, and the win word's movie messages
 ├── dev_commands.rs — The command palette's gate (`OPEN_REBELLION_DEV`), and behind it the native command script (`OPEN_REBELLION_COMMANDS`) and campaign seed (`OPEN_REBELLION_SEED`)
 ├── interface_test_fixture.rs — Test-only interface fixture scenarios and the observations the browser gates in tools/interface-parity read
 ├── tactical_flow.rs / tactical_test_fixture.rs — The production tactical-battle entry and its test-only direct entry
@@ -139,13 +141,31 @@ crates/rebellion-app/src/
 └── web_accessibility.rs / web_replay.rs — The browser accessibility bridge and the native/WASM replay runner
 
 Decoded cutscene assets are intentionally kept out of git. `scripts/decode-cutscenes.sh` expands `assets/references/ref-videos/*.webm` into `assets/references/cutscene-frames/<name>/frame-*.png`, `metadata.json`, and sibling `<name>.wav` files for the native `VideoPlayer`.
+
+The browser plays movies outside the canvas. `VideoPlayer::open` passes the
+movie's MDATA number (the path's stem, `video_player::movie_number`), a play
+number, the volume and a rectangle to the `or_movie_play` import; the shell's
+`open_rebellion_movies` plugin (`web/index.html`) shows
+`data/movies/<number>.webm` in a `<video>` over that rectangle, given as
+fractions of the screen (`movies::video_bounds`: a message movie's picture,
+which leaves its caption to the canvas, else the whole window), and calls the `or_movie_ended` export with the play number when the
+movie ends, fails to load, or is skipped (Esc, the left button, or any other
+key except in the trench-run movies 201 and 202, as `FUN_00421790` and
+`FUN_005f7240` close the movie window). `stop` and dropping the player take
+the movie down through `or_movie_stop`. `scripts/stage-web-movies.sh`
+converts the original Smacker `MDATA.<number>` files to WebM (VP9 + Opus)
+under the ignored `web/data/movies/`; `scripts/package-web.sh` runs it and
+ships the files beside `runtime.orpk`. The stage script exits 1 unless it
+staged all fifteen; a `dev` package and the Docker build accept a partial
+set (the browser skips a missing movie), and any other version fails unless
+`stage-web-movies.sh --verify` finds every movie in the package.
 ```
 
 ## Data Modules (rebellion-data)
 
 ```
 crates/rebellion-data/src/
-├── seeds.rs      — Game seeding: 3-system model, character stat rolling, named placement (~1200 LOC, 8 tests)
+├── seeds.rs      — Game seeding: 3-system model, character stat rolling, named placement (~2,800 LOC, 23 tests)
 ├── save.rs       — Save/load: bincode snapshots and save slots; only the current SAVE_VERSION loads, with no migrations (save-load.md). Native uses filesystem saves; WASM uses browser localStorage through the gl.js loader's imports, with separate metadata keys for fast slot listing.
 ├── mods.rs       — Mod loader + ModRuntime: TOML manifest, RFC 7396 merge patch, semver, hot reload
 ├── simulation.rs — Tick orchestrator: SimulationStates bundle + run_simulation_tick() (~1,900 LOC)
@@ -170,7 +190,7 @@ Rich types used by game logic, rendering, save/load. Slotmap keys for all inter-
 - `Sector` -- named region, SectorGroup, position, child system list
 - `CapitalShipClass` / `FighterClass` -- class templates, not instances
 - `Character` -- 8 `SkillPair` (base+variance), Jedi fields, role flags, major/minor
-- `Fleet` -- `capital_ships: Vec<ShipInstance>` (per-hull records: hull_current, alive, shield_weapon_packed, faction_is_alliance) + characters at a system location. Helper methods: `ship_count()`, `ship_counts_by_class()`, `is_empty()`. `ShipEntry` (aggregate class+count) was removed in Knesset Hephaestus.
+- `Fleet` -- `capital_ships: Vec<ShipInstance>` (per-hull records: hull_current, alive, shield_weapon_packed, faction_is_alliance) + characters at a system location. Helper methods: `ship_count()`, `ship_counts_by_class()`, `is_empty()`, `has_death_star(classes)` (a live ship of family 0x18-0x1b, `FUN_005003d0`).
 - `ManufacturingFacilityInstance` -- runtime facility record with `is_shipyard: bool` (used by economy to detect shipyard systems)
 - `ProductionFacilityInstance` -- runtime facility record with `is_mine: bool` (used by economy to count raw material sources)
 
@@ -206,22 +226,21 @@ The full order with its sub-steps is in `simulation.md`, "Integration Order".
 ```
 run_simulation_tick():
   integrator = PerceptionIntegrator::new(tick, wall_ms)
-  death_star::refresh_sectors      (system bit 11; again after steps 2 and 3b)
+  death_star::refresh_sectors      (system bit 11; again after steps 2 and 3)
   0. EconomySystem::advance       → integrator.apply_economy_events()
   1. ManufacturingSystem::advance  → integrator.apply_build_completions()
   2. MovementSystem::advance       → integrator.apply_arrivals()
-  3. resolve_system_space_combat (headless tactical battle) / CombatSystem::resolve_ground → apply_ground_combat()
+  3. resolve_system_space_combat (headless tactical battle); no landing or ground fight without the assault order
   4. FogSystem::advance            → integrator.emit_fog_reveals()
   5. MissionSystem::advance        → integrator.apply_mission_result()
-  5b. check_escapes()              → integrator.apply_escape_effects()
+  5b. escape_step()                → integrator.apply_escape_effects(), death_star::free_escapee()
   6. EventSystem::advance          → integrator.apply_fired_events()
   8. BlockadeSystem::advance       → integrator.apply_blockade_events()
   9. UprisingSystem::advance       → integrator.apply_uprising_events()
   10. BetrayalSystem::advance      → integrator.apply_betrayal_events()
-  11. DeathStarSystem::advance     → integrator.apply_death_star_events()
   12. ResearchSystem::advance      → integrator.apply_research_results()
   13. JediSystem::advance          → integrator.apply_jedi_events()
-  13b. ai_step per in-day step     → integrator::apply_ai_order(), resolve_ai_strike()
+  13b. ai_step per in-day step     → integrator::apply_ai_order(), resolve_ai_strike(), resolve_ai_assault()
   14. VictorySystem::check         → integrator.apply_victory()
   15. Campaign snapshot            → integrator.emit_campaign_snapshot()
   return integrator.finish()
@@ -229,21 +248,21 @@ run_simulation_tick():
 Interactive game (main.rs):
   tick_events = clock.advance(dt)
   if tick_events not empty:
-    EconomySystem::advance → apply support drift + control resolution
+    EconomySystem::advance → apply control resolution, then fire_support_events
     ManufacturingSystem::advance → apply_build_completion_inner() + message log
     MovementSystem::advance → update fleet.location + system.fleets
     (remaining systems identical to simulation.rs pattern)
   draw_galaxy_map → draw_fog_overlay → draw_fleet_overlays
-  egui_macroquad::ui: panels + object_menu + targeting + encyclopedia + system_info + message_log
+  egui_macroquad::ui: panels + object_menu + targeting + encyclopedia + message_log
 ```
 
 ### Save/Load Flow
 ```
-egui save/load panel
-    | rebellion-data::save::{save_slot, load_slot, list_saves, delete_slot}
+Game Options window (game_options.rs), Save and Load on rows 1-6
+    | rebellion-data::save::{save_slot, load_slot, list_saves}
     v
 SaveState + SaveMeta
-    | native: filesystem `saves/slotNN.sav`
+    | native: filesystem `<saves_dir>/<slot>.reb`
     | wasm32: `web_sys::Storage` localStorage
     |         - payload stored as base64 snapshot
     |         - metadata stored under separate keys for fast `list_saves()`
@@ -291,15 +310,14 @@ Round-trip validation is enforced inside `parse_and_dump` in `tools/dat-dumper/s
 2. `draw_fog_overlay(world, fog, cam)` -- dim non-visible systems
 3. `draw_fleet_overlays(world, movement, cam)` -- fleet icons and route lines
 4. `hovered_fleet(world, movement, cam, mx, my) -> Option<FleetKey>` -- fleet hit detection
-5. `draw_system_info_panel(ctx, world, state)` -- egui right panel (selected system)
-6. `object_menu::draw_object_menu(ctx, menu, ...)` -- the original right-click pop-up menu for a system window's objects
-7. `targeting::{capture_pointer, draw_targeting_cursor}` -- the galaxy view's targeting mode after the menu's Mission
-8. `draw_status_bar(ctx, world, clock, audio_vol)` -- bottom bar with speed/audio controls
-9. `draw_message_log(ctx, log, state)` -- scrollable event feed
-10. Panel functions that only debug-build letter keys open: `draw_fleets`, `draw_missions`, `draw_bombardment`, `draw_death_star`
-11. `draw_encyclopedia_surface(ctx, cache, origin, scale, state, surface)` -- the original Galactic Encyclopedia index and topic window
-12. `draw_main_menu(ctx) -> MainMenuAction` -- title screen
-13. `draw_game_setup(ctx, state) -> GameSetupAction` -- new game config
+5. `object_menu::draw_object_menu(ctx, menu, ...)` -- the original right-click pop-up menu for a system window's objects
+6. `targeting::{capture_pointer, draw_targeting_cursor}` -- the galaxy view's targeting mode after the menu's Mission
+7. `draw_status_bar(ctx, world, clock, audio_vol)` -- bottom bar with speed/audio controls
+8. `draw_message_log(ctx, log, state)` -- scrollable event feed
+9. Panel functions that only debug-build letter keys open: `draw_fleets`, `draw_missions`
+10. `draw_encyclopedia_surface(ctx, cache, origin, scale, state, surface)` -- the original Galactic Encyclopedia index and topic window
+11. `draw_main_menu(ctx) -> MainMenuAction` -- title screen
+12. `draw_game_setup(ctx, state) -> GameSetupAction` -- new game config
 
 `GalaxyMapState` holds all mutable UI state: camera position, zoom, selected/hovered system, drag tracking, the targeting flag, right-click start position.
 

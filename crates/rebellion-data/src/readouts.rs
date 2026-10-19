@@ -1,6 +1,6 @@
 //! State readouts for the developer commands and the playtest REPL: plain
-//! text for `List characters`, `List missions`, `Show research`,
-//! `List production` and `Show side`.
+//! text for `List characters`, `List fleets`, `List missions`, `Show research`,
+//! `List production`, `Show side` and `Show system`.
 //!
 //! Each function reads the world and its states and changes nothing. They
 //! see through fog of war: they are dev truth, not the player's view. Rows
@@ -102,6 +102,60 @@ fn character_is_side(character: &Character, side: Faction) -> bool {
     }
 }
 
+/// Where a fleet is: `at <system>`, or `in transit <from> to <to> (n days)`.
+fn fleet_location(
+    world: &GameWorld,
+    movement: &MovementState,
+    fleet: rebellion_core::ids::FleetKey,
+) -> String {
+    if let Some(order) = movement.orders().get(&fleet) {
+        return format!(
+            "in transit {} to {} ({} days)",
+            system_name(world, order.origin),
+            system_name(world, order.destination),
+            order.ticks_remaining()
+        );
+    }
+    let at = world
+        .fleets
+        .get(fleet)
+        .map_or("?", |f| system_name(world, f.location));
+    format!("at {at}")
+}
+
+/// Every fleet, or one side's, one row each: its name and side, where it is
+/// (`at <system>`, `in transit <from> to <to> (n days)`), its live capital
+/// ships, squadrons and characters, whether it carries the Death Star and
+/// whether it is flagged to bombard. First row: the count.
+#[must_use]
+pub fn list_fleets(world: &GameWorld, movement: &MovementState, side: Option<Faction>) -> String {
+    let mut rows: Vec<(String, String)> = world
+        .fleets
+        .iter()
+        .filter(|(_, fleet)| {
+            side.is_none_or(|side| Faction::of_alliance(fleet.is_alliance) == side)
+        })
+        .map(|(key, fleet)| {
+            let side = side_name(Faction::of_alliance(fleet.is_alliance));
+            let name = world.fleet_name(key).unwrap_or("?");
+            let row = format!(
+                "{name} {side} {} ships {} squadrons {} characters {} death star {} bombarding {}",
+                fleet_location(world, movement, key),
+                fleet.capital_ships.iter().filter(|ship| ship.alive).count(),
+                fleet.fighters.iter().map(|entry| entry.count).sum::<u32>(),
+                fleet.characters.len(),
+                fleet.has_death_star(&world.capital_ship_classes),
+                fleet.bombarding,
+            );
+            (format!("{side}{name}"), row)
+        })
+        .collect();
+    rows.sort();
+    let mut out = vec![heading(rows.len(), side, "fleets")];
+    out.extend(rows.into_iter().map(|(_, row)| row));
+    out.join("\n")
+}
+
 /// Where a character stands: a fleet and its system, a system, in transit,
 /// captive, or not placed.
 fn character_location(
@@ -113,20 +167,11 @@ fn character_location(
         return "dead".to_owned();
     }
     if let Some(fleet) = character.current_fleet {
-        let name = world.fleet_name(fleet).unwrap_or("?");
-        if let Some(order) = movement.orders().get(&fleet) {
-            return format!(
-                "{name} in transit {} to {} ({} days)",
-                system_name(world, order.origin),
-                system_name(world, order.destination),
-                order.ticks_remaining()
-            );
-        }
-        let at = world
-            .fleets
-            .get(fleet)
-            .map_or("?", |f| system_name(world, f.location));
-        return format!("{name} at {at}");
+        return format!(
+            "{} {}",
+            world.fleet_name(fleet).unwrap_or("?"),
+            fleet_location(world, movement, fleet)
+        );
     }
     match character.current_system {
         Some(system) if character.en_route => {
@@ -318,7 +363,9 @@ const fn area_label(area: ProductionArea) -> &'static str {
     }
 }
 
-fn product_name(world: &GameWorld, kind: BuildableKind) -> String {
+/// A product's class name, as `List production` prints it.
+#[must_use]
+pub fn product_name(world: &GameWorld, kind: BuildableKind) -> String {
     let named = match kind {
         BuildableKind::CapitalShip(key) => world.capital_ship_classes.get(key).map(|c| &c.name),
         BuildableKind::Fighter(key) => world.fighter_classes.get(key).map(|c| &c.name),
@@ -428,6 +475,101 @@ pub fn list_production(
     out.join("\n")
 }
 
+/// One system as a bombardment reads it, for checking a strike's deltas:
+/// holder, support points, energy and raw material, the HQ and destroyed
+/// flags, then per side the regiments, squadrons and facilities the system
+/// holds (defence facilities by DAT family), then each fleet with its
+/// bombard strength (`+0x1dc`), each ship's hull and its flag.
+///
+/// # Errors
+/// Returns `no system named …` for an unknown name.
+pub fn show_system(world: &GameWorld, name: &str) -> Result<String, String> {
+    let (key, system) = world
+        .systems
+        .iter()
+        .find(|(_, system)| system.name.eq_ignore_ascii_case(name.trim()))
+        .ok_or_else(|| format!("no system named {name:?}"))?;
+    let mut rows = vec![format!(
+        "{} holder {} support {}/{} energy {} raw {} hq {} destroyed {}",
+        system.name,
+        side_name(rebellion_core::bombardment::holder(world, key)),
+        rebellion_core::uprising::support_points(system, Faction::Alliance),
+        rebellion_core::uprising::support_points(system, Faction::Empire),
+        system.total_energy,
+        system.raw_materials,
+        system.is_headquarters,
+        system.is_destroyed,
+    )];
+    for side in [Faction::Alliance, Faction::Empire] {
+        let alliance = side == Faction::Alliance;
+        let regiments = system
+            .ground_units
+            .iter()
+            .filter_map(|&troop| world.troops.get(troop))
+            .filter(|troop| troop.is_alliance == alliance)
+            .count();
+        // Each defence facility by DAT family: 0x22 KDY, 0x23 LNR, 0x24
+        // shield generator (DEFFACSD).
+        let families: Vec<String> = system
+            .defense_facilities
+            .iter()
+            .filter_map(|&facility| world.defense_facilities.get(facility))
+            .filter(|facility| facility.side == side)
+            .map(|facility| format!("{:#x}", facility.class_dat_id.family()))
+            .collect();
+        let defense = families.len();
+        let manufacturing = system
+            .manufacturing_facilities
+            .iter()
+            .filter_map(|&facility| world.manufacturing_facilities.get(facility))
+            .filter(|facility| facility.side == side)
+            .count();
+        let production = system
+            .production_facilities
+            .iter()
+            .filter_map(|&facility| world.production_facilities.get(facility))
+            .filter(|facility| facility.side == side)
+            .count();
+        rows.push(format!(
+            "{} regiments {regiments} squadrons {} defense {defense} [{}] manufacturing \
+             {manufacturing} production {production}",
+            side_name(side),
+            system.squadron_count(alliance),
+            families.join(" "),
+        ));
+    }
+    for &fleet in &system.fleets {
+        let Some(value) = world.fleets.get(fleet) else {
+            continue;
+        };
+        let hull: Vec<String> = value
+            .capital_ships
+            .iter()
+            .map(|ship| {
+                let max = world
+                    .capital_ship_classes
+                    .get(ship.class)
+                    .map_or(0, |class| class.hull);
+                format!("{}/{max}", ship.hull_current)
+            })
+            .collect();
+        rows.push(format!(
+            "fleet {} {} strength {} ships {} hull [{}] bombarding {}",
+            world.fleet_name(fleet).unwrap_or_default(),
+            if value.is_alliance {
+                "Alliance"
+            } else {
+                "Empire"
+            },
+            rebellion_core::bombardment::fleet_strength(world, fleet),
+            value.capital_ships.len(),
+            hull.join(" "),
+            value.bombarding,
+        ));
+    }
+    Ok(rows.join("\n"))
+}
+
 /// One side's top strip and counts: raw and refined stock, maintenance
 /// capacity and use, systems held, fleets, characters and active missions.
 #[must_use]
@@ -469,4 +611,222 @@ pub fn show_side(
         maintenance_used(world, manufacturing, side),
         maintenance_capacity(world, side),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rebellion_core::world::{
+        ControlKind, DefenseFacilityInstance, Fleet, Sector, System, TroopUnit,
+    };
+
+    #[test]
+    fn show_system_counts_each_sides_units_and_names_its_fleets() {
+        let mut world = GameWorld::default();
+        let sector = world.sectors.insert(Sector::default());
+        let system = world.systems.insert(System {
+            name: "Target".into(),
+            sector,
+            control: ControlKind::Controlled(Faction::Empire),
+            total_energy: 4,
+            raw_materials: 3,
+            ..System::default()
+        });
+        for is_alliance in [false, false, true] {
+            let troop = world.troops.insert(TroopUnit {
+                class_dat_id: rebellion_core::ids::DatId::new(0x1000_0001),
+                is_alliance,
+            });
+            world.systems[system].ground_units.push(troop);
+        }
+        let battery = world.defense_facilities.insert(DefenseFacilityInstance {
+            class_dat_id: rebellion_core::ids::DatId::new(0x2200_0001),
+            side: Faction::Empire,
+        });
+        world.systems[system].defense_facilities.push(battery);
+        let yard = world.manufacturing_facilities.insert(
+            rebellion_core::world::ManufacturingFacilityInstance {
+                side: Faction::Empire,
+                ..Default::default()
+            },
+        );
+        world.systems[system].manufacturing_facilities.push(yard);
+        let mine =
+            world
+                .production_facilities
+                .insert(rebellion_core::world::ProductionFacilityInstance {
+                    side: Faction::Alliance,
+                    ..Default::default()
+                });
+        world.systems[system].production_facilities.push(mine);
+        let fleet = world.fleets.insert(Fleet {
+            location: system,
+            is_alliance: true,
+            bombarding: true,
+            ..Fleet::default()
+        });
+        world.systems[system].fleets.push(fleet);
+
+        let text = show_system(&world, "target").unwrap();
+        let rows: Vec<&str> = text.lines().collect();
+
+        assert!(rows[0].starts_with("Target holder Empire "), "{text}");
+        assert!(rows[0].contains(" energy 4 raw 3 "), "{text}");
+        assert!(rows[1].starts_with("Alliance regiments 1 "), "{text}");
+        assert!(rows[2].starts_with("Empire regiments 2 "), "{text}");
+        assert!(rows[2].contains(" defense 1 [0x22] "), "{text}");
+        assert!(rows[1].contains(" defense 0 [] "), "{text}");
+        assert!(rows[1].ends_with(" manufacturing 0 production 1"), "{text}");
+        assert!(rows[2].ends_with(" manufacturing 1 production 0"), "{text}");
+        assert!(
+            rows[3].contains(" Alliance strength 0 ships 0 hull [] bombarding true"),
+            "{text}"
+        );
+        assert_eq!(
+            show_system(&world, "Nowhere"),
+            Err("no system named \"Nowhere\"".into())
+        );
+    }
+
+    #[test]
+    fn list_characters_says_where_each_character_stands() {
+        let mut world = GameWorld::default();
+        let mut at = |name: &str| {
+            world.systems.insert(System {
+                name: name.into(),
+                ..System::default()
+            })
+        };
+        let (home, away) = (at("Home"), at("Away"));
+        let parked = world.fleets.insert(Fleet {
+            location: home,
+            ..Fleet::default()
+        });
+        let moving = world.fleets.insert(Fleet {
+            location: home,
+            ..Fleet::default()
+        });
+        let mut movement = MovementState::new();
+        assert!(movement.order(moving, home, away, 4));
+        for (name, character) in [
+            (
+                "Aboard",
+                Character {
+                    current_fleet: Some(parked),
+                    ..Character::default()
+                },
+            ),
+            (
+                "Flying",
+                Character {
+                    current_fleet: Some(moving),
+                    ..Character::default()
+                },
+            ),
+            (
+                "Walking",
+                Character {
+                    current_system: Some(away),
+                    en_route: true,
+                    ..Character::default()
+                },
+            ),
+            (
+                "Standing",
+                Character {
+                    current_system: Some(home),
+                    ..Character::default()
+                },
+            ),
+            (
+                "Hired",
+                Character {
+                    recruited: true,
+                    ..Character::default()
+                },
+            ),
+            ("Pooled", Character::default()),
+            (
+                "Fallen",
+                Character {
+                    current_system: Some(home),
+                    is_killed: true,
+                    ..Character::default()
+                },
+            ),
+        ] {
+            world.characters.insert(Character {
+                name: name.into(),
+                is_empire: true,
+                ..character
+            });
+        }
+        let text = list_characters(&world, &MissionState::new(), &movement, None);
+        let location = |name: &str| {
+            text.lines()
+                .find(|row| row.starts_with(&format!("{name} #")))
+                .and_then(|row| row.split(" | ").nth(1))
+                .unwrap_or_else(|| panic!("no {name} in {text}"))
+                .to_owned()
+        };
+        assert_eq!(location("Aboard"), "Fleet at Home");
+        assert_eq!(location("Flying"), "Fleet in transit Home to Away (4 days)");
+        assert_eq!(location("Walking"), "en route to Away");
+        assert_eq!(location("Standing"), "at Home");
+        assert_eq!(location("Hired"), "not placed");
+        assert_eq!(location("Pooled"), "not placed (recruit pool)");
+        assert_eq!(location("Fallen"), "dead");
+    }
+
+    #[test]
+    fn list_fleets_names_each_fleets_side_and_where_it_is() {
+        let mut world = GameWorld::default();
+        let mut at = |name: &str| {
+            world.systems.insert(System {
+                name: name.into(),
+                ..System::default()
+            })
+        };
+        let (home, away) = (at("Home"), at("Away"));
+        let class = world
+            .capital_ship_classes
+            .insert(rebellion_core::world::CapitalShipClass::default());
+        let mut dead = rebellion_core::world::ShipInstance::new(class, 0, false);
+        dead.alive = false;
+        world.fleets.insert(Fleet {
+            location: home,
+            capital_ships: vec![
+                rebellion_core::world::ShipInstance::new(class, 10, false),
+                dead,
+            ],
+            bombarding: true,
+            ..Fleet::default()
+        });
+        let rebel = world.fleets.insert(Fleet {
+            location: home,
+            is_alliance: true,
+            ..Fleet::default()
+        });
+        let mut movement = MovementState::new();
+        assert!(movement.order(rebel, home, away, 4));
+
+        let text = list_fleets(&world, &movement, None);
+        let rows: Vec<&str> = text.lines().collect();
+        assert_eq!(rows[0], "2 fleets", "{text}");
+        assert_eq!(
+            rows[1],
+            "Fleet Alliance in transit Home to Away (4 days) ships 0 squadrons 0 characters 0 \
+             death star false bombarding false"
+        );
+        assert_eq!(
+            rows[2],
+            "Fleet Empire at Home ships 1 squadrons 0 characters 0 death star false \
+             bombarding true"
+        );
+        let empire = list_fleets(&world, &movement, Some(Faction::Empire));
+        assert_eq!(
+            empire.lines().collect::<Vec<_>>(),
+            ["1 Empire fleets", rows[2]]
+        );
+    }
 }

@@ -142,21 +142,43 @@ pub fn choose_game_speed(clock: &mut GameClock, requested: GameSpeed) {
     }
 }
 
-/// Hold or release the speed for the Message Index's Advice category, as
-/// `FUN_00487ff0` does: showing it saves the speed once and drops to Very
-/// Slow, and hiding it restores a saved speed. A second show while one is
-/// saved, or a hide with none saved, changes nothing.
+/// Hold or release the speed for the Message Index's Advice category and
+/// the Encyclopedia, as `FUN_00487ff0` does: showing saves the speed once
+/// (`+0x58 = +0x54`) and `FUN_00487eb0(1)` drops to Very Slow, and hiding
+/// restores the saved index through `FUN_00487eb0`. A second show while one
+/// is saved, or a hide with none saved, changes nothing. Neither direction
+/// touches the stop day, so a pending pause stays pending and hiding raises
+/// no alert. A clock with no speed chosen yet ([`GameSpeed::Paused`] with no
+/// stop day, index 0 as `FUN_004861b0` builds `+0x54`) saves nothing, since
+/// 0 is the slot's empty value, and still drops to Very Slow; its hide then
+/// restores nothing and the speed stays as chosen.
 pub fn hold_speed_for_advice(clock: &mut GameClock, saved: &mut Option<GameSpeed>, shown: bool) {
     match (*saved, shown) {
         (Some(speed), false) => {
-            choose_game_speed(clock, speed);
+            clock.set_speed(speed);
             *saved = None;
         }
         (None, true) => {
-            *saved = Some(clock.speed);
-            choose_game_speed(clock, GameSpeed::VerySlow);
+            *saved = (clock.speed != GameSpeed::Paused).then_some(clock.speed);
+            clock.set_speed(GameSpeed::VerySlow);
         }
         _ => {}
+    }
+}
+
+/// Hold the speed while a window is open, acting on each open and close
+/// edge. The Encyclopedia slows on creation (`FUN_0045ddc0`, its last call
+/// `FUN_0041d3f0`) and restores on teardown (`FUN_00460070` ->
+/// `FUN_0041d410`), through the same `FUN_00487ff0` slot as Advice.
+pub fn hold_speed_while_open(
+    clock: &mut GameClock,
+    saved: &mut Option<GameSpeed>,
+    was_open: &mut bool,
+    open: bool,
+) {
+    if open != *was_open {
+        hold_speed_for_advice(clock, saved, open);
+        *was_open = open;
     }
 }
 
@@ -233,24 +255,20 @@ pub fn pause_alert_contains_screen_point(
         && point.1 < top + ALERT_HEIGHT * layout.scale
 }
 
-/// Draw the "Resume Game Play?" alert while a pause is pending or holding.
-///
-/// Returns true when the checkmark is clicked or Enter is pressed; the caller
-/// then resumes the clock. The original is a child window, not a modal
-/// dialog, so the rest of the command center stays usable.
-pub fn draw_pause_alert(
+/// The REBDLOG alert window `FUN_00417020` builds (class `FUN_00416f80`,
+/// background 0x297e, 412 by 176): `text` in the message rectangle and the
+/// checkmark, at `origin` on a canvas drawn at `scale`. `names` are the egui
+/// area id and the control registry's window and control names. Returns
+/// whether the checkmark was clicked.
+pub(crate) fn draw_alert_window(
     ctx: &egui::Context,
-    clock: &GameClock,
     cache: &mut BmpCache,
-    layout: CockpitLayout,
+    origin: egui::Pos2,
+    scale: f32,
+    text: &str,
+    names: (&str, &str, &str),
     input_enabled: bool,
 ) -> bool {
-    if !clock.pause_requested() || layout.scale <= 0.0 {
-        return false;
-    }
-    let scale = layout.scale;
-    let (x, y) = pause_alert_origin();
-    let origin = egui::pos2(layout.canvas.x + x * scale, layout.canvas.y + y * scale);
     let local = |viewport: CockpitViewport| {
         egui::Rect::from_min_size(
             origin + egui::vec2(viewport.x * scale, viewport.y * scale),
@@ -261,7 +279,7 @@ pub fn draw_pause_alert(
 
     // Above the galaxy windows, which raise themselves within Foreground
     // every frame they hold focus and would otherwise cover the alert.
-    let clicked = egui::Area::new(egui::Id::new("original_pause_alert"))
+    egui::Area::new(egui::Id::new(names.0))
         .order(egui::Order::Tooltip)
         .fade_in(false)
         .fixed_pos(origin)
@@ -285,15 +303,15 @@ pub fn draw_pause_alert(
             ui.painter().text(
                 local(ALERT_TEXT_RECT).center(),
                 egui::Align2::CENTER_CENTER,
-                RESUME_GAME_PLAY,
+                text,
                 egui::FontId::proportional(ALERT_FONT_HEIGHT * scale),
                 ALERT_TEXT_COLOR,
             );
             let button = local(ALERT_BUTTON_RECT);
-            crate::control_registry::register_screen("PauseAlert", "Resume", button);
+            crate::control_registry::register_screen(names.1, names.2, button);
             let response = ui.interact(
                 button,
-                ui.id().with("pause_alert_resume"),
+                ui.id().with((names.0, "checkmark")),
                 egui::Sense::click(),
             );
             let resource = if response.is_pointer_button_down_on() {
@@ -307,7 +325,36 @@ pub fn draw_pause_alert(
             }
             response.clicked()
         })
-        .inner;
+        .inner
+}
+
+/// Draw the "Resume Game Play?" alert while a pause is pending or holding.
+///
+/// Returns true when the checkmark is clicked or Enter is pressed; the caller
+/// then resumes the clock. The original is a child window, not a modal
+/// dialog, so the rest of the command center stays usable.
+pub fn draw_pause_alert(
+    ctx: &egui::Context,
+    clock: &GameClock,
+    cache: &mut BmpCache,
+    layout: CockpitLayout,
+    input_enabled: bool,
+) -> bool {
+    if !clock.pause_requested() || layout.scale <= 0.0 {
+        return false;
+    }
+    let scale = layout.scale;
+    let (x, y) = pause_alert_origin();
+    let origin = egui::pos2(layout.canvas.x + x * scale, layout.canvas.y + y * scale);
+    let clicked = draw_alert_window(
+        ctx,
+        cache,
+        origin,
+        scale,
+        RESUME_GAME_PLAY,
+        ("original_pause_alert", "PauseAlert", "Resume"),
+        input_enabled,
+    );
 
     // A focused text field, such as the command palette's, owns Enter.
     let enter = input_enabled
@@ -656,6 +703,69 @@ mod tests {
             GameSpeed::Fast,
             "a hide with nothing saved holds"
         );
+    }
+
+    #[test]
+    fn a_hold_before_any_speed_drops_to_very_slow_saves_nothing_and_raises_no_pause() {
+        // FUN_004861b0 builds the speed index +0x54 as 0, the value that
+        // marks +0x58 empty: FUN_00487ff0's show stores that 0, so nothing is
+        // saved, and still calls FUN_00487eb0(1); the hide then finds nothing
+        // to restore. FUN_00487eb0 never touches the stop day at
+        // DAT_006b1218+0x10.
+        let mut clock = GameClock::new();
+        let mut saved = None;
+        hold_speed_for_advice(&mut clock, &mut saved, true);
+        assert_eq!(clock.speed, GameSpeed::VerySlow);
+        assert_eq!(saved, None);
+        hold_speed_for_advice(&mut clock, &mut saved, false);
+        assert_eq!(clock.speed, GameSpeed::VerySlow);
+        assert!(!clock.pause_requested());
+    }
+
+    #[test]
+    fn a_speed_chosen_during_a_hold_begun_before_any_speed_outlasts_the_release() {
+        // FUN_00487ff0: with +0x58 empty the hide does nothing, so the
+        // index FUN_00486fb0 set during the hold stays.
+        let mut clock = GameClock::new();
+        let mut saved = None;
+        hold_speed_for_advice(&mut clock, &mut saved, true);
+        choose_game_speed(&mut clock, GameSpeed::Medium);
+        hold_speed_for_advice(&mut clock, &mut saved, false);
+        assert_eq!(clock.speed, GameSpeed::Medium);
+        assert!(!clock.pause_requested());
+    }
+
+    #[test]
+    fn advice_over_a_pending_pause_changes_the_rate_and_keeps_the_stop_day() {
+        // FUN_00487eb0 sets the index whatever the stop day; only the stop
+        // day holds play.
+        let mut clock = running(GameSpeed::Fast);
+        clock.pause();
+        let mut saved = None;
+        hold_speed_for_advice(&mut clock, &mut saved, true);
+        assert_eq!(clock.speed, GameSpeed::VerySlow);
+        assert!(clock.pause_requested());
+        hold_speed_for_advice(&mut clock, &mut saved, false);
+        assert_eq!(clock.speed, GameSpeed::Fast);
+        assert!(clock.pause_requested());
+    }
+
+    #[test]
+    fn the_encyclopedia_slows_on_open_and_restores_on_close() {
+        // FUN_0045ddc0 ends with FUN_0041d3f0; FUN_00460070 calls
+        // FUN_0041d410.
+        let mut clock = running(GameSpeed::Medium);
+        let (mut saved, mut was_open) = (None, false);
+        hold_speed_while_open(&mut clock, &mut saved, &mut was_open, false);
+        assert_eq!(clock.speed, GameSpeed::Medium, "closed stays untouched");
+        hold_speed_while_open(&mut clock, &mut saved, &mut was_open, true);
+        assert_eq!(clock.speed, GameSpeed::VerySlow);
+        clock.set_speed(GameSpeed::Fast);
+        hold_speed_while_open(&mut clock, &mut saved, &mut was_open, true);
+        assert_eq!(clock.speed, GameSpeed::Fast, "only the edge acts");
+        hold_speed_while_open(&mut clock, &mut saved, &mut was_open, false);
+        assert_eq!(clock.speed, GameSpeed::Medium);
+        assert_eq!(saved, None);
     }
 
     #[test]

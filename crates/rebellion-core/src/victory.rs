@@ -1,13 +1,17 @@
 //! Victory condition detection.
 //!
 //! Checks the asymmetric original-game objectives each tick:
-//! - **Alliance**: capture Coruscant and, in Standard mode, hold Emperor
-//!   Palpatine and Darth Vader captive.
-//! - **Empire**: destroy the mobile Alliance headquarters, then occupy its
-//!   system, and, in Standard mode, hold Mon Mothma and Luke Skywalker captive.
-//! - **Death Star route**: destroying the entire Alliance-HQ system satisfies
-//!   the Empire's headquarters objective, but not Standard's leader objective.
+//! - **Alliance**: hold or destroy Coruscant (CA or CD) and, in Standard
+//!   mode, hold Emperor Palpatine and Darth Vader captive.
+//! - **Empire**: remove the Alliance headquarters (AD: the HQ object missing
+//!   or destroyed, no occupation needed) and, in Standard mode, hold Mon
+//!   Mothma and Luke Skywalker captive.
+//! - **Death Star route**: destroying the Alliance-HQ system destroys the HQ
+//!   with it (AD); destroying Coruscant sets CD, which counts for the
+//!   Alliance.
 //! - **Headquarters Only**: omits only the principal-leader requirements.
+//!
+//! The flags are `FUN_005180e0`'s (`ghidra/notes/victory-conditions.md`).
 //!
 //! # Architecture
 //!
@@ -22,18 +26,54 @@
 //!
 //! # Source
 //!
-//! Ghidra RE: `entity-system.md §4.2` — `SideVictoryConditionsNotif`,
-//! `FinalBattle` (`FUN_0054ba00`), event IDs `0x12c`/`0x180`.
+//! Ghidra RE: `ghidra/notes/victory-conditions.md` — the win word
+//! `FUN_005180e0` (AD, CA, CD and the leaders), notification `0x128`
+//! (`SideVictoryConditionsNotif`).
 //! `IsHeadquarters` flag → `System::is_headquarters`.
-//! Death Star: family `0x34`; fires when `alive_flag` bit0 == 0 (INVERTED).
 
 use serde::{Deserialize, Serialize};
 
-use crate::bombardment::BombardmentResult;
 use crate::dat::Faction;
 use crate::ids::SystemKey;
 use crate::tick::TickEvent;
 use crate::world::{GameWorld, VictoryConditions};
+
+// ---------------------------------------------------------------------------
+// The objects the win word reads (`FUN_005180e0`)
+// ---------------------------------------------------------------------------
+
+/// Luke Skywalker (LC, `FUN_005180e0`).
+pub const LUKE: u32 = 0x3200_0242;
+/// Mon Mothma (MC, `FUN_005180e0`).
+pub const MON_MOTHMA: u32 = 0x3000_0240;
+/// Darth Vader (DC, `FUN_005180e0`).
+pub const VADER: u32 = 0x3500_0281;
+/// Emperor Palpatine (EC, `FUN_005180e0`).
+pub const PALPATINE: u32 = 0x3400_0280;
+/// Coruscant (CA, CD, `FUN_005180e0`).
+pub const CORUSCANT: u32 = 0x9000_0109;
+
+/// The win word's bits (`FUN_005180e0`; `ghidra/notes/victory-flag-word.md`):
+/// the Alliance HQ gone.
+pub const AD: u32 = 0x1;
+/// Luke a prisoner (`FUN_005180e0`).
+pub const LC: u32 = 0x10;
+/// Mon Mothma a prisoner (`FUN_005180e0`).
+pub const MC: u32 = 0x20;
+/// Coruscant held by the Alliance (`FUN_005180e0`).
+pub const CA: u32 = 0x100;
+/// Coruscant destroyed (`FUN_005180e0`).
+pub const CD: u32 = 0x200;
+/// Vader a prisoner (`FUN_005180e0`).
+pub const DC: u32 = 0x1000;
+/// Palpatine a prisoner (`FUN_005180e0`).
+pub const EC: u32 = 0x2000;
+/// The Empire wins (`FUN_005180e0`).
+pub const EW: u32 = 0x10_0000;
+/// The Alliance wins (`FUN_005180e0`).
+pub const AW: u32 = 0x100_0000;
+/// The game is over (`FUN_005180e0`).
+pub const GO: u32 = 0x1000_0000;
 
 // ---------------------------------------------------------------------------
 // VictoryOutcome
@@ -42,26 +82,22 @@ use crate::world::{GameWorld, VictoryConditions};
 /// Terminal game states returned by `VictorySystem::check`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum VictoryOutcome {
-    /// The Alliance captured and controls Coruscant.
-    ///
-    /// `winner` controls `hq_system`; `loser` has lost their command center.
+    /// The Alliance holds Coruscant (CA) or Coruscant is destroyed (CD).
     HqCaptured {
         winner: Faction,
         loser: Faction,
         hq_system: SystemKey,
     },
 
-    /// The Empire destroyed the mobile Alliance headquarters by bombardment
-    /// and subsequently took control of its system.
+    /// The Alliance headquarters is gone (AD) and its system stands.
     HqDestroyed {
         winner: Faction,
         loser: Faction,
         hq_system: SystemKey,
     },
 
-    /// The Death Star destroyed the planet containing the Alliance HQ.
-    ///
-    /// The Empire wins: `target_system` has been destroyed.
+    /// The Death Star destroyed the planet holding the Alliance HQ, and the
+    /// HQ with it (AD).
     DeathStarVictory { target_system: SystemKey },
 }
 
@@ -71,17 +107,19 @@ pub enum VictoryOutcome {
 
 /// Configuration for victory detection — set at game start.
 ///
-/// Stores the HQ system for each faction and tracks Death Star status.
+/// Stores the HQ system for each faction.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VictoryState {
-    /// The Alliance headquarters system key.
+    /// The Alliance headquarters system key; the null key when the data
+    /// marks none, which the word reads as AD (`FUN_00506110` null).
     pub alliance_hq: SystemKey,
-    /// The Empire headquarters system key.
+    /// The Empire headquarters system key; the null key when the data marks
+    /// none. The word reads Coruscant by its id instead.
     pub empire_hq: SystemKey,
-    /// When `true`, Death Star win-condition checks are active.
-    pub death_star_active: bool,
-    /// The system the Death Star is currently orbiting (if active).
-    pub death_star_location: Option<SystemKey>,
+    /// The win word last delivered (notification `0x128`); its change files
+    /// the word's messages and its win bits decide a tie.
+    #[serde(default)]
+    pub word: u32,
     /// Set `true` once a `VictoryOutcome` has been returned to suppress
     /// re-firing on subsequent ticks.
     pub resolved: bool,
@@ -93,8 +131,7 @@ impl VictoryState {
         VictoryState {
             alliance_hq,
             empire_hq,
-            death_star_active: false,
-            death_star_location: None,
+            word: 0,
             resolved: false,
         }
     }
@@ -110,8 +147,8 @@ pub struct VictorySystem;
 impl VictorySystem {
     /// Evaluate all victory conditions against the current world state.
     ///
-    /// Returns `Some(VictoryOutcome)` the first tick a terminal condition is
-    /// detected; `None` otherwise. Skips frames without a simulation tick and
+    /// Returns `Some(VictoryOutcome)` the first tick the word sets a win bit;
+    /// `None` otherwise. Skips frames without a simulation tick and
     /// already-resolved games. The original rules do not impose a minimum day.
     /// The caller must set `state.resolved = true` after acting on a result.
     #[must_use]
@@ -124,106 +161,110 @@ impl VictorySystem {
         if tick_events.is_empty() || state.resolved {
             return None;
         }
-
-        Self::headquarters_objectives(state, world)
-            .into_iter()
-            .flatten()
-            .find(|outcome| {
-                victory_conditions == VictoryConditions::HeadquartersOnly
-                    || Self::standard_leaders_captured(outcome, world)
+        let word = Self::word(state, world, victory_conditions)?;
+        let coruscant = Self::coruscant(world)?;
+        if word & AW != 0 {
+            Some(VictoryOutcome::HqCaptured {
+                winner: Faction::Alliance,
+                loser: Faction::Empire,
+                hq_system: coruscant,
             })
-    }
-
-    /// Apply the headquarters-specific effect of a resolved bombardment.
-    ///
-    /// `System::is_headquarters` represents the surviving mobile Alliance-HQ
-    /// facility. Clearing that already-persisted flag records its destruction
-    /// without changing the save layout. Occupation is checked separately, so
-    /// bombardment alone cannot end the campaign.
-    pub fn apply_headquarters_bombardment(
-        state: &VictoryState,
-        world: &mut GameWorld,
-        result: &BombardmentResult,
-        attacker: Faction,
-    ) -> bool {
-        if attacker != Faction::Empire || result.damage <= 0 || result.system != state.alliance_hq {
-            return false;
-        }
-
-        let Some(system) = world.systems.get_mut(state.alliance_hq) else {
-            return false;
-        };
-        if !system.is_headquarters || system.is_destroyed {
-            return false;
-        }
-
-        system.is_headquarters = false;
-        true
-    }
-
-    // ── Private ───────────────────────────────────────────────────────────
-
-    /// Evaluate the two faction-specific headquarters objectives.
-    fn headquarters_objectives(
-        state: &VictoryState,
-        world: &GameWorld,
-    ) -> [Option<VictoryOutcome>; 2] {
-        // Empire: a destroyed HQ planet completes the objective immediately.
-        // Otherwise the HQ facility must already be destroyed and the Empire
-        // must control the surviving system.
-        let empire = world.systems.get(state.alliance_hq).and_then(|sys| {
-            if sys.is_destroyed {
-                Some(VictoryOutcome::DeathStarVictory {
+        } else if word & EW != 0 {
+            let destroyed = world
+                .systems
+                .get(state.alliance_hq)
+                .is_some_and(|system| system.is_destroyed);
+            Some(if destroyed {
+                // A destroyed planet takes the HQ with it (FUN_004f8710).
+                VictoryOutcome::DeathStarVictory {
                     target_system: state.alliance_hq,
-                })
-            } else if !sys.is_headquarters && sys.control.is_controlled_by(Faction::Empire) {
-                Some(VictoryOutcome::HqDestroyed {
+                }
+            } else {
+                VictoryOutcome::HqDestroyed {
                     winner: Faction::Empire,
                     loser: Faction::Alliance,
                     hq_system: state.alliance_hq,
-                })
-            } else {
-                None
-            }
-        });
-
-        // Alliance: political control of Coruscant completes the objective.
-        let alliance = world.systems.get(state.empire_hq).and_then(|sys| {
-            if sys.control.is_controlled_by(Faction::Alliance) {
-                Some(VictoryOutcome::HqCaptured {
-                    winner: Faction::Alliance,
-                    loser: Faction::Empire,
-                    hq_system: state.empire_hq,
-                })
-            } else {
-                None
-            }
-        });
-
-        [empire, alliance]
+                }
+            })
+        } else {
+            None
+        }
     }
 
-    /// Standard victory also requires the winner to hold both opposing
-    /// principal leaders, matching the original game-type rules.
-    fn standard_leaders_captured(outcome: &VictoryOutcome, world: &GameWorld) -> bool {
-        let winner = match outcome {
-            VictoryOutcome::HqCaptured { winner, .. }
-            | VictoryOutcome::HqDestroyed { winner, .. } => *winner,
-            VictoryOutcome::DeathStarVictory { .. } => Faction::Empire,
+    /// The win word `FUN_005180e0` builds from zero: `None` while a principal
+    /// leader or Coruscant is missing, the word left as it was. The component
+    /// bits are written for both game types; EW and AW by the game type,
+    /// and when both qualify the side whose bit [`VictoryState::word`]
+    /// already held keeps it, else AW.
+    #[must_use]
+    pub fn word(
+        state: &VictoryState,
+        world: &GameWorld,
+        victory_conditions: VictoryConditions,
+    ) -> Option<u32> {
+        let captive = |id: u32| {
+            world
+                .characters
+                .values()
+                .find(|character| character.dat_id.is_record(id))
+                .map(|character| character.is_captive)
         };
-        let required_names: &[&str] = match winner {
-            Faction::Alliance => &["Emperor Palpatine", "Darth Vader"],
-            Faction::Empire => &["Luke Skywalker", "Mon Mothma"],
-            Faction::Neutral => return false,
-        };
+        let leaders = [
+            (captive(LUKE)?, LC),
+            (captive(MON_MOTHMA)?, MC),
+            (captive(VADER)?, DC),
+            (captive(PALPATINE)?, EC),
+        ];
+        let coruscant_key = Self::coruscant(world)?;
+        let coruscant = &world.systems[coruscant_key];
 
-        required_names.iter().all(|required| {
-            world.characters.iter().any(|(_, character)| {
-                character.name == *required
-                    && character.is_captive
-                    && character.captured_by == Some(winner)
-            })
-        })
+        // A prisoner counts whoever holds it, a jailed one too (+0xac bit 0,
+        // FUN_00549580).
+        let mut word = leaders
+            .into_iter()
+            .filter(|&(prisoner, _)| prisoner)
+            .fold(0, |word, (_, bit)| word | bit);
+        // AD: the HQ object is gone, whoever holds its system.
+        if world
+            .systems
+            .get(state.alliance_hq)
+            .is_none_or(|system| system.is_destroyed || !system.is_headquarters)
+        {
+            word |= AD;
+        }
+        // CA: Coruscant's holder bits (+0x24 & 0xc0 == 0x40), which keep the
+        // earlier holder through a stalemate (FUN_0050b610).
+        if crate::bombardment::holder(world, coruscant_key) == Faction::Alliance {
+            word |= CA;
+        }
+        if coruscant.is_destroyed {
+            word |= CD;
+        }
+
+        let all = |bits: u32| word & bits == bits;
+        let (empire, alliance) = match victory_conditions {
+            VictoryConditions::Standard => (
+                all(AD | LC | MC),
+                all(DC | EC) && word & (CA | CD) != 0,
+            ),
+            VictoryConditions::HeadquartersOnly => (all(AD), word & (CA | CD) != 0),
+        };
+        word |= match (empire, alliance) {
+            (true, true) if state.word & AW == 0 && state.word & EW != 0 => EW | GO,
+            (_, true) => AW | GO,
+            (true, false) => EW | GO,
+            (false, false) => 0,
+        };
+        Some(word)
+    }
+
+    /// Coruscant, by its id (`FUN_005180e0`).
+    fn coruscant(world: &GameWorld) -> Option<SystemKey> {
+        world
+            .systems
+            .iter()
+            .find(|(_, system)| system.dat_id.is_record(CORUSCANT))
+            .map(|(key, _)| key)
     }
 }
 
@@ -284,7 +325,7 @@ mod tests {
         });
 
         let e_hq = world.systems.insert(System {
-            dat_id: DatId::new(0x9000_0001),
+            dat_id: DatId::new(CORUSCANT),
             name: "Coruscant".into(),
             sector: sector_key,
             x: 500,
@@ -308,16 +349,266 @@ mod tests {
             control: ControlKind::Controlled(Faction::Empire),
         });
 
+        for id in [LUKE, MON_MOTHMA, VADER, PALPATINE] {
+            world.characters.insert(Character {
+                dat_id: DatId::new(id),
+                ..Character::default()
+            });
+        }
+
         (world, a_hq, e_hq)
     }
 
-    fn capture_leader(world: &mut GameWorld, name: &str, captured_by: Faction) {
+    fn leader(world: &mut GameWorld, id: u32) -> &mut Character {
+        world
+            .characters
+            .values_mut()
+            .find(|character| character.dat_id.raw() == id)
+            .expect("make_world seeds the four leaders")
+    }
+
+    fn capture_leader(world: &mut GameWorld, id: u32, captured_by: Faction) {
+        let leader = leader(world, id);
+        leader.is_captive = true;
+        leader.captured_by = Some(captured_by);
+    }
+
+    /// The ids as `rebellion-data` loads them: a SYSTEMSD or MJCHARSD
+    /// record's id is its index alone, the family kept apart
+    /// (`load_game_data`: `DatId::new(dat.id)`, `system_families`).
+    fn as_loaded(world: &mut GameWorld) {
+        for (key, system) in &mut world.systems {
+            world.system_families.insert(key, system.dat_id.family());
+            system.dat_id = DatId::new(system.dat_id.index());
+        }
+        for character in world.characters.values_mut() {
+            character.dat_id = DatId::new(character.dat_id.index());
+        }
+    }
+
+    #[test]
+    fn the_word_finds_the_loaded_leaders_and_coruscant_by_their_record_index() {
+        // FUN_005180e0 looks up Coruscant (0x109) and the four leaders
+        // (0x240, 0x242, 0x280, 0x281) by id; a loaded world holds them
+        // without their family byte, and either side still wins.
+        for conditions in [
+            VictoryConditions::HeadquartersOnly,
+            VictoryConditions::Standard,
+        ] {
+            let (mut world, a, e) = make_world();
+            world.systems[a].is_headquarters = false;
+            capture_leader(&mut world, LUKE, Faction::Empire);
+            capture_leader(&mut world, MON_MOTHMA, Faction::Empire);
+            as_loaded(&mut world);
+            let state = VictoryState::new(a, e);
+            assert_eq!(
+                VictorySystem::word(&state, &world, conditions),
+                Some(AD | LC | MC | EW | GO),
+                "Empire {conditions:?}"
+            );
+
+            let (mut world, a, e) = make_world();
+            world.systems[e].control = ControlKind::Controlled(Faction::Alliance);
+            capture_leader(&mut world, VADER, Faction::Alliance);
+            capture_leader(&mut world, PALPATINE, Faction::Alliance);
+            as_loaded(&mut world);
+            let state = VictoryState::new(a, e);
+            assert_eq!(
+                VictorySystem::word(&state, &world, conditions),
+                Some(CA | DC | EC | AW | GO),
+                "Alliance {conditions:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn when_both_sides_win_at_once_the_alliance_wins() {
+        // FUN_005180e0: with neither win bit set before, a word where both
+        // sides qualify takes AW (victory-conditions.md, The rules).
+        for conditions in [
+            VictoryConditions::HeadquartersOnly,
+            VictoryConditions::Standard,
+        ] {
+            let (mut world, a, e) = make_world();
+            world.systems[a].is_headquarters = false;
+            world.systems[e].control = ControlKind::Controlled(Faction::Alliance);
+            for (id, captor) in [
+                (PALPATINE, Faction::Alliance),
+                (VADER, Faction::Alliance),
+                (LUKE, Faction::Empire),
+                (MON_MOTHMA, Faction::Empire),
+            ] {
+                capture_leader(&mut world, id, captor);
+            }
+            let state = VictoryState::new(a, e);
+            let out = VictorySystem::check(&state, &world, &[tick(1)], conditions);
+            assert!(
+                matches!(
+                    out,
+                    Some(VictoryOutcome::HqCaptured {
+                        winner: Faction::Alliance,
+                        ..
+                    })
+                ),
+                "{conditions:?}: {out:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_word_carries_each_component_bit_for_either_game_type() {
+        // FUN_005180e0 writes the component bits whatever the game type.
+        for conditions in [
+            VictoryConditions::HeadquartersOnly,
+            VictoryConditions::Standard,
+        ] {
+            let (mut world, a, e) = make_world();
+            let state = VictoryState::new(a, e);
+            assert_eq!(VictorySystem::word(&state, &world, conditions), Some(0));
+            capture_leader(&mut world, LUKE, Faction::Empire);
+            capture_leader(&mut world, VADER, Faction::Alliance);
+            world.systems[e].is_destroyed = true;
+            assert_eq!(
+                VictorySystem::word(&state, &world, conditions),
+                Some(LC | DC | CD | if conditions == VictoryConditions::Standard {
+                    0
+                } else {
+                    AW | GO
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn standard_prisoners_alone_win_neither_side() {
+        // FUN_005180e0, Standard: EW needs AD, LC and MC; AW needs DC, EC and
+        // CA or CD. The prisoners without the objective give no win bit.
+        let (mut world, a, e) = make_world();
+        let state = VictoryState::new(a, e);
+        capture_leader(&mut world, MON_MOTHMA, Faction::Empire);
+        assert_eq!(
+            VictorySystem::word(&state, &world, VictoryConditions::Standard),
+            Some(MC)
+        );
+        capture_leader(&mut world, VADER, Faction::Alliance);
+        capture_leader(&mut world, PALPATINE, Faction::Alliance);
+        assert_eq!(
+            VictorySystem::word(&state, &world, VictoryConditions::Standard),
+            Some(MC | DC | EC)
+        );
+    }
+
+    #[test]
+    fn a_stalemated_coruscant_counts_for_the_side_that_held_it_before() {
+        // CA tests Coruscant's +0x24 & 0xc0 == 0x40 (FUN_005180e0), and both
+        // sides' regiments keep the earlier troop holder in those bits
+        // (FUN_0050b610.c:45-70).
+        for (earlier, later, word) in [
+            (Faction::Alliance, Faction::Empire, Some(CA | AW | GO)),
+            (Faction::Empire, Faction::Alliance, Some(0)),
+        ] {
+            let (mut world, a, e) = make_world();
+            let state = VictoryState::new(a, e);
+            world.systems[e].control = ControlKind::Controlled(earlier);
+            for (index, side) in [earlier, later].into_iter().enumerate() {
+                let unit = world.troops.insert(crate::world::TroopUnit {
+                    class_dat_id: DatId::new(0x1000_0001),
+                    is_alliance: side == Faction::Alliance,
+                });
+                world.systems[e].ground_units.push(unit);
+                if index == 0 {
+                    crate::support_shift::refresh_troop_bits(&mut world, e);
+                }
+            }
+            crate::support_shift::rebuild_control(&mut world, e);
+            assert_eq!(
+                VictorySystem::word(&state, &world, VictoryConditions::HeadquartersOnly),
+                word,
+                "{earlier:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_win_bit_already_held_keeps_its_side_in_a_tie() {
+        // FUN_005180e0: both qualifying, an earlier EW keeps the Empire's
+        // win unless AW was set too.
+        let (mut world, a, e) = make_world();
+        world.systems[a].is_headquarters = false;
+        world.systems[e].control = ControlKind::Controlled(Faction::Alliance);
+        let mut state = VictoryState::new(a, e);
+        let conditions = VictoryConditions::HeadquartersOnly;
+        state.word = EW;
+        assert_eq!(
+            VictorySystem::word(&state, &world, conditions),
+            Some(AD | CA | EW | GO)
+        );
+        state.word = EW | AW;
+        assert_eq!(
+            VictorySystem::word(&state, &world, conditions),
+            Some(AD | CA | AW | GO)
+        );
+    }
+
+    #[test]
+    fn the_leaders_are_known_by_their_ids_not_their_names() {
+        // FUN_005180e0 looks the four leaders up by id.
+        let (mut world, a, e) = make_world();
+        world.systems[e].is_destroyed = true;
+        for id in [PALPATINE, VADER] {
+            capture_leader(&mut world, id, Faction::Alliance);
+            leader(&mut world, id).name = "Renamed".into();
+        }
         world.characters.insert(Character {
-            name: name.to_string(),
-            is_captive: true,
-            captured_by: Some(captured_by),
+            name: "Darth Vader".into(),
             ..Character::default()
         });
+        let state = VictoryState::new(a, e);
+        assert!(matches!(
+            VictorySystem::check(&state, &world, &[tick(1)], VictoryConditions::Standard),
+            Some(VictoryOutcome::HqCaptured {
+                winner: Faction::Alliance,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn a_missing_leader_or_coruscant_leaves_no_side_a_win() {
+        // FUN_005180e0 returns 0, the word unchanged, when a leader or
+        // Coruscant is missing, whatever the game type.
+        for missing in [LUKE, MON_MOTHMA, VADER, PALPATINE, CORUSCANT] {
+            for conditions in [
+                VictoryConditions::HeadquartersOnly,
+                VictoryConditions::Standard,
+            ] {
+                let (mut world, a, e) = make_world();
+                world.systems[a].is_headquarters = false;
+                for (id, captor) in [
+                    (LUKE, Faction::Empire),
+                    (MON_MOTHMA, Faction::Empire),
+                ] {
+                    capture_leader(&mut world, id, captor);
+                }
+                if missing == CORUSCANT {
+                    world.systems[e].dat_id = DatId::new(0x9000_0001);
+                } else {
+                    let key = world
+                        .characters
+                        .iter()
+                        .find(|(_, character)| character.dat_id.raw() == missing)
+                        .map(|(key, _)| key)
+                        .expect("seeded");
+                    world.characters.remove(key);
+                }
+                let state = VictoryState::new(a, e);
+                assert_eq!(
+                    VictorySystem::check(&state, &world, &[tick(1)], conditions),
+                    None,
+                    "{missing:#x} {conditions:?}"
+                );
+            }
+        }
     }
 
     #[test]
@@ -374,72 +665,28 @@ mod tests {
         ));
     }
 
+    /// `FUN_005180e0` sets AD when the HQ object is missing or destroyed
+    /// and reads no control of its system (`victory-conditions.md`, "No
+    /// occupation is required").
     #[test]
-    fn successful_imperial_bombardment_destroys_alliance_hq_facility() {
-        let (mut world, alliance_hq, empire_hq) = make_world();
-        let state = VictoryState::new(alliance_hq, empire_hq);
-        let result = BombardmentResult {
-            system: alliance_hq,
-            damage: 12,
-            tick: 1,
-        };
-
-        assert!(VictorySystem::apply_headquarters_bombardment(
-            &state,
-            &mut world,
-            &result,
-            Faction::Empire,
-        ));
-        assert!(!world.systems[alliance_hq].is_headquarters);
-    }
-
-    #[test]
-    fn bombardment_requires_empire_damage_against_current_alliance_hq() {
-        let (mut world, alliance_hq, empire_hq) = make_world();
-        let state = VictoryState::new(alliance_hq, empire_hq);
-        let mut result = BombardmentResult {
-            system: alliance_hq,
-            damage: 0,
-            tick: 1,
-        };
-        assert!(!VictorySystem::apply_headquarters_bombardment(
-            &state,
-            &mut world,
-            &result,
-            Faction::Empire,
-        ));
-
-        result.damage = 10;
-        assert!(!VictorySystem::apply_headquarters_bombardment(
-            &state,
-            &mut world,
-            &result,
-            Faction::Alliance,
-        ));
-
-        result.system = empire_hq;
-        assert!(!VictorySystem::apply_headquarters_bombardment(
-            &state,
-            &mut world,
-            &result,
-            Faction::Empire,
-        ));
-        assert!(world.systems[alliance_hq].is_headquarters);
-    }
-
-    #[test]
-    fn destroyed_alliance_hq_requires_imperial_control() {
+    fn a_removed_alliance_hq_wins_without_imperial_control() {
         let (mut world, alliance_hq, empire_hq) = make_world();
         world.systems[alliance_hq].is_headquarters = false;
 
         let state = VictoryState::new(alliance_hq, empire_hq);
-        assert!(VictorySystem::check(
-            &state,
-            &world,
-            &[tick(1)],
-            VictoryConditions::HeadquartersOnly,
-        )
-        .is_none());
+        assert!(matches!(
+            VictorySystem::check(
+                &state,
+                &world,
+                &[tick(1)],
+                VictoryConditions::HeadquartersOnly
+            ),
+            Some(VictoryOutcome::HqDestroyed {
+                winner: Faction::Empire,
+                loser: Faction::Alliance,
+                ..
+            })
+        ));
 
         world.systems[alliance_hq].control = ControlKind::Controlled(Faction::Empire);
         assert!(matches!(
@@ -458,30 +705,6 @@ mod tests {
     }
 
     #[test]
-    fn bombardment_then_occupation_completes_imperial_hq_objective() {
-        let (mut world, alliance_hq, empire_hq) = make_world();
-        let state = VictoryState::new(alliance_hq, empire_hq);
-        let result = BombardmentResult {
-            system: alliance_hq,
-            damage: 1,
-            tick: 1,
-        };
-
-        assert!(VictorySystem::apply_headquarters_bombardment(
-            &state,
-            &mut world,
-            &result,
-            Faction::Empire,
-        ));
-        world.systems[alliance_hq].control = ControlKind::Controlled(Faction::Empire);
-
-        assert!(matches!(
-            VictorySystem::check(&state, &world, &[tick(1)], VictoryConditions::HeadquartersOnly),
-            Some(VictoryOutcome::HqDestroyed { hq_system, .. }) if hq_system == alliance_hq
-        ));
-    }
-
-    #[test]
     fn death_star_hq_destruction_satisfies_headquarters_only() {
         let (mut world, a, e) = make_world();
         world.systems.get_mut(a).unwrap().is_destroyed = true;
@@ -496,19 +719,49 @@ mod tests {
         assert!(matches!(out, Some(VictoryOutcome::DeathStarVictory { .. })));
     }
 
+    /// CD (Coruscant's `+0x50` bit 3) counts for the Alliance: Headquarters
+    /// Only's AW is CA or CD (`FUN_005180e0`, `game-end-path.md`).
     #[test]
-    fn destruction_of_a_non_hq_planet_is_not_a_victory() {
+    fn a_destroyed_coruscant_wins_headquarters_only_for_the_alliance() {
         let (mut world, alliance_hq, empire_hq) = make_world();
         world.systems[empire_hq].is_destroyed = true;
         let state = VictoryState::new(alliance_hq, empire_hq);
 
-        assert!(VictorySystem::check(
-            &state,
-            &world,
-            &[tick(1)],
-            VictoryConditions::HeadquartersOnly,
-        )
-        .is_none());
+        assert!(matches!(
+            VictorySystem::check(
+                &state,
+                &world,
+                &[tick(1)],
+                VictoryConditions::HeadquartersOnly,
+            ),
+            Some(VictoryOutcome::HqCaptured {
+                winner: Faction::Alliance,
+                loser: Faction::Empire,
+                ..
+            })
+        ));
+    }
+
+    /// Standard's AW is DC, EC and (CA or CD): a destroyed Coruscant waits
+    /// for both Imperial leaders (`FUN_005180e0`).
+    #[test]
+    fn standard_destroyed_coruscant_waits_for_both_imperial_leaders() {
+        let (mut world, alliance_hq, empire_hq) = make_world();
+        world.systems[empire_hq].is_destroyed = true;
+        let state = VictoryState::new(alliance_hq, empire_hq);
+        assert!(
+            VictorySystem::check(&state, &world, &[tick(1)], VictoryConditions::Standard).is_none()
+        );
+
+        capture_leader(&mut world, PALPATINE, Faction::Alliance);
+        capture_leader(&mut world, VADER, Faction::Alliance);
+        assert!(matches!(
+            VictorySystem::check(&state, &world, &[tick(1)], VictoryConditions::Standard),
+            Some(VictoryOutcome::HqCaptured {
+                winner: Faction::Alliance,
+                ..
+            })
+        ));
     }
 
     #[test]
@@ -516,7 +769,7 @@ mod tests {
         let (mut world, alliance_hq, empire_hq) = make_world();
         world.systems[alliance_hq].is_headquarters = false;
         world.systems[alliance_hq].control = ControlKind::Controlled(Faction::Empire);
-        capture_leader(&mut world, "Luke Skywalker", Faction::Empire);
+        capture_leader(&mut world, LUKE, Faction::Empire);
 
         let state = VictoryState::new(alliance_hq, empire_hq);
         let tick = tick(1);
@@ -524,7 +777,7 @@ mod tests {
             VictorySystem::check(&state, &world, &[tick], VictoryConditions::Standard,).is_none()
         );
 
-        capture_leader(&mut world, "Mon Mothma", Faction::Empire);
+        capture_leader(&mut world, MON_MOTHMA, Faction::Empire);
         assert!(matches!(
             VictorySystem::check(&state, &world, &[tick], VictoryConditions::Standard,),
             Some(VictoryOutcome::HqDestroyed {
@@ -534,13 +787,24 @@ mod tests {
         ));
     }
 
+    /// `FUN_005180e0` reads each leader's prisoner bit (`+0xac` bit 0) and
+    /// nothing else: Vader free holds the win back, Vader a prisoner gives it
+    /// (`victory-conditions.md`, "A prisoner counts whoever holds it").
     #[test]
     fn standard_hq_capture_waits_for_both_empire_leaders() {
         let (mut world, alliance_hq, empire_hq) = make_world();
         world.systems.get_mut(empire_hq).unwrap().control =
             ControlKind::Controlled(Faction::Alliance);
-        capture_leader(&mut world, "Emperor Palpatine", Faction::Alliance);
-        capture_leader(&mut world, "Darth Vader", Faction::Empire);
+        capture_leader(&mut world, PALPATINE, Faction::Alliance);
+        capture_leader(&mut world, VADER, Faction::Alliance);
+        let vader = world
+            .characters
+            .iter()
+            .find(|(_, character)| character.dat_id.raw() == VADER)
+            .map(|(key, _)| key)
+            .unwrap();
+        world.characters[vader].is_captive = false;
+        world.characters[vader].captured_by = None;
 
         let state = VictoryState::new(alliance_hq, empire_hq);
         let tick = tick(1);
@@ -548,13 +812,8 @@ mod tests {
             VictorySystem::check(&state, &world, &[tick], VictoryConditions::Standard,).is_none()
         );
 
-        let vader = world
-            .characters
-            .iter()
-            .find(|(_, character)| character.name == "Darth Vader")
-            .map(|(key, _)| key)
-            .unwrap();
-        world.characters.get_mut(vader).unwrap().captured_by = Some(Faction::Alliance);
+        world.characters[vader].is_captive = true;
+        world.characters[vader].captured_by = Some(Faction::Alliance);
         assert!(matches!(
             VictorySystem::check(&state, &world, &[tick], VictoryConditions::Standard,),
             Some(VictoryOutcome::HqCaptured {
@@ -564,14 +823,50 @@ mod tests {
         ));
     }
 
+    /// A prisoner counts whoever holds it (`FUN_005180e0` tests only `+0xac`
+    /// bit 0), so leaders the adrift sweep jailed with no captor
+    /// (`FUN_00549580`, status 0) count for either side's Standard win.
+    #[test]
+    fn leaders_jailed_with_no_captor_count_for_either_sides_standard_win() {
+        for winner in [Faction::Alliance, Faction::Empire] {
+            let (mut world, alliance_hq, empire_hq) = make_world();
+            let leaders = if winner == Faction::Alliance {
+                world.systems[empire_hq].is_destroyed = true;
+                [PALPATINE, VADER]
+            } else {
+                world.systems[alliance_hq].is_destroyed = true;
+                [LUKE, MON_MOTHMA]
+            };
+            for id in leaders {
+                let leader = leader(&mut world, id);
+                leader.is_captive = true;
+                leader.abode = Some(crate::world::Abode::jail_of(winner != Faction::Alliance));
+            }
+
+            let state = VictoryState::new(alliance_hq, empire_hq);
+            let outcome =
+                VictorySystem::check(&state, &world, &[tick(1)], VictoryConditions::Standard);
+
+            let won = match outcome {
+                Some(
+                    VictoryOutcome::HqCaptured { winner: side, .. }
+                    | VictoryOutcome::HqDestroyed { winner: side, .. },
+                ) => Some(side),
+                Some(VictoryOutcome::DeathStarVictory { .. }) => Some(Faction::Empire),
+                None => None,
+            };
+            assert_eq!(won, Some(winner));
+        }
+    }
+
     #[test]
     fn incomplete_imperial_objective_does_not_mask_complete_alliance_victory() {
         let (mut world, alliance_hq, empire_hq) = make_world();
         world.systems[alliance_hq].is_headquarters = false;
         world.systems[alliance_hq].control = ControlKind::Controlled(Faction::Empire);
         world.systems[empire_hq].control = ControlKind::Controlled(Faction::Alliance);
-        capture_leader(&mut world, "Emperor Palpatine", Faction::Alliance);
-        capture_leader(&mut world, "Darth Vader", Faction::Alliance);
+        capture_leader(&mut world, PALPATINE, Faction::Alliance);
+        capture_leader(&mut world, VADER, Faction::Alliance);
 
         let state = VictoryState::new(alliance_hq, empire_hq);
         assert!(matches!(
@@ -594,8 +889,8 @@ mod tests {
                 .is_none()
         );
 
-        capture_leader(&mut world, "Luke Skywalker", Faction::Empire);
-        capture_leader(&mut world, "Mon Mothma", Faction::Empire);
+        capture_leader(&mut world, LUKE, Faction::Empire);
+        capture_leader(&mut world, MON_MOTHMA, Faction::Empire);
         assert!(matches!(
             VictorySystem::check(&state, &world, &[tick(1)], VictoryConditions::Standard),
             Some(VictoryOutcome::DeathStarVictory { .. })

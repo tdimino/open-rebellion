@@ -71,6 +71,41 @@ Recover is enabled only for a selected fighter group. The constructor disables
 Attack Death Star before later battle-state checks. P58F9 preserves that
 disabled state rather than guessing its enablement predicate.
 
+## Commit and return
+
+Both panels commit and then return to the panel shown before them:
+`FUN_005df4f0` and `FUN_005dd080` apply the order, then `FUN_005ef340`
+clears the container's lock `+0xa4` and `FUN_005c5a50(0)` reactivates the
+panel at `+0xa0` (slot `+0x3c` with the panel's object) and shows it
+(`FUN_005c5760`, which keeps the one it hides at `+0xa0`). Opening a panel
+sets the lock (`FUN_005ef320`, from `FUN_005df7a0` and `FUN_005dd290`), and
+while it is set only panel `0x15` may replace the open one (`FUN_005c5a50`).
+Panel ids: `0x15` nothing selected, `0x16` capital ship, `0x17` fighter
+group, `0x19` Missions, `0x1a` Maneuvers (`FUN_005c0e80`, `FUN_005c0ea0`,
+`FUN_005c0f00`, `FUN_005c0f20`, `FUN_005c0f40`; the fighter panel's
+`FUN_005e1660` sends `0xdd01` to Missions and `0xdd02` to Maneuvers).
+
+An order reaches the selected group through the current mode's slot `+0x20`
+(`FUN_0059eec0`); a new mode it returns replaces the current one
+(`FUN_0059f350`). For a fighter group (`FUN_005a48d0`) order 6 returns the
+nothing-selected mode `FUN_005a0c80` without applying it when the group is
+not side 0 or `FUN_005ad930` refuses; otherwise it voices the order and
+applies it through the group's slot `+0x64`, `FUN_005ca530`. For order 2 or
+6 on the local side's group, `FUN_005ca530` calls `FUN_005a0320`, which
+clears the group's strip slot and, the group's mode being current, installs
+`FUN_005a0c80`. That mode shows panel `0x15` (`FUN_005c0e80`), which clears
+the lock and leaves Missions at `+0xa0`, so the commit's return reopens
+Missions on the group: `FUN_005df7a0` reads the group's order
+(`FUN_00596b20`) and disables Attack Death Star, as `FUN_005ad930` refuses
+while a run exists (`FUN_005d0ae0`, `DAT_006bc978`). A0 TAC-05-C023
+(`alliance-day1169-deathstar-trench-run`, day 1173): after the check mark
+the Missions panel stays with Attack Death Star greyed and the Red slot
+greyed.
+
+`FUN_005df7a0` enables Recover for a kind-4 object (a fighter group) and
+Attack Death Star for one when the local side is the Alliance
+(`FUN_00401060`) and `FUN_00596bb0` holds.
+
 ## Shared state boundary
 
 `FUN_00596af0` and `FUN_00596b20` read the unified order at `+0x68`.

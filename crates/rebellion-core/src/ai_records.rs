@@ -77,6 +77,8 @@ pub mod fleet {
     pub const DAMAGED: u32 = 0x1000;
     /// A damaged ship with both drives out aboard (`FUN_00433780`).
     pub const DRIVES_OUT: u32 = 0x2000;
+    /// An unfinished ship aboard (ship `0x2000`, `FUN_00433780.c:35-37`).
+    pub const INCOMPLETE: u32 = 0x400;
     /// A ship in hyperspace (`FUN_00433780`).
     pub const SHIP_EN_ROUTE: u32 = 0x800;
     /// A ship neither in hyperspace nor unfinished (`FUN_00433780`).
@@ -214,6 +216,10 @@ pub struct FleetRecord {
     /// `+0xb4`, `+0xb8`.
     pub attack_all: i64,
     pub manoeuvre_all: i64,
+    /// `+0xa4`: its completed ships' units (`FUN_00433780.c:103`, the ship
+    /// record's `+0x88`): per hull 1, plus each active squadron and
+    /// regiment aboard (`FUN_00484630.c:109,142-161,186-197`).
+    pub units: i64,
 }
 
 impl FleetRecord {
@@ -554,10 +560,16 @@ fn ship_record(
     if own {
         r.flags |= ship::OWN;
     }
-    if en_route {
+    // Its own leg from its yard sets en route as its fleet's does
+    // (`FUN_004f8240`: bit 5 or the container's bit 4).
+    if en_route || instance.transit.is_some() {
         r.flags |= ship::EN_ROUTE;
     }
-    let carried = |carrier: u32| carrier == instance.tag || (carrier == 0 && index == 0);
+    // `+0x50` bit 2 clear: an ordered ship not yet finished.
+    if !instance.completed {
+        r.flags |= ship::INCOMPLETE;
+    }
+    let carried = |carrier: u32| carrier == instance.tag;
     for entry in value.fighters.iter().filter(|e| carried(e.carrier)) {
         let Some(fnode) = ClassNode::of(world, BuildableKind::Fighter(entry.class)) else {
             continue;
@@ -616,7 +628,7 @@ fn fold(f: &mut FleetRecord, s: &ShipRecord) {
         f.flags |= fleet::ACTIVE;
     }
     if flags & ship::INCOMPLETE != 0 {
-        f.flags |= 0x400;
+        f.flags |= fleet::INCOMPLETE;
     }
     if flags & ship::DEATH_STAR != 0 {
         f.flags |= fleet::DEATH_STAR;
@@ -652,6 +664,7 @@ fn fold(f: &mut FleetRecord, s: &ShipRecord) {
         f.regiments_active += s.regiments_active;
         f.attack_all += s.attack_all;
         f.manoeuvre_all += s.manoeuvre_all;
+        f.units += 1 + s.squadrons_active + s.regiments_active;
     }
     if flags & (ship::EN_ROUTE | ship::INCOMPLETE) == 0 {
         f.free_troop_room += s.troop_room - s.regiments;
@@ -664,9 +677,20 @@ fn fold(f: &mut FleetRecord, s: &ShipRecord) {
 /// and at a non-own system the owner's installations, its regiment need
 /// and threat.
 ///
-/// hyp: `obj+0x88` bit 1, without which the record stops at `Q | 0x80`, is
-/// read as the system being explored. port: counts at a non-own system are
-/// its owner's objects, which `FUN_00433e40` counts as everything there.
+/// The record stops at `Q | 0x80` when the side's view of the system
+/// (`FUN_004f3220`) lacks `+0x88` bit 1 (`FUN_00433e40.c:120-125`). Every
+/// system's Populate sets the bit on the master (`FUN_005081f0` ->
+/// `FUN_0050a430`), and `FUN_0050fc80` copies it, with bit 0 (populated,
+/// `FUN_0050fbf0`), into a view while that view is live: the side holds the
+/// system or observes it, which an active fleet of the side there makes it
+/// (`FUN_0050ac80`; `ghidra/notes/observation-levels.md`); a view that
+/// stops being live keeps the bit. hyp: a side's view holds the bit for a
+/// core system (SYSTEMSD family `0x90`, known from the start, manual
+/// p. 69), one it holds, and one where it has a usable fleet; a view kept
+/// from an earlier observation, or refreshed by an observation level
+/// (`FUN_0050d5a0`: informants, espionage, mission ends), is not followed,
+/// since the port keeps no per-side intelligence. port: counts at a non-own system are its owner's objects,
+/// which `FUN_00433e40` counts as everything there.
 pub fn fill_system(
     r: &mut crate::ai_production::SystemRecord,
     inputs: &RecordWorld<'_>,
@@ -679,8 +703,7 @@ pub fn fill_system(
         return;
     };
     let mut s = inputs.marks.system(r.key) & sys::MARKS;
-    let family = system.dat_id.family();
-    if (0x92..=0x93).contains(&family) {
+    if (0x92..=0x93).contains(&world.system_family(r.key)) {
         s |= sys::RIM;
     }
     s |= if r.own {
@@ -691,7 +714,12 @@ pub fn fill_system(
         sys::NEUTRAL
     };
     r.last_seen = inputs.marks.last_seen.get(&r.key).copied().unwrap_or(0);
-    if system.exploration_status != crate::dat::ExplorationStatus::Explored {
+    let observed = system.fleets.iter().any(|&fleet| {
+        world.fleets.get(fleet).is_some_and(|value| {
+            value.is_alliance == (inputs.side == crate::dat::Faction::Alliance) && value.usable()
+        })
+    });
+    if world.system_family(r.key) != 0x90 && !r.own && !observed {
         r.q |= 0x80;
         r.s = s;
         return;
@@ -713,6 +741,9 @@ pub fn fill_system(
     }
     for record in system.fleets.iter().filter_map(|f| fleets.get(f)) {
         if record.flags & fleet::OWN == 0 && record.flags & fleet::ACTIVE != 0 {
+            // `FUN_00433e40.c:229-238`: sys+0xbc sums the foreign fleets'
+            // units.
+            r.stack += record.units;
             r.fleet_attack += record.attack_all;
             r.fleet_manoeuvre += record.manoeuvre_all;
             r.fleet_shield += record.shield;
@@ -835,6 +866,12 @@ pub fn fill_system(
         if !r.own {
             let regiments = r.regiments_present;
             if r.enemy {
+                // `FUN_00433e40.c:639-641`: at a system the other side
+                // holds, its operational regiments (`+0x90`) and squadrons
+                // (`+0xac`) add one unit each; the neutral branch
+                // (`:610-624`) adds none. port: a regiment enters the world
+                // finished, so every one present is operational.
+                r.stack += regiments + r.squadrons_active;
                 if 0x50 - r.popularity > 0 {
                     r.regiment_need = (r.regiment_need + (0x59 - r.popularity) / 10).min(6);
                 }
@@ -969,4 +1006,210 @@ pub fn battle_withdraw_threshold(
         ratio /= other as f32;
     }
     ratio.min(DEFAULT)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ids::DatId;
+    use crate::world::System;
+
+    #[test]
+    fn an_unfinished_ship_sets_the_ai_incomplete_flags_for_either_side() {
+        // FUN_00484630 sets ship 0x2000 for +0x50 bit 2 clear, and
+        // FUN_00433780.c:35-37 folds it into fleet 0x400, leaving the
+        // ship out of the fleet's active bit and combat sums. An ordered
+        // ship is created uncompleted (FUN_004f7d50(.., 1, 0); the route-1
+        // Empire game's day-115 save: +0x50 0x42).
+        for side in [Faction::Alliance, Faction::Empire] {
+            let is_alliance = side == Faction::Alliance;
+            let mut world = GameWorld::default();
+            let system = world.systems.insert(System::default());
+            let class = world
+                .capital_ship_classes
+                .insert(crate::world::CapitalShipClass {
+                    is_alliance,
+                    is_empire: !is_alliance,
+                    hull: 100,
+                    ..crate::world::CapitalShipClass::default()
+                });
+            let mut ship = crate::world::ShipInstance::ordered(class, 100, is_alliance);
+            ship.tag = 1;
+            let fleet = world.fleets.insert(crate::world::Fleet {
+                location: system,
+                is_alliance,
+                capital_ships: vec![ship],
+                ..crate::world::Fleet::default()
+            });
+            world.systems[system].fleets.push(fleet);
+            let inputs = RecordWorld {
+                world: &world,
+                movement: &crate::movement::MovementState::new(),
+                transport: &crate::troop_transport::TroopTransportState::default(),
+                marks: &Marks::default(),
+                side,
+            };
+
+            let (fleets, ships) = fleet_records(&inputs);
+
+            assert_ne!(ships[&1].flags & ship::INCOMPLETE, 0, "{side:?}");
+            let flags = fleets[&fleet].flags;
+            assert_ne!(flags & fleet::INCOMPLETE, 0, "{side:?}");
+            assert_eq!(flags & fleet::ACTIVE, 0, "{side:?}");
+        }
+    }
+
+    #[test]
+    fn a_loaded_rim_system_carries_the_rim_bit_for_either_side() {
+        // FUN_00433e40 sets S bit 0x40 for system family 0x92-0x93; a loaded
+        // system's id is its SYSTEMSD index alone, its family kept in
+        // system_families (load_game_data).
+        for side in [Faction::Alliance, Faction::Empire] {
+            for (family, rim) in [(0x90, 0), (0x92, sys::RIM)] {
+                let mut world = GameWorld::default();
+                let key = world.systems.insert(System {
+                    dat_id: DatId::new(0x64),
+                    ..System::default()
+                });
+                world.system_families.insert(key, family);
+                let mut r = crate::ai_production::SystemRecord {
+                    key,
+                    ..Default::default()
+                };
+                let inputs = RecordWorld {
+                    world: &world,
+                    movement: &crate::movement::MovementState::new(),
+                    transport: &crate::troop_transport::TroopTransportState::default(),
+                    marks: &Marks::default(),
+                    side,
+                };
+                fill_system(&mut r, &inputs, &HashMap::new(), 1);
+                // Unmarked, unheld and unexplored: S is the rim bit and
+                // NEUTRAL alone.
+                assert_eq!(r.s, rim | sys::NEUTRAL, "{side:?} {family:#x}");
+            }
+        }
+    }
+
+    /// An unexplored, populated, unheld system, with a fleet of `fleet_side`
+    /// over it whose one ship is completed when `usable`, and its record
+    /// for `side` as `fill_system` leaves it.
+    fn observed_record(
+        side: Faction,
+        fleet_side: Option<Faction>,
+        usable: bool,
+        own: bool,
+    ) -> crate::ai_production::SystemRecord {
+        let mut world = GameWorld::default();
+        let key = world.systems.insert(System {
+            dat_id: DatId::new(0x64),
+            is_populated: true,
+            ..System::default()
+        });
+        if let Some(fleet_side) = fleet_side {
+            let is_alliance = fleet_side == Faction::Alliance;
+            let class = world
+                .capital_ship_classes
+                .insert(crate::world::CapitalShipClass::default());
+            let mut ship = crate::world::ShipInstance::new(class, 100, is_alliance);
+            ship.completed = usable;
+            let fleet = world.fleets.insert(crate::world::Fleet {
+                location: key,
+                is_alliance,
+                capital_ships: vec![ship],
+                ..crate::world::Fleet::default()
+            });
+            world.systems[key].fleets.push(fleet);
+        }
+        let mut r = crate::ai_production::SystemRecord {
+            key,
+            own,
+            ..Default::default()
+        };
+        let inputs = RecordWorld {
+            world: &world,
+            movement: &crate::movement::MovementState::new(),
+            transport: &crate::troop_transport::TroopTransportState::default(),
+            marks: &Marks::default(),
+            side,
+        };
+        fill_system(&mut r, &inputs, &HashMap::new(), 1);
+        r
+    }
+
+    #[test]
+    fn a_system_under_the_sides_usable_fleet_gets_its_full_record_for_either_side() {
+        // FUN_00433e40.c:120-125 stops at Q 0x80 only while the side's view
+        // lacks +0x88 bit 1; FUN_0050fc80 copies it, with bit 0 (populated,
+        // FUN_0050fbf0), into a live view, and the side's active fleet there
+        // makes the view live (FUN_0050ac80; observation-levels.md). So the
+        // record reads POPULATED, and the Drop (FUN_004b1440) never takes a
+        // populated system. A held system's view is live too.
+        for side in [Faction::Alliance, Faction::Empire] {
+            for (fleet_side, own) in [(Some(side), false), (None, true)] {
+                let r = observed_record(side, fleet_side, true, own);
+                // Q 0x800_0000 marks a record that went past the view test;
+                // Q 0x80 also ends a full neutral record (FUN_00433e40's
+                // tail), so it tells nothing here.
+                assert_ne!(r.q & 0x800_0000, 0, "{side:?} {own}");
+                assert_ne!(r.s & sys::POPULATED, 0, "{side:?} {own}");
+            }
+        }
+    }
+
+    #[test]
+    fn an_unexplored_system_no_usable_fleet_of_the_side_observes_stops_at_q_0x80_for_either_side() {
+        // FUN_00433e40.c:120-125: without the view's +0x88 bit 1 the record
+        // is S and Q | 0x80 alone. Neither the other side's fleet nor the
+        // side's fleet of an unfinished ship (no +0x50 bit 0, FUN_004fe540)
+        // makes the side's view live (FUN_0050ac80).
+        for side in [Faction::Alliance, Faction::Empire] {
+            let other = if side == Faction::Alliance {
+                Faction::Empire
+            } else {
+                Faction::Alliance
+            };
+            for (fleet_side, usable) in [(None, true), (Some(other), true), (Some(side), false)] {
+                let r = observed_record(side, fleet_side, usable, false);
+                assert_ne!(r.q & 0x80, 0, "{side:?} {fleet_side:?}");
+                assert_eq!(r.q & 0x800_0000, 0, "{side:?} {fleet_side:?}");
+                assert_eq!(r.s, sys::NEUTRAL, "{side:?} {fleet_side:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_other_sides_intelligence_on_a_rim_system_gives_this_side_no_full_record() {
+        // The record's view test (FUN_00433e40.c:120-125) is per side; the
+        // world's exploration flag, which an intelligence mission of either
+        // side sets, is not. A core system (family 0x90, manual p. 69)
+        // keeps its full record; a rim one the side neither holds nor
+        // observes stops at Q 0x80 whatever the flag says.
+        for side in [Faction::Alliance, Faction::Empire] {
+            for (family, full) in [(0x90, true), (0x92, false)] {
+                let mut world = GameWorld::default();
+                let key = world.systems.insert(System {
+                    dat_id: DatId::new(0x64),
+                    is_populated: true,
+                    exploration_status: crate::dat::ExplorationStatus::Explored,
+                    ..System::default()
+                });
+                world.system_families.insert(key, family);
+                let mut r = crate::ai_production::SystemRecord {
+                    key,
+                    ..Default::default()
+                };
+                let inputs = RecordWorld {
+                    world: &world,
+                    movement: &crate::movement::MovementState::new(),
+                    transport: &crate::troop_transport::TroopTransportState::default(),
+                    marks: &Marks::default(),
+                    side,
+                };
+                fill_system(&mut r, &inputs, &HashMap::new(), 1);
+                assert_eq!(r.q & 0x800_0000 != 0, full, "{side:?} {family:#x}");
+                assert_eq!(r.s & sys::POPULATED != 0, full, "{side:?} {family:#x}");
+            }
+        }
+    }
 }

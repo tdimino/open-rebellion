@@ -8,6 +8,13 @@
     <style>
         html, body { margin: 0; padding: 0; overflow: hidden; background: #050510; }
         canvas { display: block; width: 100vw; height: 100vh; }
+        canvas:focus { outline: none; }
+        video.movie {
+            position: fixed;
+            object-fit: contain;
+            background: #000;
+            outline: none;
+        }
         #main-menu-semantics button {
             position: absolute;
             width: 1px;
@@ -253,6 +260,121 @@
                 register_plugin: register,
                 version: 1,
                 name: "open_rebellion_focus",
+            });
+        }());
+    </script>
+    <script>
+        (function registerMoviePlayer() {
+            "use strict";
+
+            // The movie window closes on a key other than Esc, except in the
+            // two trench-run movies (ids 0x70, 0x71: MDATA.202, .201), and the
+            // Smacker pump ends it on Esc or the left button (FUN_00421790,
+            // FUN_005f7240; ghidra/notes/movies.md, "The return path").
+            const KEYS_IGNORED = new Set([201, 202]);
+            const canvas = document.getElementById("glcanvas");
+            let current = null;
+
+            function close(play) {
+                if (!current || current.play !== play) {
+                    return false;
+                }
+                const video = current.video;
+                current = null;
+                document.removeEventListener("keydown", onKey, true);
+                video.pause();
+                video.removeAttribute("src");
+                video.load();
+                video.remove();
+                canvas.focus({ preventScroll: true });
+                return true;
+            }
+
+            function finish(play) {
+                if (close(play) && wasm_exports && typeof wasm_exports.or_movie_ended === "function") {
+                    wasm_exports.or_movie_ended(play);
+                }
+            }
+
+            function onKey(event) {
+                if (!current) {
+                    return;
+                }
+                event.preventDefault();
+                if (event.key === "Escape" || !KEYS_IGNORED.has(current.movie)) {
+                    finish(current.play);
+                }
+            }
+
+            // The canvas fills the window (100vw by 100vh), so the game's
+            // fractions of its screen place the video: a message movie's
+            // picture leaves the caption field below it to the canvas
+            // (FUN_00421790, movies::video_bounds).
+            function show(movie, play, volume, left, top, width, height) {
+                if (current) {
+                    finish(current.play);
+                }
+                const video = document.createElement("video");
+                video.className = "movie";
+                video.style.left = `${left * 100}vw`;
+                video.style.top = `${top * 100}vh`;
+                video.style.width = `${width * 100}vw`;
+                video.style.height = `${height * 100}vh`;
+                video.src = `data/movies/${String(movie).padStart(3, "0")}.webm`;
+                video.playsInline = true;
+                video.disablePictureInPicture = true;
+                video.tabIndex = -1;
+                video.volume = Math.min(Math.max(volume, 0), 1);
+                video.muted = volume <= 0;
+                current = { video, movie, play };
+                video.addEventListener("ended", () => finish(play));
+                video.addEventListener("error", () => finish(play));
+                video.addEventListener("pointerdown", event => {
+                    event.preventDefault();
+                    if (event.button === 0) {
+                        finish(play);
+                    }
+                });
+                video.addEventListener("contextmenu", event => event.preventDefault());
+                document.addEventListener("keydown", onKey, true);
+                document.body.append(video);
+                video.focus({ preventScroll: true });
+                video.play().catch(error => {
+                    // A page that has had no click or key yet may not start
+                    // sound; the movie then plays without it.
+                    if (error.name === "NotAllowedError" && !video.muted) {
+                        video.muted = true;
+                        video.play().catch(() => finish(play));
+                    } else {
+                        finish(play);
+                    }
+                });
+            }
+
+            // The game sends the video's place again when the screen
+            // changes, so a resize keeps a message movie's picture over its
+            // frame.
+            function place(play, left, top, width, height) {
+                if (!current || current.play !== play) {
+                    return;
+                }
+                const video = current.video;
+                video.style.left = `${left * 100}vw`;
+                video.style.top = `${top * 100}vh`;
+                video.style.width = `${width * 100}vw`;
+                video.style.height = `${height * 100}vh`;
+            }
+
+            function register(imports) {
+                imports.env.or_movie_play = show;
+                imports.env.or_movie_stop = close;
+                imports.env.or_movie_place = place;
+            }
+
+            miniquad_add_plugin({
+                register_plugin: register,
+                version: 1,
+                name: "open_rebellion_movies",
             });
         }());
     </script>

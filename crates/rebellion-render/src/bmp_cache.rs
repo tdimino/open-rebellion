@@ -1447,6 +1447,9 @@ pub struct BmpCache {
     macroquad_textures: HashMap<(DllSource, u32), Option<Texture2D>>,
     /// Native-style per-pixel hit masks decoded from the original BMPs.
     hit_masks: HashMap<(DllSource, u32), Option<BitmapHitMask>>,
+    /// Original bitmaps keyed as a CoolStrobeButton draws them.
+    button_textures: HashMap<(DllSource, u32), Option<TextureHandle>>,
+    macroquad_button_textures: HashMap<(DllSource, u32), Option<Texture2D>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1454,6 +1457,8 @@ struct BitmapHitMask {
     width: usize,
     height: usize,
     opaque: Vec<bool>,
+    /// Each pixel's palette index, top row first.
+    indices: Vec<u8>,
 }
 
 impl BitmapHitMask {
@@ -1504,11 +1509,13 @@ impl BitmapHitMask {
         let transparent_index = *bytes.get(pixel_offset)?;
         let bottom_up = signed_height > 0;
         let mut opaque = Vec::with_capacity(width.checked_mul(height)?);
+        let mut indices = Vec::with_capacity(width.checked_mul(height)?);
         for y in 0..height {
             let stored_y = if bottom_up { height - 1 - y } else { y };
             let row_offset = pixel_offset + stored_y * row_stride;
             for x in 0..width {
                 opaque.push(bytes[row_offset + x] != transparent_index);
+                indices.push(bytes[row_offset + x]);
             }
         }
 
@@ -1516,6 +1523,7 @@ impl BitmapHitMask {
             width,
             height,
             opaque,
+            indices,
         })
     }
 
@@ -1539,6 +1547,8 @@ impl BmpCache {
             textures: HashMap::new(),
             macroquad_textures: HashMap::new(),
             hit_masks: HashMap::new(),
+            button_textures: HashMap::new(),
+            macroquad_button_textures: HashMap::new(),
         }
     }
 
@@ -1550,6 +1560,8 @@ impl BmpCache {
         self.textures.clear();
         self.macroquad_textures.clear();
         self.hit_masks.clear();
+        self.button_textures.clear();
+        self.macroquad_button_textures.clear();
     }
 
     /// Set an optional HD PNG directory.
@@ -1694,6 +1706,57 @@ impl BmpCache {
         }
 
         self.macroquad_textures.get(&key)?.as_ref()
+    }
+
+    /// An original bitmap as a CoolStrobeButton draws it
+    /// ([`button_color_image`]), for the egui interface layers.
+    pub fn get_button(
+        &mut self,
+        ctx: &egui::Context,
+        source: DllSource,
+        resource_id: u32,
+    ) -> Option<&TextureHandle> {
+        let key = (source, resource_id);
+        if !self.button_textures.contains_key(&key) {
+            let handle = self
+                .load_original_bytes(source, resource_id)
+                .and_then(|bytes| button_color_image(&bytes, source, resource_id).ok())
+                .map(|image| {
+                    ctx.load_texture(
+                        format!("{}_{}_button", source.texture_prefix(), resource_id),
+                        image,
+                        AssetVariant::Original.texture_options(),
+                    )
+                });
+            if handle.is_none() {
+                eprintln!(
+                    "[bmp_cache] button asset unavailable source={} resource_id={}",
+                    source.dll_dir_name(),
+                    resource_id
+                );
+            }
+            self.button_textures.insert(key, handle);
+        }
+        self.button_textures.get(&key)?.as_ref()
+    }
+
+    /// [`Self::get_button`] as a Macroquad texture.
+    pub fn get_macroquad_button(&mut self, source: DllSource, resource_id: u32) -> Option<&Texture2D> {
+        let key = (source, resource_id);
+        if !self.macroquad_button_textures.contains_key(&key) {
+            let texture = self
+                .load_original_bytes(source, resource_id)
+                .and_then(|bytes| button_macroquad_texture(&bytes, source, resource_id));
+            if texture.is_none() {
+                eprintln!(
+                    "[bmp_cache] macroquad button asset unavailable source={} resource_id={}",
+                    source.dll_dir_name(),
+                    resource_id
+                );
+            }
+            self.macroquad_button_textures.insert(key, texture);
+        }
+        self.macroquad_button_textures.get(&key)?.as_ref()
     }
 
     fn ensure_hit_mask(&mut self, source: DllSource, resource_id: u32) {
@@ -1917,6 +1980,12 @@ fn uses_blue_screen_transparency(source: DllSource, resource_id: u32) -> bool {
                 | 10710..=10711
                 | 10716..=10745
                 | 10971..=10976
+                // The Operation Report's shells, whose blue aperture holds
+                // the picture, and its rail art, both blitted keyed over
+                // the picture (FUN_0044c630 → FUN_005fd0f0); the finders
+                // key the same shells over their panels (FUN_00461960).
+                | 10335..=10336
+                | 10820..=10821
                 // The Fleet window's frames, pictures and indicators, the
                 // Defenses window's tabs and row frames, the Missions
                 // window's row frames and tabs (buttons blit keyed,
@@ -1995,6 +2064,28 @@ fn uses_lime_screen_transparency(source: DllSource, resource_id: u32) -> bool {
     source == DllSource::Tactical && (2001..=2029).contains(&resource_id)
 }
 
+/// The destroyed system's asteroid field (STRATEGY 10240), which
+/// `FUN_0045bbb0` swaps in for the planet keyed like it: the native control
+/// keys the first stored pixel's palette index (`FUN_005fca00`), index 0
+/// here, the bitmap's only black entry.
+fn uses_black_transparency(source: DllSource, resource_id: u32) -> bool {
+    source == DllSource::Strategy && resource_id == 10240
+}
+
+/// Bitmaps keyed on their first stored pixel outside the CoolStrobeButton
+/// painters ([`BmpCache::get_button`] keys every button): the burn marks GOKRES `0x2640`-`0x278f` (`(id & 0xfff) + 0x2000`, which
+/// `FUN_0042c3b0.c:350-356` composes keyed over a damaged craft's portrait)
+/// and the Battle Summary's and Operation Report's filter tabs STRATEGY
+/// `0x2865`-`0x287c` (buttons, `FUN_00602d30`) key the same way; in all of
+/// them no other index shares the key's colour.
+fn uses_first_pixel_transparency(source: DllSource, resource_id: u32) -> bool {
+    match source {
+        DllSource::Gokres => matches!(resource_id, 0x2640..=0x278f),
+        DllSource::Strategy => matches!(resource_id, 0x2865..=0x287c),
+        _ => false,
+    }
+}
+
 fn decode_macroquad_texture(
     bytes: &[u8],
     source: DllSource,
@@ -2029,6 +2120,52 @@ fn decode_bmp_palette(bytes: &[u8]) -> Option<[[u8; 4]; 256]> {
 
 /// Decode a staged image and apply the original game's palette-blue
 /// transparency to resources whose extracted bitmaps contain that matte.
+/// A CoolStrobeButton's bitmap as `FUN_00602d30` draws it: unless the
+/// button's `+0xc4` bit `0x80` is set (`FUN_006030c0(.., 0x80)`, as the
+/// Message Index and the Fleet window do), it composes the window background
+/// (`+0xa4`) and blits the bitmap keyed over it (`FUN_005fd0f0`), the key
+/// being the first stored pixel's palette index (`FUN_005fc710`, the
+/// bitmap's `+8`). That index is transparent here.
+fn button_rgba_image(
+    bytes: &[u8],
+    source: DllSource,
+    resource_id: u32,
+) -> image::ImageResult<image::RgbaImage> {
+    let mut rgba = decode_rgba_image(bytes, source, resource_id)?;
+    if let Some(mask) = BitmapHitMask::from_bytes(bytes) {
+        if (mask.width, mask.height) == (rgba.width() as usize, rgba.height() as usize) {
+            for (pixel, opaque) in rgba.pixels_mut().zip(&mask.opaque) {
+                if !opaque {
+                    pixel[3] = 0;
+                }
+            }
+        }
+    }
+    Ok(rgba)
+}
+
+fn button_color_image(
+    bytes: &[u8],
+    source: DllSource,
+    resource_id: u32,
+) -> image::ImageResult<egui::ColorImage> {
+    let rgba = button_rgba_image(bytes, source, resource_id)?;
+    let (w, h) = rgba.dimensions();
+    Ok(egui::ColorImage::from_rgba_unmultiplied(
+        [w as usize, h as usize],
+        rgba.as_raw(),
+    ))
+}
+
+fn button_macroquad_texture(bytes: &[u8], source: DllSource, resource_id: u32) -> Option<Texture2D> {
+    let rgba = button_rgba_image(bytes, source, resource_id).ok()?;
+    let width = u16::try_from(rgba.width()).ok()?;
+    let height = u16::try_from(rgba.height()).ok()?;
+    let texture = Texture2D::from_rgba8(width, height, rgba.as_raw());
+    texture.set_filter(FilterMode::Nearest);
+    Some(texture)
+}
+
 fn decode_color_image(
     bytes: &[u8],
     source: DllSource,
@@ -2043,12 +2180,39 @@ fn decode_color_image(
     ))
 }
 
+/// The tactical window's realized palette (`FUN_0059ae70`) takes entries
+/// 10-245 from the scene palette (`FUN_005c14b0`) and entries 0-9 and
+/// 246-255 from the system palette (`GetSystemPaletteEntries`), so an
+/// indexed tactical bitmap shows its static entries in the system's colours.
+/// Only entry 254 differs from the bitmaps' own palettes where a tactical
+/// bitmap uses it (the mission graphics 2151-2156).
+/// hyp: the system's entry 254 is white; A0 TAC-05-C007, C008, C009 and C014
+/// show every index-254 pixel white.
+const TACTICAL_SYSTEM_PALETTE_254: [u8; 3] = [255, 255, 255];
+
+fn apply_tactical_system_palette(bytes: &[u8], rgba: &mut image::RgbaImage) {
+    let Some(mask) = BitmapHitMask::from_bytes(bytes) else {
+        return;
+    };
+    if (mask.width, mask.height) != (rgba.width() as usize, rgba.height() as usize) {
+        return;
+    }
+    for (pixel, &index) in rgba.pixels_mut().zip(&mask.indices) {
+        if index == 254 {
+            pixel.0[..3].copy_from_slice(&TACTICAL_SYSTEM_PALETTE_254);
+        }
+    }
+}
+
 fn decode_rgba_image(
     bytes: &[u8],
     source: DllSource,
     resource_id: u32,
 ) -> image::ImageResult<image::RgbaImage> {
     let mut rgba = image::load_from_memory(bytes)?.to_rgba8();
+    if source == DllSource::Tactical {
+        apply_tactical_system_palette(bytes, &mut rgba);
+    }
     if uses_blue_screen_transparency(source, resource_id) {
         // The facility pictures carry authored near-blue pixels (9006 and
         // 9010's (0, 0, 196)) that the palette-index key leaves alone, so
@@ -2067,6 +2231,20 @@ fn decode_rgba_image(
     } else if uses_lime_screen_transparency(source, resource_id) {
         for pixel in rgba.pixels_mut() {
             if pixel[0] == 0 && pixel[1] == 255 && pixel[2] == 0 {
+                pixel[3] = 0;
+            }
+        }
+    } else if uses_black_transparency(source, resource_id) {
+        for pixel in rgba.pixels_mut() {
+            if pixel[0] == 0 && pixel[1] == 0 && pixel[2] == 0 {
+                pixel[3] = 0;
+            }
+        }
+    } else if uses_first_pixel_transparency(source, resource_id) && rgba.height() > 0 {
+        // A bottom-up BMP stores its bottom-left pixel first.
+        let key = *rgba.get_pixel(0, rgba.height() - 1);
+        for pixel in rgba.pixels_mut() {
+            if pixel.0[..3] == key.0[..3] {
                 pixel[3] = 0;
             }
         }
@@ -2353,6 +2531,164 @@ mod tests {
     }
 
     #[test]
+    fn burn_marks_and_filter_tabs_key_their_first_stored_pixel() {
+        // FUN_0042c3b0.c:350-356 composes the burn marks GOKRES
+        // (id & 0xfff) + 0x2000 over a destroyed or damaged craft keyed
+        // (FUN_005fd0f0), and the Battle Summary's filter tabs, buttons
+        // (FUN_0046f360.c:626-735), blit keyed too (FUN_00602d30). The key
+        // is the first stored pixel's index (FUN_005fbd20 -> FUN_005fd170):
+        // 252, palette blue, in all 38 marks 0x2640-0x278f and in the
+        // Personnel tabs' matte (0x2869, 0x286a, 0x2875, 0x2876). The A0
+        // Coruscant Battle Summary shows the list through both.
+        let mut image = image::RgbaImage::new(2, 2);
+        image.put_pixel(0, 0, image::Rgba([40, 40, 40, 255]));
+        image.put_pixel(1, 0, image::Rgba([0, 0, 255, 255]));
+        image.put_pixel(0, 1, image::Rgba([0, 0, 255, 255]));
+        image.put_pixel(1, 1, image::Rgba([200, 90, 20, 255]));
+        let mut encoded = Vec::new();
+        image::DynamicImage::ImageRgba8(image)
+            .write_to(
+                &mut std::io::Cursor::new(&mut encoded),
+                image::ImageFormat::Png,
+            )
+            .unwrap();
+        let alpha = |source, id| -> Vec<u8> {
+            decode_color_image(&encoded, source, id)
+                .unwrap()
+                .pixels
+                .iter()
+                .map(|pixel| pixel.a())
+                .collect()
+        };
+        for id in [0x2640, 0x2741, 0x278f] {
+            assert_eq!(alpha(DllSource::Gokres, id), [255, 0, 0, 255], "{id:#x}");
+        }
+        for id in [0x2865, 0x2869, 0x286a, 0x2875, 0x2876, 0x287c] {
+            assert_eq!(alpha(DllSource::Strategy, id), [255, 0, 0, 255], "{id:#x}");
+        }
+    }
+
+    /// An 8-bit bottom-up BMP, 2 by 2, whose first stored pixel (the image's
+    /// bottom-left) is palette index 1, colour (58, 58, 58); index 2 shares
+    /// that colour.
+    /// port: test fixture values, not rules.
+    fn button_bmp() -> Vec<u8> {
+        let mut bytes = Vec::new();
+        let palette_entries = 256_u32;
+        let pixel_offset = 14 + 40 + palette_entries * 4;
+        let file_size = pixel_offset + 8;
+        bytes.extend_from_slice(b"BM");
+        bytes.extend_from_slice(&file_size.to_le_bytes());
+        bytes.extend_from_slice(&[0; 4]);
+        bytes.extend_from_slice(&pixel_offset.to_le_bytes());
+        bytes.extend_from_slice(&40_u32.to_le_bytes());
+        bytes.extend_from_slice(&2_i32.to_le_bytes());
+        bytes.extend_from_slice(&2_i32.to_le_bytes());
+        bytes.extend_from_slice(&1_u16.to_le_bytes());
+        bytes.extend_from_slice(&8_u16.to_le_bytes());
+        bytes.extend_from_slice(&[0; 4]);
+        bytes.extend_from_slice(&8_u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 8]);
+        bytes.extend_from_slice(&palette_entries.to_le_bytes());
+        bytes.extend_from_slice(&[0; 4]);
+        for index in 0..palette_entries {
+            let bgr = match index {
+                1 | 2 => [58, 58, 58],
+                3 => [200, 100, 50],
+                _ => [0, 0, 0],
+            };
+            bytes.extend_from_slice(&bgr);
+            bytes.push(0);
+        }
+        // Bottom row first: index 1 (the key), index 3; top row: 2, 3.
+        bytes.extend_from_slice(&[1, 3, 0, 0, 2, 3, 0, 0]);
+        bytes
+    }
+
+    #[test]
+    fn a_tactical_bitmaps_palette_entry_254_shows_as_the_systems() {
+        // FUN_0059ae70 realizes the tactical window's palette: entries
+        // 10-245 from the scene palette (FUN_005c14b0), 0-9 and 246-255 from
+        // GetSystemPaletteEntries. A0 TAC-05-C007, C008, C009 and C014 show
+        // every index-254 pixel of the mission graphics 2151-2156 white.
+        let mut bytes = button_bmp();
+        let pixels = bytes.len() - 8;
+        bytes[pixels + 1] = 254;
+        let palette = 14 + 40;
+        bytes[palette + 254 * 4..palette + 254 * 4 + 3].copy_from_slice(&[255, 255, 0]);
+        let tactical = decode_color_image(&bytes, DllSource::Tactical, 2154).unwrap();
+        // Bottom row is the image's second row: index 1, then 254.
+        assert_eq!(tactical.pixels[3], egui::Color32::from_rgb(255, 255, 255));
+        assert_eq!(tactical.pixels[2], egui::Color32::from_rgb(58, 58, 58));
+        let strategy = decode_color_image(&bytes, DllSource::Strategy, 2154).unwrap();
+        assert_eq!(strategy.pixels[3], egui::Color32::from_rgb(0, 255, 255));
+    }
+
+    #[test]
+    fn only_an_uncompressed_single_plane_8_bit_bitmap_has_a_hit_mask() {
+        // The mask reads one stored byte a pixel, so any other header, or
+        // pixel data cut short, has none.
+        assert!(BitmapHitMask::from_bytes(&button_bmp()).is_some());
+        let spoils: [(&str, usize, &[u8]); 6] = [
+            ("a short info header", 14, &39_u32.to_le_bytes()),
+            ("no width", 18, &0_i32.to_le_bytes()),
+            ("no height", 22, &0_i32.to_le_bytes()),
+            ("two planes", 26, &2_u16.to_le_bytes()),
+            ("4 bits a pixel", 28, &4_u16.to_le_bytes()),
+            ("RLE8", 30, &1_u32.to_le_bytes()),
+        ];
+        for (name, offset, value) in spoils {
+            let mut bytes = button_bmp();
+            bytes[offset..offset + value.len()].copy_from_slice(value);
+            assert!(BitmapHitMask::from_bytes(&bytes).is_none(), "{name} gave a mask");
+        }
+        let mut truncated = button_bmp();
+        truncated.pop();
+        assert!(BitmapHitMask::from_bytes(&truncated).is_none());
+    }
+
+    #[test]
+    fn a_button_bitmap_keys_its_first_stored_pixels_palette_index() {
+        // FUN_00602d30: with +0xc4 bit 0x80 clear (FUN_00602150 sets 0x10020
+        // and 0x20000), the bitmap goes through FUN_005fd0f0, keyed on the
+        // first stored pixel's palette index; index 2 shares the colour and
+        // stays.
+        let image = button_color_image(&button_bmp(), DllSource::Tactical, 1).unwrap();
+        let alpha: Vec<u8> = image.pixels.iter().map(|pixel| pixel.a()).collect();
+        // Top row (index 2, 3), then the bottom row (index 1, 3).
+        assert_eq!(alpha, vec![255, 255, 0, 255]);
+        let plain = decode_color_image(&button_bmp(), DllSource::Tactical, 1).unwrap();
+        assert!(plain.pixels.iter().all(|pixel| pixel.a() == 255));
+    }
+
+    #[test]
+    fn the_destroyed_systems_asteroid_field_keys_its_black_background() {
+        // STRATEGY 10240 (FUN_0045bbb0) keys palette index 0, its only black
+        // entry; other bitmaps keep their black pixels.
+        let mut image = image::RgbaImage::new(4, 1);
+        image.put_pixel(0, 0, image::Rgba([0, 0, 0, 255]));
+        image.put_pixel(1, 0, image::Rgba([120, 100, 80, 255]));
+        image.put_pixel(2, 0, image::Rgba([0, 100, 80, 255]));
+        image.put_pixel(3, 0, image::Rgba([100, 0, 0, 255]));
+        let mut encoded = Vec::new();
+        image::DynamicImage::ImageRgba8(image)
+            .write_to(
+                &mut std::io::Cursor::new(&mut encoded),
+                image::ImageFormat::Png,
+            )
+            .unwrap();
+
+        let decoded = decode_color_image(&encoded, DllSource::Strategy, 10_240).unwrap();
+        let alpha: Vec<u8> = decoded.pixels.iter().map(|pixel| pixel.a()).collect();
+        assert_eq!(alpha, vec![0, 255, 255, 255]);
+        // 10242 is keyed by no rule; a Tactical 10240 is another bitmap.
+        for (source, id) in [(DllSource::Strategy, 10_242), (DllSource::Tactical, 10_240)] {
+            let other = decode_color_image(&encoded, source, id).unwrap();
+            assert_eq!(other.pixels[0].a(), 255, "{id}");
+        }
+    }
+
+    #[test]
     fn encyclopedia_topic_controls_key_the_blue_matte_but_keep_fill_and_shadow() {
         // STRATEGY 10382..10387 use pure palette blue as the transparent
         // control matte. The enabled arrow fill and dark drop shadow are
@@ -2552,6 +2888,28 @@ mod tests {
         }
         for opaque in [262, 263, 264] {
             assert_eq!(alpha(opaque), 255, "{opaque}");
+        }
+    }
+
+    #[test]
+    fn the_operation_report_shell_and_rail_show_the_picture_through_their_blue() {
+        // FUN_0044c630 copies the picture to (12, 13), then blits the shell
+        // 0x285f / 0x2860 and the rail art 0x2a44 / 0x2a45 over it keyed
+        // (FUN_005fd0f0); the shells' 400x310 aperture is palette blue.
+        let mut image = image::RgbaImage::new(2, 1);
+        image.put_pixel(0, 0, image::Rgba([0, 0, 255, 255]));
+        image.put_pixel(1, 0, image::Rgba([51, 120, 156, 255]));
+        let mut encoded = Vec::new();
+        image::DynamicImage::ImageRgba8(image)
+            .write_to(
+                &mut std::io::Cursor::new(&mut encoded),
+                image::ImageFormat::Png,
+            )
+            .unwrap();
+        for id in [0x285f, 0x2860, 0x2a44, 0x2a45] {
+            let decoded = decode_color_image(&encoded, DllSource::Strategy, id).unwrap();
+            assert_eq!(decoded.pixels[0].a(), 0, "{id:#x}");
+            assert_eq!(decoded.pixels[1].a(), 255, "{id:#x}");
         }
     }
 

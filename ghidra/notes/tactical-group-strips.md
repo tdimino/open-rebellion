@@ -36,6 +36,14 @@ Both strips are child buttons of the tactical window (vtable `0x0066bb00`, ctor 
 
 **Keys.** `FUN_0059b730` (key down) maps `1`-`8` to: release every task-force slot (`FUN_0059b430`) and every fighter slot (`FUN_0059b600`), then press `0xad02 + i` through `FUN_0059ca90`; the key-up branch releases it. `F1`-`F8` post camera mode `0xb` with the task-force index when that slot exists (`FUN_005c2990`).
 
+**Slot presence.** A fighter slot shows a group while the controller's
+`+0x154 + 4 i` holds its id (`FUN_005a0c20`, `FUN_0059f5f0`); one without
+draws state 2 and takes no click (`FUN_0059b620`). `FUN_005a0320` clears
+it: from `FUN_005ca530` when the local side's group takes order 2 or 6, and
+from `FUN_005a8d30` and `FUN_005aae40` when the group has no squadron left.
+`FUN_0059fca0` then redraws the strip (`FUN_005c0e40`). `FUN_0059f680`
+gives it back from the trench run's success, state 6 of `FUN_005cfec0`.
+
 ## Port
 
 `crates/rebellion-render/src/tactical_view.rs`: `TASK_FORCE_BUTTONS`, `FIGHTER_GROUP_BUTTONS`, `TASK_FORCE_HEADER_POINT`, `FIGHTER_GROUP_HEADER_POINT` and the strip draw. Before this note the port drew both rows at a 26-pixel pitch from x 60 and 330, the task-force header at (10, 1) and the fighter header at (275, 1), and drew the squadron bitmaps 17 rows tall; so a click at (360, 10), the original's Red slot, hit the port's Blue slot.

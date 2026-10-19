@@ -740,7 +740,6 @@ impl ReplayRuntime {
             player_is_alliance,
             blockade,
             uprising,
-            death_star,
             research,
             jedi,
             victory,
@@ -774,7 +773,6 @@ impl ReplayRuntime {
                 fog,
                 blockade,
                 uprising,
-                death_star,
                 research,
                 jedi,
                 victory,
@@ -880,7 +878,6 @@ impl ReplayRuntime {
             player_is_alliance: self.player_is_alliance,
             blockade: self.states.blockade.clone(),
             uprising: self.states.uprising.clone(),
-            death_star: self.states.death_star.clone(),
             research: self.states.research.clone(),
             jedi: self.states.jedi.clone(),
             victory: self.states.victory.clone(),
@@ -1110,7 +1107,6 @@ mod tests {
     use rebellion_core::betrayal::BetrayalState;
     use rebellion_core::blockade::BlockadeState;
     use rebellion_core::dat::{ExplorationStatus, Faction, SectorGroup};
-    use rebellion_core::death_star::DeathStarState;
     use rebellion_core::economy::EconomyState;
     use rebellion_core::events::EventState;
     use rebellion_core::jedi::JediState;
@@ -1212,7 +1208,6 @@ mod tests {
             player_is_alliance: true,
             blockade: BlockadeState::new(),
             uprising: UprisingState::new(),
-            death_star: DeathStarState::default(),
             research: ResearchState::new(),
             jedi: JediState::new(),
             victory: VictoryState::new(alliance_hq, empire_hq),

@@ -72,6 +72,8 @@ pub struct Observed {
     pub paused: bool,
     /// The advisor's opening briefing holds the clock.
     pub briefing: bool,
+    /// The advisor's ending script has stopped the clock.
+    pub ending: bool,
     /// The Message Index shows Advice.
     pub advice_index: bool,
 }
@@ -134,14 +136,21 @@ impl DevPolicy {
             && !(self.advice == AdvicePolicy::Close && self.advice_alert_frames > 0)
         {
             Some(format!("pause alert (Resume Game Play?) day={}", o.day))
-        } else if o.briefing {
+        } else if o.briefing && condition != WaitCondition::BriefingSkipped {
             Some(format!(
                 "the advisor's briefing holds the clock day={}",
                 o.day
             ))
+        } else if o.ending {
+            Some(format!("the advisor's ending stops the clock day={}", o.day))
         } else if o.main_menu {
             Some(format!("main menu day={}", o.day))
-        } else if o.paused && condition != WaitCondition::PauseAlert {
+        } else if o.paused
+            && !matches!(
+                condition,
+                WaitCondition::PauseAlert | WaitCondition::BriefingSkipped
+            )
+        {
             Some(format!("the clock is paused day={}", o.day))
         } else {
             None
@@ -293,5 +302,416 @@ impl DevPolicy {
         } else {
             self.missing = None;
         }
+    }
+}
+
+/// Whether the playing movie gives way to the commands: a script line waiting
+/// for the main menu or the galaxy, or a `Wait until galaxy`, ends it as
+/// Escape does (`FUN_005f7240` sends `0x404`; `FUN_00421790` closes the
+/// movie and `FUN_004138a0` moves to the next state, whose own movie gives
+/// way the same frame it opens). A command that runs anywhere (`Capture`,
+/// `Wait <n> ms`, `Press`) leaves the movie playing.
+#[must_use]
+pub fn skips_movie(line_waiting: bool, wait: Option<WaitCondition>) -> bool {
+    line_waiting || wait == Some(WaitCondition::Galaxy)
+}
+
+/// What `Skip briefing` reads of the advisor's opening briefing.
+pub trait Briefing {
+    /// The briefing holds the game clock, until its step 11.
+    fn holds_clock(&self) -> bool;
+    /// The tour's input hooks are in, from step 12 (`FUN_0041d9d0`) to
+    /// step 13.
+    fn tour_active(&self) -> bool;
+    /// Escape on release while the hooks are in (`lpfn_0041d8f0` →
+    /// `FUN_0043a200`); it counts once.
+    fn skip_tour(&mut self);
+}
+
+impl Briefing for rebellion_render::AdvisorState {
+    fn holds_clock(&self) -> bool {
+        Self::holds_clock(self)
+    }
+
+    fn tour_active(&self) -> bool {
+        Self::tour_active(self)
+    }
+
+    fn skip_tour(&mut self) {
+        Self::skip_tour(self);
+    }
+}
+
+/// One frame of `Skip briefing`'s wait; returns whether it is met. The
+/// opening slot fires before its step 12 puts the tour's hooks in, and until
+/// then Escape skips nothing (`ghidra/notes/droid-advisor-triggers.md`,
+/// "Skipping the tour"), so the skip waits for them, as a hand pressing
+/// Escape once the tour starts. The line is met once the briefing lets go
+/// of the clock: the skip slot runs step 11 after its reply (ALBRIEF 10165,
+/// EMBRIEF 11157).
+pub fn skip_briefing(briefing: &mut impl Briefing) -> bool {
+    if briefing.tour_active() {
+        briefing.skip_tour();
+    }
+    !briefing.holds_clock()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_line_waiting_for_the_menu_or_the_galaxy_skips_the_movie_as_escape_does() {
+        // FUN_005f7240 0x404 (Escape) ends any movie; only a line that
+        // cannot run while it plays, or a wait for the galaxy, sends it.
+        assert!(skips_movie(true, None));
+        assert!(skips_movie(false, Some(WaitCondition::Galaxy)));
+        assert!(!skips_movie(false, None));
+        assert!(!skips_movie(false, Some(WaitCondition::Day(3))));
+        assert!(!skips_movie(false, Some(WaitCondition::BattleAlert)));
+    }
+
+    fn observed(ending: bool) -> Observed {
+        Observed {
+            day: 9,
+            mode: "Galaxy".to_owned(),
+            galaxy: true,
+            main_menu: false,
+            battle_alert: None,
+            results: false,
+            pause_alert: false,
+            paused: false,
+            briefing: false,
+            ending,
+            advice_index: false,
+        }
+    }
+
+    /// The frame (from 1) on which `blocker` first refuses within
+    /// `frames` calls, and its cause.
+    fn refusal(
+        policy: &mut DevPolicy,
+        observed: &Observed,
+        condition: WaitCondition,
+        frames: u32,
+    ) -> Option<(u32, String)> {
+        (1..=frames).find_map(|frame| {
+            policy
+                .blocker(observed, condition)
+                .map(|cause| (frame, cause))
+        })
+    }
+
+    const DAY: WaitCondition = WaitCondition::Day(10);
+
+    #[test]
+    fn a_wait_for_a_day_refuses_once_the_ending_has_stopped_the_clock() {
+        let mut policy = DevPolicy::default();
+        for _ in 1..BLOCKED_FRAMES {
+            assert_eq!(policy.blocker(&observed(true), DAY), None);
+        }
+        assert_eq!(
+            policy.blocker(&observed(true), DAY),
+            Some("blocked: the advisor's ending stops the clock day=9".to_owned())
+        );
+        let mut running = DevPolicy::default();
+        for _ in 0..=BLOCKED_FRAMES {
+            assert_eq!(running.blocker(&observed(false), DAY), None);
+        }
+    }
+
+    #[test]
+    fn a_battle_alert_blocks_a_wait_unless_a_battle_policy_answers_it() {
+        let alert = Observed {
+            battle_alert: Some("Yavin".to_owned()),
+            ..observed(false)
+        };
+        let blocked = Some((30, "blocked: battle alert at Yavin day=9".to_owned()));
+        assert_eq!(refusal(&mut DevPolicy::default(), &alert, DAY, 200), blocked);
+        let mut simulate = DevPolicy {
+            battle: BattlePolicy::Simulate,
+            ..DevPolicy::default()
+        };
+        assert_eq!(refusal(&mut simulate, &alert, DAY, 200), None);
+        // Answering it keeps the mode off the galaxy without refusing.
+        let off = Observed {
+            galaxy: false,
+            mode: "TacticalCombat".to_owned(),
+            ..alert.clone()
+        };
+        assert_eq!(refusal(&mut simulate, &off, DAY, 200), None);
+        let mut gave_up = DevPolicy {
+            battle: BattlePolicy::Simulate,
+            gave_up: true,
+            ..DevPolicy::default()
+        };
+        assert_eq!(refusal(&mut gave_up, &alert, DAY, 200), blocked);
+        // Waits for a battle never block.
+        assert_eq!(
+            refusal(&mut DevPolicy::default(), &alert, WaitCondition::Battle, 200),
+            None
+        );
+    }
+
+    #[test]
+    fn results_and_an_advice_index_that_will_not_close_block_after_three_clicks() {
+        let results = Observed {
+            results: true,
+            ..observed(false)
+        };
+        let stuck = DevPolicy {
+            results_attempts: BUTTON_ATTEMPTS,
+            ..DevPolicy::default()
+        };
+        assert_eq!(
+            refusal(&mut { stuck }, &results, DAY, 200),
+            Some((
+                30,
+                "blocked: Results/Close did not close the Results day=9".to_owned()
+            ))
+        );
+        let trying = DevPolicy {
+            results_attempts: BUTTON_ATTEMPTS - 1,
+            ..DevPolicy::default()
+        };
+        assert_eq!(refusal(&mut { trying }, &results, DAY, 200), None);
+        let no_results = DevPolicy {
+            results_attempts: BUTTON_ATTEMPTS,
+            ..DevPolicy::default()
+        };
+        assert_eq!(refusal(&mut { no_results }, &observed(false), DAY, 200), None);
+
+        let index = Observed {
+            advice_index: true,
+            ..observed(false)
+        };
+        let close = |attempts| DevPolicy {
+            advice: AdvicePolicy::Close,
+            advice_attempts: attempts,
+            ..DevPolicy::default()
+        };
+        assert_eq!(
+            refusal(&mut close(BUTTON_ATTEMPTS), &index, DAY, 200),
+            Some((
+                30,
+                "blocked: MessageIndex/Close did not close the Advice index day=9".to_owned()
+            ))
+        );
+        assert_eq!(refusal(&mut close(BUTTON_ATTEMPTS - 1), &index, DAY, 200), None);
+        let left_open = DevPolicy {
+            advice_attempts: BUTTON_ATTEMPTS,
+            ..DevPolicy::default()
+        };
+        assert_eq!(refusal(&mut { left_open }, &index, DAY, 200), None);
+    }
+
+    #[test]
+    fn a_pause_alert_blocks_unless_waited_for_or_answered_by_the_advice_policy() {
+        let alert = Observed {
+            pause_alert: true,
+            ..observed(false)
+        };
+        let blocked = Some((30, "blocked: pause alert (Resume Game Play?) day=9".to_owned()));
+        assert_eq!(refusal(&mut DevPolicy::default(), &alert, DAY, 200), blocked);
+        assert_eq!(
+            refusal(&mut DevPolicy::default(), &alert, WaitCondition::PauseAlert, 200),
+            None
+        );
+        let answering = |advice, frames| DevPolicy {
+            advice,
+            advice_alert_frames: frames,
+            ..DevPolicy::default()
+        };
+        assert_eq!(refusal(&mut answering(AdvicePolicy::Close, 5), &alert, DAY, 200), None);
+        assert_eq!(
+            refusal(&mut answering(AdvicePolicy::Close, 0), &alert, DAY, 200),
+            blocked
+        );
+        assert_eq!(
+            refusal(&mut answering(AdvicePolicy::Stop, 5), &alert, DAY, 200),
+            blocked
+        );
+    }
+
+    #[test]
+    fn a_paused_clock_blocks_every_wait_but_one_for_the_pause_alert() {
+        let paused = Observed {
+            paused: true,
+            ..observed(false)
+        };
+        assert_eq!(
+            refusal(&mut DevPolicy::default(), &paused, DAY, 200),
+            Some((30, "blocked: the clock is paused day=9".to_owned()))
+        );
+        assert_eq!(
+            refusal(&mut DevPolicy::default(), &paused, WaitCondition::PauseAlert, 200),
+            None
+        );
+    }
+
+    #[test]
+    fn an_unregistered_control_blocks_once_it_has_been_missing_thirty_frames() {
+        let missing = |frames| DevPolicy {
+            missing: Some(("Results/Close".to_owned(), frames)),
+            ..DevPolicy::default()
+        };
+        assert_eq!(
+            missing(BLOCKED_FRAMES).blocker(&observed(false), DAY),
+            Some("blocked: Results/Close not registered day=9".to_owned())
+        );
+        assert_eq!(missing(BLOCKED_FRAMES - 1).blocker(&observed(false), DAY), None);
+    }
+
+    #[test]
+    fn a_wait_off_the_galaxy_refuses_after_120_frames_unless_a_policy_is_answering() {
+        let off = Observed {
+            galaxy: false,
+            mode: "MultiplayerSetup".to_owned(),
+            ..observed(false)
+        };
+        let stuck = Some((120, "mode MultiplayerSetup for 120 frames day=9".to_owned()));
+        assert_eq!(refusal(&mut DevPolicy::default(), &off, DAY, 200), stuck);
+        assert_eq!(refusal(&mut DevPolicy::default(), &observed(false), DAY, 200), None);
+        assert_eq!(
+            refusal(&mut DevPolicy::default(), &off, WaitCondition::Galaxy, 200),
+            None
+        );
+        // A battle policy alone answers nothing.
+        let simulate = || DevPolicy {
+            battle: BattlePolicy::Simulate,
+            ..DevPolicy::default()
+        };
+        assert_eq!(refusal(&mut simulate(), &off, DAY, 200), stuck);
+        // The Results it is closing.
+        let results = Observed {
+            results: true,
+            ..off.clone()
+        };
+        assert_eq!(refusal(&mut simulate(), &results, DAY, 200), None);
+        let mut trying = DevPolicy {
+            results_attempts: BUTTON_ATTEMPTS - 1,
+            ..simulate()
+        };
+        assert_eq!(refusal(&mut trying, &results, DAY, 200), None);
+        assert_eq!(
+            refusal(&mut DevPolicy::default(), &results, DAY, 200),
+            Some((120, "mode MultiplayerSetup for 120 frames day=9".to_owned()))
+        );
+        // A retreat's battle.
+        let retreat = |frames| DevPolicy {
+            retreat_frames: frames,
+            ..DevPolicy::default()
+        };
+        assert_eq!(refusal(&mut retreat(5), &off, DAY, 200), None);
+        assert_eq!(refusal(&mut retreat(0), &off, DAY, 200), stuck);
+    }
+
+    /// The opening briefing frame by frame: the hooks go in at `hooks_at`
+    /// (step 12, after the tour's first clip); a skip while they are in
+    /// counts once and lets the clock go `reply` frames later (the skip
+    /// slot's clip, then step 11); unskipped, the tour lets it go at
+    /// `tour`.
+    struct TourBriefing {
+        frame: u32,
+        hooks_at: u32,
+        reply: u32,
+        tour: u32,
+        skipped_at: Option<u32>,
+    }
+
+    impl TourBriefing {
+        fn released_at(&self) -> u32 {
+            self.skipped_at.map_or(self.tour, |at| at + self.reply)
+        }
+    }
+
+    impl Briefing for TourBriefing {
+        fn holds_clock(&self) -> bool {
+            self.frame < self.released_at()
+        }
+
+        fn tour_active(&self) -> bool {
+            self.frame >= self.hooks_at && self.frame < self.released_at()
+        }
+
+        fn skip_tour(&mut self) {
+            if self.tour_active() && self.skipped_at.is_none() {
+                self.skipped_at = Some(self.frame);
+            }
+        }
+    }
+
+    #[test]
+    fn a_skip_sent_before_the_tours_hooks_answers_once_the_briefing_lets_go_of_the_clock() {
+        // droid-advisor-triggers.md, "Skipping the tour": Escape skips only
+        // while step 12's hooks are in; the skip slot's reply (ALBRIEF
+        // 10165, 4.3 s; EMBRIEF 11157, 1.3 s) plays before its step 11.
+        for (faction, reply) in [
+            (rebellion_render::AdvisorFaction::Alliance, 258),
+            (rebellion_render::AdvisorFaction::Empire, 78),
+        ] {
+            // A new game's advisor holds the clock with the hooks not yet in.
+            let mut advisor = rebellion_render::AdvisorState::new(faction);
+            assert!(!skip_briefing(&mut advisor), "{faction:?}");
+            assert!(advisor.holds_clock(), "{faction:?}");
+            // A loaded game's advisor holds nothing (FUN_00439320).
+            advisor.resume_saved_game(faction);
+            assert!(skip_briefing(&mut advisor), "{faction:?}");
+
+            let mut tour = TourBriefing {
+                frame: 0,
+                hooks_at: 90,
+                reply,
+                tour: 10_800,
+                skipped_at: None,
+            };
+            let met = (0..tour.tour).find(|_| {
+                let met = skip_briefing(&mut tour);
+                tour.frame += 1;
+                met
+            });
+            assert_eq!(tour.skipped_at, Some(90), "{faction:?}");
+            assert_eq!(met, Some(90 + reply), "{faction:?}");
+        }
+    }
+
+    #[test]
+    fn skip_briefing_s_wait_is_not_blocked_by_the_briefing_or_the_paused_clock_it_waits_out() {
+        let briefing = Observed {
+            briefing: true,
+            paused: true,
+            ..observed(false)
+        };
+        let skip = WaitCondition::BriefingSkipped;
+        assert_eq!(
+            refusal(&mut DevPolicy::default(), &briefing, skip, 200),
+            None
+        );
+        assert_eq!(
+            refusal(&mut DevPolicy::default(), &briefing, DAY, 200),
+            Some((
+                30,
+                "blocked: the advisor's briefing holds the clock day=9".to_owned()
+            ))
+        );
+        let paused = Observed {
+            paused: true,
+            ..observed(false)
+        };
+        assert_eq!(refusal(&mut DevPolicy::default(), &paused, skip, 200), None);
+        // The game leaving the galaxy still stops it.
+        let off = Observed {
+            galaxy: false,
+            mode: "MainMenu".to_owned(),
+            main_menu: true,
+            ..briefing
+        };
+        assert_eq!(
+            refusal(&mut DevPolicy::default(), &off, skip, 200),
+            Some((30, "blocked: main menu day=9".to_owned()))
+        );
+        // Fast forward runs no day for it.
+        assert!(!skip.needs_clock());
+        assert!(DAY.needs_clock());
     }
 }

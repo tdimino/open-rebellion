@@ -88,7 +88,9 @@ systems start at 100 for their holder (`initialize_special_systems`).
 
 **System squadrons (2026-10-10).** A seed group's squadrons board its lead
 when the lead is a capital ship and otherwise stay on the system
-(`FUN_0051bf30`), held in `System::fighters` per class and side. CMUNCRTB
+(`FUN_0051bf30`), held in `System::fighters` per class and side. Every
+squadron of a ship-led group rides that lead ship, with no room test and no
+choice of ship (`FUN_004f7d50`; `board_lead` in `seeds.rs`). CMUNCRTB
 gives Coruscant 10 TIEs, CMUNYVTB Yavin 2, CMUNHQTB the HQ 6; lone budget
 squadrons land on their system too. A finished squadron also lands on its
 system (`FUN_0052bee0`); no fighter-only fleet is made.

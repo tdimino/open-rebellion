@@ -934,7 +934,7 @@ mod tests {
             fighters: vec![],
             characters: vec![han_key],
             is_alliance: true,
-            has_death_star: false,
+            bombarding: false,
         });
         world.characters.get_mut(han_key).unwrap().current_fleet = Some(fleet_key);
     }

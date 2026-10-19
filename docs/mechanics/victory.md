@@ -3,11 +3,11 @@ title: "Victory Conditions"
 description: "Current victory implementation, original-game contract, and open parity divergences"
 category: "mechanics"
 created: 2026-03-16
-updated: 2026-09-10
+updated: 2026-10-17
 game_system: "victory"
 sources:
   - type: "ghidra"
-    file: "ghidra/notes/entity-system.md"
+    file: "ghidra/notes/victory-conditions.md"
   - type: "code"
     file: "crates/rebellion-core/src/victory.rs"
 related:
@@ -18,64 +18,66 @@ tags: ["victory", "headquarters", "death-star", "endgame"]
 
 # Victory Conditions
 
-`VictorySystem::check` evaluates the original faction-specific headquarters
-objectives and applies the selected game type's leader requirements.
+The game ends when the win word `FUN_005180e0` builds sets a side's win bit
+(`ghidra/notes/victory-conditions.md`; the port's rules are in
+`agent_docs/systems/victory.md`).
 
 ## What You See
 
-- A victory/defeat screen appears when the game ends.
-- The outcome describes which condition was met and which faction won.
+- No victory screen. The advisor droid speaks the side's ending line, the
+  game is torn down, and one of four ending movies plays by winner and
+  player side (MDATA 105-108); its end returns to the main menu.
+- When the Alliance headquarters goes, or the Alliance takes Coruscant, a
+  movie with the message as its caption plays (MDATA 102, 103), each time the
+  word changes while it holds.
 
 ## How It Works
 
-### Alliance objective
+### Alliance objective (AW)
 
-Alliance control of Coruscant produces `HqCaptured`. Standard mode also
-requires Emperor Palpatine and Darth Vader to be alive in Alliance custody.
+Coruscant held by the Alliance (CA: its holder bits, which a stalemate
+leaves with the earlier holder) or destroyed (CD). Standard also needs Darth
+Vader and Emperor Palpatine prisoners (DC and EC), whoever holds them.
 
-### Imperial objective
+### Imperial objective (EW)
 
-A successful Imperial bombardment of the current mobile Alliance headquarters
-clears that system's persisted `is_headquarters` flag. The Empire must then
-take political control of the surviving system to produce `HqDestroyed`.
-Occupation without prior destruction and bombardment without occupation are
-both nonterminal.
-
-Destroying the entire Alliance-HQ planet with the Death Star produces
-`DeathStarVictory` and does not require a subsequent ground occupation.
-Standard mode still requires Mon Mothma and Luke Skywalker to be alive in
-Imperial custody. Losing a Death Star does not end the campaign.
+The Alliance headquarters gone (AD): destroyed with its system, hit as a
+military bombardment target, or removed when its system leaves Alliance
+control. No occupation is needed. Standard also needs Luke Skywalker and Mon
+Mothma prisoners (LC and MC). Losing a Death Star does not end the campaign.
 
 ### Headquarters Only
 
-Headquarters Only uses the same asymmetric headquarters objectives and omits
-only the principal-leader requirements.
+EW is AD alone; AW is CA or CD alone.
+
+### Both at once
+
+A side whose win bit the previous word held keeps it; otherwise the
+Alliance wins.
 
 ### Timing and resolution
 
-There is no minimum-day grace period. A valid objective may resolve on the
-first simulation tick. Once a `VictoryOutcome` is returned, the caller sets
-`VictoryState::resolved = true`; subsequent checks remain silent.
+There is no minimum-day grace period: a valid objective may resolve on the
+first simulation tick. A missing leader or a missing Coruscant leaves the
+word unwritten. Once the word holds GO the game evaluates it no more
+(`VictoryState::resolved`).
 
 See the [source-backed campaign contract](../reference/campaign-history/official-campaign-contract.md#standard-victory).
 
-### VictoryState Configuration
-
-Set at game start:
+### VictoryState
 
 | Field | Purpose |
 |-------|---------|
 | `alliance_hq` | SystemKey of the Alliance headquarters |
-| `empire_hq` | SystemKey of the Empire headquarters |
-| `death_star_active` | Persisted Death Star campaign status |
-| `death_star_location` | Persisted last known Death Star location |
-| `resolved` | Set true after first outcome to suppress re-checking |
+| `empire_hq` | SystemKey of Coruscant |
+| `word` | The win word last delivered (notification `0x128`) |
+| `resolved` | Set once the word holds GO |
 
 ## Source Material
 
-- **Ghidra RE**: `ghidra/notes/entity-system.md` §4.2 -- `SideVictoryConditionsNotif`, `FinalBattle` (`FUN_0054ba00`)
-- **Code**: `crates/rebellion-core/src/victory.rs` -- objective detection and bombardment application
-- **Event IDs**: `0x12c` (RecruitmentDone), `0x180` (FleetBattle)
+- **Ghidra RE**: `ghidra/notes/victory-conditions.md`, `game-end-path.md`, `movies.md`
+- **Code**: `crates/rebellion-core/src/victory.rs` (the word), `crates/rebellion-app/src/movies.rs` (the movies and the ending)
+- **Event IDs**: `0x128` (the win word's notification)
 
 ## Related
 

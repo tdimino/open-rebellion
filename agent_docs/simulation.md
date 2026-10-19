@@ -37,18 +37,18 @@ The `PerceptionIntegrator` (rebellion-data `integrator.rs`) applies effects to `
 | 5 | **AI** | `ai.rs`, `ai_scheduler.rs` | `AISystem::round(state, inputs)`, driven by `simulation::ai_step` | A round a side per in-day step, rate+1 steps a day (`AiConfig::rounds_per_day`: 5 at Fast, 13, 61, 601), at most `day_orders` (10) orders a side a day; each round's order applies at the next step. Module 13, regional records, fleet tasks, character tasks, production modules, mission planners (`systems/ai-parity-tracker.md`) |
 | 6 | **Movement** | `movement.rs` | `advance(state, ticks) -> Vec<ArrivalEvent>` | Caller must update `fleet.location` + `system.fleets` |
 | 7 | **Fog** | `fog.rs` | `advance(state, world, movement)` | Fleet presence + sensor radius (detection * 15.0); monotonic |
-| 8 | **Combat** | `tactical.rs`, `combat.rs` | `resolve_system_space_combat()` (integrator) / `resolve_ground()` | Space battles run the tactical engine headless; one session per contested system, seeded from one roll. Each headless step runs the Empire's side first, then the Alliance's, and after a side's damage the morale check (`BattleSession::morale_withdraws`, `FUN_005d19a0`) withdraws a side whose strength is 0 or below its threshold of the enemy's; `apply::seat_morale` sets each side's threshold and retreat permission (`ghidra/notes/morale-retreat.md`) |
+| 8 | **Combat** | `tactical.rs`, `combat.rs` | `resolve_system_space_combat()` (integrator) | Space battles run the tactical engine headless; one session per contested system, seeded from one roll. Each headless step runs the Empire's side first, then the Alliance's, and after a side's damage the morale check (`BattleSession::morale_withdraws`, `FUN_005d19a0`) withdraws a side whose strength is 0 or below its threshold of the enemy's; `apply::seat_morale` sets each side's threshold and retreat permission (`ghidra/notes/morale-retreat.md`) |
 | 9 | **Blockade** | `blockade.rs` | `advance(state, world, ticks)` | Hostile fleet + no defender = blockade. The transitions run after combat and before the AI, so a fleet sent on the day it arrives still blockades (`FUN_0050b8e0`, event 0x311). Timer `0x386` per blockaded system shifts the blockader's support by GNPRTB 7693/7695 every 30 days (`blockade.md`) |
 | 10 | **Uprising** | `uprising.rs` | `advance(state, world, economy, missions, ticks, rolls)` | Needs the economy summary; incidents and disasters run on recovered timers |
 | 11 | **Death Star** | `death_star.rs` | `advance(state, world, ticks)` | Self-clears construction on completion |
 | 12 | **Research** | `research.rs` | `advance(state, world, uprisings, ticks, rolls)` | Passive timer `0x381` adds points and spends them into levels; Research missions credit points at their outcome (`apply_mission_points`) |
 | 13 | **Jedi** | `jedi.rs` | `advance(state, world, ticks, rolls)` | XP stored in `JediTrainingRecord`, not world |
-| 14 | **Victory** | `victory.rs` | `check(state, world, ticks)` | Death Star checks supersede HQ capture |
+| 14 | **Victory** | `victory.rs` | `check(state, world, ticks)` | The win word: EW for AD (the HQ gone, `is_headquarters` clear or its system destroyed), plus LC and MC in Standard; AW for CA or CD, plus DC and EC in Standard; in a tie the previous winner keeps it, else the Alliance wins |
 | 15 | **Betrayal** | `betrayal.rs` | `advance(state, world, ticks, rolls, loyalty_tb)` | `is_unable_to_betray` immunity; 50-tick cooldown |
-| 16 | **Economy** | `economy.rs` | `advance(state, world, ticks, difficulty)` | Full 18-function strategic state rebuild (FUN_00508250). Runs BEFORE manufacturing (position 0). Resource caps, support drift, collection rate, KDY modifier, side resolution (regiments, else support against GNPRTB 7760; FUN_0050b610), garrison, troop/fleet summary, incident generation (state-transition-driven, 4 flags). 17 GNPRTB indices. 30 tests. |
+| 16 | **Economy** | `economy.rs` | `advance(state, world, ticks, difficulty)` | Full 18-function strategic state rebuild (FUN_00508250). Runs BEFORE manufacturing (position 0). Resource caps, support drift (system `+0x6c` for the diversion roll, never added to support), collection rate, KDY modifier, the holder rule `system_control` (regiments, else support against GNPRTB 7760; FUN_0050b610; run by `support_shift`'s hooks, not here), garrison, troop/fleet summary, incident generation (state-transition-driven, 4 flags). 17 GNPRTB indices. 30 tests. |
 | 17 | **Repair** | `repair.rs` | `advance(state, world, ticks, rolls)` | Timer `0x380` per damaged ship not in hyperspace: every GNPRTB `0x805` days (30), or `0x804` days (2) at a system holding a shipyard of its side. Each step heals max hull / 10 and, at the class damage control percent, removes one damage-counter point (`FUN_00501c50`); two rolls from the simulation stream per firing ship (`roll_budget`). `RepairCheckPerformed` marks a fleet's first timer, `ShipRepaired` each step, `TimerSet` an arm, rearm or cancel; callers write them with `RepairEvent::apply`. Module 11 phase `0x3f8` (`FUN_004c8e90`) moves free damaged fleets' mobile ships to the nearest own shipyard system. Active episodes and timers persist in save v49. |
 
-Per-system detail docs: `agent_docs/systems/{combat,blockade,uprising,death-star,research,jedi,victory,betrayal,story-events,ai-parity-tracker}.md`
+Per-system detail docs: `agent_docs/systems/{combat,blockade,uprising,death-star,research,jedi,victory,betrayal,captivity,story-events,ai-parity-tracker}.md`
 
 ## Mission Types and Effects
 
@@ -57,15 +57,15 @@ Per-system detail docs: `agent_docs/systems/{combat,blockade,uprising,death-star
 | Diplomacy | `PopularityShifted` |
 | Recruitment | `CharacterRecruited` |
 | Sabotage | `FacilitySabotaged` → remove facility from system + arena |
-| Assassination | `CharacterKilled` → remove from fleets + arena |
+| Assassination | `CharacterInjured`; a minor dies on GNPRTB 2577 (`CharacterKilled` → leaves its fleets, marked killed), a major never (`victory-flag-word.md`) |
 | Espionage | `SystemIntelligenceGathered` → set explored |
 | Rescue | `CharacterRescued` → restore faction, clear captivity |
-| Abduction | `CharacterCaptured` → set `is_captive`/`captured_by`/`capture_tick`, flip faction, remove from fleets |
+| Abduction | `CharacterCaptured` → set `is_captive`/`captured_by`/`capture_tick`, remove from fleets (`systems/captivity.md`) |
 | InciteUprising | `UprisingStarted` → shift popularity |
 | Autoscrap | (no world effect) |
 
 Additional per-tick effects (not mission-driven):
-- `CharacterEscaped` (from `check_escapes()`) → restore home faction, clear captivity
+- `CharacterEscaped` (from `escape_step()`, timer `0x38a`) → `death_star::free_escapee` (`systems/captivity.md`)
 - `CharacterBusy` → set `on_mission = true`
 - `CharacterAvailable` → clear `on_mission`, `on_hidden_mission`
 - `DecoyTriggered` → log message, no world mutation
@@ -77,26 +77,25 @@ Probability: MSTB table lookup (piecewise-linear) with quadratic fallback. Combi
 ```
 run_simulation_tick():
   integrator = PerceptionIntegrator::new(tick, wall_ms)
-  bit 11: death_star::refresh_sectors() → GameWorld::death_star_sectors (FUN_005178b0); again after steps 2 and 3b, and after a load
+  bit 11: death_star::refresh_sectors() → GameWorld::death_star_sectors (FUN_005178b0); again after steps 2 and 3, and after a load
   prologue: a day a native save left open runs its remaining steps (ai_step), then close_ai_days() → ai_day records, order counts cleared
   0. economy_events  = EconomySystem::advance()       → integrator.apply_economy_events()
-  0b. stockpiles     = StockpileSystem::advance()      → scrap::scrap_all() for overdraft scraps
+  0b. stockpiles     = StockpileSystem::advance()      → scrap::scrap_all_reporting() for overdraft scraps (a `scrapped_aboard` record names the squadrons and regiments a scrapped ship took down; each is refunded half its class cost, `ghidra/notes/top-bar-resource-counters.md`)
   1. completions     = ManufacturingSystem::advance()  → integrator.apply_build_completions()
   2. arrivals        = MovementSystem::advance()       → integrator.apply_arrivals()
-  3. combat triggers → resolve_system_space_combat() (headless BattleSession) / CombatSystem::resolve_ground() → apply_ground_combat()
-  3c. blockade       = BlockadeSystem::advance()        (transitions and timer 0x386; applied at step 8)
+  3. combat triggers → resolve_system_space_combat() (headless BattleSession); regiments land and fight only on the Planetary Assault order (AI: ai_step → integrator::resolve_ai_assault)
+  3c. blockade       = BlockadeSystem::advance()        (transitions and timer 0x386; applied at step 8); then the battle bit (both sides present at a system with a side), each change of which sweeps the system's adrift characters (death_star::sweep_battle_changes; no destination: `systems/captivity.md`)
   4. reveals         = FogSystem::advance()             → integrator.emit_fog_reveals()
   5. results         = MissionSystem::advance()         → integrator.apply_mission_result()
-  5b. escapes        = MissionSystem::check_escapes()   → integrator.apply_escape_effects()
+  5b. escapes        = MissionSystem::escape_step()     → integrator.apply_escape_effects(), death_star::free_escapee()
   6. fired_events    = EventSystem::advance()           → integrator.apply_fired_events()
   8. running regiments = BlockadeSystem::resolve_running() → integrator.apply_blockade_events()
   9. uprising        = UprisingSystem::advance()        → integrator.apply_uprising_events()
   10. betrayal       = BetrayalSystem::advance()        → integrator.apply_betrayal_events()
-  11. ds_events      = DeathStarSystem::advance()       → integrator.apply_death_star_events()
   12. research       = ResearchSystem::advance()        → integrator.apply_research_results()
   12b. repair        = RepairSystem::advance()          → RepairEvent::apply()
   13. jedi           = JediSystem::advance()            → integrator.apply_jedi_events()
-  13b. AI            = ai_step() for steps 0..=rate      → integrator.emit_ai_order() (+ emit_strike), apply_blockade_events() (each step: pending orders applied Alliance first, strikes through resolve_ai_strike, regiment runs rolled, then each side's round)
+  13b. AI            = ai_step() for steps 0..=rate      → integrator.emit_ai_order() (+ emit_strike, emit_assault), apply_blockade_events() (each step: pending orders applied Alliance first, strikes through resolve_ai_strike, assaults through resolve_ai_assault, regiment runs rolled, then each side's round)
   name_flagship_fleets(), clear_lapsed_ranks()
   14. victory        = VictorySystem::check()           → integrator.apply_victory()
   15. snapshot       (every 250 ticks)                  → integrator.emit_campaign_snapshot()
@@ -104,6 +103,48 @@ run_simulation_tick():
 ```
 
 Order matters: economy runs before manufacturing (production modifiers); combat needs fleet positions from movement; AI reads mission and manufacturing state that earlier systems may have modified.
+
+A Planetary Bombardment order (`0x220`-`0x223`) resolves in the step that
+issues it, as the original's message `0x224` does: the player's when the menu
+row or dev command runs (`strike_orders::issue`, seeded from `sim_rng`), the
+AI's inside `ai_step` as its pending order applies (`resolve_ai_strike`, one
+roll from the step's stream). Both go through `integrator::order_strike`
+(`ghidra/notes/bombardment.md`, Port). Destroy System's cascade runs the
+mission validator at once (`MissionState::validate_destroyed`), not at the
+missions' next step, and when it set an adrift flag the strike sweeps the
+system after the character roll (`death_star::sweep_adrift`, event `0x30e`),
+so its adrift characters leave that day (`systems/captivity.md` for one with no place).
+An ordinary run also returns its Operation Report (`StrikeEffects::operation`,
+`operation_report::OperationReport`): what each destroyed object's event
+`0x302` lists (`StrikeReport::system_destroyed`, `fleet_destroyed`), then the
+fleets' and the system's survivors once the finalize clears the flags. The
+report message (kind `0xf`) carries it; the fleet owner's copy opens the
+report window (`ghidra/notes/operation-report-window.md`). Destroy System
+files none.
+A Planetary Assault (`0x234`) resolves in the step that issues it too
+(`integrator::order_assault` for the player's, `resolve_ai_assault` for the
+AI's; `ghidra/notes/ground-assault.md`) and returns the same report
+(`AssaultEffects::operation`).
+
+Support shifts, regiment events and holder changes queue on
+`GameWorld::support_events` in priority order (`support_shift::raise`,
+`FUN_005f61c0`: holder events `0x10` before shifts `0x100`, raising order
+within one priority) and are served head-first at the end of the operation
+that raised them (`support_shift::fire`, `FUN_0051df30`): a strike, an assault, an applied AI
+order (`simulation::ai_step`), a player's order or scrap, the day's
+overdraft scraps, builds and regiment arrivals, the blockade events, the
+missions, the uprising events (`ghidra/notes/support-shifts.md`, Port). No
+pass resolves control on a clock. A system's holder (`FUN_0050b610`,
+`support_shift::rebuild_control`, with its troop bits
+`GameWorld::troop_held`) is rebuilt by the original's hooks: every support
+change through the setter (`uprising::apply_support_change`, at once;
+`FUN_005109f0`), every regiment that joins or leaves a system
+(`support_shift::regiments_changed`, served with the queue; `FUN_00508660`)
+and the populated bit's clear (Destroy System; `FUN_00510e30`). A holder
+change's owner hook frees and flags the characters of another side there
+and turns or removes its special forces; after each operation
+`integrator::sweep_requests` (event `0x307`) sends the flagged characters
+to their side's nearest system.
 
 ## Shared Simulation Tick (v0.8.0) + PerceptionIntegrator (v0.19.0)
 
@@ -173,7 +214,10 @@ integrator and the native call sites both use them, so a query reads either.
 
 A native battle through the Battle Alert or the tactical window returns through
 `tactical_flow::apply_results`, which emits `pre_battle` (no `rng_seed`) and
-`combat_space` like the unwatched path.
+`combat_space` like the unwatched path. Both report who holds the system
+once the post-battle pass has run (`integrator::post_battle_outcome`,
+`FUN_00517270.c:79-93`): the side still present wins, and with both present
+the system stays contested (`stalemate`).
 
 The native hooks cover combat, mission resolved, AI action (applied ones
 only where an arm refuses with `continue`), blockade, research unlocked and
@@ -244,7 +288,6 @@ All simulation states are created in `main.rs` and included in `SaveState` (`reb
 | `FogState` | `FogSystem::advance` |
 | `BlockadeState` | `BlockadeSystem::advance` |
 | `UprisingState` | `UprisingSystem::advance`, `end_if_garrisoned()` |
-| `DeathStarState` | `DeathStarSystem::advance`, `fire()`, `start_construction()` |
 | `ResearchState` | `ResearchSystem::advance` (auto-applies level-ups) |
 | `JediState` | `JediSystem::advance`, `start_training()`, `stop_training()` |
 | `VictoryState` | Caller sets `resolved = true` after outcome |

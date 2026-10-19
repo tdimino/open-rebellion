@@ -3,8 +3,8 @@ title: "Editing original-game saves"
 description: "How to edit our own original-game saves safely to stage a state the original cannot reach on demand (a damaged hyperdrive, a Death Star), and how to accept the edit in the original"
 category: "agent-docs"
 created: 2026-10-10
-updated: 2026-10-13
-tags: [original-game, saves, parity, death-star, hyperdrive]
+updated: 2026-10-17
+tags: [original-game, saves, parity, death-star, hyperdrive, jail]
 ---
 
 # Editing original-game saves
@@ -26,6 +26,8 @@ Status:
 - **Battle staging (recipe 3):** the copies load and show their damage.
 - **Squadron size (recipe 4):** loads, re-saves and reloads with the edited
   size.
+- **Container change (recipe 5):** a captive moved into a jail abode, both
+  sides. Staged, not yet loaded.
 - **Player side:** cannot be changed by editing.
 
 "Edits that worked" lists each successful edit byte for byte.
@@ -34,10 +36,10 @@ Status:
 
 - Edit a copy, never a library save. Pin the source's SHA-256 and size in
   the script, and refuse to run on anything else.
-- Change bytes in place only: the same file length, no inserted or removed
-  records. Each named record's first word is often its own file offset, and
-  objects refer to each other by those keys, so a length change corrupts
-  everything after it.
+- Change bytes in place, the same file length, unless the edit moves an
+  object between containers. A move changes the length, and every position
+  marker after it must then hold its new offset; only
+  `tools/original-capture/save_tree.py` does that (recipe 5).
 - Fail closed: assert every field you expect before writing, write to a new
   path (never over the source or an existing file), re-read the output and
   prove that only the intended bytes changed.
@@ -59,7 +61,16 @@ original's own re-saves after it loaded and played the edit.
 | Empire Death Star (route 1) | `ds-b.sav` `1e6db63f…` → `ds-b583.sav` `43977b84…` | The Death Star order's progress word, 2 → 583 (cost 584), in both graph copies. Found as the u32 8 bytes before `88000018 48020000 48020000` | Finished "Death Star 1" into Fleet 6 at Coruscant within 11 days. It moves, and it fights | `empire-huge-deathstar-built.sav`, `empire-day660-deathstar-pre-alert.sav` |
 | Imperial Death Star in an Alliance game (route 1, converted order) | `fwd1.sav` (Alliance, late game) → `fwd1-ds.sav` `7ecf1706…` | Turned the Empire AI's Star Destroyer order into a Death Star order: 21 words (see "Route 1 in an Alliance game") | Completed as "Devastator" at Coruscant. The Alliance can Take Command at Coruscant, but the Death Star's fleet did not join the battle | `alliance-day731-imperial-deathstar-built.sav` |
 | Battle staging at the day-30 alert (`save_edit.py damage`, `subsystems`, `engines`, `fragile`, `stranded`) | `empire-day30-yaga-alert-control.sav` `8a7a9923…` → recipe 3 table | Hull damage and the packed word on the named ships, in every graph copy | Each loads and shows the staged damage; used for tactical A0 captures | none (staging only) |
+| Imperial squadrons emptied before the Death Star battle (`save_edit.py trench`) | `empire-day660-deathstar-pre-alert.sav` `5973cf91…` → `6e399b3e…` | Fleet 6's six TIE squadrons (ids `0x9f2`-`0x9f7`, aboard Imperial Star Destroyer 1 `0x140009f1`): the `+0x60` damage word 0 → 12 in the `0x81` and `0xa1` copies, 12 words, so the Alliance's squadrons outnumber the Empire's (`FUN_005ad930`) | Loaded from a fresh launch: the Battle at Coruscant alert opens on day 676 (after the Carida alert on day 669); with Take Command the Alliance AI runs the trench on its own, trench-run films play about 160, 340 and 520 s after the unpause, and the Battle Summary lists Imperial Star Destroyer 1, Galleon 2 and the Death Star destroyed and the TIE squadrons destroyed | `empire-day660-trench-tieless.sav` |
+| Leia into the Empire Jail (`save_tree.py jail`) | `alliance-day731-imperial-deathstar-built.sav` `502ac1cb…` → `97598719…` | Leia (`0x31000241`), an Imperial captive at Coruscant, moved from Coruscant's list into the Empire Jail's (`0x98000480`) in the `0x81`, `0x92` and `0xa1` graphs; her master location word `0x90000109` → `0x98000480`; +36 bytes and every later marker | Loaded: the Personnel Finder reads "Leia Organa - Empire Jail" with no "( Captured )" (Luke, a captive at Coruscant, reads "Luke Skywalker - Coruscant ( Captured )"), and no system window lists her, so no Rescue can target her. Within about 50 days "Leia Organa Escaped" files ("Leia Organa escaped from the Empire at Empire Jail."), then "Leia Organa Arrives at Yavin", and the finder reads "Leia Organa - Yavin" | `alliance-day731-leia-jailed.sav` |
+| Palpatine into the Alliance Jail (`save_tree.py jail`) | `empire-day660-deathstar-pre-alert.sav` `5973cf91…` → `6270d084…` | Palpatine (`0x34000280`), an Alliance captive at `0x9000010a`, moved into the Alliance Jail's list (`0x98000440`) in the `0x41`, `0x51` and `0x62` graphs; his master location word `0x9000010a` → `0x98000440`; +36 bytes and every later marker | Loaded: the Personnel Finder reads "Emperor Palpatine - Alliance Jail". The Alliance then wins the Standard game between days 682 and 692 (the Empire's defeat ending, `victory-flag-word.md`) | `empire-day660-palpatine-jailed.sav` |
+| Assassin combat (`save_tree.py assassin`) | `empire-sixteen-tie-day415.sav` `1f8381e5…` → `bf5ef29b…` | Daala's (`0x38000393`) effective combat `+0x86`, the high half of master word 31, 84 → 220. Two bytes at `0x21f18` | Loaded: Daala at Berchest takes an Assassination of Han Solo, free at Carida and listed in the Empire's Carida window. In two runs it ended within about ten days with Han's injury 0 and no Imperial mission message; the hidden Return (`0x42000002`) took Daala home | none (experiment) |
 | Squadron size (`save_edit.py squadron`) | `alliance-deathstar-at-coruscant.sav` `5825d980…` → `e0953abc…` | Fleet 2's first X-wing squadron (id `0x17b8`): its `+0x60` damage word 0 → 7 in the `0x41` and `0x51` copies. Two bytes: `0x3a128`, `0x9e22f` | Status reads Squadron Size 5:12; shield and laser scale with it (25:60, 40:96). The original's re-save keeps 7 in both copies, and a restart and reload still read 5:12 | none (experiment) |
+| Imperial garrison at Ord Pardon (`save_tree.py garrison contested-visible`) | `alliance-day1169-deathstar-trench-run.sav` `ad68f6f4…` → `dde9bb3d…` | Imperial Army Regiment `0x100009db` (defence 5) moved from `0x92000068` to Ord Pardon `0x920000a5`: the master copy (graph `0x81`, location word `0x92000068` → `0x920000a5`), the Empire's view (`0xa1`), and the Alliance's bucket copy (`0x92` in container `0xf2`) re-keyed to `0x91` and moved into Ord Pardon's list there. Master words 3, 10 and 11 stay as in the origin (`0xc00`, `0x20`, `0x330000`). +0 bytes | Loaded and played on Wine: the Alliance fleet's assault captures or is repulsed according to the generator state (`ground-assault.md`, "In the original"), and the regiment is listed under System Forces | `alliance-day1169-ord-pardon-garrison.sav` |
+| Dark Trooper at Ord Pardon (`save_tree.py garrison repulsed`) | same source → `fb545ffb…` | Dark Trooper Regiment `0x10001eea` (defence 8) moved the same way, in the master and the Empire's view only; the Alliance's bucket copy stays in `0xf2`. Master words 3, 10 and 11 untouched. +0 bytes | Loaded and played on Wine: every assault is repulsed and all six attackers die; System Forces lists nothing (the Alliance's view does not locate it) | `alliance-day1169-ord-pardon-dark-trooper.sav` |
+| Empire maintenance capacity (`save_tree.py maintenance`, facilities at `0x9000008f`) | `ds-b.sav` `1e6db63f…` (Empire, day 123, a Death Star queued at Coruscant) → `22ea6fc0…` | Capacity 1500 → 5500 (+4000). The capacity is recomputed from the facilities (`FUN_0052fff0` sums the completed, enabled mines' and refineries' capacity pairs into side `+0x60` and `+0x68`; `FUN_005323c0` sets side `+0x58` to the smaller) at every destroy and usable-bit change, so the edit adds 4000 to Mine `0x2c00077d`'s and Refinery `0x2d000780`'s capacity word (master words 19, view word 10) and to the Empire side object `0xf3000010`'s `+0x58`, `+0x60`, `+0x68` capacities (master words 12, 14, 16; view words 7, 9, 11), in the master copy (graph `0x81`) and the Empire's view (`0xa1`). Ten words, 20 bytes, no length change, at `0xd907`, `0xdac7`, `0x48312`, `0x4831a`, `0x48322`, `0x7e28b`, `0x7e3bb`, `0xa8b49`, `0xa8b51`, `0xa8b59`; each word reads 1500 → 5500 or 50 → 4050, so two bytes of each differ. The Empire's other mines and refineries keep 50, and the allocated halves keep their values. The budget gate (`death-star-product.md` §3) needs `(30 × capacity / 100) × 90 / 100` above 600 plus the fielded capital-ship maintenance (212 without the queued Death Star, 812 with it): 5500 gives 1485 | Loaded: the Maintenance Monitor reads 4309 and the Death Star Build is accepted | none (experiment) |
+| Empire maintenance capacity (`save_tree.py maintenance empire 4000`) | any Empire save; day 178 of the ds-b line `bb007f67…` → `2c580231…` | Capacity 5500 → 9500. The command adds 4000 to the capacity word of the lowest-id plain (flags `0x30047`), completed, enabled Empire mine and refinery at Coruscant (`0x90000109`), or, when Coruscant holds no such pair, at the Empire system holding the most of them (here Coruscant's: Mine `0x2c0008f4` and Refinery `0x2d0008f3`, master words 19, view word 10) and to the Empire side object's (`0xf3000010`) `+0x58`, `+0x60`, `+0x68` capacities (master words 12, 14, 16; view words 7, 9, 11). It requires `+0x58` = min(`+0x60`, `+0x68`) and each side sum equal to the master facilities' sum, and prints each word it changed. Ten words, 20 bytes, no length change, at `0x3afe8`, `0x3b1a8`, `0x490af`, `0x490b7`, `0x490bf`, `0x98173`, `0x982a3`, `0xaaaff`, `0xaab07`, `0xaab0f` | Loaded: pending lead Wine check | none (experiment) |
+| Empire maintenance capacity, day 660 (`save_tree.py maintenance empire 4000`) | `empire-day660-deathstar-pre-alert.sav` `5973cf91…` → `691cc18e…` | Capacity 850 → 4850. Coruscant holds no mine or refinery, so the command takes the Empire system with the most plain pairs, `0x90000114`: Mine `0x2c000953` and Refinery `0x2d000952` (50 → 4050, master and view), and the side object's `+0x58`, `+0x60`, `+0x68` (850, 1000, 850 → 4850, 5000, 4850, master and view). Ten words, 20 bytes, at `0x55459`, `0x55619`, `0x601a3`, `0x601ab`, `0x601b3`, `0xbec2a`, `0xbed5a`, `0xd9364`, `0xd936c`, `0xd9374` | Loaded: pending lead Wine check | none (experiment) |
 
 What failed, so it is not repeated:
 - **Recipe 1, first try:** wrote the wrong word, word 15. It loaded but
@@ -83,7 +94,7 @@ A named record:
 
 | Offset | Type | Field |
 |---|---|---|
-| `+0x00` | u32 | object key: the record's own file offset, or 0 |
+| `+0x00` | u32 | before a list's first object only: the list's marker, the stream position (`FUN_005f4d40`), so it equals this offset; a later object starts at `+0x04` |
 | `+0x04` | u32 | family (`0x08` fleet, `0x10` regiment, `0x14` capital ship, `0x18` Death Star, `0x1c` fighter squadron) |
 | `+0x08` | u32 | instance id |
 | `+0x0c` | u32 | graph key (see below) |
@@ -390,6 +401,108 @@ full and short copies together.
 Damage 12 should empty a squadron, which `FUN_005032c0` treats as
 destroyed. Removing squadrons that way is untested.
 
+## Recipe 5: a container change
+
+`tools/original-capture/save_tree.py` reads a save as the loader does and
+rebuilds it, so an object can move between containers.
+
+The tree, from the code:
+- The loader reads three graph roots (`FUN_00513a50`): each root object
+  (`FUN_00518dd0`, no family word before it) and then its child list
+  (`FUN_0053a1e0`).
+- A child list is a u32 flag (0: none). When the flag is set, three words
+  follow: one the list object keeps (`FUN_005841a0`), a count, and, when the
+  count is not 0, a marker before the first child.
+- Each child is its family word (the class `FUN_00540500` looks up in the
+  58-row registry `FUN_0051ebf0`), its own fields (vtable `+0x14`), then its
+  own child list.
+- A child's container is its place in the list (`FUN_0060f5d0`), not its
+  location word.
+- The marker is `FUN_005f4d40`: the stream position (`FUN_00616d70`),
+  checked on read. It is the only position-dependent word: `FUN_00616d70`
+  has no other caller in the save path. The section readers before and
+  after the trees (`FUN_00409480`, `FUN_00409700`, `FUN_0041dd60`,
+  `FUN_0051cec0`) write the same marker; 17 or 18 self-referencing words
+  lie outside the trees in each library save.
+- Every list in the library saves has flag 1 and kept word 1. A list that
+  emptied stays as flag 1, kept 1, count 0.
+
+Field lengths:
+- The script learns each kind's field length, by family and by master or
+  view copy, from the library saves.
+- Kinds of varying length (missions `0x41`-`0x69`, the build managers
+  `0xa0`-`0xa4`, the master copy of `0xf3`) end where the next object
+  begins.
+- The side object `0xfa` closes each save's last graph. Its view copy is
+  never followed by another object, so it takes the other view's length:
+  the readers branch only on master against view (`FUN_004f9340`,
+  `FUN_005621b0`).
+
+Gates, on all 23 library saves (2026-10-17):
+1. Parse, then rebuild with every list count taken from its objects and
+   every marker from its new position: byte-identical. 3 trees per save,
+   3,795 to 13,587 objects, no object header outside the trees, no list
+   marker unparsed.
+2. Cut the first character out of its list and put it back: byte-identical.
+
+`save_tree.py jail SOURCE OUTPUT` does the move. It is pinned to two
+sources (the edits table above; `garrison` and `assassin` carry their own pins) and checks each copy before it moves it:
+- the copy sits in a system's list;
+- the abode has the copy's owner bits (`FUN_005775a0`) and holds nothing;
+- the master copy's location word is that system, and its prisoner bit
+  (word 17 bit 0) is set.
+
+`save_tree.py garrison contested|repulsed|contested-visible SOURCE OUTPUT`
+moves one regiment between systems (pinned to
+`alliance-day1169-deathstar-trench-run.sav`). It moves the master copy
+(graph `0x81`) and the Empire's own view (`0xa1`) into the destination's list
+of the same graph, after its fleets and before its facilities, and sets the
+master location word to the destination. It requires the copy to sit in the
+origin, the destination's owner bits (graph bits 6-7) to match the copy's, and
+no regiment already in the destination list. The Alliance's copy sits in the
+unlocated bucket (container `0xf2`, graph `0x92`): `garrison` leaves it there,
+and `contested-visible` re-keys it to graph `0x91` and moves it into the
+destination's list in that tree, the Alliance's view of the system. Master
+words 3, 10 and 11 are untouched.
+
+A master character copy's stream words from word 29 are the
+`FUN_004ef940` writes: the 16 skill shorts `+0x7c`..`+0x9a` (words 29-36;
+combat `+0x86` is the high half of word 31), four key dwords, the flags
+`+0xac` (word 41, bit 0 captive). Words 20-23 hold the creation skills
+(`+0x58`..`+0x67`), word 24 the mission key (`+0x68`, 2 when none), word 35's
+low half the injury (`+0x94`). The Assassination roll reads `+0x86` (slot
+`+0x1f0`, `FUN_004edc40`), not the creation block.
+
+`jail` moves every copy and sets the master location word to the abode's
+key. That is the state `FUN_00549580`'s trip leaves once the `0x387` timer
+fires (`ghidra/notes/jail.md`, section 1). Each abode gains a list (12
+bytes), and later markers move with it.
+
+The script re-parses its output and requires two things:
+- every object other than the captive's copies is unchanged, with its
+  container;
+- the section markers are the same in number, now at their new positions.
+
+The captive's own side's view copy still carries en route and autorouting
+(`+0x50` `0x34876`, `+0x3c` the captor's system), as it does in the
+source.
+
+On the VM, for each side:
+1. `vm-game.sh save-in` the `jail` output (SHA-256 in the edits table)
+   into the first empty slot N, not 5. Then a fresh `up` and `load N`.
+2. **The finder row:** the Personnel Finder lists "Leia Organa - Empire
+   Jail" (Palpatine: "- Alliance Jail"), with no state and no rank
+   (`jail.md`, section 3).
+3. **The Rescue options:** the finder gives no target (`FUN_004ac4b0`), and
+   no system window lists the captive.
+4. **Escape over 30 days:** run 30 days and watch for "Escaped"
+   (notification `0x1e0`) and where the escapee goes.
+5. Re-save, restart, reload. Then save-out and run `save_tree.py check` on
+   the original's re-save.
+
+The trip day cannot be seen with this edit, because the captive starts
+inside the jail. It needs a team stranded with no accepting system.
+
 ## Checksums
 
 None found in the decompiled serializer (`FUN_004f9450` / `FUN_004f9340`,
@@ -425,6 +538,11 @@ swap it in. Slot 5 holds `empire-day488-late`; leave it.
   `status-window.md`, `tactical-subsystem-damage-path.md`,
   `FUN_0051ebf0.c`, `build-delivery.md`, `object-state-flags.md`,
   `FUN_004f9450.c`, `FUN_004f9340.c`, `FUN_0053a1e0.c`.
+- The tree and its markers (recipe 5, 2026-10-17): `FUN_00513a50.c`,
+  `FUN_00518dd0.c`, `FUN_0053a1e0.c`, `FUN_005841a0.c`, `FUN_005f4d40.c`,
+  `FUN_00616d70.c`, `FUN_0060f5d0.c`, `FUN_005f5540.c`, `FUN_00540500.c`,
+  `FUN_0051ebf0.c`, `FUN_005621b0.c`, `FUN_00409480.c`, `FUN_00409700.c`,
+  `FUN_0041dd60.c`, `FUN_0051cec0.c`.
 - TheArchitect2018, "Deep-Dive-into-SW-Rebellion-PC-Game-Internals" wiki,
   SaveGame page; MetasharpNet StarWarsRebellionEditor.NET,
   `documentation/SAVEGAME_FORMAT_SPEC.md` (the envelope only; its local

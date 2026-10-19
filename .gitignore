@@ -1,5 +1,7 @@
 .idea/
 /target
+/mutants.out/
+/mutants.out.old/
 .osgrep/
 *.swp
 *.swo

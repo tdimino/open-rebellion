@@ -264,8 +264,35 @@ facilities; `+0x70`/`+0x74` is the load L.
 - Manual p. 86: "This returns to you the maintenance and some of the refined
   material the unit used." "You can scrap any facility, troop, or ship in
   this way."
-- Open: what scrapping a fleet does to the ships and squadrons it carries
-  (the fleet's own destroy path); reason `0x16`.
+- **What a scrapped capital ship takes with it.** The scrap order
+  (`+0x98` `FUN_004f84e0` → `+0xa0` `FUN_00534c00` → `+0xac(0x14)`) is not
+  refused for a laden ship: the enabled test (`FUN_004f9860`) reads the
+  order's side, completed, not destroyed, not en route and not on a mission,
+  never the contents. The ship's destroyed-bit setter (`FUN_004f2ad0` →
+  `FUN_004fb200` → `FUN_004f7560`) calls hook `+0x11c` = `FUN_00502840`
+  (vtable `0x0065d650` index 71). Its first call, `FUN_00557b90` →
+  `FUN_005582b0` → `FUN_004f2b50` → `FUN_004fb520`, walks every child and
+  calls slot `+0xb4`: a squadron's and a regiment's is `FUN_004f8710`, which
+  destroys a completed child that is not en route with the ship's reason
+  (`FUN_004f7ed0` passes the container's `+0x40` byte, here `0x14`); a child
+  not completed or en route gets the autoscrap request instead. The hook's
+  second part (the wound roll, slot `+0x2e8`) runs only for reasons
+  1..`0x10`, so a scrap wounds no character. Each destroyed child then
+  reaches `FUN_005140c0` → `FUN_00530270`, which refunds half its own class
+  cost (reason `0x14..0x16`, completed): squadrons and regiments aboard a
+  scrapped ship are destroyed and refunded one by one. A character aboard
+  takes `FUN_004ef2e0`, which at reason `0x14` requests autoscrap
+  (`tactical-results.md` 3). No message class is read from this path (hyp:
+  none is filed for reason `0x14`; the maintenance overdraft's reason `0x15`
+  files its notice from the shortfall, `message-display.md`). Reason `0x16`
+  is not traced.
+- Port: `scrap::scrap` destroys the squadrons and regiments whose carrier is
+  the scrapped ship (`carriage::take_lost_squadrons`,
+  `TroopTransportState::destroy_untransportable_cargo`) and adds each one's
+  half cost to the refund; every object aboard counts as completed
+  (`port:`). The AI's Scrap order and the overdraft scrap file a
+  `scrapped_aboard` record with the counts. A character aboard moves to the
+  fleet's next ship instead of requesting autoscrap (`port:`, not changed).
 
 ### Starting stockpiles
 
@@ -300,8 +327,8 @@ constructor zeroes them; not read).
   stay the best case over the yards' periods.
 - `rebellion-core/src/scrap.rs`: the Scrap order's team, gate, names and
   the scrap itself with its half-cost refund; the overdraft's candidates.
-- `rebellion-core/src/economy.rs`: `SystemEconomy::support_drift`, the
-  system's `+0x6c`.
+- `rebellion-core/src/economy.rs`: `SupportValues::support_drift`, the
+  system's `+0x6c` (`GameWorld::support_values`).
 - The app draws all three monitors and opens the Scrap confirmation from
   the object menus.
 - port: a unit's daily order is finish, assign, start; the original runs

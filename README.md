@@ -84,7 +84,8 @@ sudo apt install libasound2-dev libx11-dev libxi-dev libgl1-mesa-dev ffmpeg gola
   in particular fails at the *link* step, not compile, so `cargo check`
   alone won't catch it).
 - `ffmpeg`—required by `scripts/decode-cutscenes.sh` to convert/decode the
-  Smacker cutscenes.
+  Smacker cutscenes, and by `scripts/stage-web-movies.sh` to convert them
+  for the browser.
 - `golang-go` (1.22+; check your distro's version)—required by
   `tools/stage-ui-assets` to extract UI bitmaps. If your distro's package is
   older than 1.22, install a newer toolchain from
@@ -122,7 +123,8 @@ python3 -m http.server 8080 -d web/
 `MDATA/`, and `EData/`. The Make targets always derive `MDATA/` and `EData/`
 from that directory; generated and proprietary assets remain ignored.
 
-**Controls**: scroll to zoom, right-drag to pan, left-click to select a system, `R` to reset view, `Esc` to quit.
+**Controls**: scroll to zoom, right-drag to pan, left-click to select a system;
+`Esc` closes the focused window, and Game Options (`F1`) holds Exit.
 
 ## Docker (Browser Build)
 
@@ -147,7 +149,8 @@ This runs two services:
 - **`builder`**—a one-shot container that stages `*.DAT`/`*.DLL` files into
   `data/base/`, extracts UI bitmaps (`tools/stage-ui-assets`), converts the
   Smacker `MDATA.*` cutscenes to WebM and decodes them to frame sequences
-  (`scripts/decode-cutscenes.sh`), then runs `scripts/build-wasm.sh`. Each
+  (`scripts/decode-cutscenes.sh`), then runs `scripts/build-wasm.sh` and
+  converts the movies for the browser (`scripts/stage-web-movies.sh`). Each
   step skips work that's already done, so re-running `docker compose up` is
   fast; set `FORCE_REBUILD=1` in `.env` to force a full rebuild.
 - **`web`**—serves `web/` on [http://localhost:8095](http://localhost:8095)

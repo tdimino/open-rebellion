@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Shrink a Cargo target directory to what the last build used.
 
-    scripts/prune-target.py [--units FILE] [--target DIR] [--keep-incremental N]
-                            [--max-gb N] [--log FILE] [--force]
+    scripts/prune-target.py [--units FILE] [--target DIR] [--keep-builds N]
+                            [--keep-incremental N] [--max-gb N] [--log FILE] [--force]
     cargo … --message-format=json-render-diagnostics | scripts/prune-target.py --tee-units FILE
 
 scripts/mini-cargo.sh runs this on the Mac Mini after every build, and a
@@ -13,9 +13,13 @@ three things grow:
 1. Units no build needs any more. Every change to features, `-p` selection
    or flags hashes a unit anew and leaves the old outputs. With --units
    (the build's `--message-format=json` messages), every entry of deps/,
-   .fingerprint/, build/ and examples/ in a profile the build used is
-   removed unless its 16-hex unit hash is among the build's units, fresh or
-   rebuilt. Cargo reports fresh units, so a repeat build stays fresh. Access
+   .fingerprint/, build/ and examples/ in a profile one of the last N builds
+   used (--keep-builds, default 6) is removed unless its 16-hex unit hash is
+   among those builds' units, fresh or rebuilt. Builds that alternate
+   (workspace tests, a fixture feature, one crate, WASM) so keep each other's
+   units instead of deleting and rebuilding them. The history lives in
+   target/.prune-history.json. Cargo reports fresh units, so a repeat build
+   stays fresh. Access
    times are not used: APFS does not update them reliably, and
    `cargo sweep --file`, which relies on them, deleted fresh units here.
 2. Stale codegen objects. With split-debuginfo "unpacked", Cargo's macOS dev
@@ -28,13 +32,20 @@ three things grow:
    N most recently used (default 2: a library and its tests). The deps
    objects are hard links into them, so this frees the most space.
 
-Past --max-gb (default 12) after all that, `cargo clean` runs. Each run
+Each run first takes Cargo's own build lock (`<profile>/.cargo-lock`) on
+every profile in the target, without waiting; while another build holds
+one, it prunes nothing. --force skips only the process check below, so the
+wrapper's prune can run beside a build in another directory.
+
+Past --max-gb (default 12) after all that, only the last build's units are
+kept and the history restarts; past it still, `cargo clean` runs. Each run
 appends one JSON line to --log. Without --force it does nothing while
 another cargo or rustc runs.
 """
 
 import argparse
 import concurrent.futures
+import fcntl
 import filecmp
 import json
 import os
@@ -106,6 +117,27 @@ def build_units(units_file, target):
     return hashes, profiles
 
 
+def remember_build(target, hashes, profiles, keep):
+    """The union of the units and profiles of the last `keep` builds, this one included."""
+    path = target / ".prune-history.json"
+    try:
+        history = json.loads(path.read_text())
+    except (OSError, ValueError):
+        history = []
+    if not isinstance(history, list) or not all(
+        isinstance(build, dict)
+        and isinstance(build.get("hashes"), list)
+        and isinstance(build.get("profiles"), list)
+        for build in history
+    ):
+        history = []
+    history = (history + [{"hashes": sorted(hashes), "profiles": sorted(map(str, profiles))}])[-keep:]
+    path.write_text(json.dumps(history))
+    all_hashes = set().union(*(build["hashes"] for build in history))
+    all_profiles = {Path(name) for build in history for name in build["profiles"]}
+    return all_hashes, all_profiles
+
+
 def prune_units(hashes, profiles):
     removed = 0
     for profile in profiles:
@@ -168,6 +200,22 @@ def prune_incremental(target, keep):
     return removed
 
 
+def lock_builds(target):
+    """Cargo's build locks on every profile in `target`, or None while a build holds one."""
+    held = []
+    for lock in sorted(target.glob("*/.cargo-lock")) + sorted(target.glob("*/*/.cargo-lock")):
+        handle = open(lock, "a")
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            handle.close()
+            for other in held:
+                other.close()
+            return None
+        held.append(handle)
+    return held
+
+
 def busy():
     for name in ("cargo", "rustc"):
         if subprocess.run(["pgrep", "-x", name], capture_output=True).returncode == 0:
@@ -179,6 +227,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--units")
     parser.add_argument("--target", default=str(REPO / "target"))
+    parser.add_argument("--keep-builds", type=int, default=6)
     parser.add_argument("--keep-incremental", type=int, default=2)
     parser.add_argument("--max-gb", type=int, default=int(os.environ.get("OPEN_REBELLION_TARGET_MAX_GB", "12")))
     parser.add_argument("--log")
@@ -199,18 +248,33 @@ def main():
     record = {"time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "host": socket.gethostname()}
     record["before_mb"] = size_mb(target)
     record.update(units_removed=0, objects_removed=0, incremental_removed=0, cleaned=False, skipped="")
+    locks = None
     if not args.force and busy():
         record["skipped"] = "a cargo or rustc process is running"
     else:
+        locks = lock_builds(target)
+        if locks is None:
+            record["skipped"] = "a cargo build holds the target"
+    if locks is not None:
+        hashes = set()
         if args.units and Path(args.units).is_file():
             hashes, profiles = build_units(args.units, target)
             if hashes:
-                record["units_removed"] = prune_units(hashes, profiles)
+                kept, kept_profiles = remember_build(target, hashes, profiles, max(args.keep_builds, 1))
+                record["units_removed"] = prune_units(kept, kept_profiles)
         record["objects_removed"] = prune_objects(target)
         record["incremental_removed"] = prune_incremental(target, args.keep_incremental)
+        if hashes and size_mb(target) > args.max_gb * 1024:
+            record["units_removed"] += prune_units(hashes, profiles)
+            remember_build(target, hashes, profiles, 1)
         if size_mb(target) > args.max_gb * 1024:
+            for handle in locks:
+                handle.close()
+            locks = []
             subprocess.run(["cargo", "clean", "-q", "--target-dir", str(target)], cwd=REPO)
             record["cleaned"] = True
+        for handle in locks:
+            handle.close()
     record["after_mb"] = size_mb(target)
     if args.log:
         with open(args.log, "a") as log:

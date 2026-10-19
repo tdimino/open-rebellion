@@ -200,6 +200,44 @@ the application pump until this helper reports no capture, then briefly
 captures the galaxy during construction and releases it. No modal constructor
 holds capture for the modal's lifetime.
 
+### Window drag
+
+The movable bit is `+0xb8 & 4`. The System (`FUN_00452fc0`), Fleet
+(`FUN_004a2630`), Defenses (`FUN_004a7790`) and Missions (`FUN_0049f130`)
+windows OR it in. A sector window's base gets policy 0 (`FUN_004591d0` →
+`FUN_004ac120` → `FUN_00606380`), so sector windows stay in their columns.
+Under Wine, a title drag on the Dolomar sector window (Alliance,
+alliance-day1169-deathstar-trench-run played on to day 1170) left it in
+place.
+`FUN_00606380` also sets `+0xf4` to 1, the live mode:
+- A left press that reaches the base procedure (`FUN_00606650` 0x201 →
+  `FUN_00606ee0`) records the grab offset and captures the pointer.
+- Each `WM_MOUSEMOVE` with the drag on (`+0xe0`) calls `SetWindowPos` to put
+  the window at the pointer less that offset (`FUN_006071e0`), with no
+  clamp.
+- The release ends it (`FUN_00607010`). The XOR-outline mode (`+0xf4 & 2`)
+  is not used by these windows.
+
+Every left press on the window's own surface reaches the base. The Missions
+(`FUN_0049f4b0`), Fleet (`FUN_004a29c0`) and Defenses (`FUN_004a86d0`)
+procedures first send or post 0x467 for themselves and then pass it on. The
+System procedure (`FUN_004534f0`) passes it on unless it lands on an
+overview band. Presses on the child controls (title buttons, tabs, lists)
+go to those controls.
+
+Under Wine, on the Empire assassin-combat save at day 416, Carida's System
+window moved 80 pixels left and Berchest's 120 right, by the pointer's
+travel and without snapping.
+
+port: `system_window::TitleDrag`, `surface_drag_grab` and
+`title_drag_step`. A primary press on the window's background widget, under
+all of its control widgets (title buttons, tabs, bands, the System and
+Defenses lists, list rows), takes hold, as does any press outside the
+rectangles of the child controls the port tests by hand: the Fleet window's
+two lists and tab strip, and the Missions window's mission list and, while
+a mission is selected, its member list. hyp: the Fleet window's
+selected-name label and picture panel pass presses to the window.
+
 ## Opening, close, and restoration
 
 ### Close sequence
@@ -291,6 +329,60 @@ The singleton conclusions come from `FUN_0042a000`, `FUN_0042a0c0`,
 `FUN_0042a4d0`, `FUN_0042a180`, `FUN_0042a240`, and `FUN_00429f30`. Sector
 behavior comes from `FUN_00429ce0`; detail behavior from `FUN_0045aac0`.
 Consequently, a generic `open == raise` rule would be a parity defect.
+
+## Saved windows and a load
+
+A strategic save ends with the view's interface, after the world and the
+controllers: `FUN_004095b0` → `FUN_00401250` → `FUN_00415f60` → view slot
+`+0x3c` (`FUN_00440ea0`, vtable `0x00658bf8`) writes it, and `FUN_00409480`
+→ `FUN_00401270` → `FUN_00415f80`, which rebuilds the strategic view
+(`FUN_00414330(app, 8)`), reads it back through slot `+0x40`
+(`FUN_00440f80`).
+
+- The record: a u16 with the ending code (`+0xa8`) high and the GID mode
+  (`+0xc8`, set by `FUN_00425d00.c:126`) low; a u16 count; then each child
+  window from the bottom of the z-order up (`FUN_00440f20`, then
+  `GW_HWNDPREV`): a six-u32 descriptor (`FUN_0049ecf0`: type `+0x24 & 0x3f`,
+  x, y, w, h from `+0x28..+0x34`, shown `+0x110`) and the class's slot
+  `+0x24` payload.
+- Payloads: sector (type 1, `FUN_0045d2b0`) its sector and key; Fleet (4,
+  `FUN_004a7300`) its system, key, tab `+0x194` and `+0x16c..+0x174`; the
+  "Battle in Progress..." overlay (7, `FUN_0049f0f0`) its key; System (9,
+  `FUN_00458ea0`), Defenses (10, `FUN_004aa6d0`) and Missions (11,
+  `FUN_004a0b00`) their system and key. No page is saved but the Fleet
+  window's tab; other types write only a descriptor and are not rebuilt.
+- The load: the u16's high byte becomes the ending code, and a GID mode
+  other than the view's is replayed as `WM_COMMAND(0x140, mode)`. View
+  `+0xc0` bit 4 holds for the restore, so restored windows open silently.
+  `FUN_00441190` builds each window in order at the saved place, created
+  hidden, inserted into `+0x6c` and (but type 7) `+0x478`. A window saved
+  shown, the overlay, and every sector window (its branch clears the rail
+  flag, `0x441248` → `0x4413f1`) show through slot `+0x2c(5)`; a hidden one
+  goes back on the rail (slot `+0x08`, then `FUN_00428b40`). Every sector
+  window and the compact legend `+0x248` then drop to `HWND_BOTTOM`
+  (`FUN_00440f80.c:31-38`).
+- Under Wine, Empire day-2 start played on to day 6: a System window
+  dragged to (322, 92) and switched to Shipyards came back at (322, 92) on
+  the overview; a minimized one came back on the rail; the sector window
+  came back under the System window. Saved with the GID menu open (day 8):
+  the menu did not come back, the System window it hid came back on the
+  rail, and the sector window it hid came back shown.
+- The focus after a load is on the top restored window that is shown and
+  is not a sector window (Wine runs r, t1, t3, u and w1,
+  empire-fleet-to-yaga-minor at day 38).
+
+Port: the save's interface section (`rebellion_core::saved_interface`,
+`agent_docs/save-load.md`) keeps the GID mode and the Sector, System,
+Fleet, Defenses and Missions windows; the port has no type 7 overlay. A
+minimized window keeps its z serial on the rail, so `saved_interface`
+writes every window in one list by z serial, a hidden one at its own place
+and a window the GID menu hides as hidden (`FUN_00440ea0.c:19-24`).
+`restore_interface` rebuilds them in that order and appends each hidden one
+to the rail as it meets it (`FUN_00428b40`); Fleet windows open through the
+window manager, so `finish_interface_restore` gives a hidden one its rail
+slot before the manager's minimize, raises every window again in saved
+order, and `GalaxyFocusState::after_load` takes the focus. During play a
+minimize still appends to the rail; only a load orders it by z.
 
 ## Modality and input routing
 

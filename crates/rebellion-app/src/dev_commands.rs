@@ -189,8 +189,13 @@ pub enum DevCommand {
     LocateControl(String),
     /// Report the control names of the last drawn frame, or one window's.
     ListControls(Option<String>),
-    /// Press at one point, move, release at another.
-    Drag { from: (f32, f32), to: (f32, f32) },
+    /// Press at one point, move, release at another, with Control held
+    /// around them when `ctrl`.
+    Drag {
+        from: (f32, f32),
+        to: (f32, f32),
+        ctrl: bool,
+    },
     /// Press at one point and move to another, leaving the button held.
     HoldDrag { from: (f32, f32), to: (f32, f32) },
     /// Release the held left button at a point.
@@ -217,6 +222,28 @@ pub enum DevCommand {
     GiveDeathStar(String),
     /// Halve the hull of the first capital ship in the player's named fleet.
     DamageShip(String),
+    /// Raise a side's maintenance capacity by at least `amount` (staging).
+    MaintenanceCapacity { alliance: bool, amount: u32 },
+    /// Destroy every defender of the system's holder there (staging).
+    StripDefenders(String),
+    /// Queue one unit of a class at a system's yard for a side, through
+    /// Build Selection's checks and enqueue (staging).
+    QueueBuild {
+        alliance: bool,
+        class: String,
+        system: String,
+    },
+    /// Issue a Planetary Bombardment order (`0x220`-`0x223`) for a named
+    /// fleet: the player's (no side, or the player's) as the fleet's menu
+    /// row does, the other side's as the AI orders one.
+    Bombard {
+        kind: rebellion_core::bombardment::BombardKind,
+        side: Option<Faction>,
+        fleet: String,
+    },
+    /// Issue a Planetary Assault order (`0x234`) for the player's named
+    /// fleet, as the fleet's menu row does.
+    Assault(String),
     /// The opening briefing's own skip.
     SkipBriefing,
     /// Post an advice code to the droids, as a game event does.
@@ -225,10 +252,15 @@ pub enum DevCommand {
     ReleaseAdviceTopic(u16),
     /// Report every system's holder and the sides with fleets there.
     ListSystems,
+    /// Report every fleet, or one side's, and where it is.
+    ListFleets(Option<Faction>),
     /// Report the Advice topics still held.
     ListAdviceTopics,
     /// Report the game's state: mode, day, speed, open dialogs, side.
     Status,
+    /// Staging only: end the program at once, as Game Options' Exit (0x8f)
+    /// does after its confirmation, from any screen.
+    Quit,
     /// Report every character, or one side's.
     ListCharacters(Option<Faction>),
     /// Report the active missions, or one side's.
@@ -239,6 +271,8 @@ pub enum DevCommand {
     ListProduction(Option<Faction>),
     /// Report one side's top strip and counts.
     ShowSide(Faction),
+    /// Report one system's holder, support, stocks, units and fleets.
+    ShowSystem(String),
     /// Save the campaign as `<evidence>/saves/<name>.reb`, through the game's
     /// own save path.
     Save(String),
@@ -249,6 +283,8 @@ pub enum DevCommand {
         team: Vec<String>,
         kind: MissionKind,
         system: String,
+        /// The capital ship the order names by its tag, else none.
+        ship: Option<u32>,
         decoys: Vec<String>,
     },
     /// Apply the Recruitment mission's success effect to one character.
@@ -257,6 +293,9 @@ pub enum DevCommand {
         side: Faction,
         system: Option<String>,
     },
+    /// Hold one character in the other side's jail, as a stranded mission
+    /// member is held.
+    Jail(String),
     /// Turn fast forward on or off: one game day each frame.
     FastForward(bool),
     /// What a wait does when a Battle Alert opens.
@@ -291,6 +330,9 @@ pub enum WaitCondition {
         tech: rebellion_core::research::TechType,
         level: u32,
     },
+    /// `Skip briefing`'s own wait: the briefing has let go of the clock
+    /// (`dev_policy::skip_briefing`). No line names it.
+    BriefingSkipped,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -299,7 +341,7 @@ impl WaitCondition {
     /// run the clock for it.
     #[must_use]
     pub const fn needs_clock(self) -> bool {
-        !matches!(self, Self::Galaxy)
+        !matches!(self, Self::Galaxy | Self::BriefingSkipped)
     }
 }
 
@@ -334,8 +376,22 @@ pub enum MessageClass {
 pub enum Readiness {
     /// In any game mode, the main menu and battles included.
     Anywhere,
-    /// Only once the galaxy shows and earlier commands have run.
+    /// Only once the galaxy shows and earlier commands have run; never on
+    /// the main menu, whose background world is no campaign.
     Galaxy,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl Readiness {
+    /// Whether a command of this readiness may run now: `in_galaxy` when the
+    /// galaxy view shows with no interface work pending.
+    #[must_use]
+    pub const fn admits(self, in_galaxy: bool) -> bool {
+        match self {
+            Self::Anywhere => true,
+            Self::Galaxy => in_galaxy,
+        }
+    }
 }
 
 /// The Message Index categories by name, as the window's controls read.
@@ -378,11 +434,14 @@ impl DevCommand {
             | Self::BattlePolicy(_)
             | Self::AdvicePolicy(_)
             | Self::ListCharacters(_)
+            | Self::ListFleets(_)
             | Self::ListMissions(_)
             | Self::ShowResearch
             | Self::ListProduction(_)
             | Self::ShowSide(_)
+            | Self::ShowSystem(_)
             | Self::Load(_)
+            | Self::Quit
             | Self::Status => Readiness::Anywhere,
             _ => Readiness::Galaxy,
         }
@@ -529,7 +588,19 @@ pub fn parse_line(line: &str) -> Result<Option<DevCommand>, String> {
     }
     if lower.starts_with("drag ") {
         let (from, to) = span(rest("drag "), "drag")?;
-        return Ok(Some(DevCommand::Drag { from, to }));
+        return Ok(Some(DevCommand::Drag {
+            from,
+            to,
+            ctrl: false,
+        }));
+    }
+    if lower.starts_with("ctrl drag ") {
+        let (from, to) = span(rest("ctrl drag "), "ctrl drag")?;
+        return Ok(Some(DevCommand::Drag {
+            from,
+            to,
+            ctrl: true,
+        }));
     }
     if lower.starts_with("hold drag ") {
         let (from, to) = span(rest("hold drag "), "hold drag")?;
@@ -583,6 +654,53 @@ pub fn parse_line(line: &str) -> Result<Option<DevCommand>, String> {
         }
         return Ok(Some(DevCommand::GiveDeathStar(fleet.to_owned())));
     }
+    for (prefix, kind) in [
+        (
+            "bombard military:",
+            rebellion_core::bombardment::BombardKind::Military,
+        ),
+        (
+            "bombard civilian:",
+            rebellion_core::bombardment::BombardKind::Civilian,
+        ),
+        (
+            "bombard general:",
+            rebellion_core::bombardment::BombardKind::General,
+        ),
+        (
+            "destroy system:",
+            rebellion_core::bombardment::BombardKind::DestroySystem,
+        ),
+    ] {
+        if lower.starts_with(prefix) {
+            let body = rest(prefix);
+            let (side, fleet) = match body.split_once(' ') {
+                Some((word, fleet)) => match side_filter(word) {
+                    Ok(side @ Some(_)) => (side, fleet.trim()),
+                    _ => (None, body),
+                },
+                None => (None, body),
+            };
+            if fleet.is_empty() || side_filter(fleet).is_ok_and(|side| side.is_some()) {
+                return Err(format!(
+                    "{} takes [alliance|empire] and a fleet name",
+                    prefix.trim_end_matches(':')
+                ));
+            }
+            return Ok(Some(DevCommand::Bombard {
+                kind,
+                side,
+                fleet: fleet.to_owned(),
+            }));
+        }
+    }
+    if lower.starts_with("assault:") {
+        let fleet = rest("assault:");
+        if fleet.is_empty() {
+            return Err("assault takes a fleet name".into());
+        }
+        return Ok(Some(DevCommand::Assault(fleet.to_owned())));
+    }
     if lower.starts_with("damage ship:") {
         let fleet = rest("damage ship:");
         if fleet.is_empty() {
@@ -590,11 +708,60 @@ pub fn parse_line(line: &str) -> Result<Option<DevCommand>, String> {
         }
         return Ok(Some(DevCommand::DamageShip(fleet.to_owned())));
     }
+    if lower.starts_with("queue build:") {
+        let usage = "queue build takes `alliance` or `empire`, a class and `at <system>`";
+        let body = rest("queue build:");
+        let (side, tail) = body.split_once(' ').ok_or(usage)?;
+        let alliance = match side.to_ascii_lowercase().as_str() {
+            "alliance" => true,
+            "empire" => false,
+            _ => return Err(usage.into()),
+        };
+        let lower_tail = tail.to_ascii_lowercase();
+        let at = lower_tail.rfind(" at ").ok_or(usage)?;
+        let (class, system) = (tail[..at].trim(), tail[at + 4..].trim());
+        if class.is_empty() || system.is_empty() {
+            return Err(usage.into());
+        }
+        return Ok(Some(DevCommand::QueueBuild {
+            alliance,
+            class: class.to_owned(),
+            system: system.to_owned(),
+        }));
+    }
+    if lower.starts_with("strip defenders at ") {
+        let system = rest("strip defenders at ");
+        if system.is_empty() {
+            return Err("strip defenders at takes a system name".into());
+        }
+        return Ok(Some(DevCommand::StripDefenders(system.to_owned())));
+    }
+    if lower.starts_with("maintenance capacity:") {
+        let usage = "maintenance capacity takes `alliance` or `empire` and `+<n>`";
+        let mut words = rest("maintenance capacity:").split_whitespace();
+        let alliance = match words.next().map(str::to_ascii_lowercase).as_deref() {
+            Some("alliance") => true,
+            Some("empire") => false,
+            _ => return Err(usage.into()),
+        };
+        let amount = words
+            .next()
+            .and_then(|word| word.strip_prefix('+'))
+            .and_then(|n| n.parse::<u32>().ok())
+            .filter(|&n| n > 0);
+        return match (amount, words.next()) {
+            (Some(amount), None) => Ok(Some(DevCommand::MaintenanceCapacity { alliance, amount })),
+            _ => Err(usage.into()),
+        };
+    }
     if lower.starts_with("blockade ") {
         return Ok(Some(DevCommand::Blockade(rest("blockade ").to_owned())));
     }
     if lower == "status" {
         return Ok(Some(DevCommand::Status));
+    }
+    if lower == "quit" {
+        return Ok(Some(DevCommand::Quit));
     }
     if lower.starts_with("fast forward:") {
         return match rest("fast forward:").to_ascii_lowercase().as_str() {
@@ -623,6 +790,9 @@ pub fn parse_line(line: &str) -> Result<Option<DevCommand>, String> {
     if let Some(side) = lower.strip_prefix("list characters") {
         return side_filter(side).map(|side| Some(DevCommand::ListCharacters(side)));
     }
+    if let Some(side) = lower.strip_prefix("list fleets") {
+        return side_filter(side).map(|side| Some(DevCommand::ListFleets(side)));
+    }
     if let Some(side) = lower.strip_prefix("list missions") {
         return side_filter(side).map(|side| Some(DevCommand::ListMissions(side)));
     }
@@ -631,6 +801,14 @@ pub fn parse_line(line: &str) -> Result<Option<DevCommand>, String> {
     }
     if lower == "show research" {
         return Ok(Some(DevCommand::ShowResearch));
+    }
+    if lower.starts_with("show system") {
+        let name = rest("show system");
+        return if name.is_empty() {
+            Err("show system takes a system name".into())
+        } else {
+            Ok(Some(DevCommand::ShowSystem(name.to_owned())))
+        };
     }
     if let Some(side) = lower.strip_prefix("show side") {
         return match side_filter(side)? {
@@ -660,6 +838,13 @@ pub fn parse_line(line: &str) -> Result<Option<DevCommand>, String> {
     }
     if lower.starts_with("recruit:") {
         return recruit(rest("recruit:")).map(Some);
+    }
+    if lower.starts_with("jail:") {
+        let character = rest("jail:");
+        if character.is_empty() {
+            return Err("jail takes a character name".into());
+        }
+        return Ok(Some(DevCommand::Jail(character.to_owned())));
     }
     if lower == "list systems" {
         return Ok(Some(DevCommand::ListSystems));
@@ -849,9 +1034,10 @@ fn names(text: &str) -> Vec<String> {
 }
 
 /// The mission kinds `Mission:` names, by the dialog's own names (and
-/// `Research(Ship)` for each research tree), longest first. Sabotage, Death
-/// Star Sabotage, Assassination, Abduction and Rescue are absent: each needs
-/// a target object or character the line cannot name.
+/// `Research(Ship)` for each research tree), longest first. Sabotage and
+/// Death Star Sabotage take the first object at the system the dialog offers
+/// them for (`dev_actions::mission_order`). Assassination, Abduction and
+/// Rescue are absent: each needs a target character the line cannot name.
 #[cfg(not(target_arch = "wasm32"))]
 fn mission_kind_names() -> Vec<(String, MissionKind)> {
     let mut named: Vec<(String, MissionKind)> = [
@@ -861,6 +1047,8 @@ fn mission_kind_names() -> Vec<(String, MissionKind)> {
         MissionKind::InciteUprising,
         MissionKind::SubdueUprising,
         MissionKind::Move,
+        MissionKind::Sabotage,
+        MissionKind::DeathStarSabotage,
     ]
     .into_iter()
     .chain(TechType::ALL.map(MissionKind::Research))
@@ -880,11 +1068,12 @@ fn mission_kind_names() -> Vec<(String, MissionKind)> {
     named
 }
 
-/// `<character>[, <character>...] <kind> at <system> [decoys <character>, ...]`.
+/// `<character>[, <character>...] <kind> at <system> [ship <tag>] [decoys
+/// <character>, ...]`.
 #[cfg(not(target_arch = "wasm32"))]
 fn mission(args: &str) -> Result<DevCommand, String> {
-    const USAGE: &str =
-        "mission takes `<character>[, ...] <kind> at <system> [decoys <character>, ...]`";
+    const USAGE: &str = "mission takes `<character>[, ...] <kind> at <system> [ship <tag>] \
+                         [decoys <character>, ...]`";
     let lower = args.to_ascii_lowercase();
     let (body, decoys) = match lower.find(" decoys ") {
         Some(split) => (&args[..split], names(&args[split + " decoys ".len()..])),
@@ -894,6 +1083,16 @@ fn mission(args: &str) -> Result<DevCommand, String> {
         return Err(USAGE.into());
     };
     let system = body[at + " at ".len()..].trim();
+    let (system, ship) = match system.to_ascii_lowercase().rfind(" ship ") {
+        Some(split) => {
+            let tag = system[split + " ship ".len()..].trim();
+            let tag = tag
+                .parse::<u32>()
+                .map_err(|_| format!("{USAGE}; {tag:?} is not a ship tag"))?;
+            (system[..split].trim(), Some(tag))
+        }
+        None => (system, None),
+    };
     let head = body[..at].trim();
     let head_lower = head.to_ascii_lowercase();
     let (kind, team) = mission_kind_names()
@@ -912,6 +1111,7 @@ fn mission(args: &str) -> Result<DevCommand, String> {
         team,
         kind,
         system: system.to_owned(),
+        ship,
         decoys,
     })
 }
@@ -975,7 +1175,16 @@ mod tests {
             parse_line("Drag 100,200 to 140,210"),
             Ok(Some(DevCommand::Drag {
                 from: (100.0, 200.0),
-                to: (140.0, 210.0)
+                to: (140.0, 210.0),
+                ctrl: false
+            }))
+        );
+        assert_eq!(
+            parse_line("Ctrl drag 100,200 to 140,210"),
+            Ok(Some(DevCommand::Drag {
+                from: (100.0, 200.0),
+                to: (140.0, 210.0),
+                ctrl: true
             }))
         );
         assert!(parse_line("Hold drag 100,200").is_err());
@@ -983,6 +1192,246 @@ mod tests {
             parse_line("Release advice topic 3"),
             Ok(Some(DevCommand::ReleaseAdviceTopic(3)))
         );
+    }
+
+    #[test]
+    fn the_four_bombardment_orders_parse_with_a_fleet_name() {
+        use rebellion_core::bombardment::BombardKind;
+        for (line, kind) in [
+            ("Bombard military: Fleet 1", BombardKind::Military),
+            ("Bombard civilian: Fleet 1", BombardKind::Civilian),
+            ("bombard general: Fleet 1", BombardKind::General),
+            ("Destroy system: Fleet 1", BombardKind::DestroySystem),
+        ] {
+            assert_eq!(
+                parse_line(line),
+                Ok(Some(DevCommand::Bombard {
+                    kind,
+                    side: None,
+                    fleet: "Fleet 1".into()
+                }))
+            );
+        }
+        assert!(parse_line("Destroy system:").is_err());
+    }
+
+    #[test]
+    fn a_strike_order_may_name_the_side_whose_fleet_strikes() {
+        use rebellion_core::bombardment::BombardKind;
+        for (line, side) in [
+            ("Destroy system: empire Fleet 1", Some(Faction::Empire)),
+            ("Destroy system: Alliance Fleet 1", Some(Faction::Alliance)),
+            ("Destroy system: Fleet 1", None),
+        ] {
+            assert_eq!(
+                parse_line(line),
+                Ok(Some(DevCommand::Bombard {
+                    kind: BombardKind::DestroySystem,
+                    side,
+                    fleet: "Fleet 1".into()
+                })),
+                "{line}"
+            );
+        }
+        assert!(parse_line("Destroy system: empire").is_err());
+        assert!(parse_line("Bombard general: empire  ").is_err());
+        assert_eq!(
+            parse_line("List fleets empire"),
+            Ok(Some(DevCommand::ListFleets(Some(Faction::Empire))))
+        );
+        assert_eq!(
+            parse_line("list fleets"),
+            Ok(Some(DevCommand::ListFleets(None)))
+        );
+        assert_eq!(
+            parse_line("List fleets").unwrap().unwrap().readiness(),
+            Readiness::Anywhere
+        );
+        assert!(parse_line("List fleets rebels").is_err());
+    }
+
+    #[test]
+    fn the_assault_order_parses_with_a_fleet_name() {
+        assert_eq!(
+            parse_line("Assault: Fleet 1"),
+            Ok(Some(DevCommand::Assault("Fleet 1".into())))
+        );
+        assert_eq!(
+            parse_line("Assault: Fleet 1").unwrap().unwrap().readiness(),
+            Readiness::Galaxy
+        );
+        assert!(parse_line("assault:").is_err());
+    }
+
+    #[test]
+    fn a_mission_line_names_sabotage_and_death_star_sabotage_by_the_dialogs_names() {
+        assert_eq!(
+            parse_line("Mission: Han Solo, Chewbacca Death Star Sabotage at Coruscant decoys Leia"),
+            Ok(Some(DevCommand::Mission {
+                team: vec!["Han Solo".into(), "Chewbacca".into()],
+                kind: MissionKind::DeathStarSabotage,
+                system: "Coruscant".into(),
+                ship: None,
+                decoys: vec!["Leia".into()],
+            }))
+        );
+        assert_eq!(
+            parse_line("mission: Han Solo sabotage at Kuat"),
+            Ok(Some(DevCommand::Mission {
+                team: vec!["Han Solo".into()],
+                kind: MissionKind::Sabotage,
+                system: "Kuat".into(),
+                ship: None,
+                decoys: Vec::new(),
+            }))
+        );
+        assert!(parse_line("Mission: Han Solo Assassination at Kuat").is_err());
+    }
+
+    #[test]
+    fn a_mission_line_names_its_target_ship_by_tag_before_its_decoys() {
+        assert_eq!(
+            parse_line("Mission: Han Solo Sabotage at Corellia ship 812 decoys Leia"),
+            Ok(Some(DevCommand::Mission {
+                team: vec!["Han Solo".into()],
+                kind: MissionKind::Sabotage,
+                system: "Corellia".into(),
+                ship: Some(812),
+                decoys: vec!["Leia".into()],
+            }))
+        );
+        assert_eq!(
+            parse_line("mission: Wedge Antilles death star sabotage at Coruscant SHIP 7"),
+            Ok(Some(DevCommand::Mission {
+                team: vec!["Wedge Antilles".into()],
+                kind: MissionKind::DeathStarSabotage,
+                system: "Coruscant".into(),
+                ship: Some(7),
+                decoys: Vec::new(),
+            }))
+        );
+        assert!(parse_line("Mission: Han Solo Sabotage at Corellia ship Devastator").is_err());
+        assert!(parse_line("Mission: Han Solo Sabotage at  decoys Leia").is_err());
+    }
+
+    #[test]
+    fn a_galaxy_command_waits_off_the_galaxy_and_an_anywhere_command_does_not() {
+        let staging = parse_line("Maintenance capacity: empire +600")
+            .unwrap()
+            .unwrap()
+            .readiness();
+        assert!(!staging.admits(false), "the main menu is not the galaxy");
+        assert!(staging.admits(true));
+        let readout = parse_line("Show side empire").unwrap().unwrap().readiness();
+        assert!(readout.admits(false));
+    }
+
+    #[test]
+    fn queue_build_takes_a_side_a_class_and_a_system() {
+        assert_eq!(
+            parse_line("Queue build: empire Death Star at Coruscant"),
+            Ok(Some(DevCommand::QueueBuild {
+                alliance: false,
+                class: "Death Star".into(),
+                system: "Coruscant".into(),
+            }))
+        );
+        assert_eq!(
+            parse_line("queue build: Alliance Bulk Transport at Sluis Van")
+                .unwrap()
+                .unwrap(),
+            DevCommand::QueueBuild {
+                alliance: true,
+                class: "Bulk Transport".into(),
+                system: "Sluis Van".into(),
+            }
+        );
+        assert_eq!(
+            parse_line("Queue build: empire Death Star at Coruscant")
+                .unwrap()
+                .unwrap()
+                .readiness(),
+            Readiness::Galaxy
+        );
+        for bad in [
+            "Queue build:",
+            "Queue build: empire Death Star",
+            "Queue build: rebels Death Star at Coruscant",
+            "Queue build: empire at Coruscant",
+            "Queue build: empire Death Star at",
+        ] {
+            assert!(parse_line(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn strip_defenders_takes_a_system_and_waits_for_the_galaxy() {
+        let command = parse_line("Strip defenders at Coruscant");
+        assert_eq!(
+            command,
+            Ok(Some(DevCommand::StripDefenders("Coruscant".into())))
+        );
+        assert_eq!(command.unwrap().unwrap().readiness(), Readiness::Galaxy);
+    }
+
+    #[test]
+    fn maintenance_capacity_takes_a_side_and_a_positive_amount() {
+        assert_eq!(
+            parse_line("Maintenance capacity: empire +600"),
+            Ok(Some(DevCommand::MaintenanceCapacity {
+                alliance: false,
+                amount: 600
+            }))
+        );
+        assert_eq!(
+            parse_line("maintenance capacity: Alliance +50")
+                .unwrap()
+                .unwrap()
+                .readiness(),
+            Readiness::Galaxy
+        );
+        for bad in [
+            "Maintenance capacity:",
+            "Maintenance capacity: empire",
+            "Maintenance capacity: empire 600",
+            "Maintenance capacity: empire +0",
+            "Maintenance capacity: empire +600 more",
+            "Maintenance capacity: rebels +600",
+        ] {
+            assert!(parse_line(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn the_jail_command_parses_with_a_character_name() {
+        assert_eq!(
+            parse_line("Jail: Han Solo"),
+            Ok(Some(DevCommand::Jail("Han Solo".into())))
+        );
+        assert_eq!(
+            parse_line("jail: Han Solo").unwrap().unwrap().readiness(),
+            Readiness::Galaxy
+        );
+        assert!(parse_line("Jail:").is_err());
+    }
+
+    #[test]
+    fn quit_parses_in_any_case_and_runs_anywhere() {
+        // Staging only: the galaxy has no Escape route to the menu
+        // (FUN_00422ce0), so a run ends with this or F1 and Exit.
+        for line in ["Quit", "quit", "  QUIT  "] {
+            let command = parse_line(line);
+            assert_eq!(command, Ok(Some(DevCommand::Quit)), "{line}");
+            assert_eq!(command.unwrap().unwrap().readiness(), Readiness::Anywhere);
+        }
+    }
+
+    #[test]
+    fn show_system_takes_a_system_name_and_runs_anywhere() {
+        let command = parse_line("Show system Yavin");
+        assert_eq!(command, Ok(Some(DevCommand::ShowSystem("Yavin".into()))));
+        assert_eq!(command.unwrap().unwrap().readiness(), Readiness::Anywhere);
+        assert!(parse_line("show system").is_err());
     }
 
     #[test]

@@ -3,7 +3,7 @@ title: "Orbital Bombardment"
 description: "Bombardment orders 0x220-0x223: defence fire, per-hit target rolls, support shifts"
 category: "mechanics"
 created: 2026-03-16
-updated: 2026-10-14
+updated: 2026-10-17
 game_system: "bombardment"
 sources:
   - type: "ghidra"
@@ -48,39 +48,44 @@ Death Star-family ship. `FUN_0058d800` sets the target classes:
 
 Military targets are the holder's regiments, defence and production
 facilities and the Alliance HQ; civilian targets are its other facilities.
+A stalemated system keeps its earlier holder (`FUN_0050b610`).
 
 ### The run
 
 1. **Death Star** (`FUN_0058d990`): with Destroy System, a Death Star in the
-   bombarding fleets destroys the system and everything in it; each
-   character there is hit with probability 50% (GNPRTB `0x606`).
-2. **Defence fire** (`FUN_0058dc10`): each KDY-150, then each LNR battery,
-   fires once at a random bombarding ship: its DEFFACSD attack × (the
-   General's leadership / 40 + 1).
+   bombarding fleets destroys the system (the cascade:
+   [death-star.md](death-star.md)); then each minor character (families
+   `0x38`-`0x3b`) of either side directly at the system, not aboard a fleet
+   and not in transit, dies with chance GNPRTB `0x606` (50)
+   (`bombardment::roll_characters`).
+2. **Defence fire** (`FUN_0058dc10`): each KDY-150, then each LNR battery
+   at the system, whoever owns it, fires once at a random bombarding ship:
+   its DEFFACSD attack × (the General's leadership / 40 + 1).
 3. **Hits** (`FUN_0058df60`): per fleet, its bombard strength × (the
    Admiral's leadership / 40 + 1), summed, minus the holder's planetary
    shield generators. Each hit picks a random target with value v and
-   succeeds with chance (10 − v)/10.
+   succeeds with chance (10 − v)/10. Target Military Facilities first rolls
+   one collateral hit on the holder's first civilian facility, with chance
+   1 in (military targets + 1), always when there is none (`FUN_0058d080`).
 4. **Support** (`FUN_0058e320`): when a civilian facility, energy or raw
    material was lost, the system's support for the bombarding side falls by
    20 (GNPRTB 7705), with a sector-wide shift; destroying a system shifts
-   support galaxy-wide.
+   support galaxy-wide instead, since a system no longer populated takes no
+   support change.
 
 Nothing branches by side, so either side can bombard.
 
 ### The port
 
-`bombardment.rs` still computes one number from the transit-distance formula
-(`FUN_0055d8c0`, the reader of GNPRTB `0x1400`), and the Death Star fires
-through its own panel. Task-graph node `or-port-bombardment-8usw` replaces
-both with the run above.
+`bombardment.rs` ports the run above for both sides and the AI (`gate`,
+`open`, `bombard`, `finalize`; `integrator::order_strike`); the player orders
+it from the Planetary Bombardment submenu.
 
 ## Source Material
 
 - Ghidra: [bombardment.md](../../ghidra/notes/bombardment.md) — orders, phases, rolls, decompiles
 - Ghidra: [support-shifts.md](../../ghidra/notes/support-shifts.md) — the support changes
-- Ghidra: [build-delivery.md](../../ghidra/notes/build-delivery.md) — the distance formula `bombardment.rs` borrows
-- Rust: `crates/rebellion-core/src/bombardment.rs` — `BombardmentSystem::resolve_bombardment()`
+- Rust: `crates/rebellion-core/src/bombardment.rs` — `gate`, `bombard`, `finalize`
 
 ## Related
 

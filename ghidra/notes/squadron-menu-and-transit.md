@@ -67,9 +67,8 @@ Observed in the original (2026-10-10, capture VM, save
 on one TIE Fighter squadron opens Move, Confirmed Move, Encyclopedia, Status,
 Scrap, in that order, all drawn alike. Choosing Confirmed Move turns the
 pointer into the targeting crosshair (`25-confirmed-move.png`), so it is
-enabled for a squadron; the port keeps it disabled. An earlier draft of this note said the
-Fleet window has no per-squadron right-click; that rested on the port's model
-(squadrons as fleet fighter entries) and is wrong. The original's carried
+enabled for a squadron, as the port's is (`regiment-unload.md`). The Fleet
+window has a per-squadron right-click: the original's carried
 squadrons are `0x1c` objects in a ship's container (`FUN_00504c40`,
 `FUN_00556390`), so they take `FUN_00503930`'s list like a planet's.
 Evidence: `.artifacts/native-checks/2026-10-10-original-fleet-squadron-menu/`

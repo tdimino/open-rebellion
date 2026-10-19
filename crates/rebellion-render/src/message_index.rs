@@ -5,7 +5,7 @@
 //! `FUN_00468ab0` fills the list, `FUN_00468f20` filters by category, and
 //! `FUN_00468fb0` transitions between modes 1 (index) and 2 (single message).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
 use egui_macroquad::egui::{self, Color32};
 
@@ -539,32 +539,17 @@ pub fn draw_message_index_shell(
         .show(ctx, |ui| {
             let size = egui::vec2(MESSAGE_INDEX_WIDTH * scale, MESSAGE_INDEX_HEIGHT * scale);
             let (window_rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
-            let (base, rail) = match faction {
-                CockpitFaction::Alliance => (INDEX_BASE_ALLIANCE, INDEX_RAIL_ALLIANCE),
-                CockpitFaction::Empire => (INDEX_BASE_EMPIRE, INDEX_RAIL_EMPIRE),
-            };
-            paint_strategy_resource(ui.painter(), ctx, cache, base, window_rect);
-            paint_strategy_resource(
-                ui.painter(),
-                ctx,
-                cache,
-                rail,
-                message_index_rect(window_rect, scale, 412.0, 0.0, 58.0, 330.0),
-            );
-            paint_strategy_resource(
-                ui.painter(),
-                ctx,
-                cache,
-                INDEX_CONTENT,
-                message_index_rect(
-                    window_rect,
-                    scale,
-                    INDEX_CONTENT_X,
-                    INDEX_CONTENT_Y,
-                    INDEX_CONTENT_WIDTH,
-                    INDEX_CONTENT_HEIGHT,
-                ),
-            );
+            // The surface starts as index 0, black (FUN_005fbda0).
+            ui.painter().rect_filled(window_rect, 0.0, Color32::BLACK);
+            for (resource, (x, y, width, height)) in shell_layers(faction) {
+                paint_strategy_resource(
+                    ui.painter(),
+                    ctx,
+                    cache,
+                    resource,
+                    message_index_rect(window_rect, scale, x, y, width, height),
+                );
+            }
 
             let (pointer, primary_down) = ctx.input(|input| {
                 (
@@ -622,6 +607,31 @@ pub fn draw_message_index_shell(
     selected
 }
 
+/// The index surface's layers in `FUN_004665f0`'s order, as (resource,
+/// window rectangle): the content plain at (12, 13) (`FUN_005fcc30`), then
+/// the shell and the rail keyed over it (`FUN_005fd0f0`, the key being each
+/// bitmap's first stored pixel, palette blue). The shell's keyed bottom row
+/// therefore shows the surface's black.
+fn shell_layers(faction: CockpitFaction) -> [(u32, (f32, f32, f32, f32)); 3] {
+    let (base, rail) = match faction {
+        CockpitFaction::Alliance => (INDEX_BASE_ALLIANCE, INDEX_RAIL_ALLIANCE),
+        CockpitFaction::Empire => (INDEX_BASE_EMPIRE, INDEX_RAIL_EMPIRE),
+    };
+    [
+        (
+            INDEX_CONTENT,
+            (
+                INDEX_CONTENT_X,
+                INDEX_CONTENT_Y,
+                INDEX_CONTENT_WIDTH,
+                INDEX_CONTENT_HEIGHT,
+            ),
+        ),
+        (base, (0.0, 0.0, MESSAGE_INDEX_WIDTH, MESSAGE_INDEX_HEIGHT)),
+        (rail, (412.0, 0.0, 58.0, 330.0)),
+    ]
+}
+
 // ---------------------------------------------------------------------------
 // Geometry helpers
 // ---------------------------------------------------------------------------
@@ -642,6 +652,77 @@ fn message_index_rect(
 
 fn message_index_rect_contains(rect: egui::Rect, point: egui::Pos2) -> bool {
     point.x >= rect.min.x && point.x < rect.max.x && point.y >= rect.min.y && point.y < rect.max.y
+}
+
+/// Where the picture loader `FUN_0046a280` finds a message picture id:
+/// STRATEGY (module 7) first, else its ENCYBMAP EDATA file
+/// (`FUN_0045f970`, the Encyclopedia's route).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PictureSource {
+    Strategy,
+    Encyclopedia,
+}
+
+fn picture_source(in_strategy: bool, in_encyclopedia: bool) -> Option<PictureSource> {
+    if in_strategy {
+        Some(PictureSource::Strategy)
+    } else if in_encyclopedia {
+        Some(PictureSource::Encyclopedia)
+    } else {
+        None
+    }
+}
+
+/// Paint one message picture layer through `FUN_0046a280`: `place` takes
+/// the picture's native size and gives its rectangle. With no source,
+/// nothing is painted (`FUN_0046a320`).
+fn paint_message_picture(
+    painter: &egui::Painter,
+    ctx: &egui::Context,
+    cache: &mut BmpCache,
+    pictures: &mut MessagePictures,
+    encyclopedia_picture: &dyn Fn(u16) -> Option<Vec<u8>>,
+    id: u16,
+    place: impl Fn([usize; 2]) -> egui::Rect,
+) {
+    let strategy = cache.original_resource_size(DllSource::Strategy, u32::from(id));
+    let texture = pictures
+        .0
+        .entry(id)
+        .or_insert_with(|| {
+            if strategy.is_some() {
+                return None;
+            }
+            let bytes = encyclopedia_picture(id)?;
+            let image = image::load_from_memory(&bytes).ok()?.to_rgba8();
+            let size = [image.width() as usize, image.height() as usize];
+            let image = egui::ColorImage::from_rgba_unmultiplied(size, image.as_raw());
+            Some(ctx.load_texture(
+                format!("message-picture-{id}"),
+                image,
+                egui::TextureOptions::NEAREST,
+            ))
+        })
+        .clone();
+    match picture_source(strategy.is_some(), texture.is_some()) {
+        Some(PictureSource::Strategy) => {
+            if let Some(size) = strategy {
+                paint_strategy_resource(painter, ctx, cache, u32::from(id), place(size));
+            }
+        }
+        Some(PictureSource::Encyclopedia) => {
+            if let Some(texture) = texture {
+                let [width, height] = texture.size();
+                painter.image(
+                    texture.id(),
+                    place([width, height]),
+                    egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+                    Color32::WHITE,
+                );
+            }
+        }
+        None => {}
+    }
 }
 
 fn paint_strategy_resource(
@@ -703,6 +784,11 @@ pub enum MessageIndexAction {
     /// Display (`0x67`): go to the message's object (`FUN_00429440`); a
     /// [`MessageIndexAction::Close`] follows, as the original posts `0x28`.
     GoTo(MessageTarget),
+    /// An Operation Report shown from the list (`FUN_00469de0` on a
+    /// kind-`0xf` message): open its report window (window message
+    /// `0x468`, wParam `0x1c`), which goes back to the Index when it closes;
+    /// a [`MessageIndexAction::Close`] follows.
+    OpenReport(MessageId),
 }
 
 /// Mutable state for the Message Index window.
@@ -739,6 +825,19 @@ pub struct MessageIndexState {
     /// The rows the list last filled with; `None` until the first fill.
     /// A change of rows is a re-fill (`FUN_00468f20`).
     filled: Option<Vec<MessageId>>,
+    /// Message pictures that STRATEGY lacks, loaded from their ENCYBMAP
+    /// EDATA files (`FUN_0046a280`), by id.
+    pictures: MessagePictures,
+}
+
+/// The loaded fallback pictures, by id; `None` for an id with no file.
+#[derive(Clone, Default)]
+struct MessagePictures(HashMap<u16, Option<egui::TextureHandle>>);
+
+impl std::fmt::Debug for MessagePictures {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_set().entries(self.0.keys()).finish()
+    }
 }
 
 impl Default for MessageIndexState {
@@ -756,6 +855,7 @@ impl Default for MessageIndexState {
             body_scroll: (None, 0),
             body_drag: ScrollDrag::default(),
             filled: None,
+            pictures: MessagePictures::default(),
         }
     }
 }
@@ -904,6 +1004,25 @@ impl MessageIndexState {
         self.viewing = Some(id);
         self.last_clicked = None;
         Some(MessageIndexAction::MessageDisplayed(id))
+    }
+
+    /// `FUN_00469de0` on a message whose kind (slot 3) is `0xf`: it does
+    /// not take the single-message layout, but records the message
+    /// (`DAT_006b2904`) and the route (`DAT_006b2910 = 0x1c`), posts the
+    /// report window and closes the Index. The Index returns to its list.
+    pub fn route_report(&mut self, rows: &[&GameMessage]) -> Vec<MessageIndexAction> {
+        let report = self
+            .viewing
+            .filter(|_| self.mode == IndexMode::SingleMessage)
+            .filter(|&id| rows.iter().any(|msg| msg.id == id && msg.report.is_some()));
+        let Some(id) = report else {
+            return Vec::new();
+        };
+        self.return_to_list();
+        vec![
+            MessageIndexAction::OpenReport(id),
+            MessageIndexAction::Close,
+        ]
     }
 
     /// Return to mode 1 (list) from mode 2 (single message).
@@ -1056,6 +1175,7 @@ pub fn draw_message_index(
     log: &MessageLog,
     state: &mut MessageIndexState,
     player_is_alliance: bool,
+    encyclopedia_picture: &dyn Fn(u16) -> Option<Vec<u8>>,
 ) -> Vec<MessageIndexAction> {
     let mut actions = Vec::new();
 
@@ -1113,7 +1233,16 @@ pub fn draw_message_index(
             actions.extend(list_actions);
         }
         IndexMode::SingleMessage => {
-            match draw_single_message(ctx, cache, faction, origin, scale, &rows, state) {
+            match draw_single_message(
+                ctx,
+                cache,
+                faction,
+                origin,
+                scale,
+                &rows,
+                state,
+                encyclopedia_picture,
+            ) {
                 Some(0x9a) => actions.extend(state.step_message(&rows, false)),
                 Some(0x96) => actions.extend(state.step_message(&rows, true)),
                 _ => {}
@@ -1162,6 +1291,7 @@ pub fn draw_message_index(
         Some(0x91) => actions.extend(state.delete_selected()),
         _ => {}
     }
+    actions.extend(state.route_report(&rows));
 
     actions
 }
@@ -1398,6 +1528,7 @@ fn draw_single_message(
     scale: f32,
     rows: &[&GameMessage],
     state: &mut MessageIndexState,
+    encyclopedia_picture: &dyn Fn(u16) -> Option<Vec<u8>>,
 ) -> Option<u16> {
     let id = state.viewing?;
     let msg = rows.iter().find(|m| m.id == id)?;
@@ -1429,26 +1560,28 @@ fn draw_single_message(
             painter.rect_filled(picture, 0.0, Color32::BLACK);
             if let Some(display) = &msg.display {
                 if display.background != 0 {
-                    paint_strategy_resource(
+                    paint_message_picture(
                         painter,
                         ctx,
                         cache,
-                        u32::from(display.background),
-                        picture,
+                        &mut state.pictures,
+                        encyclopedia_picture,
+                        display.background,
+                        |_| picture,
                     );
                 }
-                let overlay = u32::from(display.overlay);
-                if let Some([width, height]) = (overlay != 0)
-                    .then(|| cache.original_resource_size(DllSource::Strategy, overlay))
-                    .flatten()
-                {
-                    let size = egui::vec2(width as f32, height as f32) * scale;
-                    paint_strategy_resource(
+                if display.overlay != 0 {
+                    paint_message_picture(
                         painter,
                         ctx,
                         cache,
-                        overlay,
-                        egui::Rect::from_center_size(picture.center(), size),
+                        &mut state.pictures,
+                        encyclopedia_picture,
+                        display.overlay,
+                        |[width, height]| {
+                            let size = egui::vec2(width as f32, height as f32) * scale;
+                            egui::Rect::from_center_size(picture.center(), size)
+                        },
                     );
                 }
             }
@@ -1648,9 +1781,116 @@ pub fn draw_message_index_fixture(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_picture_strategy_lacks_is_painted_from_its_encyclopedia_bytes_or_not_at_all() {
+        // FUN_0046a280 -> FUN_0045f970, then FUN_0046a320 blits it where
+        // the layer goes; a null picture blits nothing.
+        let mut bmp = std::io::Cursor::new(Vec::new());
+        image::RgbaImage::from_pixel(2, 1, image::Rgba([10, 20, 30, 255]))
+            .write_to(&mut bmp, image::ImageFormat::Bmp)
+            .unwrap();
+        let bytes = bmp.into_inner();
+        let place = |[width, height]: [usize; 2]| {
+            egui::Rect::from_min_size(egui::pos2(12.0, 33.0), egui::vec2(width as f32, height as f32))
+        };
+        for (source, painted) in [(Some(bytes), 1), (None, 0)] {
+            let ctx = egui::Context::default();
+            let mut cache = BmpCache::new();
+            let mut pictures = MessagePictures::default();
+            let output = ctx.run(egui::RawInput::default(), |ctx| {
+                let painter = ctx.layer_painter(egui::LayerId::background());
+                paint_message_picture(
+                    &painter,
+                    ctx,
+                    &mut cache,
+                    &mut pictures,
+                    &|id| (id == 0x1540).then(|| source.clone()).flatten(),
+                    0x1540,
+                    place,
+                );
+            });
+            let meshes: Vec<egui::Rect> = output
+                .shapes
+                .iter()
+                .filter_map(|clipped| match &clipped.shape {
+                    egui::epaint::Shape::Mesh(mesh) => Some(mesh.calc_bounds()),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(meshes.len(), painted);
+            if painted == 1 {
+                assert_eq!(meshes[0], place([2, 1]));
+            }
+        }
+    }
+
+    #[test]
+    fn a_message_picture_comes_from_strategy_else_from_its_encyclopedia_file() {
+        // FUN_0046a280: STRATEGY (module 7) first, then FUN_0045f970 over
+        // ENCYBMAP's EDATA file; with neither, FUN_0046a320 blits nothing.
+        assert_eq!(picture_source(true, true), Some(PictureSource::Strategy));
+        assert_eq!(picture_source(true, false), Some(PictureSource::Strategy));
+        assert_eq!(picture_source(false, true), Some(PictureSource::Encyclopedia));
+        assert_eq!(picture_source(false, false), None);
+    }
     use crate::message_log::{MessageCategory, RailAudience};
 
     // ── Geometry tests (preserved) ──────────────────────────────────────
+
+    // FUN_004665f0.c:97-105: a zero-filled surface (FUN_005fbda0), 10822
+    // plain at (12, 13), then the side's shell and rail keyed over it
+    // (FUN_005fd0f0), so the shell's palette-blue bottom row shows black.
+    #[test]
+    fn the_index_surface_is_black_under_the_content_then_the_keyed_shell_and_rail() {
+        for (faction, base, rail) in [
+            (CockpitFaction::Alliance, 10_335, 10_820),
+            (CockpitFaction::Empire, 10_336, 10_821),
+        ] {
+            assert_eq!(
+                shell_layers(faction).map(|(resource, _)| resource),
+                [10_822, base, rail]
+            );
+            assert_eq!(
+                shell_layers(faction).map(|(_, rect)| rect),
+                [
+                    (12.0, 13.0, 400.0, 306.0),
+                    (0.0, 0.0, 470.0, 331.0),
+                    (412.0, 0.0, 58.0, 330.0)
+                ]
+            );
+            let ctx = egui::Context::default();
+            let mut cache = BmpCache::new();
+            // egui paints an Area from its second pass and fades it in;
+            // read a pass a second later.
+            let mut output = egui::FullOutput::default();
+            for time in [0.0, 0.5, 1.5] {
+                let input = egui::RawInput {
+                    time: Some(time),
+                    ..Default::default()
+                };
+                output = ctx.run(input, |ctx| {
+                    let _ = draw_message_index_shell(
+                        ctx,
+                        &mut cache,
+                        faction,
+                        egui::pos2(85.0, 55.0),
+                        1.0,
+                        true,
+                    );
+                });
+            }
+            let first = output.shapes.first().map(|clipped| &clipped.shape);
+            let Some(egui::epaint::Shape::Rect(backing)) = first else {
+                panic!("the surface's black is not painted first: {first:?}");
+            };
+            assert_eq!(
+                backing.rect,
+                egui::Rect::from_min_size(egui::pos2(85.0, 55.0), egui::vec2(470.0, 331.0))
+            );
+            assert_eq!(backing.fill, Color32::BLACK);
+        }
+    }
 
     #[test]
     fn category_geometry_matches_the_recovered_native_controls() {
@@ -1787,6 +2027,51 @@ mod tests {
         );
         log.push(GameMessage::new(5, "No rail", MessageCategory::Event));
         log
+    }
+
+    #[test]
+    fn showing_a_report_row_opens_its_window_and_closes_the_index_for_both_sides() {
+        // FUN_00469de0: a kind-0xf message posts 0x468 / 0x1c and closes
+        // the Index (DAT_006b2910 = 0x1c); any other message takes the
+        // single-message layout.
+        use rebellion_core::dat::Faction;
+        use rebellion_core::operation_report::OperationReport;
+        for alliance in [true, false] {
+            let mut log = MessageLog::new(8);
+            let plain = log.push(
+                GameMessage::new(1, "Fleet arrived", MessageCategory::Mission)
+                    .on_rail(MessageRail::Conflict, RailAudience::side(alliance)),
+            );
+            let report = log.push(
+                GameMessage::new(2, "Orbital bombardment", MessageCategory::Combat)
+                    .on_rail(MessageRail::Conflict, RailAudience::side(alliance))
+                    .with_report(std::sync::Arc::new(OperationReport::new(
+                        rebellion_core::ids::SystemKey::default(),
+                        false,
+                        Faction::Neutral,
+                        Faction::of_alliance(alliance),
+                    ))),
+            );
+            let rows = filtered_messages(&log, 0x80, alliance);
+            let mut state = MessageIndexState::new();
+            state.set_category(0x80);
+            assert_eq!(
+                state.view_row(&rows, 1),
+                Some(MessageIndexAction::MessageDisplayed(plain))
+            );
+            assert!(state.route_report(&rows).is_empty());
+            assert_eq!(state.mode(), IndexMode::SingleMessage);
+            state.view_row(&rows, 2);
+            assert_eq!(
+                state.route_report(&rows),
+                [
+                    MessageIndexAction::OpenReport(report),
+                    MessageIndexAction::Close
+                ]
+            );
+            assert_eq!(state.mode(), IndexMode::List);
+            assert!(state.route_report(&rows).is_empty());
+        }
     }
 
     #[test]
@@ -2318,6 +2603,7 @@ mod tests {
                     log,
                     state,
                     true,
+                    &|_| None,
                 );
                 all_actions.extend(actions);
             });

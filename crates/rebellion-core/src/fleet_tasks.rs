@@ -609,17 +609,17 @@ impl FleetTask {
             .filter(|s| s.flags & ship::OWN != 0 && s.flags & (ship::EN_ROUTE | ship::FREE) == 0)
             .map(|s| (s.tag, s.regiments_active))
             .collect();
-        let first = f.ships.first().copied();
         let mut ships = Holder::new(vec![(items, Dir::Largest)], &mut round.rng);
         let transport = round.inputs.transport;
         let mut troops = Vec::new();
         while let Some(tag) = ships.pick() {
-            // A regiment held on the fleet rides its first ship
-            // (`crate::ai_records`).
-            troops.extend(transport.cargo(key).iter().copied().filter(|t| {
-                let carrier = transport.carrier(*t);
-                carrier == tag || (carrier == 0 && first == Some(tag))
-            }));
+            troops.extend(
+                transport
+                    .cargo(key)
+                    .iter()
+                    .copied()
+                    .filter(|t| transport.carrier(*t) == tag),
+            );
         }
         (!troops.is_empty()).then_some(AIAction::MoveRegiments {
             troops,

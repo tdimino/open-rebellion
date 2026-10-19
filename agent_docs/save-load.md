@@ -1,9 +1,9 @@
 ---
 title: "Save/Load System"
-description: "Native and browser save v53, canonical fingerprints, campaign setup, continuation state, troop cargo, embarked tracking, deliveries, and the no-migration rule"
+description: "Native and browser save v63, canonical fingerprints, campaign setup, continuation state, troop cargo, embarked tracking, deliveries, and the no-migration rule"
 category: "agent-docs"
 created: 2026-03-15
-updated: 2026-10-16
+updated: 2026-10-19
 tags: [save-load, bincode, migration, serialization, wasm, determinism]
 ---
 
@@ -11,14 +11,14 @@ tags: [save-load, bincode, migration, serialization, wasm, determinism]
 
 `crates/rebellion-data/src/save.rs` owns native files and browser storage.
 `crates/rebellion-app/src/main.rs` converts between a live campaign and the
-serializable snapshot. The current format is v53, and it is the only one
+serializable snapshot. The current format is v63, and it is the only one
 that loads.
 
-## Native format (v53)
+## Native format (v63)
 
 ```text
 [magic: 8 bytes "OPENREB\0"]
-[version: u32 LE]             — SAVE_VERSION = 53
+[version: u32 LE]             — SAVE_VERSION = 63
 [save_name: u32 len + UTF-8]
 [timestamp_secs: u64 LE]
 [mod_count: u32 LE]
@@ -29,6 +29,7 @@ that loads.
 [fingerprint_version: u16 LE]
 [state_fingerprint: u64 LE]
 [bincode body: SaveState]
+[bincode body: SavedInterface] — GID mode and open windows, outside the fingerprint
 ```
 
 The fingerprint is versioned separately from the save format. It is a
@@ -52,10 +53,9 @@ Every mutable campaign subsystem required by the app is serialized:
 | `player_is_alliance` | `bool` |
 | `blockade` | `BlockadeState` |
 | `uprising` | `UprisingState` |
-| `death_star` | `DeathStarState` |
 | `research` | `ResearchState` |
 | `jedi` | `JediState` |
-| `victory` | `VictoryState` |
+| `victory` | `VictoryState`: the HQs and the win flag word (`FUN_005180e0`, v54) |
 | `betrayal` | `BetrayalState` |
 | `economy` | `EconomyState` |
 | `sim_rng` | `Xoshiro256PlusPlus` |
@@ -74,7 +74,6 @@ original re-fights a system every pass while both sides remain
 difficulty, galaxy-size label, player faction, and victory mode. The clock
 keeps its original Game Speed and partial day, so a game saved while paused
 reloads paused. The save also holds blockade embarked-regiment tracking,
-the fleets holding regiments loaded through the Fleet window (v24),
 regiments travelling on their own (v25) and squadrons travelling on their
 own (v35), the fleet a moving fleet joins on
 arrival (v26), the fleet naming mode (v28), and the player's Manage
@@ -114,8 +113,8 @@ Build round, and each AI side's scheduler keeps its round-robin cursor, its
 priority scan start, each module's priority, the orders issued today, the
 last round's in-day step, whether the day ended since that round, and the
 order of its last round still to apply; the player's advisor agent keeps
-its round-robin cursor and the order of its last step still to apply (serde
-defaults); each mission keeps how many outcome passes it has run (v52,
+its round-robin cursor and the order of its last step still to apply; each
+mission keeps how many outcome passes it has run (v52,
 the AI round scheduler; `ghidra/notes/ai-order-emission.md`, "Scheduler and
 executor"). Each system's economy record keeps the side that last held it by
 support alone (`SupportHolder`, `FUN_0055a080`), and the blockade state keeps
@@ -123,8 +122,64 @@ each blockaded system's timer `0x386`, its minimum delay and due tick (v52,
 `ghidra/notes/timer-scheduler.md`). System `+0x88` bit 11, a usable Death
 Star in the sector (`GameWorld::death_star_sectors`), is derived each tick
 and after a load, and saved nowhere; the economy record keeps no copy of it
-(v53). A native save taken mid-day keeps the clock's part of the day and
-each side's last in-day step, so a load resumes at the next due step and
+(v53). A fleet keeps its bombardment-order flag (`Fleet::bombarding`, fleet
+`+0x58` bit 6, `FUN_004fec00`), a capital ship class its DAT family
+(`CapitalShipClass::family`; families 0x18-0x1b are the Death Star), a
+character its adrift flag (`Character::adrift`, role bit 6,
+`FUN_00534790`), the jail abode holding it (`Character::abode`,
+`FUN_00549580`) and its escape timer's day (`Character::escape_due`, timer
+`0x38a`), the world each system's SYSTEMSD family, setup bit 3 and
+troop bits (`GameWorld::system_families`, `shift_excluded`, `troop_held`,
+`FUN_0050b610`), and the blockade state each system's loss
+counters (`BlockadeState::losses`, `FUN_00508c60`) and battle bit
+(`BlockadeState::battle`, `FUN_0050a900`), and the world the
+control-change cap of the current scheduler step, keyed by its day and
+in-day step (`GameWorld::control_change_cap`, `support_shift::step`,
+`FUN_00518040`); the posted support shifts, regiment events and holder
+changes, served by the operation that raises them, are saved nowhere
+(v54). Each
+revolt saves its next timer `0x384` day (`ActiveUprising::next_support_tick`).
+A regiment
+holds only its class and side, and a fleet's cargo only its regiments and
+their ships (v55). Whether a fleet has
+the Death Star is saved nowhere either: `Fleet::has_death_star` asks its
+capital ships (`FUN_005003d0`, v54). The Death Star has no state of its
+own: it is the capital ship of family 0x18-0x1b (v54). With both sides'
+regiments, a system's control keeps the earlier troop holder
+(`ControlKind`, `FUN_0050b610`), with no stalemate state of its own (v56).
+Each running
+mission keeps the container its members joined from
+(`ActiveMission::set_out_from`, each member's `+0x70`, `FUN_00536490`;
+v57). A delivery, or a regiment or squadron in transit, that a destroy
+cascade moves on its way (`FUN_00515480` -> `FUN_00556390`) keeps its
+arrival day and the destroyed system its leg still names
+(`Delivery::via`, `RegimentTransit::via`, `SquadronTransit::via`; `+0x3c`),
+and on that day starts its next leg from there (`FUN_00556620`;
+`DeliveryState::relocate`, `TroopTransportState::reroute_regiment`; v57).
+The world keeps each system's
+garrison requirement, support drift and collection rate
+(`GameWorld::support_values`, `economy::SupportValues`: `+0x80`, `+0x6c`,
+`+0x70`), as the support hook writes them, and the systems in revolt
+(`GameWorld::revolting`, `+0x88` bit 2; v58).
+A regiment's or squadron's transit keeps the tag of the ship it boards,
+chosen at the order (`RegimentTransit::carrier`, `SquadronTransit::carrier`,
+`FUN_00552300`; v59). A capital ship on its own leg from
+yard to fleet keeps it (`ShipInstance::transit`: the system it left, its
+destination and the arrival day, `+0x38`, `+0x3c`, `+0x44`,
+`FUN_00556430`; v61). A squadron or regiment ordered for a fleet keeps
+the tag of the ship its Build chose, queued and travelling
+(`QueueItem::carrier`, `Delivery::carrier`, `FUN_005385f0` ->
+`FUN_00552300`; v62). Each capital ship keeps whether it is completed
+(`ShipInstance::completed`, `+0x50` bit 2): an ordered ship exists from its
+order, unfinished (`FUN_0052a140` -> `FUN_004f7d50(.., 1, 0)`), and its yard
+completes it in place (`FUN_0052bee0`). Its queue entry keeps its tag
+(`QueueItem::ship`), and the world marks each side's bit-1 spare fleet,
+which takes every ship ordered or moved to its system
+(`GameWorld::spare_fleets`, fleet `+0x58` bit 1, `FUN_005097d0`,
+`FUN_0050bc60`; v63).
+
+A native save taken mid-day keeps the clock's part of the day and each
+side's last in-day step, so a load resumes at the next due step and
 applies the pending order first. A headless save leaves the day open with its
 last step run, so the next tick's prologue only closes it.
 
@@ -141,6 +196,20 @@ whose `free` is not a permutation of its vacant slots. An arena with no live
 value is probed and rebuilt with `Default::default()` of its value type as the
 inserted placeholder (v51), so an emptied arena keeps its free order too.
 The free order is part of the canonical fingerprint.
+
+## Interface section
+
+The body ends with a `SavedInterface` (`rebellion_core::saved_interface`):
+the GID display mode's command byte and the galaxy view's child windows,
+bottom of the z-order first. Each window is a `SavedWindowKind` (Sector,
+System, Fleet with its tab, Defenses, Missions; subjects by `DatId`), its
+top-left on the 640x480 canvas, and whether it is shown or on the minimized
+rail. It mirrors the original's third save section, which follows the world
+(`FUN_00440ea0` writes it, `FUN_00440f80` reads it back), and leaves out the
+original's ending code and its "Battle in Progress..." overlay window, which
+the port keeps elsewhere or lacks. `compute_state_fingerprint` reads only
+`SaveState`, so two saves of one campaign with different windows open share
+a fingerprint; the decoder refuses any bytes after the interface.
 
 ## Deterministic fingerprints
 
@@ -172,8 +241,8 @@ released, restore versioned migration before the next layout change.
 WASM stores base64 bincode and versioned JSON metadata in `localStorage`:
 
 ```text
-rebellion_save_v26_<slot>
-rebellion_meta_v26_<slot>
+rebellion_save_v63_<slot>
+rebellion_meta_v63_<slot>
 ```
 
 Metadata includes the full save name, game tick, and fingerprint with its
@@ -192,11 +261,22 @@ quota/corruption acceptance tests.
 let fingerprint = save_slot(saves_dir, slot, name, &state, &active_mods)?;
 let fingerprint = save_slot_no_mods(saves_dir, slot, name, &state)?;
 let (meta, state) = load_slot(saves_dir, slot)?;
+let fingerprint = save_slot_with_interface(saves_dir, slot, name, &state, &interface, &active_mods)?;
+let (meta, state, interface) = load_slot_with_interface(saves_dir, slot)?;
 let occupied = list_saves(saves_dir);
-delete_slot(saves_dir, slot)?;
 ```
 
-Native saves live at `<saves_dir>/<slot>.reb`. The UI exposes ten slots.
+Native saves live at `<saves_dir>/<slot>.reb`. The save layer keeps
+`MAX_SAVE_SLOTS` (6) slots, the Game Options window's six rows (`SAVE_ROWS`,
+rows 1-6 of `FUN_00407180`); a compile-time check in `rebellion-app` holds
+the two equal; `save_slot` and `load_slot` refuse a slot past the sixth.
+The save layer has no delete; no Game Options control removes a save.
+
+A save refuses a world holding raised events not yet served
+(`GameWorld::support_events`, `GameWorld::manager_side_changes`): neither is
+saved, and every operation that raises them serves them before it returns
+(`integrator::fire_holder_changes`), so a save holding them would drop work
+the running game still does.
 
 ## Safe change checklist
 

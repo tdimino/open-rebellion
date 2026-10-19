@@ -3,7 +3,7 @@ title: "Facility Ownership"
 description: "Which side a facility belongs to: the system's side at seeding, the cascade that hands a system's completed facilities to its new side (or removes those whose class cannot serve it), the HQ's class, and the mine/refinery families"
 category: "ghidra"
 created: 2026-10-07
-updated: 2026-10-07
+updated: 2026-10-19
 tags: [facility, side, seeding, control, capture, hq, mine, refinery]
 ---
 
@@ -68,8 +68,10 @@ system's facilities are side 3. The trailing `1, 1` set the created bit
    3)`) and calls each one's slot `+0xb0`. It then reruns the derived system
    state: blockade `FUN_0050b890`, informant timers `FUN_0050c820`, and
    others.
-4. Slot `+0xb0` is `FUN_004f8680` in every object class, all ten facility
-   classes included. It reads the object's `+0x50`:
+4. Slot `+0xb0` is `FUN_004f8680` in the facility classes, all ten of
+   them. The fleet class (vtable `0x0065d438`) has `FUN_0051ebb0` there,
+   which returns 1 and changes nothing, so a fleet and the ships in it keep
+   their side. `FUN_004f8680` reads the object's `+0x50`:
    - **completed (`0x4`) and not `0x20`:** if the class accepts the
      container's new side (slot `+0x50`), it calls `FUN_004f6f40(object,
      side)`, so the facility changes hands. Otherwise it calls slot
@@ -77,9 +79,42 @@ system's facilities are side 3. The trailing `1, 1` set the created bit
      `+0x40` to 3. That is the removal path: reason `0x14` disbands a fleet
      (`fleet-join-split.md`), and the incidents destroy with reasons 8 and
      `0xb` (`uprising-incident.md`). So the facility is removed.
-   - **otherwise**, unless `0x8` is set, `FUN_004f78e0(1)` sets `+0x50`
-     `0x1000`. hyp: an unfinished facility is flagged rather than handed over;
-     the meanings of `0x20` and `0x1000` are not traced.
+   - **otherwise** (not completed, or en route `0x20`), unless `0x8` is set,
+     `FUN_004f78e0(1)` sets `+0x50` `0x1000`, the autoscrap request, with no
+     side test (`FUN_004f8680.c:14-17`). It raises event `0x307` through slot
+     `+0x13c` (`FUN_004f2bd0` → `FUN_004fba70`), and `FUN_00515480` looks for
+     a place for the object (`system-squadrons-combat.md`, section 3b): the
+     system keeps it while it accepts the object's side and is not
+     blockaded, else the hint (an unfinished product's producer system),
+     else the nearest system of its side; with none it is destroyed with
+     reason 2. An unfinished product moves with no transit and keeps its
+     manager's queue slot.
+5. **Production managers.** The three managers (`0xa0`, `0xa2`, `0xa4`;
+   vtables `0x0065fbf8` and `0x006629a0`) are completed children, and slot
+   `+0x50` is `FUN_0051ebb0`, so each takes the new side (`FUN_004f8680.c:28-31`
+   → `FUN_004f6f40`). Its side hook, slot `+0xf0` `FUN_0052b790`, runs
+   `FUN_0052a2c0`, then `FUN_0052a360(0)` (`FUN_00529710`: `+0x70` = 0)
+   (`FUN_0052b790.c:7-14`). `FUN_0052a2c0` destroys every product in the
+   manager's list with reason `0x16` (`FUN_0052a2c0.c:20-36`): facilities,
+   regiments, squadrons, special forces and capital ships, wherever they
+   sit, none refunded (`FUN_00530270`). A product that sits in the system
+   but belongs to another system's manager is only flagged as above; a
+   capital ship product sits in a fleet, which the walk leaves alone. The
+   Empire game of the Duros line shows it: on day 306 Duros
+   (`0x9000008f`) is Imperial and its facility manager `0xa0000523` lists
+   an unfinished Orbital Shipyard (`0x28000e75`, `+0x50` `0x42`); on day
+   430 Duros and the manager are the Alliance's, the manager lists only the
+   Alliance's own Build (`0x29001059`), and the shipyard has no record in
+   any graph, though Duros's construction yard (`0x2a00077e`) stands. A
+   replay of that line saved on day 378, after the capture, holds the
+   shipyard as a destroyed record (`+0x50` `0xa`, reason word `0x16`,
+   Empire-owned) and the Imperial special force `0x3c000a17`, alive at Duros
+   on day 320, destroyed with reason 3 (`FUN_00503d90`, its slot `+0xb0`),
+   so the walk reached Duros's children. The Alliance's own Build already
+   stood on day 378, and it destroys with the same reason, so these saves
+   agree with the trace without separating the capture from that Build.
+6. **Yards.** A yard's side hook (slot `+0xf0`, `FUN_0052cd40` →
+   `FUN_0053b0f0`) stops it (`FUN_0053ab10`, state 4).
 
 Every facility class uses `FUN_004f27d0` for slot `+0x50`:
 
@@ -122,6 +157,56 @@ side, kept equal to the system's side by the cascade above. A battle
 (`blockade-bit.md`, `FUN_0050b8e0`). The side does not change, so the
 holder keeps its yards and mines until control actually changes.
 
+### The holder rule (`FUN_0050b610`)
+
+The system keeps no contested value. Its holder (`+0x24` bits 6-7, written
+from the control word's bits 0-1 by `FUN_00510d70` → `FUN_004f6f40`) is 1, 2
+or 3 (neutral). `FUN_0050b610` rebuilds the control word `+0x84` on every call
+(`FUN_0050b610.c:24-70`):
+
+- bits 2-3 are the support side (`FUN_0055a080` of `+0x58`; 3 when the system
+  is unpopulated, `:24-33`);
+- bits 4-5 are the troop side: `FUN_005131b0` over the system's usable
+  regiments (`FUN_00504cc0(system, 1, side)`) for side 1 and for side 2. None
+  gives 0, only side 1 gives 1, only side 2 gives 2, and both sides give the
+  word's old bits 4-5 unchanged (`:34-61`; the copy is `FUN_00558840` of the word,
+  read back as `local_30 >> 4 & 3`);
+- bits 0-1, the holder, are bits 4-5 when they are nonzero, else bits 2-3
+  (`:64-70`).
+
+With both sides' regiments present, the side that held the system's troop word
+before keeps it. When that word was 0 (the first rebuild of a system that both
+sides' regiments reached together, as in `FUN_00508250` at setup), the holder
+is the support side, which is 3 for an unpopulated system. Nothing stores a
+separate "earlier holder". A system therefore reads as side 3 exactly when
+its troop bits are 0 and its support side is 3: it is unpopulated, or no
+side's support reaches GNPRTB 7760 (`FUN_0055a080`). The port's
+`ControlKind::Uncontrolled` is that state (`economy::resolve_system_control`,
+the troop bits `GameWorld::troop_held`), and the render side code of an
+`Uncontrolled` system or a neutral facility is 3 (`fleet_window::control_side`,
+`faction_side`).
+
+### What reads the holder
+
+Every reader below sees the earlier side, never a contested state. Locating
+instruction: `SHR reg, 6` on `+0x24` (306 hits in 175 functions across all
+object classes); the role is from the cited note.
+
+| Reader | Original | Note |
+|---|---|---|
+| Blockade bit | `FUN_0050b8e0` | `blockade-bit.md` |
+| Sector shift owner filter and gate | `FUN_00518be0`, `FUN_00517aa0`, `FUN_0055de50` | `support-shifts.md` |
+| Drift, garrison requirement, collection rate | `FUN_0050b230`, `FUN_0050b5a0`, `FUN_0050b2c0` | `support-shifts.md` |
+| Uprising state, score and timers | `FUN_0050bb00`, `FUN_0050b4d0`, `FUN_0050b800`, `FUN_0050caa0`, `FUN_0050cad0`, `FUN_0050d030` | `uprising-incident.md` |
+| Informant draw | `FUN_0050d510` (holder not 3; reveals to the opponent) | `observation-levels.md` |
+| Blockade end | `FUN_00515f40`, `FUN_00517ee0` | `support-shifts.md` |
+| Facility hand-over and invariant | `FUN_00510820` → `FUN_004fae40`, `FUN_0050e820` | above |
+| Victory word (CA: Coruscant owner 1) and Coruscant's shift | `FUN_005180e0`, `FUN_00517be0` | `victory-flag-word.md`, `support-shifts.md` |
+| Move and Confirmed Move choice | `FUN_00487cc0` | `move-order.md`, `blockade-bit.md` |
+| Computer player's system record | `FUN_00433e40.c:94` | `ai-order-emission.md`, `ai-production.md` |
+| System status window, system window, sector window icons and name colours | `FUN_00446250` (state = side bits), `FUN_004a8790` (side shown), `FUN_0045b770` → `FUN_0045ca80`, fleet icon `FUN_0045d140` (the system's side bits) | `status-window.md`, `sector-quadrants.md`, `fleet-window.md` |
+| Bombardment and assault events (the event's side field is the holder at the event) | `FUN_00512320`, `FUN_00512370` | `operation-report-window.md` |
+
 ## The Alliance HQ (family `0x20`)
 
 - ALLFACSD has one record, `0x20000001`, with TEXTSTRA 9024, `is_alliance` 1
@@ -154,12 +239,13 @@ refineries on page `0x6b` (`0x2d`). **The mine is `0x2c` and the refinery is
 - **Capture and control change.** When a system's holder changes, each
   completed facility there passes to the new holder if its class serves
   that side (DAT `is_alliance` / `is_empire`; both for neutral). Otherwise
-  it is removed. hyp: a facility still under construction or en route is not
-  handed over.
+  it is removed. A facility still under construction or en route is not
+  handed over: it takes the autoscrap request. The system's own production
+  managers take the new side and destroy every product they list
+  (`manufacturing::serve_manager_sides`).
 - **Contested.** A battle does not change ownership. The holder keeps its
-  facilities until control changes. The port's `ControlKind::Contested`
-  carries no faction, so the port must remember the last holder rather than
-  drop the facilities' side.
+  facilities until control changes; both sides' regiments keep the earlier
+  holder (`FUN_0050b610.c:45-70`).
 - **Neutral.** Side 3, served by neither side's managers. A facility moves to
   neutral only when its class serves both sides.
 - **HQ.** Family `0x20` is not a producer. Do not count it as a shipyard,
@@ -169,10 +255,36 @@ refineries on page `0x6b` (`0x2d`). **The mine is `0x2c` and the refinery is
   the removal of a facility whose class cannot serve the new holder. That
   removal has to happen once, when control changes.
 
+### Open port points
+
+The port serves the managers' side change (`manufacturing::serve_manager_sides`).
+It does not yet serve the rest of the child walk for products of another
+system's managers that sit in the changed system, nor deliveries bound for it:
+
+- **Facility, regiment and squadron products.** `FUN_004f8680.c:14-17`
+  (facilities, regiments) and `FUN_00503510` (squadrons, slot `+0xb0` of
+  vtable `0x0065def0`) set the autoscrap request; event `0x307` runs
+  `FUN_00515480`. The system keeps the product while it accepts the
+  product's side and is not blockaded (`FUN_00553410`, `FUN_005073d0.c:126-141`);
+  else the hint, the producer's system (`FUN_00515480.c:82-124`), then the
+  nearest system of its side with room (`FUN_005545e0`,
+  `FUN_005571c0` → `FUN_00551630`); else `+0xac(2)`. The move is a reparent
+  with no transit, and the product keeps its queue slot (`FUN_00528890`).
+  The port's Destroy System cascade already ports this chain
+  (`death_star.rs`, `place_product`, `retain_bound_for`); a holder change
+  serves it beside the characters' sweep, the same event `0x307`.
+- **Special-force products.** Slot `+0xb0` is `FUN_00503d90`: the product
+  takes the new side when its class serves it (slot `+0x50`, `FUN_004f27d0`),
+  else `+0xac(3)`.
+- **Deliveries.** A completed product en route to the system (`+0x50`
+  `0x20`) takes the request too (`FUN_004f8680.c:14-17`), with its transit
+  origin as the hint (`FUN_00515480.c:125-153`).
+- **Capital-ship products** of another system's manager sit in a fleet,
+  which the walk leaves alone (`FUN_0051ebb0`); the port already matches.
+
 ## Uncertainties
 
-- The meanings of `+0x50` bits `0x20`, `0x1000` and `0x4000` are untraced.
-  The handling of unfinished facilities above follows the code path only.
+- The meanings of `+0x50` bits `0x20` and `0x4000` are untraced.
 - `+0x40` state 3 is read as a removal from the other reason codes. Its view
   handler (`+0x100`) is not read here.
 - The full list of control-word writers (battle won, uprising, loyalty) is

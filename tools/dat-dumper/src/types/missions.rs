@@ -46,8 +46,10 @@ pub struct Mission {
     pub detection_phases: u32,
     // Members may resign (record +0x64, FUN_00520b90)
     pub can_resign: u32,
-    // Not yet mapped
-    pub flag_col10: u32,
+    // Where members go at the mission's end (record +0x68, FUN_00520ba0,
+    // read by FUN_00521220): 0 stay, 1 home from another side's container,
+    // 2 home always
+    pub return_policy: u32,
     // A running mission ends (code 7) when its container is destroyed
     // (record +0x6c, FUN_00523450)
     pub container_loss_ends: u32,
@@ -123,7 +125,7 @@ impl Mission {
             hidden: r.read_u32()?,
             detection_phases: r.read_u32()?,
             can_resign: r.read_u32()?,
-            flag_col10: r.read_u32()?,
+            return_policy: r.read_u32()?,
             container_loss_ends: r.read_u32()?,
             flag_col12: r.read_u32()?,
             needs_populated_container: r.read_u32()?,
@@ -156,7 +158,7 @@ impl Mission {
         w.write_u32(self.hidden);
         w.write_u32(self.detection_phases);
         w.write_u32(self.can_resign);
-        w.write_u32(self.flag_col10);
+        w.write_u32(self.return_policy);
         w.write_u32(self.container_loss_ends);
         w.write_u32(self.flag_col12);
         w.write_u32(self.needs_populated_container);

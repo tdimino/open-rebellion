@@ -142,7 +142,7 @@ pub const MENU_SFX_ASSETS: &[(SfxKind, &str, u32)] = &[
     (SfxKind::MenuSelect, "sfx/menu_select.wav", 8004),
 ];
 
-/// Exact weapon-event variant table built by `FUN_005bae60`. Each row is
+/// Exact weapon-event and jump-effect variant table built by `FUN_005bae60`. Each row is
 /// `(event_id, variant, runtime_path, TACTICAL.DLL WAVE resource)`.
 pub const TACTICAL_SFX_ASSETS: &[(u8, u8, &str, u32)] = &[
     (0x0d, 0, "sfx/tactical_event_0d_0.wav", 13_033),
@@ -167,6 +167,8 @@ pub const TACTICAL_SFX_ASSETS: &[(u8, u8, &str, u32)] = &[
     (0x13, 1, "sfx/tactical_event_13_1.wav", 13_052),
     (0x13, 2, "sfx/tactical_event_13_2.wav", 13_053),
     (0x14, 0, "sfx/tactical_event_14_0.wav", 13_054),
+    (0x1d, 0, "sfx/tactical_event_1d_0.wav", 13_063),
+    (0x1f, 0, "sfx/tactical_event_1f_0.wav", 13_065),
 ];
 
 /// Build the filename for a voice line as found in the extracted DLL output.
@@ -277,6 +279,9 @@ pub struct AudioEngine {
 
     /// The message sound last started, which the next one stops.
     message_playing: Option<u32>,
+    /// The shown message's voice line (`+0x32`, `FUN_00469de0`), by its
+    /// droid sound key.
+    message_voice_playing: Option<String>,
 
     /// Currently loaded music track + which track it is.
     music: Option<(Sound, MdataTrack)>,
@@ -309,6 +314,7 @@ impl AudioEngine {
             advisor_voice: HashMap::new(),
             message_sounds: HashMap::new(),
             message_playing: None,
+            message_voice_playing: None,
             music: None,
             music_playing: false,
             #[cfg(not(target_arch = "wasm32"))]
@@ -672,6 +678,44 @@ impl AudioEngine {
                 },
             );
             self.message_playing = Some(resource_id);
+        }
+        true
+    }
+
+    /// Stop the shown message's waves (`FUN_0046a6e0`).
+    pub fn stop_message_sounds(&mut self) {
+        if let Some(previous) = self.message_playing.take() {
+            if let Some(sound) = self.message_sounds.get(&previous) {
+                sound.stop(&self.ctx);
+            }
+        }
+        if let Some(previous) = self.message_voice_playing.take() {
+            if let Some(sound) = self.advisor_voice.get(&previous) {
+                sound.stop(&self.ctx);
+            }
+        }
+    }
+
+    /// Play a message's voice line, a loaded sprite DLL sound (module 9),
+    /// at the current SFX volume. False when the sound is not loaded.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Audio gains are bounded values; the playback API takes f32."
+    )]
+    pub fn play_message_voice(&mut self, key: &str, vol_state: &AudioVolumeState) -> bool {
+        let vol = vol_state.effective_sfx_volume() as f32;
+        let Some(sound) = self.advisor_voice.get(key) else {
+            return false;
+        };
+        if vol > 0.0 {
+            sound.play(
+                &self.ctx,
+                quad_snd::PlaySoundParams {
+                    looped: false,
+                    volume: vol,
+                },
+            );
+            self.message_voice_playing = Some(key.to_owned());
         }
         true
     }

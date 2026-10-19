@@ -154,8 +154,8 @@ impl EventLogger {
             counts.get("combat_space").unwrap_or(&0)
         );
         println!(
-            "  Ground battles:          {}",
-            counts.get("combat_ground").unwrap_or(&0)
+            "  Assaults:                {}",
+            counts.get("assault").unwrap_or(&0)
         );
         println!(
             "  Bombardments:            {}",

@@ -3,7 +3,7 @@ title: "Movies: Which Events Play Which MDATA File, and the Return Path"
 description: "The one movie player, the closed id-to-file switch FUN_00421ba0, the app-state and message-class triggers for every MDATA movie, the trench-run pair, the return routing, and what a mod changes to add or replace a movie"
 category: "ghidra"
 created: 2026-10-14
-updated: 2026-10-14
+updated: 2026-10-18
 tags: [movies, smacker, mdata, endings, death-star, messages, mod-surface]
 ---
 
@@ -41,9 +41,23 @@ movie table in the executable and no DAT field that names a movie.**
    any kind-6 message's `+0x5c` (`FUN_00488b90` → `FUN_0041d850` →
    `FUN_00425ce0` → message `0x482` wParam 1 → `FUN_00422ce0` →
    `FUN_004019a0`).
+   Message `0x482` (like `0x468`, the window-open message) first clears the
+   screen of mouse capture and modal windows: it returns at once while the step
+   counter `FUN_004fcee0` is below 2, then loops on `FUN_00601340`, which sends
+   `0x40d` to the `GetCapture` window or, with none, to the modal stack's top
+   (`FUN_00601320`) and reports done when there was none to send it to
+   (`FUN_00422ce0.c:1192-1232`, `FUN_00601340.c`). Each pass dispatches the
+   pending messages and runs the frame, so the game keeps running while it
+   waits. `0x40d` closes a window only where its procedure maps it to slot
+   `+0x30` (the Status window `FUN_0044b250`, the Encyclopedia `FUN_0045d8f0`,
+   `FUN_00467e80`); the base procedure `FUN_006083c0` and the sector window
+   `FUN_004593e0` release the capture and nothing more, and the Operation Report
+   (`FUN_00606650`) has no `0x40d` case, so the movie waits for it to be closed
+   (`operation-report-window.md`, section 6). With wParam 1 the message is then
+   `FUN_00610c00(0)` and `FUN_004019a0(message +0x5c, message +0x50, 0)`; with
+   wParam 0 `FUN_00401040(ending code)`.
 4. **The Luke, Dagobah, Vader, Han chains play no movie.** None of the
-   `story-missions.md` functions reaches a movie caller; `story_event_to_cutscene`
-   in the port (`crates/rebellion-app/src/main.rs`) has no original behind it.
+   `story-missions.md` functions reaches a movie caller.
 5. **Return.** The Smacker frame pump (`FUN_005f7240`) sends `0x402` to the
    movie window at the last frame, `0x404` on Esc or left button, and the
    open call (`FUN_005f6920`) posts `0x403` when the path is unknown. All three
@@ -64,10 +78,10 @@ movie table in the executable and no DAT field that names a movie.**
 | 8 | Ending, Alliance viewer, Empire wins (`0x11`) | same | state `0x11` | `0x6a` | MDATA.106 |
 | 9 | Ending, Empire viewer, Empire wins (`0x12`) | same | state `0x12` | `0x6d` | MDATA.108 |
 | 10 | Ending, Empire viewer, Alliance wins (`0x13`) | same | state `0x13` | `0x6c` | MDATA.107 |
-| 11 | Message raised by event `0x305` (sabotage destroyed): object family `0x18`-`0x1b` in a system (`0x90`-`0x97`); title TEXTSTRA `0x71bd`, body `0x71be` (map page: Death Star sabotaged) | `FUN_0048d470` sets `+0x5c` | pump → `FUN_004019a0` | `0x72` | MDATA.104 |
+| 11 | Message raised by event `0x305` (sabotage destroyed): object family `0x18`-`0x1b` in a system (`0x90`-`0x97`); title TEXTSTRA `0x71bd` "Death Star Sabotaged", body `0x71be` "The Rebel Alliance has sabotaged the Death Star at \|." (the system's name) | `FUN_0048d470` sets `+0x5c` | pump → `FUN_004019a0` | `0x72` | MDATA.104 |
 | 12 | Message raised by event `0x128` with the AD bit (Alliance HQ missing or destroyed): TEXTSTRA `0x7188`/`0x7189` | `FUN_0048e5a0` | pump | `0x73` | MDATA.102 |
 | 13 | Message raised by event `0x128` while Coruscant (`0x90000109`) is Alliance-owned: TEXTSTRA `0x7170`/`0x7171` | `FUN_0048f790` | pump | `0x74` | MDATA.103 |
-| 14 | Message raised by event `0x182` (FleetBombard): the fleet holds a child of family `0x18`-`0x1c`; TEXTSTRA `0x70c8`-`0x70ca` (map page: "[system] Destroyed!", Death Star destroys a system) | `FUN_004950d0` | pump | `0x6f` | MDATA.101 |
+| 14 | Message raised by event `0x182` (FleetBombard): the fleet holds a child of family `0x18`-`0x1b`; title TEXTSTRA `0x70c8` "\| Destroyed!", body `0x70c9` "The Death Star has destroyed the \| system \|." or `0x70ca` "The Death Star has destroyed the neutral system \|." | `FUN_004950d0` | pump | `0x6f` | MDATA.101 |
 | 15 | Tactical trench run succeeded (result state 6) | `FUN_0059cc60` | `FUN_004019a0`, callback 0 | `0x71` | MDATA.201 |
 | 16 | Tactical trench run failed (result state 7) | `FUN_0059cc80` | same | `0x70` | MDATA.202 |
 
@@ -84,9 +98,11 @@ movies: `FUN_00417520` indexes their names as music cues
 - Rows 11-14 are raised for either side's message manager (`+0x20` is the
   side). Row 12 (`FUN_0048e5a0`) reads no side: both sides get the same
   message and movie. Row 13 (`FUN_0048f790`) tests Coruscant's owner, not the
-  viewer; the advice code `+0x28` is `(side != 1) + 1`. Row 11 reads the
-  object through the side's view (`FUN_004f2d10(side, id)`), so it needs a
-  view of the destroyed object, hyp: an unobserved sabotage raises nothing.
+  viewer; the advice code `+0x28` is `(side != 1) + 1`. Row 11 tests no
+  side: it looks the system (the event's last argument, family `0x90`-`0x97`)
+  up in the side's view (`FUN_004f2d10(side, system)`) and names it in the
+  body, so both sides file it, whichever side sabotaged. hyp: every side's
+  view holds every system.
   Row 14 reads the fleet through the side's view (`FUN_004f36a0`); the body
   text depends on the owner (`0x70c9` owned, `0x70ca` neutral).
 - Only the local human's pump plays them: `FUN_00486520` runs for the local
@@ -118,7 +134,7 @@ at `0x00414694`. States that run `FUN_00414830` are `1`, `2`, `7` and
 |---|---|
 | 1 | `0x65` |
 | 2 | `0x66` |
-| 7 | `(+0x108 != 1) + 0x68`: `0x68` for side 1, `0x69` for side 2 (also fills the settings record and `DAT_006b1208`) |
+| 7 | `(+0x108 != 1) + 0x68`: `0x68` for side 1, `0x69` for side 2. Before the movie it fills the settings record and `DAT_006b1208` and builds the game session: `FUN_00401b90` → `FUN_00409fe0` → `FUN_0040adb0` makes the session object (`DAT_006b1218`, `FUN_0041dd20`) and hands it the settings (`FUN_0041df40`; hyp: the galaxy is seeded there) |
 | `0x10` / `0x11` / `0x12` / `0x13` | `0x6b` / `0x6a` / `0x6d` / `0x6c` |
 | other | none |
 
@@ -187,6 +203,8 @@ paused tactical view (`tactical-death-star-path.md`); hyp: through the same
 | [`FUN_0048d640`](FUN_0048d640.c), [`FUN_004953a0`](FUN_004953a0.c) | `0x0048d640`, `0x004953a0` | the kind getters (return 6) of those four classes |
 | [`FUN_0059cc60`](FUN_0059cc60.c), [`FUN_0059cc80`](FUN_0059cc80.c) | `0x0059cc60`, `0x0059cc80` | tactical trench-run results: movies `0x71`, `0x70` |
 | [`FUN_004104b0`](FUN_004104b0.c) | `0x004104b0` | multiplayer lobby start: state 7 |
+| [`FUN_00401b90`](FUN_00401b90.c), [`FUN_00409fe0`](FUN_00409fe0.c), [`FUN_0040adb0`](FUN_0040adb0.c) | `0x00401b90`, `0x00409fe0`, `0x0040adb0` | state 7: build the game session from the settings record before the side's movie |
+| [`FUN_00414eb0`](FUN_00414eb0.c) | `0x00414eb0` | state 8: build and show the strategic window (`FUN_00421c70`) |
 
 ## Evidence
 
@@ -249,12 +267,24 @@ REBEXE:
    and the codes in `FUN_00425c90`. A third ending needs a new state in
    `FUN_00414330`'s tables, a new `FUN_00414830` case, a new `0x405` row and a
    new win-word bit in `FUN_005180e0` (`victory-conditions.md`).
-6. **Port.** `story_event_to_cutscene` in `crates/rebellion-app/src/main.rs`
-   maps events `0x221`, `0x210`, `0x212`, `0x383`, `0x220`, `0x393`, `0x396`,
-   `0x397` to cutscenes 101-108. The original plays MDATA.101-104 on Death
-   Star, HQ, Coruscant and sabotage events (rows 11-14) and MDATA.105-108 only
-   as endings; `docs`/`game-media.md` call MDATA.005 "campaign setup 3", but
-   the menu's Credits button plays it (row 6).
+6. **Port.** `crates/rebellion-app/src/movies.rs` holds the id-to-file
+   switch, the state 7 pick (`side_movie`), the `0x405` routing with the
+   next state's movie (`after`, `Scene`), the skip of a movie that cannot
+   open (`after_movie`, the `0x403` path), the ending codes and movies, and
+   the queue of kind-6 message movies. In `main.rs`, `CutsceneKind::ended`
+   routes every movie's end through `after_movie`: the program starts on
+   row 1 and chains row 2, then the main menu; a new game is seeded first
+   and then plays row 3 or 4 by the player's side, then the galaxy; the
+   Credits control plays row 6 and returns to the menu; a `Child` movie
+   returns to the window it played over (the galaxy, the tactical view, the
+   menu). The browser plays each through `or_movie_play`, `or_movie_stop` and
+   `or_movie_ended` (`crates/rebellion-render/src/video_player.rs`,
+   `web/index.html`). `strike_orders.rs` builds rows 11-14
+   (`sabotage_movies`, `word_movies`, `strike_movies`), each playing with
+   its body as the caption and filing no Message Index row and no advice.
+   Row 11 goes to both sides; row 14 to each side `strike_orders::recipients`
+   tells. Rows 7-10 end the game. Row 5 has no port: the port has no
+   multiplayer lobby.
 
 ### Proposed follow-up questions
 
@@ -264,10 +294,14 @@ REBEXE:
 - What exactly gates `FUN_00597480` (`DAT_006be354`) at the first activation:
   state 1 (intro movies) or state 5 (menu)? (`FUN_005974c0`, `FUN_005f8600`,
   `FUN_005fa5e0`)
-- Which code calls the fleet's FleetBombard slot (`FUN_004ff840`, vtable
-  `0x0065d640`) with a Death Star fleet, and why does `FUN_004950d0` iterate
-  family `0x18`-`0x1c` children? Settles whether MDATA.101 is Destroy System
-  only.
+- Whether MDATA.101 plays for every strike by a fleet holding a family
+  `0x18`-`0x1b` ship or for Destroy System only. The FleetBombard slot
+  (`FUN_004ff840`, fleet vtable `0x0065d438` slot `+0x208`, entry
+  `0x0065d640`) is called by `FUN_004ff450` when a side's view of the fleet's
+  bombard bit changes, which `FUN_004fe460` runs for both sides whenever the
+  order sets the bit or the finalize or an arrival clears it (`bombardment.md`,
+  "Messages"); `FUN_004950d0` walks the fleet's ships through the
+  `[0x18,0x1c)` iterator `FUN_005003d0`.
 - Is a kind-6 message without a movie id possible (other classes), and what
   happens when `+0x5c` is 0 (`FUN_00421ba0` returns null)?
 - Does the Empire human player see the trench-run movies (`0x70`, `0x71`)

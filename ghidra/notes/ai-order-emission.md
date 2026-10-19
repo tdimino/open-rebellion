@@ -2,7 +2,7 @@
 title: "AI Order Emission: Every Order the Computer Player Sends"
 description: "The computer player's orders by source: 13 of its 14 task modules, the fleet tasks and posture engine under modules 9 and 8, the character-command tasks of module 12, and the mission planners; each order's trigger, side gate and the port's matching path or its absence"
 category: "ghidra"
-updated: 2026-10-16
+updated: 2026-10-18
 tags: [ai, orders, modules, posture, production, fleets, characters, missions]
 ---
 
@@ -426,7 +426,7 @@ headquarters systems with a fleet as strong as its best warship class.
 | 0 | | 1, revalidate | |
 | 1 | `FUN_004744b0`: keep the target while own, tagged and not blockaded; else a random tagged sector (`sec+0x24` `0x40000000`, key `rand(20)`) and in it a random own tagged unblockaded unclaimed system (key `rand(10)`); the target is claimed (`sys+0x30` `0x80000`) | 2, or 8 without a target | |
 | 2 | `FUN_004749b0` | 3 | Create Fleet of the fleet's damaged ships, `ship+0x24` `0x801000` (not en route), in its system, when fleet `+0x38` has `0x3000` and none of `0xf0000802` |
-| 3 | `FUN_00474b90`: need = fleet `+0xb4` − `c+0x164` (twice `c+0x164` when `c+4` bit 1, a Headquarters Only game) | 4 | |
+| 3 | `FUN_00474b90`: need = fleet `+0xb4` − `c+0x164` (twice `c+0x164` when `c+4` bit 0 (`FUN_00474b90` tests `& 1`), a Headquarters Only game; bit 1 (`|2`) is set by `FUN_004189b0` when the win word arrives) | 4 | |
 | 4 | `FUN_00474c00`: nothing while the fleet is en route; need < 0: gather (`FUN_00475490`, then `FUN_00475890`); need > 0: peel (`FUN_00475c70`) | 5 always | Move of the gathered ships onto the task fleet, or Create Fleet at the target without one; Create Fleet of the peeled ship |
 | 5 | `FUN_00474ce0` | 6 | Move of the regiments aboard into the fleet's own system, ship with most regiments first |
 | 6 | `FUN_00474ff0` | 7 | Move of the side's characters aboard into the fleet's own system |
@@ -629,6 +629,14 @@ The posture step moves its units with Move: slot 14 (`FUN_004afce0` for kinds
 / 2, it picks General Bombardment when d < 1 and system `+0x90` or `+0xcc` is
 positive, else Target Military Facilities when `+0x64 + +0x90 > d` and
 `+0x90 > 0`. `FUN_004b1330` builds the chosen order with the target `+0x2c`.
+
+One call emits at most one order and moves the cursor `this+0x30` to the
+next fleet of the list (`FUN_004b1070.c:106-115`). An order for the list's
+last fleet ends the pass as running off the list does: `*param_1 = 1` and
+the cursor cleared (`:109`, `:118-121`), and `FUN_004adb70` case `0xe`
+returns the posture to state 0. A need that outlives its order is therefore
+acted on again only in the posture's next pass, after states 1-13 have run.
+Port: `RegionalRecord::execute` (`ai_regions.rs`).
 
 How long a need lasts (`FUN_004b1070.c:58-102`; `:101` is the only writer
 that clears `+0x38` bits `0xf0000000` among the dumped functions):

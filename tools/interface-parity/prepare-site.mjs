@@ -53,6 +53,8 @@ const fixturePlugin = `    <script>
                             (window.__openRebellionInterfaceFleetFinders ||= []).push(message);
                         } else if (message.status === "encyclopedia-surface") {
                             (window.__openRebellionEncyclopediaSurfaces ||= []).push(message);
+                        } else if (message.status === "operation-report") {
+                            (window.__openRebellionInterfaceOperationReports ||= []).push(message);
                         } else {
                             window.__openRebellionInterfaceReady = message;
                         }

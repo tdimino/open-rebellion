@@ -307,6 +307,21 @@ pub fn character_target(character: &rebellion_core::world::Character) -> Charact
     }
 }
 
+/// The name of the container holding `character` off a fleet
+/// (`FUN_004f62d0`): its jail abode (`FUN_00549580`), else its system.
+fn container_name(
+    world: &GameWorld,
+    character: &rebellion_core::world::Character,
+) -> Option<String> {
+    match character.held_abode() {
+        Some(abode) => Some(abode.name().to_owned()),
+        None => character
+            .current_system
+            .and_then(|system| world.systems.get(system))
+            .map(|system| system.name.clone()),
+    }
+}
+
 /// A Characters row's text (`FUN_00465bb0`): the name, " - " (`0x1897`),
 /// then "Killed" for a destroyed character, else its container's name
 /// ("Location Unknown", `0x1895`, with none) and the state word in " ( " and
@@ -318,15 +333,15 @@ fn character_text(world: &GameWorld, character: &rebellion_core::world::Characte
     if character.is_killed {
         return format!("{} - Killed", character.display_name());
     }
+    // The family-0x98 branch (0x00465fed) names the abode and skips the
+    // state and rank words (jail.md, "The Personnel Finder row").
+    if let Some(abode) = character.held_abode() {
+        return format!("{} - {}", character.display_name(), abode.name());
+    }
     let location = character
         .current_fleet
         .and_then(|fleet| fleet_label(world, fleet))
-        .or_else(|| {
-            character
-                .current_system
-                .and_then(|system| world.systems.get(system))
-                .map(|system| system.name.clone())
-        })
+        .or_else(|| container_name(world, character))
         .unwrap_or_else(|| "Location Unknown".to_owned());
     match character_state(character) {
         Some(state) => format!("{} - {location} ( {state} ) ", character.display_name()),
@@ -334,7 +349,7 @@ fn character_text(world: &GameWorld, character: &rebellion_core::world::Characte
     }
 }
 
-/// Build the Characters view rows for `tab` (FUN_00464e10 view==2,
+/// Build the Characters view rows for `tab` (FUN_00464e10 view==3,
 /// FUN_00465bb0).
 #[must_use]
 pub fn character_rows(
@@ -352,10 +367,7 @@ pub fn character_rows(
             continue;
         }
         // hyp: fog gating for opposing side's characters.
-        let location = character
-            .current_system
-            .and_then(|sys| world.systems.get(sys))
-            .map_or_else(String::new, |sys| sys.name.clone());
+        let location = container_name(world, character).unwrap_or_default();
         let state = character_state(character).unwrap_or_default().to_owned();
         let display = character_text(world, character);
         rows.push(PersonnelFinderRow::Character {
@@ -370,7 +382,7 @@ pub fn character_rows(
     rows
 }
 
-/// Build the SpecForces view rows for `tab` (FUN_00464e10 view==3,
+/// Build the SpecForces view rows for `tab` (FUN_00464e10 view==2,
 /// FUN_00465540).
 #[must_use]
 pub fn specforces_rows(
@@ -1059,6 +1071,9 @@ mod tests {
             current_system: None,
             current_fleet: None,
             en_route: false,
+            adrift: false,
+            abode: None,
+            escape_due: None,
             heritage_known: false,
             is_killed: false,
             recruited: true,
@@ -1111,7 +1126,7 @@ mod tests {
 
     #[test]
     fn the_characters_view_lists_recruited_living_characters_of_the_tabs_side() {
-        // FUN_00464e10 view==2: walk characters of the side, call
+        // FUN_00464e10 view==3: walk characters of the side, call
         // FUN_00465bb0 for each.
         let mut world = GameWorld::default();
         let yavin = add_system(&mut world, "Yavin");
@@ -1250,6 +1265,100 @@ mod tests {
                 "Wedge - Location Unknown"
             ]
         );
+    }
+
+    #[test]
+    fn a_jailed_character_reads_its_name_and_the_other_sides_jail_alone() {
+        // FUN_00465bb0's family-0x98 branch (0x00465fed) names the abode
+        // (FUN_004f62d0; ABODESD names TEXTSTRA 11600, 11616) and skips the
+        // state and rank words. The jail is the captor's (FUN_00549580), and
+        // the Characters view lists a character on its native side's tab
+        // (FUN_004637a0 stores FUN_004edc80).
+        for (is_alliance, tab, abode, text) in [
+            (
+                true,
+                PersonnelTab::Alliance,
+                rebellion_core::world::Abode::EmpireJail,
+                "Wedge - Empire Jail",
+            ),
+            (
+                false,
+                PersonnelTab::Imperial,
+                rebellion_core::world::Abode::AllianceJail,
+                "Wedge - Alliance Jail",
+            ),
+        ] {
+            let mut world = GameWorld::default();
+            let mut wedge = default_character();
+            wedge.name = "Wedge".into();
+            wedge.is_alliance = is_alliance;
+            wedge.is_empire = !is_alliance;
+            wedge.is_captive = true;
+            wedge.abode = Some(abode);
+            world.characters.insert(wedge);
+
+            let fog = FogState::new(Faction::Alliance);
+            let listed = character_rows(&world, &fog, Faction::Alliance, tab);
+
+            assert_eq!(listed[0].display_name(), text);
+            let PersonnelFinderRow::Character {
+                location, system, ..
+            } = &listed[0]
+            else {
+                panic!("a character row");
+            };
+            assert_eq!((location.as_str(), *system), (abode.name(), None));
+        }
+    }
+
+    #[test]
+    fn a_character_out_of_its_jail_reads_its_new_container() {
+        // FUN_00465bb0 names the character's container (FUN_004f62d0). An
+        // abode holds a prisoner with no captor in no system or fleet
+        // (FUN_00549580); a capture that names a captor, or a placement at
+        // a system, takes it out.
+        for (is_alliance, tab) in [
+            (true, PersonnelTab::Alliance),
+            (false, PersonnelTab::Imperial),
+        ] {
+            let mut world = GameWorld::default();
+            let yavin = add_system(&mut world, "Yavin");
+            let jailed = |name: &str| {
+                let mut character = default_character();
+                character.name = name.into();
+                character.is_alliance = is_alliance;
+                character.is_empire = !is_alliance;
+                character.is_captive = true;
+                character.abode = Some(rebellion_core::world::Abode::jail_of(!is_alliance));
+                character
+            };
+            let mut held = jailed("Held");
+            held.captured_by = Some(if is_alliance {
+                Faction::Empire
+            } else {
+                Faction::Alliance
+            });
+            world.characters.insert(held);
+            let mut placed = jailed("Placed");
+            placed.current_system = Some(yavin);
+            world.characters.insert(placed);
+
+            let fog = FogState::new(Faction::Alliance);
+            let listed = character_rows(&world, &fog, Faction::Alliance, tab);
+            let names: Vec<&str> = listed
+                .iter()
+                .map(PersonnelFinderRow::display_name)
+                .collect();
+
+            assert_eq!(
+                names,
+                [
+                    "Held - Location Unknown ( Captured ) ",
+                    "Placed - Yavin ( Captured ) "
+                ],
+                "{is_alliance}"
+            );
+        }
     }
 
     #[test]

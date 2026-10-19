@@ -287,17 +287,6 @@ pub enum EventCondition {
 /// `rebellion-core` free of rendering and IO dependencies.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum EventAction {
-    /// Shift a system's Alliance/Empire popularity values.
-    ///
-    /// Deltas are clamped to [0.0, 1.0] by the caller after application.
-    ShiftPopularity {
-        system: SystemKey,
-        /// Delta to apply to `popularity_alliance` (negative = decrease).
-        alliance_delta: f32,
-        /// Delta to apply to `popularity_empire` (negative = decrease).
-        empire_delta: f32,
-    },
-
     /// Emit a message to the player's message log.
     DisplayMessage { text: String },
 
@@ -1389,7 +1378,7 @@ mod tests {
             fighters: vec![],
             characters: vec![luke, vader, emperor],
             is_alliance: false,
-            has_death_star: false,
+            bombarding: false,
         });
         world.systems[sys_key].fleets.push(fleet);
 
@@ -1482,7 +1471,7 @@ mod tests {
             fighters: vec![],
             characters: vec![luke],
             is_alliance: true,
-            has_death_star: false,
+            bombarding: false,
         });
         world.systems[sys1].fleets.push(fleet1);
 
@@ -1492,7 +1481,7 @@ mod tests {
             fighters: vec![],
             characters: vec![vader],
             is_alliance: false,
-            has_death_star: false,
+            bombarding: false,
         });
         world.systems[sys2].fleets.push(fleet2);
 
@@ -1625,7 +1614,7 @@ mod tests {
             fighters: vec![],
             characters: vec![luke],
             is_alliance: true,
-            has_death_star: false,
+            bombarding: false,
         });
         let fleet2 = world.fleets.insert(crate::world::Fleet {
             location: sys_key,
@@ -1633,7 +1622,7 @@ mod tests {
             fighters: vec![],
             characters: vec![vader],
             is_alliance: false,
-            has_death_star: false,
+            bombarding: false,
         });
         world.systems[sys_key].fleets.push(fleet1);
         world.systems[sys_key].fleets.push(fleet2);
@@ -1707,7 +1696,7 @@ mod tests {
             fighters: vec![],
             characters: vec![luke],
             is_alliance: true,
-            has_death_star: false,
+            bombarding: false,
         });
         world.systems[sys_key].fleets.push(fleet);
 
@@ -1784,7 +1773,7 @@ mod tests {
             fighters: vec![],
             characters: vec![han_key],
             is_alliance: true,
-            has_death_star: false,
+            bombarding: false,
         });
         world.characters.get_mut(han_key).unwrap().current_fleet = Some(fleet_key);
 
@@ -1843,7 +1832,7 @@ mod tests {
             fighters: vec![],
             characters: vec![],
             is_alliance: false,
-            has_death_star: false,
+            bombarding: false,
         });
         han.current_fleet = Some(fleet_key);
         let han_key = world.characters.insert(han);

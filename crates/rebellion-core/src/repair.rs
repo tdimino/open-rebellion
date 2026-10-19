@@ -161,8 +161,10 @@ impl RepairSystem {
                 .count()
     }
 
+    /// Damaged and usable (`FUN_005578d0.c:4`: `+0x50` bits `0x200` and
+    /// 0): a ship unfinished or on its own leg arms no timer.
     fn damaged(world: &GameWorld, ship: &ShipInstance) -> bool {
-        ship.alive
+        ship.usable()
             && world
                 .capital_ship_classes
                 .get(ship.class)
@@ -452,7 +454,7 @@ mod tests {
             fighters: vec![],
             characters: vec![],
             is_alliance: false,
-            has_death_star: false,
+            bombarding: false,
         });
         world
             .systems
@@ -558,6 +560,56 @@ mod tests {
         assert!(late
             .iter()
             .any(|event| matches!(event, RepairEvent::ShipRepaired { .. })));
+    }
+
+    // FUN_005578d0.c:4 arms the timer only for a damaged (`+0x50` bit
+    // 0x200) and usable (bit 0) ship; a ship on its own leg from its yard
+    // (bit 5, FUN_00556430) is not usable (0x004f7b80).
+    #[test]
+    fn a_damaged_ship_unfinished_or_on_its_own_leg_arms_no_repair_timer_for_either_side() {
+        for is_alliance in [true, false] {
+            let mut world = GameWorld::default();
+            let sys_key = make_shipyard_system(&mut world);
+            let fleet_key = add_fleet_with_ship(&mut world, sys_key);
+            world.fleets[fleet_key].is_alliance = is_alliance;
+            let fleet = &mut world.fleets[fleet_key];
+            for ship in &mut fleet.capital_ships {
+                ship.hull_current = 150;
+            }
+            fleet.capital_ships[0].transit = Some(ShipTransit {
+                from: sys_key,
+                to: sys_key,
+                arrival_tick: 9,
+            });
+            // Unfinished at its order (FUN_004f7d50(.., completed 0)): not
+            // usable either.
+            fleet.capital_ships[2].completed = false;
+            let mut state = RepairState::default();
+
+            let events = RepairSystem::advance(
+                &mut state,
+                &world,
+                &UprisingState::default(),
+                &[crate::tick::TickEvent { tick: 1 }],
+                &[],
+            );
+            let armed: Vec<usize> = events
+                .iter()
+                .filter_map(|event| match event {
+                    RepairEvent::TimerSet {
+                        ship_index,
+                        timer: Some(_),
+                        ..
+                    } => Some(*ship_index),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(armed, vec![1], "{is_alliance}");
+            assert!(events.iter().any(|event| matches!(
+                event,
+                RepairEvent::RepairCheckPerformed { ships_checked: 1, .. }
+            )));
+        }
     }
 
     #[test]

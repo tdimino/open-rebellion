@@ -4141,7 +4141,7 @@
         132,
         133
       ],
-      "current_implementation": "Source-recovered item menus now open from sector quadrant icons and Fleet-window objects, with enabled routing for a bounded subset of Move, Confirmed Move, Create Fleet, Mission, Encyclopedia, Status, Scrap, Destination, Rename, and system-wide fleet movement paths. Commit 8fc9d983 adds in-place Rename for fleets and capital ships; the 38-case two-faction Fleet-window browser gate covers Rename and Destination. The complete per-object command trees, nested and disabled states, exact focus-loss behavior, and A0 comparison remain open.",
+      "current_implementation": "Source-recovered item menus now open from sector quadrant icons and Fleet-window objects, with enabled routing for a bounded subset of Move, Confirmed Move, Create Fleet, Mission, Encyclopedia, Status, Scrap, Destination, Rename, and system-wide fleet movement paths. Commit 8fc9d983 adds in-place Rename for fleets and capital ships; the 38-case two-faction Fleet-window browser gate covers Rename and Destination. A fleet's and a sector fleet icon's Planetary Bombardment parent (0x120) lists its four orders (0x220-0x223), each enabled by the original enable slot (FUN_00581e80), and every parent is enabled when one of its rows is (FUN_00442c90); native checks on both sides (2026-10-16, seed 42) opened the submenu with Destroy System disabled and then enabled with a Death Star, issued General Bombardment and Target Military from it, and showed the parent disabled for a fleet of strength 0. No browser probe covers the bombardment rows yet. The complete per-object command trees, nested and disabled states, exact focus-loss behavior, and A0 comparison remain open.",
       "finding_ids": [
         "UIP-F-003",
         "UIP-F-007"
@@ -4612,7 +4612,7 @@
         149,
         150
       ],
-      "current_implementation": "Custom bombardment dashboard and uncalled summary renderer do not reproduce original report routing.",
+      "current_implementation": "rebellion-render/src/operation_report.rs ports the original report window (FUN_00496770, ghidra/notes/operation-report-window.md), which serves the bombardment (0x182) and assault (0x183) reports: its lists fill from the strike and assault reports, and it opens at once for the bombarder and again from the Message Index. Native checks (Empire at Vagran and, seed 3, Tralus; Alliance at Corfai) pass on both sides for C001-C003, C005-C008, C010, C011, C013, C014 and C015, and for the Empire only on this build for C004 shield blocked (Tralus, GenCore Level I; no shielded Imperial system in Alliance reach) and C009 assault failure. C012 damaged is open: a damaged Imperial Star Destroyer (1250/2750) was listed Operational with a plain portrait; the report's cells take the damaged-bit marks (FUN_0042c3b0, FUN_00501c00) in code, awaiting a recheck. In the original, Go To fleet opens the system's Fleet window with no selection; C015 is rechecked after that port. No browser check covers the window, so every cell stays pending.",
       "finding_ids": [
         "UIP-F-008"
       ],
@@ -5910,7 +5910,7 @@
       ],
       "authority_refs": [],
       "manual_pages": [],
-      "current_implementation": "These visible top-level dashboards reorganize original actions and must be removed from parity mode as their actions move into original surfaces.",
+      "current_implementation": "These visible top-level dashboards reorganize original actions and must be removed from parity mode as their actions move into original surfaces. The Bombardment and Death Star dashboards are removed (2026-10-16); the original Planetary Bombardment submenu (OBJ-14) carries their orders. The live ground-combat screen is deleted (2026-10-17); the original Planetary Assault row (0x234) issues the assault.",
       "finding_ids": [
         "UIP-F-007",
         "UIP-F-010"

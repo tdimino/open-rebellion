@@ -125,7 +125,10 @@ async function startServer() {
   return server;
 }
 
-function decodeIndexedBmp(bytes, expectedWidth, expectedHeight) {
+// A CoolStrobeButton's bitmap is blitted keyed on its first stored pixel's
+// palette index (FUN_00602d30 -> FUN_005fd0f0, unless +0xc4 bit 0x80): those
+// pixels get alpha 0 and leave what lies under them.
+function decodeIndexedBmp(bytes, expectedWidth, expectedHeight, keyed = false) {
   assert.equal(bytes.toString("ascii", 0, 2), "BM", "source resource is not a BMP");
   const dataOffset = bytes.readUInt32LE(10);
   const headerSize = bytes.readUInt32LE(14);
@@ -147,7 +150,7 @@ function decodeIndexedBmp(bytes, expectedWidth, expectedHeight) {
       png.data[destination] = bytes[palette + 2];
       png.data[destination + 1] = bytes[palette + 1];
       png.data[destination + 2] = bytes[palette];
-      png.data[destination + 3] = 255;
+      png.data[destination + 3] = keyed && paletteIndex === bytes[dataOffset] ? 0 : 255;
     }
   }
   return png;
@@ -158,8 +161,11 @@ function blitClipped(destination, source, x, y, width = source.width, height = s
   for (let row = 0; row < Math.min(height, source.height); row += 1) {
     if (y + row >= destination.height) break;
     const columns = Math.min(width, source.width, destination.width - x);
-    const start = row * source.width * 4;
-    destination.data.set(source.data.subarray(start, start + columns * 4), ((y + row) * destination.width + x) * 4);
+    for (let column = 0; column < columns; column += 1) {
+      const from = (row * source.width + column) * 4;
+      if (source.data[from + 3] === 0) continue;
+      destination.data.set(source.data.subarray(from, from + 4), ((y + row) * destination.width + x + column) * 4);
+    }
   }
 }
 
@@ -172,11 +178,14 @@ function resource(source, id, width, height) {
   return decodeIndexedBmp(fs.readFileSync(path.join(source, `${id}.bmp`)), width, height);
 }
 
+const button = (source, id, width, height) =>
+  decodeIndexedBmp(fs.readFileSync(path.join(source, `${id}.bmp`)), width, height, true);
+
 function composeExpected(source, faction) {
   const expected = resource(source, 10800, dimensions.width, dimensions.height);
   blitClipped(expected, resource(source, faction.title, 240, 17), 2, 2);
   for (const control of controls) {
-    blitClipped(expected, resource(source, control.id, ...control.native), control.x, control.y,
+    blitClipped(expected, button(source, control.id, ...control.native), control.x, control.y,
       control.width, control.height);
   }
   return expected;

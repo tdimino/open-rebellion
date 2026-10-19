@@ -78,11 +78,6 @@ pub enum MessageCategoryTag {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum GameEffect {
     // ── Economy (Phase 0) ────────────────────────────────────────────
-    SupportDrifted {
-        system: SystemKey,
-        alliance_delta: f32,
-        empire_delta: f32,
-    },
     CollectionRateChanged {
         system: SystemKey,
         new_rate: f32,
@@ -113,10 +108,6 @@ pub enum GameEffect {
     GroundBattleResolved {
         system: SystemKey,
         winner: CombatSide,
-    },
-    BombardmentApplied {
-        system: SystemKey,
-        damage: i32,
     },
     ShipRepaired {
         fleet: FleetKey,
@@ -246,15 +237,6 @@ pub enum GameEffect {
     // the PerceptionIntegrator applies skill effects.
 
     // ── Endgame (Phase 7) ────────────────────────────────────────────
-    DeathStarConstructionProgress {
-        system: SystemKey,
-    },
-    PlanetDestroyed {
-        system: SystemKey,
-    },
-    DeathStarShieldStatus {
-        active: bool,
-    },
     VictoryReached {
         outcome: VictoryOutcome,
     },
@@ -271,9 +253,9 @@ impl GameEffect {
     #[must_use]
     pub fn phase(&self) -> EffectPhase {
         match self {
-            Self::SupportDrifted { .. }
-            | Self::CollectionRateChanged { .. }
-            | Self::GarrisonRequirementChanged { .. } => EffectPhase::Economy,
+            Self::CollectionRateChanged { .. } | Self::GarrisonRequirementChanged { .. } => {
+                EffectPhase::Economy
+            }
 
             Self::BuildCompleted { .. } => EffectPhase::Manufacturing,
 
@@ -281,7 +263,6 @@ impl GameEffect {
 
             Self::SpaceBattleResolved { .. }
             | Self::GroundBattleResolved { .. }
-            | Self::BombardmentApplied { .. }
             | Self::ShipRepaired { .. } => EffectPhase::Combat,
 
             Self::PopularityShifted { .. }
@@ -313,10 +294,7 @@ impl GameEffect {
             | Self::SpecialForceSpawned { .. }
             | Self::StoryMessageDisplayed { .. } => EffectPhase::Command,
 
-            Self::DeathStarConstructionProgress { .. }
-            | Self::PlanetDestroyed { .. }
-            | Self::DeathStarShieldStatus { .. }
-            | Self::VictoryReached { .. }
+            Self::VictoryReached { .. }
             | Self::CampaignSnapshot { .. } => EffectPhase::Endgame,
         }
     }
@@ -332,15 +310,6 @@ impl GameEffect {
                 alliance_delta,
                 empire_delta,
             } => Some(Self::PopularityShifted {
-                system: *system,
-                alliance_delta: -alliance_delta,
-                empire_delta: -empire_delta,
-            }),
-            Self::SupportDrifted {
-                system,
-                alliance_delta,
-                empire_delta,
-            } => Some(Self::SupportDrifted {
                 system: *system,
                 alliance_delta: -alliance_delta,
                 empire_delta: -empire_delta,
@@ -476,10 +445,9 @@ mod tests {
 
     #[test]
     fn system_name_matches_phase() {
-        let eco = GameEffect::SupportDrifted {
+        let eco = GameEffect::CollectionRateChanged {
             system: SystemKey::default(),
-            alliance_delta: 0.0,
-            empire_delta: 0.0,
+            new_rate: 0.0,
         };
         assert_eq!(eco.system_name(), "economy");
 

@@ -20,7 +20,7 @@ use std::collections::HashSet;
 use serde::{Deserialize, Serialize};
 
 use crate::ai_production::{Round, SystemRecord};
-use crate::ids::{CharacterKey, FleetKey, ManufacturingFacilityKey, SystemKey, TroopKey};
+use crate::ids::{CharacterKey, FleetKey, SystemKey, TroopKey};
 use crate::manufacturing::BuildableKind;
 use crate::mission_planning::Planner;
 use crate::missions::{MissionFaction, MissionKind, MissionState};
@@ -261,9 +261,9 @@ pub enum AIAction {
         to_system: SystemKey,
     },
 
-    /// Planetary Assault `0x234` (`FUN_004b1070`). port: the fleet's held
-    /// cargo is released to the landing (`crate::troop_transport`).
-    Assault { fleet: FleetKey },
+    /// Planetary Assault `0x234` by the fleet at its target system
+    /// (`FUN_004b1070` -> `FUN_004b1330(fleet, 0x234)`; `crate::assault`).
+    Assault { fleet: FleetKey, system: SystemKey },
 
     /// General Bombardment `0x222` or Target Military Facilities `0x220`
     /// (`FUN_004b1070`).
@@ -628,23 +628,29 @@ impl AISystem {
     /// Dispatch covert operatives on Sabotage, Assassination, Abduction, and
     /// Espionage missions against the enemy faction.
     ///
-    /// port: the targets are the port's (side `+0x318` is untraced); the
-    /// planner of each kind picks the members (`crate::mission_planning`).
-    /// 1. **Sabotage**: enemy systems with manufacturing facilities, the most
-    ///    first.
+    /// port: the targets of the last three are the port's (side `+0x318` is
+    /// untraced); the planner of each kind picks the members
+    /// (`crate::mission_planning`).
+    /// 1. **Sabotage**: one planner per regional record that asks for one
+    ///    ([`Round::sabotage`]; `FUN_004bda60`): its target system and
+    ///    object (`crate::ai_regions::sabotage_system`, `sabotage_object`),
+    ///    its staging system, then its team and decoys.
     /// 2. **Assassination**, then **Abduction**: enemy characters.
     /// 3. **Espionage**: systems with `sys+0x2c` bit `0x200` (held by the
     ///    side or its enemy, `FUN_00433e40`), the enemy's first
     ///    (`FUN_004b1bf0.c:31-52`).
     ///
-    /// A kind stops once its planner finds no team.
+    /// A kind stops once its planner finds no team. The shipped AI never
+    /// plans Death Star Sabotage: `FUN_004e8290.c:90-99` requests `0x6a`
+    /// only for the Alliance with an own Death Star hull, which no Alliance
+    /// class is.
     #[expect(
         clippy::too_many_lines,
         reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
     )]
     pub(crate) fn evaluate_espionage(
         planner: &mut Planner<'_>,
-        round: &Round<'_>,
+        round: &mut Round<'_>,
         faction: AiFaction,
         limit: usize,
         actions: &mut Vec<AIAction>,
@@ -652,69 +658,51 @@ impl AISystem {
         let world = round.inputs.world;
         let stop = actions.len().saturating_add(limit);
 
-        // ── Priority 1: Sabotage enemy manufacturing systems ─────────────────
-        // Score each enemy system by number of mfg facilities (proxy for value).
-        // port: the planner's object choice is untraced (F-019 phase 5); the
-        // AI names the system's first enemy manufacturing facility.
-        let mut sabotage_targets: Vec<(SystemKey, usize, ManufacturingFacilityKey)> = world
-            .systems
-            .iter()
-            .filter_map(|(sys_key, system)| {
-                // Target systems where the enemy faction has manufacturing presence.
-                let enemy_mfg: Vec<ManufacturingFacilityKey> = system
-                    .manufacturing_facilities
-                    .iter()
-                    .copied()
-                    .filter(|mfk| {
-                        world
-                            .manufacturing_facilities
-                            .get(*mfk)
-                            .is_some_and(|f| match faction {
-                                AiFaction::Alliance => f.side == crate::dat::Faction::Empire,
-                                AiFaction::Empire => f.side == crate::dat::Faction::Alliance,
-                            })
-                    })
-                    .collect();
-                enemy_mfg
-                    .first()
-                    .map(|&first| (sys_key, enemy_mfg.len(), first))
-            })
-            .filter(|&(system, _, facility)| {
-                let target = crate::missions::MissionTarget::ManufacturingFacility(facility);
-                Self::admits(
-                    round,
-                    faction,
-                    MissionKind::Sabotage,
-                    system,
-                    None,
-                    Some(target),
-                )
-            })
-            .collect();
-
-        // Highest facility count first.
-        sabotage_targets.sort_by_key(|a| std::cmp::Reverse(a.1));
-        Self::trace_scored(world, "sabotage_candidates", || {
-            sabotage_targets
-                .iter()
-                .map(|&(key, facilities, _)| (key, facilities as f64))
-                .collect()
-        });
-
-        for &(target_sys, _, facility) in &sabotage_targets {
-            let target = Some(crate::missions::MissionTarget::ManufacturingFacility(
-                facility,
-            ));
-            if !Self::dispatch_planned(
-                planner,
-                stop,
-                MissionKind::Sabotage,
-                (target_sys, None),
-                target,
-                actions,
-            ) {
+        // ── Priority 1: the regional Sabotage planners ───────────────────────
+        for (_, sector, kind) in round.sabotage.clone() {
+            // Each regional record runs its own planner (FUN_004d2690), so
+            // a request past the pass's limit draws nothing.
+            if actions.len() >= stop {
                 break;
             }
+            // State 2 (FUN_004bdbc0): the target system, then its object.
+            let Some((target_sys, mask)) = crate::ai_regions::sabotage_system(round, sector, kind)
+            else {
+                continue;
+            };
+            // FUN_004bdbc0.c:30-31: with nothing listed the target test
+            // fails and the planner ends before state 3.
+            let Some(target) = crate::ai_regions::sabotage_object(round, target_sys, mask) else {
+                continue;
+            };
+            // State 3 (FUN_004bdcd0.c:184-221): an own system of the sector
+            // not blockaded. port: the fallback to the nearest other sector
+            // (FUN_0041b2b0) is not taken.
+            let staging = crate::ai_regions::random_system(
+                round,
+                sector,
+                crate::ai_regions::Words::new(0, 0, crate::ai_records::sys::OWN, 0x2, 0, 0),
+            );
+            // port: an object the port cannot name (a ship other than a
+            // Death Star, a squadron or the headquarters) gives no order.
+            let Some(target) = target else {
+                continue;
+            };
+            if !Self::admits(round, faction, MissionKind::Sabotage, target_sys, None, Some(target)) {
+                continue;
+            }
+            let stack = round.records.get(&target_sys).map_or(0, |r| r.stack);
+            let Some((team, decoys)) = planner.plan_sabotage(stack, staging) else {
+                break;
+            };
+            actions.push(AIAction::DispatchMission {
+                kind: MissionKind::Sabotage,
+                team,
+                decoys,
+                target_system: target_sys,
+                target_character: None,
+                target_object: Some(target),
+            });
         }
 
         // ── Priority 2: Assassination, then Abduction, of enemy characters ──
@@ -987,7 +975,7 @@ impl AISystem {
     }
 
     /// A garrison strength score for a system: the side's live hull total,
-    /// its regiment strength, and ten per facility. Higher is more heavily
+    /// 100 per regiment, and ten per facility. Higher is more heavily
     /// defended.
     ///
     /// port: ranks the reconnaissance targets above; the original's
@@ -1016,7 +1004,7 @@ impl AISystem {
             .iter()
             .filter_map(|&tk| world.troops.get(tk))
             .filter(|t| t.is_alliance == is_alliance)
-            .map(|t| t.regiment_strength as u32)
+            .map(|_| 100)
             .fold(0, u32::saturating_add);
 
         // Facility count (defense + manufacturing)
@@ -1199,7 +1187,7 @@ mod tests {
         pop_alliance: f32,
         pop_empire: f32,
     ) -> SystemKey {
-        world.systems.insert(System {
+        let key = world.systems.insert(System {
             dat_id: DatId(0),
             name: "Test System".into(),
             sector,
@@ -1222,7 +1210,11 @@ mod tests {
             is_headquarters: false,
             is_destroyed: false,
             control: ControlKind::Uncontrolled,
-        })
+        });
+        // A core system (SYSTEMSD family 0x90), which either side's AI
+        // record reads in full (`ai_records::fill_system`).
+        world.system_families.insert(key, 0x90);
+        key
     }
 
     fn add_character(
@@ -1537,95 +1529,643 @@ mod tests {
         ))
     }
 
-    /// Whether the Empire sends a special force of `espionage` and `combat`
-    /// to sabotage an Alliance manufacturing system.
-    fn sabotage_dispatched(espionage: u32, combat: u32) -> bool {
-        sabotage_dispatched_by(AiFaction::Empire, |world, alliance| {
-            add_commando(world, alliance, espionage, combat)
-        })
+    /// An `enemy`-held system of `sector` with one `enemy` facility of each
+    /// of `families` and `regiments` `enemy` regiments.
+    fn enemy_yards(
+        world: &mut GameWorld,
+        sector: SectorKey,
+        enemy: crate::dat::Faction,
+        families: &[u8],
+        regiments: usize,
+    ) -> (SystemKey, Vec<crate::ids::ManufacturingFacilityKey>) {
+        let system = add_system(world, sector, 0.5, 0.5);
+        world.systems[system].control = ControlKind::Controlled(enemy);
+        world.sectors[sector].systems.push(system);
+        let yards = families
+            .iter()
+            .map(|&family| {
+                let key = world.manufacturing_facilities.insert(
+                    crate::world::ManufacturingFacilityInstance {
+                        class_dat_id: DatId((u32::from(family) << 24) | 1),
+                        side: enemy,
+                        is_shipyard: family == 0x28,
+                    },
+                );
+                world.systems[system].manufacturing_facilities.push(key);
+                key
+            })
+            .collect();
+        for _ in 0..regiments {
+            let troop = world.troops.insert(crate::world::TroopUnit {
+                class_dat_id: DatId(0),
+                is_alliance: enemy == crate::dat::Faction::Alliance,
+            });
+            world.systems[system].ground_units.push(troop);
+        }
+        (system, yards)
     }
 
-    /// Whether `side`'s AI sends the agent `add` makes to sabotage the enemy
-    /// shipyard, naming the shipyard as the target object.
-    fn sabotage_dispatched_by(
+    type SabotageOrder = (
+        Vec<crate::missions::MissionMember>,
+        SystemKey,
+        Option<crate::missions::MissionTarget>,
+    );
+
+    /// The Sabotage orders `side`'s AI gives on `world` when regional
+    /// records ask for them ([`Round::sabotage`]), each as its sector and
+    /// posture kind.
+    fn sabotage_orders(
+        world: &GameWorld,
         side: AiFaction,
-        add: impl FnOnce(&mut GameWorld, bool) -> crate::missions::MissionMember,
-    ) -> bool {
-        let alliance_ai = side == AiFaction::Alliance;
-        let mut world = empty_world();
-        let sector = add_sector(&mut world);
-
-        // Enemy (alliance) system with a manufacturing facility — a sabotage target.
-        let mfg_key =
-            world
-                .manufacturing_facilities
-                .insert(crate::world::ManufacturingFacilityInstance {
-                    class_dat_id: DatId(1),
-                    side: crate::dat::Faction::of_alliance(!alliance_ai), // owned by the AI's enemy
-                    is_shipyard: false,
-                });
-        let enemy_sys = world.systems.insert(System {
-            dat_id: DatId(0),
-            name: "Enemy Shipyard".into(),
-            sector,
-            x: 10,
-            y: 10,
-            exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.8,
-            popularity_empire: 0.1,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![mfg_key],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Uncontrolled,
+        requests: &[(SectorKey, u8)],
+    ) -> Vec<SabotageOrder> {
+        let mut planner = planner_for(world, side);
+        let mut actions = Vec::new();
+        with_round(world, side, |round| {
+            round.sabotage = requests
+                .iter()
+                .zip(1..)
+                .map(|(&(sector, kind), id)| (id, sector, kind))
+                .collect();
+            AISystem::evaluate_espionage(&mut planner, round, side, usize::MAX, &mut actions);
         });
-
-        let spy = add(&mut world, alliance_ai);
-
-        let mut state = AIState::new(side);
-
-        let actions = day_of_rounds(&mut state, &world);
-
-        let sabotage = actions.iter().find(|a| {
-            matches!(
-                a,
+        actions
+            .into_iter()
+            .filter_map(|action| match action {
                 AIAction::DispatchMission {
                     kind: MissionKind::Sabotage,
                     team,
                     target_system,
-                    target_object: Some(crate::missions::MissionTarget::ManufacturingFacility(yard)),
+                    target_object,
                     ..
-                }
-                if *team == [spy] && *target_system == enemy_sys && *yard == mfg_key
-            )
-        });
-        sabotage.is_some()
+                } => Some((team, target_system, target_object)),
+                _ => None,
+            })
+            .collect()
     }
 
     #[test]
     fn a_sabotage_team_needs_combat_and_espionage_of_51() {
-        // FUN_0047d520 queries combat 51..=10000 and espionage 51..=10000
-        // and takes only hits of both (FUN_004357b0).
-        assert!(sabotage_dispatched(51, 51));
-        assert!(!sabotage_dispatched(50, 80));
-        assert!(!sabotage_dispatched(80, 50));
+        // FUN_0047d520.c:28-44 queries combat 51..=10000 and espionage
+        // 51..=10000 and takes only hits of both (FUN_004357b0).
+        for side in [AiFaction::Empire, AiFaction::Alliance] {
+            let enemy = crate::dat::Faction::of_alliance(side == AiFaction::Empire);
+            let dispatched = |espionage, combat| {
+                let mut world = empty_world();
+                let sector = add_sector(&mut world);
+                let (system, yards) = enemy_yards(&mut world, sector, enemy, &[0x28], 0);
+                let spy =
+                    add_commando(&mut world, side == AiFaction::Alliance, espionage, combat);
+                let target =
+                    Some(crate::missions::MissionTarget::ManufacturingFacility(yards[0]));
+                sabotage_orders(&world, side, &[(sector, 1)])
+                    == vec![(vec![spy], system, target)]
+            };
+
+            assert!(dispatched(51, 51), "{side:?}");
+            assert!(!dispatched(50, 80), "{side:?}");
+            assert!(!dispatched(80, 50), "{side:?}");
+        }
     }
 
     #[test]
-    fn an_alliance_commando_sabotages_an_empire_shipyard() {
-        assert!(sabotage_dispatched_by(
-            AiFaction::Alliance,
-            |world, alliance| { add_commando(world, alliance, 80, 60) }
-        ));
+    fn a_sabotage_request_past_the_pass_limit_draws_nothing_for_either_side() {
+        // FUN_004d2690 gives each regional record its own planner, so a
+        // pass that has dispatched its limit (one, the pseudo-planner pass)
+        // runs no other record's target, object or staging draws
+        // (FUN_00431830, FUN_0041cd80, FUN_0041a460). Each sector's target
+        // lists two facilities, so its object draw takes one draw.
+        for side in [AiFaction::Empire, AiFaction::Alliance] {
+            let enemy = crate::dat::Faction::of_alliance(side == AiFaction::Empire);
+            let mut world = empty_world();
+            let first = add_sector(&mut world);
+            let second = add_sector(&mut world);
+            for sector in [first, second] {
+                let _ = enemy_yards(&mut world, sector, enemy, &[0x28, 0x29], 0);
+            }
+            let _ = add_commando(&mut world, side == AiFaction::Alliance, 80, 80);
+            let after = |requests: &[(SectorKey, u8)]| {
+                let mut planner = planner_for(&world, side);
+                let mut actions = Vec::new();
+                with_round(&world, side, |round| {
+                    round.sabotage = requests
+                        .iter()
+                        .zip(1..)
+                        .map(|(&(sector, kind), id)| (id, sector, kind))
+                        .collect();
+                    AISystem::evaluate_espionage(&mut planner, round, side, 1, &mut actions);
+                    let draws: Vec<i32> = (0..4)
+                        .map(|_| crate::uprising::Draws::draw(&mut round.rng, 1_000_000))
+                        .collect();
+                    let kinds: Vec<MissionKind> = actions
+                        .iter()
+                        .filter_map(|action| match action {
+                            AIAction::DispatchMission { kind, .. } => Some(*kind),
+                            _ => None,
+                        })
+                        .collect();
+                    (kinds, draws)
+                })
+            };
+
+            let (dispatched, alone) = after(&[(first, 1)]);
+            assert_eq!(dispatched, [MissionKind::Sabotage], "{side:?}");
+            assert_eq!(
+                after(&[(first, 1), (second, 1)]),
+                (vec![MissionKind::Sabotage], alone),
+                "{side:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn either_side_sabotages_the_least_defended_enemy_system_of_the_requests_sector() {
+        // FUN_004bdbc0.c:21-31 through the posture's slot +0x30: kind 1
+        // (FUN_004bab30) asks for yards (sys+0x2c 0x20000) after the
+        // headquarters, and FUN_0041a340 keys the hits on sys+0xbc (0x1d),
+        // smallest first. At an enemy system each regiment adds one
+        // (FUN_00433e40.c:639-641). A yard in another sector never counts.
+        for side in [AiFaction::Empire, AiFaction::Alliance] {
+            let enemy = crate::dat::Faction::of_alliance(side == AiFaction::Empire);
+            let mut world = empty_world();
+            let sector = add_sector(&mut world);
+            let elsewhere = add_sector(&mut world);
+            let _ = enemy_yards(&mut world, sector, enemy, &[0x28], 2);
+            let (weakest, yards) = enemy_yards(&mut world, sector, enemy, &[0x28], 1);
+            let _ = enemy_yards(&mut world, elsewhere, enemy, &[0x28], 0);
+            let spy = add_commando(&mut world, side == AiFaction::Alliance, 80, 80);
+
+            let orders = sabotage_orders(&world, side, &[(sector, 1)]);
+
+            let target = Some(crate::missions::MissionTarget::ManufacturingFacility(yards[0]));
+            assert_eq!(orders, vec![(vec![spy], weakest, target)], "{side:?}");
+        }
+    }
+
+    #[test]
+    fn the_first_query_of_the_postures_list_that_finds_a_system_names_it() {
+        // Kind 1 (FUN_004bab30) asks for yards before regiments; kind 5
+        // (FUN_004b1f80.c:33-180) never asks for yards; kind 3
+        // (FUN_004b3f80) asks for regiments before yards; kind 6 asks for
+        // the headquarters after shields and never for yards. The winning
+        // query's mask goes on to FUN_004ae480.
+        let mut world = empty_world();
+        let sector = add_sector(&mut world);
+        let enemy = crate::dat::Faction::Alliance;
+        let (yards, _) = enemy_yards(&mut world, sector, enemy, &[0x28], 0);
+        let (garrison, _) = enemy_yards(&mut world, sector, enemy, &[], 1);
+
+        let picks: Vec<_> = with_round(&world, AiFaction::Empire, |round| {
+            [1, 5, 3, 2, 6]
+                .map(|kind| crate::ai_regions::sabotage_system(round, sector, kind))
+                .to_vec()
+        });
+
+        assert_eq!(
+            picks,
+            vec![
+                Some((yards, 0x2_0000)),
+                Some((garrison, 0x20_0000)),
+                Some((garrison, 0x20_0000)),
+                Some((yards, 0x2_0000)),
+                Some((garrison, 0x20_0000)),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_sabotage_draws_one_object_of_the_masks_kinds_uniformly() {
+        // FUN_004ae480.c:60-512 lists training facilities (0x29), then
+        // shipyards (0x28), then construction yards (0x2a) unless c+4 has
+        // 0x40, and draws one with FUN_0041cd80(count) (:517-533).
+        let mut world = empty_world();
+        let sector = add_sector(&mut world);
+        let (system, yards) = enemy_yards(
+            &mut world,
+            sector,
+            crate::dat::Faction::Alliance,
+            &[0x28, 0x29, 0x2a],
+            0,
+        );
+        let [shipyard, training, construction] = [yards[0], yards[1], yards[2]];
+        let named = |key| Some(crate::missions::MissionTarget::ManufacturingFacility(key));
+
+        with_round(&world, AiFaction::Empire, |round| {
+            for (ctx, list) in [
+                (0, vec![training, shipyard, construction]),
+                (0x40, vec![training, shipyard]),
+            ] {
+                round.ctx = ctx;
+                let mut oracle = round.rng.clone();
+                let index =
+                    crate::uprising::Draws::draw(&mut oracle, i32::try_from(list.len()).unwrap() - 1);
+                let expected = named(list[usize::try_from(index).unwrap()]);
+
+                let drawn = crate::ai_regions::sabotage_object(round, system, 0x2_0000);
+
+                assert_eq!(drawn, Some(expected), "ctx {ctx:#x}");
+            }
+        });
+    }
+
+    #[test]
+    fn a_sabotage_lists_each_masks_kind_in_the_sources_order() {
+        // FUN_004ae480.c:60-512: the headquarters (0x2000000), shields 0x24
+        // (0x40000), Death Star shields 0x25 (0x80000), batteries 0x23 then
+        // 0x22 (0x100000), regiments (0x200000), squadrons (0x400000),
+        // every live ship of a fleet not the side's (0x800000), training
+        // facilities, shipyards and construction yards (0x20000), every
+        // refinery then the first mine (0x10000). A full mask lists them in
+        // that order.
+        use crate::missions::MissionTarget;
+        for side in [AiFaction::Empire, AiFaction::Alliance] {
+            let enemy = crate::dat::Faction::of_alliance(side == AiFaction::Empire);
+            let mut world = empty_world();
+            let sector = add_sector(&mut world);
+            let (system, yards) = enemy_yards(&mut world, sector, enemy, &[0x2a, 0x28, 0x29], 2);
+            world.systems[system].is_headquarters = true;
+            let defences: Vec<_> = [0x22u32, 0x25, 0x23, 0x24]
+                .map(|family| {
+                    let key = world.defense_facilities.insert(crate::world::DefenseFacilityInstance {
+                        class_dat_id: DatId((family << 24) | 1),
+                        side: enemy,
+                    });
+                    world.systems[system].defense_facilities.push(key);
+                    Some(MissionTarget::DefenseFacility(key))
+                })
+                .to_vec();
+            let products: Vec<_> = [0x2cu32, 0x2d, 0x2c, 0x2d]
+                .map(|family| {
+                    let key = world.production_facilities.insert(
+                        crate::world::ProductionFacilityInstance {
+                            class_dat_id: DatId((family << 24) | 1),
+                            side: enemy,
+                            is_mine: family == 0x2c,
+                        },
+                    );
+                    world.systems[system].production_facilities.push(key);
+                    Some(MissionTarget::ProductionFacility(key))
+                })
+                .to_vec();
+            for count in [2, 1] {
+                world.systems[system].fighters.push(crate::world::SystemSquadrons {
+                    class: crate::ids::FighterKey::default(),
+                    count,
+                    is_alliance: enemy == crate::dat::Faction::Alliance,
+                });
+            }
+            let station = world.capital_ship_classes.insert(crate::world::CapitalShipClass {
+                family: 0x18,
+                ..Default::default()
+            });
+            let cruiser = world
+                .capital_ship_classes
+                .insert(crate::world::CapitalShipClass::default());
+            let mut fleet = |is_alliance, ships: Vec<crate::world::ShipInstance>| {
+                let key = world.fleets.insert(Fleet {
+                    location: system,
+                    capital_ships: ships,
+                    is_alliance,
+                    ..Default::default()
+                });
+                world.systems[system].fleets.push(key);
+                key
+            };
+            let mut wreck = crate::world::ShipInstance::new(cruiser, 0, false);
+            wreck.alive = false;
+            let enemies = fleet(
+                enemy == crate::dat::Faction::Alliance,
+                vec![
+                    crate::world::ShipInstance::new(station, 100, false),
+                    wreck,
+                    crate::world::ShipInstance::new(cruiser, 100, false),
+                ],
+            );
+            let _ = fleet(
+                side == AiFaction::Alliance,
+                vec![crate::world::ShipInstance::new(station, 100, false)],
+            );
+            crate::carriage::tag_all(&mut world);
+            let station_tag = world.fleets[enemies].capital_ships[0].tag;
+            let regiments: Vec<_> = world.systems[system]
+                .ground_units
+                .iter()
+                .map(|&key| Some(MissionTarget::Troop(key)))
+                .collect();
+            let made = |key| Some(MissionTarget::ManufacturingFacility(key));
+            let kinds = [
+                (0x200_0000, vec![None]),
+                (0x4_0000, vec![defences[3]]),
+                (0x8_0000, vec![defences[1]]),
+                (0x10_0000, vec![defences[2], defences[0]]),
+                (0x20_0000, regiments),
+                (0x40_0000, vec![None; 3]),
+                (0x80_0000, vec![Some(MissionTarget::CapitalShip(station_tag)), None]),
+                (0x2_0000, vec![made(yards[2]), made(yards[1]), made(yards[0])]),
+                (0x1_0000, vec![products[1], products[3], products[0]]),
+            ];
+
+            with_round(&world, side, |round| {
+                for (mask, list) in &kinds {
+                    let listed = crate::ai_regions::sabotage_candidates(round, system, *mask);
+                    assert_eq!(&listed, list, "{side:?} mask {mask:#x}");
+                }
+                let all = kinds.iter().fold(0, |all, (mask, _)| all | mask);
+                let every: Vec<_> = kinds.iter().flat_map(|(_, list)| list.clone()).collect();
+                assert_eq!(crate::ai_regions::sabotage_candidates(round, system, all), every);
+            });
+            world.systems[system].is_headquarters = false;
+            with_round(&world, side, |round| {
+                assert!(crate::ai_regions::sabotage_candidates(round, system, 0x200_0000).is_empty());
+            });
+        }
+    }
+
+    #[test]
+    fn a_fleet_of_unfinished_ships_lists_no_death_star_sabotage_target_for_either_side() {
+        // FUN_004ae480.c:302 walks the system's fleets in mode 1
+        // (FUN_004ffe70(system, 1)): a fleet whose only ship is unfinished
+        // (FUN_004f7d50(.., 1, 0); the route-1 day-115 save: +0x50 0x42) is
+        // not usable (FUN_004fe540.c:20-35), so its Death Star is no target.
+        for side in [AiFaction::Alliance, AiFaction::Empire] {
+            let enemy_is_alliance = side == AiFaction::Empire;
+            let mut world = empty_world();
+            let sector = add_sector(&mut world);
+            let (system, _) = enemy_yards(
+                &mut world,
+                sector,
+                crate::dat::Faction::of_alliance(enemy_is_alliance),
+                &[],
+                0,
+            );
+            let station = world
+                .capital_ship_classes
+                .insert(crate::world::CapitalShipClass {
+                    family: 0x18,
+                    ..Default::default()
+                });
+            let key = world.fleets.insert(Fleet {
+                location: system,
+                capital_ships: vec![crate::world::ShipInstance::ordered(
+                    station,
+                    100,
+                    enemy_is_alliance,
+                )],
+                is_alliance: enemy_is_alliance,
+                ..Default::default()
+            });
+            world.systems[system].fleets.push(key);
+            crate::carriage::tag_all(&mut world);
+
+            with_round(&world, side, |round| {
+                assert!(
+                    crate::ai_regions::sabotage_candidates(round, system, 0x80_0000).is_empty(),
+                    "{side:?}"
+                );
+            });
+
+            world.fleets[key].capital_ships[0].completed = true;
+            let tag = world.fleets[key].capital_ships[0].tag;
+            with_round(&world, side, |round| {
+                assert_eq!(
+                    crate::ai_regions::sabotage_candidates(round, system, 0x80_0000),
+                    [Some(crate::missions::MissionTarget::CapitalShip(tag))],
+                    "{side:?}"
+                );
+            });
+        }
+    }
+
+    #[test]
+    fn an_empty_sabotage_list_draws_nothing() {
+        // FUN_004ae480.c:517-519 calls FUN_0041cd80 only for a count above 0.
+        let mut world = empty_world();
+        let sector = add_sector(&mut world);
+        let (system, _) = enemy_yards(&mut world, sector, crate::dat::Faction::Alliance, &[], 0);
+
+        with_round(&world, AiFaction::Empire, |round| {
+            let mut oracle = round.rng.clone();
+
+            assert_eq!(crate::ai_regions::sabotage_object(round, system, 0x2_0000), None);
+            assert_eq!(
+                crate::uprising::Draws::draw(&mut round.rng, 99),
+                crate::uprising::Draws::draw(&mut oracle, 99)
+            );
+        });
+    }
+
+    #[test]
+    fn a_drawn_headquarters_gives_no_sabotage_order() {
+        // FUN_004ae480 lists the headquarters first for mask 0x2000000,
+        // which kind 1 asks for first (FUN_004bab30). port: no mission
+        // target names the headquarters, so the planner gives no order.
+        let mut world = empty_world();
+        let sector = add_sector(&mut world);
+        let (system, _) = enemy_yards(&mut world, sector, crate::dat::Faction::Alliance, &[], 0);
+        world.systems[system].is_headquarters = true;
+        let _ = add_commando(&mut world, false, 80, 80);
+
+        assert!(sabotage_orders(&world, AiFaction::Empire, &[(sector, 1)]).is_empty());
+    }
+
+    #[test]
+    fn no_sabotage_is_planned_without_a_regional_request() {
+        // FUN_004b7150.c:25-35: only a regional record whose posture
+        // recommends 0x69 starts a Sabotage planner (FUN_004bda60).
+        let mut world = empty_world();
+        let sector = add_sector(&mut world);
+        let _ = enemy_yards(&mut world, sector, crate::dat::Faction::Alliance, &[0x28], 0);
+        let _ = add_commando(&mut world, false, 90, 90);
+
+        assert!(sabotage_orders(&world, AiFaction::Empire, &[]).is_empty());
+    }
+
+    #[test]
+    fn a_record_asks_for_sabotage_only_while_none_of_its_sectors_runs() {
+        // FUN_004b7150.c:25-35 recommends 0x69 only with the record's
+        // counter +0xac at 0: the side's running Sabotage missions against
+        // a system of its sector.
+        let mut world = empty_world();
+        let sector = add_sector(&mut world);
+        let (system, _) = enemy_yards(&mut world, sector, crate::dat::Faction::Alliance, &[0x28], 0);
+        let spy = add_commando(&mut world, false, 90, 90);
+        let mut regions = crate::ai_regions::Regions::default();
+        regions.records.push(crate::ai_regions::RegionalRecord {
+            id: 4,
+            sector: Some(sector),
+            mission: 0x69,
+            posture: Some(crate::ai_regions::Posture {
+                kind: 6,
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+        let mut missions = MissionState::new();
+        let empire = crate::dat::Faction::Empire;
+
+        assert_eq!(
+            regions.sabotage_requests(&world, &missions, empire),
+            vec![(4, sector, 6)]
+        );
+
+        let _ = missions.dispatch(crate::missions::MissionRequest {
+            kind: MissionKind::Sabotage,
+            faction: crate::missions::MissionFaction::Empire,
+            team: vec![spy],
+            decoys: vec![],
+            target_system: system,
+            target_character: None,
+            target_object: None,
+            tick: 0,
+        });
+
+        assert!(regions.sabotage_requests(&world, &missions, empire).is_empty());
+        assert_eq!(regions.records[0].missions[3], 1);
+        assert!(regions
+            .sabotage_requests(&world, &missions, crate::dat::Faction::Alliance)
+            .contains(&(4, sector, 6)));
+    }
+
+    #[test]
+    fn a_sabotage_target_with_nothing_listed_draws_no_staging_system() {
+        // FUN_004bdbc0.c:30-31: with nothing listed FUN_004ae480.c:517-519
+        // leaves the object +0x30 clear, the target test fails and the
+        // planner ends without reaching state 3, so FUN_004bdcd0's staging
+        // draw (FUN_0041a460) never runs. Kind 1 (FUN_004bab30) admits the
+        // construction yard (0x20000), which c+4 & 0x40 keeps off the list
+        // (FUN_004ae480.c:60-512).
+        for side in [AiFaction::Empire, AiFaction::Alliance] {
+            let own = crate::dat::Faction::of_alliance(side == AiFaction::Alliance);
+            let enemy = crate::dat::Faction::of_alliance(side == AiFaction::Empire);
+            let mut world = empty_world();
+            let sector = add_sector(&mut world);
+            let _ = enemy_yards(&mut world, sector, enemy, &[0x2a], 0);
+            // An own system of the sector the staging draw would admit.
+            let _ = enemy_yards(&mut world, sector, own, &[], 0);
+            let mut planner = planner_for(&world, side);
+
+            with_round(&world, side, |round| {
+                round.ctx = 0x40;
+                round.sabotage = vec![(1, sector, 1)];
+                let before = round.rng.clone();
+                assert!(crate::ai_regions::sabotage_system(round, sector, 1).is_some());
+                let mut oracle = std::mem::replace(&mut round.rng, before);
+                let mut actions = Vec::new();
+
+                AISystem::evaluate_espionage(&mut planner, round, side, usize::MAX, &mut actions);
+
+                assert!(actions.is_empty(), "{side:?}");
+                let draws = |rng: &mut crate::mission_detection::MissionRng| {
+                    (0..8)
+                        .map(|_| crate::uprising::Draws::draw(rng, 99))
+                        .collect::<Vec<_>>()
+                };
+                assert_eq!(draws(&mut round.rng), draws(&mut oracle), "{side:?}");
+            });
+        }
+    }
+
+    #[test]
+    fn a_neutral_systems_regiments_and_squadrons_leave_its_defence_figure_alone() {
+        // FUN_00433e40.c:625-641: only at a system the other side holds
+        // (sys+0x30 & 4) do the operational regiments +0x90 and squadrons
+        // +0xac add one unit each to sys+0xbc (key 0x1d); the neutral
+        // branch (:610-624) leaves it.
+        for side in [AiFaction::Empire, AiFaction::Alliance] {
+            let enemy = crate::dat::Faction::of_alliance(side == AiFaction::Empire);
+            let mut world = empty_world();
+            let sector = add_sector(&mut world);
+            let class = world.fighter_classes.insert(FighterClass::default());
+            let (neutral, _) = enemy_yards(&mut world, sector, enemy, &[], 2);
+            world.systems[neutral].control = ControlKind::Uncontrolled;
+            let (held, _) = enemy_yards(&mut world, sector, enemy, &[], 2);
+            for system in [neutral, held] {
+                world.systems[system]
+                    .fighters
+                    .push(crate::world::SystemSquadrons {
+                        class,
+                        count: 3,
+                        is_alliance: enemy == crate::dat::Faction::Alliance,
+                    });
+            }
+
+            with_round(&world, side, |round| {
+                assert_eq!(round.records[&neutral].slot(0x1d), 0, "{side:?}");
+                assert_eq!(round.records[&held].slot(0x1d), 5, "{side:?}");
+            });
+        }
+    }
+
+    #[test]
+    fn a_fleet_assaults_the_system_it_stands_at_whatever_squadrons_guard_it() {
+        // FUN_004ae240.c:24-34: where the fleet stands (fleet+0x28 is the
+        // system) the manoeuvre and squadron requirements are both 0; away,
+        // the system's squadrons sys+0xa4 must not outnumber the fleet's
+        // active squadrons +0x74 unless it has a ship with class flag 2
+        // (+0x9c).
+        for side in [AiFaction::Empire, AiFaction::Alliance] {
+            let enemy = crate::dat::Faction::of_alliance(side == AiFaction::Empire);
+            let mut world = empty_world();
+            let sector = add_sector(&mut world);
+            let (system, _) = enemy_yards(&mut world, sector, enemy, &[], 0);
+            let (elsewhere, _) = enemy_yards(&mut world, sector, enemy, &[], 0);
+            world.systems[system]
+                .fighters
+                .push(crate::world::SystemSquadrons {
+                    class: crate::ids::FighterKey::default(),
+                    count: 3,
+                    is_alliance: enemy == crate::dat::Faction::Alliance,
+                });
+
+            with_round(&world, side, |round| {
+                let target = &round.records[&system];
+                let fleet =
+                    |location, squadrons_active, laser_ships| crate::ai_records::FleetRecord {
+                        location,
+                        regiments_active: target.slot(0x34).max(1),
+                        squadrons_active,
+                        laser_ships,
+                        ..Default::default()
+                    };
+                let assault = |f: crate::ai_records::FleetRecord| {
+                    crate::ai_regions::can_assault(&f, target, 0)
+                };
+
+                assert!(assault(fleet(system, 0, 0)), "{side:?} at the system");
+                assert!(!assault(fleet(elsewhere, 2, 0)), "{side:?} away");
+                assert!(assault(fleet(elsewhere, 3, 0)), "{side:?} away, squadrons");
+                assert!(assault(fleet(elsewhere, 0, 1)), "{side:?} away, laser ship");
+            });
+        }
+    }
+
+    #[test]
+    fn no_fleet_assaults_an_unpopulated_system_nobody_holds() {
+        // FUN_004ae240.c:19 needs sys+0x30 bit 0x20, which FUN_00433e40
+        // sets only on a system a side holds or a populated one.
+        for side in [AiFaction::Empire, AiFaction::Alliance] {
+            let enemy = crate::dat::Faction::of_alliance(side == AiFaction::Empire);
+            let mut world = empty_world();
+            let sector = add_sector(&mut world);
+            let (system, _) = enemy_yards(&mut world, sector, enemy, &[], 0);
+            world.systems[system].is_populated = false;
+            world.systems[system].control = ControlKind::Uncontrolled;
+
+            with_round(&world, side, |round| {
+                let fleet = crate::ai_records::FleetRecord {
+                    location: system,
+                    regiments_active: 10,
+                    squadrons_active: 10,
+                    laser_ships: 1,
+                    ..Default::default()
+                };
+
+                assert!(
+                    !crate::ai_regions::can_assault(&fleet, &round.records[&system], 0),
+                    "{side:?}"
+                );
+            });
+        }
     }
 
     #[test]
@@ -1913,7 +2453,11 @@ mod tests {
 
     /// `f` over a round of `faction`'s AI on `world`, every other state
     /// empty.
-    fn with_round<R>(world: &GameWorld, faction: AiFaction, f: impl FnOnce(&Round<'_>) -> R) -> R {
+    fn with_round<R>(
+        world: &GameWorld,
+        faction: AiFaction,
+        f: impl FnOnce(&mut Round<'_>) -> R,
+    ) -> R {
         let manufacturing = ManufacturingState::new();
         let transport = crate::troop_transport::TroopTransportState::new();
         let uprisings = crate::uprising::UprisingState::new();
@@ -1932,8 +2476,8 @@ mod tests {
             tick: 7,
             round_in_day: 0,
         };
-        let round = Round::new(&crate::ai_production::ProductionState::default(), &inputs);
-        f(&round)
+        let mut round = Round::new(&crate::ai_production::ProductionState::default(), &inputs);
+        f(&mut round)
     }
 
     /// Each `kind` order as (team, target system, target character).
@@ -2048,50 +2592,6 @@ mod tests {
     }
 
     #[test]
-    fn a_sabotage_goes_to_each_enemy_yard() {
-        let mut world = empty_world();
-        let sector = add_sector(&mut world);
-        let mut yards = Vec::new();
-        for _ in 0..2 {
-            let system = add_system(&mut world, sector, 0.8, 0.1);
-            let yard = world.manufacturing_facilities.insert(
-                crate::world::ManufacturingFacilityInstance {
-                    class_dat_id: DatId(1),
-                    side: crate::dat::Faction::Alliance,
-                    is_shipyard: false,
-                },
-            );
-            world.systems[system].manufacturing_facilities.push(yard);
-            yards.push(system);
-        }
-        for _ in 0..4 {
-            add_commando(&mut world, false, 0, 90);
-        }
-        for member in world.special_forces.values_mut() {
-            member.skills[crate::world::Skill::Espionage as usize] = 90;
-        }
-        let mut planner = planner_for(&world, AiFaction::Empire);
-        let mut actions = Vec::new();
-
-        with_round(&world, AiFaction::Empire, |round| {
-            AISystem::evaluate_espionage(
-                &mut planner,
-                round,
-                AiFaction::Empire,
-                usize::MAX,
-                &mut actions,
-            );
-        });
-
-        let targets: Vec<SystemKey> = orders(&actions, MissionKind::Sabotage)
-            .into_iter()
-            .map(|(_, system, _)| system)
-            .collect();
-        assert_eq!(targets.len(), 2);
-        assert!(yards.iter().all(|yard| targets.contains(yard)));
-    }
-
-    #[test]
     fn an_assassination_goes_where_each_free_enemy_major_stands() {
         // FUN_004bd0a0 sends the order to the target's system; a character
         // in a fleet stands at the fleet's system. The original caps no
@@ -2106,7 +2606,7 @@ mod tests {
             fighters: vec![],
             characters: vec![],
             is_alliance: true,
-            has_death_star: false,
+            bombarding: false,
         });
         let target = add_character(&mut world, true, true, 30);
         at(&mut world, target, here);
@@ -2221,6 +2721,9 @@ mod tests {
             ControlKind::Controlled(crate::dat::Faction::Empire),
         );
         world.systems[unexplored].exploration_status = ExplorationStatus::Unexplored;
+        // A rim system (family 0x92) the side neither holds nor observes:
+        // its view lacks +0x88 bit 1 (`ai_records::fill_system`).
+        world.system_families.insert(unexplored, 0x92);
         let second_enemy = held(
             &mut world,
             ControlKind::Controlled(crate::dat::Faction::Empire),
@@ -2409,7 +2912,6 @@ mod tests {
             let troop = world.troops.insert(crate::world::TroopUnit {
                 class_dat_id: DatId(0),
                 is_alliance,
-                regiment_strength: 50,
             });
             world.systems[system].ground_units.push(troop);
         };

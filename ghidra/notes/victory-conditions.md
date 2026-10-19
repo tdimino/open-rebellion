@@ -68,6 +68,8 @@ it lands at root `+0x60` (the galaxy size, record `+4`, lands at `+0x5c`).
   it: AW if `+0x74` already had `0x1000000`, else EW if it had `0x100000`,
   else AW.
 - There is no minimum day.
+- The word is rebuilt from zero on each call; only the tie rule reads an earlier EW or AW.
+- The principal leaders cannot be destroyed: kill slot `+0x2e0` returns 0 for all six majors (`victory-flag-word.md`, 3).
 
 ## When the check runs
 
@@ -127,30 +129,28 @@ it lands at root `+0x60` (the galaxy size, record `+4`, lands at `+0x5c`).
 
 `crates/rebellion-core/src/victory.rs` against the table above:
 
-- **Empire objective.** The port wins for the Empire when the Alliance HQ
-  system is destroyed, or when its `is_headquarters` flag is clear and the
-  Empire controls it. Only bombardment clears the flag
-  (`apply_headquarters_bombardment`), on any Empire bombardment with damage
-  above 0. The original needs only the HQ object gone, so capturing the HQ
-  system (which removes the HQ) is enough, and no occupation is needed after
-  it is destroyed. In the original a bombardment destroys the HQ only through
-  a successful hit roll on it as a military target (`bombardment.md`).
-- **Alliance objective.** The port checks Alliance control of Coruscant; the
-  original also accepts Coruscant destroyed (CD).
-- **Both at once.** The port returns the Empire's outcome first; the original
-  keeps an earlier winner, else gives it to the Alliance.
-- **Leaders.** The port requires `captured_by == winner`; the original tests
-  only the prisoner bit.
-- **Ending.** The port shows `GameMode::VictoryModal`. The original plays one
-  of the four ending movies above. `story_event_to_cutscene` in
-  `crates/rebellion-app/src/main.rs` maps files 105-108 to story events.
-- **Source comment.** `victory.rs` cites event `0x12c`, which is
-  `RecruitmentDone` (`entity-system.md`); the victory notification is `0x128`.
-
-## Open
-
-- The HQ's bombardment value, and whether an HQ in transit survives Destroy
-  System or capture (`game-end-path.md`).
+- **Empire objective (AD).** The HQ system destroyed, or its
+  `is_headquarters` flag clear, whoever holds it. The flag clears through
+  `support_shift::remove_headquarters` (`game-end-path.md`, Port): a
+  successful hit on the HQ as a military target, Destroy System, or a
+  control change that leaves the system Empire or neutral.
+- **Alliance objective (CA or CD).** Coruscant's holder the Alliance
+  (`bombardment::holder`, which keeps the earlier holder through a
+  stalemate, as `FUN_0050b610` keeps `+0x24` bits 6-7), or Coruscant
+  destroyed.
+- **Cadence.** `port:` the game rebuilds the word (`VictorySystem::word`)
+  and the headless runner checks it (`VictorySystem::check`) every tick, in
+  place of `FUN_005180e0`'s event-driven reruns.
+- **Both at once.** `VictorySystem::word` keeps the side whose win bit the
+  previous word held, else gives AW, as the original does.
+- **Leaders.** The port reads each leader's prisoner bit
+  (`Character::is_captive`) and no captor, so a leader the adrift sweep
+  jailed with no captor counts too (`death-star-strategic.md`, "Jail
+  abodes").
+- **Ending.** The local player's advisor stamps its ending slot and the
+  clock stops; the script's step 3 stores the ending code, and its movie
+  plays after the teardown, then the main menu (`movies.rs`;
+  `agent_docs/systems/victory.md`, "The ending").
 
 The HQ's removal (Destroy System's container cascade, a bombardment hit,
 capture), the advisor's ending script, the computer player's counters and the

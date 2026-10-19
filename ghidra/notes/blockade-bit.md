@@ -20,14 +20,24 @@ notification slot (`+0x20c` for `0x1`, rising by 4 per bit). Bit `0x20`'s
 setter is `FUN_0050a5f0` (views `FUN_0050fec0`, slot `+0x220`); its only
 caller is `FUN_0050b8e0`.
 
+Bit `0x2000` (`FUN_0050a970`, views by `FUN_005103a0`, hook slot `+0x240`) is
+unrelated to blockades: it records that the latest holder change had no regiments
+at either end, and gates the Loyalty Change Message (`message-display.md`,
+"The loyalty bit"). Its one caller is `FUN_00510d70`, slot `+0x208`.
+
 ## The rule (`FUN_0050b8e0`)
 
 `FUN_0050b8e0` recomputes three bits together:
 
 1. `owned`: the system's side bits (`+0x24` bits 6..7) are 1, 2, or 3.
-   With side 0 (neutral) all three bits are written clear.
+   With side 0 all three bits are written clear. A neutral system is side 3,
+   not 0: `FUN_0055a080` returns 1, 2 or 3 and `FUN_0050b610` writes no
+   other holder, and setup runs it for every system (`FUN_00508250`), so no
+   system in play has side 0.
 2. `battle` (bit `0x1000`, `FUN_0050a900`): both side 1 and side 2 are
-   present (`FUN_00509710(this, 1)` and `(this, 2)`).
+   present (`FUN_00509710(this, 1)` and `(this, 2)`). Its change hook
+   `+0x23c` (`FUN_00511780`) posts event `0x304`, whose handler sweeps the
+   system's adrift characters (`FUN_00548e90`, `death-star-strategic.md`).
 3. `blockade` (bit `0x20`, `FUN_0050a5f0`): no battle, the system is
    populated (`+0x88` bit 0) or its side is not 3, and some active fleet in
    the system (`FUN_004ffe70(this, 1)`, types `0x08..0x0f`, no side filter)
@@ -42,11 +52,17 @@ A side is **present** (`FUN_00509710`) when the system holds an active
 `0x1c..0x1f`) whose side bits equal it (`FUN_005131d0`: type range, mode,
 then `+0x24 >> 6 & 3`).
 
+Fighter squadrons count for presence only: the blockade rule reads fleets
+(`FUN_004ffe70`), and `FUN_0050c0b0` copies the bit to fleets, so a side whose
+only force at a system is system squadrons holds presence, sets no blockade
+and keeps none (`morale-retreat.md`, "Presence and blockade").
+
 So for a system held by side 1 or 2: blockaded exactly when an enemy fleet
 is there and the holder has no active fleet or fighter squadron there. With
-both present it is a battle, not a blockade. A contested system (side 3) is
-blockaded by any one side's fleets alone, when populated. A neutral system is
-never blockaded.
+both present it is a battle, not a blockade. A neutral system (side 3:
+`FUN_0055a080` returns 1, 2 or 3 and `FUN_0050b610` writes no other holder)
+is blockaded by any one side's fleets alone when populated, and takes the
+battle bit with both present. Side 0 writes every bit clear.
 
 ## When it runs
 
@@ -148,9 +164,25 @@ bit that `FUN_004f7640` writes (`FUN_004fb760` -> `FUN_004f8240` ->
   -> `FUN_0051d8f0`) go to queue `+0xb0` (vtable `0x00662018`). The queue
   orders by the item's slot `+0x28` (`FUN_0054ee90`, strict `<`), the head is
   always due (slot `+0x1c` is `FUN_0041c210`), and an item that ties goes
-  behind those already queued (`FUN_005f61c0`). Priorities: `0x301`, `0x306`,
-  `0x320` and the other fleet events `0x10` (`FUN_0048af30`); `0x311` `0x400`
-  (`FUN_0048e670`); `0x31a` `0x999` (`FUN_0057bd20`).
+  behind those already queued (`FUN_005f61c0`); the head is the lowest priority
+  (`support-shifts.md`, "Event order"). Priorities: `0x300`, `0x301`, `0x305`,
+  `0x306`, `0x31b`, `0x320` and the other fleet events `0x10` (`FUN_0048af30`);
+  `0x373` `0x100` (`FUN_0048bc60`); `0x311` `0x400` (`FUN_0048e670`); `0x31a`
+  `0x999` (`FUN_0057bd20`).
+- More priorities, read from each class's vtable slot 10 (the class found from
+  the event's factory in `FUN_0051ef80` through its constructor): `0x10`
+  (`FUN_0048af30`) for `0x304`, `0x308` and `0x317` besides the ones above
+  (vtables `0x00663358`, `0x006696b8`, `0x006699a8`); `0x200` (`FUN_0048b450`)
+  for `0x30e` (`0x00661b18`); `0x300` (`FUN_0057b260`) for `0x307`
+  (`0x00669748`); `0x801` (`FUN_005651c0`) for `0x319` (`0x006634a8`). The
+  autoscrap request `0x307` therefore runs after every queued `0x300`,
+  `0x31b`, `0x373` and `0x30e`, and before the blockade recompute `0x311`. An
+  event posted while a handler runs is inserted by this order and served after
+  the handler returns (`FUN_0051d8f0` is the only insertion, reached from
+  every raiser through `FUN_004fd010`, the callback `FUN_004fcde0` stores in
+  `DAT_006b2af8`), so a synchronous chain, such as a destroy cascade or a
+  mission's phases 8 to `0xb` with the return, completes before any event it
+  raises runs.
 - `FUN_0051df30` serves queue `+0xb0` first, then timer queue `+0xa8`, then
   `+0xac`, and only when none ran does it take one entry of list `+0xa4`
   (`FUN_0051dd20`: slot `+0x20`, then delete). It reports done (1) only when
@@ -220,15 +252,28 @@ a fleet.
 
 `crates/rebellion-core/src/blockade.rs` `system_is_blockaded` ports the rule
 (2026-10-02): both sides' fleets make a battle; a system held by one side
-(`Controlled` or `Uprising`) is blockaded by the other side's fleets; a
-populated `Contested` system by either side's fleets; a neutral one never.
+(`Controlled` or `Uprising`) is blockaded by the other side's fleets, and a
+neutral one (`Uncontrolled`, side 3) by either side's fleets while it is
+populated. `BlockadeSystem::battle_bit` is both sides present at any system.
 
+- the support events queue on `GameWorld::support_events` by priority
+  (`support_shift::raise`, `FUN_005f61c0`, `FUN_0054ee90`): regiment events
+  and holder changes (`0x10`, `FUN_0048af30`) ahead of shifts (`0x100`,
+  `FUN_0048bc60`), raising order within one priority. `support_shift::fire`
+  drains the head until the queue is empty (`FUN_0051df30`, `FUN_0054ec90`),
+  and an event raised meanwhile is inserted by its priority. The blockade and
+  battle rerun (`0x311`, `0x400`) runs after a `fire` that drains everything
+  below it, in the assault tail and the Kill branch, and a second `fire`
+  serves what the rerun posts;
 - presence is a side's fleets or the squadrons the system holds for it
-  (`System::fighters`, 2026-10-10); port: every fleet counts as active.
+  (`System::fighters`). A fleet counts while it is usable
+  (`Fleet::usable`, `FUN_004fe540`): one of its live capital ships is not
+  on its own leg (`ShipInstance::usable`). A fleet holding only travelling
+  or destroyed ships, or none, is absent for both sides (`combat.rs`
+  `a_fleet_without_a_usable_capital_ship_is_not_present_for_either_side`).
   The withdraw percent counts those squadrons too
   (`blockade-troop-withdrawal.md`);
-- hyp: `ControlKind::Contested` is side 3, and an `Uprising` system keeps its
-  holder's side bits;
+- hyp: an `Uprising` system keeps its holder's side bits;
 - port: the rule reruns once per tick (`BlockadeSystem::advance`), after
   arrivals, battles and landings and before the AI round
   (`crates/rebellion-data/src/simulation.rs`, `crates/rebellion-app/src/main.rs`),

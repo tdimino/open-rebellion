@@ -55,11 +55,14 @@ if [ "$FORCE_REBUILD" = "1" ]; then
 fi
 go run ./tools/stage-ui-assets "${asset_args[@]}"
 
-echo "=== [3/4] Building WASM + browser runtime pack ==="
+echo "=== [3/4] Building WASM, the browser runtime pack and movies ==="
 export REBELLION_MDATA_DIR="${MDATA_SRC_DIR:-$ORIGINAL_GAME_DIR/MDATA}"
 export REBELLION_GAME_DIR="$ROOT/data/base"
 export REBELLION_EDATA_DIR="$ORIGINAL_GAME_DIR/EData"
 ./scripts/build-wasm.sh
+# A development build serves web/ as staged; a missing movie is skipped.
+./scripts/stage-web-movies.sh \
+    || echo "WARNING: not every movie was staged; the browser skips the missing ones."
 
 echo "=== [4/4] Preparing modding reference data ==="
 if [ "$PREPARE_MODDING" = "1" ]; then

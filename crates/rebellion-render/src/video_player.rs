@@ -1,5 +1,5 @@
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug)]
 pub enum VideoError {
@@ -55,6 +55,23 @@ impl std::error::Error for VideoError {
     }
 }
 
+/// The MDATA file number a movie path names by its stem: 105 for
+/// `assets/references/ref-videos/105.webm`, the movie `MDATA\MDATA.105`
+/// (`FUN_00421ba0` names a movie id's file). The browser shell plays a movie
+/// by this number (`scripts/stage-web-movies.sh`).
+///
+/// # Errors
+/// Returns [`VideoError::InvalidPath`] when the stem is not a number.
+pub fn movie_number(path: &Path) -> Result<u32, VideoError> {
+    path.file_stem()
+        .and_then(|stem| stem.to_str())
+        .and_then(|stem| stem.parse().ok())
+        .ok_or_else(|| VideoError::InvalidPath {
+            path: path.to_path_buf(),
+            message: "the file stem is not an MDATA movie number".to_string(),
+        })
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 mod native {
     use std::collections::BTreeMap;
@@ -103,6 +120,8 @@ mod native {
     }
 
     impl VideoPlayer {
+        /// Open the movie at `path`. The caller draws the frames, so the
+        /// browser's `bounds` are not read here.
         ///
         /// # Errors
         /// Returns an error if the video cannot be opened or its first frame cannot be decoded.
@@ -110,7 +129,11 @@ mod native {
             clippy::cast_possible_truncation,
             reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
         )]
-        pub fn open(path: &Path, volume: f32) -> Result<VideoPlayer, VideoError> {
+        pub fn open(
+            path: &Path,
+            volume: f32,
+            _bounds: [f32; 4],
+        ) -> Result<VideoPlayer, VideoError> {
             let assets = resolve_decoded_assets(path)?;
             if !assets.frames_dir.exists() || !assets.metadata_path.exists() {
                 return Err(VideoError::NotDecoded {
@@ -173,6 +196,10 @@ mod native {
         pub fn is_finished(&self) -> bool {
             self.finished
         }
+
+        /// The canvas draws the frame wherever the screen puts it; nothing
+        /// to move.
+        pub fn place(&mut self, _bounds: [f32; 4]) {}
 
         pub fn stop(&mut self) {
             self.finished = true;
@@ -360,7 +387,7 @@ mod native {
         use std::time::{SystemTime, UNIX_EPOCH};
 
         use super::{resolve_decoded_assets, VideoPlayer};
-        use crate::video_player::VideoError;
+        use crate::video_player::{movie_number, VideoError};
 
         fn temp_root() -> PathBuf {
             let nonce = SystemTime::now()
@@ -390,12 +417,23 @@ mod native {
         }
 
         #[test]
+        fn a_movie_path_names_its_mdata_file_number() {
+            let number = |path: &str| movie_number(Path::new(path));
+            assert_eq!(number("assets/references/ref-videos/105.webm").unwrap(), 105);
+            assert_eq!(number("assets/references/ref-videos/000.webm").unwrap(), 0);
+            assert!(matches!(
+                number("assets/references/ref-videos/intro.webm"),
+                Err(VideoError::InvalidPath { .. })
+            ));
+        }
+
+        #[test]
         fn open_returns_not_decoded_when_cutscene_directory_is_missing() {
             let root = temp_root();
             let source = root.join("assets/references/ref-videos/000.webm");
             fs::create_dir_all(source.parent().unwrap()).expect("create temp ref-videos dir");
 
-            match VideoPlayer::open(&source, 1.0) {
+            match VideoPlayer::open(&source, 1.0, [0.0, 0.0, 1.0, 1.0]) {
                 Err(VideoError::NotDecoded { path }) => {
                     assert_eq!(path, root.join("assets/references/cutscene-frames/000"));
                 }
@@ -409,35 +447,114 @@ mod native {
 }
 
 #[cfg(target_arch = "wasm32")]
-mod wasm_stub {
+mod web {
     use std::path::Path;
+    use std::sync::atomic::{AtomicU32, Ordering};
 
     use macroquad::prelude::Texture2D;
 
-    use super::VideoError;
+    use super::{movie_number, VideoError};
 
-    pub struct VideoPlayer;
+    /// The latest play the browser shell reported over (`or_movie_ended`).
+    static ENDED: AtomicU32 = AtomicU32::new(0);
+    static NEXT_PLAY: AtomicU32 = AtomicU32::new(1);
+
+    extern "C" {
+        /// Show MDATA movie `movie` over the canvas as play `play`, in the
+        /// rectangle `left`, `top`, `width`, `height` (fractions of the
+        /// screen) (`web/index.html`, `open_rebellion_movies`).
+        fn or_movie_play(
+            movie: u32,
+            play: u32,
+            volume: f32,
+            left: f32,
+            top: f32,
+            width: f32,
+            height: f32,
+        );
+        /// Take play `play` off the screen without reporting it.
+        fn or_movie_stop(play: u32);
+        /// Move play `play`'s video to a new rectangle (fractions of the
+        /// screen), after the window resized.
+        fn or_movie_place(play: u32, left: f32, top: f32, width: f32, height: f32);
+    }
+
+    /// The browser shell's report that play `play` is over: it ended, failed
+    /// to load, or was skipped.
+    #[no_mangle]
+    pub extern "C" fn or_movie_ended(play: u32) {
+        ENDED.fetch_max(play, Ordering::AcqRel);
+    }
+
+    /// A movie the browser plays in a `<video>` element over the canvas.
+    pub struct VideoPlayer {
+        play: u32,
+        finished: bool,
+        bounds: [f32; 4],
+    }
 
     impl VideoPlayer {
-        pub fn open(_path: &Path, _volume: f32) -> Result<VideoPlayer, VideoError> {
-            Ok(VideoPlayer)
+        /// Play the movie at `path` in the shell's `<video>`, placed at
+        /// `bounds` (left, top, width, height, fractions of the screen).
+        ///
+        /// # Errors
+        /// Returns an error if the path names no MDATA movie number.
+        pub fn open(path: &Path, volume: f32, bounds: [f32; 4]) -> Result<VideoPlayer, VideoError> {
+            let movie = movie_number(path)?;
+            let play = NEXT_PLAY.fetch_add(1, Ordering::Relaxed);
+            let [left, top, width, height] = bounds;
+            // SAFETY: the shell's `open_rebellion_movies` plugin defines this
+            // import before the module starts.
+            unsafe { or_movie_play(movie, play, volume, left, top, width, height) };
+            Ok(VideoPlayer {
+                play,
+                finished: false,
+                bounds,
+            })
         }
 
-        pub fn advance(&mut self, _dt: f32) {}
+        pub fn advance(&mut self, _dt: f32) {
+            self.finished = self.is_finished();
+        }
 
+        /// None: the shell draws the movie, not the canvas.
         pub fn current_frame(&self) -> Option<&Texture2D> {
             None
         }
 
-        pub fn is_finished(&self) -> bool {
-            true
+        /// Keep the shell's video on `bounds`, the screen's current place for
+        /// it: a resize moves the letterboxed canvas, and a message movie's
+        /// picture must stay over its frame.
+        pub fn place(&mut self, bounds: [f32; 4]) {
+            if bounds != self.bounds && !self.is_finished() {
+                self.bounds = bounds;
+                let [left, top, width, height] = bounds;
+                // SAFETY: as in `open`.
+                unsafe { or_movie_place(self.play, left, top, width, height) };
+            }
         }
 
-        pub fn stop(&mut self) {}
+        pub fn is_finished(&self) -> bool {
+            self.finished || ENDED.load(Ordering::Acquire) >= self.play
+        }
+
+        pub fn stop(&mut self) {
+            if !self.is_finished() {
+                // SAFETY: as in `open`.
+                unsafe { or_movie_stop(self.play) };
+            }
+            self.finished = true;
+        }
+    }
+
+    impl Drop for VideoPlayer {
+        fn drop(&mut self) {
+            self.stop();
+        }
     }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use native::VideoPlayer;
 #[cfg(target_arch = "wasm32")]
-pub use wasm_stub::VideoPlayer;
+pub use web::VideoPlayer;

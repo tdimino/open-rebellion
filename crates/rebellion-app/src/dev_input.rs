@@ -75,10 +75,17 @@ impl DevInput {
         }
     }
 
-    /// Queue a press at `from`, a move in even steps, and a release at `to`.
-    pub fn drag(&mut self, from: (f32, f32), to: (f32, f32)) {
+    /// Queue a press at `from`, a move in even steps, and a release at `to`,
+    /// with Control held around them when `ctrl`.
+    pub fn drag(&mut self, from: (f32, f32), to: (f32, f32), ctrl: bool) {
+        if ctrl {
+            self.steps.push_back(Step::Ctrl(true));
+        }
         self.hold_drag(from, to);
         self.release(to.0, to.1);
+        if ctrl {
+            self.steps.push_back(Step::Ctrl(false));
+        }
     }
 
     /// Queue a press at `from` and a move in even steps to `to`, leaving the
@@ -385,10 +392,22 @@ mod tests {
     #[test]
     fn a_whole_drag_is_a_held_drag_and_its_release() {
         let mut whole = DevInput::default();
-        whole.drag((10.0, 20.0), (50.0, 20.0));
+        whole.drag((10.0, 20.0), (50.0, 20.0), false);
         let mut split = DevInput::default();
         split.hold_drag((10.0, 20.0), (50.0, 20.0));
         split.release(50.0, 20.0);
         assert_eq!(whole.steps, split.steps);
+    }
+
+    #[test]
+    fn a_ctrl_drag_holds_control_around_the_whole_drag() {
+        let mut ctrl = DevInput::default();
+        ctrl.drag((10.0, 20.0), (50.0, 20.0), true);
+        let mut plain = DevInput::default();
+        plain.drag((10.0, 20.0), (50.0, 20.0), false);
+        let mut expected = std::collections::VecDeque::from([Step::Ctrl(true)]);
+        expected.extend(plain.steps);
+        expected.push_back(Step::Ctrl(false));
+        assert_eq!(ctrl.steps, expected);
     }
 }

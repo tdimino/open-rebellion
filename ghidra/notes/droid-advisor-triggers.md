@@ -3,7 +3,7 @@ title: "Droid Advisor Triggers and Playback"
 description: "When the cockpit droids animate: the per-side advice agent's reaction slots, the GData SPT action tables, the message codes that fill them, idle chatter, and the droid command player"
 category: "ghidra"
 created: 2026-10-08
-updated: 2026-10-09
+updated: 2026-10-16
 ---
 
 # Droid Advisor Triggers and Playback
@@ -81,9 +81,8 @@ it starts (`FUN_00403f70`). The sprite DLLs hold 213 (Alliance) and 216
   1019 (action 10019) and EMSPRITE 1580 (action 11080).
 
 For example, ALSPRITE 10096 is `(4, 4096, 0, 0)`, and 4096 is
-`(0, wave 1096, 9, 91 frames, anchor 3002)`. The run 2001 + 2002..2024,
-which the port used to loop, is action 4002 with wave 1002: one reaction
-among many.
+`(0, wave 1096, 9, 91 frames, anchor 3002)`. The run 2001 + 2002..2024 is
+action 4002 with wave 1002: one reaction among many.
 
 ## The advice agent
 
@@ -186,11 +185,15 @@ its setter.
 | `0x2a`, `0x2b` | Advice messages (`FUN_0048b2e0`) | — | `FUN_004c4430`, `FUN_004c4480` | `FUN_004c2270`, `FUN_004c22c0` |
 | `0x2c` | — | `FUN_00545240` (untraced) | 75 (10) | — |
 | `0x2d` | Bounty hunters locate Solo | `FUN_0048fa00` | — | 72 (10) |
-| `0x2e` | Orbital bombardment of a neutral system | `FUN_00496770` | 25 (10) | 35 (10) |
-| `0x2f` | Assault on a system | `FUN_00496770` | 26 (10) | 36 (10) |
+| `0x2e` | Orbital bombardment, for a side that does not own the bombarding fleet (`+0x6c`, the fleet's `+0x24` bits 6-7) | `FUN_00496770` | 25 (10) | 35 (10) |
+| `0x2f` | Assault on a system, for a side that does not own the assaulting fleet (the same test) | `FUN_00496770` | 26 (10) | 36 (10) |
+
+Codes `0x2e` and `0x2f` are set only in the class-3 path of `FUN_0048a060` (message side differs from the fleet owner), the only path without a popup.
 
 `VT[4]` (`FUN_004c3010`, `FUN_004c0f10`) fills slots 86/87 (Alliance) and
-84/85 (Empire) on flag bits `0x100000` and `0x1000000`.
+84/85 (Empire) on flag bits `0x100000` and `0x1000000`, at the step count
++ 40000, and stops the clock (`FUN_0041d810`); `FUN_00486890` calls it with
+the win word once GO is set (`game-end-path.md`).
 
 ### Flag bits
 
@@ -214,7 +217,10 @@ The pass first runs a stored cockpit step (`DAT_006b28c4`, `DAT_006b28c8`,
 set by command `0x11`) through `FUN_004c3060`, then returns:
 
 - p2 2 runs briefing step p3 (`FUN_004c30c0`);
-- p2 3 selects an object (`FUN_0041d830`).
+- p2 3 passes the side object's win word (`FUN_004f3dd0` `+0xbc`) to
+  `FUN_0041d830` → `FUN_00425c90`, which stores the ending code at strategic
+  window `+0xa8` (`game-end-path.md`, "The advisor's ending"). The ending
+  slots' last record is such a step (p2 3, p3 1).
 
 The opening slot (Alliance 41, Empire 74) alternates such steps with module 13
 clips. On the Alliance side there are 16 clips, of 50 to 380 frames each, so

@@ -35,10 +35,13 @@ pub fn maintenance_capacity(world: &GameWorld, side: Faction) -> i64 {
 /// existing objects of their class `+0x4c` (`FUN_0052fff0`,
 /// `FUN_004f2990` → `FUN_0053b870`). Characters' classes carry none.
 ///
-/// hyp: units in a production queue count from their order (manual p. 84
-/// deducts maintenance at the order; `build-delivery.md`: the queued units
-/// are game objects from the order). A queue belongs to its system's
-/// holder.
+/// An ordered capital ship is an unfinished member of its fleet from its
+/// order and counts there, once, for its own side (`FUN_0052fff0` walks
+/// existing objects; in play a queued Death Star held its 600:
+/// `death-star-product.md`, "Play evidence"). hyp: the other queued units
+/// count from their order too (manual p. 84 deducts maintenance at the
+/// order; `build-delivery.md`: the queued units are game objects from the
+/// order), and their queue belongs to its system's holder.
 #[must_use]
 pub fn maintenance_used(
     world: &GameWorld,
@@ -129,6 +132,12 @@ pub fn maintenance_used(
         used += queue
             .items()
             .iter()
+            .filter(|item| {
+                !matches!(
+                    item.kind,
+                    crate::manufacturing::BuildableKind::CapitalShip(_)
+                )
+            })
             .filter_map(|item| unit_costs(world, item.kind))
             .map(|(_, maintenance)| i64::from(maintenance))
             .sum::<i64>();
@@ -185,6 +194,48 @@ mod tests {
         assert_eq!(maintenance_capacity(&world, Faction::Empire), 100);
     }
 
+    // FUN_0052fff0 walks existing objects, and an ordered capital ship is
+    // one, in its fleet from the order (FUN_004f7d50(.., created 1,
+    // completed 0)): it counts once. The route-1 Empire game played on: a
+    // Stop of the queued Death Star raised the maintenance counter from 309
+    // to 909, its 600 held once.
+    #[test]
+    fn an_ordered_capital_ship_costs_its_maintenance_once_for_either_side() {
+        for side in [Faction::Alliance, Faction::Empire] {
+            let is_alliance = side == Faction::Alliance;
+            let mut world = GameWorld::default();
+            let yard = world.systems.insert(crate::world::System {
+                control: crate::world::ControlKind::Controlled(side),
+                ..crate::world::System::default()
+            });
+            let class = world
+                .capital_ship_classes
+                .insert(crate::world::CapitalShipClass {
+                    is_alliance,
+                    is_empire: !is_alliance,
+                    hull: 100,
+                    maintenance_cost: 600,
+                    ..crate::world::CapitalShipClass::default()
+                });
+            let mut manufacturing = ManufacturingState::new();
+            manufacturing.build(
+                yard,
+                &crate::manufacturing::QueueItem::new(
+                    crate::manufacturing::BuildableKind::CapitalShip(class),
+                    584,
+                ),
+                1,
+            );
+            crate::manufacturing::seat_ordered_ships(&mut world, &mut manufacturing);
+
+            assert_eq!(
+                maintenance_used(&world, &manufacturing, side),
+                600,
+                "{side:?}"
+            );
+        }
+    }
+
     #[test]
     fn the_surplus_takes_each_of_the_sides_units_class_maintenance() {
         // FUN_0052fff0: Σ class +0x4c over the side's objects;
@@ -202,7 +253,6 @@ mod tests {
             world.troops.insert(TroopUnit {
                 class_dat_id: regiment,
                 is_alliance,
-                regiment_strength: 1,
             });
         }
         world

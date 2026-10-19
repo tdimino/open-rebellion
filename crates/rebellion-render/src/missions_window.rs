@@ -16,6 +16,7 @@ use rebellion_core::ids::{CharacterKey, SystemKey};
 use rebellion_core::missions::{
     ActiveMission, MissionFaction, MissionMember, MissionState, MissionTarget,
 };
+use rebellion_core::saved_interface::{SavedWindow, SavedWindowKind};
 use rebellion_core::world::GameWorld;
 
 use crate::bmp_cache::{BmpCache, DllSource};
@@ -29,8 +30,10 @@ use crate::sector_window::planet_resource_id;
 use crate::system_window::{
     character_mini_resource_id, clamp_window_to_galaxy, defense_facility_mini, exact_clicked,
     logical_rect, manufacturing_facility_mini, production_facility_mini, rect_contains,
-    special_force_mini, troop_mini,
+    special_force_mini, surface_drag_grab, system_by_dat_id, title_drag_step, troop_mini,
+    TitleDrag,
 };
+use crate::window_focus::GalaxyChild;
 
 pub const MISSIONS_WINDOW_WIDTH: f32 = 235.0;
 pub const MISSIONS_WINDOW_HEIGHT: f32 = 304.0;
@@ -158,6 +161,8 @@ enum Target {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct OpenMissionsWindow {
     system: SystemKey,
+    /// When this window last took focus (`window_focus`).
+    focus_serial: u64,
     logical_position: (i16, i16),
     /// The selected mission row `+0x1c4`, by mission id.
     selected: Option<u64>,
@@ -168,17 +173,17 @@ struct OpenMissionsWindow {
 #[derive(Debug)]
 pub struct MissionsWindowState {
     faction: CockpitFaction,
-    /// When one of these windows last took focus (`window_focus`).
-    focus_serial: u64,
     windows: Vec<OpenMissionsWindow>,
+    /// A window drag in progress.
+    title_drag: Option<TitleDrag>,
 }
 
 impl Default for MissionsWindowState {
     fn default() -> Self {
         Self {
             faction: CockpitFaction::Alliance,
-            focus_serial: 0,
             windows: Vec::new(),
+            title_drag: None,
         }
     }
 }
@@ -219,9 +224,9 @@ impl MissionsWindowState {
         let selected = mission_rows(world, fog, missions, player, system)
             .first()
             .map(|row| row.mission);
-        self.focus_serial = crate::window_focus::next_serial();
         self.windows.push(OpenMissionsWindow {
             system,
+            focus_serial: crate::window_focus::next_serial(),
             logical_position: clamp_window_to_galaxy(
                 logical_position,
                 layout,
@@ -246,9 +251,22 @@ impl MissionsWindowState {
 
     #[must_use]
     pub fn contains_screen_point(&self, layout: CockpitLayout, point: (f32, f32)) -> bool {
+        self.contains_shown_screen_point(layout, point, &|_| true)
+    }
+
+    /// [`contains_screen_point`](Self::contains_screen_point) over the
+    /// windows `shown` passes.
+    #[must_use]
+    pub fn contains_shown_screen_point(
+        &self,
+        layout: CockpitLayout,
+        point: (f32, f32),
+        shown: &dyn Fn(GalaxyChild) -> bool,
+    ) -> bool {
         let point = egui::pos2(point.0, point.1);
         self.windows
             .iter()
+            .filter(|window| shown(GalaxyChild::Missions(window.system)))
             .any(|window| rect_contains(window_screen_rect(window, layout), point))
     }
 
@@ -397,11 +415,92 @@ impl MissionsWindowState {
         true
     }
 
-    /// When one of this kind's windows last took focus; the newest kind
-    /// is in front (`window_focus`).
+    /// When the window in front took focus (`window_focus`); 0 with none
+    /// open. Each window keeps its own, so after a close the window behind
+    /// ranks where it took focus, as the original's z-order does.
     #[must_use]
     pub fn focus_serial(&self) -> u64 {
-        self.focus_serial
+        self.windows.last().map_or(0, |window| window.focus_serial)
+    }
+
+    /// The open windows as galaxy children, with their z serials; a
+    /// minimized window is on the rail, not among them.
+    pub fn children(&self) -> impl Iterator<Item = (u64, GalaxyChild)> + '_ {
+        self.windows
+            .iter()
+            .map(|window| (window.focus_serial, GalaxyChild::Missions(window.system)))
+    }
+
+    /// The open windows as a save keeps them, each with its z serial: the
+    /// system by its DAT id (`FUN_004a0b00`) and the window's top-left.
+    #[must_use]
+    pub fn saved_windows(&self, world: &GameWorld) -> Vec<(u64, SavedWindow)> {
+        self.windows
+            .iter()
+            .filter_map(|window| {
+                Some((
+                    window.focus_serial,
+                    SavedWindow {
+                        kind: SavedWindowKind::Missions {
+                            system: world.systems.get(window.system)?.dat_id,
+                        },
+                        position: window.logical_position,
+                        shown: true,
+                    },
+                ))
+            })
+            .collect()
+    }
+
+    /// Rebuild a shown saved Missions window (`FUN_00441190` type 11,
+    /// `FUN_0049f130`) at its saved place, above the windows rebuilt before
+    /// it, as a new window opens: on the agents tab with the first row
+    /// selected, since neither is saved (`FUN_004a0b00`). A hidden one is a
+    /// rail entry only (`SystemWindowState::restore_saved`). False for any
+    /// other record, a hidden one, or a system not in the world.
+    pub fn restore_saved(
+        &mut self,
+        world: &GameWorld,
+        fog: &FogState,
+        missions: &MissionState,
+        faction: CockpitFaction,
+        saved: &SavedWindow,
+    ) -> bool {
+        let SavedWindowKind::Missions { system } = saved.kind else {
+            return false;
+        };
+        let Some(system) = system_by_dat_id(world, system).filter(|_| saved.shown) else {
+            return false;
+        };
+        self.prepare_faction(faction);
+        self.close(system);
+        let player = cockpit_faction(faction);
+        let selected = mission_rows(world, fog, missions, player, system)
+            .first()
+            .map(|row| row.mission);
+        self.windows.push(OpenMissionsWindow {
+            system,
+            focus_serial: crate::window_focus::next_serial(),
+            logical_position: saved.position,
+            selected,
+            tab: MissionsTab::Agents,
+        });
+        true
+    }
+
+    /// Bring `system`'s window to the top of the galaxy view's z-order, as
+    /// its activation does (`FUN_00422ce0` 0x467: `BringWindowToTop`).
+    /// False when it is not open.
+    pub fn raise(&mut self, system: SystemKey) -> bool {
+        self.focus(system)
+    }
+
+    /// Close `system`'s window, as its keyed close does (slot `+0x30`).
+    /// False when it is not open.
+    pub fn close_window(&mut self, system: SystemKey) -> bool {
+        let open = self.windows.iter().any(|window| window.system == system);
+        self.close(system);
+        open
     }
 
     fn focus(&mut self, system: SystemKey) -> bool {
@@ -412,8 +511,8 @@ impl MissionsWindowState {
         else {
             return false;
         };
-        let window = self.windows.remove(index);
-        self.focus_serial = crate::window_focus::next_serial();
+        let mut window = self.windows.remove(index);
+        window.focus_serial = crate::window_focus::next_serial();
         self.windows.push(window);
         true
     }
@@ -424,6 +523,25 @@ impl MissionsWindowState {
             .iter()
             .position(|window| window.system == system)?;
         Some(self.windows.remove(index))
+    }
+
+    /// Carry a window drag one frame ([`TitleDrag`]): the window follows
+    /// the pointer while the button is down, and the release lets go.
+    fn update_title_drag(&mut self, ctx: &egui::Context, layout: CockpitLayout) {
+        if let Some(drag) = self.title_drag {
+            let window = self
+                .windows
+                .iter_mut()
+                .find(|window| area_id(window.system) == drag.area);
+            match (window, title_drag_step(ctx, layout, drag)) {
+                (Some(window), Ok(place)) => {
+                    if let Some(place) = place {
+                        window.logical_position = place;
+                    }
+                }
+                _ => self.title_drag = None,
+            }
+        }
     }
 
     fn window_mut(&mut self, system: SystemKey) -> Option<&mut OpenMissionsWindow> {
@@ -462,6 +580,8 @@ pub enum MissionsWindowAction {
     Minimize {
         system: SystemKey,
         logical_position: (i16, i16),
+        /// The window's place in the z-order, which it keeps while hidden.
+        serial: u64,
     },
 }
 
@@ -653,6 +773,15 @@ fn target(
         .then_some(Target::System(system))
 }
 
+/// An object target's GOKRES portrait and name, as [`target_view`] draws
+/// it; the mission dialog's first page shows the same (`mission-dialog.md`).
+pub(crate) fn object_view(
+    world: &GameWorld,
+    object: MissionTarget,
+) -> Option<(DllSource, Option<u32>, String)> {
+    target_view(world, Target::Object(object))
+}
+
 /// The target's picture and name, when it still exists: a system's planet
 /// (STRATEGY, `FUN_0045c970`), a character's GOKRES mini (`FUN_0042c3b0(..,
 /// 0, 1)`), or another object's GOKRES portrait, its mini less `0x4000`
@@ -699,18 +828,11 @@ fn target_view(world: &GameWorld, target: Target) -> Option<(DllSource, Option<u
         Target::Object(MissionTarget::SpecialForce(key)) => portrait(special_force_mini(
             world.special_forces.get(key)?.class_dat_id,
         )),
-        Target::Object(MissionTarget::DeathStar(key)) => {
+        Target::Object(MissionTarget::CapitalShip(tag)) => {
+            let (fleet, index) = rebellion_core::carriage::ship_of_tag(world, tag)?;
             let class = world
-                .fleets
-                .get(key)?
-                .capital_ships
-                .iter()
-                .find_map(|ship| {
-                    world
-                        .capital_ship_classes
-                        .get(ship.class)
-                        .filter(|class| ship.alive && class.is_death_star())
-                })?;
+                .capital_ship_classes
+                .get(world.fleets[fleet].capital_ships[index].class)?;
             Some((
                 DllSource::Gokres,
                 capital_ship_mini_id(class.dat_id).map(|mini| mini - MISSION_MINI_BASE),
@@ -718,13 +840,15 @@ fn target_view(world: &GameWorld, target: Target) -> Option<(DllSource, Option<u
             ))
         }
         // A Move's fleet: the capital ship its members board, the fleet's
-        // first (`FUN_00552300` keeps the first that accepts).
+        // first usable one (`FUN_00552300.c:108` walks in mode 1 and keeps
+        // the first that accepts).
         Target::Object(MissionTarget::Fleet(key)) => {
             let class = world
                 .fleets
                 .get(key)?
                 .capital_ships
                 .iter()
+                .filter(|ship| ship.usable())
                 .find_map(|ship| world.capital_ship_classes.get(ship.class))?;
             Some((
                 DllSource::Gokres,
@@ -838,6 +962,8 @@ fn member_row_rect(window: egui::Rect, scale: f32, index: usize) -> egui::Rect {
 
 #[derive(Default)]
 struct WindowDrawResult {
+    /// Where a press on the window's own surface took hold ([`TitleDrag`]).
+    drag_grab: Option<egui::Vec2>,
     focus: bool,
     close: bool,
     minimize: bool,
@@ -865,6 +991,7 @@ pub fn draw_missions_windows(
     layout: CockpitLayout,
     cache: &mut BmpCache,
     front: bool,
+    shown: &dyn Fn(GalaxyChild) -> bool,
 ) -> Vec<MissionsWindowAction> {
     state.prepare_faction(faction);
     let player = cockpit_faction(faction);
@@ -879,7 +1006,14 @@ pub fn draw_missions_windows(
             window.selected = None;
         }
     }
-    let windows = state.windows.clone();
+    state.update_title_drag(ctx, layout);
+    // A window the GID menu hides is neither painted nor live.
+    let windows: Vec<_> = state
+        .windows
+        .iter()
+        .filter(|window| shown(GalaxyChild::Missions(window.system)))
+        .cloned()
+        .collect();
     let focused_system = windows.last().map(|window| window.system);
     let mut actions = Vec::new();
     for window in &windows {
@@ -894,6 +1028,12 @@ pub fn draw_missions_windows(
             layout,
             cache,
         );
+        if let Some(grab) = result.drag_grab {
+            state.title_drag = Some(TitleDrag {
+                area: area_id(window.system),
+                grab,
+            });
+        }
         let system = window.system;
         if result.close || !world.systems.contains_key(system) {
             state.close(system);
@@ -904,6 +1044,7 @@ pub fn draw_missions_windows(
                 actions.push(MissionsWindowAction::Minimize {
                     system,
                     logical_position: closed.logical_position,
+                    serial: closed.focus_serial,
                 });
             }
             continue;
@@ -1221,7 +1362,7 @@ fn draw_missions_window(
                         let (x, y) = size.map_or((0.0, 0.0), |size| centered(MEMBER_IMAGE, size));
                         let layers = member.object.map_or_else(
                             || vec![(DllSource::Gokres, mini)],
-                            |object| mini_layers(object, mini, member.en_route.is_some()),
+                            |object| mini_layers(object, mini, member.en_route.is_some(), None),
                         );
                         for (source, bitmap) in layers {
                             paint_native(
@@ -1265,6 +1406,14 @@ fn draw_missions_window(
                 }
             }
 
+            // The mission list and, while a mission is selected, the member
+            // list are list controls of their own (FUN_0049f4b0 passes every
+            // other press to the base).
+            let mut lists = vec![MISSION_LIST];
+            if selected.is_some() {
+                lists.push(MEMBER_LIST);
+            }
+            result.drag_grab = surface_drag_grab(ctx, &window_response, local, scale, &lists);
             if window_response.clicked() || clicked.iter().any(|&value| value) {
                 result.focus = true;
             }
@@ -1624,6 +1773,52 @@ mod tests {
     }
 
     #[test]
+    fn a_saved_missions_window_comes_back_in_place_as_a_new_window_opens() {
+        // FUN_004a0b00 saves the system and no tab; FUN_00441190 rebuilds
+        // type 11 at the saved x and y (FUN_0049f130), which selects the
+        // first row on the agents tab (FUN_0049f540).
+        let (world, system, missions, _) = busy();
+        let fog = unseen();
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            let mut state = MissionsWindowState::default();
+            assert!(state.open(&world, &fog, &missions, system, (20, 30), faction, scaled()));
+            state.windows[0].tab = MissionsTab::Decoys;
+            state.windows[0].selected = None;
+            let saved = state.saved_windows(&world);
+            assert_eq!(saved.len(), 1);
+            let fresh = state.windows[0].clone();
+
+            let mut restored = MissionsWindowState::default();
+            assert!(restored.restore_saved(&world, &fog, &missions, faction, &saved[0].1));
+
+            let mut opened = MissionsWindowState::default();
+            assert!(opened.open(&world, &fog, &missions, system, (20, 30), faction, scaled()));
+            let window = &restored.windows[0];
+            assert_eq!(
+                (
+                    window.system,
+                    window.logical_position,
+                    window.tab,
+                    window.selected
+                ),
+                (
+                    fresh.system,
+                    fresh.logical_position,
+                    MissionsTab::Agents,
+                    opened.windows[0].selected
+                ),
+                "{faction:?}"
+            );
+            let hidden = SavedWindow {
+                shown: false,
+                ..saved[0].1
+            };
+            let mut none = MissionsWindowState::default();
+            assert!(!none.restore_saved(&world, &fog, &missions, faction, &hidden));
+        }
+    }
+
+    #[test]
     fn showing_a_member_selects_its_mission_and_the_tab_its_role_picks() {
         // FUN_004a1e10 (slot 27): the member's mission key selects its row;
         // role bit 0 picks the decoys' tab. FUN_00429440 sends a character
@@ -1732,7 +1927,7 @@ mod tests {
 
     #[test]
     fn a_death_star_target_shows_the_living_hulls_portrait() {
-        // FUN_0042c3b0(.., 1, 1) on the hull MissionTarget::DeathStar
+        // FUN_0042c3b0(.., 1, 1) on the ship MissionTarget::CapitalShip
         // names: GOKRES 18312 (its mini) less 0x4000; a destroyed hull is
         // no target.
         let (mut world, _) = world(ControlKind::Uncontrolled);
@@ -1741,6 +1936,8 @@ mod tests {
                 .capital_ship_classes
                 .insert(rebellion_core::world::CapitalShipClass {
                     dat_id: DatId::new(dat_id),
+                    // CAPSHPSD: the Death Star (136) is family 0x18.
+                    family: if dat_id == 136 { 0x18 } else { 0x14 },
                     name: name.into(),
                     ..Default::default()
                 })
@@ -1754,10 +1951,12 @@ mod tests {
             fighters: Vec::new(),
             characters: Vec::new(),
             is_alliance: false,
-            has_death_star: true,
+            bombarding: false,
         });
+        rebellion_core::carriage::tag_all(&mut world);
+        let target = MissionTarget::CapitalShip(world.fleets[fleet].capital_ships[1].tag);
         assert_eq!(
-            target_view(&world, Target::Object(MissionTarget::DeathStar(fleet))),
+            target_view(&world, Target::Object(target)),
             Some((
                 DllSource::Gokres,
                 Some(18_312 - 0x4000),
@@ -1765,10 +1964,54 @@ mod tests {
             ))
         );
         world.fleets[fleet].capital_ships[1].alive = false;
-        assert_eq!(
-            target_view(&world, Target::Object(MissionTarget::DeathStar(fleet))),
-            None
-        );
+        assert_eq!(target_view(&world, Target::Object(target)), None);
+    }
+
+    #[test]
+    fn a_move_to_a_fleet_shows_its_first_usable_ship_not_one_on_its_own_leg_for_either_side() {
+        // FUN_00552300.c:108 seats the members on the fleet's first ship
+        // that accepts, walking in mode 1 (FUN_00502e30(fleet, 1)): a ship
+        // on its own leg from its yard (bit 5, FUN_00556430) is not usable
+        // (0x004f7b80).
+        for is_alliance in [true, false] {
+            let (mut world, _) = world(ControlKind::Uncontrolled);
+            let mut class = |dat_id: u32, name: &str| {
+                world
+                    .capital_ship_classes
+                    .insert(rebellion_core::world::CapitalShipClass {
+                        dat_id: DatId::new(dat_id),
+                        family: if dat_id == 136 { 0x18 } else { 0x14 },
+                        name: name.into(),
+                        ..Default::default()
+                    })
+            };
+            let destroyer = class(133, "Imperial I Star Destroyer");
+            let death_star = class(136, "Death Star");
+            let mut travelling = rebellion_core::world::ShipInstance::new(destroyer, 10, is_alliance);
+            travelling.transit = Some(rebellion_core::world::ShipTransit {
+                from: SystemKey::default(),
+                to: SystemKey::default(),
+                arrival_tick: 9,
+            });
+            let fleet = world.fleets.insert(rebellion_core::world::Fleet {
+                location: SystemKey::default(),
+                capital_ships: vec![
+                    travelling,
+                    rebellion_core::world::ShipInstance::new(death_star, 10, is_alliance),
+                ],
+                is_alliance,
+                ..Default::default()
+            });
+            assert_eq!(
+                target_view(&world, Target::Object(MissionTarget::Fleet(fleet))),
+                Some((
+                    DllSource::Gokres,
+                    Some(18_312 - 0x4000),
+                    "Death Star".into()
+                )),
+                "{is_alliance}"
+            );
+        }
     }
 
     #[test]
@@ -1841,6 +2084,15 @@ mod tests {
         missions: &MissionState,
         system: SystemKey,
     ) -> MissionsWindowState {
+        opened_as(world, missions, system, CockpitFaction::Alliance)
+    }
+
+    fn opened_as(
+        world: &GameWorld,
+        missions: &MissionState,
+        system: SystemKey,
+        faction: CockpitFaction,
+    ) -> MissionsWindowState {
         let mut state = MissionsWindowState::default();
         assert!(state.open(
             world,
@@ -1848,7 +2100,7 @@ mod tests {
             missions,
             system,
             ORIGIN,
-            CockpitFaction::Alliance,
+            faction,
             scaled()
         ));
         state
@@ -1942,6 +2194,16 @@ mod tests {
         state: &mut MissionsWindowState,
         frames: Vec<Vec<egui::Event>>,
     ) -> Run {
+        run_as(world, missions, state, frames, CockpitFaction::Alliance)
+    }
+
+    fn run_as(
+        world: &GameWorld,
+        missions: &MissionState,
+        state: &mut MissionsWindowState,
+        frames: Vec<Vec<egui::Event>>,
+        faction: CockpitFaction,
+    ) -> Run {
         let ctx = egui::Context::default();
         let mut cache = BmpCache::new();
         let fog = unseen();
@@ -1964,10 +2226,11 @@ mod tests {
                     &fog,
                     missions,
                     state,
-                    CockpitFaction::Alliance,
+                    faction,
                     scaled(),
                     &mut cache,
                     true,
+                    &|_| true,
                 ));
             });
             result.painted = PAINTED.with(|painted| painted.take());
@@ -2141,12 +2404,14 @@ mod tests {
             ]
         );
 
+        let serial = state.focus_serial();
         let minimized = run(&world, &missions, &mut state, click(at(210.0, 9.0)));
         assert_eq!(
             minimized.actions,
             [MissionsWindowAction::Minimize {
                 system,
-                logical_position: ORIGIN
+                logical_position: ORIGIN,
+                serial,
             }]
         );
         assert_eq!(state.window_count(), 0);
@@ -2170,5 +2435,145 @@ mod tests {
         assert!(held.painted.contains(&(CLOSE_PRESSED, at(218.0, 3.0))));
         assert!(held.painted.contains(&(MINIMIZE_NORMAL, at(204.0, 3.0))));
         assert_eq!(state.window_count(), 1);
+    }
+
+    #[test]
+    fn a_keyed_close_closes_that_window_and_leaves_the_rest_for_either_side() {
+        // FUN_004ac3a0: WM_KEYDOWN 0x1b calls slot +0x30 on the focused window.
+        let (mut world, first) = world(ControlKind::Uncontrolled);
+        let second = world.systems.insert(world.systems[first].clone());
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            let mut state = MissionsWindowState::default();
+            let (fog, missions) = (unseen(), MissionState::new());
+            for system in [first, second] {
+                assert!(state.open(&world, &fog, &missions, system, ORIGIN, faction, scaled()));
+            }
+            assert!(state.close_window(second));
+            assert!(
+                state.is_open(first) && !state.is_open(second),
+                "{faction:?}"
+            );
+            assert!(state.close_window(first));
+            assert_eq!(state.window_count(), 0);
+            assert!(!state.close_window(first));
+        }
+    }
+
+    #[test]
+    fn after_an_escape_the_window_behind_ranks_where_it_took_focus_for_either_side() {
+        // The keyed close posts 0x467(0,0), which activates the topmost
+        // remaining child in z-order (FUN_00422ce0); a window of another
+        // kind focused between this kind's two stays above the one behind.
+        let (mut world, first) = world(ControlKind::Uncontrolled);
+        let second = world.systems.insert(world.systems[first].clone());
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            let mut state = MissionsWindowState::default();
+            let (fog, missions) = (unseen(), MissionState::new());
+            assert!(state.open(&world, &fog, &missions, first, ORIGIN, faction, scaled()));
+            let between = crate::window_focus::next_serial();
+            assert!(state.open(&world, &fog, &missions, second, ORIGIN, faction, scaled()));
+            assert!(state.focus_serial() > between, "{faction:?}");
+            assert!(state.close_window(second));
+            assert!(
+                state.focus_serial() < between,
+                "{faction:?}: the window behind keeps the place it took focus at"
+            );
+        }
+    }
+
+    #[test]
+    fn the_view_raises_one_window_of_the_kind_above_the_rest_for_either_side() {
+        // FUN_00422ce0 0x467: BringWindowToTop on the window it activates.
+        let (mut world, first) = world(ControlKind::Uncontrolled);
+        let second = world.systems.insert(world.systems[first].clone());
+        let missing = world.systems.insert(world.systems[first].clone());
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            let mut state = MissionsWindowState::default();
+            let (fog, missions) = (unseen(), MissionState::new());
+            assert!(state.open(&world, &fog, &missions, first, ORIGIN, faction, scaled()));
+            assert!(state.open(&world, &fog, &missions, second, ORIGIN, faction, scaled()));
+            let raised =
+                |state: &MissionsWindowState| crate::window_focus::topmost(state.children());
+            assert_eq!(state.children().count(), 2, "{faction:?}");
+            assert_eq!(raised(&state), Some(GalaxyChild::Missions(second)));
+            assert!(state.raise(first), "{faction:?}");
+            assert_eq!(raised(&state), Some(GalaxyChild::Missions(first)));
+            assert!(!state.raise(missing), "{faction:?}");
+        }
+    }
+
+    /// Press at `from`, move to `to` with the button held, and release.
+    fn title_drag(from: egui::Pos2, to: egui::Pos2) -> Vec<Vec<egui::Event>> {
+        let mut frames = hover(from);
+        frames.extend([
+            vec![press(from, true)],
+            vec![egui::Event::PointerMoved(from.lerp(to, 0.5))],
+            vec![egui::Event::PointerMoved(to)],
+            vec![press(to, false)],
+            vec![egui::Event::PointerMoved(to + egui::vec2(30.0, 30.0))],
+        ]);
+        frames
+    }
+
+    /// Whether a drag of 20 by 20 from window pixel `from` moves the
+    /// window by that much, for `faction`.
+    fn surface_drag_moves(
+        world: &GameWorld,
+        missions: &MissionState,
+        system: SystemKey,
+        from: (f32, f32),
+        faction: CockpitFaction,
+    ) -> bool {
+        let mut state = opened_as(world, missions, system, faction);
+        let start = at(from.0, from.1);
+        let _ = run_as(
+            world,
+            missions,
+            &mut state,
+            title_drag(start, start + egui::vec2(40.0, 40.0)),
+            faction,
+        );
+        let moved = state.windows[0].logical_position;
+        assert!(
+            moved == ORIGIN || moved == (ORIGIN.0 + 20, ORIGIN.1 + 20),
+            "{moved:?}"
+        );
+        moved != ORIGIN
+    }
+
+    #[test]
+    fn a_press_on_the_windows_bare_surface_drags_it_but_not_on_its_lists_or_buttons() {
+        // FUN_0049f130 sets the movable bit (+0xb8 | 4) and FUN_0049f4b0
+        // passes every press on the window to the base (FUN_00606ee0), which
+        // takes hold; FUN_006071e0 places it live and FUN_00607010 lets go.
+        // The mission and member lists and the title buttons are controls
+        // of their own.
+        let (mut world, system) = world(ControlKind::Uncontrolled);
+        let none = MissionState::new();
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            let alliance = faction == CockpitFaction::Alliance;
+            let own = character(&mut world, system, "Agent", alliance);
+            let mut sent = MissionState::new();
+            send(
+                &mut sent,
+                MissionKind::Diplomacy,
+                alliance,
+                &[own],
+                &[],
+                system,
+                None,
+            );
+            let moves =
+                |missions, from| surface_drag_moves(&world, missions, system, from, faction);
+            assert!(moves(&none, (100.0, 9.0)), "{faction:?}: title");
+            assert!(
+                moves(&none, (150.0, 200.0)),
+                "{faction:?}: no member list with none selected"
+            );
+            assert!(!moves(&none, (50.0, 150.0)), "{faction:?}: mission list");
+            assert!(moves(&none, (50.0, 302.0)), "{faction:?}: under the mission list");
+            assert!(!moves(&none, (208.0, 9.0)), "{faction:?}: minimize");
+            assert!(!moves(&sent, (150.0, 200.0)), "{faction:?}: member list");
+        }
     }
 }

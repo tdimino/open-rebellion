@@ -493,9 +493,26 @@ pub struct AdvisorVoice {
     pub wave: u16,
 }
 
+/// `FUN_004c4990`: an RCDATA list `[u16 n][u16 v0..]` gives `v0`, or with
+/// more than one entry the drawn one (`FUN_0041cd80(n)`, `0..n`); a missing
+/// or empty list gives 0.
+#[must_use]
+pub fn pick_voice_line(list: Option<&[u8]>, draw: impl FnOnce(u16) -> u16) -> u16 {
+    let word = |index: usize| {
+        list.and_then(|bytes| bytes.get(index * 2..index * 2 + 2))
+            .map_or(0, |pair| u16::from_le_bytes([pair[0], pair[1]]))
+    };
+    match word(0) {
+        0 => 0,
+        1 => word(1),
+        count => word(usize::from(draw(count)) + 1),
+    }
+}
+
 /// A cockpit step the agent's pass runs (`FUN_004c3060`): kind 2 runs
-/// briefing step `step` (`FUN_004c30c0`), kind 3 selects an object
-/// (`FUN_0041d830`).
+/// briefing step `step` (`FUN_004c30c0`), kind 3 hands the side's win word
+/// to the strategic window as its ending code (`FUN_0041d830` →
+/// `FUN_00425c90`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CockpitStep {
     pub kind: u32,
@@ -725,6 +742,23 @@ impl AdvisorState {
             .collect()
     }
 
+    /// A message's voice line (`FUN_004c4990`): a WAVE of the side's sprite
+    /// DLL (module 9) from its RCDATA list `list`, or 0.
+    #[must_use]
+    pub fn voice_line(&self, list: u16) -> u16 {
+        pick_voice_line(
+            self.asset(SPRITE_MODULE, AdvisorAsset::Script(list)).as_deref(),
+            |n| macroquad::rand::gen_range(0_u16, n),
+        )
+    }
+
+    /// The side's sprite DLL WAVE `wave` (module 9), as a message plays its
+    /// voice line (`FUN_00469de0`: `+0x148 = 9`).
+    #[must_use]
+    pub fn sprite_voice(&self, wave: u16) -> AdvisorVoice {
+        self.voice(SPRITE_MODULE, wave)
+    }
+
     /// The bytes of `voice`'s WAVE resource.
     #[must_use]
     pub fn voice_bytes(&self, voice: &AdvisorVoice) -> Option<Vec<u8>> {
@@ -772,6 +806,26 @@ impl AdvisorState {
         macroquad::logging::info!("[advisor] code {:#x} posted at step {}", code, now);
         self.agent
             .post(code, now, |n| macroquad::rand::gen_range(0_u32, n));
+    }
+
+    /// Deliver a win word (the local player's slot `+0x74`, `FUN_00486890`,
+    /// passes it on with GO set): stamp the side's ending slot
+    /// ([`AdviceAgent::post_word`]). Returns whether a slot was stamped, and
+    /// so whether the strategic window stops the clock (`FUN_0041d810`).
+    ///
+    /// port: without that slot's records (the advice table not staged) the
+    /// script's closing step 3 could never run, so it is queued at once.
+    pub fn post_word(&mut self, word: u32) -> bool {
+        self.ensure_loaded();
+        let now = self.now();
+        let Some(slot) = self.agent.post_word(word, now) else {
+            return false;
+        };
+        macroquad::logging::info!("[advisor] ending slot {} stamped at step {}", slot, now);
+        if self.table.records(slot).is_empty() {
+            self.steps_run.push(CockpitStep { kind: 3, step: 1 });
+        }
+        true
     }
 
     /// Step the droids by `dt` seconds. The step count advances at the
@@ -873,7 +927,8 @@ impl AdvisorState {
     fn queue_slot(&mut self, slot: u32) {
         let records = self.table.records(slot).to_vec();
         macroquad::logging::info!(
-            "[advisor] slot {slot} fired at step {} ({} records)",
+            "[advisor] slot {} fired at step {} ({} records)",
+            slot,
             self.now(),
             records.len()
         );
@@ -933,7 +988,8 @@ impl AdvisorState {
                 }
                 _ => {
                     macroquad::logging::warn!(
-                        "[advisor] frame {next} of run {} did not decode",
+                        "[advisor] frame {} of run {} did not decode",
+                        next,
                         frame.anchor
                     );
                     run.broken = true;
@@ -1044,6 +1100,43 @@ pub fn draw_advisor(ctx: &egui::Context, state: &mut AdvisorState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_side_s_voice_line_comes_from_its_own_sprite_dll_list() {
+        // FUN_004c4990 reads RCDATA from module 9 (FUN_005fefd0(9)), the
+        // player's ALSPRITE or EMSPRITE (FUN_0042d650); FUN_00469de0
+        // plays the wave from the same module (+0x148 = 9).
+        let root = std::env::temp_dir().join(format!("or-voice-line-{}", std::process::id()));
+        for (faction, dll, wave) in [
+            (AdvisorFaction::Alliance, "alsprite-dll", 1358_u16),
+            (AdvisorFaction::Empire, "emsprite-dll", 1387),
+        ] {
+            let rcdata = root.join(dll).join("RCDATA");
+            std::fs::create_dir_all(&rcdata).unwrap();
+            let [low, high] = wave.to_le_bytes();
+            std::fs::write(rcdata.join("233.bin"), [1, 0, low, high]).unwrap();
+            let mut state = AdvisorState::new(faction);
+            state.set_sprite_dir(&root);
+
+            assert_eq!(state.voice_line(0xe9), wave);
+            assert_eq!(state.voice_line(0xf3), 0);
+            assert_eq!(state.sprite_voice(wave).key, format!("{dll}/{wave}"));
+        }
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn a_voice_list_gives_its_one_wave_or_the_drawn_one_and_none_gives_zero() {
+        // FUN_004c4990: [u16 n][u16 v0..]; n > 1 draws FUN_0041cd80(n).
+        // RCDATA 0xe9 (Han) holds 1358 and 1359, 0xf3 (Mon Mothma) 1370.
+        let han = [2, 0, 0x4e, 0x05, 0x4f, 0x05];
+        let mothma = [1, 0, 0x5a, 0x05];
+        assert_eq!(pick_voice_line(Some(&han), |n| n - 1), 1359);
+        assert_eq!(pick_voice_line(Some(&han), |_| 0), 1358);
+        assert_eq!(pick_voice_line(Some(&mothma), |_| unreachable!()), 1370);
+        assert_eq!(pick_voice_line(Some(&[0, 0]), |_| unreachable!()), 0);
+        assert_eq!(pick_voice_line(None, |_| unreachable!()), 0);
+    }
 
     fn assert_close(actual: f32, expected: f32) {
         assert!(
@@ -1221,6 +1314,41 @@ mod tests {
             [(0.0, 347.0, 107.0, 133.0), (302.0, 401.0, 101.0, 79.0)]
         );
     }
+    /// An advice table holding one record in `slot`.
+    fn table_with(slot: u32) -> ActionTable {
+        let mut bytes = Vec::new();
+        for word in [1, slot, 0, 1, 0] {
+            bytes.extend_from_slice(&u32::to_le_bytes(word));
+        }
+        bytes.extend_from_slice(&11_094_u16.to_le_bytes());
+        for word in [0_u32, 3, 1] {
+            bytes.extend_from_slice(&word.to_le_bytes());
+        }
+        ActionTable::parse(&bytes).unwrap()
+    }
+
+    #[test]
+    fn an_ending_waits_for_its_script_and_closes_at_once_without_one() {
+        // FUN_004c0f10 stamps Empire slot 84 for EW; the script's last record
+        // (step 0x11, p2 3, p3 1) brings the ending step. port: with no
+        // records in the slot the step is queued at once.
+        use rebellion_core::victory::{AD, EW, GO};
+        let mut bare = AdvisorState::new(AdvisorFaction::Empire);
+        assert!(bare.post_word(EW | GO | AD));
+        assert_eq!(
+            bare.take_cockpit_steps(),
+            [CockpitStep { kind: 3, step: 1 }]
+        );
+        assert!(!bare.post_word(AD));
+        assert!(bare.take_cockpit_steps().is_empty());
+
+        let mut staged = AdvisorState::new(AdvisorFaction::Empire);
+        staged.loaded = true;
+        staged.table = table_with(84);
+        assert!(staged.post_word(EW | GO | AD));
+        assert!(staged.take_cockpit_steps().is_empty());
+    }
+
     #[test]
     fn advisor_faction_converts_from_cockpit_faction() {
         assert_eq!(

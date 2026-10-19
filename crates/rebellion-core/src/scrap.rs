@@ -184,11 +184,28 @@ pub fn overdraft_candidates(world: &GameWorld, side: Faction) -> Vec<ScrapTarget
     candidates
 }
 
-/// What a scrap removed: its side and the refined material returned.
+/// What a scrapped capital ship took down with it: the squadrons and
+/// regiments aboard, each destroyed with the ship's reason (`+0x40` byte
+/// `0x14`) and refunded half its own class cost (`FUN_00530270`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Aboard {
+    pub squadrons: u32,
+    pub regiments: u32,
+}
+
+/// What a scrap removed: its side, the refined material returned (the
+/// object's own and that of everything aboard it) and what was aboard.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Scrapped {
     pub side: Faction,
     pub refund: i64,
+    pub aboard: Aboard,
+}
+
+/// The side that holds `target`, if it still exists.
+#[must_use]
+pub fn target_side(world: &GameWorld, target: ScrapTarget) -> Option<Faction> {
+    owner_and_cost(world, target).map(|(side, _)| side)
 }
 
 /// The side and refined cost of `target`, if it still exists.
@@ -288,14 +305,21 @@ pub fn scrap(
     target: ScrapTarget,
 ) -> Option<Scrapped> {
     let (side, cost) = owner_and_cost(world, target)?;
+    let mut aboard = Aboard::default();
+    let mut aboard_refund = 0_i64;
     match target {
         ScrapTarget::Troop(key) => {
             if !transport.destroy_embarked(world, key) {
                 transport.forget_transit(key);
-                for (_, system) in &mut world.systems {
+                let at = crate::troop_transport::regiment_system(world, key);
+                if let Some(system) = at.and_then(|system| world.systems.get_mut(system)) {
                     system.ground_units.retain(|&k| k != key);
                 }
                 world.troops.remove(key);
+                // Event 0x301 at its system (FUN_00508660).
+                if let Some(system) = at {
+                    crate::support_shift::regiments_changed(world, system);
+                }
             }
         }
         ScrapTarget::SpecialForce(key) => crate::missions::destroy_special_force(world, key),
@@ -307,11 +331,49 @@ pub fn scrap(
             {
                 ship.alive = false;
             }
-            // hyp: the squadrons aboard go with their ship (carriage).
-            if let Some(value) = world.fleets.get_mut(fleet) {
-                crate::carriage::drop_lost_squadrons(value);
+            // The ship's hook +0x11c reaches FUN_004fb520, whose child walk
+            // destroys every completed squadron and regiment aboard with the
+            // ship's reason 0x14 (FUN_004f8710, FUN_004f7ed0); each is refunded
+            // half its own class cost (FUN_00530270). A scrap is not refused
+            // for a laden ship (FUN_004f9860). port: every squadron and
+            // regiment aboard counts as completed.
+            let lost_regiments: Vec<_> = world
+                .fleets
+                .get(fleet)
+                .map(|value| {
+                    transport
+                        .cargo(fleet)
+                        .iter()
+                        .copied()
+                        .filter(|&troop| {
+                            crate::carriage::lost_with_ship(value, transport.carrier(troop))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            for troop in lost_regiments {
+                let class = world
+                    .troops
+                    .get(troop)
+                    .and_then(|unit| world.buildable_classes.get(&unit.class_dat_id));
+                aboard_refund +=
+                    i64::from(class.map_or(0, |value| value.refined_material_cost) / 2);
+                aboard.regiments += 1;
             }
-            remove_if_empty(world, fleet);
+            let lost_squadrons = world
+                .fleets
+                .get_mut(fleet)
+                .map(crate::carriage::take_lost_squadrons)
+                .unwrap_or_default();
+            for entry in lost_squadrons {
+                let each = world
+                    .fighter_classes
+                    .get(entry.class)
+                    .map_or(0, |class| class.refined_material_cost / 2);
+                aboard_refund += i64::from(each) * i64::from(entry.count);
+                aboard.squadrons += entry.count;
+            }
+            world.remove_fleet_if_empty(fleet);
             transport.destroy_untransportable_cargo(world);
         }
         ScrapTarget::Fighter { fleet, entry } => {
@@ -322,7 +384,7 @@ pub fn scrap(
             {
                 fighters.count -= 1;
             }
-            remove_if_empty(world, fleet);
+            world.remove_fleet_if_empty(fleet);
         }
         ScrapTarget::SystemFighter {
             system,
@@ -362,30 +424,100 @@ pub fn scrap(
             );
         }
     }
-    let refund = i64::from(cost / 2);
+    let refund = i64::from(cost / 2) + aboard_refund;
     stockpiles.side_mut(side).refined += refund;
-    Some(Scrapped { side, refund })
+    Some(Scrapped {
+        side,
+        refund,
+        aboard,
+    })
+}
+
+/// The squadrons and regiments a scrapped ship took with it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AboardLoss {
+    pub side: Faction,
+    /// The scrapped ship's name.
+    pub ship: String,
+    /// The system its fleet was in.
+    pub system: crate::ids::SystemKey,
+    pub aboard: Aboard,
+}
+
+impl AboardLoss {
+    /// The log line the native game writes for it, the form of its other
+    /// `[tag] key=value` records.
+    #[must_use]
+    pub fn log_line(&self, system_name: &str) -> String {
+        format!(
+            "[scrap] side={:?} ship={} system={} squadrons={} regiments={}",
+            self.side, self.ship, system_name, self.aboard.squadrons, self.aboard.regiments
+        )
+    }
+}
+
+/// What [`scrap_all_reporting`] did: the refund and each ship's losses
+/// aboard (ships with nothing aboard are not listed).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ScrapReport {
+    pub refund: i64,
+    pub losses: Vec<AboardLoss>,
 }
 
 /// Scrap every one of `targets`, one order's worth, and return the refund.
-/// Ship indices hold while the order runs, so a scrapped hull stays in its
-/// fleet, dead, until the end; then it goes, as every other lost ship does
-/// (`retain(|ship| ship.alive)` in the integrator, missions and tactical
-/// results).
+/// See [`scrap_all_reporting`].
 pub fn scrap_all(
     world: &mut GameWorld,
     stockpiles: &mut StockpileState,
     transport: &mut TroopTransportState,
     targets: impl IntoIterator<Item = ScrapTarget>,
 ) -> i64 {
+    scrap_all_reporting(world, stockpiles, transport, targets).refund
+}
+
+/// Scrap every one of `targets`, one order's worth, and report the refund
+/// and what each scrapped ship took with it.
+/// Ship indices hold while the order runs, so a scrapped hull stays in its
+/// fleet, dead, until the end; then it goes, as every other lost ship does
+/// (`retain(|ship| ship.alive)` in the integrator, missions and tactical
+/// results).
+pub fn scrap_all_reporting(
+    world: &mut GameWorld,
+    stockpiles: &mut StockpileState,
+    transport: &mut TroopTransportState,
+    targets: impl IntoIterator<Item = ScrapTarget>,
+) -> ScrapReport {
+    let mut report = ScrapReport::default();
     let mut refund = 0;
     let mut fleets = Vec::new();
+    let mut death_star = false;
     for target in targets {
-        if let ScrapTarget::CapitalShip { fleet, .. } = target {
+        if let ScrapTarget::CapitalShip { fleet, index } = target {
             fleets.push(fleet);
+            death_star |= world
+                .fleets
+                .get(fleet)
+                .and_then(|value| value.capital_ships.get(index))
+                .and_then(|ship| world.capital_ship_classes.get(ship.class))
+                .is_some_and(crate::world::CapitalShipClass::is_death_star);
         }
+        let ship = match target {
+            ScrapTarget::CapitalShip { fleet, .. } => world
+                .fleets
+                .get(fleet)
+                .map(|value| (target_name(world, target), value.location)),
+            _ => None,
+        };
         if let Some(scrapped) = scrap(world, stockpiles, transport, target) {
             refund += scrapped.refund;
+            if let (Some((ship, system)), true) = (ship, scrapped.aboard != Aboard::default()) {
+                report.losses.push(AboardLoss {
+                    side: scrapped.side,
+                    ship,
+                    system,
+                    aboard: scrapped.aboard,
+                });
+            }
         }
     }
     for fleet in fleets {
@@ -393,27 +525,13 @@ pub fn scrap_all(
             value.capital_ships.retain(|ship| ship.alive);
         }
     }
-    refund
-}
-
-/// Removes `fleet` once its last unit is gone: `FUN_00530270` destroys the
-/// fleet object with its members. hyp: a character aboard stays in the
-/// system.
-fn remove_if_empty(world: &mut GameWorld, fleet: FleetKey) {
-    let Some(value) = world.fleets.get(fleet).filter(|value| value.is_empty()) else {
-        return;
-    };
-    let (location, characters) = (value.location, value.characters.clone());
-    for key in characters {
-        if let Some(character) = world.characters.get_mut(key) {
-            character.current_fleet = None;
-            character.current_system = Some(location);
-        }
+    // A scrapped Death Star's kill clears its usable bit (FUN_004f7b80 ->
+    // FUN_004f7410), whose event 0x301 reruns bit 11 (FUN_00514510).
+    if death_star {
+        crate::death_star::refresh_sectors(world);
     }
-    if let Some(system) = world.systems.get_mut(location) {
-        system.fleets.retain(|&key| key != fleet);
-    }
-    world.fleets.remove(fleet);
+    report.refund = refund;
+    report
 }
 
 /// What a player's Scrap order (`0x200`) names: one object from its own
@@ -671,8 +789,10 @@ pub fn target_system(
 /// Whether Scrap is enabled for `order` (its `+0x18`, the object's `+0x5c`:
 /// `FUN_004f9860`, and for a fleet `FUN_004ffa70`): something to scrap,
 /// every object the side's and not en route. A fleet in hyperspace, and a
-/// regiment travelling on its own, are en route. port: the port's objects
-/// exist only once completed, and regiments and ships have no mission.
+/// regiment travelling on its own, are en route. A capital ship must be
+/// completed too; a fleet needs one ship that is. port: the port's other
+/// objects exist only once completed, and regiments and ships have no
+/// mission.
 #[must_use]
 pub fn order_enabled(
     world: &GameWorld,
@@ -689,14 +809,43 @@ pub fn order_enabled(
             .iter()
             .any(|transit| transit.troop == troop)
     };
+    // FUN_004f9860.c:45-66: Scrap (0x200) is not exempt from the completed
+    // test, and no object en route takes it (its own leg or its fleet's).
+    let ready = |ship: &crate::world::ShipInstance| {
+        ship.alive && ship.completed && ship.transit.is_none()
+    };
+    let ship_ready = |fleet: FleetKey, index: usize| {
+        world
+            .fleets
+            .get(fleet)
+            .and_then(|value| value.capital_ships.get(index))
+            .is_some_and(ready)
+    };
+    // FUN_004ffa70.c:27-62: the fleet's own check, then its existing ships
+    // (mode 3) until one is completed and not en route; with none, the last
+    // ship's refusal (1/0x10, 1/0x11), or 8/1 for a fleet without ships.
+    let fleet_ready = |fleet: FleetKey| {
+        in_orbit(fleet)
+            && world
+                .fleets
+                .get(fleet)
+                .is_some_and(|value| value.capital_ships.iter().any(ready))
+    };
     !targets.is_empty()
-        && targets.iter().all(|target| match *target {
-            ScrapTarget::CapitalShip { fleet, .. } | ScrapTarget::Fighter { fleet, .. } => {
-                in_orbit(fleet)
-            }
-            ScrapTarget::Troop(troop) => !travelling(troop),
-            _ => true,
-        })
+        && match order {
+            ScrapOrder::Fleet(fleet) => fleet_ready(fleet),
+            ScrapOrder::Fleets(system) => side_fleets(world, system, side)
+                .into_iter()
+                .all(fleet_ready),
+            _ => targets.iter().all(|target| match *target {
+                ScrapTarget::CapitalShip { fleet, index } => {
+                    in_orbit(fleet) && ship_ready(fleet, index)
+                }
+                ScrapTarget::Fighter { fleet, .. } => in_orbit(fleet),
+                ScrapTarget::Troop(troop) => !travelling(troop),
+                _ => true,
+            }),
+        }
 }
 
 #[cfg(test)]
@@ -765,7 +914,6 @@ mod tests {
         let troop = world.troops.insert(TroopUnit {
             class_dat_id: DatId::new(0x1000_0001),
             is_alliance: true,
-            regiment_strength: 100,
         });
         world.systems[system].ground_units.push(troop);
         let mut stockpiles = StockpileState::new();
@@ -782,7 +930,8 @@ mod tests {
             scrapped,
             Some(Scrapped {
                 side: Faction::Alliance,
-                refund: 4
+                refund: 4,
+                aboard: Aboard::default(),
             })
         );
         assert_eq!(stockpiles.side(Faction::Alliance).refined, 4);
@@ -799,7 +948,6 @@ mod tests {
         let troop = world.troops.insert(TroopUnit {
             class_dat_id: DatId::new(0x1000_0001),
             is_alliance: true,
-            regiment_strength: 100,
         });
         world.systems[system].ground_units.push(troop);
         let manufacturing = crate::manufacturing::ManufacturingState::new();
@@ -832,7 +980,6 @@ mod tests {
         let troop = world.troops.insert(TroopUnit {
             class_dat_id: DatId::new(0x1000_0001),
             is_alliance: true,
-            regiment_strength: 100,
         });
         // A regiment class with no upkeep is never picked either.
         world.buildable_classes.insert(
@@ -845,12 +992,10 @@ mod tests {
         world.troops.insert(TroopUnit {
             class_dat_id: DatId::new(0x1000_0002),
             is_alliance: true,
-            regiment_strength: 100,
         });
         let enemy = world.troops.insert(TroopUnit {
             class_dat_id: DatId::new(0x1000_0001),
             is_alliance: false,
-            regiment_strength: 100,
         });
         let candidates = overdraft_candidates(&world, Faction::Alliance);
         assert_eq!(candidates, [ScrapTarget::Troop(troop)]);
@@ -877,7 +1022,9 @@ mod tests {
                     is_alliance: side == Faction::Alliance,
                     origin: system,
                     leg: crate::troop_transport::RegimentLeg::Surface(system),
+                    carrier: 0,
                     arrival_tick: 30,
+                    via: None,
                 });
             let mut transport = TroopTransportState::new();
             let mut stockpiles = StockpileState::new();
@@ -921,9 +1068,11 @@ mod tests {
             hull_current: 10,
             damage_counters: 0,
             alive,
+            completed: true,
             name: None,
             tag: 0,
             repair_timer: None,
+            transit: None,
         };
         let entry = |class, count| crate::world::FighterEntry {
             class,
@@ -936,7 +1085,6 @@ mod tests {
             let troop_of = |class_dat_id| TroopUnit {
                 class_dat_id,
                 is_alliance,
-                regiment_strength: 100,
             };
             let troop = world.troops.insert(troop_of(costly));
             world.troops.insert(troop_of(free));
@@ -950,7 +1098,7 @@ mod tests {
                 fighters: vec![entry(costly_fighter, 2), entry(free_fighter, 1)],
                 characters: vec![],
                 is_alliance,
-                has_death_star: false,
+                bombarding: false,
             });
             // The sides hold different counts, so each walk shows whose it took.
             let held = if is_alliance { 1 } else { 2 };
@@ -964,7 +1112,9 @@ mod tests {
                         is_alliance,
                         origin: system,
                         leg: crate::troop_transport::RegimentLeg::Surface(system),
+                        carrier: 0,
                         arrival_tick: 30,
+                        via: None,
                     });
             }
             let defense_of =
@@ -1039,7 +1189,9 @@ mod tests {
                 is_alliance,
                 origin: system,
                 leg: crate::troop_transport::RegimentLeg::Surface(leg),
+                carrier: 0,
                 arrival_tick,
+                via: None,
             };
         let near_misses = vec![
             transit(other, true, system, 30),
@@ -1115,12 +1267,31 @@ mod tests {
     }
 
     #[test]
+    fn a_targets_side_is_its_holders_and_a_gone_target_has_none() {
+        for is_alliance in [true, false] {
+            let (mut world, _) = world();
+            let troop = world.troops.insert(TroopUnit {
+                class_dat_id: DatId::new(0x1000_0001),
+                is_alliance,
+            });
+            let target = ScrapTarget::Troop(troop);
+
+            assert_eq!(
+                target_side(&world, target),
+                Some(Faction::of_alliance(is_alliance)),
+                "{is_alliance}"
+            );
+            world.troops.remove(troop);
+            assert_eq!(target_side(&world, target), None, "{is_alliance}");
+        }
+    }
+
+    #[test]
     fn a_target_that_is_gone_scraps_nothing() {
         let (mut world, _) = world();
         let troop = world.troops.insert(TroopUnit {
             class_dat_id: DatId::new(0x1000_0001),
             is_alliance: true,
-            regiment_strength: 100,
         });
         world.troops.remove(troop);
         let mut stockpiles = StockpileState::new();
@@ -1155,9 +1326,11 @@ mod tests {
             hull_current: 10,
             damage_counters: 0,
             alive,
+            completed: true,
             name: None,
             tag: 0,
             repair_timer: None,
+            transit: None,
         };
         let key = world.fleets.insert(crate::world::Fleet {
             location: system,
@@ -1169,7 +1342,7 @@ mod tests {
             }],
             characters: vec![],
             is_alliance,
-            has_death_star: false,
+            bombarding: false,
         });
         world.systems[system].fleets.push(key);
         key
@@ -1253,6 +1426,127 @@ mod tests {
         ));
     }
 
+    // FUN_004f9860.c:45-66 refuses an object not completed (+0x50 bit 2)
+    // for every order but 0x203, 0x204, 0x215 and 0x241, so Scrap (0x200)
+    // too, and one en route (bit 4: its own leg or its fleet's). A fleet's
+    // Scrap (FUN_004ffa70.c:27-62) walks its existing ships (mode 3) and
+    // passes at the first completed one not en route, else keeps the last
+    // ship's refusal (1/0x10 unfinished, 1/0x11 en route). The route-1
+    // Empire save, its day-123 Death Star played on: Fleet 6, holding only
+    // the unfinished Death Star, greyed Scrap; Fleet 1, a Galleon beside
+    // the unfinished Death Star, offered it.
+    #[test]
+    fn scrap_refuses_a_ship_not_ready_and_a_fleet_with_none_ready_for_either_side() {
+        for side in [Faction::Alliance, Faction::Empire] {
+            let (mut world, system) = world();
+            let key = fleet(&mut world, system, side == Faction::Alliance);
+            let transport = TroopTransportState::default();
+            let movement = crate::movement::MovementState::new();
+            let enabled = |world: &GameWorld, order| {
+                order_enabled(world, &movement, &transport, order, side)
+            };
+            let ship = ScrapOrder::Ship { fleet: key, index: 0 };
+            let leg = Some(crate::world::ShipTransit {
+                from: system,
+                to: system,
+                arrival_tick: 9,
+            });
+            assert!(enabled(&world, ship), "{side:?}");
+            assert!(enabled(&world, ScrapOrder::Fleet(key)), "{side:?}");
+
+            world.fleets[key].capital_ships[0].completed = false;
+            assert!(!enabled(&world, ship), "{side:?}: unfinished");
+            assert!(
+                enabled(&world, ScrapOrder::Ship { fleet: key, index: 2 }),
+                "{side:?}: a completed ship beside it"
+            );
+            assert!(
+                enabled(&world, ScrapOrder::Fleet(key)),
+                "{side:?}: that ship keeps its fleet's Scrap"
+            );
+            assert!(
+                enabled(&world, ScrapOrder::Fleets(system)),
+                "{side:?}: and the fleet icon's"
+            );
+
+            world.fleets[key].capital_ships[2].transit = leg;
+            assert!(
+                !enabled(&world, ScrapOrder::Fleet(key)),
+                "{side:?}: its only completed ship on its own leg"
+            );
+            world.fleets[key].capital_ships[2].transit = None;
+            world.fleets[key].capital_ships[2].completed = false;
+            assert!(
+                !enabled(&world, ScrapOrder::Fleet(key)),
+                "{side:?}: every living ship unfinished"
+            );
+            assert!(
+                !enabled(&world, ScrapOrder::Fleets(system)),
+                "{side:?}: nor the fleet icon's"
+            );
+
+            world.fleets[key].capital_ships[0].completed = true;
+            world.fleets[key].capital_ships[0].transit = leg;
+            assert!(!enabled(&world, ship), "{side:?}: on its own leg");
+        }
+    }
+
+    // FUN_004f9860 refuses Scrap (0x200) an object en route: a squadron
+    // whose fleet is in hyperspace (bit 4, its fleet's leg), and a regiment
+    // travelling on its own (its own leg, FUN_00556430).
+    #[test]
+    fn scrap_refuses_a_squadron_in_hyperspace_and_a_regiment_travelling_on_its_own_for_either_side() {
+        for side in [Faction::Alliance, Faction::Empire] {
+            let is_alliance = side == Faction::Alliance;
+            let (mut world, system) = world();
+            world.systems[system].control = crate::world::ControlKind::Controlled(side);
+            let far = world.systems.insert(System {
+                name: "Far".into(),
+                x: 50,
+                ..world.systems[system].clone()
+            });
+            let key = fleet(&mut world, system, is_alliance);
+            let troop = world.troops.insert(TroopUnit {
+                class_dat_id: DatId::new(0x1000_0001),
+                is_alliance,
+            });
+            world.systems[system].ground_units.push(troop);
+            let mut transport = TroopTransportState::default();
+            let mut movement = crate::movement::MovementState::new();
+            let squadron = ScrapOrder::Fighter { fleet: key, entry: 0 };
+            let regiment = ScrapOrder::Troop(troop);
+            let enabled = |world: &GameWorld,
+                           movement: &crate::movement::MovementState,
+                           transport: &TroopTransportState,
+                           order| {
+                order_enabled(world, movement, transport, order, side)
+            };
+            assert!(enabled(&world, &movement, &transport, squadron), "{side:?}");
+            assert!(enabled(&world, &movement, &transport, regiment), "{side:?}");
+
+            transport
+                .move_regiment(
+                    &mut world,
+                    &movement,
+                    &std::collections::HashSet::new(),
+                    &crate::carriage::ProductRoom::default(),
+                    troop,
+                    crate::troop_transport::RegimentTarget::System(far),
+                    0,
+                )
+                .unwrap();
+            assert!(
+                !enabled(&world, &movement, &transport, regiment),
+                "{side:?}: travelling"
+            );
+            movement.order(key, system, far, 5);
+            assert!(
+                !enabled(&world, &movement, &transport, squadron),
+                "{side:?}: its fleet in hyperspace"
+            );
+        }
+    }
+
     // FUN_0049a880 adds one line per object of the order's team: a fleet's
     // team is the fleet, so its name stands for its members.
     #[test]
@@ -1303,6 +1597,218 @@ mod tests {
         assert_eq!(world.fleets[key].fighters[0].count, 1);
     }
 
+    /// A two-ship fleet, tags 1 and 2, with squadrons and a regiment aboard
+    /// each: ship 1 carries two squadrons (class cost 10) and a regiment
+    /// (class cost 9), ship 2 one of each.
+    fn laden_fleet(
+        world: &mut GameWorld,
+        system: crate::ids::SystemKey,
+        transport: &mut TroopTransportState,
+        is_alliance: bool,
+    ) -> (FleetKey, [crate::ids::TroopKey; 2]) {
+        let class = world
+            .capital_ship_classes
+            .insert(crate::world::CapitalShipClass {
+                refined_material_cost: 30,
+                troop_capacity: 5,
+                ..crate::world::CapitalShipClass::default()
+            });
+        let fighters = world.fighter_classes.insert(crate::world::FighterClass {
+            refined_material_cost: 10,
+            ..crate::world::FighterClass::default()
+        });
+        let ship = |tag| {
+            let mut ship = crate::world::ShipInstance::new(class, 10, is_alliance);
+            ship.tag = tag;
+            ship
+        };
+        let entry = |carrier, count| crate::world::FighterEntry {
+            class: fighters,
+            count,
+            carrier,
+        };
+        let fleet = world.fleets.insert(crate::world::Fleet {
+            location: system,
+            capital_ships: vec![ship(1), ship(2)],
+            fighters: vec![entry(1, 2), entry(2, 1)],
+            characters: vec![],
+            is_alliance,
+            bombarding: false,
+        });
+        world.systems[system].fleets.push(fleet);
+        let troops = [1, 2].map(|carrier| {
+            let troop = world.troops.insert(TroopUnit {
+                class_dat_id: DatId::new(0x1000_0001),
+                is_alliance,
+            });
+            transport.board_product(fleet, troop, carrier);
+            troop
+        });
+        (fleet, troops)
+    }
+
+    // FUN_00502840 (hook +0x11c) runs FUN_00557b90 -> FUN_005582b0 ->
+    // FUN_004f2b50 -> FUN_004fb520 first, which calls slot +0xb4 on every
+    // child: FUN_004f8710 destroys a completed child that is not en route
+    // with the ship's own reason, 0x14 for a scrap (FUN_004f7ed0), and
+    // FUN_005140c0 -> FUN_00530270 refunds each such object half its class
+    // cost (reason 0x14..0x16, completed). The scrap order is not refused
+    // for a laden ship (FUN_004f9860).
+    #[test]
+    fn a_scrapped_ships_squadrons_and_regiments_go_with_it_and_return_half_their_cost() {
+        for is_alliance in [true, false] {
+            let side = Faction::of_alliance(is_alliance);
+            let (mut world, system) = world();
+            let mut transport = TroopTransportState::default();
+            let (fleet, [aboard, other]) =
+                laden_fleet(&mut world, system, &mut transport, is_alliance);
+            let mut stockpiles = StockpileState::new();
+
+            let scrapped = scrap(
+                &mut world,
+                &mut stockpiles,
+                &mut transport,
+                ScrapTarget::CapitalShip { fleet, index: 0 },
+            );
+
+            // 30 / 2 for the ship, 2 x (10 / 2) and 9 / 2 for what it carried.
+            assert_eq!(
+                scrapped,
+                Some(Scrapped {
+                    side,
+                    refund: 15 + 10 + 4,
+                    aboard: Aboard {
+                        squadrons: 2,
+                        regiments: 1
+                    }
+                }),
+                "{side:?}"
+            );
+            assert_eq!(stockpiles.side(side).refined, 29, "{side:?}");
+            assert_eq!(world.fleets[fleet].fighters.len(), 1, "{side:?}");
+            assert_eq!(world.fleets[fleet].fighters[0].carrier, 2, "{side:?}");
+            assert!(!world.troops.contains_key(aboard), "{side:?}");
+            assert!(world.troops.contains_key(other), "{side:?}");
+        }
+    }
+
+    #[test]
+    fn a_scrap_order_reports_what_each_ship_took_with_it() {
+        for is_alliance in [true, false] {
+            let side = Faction::of_alliance(is_alliance);
+            let (mut world, system) = world();
+            let mut transport = TroopTransportState::default();
+            let (fleet, _) = laden_fleet(&mut world, system, &mut transport, is_alliance);
+            world.fleets[fleet]
+                .fighters
+                .retain(|entry| entry.carrier == 1);
+            let mut stockpiles = StockpileState::new();
+
+            let report = scrap_all_reporting(
+                &mut world,
+                &mut stockpiles,
+                &mut transport,
+                [
+                    ScrapTarget::CapitalShip { fleet, index: 0 },
+                    ScrapTarget::CapitalShip { fleet, index: 1 },
+                ],
+            );
+
+            // Ship 1 held two squadrons and a regiment; ship 2 only a
+            // regiment, so each is listed with its own count.
+            assert_eq!(
+                report
+                    .losses
+                    .iter()
+                    .map(|loss| loss.aboard)
+                    .collect::<Vec<_>>(),
+                [
+                    Aboard {
+                        squadrons: 2,
+                        regiments: 1
+                    },
+                    Aboard {
+                        squadrons: 0,
+                        regiments: 1
+                    }
+                ],
+                "{side:?}"
+            );
+            assert!(report
+                .losses
+                .iter()
+                .all(|loss| loss.side == side && loss.system == system));
+            assert_eq!(report.refund, 15 + 10 + 4 + 15 + 4, "{side:?}");
+        }
+    }
+
+    #[test]
+    fn a_ships_losses_aboard_have_a_log_line_naming_what_went_down() {
+        let loss = AboardLoss {
+            side: Faction::Empire,
+            ship: "Vengeance".into(),
+            system: crate::ids::SystemKey::default(),
+            aboard: Aboard {
+                squadrons: 2,
+                regiments: 1,
+            },
+        };
+        assert_eq!(
+            loss.log_line("Carida"),
+            "[scrap] side=Empire ship=Vengeance system=Carida squadrons=2 regiments=1"
+        );
+    }
+
+    #[test]
+    fn an_untagged_regiment_is_not_lost_with_a_scrapped_ship() {
+        for is_alliance in [true, false] {
+            let (mut world, system) = world();
+            let mut transport = TroopTransportState::default();
+            let (fleet, [aboard, other]) =
+                laden_fleet(&mut world, system, &mut transport, is_alliance);
+            let untagged = world.troops.insert(TroopUnit {
+                class_dat_id: DatId::new(0x1000_0001),
+                is_alliance,
+            });
+            transport.board_product(fleet, untagged, 0);
+
+            let scrapped = scrap(
+                &mut world,
+                &mut StockpileState::new(),
+                &mut transport,
+                ScrapTarget::CapitalShip { fleet, index: 0 },
+            );
+
+            assert_eq!(scrapped.map(|value| value.aboard.regiments), Some(1), "{is_alliance}");
+            assert!(!world.troops.contains_key(aboard), "{is_alliance}");
+            assert!(world.troops.contains_key(other), "{is_alliance}");
+            assert!(world.troops.contains_key(untagged), "{is_alliance}");
+        }
+    }
+
+    #[test]
+    fn a_scrapped_ship_with_nothing_aboard_refunds_only_itself() {
+        let (mut world, system) = world();
+        let mut transport = TroopTransportState::default();
+        let (fleet, _) = laden_fleet(&mut world, system, &mut transport, true);
+        world.fleets[fleet].fighters.clear();
+        let mut stockpiles = StockpileState::new();
+        let cargo = transport.cargo(fleet).to_vec();
+        for troop in cargo {
+            transport.destroy_embarked(&mut world, troop);
+        }
+
+        let scrapped = scrap(
+            &mut world,
+            &mut stockpiles,
+            &mut transport,
+            ScrapTarget::CapitalShip { fleet, index: 0 },
+        );
+
+        assert_eq!(scrapped.map(|value| value.aboard), Some(Aboard::default()));
+        assert_eq!(stockpiles.side(Faction::Alliance).refined, 15);
+    }
+
     // FUN_00530270 destroys the fleet object with its members. hyp: a
     // character aboard stays in the system.
     #[test]
@@ -1327,5 +1833,38 @@ mod tests {
         assert!(!world.systems[system].fleets.contains(&key));
         assert_eq!(world.characters[character].current_fleet, None);
         assert_eq!(world.characters[character].current_system, Some(system));
+    }
+
+    // A scrapped Death Star's kill clears its usable bit (FUN_004f7b80 ->
+    // FUN_004f7410), and event 0x301 reruns FUN_005178b0 (FUN_00514510).
+    #[test]
+    fn a_scrapped_death_star_clears_its_sector_at_once() {
+        let (mut world, system) = world();
+        let class = world
+            .capital_ship_classes
+            .insert(crate::world::CapitalShipClass {
+                family: 0x18,
+                is_empire: true,
+                hull: 100,
+                ..crate::world::CapitalShipClass::default()
+            });
+        let fleet = world.fleets.insert(crate::world::Fleet {
+            location: system,
+            capital_ships: vec![crate::world::ShipInstance::new(class, 100, false)],
+            ..crate::world::Fleet::default()
+        });
+        world.systems[system].fleets.push(fleet);
+        world
+            .death_star_sectors
+            .insert(world.systems[system].sector);
+
+        scrap_all(
+            &mut world,
+            &mut StockpileState::new(),
+            &mut TroopTransportState::default(),
+            [ScrapTarget::CapitalShip { fleet, index: 0 }],
+        );
+
+        assert!(world.death_star_sectors.is_empty());
     }
 }

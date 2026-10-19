@@ -643,17 +643,13 @@ mod tests {
     }
 
     #[test]
-    fn the_system_icon_takes_a_neutral_or_contested_systems_side() {
+    fn the_system_icon_takes_a_neutral_systems_side() {
         // FUN_0045cdc0 passes the side bits 0 and 3 through; FUN_0045ca80
-        // gives both the neutral art.
-        for (control, expected) in [(ControlKind::Uncontrolled, 0), (ControlKind::Contested, 3)] {
-            let (mut world, system) = world(control);
-            add_mine(&mut world, system, true);
-            assert_eq!(
-                alliance_side(&world, system, Quadrant::System),
-                Some(expected)
-            );
-        }
+        // gives both the neutral art. A neutral system is side 3
+        // (FUN_0055a080 returns 1, 2 or 3; FUN_0050b610).
+        let (mut world, system) = world(ControlKind::Uncontrolled);
+        add_mine(&mut world, system, true);
+        assert_eq!(alliance_side(&world, system, Quadrant::System), Some(3));
     }
 
     #[test]
@@ -677,7 +673,6 @@ mod tests {
         let regiment = world.troops.insert(TroopUnit {
             class_dat_id: DatId::new(0x1000_0001),
             is_alliance: true,
-            regiment_strength: 100,
         });
         world.systems[system].ground_units.push(regiment);
         assert_eq!(alliance_side(&world, system, Quadrant::Defenses), Some(1));
@@ -901,7 +896,9 @@ mod tests {
         let mut fog = FogState::new(Faction::Alliance);
         rebellion_core::fog::FogSystem::seed(&mut fog, &world);
         assert!(!fog.is_visible(system));
-        assert_eq!(icon(&fog), Some(0));
+        // A neutral system and its facilities are side 3 (FUN_0055a080,
+        // FUN_0050b610; facility-ownership.md).
+        assert_eq!(icon(&fog), Some(3));
     }
 
     #[test]

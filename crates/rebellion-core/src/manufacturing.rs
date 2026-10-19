@@ -129,6 +129,16 @@ pub struct QueueItem {
     /// system. A different system or a fleet makes it travel there once
     /// completed (`FUN_0052bee0`, `crate::delivery`).
     pub destination: Option<Destination>,
+    /// The tag of the ship a squadron or regiment bound for a fleet rides,
+    /// chosen at the order (`FUN_005385f0` -> `FUN_00551a20` ->
+    /// `FUN_00552300`), so it takes that ship's room from then
+    /// (`crate::carriage::ProductRoom`); 0 for any other product.
+    pub carrier: u32,
+    /// The tag of the unfinished capital ship this entry builds, the key the
+    /// manager lists (`+0x54 -> +0x18`): the ship exists from the order
+    /// ([`seat_ordered_ships`]); 0 until it is seated, and for any other
+    /// product.
+    pub ship: u32,
 }
 
 /// Where a production area sends what it builds (the manager's `+0x74`,
@@ -162,6 +172,8 @@ impl QueueItem {
             work_done: 0,
             total_cost,
             destination: None,
+            carrier: 0,
+            ship: 0,
         }
     }
 
@@ -346,8 +358,11 @@ impl ProductionQueue {
 /// `0xa0..0xaf`, `FUN_0052c170`): the agent's Destination (`0x214`) and
 /// build orders act on construction managers (`0xa0..0xa1`) and training
 /// managers (`0xa4..0xa5`; `ghidra/notes/manage-automation.md`), and the
-/// manual gives each area its own Destination (p. 84, Fig. 3.75). hyp:
-/// shipyards are `0xa2..0xa3`.
+/// manual gives each area its own Destination (p. 84, Fig. 3.75).
+/// Shipyards are `0xa2..0xa3`: the system initializer creates
+/// `0xa2000006` with kind 0, ships and fighters (`FUN_0050e200.c:24-38`),
+/// and the Empire game's saves show Drall's `0xa2000500` listing an
+/// unfinished capital ship and Duros's `0xa0000523` a facility.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum ProductionArea {
     Shipyard,
@@ -412,9 +427,64 @@ impl ManufacturingState {
         self.queues.entry((system, area)).or_default()
     }
 
-    /// Remove every area's queue at a system (used when system is destroyed).
-    pub fn clear_queue(&mut self, system: SystemKey) {
-        self.queues.retain(|(key, _), _| *key != system);
+    /// Take every product queued at `system`, area by area in
+    /// [`ProductionArea::ALL`] order, leaving its queues empty.
+    pub fn take_queued(&mut self, system: SystemKey) -> Vec<QueueItem> {
+        ProductionArea::ALL
+            .iter()
+            .filter_map(|&area| self.queues.remove(&(system, area)))
+            .flat_map(|queue| queue.items)
+            .collect()
+    }
+
+    /// Every queued product with its producer and area, producer by producer
+    /// in key order and each queue front to back.
+    pub fn items(&self) -> impl Iterator<Item = (SystemKey, ProductionArea, &QueueItem)> {
+        let mut keys: Vec<&(SystemKey, ProductionArea)> = self.queues.keys().collect();
+        keys.sort_unstable();
+        keys.into_iter().flat_map(move |key| {
+            self.queues[key]
+                .items
+                .iter()
+                .map(move |item| (key.0, key.1, item))
+        })
+    }
+
+    /// Every queued product, mutably, in [`Self::items`] order.
+    pub fn items_mut(&mut self) -> impl Iterator<Item = &mut QueueItem> {
+        let mut queues: Vec<(&(SystemKey, ProductionArea), &mut ProductionQueue)> =
+            self.queues.iter_mut().collect();
+        queues.sort_unstable_by_key(|(key, _)| **key);
+        queues
+            .into_iter()
+            .flat_map(|(_, queue)| queue.items.iter_mut())
+    }
+
+    /// Walk the products other systems' areas build for `system` (their
+    /// Destination `+0x3c` names it), producer by producer in key order and
+    /// each queue front to back. `keep` may rewrite a product's destination
+    /// and returns whether it stays in its queue; a kept product keeps its
+    /// slot.
+    pub fn retain_bound_for(
+        &mut self,
+        system: SystemKey,
+        mut keep: impl FnMut(SystemKey, &mut QueueItem) -> bool,
+    ) {
+        let mut keys: Vec<(SystemKey, ProductionArea)> = self
+            .queues
+            .keys()
+            .copied()
+            .filter(|&(at, _)| at != system)
+            .collect();
+        keys.sort_unstable();
+        for (at, area) in keys {
+            let Some(queue) = self.queues.get_mut(&(at, area)) else {
+                continue;
+            };
+            queue.items.retain_mut(|item| {
+                item.destination != Some(Destination::System(system)) || keep(at, item)
+            });
+        }
     }
 
     /// The queue of `system`'s `area` (read-only); `None` when never used.
@@ -483,7 +553,10 @@ impl ManufacturingState {
     /// The Destination order (`0x214`) on `system`'s `area`: what it builds,
     /// queued now or later, goes to `destination`; the area's own system
     /// clears it. hyp: the order rewrites the queued products' destination
-    /// (`+0x3c`) too; its handler is untraced (`production-destination.md`).
+    /// (`+0x3c`) too, and a rewritten product leaves the ship it was bound
+    /// for; its handler is untraced (`production-destination.md`). The
+    /// order as given is `crate::build_selection::order_destination`, which
+    /// seats the products again.
     pub fn set_destination(
         &mut self,
         system: SystemKey,
@@ -497,7 +570,10 @@ impl ManufacturingState {
         };
         if let Some(queue) = self.queues.get_mut(&(system, area)) {
             for item in &mut queue.items {
-                item.destination = target;
+                if item.destination != target {
+                    item.destination = target;
+                    item.carrier = 0;
+                }
             }
         }
     }
@@ -514,6 +590,268 @@ impl ManufacturingState {
     #[must_use]
     pub fn queues(&self) -> &HashMap<(SystemKey, ProductionArea), ProductionQueue> {
         &self.queues
+    }
+}
+
+/// Keep the ordered capital ships in line with the queues, in the order the
+/// original's Build runs (`FUN_00529ab0`: `FUN_0052a2c0`, then
+/// `FUN_0052a140`):
+///
+/// 1. An entry whose ship is gone, or no longer unfinished, leaves its queue
+///    (`FUN_0052a710` drops a key `FUN_00528890` no longer accepts).
+/// 2. An unfinished ship no entry names is destroyed (`FUN_0052a2c0`: a
+///    Stop, a Build's replacement, the yard's system destroyed).
+/// 3. Each queue's unseated capital-ship entries become unfinished ships
+///    (`FUN_004f7d50(.., created 1, completed 0)`) under fresh tags. Those
+///    bound for a system join the side's bit-1 spare fleet there
+///    (`FUN_00552300.c:127-131` -> `FUN_005097d0`), which keeps its bit, and
+///    so takes every later ship bound there, until it is destroyed
+///    (`FUN_0050bc60.c:41-51`); those bound for a fleet join it
+///    (`FUN_00552300.c:100-118`). Ship and fleet are numbered on the order
+///    day (`FUN_005140c0.c:127` -> `FUN_00517760`).
+/// 4. A fleet step 2 left with no ship disbands (`FUN_004fe630.c:21-28`);
+///    one a new ship joined in step 3 stays (Wine, the ds-b save, day 151).
+///
+/// The order's callers run it at once; a step that completes ships runs it
+/// after [`finish_ships`].
+pub fn seat_ordered_ships(
+    world: &mut crate::world::GameWorld,
+    manufacturing: &mut ManufacturingState,
+) {
+    let unfinished: HashSet<u32> = world
+        .fleets
+        .values()
+        .flat_map(|fleet| &fleet.capital_ships)
+        .filter(|ship| ship.alive && !ship.completed && ship.tag != 0)
+        .map(|ship| ship.tag)
+        .collect();
+    for queue in manufacturing.queues.values_mut() {
+        queue
+            .items
+            .retain(|item| item.ship == 0 || unfinished.contains(&item.ship));
+    }
+
+    let named: HashSet<u32> = manufacturing
+        .queues
+        .values()
+        .flat_map(|queue| &queue.items)
+        .map(|item| item.ship)
+        .filter(|&tag| tag != 0)
+        .collect();
+    let mut emptied = Vec::new();
+    for (key, fleet) in &mut world.fleets {
+        let before = fleet.capital_ships.len();
+        fleet
+            .capital_ships
+            .retain(|ship| ship.completed || !ship.alive || named.contains(&ship.tag));
+        if fleet.capital_ships.len() != before {
+            emptied.push(key);
+        }
+    }
+
+    let mut keys: Vec<(SystemKey, ProductionArea)> = manufacturing.queues.keys().copied().collect();
+    keys.sort_unstable();
+    for key in keys {
+        let Some(queue) = manufacturing.queues.get_mut(&key) else {
+            continue;
+        };
+        for item in queue.items.iter_mut().filter(|item| item.ship == 0) {
+            let BuildableKind::CapitalShip(class) = item.kind else {
+                continue;
+            };
+            let Some((hull, is_alliance)) = world
+                .capital_ship_classes
+                .get(class)
+                .map(|value| (value.hull.cast_signed(), value.is_alliance))
+            else {
+                continue;
+            };
+            let destination = item.destination.unwrap_or(Destination::System(key.0));
+            let Some(fleet) = seat_fleet(world, destination, is_alliance) else {
+                continue;
+            };
+            world.last_ship_tag += 1;
+            let mut ship = crate::world::ShipInstance::ordered(class, hull, is_alliance);
+            ship.tag = world.last_ship_tag;
+            item.ship = ship.tag;
+            world.fleets[fleet].capital_ships.push(ship);
+        }
+    }
+    for fleet in emptied {
+        world.remove_fleet_if_empty(fleet);
+    }
+    world.number_capital_ships();
+}
+
+/// The fleet an ordered ship of a side joins at `destination`: the
+/// destination fleet itself (it takes capital ships, `FUN_004fe160`), or the
+/// side's bit-1 spare at the destination system
+/// ([`crate::world::GameWorld::spare_fleet_or_new`], `FUN_005097d0`).
+/// `None` when neither exists.
+fn seat_fleet(
+    world: &mut crate::world::GameWorld,
+    destination: Destination,
+    is_alliance: bool,
+) -> Option<FleetKey> {
+    let system = match destination {
+        Destination::Fleet(fleet) => return world.fleets.contains_key(fleet).then_some(fleet),
+        Destination::System(system) => system,
+    };
+    world.systems.get(system)?;
+    Some(world.spare_fleet_or_new(system, is_alliance))
+}
+
+/// The production managers of each system whose holder changed
+/// (`GameWorld::manager_side_changes`) take the new side. The holder
+/// change walks the system's children (`FUN_00510820` → `FUN_004fae40`,
+/// slot `+0xb0`). A manager is completed, and its class accepts any side
+/// (slot `+0x50`, `FUN_0051ebb0`), so `FUN_004f8680.c:28-31` sets its side
+/// (`FUN_004f6f40`). The manager's side hook (slot `+0xf0`,
+/// `FUN_0052b790.c:7-14`) then runs `FUN_0052a2c0`, which destroys every
+/// product the manager lists with reason `0x16` (`FUN_0052a2c0.c:20-36`):
+/// any kind, wherever it sits, refunding nothing (`FUN_00530270`). The
+/// ships those entries named leave their fleets, and a fleet left with no
+/// ship disbands (`FUN_004fe630.c:21-28`); no other ship changes, names
+/// included, since numbering belongs to the order day (`FUN_00517760`).
+/// Another system's product bound here keeps its queue slot, since its
+/// manager keeps its side. Returns the destroyed products.
+pub fn serve_manager_sides(
+    world: &mut crate::world::GameWorld,
+    manufacturing: &mut ManufacturingState,
+) -> Vec<BuildableKind> {
+    let destroyed: Vec<QueueItem> = std::mem::take(&mut world.manager_side_changes)
+        .into_iter()
+        .flat_map(|system| manufacturing.take_queued(system))
+        .collect();
+    let ships: HashSet<u32> = destroyed
+        .iter()
+        .map(|item| item.ship)
+        .filter(|&tag| tag != 0)
+        .collect();
+    if !ships.is_empty() {
+        let mut emptied = Vec::new();
+        for (key, fleet) in &mut world.fleets {
+            let before = fleet.capital_ships.len();
+            fleet.capital_ships.retain(|ship| !ships.contains(&ship.tag));
+            if fleet.capital_ships.len() != before {
+                emptied.push(key);
+            }
+        }
+        for fleet in emptied {
+            world.remove_fleet_if_empty(fleet);
+        }
+    }
+    destroyed.into_iter().map(|item| item.kind).collect()
+}
+
+/// The Destination order on a production area with units queued
+/// (`FUN_00537180.c:321-345`, executed by `FUN_00529cd0` ->
+/// `FUN_0052a380`): every unfinished ship the area builds moves at once
+/// into the container its new leg chose, the side's spare at the new
+/// system or the destination fleet, and a fleet it leaves with no ship
+/// disbands (`FUN_004fe630`). Its progress stays.
+pub fn move_ordered_ships(
+    world: &mut crate::world::GameWorld,
+    manufacturing: &ManufacturingState,
+    system: SystemKey,
+    area: ProductionArea,
+) {
+    let Some(queue) = manufacturing.queue(system, area) else {
+        return;
+    };
+    let tags: Vec<u32> = queue
+        .items
+        .iter()
+        .map(|item| item.ship)
+        .filter(|&tag| tag != 0)
+        .collect();
+    let destination = manufacturing
+        .destination(system, area)
+        .unwrap_or(Destination::System(system));
+    let mut moving = Vec::new();
+    let mut left = Vec::new();
+    for (key, fleet) in &mut world.fleets {
+        if matches!(destination, Destination::Fleet(target) if target == key) {
+            continue;
+        }
+        let before = fleet.capital_ships.len();
+        let (taken, kept): (Vec<_>, Vec<_>) = std::mem::take(&mut fleet.capital_ships)
+            .into_iter()
+            .partition(|ship| ship.alive && !ship.completed && tags.contains(&ship.tag));
+        fleet.capital_ships = kept;
+        if fleet.capital_ships.len() != before {
+            left.push(key);
+        }
+        moving.extend(taken);
+    }
+    moving.sort_by_key(|ship| tags.iter().position(|&tag| tag == ship.tag));
+    for ship in moving {
+        let is_alliance = world
+            .capital_ship_classes
+            .get(ship.class)
+            .is_some_and(|class| class.is_alliance);
+        let Some(fleet) = seat_fleet(world, destination, is_alliance) else {
+            continue;
+        };
+        world.fleets[fleet].capital_ships.push(ship);
+    }
+    for fleet in left {
+        world.remove_fleet_if_empty(fleet);
+    }
+}
+
+/// A capital ship its yard finished (`FUN_0052b960` -> `FUN_0052bee0`):
+/// the ordered ship's tag and the yard's system.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FinishedShip {
+    /// The ordered ship ([`QueueItem::ship`]).
+    pub tag: u32,
+    /// The system of the yard that built it (the manager's location).
+    pub yard: SystemKey,
+    /// The day it was finished.
+    pub tick: u64,
+}
+
+/// Complete each finished ship in place (`FUN_0052bee0`: deployed, then
+/// completed). When its fleet lies in another system than its yard, the
+/// deploy event starts its own leg there (`FUN_005150c0.c:90-102` ->
+/// `FUN_00556430`), the ship already a member of that fleet. A fleet in
+/// hyperspace is already its destination's child (`FUN_00556390`), so the
+/// leg ends there ([`crate::movement::listed_location`]), as
+/// `delivery::advance_ship_legs` reads it.
+pub fn finish_ships(
+    world: &mut crate::world::GameWorld,
+    movement: &crate::movement::MovementState,
+    finished: &[FinishedShip],
+) {
+    for done in finished {
+        let Some(fleet) = crate::carriage::fleet_of_ship(world, done.tag) else {
+            continue;
+        };
+        let Some(location) = crate::movement::listed_location(movement, world, fleet) else {
+            continue;
+        };
+        let Some(index) = world.fleets[fleet]
+            .capital_ships
+            .iter()
+            .position(|ship| ship.alive && ship.tag == done.tag)
+        else {
+            continue;
+        };
+        let class = world.fleets[fleet].capital_ships[index].class;
+        let ticks = crate::delivery::transit_days(
+            world,
+            BuildableKind::CapitalShip(class),
+            done.yard,
+            location,
+        );
+        let ship = &mut world.fleets[fleet].capital_ships[index];
+        ship.completed = true;
+        ship.transit = (ticks > 0).then_some(crate::world::ShipTransit {
+            from: done.yard,
+            to: location,
+            arrival_tick: done.tick + u64::from(ticks),
+        });
     }
 }
 
@@ -549,6 +887,8 @@ pub struct ManufacturingAdvance {
     /// Completed items bound for another system; `crate::delivery` times
     /// their travel and completes them there on arrival.
     pub departures: Vec<Departure>,
+    /// The ordered capital ships among them, for [`finish_ships`].
+    pub finished_ships: Vec<FinishedShip>,
 }
 
 /// A completed item leaving its building system for its destination.
@@ -562,6 +902,8 @@ pub struct Departure {
     pub tick: u64,
     /// What was built.
     pub kind: BuildableKind,
+    /// The ship it rides ([`QueueItem::carrier`]).
+    pub carrier: u32,
 }
 
 // ---------------------------------------------------------------------------
@@ -635,6 +977,7 @@ impl ManufacturingSystem {
         let mut completions = Vec::new();
         let mut newly_idle = Vec::new();
         let mut departures = Vec::new();
+        let mut finished_ships = Vec::new();
 
         // HashMap iteration order is randomized per process. Completion order
         // mutates slotmaps downstream, so walk queues by stable key: each
@@ -655,6 +998,13 @@ impl ManufacturingSystem {
                 .expect("manufacturing queue key collected from the same map");
             pre_len += queue.len();
             for item in queue.take_completed() {
+                if item.ship != 0 {
+                    finished_ships.push(FinishedShip {
+                        tag: item.ship,
+                        yard: system_key,
+                        tick: final_tick,
+                    });
+                }
                 match item
                     .destination
                     .filter(|&destination| destination != Destination::System(system_key))
@@ -664,6 +1014,7 @@ impl ManufacturingSystem {
                         destination,
                         tick: final_tick,
                         kind: item.kind,
+                        carrier: item.carrier,
                     }),
                     None => completions.push(CompletionEvent {
                         system: system_key,
@@ -689,6 +1040,7 @@ impl ManufacturingSystem {
             completions,
             newly_idle,
             departures,
+            finished_ships,
         }
     }
 }
@@ -717,6 +1069,425 @@ mod tests {
         let mut sm: slotmap::SlotMap<CapitalShipKey, ()> = slotmap::SlotMap::with_key();
         let key = sm.insert(());
         QueueItem::new(BuildableKind::CapitalShip(key), cost)
+    }
+
+    /// A world of `count` systems and a capital ship class of a side, named
+    /// "Carrack", with 100 hull. port: test fixture values, not rules.
+    fn yard_world(
+        count: usize,
+        is_alliance: bool,
+    ) -> (crate::world::GameWorld, Vec<SystemKey>, CapitalShipKey) {
+        let mut world = crate::world::GameWorld::default();
+        let systems = (0..count)
+            .map(|_| world.systems.insert(crate::world::System::default()))
+            .collect();
+        let class = world
+            .capital_ship_classes
+            .insert(crate::world::CapitalShipClass {
+                name: "Carrack".into(),
+                is_alliance,
+                is_empire: !is_alliance,
+                hull: 100,
+                ..crate::world::CapitalShipClass::default()
+            });
+        (world, systems, class)
+    }
+
+    /// The ships of `fleet` as (tag, completed, usable).
+    fn ships(world: &crate::world::GameWorld, fleet: FleetKey) -> Vec<(u32, bool, bool)> {
+        world.fleets[fleet]
+            .capital_ships
+            .iter()
+            .map(|ship| (ship.tag, ship.completed, ship.usable()))
+            .collect()
+    }
+
+    // FUN_0052a140 -> FUN_004f7d50(.., created 1, completed 0) creates the
+    // ship at the order (FUN_004f7d50.c:31-38) in its destination system's
+    // bit-1 spare fleet (FUN_00552300.c:127-131 -> FUN_005097d0), never an
+    // existing fleet. The route-1 Empire game's day-115 save, the order day:
+    // the Death Star +0x50 0x42 in its new fleet +0x50 0x10046.
+    #[test]
+    fn an_ordered_capital_ship_is_an_unfinished_member_of_a_new_fleet_at_its_destination_from_the_order_day_for_either_side(
+    ) {
+        for is_alliance in [true, false] {
+            let (mut world, systems, class) = yard_world(2, is_alliance);
+            let (yard, target) = (systems[0], systems[1]);
+            let standing = world.insert_fleet(crate::world::Fleet {
+                location: target,
+                is_alliance,
+                capital_ships: vec![crate::world::ShipInstance::new(class, 100, is_alliance)],
+                ..crate::world::Fleet::default()
+            });
+            world.systems[target].fleets.push(standing);
+            let mut state = ManufacturingState::new();
+            state.build_units(
+                yard,
+                vec![QueueItem::new(BuildableKind::CapitalShip(class), 5)
+                    .delivered_to(Destination::System(target))],
+            );
+
+            seat_ordered_ships(&mut world, &mut state);
+
+            assert_eq!(
+                world.fleets[standing].capital_ships.len(),
+                1,
+                "{is_alliance}"
+            );
+            let fleets = world.systems[target].fleets.clone();
+            assert_eq!(fleets.len(), 2, "{is_alliance}");
+            let fleet = fleets[1];
+            assert_eq!(world.fleets[fleet].is_alliance, is_alliance);
+            assert_eq!(world.fleets[fleet].location, target);
+            let tag = state.queue(yard, ProductionArea::Shipyard).unwrap().items()[0].ship;
+            assert_ne!(tag, 0, "{is_alliance}");
+            assert_eq!(ships(&world, fleet), [(tag, false, false)], "{is_alliance}");
+            assert!(world.systems[yard].fleets.is_empty(), "{is_alliance}");
+        }
+    }
+
+    // FUN_005385f0.c:200-219 resolves every unit of one Build in one pass
+    // through FUN_005097d0, a pure query, and FUN_0052a140 creates each in
+    // its entry's container: one fleet. The route-1 Empire game played on:
+    // one Build of two Carracks at Coruscant, both 0x42 in one new fleet.
+    #[test]
+    fn the_units_of_one_build_share_one_new_fleet_for_either_side() {
+        for is_alliance in [true, false] {
+            let (mut world, systems, class) = yard_world(1, is_alliance);
+            let yard = systems[0];
+            let mut state = ManufacturingState::new();
+            let unit = QueueItem::new(BuildableKind::CapitalShip(class), 5);
+            state.build(yard, &unit, 2);
+
+            seat_ordered_ships(&mut world, &mut state);
+            seat_ordered_ships(&mut world, &mut state);
+
+            assert_eq!(world.systems[yard].fleets.len(), 1, "{is_alliance}");
+            let fleet = world.systems[yard].fleets[0];
+            let tags: Vec<u32> = state
+                .queue(yard, ProductionArea::Shipyard)
+                .unwrap()
+                .items()
+                .iter()
+                .map(|item| item.ship)
+                .collect();
+            assert_eq!(
+                ships(&world, fleet),
+                [(tags[0], false, false), (tags[1], false, false)],
+                "{is_alliance}"
+            );
+            assert_ne!(tags[0], tags[1], "{is_alliance}");
+        }
+    }
+
+    // FUN_005140c0.c:127 -> FUN_00517760 numbers an existing object on its
+    // event 0x300, and the ordered ship exists from its order. The route-1
+    // Empire game's day-115 save, the order day: "Death Star 1" in
+    // "Fleet 6".
+    #[test]
+    fn an_ordered_ship_and_its_fleet_are_numbered_on_the_order_day_for_either_side() {
+        for is_alliance in [true, false] {
+            let (mut world, systems, class) = yard_world(1, is_alliance);
+            let yard = systems[0];
+            let mut state = ManufacturingState::new();
+            state.build(
+                yard,
+                &QueueItem::new(BuildableKind::CapitalShip(class), 5),
+                1,
+            );
+
+            seat_ordered_ships(&mut world, &mut state);
+
+            let fleet = world.systems[yard].fleets[0];
+            assert_eq!(world.fleet_name(fleet), Some("Fleet 1"), "{is_alliance}");
+            assert_eq!(
+                world.fleets[fleet].capital_ships[0].name.as_deref(),
+                Some("Carrack 1"),
+                "{is_alliance}"
+            );
+        }
+    }
+
+    // FUN_0050bc60.c:41-51 drops bit 1 only from a destroyed fleet, so the
+    // side's spare at a system goes on taking every ship ordered there
+    // (FUN_005097d0); the other side has its own. The route-1 Empire game
+    // played on: a ship moved to Averam joined the fleet an earlier one had
+    // made there.
+    #[test]
+    fn a_later_build_bound_for_the_same_system_joins_its_sides_spare_for_either_side() {
+        for is_alliance in [true, false] {
+            let (mut world, systems, class) = yard_world(3, is_alliance);
+            let (target, first, second) = (systems[0], systems[1], systems[2]);
+            let enemy = world
+                .capital_ship_classes
+                .insert(crate::world::CapitalShipClass {
+                    is_alliance: !is_alliance,
+                    is_empire: is_alliance,
+                    hull: 100,
+                    ..crate::world::CapitalShipClass::default()
+                });
+            let mut state = ManufacturingState::new();
+            for (yard, class) in [(first, class), (second, class), (second, enemy)] {
+                state.enqueue(
+                    yard,
+                    QueueItem::new(BuildableKind::CapitalShip(class), 5)
+                        .delivered_to(Destination::System(target)),
+                );
+                seat_ordered_ships(&mut world, &mut state);
+            }
+
+            let sides: Vec<(bool, usize)> = world.systems[target]
+                .fleets
+                .iter()
+                .map(|&fleet| {
+                    let value = &world.fleets[fleet];
+                    (value.is_alliance, value.capital_ships.len())
+                })
+                .collect();
+            assert_eq!(
+                sides,
+                [(is_alliance, 2), (!is_alliance, 1)],
+                "{is_alliance}"
+            );
+        }
+    }
+
+    // FUN_00529ab0 runs FUN_0052a2c0 (+0xac(0x16) on every listed product)
+    // before FUN_0052a140 creates the new units, and the new unit takes the
+    // replaced one's fleet, which does not disband. Wine, the ds-b save
+    // (route-1 Empire game, day 151): a Build at Coruscant replaced the
+    // unfinished Death Star `0x18000df5`, the only ship of Fleet 6
+    // `0x08000aea`, with `0x18000e4f` in that same fleet.
+    #[test]
+    fn a_new_build_destroys_what_its_area_was_building_and_seats_the_new_ship_in_the_same_fleet_for_either_side(
+    ) {
+        for is_alliance in [true, false] {
+            let (mut world, systems, class) = yard_world(1, is_alliance);
+            let yard = systems[0];
+            let mut state = ManufacturingState::new();
+            let unit = QueueItem::new(BuildableKind::CapitalShip(class), 5);
+            state.build(yard, &unit, 1);
+            seat_ordered_ships(&mut world, &mut state);
+            let old_fleet = world.systems[yard].fleets[0];
+            let old_tag = world.fleets[old_fleet].capital_ships[0].tag;
+
+            state.build(yard, &unit, 1);
+            seat_ordered_ships(&mut world, &mut state);
+
+            assert_eq!(world.systems[yard].fleets, [old_fleet], "{is_alliance}");
+            let fleet = world.systems[yard].fleets[0];
+            let tag = world.fleets[fleet].capital_ships[0].tag;
+            assert_ne!(tag, old_tag, "{is_alliance}");
+            assert_eq!(ships(&world, fleet), [(tag, false, false)], "{is_alliance}");
+        }
+    }
+
+    // Stop is manager slot +0x1f8, FUN_00529ba0 -> FUN_0052a2c0; the fleet
+    // it empties disbands (FUN_004fe630). The route-1 Empire game played
+    // on: after Stop the Death Star's state byte is 0x16, its fleet's 0x14.
+    #[test]
+    fn stop_destroys_the_areas_unfinished_ships_and_disbands_their_emptied_fleet_for_either_side() {
+        for is_alliance in [true, false] {
+            let (mut world, systems, class) = yard_world(1, is_alliance);
+            let yard = systems[0];
+            let mut state = ManufacturingState::new();
+            state.build(
+                yard,
+                &QueueItem::new(BuildableKind::CapitalShip(class), 5),
+                2,
+            );
+            seat_ordered_ships(&mut world, &mut state);
+            let fleet = world.systems[yard].fleets[0];
+
+            state.stop(yard, ProductionArea::Shipyard);
+            seat_ordered_ships(&mut world, &mut state);
+
+            assert!(!world.fleets.contains_key(fleet), "{is_alliance}");
+            assert!(world.systems[yard].fleets.is_empty(), "{is_alliance}");
+        }
+    }
+
+    // FUN_0052a710 drops a listed key FUN_00528890 no longer accepts (a
+    // product destroyed elsewhere), so its entry leaves the queue.
+    #[test]
+    fn a_queue_entry_whose_ship_is_gone_leaves_its_queue_for_either_side() {
+        for is_alliance in [true, false] {
+            let (mut world, systems, class) = yard_world(1, is_alliance);
+            let yard = systems[0];
+            let mut state = ManufacturingState::new();
+            state.build(
+                yard,
+                &QueueItem::new(BuildableKind::CapitalShip(class), 5),
+                2,
+            );
+            seat_ordered_ships(&mut world, &mut state);
+            let fleet = world.systems[yard].fleets[0];
+            let kept = world.fleets[fleet].capital_ships[1].tag;
+            world.fleets[fleet].capital_ships[0].alive = false;
+
+            seat_ordered_ships(&mut world, &mut state);
+
+            let tags: Vec<u32> = state
+                .queue(yard, ProductionArea::Shipyard)
+                .unwrap()
+                .items()
+                .iter()
+                .map(|item| item.ship)
+                .collect();
+            assert_eq!(tags, [kept], "{is_alliance}");
+        }
+    }
+
+    // FUN_0052b960 -> FUN_0052bee0 sets deployed, then completed, on the
+    // object the order made: no second ship, the same fleet, tag and name.
+    // The route-1 Empire game: at completion the ship and its fleet read
+    // 0x30147 under the same keys and names ("Death Star 1", "Fleet 6").
+    #[test]
+    fn completion_marks_the_ordered_ship_completed_in_place_keeping_its_fleet_tag_and_name_for_either_side(
+    ) {
+        for is_alliance in [true, false] {
+            let (mut world, systems, class) = yard_world(1, is_alliance);
+            let yard = systems[0];
+            let mut state = ManufacturingState::new();
+            state.build(
+                yard,
+                &QueueItem::new(BuildableKind::CapitalShip(class), 1),
+                1,
+            );
+            seat_ordered_ships(&mut world, &mut state);
+            let fleet = world.systems[yard].fleets[0];
+            let tag = world.fleets[fleet].capital_ships[0].tag;
+            state.add_progress(yard, ProductionArea::Shipyard);
+
+            let advance = ManufacturingSystem::advance_tracked(
+                &mut state,
+                &[TickEvent { tick: 7 }],
+                &HashSet::new(),
+            );
+            finish_ships(
+                &mut world,
+                &crate::movement::MovementState::new(),
+                &advance.finished_ships,
+            );
+            seat_ordered_ships(&mut world, &mut state);
+
+            assert_eq!(
+                advance.finished_ships,
+                [FinishedShip { tag, yard, tick: 7 }],
+                "{is_alliance}"
+            );
+            assert_eq!(world.systems[yard].fleets, [fleet], "{is_alliance}");
+            assert_eq!(ships(&world, fleet), [(tag, true, true)], "{is_alliance}");
+            assert_eq!(
+                world.fleets[fleet].capital_ships[0].name.as_deref(),
+                Some("Carrack 1"),
+                "{is_alliance}"
+            );
+        }
+    }
+
+    // A fleet in hyperspace is its destination's child from its order
+    // (FUN_00556390), so the deploy event's leg (FUN_005150c0.c:90-102 ->
+    // FUN_00556430) for a ship finished in it ends at that destination.
+    #[test]
+    fn a_ship_finished_for_a_fleet_in_hyperspace_flies_to_its_destination_for_either_side() {
+        for is_alliance in [true, false] {
+            let (mut world, systems, class) = yard_world(3, is_alliance);
+            let (yard, target, far) = (systems[0], systems[1], systems[2]);
+            world.systems[target].x = 100;
+            world.systems[far].x = 200;
+            world.capital_ship_classes[class].hyperdrive = 100;
+            let mut state = ManufacturingState::new();
+            state.build_units(
+                yard,
+                vec![
+                    QueueItem::new(BuildableKind::CapitalShip(class), 5)
+                        .delivered_to(Destination::System(target));
+                    2
+                ],
+            );
+            seat_ordered_ships(&mut world, &mut state);
+            let fleet = world.systems[target].fleets[0];
+            let tag = world.fleets[fleet].capital_ships[1].tag;
+            let mut movement = crate::movement::MovementState::new();
+            assert!(crate::movement::begin_fleet_transit(
+                &mut movement,
+                &mut world,
+                fleet,
+                far,
+                5
+            ));
+
+            finish_ships(
+                &mut world,
+                &movement,
+                &[FinishedShip { tag, yard, tick: 7 }],
+            );
+
+            let transit = world.fleets[fleet].capital_ships[1].transit;
+            assert_eq!(
+                transit.map(|leg| (leg.from, leg.to)),
+                Some((yard, far)),
+                "{is_alliance}"
+            );
+        }
+    }
+
+    // FUN_0052bee0 sets deployed and completed on the finished product
+    // alone, and en route active when its place is not the yard's; deploy
+    // event 0x308 then starts its own leg from the yard (+0x38) to the
+    // fleet it sits in (FUN_005150c0.c:90-102 -> FUN_00556430), on the
+    // transit time of FUN_0055d8c0.
+    #[test]
+    fn a_ship_finished_for_a_fleet_elsewhere_starts_its_own_leg_from_the_yard_for_either_side() {
+        for is_alliance in [true, false] {
+            let (mut world, systems, class) = yard_world(2, is_alliance);
+            let (yard, target) = (systems[0], systems[1]);
+            world.systems[target].x = 100;
+            world.capital_ship_classes[class].hyperdrive = 100;
+            let mut state = ManufacturingState::new();
+            state.build_units(
+                yard,
+                vec![
+                    QueueItem::new(BuildableKind::CapitalShip(class), 5)
+                        .delivered_to(Destination::System(target));
+                    2
+                ],
+            );
+            seat_ordered_ships(&mut world, &mut state);
+            let fleet = world.systems[target].fleets[0];
+            let second = world.fleets[fleet].capital_ships[1].tag;
+
+            finish_ships(
+                &mut world,
+                &crate::movement::MovementState::new(),
+                &[FinishedShip {
+                    tag: second,
+                    yard,
+                    tick: 7,
+                }],
+            );
+
+            let days = crate::delivery::transit_days(
+                &world,
+                BuildableKind::CapitalShip(class),
+                yard,
+                target,
+            );
+            assert!(days > 0, "{is_alliance}");
+            let ships = &world.fleets[fleet].capital_ships;
+            assert!(!ships[0].completed, "{is_alliance}");
+            assert!(ships[1].completed, "{is_alliance}");
+            assert_eq!(
+                ships[1].transit,
+                Some(crate::world::ShipTransit {
+                    from: yard,
+                    to: target,
+                    arrival_tick: 7 + u64::from(days),
+                }),
+                "{is_alliance}"
+            );
+        }
     }
 
     fn fighter_item(cost: u32) -> QueueItem {
@@ -798,10 +1569,50 @@ mod tests {
                 destination: Destination::System(systems[1]),
                 tick: 9,
                 kind: cap_ship_item(1).kind,
+                carrier: 0,
             }]
         );
         assert_eq!(advance.completions.len(), 1);
         assert_eq!(advance.completions[0].system, systems[2]);
+    }
+
+    // A fleet-bound squadron rides the ship its Build chose (FUN_005385f0
+    // -> FUN_00552300) from its order to its arrival, so its departure
+    // names that ship. hyp: a Destination order that rewrites it frees the
+    // ship (`set_destination`; the order's handler is untraced).
+    #[test]
+    fn a_fleet_bound_squadron_keeps_its_ship_until_its_destination_changes() {
+        let systems = mock_system_keys(2);
+        let fleet = {
+            let mut keys = slotmap::SlotMap::<FleetKey, ()>::with_key();
+            keys.insert(())
+        };
+        let mut state = ManufacturingState::new();
+        let mut item = fighter_item(1).delivered_to(Destination::Fleet(fleet));
+        item.carrier = 7;
+        state.enqueue(systems[0], item.clone());
+        state.enqueue(systems[0], item);
+        state.set_destination(
+            systems[0],
+            ProductionArea::Shipyard,
+            Destination::Fleet(fleet),
+        );
+        let carriers: Vec<u32> = state.items().map(|(_, _, item)| item.carrier).collect();
+        assert_eq!(carriers, [7, 7]);
+        work(&mut state, systems[0], ProductionArea::Shipyard, 1);
+
+        let advance =
+            ManufacturingSystem::advance_tracked(&mut state, &ticks(9..=9), &HashSet::new());
+
+        assert_eq!(advance.departures.len(), 1);
+        assert_eq!(advance.departures[0].carrier, 7);
+        state.set_destination(
+            systems[0],
+            ProductionArea::Shipyard,
+            Destination::System(systems[1]),
+        );
+        let carriers: Vec<u32> = state.items().map(|(_, _, item)| item.carrier).collect();
+        assert_eq!(carriers, [0]);
     }
 
     // FUN_00509670: a system has one manager per area (ships 0, facilities
@@ -885,15 +1696,16 @@ mod tests {
     }
 
     #[test]
-    fn clearing_a_system_drops_every_area() {
+    fn taking_a_systems_products_empties_every_area_and_spares_other_systems() {
         let keys = mock_system_keys(2);
         let mut state = ManufacturingState::new();
         state.enqueue(keys[0], cap_ship_item(2));
         state.enqueue(keys[0], troop_item(2));
         state.enqueue(keys[1], troop_item(2));
 
-        state.clear_queue(keys[0]);
+        let taken = state.take_queued(keys[0]);
 
+        assert_eq!(taken, vec![cap_ship_item(2), troop_item(2)]);
         assert_eq!(state.queued_at(keys[0]), 0);
         assert_eq!(state.queued_at(keys[1]), 1);
     }
@@ -1228,5 +2040,191 @@ mod tests {
 
         assert_eq!(completion_systems, keys);
         assert_eq!(advance.newly_idle, keys);
+    }
+
+    /// `system` passes to `side` (`FUN_0050a300` → `FUN_00510d70`): the new
+    /// control, then the owner hook (`FUN_00510820`).
+    fn change_holder(
+        world: &mut crate::world::GameWorld,
+        system: SystemKey,
+        control: crate::world::ControlKind,
+    ) {
+        let old = world.systems[system].control;
+        world.systems[system].control = control;
+        crate::support_shift::control_changed(world, system, old, (false, false), 1);
+    }
+
+    /// Both sides' controls: own first.
+    fn controls(is_alliance: bool) -> [crate::world::ControlKind; 2] {
+        use crate::dat::Faction;
+        use crate::world::ControlKind;
+        let (own, enemy) = if is_alliance {
+            (Faction::Alliance, Faction::Empire)
+        } else {
+            (Faction::Empire, Faction::Alliance)
+        };
+        [ControlKind::Controlled(own), ControlKind::Controlled(enemy)]
+    }
+
+    // The holder change hands each production manager to the captor
+    // (FUN_004f8680.c:28-31 -> FUN_004f6f40), and the manager's side hook
+    // FUN_0052b790.c:7-14 runs FUN_0052a2c0: +0xac(0x16) on every product it
+    // lists, whatever its kind or container (FUN_0052a2c0.c:20-36). The
+    // Empire game of the Duros line: on day 306 Duros's facility manager
+    // 0xa0000523 lists an unfinished Orbital Shipyard (0x28000e75, +0x50
+    // 0x42); on day 430 Duros and that manager are the Alliance's, the
+    // manager lists only the Alliance's own new Build (0x29001059), and the
+    // shipyard has no record in any graph, though Duros's construction yard
+    // (0x2a00077e) stands, now the Alliance's.
+    #[test]
+    fn a_captured_systems_managers_lose_every_product_wherever_it_sits_for_either_side() {
+        for is_alliance in [true, false] {
+            let [own, enemy] = controls(is_alliance);
+            let (mut world, systems, class) = yard_world(2, is_alliance);
+            let (yard, elsewhere) = (systems[0], systems[1]);
+            for &system in &systems {
+                world.systems[system].control = own;
+            }
+            let facility = BuildableKind::ManufacturingFacility(FacilityBuild {
+                class: DatId::new(0x2800_0001),
+                is_alliance,
+            });
+            let mut state = ManufacturingState::new();
+            state.build_units(
+                yard,
+                vec![QueueItem::new(BuildableKind::CapitalShip(class), 5)
+                    .delivered_to(Destination::System(elsewhere))],
+            );
+            state.enqueue(yard, QueueItem::new(facility, 5));
+            seat_ordered_ships(&mut world, &mut state);
+            let fleet = world.systems[elsewhere].fleets[0];
+
+            change_holder(&mut world, yard, enemy);
+            let destroyed = serve_manager_sides(&mut world, &mut state);
+
+            assert_eq!(
+                destroyed,
+                [BuildableKind::CapitalShip(class), facility],
+                "{is_alliance}"
+            );
+            assert_eq!(state.queued_at(yard), 0, "{is_alliance}");
+            assert!(!world.fleets.contains_key(fleet), "{is_alliance}");
+            assert!(world.systems[elsewhere].fleets.is_empty(), "{is_alliance}");
+            assert!(world.manager_side_changes.is_empty(), "{is_alliance}");
+        }
+    }
+
+    // A capital ship product sits in a fleet, whose slot +0xb0 is
+    // FUN_0051ebb0 (returns 1, changes nothing), so the holder change's
+    // child walk (FUN_004fae40) leaves it, and its own manager keeps its
+    // side: it stays listed, unfinished, of the side that ordered it.
+    #[test]
+    fn a_ship_another_systems_yard_builds_for_a_captured_system_stays_unfinished_for_either_side()
+    {
+        for is_alliance in [true, false] {
+            let [own, enemy] = controls(is_alliance);
+            let (mut world, systems, class) = yard_world(2, is_alliance);
+            let (yard, captured) = (systems[0], systems[1]);
+            for &system in &systems {
+                world.systems[system].control = own;
+            }
+            let mut state = ManufacturingState::new();
+            state.build_units(
+                yard,
+                vec![QueueItem::new(BuildableKind::CapitalShip(class), 5)
+                    .delivered_to(Destination::System(captured))],
+            );
+            seat_ordered_ships(&mut world, &mut state);
+            let fleet = world.systems[captured].fleets[0];
+            let tag = state.queue(yard, ProductionArea::Shipyard).unwrap().items()[0].ship;
+
+            change_holder(&mut world, captured, enemy);
+            let destroyed = serve_manager_sides(&mut world, &mut state);
+
+            assert!(destroyed.is_empty(), "{is_alliance}");
+            assert_eq!(state.queued_at(yard), 1, "{is_alliance}");
+            assert_eq!(world.fleets[fleet].is_alliance, is_alliance);
+            assert_eq!(ships(&world, fleet), [(tag, false, false)], "{is_alliance}");
+        }
+    }
+
+    // FUN_0052a2c0 destroys only the listed products (+0xac(0x16)): a fleet
+    // keeps its other ships as they are, names included, and disbands only
+    // when emptied (FUN_004fe630.c:21-28). Names come on the order day
+    // (FUN_00517760), never at a destruction.
+    #[test]
+    fn a_holder_change_kills_only_its_yards_ships_and_renames_none_for_either_side() {
+        for is_alliance in [true, false] {
+            let [own, enemy] = controls(is_alliance);
+            let (mut world, systems, class) = yard_world(3, is_alliance);
+            let (captured, other, at) = (systems[0], systems[1], systems[2]);
+            for &system in &systems {
+                world.systems[system].control = own;
+            }
+            let fleet = world.insert_fleet(crate::world::Fleet {
+                location: at,
+                is_alliance,
+                ..crate::world::Fleet::default()
+            });
+            world.systems[at].fleets.push(fleet);
+            let mut state = ManufacturingState::new();
+            for yard in [captured, other] {
+                state.build_units(
+                    yard,
+                    vec![QueueItem::new(BuildableKind::CapitalShip(class), 5)
+                        .delivered_to(Destination::Fleet(fleet))],
+                );
+            }
+            seat_ordered_ships(&mut world, &mut state);
+            let kept = state.queue(other, ProductionArea::Shipyard).unwrap().items()[0].ship;
+            // A ship still bearing its class's name, which a numbering pass
+            // would rename.
+            world.fleets[fleet]
+                .capital_ships
+                .push(crate::world::ShipInstance::new(class, 100, is_alliance));
+            let names = |world: &crate::world::GameWorld| {
+                world.fleets[fleet]
+                    .capital_ships
+                    .iter()
+                    .map(|ship| (ship.tag, ship.completed, ship.name.clone()))
+                    .collect::<Vec<_>>()
+            };
+            let mut expected = names(&world);
+            expected.retain(|&(tag, _, _)| tag == kept || tag == 0);
+
+            change_holder(&mut world, captured, enemy);
+            serve_manager_sides(&mut world, &mut state);
+
+            assert_eq!(expected.len(), 2, "{is_alliance}");
+            assert_eq!(names(&world), expected, "{is_alliance}");
+            assert_eq!(state.queued_at(other), 1, "{is_alliance}");
+        }
+    }
+
+    // FUN_004f6f40.c:22 calls the side hook only when the side bits change:
+    // an uprising keeps the holder (FUN_0050b610 writes the same side), so
+    // the managers keep their products.
+    #[test]
+    fn a_control_change_that_keeps_the_holder_keeps_the_products_for_either_side() {
+        for is_alliance in [true, false] {
+            let [own, _] = controls(is_alliance);
+            let side = own.faction().unwrap();
+            let (mut world, systems, class) = yard_world(1, is_alliance);
+            let yard = systems[0];
+            world.systems[yard].control = own;
+            let mut state = ManufacturingState::new();
+            state.build_units(
+                yard,
+                vec![QueueItem::new(BuildableKind::CapitalShip(class), 5)],
+            );
+            seat_ordered_ships(&mut world, &mut state);
+
+            change_holder(&mut world, yard, crate::world::ControlKind::Uprising(side));
+            let destroyed = serve_manager_sides(&mut world, &mut state);
+
+            assert!(destroyed.is_empty(), "{is_alliance}");
+            assert_eq!(state.queued_at(yard), 1, "{is_alliance}");
+            assert_eq!(world.systems[yard].fleets.len(), 1, "{is_alliance}");
+        }
     }
 }

@@ -32,9 +32,17 @@ functional. Do not repeat historical parity percentages as verified results.
   back to `cua-driver` for what the game cannot do itself
   (`agent_docs/agent-tooling.md`, "Native GUI Acceptance").
 - Settle game behaviour against the original game itself, not the trace
-  alone. The unmodified original runs in the Windows VM on the Mac Mini;
-  drive it from this Mac with `tools/original-capture/vm-game.sh` (`up`,
-  `click`, `key`, `cap`) and start from a save in
+  alone. The unmodified original runs on the Mac Mini under Wine and in a
+  Windows VM. Start strategic checks (galaxy play, saves, messages, Battle
+  Alerts, play-forward to a day) on Wine with
+  `tools/original-capture/wine-game.sh`, which drives the Mini from this
+  Mac and plays up to 16 times faster (`timescale`); its tactical view is
+  black, so tactical battles, A0 frames and sound stay on the VM, which also
+  settles any result where the two disagree. Drive the VM from this Mac with
+  `tools/original-capture/vm-game.sh` (`up`, `click`, `key`, `cap`). Wine's
+  mouse leaves the Mini's pointer alone once `wine-game.sh status` prints
+  `mouse=drive64.exe`; otherwise its moves warp the pointer, so never drive
+  Wine's mouse while the VM is in use. Start from a save in
   `tools/original-capture/saves/INDEX.md`. Setup, VNC caveats and save
   transfer: `tools/original-capture/README.md`. The game is scaled to
   800×600, so A0 frames come only from `up-a0` and `a0`, which capture in the
@@ -52,7 +60,7 @@ functional. Do not repeat historical parity percentages as verified results.
 
 Cargo runs on the Mac Mini, never on this Mac: `scripts/mini-cargo.sh`
 syncs the tree there, runs Cargo with the sanitized PATH, and cuts the Mini's
-`target/` back to what that build used (`agent_docs/agent-tooling.md`,
+`target/` back to what its recent builds used (`agent_docs/agent-tooling.md`,
 "Builds and the Build Cache"):
 
 ```bash

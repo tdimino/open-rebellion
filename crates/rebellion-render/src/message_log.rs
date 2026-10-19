@@ -21,8 +21,11 @@
 
 use egui_macroquad::egui::{self, Color32, RichText, ScrollArea};
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
+use rebellion_core::dat::Faction;
 use rebellion_core::ids::{FleetKey, SystemKey};
+use rebellion_core::operation_report::OperationReport;
 use serde::Serialize;
 
 // ---------------------------------------------------------------------------
@@ -220,22 +223,30 @@ pub struct GameMessage {
     /// `None` leaves Display unlit.
     #[serde(skip)]
     pub target: Option<MessageTarget>,
+    /// The lists of a kind-`0xf` message, an Operation Report
+    /// (`FUN_00496460`), which the report window shows (`FUN_0044c410`).
+    #[serde(skip)]
+    pub report: Option<Arc<OperationReport>>,
 }
 
 /// What a message's Display button opens: the uprising, loyalty and
 /// blockade classes point at their system, fleet arrival at the fleet
 /// (`FUN_00499460`, `FUN_00499760`, `FUN_004960f0`, `FUN_004981c0` set
-/// `+0x5c`; each class's kind, vtable slot `+0x10`, is 3).
+/// `+0x5c`; each class's kind, vtable slot `+0x10`, is 3), and a mission's
+/// end at its free lead (`FUN_00491500.c:128-137`), which opens as a
+/// Personnel Finder row does (`FUN_00429440`, families `0x30`-`0x3f`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MessageTarget {
     System(SystemKey),
     Fleet(FleetKey),
+    Personnel(rebellion_core::missions::MissionMember),
 }
 
 /// A message's display (`FUN_00469de0`, `FUN_0046a320`): its title (`+0x44`)
 /// and body (`+0x50`), the STRATEGY background (`+0x2e`) with an overlay
-/// (`+0x2c`) keyed over its centre, and the sound it plays (`+0x30`, a
-/// STRATEGY WAVE that `FUN_00610c30` loads from module 7).
+/// (`+0x2c`) keyed over its centre, the sound it plays (`+0x30`, a STRATEGY
+/// WAVE that `FUN_00610c30` loads from module 7) and its voice line (`+0x32`,
+/// a WAVE of the player's sprite DLL, module 9); 0 plays nothing.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct MessageDisplay {
     pub title: String,
@@ -243,6 +254,7 @@ pub struct MessageDisplay {
     pub background: u16,
     pub overlay: u16,
     pub sound: u16,
+    pub voice: u16,
 }
 
 impl GameMessage {
@@ -262,6 +274,7 @@ impl GameMessage {
             advice_audience: None,
             display: None,
             target: None,
+            report: None,
         }
     }
 
@@ -286,6 +299,7 @@ impl GameMessage {
             advice_audience: None,
             display: None,
             target: None,
+            report: None,
         }
     }
 
@@ -311,6 +325,29 @@ impl GameMessage {
     pub const fn with_target(mut self, target: MessageTarget) -> Self {
         self.target = Some(target);
         self
+    }
+
+    /// Make the message an Operation Report carrying `report`'s lists.
+    #[must_use]
+    pub fn with_report(mut self, report: Arc<OperationReport>) -> Self {
+        self.report = Some(report);
+        self
+    }
+
+    /// Whether filing the message opens its report window
+    /// (`FUN_0048a060`): an Operation Report's slot-4 class is 7 when the
+    /// copy's side is the fleet owner (`FUN_00497530`), and class 7 posts
+    /// window message `0x468`, wParam `0x1c` (`FUN_0041d7d0` ->
+    /// `FUN_0042a410`); the other side's copy (class 3) is filed only.
+    #[must_use]
+    pub fn alerts(&self) -> bool {
+        self.report.as_ref().is_some_and(|report| {
+            matches!(
+                (self.audience, report.fleet_owner),
+                (RailAudience::Alliance, Faction::Alliance)
+                    | (RailAudience::Empire, Faction::Empire)
+            )
+        })
     }
 
     /// Give the message the advice code its original message class sets.
@@ -344,6 +381,9 @@ pub struct MessageLog {
     next_id: MessageId,
     /// Advice codes of messages filed since the last [`MessageLog::take_advice`].
     advice: Vec<(u8, RailAudience)>,
+    /// Reports filed since the last [`MessageLog::take_alerts`] whose
+    /// window opens itself ([`GameMessage::alerts`]).
+    alerts: Vec<MessageId>,
     /// The player's posting flags: one word for every category (`+0xc`) and
     /// per-category overrides keyed by mask (`+0x44`), read by
     /// `FUN_0048a1c0`. Bit 4 is Post Messages Silently.
@@ -371,6 +411,7 @@ impl MessageLog {
             capacity,
             next_id: 1,
             advice: Vec::new(),
+            alerts: Vec::new(),
             post_flags: 0,
             post_flag_overrides: BTreeMap::new(),
         }
@@ -400,6 +441,9 @@ impl MessageLog {
             self.advice
                 .push((code, msg.advice_audience.unwrap_or(msg.audience)));
         }
+        if msg.alerts() {
+            self.alerts.push(id);
+        }
         if self.messages.len() >= self.capacity {
             self.messages.remove(0);
         }
@@ -411,6 +455,17 @@ impl MessageLog {
     /// audience; the side's agent reacts to its own (`FUN_0048a060`).
     pub fn take_advice(&mut self) -> Vec<(u8, RailAudience)> {
         std::mem::take(&mut self.advice)
+    }
+
+    /// The reports filed since the last call whose window opens itself.
+    pub fn take_alerts(&mut self) -> Vec<MessageId> {
+        std::mem::take(&mut self.alerts)
+    }
+
+    /// The message with id `id`, while the log holds it.
+    #[must_use]
+    pub fn get(&self, id: MessageId) -> Option<&GameMessage> {
+        self.messages.iter().find(|msg| msg.id == id)
     }
 
     /// A category's posting flags (`FUN_0048a1c0`): its override, else the
@@ -761,6 +816,38 @@ fn category_toggle(ui: &mut egui::Ui, label: &str, category: MessageCategory, en
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_the_fleet_owners_copy_of_a_report_opens_its_window() {
+        // FUN_0048a060 by slot-4 class (FUN_00497530): 7 when the copy's
+        // side is the fleet owner, which posts 0x468 / 0x1c; 3 otherwise,
+        // filed only. Other messages never open it.
+        for owner in [Faction::Alliance, Faction::Empire] {
+            let report = Arc::new(OperationReport::new(
+                SystemKey::default(),
+                false,
+                Faction::Neutral,
+                owner,
+            ));
+            let mut log = MessageLog::new(8);
+            let copy = |is_alliance| {
+                GameMessage::new(1, "Orbital bombardment", MessageCategory::Combat)
+                    .on_rail(MessageRail::Conflict, RailAudience::side(is_alliance))
+                    .with_report(Arc::clone(&report))
+            };
+            let own = log.push(copy(owner == Faction::Alliance));
+            log.push(copy(owner != Faction::Alliance));
+            log.push(
+                GameMessage::new(1, "Plain", MessageCategory::Combat).on_rail(
+                    MessageRail::Conflict,
+                    RailAudience::side(owner == Faction::Alliance),
+                ),
+            );
+            assert_eq!(log.take_alerts(), [own], "{owner:?}");
+            assert!(log.take_alerts().is_empty());
+            assert!(log.get(own).is_some_and(|message| message.report.is_some()));
+        }
+    }
 
     #[test]
     fn rail_masks_match_the_recovered_class_getters() {

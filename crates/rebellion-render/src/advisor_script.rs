@@ -8,6 +8,8 @@
 
 use std::collections::{HashMap, VecDeque};
 
+use rebellion_core::victory::{AW, EW};
+
 use crate::advisor::AdvisorFaction;
 
 /// The droid players' tick: `FUN_0042adb0` passes `0x43` ms per frame to
@@ -377,6 +379,35 @@ impl AdviceAgent {
         }
     }
 
+    /// The side's slot for a win word (agent `VT[4]`: `FUN_004c3010` for
+    /// the Alliance, `FUN_004c0f10` for the Empire): EW stamps Alliance
+    /// `+0x15c` (87) or Empire `+0x150` (84); AW stamps Alliance `+0x158`
+    /// (86) or Empire `+0x154` (85). The x094 script each holds is the
+    /// viewer's win line, x093 its loss line.
+    #[must_use]
+    pub const fn ending_slot(faction: AdvisorFaction, word: u32) -> Option<u32> {
+        let empire_won = word & EW != 0;
+        if !empire_won && word & AW == 0 {
+            return None;
+        }
+        Some(match (faction, empire_won) {
+            (AdvisorFaction::Alliance, true) => 0x15c / 4,
+            (AdvisorFaction::Alliance, false) => 0x158 / 4,
+            (AdvisorFaction::Empire, true) => 0x150 / 4,
+            (AdvisorFaction::Empire, false) => 0x154 / 4,
+        })
+    }
+
+    /// Stamp the ending slot of a win word for the whole game, `now +
+    /// 40000`, and return it; `None` without EW or AW.
+    pub fn post_word(&mut self, word: u32, now: u32) -> Option<u32> {
+        let slot = Self::ending_slot(self.faction, word)?;
+        if let Some(stamp) = self.fire_by.get_mut(slot as usize) {
+            *stamp = now.saturating_add(FOREVER);
+        }
+        Some(slot)
+    }
+
     /// The agent droid's rest command started (`FUN_0041cea0` →
     /// `FUN_00439ef0`): scan the slots on the next pass, and arm chatter
     /// once the game has been quiet long enough.
@@ -525,7 +556,8 @@ impl Command {
             // +0x50 to 1, `FUN_00412260` counts it down). Its p2 and p3 are a
             // cockpit step for the agent's next pass (`FUN_00412400` →
             // `FUN_00439eb0` → `FUN_004c3060`): p2 2 runs briefing step p3
-            // (`FUN_004c30c0`), p2 3 selects an object (`FUN_0041d830`).
+            // (`FUN_004c30c0`), p2 3 hands the win word to the strategic
+            // window as its ending code (`FUN_0041d830` → `FUN_00425c90`).
             0x11 => Self::Hold {
                 module,
                 bitmap: *words.first()?,
@@ -711,5 +743,47 @@ impl DroidPlayer {
             _ => {}
         }
         self.current = Some(next);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rebellion_core::victory::{AD, GO};
+
+    /// The slot the agent's next scanning pass fires at step `now`.
+    fn fired(agent: &mut AdviceAgent, now: u32) -> PassOutcome {
+        agent.arm(now);
+        agent.pass(now, || 12)
+    }
+
+    #[test]
+    fn a_win_word_stamps_the_viewers_ending_slot_for_the_whole_game() {
+        // FUN_004c3010 (Alliance) and FUN_004c0f10 (Empire): EW -> +0x15c /
+        // +0x150, AW -> +0x158 / +0x154, at DAT_006b28cc + 40000.
+        for (faction, word, slot) in [
+            (AdvisorFaction::Alliance, EW | GO | AD, 87),
+            (AdvisorFaction::Alliance, AW | GO, 86),
+            (AdvisorFaction::Empire, EW | GO | AD, 84),
+            (AdvisorFaction::Empire, AW | GO, 85),
+        ] {
+            let mut agent = AdviceAgent::new(faction);
+            agent.clear_opening();
+            assert_eq!(agent.post_word(word, 100), Some(slot));
+            assert_eq!(agent.fire_by[slot as usize], 100 + 40000);
+            assert_eq!(fired(&mut agent, 40099), PassOutcome::Fired(slot));
+        }
+    }
+
+    #[test]
+    fn a_word_without_a_win_bit_stamps_no_slot() {
+        // FUN_004c3010, FUN_004c0f10: neither 0x100000 nor 0x1000000 set.
+        for faction in [AdvisorFaction::Alliance, AdvisorFaction::Empire] {
+            let mut agent = AdviceAgent::new(faction);
+            agent.clear_opening();
+            assert_eq!(agent.post_word(AD, 100), None);
+            assert!(agent.fire_by.iter().all(|&stamp| stamp == 0));
+            assert_eq!(fired(&mut agent, 100), PassOutcome::Idle);
+        }
     }
 }

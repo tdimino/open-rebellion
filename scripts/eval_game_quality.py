@@ -64,7 +64,7 @@ def evaluate(events: list[dict]) -> dict:
     combat_locations = Counter()
     combat_events = 0
     for e in events:
-        if e["event_type"] in ("combat_space", "combat_ground", "bombardment"):
+        if e["event_type"] in ("combat_space", "assault", "bombardment"):
             combat_events += 1
             system = e.get("details", {}).get("system", "unknown")
             combat_locations[system] += 1

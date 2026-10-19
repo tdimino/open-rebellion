@@ -23,7 +23,6 @@ pub mod game_menu;
 pub mod game_options;
 pub mod game_speed;
 pub mod gid_legend;
-pub mod ground_combat;
 pub mod main_menu;
 pub mod main_menu_destinations;
 pub mod manufacturing_window;
@@ -33,6 +32,7 @@ pub mod mission_dialog;
 pub mod missions_window;
 pub mod move_confirmation;
 pub mod object_menu;
+pub mod operation_report;
 pub mod panels;
 pub mod personnel_finder;
 pub mod quadrant_icons;
@@ -58,7 +58,6 @@ pub mod windowing_policy;
 #[cfg(all(test, feature = "interface-test-fixtures"))]
 mod windowing_adapter_probe;
 
-use egui_macroquad::egui;
 use macroquad::prelude::*;
 use rebellion_core::blockade::BlockadeState;
 use rebellion_core::dat::ExplorationStatus;
@@ -71,6 +70,10 @@ use rebellion_core::world::{ControlKind, GameWorld, System};
 
 #[cfg(target_arch = "wasm32")]
 pub use advisor::set_advisor_asset_cache;
+pub use window_focus::{
+    apply_focus_step, galaxy_children, topmost, FocusStep, GalaxyChild, GalaxyFocus,
+    GalaxyFocusState,
+};
 pub use advisor::{
     draw_advisor, staged_wave, AdvisorFaction, AdvisorState, AdvisorVoice, CockpitStep,
 };
@@ -120,12 +123,13 @@ pub use fleet_window::{
     FLEET_WINDOW_WIDTH,
 };
 pub use fog::draw_fog_overlay;
-pub use game_options::{draw_game_options, GameOptionsAction, GameOptionsOrigin, GameOptionsState};
-pub use ground_combat::{draw_ground_combat, GroundAction, GroundCombatState, GroundWinner};
+pub use game_options::{
+    draw_game_options, GameOptionsAction, GameOptionsOrigin, GameOptionsState, SaveAlert,
+    SaveSlotInfo,
+};
 pub use main_menu::{draw_main_menu, MainMenuAction, MainMenuControl, MainMenuState};
 pub use main_menu_destinations::{
-    draw_credits, draw_multiplayer_setup, CreditsState, MenuDestinationAction,
-    MultiplayerSetupAction, MultiplayerSetupState, MultiplayerTransport,
+    draw_multiplayer_setup, MultiplayerSetupAction, MultiplayerSetupState, MultiplayerTransport,
 };
 #[cfg(feature = "interface-test-fixtures")]
 pub use message_index::draw_message_index_fixture;
@@ -137,11 +141,13 @@ pub use message_log::{
 pub use missions_window::{
     draw_missions_windows, MissionsTab, MissionsWindowAction, MissionsWindowState,
 };
+#[cfg(feature = "interface-test-fixtures")]
+pub use operation_report::draw_operation_report_fixture;
+pub use operation_report::{draw_operation_report, OperationReportAction, OperationReportState};
 pub use panels::game_setup::{draw_game_setup, Difficulty, GameSetupAction, GameSetupState};
 pub use panels::{
-    draw_fleets, draw_missions, draw_mod_manager, draw_save_load, FleetsState,
-    ModInfo, ModManagerAction, ModManagerState, PanelAction, SaveLoadPanelState,
-    SaveSlotInfo,
+    draw_fleets, draw_missions, draw_mod_manager, FleetsState, ModInfo, ModManagerAction,
+    ModManagerState, PanelAction,
 };
 pub use rebellion_core::tactical::resource_ids::{
     capital_ship_tactical_resource, death_star_tactical_resource, fighter_tactical_resource,
@@ -584,6 +590,20 @@ fn gid_marker_for_system(
     use bmp_cache::resources::strategy;
 
     let explored = system.exploration_status == ExplorationStatus::Explored;
+    // FUN_0042b330 0x0042b4d0-0x0042b4f5: modes 0x22 and 0x44 never take
+    // the exit to 10158; modes 0x20, 0x21, 0x43, 0x92 and 0x93 skip its
+    // destroyed test.
+    let (exit, destroyed_test) = match mode {
+        GidMode::FleetsEnRoute | GidMode::ActivePersonnel => (false, false),
+        GidMode::IdleFleets
+        | GidMode::IdlePersonnel
+        | GidMode::HighlightEmpire
+        | GidMode::HighlightAlliance => (true, false),
+        _ => (true, true),
+    };
+    if destroyed_test && system.is_destroyed {
+        return strategy::GID_UNEXPLORED;
+    }
     match mode {
         GidMode::PopularSupport => return popular_support_marker_resource(system, faction),
         // FUN_0042b330 0x17: value 0x52 while the explored bit is clear, in
@@ -606,7 +626,9 @@ fn gid_marker_for_system(
         }
         _ => {}
     }
-    if !explored || !system.is_populated {
+    // hyp: an unpopulated system that was never destroyed draws as an
+    // unexplored one (the Popular Support restore's rule).
+    if exit && (!explored || !(system.is_populated || system.is_destroyed)) {
         return strategy::GID_UNEXPLORED;
     }
 
@@ -1246,301 +1268,6 @@ pub fn draw_blockade_indicators(world: &GameWorld, blockade: &BlockadeState, cam
     }
 }
 
-/// Draw the system info side panel (right side).
-///
-/// Shows details for the currently selected system. Call inside
-/// `egui_macroquad::ui(|ctx| { ... })`.
-#[expect(
-    clippy::too_many_lines,
-    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
-)]
-pub fn draw_system_info_panel(ctx: &egui::Context, world: &GameWorld, state: &GalaxyMapState) {
-    if let Some(sys_key) = state.selected_system {
-        if let Some(system) = world.systems.get(sys_key) {
-            egui::SidePanel::right("system_info")
-                .min_width(280.0)
-                .max_width(320.0)
-                .show(ctx, |ui| {
-                    egui::ScrollArea::vertical().show(ui, |ui| {
-                        // ── Header ───────────────────────────────────────────
-                        let name_color = match system.control {
-                            rebellion_core::world::ControlKind::Controlled(
-                                rebellion_core::dat::Faction::Alliance,
-                            ) => theme::ALLIANCE_BLUE,
-                            rebellion_core::world::ControlKind::Controlled(
-                                rebellion_core::dat::Faction::Empire,
-                            ) => theme::EMPIRE_RED,
-                            _ => theme::TEXT_PRIMARY,
-                        };
-                        ui.heading(egui::RichText::new(&system.name).color(name_color));
-
-                        if system.is_headquarters {
-                            ui.label(
-                                egui::RichText::new("HEADQUARTERS")
-                                    .color(theme::GOLD)
-                                    .size(10.0)
-                                    .strong(),
-                            );
-                        }
-                        if system.is_destroyed {
-                            ui.label(
-                                egui::RichText::new("DESTROYED")
-                                    .color(theme::DANGER_RED)
-                                    .size(10.0)
-                                    .strong(),
-                            );
-                        }
-
-                        // Sector + region
-                        if let Some(sector) = world.sectors.get(system.sector) {
-                            let region = match sector.group {
-                                rebellion_core::dat::SectorGroup::Core => "Core",
-                                rebellion_core::dat::SectorGroup::RimInner => "Inner Rim",
-                                rebellion_core::dat::SectorGroup::RimOuter => "Outer Rim",
-                            };
-                            ui.label(
-                                egui::RichText::new(format!("{} — {}", sector.name, region))
-                                    .color(theme::TEXT_SECONDARY)
-                                    .size(11.0),
-                            );
-                        }
-
-                        ui.separator();
-
-                        // ── Popularity bars ──────────────────────────────────
-                        ui.label(
-                            egui::RichText::new("SUPPORT")
-                                .color(theme::GOLD_DIM)
-                                .size(10.0)
-                                .strong(),
-                        );
-
-                        let alliance_pct = system.popularity_alliance;
-                        let empire_pct = system.popularity_empire;
-
-                        // Alliance bar
-                        ui.horizontal(|ui| {
-                            ui.label(
-                                egui::RichText::new("Alliance")
-                                    .color(theme::ALLIANCE_BLUE)
-                                    .size(11.0),
-                            );
-                            let bar = egui::ProgressBar::new(alliance_pct)
-                                .text(format!("{:.0}%", alliance_pct * 100.0))
-                                .fill(theme::ALLIANCE_BLUE);
-                            ui.add(bar);
-                        });
-
-                        // Empire bar
-                        ui.horizontal(|ui| {
-                            ui.label(
-                                egui::RichText::new("Empire  ")
-                                    .color(theme::EMPIRE_RED)
-                                    .size(11.0),
-                            );
-                            let bar = egui::ProgressBar::new(empire_pct)
-                                .text(format!("{:.0}%", empire_pct * 100.0))
-                                .fill(theme::EMPIRE_RED);
-                            ui.add(bar);
-                        });
-
-                        // Control status
-                        let control_str = match system.control {
-                            rebellion_core::world::ControlKind::Controlled(
-                                rebellion_core::dat::Faction::Alliance,
-                            ) => "Alliance Controlled",
-                            rebellion_core::world::ControlKind::Controlled(
-                                rebellion_core::dat::Faction::Empire,
-                            ) => "Empire Controlled",
-                            rebellion_core::world::ControlKind::Uncontrolled
-                            | rebellion_core::world::ControlKind::Controlled(
-                                rebellion_core::dat::Faction::Neutral,
-                            ) => "Neutral",
-                            rebellion_core::world::ControlKind::Contested => "Contested",
-                            rebellion_core::world::ControlKind::Uprising(_) => "Uprising",
-                        };
-                        ui.label(
-                            egui::RichText::new(control_str)
-                                .color(theme::TEXT_SECONDARY)
-                                .size(10.0),
-                        );
-
-                        ui.separator();
-
-                        // ── Fleets ───────────────────────────────────────────
-                        if !system.fleets.is_empty() {
-                            ui.label(
-                                egui::RichText::new("FLEETS")
-                                    .color(theme::GOLD_DIM)
-                                    .size(10.0)
-                                    .strong(),
-                            );
-                            for &fleet_key in &system.fleets {
-                                if let Some(fleet) = world.fleets.get(fleet_key) {
-                                    let faction_color = if fleet.is_alliance {
-                                        theme::ALLIANCE_BLUE
-                                    } else {
-                                        theme::EMPIRE_RED
-                                    };
-                                    let faction_tag = if fleet.is_alliance { "A" } else { "E" };
-
-                                    let ship_count: u32 = fleet.ship_count();
-                                    let fighter_count: u32 =
-                                        fleet.fighters.iter().map(|e| e.count).sum();
-
-                                    ui.horizontal(|ui| {
-                                        ui.label(
-                                            egui::RichText::new(format!("[{faction_tag}]"))
-                                                .color(faction_color)
-                                                .size(11.0)
-                                                .strong(),
-                                        );
-
-                                        let mut parts = Vec::new();
-                                        if ship_count > 0 {
-                                            parts.push(format!("{ship_count} ships"));
-                                        }
-                                        if fighter_count > 0 {
-                                            parts.push(format!("{fighter_count} sqns"));
-                                        }
-                                        if fleet.has_death_star {
-                                            parts.push("Death Star".to_string());
-                                        }
-                                        ui.label(
-                                            egui::RichText::new(parts.join(", "))
-                                                .color(theme::TEXT_PRIMARY)
-                                                .size(11.0),
-                                        );
-                                    });
-
-                                    // Ship class breakdown
-                                    for (class_key, count) in fleet.ship_counts_by_class() {
-                                        if let Some(class) =
-                                            world.capital_ship_classes.get(class_key)
-                                        {
-                                            ui.label(
-                                                egui::RichText::new(format!(
-                                                    "  {} ×{}",
-                                                    class.name, count
-                                                ))
-                                                .color(theme::TEXT_SECONDARY)
-                                                .size(10.0),
-                                            );
-                                        }
-                                    }
-
-                                    // Commander
-                                    for &char_key in &fleet.characters {
-                                        if let Some(c) = world.characters.get(char_key) {
-                                            ui.label(
-                                                egui::RichText::new(format!("  Cmd: {}", c.name))
-                                                    .color(theme::GOLD_DIM)
-                                                    .size(10.0),
-                                            );
-                                        }
-                                    }
-                                }
-                            }
-                            ui.add_space(4.0);
-                        }
-
-                        // ── Ground Units ─────────────────────────────────────
-                        if !system.ground_units.is_empty() {
-                            let alliance_troops = system
-                                .ground_units
-                                .iter()
-                                .filter(|k| world.troops.get(**k).is_some_and(|t| t.is_alliance))
-                                .count();
-                            let empire_troops = system.ground_units.len() - alliance_troops;
-
-                            ui.label(
-                                egui::RichText::new(format!(
-                                    "GROUND FORCES ({})",
-                                    system.ground_units.len()
-                                ))
-                                .color(theme::GOLD_DIM)
-                                .size(10.0)
-                                .strong(),
-                            );
-                            if alliance_troops > 0 {
-                                ui.label(
-                                    egui::RichText::new(format!(
-                                        "  Alliance: {alliance_troops} regiments"
-                                    ))
-                                    .color(theme::ALLIANCE_BLUE)
-                                    .size(10.0),
-                                );
-                            }
-                            if empire_troops > 0 {
-                                ui.label(
-                                    egui::RichText::new(format!(
-                                        "  Empire: {empire_troops} regiments"
-                                    ))
-                                    .color(theme::EMPIRE_RED)
-                                    .size(10.0),
-                                );
-                            }
-                            ui.add_space(4.0);
-                        }
-
-                        // ── Facilities ────────────────────────────────────────
-                        let total_fac = system.defense_facilities.len()
-                            + system.manufacturing_facilities.len()
-                            + system.production_facilities.len();
-                        if total_fac > 0 {
-                            ui.label(
-                                egui::RichText::new(format!("FACILITIES ({total_fac})"))
-                                    .color(theme::GOLD_DIM)
-                                    .size(10.0)
-                                    .strong(),
-                            );
-
-                            if !system.defense_facilities.is_empty() {
-                                ui.label(
-                                    egui::RichText::new(format!(
-                                        "  Defense: {}",
-                                        system.defense_facilities.len()
-                                    ))
-                                    .color(theme::TEXT_SECONDARY)
-                                    .size(10.0),
-                                );
-                            }
-                            if !system.manufacturing_facilities.is_empty() {
-                                ui.label(
-                                    egui::RichText::new(format!(
-                                        "  Shipyards: {}",
-                                        system.manufacturing_facilities.len()
-                                    ))
-                                    .color(theme::TEXT_SECONDARY)
-                                    .size(10.0),
-                                );
-                            }
-                            if !system.production_facilities.is_empty() {
-                                ui.label(
-                                    egui::RichText::new(format!(
-                                        "  Production: {}",
-                                        system.production_facilities.len()
-                                    ))
-                                    .color(theme::TEXT_SECONDARY)
-                                    .size(10.0),
-                                );
-                            }
-                            ui.add_space(4.0);
-                        }
-
-                        // ── Coordinates (small, at bottom) ───────────────────
-                        ui.separator();
-                        ui.label(
-                            egui::RichText::new(format!("({}, {})", system.x, system.y))
-                                .color(theme::TEXT_DISABLED)
-                                .size(9.0),
-                        );
-                    });
-                });
-        }
-    }
-}
-
 #[cfg(test)]
 mod interaction_tests {
     use super::*;
@@ -1831,6 +1558,7 @@ mod interaction_tests {
             rebellion_core::uprising::ActiveUprising {
                 started_tick: 0,
                 next_incident_tick: None,
+                next_support_tick: None,
             },
         );
         assert_eq!(metric(&uprisings, &world), 1);
@@ -1907,5 +1635,116 @@ mod interaction_tests {
         assert_eq!(metric(GidMode::IdleShipyards), 1);
         assert_eq!(metric(GidMode::IdleTrainingFacilities), 0);
         assert_eq!(metric(GidMode::TrainingFacilities), 1);
+    }
+
+    // FUN_0042b330 0x0042b4d0-0x0042b4f5: the exit to STRATEGY 10158 takes
+    // an unexplored system, and a destroyed one outside modes 0x20, 0x21,
+    // 0x43, 0x92 and 0x93; modes 0x22 and 0x44 never take it. In the
+    // original, destroyed Yaga Minor shows 10158 under Popular Support and
+    // its fleets' marker under Idle Fleets.
+    #[test]
+    fn a_destroyed_system_takes_the_white_cross_except_in_the_fleet_and_personnel_modes() {
+        use bmp_cache::resources::strategy;
+        let mut world = GameWorld::default();
+        let key = world.systems.insert(System {
+            dat_id: rebellion_core::ids::DatId::new(0x9000_0001),
+            name: "Yaga Minor".into(),
+            sector: rebellion_core::ids::SectorKey::default(),
+            x: 0,
+            y: 0,
+            exploration_status: rebellion_core::dat::ExplorationStatus::Explored,
+            popularity_alliance: 0.5,
+            popularity_empire: 0.5,
+            is_populated: false,
+            total_energy: 0,
+            raw_materials: 0,
+            espionage_rating: 0.0,
+            fleets: vec![],
+            ground_units: vec![],
+            special_forces: vec![],
+            fighters: Vec::new(),
+            defense_facilities: vec![],
+            manufacturing_facilities: vec![],
+            production_facilities: vec![],
+            is_headquarters: false,
+            is_destroyed: true,
+            control: ControlKind::Uncontrolled,
+        });
+        let movement = rebellion_core::movement::MovementState::new();
+        let manufacturing = ManufacturingState::new();
+        let economy = rebellion_core::economy::EconomyState::default();
+        let missions = rebellion_core::missions::MissionState::new();
+        let uprisings = rebellion_core::uprising::UprisingState::default();
+        let gid = GidOverlayContext {
+            movement: &movement,
+            manufacturing: &manufacturing,
+            economy: &economy,
+            missions: &missions,
+            uprisings: &uprisings,
+            highlight: &[],
+        };
+        for faction in [CockpitFaction::Empire, CockpitFaction::Alliance] {
+            let marker = |world: &GameWorld, mode| {
+                gid_marker_for_system(world, key, &world.systems[key], faction, mode, &gid)
+            };
+            for mode in [
+                GidMode::PopularSupport,
+                GidMode::Uprisings,
+                GidMode::UnexploredSystems,
+                GidMode::Mines,
+                GidMode::Troopers,
+                GidMode::AllDefenses,
+            ] {
+                assert_eq!(marker(&world, mode), strategy::GID_UNEXPLORED, "{mode:?}");
+            }
+            for mode in [
+                GidMode::IdleFleets,
+                GidMode::FleetsEnRoute,
+                GidMode::IdlePersonnel,
+                GidMode::ActivePersonnel,
+            ] {
+                assert_ne!(marker(&world, mode), strategy::GID_UNEXPLORED, "{mode:?}");
+            }
+            // 0x92 / 0x93 skip the destroyed test: a listed destroyed
+            // system takes its side's largest marker.
+            let listed = GidOverlayContext {
+                highlight: &[key],
+                ..gid
+            };
+            for (mode, expected) in [
+                (GidMode::HighlightEmpire, strategy::GID_EMPIRE_LARGEST),
+                (GidMode::HighlightAlliance, strategy::GID_ALLIANCE_LARGEST),
+            ] {
+                let marker = gid_marker_for_system(
+                    &world,
+                    key,
+                    &world.systems[key],
+                    faction,
+                    mode,
+                    &listed,
+                );
+                assert_eq!(marker, expected, "{mode:?}");
+            }
+
+            let mut unexplored = world.clone();
+            let system = &mut unexplored.systems[key];
+            system.is_destroyed = false;
+            system.is_populated = true;
+            system.exploration_status = rebellion_core::dat::ExplorationStatus::Unexplored;
+            for mode in [GidMode::IdleFleets, GidMode::IdlePersonnel, GidMode::Mines] {
+                assert_eq!(
+                    marker(&unexplored, mode),
+                    strategy::GID_UNEXPLORED,
+                    "{mode:?}"
+                );
+            }
+            for mode in [GidMode::FleetsEnRoute, GidMode::ActivePersonnel] {
+                assert_ne!(
+                    marker(&unexplored, mode),
+                    strategy::GID_UNEXPLORED,
+                    "{mode:?}"
+                );
+            }
+        }
     }
 }

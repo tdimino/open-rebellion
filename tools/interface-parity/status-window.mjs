@@ -110,7 +110,10 @@ async function startServer() {
   return server;
 }
 
-function decodeIndexedBmp(bytes, expectedWidth, expectedHeight) {
+// A CoolStrobeButton's bitmap is blitted keyed on its first stored pixel's
+// palette index (FUN_00602d30 -> FUN_005fd0f0, unless +0xc4 bit 0x80): those
+// pixels get alpha 0 and leave what lies under them.
+function decodeIndexedBmp(bytes, expectedWidth, expectedHeight, keyed = false) {
   assert.equal(bytes.toString("ascii", 0, 2), "BM", "source resource is not a BMP");
   const dataOffset = bytes.readUInt32LE(10);
   const headerSize = bytes.readUInt32LE(14);
@@ -125,29 +128,34 @@ function decodeIndexedBmp(bytes, expectedWidth, expectedHeight) {
   for (let y = 0; y < height; y += 1) {
     const sourceY = signedHeight > 0 ? height - 1 - y : y;
     for (let x = 0; x < width; x += 1) {
-      const palette = paletteOffset + bytes[dataOffset + sourceY * stride + x] * 4;
+      const index = bytes[dataOffset + sourceY * stride + x];
+      const palette = paletteOffset + index * 4;
       const destination = (y * width + x) * 4;
       png.data[destination] = bytes[palette + 2];
       png.data[destination + 1] = bytes[palette + 1];
       png.data[destination + 2] = bytes[palette];
-      png.data[destination + 3] = 255;
+      png.data[destination + 3] = keyed && index === bytes[dataOffset] ? 0 : 255;
     }
   }
   return png;
 }
 
 const resource = (source, id, width, height) => decodeIndexedBmp(fs.readFileSync(path.join(source, `${id}.bmp`)), width, height);
+const buttonArt = (source, id, width, height) => decodeIndexedBmp(fs.readFileSync(path.join(source, `${id}.bmp`)), width, height, true);
 
 function blit(destination, image, x, y) {
   for (let row = 0; row < image.height; row += 1) {
-    const start = row * image.width * 4;
-    destination.data.set(image.data.subarray(start, start + image.width * 4), ((y + row) * destination.width + x) * 4);
+    for (let column = 0; column < image.width; column += 1) {
+      const from = (row * image.width + column) * 4;
+      if (image.data[from + 3] === 0) continue;
+      destination.data.set(image.data.subarray(from, from + 4), ((y + row) * destination.width + x + column) * 4);
+    }
   }
 }
 
 function composeExpected(source, faction) {
   const expected = resource(source, faction.background, dimensions.width, dimensions.height);
-  for (const button of Object.values(buttons)) blit(expected, resource(source, button.id, 32, 31), button.x, button.y);
+  for (const button of Object.values(buttons)) blit(expected, buttonArt(source, button.id, 32, 31), button.x, button.y);
   return expected;
 }
 

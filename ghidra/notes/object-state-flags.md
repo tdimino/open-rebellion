@@ -27,7 +27,11 @@ The derived bits are recomputed by two unnamed base handlers:
 - `0x004f7b80`: usable (bit 0) = existing (bit 6) and completed (bit 2) and
   not en route (bit 4).
 - The fleet override `FUN_004fe540` (fleet vtable slot `+0x84`) adds that at
-  least one member ship is completed and not in transit (bit 5).
+  least one member ship is completed and not in transit (bit 5): it walks the
+  fleet's existing ships of its own side (`FUN_00502e30`, mode 3, side
+  `+0x24 >> 6 & 3`) and stops at the first with bit 2 set and bit 5 clear.
+  A fleet with no such ship, including one with no ship at all, is not
+  usable (`FUN_004fe540.c:20-35`).
 
 ## Child-list walk
 
@@ -37,6 +41,13 @@ side filter. `FUN_00513120` starts at the container's first child
 (`FUN_00539f70` -> `+0x28` list, `FUN_005f5060`) and `FUN_005130d0` follows
 the sibling link at `+0x10` (`FUN_005c7530`). The walk never descends, so it
 sees only the container's direct children.
+
+The child list is a tree (`FUN_00584150`, vtable `0x0066a168`; insert
+`FUN_005f5440` -> `FUN_005f4f10`) whose comparator, slot 2 `FUN_00584320`,
+orders by the child's family (slot `+4`), then by its id `+0x18`. The walk
+starts at the leftmost node and follows the in-order links, so every
+child-list walk visits a container's children by family, then id: container
+order.
 
 `FUN_005131d0` accepts a child whose type (slot `+4`) is in range and whose
 state passes `FUN_004f6b90(child, mode)`:

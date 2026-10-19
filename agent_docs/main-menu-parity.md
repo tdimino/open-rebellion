@@ -80,11 +80,11 @@ inclusive resource sequences loaded by the original animated-control class.
 | Medium galaxy screen | `(326,293,24,21)` | `10018` | n/a | pointer region | encoded size `2` |
 | Large galaxy screen | `(362,293,24,21)` | `10017` | n/a | pointer region | encoded size `3` |
 | Game type (Cloud City) | `(305,333,42,30)` | `10158–10159` | n/a | `0x71` | Standard / Headquarters Only |
-| Empire faction/start | `(153,308,62,55)` | `10009` | `11001–11015` | `0x66` | starts as Empire |
-| Alliance faction/start | `(437,307,62,55)` | `10007` | `11031–11045` | `0x65` | starts as Alliance |
+| Empire faction/start | `(153,308,62,55)` | `10009` | `11001–11015` | `0x66` | starts as Empire: movie `0x69` (MDATA.004), then the galaxy |
+| Alliance faction/start | `(437,307,62,55)` | `10007` | `11031–11045` | `0x65` | starts as Alliance: movie `0x68` (MDATA.003), then the galaxy |
 | Multiplayer | `(67,381,51,61)` | `10005` | `11151–11180` | `0x67` | enters head-to-head setup |
 | Save/load (CD-ROM) | `(411,232,40,37)` | `10013` | `11241–11255` | `0x68` | opens save/load |
-| Credits (LucasArts logo) | `(459,242,33,28)` | `11271–11272` | two-state | `0x73` | opens credits |
+| Credits (LucasArts logo) | `(459,242,33,28)` | `11271–11272` | two-state | `0x73` | plays the Credits movie `0x6e` (MDATA.005), then the menu again (`FUN_00406000`, `FUN_00406520`) |
 | Quit/ejection handle | `(536,393,63,64)` | `10011` | `11181–11210` | `0x69` | exits the game |
 
 The original labels galaxy sizes Small, Medium, and Large. The current Rust

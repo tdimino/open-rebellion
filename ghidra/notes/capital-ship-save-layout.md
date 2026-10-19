@@ -34,16 +34,16 @@ DatId family bytes):
 
 ## 2  Record header (pre-payload)
 
-All byte offsets are from the record's start (= the self-referencing key
-position).
+All byte offsets are from the record's start: the list marker when the
+record is its list's first child, else 4 bytes before its family word.
 
 | Offset | Size | Field                | Notes                              |
 |--------|------|----------------------|------------------------------------|
-| +0     | u32  | key                  | Self-referencing file position (key == absolute file offset of this record). Read by the parent tree loop, not by the record's own vtable. |
-| +4     | u32  | +0x18 (node_type)    | Always 0x14 for capital ships. Read by Level 1 (FUN_005f5610). |
-| +8     | u32  | +0x24 (flags)        | Status/flag word. Read by Level 2 (FUN_005405a0). Always 0x077f in day-2 start saves. |
-| +12    | u32  | owner_key            | XOR-decoded owner reference. Read by Level 3 (FUN_0053a080). Values: 0x80000081/0x80000041 (owning faction), 0x800000a1/0x80000051 (opposing faction). |
-| +16    | u32  | class_code           | Save-internal class identifier (0x85 for ISD, etc.). Read by an intermediate level between Level 3 and CCombatUnit. |
+| +0     | u32  | list marker          | Present before a list's first child only: the stream position (`FUN_005f4d40` → `FUN_00616d70`), checked on read, so it equals this offset. A later sibling starts at +4. |
+| +4     | u32  | family               | 0x14 for capital ships. Read by the parent's child loop (`FUN_0053a1e0`) and looked up in the class registry (`FUN_00540500`, rows from `FUN_0051ebf0`). |
+| +8     | u32  | +0x18 (id)           | Instance id. Read by FUN_005f5610 (via FUN_005405a0). 0x077f for the ISD in the day-2 start save. |
+| +12    | u32  | +0x24 (graph)        | Graph key: owner bits 6-7, view bits 4-5. Read by FUN_005405a0. Values: 0x80000081/0x80000041 (owning faction), 0x800000a1/0x80000051 (opposing faction). |
+| +16    | u32  | class key            | Low 24 bits of the class record's DatId (0x85 for the ISD); FUN_0053a080 joins it with the family and resolves it (FUN_0051cab0) into +0x2c. |
 | +20    | u32  | has_sub34            | Boolean (always 0 or 1). Proven from write-side: `setnz al` in FUN_004f9450. When 1, a name string follows. |
 | +24    | u16  | name_len             | Only present when has_sub34 == 1. Read via FUN_005f4c40 (u16 transfer). |
 | +26    | bytes| name                 | `name_len` raw bytes. Read via FUN_006173b0. |
@@ -72,8 +72,8 @@ vtable[0x14] = FUN_005000e0 (pure thunk)
                                   calls FUN_005f5610  [Level 1]
                                       reads +0x18 (u32)
                               reads +0x24 (u32)
-                          reads owner key (u32), XOR-decodes → +0x2c
-                      [unknown intermediate: reads class_code (u32)]
+                          reads the class key (u32), joins it with the
+                          family (vtable +4) and resolves it → +0x2c
                       reads has_sub34 (u32)
                       if has_sub34: reads name via FUN_005f3580 → FUN_005f3850
                           reads name_len (u16 via FUN_005f4c40)
@@ -127,11 +127,12 @@ SHORT records appear in the opposing faction's subtree (fog-of-war copy).
 
 ¹ Byte offset from start of post-name payload (= record_start + header_size).
 
-Tree reader overhead immediately follows:
-- READ#1 (u32, = 1 for tree nodes)
-- container (u32, = 1)
+The record's child list immediately follows (`FUN_0053a1e0`):
+- flag (u32; 0 = no list, and nothing else follows)
+- the list's kept word (u32, = 1, FUN_005841a0)
 - child_count (u32)
-- Children: each child's key (u32, self-referencing) followed by child vtable payload.
+- when child_count is not 0: the list marker (u32, its own offset), then
+  each child: family word, vtable payload, its own child list.
 
 ## 5  Post-name payload: LONG record (21 fields)
 
@@ -245,31 +246,28 @@ If you edit only the LONG record, the opposing faction's view will remain
 stale.  Edit both records (the LONG at f19/f20 and the SHORT at f9/f10)
 for consistent state.
 
-**Self-referencing keys break on insertion.** Every record's key equals its
-absolute file position.  Inserting or deleting bytes anywhere invalidates
-all subsequent keys.  Field edits that preserve byte count (overwriting a
-u32 in place) are safe.
+**List markers move on insertion.** Each list marker equals its absolute
+file position. Inserting or deleting bytes moves every later marker, which
+must then be rewritten (`tools/original-capture/save_tree.py`,
+`agent_docs/original-save-editing.md` recipe 5). Field edits that preserve
+byte count (overwriting a u32 in place) are safe.
 
 ## 8  Open questions
 
-1. **Intermediate level.** Between Level 3 (owner key) and CCombatUnit
-   (has_sub34), there is an unidentified intermediate level that reads the
-   class_code u32.  The function has not been located in the binary.
-
-2. **10-field source.** The 10 extra fields in LONG records (f7–f16) come
+1. **10-field source.** The 10 extra fields in LONG records (f7–f16) come
    from a more-derived class.  The exact vtable and constructor are unknown
    because the factory table (BSS 0x006b90fc) is runtime-populated.
 
-3. **Class 0x45 anomaly.** Corellian Corvettes, Arrows, Swifts (class 0x45)
+2. **Class 0x45 anomaly.** Corellian Corvettes, Arrows, Swifts (class 0x45)
    do not match the standard tree reader pattern and may have additional
    fields or a different serializer branch.
 
-4. **No damaged saves available.** All four saves have hull_current = 0 and
+3. **No damaged saves available.** All four saves have hull_current = 0 and
    shield_weapon_packed = 0 (no combat damage).  The f19/f20 (LONG) and
    f9/f10 (SHORT) mapping is confirmed by function chain position but not
    by observing non-zero damage values.
 
-5. **f13 = 0x001e0000.** Consistently (30 << 16) across all owning-faction
+4. **f13 = 0x001e0000.** Consistently (30 << 16) across all owning-faction
    records at game start.  Possibly a timer, capacity, or shield allocation
    starting value.  Not yet traced to a runtime field.
 
@@ -285,7 +283,7 @@ u32 in place) are safe.
 | FUN_00569890   | 0x00569890   | thunk → CCombatUnit                      |
 | FUN_004f9340   | 0x004f9340   | CCombatUnit READ (has_sub34, +0x50, keys, +0x40–0x4c) |
 | FUN_004f9450   | 0x004f9450   | CCombatUnit WRITE (proves has_sub34 is 0 or 1) |
-| FUN_0053a080   | 0x0053a080   | Level 3: owner key decode                |
+| FUN_0053a080   | 0x0053a080   | Level 3: class key → +0x2c               |
 | FUN_005405a0   | 0x005405a0   | Level 2: reads +0x24                    |
 | FUN_005f5610   | 0x005f5610   | Level 1: reads +0x18                    |
 | FUN_005f4ce0   | 0x005f4ce0   | Stream transfer primitive                |

@@ -312,7 +312,7 @@ impl EncyclopediaSurfaceController {
         reason = "native tests validate fixture inputs; drawing is exercised by the WASM browser gate"
     )
 )]
-mod fixture {
+pub(crate) mod fixture {
     use std::collections::{BTreeMap, HashMap};
     use std::sync::Arc;
 
@@ -763,7 +763,7 @@ mod fixture {
         }
     }
 
-    fn fixture_session() -> Result<Arc<EncyclopediaSession>, String> {
+    pub(crate) fn fixture_session() -> Result<Arc<EncyclopediaSession>, String> {
         let category = |command_id: u16,
                         label_resource_id: u16,
                         label: &str,
@@ -1123,7 +1123,7 @@ pub use fixture::{CanonicalFixtureStart, EncyclopediaSurfaceFixture, FixtureStar
 pub use fixture::{CanonicalFixtureStart, FixtureStart};
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use egui_macroquad::egui;
     use std::collections::{BTreeMap, HashMap};
     use std::sync::Arc;
@@ -1253,7 +1253,8 @@ mod tests {
         }
     }
 
-    fn session() -> Arc<rebellion_data::encyclopedia_session::EncyclopediaSession> {
+    /// A synthetic session for the crate's tests.
+    pub(crate) fn session() -> Arc<rebellion_data::encyclopedia_session::EncyclopediaSession> {
         let mut store = EncyclopediaSessionStore::default();
         store.replace(session_input()).unwrap();
         store.current().unwrap()

@@ -128,7 +128,10 @@ async function startServer() {
   return server;
 }
 
-function decodeIndexedBmp(bytes, expectedWidth, expectedHeight) {
+// A CoolStrobeButton's bitmap is blitted keyed on its first stored pixel's
+// palette index (FUN_00602d30 -> FUN_005fd0f0, unless +0xc4 bit 0x80): those
+// pixels get alpha 0 and leave what lies under them.
+function decodeIndexedBmp(bytes, expectedWidth, expectedHeight, keyed = false) {
   assert.equal(bytes.toString("ascii", 0, 2), "BM", "source resource is not a BMP");
   const dataOffset = bytes.readUInt32LE(10);
   const headerSize = bytes.readUInt32LE(14);
@@ -150,7 +153,7 @@ function decodeIndexedBmp(bytes, expectedWidth, expectedHeight) {
       png.data[destination] = bytes[palette + 2];
       png.data[destination + 1] = bytes[palette + 1];
       png.data[destination + 2] = bytes[palette];
-      png.data[destination + 3] = 255;
+      png.data[destination + 3] = keyed && paletteIndex === bytes[dataOffset] ? 0 : 255;
     }
   }
   return png;
@@ -260,13 +263,19 @@ function resource(source, id, width, height) {
   return decodeIndexedBmp(fs.readFileSync(path.join(source, `${id}.bmp`)), width, height);
 }
 
+const button = (source, id, width, height) =>
+  decodeIndexedBmp(fs.readFileSync(path.join(source, `${id}.bmp`)), width, height, true);
+
 function blitClipped(destination, source, x, y, width = source.width, height = source.height) {
   // FUN_005fc140 blits at the bitmap's own size; the control clips the rest.
   for (let row = 0; row < Math.min(height, source.height); row += 1) {
     if (y + row >= destination.height) break;
     const columns = Math.min(width, source.width, destination.width - x);
-    const start = row * source.width * 4;
-    destination.data.set(source.data.subarray(start, start + columns * 4), ((y + row) * destination.width + x) * 4);
+    for (let column = 0; column < columns; column += 1) {
+      const from = (row * source.width + column) * 4;
+      if (source.data[from + 3] === 0) continue;
+      destination.data.set(source.data.subarray(from, from + 4), ((y + row) * destination.width + x + column) * 4);
+    }
   }
 }
 
@@ -301,20 +310,20 @@ function composeExpected(source, faction, page) {
   const title = resource(source, faction.title, 240, 17);
   blitClipped(expected, title, 2, 2);
   blitClipped(expected, title, 32, 2);
-  blitClipped(expected, resource(source, 10108, 14, 14), 242, 3);
+  blitClipped(expected, button(source, 10108, 14, 14), 242, 3);
   const [missionTab, agentsTab] = faction.tabs;
-  blitClipped(expected, resource(source, missionTab[page === "mission" ? 1 : 0], 116, 33), 7, 20);
-  blitClipped(expected, resource(source, agentsTab[page === "agents" ? 1 : 0], 116, 33), 137, 20);
+  blitClipped(expected, button(source, missionTab[page === "mission" ? 1 : 0], 116, 33), 7, 20);
+  blitClipped(expected, button(source, agentsTab[page === "agents" ? 1 : 0], 116, 33), 137, 20);
   if (page === "mission") {
-    blitClipped(expected, resource(source, 10606, 65, 18), 101, 174);
+    blitClipped(expected, button(source, 10606, 65, 18), 101, 174);
   } else {
     blitClipped(expected, resource(source, faction.headers[0], 108, 27), 8, 65);
     blitClipped(expected, resource(source, faction.headers[1], 108, 27), 136, 65);
-    blitClipped(expected, resource(source, 11117, 16, 16), 120, 136);
-    blitClipped(expected, resource(source, 11119, 16, 16), 120, 221);
+    blitClipped(expected, button(source, 11117, 16, 16), 120, 136);
+    blitClipped(expected, button(source, 11119, 16, 16), 120, 221);
   }
-  for (const button of bottomButtons) {
-    blitClipped(expected, resource(source, button.id, ...button.native), button.x, button.y, button.width, button.height);
+  for (const control of bottomButtons) {
+    blitClipped(expected, button(source, control.id, ...control.native), control.x, control.y, control.width, control.height);
   }
   return expected;
 }

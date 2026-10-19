@@ -3,7 +3,7 @@ title: "Game Domain: Star Wars Rebellion"
 description: "Game mechanics overview covering galaxy structure, factions, units, missions, and combat"
 category: "agent-docs"
 created: 2026-03-11
-updated: 2026-10-16
+updated: 2026-10-17
 tags: [reference, game-mechanics, factions, missions]
 ---
 
@@ -97,22 +97,22 @@ See `agent_docs/simulation.md` for full API reference on all 15 systems.
 ### War Machine (v0.4.0)
 - **Missions** (`missions.rs`): Diplomacy, Recruitment, Sabotage, Assassination, Espionage, Rescue, Abduction, InciteUprising, Autoscrap, SubdueUprising, DeathStarSabotage, Research (three trees) and Move—MSTB probability tables with quadratic fallback
 - **Space combat** (`tactical.rs`): every battle runs the tactical engine, played, simulated or headless (`FUN_0040a050` state 8); re-fought every tick while both sides remain
-- **Ground combat** (`combat.rs`): a port resolution with no source; the original's is open (`or-q-ground-resolution-nms`)
-- **Orbital bombardment** (`bombardment.rs`): a port formula built on the transit distance; the original's orders, defence fire and hit rolls are in `ghidra/notes/bombardment.md`
+- **Ground combat** (`assault.rs`): the Planetary Assault order `0x234`, issued by either side from the fleet's menu and by the AI: defence fire, one engagement per attacking regiment, collateral hits and a landing of up to six regiments (`ghidra/notes/ground-assault.md`)
+- **Orbital bombardment** (`bombardment.rs`): the original's four Planetary Bombardment orders, issued by either side from the object menu, and by the AI through `integrator::resolve_ai_strike`: gate, defence fire, per-hit target rolls, character roll and support finalize (`ghidra/notes/bombardment.md`)
 - **Blockade** (`blockade.rs`): Hostile fleet without defender halts manufacturing, destroys in-transit troops, and runs timer `0x386`, the blockader's support shift (`systems/blockade.md`)
 - **Uprising** (`uprising.rs`): revolts start on a troop shortfall and never change control; an incident every 30-100 ticks maps its score through UPRIS1TB/UPRIS2TB step lookups to losses; natural disasters erode resources and facilities
-- **Death Star** (`death_star.rs`): Construction countdown, superlaser fire (precondition checks from RE), nearby-warning scan
+- **Death Star** (`death_star.rs`): a shipyard product, one per system (`systems/death-star.md`); Destroy System is bombardment order `0x223` and runs the destroy cascade (`ghidra/notes/death-star-strategic.md`)
 - **Research** (`research.rs`): 3 tech trees (Ship/Troop/Facility) per faction, points pools fed by timer `0x381` and Research missions, spent on `research_order` at `research_difficulty` (`systems/research.md`)
 - **Jedi training** (`jedi.rs`): 4-tier Force progression (None→Aware→Training→Experienced), XP accumulation, detection checks
-- **Victory conditions** (`victory.rs`): HQ capture, Death Star fire/destroyed, `resolved` flag prevents re-trigger
-- **Save/load** (`rebellion-data/src/save.rs`): Bincode with OPENREB header, mod metadata and FNV-1a hash, 10 slots; an older version is rejected, never migrated. See `agent_docs/save-load.md`.
+- **Victory conditions** (`victory.rs`): the win word. The Empire wins on AD (the Alliance HQ gone), the Alliance on CA or CD (Coruscant held or destroyed); Standard also needs the other side's two leaders prisoners (LC and MC, or DC and EC), Headquarters Only does not. `resolved` stops evaluation once the word holds GO
+- **Save/load** (`rebellion-data/src/save.rs`): Bincode with OPENREB header, mod metadata and FNV-1a hash, 6 slots (the Game Options rows); an older version is rejected, never migrated. See `agent_docs/save-load.md`.
 
 ### Full Parity (v0.5.0)
 - **4 scripted story chains** (`story_events.rs`): Luke Dagobah (0x221→0x210), Final Battle (0x220), Bounty Hunters (0x212), Jabba's Palace (0x380-0x383)
 - **Han Solo speed bonus** (`movement.rs`): `hyperdrive_modifier` on Character, consulted by `fleet_ticks_per_hop()`
 - **Betrayal system** (`betrayal.rs`): loyalty threshold via UPRIS1TB, `is_unable_to_betray` immunity, 50-tick cooldown
 - **Decoy system** (`missions.rs`): FDECOYTB consultation during mission resolution
-- **Escape system** (`missions.rs`): ESCAPETB per-tick check for captive characters, `check_escapes()` in main loop
+- **Escape system** (`missions.rs`): timer `0x38a` and its ESCAPETB roll, `escape_step()` (`systems/captivity.md`)
 - **Mission state flags**: `on_mission`, `on_hidden_mission`, `on_mandatory_mission` tracked on Character; `dispatch_guarded()` prevents double-dispatch
 - **6 new EventConditions** + **6 new EventActions** for story event mechanics
 - **15 Ghidra RE event ID constants** (0x12c–0x370)

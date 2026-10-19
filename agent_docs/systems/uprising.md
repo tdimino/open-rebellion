@@ -16,9 +16,9 @@ the natural disaster (F-026). Ghidra evidence: `ghidra/notes/uprising-incident.m
 
 | Type | Purpose |
 |------|---------|
-| `UprisingState` | Active revolts (`ActiveUprising`: start tick, next incident tick) and the galaxy disaster timer |
+| `UprisingState` | Active revolts (`ActiveUprising`: start tick, next incident tick, next timer `0x384` tick) and the galaxy disaster timer |
 | `UprisingStateV14` | The v14 save shape, kept for migration |
-| `UprisingEvent` | `UprisingBegan`, `UprisingEnded`, `UprisingIncident` (codes, losses, support change), `Disaster` |
+| `UprisingEvent` | `UprisingBegan`, `UprisingEnded`, `UprisingIncident` (codes, losses, support change), `RevoltSupportLoss` (timer `0x384`), `Disaster` |
 | `IncidentLoss` | A destroyed facility or regiment, an injured character, a freed prisoner |
 
 ## API
@@ -44,7 +44,7 @@ let ended = end_if_garrisoned(&mut state, &world, system, tick);
 2. It continues while the system stays held and populated, even after the
    garrison is restored, and ends when the system is lost or emptied.
 3. A Subdue Uprising success raises support (`FUN_0055cb10`: 1..20 on its own
-   side's system, 1..10 when contested) and ends the revolt once all regiments
+   side's system, 1..10 at a neutral one) and ends the revolt once all regiments
    cover the requirement without the uprising doubling (`FUN_0050c910`).
 4. While a revolt lasts, an incident fires every 30 to 100 ticks. It scores two
    `1..10` draws, the support shortfall below 60, the holder's regiments, the
@@ -53,6 +53,11 @@ let ended = end_if_garrisoned(&mut state, &world, system, tick);
    regiment, an injured character, or freed prisoners. An active Incite
    mission then costs the holder 2 support points (halved for an Empire
    holder with a Death Star in the sector, system bit 11).
+5. Every GNPRTB 7698 (30) days of a revolt, timer `0x384` costs the holder
+   GNPRTB 7697 (1) support point through the setter (`FUN_00510f20` arms
+   it, `FUN_0050caa0` fires it; `RevoltSupportLoss`, telemetry
+   `revolt_support_loss`, no message). Every support change reruns control
+   at once (`support_shift::support_changed`, `FUN_005109f0`).
 
 ## Character picks
 

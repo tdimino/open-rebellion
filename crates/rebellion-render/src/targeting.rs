@@ -45,23 +45,25 @@ pub enum TargetOrder {
         members: Vec<MissionMember>,
         confirmed: bool,
     },
-    /// A regiment's Move (`0x201`). Released on a Fleet window it boards the
-    /// fleet (`ghidra/notes/fleet-window.md`, "Loading a regiment onto a
-    /// fleet").
-    TroopMove { troop: TroopKey },
-    /// A squadron's Move (`0x201`, `FUN_00503930`): it takes the regiment's
-    /// path, boarding a fleet, landing or travelling alone
-    /// (`TroopTransportState::move_squadron`).
+    /// A regiment's Move (`0x201`) or Confirmed Move (`0x202`). Released on
+    /// a Fleet window it boards the fleet (`ghidra/notes/fleet-window.md`,
+    /// "Loading a regiment onto a fleet").
+    TroopMove { troop: TroopKey, confirmed: bool },
+    /// A squadron's Move (`0x201`, `FUN_00503930`) or Confirmed Move
+    /// (`0x202`): it takes the regiment's path, boarding a fleet, landing
+    /// or travelling alone (`TroopTransportState::move_squadron`).
     SquadronMove {
         source: rebellion_core::troop_transport::SquadronSource,
+        confirmed: bool,
     },
-    /// A capital ship's Move (`0x201`). Released on a Fleet window it joins
-    /// that fleet; on a system it forms a fleet of its own there
-    /// (`ghidra/notes/fleet-join-split.md`).
+    /// A capital ship's Move (`0x201`) or Confirmed Move (`0x202`).
+    /// Released on a Fleet window it joins that fleet; on a system it goes
+    /// into the side's fleet there (`ghidra/notes/fleet-join-split.md`).
     ShipMove {
         fleet: FleetKey,
         ships: Vec<usize>,
         roster: u64,
+        confirmed: bool,
     },
     /// Destination (`0x214`): the target system becomes where production
     /// delivers. A facility icon's team is every production area of the
@@ -188,6 +190,34 @@ pub fn release_destination(
         .release_target(world, layout, layer, point)
         .flatten()
         .map(ReleaseTarget::System)
+}
+
+/// The object a Mission order's release at `point` names: `FUN_00422ce0`
+/// asks the child window under the point for its `+0x68` object, which a
+/// system, Defenses or Fleet window answers from the list item under the
+/// point (`ghidra/notes/move-order.md`, "Hit tests"). `None` where the
+/// window answers its system, which [`release_destination`] gives.
+#[must_use]
+pub fn release_object(
+    ctx: &egui::Context,
+    world: &GameWorld,
+    movement: &rebellion_core::movement::MovementState,
+    fog: &FogState,
+    transport: &rebellion_core::troop_transport::TroopTransportState,
+    layout: CockpitLayout,
+    windows: ReleaseWindows<'_>,
+    point: egui::Pos2,
+) -> Option<rebellion_core::missions::MissionTarget> {
+    let layer = window_layer_at(ctx, point)?;
+    windows
+        .system
+        .release_object(layout, layer, point)
+        .or_else(|| windows.defenses.release_object(layout, layer, point))
+        .or_else(|| {
+            windows
+                .fleet
+                .release_object(world, movement, fog, transport, layout, layer, point)
+        })
 }
 
 /// The topmost visible area holding `point`, passing over the capture,
@@ -603,6 +633,7 @@ mod tests {
                         &mut cache,
                         missions,
                         &rebellion_core::uprising::UprisingState::default(),
+                        &|_| true,
                     );
                     let _ = draw_system_windows(
                         ctx,
@@ -617,6 +648,7 @@ mod tests {
                         layout,
                         &mut cache,
                         true,
+                        &|_| true,
                     );
                     let _ = draw_fleet_windows(
                         ctx,
@@ -635,12 +667,12 @@ mod tests {
                         world,
                         &fog,
                         &rebellion_core::missions::MissionState::new(),
-                        &rebellion_core::economy::EconomyState::default(),
                         defenses,
                         faction,
                         layout,
                         &mut cache,
                         true,
+                        &|_| true,
                     );
                     let _ = draw_missions_windows(
                         ctx,
@@ -652,6 +684,7 @@ mod tests {
                         layout,
                         &mut cache,
                         true,
+                        &|_| true,
                     );
                     capture_pointer(ctx);
                 });
@@ -774,7 +807,7 @@ mod tests {
                 fighters: Vec::new(),
                 characters: Vec::new(),
                 is_alliance,
-                has_death_star: false,
+                bombarding: false,
             });
             world.systems[system].fleets.push(fleet);
             fleet
@@ -869,7 +902,6 @@ mod tests {
             let troop = world.troops.insert(rebellion_core::world::TroopUnit {
                 class_dat_id: rebellion_core::ids::DatId::new(0x1000_0001),
                 is_alliance: true,
-                regiment_strength: 100,
             });
             world.systems[first].ground_units.push(troop);
             let mut sectors = SectorWindowState::default();

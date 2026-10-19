@@ -3,7 +3,7 @@ title: "Uprising Incident and Probability Tables"
 description: "How table ids map to DAT files, and how the uprising incident turns UPRIS1TB/UPRIS2TB outcome codes into losses"
 category: "ghidra"
 created: 2026-09-26
-updated: 2026-09-26
+updated: 2026-10-17
 tags: [uprising, upris1tb, upris2tb, decoy, mission-tables, table-ids]
 ---
 
@@ -102,6 +102,13 @@ The system vtable base is `0x0065e640` (constructor `FUN_00507130`;
   (`FUN_005862a0`); the incident uses GNPRTB 7701 (30) and 7702 (70), so it
   fires every 30 to 100 ticks. Event 0x38d (`FUN_005660c0` -> `FUN_0050cb80`)
   pulses bit 16 only while bit 2 is on.
+- Event 900 is timer `0x384` (vtable `0x00663510`; slot `+0x20` is
+  `FUN_005862a0`, so it fires again each period). Its record is system
+  `+0x54`+`0x20`: minimum GNPRTB 7698 (30), no spread
+  (`FUN_0050e200.c:48`). The fire (`FUN_00565730` -> `FUN_0050caa0`) runs
+  only while bit 2 is set: `FUN_0050c9f0(GNPRTB 7697 (-1), holder)`, the
+  holder being `+0x24` bits 6-7; side 3 moves nothing. Port:
+  `UprisingEvent::RevoltSupportLoss`.
 
 ## Uprising incident (`FUN_0050d030`)
 

@@ -72,7 +72,6 @@ use crate::ids::{DatId, SystemKey, TroopKey};
 use crate::movement::MovementState;
 use crate::tick::TickEvent;
 use crate::troop_transport::TroopTransportState;
-use crate::world::ControlKind;
 use crate::world::GameWorld;
 
 // ---------------------------------------------------------------------------
@@ -205,6 +204,90 @@ pub struct BlockadeState {
         deserialize_with = "crate::serde_ordered::deserialize_hash_map"
     )]
     support_shift: HashMap<SystemKey, SupportShiftTimer>,
+    /// Each system's loss record (system `+0x54`): the blockading side and
+    /// counters A, B and C (`FUN_00508c60`), read when the blockade ends
+    /// (`support_shift::blockade_ended`).
+    #[serde(
+        default,
+        serialize_with = "crate::serde_ordered::serialize_hash_map",
+        deserialize_with = "crate::serde_ordered::deserialize_hash_map"
+    )]
+    losses: HashMap<SystemKey, BlockadeLosses>,
+    /// Systems whose battle bit (`+0x88` `0x1000`, `FUN_0050a900`) is set:
+    /// side 1 and side 2 both present at a system with a side
+    /// ([`BlockadeSystem::battle_bit`]).
+    #[serde(
+        default,
+        serialize_with = "crate::serde_ordered::serialize_hash_set",
+        deserialize_with = "crate::serde_ordered::deserialize_hash_set"
+    )]
+    battle: HashSet<SystemKey>,
+}
+
+/// The reason byte (`+0x40`) of a destroyed object that `FUN_00508c60`
+/// counts in A: the Planetary Assault's casualties, the argument of slot
+/// `+0xac` in `FUN_0058c3c0.c:44`, `FUN_0058bec0.c:106` and
+/// `FUN_0058c580.c:88` (`crate::assault`).
+pub const REASON_GROUND_COMBAT: u8 = 0xe;
+/// Counted in B: a bombardment hit on an enemy object (`FUN_0058ce70`), a
+/// bombarding ship destroyed by defence fire (`FUN_00501ae0`), Destroy
+/// System's cascade at an enemy system (`bombardment.md`,
+/// `game-end-path.md`).
+pub const REASON_BOMBARDMENT: u8 = 0xf;
+/// The same at the bombarder's own system; `FUN_00508c60` counts nothing.
+pub const REASON_OWN_BOMBARDMENT: u8 = 0x10;
+/// Counted in C; its producers and readers (`FUN_00517270`,
+/// `FUN_00560d00`) are not traced.
+pub const REASON_C: u8 = 0xc;
+
+/// A destroyed regiment, capital ship or squadron (families `0x10`-`0x1f`)
+/// as `FUN_00508c60` reads it: its owner, slot `+0x1c0` minus `+0x1c8`, and
+/// its reason byte.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UnitLoss {
+    pub side: crate::dat::Faction,
+    pub value: i32,
+    pub reason: u8,
+}
+
+/// A system's loss record (`+0x54`): the blockading side (`+0x60`,
+/// `FUN_00509ac0`) and counters A (`+0x44`), B (`+0x50`) and C (`+0x64`)
+/// for sides 1-3 (`FUN_005099c0`, `FUN_005099f0`, `FUN_00509ae0`), indexed
+/// Alliance, Empire, Neutral.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BlockadeLosses {
+    /// The side whose fleets set the blockade bit; `None` before any.
+    pub blockader: Option<crate::dat::Faction>,
+    pub a: [i32; 3],
+    pub b: [i32; 3],
+    pub c: [i32; 3],
+}
+
+/// A side's counter index: 0 Alliance, 1 Empire, 2 Neutral (sides 1-3 at
+/// `+0x44 + 4·side`, `FUN_005099c0`).
+const fn loss_index(side: crate::dat::Faction) -> usize {
+    match side {
+        crate::dat::Faction::Alliance => 0,
+        crate::dat::Faction::Empire => 1,
+        crate::dat::Faction::Neutral => 2,
+    }
+}
+
+impl BlockadeLosses {
+    /// `FUN_00509a20`: `side`'s A + B, plus the Neutral side's when `side`
+    /// is not the blockader; 0 without a stored blockader.
+    #[must_use]
+    pub fn total(&self, side: crate::dat::Faction) -> i32 {
+        let Some(blockader) = self.blockader else {
+            return 0;
+        };
+        let own = loss_index(side);
+        let mut total = self.a[own] + self.b[own];
+        if blockader != side {
+            total += self.a[2] + self.b[2];
+        }
+        total
+    }
 }
 
 /// Timer `0x386`'s record and its pending fire.
@@ -243,21 +326,71 @@ impl BlockadeState {
             blockaded: HashSet::new(),
             embarked: HashMap::new(),
             support_shift: HashMap::new(),
+            losses: HashMap::new(),
+            battle: HashSet::new(),
         }
+    }
+
+    /// Whether `system`'s battle bit is set.
+    #[must_use]
+    pub fn in_battle(&self, system: SystemKey) -> bool {
+        self.battle.contains(&system)
+    }
+
+    /// `FUN_0050b8e0`'s battle bit at `system`, rerun from the world: the
+    /// new bit when it changed, whose hook `+0x23c` (`FUN_00511780`) posts
+    /// event `0x304`; `None` when it kept its value.
+    pub fn refresh_battle(&mut self, world: &GameWorld, system: SystemKey) -> Option<bool> {
+        let bit = BlockadeSystem::battle_bit(world, system);
+        let changed = if bit {
+            self.battle.insert(system)
+        } else {
+            self.battle.remove(&system)
+        };
+        changed.then_some(bit)
+    }
+
+    /// [`Self::refresh_battle`] at every system, in key order: each change.
+    pub fn battle_changes(&mut self, world: &GameWorld) -> Vec<(SystemKey, bool)> {
+        world
+            .systems
+            .keys()
+            .filter_map(|system| self.refresh_battle(world, system).map(|bit| (system, bit)))
+            .collect()
+    }
+
+    /// `FUN_00508c60`: add a destroyed unit's value to its owner's counter
+    /// by reason: `0xe` to A, `0xf` to B, `0xc` to C, any other to none.
+    pub fn record_loss(&mut self, system: SystemKey, loss: UnitLoss) {
+        let index = loss_index(loss.side);
+        let losses = self.losses.entry(system).or_default();
+        match loss.reason {
+            REASON_GROUND_COMBAT => losses.a[index] += loss.value,
+            REASON_BOMBARDMENT => losses.b[index] += loss.value,
+            REASON_C => losses.c[index] += loss.value,
+            _ => {}
+        }
+    }
+
+    /// `FUN_00511300` as the blockade bit sets: zero A and B for every side
+    /// and store the blockading side (`FUN_00509890`); C is kept.
+    pub fn start_losses(&mut self, system: SystemKey, blockader: crate::dat::Faction) {
+        let losses = self.losses.entry(system).or_default();
+        losses.a = [0; 3];
+        losses.b = [0; 3];
+        losses.blockader = Some(blockader);
+    }
+
+    /// The system's loss record, if it ever had one.
+    #[must_use]
+    pub fn losses(&self, system: SystemKey) -> Option<&BlockadeLosses> {
+        self.losses.get(&system)
     }
 
     /// The tracked position and withdraw percent of an embarked regiment.
     #[must_use]
     pub fn embarked_regiment(&self, troop: TroopKey) -> Option<EmbarkedRegiment> {
         self.embarked.get(&troop).copied()
-    }
-
-    /// Remove blockade state for a system (used when system is destroyed).
-    pub fn clear_blockade(&mut self, system: SystemKey) {
-        self.blockaded.remove(&system);
-        // hyp: a destroyed system's pending timer goes with it; slot `+0x1c`
-        // (`0x00586290`) is not read.
-        self.support_shift.remove(&system);
     }
 
     /// The system's timer `0x386` record, if it was ever armed.
@@ -336,6 +469,13 @@ impl BlockadeSystem {
         // New blockades (entered this tick)
         for sys_key in newly_blockaded {
             Self::trace_transition(world, sys_key, "started");
+            if let Some(blockader) = world
+                .systems
+                .get(sys_key)
+                .and_then(|sys| Self::blockader(world, sys))
+            {
+                state.start_losses(sys_key, blockader);
+            }
             events.push(BlockadeEvent::BlockadeStarted {
                 system: sys_key,
                 tick,
@@ -360,6 +500,38 @@ impl BlockadeSystem {
         state.blockaded = now_blockaded;
         Self::advance_support_shift(state, world, tick, &mut events);
         events
+    }
+
+    /// Rerun the blockade rule for `system` alone, as a holder change does at
+    /// once: the side-bits hook (`FUN_00510820` -> `FUN_0050ac10(1)`) posts
+    /// event `0x311`, whose `FUN_0050b8e0` sets or clears the bit
+    /// (`ghidra/notes/blockade-bit.md`, "The recompute request"). Returns the
+    /// transition, if any, with its loss counters started as
+    /// [`Self::advance`] starts them; timer `0x386` follows on the next
+    /// `advance`, which disarms or arms it from the blockaded set.
+    pub fn refresh_system(
+        state: &mut BlockadeState,
+        world: &GameWorld,
+        system: SystemKey,
+        tick: u64,
+    ) -> Option<BlockadeEvent> {
+        let sys = world.systems.get(system)?;
+        let now = Self::system_is_blockaded(world, sys);
+        if now == state.blockaded.contains(&system) {
+            return None;
+        }
+        if now {
+            Self::trace_transition(world, system, "started");
+            if let Some(blockader) = Self::blockader(world, sys) {
+                state.start_losses(system, blockader);
+            }
+            state.blockaded.insert(system);
+            Some(BlockadeEvent::BlockadeStarted { system, tick })
+        } else {
+            Self::trace_transition(world, system, "ended");
+            state.blockaded.remove(&system);
+            Some(BlockadeEvent::BlockadeEnded { system, tick })
+        }
     }
 
     /// Timer `0x386` over the blockaded systems, in key order: disarmed when
@@ -497,13 +669,24 @@ impl BlockadeSystem {
         if has_kdy_150 {
             return FULL_WITHDRAW_PERCENT;
         }
+        // Usable fleets and their usable ships (`FUN_004ffe70(system, 1)`,
+        // `FUN_00502db0` in mode 1): a ship on its own leg is not counted.
         let (ships, fighters) = sys
             .fleets
             .iter()
             .filter_map(|&key| world.fleets.get(key))
+            .filter(|fleet| fleet.usable())
             .fold((0_i64, 0_i64), |(ships, fighters), fleet| {
                 let squadrons: i64 = fleet.fighters.iter().map(|f| i64::from(f.count)).sum();
-                (ships + i64::from(fleet.ship_count()), fighters + squadrons)
+                let usable = fleet
+                    .capital_ships
+                    .iter()
+                    .filter(|ship| ship.usable())
+                    .count();
+                (
+                    ships + i64::try_from(usable).unwrap_or(i64::MAX),
+                    fighters + squadrons,
+                )
             });
         // And the squadrons the system holds, both sides
         // (`blockade-troop-withdrawal.md`).
@@ -640,31 +823,40 @@ impl BlockadeSystem {
         });
     }
 
-    /// Whether the Alliance and the Empire each have a fleet or held
-    /// squadrons at the system.
+    /// Whether the Alliance and the Empire each have a usable fleet
+    /// ([`crate::world::Fleet::usable`], `FUN_004fe540`) or held squadrons
+    /// at the system.
     fn presence(world: &GameWorld, sys: &crate::world::System) -> (bool, bool) {
-        sys.fleets
-            .iter()
-            .filter_map(|&fk| world.fleets.get(fk))
-            .fold(
-                (sys.squadron_count(true) > 0, sys.squadron_count(false) > 0),
-                |(alliance, empire), fleet| {
-                    (alliance || fleet.is_alliance, empire || !fleet.is_alliance)
-                },
-            )
+        (
+            crate::combat::side_present_in(world, sys, true),
+            crate::combat::side_present_in(world, sys, false),
+        )
+    }
+
+    /// The system's battle bit (`+0x88` `0x1000`, `FUN_0050a900`) as
+    /// `FUN_0050b8e0` writes it: side 1 and side 2 both present
+    /// (`FUN_00509710`) at a system whose side bits are not 0
+    /// (`ghidra/notes/blockade-bit.md`, the rule, items 1 and 2). Every
+    /// system in play has side bits 1, 2 or 3, a neutral one 3
+    /// (`FUN_0055a080`, `FUN_0050b610`).
+    #[must_use]
+    pub fn battle_bit(world: &GameWorld, system: SystemKey) -> bool {
+        world.systems.get(system).is_some_and(|sys| {
+            let (alliance, empire) = Self::presence(world, sys);
+            alliance && empire
+        })
     }
 
     /// The system's blockade bit (`+0x88` `0x20`), as `FUN_0050b8e0` writes
     /// it (`ghidra/notes/blockade-bit.md`). Both sides present is a battle
     /// (bit `0x1000`, `FUN_00509710`), never a blockade. Otherwise a system
-    /// held by one side is blockaded by any fleet of the other, and a
-    /// contested one, when populated, by either side's fleets. A neutral
-    /// system never is.
+    /// held by one side is blockaded by any usable fleet of the other, and a
+    /// neutral one (side 3: `FUN_0055a080`, `FUN_0050b610`) by any usable
+    /// fleet while it is populated ("populated or side not 3").
     ///
-    /// Presence is a side's fleets (`FUN_004ffef0`) or the squadrons the
-    /// system holds for it (`FUN_00503a50`). port: every fleet is active.
-    /// hyp: `Contested` is the original's side 3, and an `Uprising` system
-    /// keeps its holder's side.
+    /// Presence is a side's usable fleets (`FUN_004ffef0`, `FUN_004fe540`)
+    /// or the squadrons the system holds for it (`FUN_00503a50`).
+    /// hyp: an `Uprising` system keeps its holder's side.
     pub(crate) fn system_is_blockaded(world: &GameWorld, sys: &crate::world::System) -> bool {
         use crate::dat::Faction;
 
@@ -672,13 +864,10 @@ impl BlockadeSystem {
         if alliance && empire {
             return false;
         }
-        match sys.control {
-            ControlKind::Contested => sys.is_populated && (alliance || empire),
-            control => match control.faction() {
-                Some(Faction::Alliance) => empire,
-                Some(Faction::Empire) => alliance,
-                Some(Faction::Neutral) | None => false,
-            },
+        match sys.control.faction() {
+            Some(Faction::Alliance) => empire,
+            Some(Faction::Empire) => alliance,
+            Some(Faction::Neutral) | None => sys.is_populated && (alliance || empire),
         }
     }
 }
@@ -690,10 +879,11 @@ impl BlockadeSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::carriage::ProductRoom;
     use crate::dat::{ExplorationStatus, Faction, SectorGroup};
     use crate::ids::DatId;
     use crate::tick::TickEvent;
-    use crate::world::{Fleet, GameWorld, Sector, System, TroopUnit};
+    use crate::world::{ControlKind, Fleet, GameWorld, Sector, System, TroopUnit};
 
     fn tick(n: u64) -> TickEvent {
         TickEvent { tick: n }
@@ -736,14 +926,25 @@ mod tests {
         (world, sys)
     }
 
+    /// A fleet of one completed capital ship: the fleet override
+    /// `FUN_004fe540` makes a fleet usable, and so present, only through
+    /// such a ship.
     fn add_fleet(world: &mut GameWorld, system: SystemKey, is_alliance: bool) {
+        let class = world
+            .capital_ship_classes
+            .insert(crate::world::CapitalShipClass {
+                is_alliance,
+                is_empire: !is_alliance,
+                hull: 100,
+                ..crate::world::CapitalShipClass::default()
+            });
         let fk = world.fleets.insert(Fleet {
             location: system,
-            capital_ships: vec![],
+            capital_ships: vec![crate::world::ShipInstance::new(class, 100, is_alliance)],
             fighters: vec![],
             characters: vec![],
             is_alliance,
-            has_death_star: false,
+            bombarding: false,
         });
         world.systems.get_mut(system).unwrap().fleets.push(fk);
     }
@@ -752,10 +953,31 @@ mod tests {
         let tk = world.troops.insert(TroopUnit {
             class_dat_id: DatId::new(0x1400_0000),
             is_alliance,
-            regiment_strength: 100,
         });
         world.systems.get_mut(system).unwrap().ground_units.push(tk);
         tk
+    }
+
+    #[test]
+    fn the_battle_bit_follows_both_sides_present_and_reports_each_change() {
+        // FUN_0050b8e0 -> FUN_0050a900: the battle bit (+0x88 0x1000) is
+        // side 1 and side 2 both present; hook +0x23c reacts only to a
+        // change (FUN_00511780).
+        for holder in [Faction::Alliance, Faction::Empire] {
+            let (mut world, sys) = make_world();
+            world.systems[sys].control = ControlKind::Controlled(holder);
+            add_fleet(&mut world, sys, true);
+            add_fleet(&mut world, sys, false);
+            let mut state = BlockadeState::new();
+
+            assert_eq!(state.refresh_battle(&world, sys), Some(true));
+            assert!(state.in_battle(sys));
+            assert_eq!(state.refresh_battle(&world, sys), None);
+
+            world.systems[sys].fleets.truncate(1);
+            assert_eq!(state.refresh_battle(&world, sys), Some(false), "{holder:?}");
+            assert!(!state.in_battle(sys));
+        }
     }
 
     #[test]
@@ -869,6 +1091,70 @@ mod tests {
     }
 
     #[test]
+    fn a_blockade_start_stores_the_blockader_and_zeroes_a_and_b() {
+        // FUN_00511300 as bit 0x20 sets: A and B zeroed for sides 1-3 and
+        // the blockading side stored (FUN_00509890); C is kept.
+        for (holder, blockader) in [
+            (Faction::Alliance, Faction::Empire),
+            (Faction::Empire, Faction::Alliance),
+        ] {
+            let (mut world, sys) = make_world();
+            world.systems[sys].control = ControlKind::Controlled(holder);
+            let mut state = BlockadeState::new();
+            for reason in [REASON_GROUND_COMBAT, REASON_BOMBARDMENT, REASON_C] {
+                state.record_loss(
+                    sys,
+                    UnitLoss {
+                        side: holder,
+                        value: 3,
+                        reason,
+                    },
+                );
+            }
+            add_fleet(&mut world, sys, blockader == Faction::Alliance);
+            BlockadeSystem::advance(&mut state, &world, &[tick(1)]);
+            let losses = state.losses(sys).copied().expect("a loss record");
+            assert_eq!(losses.blockader, Some(blockader), "{blockader:?}");
+            assert_eq!((losses.a, losses.b), ([0; 3], [0; 3]), "{blockader:?}");
+            assert_eq!(
+                losses.c[usize::from(holder == Faction::Empire)],
+                3,
+                "{blockader:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_loss_totals_add_the_neutral_sides_losses_to_the_side_that_did_not_blockade() {
+        // FUN_00509a20: A + B for the side, plus side 3's when the side is
+        // not the blockader; a reason outside 0xc, 0xe and 0xf adds nothing.
+        let mut losses = BlockadeLosses {
+            blockader: Some(Faction::Empire),
+            a: [1, 10, 100],
+            b: [2, 20, 200],
+            c: [5, 5, 5],
+        };
+        assert_eq!(losses.total(Faction::Alliance), 303);
+        assert_eq!(losses.total(Faction::Empire), 30);
+        losses.blockader = Some(Faction::Alliance);
+        assert_eq!(losses.total(Faction::Alliance), 3);
+        assert_eq!(losses.total(Faction::Empire), 330);
+        losses.blockader = None;
+        assert_eq!(losses.total(Faction::Alliance), 0);
+        let (_, sys) = make_world();
+        let mut state = BlockadeState::new();
+        state.record_loss(
+            sys,
+            UnitLoss {
+                side: Faction::Neutral,
+                value: 9,
+                reason: REASON_OWN_BOMBARDMENT,
+            },
+        );
+        assert_eq!(state.losses(sys).copied(), Some(BlockadeLosses::default()));
+    }
+
+    #[test]
     fn blockade_ends_when_defender_arrives() {
         let (mut world, sys) = make_world();
         add_fleet(&mut world, sys, false); // Empire blockader
@@ -886,6 +1172,43 @@ mod tests {
         assert!(!state.is_blockaded(sys));
     }
 
+    #[test]
+    fn a_holder_change_reruns_the_rule_for_that_system_at_once() {
+        // Event 0x311 runs FUN_0050b8e0 for the one system whose side bits
+        // changed (blockade-bit.md, "The recompute request"): the new
+        // holder's own fleet clears the bit, and a fleet that is the holder's
+        // enemy again sets it.
+        let (mut world, sys) = make_world();
+        add_fleet(&mut world, sys, false);
+        let mut state = BlockadeState::new();
+        BlockadeSystem::advance(&mut state, &world, &[tick(1)]);
+        assert!(state.is_blockaded(sys));
+        assert_eq!(
+            BlockadeSystem::refresh_system(&mut state, &world, sys, 4),
+            None
+        );
+
+        world.systems[sys].control = ControlKind::Controlled(Faction::Empire);
+        assert_eq!(
+            BlockadeSystem::refresh_system(&mut state, &world, sys, 4),
+            Some(BlockadeEvent::BlockadeEnded {
+                system: sys,
+                tick: 4
+            })
+        );
+        assert!(!state.is_blockaded(sys));
+
+        world.systems[sys].control = ControlKind::Controlled(Faction::Alliance);
+        assert_eq!(
+            BlockadeSystem::refresh_system(&mut state, &world, sys, 5),
+            Some(BlockadeEvent::BlockadeStarted {
+                system: sys,
+                tick: 5
+            })
+        );
+        assert!(state.is_blockaded(sys));
+    }
+
     fn blockaded_under(control: ControlKind, alliance_fleet: bool, empire_fleet: bool) -> bool {
         let (mut world, sys) = make_world();
         world.systems[sys].control = control;
@@ -900,21 +1223,12 @@ mod tests {
         state.is_blockaded(sys)
     }
 
-    // FUN_0050b8e0: a populated side-3 system takes the blockade bit from any
-    // fleet whose side differs from 3. hyp: `Contested` is side 3.
-    #[test]
-    fn either_sides_fleets_alone_blockade_a_contested_system() {
-        assert!(blockaded_under(ControlKind::Contested, true, false));
-        assert!(blockaded_under(ControlKind::Contested, false, true));
-        assert!(!blockaded_under(ControlKind::Contested, false, false));
-    }
-
     // FUN_0050b8e0 → FUN_00509710: both sides present sets the battle bit and
     // clears the blockade bit, whoever holds the system.
     #[test]
     fn both_sides_fleets_make_a_battle_not_a_blockade() {
         for control in [
-            ControlKind::Contested,
+            ControlKind::Uncontrolled,
             ControlKind::Controlled(Faction::Alliance),
             ControlKind::Controlled(Faction::Empire),
         ] {
@@ -922,11 +1236,46 @@ mod tests {
         }
     }
 
-    // FUN_0050b8e0 writes every bit clear for side 0.
+    // A neutral system is side 3: FUN_0055a080 returns 1, 2 or 3 and
+    // FUN_0050b610 writes no other holder. FUN_0050b8e0 treats side 3 as
+    // held and, while it is populated (+0x88 bit 0), lets any fleet whose
+    // side bits differ from 3 (every fleet) blockade it.
     #[test]
-    fn a_neutral_system_is_never_blockaded() {
-        assert!(!blockaded_under(ControlKind::Uncontrolled, true, false));
-        assert!(!blockaded_under(ControlKind::Uncontrolled, false, true));
+    fn either_sides_fleets_alone_blockade_a_populated_neutral_system() {
+        assert!(blockaded_under(ControlKind::Uncontrolled, true, false));
+        assert!(blockaded_under(ControlKind::Uncontrolled, false, true));
+        assert!(!blockaded_under(ControlKind::Uncontrolled, false, false));
+    }
+
+    // FUN_0050b8e0: an unpopulated side-3 system is never blockaded
+    // ("populated or side not 3").
+    #[test]
+    fn an_unpopulated_neutral_system_is_never_blockaded() {
+        for (alliance, empire) in [(true, false), (false, true)] {
+            let (mut world, sys) = make_world();
+            world.systems[sys].control = ControlKind::Uncontrolled;
+            world.systems[sys].is_populated = false;
+            if alliance {
+                add_fleet(&mut world, sys, true);
+            }
+            if empire {
+                add_fleet(&mut world, sys, false);
+            }
+            let mut state = BlockadeState::new();
+            BlockadeSystem::advance(&mut state, &world, &[tick(1)]);
+            assert!(!state.is_blockaded(sys), "{alliance} {empire}");
+        }
+    }
+
+    // FUN_0050b8e0 -> FUN_0050a900: side 3 is held, so both sides' fleets
+    // at a neutral system set the battle bit.
+    #[test]
+    fn both_sides_fleets_at_a_neutral_system_set_the_battle_bit() {
+        let (mut world, sys) = make_world();
+        world.systems[sys].control = ControlKind::Uncontrolled;
+        add_fleet(&mut world, sys, true);
+        add_fleet(&mut world, sys, false);
+        assert!(BlockadeSystem::battle_bit(&world, sys));
     }
 
     // FUN_0050b8e0: a held system is blockaded by the other side's fleet.
@@ -1038,12 +1387,14 @@ mod tests {
             }],
             characters: vec![],
             is_alliance: false,
-            has_death_star: false,
+            bombarding: false,
         });
         world.systems[origin].fleets.push(fleet);
         let troop = add_troop(&mut world, origin, false);
         let mut transport = TroopTransportState::default();
-        transport.embark(&mut world, fleet, &[troop]).unwrap();
+        transport
+            .embark(&mut world, &ProductRoom::default(), fleet, &[troop])
+            .unwrap();
         Run {
             world,
             origin,
@@ -1185,7 +1536,12 @@ mod tests {
         assert_eq!(run.state.embarked_regiment(run.troop), None);
 
         run.transport
-            .embark(&mut run.world, run.fleet, &[run.troop])
+            .embark(
+                &mut run.world,
+                &ProductRoom::default(),
+                run.fleet,
+                &[run.troop],
+            )
             .unwrap();
         assert!(run.observe_orbiting().is_empty());
         assert!(run.observe_departing(run.target, run.origin).is_empty());

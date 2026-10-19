@@ -42,9 +42,11 @@ pub enum ForceTier {
 
 /// Control state of a star system.
 ///
-/// Maps to the 2-bit `faction_side` field at `entity+0x24 bits 6-7` in REBEXE.EXE:
-/// 0=Uncontrolled, 1=Alliance, 2=Empire, 3=Contested.
-/// Extended with `Uprising` for active uprising state.
+/// The holder of the control word `+0x84` bits 0-1 and the side bits
+/// `+0x24` bits 6-7: 1 Alliance, 2 Empire, 3 Neutral (`FUN_0050b610`,
+/// `FUN_004f8c60`). With both sides' regiments at a system the holder stays
+/// the earlier troop side (`FUN_0050b610.c:45-70`). Extended with
+/// `Uprising` for active uprising state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum ControlKind {
     /// No faction controls this system (neutral / unclaimed).
@@ -52,8 +54,6 @@ pub enum ControlKind {
     Uncontrolled,
     /// A single faction holds this system.
     Controlled(crate::dat::Faction),
-    /// Both factions have military presence — active engagement.
-    Contested,
     /// An uprising is in progress — faction control is unstable.
     Uprising(crate::dat::Faction),
 }
@@ -335,6 +335,10 @@ pub struct Sector {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CapitalShipClass {
     pub dat_id: DatId,
+    /// The record's family byte (CAPSHPSD `family_id`): `0x18` for the Death
+    /// Star (record 136), `0x14`-`0x17` for the rest.
+    #[serde(default)]
+    pub family: u8,
     pub name: String,
     /// True if this class is buildable/usable by the Rebel Alliance.
     pub is_alliance: bool,
@@ -428,14 +432,12 @@ pub struct CapitalShipClass {
 pub const DEATH_STAR_CLASS_ID: u32 = 136;
 
 impl CapitalShipClass {
-    /// True for the Death Star class. Seeded classes carry the CAPSHPSD
-    /// record id. port: the family `0x34` clause has no source; `0x34` is the
-    /// Emperor's character family, and the original keys the Death Star on
-    /// capital-ship family `0x18` (`ghidra/notes/death-star-strategic.md`,
-    /// `or-port-death-star-family-qtde`).
+    /// True for the Death Star classes: capital-ship families `0x18`-`0x1b`
+    /// (`FUN_005003d0`, `FUN_005131b0`; `ghidra/notes/death-star-strategic.md`).
+    /// CAPSHPSD record 136 is the only shipped one.
     #[must_use]
     pub fn is_death_star(&self) -> bool {
-        self.dat_id == DatId::new(DEATH_STAR_CLASS_ID) || self.dat_id.family() == 0x34
+        (0x18..0x1c).contains(&self.family)
     }
 }
 
@@ -443,6 +445,7 @@ impl Default for CapitalShipClass {
     fn default() -> Self {
         Self {
             dat_id: DatId::new(0),
+            family: 0,
             name: String::new(),
             is_alliance: false,
             is_empire: false,
@@ -599,6 +602,44 @@ impl Default for FighterClass {
     }
 }
 
+/// A jail abode (ABODESD, family `0x98`), the character group a stranded
+/// character is held in (`FUN_00549580`; `ghidra/notes/death-star-strategic.md`,
+/// "Jail abodes"). It has no system: an occupant sits in no system or fleet
+/// list. port: the port keeps the two jails; Dagobah, the Hermitage and
+/// Jabba's Palace have no port reader.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Abode {
+    /// `0x98000440`, owner 1.
+    AllianceJail,
+    /// `0x98000480`, owner 2.
+    EmpireJail,
+}
+
+impl Abode {
+    /// The jail of a prisoner's side bits, its captor's: side bits 1 take
+    /// `0x98000440`, any other `0x98000480` (`FUN_00549580`). The Alliance
+    /// Jail holds Empire characters, the Empire Jail Alliance ones
+    /// (`FUN_005775a0` accepts only occupants of its owner's side).
+    #[must_use]
+    pub const fn jail_of(is_alliance: bool) -> Self {
+        if is_alliance {
+            Self::AllianceJail
+        } else {
+            Self::EmpireJail
+        }
+    }
+
+    /// The name the Personnel Finder shows for the container
+    /// (`FUN_004f62d0`): the ABODESD record's TEXTSTRA id, 11600 and 11616.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::AllianceJail => "Alliance Jail",
+            Self::EmpireJail => "Empire Jail",
+        }
+    }
+}
+
 /// A character — either a named major hero/villain or a generic minor character.
 ///
 /// Characters can be assigned as admirals, generals, or diplomats.
@@ -682,6 +723,11 @@ pub struct Character {
     /// True if character is currently held captive.
     #[serde(default)]
     pub is_captive: bool,
+    /// The day timer `0x38a` fires: armed while the prisoner bit is set
+    /// (bit 8, `FUN_004eeb10` → `FUN_004f1ba0`), cleared with it
+    /// ([`crate::missions::MissionSystem::escape_step`]).
+    #[serde(default)]
+    pub escape_due: Option<u64>,
 
     // ── Location tracking ───────────────────────────────────────────────────
     /// System where this character is currently located.
@@ -695,6 +741,17 @@ pub struct Character {
     /// (`FUN_004f8240`; `move-order.md`, "Who reads the en route bit").
     #[serde(default)]
     pub en_route: bool,
+    /// Adrift: the role byte's bit 6 (`+0x78`), set by the destroy cascade
+    /// on a character left directly at a destroyed system off a mission
+    /// (`FUN_004ef2e0` → `FUN_00534790`). The sweep clears it and sends
+    /// the character away (`crate::death_star::sweep_adrift`).
+    #[serde(default)]
+    pub adrift: bool,
+    /// The jail abode holding the character, a child of a family-`0x98`
+    /// object: no system or fleet holds it (`crate::death_star::sweep_adrift`),
+    /// and an escape takes it out (`crate::death_star::free_escapee`).
+    #[serde(default)]
+    pub abode: Option<Abode>,
 
     // ── Story state ────────────────────────────────────────────────────
     /// True once the player has witnessed the Luke–Vader paternity reveal.
@@ -761,6 +818,27 @@ impl Character {
         self.is_captive = false;
         self.captured_by = None;
         self.capture_tick = None;
+        self.leave_abode();
+    }
+
+    /// Leave the jail abode: every placement and every change of captivity
+    /// takes the character out of it (`FUN_00549580` holds a prisoner with
+    /// no captor in no system or fleet).
+    pub fn leave_abode(&mut self) {
+        self.abode = None;
+    }
+
+    /// The jail abode holding the character: its abode while it is a
+    /// prisoner with no captor in no system or fleet, as `FUN_00549580`
+    /// leaves it (`ghidra/notes/death-star-strategic.md`, "Jail abodes").
+    #[must_use]
+    pub fn held_abode(&self) -> Option<Abode> {
+        self.abode.filter(|_| {
+            self.is_captive
+                && self.captured_by.is_none()
+                && self.current_system.is_none()
+                && self.current_fleet.is_none()
+        })
     }
 
     /// The name the game shows: ranked while the character holds a rank
@@ -838,6 +916,9 @@ impl Default for Character {
             current_system: None,
             current_fleet: None,
             en_route: false,
+            adrift: false,
+            abode: None,
+            escape_due: None,
             heritage_known: false,
             is_killed: false,
             recruited: false,
@@ -880,11 +961,11 @@ pub struct Fleet {
     pub characters: Vec<CharacterKey>,
     /// True if this fleet belongs to the Rebel Alliance; false = Empire.
     pub is_alliance: bool,
-    /// True if this fleet contains a Death Star (family `0x34`).
-    ///
-    /// Enables the Death Star win-condition check in `VictorySystem`.
-    /// Set by `rebellion-data` when loading fleet composition from CAPSHPSD.
-    pub has_death_star: bool,
+    /// Fleet `+0x58` bit 6: a Planetary Bombardment order flagged it
+    /// (`FUN_004fec00`); the run's finalize and the fleet's arrival clear it
+    /// (`ghidra/notes/bombardment.md`).
+    #[serde(default)]
+    pub bombarding: bool,
 }
 
 impl Fleet {
@@ -916,13 +997,58 @@ impl Fleet {
         counts
     }
 
-    /// True if this fleet has no alive capital ships, fighter squadrons, or
-    /// separate Death Star tactical object.
+    /// True if this fleet has no alive capital ships or fighter squadrons.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        !self.has_death_star
-            && !self.capital_ships.iter().any(|s| s.alive)
-            && self.fighters.iter().all(|e| e.count == 0)
+        !self.capital_ships.iter().any(|s| s.alive) && self.fighters.iter().all(|e| e.count == 0)
+    }
+
+    /// True when one of the fleet's live capital ships is a Death Star
+    /// (`CapitalShipClass::is_death_star`). The original keeps no flag: it
+    /// asks the fleet's children for family `[0x18,0x1c)` (`FUN_005003d0`,
+    /// `FUN_00582440`, `FUN_00507ab0`, `FUN_0040b0e0`;
+    /// `ghidra/notes/death-star-strategic.md`).
+    #[must_use]
+    pub fn has_death_star(
+        &self,
+        classes: &slotmap::SlotMap<CapitalShipKey, CapitalShipClass>,
+    ) -> bool {
+        self.capital_ships.iter().any(|ship| {
+            ship.alive
+                && classes
+                    .get(ship.class)
+                    .is_some_and(CapitalShipClass::is_death_star)
+        })
+    }
+
+    /// [`Self::has_death_star`] in mode 1 (`FUN_005003d0(fleet, 1)`): a
+    /// usable Death Star, not one still on its own leg
+    /// ([`ShipInstance::usable`]).
+    #[must_use]
+    pub fn has_usable_death_star(
+        &self,
+        classes: &slotmap::SlotMap<CapitalShipKey, CapitalShipClass>,
+    ) -> bool {
+        self.capital_ships.iter().any(|ship| {
+            ship.usable()
+                && classes
+                    .get(ship.class)
+                    .is_some_and(CapitalShipClass::is_death_star)
+        })
+    }
+
+    /// Usable (`+0x50` bit 0): the fleet override `FUN_004fe540` (slot
+    /// `+0x84`) walks the fleet's existing capital ships (`FUN_00502e30`,
+    /// mode 3) and requires one that is completed and not in transit
+    /// ([`ShipInstance::usable`]). A fleet with no such ship, whether its
+    /// ships are on their own legs, destroyed or absent, is not present
+    /// for battle or blockade (mode 1 walks, `FUN_00509710`,
+    /// `FUN_0050b8e0`); squadrons never count (`FUN_004fe160`). The
+    /// override's own test that the fleet is not en route (bit 4) is the
+    /// fleet's absence from `System::fleets` while it moves.
+    #[must_use]
+    pub fn usable(&self) -> bool {
+        self.capital_ships.iter().any(ShipInstance::usable)
     }
 }
 
@@ -933,13 +1059,13 @@ pub struct FighterEntry {
     pub count: u32,
     /// The tag of the capital ship the squadrons ride aboard
     /// (`ShipInstance::tag`; the original's squadrons are children of a
-    /// ship, `FUN_005039d0`). 0 holds them on the fleet itself. port: a
-    /// fleet with no capital ship, or more squadrons than its ships hold.
+    /// ship, `FUN_005039d0`). A Move, a Build and seeding each name one
+    /// (`crate::carriage`).
     pub carrier: u32,
 }
 
 /// Squadrons of one class and side held by a system (`System::fighters`).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SystemSquadrons {
     pub class: FighterKey,
     pub count: u32,
@@ -1029,6 +1155,11 @@ pub struct ShipInstance {
     pub damage_counters: u32,
     /// True while `hull_current` > 0 and the ship has not been destroyed.
     pub alive: bool,
+    /// Completed (`+0x50` bit 2, `FUN_004f74f0`). An ordered ship exists
+    /// from its order with the bit clear (`FUN_0052a140` ->
+    /// `FUN_004f7d50(.., created 1, completed 0)`), so mode-3 walks see it,
+    /// until its yard finishes it in place (`FUN_0052bee0`).
+    pub completed: bool,
     /// Its own name (`+0x34`): "<class name> N" once numbered
     /// (`GameWorld::number_capital_ships`), or the one the player gave it
     /// (order 0x203); `None` shows the class's (`FUN_004f6270`).
@@ -1041,6 +1172,22 @@ pub struct ShipInstance {
     /// The repair timer `0x380` while the ship is damaged and usable
     /// (`FUN_005577f0`, `FUN_0057c2c0`; `repair::RepairSystem`).
     pub repair_timer: Option<RepairTimer>,
+    /// Its own leg while it travels from its yard to the fleet that holds
+    /// it (`+0x50` bit 5, `FUN_00556430`); `None` once it has arrived.
+    pub transit: Option<ShipTransit>,
+}
+
+/// A capital ship's own leg (`FUN_00556430`): a finished ship leaves its
+/// yard already a member of its destination fleet and travels there by
+/// itself (`FUN_005150c0.c:90-102`; `build-delivery.md`, "Travel").
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ShipTransit {
+    /// The system it left (the yard's, `+0x38`).
+    pub from: SystemKey,
+    /// The system it travels to (`+0x3c`).
+    pub to: SystemKey,
+    /// The day it arrives (`+0x44`, galaxy event `0x387`).
+    pub arrival_tick: u64,
 }
 
 /// Ship repair timer `0x380` (`ship-damage-repair.md`, "Repair"): armed
@@ -1067,10 +1214,32 @@ impl ShipInstance {
             // not yet been allocated.
             damage_counters: 0,
             alive: true,
+            completed: true,
             name: None,
             tag: 0,
             repair_timer: None,
+            transit: None,
         }
+    }
+
+    /// A ship at its order: created, so it exists, but not completed
+    /// (`FUN_004f7d50(.., 1, 0)` from `FUN_0052a140`), at full hull (an
+    /// unbuilt product keeps its initial `+0x274`, `death-star-product.md`
+    /// section 7).
+    #[must_use]
+    pub fn ordered(class: CapitalShipKey, hull: i32, is_alliance: bool) -> Self {
+        ShipInstance {
+            completed: false,
+            ..Self::new(class, hull, is_alliance)
+        }
+    }
+
+    /// Usable (`+0x50` bit 0, `0x004f7b80`): existing (alive), completed
+    /// and not travelling on its own leg. Walks in mode 1 (`FUN_004f6b90`)
+    /// see only these ships.
+    #[must_use]
+    pub fn usable(&self) -> bool {
+        self.alive && self.completed && self.transit.is_none()
     }
 
     /// Create `count` instances of the same class at full hull.
@@ -1351,6 +1520,11 @@ pub struct MissionRecord {
     pub detection_phases: bool,
     /// Members may resign (record `+0x64`, `FUN_00520b90`).
     pub can_resign: bool,
+    /// Where members go at the end (record `+0x68`, `FUN_00520ba0`, read by
+    /// `FUN_00521220`): 0 stay, 1 home from a container of another side, 2
+    /// home always (`ghidra/notes/mission-return.md`).
+    #[serde(default)]
+    pub return_policy: u8,
     /// What the validator requires of a running mission's target and
     /// container (record `+0x6c..+0x94`).
     pub rules: MissionTargetRules,
@@ -1493,13 +1667,13 @@ impl MstbTable {
 }
 
 /// A troop regiment stationed at a system — a deployed instance of a troop class.
+/// A regiment has no strength of its own: an assault kills it whole
+/// (`crate::assault`, `ghidra/notes/ground-assault.md`).
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct TroopUnit {
     /// The class definition (from TROOPSD.DAT).
     pub class_dat_id: DatId,
     pub is_alliance: bool,
-    /// port: current regiment strength. Starts at class max, reduced by ground combat.
-    pub regiment_strength: i16,
 }
 
 /// A special-forces unit stationed at a system.
@@ -1563,6 +1737,11 @@ pub struct ClassStats {
     /// DEFFACSD `shield_strength`, class `+0x60` (`FUN_00520b80`): "Shield
     /// Strength".
     pub shield_strength: u32,
+    /// TROOPSD `uprising_defense`, class `+0x58`: a regiment's slot
+    /// `+0x1c0`, which the blockade loss counters read
+    /// (`support_shift::regiment_value`).
+    #[serde(default)]
+    pub uprising_defense: u32,
 }
 
 impl BuildableClass {
@@ -1806,6 +1985,11 @@ pub struct GameWorld {
     pub research_exhausted: [[bool; 3]; 2],
     /// Each fleet's name (`+0x34`) and each side's default-name counter.
     pub fleet_names: FleetNames,
+    /// The fleets carrying `+0x58` bit 1, the side's spare at a system that
+    /// a ship's Move or Build bound for the system lands in
+    /// (`FUN_005097d0`; [`Self::spare_fleet`]).
+    #[serde(default)]
+    pub spare_fleets: slotmap::SecondaryMap<FleetKey, ()>,
     /// The last tag given to a capital ship (`ShipInstance::tag`).
     pub last_ship_tag: u32,
     /// Squadrons travelling on their own, in departure order. The original
@@ -1826,10 +2010,77 @@ pub struct GameWorld {
     )]
     pub arrival_holders: std::collections::HashMap<SystemKey, bool>,
     /// The sectors whose systems carry `+0x88` bit 11: a usable Death Star
-    /// lies at one of their systems (`FUN_005178b0`). Derived each tick by
-    /// `death_star::refresh_sectors`, so never saved.
+    /// lies at one of their systems (`FUN_005178b0`). Rebuilt by
+    /// `death_star::refresh_sectors` wherever a Death Star's usable bit
+    /// changes and after a load, so never saved.
     #[serde(skip)]
     pub death_star_sectors: std::collections::HashSet<SectorKey>,
+    /// Each system's SYSTEMSD `family_id` (`0x90` core, `0x92` rim), which
+    /// the shift gate reads through slot `+4` (`FUN_00518be0`). A system's
+    /// `DatId` carries no family byte.
+    #[serde(
+        default,
+        serialize_with = "crate::serde_ordered::serialize_hash_map",
+        deserialize_with = "crate::serde_ordered::deserialize_hash_map"
+    )]
+    pub system_families: HashMap<SystemKey, u8>,
+    /// The systems with `+0x88` bit 3, kept out of every sector support
+    /// shift (`support_shift`): the rim systems from setup until a control
+    /// change leaves them held and populated (`FUN_005081f0`,
+    /// `FUN_0056a550`, `FUN_0050b890`).
+    #[serde(
+        default,
+        serialize_with = "crate::serde_ordered::serialize_hash_set",
+        deserialize_with = "crate::serde_ordered::deserialize_hash_set"
+    )]
+    pub shift_excluded: std::collections::HashSet<SystemKey>,
+    /// The systems whose control word has troop bits (`+0x84` bits 4-5,
+    /// `FUN_0050b610`): one side's regiments set the holder
+    /// (`support_shift::refresh_troop_bits`).
+    #[serde(
+        default,
+        serialize_with = "crate::serde_ordered::serialize_hash_set",
+        deserialize_with = "crate::serde_ordered::deserialize_hash_set"
+    )]
+    pub troop_held: std::collections::HashSet<SystemKey>,
+    /// Each system's garrison requirement, support drift and collection
+    /// rate (`+0x80`, `+0x6c`, `+0x70`), as the support hook's writers
+    /// left them (`economy::SupportValues`, `FUN_005109f0`).
+    #[serde(
+        default,
+        serialize_with = "crate::serde_ordered::serialize_hash_map",
+        deserialize_with = "crate::serde_ordered::deserialize_hash_map"
+    )]
+    pub support_values: HashMap<SystemKey, crate::economy::SupportValues>,
+    /// Systems in revolt: `+0x88` bit 2 (`FUN_0050a130`), which doubles the
+    /// garrison requirement (`FUN_0050b5a0`). It follows
+    /// `uprising::UprisingState`'s revolts: set as one begins and cleared
+    /// as one ends (`uprising::apply_uprising_event`,
+    /// `uprising::end_if_garrisoned`).
+    #[serde(
+        default,
+        serialize_with = "crate::serde_ordered::serialize_hash_set",
+        deserialize_with = "crate::serde_ordered::deserialize_hash_set"
+    )]
+    pub revolting: std::collections::HashSet<SystemKey>,
+    /// Event `0x373` support shifts and event `0x31b` control changes
+    /// raised and not yet served. Each operation that raises them serves
+    /// them before it returns (`support_shift::fire`), so never saved.
+    #[serde(skip)]
+    pub support_events: Vec<crate::support_shift::QueuedEvent>,
+    /// Systems whose holder changed and whose production managers' products
+    /// are not yet destroyed (`FUN_004f8680` → `FUN_0052b790`). The
+    /// operation that changes the holder serves them with its events
+    /// (`manufacturing::serve_manager_sides`), so never saved.
+    #[serde(skip)]
+    pub manager_side_changes: Vec<SystemKey>,
+    /// The game root's per-step control-change counters (`FUN_00518040`),
+    /// keyed by `support_shift::step`.
+    pub control_change_cap: crate::support_shift::ControlChangeCap,
+    /// The headless battle's generator, which runs on from battle to
+    /// battle (`crate::tactical::OriginalBattleRng`); never saved.
+    #[serde(skip)]
+    pub battle_rng: crate::tactical::OriginalBattleRng,
 }
 
 /// The fleet record's name (`+0x34`, TEXTSTRA 11523): a fleet's name until
@@ -1870,6 +2121,20 @@ fn default_difficulty_index() -> u8 {
 }
 
 impl GameWorld {
+    /// A system's family (`system_families`). port: a system built without
+    /// the SYSTEMSD loader reads its `DatId`'s family byte.
+    #[must_use]
+    pub fn system_family(&self, system: SystemKey) -> u8 {
+        self.system_families
+            .get(&system)
+            .copied()
+            .unwrap_or_else(|| {
+                self.systems
+                    .get(system)
+                    .map_or(0, |value| value.dat_id.family())
+            })
+    }
+
     /// `+0x88` bit 11 of `sys`: a usable Death Star lies in its sector
     /// (`FUN_005178b0`, `FUN_0050a890`).
     #[must_use]
@@ -1964,14 +2229,12 @@ impl GameWorld {
     }
 
     /// The side a system's facilities belong to under `control`: its
-    /// holder, neutral when uncontrolled, and none while contested, when
-    /// the last holder keeps them (`ghidra/notes/facility-ownership.md`).
+    /// holder, neutral when uncontrolled (`ghidra/notes/facility-ownership.md`).
     #[must_use]
-    pub const fn facility_holder(control: ControlKind) -> Option<Faction> {
+    pub const fn facility_holder(control: ControlKind) -> Faction {
         match control {
-            ControlKind::Controlled(side) | ControlKind::Uprising(side) => Some(side),
-            ControlKind::Uncontrolled => Some(Faction::Neutral),
-            ControlKind::Contested => None,
+            ControlKind::Controlled(side) | ControlKind::Uprising(side) => side,
+            ControlKind::Uncontrolled => Faction::Neutral,
         }
     }
 
@@ -1984,7 +2247,7 @@ impl GameWorld {
         let Some(holder) = self
             .systems
             .get(system)
-            .and_then(|value| Self::facility_holder(value.control))
+            .map(|value| Self::facility_holder(value.control))
         else {
             return Vec::new();
         };
@@ -2027,11 +2290,97 @@ impl GameWorld {
         recruit_side_index(side).is_some_and(|index| self.recruit_pool_empty[index])
     }
 
+    /// Whether `fleet` exists and holds a usable Death Star
+    /// ([`Fleet::has_usable_death_star`]).
+    #[must_use]
+    pub fn fleet_has_usable_death_star(&self, fleet: FleetKey) -> bool {
+        self.fleets
+            .get(fleet)
+            .is_some_and(|value| value.has_usable_death_star(&self.capital_ship_classes))
+    }
+
+    /// Whether `fleet` exists and holds a live Death Star, on its own leg
+    /// or not ([`Fleet::has_death_star`]).
+    #[must_use]
+    pub fn fleet_has_death_star(&self, fleet: FleetKey) -> bool {
+        self.fleets
+            .get(fleet)
+            .is_some_and(|value| value.has_death_star(&self.capital_ship_classes))
+    }
+
+    /// The side's spare fleet at `system` (`FUN_005097d0`): its first fleet
+    /// there, in container order, with `+0x58` bit 1. The bit stays while
+    /// the fleet holds ships: `FUN_0050bc60` drops it only from a destroyed
+    /// fleet, so every later Move or Build bound for the system joins it
+    /// (the route-1 Empire save, its day-123 Death Star played on: the
+    /// unfinished Death Star Moved to Averam joined the fleet Galleon 2's
+    /// Move had made there).
+    #[must_use]
+    pub fn spare_fleet(&self, system: SystemKey, is_alliance: bool) -> Option<FleetKey> {
+        self.systems.get(system)?.fleets.iter().copied().find(|&fleet| {
+            self.spare_fleets.contains_key(fleet)
+                && self
+                    .fleets
+                    .get(fleet)
+                    .is_some_and(|value| value.is_alliance == is_alliance && value.location == system)
+        })
+    }
+
+    /// [`Self::spare_fleet`], else a new empty fleet of the side at
+    /// `system` carrying bit 1. port: the original keeps a spare ready
+    /// (`FUN_00512d00`, made when the side has none); the port makes it
+    /// when a ship first needs it, and numbers it then (`FUN_00517760`).
+    pub fn spare_fleet_or_new(&mut self, system: SystemKey, is_alliance: bool) -> FleetKey {
+        if let Some(fleet) = self.spare_fleet(system, is_alliance) {
+            return fleet;
+        }
+        let fleet = self.insert_fleet(Fleet {
+            location: system,
+            is_alliance,
+            ..Fleet::default()
+        });
+        if let Some(value) = self.systems.get_mut(system) {
+            value.fleets.push(fleet);
+            value.fleets.sort_unstable();
+        }
+        self.spare_fleets.insert(fleet, ());
+        fleet
+    }
+
+    /// Remove `fleet` from the world, and with it its spare mark:
+    /// `FUN_0050bc60` drops `+0x58` bit 1 from a destroyed fleet
+    /// (`FUN_0050bc60.c:41-51`).
+    pub fn remove_fleet(&mut self, fleet: FleetKey) -> Option<Fleet> {
+        self.spare_fleets.remove(fleet);
+        self.fleets.remove(fleet)
+    }
+
     /// Insert `fleet` and give it its side's next default name.
     pub fn insert_fleet(&mut self, fleet: Fleet) -> FleetKey {
         let key = self.fleets.insert(fleet);
         self.name_new_fleet(key);
         key
+    }
+
+    /// Disband `fleet` once it holds no ship and no squadron
+    /// ([`Fleet::is_empty`]): `FUN_004fe630` counts its ships in mode 3 and,
+    /// with none left, sends the fleet `+0xac(0x14)` (`FUN_004fe630.c:21-28`).
+    /// hyp: a character aboard stays in the system.
+    pub fn remove_fleet_if_empty(&mut self, fleet: FleetKey) {
+        let Some(value) = self.fleets.get(fleet).filter(|value| value.is_empty()) else {
+            return;
+        };
+        let (location, characters) = (value.location, value.characters.clone());
+        for key in characters {
+            if let Some(character) = self.characters.get_mut(key) {
+                character.current_fleet = None;
+                character.current_system = Some(location);
+            }
+        }
+        if let Some(system) = self.systems.get_mut(location) {
+            system.fleets.retain(|&key| key != fleet);
+        }
+        self.remove_fleet(fleet);
     }
 
     /// `FUN_00517760`: a fleet still bearing the record's name takes
@@ -2357,18 +2706,6 @@ mod facility_ownership_tests {
     }
 
     #[test]
-    fn a_contested_system_keeps_its_last_holders_facilities() {
-        // A battle only sets the system's battle bit; ownership changes only
-        // with the side (ghidra/notes/facility-ownership.md, "Contested").
-        let mut world = GameWorld::default();
-        let here = system(&mut world, ControlKind::Contested);
-        let shipyard = class(&mut world, 0x2800_0001, true, true);
-        let facility = yard(&mut world, here, shipyard, Faction::Alliance);
-        assert!(world.hand_over_facilities(here).is_empty());
-        assert_eq!(side_of(&world, facility), Some(Faction::Alliance));
-    }
-
-    #[test]
     fn a_system_gone_neutral_keeps_only_classes_serving_both_sides() {
         // FUN_004f27d0: neutral (side 3) needs both flags.
         let mut world = GameWorld::default();
@@ -2409,20 +2746,19 @@ mod facility_ownership_tests {
     }
 
     #[test]
-    fn the_facility_holder_follows_control_and_holds_while_contested() {
+    fn the_facility_holder_follows_control() {
         assert_eq!(
             GameWorld::facility_holder(ControlKind::Controlled(Faction::Empire)),
-            Some(Faction::Empire)
+            Faction::Empire
         );
         assert_eq!(
             GameWorld::facility_holder(ControlKind::Uprising(Faction::Alliance)),
-            Some(Faction::Alliance)
+            Faction::Alliance
         );
         assert_eq!(
             GameWorld::facility_holder(ControlKind::Uncontrolled),
-            Some(Faction::Neutral)
+            Faction::Neutral
         );
-        assert_eq!(GameWorld::facility_holder(ControlKind::Contested), None);
     }
 }
 
@@ -2437,8 +2773,77 @@ mod tests {
             fighters: Vec::new(),
             characters: Vec::new(),
             is_alliance,
-            has_death_star: false,
+            bombarding: false,
         }
+    }
+
+    // FUN_0050bc60 drops a fleet's spare bit (+0x58 bit 1) only when the
+    // fleet is destroyed (.c:41-51), so a fleet that is gone keeps no mark:
+    // one disbanded once emptied (FUN_004fe630.c:21-28) and one destroyed
+    // with its ship (post_battle::destroy_fleet) both leave the list.
+    #[test]
+    fn a_spare_fleet_that_is_gone_leaves_the_spare_list_for_either_side() {
+        for is_alliance in [true, false] {
+            let mut world = GameWorld::default();
+            let system = world.systems.insert(System::default());
+            let disbanded = world.spare_fleet_or_new(system, is_alliance);
+            world.remove_fleet_if_empty(disbanded);
+            assert!(!world.fleets.contains_key(disbanded), "{is_alliance}");
+            assert!(world.spare_fleets.is_empty(), "{is_alliance}");
+
+            let class = world.capital_ship_classes.insert(CapitalShipClass {
+                hull: 100,
+                ..CapitalShipClass::default()
+            });
+            let destroyed = world.spare_fleet_or_new(system, is_alliance);
+            world.fleets[destroyed]
+                .capital_ships
+                .push(ShipInstance::new(class, 100, is_alliance));
+            crate::post_battle::destroy_fleet(
+                &mut world,
+                &mut crate::troop_transport::TroopTransportState::new(),
+                destroyed,
+                0,
+            );
+            assert!(!world.fleets.contains_key(destroyed), "{is_alliance}");
+            assert!(world.spare_fleets.is_empty(), "{is_alliance}");
+        }
+    }
+
+    #[test]
+    fn a_ship_ordered_but_unfinished_is_not_usable_for_either_side() {
+        // 0x004f7b80: usable (+0x50 bit 0) = existing and completed (bit 2)
+        // and not en route. An ordered ship is created with completed clear
+        // (FUN_0052a140 -> FUN_004f7d50(.., 1, 0)), so its fleet is not
+        // usable either (FUN_004fe540.c:20-35). The day-115 save of the
+        // route-1 Empire game holds such a ship: +0x50 0x42.
+        let mut classes = slotmap::SlotMap::<CapitalShipKey, CapitalShipClass>::with_key();
+        for is_alliance in [true, false] {
+            let class = classes.insert(CapitalShipClass {
+                is_alliance,
+                is_empire: !is_alliance,
+                hull: 100,
+                ..CapitalShipClass::default()
+            });
+            let ordered = ShipInstance::ordered(class, 100, is_alliance);
+            assert!(ordered.alive, "{is_alliance}: an ordered ship exists");
+            assert!(!ordered.usable(), "{is_alliance}");
+            let mut unfinished = fleet(is_alliance);
+            unfinished.capital_ships.push(ordered.clone());
+            assert!(!unfinished.usable(), "{is_alliance}");
+            unfinished.capital_ships[0].completed = true;
+            assert!(unfinished.usable(), "{is_alliance}: completed in place");
+        }
+    }
+
+    #[test]
+    fn each_side_is_jailed_in_its_own_abode_under_its_abodesd_name() {
+        // FUN_00549580: side bits 1 take 0x98000440, any other 0x98000480;
+        // ABODESD's name field gives TEXTSTRA 11600 and 11616.
+        assert_eq!(Abode::jail_of(true), Abode::AllianceJail);
+        assert_eq!(Abode::jail_of(false), Abode::EmpireJail);
+        assert_eq!(Abode::AllianceJail.name(), "Alliance Jail");
+        assert_eq!(Abode::EmpireJail.name(), "Empire Jail");
     }
 
     #[test]
@@ -2744,6 +3149,7 @@ mod tests {
             hidden: false,
             detection_phases: true,
             can_resign: true,
+            return_policy: 1,
             rules: MissionTargetRules::default(),
             members: MissionMemberRules::default(),
         };
@@ -2807,16 +3213,19 @@ mod tests {
     }
 
     #[test]
-    fn only_the_death_star_record_or_family_is_the_death_star() {
-        let class = |raw| CapitalShipClass {
-            dat_id: DatId::new(raw),
+    fn only_capital_ship_families_0x18_to_0x1b_are_the_death_star() {
+        // FUN_005003d0 tests the family range [0x18, 0x1c); CAPSHPSD record
+        // 136 is family 0x18, a Star Destroyer 0x14, the Emperor's character
+        // family 0x34 is no ship.
+        let class = |family| CapitalShipClass {
+            family,
             ..Default::default()
         };
-        // CAPSHPSD record 136 is the Death Star; 131 is a Star Destroyer.
-        assert!(class(DEATH_STAR_CLASS_ID).is_death_star());
-        assert!(class(0x3400_0001).is_death_star());
-        assert!(!class(131).is_death_star());
-        assert!(!class(0x3000_0088).is_death_star());
+        assert!(class(0x18).is_death_star());
+        assert!(class(0x1b).is_death_star());
+        assert!(!class(0x14).is_death_star());
+        assert!(!class(0x1c).is_death_star());
+        assert!(!class(0x34).is_death_star());
     }
 
     #[test]
@@ -2951,7 +3360,7 @@ mod tests {
             fighters: vec![],
             characters: vec![],
             is_alliance: false,
-            has_death_star: false,
+            bombarding: false,
         });
 
         let mut c = default_character();
@@ -2981,6 +3390,20 @@ mod tests {
     }
 
     #[test]
+    fn a_killed_character_leaves_its_jail() {
+        // A destroyed character is no abode's occupant: FUN_00549580 holds
+        // only a member that exists (+0x50 bit 3 clear).
+        for is_alliance in [true, false] {
+            let mut c = default_character();
+            c.is_alliance = is_alliance;
+            c.is_captive = true;
+            c.abode = Some(Abode::jail_of(!is_alliance));
+            c.mark_killed();
+            assert_eq!(c.abode, None, "{is_alliance}");
+        }
+    }
+
+    #[test]
     fn mark_killed_is_idempotent() {
         let mut c = default_character();
         c.mark_killed();
@@ -3002,16 +3425,53 @@ mod tests {
     }
 
     #[test]
-    fn death_star_only_fleet_is_not_empty() {
-        let fleet = Fleet {
-            location: SystemKey::default(),
-            capital_ships: Vec::new(),
-            fighters: Vec::new(),
-            characters: Vec::new(),
-            is_alliance: false,
-            has_death_star: true,
+    fn a_fleet_has_a_death_star_exactly_when_it_holds_a_live_family_0x18_ship() {
+        // FUN_005003d0 / FUN_00582440 / FUN_00507ab0 / FUN_0040b0e0: the
+        // original asks the fleet's ships for family [0x18, 0x1c); there is
+        // no stored flag. The rule takes no side, so an Alliance fleet given
+        // the class answers as the Empire's does.
+        let mut classes = slotmap::SlotMap::with_key();
+        let death_star = classes.insert(CapitalShipClass {
+            family: 0x18,
+            hull: 500,
+            ..Default::default()
+        });
+        let star_destroyer = classes.insert(CapitalShipClass {
+            family: 0x14,
+            hull: 100,
+            ..Default::default()
+        });
+        for is_alliance in [false, true] {
+            let mut fleet = Fleet {
+                is_alliance,
+                capital_ships: vec![ShipInstance::new(star_destroyer, 100, is_alliance)],
+                ..Default::default()
+            };
+            assert!(!fleet.has_death_star(&classes));
+            fleet
+                .capital_ships
+                .push(ShipInstance::new(death_star, 500, is_alliance));
+            assert!(fleet.has_death_star(&classes));
+            fleet.capital_ships[1].alive = false;
+            assert!(!fleet.has_death_star(&classes));
+        }
+    }
+
+    #[test]
+    fn a_fleet_holding_only_a_death_star_is_empty_once_the_ship_dies() {
+        let mut classes = slotmap::SlotMap::with_key();
+        let death_star = classes.insert(CapitalShipClass {
+            family: 0x18,
+            ..Default::default()
+        });
+        let mut fleet = Fleet {
+            capital_ships: vec![ShipInstance::new(death_star, 500, false)],
+            ..Default::default()
         };
         assert!(!fleet.is_empty());
+        fleet.capital_ships[0].alive = false;
+        assert!(fleet.is_empty());
+        assert!(!fleet.has_death_star(&classes));
     }
 
     #[test]

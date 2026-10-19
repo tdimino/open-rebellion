@@ -7,7 +7,6 @@ use rebellion_core::ai::{AIState, AiFaction};
 use rebellion_core::betrayal::BetrayalState;
 use rebellion_core::blockade::BlockadeState;
 use rebellion_core::dat::Faction;
-use rebellion_core::death_star::DeathStarState;
 use rebellion_core::economy::EconomyState;
 use rebellion_core::events::EventState;
 use rebellion_core::fog::{FogState, FogSystem};
@@ -35,8 +34,8 @@ pub const SEED42_FIXTURE_ID: &str = "seed42-v1";
 pub const SEED42_ARTIFACT_BYTES: &[u8] = include_bytes!("../tests/fixtures/replay_seed42_v1.json");
 pub const SEED42_ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const SEED42_SEED: u64 = 42;
-pub const SEED42_INITIAL_FINGERPRINT: &str = "v1:dba544d28bce7aa4";
-pub const SEED42_FINAL_FINGERPRINT: &str = "v1:df820646127bbe3b";
+pub const SEED42_INITIAL_FINGERPRINT: &str = "v1:658cfc9d271b84e3";
+pub const SEED42_FINAL_FINGERPRINT: &str = "v1:bdbad073a9bf4152";
 pub const SEED42_FINAL_TICK: u64 = 25;
 pub const SEED42_DATA_INPUTS: usize = 51;
 pub const SEED42_DATA_BYTES: u64 = 50_597;
@@ -54,15 +53,15 @@ pub fn seed42_seed_options() -> SeedOptions {
 }
 
 pub const SEED42_CHECKPOINTS: &[(u64, u64, &str)] = &[
-    (1, 0, "v1:b3575b2a99808e84"),
-    (2, 0, "v1:c010420d31661ea2"),
-    (3, 5, "v1:c11e8156636cbfc7"),
-    (4, 10, "v1:8b76432a9a70a508"),
-    (5, 15, "v1:a95940303cc7120a"),
-    (6, 20, "v1:626fd92f92f04f9a"),
-    (7, 25, "v1:af2e332caaabdb6c"),
-    (8, 25, "v1:df820646127bbe3b"),
-    (9, 25, "v1:df820646127bbe3b"),
+    (1, 0, "v1:d40157a96a9c2e9f"),
+    (2, 0, "v1:305c5ea0dcb92035"),
+    (3, 5, "v1:b571be90b1cf6601"),
+    (4, 10, "v1:fdab04bb7aede213"),
+    (5, 15, "v1:54b25363be443be0"),
+    (6, 20, "v1:ace2076b56eba53a"),
+    (7, 25, "v1:9f4b52d74d4d2ce3"),
+    (8, 25, "v1:bdbad073a9bf4152"),
+    (9, 25, "v1:bdbad073a9bf4152"),
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -187,7 +186,6 @@ pub fn seed42_initial_state(world: GameWorld) -> anyhow::Result<SaveState> {
         player_is_alliance: true,
         blockade: BlockadeState::new(),
         uprising: UprisingState::new(),
-        death_star: DeathStarState::default(),
         research: ResearchState::new(),
         jedi: JediState::new(),
         victory: VictoryState::new(alliance_hq, empire_hq),

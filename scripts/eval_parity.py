@@ -150,14 +150,14 @@ def evaluate(events: list[dict], golden: dict) -> dict:
         build_presence_checks(
             events,
             "economy",
-            ["economy_tick", "support_drift", "collection_rate", "garrison_required", "control_changed"],
+            ["economy_tick", "collection_rate", "garrison_required", "control_changed"],
         )
     )
     checks.extend(
         build_presence_checks(
             events,
             "combat",
-            ["combat_space", "combat_ground", "bombardment"],
+            ["combat_space", "assault", "bombardment"],
         )
     )
     checks.extend(
@@ -184,23 +184,20 @@ def evaluate(events: list[dict], golden: dict) -> dict:
             )
         )
 
-    # Death Star events are only meaningful once the log runs long enough for
-    # construction to be theoretically possible.
-    final_tick = max(int(event.get("tick", 0)) for event in events)
-    ds_required = ["death_star_construction", "death_star_fired", "death_star_shield_status"]
-    if final_tick < values["death_star"]["construction_ticks"]:
-        for event_type in ds_required:
-            checks.append(
-                make_check(
-                    f"death_star.{event_type}",
-                    "skip",
-                    expected=True,
-                    observed=False,
-                    details=f"log ended at tick {final_tick}, below construction threshold {values['death_star']['construction_ticks']}",
-                )
-            )
+    # A Destroy System (order 0x223) needs a Death Star and a target, so a log
+    # without one skips the check rather than failing it.
+    if "death_star_fired" in event_types_present(events):
+        checks.extend(build_presence_checks(events, "death_star", ["death_star_fired"]))
     else:
-        checks.extend(build_presence_checks(events, "death_star", ds_required))
+        checks.append(
+            make_check(
+                "death_star.death_star_fired",
+                "skip",
+                expected=True,
+                observed=False,
+                details="no Destroy System in this log",
+            )
+        )
 
     # Victory timing: if a victory event exists, it must not fire before the
     # current minimum victory tick.

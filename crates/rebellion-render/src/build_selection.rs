@@ -8,15 +8,18 @@
 //! takes the number to build. Confirm replaces what the band was building.
 
 use egui_macroquad::egui;
-use rebellion_core::build_selection::{estimate, BuildEstimate};
+use rebellion_core::build_selection::{estimate, order_refusal, BuildEstimate};
+use rebellion_core::delivery::DeliveryState;
 use rebellion_core::ids::SystemKey;
 use rebellion_core::manufacturing::{BuildableKind, ManufacturingState, ProductionArea};
+use rebellion_core::movement::MovementState;
+use rebellion_core::troop_transport::TroopTransportState;
 use rebellion_core::world::GameWorld;
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::CockpitLayout;
 use crate::manufacturing_window::product;
-use crate::mission_dialog::{button, galaxy_centered_rect, paint, paint_centered, scrolled};
+use crate::mission_dialog::{button, galaxy_centered_rect, paint, paint_button, paint_centered, scrolled};
 use crate::system_window::{exact_clicked, logical_rect, rect_contains};
 
 pub const BUILD_SELECTION_WIDTH: f32 = 210.0;
@@ -60,8 +63,16 @@ const DEPLOYMENT_FIELD: (f32, f32) = (140.0, 165.0);
 /// The number to build, an edit of 45 by 17 (`+0x128`).
 const QUANTITY_FIELD: (f32, f32, f32, f32) = (141.0, 196.0, 45.0, 17.0);
 
+/// The drop-down's rows (box `+0xa8`, `FUN_00437f80`'s 2) and their height
+/// (`+0xa4`, 0x46); `FUN_0060cac0` makes it the rows' height plus 4.
+const LIST_ROWS: usize = 2;
+const LIST_ROW_HEIGHT: f32 = 70.0;
+
 /// The labels' color, `0x2f0fbff` (`FUN_00438500`).
 const LABEL: egui::Color32 = egui::Color32::from_rgb(0xff, 0xfb, 0xf0);
+/// A list row's name unless picked or under the pointer: item `+0x60`,
+/// 0x808080 (`FUN_00437880`); the other two states keep white.
+const ROW_GREY: egui::Color32 = egui::Color32::from_rgb(0x80, 0x80, 0x80);
 
 /// The most units one order builds (`FUN_00438c30`, `FUN_00438c60`).
 pub const MAX_QUANTITY: u32 = 255;
@@ -78,6 +89,17 @@ pub struct BuildSelection {
     quantity: u32,
     /// The class list is open (`CoolSelectionBoxClass +0xe8`).
     list_open: bool,
+    /// The list's first shown row (its scroll, list `+0xc4`).
+    top: usize,
+    /// The row last clicked in the list: its item's `+0x3c` bit 0, which
+    /// `FUN_006094b0` clears on every other item.
+    picked: Option<usize>,
+    /// Each row's item `+0x3c` bit 1, set while the pointer is on it. The
+    /// items outlive the list (`FUN_00608280` shares the box's), so a bit
+    /// stays until a list moves the pointer off its row.
+    hot: Vec<bool>,
+    /// The row this list marked hot (list `+0x100`); a new list has none.
+    last_hot: Option<usize>,
 }
 
 impl BuildSelection {
@@ -127,6 +149,51 @@ impl BuildSelection {
     pub fn erase_digit(&mut self) {
         self.quantity = (self.quantity / 10).max(1);
     }
+
+    /// The drop-down (`0x6c`): open a new list scrolled to the class
+    /// (`FUN_00609ed0` from 0 brings it up to the last row), or close it.
+    fn toggle_list(&mut self) {
+        self.list_open = !self.list_open;
+        if self.list_open {
+            self.top = self.selected.saturating_sub(LIST_ROWS - 1);
+            self.last_hot = None;
+        }
+    }
+
+    /// The pointer moved over the list (`FUN_006083c0`, `WM_MOUSEMOVE`):
+    /// the row it left loses bit 1 and the row under it, if any, gains it.
+    fn hover(&mut self, row: Option<usize>) {
+        if row == self.last_hot {
+            return;
+        }
+        if let Some(old) = self.last_hot {
+            self.hot[old] = false;
+        }
+        self.last_hot = row;
+        if let Some(row) = row {
+            self.hot[row] = true;
+        }
+    }
+
+    /// A click in the list (`FUN_006083c0`, buttons up): the row's class is
+    /// picked and the list closes (notification `0x29b` -> `FUN_0060c970`);
+    /// off the rows only the old pick clears.
+    fn click_list(&mut self, row: Option<usize>) {
+        self.picked = row;
+        if let Some(row) = row {
+            self.select(row);
+            self.list_open = false;
+        }
+    }
+
+    /// A row's name color (`FUN_006083c0`, `WM_PAINT`).
+    fn row_color(&self, row: usize) -> egui::Color32 {
+        if self.picked == Some(row) || self.hot[row] {
+            egui::Color32::WHITE
+        } else {
+            ROW_GREY
+        }
+    }
 }
 
 /// Whether a Build Selection window is open, and the class each production
@@ -164,6 +231,7 @@ impl BuildSelectionState {
         let selected = self.remembered[area_index(area)]
             .and_then(|kind| kinds.iter().position(|&listed| listed == kind))
             .unwrap_or(0);
+        let hot = vec![false; kinds.len()];
         self.dialog = Some(BuildSelection {
             system,
             area,
@@ -172,6 +240,10 @@ impl BuildSelectionState {
             selected,
             quantity: 1,
             list_open: false,
+            top: 0,
+            picked: None,
+            hot,
+            last_hot: None,
         });
         true
     }
@@ -265,10 +337,17 @@ pub fn days_text(value: u32, valid: bool) -> String {
     clippy::too_many_lines,
     reason = "The window paints in the original's control order; splitting it hides that order."
 )]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The validator reads the queues, the cargo aboard and the products on their way."
+)]
 pub fn draw_build_selection(
     ctx: &egui::Context,
     world: &GameWorld,
     manufacturing: &ManufacturingState,
+    transport: &TroopTransportState,
+    deliveries: &DeliveryState,
+    movement: &MovementState,
     state: &mut BuildSelectionState,
     layout: CockpitLayout,
     cache: &mut BmpCache,
@@ -285,12 +364,29 @@ pub fn draw_build_selection(
         dialog.quantity,
         dialog.is_alliance,
     );
-    let valid = estimate.completion.is_some();
+    // FUN_00439160: FUN_00538220 runs the order's validator (slot +0x1c,
+    // FUN_0051ff30 -> FUN_005385f0), whose refusals (`order_refusal`) make
+    // the order invalid as a missing yard does.
+    let valid = estimate.completion.is_some()
+        && order_refusal(
+            world,
+            manufacturing,
+            transport,
+            deliveries,
+            dialog.system,
+            dialog.area,
+            dialog.kind(),
+            dialog.quantity,
+            dialog.is_alliance,
+            movement,
+        )
+        .is_none();
     let mut action = None;
     let mut close = false;
     let mut confirm = false;
 
-    // FUN_00438b60: Enter confirms, Escape closes, keypad + and - step the
+    // FUN_00438b60: Enter confirms, even an invalid order, which its
+    // validator then refuses; Escape closes, keypad + and - step the
     // number; the number edit has the focus for digits.
     ctx.input(|input| {
         for event in &input.events {
@@ -299,7 +395,7 @@ pub fn draw_build_selection(
             } = event
             {
                 match key {
-                    egui::Key::Enter if valid => confirm = true,
+                    egui::Key::Enter => confirm = true,
                     egui::Key::Escape => close = true,
                     egui::Key::Plus | egui::Key::Equals => dialog.step_quantity(true),
                     egui::Key::Minus => dialog.step_quantity(false),
@@ -366,8 +462,8 @@ pub fn draw_build_selection(
                 );
             }
 
-            // The selected class: its mini centered in the box, its name
-            // under it (FUN_00437880's 195 by 63 item).
+            // The selected class: its portrait centered in the box, its name
+            // from the portrait's height down (FUN_00437880's 195 by 63 item).
             let (x, y, w, h) = ITEM_BOX;
             paint_item(
                 &painter,
@@ -378,15 +474,21 @@ pub fn draw_build_selection(
                 at(x, y, w, h),
                 scale,
                 &small,
+                egui::Color32::WHITE,
             );
 
-            // FUN_00438dd0 / FUN_00438f30: the values, white.
+            // FUN_00438dd0 / FUN_00438f30: the values, white, each in its
+            // FUN_00437f80 field. port: clipped to the field, where the
+            // original's aliased GDI text ends; the anti-aliased edge of a
+            // right-aligned value would otherwise cross it.
+            let in_field = |field: egui::Rect| painter.with_clip_rect(field.intersect(painter.clip_rect()));
             for ((x, y), text) in [
                 (REFINED_FIELD, cost_text(estimate.refined_material, valid)),
                 (MAINTENANCE_FIELD, cost_text(estimate.maintenance, valid)),
             ] {
-                painter.text(
-                    at(x, y, 64.0, 23.0).center(),
+                let field = at(x, y, 64.0, 23.0);
+                in_field(field).text(
+                    field.center(),
                     egui::Align2::CENTER_CENTER,
                     text,
                     value_font.clone(),
@@ -400,8 +502,9 @@ pub fn draw_build_selection(
                 ),
                 (DEPLOYMENT_FIELD, days_text(estimate.deployment, valid)),
             ] {
-                painter.text(
-                    at(x, y, 60.0, 15.0).right_center(),
+                let field = at(x, y, 60.0, 15.0);
+                in_field(field).text(
+                    field.right_center(),
                     egui::Align2::RIGHT_CENTER,
                     text,
                     small.clone(),
@@ -409,7 +512,7 @@ pub fn draw_build_selection(
                 );
             }
             let (x, y, w, h) = QUANTITY_FIELD;
-            painter.text(
+            in_field(at(x, y, w, h)).text(
                 at(x, y, w, h).left_center(),
                 egui::Align2::LEFT_CENTER,
                 dialog.quantity.to_string(),
@@ -437,7 +540,7 @@ pub fn draw_build_selection(
                 false,
                 scale,
             ) {
-                dialog.list_open = !dialog.list_open;
+                dialog.toggle_list();
             }
             if button(
                 ui,
@@ -480,7 +583,7 @@ pub fn draw_build_selection(
                     confirm = true;
                 }
             } else {
-                paint(&painter, ctx, cache, CONFIRM.0, confirm_rect, scale);
+                paint_button(&painter, ctx, cache, CONFIRM.0, confirm_rect, scale);
             }
             if button(
                 ui,
@@ -494,32 +597,62 @@ pub fn draw_build_selection(
                 close = true;
             }
 
-            // The drop-down: a window under the box holding one item at a
-            // time. port: its scroll bar (base 0x299a) is not drawn; the
-            // wheel scrolls it, as the mission dialog's.
+            // The drop-down (FUN_0060cac0): a window under the box, the box's
+            // width and two rows high, its list (FUN_00607ea0) 2 pixels in.
+            // port: its scroll bar (base 0x299a) is not drawn; the wheel
+            // scrolls the rows, as the mission dialog's.
             if dialog.list_open {
+                // FUN_0060d020 takes the capture: a press off the popup
+                // closes it and reaches no other control. port: on the
+                // release, within the window.
+                let capture =
+                    ui.interact(frame, ui.id().with("class-list-capture"), egui::Sense::click());
                 let (x, y, w, h) = ITEM_BOX;
-                let popup = at(x, y + h, w, h + 4.0);
-                let item = at(x + 2.0, y + h + 2.0, w - 4.0, h);
+                let rows_height = LIST_ROWS as f32 * LIST_ROW_HEIGHT;
+                let popup = at(x, y + h, w, rows_height + 4.0);
+                let list = at(x + 2.0, y + h + 2.0, w - 4.0, rows_height);
                 painter.rect_filled(popup, 0.0, egui::Color32::BLACK);
                 let response = ui.interact(popup, ui.id().with("class-list"), egui::Sense::click());
+                let len = dialog.kinds.len();
+                let top = dialog.top;
+                let row_at = |point: egui::Pos2| {
+                    let row = top + ((point.y - list.min.y) / (LIST_ROW_HEIGHT * scale)) as usize;
+                    (row < len).then_some(row)
+                };
+                // The list sees the pointer only over itself.
+                if let Some(point) = ctx
+                    .input(|input| input.pointer.hover_pos())
+                    .filter(|&point| rect_contains(list, point))
+                {
+                    dialog.hover(row_at(point));
+                }
                 if response.hovered() {
                     let wheel = ctx.input(|input| input.raw_scroll_delta.y);
-                    let row = scrolled(dialog.selected, dialog.kinds.len(), wheel);
-                    dialog.select(row);
+                    dialog.top = scrolled(dialog.top, len.saturating_sub(LIST_ROWS) + 1, wheel);
                 }
-                paint_item(
-                    &painter,
-                    ctx,
-                    cache,
-                    world,
-                    dialog.kind(),
-                    item,
-                    scale,
-                    &small,
-                );
-                if exact_clicked(&response, popup) {
-                    dialog.list_open = false;
+                for (slot, row) in (dialog.top..len).take(LIST_ROWS).enumerate() {
+                    paint_item(
+                        &painter,
+                        ctx,
+                        cache,
+                        world,
+                        dialog.kinds[row],
+                        at(
+                            x + 2.0,
+                            y + h + 2.0 + slot as f32 * LIST_ROW_HEIGHT,
+                            w - 4.0,
+                            h,
+                        ),
+                        scale,
+                        &small,
+                        dialog.row_color(row),
+                    );
+                }
+                if exact_clicked(&response, list) {
+                    let row = response.interact_pointer_pos().and_then(row_at);
+                    dialog.click_list(row);
+                } else if capture.clicked() {
+                    dialog.toggle_list();
                 }
             }
         });
@@ -533,8 +666,27 @@ pub fn draw_build_selection(
     action
 }
 
-/// One class: its GOKRES mini centered in the box and its name under it.
-/// hyp: the name sits under the mini, centered, as the mission kinds'.
+/// The GOKRES picture a class's list item holds: the class's portrait,
+/// `+0x30 & 0xfff` (`FUN_00437880.c:94-102`), the band's picture
+/// (`FUN_00457c90.c:48-55`), not its `+0x4000` mini.
+fn item_picture(world: &GameWorld, kind: BuildableKind) -> Option<u32> {
+    product(world, kind)
+        .1
+        .map(crate::fleet_window::ship_portrait)
+}
+
+/// Where an item's name starts: its picture's height below the item's top
+/// (`FUN_00437880.c:138-139` stores the height as the item's text offset,
+/// `+0x34`, which the box and the list add to the text rect's top,
+/// `FUN_0060c210.c:60-74`, `FUN_006083c0.c:124-127`). port: with no
+/// picture loaded, the item's middle.
+fn name_top(bounds: egui::Rect, picture: Option<egui::Rect>) -> f32 {
+    picture.map_or(bounds.center().y, |rect| bounds.min.y + rect.height())
+}
+
+/// One class: its GOKRES portrait centered in the box (`FUN_00437880.c:
+/// 128-133`) and its name from [`name_top`], centered across the item
+/// (`DT_CENTER | DT_NOCLIP`, `0x101`, `FUN_00437f80.c:55`), in `color`.
 #[expect(
     clippy::too_many_arguments,
     reason = "Keep explicit painter, cache and geometry inputs at this drawing boundary."
@@ -548,19 +700,17 @@ fn paint_item(
     bounds: egui::Rect,
     scale: f32,
     font: &egui::FontId,
+    color: egui::Color32,
 ) {
-    let (name, mini) = product(world, kind);
-    let image = mini
+    let name = product(world, kind).0;
+    let image = item_picture(world, kind)
         .and_then(|id| paint_centered(painter, ctx, cache, DllSource::Gokres, id, bounds, scale));
     painter.text(
-        egui::pos2(
-            bounds.center().x,
-            image.map_or(bounds.center().y, |rect| rect.max.y),
-        ),
+        egui::pos2(bounds.center().x, name_top(bounds, image)),
         egui::Align2::CENTER_TOP,
         name,
         font.clone(),
-        egui::Color32::WHITE,
+        color,
     );
 }
 
@@ -598,11 +748,13 @@ mod tests {
     }
 
     /// A drawn text: its string, position and font size.
-    /// A painted text, the top centre of its galley, and its size.
-    type Text = (String, egui::Pos2, f32);
+    /// A painted text, the top centre of its galley, its size and color.
+    type Text = (String, egui::Pos2, f32, egui::Color32);
 
-    /// A system of the Alliance's with a training facility (period 4) when
-    /// `yard`, and the regiment class TROOPSD 1 (cost 8, maintenance 6).
+    /// A system of the Alliance's with a training facility (period 4) of
+    /// each side when `yard`, the regiment class TROOPSD 1 (cost 8,
+    /// maintenance 6), and a mine and refinery pair of each side (50
+    /// maintenance capacity).
     fn galaxy(yard: bool) -> (GameWorld, SystemKey) {
         let mut world = GameWorld::default();
         let system = world.systems.insert(System {
@@ -643,15 +795,26 @@ mod tests {
         world
             .buildable_classes
             .insert(DatId::new(0x1000_0001), class(8, 6, 0));
-        if yard {
-            let key = world
-                .manufacturing_facilities
-                .insert(ManufacturingFacilityInstance {
-                    class_dat_id: DatId::new(0x2900_0002),
-                    side: rebellion_core::dat::Faction::Alliance,
-                    is_shipyard: false,
-                });
-            world.systems[system].manufacturing_facilities.push(key);
+        for side in [Faction::Alliance, Faction::Empire] {
+            if yard {
+                let key = world
+                    .manufacturing_facilities
+                    .insert(ManufacturingFacilityInstance {
+                        class_dat_id: DatId::new(0x2900_0002),
+                        side,
+                        is_shipyard: false,
+                    });
+                world.systems[system].manufacturing_facilities.push(key);
+            }
+            for is_mine in [true, false] {
+                world
+                    .production_facilities
+                    .insert(rebellion_core::world::ProductionFacilityInstance {
+                        class_dat_id: DatId::new(0x2c00_0001),
+                        side,
+                        is_mine,
+                    });
+            }
         }
         (world, system)
     }
@@ -727,9 +890,17 @@ mod tests {
                 ..Default::default()
             };
             let output = ctx.run(input, |ctx| {
-                if let Some(action) =
-                    draw_build_selection(ctx, world, &manufacturing, state, layout, &mut cache)
-                {
+                if let Some(action) = draw_build_selection(
+                    ctx,
+                    world,
+                    &manufacturing,
+                    &TroopTransportState::default(),
+                    &DeliveryState::default(),
+                    &MovementState::new(),
+                    state,
+                    layout,
+                    &mut cache,
+                ) {
                     emitted = Some(action);
                 }
             });
@@ -741,6 +912,7 @@ mod tests {
                         text.galley.text().to_owned(),
                         text.pos + egui::vec2(text.galley.size().x / 2.0, 0.0),
                         text.galley.job.sections[0].format.font_id.size,
+                        text.galley.job.sections[0].format.color,
                     )),
                     _ => None,
                 })
@@ -761,6 +933,54 @@ mod tests {
             point,
             vec![vec![press(at, true)], vec![press(at, false)]],
         )
+    }
+
+    // FUN_00437880.c:94-102 loads each item's picture from GOKRES at the
+    // class's +0x30 & 0xfff (FUN_005fbd20(.., id & 0xfff, 2)), the portrait,
+    // not its +0x4000 mini, and centres it in a 0xc3 by 0x3f (195 by 63)
+    // buffer (:111-131); the box shows the picked item (FUN_00608280).
+    #[test]
+    fn each_class_in_the_list_and_box_shows_its_portrait() {
+        use crate::panels::fleets::capital_ship_mini_id;
+        let ship = DatId::new(0x1400_0040);
+        let mut world = GameWorld::default();
+        let class = world
+            .capital_ship_classes
+            .insert(rebellion_core::world::CapitalShipClass {
+                dat_id: ship,
+                ..Default::default()
+            });
+        for (kind, portrait) in [
+            (
+                BuildableKind::CapitalShip(class),
+                capital_ship_mini_id(ship).map(|mini| mini - 0x4000),
+            ),
+            (BuildableKind::Troop(DatId::new(0x1000_0001)), Some(0x440)),
+            (
+                BuildableKind::ProductionFacility(rebellion_core::manufacturing::FacilityBuild {
+                    class: DatId::new(0x2c00_0001),
+                    is_alliance: true,
+                }),
+                Some(1),
+            ),
+        ] {
+            assert!(portrait.is_some(), "{kind:?}");
+            assert_eq!(item_picture(&world, kind), portrait, "{kind:?}");
+        }
+    }
+
+    // FUN_00437880.c:138-139 sets each item's text offset (+0x34) to its
+    // picture's height; the box (FUN_0060c210.c:60-74) and the list
+    // (FUN_006083c0.c:124-127) add it to the top of the item's text rect,
+    // drawn with DT_CENTER | DT_NOCLIP (0x101, FUN_00437f80.c:55) and no
+    // vertical alignment. So the name starts the picture's height below the
+    // item's top, inside the centred picture, not under it.
+    #[test]
+    fn an_items_name_starts_its_pictures_height_below_the_items_top() {
+        let item = egui::Rect::from_min_size(egui::pos2(6.0, 22.0), egui::vec2(195.0, 63.0));
+        // A 122 by 50 portrait centred in the item, (63 - 50) / 2 = 6 down.
+        let picture = egui::Rect::from_min_size(egui::pos2(42.0, 28.0), egui::vec2(122.0, 50.0));
+        assert_eq!(name_top(item, Some(picture)), 22.0 + 50.0);
     }
 
     // FUN_00437df0: background 10800 at (0, 0); FUN_00438500: the side's
@@ -814,16 +1034,48 @@ mod tests {
         let mut state = opened(system, true);
         assert_eq!(click(&world, &mut state, (100.0, 240.0)), None);
         assert!(state.is_open());
-        assert_eq!(
+        // FUN_00438b60 case 0xd: Enter calls FUN_00438980 whatever the
+        // button's state, then closes; FUN_0041ce20 issues the order and its
+        // validator refuses it (mission-dialog.md, "Refusal").
+        assert!(matches!(
             drive(
                 &world,
                 &mut state,
                 (0.0, 0.0),
                 vec![vec![key(egui::Key::Enter)]]
             ),
-            None
-        );
-        assert!(state.is_open());
+            Some(BuildSelectionAction::Confirm { .. })
+        ));
+        assert!(!state.is_open());
+    }
+
+    // FUN_00439160 -> FUN_00538220 -> the order's slot +0x1c (FUN_0051ff30)
+    // -> slot +0x50 (FUN_005385f0) -> FUN_0052e970: an order whose
+    // maintenance exceeds the side's spare is invalid, so all four fields
+    // read 14358 "n/a" and Confirm is disabled; equality passes.
+    #[test]
+    fn an_order_over_the_spare_maintenance_reads_na_and_cannot_be_confirmed() {
+        let (world, system) = galaxy(true);
+        for side in [Faction::Alliance, Faction::Empire] {
+            let spare = rebellion_core::resources::maintenance_surplus(
+                &world,
+                &ManufacturingState::new(),
+                side,
+            );
+            // Six maintenance a regiment.
+            let fits = u32::try_from(spare / 6).unwrap();
+            assert!(fits > 1, "the fixture leaves room for a regiment");
+            for (count, valid) in [(fits, true), (fits + 1, false)] {
+                let mut state = opened(system, side == Faction::Alliance);
+                state.dialog_mut().unwrap().quantity = count;
+                let (_, texts) = drive_at(&world, &mut state, 1.0, (0.0, 0.0), vec![]);
+                let na = texts.iter().filter(|(text, ..)| text == "n/a").count();
+                assert_eq!(na, if valid { 0 } else { 4 }, "{side:?} x{count}");
+                let confirmed = click(&world, &mut state, (100.0, 240.0));
+                assert_eq!(confirmed.is_some(), valid, "{side:?} x{count}");
+                assert_eq!(state.is_open(), !valid);
+            }
+        }
     }
 
     // FUN_00438b60: Enter confirms, Escape closes, keypad + steps the
@@ -978,10 +1230,28 @@ mod tests {
         assert_eq!(state.dialog().unwrap().kind(), kinds()[0]);
     }
 
-    // The drop-down (command 0x6c) opens under the class box; the wheel
-    // walks the list and a click closes it.
+    /// The drop-down's rows, top to bottom, with their colors: the class
+    /// names drawn below the class box (window y 85 on).
+    fn list_rows(texts: &[Text], names: &[String]) -> Vec<(String, egui::Color32)> {
+        let below = window_rect(layout()).min.y + 85.0;
+        let mut rows: Vec<_> = texts
+            .iter()
+            .filter(|(text, top, ..)| top.y > below && names.contains(text))
+            .map(|(text, top, _, color)| (top.y, text.clone(), *color))
+            .collect();
+        rows.sort_by(|a, b| a.0.total_cmp(&b.0));
+        rows.into_iter().map(|(_, text, color)| (text, color)).collect()
+    }
+
+    const GREY: egui::Color32 = egui::Color32::from_rgb(0x80, 0x80, 0x80);
+
+    // The drop-down (command 0x6c, FUN_0060c1f0 -> FUN_0060cac0) hangs
+    // under the class box, 195 wide and two 70-pixel rows plus 4 high
+    // (box +0xa8 = 2 from FUN_00437f80, +0xa4 = 0x46); its list
+    // (FUN_00607ea0) sits 2 in. A click on a row picks its class and closes
+    // it (notification 0x29b, FUN_0060d020 -> FUN_0060c970).
     #[test]
-    fn the_class_list_opens_scrolls_and_closes() {
+    fn the_class_list_shows_two_rows_and_a_click_picks_one() {
         let (world, system) = galaxy(true);
         let mut state = BuildSelectionState::default();
         let regiments = kinds();
@@ -999,52 +1269,236 @@ mod tests {
             vec![vec![press(at, true)], vec![press(at, false)]],
         );
         assert!(state.dialog().unwrap().list_open());
-        // Down one notch over the list's last rows, below the box it hangs
-        // from (y 85..152).
-        let wheel = egui::Event::MouseWheel {
-            unit: egui::MouseWheelUnit::Line,
-            delta: egui::vec2(0.0, -1.0),
-            modifiers: egui::Modifiers::default(),
-        };
-        drive(&world, &mut state, (100.0, 147.0), vec![vec![wheel]]);
-        assert_eq!(state.dialog().unwrap().kind(), regiments[1]);
-        // The list's item names the class in its own box, under the main one.
-        let (_, texts) = drive_at(&world, &mut state, 1.0, (100.0, 147.0), vec![]);
+        let (_, texts) = drive_at(&world, &mut state, 1.0, (111.0, 99.0), vec![]);
         let origin = window_rect(layout()).min;
-        let item =
-            egui::Rect::from_min_size(origin + egui::vec2(8.0, 87.0), egui::vec2(191.0, 63.0));
-        // The class box above names it too; the list's copy is the lower.
-        let named = texts
-            .iter()
-            .filter(|(text, _, _)| text == "Alliance Army Regiment")
-            .map(|(_, top, _)| *top)
-            .max_by(|a, b| a.y.total_cmp(&b.y))
-            .unwrap();
-        assert!(
-            (named.x - item.center().x).abs() < 0.5,
-            "{named:?} vs {item:?}"
-        );
-        // No mini is painted here, so the name hangs from the item's middle.
-        assert!(
-            (named.y - item.center().y).abs() < 0.5,
-            "{named:?} vs {item:?}"
-        );
-        // The list is the box's height and four more (y 85..152): the wheel
-        // below it, up a notch, leaves the class alone.
-        let up = egui::Event::MouseWheel {
-            unit: egui::MouseWheelUnit::Line,
-            delta: egui::vec2(0.0, 1.0),
-            modifiers: egui::Modifiers::default(),
+        for (row, kind) in regiments.iter().enumerate() {
+            let item = egui::Rect::from_min_size(
+                origin + egui::vec2(8.0, 87.0 + 70.0 * row as f32),
+                egui::vec2(191.0, 63.0),
+            );
+            let name = product(&world, *kind).0;
+            // No portrait is painted here, so the name hangs from the item's
+            // middle.
+            let top = texts
+                .iter()
+                .filter(|(text, ..)| *text == name)
+                .map(|(_, top, ..)| *top)
+                .max_by(|a, b| a.y.total_cmp(&b.y))
+                .unwrap();
+            assert!((top - item.center()).length() < 0.5, "{top:?} vs {item:?}");
+        }
+        // The popup holds the capture (FUN_0060d020): a click beside it (x
+        // 6..201) or on Cancel closes it, picks nothing and cancels nothing.
+        let click_at = |state: &mut BuildSelectionState, point| {
+            drive(
+                &world,
+                state,
+                point,
+                vec![vec![press(at, true)], vec![press(at, false)]],
+            )
         };
-        drive(&world, &mut state, (100.0, 155.0), vec![vec![up]]);
+        for outside in [(203.0, 150.0), (170.0, 240.0)] {
+            if !state.dialog().unwrap().list_open() {
+                click_at(&mut state, (111.0, 99.0));
+            }
+            assert_eq!(click_at(&mut state, outside), None);
+            assert!(state.is_open());
+            assert!(!state.dialog().unwrap().list_open(), "{outside:?}");
+            assert_eq!(state.dialog().unwrap().kind(), regiments[0]);
+        }
+        click_at(&mut state, (111.0, 99.0));
+        click_at(&mut state, (100.0, 190.0));
         assert_eq!(state.dialog().unwrap().kind(), regiments[1]);
+        assert!(!state.dialog().unwrap().list_open());
+    }
+
+    // FUN_006083c0 (WM_PAINT): a row's name takes item +0x5c when picked
+    // (+0x3c bit 0), else +0x64 when under the pointer (bit 1), else +0x60;
+    // FUN_00437880 sets +0x60 to 0x808080 and leaves the others white. The
+    // list shares the box's items (FUN_00608280), so the bits outlive it;
+    // only WM_MOUSEMOVE clears bit 1, on the row the open list marked last.
+    // The popup covers the drop-down button, so the pointer that opened it
+    // rests on the first row.
+    #[test]
+    fn the_class_list_greys_every_row_but_the_picked_and_hovered_ones() {
+        let (world, system) = galaxy(true);
+        let regiments = kinds();
+        let names: Vec<String> = regiments.iter().map(|&k| product(&world, k).0).collect();
+        let mut state = BuildSelectionState::default();
+        assert!(state.open(
+            system,
+            ProductionArea::TrainingFacility,
+            true,
+            regiments.clone()
+        ));
+        let at = egui::Pos2::ZERO;
+        let toggle = |state: &mut BuildSelectionState| {
+            drive(
+                &world,
+                state,
+                (111.0, 99.0),
+                vec![vec![press(at, true)], vec![press(at, false)]],
+            );
+        };
+        let rows = |state: &mut BuildSelectionState, point| {
+            list_rows(&drive_at(&world, state, 1.0, point, vec![]).1, &names)
+        };
+        let white = egui::Color32::WHITE;
+        toggle(&mut state);
+        // Nothing picked yet: only the row under the pointer is white.
+        assert_eq!(
+            rows(&mut state, (111.0, 99.0)),
+            vec![(names[0].clone(), white), (names[1].clone(), GREY)]
+        );
+        assert_eq!(
+            rows(&mut state, (100.0, 190.0)),
+            vec![(names[0].clone(), GREY), (names[1].clone(), white)]
+        );
+        // On the popup's frame, off its list (y 87..227), or off the popup,
+        // the list sees no move and nothing changes.
+        for off in [(100.0, 228.0), (203.0, 150.0)] {
+            assert_eq!(
+                rows(&mut state, off),
+                vec![(names[0].clone(), GREY), (names[1].clone(), white)]
+            );
+        }
+        assert_eq!(
+            rows(&mut state, (100.0, 120.0)),
+            vec![(names[0].clone(), white), (names[1].clone(), GREY)]
+        );
         drive(
             &world,
             &mut state,
-            (100.0, 147.0),
+            (100.0, 190.0),
             vec![vec![press(at, true)], vec![press(at, false)]],
         );
+        assert_eq!(state.dialog().unwrap().kind(), regiments[1]);
+        // Reopened over the first row, the picked second row stays white.
+        toggle(&mut state);
+        assert_eq!(
+            rows(&mut state, (111.0, 99.0)),
+            vec![(names[0].clone(), white), (names[1].clone(), white)]
+        );
+        // A move to the picked row leaves the first grey.
+        assert_eq!(
+            rows(&mut state, (100.0, 190.0)),
+            vec![(names[0].clone(), GREY), (names[1].clone(), white)]
+        );
+    }
+
+    // FUN_00609ed0 scrolls the new list to the box's class; the wheel
+    // scrolls the rows, not the class. port: the wheel stands in for the
+    // list's scroll bar.
+    #[test]
+    fn the_class_list_opens_on_the_class_and_scrolls_with_the_wheel() {
+        let (world, system) = galaxy(true);
+        let mut regiments = kinds();
+        regiments.push(BuildableKind::Troop(DatId::new(0x1000_0003)));
+        let names: Vec<String> = regiments.iter().map(|&k| product(&world, k).0).collect();
+        let mut state = BuildSelectionState::default();
+        assert!(state.open(
+            system,
+            ProductionArea::TrainingFacility,
+            true,
+            regiments.clone()
+        ));
+        state.dialog_mut().unwrap().select(2);
+        let at = egui::Pos2::ZERO;
+        drive(
+            &world,
+            &mut state,
+            (111.0, 99.0),
+            vec![vec![press(at, true)], vec![press(at, false)]],
+        );
+        let shown = |state: &mut BuildSelectionState, events| {
+            list_rows(&drive_at(&world, state, 1.0, (100.0, 150.0), events).1, &names)
+                .into_iter()
+                .map(|(name, _)| name)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(shown(&mut state, vec![]), names[1..].to_vec());
+        let wheel = |delta| {
+            vec![vec![egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Line,
+                delta: egui::vec2(0.0, delta),
+                modifiers: egui::Modifiers::default(),
+            }]]
+        };
+        assert_eq!(shown(&mut state, wheel(1.0)), names[..2].to_vec());
+        assert_eq!(shown(&mut state, wheel(1.0)), names[..2].to_vec());
+        assert_eq!(shown(&mut state, wheel(-1.0)), names[1..].to_vec());
+        assert_eq!(shown(&mut state, wheel(-1.0)), names[1..].to_vec());
+        assert_eq!(state.dialog().unwrap().kind(), regiments[2]);
+    }
+
+    // FUN_0060d020 forwards a press on the popup only to the list under it
+    // (2 in, 191 by 140); FUN_006083c0 picks only on a row, and below the
+    // last row it clears the pick and leaves the list open.
+    #[test]
+    fn the_class_list_picks_only_on_its_rows() {
+        let (world, system) = galaxy(true);
+        let at = egui::Pos2::ZERO;
+        let click_at = |state: &mut BuildSelectionState, point| {
+            drive(
+                &world,
+                state,
+                point,
+                vec![vec![press(at, true)], vec![press(at, false)]],
+            );
+        };
+        let mut state = open();
+        click_at(&mut state, (111.0, 99.0));
+        // The popup's frame: left of, above and below the list.
+        for frame in [(7.0, 190.0), (100.0, 86.0), (100.0, 228.0)] {
+            click_at(&mut state, frame);
+            assert!(state.dialog().unwrap().list_open(), "{frame:?}");
+            assert_eq!(state.dialog().unwrap().kind(), kinds()[0], "{frame:?}");
+        }
+        // The list's left edge, x 8.
+        click_at(&mut state, (9.0, 190.0));
+        assert_eq!(state.dialog().unwrap().kind(), kinds()[1]);
         assert!(!state.dialog().unwrap().list_open());
+
+        // One class: the second row is empty.
+        let mut state = opened(system, true);
+        let name = product(&world, state.dialog().unwrap().kind()).0;
+        click_at(&mut state, (111.0, 99.0));
+        let (_, texts) = drive_at(&world, &mut state, 1.0, (100.0, 190.0), vec![]);
+        assert_eq!(list_rows(&texts, &[name.clone()]), vec![(name, GREY)]);
+        click_at(&mut state, (100.0, 190.0));
+        assert!(state.dialog().unwrap().list_open());
+    }
+
+    // The rows and the pointer's row scale with the window.
+    #[test]
+    fn the_class_list_rows_scale_with_the_window() {
+        let (world, system) = galaxy(true);
+        let regiments = kinds();
+        let names: Vec<String> = regiments.iter().map(|&k| product(&world, k).0).collect();
+        let mut state = BuildSelectionState::default();
+        assert!(state.open(system, ProductionArea::TrainingFacility, true, regiments));
+        let at = egui::Pos2::ZERO;
+        drive_at(
+            &world,
+            &mut state,
+            2.0,
+            (111.0, 99.0),
+            vec![vec![press(at, true)], vec![press(at, false)]],
+        );
+        assert!(state.dialog().unwrap().list_open());
+        let (_, texts) = drive_at(&world, &mut state, 2.0, (100.0, 190.0), vec![]);
+        let mut named: Vec<_> = texts
+            .iter()
+            .filter(|(text, ..)| names.contains(text))
+            .map(|(text, top, _, color)| (top.y, text.clone(), *color))
+            .collect();
+        named.sort_by(|a, b| a.0.total_cmp(&b.0));
+        // The class box's name comes first, then the two rows.
+        let rows: Vec<_> = named[1..].iter().map(|(_, text, color)| (text.clone(), *color)).collect();
+        assert_eq!(
+            rows,
+            vec![(names[0].clone(), GREY), (names[1].clone(), egui::Color32::WHITE)]
+        );
     }
 
     #[test]
@@ -1060,7 +1514,8 @@ mod tests {
     }
 
     // FUN_00438500 fonts 5, 4 and 10 and FUN_00437f80's value fonts, at
-    // twice the size on a doubled layout; the class's name under its mini.
+    // twice the size on a doubled layout; the class's name under its
+    // portrait.
     #[test]
     fn texts_scale_with_the_window_and_name_the_class() {
         let (world, system) = galaxy(true);
@@ -1069,8 +1524,8 @@ mod tests {
         let size = |wanted: &str| {
             texts
                 .iter()
-                .find(|(text, _, _)| text == wanted)
-                .map(|(_, _, size)| *size)
+                .find(|(text, ..)| text == wanted)
+                .map(|(_, _, size, _)| *size)
         };
         assert_eq!(size(TITLE), Some(22.0));
         assert_eq!(size(NUMBER_TO_BUILD), Some(20.0));
@@ -1079,6 +1534,51 @@ mod tests {
         assert_eq!(size("8"), Some(20.0));
         assert_eq!(size("6"), Some(20.0));
         assert_eq!(size("Alliance Fleet Regiment"), Some(18.0));
+    }
+
+    // FUN_00437f80's fields: each value stays inside its own rectangle, as
+    // the original's aliased text does (the original ends "40 Days" inside
+    // its 60-pixel field), so no edge pixel lands on the background.
+    #[test]
+    fn each_value_is_clipped_to_its_field() {
+        let (world, system) = galaxy(true);
+        let mut state = opened(system, true);
+        let layout = layout();
+        let window = window_rect(layout);
+        let ctx = egui::Context::default();
+        let mut cache = BmpCache::new();
+        let manufacturing = ManufacturingState::new();
+        // egui paints an Area from its second pass; read the third.
+        let mut output = egui::FullOutput::default();
+        for _ in 0..3 {
+            output = ctx.run(egui::RawInput::default(), |ctx| {
+                let _ = draw_build_selection(
+                    ctx,
+                    &world,
+                    &manufacturing,
+                    &TroopTransportState::default(),
+                    &DeliveryState::default(),
+                    &MovementState::new(),
+                    &mut state,
+                    layout,
+                    &mut cache,
+                );
+            });
+        }
+        let clip = |wanted: &str| {
+            output.shapes.iter().find_map(|clipped| match &clipped.shape {
+                egui::Shape::Text(text) if text.galley.text() == wanted => Some(clipped.clip_rect),
+                _ => None,
+            })
+        };
+        let field = |x: f32, y: f32, w: f32, h: f32| {
+            egui::Rect::from_min_size(window.min + egui::vec2(x, y), egui::vec2(w, h))
+        };
+        assert_eq!(clip("32 Days"), Some(field(140.0, 145.0, 60.0, 15.0)));
+        assert_eq!(clip("0 Days"), Some(field(140.0, 165.0, 60.0, 15.0)));
+        assert_eq!(clip("8"), Some(field(36.0, 110.0, 64.0, 23.0)));
+        assert_eq!(clip("6"), Some(field(138.0, 110.0, 64.0, 23.0)));
+        assert_eq!(clip("1"), Some(field(141.0, 196.0, 45.0, 17.0)));
     }
 
     // FUN_00438dd0 / FUN_00438f30: 9999 at most, " Days" (14357), and "n/a"

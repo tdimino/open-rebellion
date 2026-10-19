@@ -161,7 +161,8 @@ whose text matches a recovered notification type are filed:
 | Death Star sabotaged | `0x23` Death Star Sabotaged | Mission | mission side |
 | Force tier reached | `0x1d` Force Skill Improvement | Mission | character side |
 | Character killed | `0x1a` Character Health | Mission | character side |
-| Planet destroyed by the Death Star | `0x15` Planet Destroyed | Mission | both |
+| Orbital bombardment | `0xf` Operation Reports | Conflict | the bombarder and the holder (advice `0x2e` for the holder) |
+| Planet destroyed by the Death Star | `0x15` Planet Destroyed | Mission | the bombarder and the holder |
 
 Battle reports stay off the rail, as types 1 and 2 do. Player-action
 confirmations, saves, mods, debug listings, AI decisions, and cutscene text
@@ -170,7 +171,9 @@ manufacturing queues, special-force landings, betrayals, Death Star
 detection, escapes, story text, and Force discovery (whose `0x1c` audience is
 unclear). The Message Index window is not implemented yet, so nothing marks a
 category read; the audiences marked "both" are inferred from the event, not
-traced per faction.
+traced per faction. The bombardment audiences follow event `0x182` through
+each side's view of the bombarding fleet (`ghidra/notes/bombardment.md`,
+"Messages").
 
 ## Advice slows the game
 

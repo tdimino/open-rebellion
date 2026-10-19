@@ -44,6 +44,7 @@ use macroquad::prelude::*;
 
 use crate::bmp_cache::{resources, BmpCache, DllSource};
 use crate::message_log::MessageRail;
+use crate::window_focus::GalaxyChild;
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -141,6 +142,47 @@ pub struct GidHighlight {
 }
 
 impl GidMode {
+    /// Every mode, in declaration order.
+    pub const ALL: [Self; 30] = [
+        Self::PopularSupport,
+        Self::Uprisings,
+        Self::IdleFleets,
+        Self::FleetsEnRoute,
+        Self::IdlePersonnel,
+        Self::ActivePersonnel,
+        Self::AvailableEnergy,
+        Self::AvailableRawMaterial,
+        Self::Mines,
+        Self::Refineries,
+        Self::Shipyards,
+        Self::IdleShipyards,
+        Self::TrainingFacilities,
+        Self::IdleTrainingFacilities,
+        Self::ConstructionYards,
+        Self::IdleConstructionYards,
+        Self::Troopers,
+        Self::FighterSquadrons,
+        Self::DeathStarShields,
+        Self::PlanetaryShieldGenerators,
+        Self::PlanetaryDefenseBatteries,
+        Self::DisplayOff,
+        Self::LoyalToPlayer,
+        Self::PlayerMilitaryControl,
+        Self::LoyalToEnemy,
+        Self::EnemyMilitaryControl,
+        Self::UnexploredSystems,
+        Self::AllDefenses,
+        Self::HighlightEmpire,
+        Self::HighlightAlliance,
+    ];
+
+    /// The mode whose command byte is `id`, as a save's interface records
+    /// it (view `+0xc8`; `FUN_00440f80` replays it as `WM_COMMAND` 0x140).
+    #[must_use]
+    pub fn from_command_id(id: u8) -> Option<Self> {
+        Self::ALL.into_iter().find(|mode| mode.command_id() == id)
+    }
+
     /// Native command identifier dispatched by the code-built GID menu.
     #[must_use]
     pub const fn command_id(self) -> u8 {
@@ -325,7 +367,7 @@ struct GidMenuItem {
 }
 
 /// State for the original code-built GID menu.
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct GidUiState {
     pub menu_open: bool,
     pub category: Option<GidCategory>,
@@ -337,6 +379,66 @@ pub struct GidUiState {
     /// Where the compact legend has been dragged to, on the 640x480
     /// canvas; `None` at its constructed place.
     pub compact_legend: Option<(f32, f32)>,
+    /// The galaxy's child windows are hidden behind the open menu.
+    pub windows_hidden: bool,
+    /// The menu has been built for this galaxy view: the first press of the
+    /// GID control builds it (`FUN_00451130`), later ones reuse it.
+    pub built: bool,
+    /// Children shown again while the menu stays open: the one the view's
+    /// activation shows (`FUN_00422ce0` 0x467, `ShowWindow` 5) and any
+    /// window opened since, which is created visible.
+    pub shown: Vec<GalaxyChild>,
+}
+
+impl GidUiState {
+    /// The GID control's command: `FUN_00422ce0` case 0x132 always shows the
+    /// menu, reusing the one already built (`+0x118`), so a press on the
+    /// control while the menu is open leaves it open and changes nothing:
+    /// under Wine on the Alliance game in slot 5 at day 1173, and on the VM
+    /// on the Empire Death Star game at day 677, where the held press drew
+    /// the menu whole. Before it, the case hides
+    /// every child window in the view's `+0x6c` registry (slot `+8`) and
+    /// trades a shown detailed legend (`+0x124`) for the compact one
+    /// (`+0x248`). True when this press built the menu, whose `WM_CREATE`
+    /// step (`FUN_004511e0`) ends with `SetFocus` on it.
+    pub fn open_menu(&mut self) -> bool {
+        let built_now = !self.built;
+        self.built = true;
+        if !self.menu_open {
+            self.menu_open = true;
+            self.category = None;
+        }
+        self.windows_hidden = true;
+        self.shown.clear();
+        self.legend_open = false;
+        built_now
+    }
+
+    /// The menu closes and the windows it hid show again, minimized ones
+    /// staying on their rails (`FUN_004291d0`): after a row choice
+    /// (`WM_COMMAND` 0x140) and on a left release on the galaxy view
+    /// (`WM_LBUTTONUP`, both in `FUN_00422ce0`). The detailed legend stays
+    /// closed.
+    pub fn close_menu(&mut self) {
+        self.menu_open = false;
+        self.category = None;
+        self.windows_hidden = false;
+        self.shown.clear();
+    }
+
+    /// Whether the open menu keeps `child` hidden.
+    #[must_use]
+    pub fn hides(&self, child: GalaxyChild) -> bool {
+        self.windows_hidden && !self.shown.contains(&child)
+    }
+
+    /// Show `child` again under the open menu; nothing while no window is
+    /// hidden.
+    pub fn show_child(&mut self, child: GalaxyChild) {
+        if self.windows_hidden && !self.shown.contains(&child) {
+            self.shown.push(child);
+        }
+    }
 }
 
 /// Recovered native control record for one strategic command button.
@@ -766,10 +868,11 @@ impl CockpitState {
 
     /// Show `mode` on the keyboard's behalf, as Alt+1..9 does. Returns false
     /// when `mode` is already shown: `FUN_00425d00` returns early for the
-    /// current mode, so the key changes nothing. hyp: an open GID menu takes
-    /// the keys, as `TrackPopupMenu`'s modal loop would.
+    /// current mode, so the key changes nothing. An open GID menu leaves the
+    /// keys to the view: its procedure `FUN_004aab50` passes all but Enter
+    /// and Escape on.
     pub fn select_gid_from_keyboard(&mut self, mode: GidMode) -> bool {
-        if self.gid_ui.menu_open || self.gid_mode == mode {
+        if self.gid_mode == mode {
             return false;
         }
         self.gid_mode = mode;
@@ -1004,8 +1107,7 @@ pub fn draw_cockpit_egui_layer(
     let selected = draw_gid_menu(ctx, state, cache, layout, gid_menu_input_enabled);
     if let Some(mode) = selected {
         state.gid_mode = mode;
-        state.gid_ui.menu_open = false;
-        state.gid_ui.category = None;
+        state.gid_ui.close_menu();
     }
     selected
 }
@@ -1520,6 +1622,18 @@ fn gid_menu_row(
     response
 }
 
+/// Where `FUN_00422ce0` 0x132 builds the menu (`FUN_00451130`): (370,233)
+/// for side 1 and (420,233) for side 2.
+const fn gid_menu_origin(faction: CockpitFaction) -> (f32, f32) {
+    match faction {
+        CockpitFaction::Alliance => (370.0, 233.0),
+        CockpitFaction::Empire => (420.0, 233.0),
+    }
+}
+
+/// The menu window's side, 0xa0 (`FUN_00451130`).
+const GID_MENU_SIZE: f32 = 160.0;
+
 #[expect(
     clippy::too_many_lines,
     clippy::cast_precision_loss,
@@ -1538,9 +1652,10 @@ fn draw_gid_menu(
 
     let scale = layout.scale.max(0.5);
     let highlight = gid_highlight_color(state.faction);
+    let (root_x, root_y) = gid_menu_origin(state.faction);
     let root_pos = egui::pos2(
-        layout.canvas.x + 425.0 * layout.scale,
-        layout.canvas.y + 230.0 * layout.scale,
+        layout.canvas.x + root_x * layout.scale,
+        layout.canvas.y + root_y * layout.scale,
     );
     let root = egui::Area::new(egui::Id::new("original_gid_root_menu"))
         .order(egui::Order::Foreground)
@@ -1550,9 +1665,11 @@ fn draw_gid_menu(
             if !input_enabled {
                 ui.disable();
             }
-            ui.set_width(158.0 * scale);
+            ui.set_width(GID_MENU_SIZE * scale);
             let menu = gid_popup_frame().show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 0.0;
+                // The frame's 5-pixel margin and 1-pixel stroke on each side.
+                ui.set_min_height(GID_MENU_SIZE * scale - 12.0);
                 for category in GidCategory::ALL {
                     let response = gid_menu_row(
                         ui,
@@ -1632,26 +1749,47 @@ fn draw_gid_menu(
         selected = selected.or(submenu.inner);
     }
 
+    // Escape never closes the menu (FUN_004aab50 posts 0x405 for a key the
+    // view has not registered), and a press closes it only where the galaxy
+    // view's left release can land.
     if input_enabled && selected.is_none() {
-        let (pressed, pointer, escape) = ctx.input(|input| {
+        let (pressed, pointer) = ctx.input(|input| {
             (
                 input.pointer.button_pressed(egui::PointerButton::Primary),
                 input.pointer.interact_pos(),
-                input.key_pressed(egui::Key::Escape),
             )
         });
-        let trigger_rect =
-            logical_rect_to_screen(layout, strategic_gid_control(state.faction).rect);
         let outside = pressed
             && pointer.is_some_and(|pointer| {
-                should_dismiss_gid_menu(pointer, root.response.rect, submenu_rect, trigger_rect)
+                should_dismiss_gid_menu(
+                    pointer,
+                    root.response.rect,
+                    submenu_rect,
+                    on_cockpit_control(state, layout, pointer),
+                )
             });
-        if outside || escape {
-            state.gid_ui.menu_open = false;
-            state.gid_ui.category = None;
+        if outside {
+            state.gid_ui.close_menu();
         }
     }
     selected
+}
+
+/// Whether a screen point is on one of the command center's child controls
+/// (`FUN_00427270`): the primary and side controls (`0x12d..0x133`), the
+/// Message Index rail (`0x136..0x13e`) and the compact legend (`0x134`).
+/// A press there goes to that control, not to the galaxy view.
+fn on_cockpit_control(state: &CockpitState, layout: CockpitLayout, pointer: egui::Pos2) -> bool {
+    let faction = state.faction;
+    let on = |rect| logical_rect_to_screen(layout, rect).contains(pointer);
+    strategic_primary_controls(faction)
+        .iter()
+        .chain(std::iter::once(strategic_side_control(faction)))
+        .any(|control| on(control.rect))
+        || strategic_message_index_controls(faction)
+            .iter()
+            .any(|control| on(control.rect))
+        || state.gid_legend_contains(layout, (pointer.x, pointer.y))
 }
 
 /// Resolve control input after floating panels have registered their areas.
@@ -1703,9 +1841,9 @@ fn should_dismiss_gid_menu(
     pointer: egui::Pos2,
     root: egui::Rect,
     submenu: egui::Rect,
-    trigger: egui::Rect,
+    on_control: bool,
 ) -> bool {
-    !root.contains(pointer) && !submenu.contains(pointer) && !trigger.contains(pointer)
+    !on_control && !root.contains(pointer) && !submenu.contains(pointer)
 }
 
 fn update_control_capture(
@@ -1847,11 +1985,409 @@ mod tests {
     }
 
     #[test]
-    fn an_open_gid_menu_holds_the_accelerators() {
-        let mut state = CockpitState::new(CockpitFaction::Empire);
-        state.gid_ui.menu_open = true;
-        assert!(!state.select_gid_from_keyboard(GidMode::Uprisings));
-        assert_eq!(state.gid_mode, GidMode::PopularSupport);
+    fn the_gid_control_opens_its_menu_and_a_second_press_leaves_it_as_it_is() {
+        // FUN_00422ce0 0x132 has no toggle: it reuses the open menu (+0x118).
+        let mut gid = GidUiState::default();
+        gid.open_menu();
+        assert!(gid.menu_open);
+        assert_eq!(gid.category, None);
+        gid.category = Some(GidCategory::Fleets);
+        gid.open_menu();
+        assert!(gid.menu_open);
+        assert_eq!(gid.category, Some(GidCategory::Fleets));
+    }
+
+    #[test]
+    fn the_gid_menu_hides_the_windows_and_the_detailed_legend_until_it_closes() {
+        // FUN_00422ce0 0x132: slot +8 on every +0x6c child, and the detailed
+        // legend (+0x124) gives way to the compact one (+0x248); a row choice
+        // (0x140) or a galaxy release (0x202) shows the children again.
+        // Under Wine the Empire Death Star save (days 677-700) hid its two
+        // System windows and a sector window and a galaxy press brought them
+        // back; alliance-day54-advice at day 61 hid its sector window.
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            let mut gid = CockpitState::new(faction).gid_ui;
+            gid.legend_open = true;
+            gid.open_menu();
+            assert!(gid.menu_open && gid.windows_hidden, "{faction:?}");
+            assert!(!gid.legend_open, "{faction:?}");
+            gid.open_menu();
+            assert!(gid.windows_hidden);
+            gid.category = Some(GidCategory::Defense);
+            gid.close_menu();
+            assert!(!gid.menu_open && !gid.windows_hidden, "{faction:?}");
+            assert_eq!(gid.category, None);
+            assert!(!gid.legend_open, "the detailed legend stays closed");
+        }
+    }
+
+    /// One frame of `draw_gid_menu` on a 640 by 480 screen with `events`.
+    fn run_gid_menu_frame(state: &mut CockpitState, events: Vec<egui::Event>) -> egui::Context {
+        run_gid_menu_frame_with(state, events, true)
+    }
+
+    fn run_gid_menu_frame_with(
+        state: &mut CockpitState,
+        events: Vec<egui::Event>,
+        input_enabled: bool,
+    ) -> egui::Context {
+        let ctx = egui::Context::default();
+        let mut cache = BmpCache::new();
+        let layout = state.layout_for(640.0, 480.0);
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(640.0, 480.0),
+            )),
+            events,
+            ..Default::default()
+        };
+        let _ = ctx.run(input, |ctx| {
+            let _ = draw_gid_menu(ctx, state, &mut cache, layout, input_enabled);
+        });
+        ctx
+    }
+
+    fn primary_press(point: egui::Pos2) -> Vec<egui::Event> {
+        vec![
+            egui::Event::PointerMoved(point),
+            egui::Event::PointerButton {
+                pos: point,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::NONE,
+            },
+        ]
+    }
+
+    #[test]
+    fn the_gid_menu_opens_where_the_original_builds_it_on_either_side() {
+        // FUN_00422ce0 0x132 builds the menu with FUN_00451130 at (370,233)
+        // for side 1 and (420,233) for side 2, 0xa0 by 0xa0; under Wine its
+        // frame spans those 160 pixels on alliance-day54-advice at day 61
+        // and on empire-fleet-to-yaga-minor at day 39.
+        for (faction, x) in [
+            (CockpitFaction::Alliance, 370.0),
+            (CockpitFaction::Empire, 420.0),
+        ] {
+            let mut state = CockpitState::new(faction);
+            state.gid_ui.open_menu();
+            let ctx = run_gid_menu_frame(&mut state, Vec::new());
+            let mut cache = BmpCache::new();
+            let layout = state.layout_for(640.0, 480.0);
+            let _ = ctx.run(egui::RawInput::default(), |ctx| {
+                let _ = draw_gid_menu(ctx, &mut state, &mut cache, layout, true);
+            });
+            let rect = ctx
+                .memory(|memory| memory.area_rect(egui::Id::new("original_gid_root_menu")))
+                .expect("the root menu is laid out");
+            assert_eq!(rect.min, egui::pos2(x, 233.0), "{faction:?}");
+            assert_eq!(rect.size(), egui::vec2(160.0, 160.0), "{faction:?}");
+        }
+    }
+
+    /// Frames of `draw_gid_menu` on one context at `scale`, each with its
+    /// events; the last frame's choice and the context.
+    fn run_gid_menu_frames(
+        state: &mut CockpitState,
+        scale: f32,
+        input_enabled: bool,
+        frames: Vec<Vec<egui::Event>>,
+    ) -> (Option<GidMode>, egui::Context) {
+        let ctx = egui::Context::default();
+        let mut cache = BmpCache::new();
+        let layout = state.layout_for(640.0 * scale, 480.0 * scale);
+        let mut chosen = None;
+        for events in frames {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(640.0 * scale, 480.0 * scale),
+                )),
+                events,
+                ..Default::default()
+            };
+            let _ = ctx.run(input, |ctx| {
+                chosen = draw_gid_menu(ctx, state, &mut cache, layout, input_enabled);
+            });
+        }
+        (chosen, ctx)
+    }
+
+    fn primary_release(point: egui::Pos2) -> Vec<egui::Event> {
+        vec![egui::Event::PointerButton {
+            pos: point,
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: egui::Modifiers::NONE,
+        }]
+    }
+
+    #[test]
+    fn the_gid_menu_and_its_submenu_scale_with_the_command_center() {
+        // port: the 640 by 480 layout scaled whole; the submenu opens 246
+        // pixels left of the root, level with its category row, and stays
+        // above the canvas's bottom 10 pixels.
+        let scale = 2.0;
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            let (x, y) = gid_menu_origin(faction);
+            for category in [GidCategory::Loyalty, GidCategory::Defense] {
+                let index = GidCategory::ALL
+                    .iter()
+                    .position(|held| *held == category)
+                    .unwrap() as f32;
+                let row = egui::pos2((x + 40.0) * scale, (y + 6.0 + 21.0 * index + 10.0) * scale);
+                let mut state = CockpitState::new(faction);
+                state.gid_ui.open_menu();
+                let (_, ctx) = run_gid_menu_frames(
+                    &mut state,
+                    scale,
+                    true,
+                    vec![
+                        vec![egui::Event::PointerMoved(row)],
+                        Vec::new(),
+                        Vec::new(),
+                        Vec::new(),
+                    ],
+                );
+                assert_eq!(state.gid_ui.category, Some(category), "{faction:?}");
+                let area = |name| {
+                    ctx.memory(|memory| memory.area_rect(egui::Id::new(name)))
+                        .expect("laid out")
+                };
+                let root = area("original_gid_root_menu");
+                assert_eq!(root.min, egui::pos2(x * scale, y * scale), "{faction:?}");
+                assert_eq!(root.size(), egui::vec2(160.0, 160.0) * scale);
+                let items = gid_submenu_items(category, faction).len() as f32;
+                let top = (y + 21.0 * index).min(480.0 - 10.0 - 21.0 * items);
+                let submenu = area("original_gid_submenu");
+                assert_eq!(
+                    submenu.min,
+                    egui::pos2((x - 246.0) * scale, top * scale),
+                    "{faction:?} {category:?}"
+                );
+                assert_eq!(submenu.width(), 238.0 * scale);
+            }
+        }
+    }
+
+    #[test]
+    fn a_modal_over_the_gid_menu_leaves_its_rows_unchosen() {
+        // Our own gating: under a modal window neither the root's Display
+        // Off nor a submenu row takes a click.
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            let (x, y) = gid_menu_origin(faction);
+            let display_off = egui::pos2(x + 50.0, y + 6.0 + 21.0 * 6.0 + 10.0);
+            let mut state = CockpitState::new(faction);
+            state.gid_ui.open_menu();
+            let (chosen, _) = run_gid_menu_frames(
+                &mut state,
+                1.0,
+                false,
+                vec![
+                    Vec::new(),
+                    vec![egui::Event::PointerMoved(display_off)],
+                    primary_press(display_off),
+                    primary_release(display_off),
+                ],
+            );
+            assert_eq!(chosen, None, "{faction:?}");
+            assert_eq!(state.gid_mode, GidMode::PopularSupport);
+
+            state.gid_ui.category = Some(GidCategory::Loyalty);
+            let leaf = egui::pos2(x - 246.0 + 40.0, y + 6.0 + 10.0);
+            let (chosen, _) = run_gid_menu_frames(
+                &mut state,
+                1.0,
+                false,
+                vec![
+                    Vec::new(),
+                    vec![egui::Event::PointerMoved(leaf)],
+                    primary_press(leaf),
+                    primary_release(leaf),
+                ],
+            );
+            assert_eq!(chosen, None, "{faction:?}");
+            assert!(state.gid_ui.menu_open);
+        }
+    }
+
+    #[test]
+    fn display_off_is_chosen_with_a_click_on_its_row() {
+        // FUN_004aab50: a release on a row posts its command (0x140) to the
+        // view; the counterpart of the modal case above.
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            let (x, y) = gid_menu_origin(faction);
+            let display_off = egui::pos2(x + 50.0, y + 6.0 + 21.0 * 6.0 + 10.0);
+            let mut state = CockpitState::new(faction);
+            state.gid_ui.open_menu();
+            let (chosen, _) = run_gid_menu_frames(
+                &mut state,
+                1.0,
+                true,
+                vec![
+                    Vec::new(),
+                    vec![egui::Event::PointerMoved(display_off)],
+                    primary_press(display_off),
+                    primary_release(display_off),
+                ],
+            );
+            assert_eq!(chosen, Some(GidMode::DisplayOff), "{faction:?}");
+        }
+    }
+
+    #[test]
+    fn escape_leaves_the_gid_menu_open_with_the_windows_hidden() {
+        // FUN_004aab50, the menu's procedure, answers 0x1b by moving the
+        // focus to the galaxy view and posting 0x405 for its own key
+        // (0x140); the menu is not in the +0x6c registry, so FUN_00600f90
+        // destroys nothing and it stays open. Unfocused, Escape reaches the
+        // galaxy view, whose WM_KEYDOWN has no 0x1b. Under Wine no Escape
+        // closed it, on alliance-day54-advice at day 61 or on
+        // empire-fleet-to-yaga-minor on days 39-42.
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            let mut state = CockpitState::new(faction);
+            state.gid_ui.open_menu();
+            run_gid_menu_frame(
+                &mut state,
+                vec![egui::Event::Key {
+                    key: egui::Key::Escape,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+            );
+            assert!(state.gid_ui.menu_open, "{faction:?}");
+            assert!(state.gid_ui.windows_hidden, "{faction:?}");
+        }
+    }
+
+    #[test]
+    fn a_press_on_a_cockpit_control_leaves_the_gid_menu_open() {
+        // FUN_00427270 builds the primary and side controls (0x12d..0x133),
+        // the Message Index rail (0x136..0x13e) and the compact legend
+        // (0x134) as child windows, so their presses never reach the galaxy
+        // view's left release, which closes the menu (FUN_00422ce0 0x202).
+        // A rail light opened the Message Index over the open menu, and the
+        // menu and the hidden windows stayed so after it closed; the
+        // original, alliance-day54-advice on day 61.
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            let layout = CockpitState::new(faction).layout_for(640.0, 480.0);
+            let primary = strategic_primary_controls(faction)
+                .iter()
+                .chain(std::iter::once(strategic_side_control(faction)))
+                .map(|control| control.rect);
+            let rail = strategic_message_index_controls(faction)
+                .iter()
+                .map(|control| control.rect);
+            let (legend_x, legend_y) = compact_legend_origin(faction);
+            let legend = CockpitViewport {
+                x: legend_x,
+                y: legend_y,
+                width: COMPACT_LEGEND_SIZE.0,
+                height: COMPACT_LEGEND_SIZE.1,
+            };
+            for rect in primary.chain(rail).chain(std::iter::once(legend)) {
+                let mut state = CockpitState::new(faction);
+                state.gid_ui.open_menu();
+                let centre = logical_rect_to_screen(layout, rect).center();
+                run_gid_menu_frame(&mut state, primary_press(centre));
+                assert!(state.gid_ui.menu_open, "{faction:?} {rect:?}");
+                assert!(state.gid_ui.windows_hidden, "{faction:?} {rect:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_press_on_the_cockpit_background_closes_the_gid_menu() {
+        // The command-center art belongs to the galaxy view, whose left
+        // release closes the menu and shows the windows again (FUN_00422ce0
+        // 0x202): under Wine on alliance-day54-advice at day 61 and on
+        // empire-fleet-to-yaga-minor at day 42. Neither point is on a
+        // control, the menu or the compact legend.
+        for (faction, point) in [
+            (CockpitFaction::Alliance, egui::pos2(600.0, 20.0)),
+            (CockpitFaction::Empire, egui::pos2(60.0, 20.0)),
+        ] {
+            let mut state = CockpitState::new(faction);
+            state.gid_ui.open_menu();
+            run_gid_menu_frame(&mut state, primary_press(point));
+            assert!(!state.gid_ui.menu_open, "{faction:?}");
+            assert!(!state.gid_ui.windows_hidden, "{faction:?}");
+        }
+    }
+
+    #[test]
+    fn a_galaxy_press_leaves_the_gid_menu_open_while_a_modal_holds_its_input() {
+        // Our own gating: under a modal window the press is the modal's.
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            let mut state = CockpitState::new(faction);
+            state.gid_ui.open_menu();
+            run_gid_menu_frame_with(&mut state, primary_press(egui::pos2(300.0, 60.0)), false);
+            assert!(state.gid_ui.menu_open, "{faction:?}");
+        }
+    }
+
+    #[test]
+    fn a_child_shown_under_the_open_menu_stays_shown_until_the_control_hides_all_again() {
+        // FUN_00422ce0: 0x467 shows one child (ShowWindow 5) under the open
+        // menu; a press on the GID control (0x132) hides every child again.
+        let mut world = rebellion_core::world::GameWorld::default();
+        let first = GalaxyChild::System(
+            world
+                .systems
+                .insert(rebellion_core::world::System::default()),
+        );
+        let second = GalaxyChild::System(
+            world
+                .systems
+                .insert(rebellion_core::world::System::default()),
+        );
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            let mut gid = CockpitState::new(faction).gid_ui;
+            gid.show_child(first);
+            assert!(!gid.hides(first) && gid.shown.is_empty(), "{faction:?}");
+            gid.open_menu();
+            assert!(gid.hides(first) && gid.hides(second));
+            gid.show_child(first);
+            assert!(!gid.hides(first) && gid.hides(second));
+            gid.open_menu();
+            assert!(gid.hides(first), "{faction:?}");
+            gid.show_child(second);
+            gid.close_menu();
+            assert!(!gid.hides(second) && gid.shown.is_empty());
+        }
+    }
+
+    #[test]
+    fn only_the_first_gid_press_builds_the_menu() {
+        // FUN_00422ce0 0x132 builds +0x118 with FUN_00451130 when the view
+        // has none and otherwise reuses it.
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            let mut gid = CockpitState::new(faction).gid_ui;
+            assert!(gid.open_menu(), "{faction:?}");
+            gid.close_menu();
+            assert!(!gid.open_menu(), "{faction:?}");
+            assert!(!gid.open_menu(), "{faction:?}");
+        }
+    }
+
+    #[test]
+    fn an_open_gid_menu_leaves_the_accelerators_working() {
+        // The menu is no modal loop: its procedure FUN_004aab50 passes every
+        // key but Enter and Escape to the galaxy view's, and an unfocused
+        // menu never sees them.
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            let mut state = CockpitState::new(faction);
+            state.gid_ui.open_menu();
+            assert!(
+                state.select_gid_from_keyboard(GidMode::Uprisings),
+                "{faction:?}"
+            );
+            assert_eq!(state.gid_mode, GidMode::Uprisings);
+            assert!(state.gid_ui.menu_open, "{faction:?}");
+        }
     }
 
     #[test]
@@ -2055,6 +2591,20 @@ mod tests {
                 (0x132, 519.0, 434.0, 37.0, 25.0, 10026, 10025),
             ]
         );
+    }
+
+    #[test]
+    fn a_saved_gid_mode_comes_back_from_its_command_byte() {
+        // FUN_00440ea0 saves the mode's byte (view +0xc8) and FUN_00440f80
+        // replays it as the row choice, WM_COMMAND 0x140.
+        for mode in GidMode::ALL {
+            assert_eq!(GidMode::from_command_id(mode.command_id()), Some(mode));
+        }
+        let mut codes: Vec<u8> = GidMode::ALL.iter().map(|mode| mode.command_id()).collect();
+        codes.sort_unstable();
+        codes.dedup();
+        assert_eq!(codes.len(), GidMode::ALL.len());
+        assert_eq!(GidMode::from_command_id(0), None);
     }
 
     #[test]
@@ -2313,34 +2863,33 @@ mod tests {
     }
 
     #[test]
-    fn gid_trigger_closes_through_command_dispatch_not_outside_dismissal() {
+    fn a_press_dismisses_the_gid_menu_only_off_its_menus_and_the_controls() {
         let root = egui::Rect::from_min_size(egui::pos2(425.0, 230.0), egui::vec2(158.0, 147.0));
         let submenu = egui::Rect::from_min_size(egui::pos2(179.0, 230.0), egui::vec2(238.0, 42.0));
-        let trigger = egui::Rect::from_min_size(egui::pos2(446.0, 406.0), egui::vec2(27.0, 16.0));
 
         assert!(!should_dismiss_gid_menu(
             egui::pos2(450.0, 410.0),
             root,
             submenu,
-            trigger,
+            true,
         ));
         assert!(!should_dismiss_gid_menu(
             egui::pos2(430.0, 235.0),
             root,
             submenu,
-            trigger,
+            false,
         ));
         assert!(!should_dismiss_gid_menu(
             egui::pos2(200.0, 250.0),
             root,
             submenu,
-            trigger,
+            false,
         ));
         assert!(should_dismiss_gid_menu(
             egui::pos2(100.0, 100.0),
             root,
             submenu,
-            trigger,
+            false,
         ));
     }
 

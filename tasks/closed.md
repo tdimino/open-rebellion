@@ -2,7 +2,162 @@
 
 # Closed
 
-93 closed nodes, newest first. Back to the [index](INDEX.md).
+103 closed nodes, newest first. Back to the [index](INDEX.md).
+
+<a id="or-port-movie-triggers-45gd"></a>
+### Port: play movies from the original triggers instead of story_event_to_cutscene
+
+`or-port-movie-triggers-45gd` · **closed** · P2 · port, question · closed 2026-10-18  
+Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
+
+> crates/rebellion-app/src/main.rs:206 story_event_to_cutscene maps story events to movies; the original's story-mission functions play no movie (ghidra/notes/movies.md). Movies come from app states (intro 0x65, 0x66, side-select 0x68/0x69, endings 0x6a-0x6d), the Credits button (0x6e), four message classes (Death Star destroys a system 0x6f, Alliance HQ destroyed 0x73, Coruscant taken 0x74, sabotage 0x72) and the tactical trench run (0x71 success, 0x70 failure). Replace the mapping with those triggers, both factions; verify e2e.
+
+**Notes**
+
+> After the ending movie the game goes straight to the main menu, with no victory modal; the Credits movie replaces the scrolling credits screen.
+> 2026-10-17: story_event_to_cutscene is gone. The port plays the intro 0x65, the trench-run pair 0x71/0x70, the kind-6 message movies 0x6f (strike_movies), 0x72 (sabotage_movies), 0x73 and 0x74 (word_movies), and the endings 0x6a-0x6d by code 0x10-0x13 (movies.rs ending_movie); the browser plays them through the or_movie_play/or_movie_stop imports and the or_movie_ended export (video_player.rs, web/index.html). Remaining: 0x66, the side-select pair 0x68/0x69 and the Credits movie 0x6e, and the e2e check on both sides.
+> Done 2026-10-18. The port plays every movie trigger from FUN_004138a0's 0x405 routing through FUN_00414830 (movies.rs after/after_movie/side_movie, main.rs CutsceneKind::ended): intro 0x65 then 0x66 then the menu; a new game seeds, plays 0x68 (Alliance) or 0x69 (Empire), then the galaxy; the Credits control plays 0x6e and returns to the menu (GameMode::Credits and the scrolling credits screen are gone); message, trench and ending movies as before. A movie that cannot open ends at once (0x403). Browser via or_movie_play/or_movie_ended. Dev lines waiting for the menu or galaxy end a movie as Escape does (dev_policy::skips_movie). Native e2e both sides; row 5 (multiplayer lobby) has no port.
+
+**Closed:** Every original movie trigger ported; native e2e both sides
+
+<a id="or-hq-bombard-transit-4rh7"></a>
+### Q: What is the Alliance HQ's bombardment value, and does an HQ in transit survive capture or Destroy System?
+
+`or-hq-bombard-transit-4rh7` · **closed** · P3 · ghidra, question · closed 2026-10-18  
+Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
+
+> Start from FUN_00520b60 (class +0x58), FUN_0055e970, FUN_00526860, FUN_004f7640; FUN_004f8710/FUN_004f8680 skip +0x50 bit 0x20 (game-end-path.md, bombardment.md).
+
+**Notes**
+
+> 2026-10-18: an HQ en route under Destroy System survives and relocates (plan Phase A, cascade edges; death-star-strategic.md). Open: its bombardment value (class +0x58, FUN_00520b60) and the capture case (FUN_00526860, FUN_004f7640).
+> Answered: the HQ's bombardment value is 9 (FUN_00520b60 reads ALLFACSD 0x20000001 extra7 at class +0x58; FUN_0058cf80's per-hit roll needs FUN_0055e970's 1-10 draw above it), ported (rebellion-data lib.rs extra7, bombardment.rs HEADQUARTERS_CLASS). An en-route HQ survives capture and Destroy System and relocates (game-end-path.md, An HQ in transit); the port has no travelling HQ, so that rule moves to or-alliance-hq-move-o9ms.
+
+**Closed:** Value ported; in-transit rule moved to the HQ Move node
+
+<a id="or-c-gnd-alliance-qqg"></a>
+### Capture an Alliance-side planetary assault reference in the VM
+
+`or-c-gnd-alliance-qqg` · **closed** · P2 · capture, ground-assault · closed 2026-10-18  
+Epic: [Ground assault (TAC-08): port the original's report-only flow](INDEX.md#or-ep-gnd-mmf)  
+Unblocks: [or-d-gnd-plan-glw](other.md#or-d-gnd-plan-glw)
+
+> The Alliance needs regiments: build them through C-3PO, Build Troops (a Talus game was never saved). A0 frames only from a0/a0-cell/up-a0; never overwrite slot 5.
+
+**Notes**
+
+> Alliance-side reference captured on Wine from two library saves edited by save_tree.py garrison: alliance-day1169-ord-pardon-garrison.sav (Imperial Army Regiment at Ord Pardon; capture 'Alliance troops have taken control of the Imperial system Ord Pardon' and repulse 'Imperial Troops have defended Ord Pardon from an Alliance assault.', both with the Alliance picture 0x2b98, the defender listed under System Forces) and alliance-day1169-ord-pardon-dark-trooper.sav (every assault repulsed, all six attackers destroyed). The outcomes match the draw ledger from the generator state read in memory (ground-assault.md, In the original). Regiments built through C-3PO are not needed for the reference.
+
+**Closed:** Alliance assault reference captured (capture and repulse) and matched to the draw ledger
+
+<a id="or-port-message-voices-aagk"></a>
+### Port: message voice lines (+0x32, FUN_004c4990)
+
+`or-port-message-voices-aagk` · **closed** · P3 · port · closed 2026-10-18
+
+> A message's second sound, its voice line at `+0x32`, is filled by the message-class handlers from FUN_004c4990, the RCDATA list picker (`[u16 n][u16 v0..]`, a random entry when n > 1; rebexe-map.md). The Message Index plays it with the `+0x30` sound when the message shows (FUN_00469de0 -> FUN_00610c30, module 9 WAVE; message-index-rows.md). The port files no voice line: MessageDisplay carries only the `+0x30` sound.
+>
+> Callers to port, both factions:
+> - the mission end-code messages (FUN_00491500.c:214-256): a major lead's voice from lists 0xf3, 0xdf, 0xcb or 0xd5 (Luke, by +0xb0 bit 3), 0xe9, 0x107, 0xfd (mission-lifecycle.md, "End-code messages");
+> - the story messages, such as Luke Goes to Dagobah, FUN_004c4990(0x11d) (story-encounters.md);
+> - every other FUN_004c4990 caller among the message classes (23 callers).
+>
+> Needs: a voice field on MessageDisplay, a reader for the RCDATA lists, the module 9 WAVEs staged for native and browser, and playback beside the message sound. Verify e2e in the running game.
+
+**Closed:** Ported: MessageDisplay.voice (+0x32) drawn through FUN_004c4990 (AdvisorState::voice_line) for the end-code and escape messages, played with +0x30 when the Message Index shows a message (FUN_00469de0, FUN_0046a6e0) from the player's sprite DLL, native and browser; tests red first both sides
+
+<a id="or-q-regiment-combat-eaxn"></a>
+### Q: Where is regiment-versus-regiment ground combat resolved, and which class fields does it read?
+
+`or-q-regiment-combat-eaxn` · **closed** · P2 · ghidra, question · closed 2026-10-17  
+Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
+
+> ground-unit-assets.md: FUN_00560d50 moves characters and capital ships; the regiment battle's resolution is not found. Start from FUN_00496f50, FUN_00512370, FUN_00445280 and the class fields +0x60/+0x64/+0x68. Done when a note gives the resolution with its formula for both sides.
+
+**Notes**
+
+> 2026-10-17: ghidra/notes/ground-assault.md answers it. Regiment combat is the Planetary Assault run (order 0x234, FUN_00563390 -> FUN_0058c1e0 -> FUN_0058c120): each attacking regiment fights one random defender once (FUN_0055eb00): rand(0..GNPRTB 0x202) + attack + the fleet General's leadership / GNPRTB 0x201 - defence - the system General's / GNPRTB 0x201; at or below GNPRTB 0x203 the attacker dies, at or above 0x204 the defender (thresholds DAT_006bb778..78c, FUN_0055ea00). Defence facilities fire first (FUN_0055ead0), then collateral (FUN_0055eb80, FUN_0055ebc0) and the landing. The run tests no side, so it is the same for both. Ported as assault::resolve, with tests citing each function in crates/rebellion-core/src/assault.rs; the decompiles are in ghidra/notes/.
+
+**Closed:** ground-assault.md gives the resolution and its formula for both sides (FUN_0058c120, FUN_0055eb00, FUN_0055ead0)
+
+<a id="or-q-final-battle-jail-xkv9"></a>
+### Q: Where does each branch of the final battle send the loser?
+
+`or-q-final-battle-jail-xkv9` · **closed** · P3 · ghidra, question · closed 2026-10-17  
+Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
+
+> story-encounters.md: FUN_0054b040 decides the Luke/Vader/Emperor final battle by Luke's Force against GNPRTB 0x1807; the jail moves per branch (slots +0x218/+0x20c) are hyp. Done when a note gives each branch's moves for both sides.
+
+**Notes**
+
+> 2026-10-17: ghidra/notes/jail.md section 7 answers both branches. FUN_0054b040 duels Luke, Vader and the Emperor in one container on Luke's Force against GNPRTB 0x1807: at or above, Luke is freed (slot +0x218) and Vader and the Emperor are captured (slot +0x20c); below, Luke is injured (FUN_00549a20). When the winner's container is of the other side, all three go by the Move mission 0x41000001 (FUN_00547480, FUN_00547ba0, prisoner flag 1) to FUN_00543040's destination for the winner, Luke or Vader; with no destination nobody moves. No branch names a jail abode (no 0x98 constant, no FUN_00549580). FUN_0054b040.c and FUN_00547480.c are in ghidra/notes/.
+
+**Closed:** jail.md section 7 gives each branch's moves for both sides: the losers go by Move to the winner's FUN_00543040 destination, never to a jail abode (FUN_0054b040, FUN_00547480)
+
+<a id="or-port-death-star-family-qtde"></a>
+### Port: identify the Death Star by family 0x18 and drop the 0x34 clause and the fleet flag
+
+`or-port-death-star-family-qtde` · **closed** · P2 · port, question · closed 2026-10-17  
+Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
+
+> crates/rebellion-core/src/world/mod.rs:434 CapitalShipClass::is_death_star accepts family 0x34, which is the Emperor's family (FUN_005617b0 is the Emperor-at-Coruscant flag), and Fleet::has_death_star (mod.rs:853) is a stored flag said to enable a Death Star win check. The original keys every rule on the ship family range [0x18,0x1c) (FUN_005003d0, FUN_00582440, FUN_0058d440), computes 'fleet has a Death Star' from its ships, allows one such ship per system (FUN_00507ab0, literal 1 in FUN_0040f340), and reads the Death Star in victory only through the AD and CD bits (losing it ends nothing). Note ghidra/notes/death-star-strategic.md. Verify both factions.
+
+**Notes**
+
+> 2026-10-16: CombatEntityKind is deleted (dead code with a wrong mapping); only is_death_star remains to move onto [0x18,0x1c).
+> 2026-10-16: carried by plan 2026-10-16-feat-orbital-strike-and-bombardment Phase B1.
+> 2026-10-17: CapitalShipClass carries its DAT family and is_death_star tests 0x18-0x1b; the gate and the run read ships. Remaining: Fleet::has_death_star is a stored flag (about 150 readers) to turn into a query.
+> 2026-10-17: Fleet::has_death_star is a query over the fleet's live ships (family 0x18-0x1b, FUN_005003d0); the stored field is gone from the save, a Death Star destroyed in battle kills its ship (tactical::apply), and bombardment's duplicate helper folds into GameWorld::fleet_has_death_star.
+
+**Closed:** Death Star identity is the CAPSHPSD family 0x18-0x1b and a fleet's Death Star is a query of its ships, as the original (FUN_005003d0).
+
+<a id="or-bombard-command-timing-d1b2"></a>
+### Q: When does the bombard command (message 0x224, FUN_005637c0) execute?
+
+`or-bombard-command-timing-d1b2` · **closed** · P3 · ghidra, question · closed 2026-10-17  
+Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
+
+> Start from FUN_005637c0, FUN_00563620, FUN_004fe020, FUN_004fec00, FUN_005820a0 (bombardment.md Open).
+
+**Notes**
+
+> 2026-10-16: answered in bombardment.md. The order posts per-fleet flag commands and one 0x224 per system, run in the same scheduler step before the next day; the VM alert opens within a second. FUN_0058d800's only caller is FUN_005637c0, so the original never bombards after a battle without the order.
+> 2026-10-17: ported as answered (the order resolves where it is issued; no post-battle bombardment).
+
+**Closed:** done
+
+<a id="or-port-bombardment-8usw"></a>
+### Port: bombardment resolves per-hit target rolls (FUN_0058d800) for both sides and the AI
+
+`or-port-bombardment-8usw` · **closed** · P1 · closed 2026-10-17  
+Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
+
+> Replace bombardment.rs's transit-formula damage, main.rs's sourceless popularity cut and victory.rs apply_headquarters_bombardment with the original run: orders 0x220-0x223 (gate FUN_00582440), Death Star phase (FUN_0058d990, 50% character roll), KDY/LNR defence fire (FUN_0058dc10), hits = bombard strength x (Admiral leadership/40+1) - GenCore shields, per-hit roll (10-v)/10 against military (incl. Alliance HQ), civilian, energy/raw targets (FUN_0058df60), support shifts (FUN_0058e320). FireDeathStar's Empire-held refusal has no source. Both factions can bombard; the AI posture emitter (ai-order-emission.md) issues them. Source: ghidra/notes/bombardment.md, support-shifts.md. Blocks the apply_automatic_bombardment part of or-port-headless-battles-tdl.
+
+**Notes**
+
+> 2026-10-16: the finalize part (FUN_0058e320: support for the bombarding side by GNPRTB 7705, then the sector or galaxy shift) is being ported in the AI round scheduler's shared strike resolver (or-port-ai-round-scheduler-wz8g), for player and AI alike; native's sourceless popularity cut goes with it. The per-hit run (FUN_0058d800) and the rest of this node remain.
+> 2026-10-16: the port has three post-battle bombardments with no source of their own: tactical_flow::apply_automatic_bombardment (native), and in simulation.rs the space-win follow-up and the unopposed HQ invasion (headless). Each now ends with bombardment::finalize (FUN_0058e320). When the hit loop is ported, check whether the original bombards after a battle at all (or only on the bombard command, message 0x224 / FUN_005637c0, or-bombard-command-timing-d1b2) and remove or source these three.
+> 2026-10-16 (plan 2026-10-16-feat-orbital-strike-and-bombardment, Phase A): every open question read into bombardment.md (gate: one passing fleet of the ordered group; strengths and target values mapped to DAT fields, HQ = ALLFACSD extra7; KDY overflow zeroes a ship's strength; 0x224 runs in the order's own scheduler step; FUN_0058d800 has one caller, so no post-battle bombardment). VM: Selonia shield blocked a General Bombardment entirely; Yaga Minor General Bombardment killed both Alliance regiments and 4 of 5 civilian facilities; an Alliance fleet of zero strength sees the submenu disabled.
+> 2026-10-17: ported. Orders 0x220-0x223 resolve in the step they are given (integrator::order_strike, strike_orders::issue for the player's menu row and dev command, resolve_ai_strike inside ai_step), through the gate (bombardment::gate, FUN_00582440) and the per-hit run (FUN_0058d800) to finalize (FUN_0058e320); the post-battle bombardments are gone (FUN_0058d800's only caller is FUN_005637c0). Native seed 42 both sides (Vagran, Denab) from the original Planetary Bombardment menu; 24 headless seeds give 95 Alliance and 226 Empire AI strikes, all 0x220 (FUN_004ae320).
+
+**Closed:** done
+
+<a id="or-q-port-support-shifts-y0y"></a>
+### Q: Port the support shifts and the Death Star sector bit?
+
+`or-q-port-support-shifts-y0y` · **closed** · P1 · port, question · closed 2026-10-17  
+Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
+
+> support-shifts.md: the port has no sector-wide support shifts (control change, blockade end, HQ removal, Death Star kill; GNPRTB/SDPRTB 0x1401-0x1445, 7705) and economy::is_strong_support reads +0x88 bit 11 as holder support above the drift threshold, though the original's bit 11 is the Death Star (family 0x18) in the system's sector (FUN_005178b0). That bit gates the pro-Alliance halving (uprising.rs support_change), Empire troop doubling in drift (economy.rs) and the uprising requirement/score. Game-rule code: explain before changing. Done when both factions' shifts follow the note, verified e2e.
+
+**Notes**
+
+> 2026-10-16: system bit 11 is the Death Star in the sector (GameWorld::death_star_sectors, death_star::refresh_sectors, FUN_005178b0), read by the support-change halving, the drift's Empire regiment weight, the uprising score and the Empire garrison; is_strong_support deleted. The blockade's periodic shift is timer 0x386 (blockade.rs advance_support_shift, FUN_0050cb20), checked natively on both sides (seed 42: Vagran 69 -> 70 without the Death Star, held at 69 with it; Denab 35 -> 32). The Death Star kill uses the original finalize (FUN_0058e320). Still open: the control-change, blockade-end and HQ-removal sector shifts.
+> 2026-10-16 (Phase A): control change (per-step cap, Coruscant 15 + victory rerun), blockade end (counters A/B/C by reason), HQ removal (-10 Alliance in the HQ's sector), event 0x373 deferral read into support-shifts.md and game-end-path.md. VM: a Death Star kill moved every core system by 10 plus 1 per holder change in its sector (halved in the Death Star's sector) and no rim system (setup bit 3).
+> 2026-10-17 (Phase D): control change (cap, troop bits FUN_0050b610 as GameWorld::troop_held choosing the FUN_0055de50 record 0x1420/0x1442/0x1440/0x1444, Coruscant FUN_0055e010), blockade end (FUN_0055dbf0 over the loss counters and strength sums) and HQ removal (GNPRTB 0x1407) post through event 0x373 at every control-change and BlockadeEnded site. Native seed 42, both sides: Empire lift at Vagran -1 x10 (losses 15, strength 69/98); Alliance at Corellia +10 x10 for the lost garrison (0x1442) and +2 x10 for the lift (losses 15, strength 84/83); Destroy System +10 on 29 core systems with no control record while regiments stood. Remaining hyps in support-shifts.md: no FUN_0050b610 rerun when a killed system's regiments die; the designers' meaning of 0x1440-0x1445.
+
+**Closed:** done
 
 <a id="or-39er"></a>
 ### Port ship damage counters, the module 11 repair move (FUN_004c8e90) and the original repair cadence

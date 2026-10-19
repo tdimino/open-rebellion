@@ -90,6 +90,18 @@ loop:
   The running original showed 12 TIE squadrons of Coruscant's own on day 5
   (`.artifacts/native-checks/2026-10-10-original-coruscant-fighters/`):
   10 from CMUNCRTB and, hyp, two lone-squadron rolls.
+- **No room test and no choice of ship.** `FUN_004f7d50` builds the object
+  and reparents it (`+0xa8`) with no acceptance or capacity read
+  (`FUN_004f7d50.c:21-31`), and `FUN_004f7cf0` only repeats it, so every
+  follower of a group rides the group's lead whatever the lead's hangar
+  (class `+0x26c`) and troop (`+0x270`) capacity. Every shipped group
+  holds at most one capital ship, and it is item 0 (CMUNAFTB, CMUNEFTB,
+  CMUNEMTB, CMUNALTB: `data/base/json/`), so the carrier of every seeded
+  squadron and regiment is that ship; no shipped group holds more squadrons
+  or regiments than its lead's `fighter_capacity` and `troop_capacity`
+  (CAPSHPSD), so the room rule never binds on shipped data. The seeded cargo is never left on a
+  fleet with no ship: a group without a ship lead has a null lead and lands
+  on its parent.
 
 ## Difficulty
 

@@ -84,7 +84,8 @@ pub enum WindowKind {
     ScrapConfirmation,
     /// Tactical Battle Alert dialog.
     BattleAlert,
-    /// Tactical Battle Results or Summary window.
+    /// Battle Results or Summary window: original window type `0x1c`
+    /// (`FUN_0044c410`), whose class also shows the Operation Report.
     BattleResults,
     /// One active object, agent, game-speed, or GID menu presentation.
     Menu,

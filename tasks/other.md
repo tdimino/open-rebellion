@@ -4,7 +4,7 @@
 
 Decisions, chores and unlabelled nodes. Back to the [index](INDEX.md).
 
-14 open.
+16 open.
 
 <a id="or-dec-c6-text-masks-rue"></a>
 ### Decide: may C6 mask label text boxes, citing the accepted anti-aliased font?
@@ -14,19 +14,6 @@ Epic: [Tactical parity: every TAC-01..07 A0 cell passes or is settled](INDEX.md#
 Unblocks: [or-acc-status-2ls](acceptance.md#or-acc-status-2ls)
 
 > Tom accepted the port's anti-aliased Liberation Sans where the original draws aliased GDI Arial (2026-10-14). C6 thresholds (changed pixels <= 0.5%, SSIM >= 0.995) still fail any region holding text: TAC-03-C019 status-panel matches A0 in content, art and layout but fails at SSIM 0.952, 3.7% changed. Proposal: mask only the measured label boxes (e.g. the fighter panel's four labels from tactical-fighter-group-panel.md), each mask citing this decision, and keep a separate text check that the strings, positions and em size match A0. Done when Tom approves or rejects the masks.
-
-<a id="or-port-bombardment-8usw"></a>
-### Port: bombardment resolves per-hit target rolls (FUN_0058d800) for both sides and the AI
-
-`or-port-bombardment-8usw` · **open** · P1 · updated 2026-10-16  
-Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
-
-> Replace bombardment.rs's transit-formula damage, main.rs's sourceless popularity cut and victory.rs apply_headquarters_bombardment with the original run: orders 0x220-0x223 (gate FUN_00582440), Death Star phase (FUN_0058d990, 50% character roll), KDY/LNR defence fire (FUN_0058dc10), hits = bombard strength x (Admiral leadership/40+1) - GenCore shields, per-hit roll (10-v)/10 against military (incl. Alliance HQ), civilian, energy/raw targets (FUN_0058df60), support shifts (FUN_0058e320). FireDeathStar's Empire-held refusal has no source. Both factions can bombard; the AI posture emitter (ai-order-emission.md) issues them. Source: ghidra/notes/bombardment.md, support-shifts.md. Blocks the apply_automatic_bombardment part of or-port-headless-battles-tdl.
-
-**Notes**
-
-> 2026-10-16: the finalize part (FUN_0058e320: support for the bombarding side by GNPRTB 7705, then the sector or galaxy shift) is being ported in the AI round scheduler's shared strike resolver (or-port-ai-round-scheduler-wz8g), for player and AI alike; native's sourceless popularity cut goes with it. The per-hit run (FUN_0058d800) and the rest of this node remain.
-> 2026-10-16: the port has three post-battle bombardments with no source of their own: tactical_flow::apply_automatic_bombardment (native), and in simulation.rs the space-win follow-up and the unopposed HQ invasion (headless). Each now ends with bombardment::finalize (FUN_0058e320). When the hit loop is ported, check whether the original bombards after a battle at all (or only on the bombard command, message 0x224 / FUN_005637c0, or-bombard-command-timing-d1b2) and remove or source these three.
 
 <a id="or-3ioq"></a>
 ### Port the production modules' ascending kind order (FUN_005f4f10 tree, FUN_004be980)
@@ -55,7 +42,7 @@ Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX
 
 `or-d-gnd-plan-glw` · **open** · P2 · decision, ground-assault, owner · updated 2026-10-14  
 Epic: [Ground assault (TAC-08): port the original's report-only flow](INDEX.md#or-ep-gnd-mmf)  
-Waits on: [or-c-gnd-alliance-qqg](acceptance.md#or-c-gnd-alliance-qqg), [or-r-gnd-5hu](reviews.md#or-r-gnd-5hu)  
+Waits on: [or-c-gnd-alliance-qqg](closed.md#or-c-gnd-alliance-qqg), [or-r-gnd-5hu](reviews.md#or-r-gnd-5hu)  
 Unblocks: [or-p-gnd-ykv](ports.md#or-p-gnd-ykv)
 
 > Well over three files: phases, each explained before implementing.
@@ -81,6 +68,17 @@ Unblocks: [or-p-gnd-ykv](ports.md#or-p-gnd-ykv)
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > movement.rs transit_ticks_between divides by GNPRTB 1 where FUN_0055d8c0 divides by DAT_00661a88 (100), and the port has no FUN_00555b30 rule (same container 0 ticks; different containers that are not both systems 1 tick). Source: ghidra/notes/build-delivery.md Travel and Port. Both factions identical (no side branch).
+
+<a id="or-port-window-restore-on-load-iclp"></a>
+### Port: a load reopens the saved strategic windows
+
+`or-port-window-restore-on-load-iclp` · **open** · P2 · updated 2026-10-19
+
+> The original saves the strategic view's child windows as the save's third section (writer FUN_00440ea0, reader FUN_00440f80 → FUN_00441190), bottom of the z-order to top: a six-word descriptor (type, x, y, w, h, shown) plus a per-type payload for Sector (1), Fleet (4, with tab), Battle in Progress (7), System (9), Defenses (10) and Missions (11). The GID mode is replayed through WM_COMMAND 0x140. Shown windows come back shown, hidden ones on the minimized rail, and sector windows drop to the bottom; restored windows open silently. System, Defenses and Missions pages are not saved; System reopens on Overview. The port saves no interface state and closes every window on a load; the GID category is neither saved nor reset. Port plan: an InterfaceState save section outside the state fingerprint (fleet windows by FleetKey, which the save keeps stable with the slotmap versions), per-family export/restore, and main.rs wiring after the GID focus model.
+
+**Notes**
+
+> Wine checks (Empire day-2 start, played on to day 6 / day 8): a dragged System window reopens where it was dragged (322,92), so the descriptor's x and y follow a drag; a System window saved on Shipyards reopens on the Manufacturing overview; a window minimized to the rail comes back on the rail; the sector window comes back under the System window. Saved with the GID menu open: the menu does not reopen; a System window the menu had hidden comes back on the rail (GID's slot +0x08 clears +0x110, so it saves as hidden); a sector window the menu had hidden comes back shown, because FUN_00441190's type-1 branch clears its rail flag (0x441248 jumps to 0x4413f1, as type 7 does), so only +0x2c(5) follows; the legend category was unchanged (Popular Support), so the GID-mode replay is not exercised. The Fleet window's subject is its system (fleet-window.md, +0x144), as the port keys it, so fleet windows save by system DatId; no FleetKey is needed. The Battle in Progress overlay (type 7) is left out: the port has no such window. The record types live in rebellion_core::saved_interface; they follow SaveState in the body, outside the fingerprint, under the save version current when this lands.
 
 <a id="or-a631"></a>
 ### Re-source or retire eval_parity's golden-value oracle
@@ -121,6 +119,20 @@ Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX
 `or-i7uo` · **open** · P3 · updated 2026-10-15
 
 > FUN_0050b610 leaves the troop-side bits 4-5 unchanged when both sides have regiments at a system, and FUN_005588f0 takes the holder from those bits when set, so the earlier troop side keeps the system; economy.rs resolve_system_control returns ControlKind::Contested instead (a port: tag). For an unpopulated system (+0x88 bit 0 clear) FUN_0050b610 sets the support bits 2-3 to 3 (neutral), but the troop bits still decide; the port returns Uncontrolled before reading regiments. Contested is read by blockade, the UI and the AI, so the change crosses crates: explain before changing. Done when both cases follow the original, verified e2e on both sides.
+
+<a id="or-port-gid-unit-mode-colour-xgrr"></a>
+### Port the GID fleet and personnel modes' marker colour
+
+`or-port-gid-unit-mode-colour-xgrr` · **open** · P3 · updated 2026-10-17
+
+> FUN_0042b330 cases 0x20-0x22 and 0x43-0x44 pick the marker's side from the units counted, not the system's holder: the player's side when the player's fleets are there, the enemy's when only the enemy's are, the mixed sprite 0x27b0 (10160) with the summed count when both are, and the system's side when neither is (0x0042b7fb-0x0042b83a). The port colours every metric mode by System::control (gid_marker_for_system). Original: destroyed, neutral Yaga Minor shows a large green marker under Idle Fleets for the two Imperial fleets in orbit (empire-huge-deathstar-built.sav played to day 315). Both sides.
+
+<a id="or-q-emptied-fleet-crew-iz3z"></a>
+### Q: What happens to the characters aboard a fleet whose last ship dies?
+
+`or-q-emptied-fleet-crew-iz3z` · **open** · P3 · updated 2026-10-17
+
+> post_battle::destroy_fleet makes them captives of the other side (hyp, from the tactical loser's emptied fleet). It serves battles and bombardment defence fire alike (integrator resolve_strike), where the other side may not be present: a side may bombard its own system, and its own KDY/LNR batteries can empty its fleet (FUN_00527550, FUN_005272e0 take no side). Trace the fleet destroy slots +0xac(2)/+0xac(5) on a fleet's character children and whether the adrift setter FUN_00534790 or the prisoner path runs; settle in the VM (a fleet with a character emptied by batteries at its own system, both sides).
 
 <a id="or-rhik"></a>
 ### Port persistent research planners (FUN_004bced0, FUN_004e8290) without the yard pre-test

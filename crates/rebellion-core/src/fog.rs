@@ -33,9 +33,9 @@ use std::collections::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 
 use crate::dat::Faction;
-use crate::ids::SystemKey;
+use crate::ids::{FleetKey, SystemKey};
 use crate::movement::MovementState;
-use crate::world::{FacilityRef, GameWorld};
+use crate::world::{FacilityRef, Fleet, GameWorld};
 
 // ---------------------------------------------------------------------------
 // FogState
@@ -218,13 +218,19 @@ impl FogSystem {
 
         let is_alliance = fog.faction == Faction::Alliance;
         let mut events = Vec::new();
+        // A side observes a system through its fleets there in mode 1
+        // (`FUN_0050ac80.c:21-37`: `FUN_004ffef0(system, 1, side)`): usable
+        // fleets (`FUN_004fe540`), not en route, so a fleet holding only
+        // unfinished or travelling ships observes nothing.
+        let observing = |fleet_key: FleetKey, fleet: &Fleet| {
+            fleet.is_alliance == is_alliance
+                && !movement_state.is_in_transit(fleet_key)
+                && fleet.usable()
+        };
 
         // Stationary fleets reveal their current location.
         for (fleet_key, fleet) in &world.fleets {
-            if fleet.is_alliance != is_alliance {
-                continue;
-            }
-            if movement_state.is_in_transit(fleet_key) {
+            if !observing(fleet_key, fleet) {
                 continue;
             }
             if !fog.is_visible(fleet.location) {
@@ -260,17 +266,16 @@ impl FogSystem {
 
         // Sensor-radius reveals: fleets with detection capability reveal nearby systems.
         for (fleet_key, fleet) in &world.fleets {
-            if fleet.is_alliance != is_alliance {
-                continue; // skip enemy fleets
-            }
-            if movement_state.is_in_transit(fleet_key) {
+            if !observing(fleet_key, fleet) {
                 continue;
             }
-            // Find max detection from fleet's ship classes.
+            // Find max detection from fleet's ship classes. port: the
+            // original has no per-ship sensor walk; the usable ships are
+            // the mode the fleet's own observation walks.
             let max_detection = fleet
                 .capital_ships
                 .iter()
-                .filter(|ship| ship.alive)
+                .filter(|ship| ship.usable())
                 .filter_map(|ship| world.capital_ship_classes.get(ship.class))
                 .map(|c| c.detection)
                 .max()
@@ -373,13 +378,20 @@ mod tests {
         let fleet_keys: Vec<FleetKey> = fleet_locations
             .iter()
             .map(|&idx| {
+                // A fleet holds at least one ship, or it disbands
+                // (`FUN_004fe630.c:21-28`); this one is completed, so the
+                // fleet observes its system (`FUN_0050ac80`).
                 world.fleets.insert(Fleet {
                     location: sys_keys[idx],
-                    capital_ships: vec![],
+                    capital_ships: vec![crate::world::ShipInstance::new(
+                        crate::ids::CapitalShipKey::default(),
+                        1,
+                        is_alliance,
+                    )],
                     fighters: vec![],
                     characters: vec![],
                     is_alliance,
-                    has_death_star: false,
+                    bombarding: false,
                 })
             })
             .collect();
@@ -445,6 +457,129 @@ mod tests {
         world.fleets[fleets[0]].location = systems[0];
         FogSystem::advance(&mut fog, &world, &movement);
         assert_eq!(fog.known_facilities(systems[0]).len(), 1);
+    }
+
+    #[test]
+    fn a_fleet_holding_only_unfinished_ships_reveals_neither_its_system_nor_its_neighbours_for_either_side(
+    ) {
+        // FUN_0050ac80.c:21-37: a side observes a system through its fleets
+        // there in mode 1 (FUN_004ffef0(system, 1, side)), and a fleet is
+        // usable only with a completed ship not on its own leg
+        // (FUN_004fe540.c:20-35). An ordered ship is created uncompleted
+        // (FUN_004f7d50(.., 1, 0); the route-1 day-115 save: +0x50 0x42).
+        for is_alliance in [true, false] {
+            let faction = if is_alliance {
+                Faction::Alliance
+            } else {
+                Faction::Empire
+            };
+            let (mut world, systems, fleets) = make_world_with_fleets(2, &[0], is_alliance);
+            let sensor = world
+                .capital_ship_classes
+                .insert(crate::world::CapitalShipClass {
+                    is_alliance,
+                    is_empire: !is_alliance,
+                    hull: 100,
+                    detection: 10,
+                    ..crate::world::CapitalShipClass::default()
+                });
+            world.fleets[fleets[0]].capital_ships = vec![crate::world::ShipInstance::ordered(
+                sensor,
+                100,
+                is_alliance,
+            )];
+            let mut fog = FogState::new(faction);
+            let movement = MovementState::new();
+
+            let events = FogSystem::advance(&mut fog, &world, &movement);
+
+            assert!(events.is_empty(), "{faction:?}");
+            assert!(!fog.is_visible(systems[0]), "{faction:?}");
+            assert!(!fog.is_visible(systems[1]), "{faction:?}");
+
+            // Completed in place (FUN_0052bee0), the same fleet observes.
+            world.fleets[fleets[0]].capital_ships[0].completed = true;
+            FogSystem::advance(&mut fog, &world, &movement);
+            assert!(fog.is_visible(systems[0]), "{faction:?}");
+            assert!(fog.is_visible(systems[1]), "{faction:?}");
+        }
+    }
+
+    #[test]
+    fn an_unfinished_ship_lends_no_sensors_to_its_usable_fleet_for_either_side() {
+        // port: the sensor radius has no source; inside a fleet that
+        // observes (mode 1, FUN_0050ac80) it walks the usable ships, the
+        // mode the fleet's own test walks (FUN_004fe540.c:20-35).
+        for is_alliance in [true, false] {
+            let faction = if is_alliance {
+                Faction::Alliance
+            } else {
+                Faction::Empire
+            };
+            let (mut world, systems, fleets) = make_world_with_fleets(2, &[0], is_alliance);
+            let sensor = world
+                .capital_ship_classes
+                .insert(crate::world::CapitalShipClass {
+                    is_alliance,
+                    is_empire: !is_alliance,
+                    hull: 100,
+                    detection: 10,
+                    ..crate::world::CapitalShipClass::default()
+                });
+            world.fleets[fleets[0]]
+                .capital_ships
+                .push(crate::world::ShipInstance::ordered(
+                    sensor,
+                    100,
+                    is_alliance,
+                ));
+            let mut fog = FogState::new(faction);
+
+            FogSystem::advance(&mut fog, &world, &MovementState::new());
+
+            assert!(fog.is_visible(systems[0]), "{faction:?}");
+            assert!(!fog.is_visible(systems[1]), "{faction:?}");
+        }
+    }
+
+    #[test]
+    fn the_sensor_radius_is_measured_from_the_fleets_own_system_for_either_side() {
+        // port: the sensor radius has no source (fog.rs, FogSystem::advance);
+        // detection 1 reaches 15 units around the fleet's system, along
+        // either axis and wherever that system lies.
+        for is_alliance in [true, false] {
+            let faction = if is_alliance {
+                Faction::Alliance
+            } else {
+                Faction::Empire
+            };
+            let (mut world, systems, fleets) = make_world_with_fleets(5, &[0], is_alliance);
+            for (system, (x, y)) in
+                systems
+                    .iter()
+                    .zip([(100, 100), (110, 100), (100, 110), (130, 100), (100, 130)])
+            {
+                world.systems[*system].x = x;
+                world.systems[*system].y = y;
+            }
+            let sensor = world
+                .capital_ship_classes
+                .insert(crate::world::CapitalShipClass {
+                    is_alliance,
+                    is_empire: !is_alliance,
+                    hull: 100,
+                    detection: 1,
+                    ..crate::world::CapitalShipClass::default()
+                });
+            world.fleets[fleets[0]].capital_ships =
+                vec![crate::world::ShipInstance::new(sensor, 100, is_alliance)];
+            let mut fog = FogState::new(faction);
+
+            FogSystem::advance(&mut fog, &world, &MovementState::new());
+
+            let seen: Vec<bool> = systems.iter().map(|&key| fog.is_visible(key)).collect();
+            assert_eq!(seen, [true, true, true, false, false], "{faction:?}");
+        }
     }
 
     #[test]
@@ -694,7 +829,7 @@ mod tests {
             fighters: vec![],
             characters: vec![],
             is_alliance: true,
-            has_death_star: false,
+            bombarding: false,
         });
 
         let mut fog = FogState::new(Faction::Alliance);
@@ -799,7 +934,7 @@ mod tests {
             fighters: vec![],
             characters: vec![],
             is_alliance: true,
-            has_death_star: false,
+            bombarding: false,
         });
 
         let mut fog = FogState::new(Faction::Alliance);

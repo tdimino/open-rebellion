@@ -738,6 +738,7 @@ fn action_for_row(row: &TroopFinderRow) -> TroopFinderAction {
 mod tests {
     use super::*;
     use crate::cockpit::CockpitViewport;
+    use rebellion_core::carriage::ProductRoom;
     use rebellion_core::dat::{ExplorationStatus, Faction, SectorGroup};
     use rebellion_core::ids::{DatId, FleetKey, SystemKey};
     use rebellion_core::world::{
@@ -806,7 +807,6 @@ mod tests {
         let key = world.troops.insert(TroopUnit {
             class_dat_id: DatId::new(class_raw),
             is_alliance,
-            regiment_strength: 100,
         });
         world.systems[system].ground_units.push(key);
         key
@@ -827,7 +827,7 @@ mod tests {
             fighters: Vec::new(),
             characters: Vec::new(),
             is_alliance,
-            has_death_star: false,
+            bombarding: false,
         });
         world.systems[system].fleets.push(fleet);
         fleet
@@ -893,11 +893,12 @@ mod tests {
         let troop = galaxy.world.troops.insert(TroopUnit {
             class_dat_id: DatId::new(0x1000_0002),
             is_alliance: true,
-            regiment_strength: 100,
         });
         galaxy.world.systems[yavin].ground_units.push(troop);
         let mut transport = TroopTransportState::default();
-        transport.load(&mut galaxy.world, fleet, &[troop]).unwrap();
+        transport
+            .load(&mut galaxy.world, &ProductRoom::default(), fleet, &[troop])
+            .unwrap();
 
         let listed = rows(&galaxy.world, TroopTab::Alliance, &transport);
 

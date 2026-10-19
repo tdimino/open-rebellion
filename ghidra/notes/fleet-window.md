@@ -287,9 +287,11 @@ Missions window draws them (`FUN_004a0e10`).
   (`FUN_00422ce0`, `move-order.md` "A drag is a move") moves the whole
   selection against the drop window's `+0x70`, as `0x201` (`0x202` with
   Ctrl), because the source is type 4. port: `fleet_window.rs` drags a
-  left-list fleet or ship entry and a right-list regiment or ship; Ctrl's
-  `0x202` is not ported. A fleet's drop goes through the Move path
-  (`issue_fleet_move`): it joins a fleet under the point, else moves.
+  left-list fleet or ship entry and a right-list regiment, squadron or
+  ship. Any of them dropped with Ctrl held is a Confirmed Move. A fleet's
+  drop goes through the Move path (`issue_fleet_move`), a ship's through
+  `issue_ship_move`, a regiment's or squadron's through `issue_unit_move`:
+  it joins a fleet under the point, else moves.
 - **Refresh**: object notifications (slots `+0x5c`/`+0x60`, `FUN_004a2e70`,
   `FUN_004a2d60`) set `+0x14c` bit `0x10000000` for ships and fighters
   (`0x14..0x1f`), fleets, regiments and characters or special forces. Slot
@@ -334,8 +336,8 @@ therefore joins a fleet when a move names the Fleet window's `+0x70` target.
   issues `0x201` against that fleet or ship.
 - **The `0x201` path.** `0x204`'s group check (`FUN_0053d430`) allows an
   all-regiment group only toward the order's side, or onto an existing
-  system (`+0x50` bit `0x40`) that is unpopulated (`+0x88` bit 0 clear;
-  corrected from "bit 1", `regiment-unload.md`). The command's check
+  system (`+0x50` bit `0x40`) that is unpopulated (`+0x88` bit 0 clear,
+  `regiment-unload.md`). The command's check
   `FUN_00555920` refuses `1`/`0x18` across systems when the object's speed
   slot `+0x34(1)` is 0. A regiment's speed (`FUN_004f63f0`) is
   `DAT_006b9050`, GNPRTB 1 (100), while it exists (`build-delivery.md`), so
@@ -353,8 +355,9 @@ therefore joins a fleet when a move names the Fleet window's `+0x70` target.
   - anything else: refused.
 
 - **Which ship.** For a fleet destination, `FUN_00552300` walks the
-  fleet's capital ships in child-list order (`FUN_00502e30(fleet, 1, side)`)
-  and evaluates each with `FUN_00552b10`: accept
+  fleet's capital ships in child-list order (`FUN_00502e30(fleet, 1, side)`,
+  the mode-1 walk of usable ships, so a ship on its own leg from its yard is
+  never a carrier; `carriage::rooms`) and evaluates each with `FUN_00552b10`: accept
   (`FUN_00500ac0`) and room (`FUN_00500b40`, one evaluation per capacity,
   `FUN_00550c90`/`FUN_00550de0` keeping the tightest). `FUN_0054fbb0(a, b)`
   is true when `b` is more constrained than `a`: an evaluated room
@@ -391,12 +394,13 @@ therefore joins a fleet when a move names the Fleet window's `+0x70` target.
   and regiments aboard a lost ship are lost with it (`FUN_004f84e0`; cargo
   aboard a destroyed hull is open in `mission-lifecycle.md`). port: the
   fleet's characters ride its first living ship, so one whose ship is lost
-  moves to the next; a squadron or regiment no ship has room for is held on
-  the fleet (carrier 0) where the original refuses. hyp: seeding and build
-  delivery board by the same rule (their own placement is untraced).
+  moves to the next. A squadron or regiment no ship has room for is refused
+  with `1`/`0x27`, at a Move and at a Build bound for the fleet
+  (`FUN_00552300`); seeding boards a group's lead with no room test
+  (`fleet-join-split.md`, "No cargo rides a fleet without a ship").
 - Each ship entry and right-list capital ship paints its `FUN_004a66a0`
-  flags, the fleet entry their union plus what the fleet holds itself, and
-  a selected ship's tabs list its own contents (`FUN_004a5c00`).
+  flags, the fleet entry their union, and a selected ship's tabs list its
+  own contents (`FUN_004a5c00`).
 
 - `crates/rebellion-render/src/fleet_window.rs` is type 4; `system_window.rs`
   is type 9; `defenses_window.rs` and `missions_window.rs` are types 10 and

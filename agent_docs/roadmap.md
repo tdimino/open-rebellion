@@ -630,9 +630,11 @@ acceptance. Their JSON ledgers provide stable finding and feature IDs.
   Abduction (F-019).
 - [ ] Trace the galaxy view's right click on a system or fleet, then port
   what it opens.
-- [ ] Play the advisor's mission-refusal reactions (P34; the slots are in
-  `ghidra/notes/mission-dialog.md`, "Refusal"), replacing the message-log
-  stand-ins.
+- [ ] Sort a refused order's status by its first word as the advisor does
+  (P34; `FUN_004c3bb0`, `FUN_004c19f0`; `ghidra/notes/mission-dialog.md`,
+  "Refusal"). Every refusal (missions, fleet, regiment and squadron moves)
+  already reaches `AdvisorState::refuse` and files no text; any status but a
+  repeat takes the generic reaction.
 - [ ] Add the original mission kinds the port lacks: Reconnaissance, Palace,
   Bounty, Jedi Training, and the leisure and movement kinds (F-040).
 - [x] Gate uncited simulation rules with `tools/provenance-scan`; its baseline
@@ -657,7 +659,7 @@ would tune around known simulation feedback defects.
 - [ ] Route the app and playtest through one simulation tick API and event sink.
 - [ ] Move the panel-action handling out of `rebellion-app/src/main.rs` into
   modules native tests reach; every mutation run leaves survivors there.
-- [ ] Make automatic, tactical, and ground combat share resumable core state and calculations. Tactical ground damage and occupation capture now persist.
+- [ ] Make automatic, tactical, and ground combat share resumable core state and calculations. Unplayed battles run the tactical engine headless; the Planetary Assault (`assault.rs`) resolves in one pass with nothing to resume.
 - [ ] Construct the victory modal and unify win/loss transitions.
 - [ ] Remove `AdvanceTicks` or make it execute the real simulation.
 - [ ] Prove identical fingerprints for the same seed and command stream across app/playtest, native/WASM, and auto/tactical paths.
@@ -671,22 +673,12 @@ would tune around known simulation feedback defects.
   parity cell.
 - [ ] Bring the ground assault to parity (`UIP-F-010`, `TAC-08`,
   `RE-GND-01`).
-  - Remove the invented live ground-combat screen
-    (`rebellion-render/src/ground_combat.rs`). The original has no ground
-    battle.
-  - Port the original report-only flow (manual pp. 119-121, figs. 2.58,
-    3.66 and 3.67).
-    - The fleet's Planetary Assault order: enabled when troops are aboard,
-      greyed out against two planetary shields.
-    - Immediate resolution.
-    - The Assault Summary window: Summary, Imperial Forces, Alliance Forces,
-      Go to System.
-    - Its damage summary tabs: troopers, capital ships, fighters, facilities
-      and personnel.
-    - The same window delivered as a message when the opponent assaults the
-      player.
-  - Recover the window's resources and the resolution rules from the
-    executable first.
+  - The original report-only flow is ported (manual pp. 119-121, figs. 2.58,
+    3.66 and 3.67; `ghidra/notes/ground-assault.md`): the fleet's Planetary
+    Assault order (`assault::order_enabled`, greyed out against two
+    planetary shields), immediate resolution (`assault::resolve`), and the
+    Operation Report window (`rebellion-render/src/operation_report.rs`),
+    filed to both sides. The invented ground-combat screen is gone.
   - Cover both factions, win and loss, casualties, occupation and the return
     to the map.
   - Close the eight `TAC-08` cells against A0 captures of the original.

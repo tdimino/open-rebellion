@@ -19,13 +19,10 @@
 //! egui_macroquad::draw();
 //! ```
 
-pub mod bombardment;
-pub mod death_star;
 pub mod fleets;
 pub mod game_setup;
 pub mod missions;
 pub mod mod_manager;
-pub mod save_load;
 
 #[cfg(any(debug_assertions, not(target_arch = "wasm32")))]
 pub mod command_palette;
@@ -33,7 +30,6 @@ pub mod command_palette;
 pub use fleets::{draw_fleets, FleetsState};
 pub use missions::draw_missions;
 pub use mod_manager::{draw_mod_manager, ModInfo, ModManagerAction, ModManagerState};
-pub use save_load::{draw_save_load, SaveLoadPanelState, SaveSlotInfo};
 
 use rebellion_core::fleet_join::FleetMover;
 use rebellion_core::ids::{CharacterKey, FleetKey, SystemKey, TroopKey};
@@ -54,6 +50,9 @@ pub enum PanelAction {
     // ── Fleets ────────────────────────────────────────────────────────────────
     /// Focus the galaxy map on the system where a fleet is located.
     FocusFleetSystem(SystemKey),
+    /// An order's validator refused with a status the side's advisor
+    /// reacts to (`FUN_00487c90`).
+    AdvisorRefusal((u32, u32)),
     /// A fleet's or capital ships' Move (`0x201`) released on a Fleet window
     /// (`fleet_join::join_fleet`).
     JoinFleet { mover: FleetMover, target: FleetKey },
@@ -86,6 +85,15 @@ pub enum PanelAction {
         roster: u64,
         system: SystemKey,
     },
+    /// A Planetary Bombardment row (`0x220..0x223`) chosen for `fleets`, the
+    /// selection's team; it executes at once (`FUN_005820a0`).
+    Bombard {
+        fleets: Vec<FleetKey>,
+        kind: rebellion_core::bombardment::BombardKind,
+    },
+    /// The Planetary Assault row (`0x234`) chosen for `fleets`, the
+    /// selection's team; it executes at once, as a bombardment does.
+    Assault { fleets: Vec<FleetKey> },
     /// Dispatch one player-controlled fleet to a selected destination.
     DispatchFleet {
         fleet: FleetKey,
@@ -137,22 +145,17 @@ pub enum PanelAction {
         decoys: Vec<MissionMember>,
         target: SystemKey,
         target_character: Option<CharacterKey>,
+        target_object: Option<rebellion_core::missions::MissionTarget>,
         tick: u64,
     },
     /// Cancel a mission that is currently in progress.
     CancelMission(u64),
 
     // ── Save / Load ───────────────────────────────────────────────────────────
-    /// Open (toggle) the save/load panel.
-    OpenSaveLoad,
     /// Player confirmed a save to the given slot with the given name.
     SaveGame { slot: usize, name: String },
     /// Player confirmed a load from the given slot.
     LoadGame { slot: usize },
-    /// Player deleted the save in the given slot.
-    DeleteSave { slot: usize },
-    /// Player closed the save/load panel without taking an action.
-    CloseSaveLoadPanel,
 
     // ── Mod Manager ─────────────────────────────────────────────────────
     /// Open/close the mod manager panel.
@@ -161,16 +164,6 @@ pub enum PanelAction {
     ToggleMod { name: String },
     /// Reload all mods from disk.
     ReloadMods,
-
-    // ── Bombardment ──────────────────────────────────────────────────
-    /// Order orbital bombardment from a fleet against its current system.
-    OrderBombardment { fleet: FleetKey, system: SystemKey },
-
-    // ── Death Star ───────────────────────────────────────────────────
-    /// Fire the Death Star superlaser at a system.
-    FireDeathStar { system: SystemKey },
-    /// Move the Death Star fleet to a target system.
-    MoveDeathStar { system: SystemKey },
 
     // ── Play-testing (command palette) ────────────────────────────────
     /// Advance simulation by N ticks immediately.
