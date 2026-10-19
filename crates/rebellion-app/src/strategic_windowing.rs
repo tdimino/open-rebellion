@@ -1969,29 +1969,45 @@ mod tests {
     use std::collections::BTreeSet;
 
     use super::*;
+    use egui_macroquad::egui;
     use rebellion_core::dat::{ExplorationStatus, Faction, SectorGroup};
+    use rebellion_core::delivery::DeliveryState;
+    use rebellion_core::economy::EconomyState;
     use rebellion_core::fog::FogState;
     use rebellion_core::ids::DatId;
-    use rebellion_core::manufacturing::{BuildableKind, ProductionArea};
-    use rebellion_core::missions::MissionState;
+    use rebellion_core::manufacturing::{BuildableKind, ManufacturingState, ProductionArea};
+    use rebellion_core::missions::{
+        MissionFaction, MissionKind, MissionMember, MissionRequest, MissionState,
+    };
+    use rebellion_core::movement::MovementState;
+    use rebellion_core::troop_transport::TroopTransportState;
     use rebellion_core::world::{
-        BuildableClass, ControlKind, GameWorld, ManufacturingFacilityInstance, Sector, System,
+        BuildableClass, Character, ControlKind, Fleet, GameWorld, ManufacturingFacilityInstance,
+        Sector, System,
     };
+    use rebellion_render::defenses_window::{draw_managed_defenses_windows, DefensesWindowReport};
+    use rebellion_render::fleet_window::FleetWindowEntry;
+    use rebellion_render::fleet_window::FleetWindowReport;
+    use rebellion_render::missions_window::MissionsWindowReport;
+    use rebellion_render::system_window::draw_managed_system_windows;
     use rebellion_render::windowing_input::{
-        FrameInputRouter, InputDisposition, InputEventId, InputRecipient,
+        FrameInputRouter, InputDisposition, InputEventId, InputRecipient, PointerButtonId,
+        PointerPhase,
     };
-    use rebellion_render::windowing_policy::{contextual_spec, singleton_spec};
+    use rebellion_render::windowing_policy::{contextual_spec, singleton_spec, system_subject};
     use rebellion_render::{
         fleet_finder::{FleetFinderState, FLEET_FINDER_NAME_CONTROL},
         message_index::{MessageIndexAction, MessageIndexState},
         status_rows::{StatusObject, StatusSources},
         status_window::StatusWindowState,
         troop_finder::{TroopFinderState, TroopTab, TROOP_FINDER_NAME_CONTROL},
-        CockpitFaction, CockpitLayout, CockpitViewport, DefensesWindowState, FleetWindowState,
-        MissionsWindowState, SectorWindowState, SystemWindowState,
+        BmpCache, CockpitFaction, CockpitLayout, CockpitViewport, DefensesWindowState,
+        FleetWindowState, MissionsWindowState, SectorWindowState, SystemWindowState,
+        SystemWindowTab,
     };
     use rebellion_windowing::{
-        ControlId, FocusTarget, SubjectId, WindowKey, WindowKind, WindowOwner,
+        ContentStatus, ControlId, FocusTarget, SubjectId, WindowKey, WindowKind, WindowOwner,
+        WindowSpec,
     };
 
     fn opened_id(applied: &AppliedWindowCommand) -> WindowId {
@@ -2271,6 +2287,762 @@ mod tests {
             galaxy: viewport,
             scale: 1.0,
         }
+    }
+
+    // Source authority shared by every cross-family test below: the recovered
+    // Window-family matrix in ghidra/notes/strategic-windowing-toolkit.md and
+    // System FUN_0045aac0/FUN_00452fc0, Fleet FUN_004a2630, Defenses
+    // FUN_004a7790, and Missions FUN_0049f130.
+    struct CrossFamilyDetailFixture {
+        world: GameWorld,
+        system: SystemKey,
+        fog: FogState,
+        missions: MissionState,
+        system_windows: SystemWindowState,
+        fleet_windows: FleetWindowState,
+        defenses_windows: DefensesWindowState,
+        missions_windows: MissionsWindowState,
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct CrossFamilyContentObservation {
+        system: (SystemWindowTab, Option<ProductionArea>),
+        fleet: FleetWindowReport,
+        defenses: DefensesWindowReport,
+        missions: MissionsWindowReport,
+        visible_defenses_rows: Vec<String>,
+    }
+
+    impl CrossFamilyDetailFixture {
+        fn new() -> Self {
+            let (mut world, system) = fleet_world();
+            world.systems[system].control = ControlKind::Controlled(Faction::Alliance);
+            let mut fog = FogState::new(Faction::Alliance);
+            fog.reveal(system);
+            Self {
+                world,
+                system,
+                fog,
+                missions: MissionState::new(),
+                system_windows: SystemWindowState::default(),
+                fleet_windows: FleetWindowState::default(),
+                defenses_windows: DefensesWindowState::default(),
+                missions_windows: MissionsWindowState::default(),
+            }
+        }
+
+        fn specs(&self) -> [WindowSpec; 4] {
+            [
+                self.system_windows
+                    .prepare_open(
+                        &self.world,
+                        self.system,
+                        (40, 50),
+                        CockpitFaction::Alliance,
+                        fleet_layout(),
+                    )
+                    .unwrap()
+                    .spec(),
+                self.fleet_windows
+                    .prepare_open(
+                        &self.world,
+                        self.system,
+                        (40, 50),
+                        CockpitFaction::Alliance,
+                        fleet_layout(),
+                        None,
+                    )
+                    .unwrap()
+                    .spec(),
+                self.defenses_windows
+                    .prepare_open(
+                        &self.world,
+                        self.system,
+                        (40, 50),
+                        CockpitFaction::Alliance,
+                        fleet_layout(),
+                    )
+                    .unwrap()
+                    .spec(),
+                self.missions_windows
+                    .prepare_open(
+                        &self.world,
+                        &self.fog,
+                        &self.missions,
+                        self.system,
+                        (40, 50),
+                        CockpitFaction::Alliance,
+                        fleet_layout(),
+                    )
+                    .unwrap()
+                    .spec(),
+            ]
+        }
+
+        fn add_fleet(&mut self) -> rebellion_core::ids::FleetKey {
+            let fleet = self.world.insert_fleet(Fleet {
+                location: self.system,
+                is_alliance: true,
+                ..Fleet::default()
+            });
+            self.world.systems[self.system].fleets.push(fleet);
+            fleet
+        }
+
+        fn add_character(&mut self, name: &str, on_mission: bool) -> MissionMember {
+            MissionMember::Character(self.world.characters.insert(Character {
+                dat_id: DatId::new(832 + self.world.characters.len() as u32),
+                name: name.into(),
+                is_alliance: true,
+                current_system: Some(self.system),
+                on_mission,
+                recruited: true,
+                ..Character::default()
+            }))
+        }
+
+        fn add_mission_with_decoy(&mut self) -> MissionMember {
+            let agent = self.add_character("Mission Agent", true);
+            let decoy = self.add_character("Mission Decoy", true);
+            self.missions.dispatch(MissionRequest {
+                kind: MissionKind::Diplomacy,
+                faction: MissionFaction::Alliance,
+                team: vec![agent],
+                decoys: vec![decoy],
+                target_system: self.system,
+                target_character: None,
+                target_object: None,
+                tick: 0,
+            });
+            decoy
+        }
+
+        fn publish_all(
+            &mut self,
+            coordinator: &mut StrategicWindowing,
+            fleet_selection: Option<FleetWindowEntry>,
+            new_content: bool,
+        ) -> [WindowId; 4] {
+            coordinator.enqueue_system_open(
+                self.system_windows
+                    .prepare_open(
+                        &self.world,
+                        self.system,
+                        (40, 50),
+                        CockpitFaction::Alliance,
+                        fleet_layout(),
+                    )
+                    .unwrap(),
+            );
+            coordinator.enqueue_fleet_open(
+                self.fleet_windows
+                    .prepare_open(
+                        &self.world,
+                        self.system,
+                        (40, 50),
+                        CockpitFaction::Alliance,
+                        fleet_layout(),
+                        fleet_selection,
+                    )
+                    .unwrap(),
+            );
+            coordinator.enqueue_defenses_open(
+                self.defenses_windows
+                    .prepare_open(
+                        &self.world,
+                        self.system,
+                        (40, 50),
+                        CockpitFaction::Alliance,
+                        fleet_layout(),
+                    )
+                    .unwrap(),
+            );
+            coordinator.enqueue_missions_open(
+                self.missions_windows
+                    .prepare_open(
+                        &self.world,
+                        &self.fog,
+                        &self.missions,
+                        self.system,
+                        (40, 50),
+                        CockpitFaction::Alliance,
+                        fleet_layout(),
+                    )
+                    .unwrap(),
+            );
+
+            let mut applied = coordinator.apply_pending().into_iter();
+            let mut system = applied.next().unwrap();
+            let system_id = system.system_content_id.unwrap();
+            assert_eq!(
+                self.system_windows.commit_open(
+                    system.prepared_system.take().unwrap(),
+                    &system.result.as_ref().unwrap().transition,
+                ),
+                Some(system_id)
+            );
+            let mut fleet = applied.next().unwrap();
+            let fleet_id = fleet.fleet_content_id.unwrap();
+            assert_eq!(
+                self.fleet_windows.commit_open(
+                    fleet.prepared_fleet.take().unwrap(),
+                    &fleet.result.as_ref().unwrap().transition,
+                ),
+                Some(fleet_id)
+            );
+            let mut defenses = applied.next().unwrap();
+            let defenses_id = defenses.defenses_content_id.unwrap();
+            assert_eq!(
+                self.defenses_windows.commit_open(
+                    defenses.prepared_defenses.take().unwrap(),
+                    &defenses.result.as_ref().unwrap().transition,
+                ),
+                Some(defenses_id)
+            );
+            let mut missions = applied.next().unwrap();
+            let missions_id = missions.missions_content_id.unwrap();
+            assert_eq!(
+                self.missions_windows.commit_open(
+                    missions.prepared_missions.take().unwrap(),
+                    &missions.result.as_ref().unwrap().transition,
+                ),
+                Some(missions_id)
+            );
+            assert!(applied.next().is_none());
+
+            if new_content {
+                assert!(coordinator.acknowledge_system_publication(system_id));
+                assert!(coordinator.acknowledge_fleet_publication(fleet_id));
+                assert!(coordinator.acknowledge_defenses_publication(defenses_id));
+                assert!(coordinator.acknowledge_missions_publication(missions_id));
+            } else {
+                for id in [system_id, fleet_id, defenses_id, missions_id] {
+                    assert!(coordinator.has_content(id));
+                }
+            }
+
+            [system_id, fleet_id, defenses_id, missions_id]
+        }
+
+        fn draw_defenses_frames(
+            &mut self,
+            coordinator: &StrategicWindowing,
+            frames: Vec<(Vec<egui::Event>, Vec<PointerPhase>)>,
+        ) -> Vec<String> {
+            let ctx = egui::Context::default();
+            let mut cache = BmpCache::new();
+            let economy = EconomyState::default();
+            let window = self.defenses_windows.window_id(self.system).unwrap();
+            let mut router = FrameInputRouter::default();
+            let mut visible_rows = Vec::new();
+            for (index, (events, phases)) in frames.into_iter().enumerate() {
+                let frame = u64::try_from(index + 1).unwrap();
+                let snapshot = coordinator.begin_frame();
+                router.begin_frame(frame, &snapshot);
+                let mut routed = Vec::new();
+                for (ordinal, phase) in phases.into_iter().enumerate() {
+                    let event = InputEventId {
+                        frame,
+                        ordinal: u32::try_from(ordinal).unwrap(),
+                    };
+                    assert_eq!(
+                        router.collect_pointer(event, &BTreeSet::from([window]), phase),
+                        InputRecipient::Window(window)
+                    );
+                    routed.push((event, phase));
+                }
+                let input = egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(640.0, 480.0),
+                    )),
+                    time: Some(index as f64 * 0.05),
+                    events,
+                    ..egui::RawInput::default()
+                };
+                let output = ctx.run(input, |ctx| {
+                    let _ = draw_managed_defenses_windows(
+                        ctx,
+                        &self.world,
+                        &self.fog,
+                        &self.missions,
+                        &economy,
+                        &mut self.defenses_windows,
+                        CockpitFaction::Alliance,
+                        fleet_layout(),
+                        &mut cache,
+                        &snapshot,
+                        &routed,
+                        &mut router,
+                        true,
+                    );
+                });
+                visible_rows = output
+                    .shapes
+                    .into_iter()
+                    .filter_map(|shape| match shape.shape {
+                        egui::Shape::Text(text) => Some(text.galley.text().to_owned()),
+                        _ => None,
+                    })
+                    .filter(|text| text.starts_with("Agent "))
+                    .collect();
+            }
+            visible_rows
+        }
+
+        fn select_system_tab(&mut self, coordinator: &StrategicWindowing, tab: SystemWindowTab) {
+            let point = self
+                .system_windows
+                .tab_screen_rect(fleet_layout(), self.system, tab)
+                .unwrap()
+                .center();
+            let button = |pressed| egui::Event::PointerButton {
+                pos: point,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::default(),
+            };
+            let frames = [
+                (vec![egui::Event::PointerMoved(point)], vec![]),
+                (vec![egui::Event::PointerMoved(point)], vec![]),
+                (
+                    vec![button(true)],
+                    vec![PointerPhase::Press(PointerButtonId::Primary)],
+                ),
+                (
+                    vec![button(false)],
+                    vec![PointerPhase::Release(PointerButtonId::Primary)],
+                ),
+            ];
+            let ctx = egui::Context::default();
+            let movement = MovementState::default();
+            let manufacturing = ManufacturingState::new();
+            let deliveries = DeliveryState::new();
+            let mut cache = BmpCache::new();
+            let window = self.system_windows.window_id(self.system).unwrap();
+            let mut router = FrameInputRouter::default();
+            for (index, (events, phases)) in frames.into_iter().enumerate() {
+                let frame = u64::try_from(index + 1).unwrap();
+                let snapshot = coordinator.begin_frame();
+                router.begin_frame(frame, &snapshot);
+                let mut routed = Vec::new();
+                for (ordinal, phase) in phases.into_iter().enumerate() {
+                    let event = InputEventId {
+                        frame,
+                        ordinal: u32::try_from(ordinal).unwrap(),
+                    };
+                    assert_eq!(
+                        router.collect_pointer(event, &BTreeSet::from([window]), phase),
+                        InputRecipient::Window(window)
+                    );
+                    routed.push((event, phase));
+                }
+                let input = egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(640.0, 480.0),
+                    )),
+                    time: Some(index as f64 * 0.05),
+                    events,
+                    ..egui::RawInput::default()
+                };
+                let _ = ctx.run(input, |ctx| {
+                    let _ = draw_managed_system_windows(
+                        ctx,
+                        &self.world,
+                        &movement,
+                        &self.fog,
+                        &self.missions,
+                        &manufacturing,
+                        &deliveries,
+                        &mut self.system_windows,
+                        CockpitFaction::Alliance,
+                        fleet_layout(),
+                        &mut cache,
+                        &snapshot,
+                        &routed,
+                        &mut router,
+                        true,
+                    );
+                });
+            }
+        }
+
+        fn scroll_and_select_defenses(&mut self, coordinator: &StrategicWindowing) -> Vec<String> {
+            let rect = self
+                .defenses_windows
+                .screen_rect(fleet_layout(), self.system)
+                .unwrap();
+            let thumb = rect.min + egui::vec2(220.0, 100.0);
+            let dragged = rect.min + egui::vec2(220.0, 200.0);
+            let first_visible_cell = rect.min + egui::vec2(35.0, 115.0);
+            let button = |point, button, pressed| egui::Event::PointerButton {
+                pos: point,
+                button,
+                pressed,
+                modifiers: egui::Modifiers::default(),
+            };
+            self.draw_defenses_frames(
+                coordinator,
+                vec![
+                    (vec![egui::Event::PointerMoved(thumb)], vec![]),
+                    (vec![egui::Event::PointerMoved(thumb)], vec![]),
+                    (
+                        vec![button(thumb, egui::PointerButton::Primary, true)],
+                        vec![PointerPhase::Press(PointerButtonId::Primary)],
+                    ),
+                    (
+                        vec![egui::Event::PointerMoved(dragged)],
+                        vec![PointerPhase::Motion(PointerButtonId::Primary)],
+                    ),
+                    (
+                        vec![button(dragged, egui::PointerButton::Primary, false)],
+                        vec![PointerPhase::Release(PointerButtonId::Primary)],
+                    ),
+                    (vec![egui::Event::PointerMoved(first_visible_cell)], vec![]),
+                    (
+                        vec![button(
+                            first_visible_cell,
+                            egui::PointerButton::Secondary,
+                            true,
+                        )],
+                        vec![PointerPhase::Press(PointerButtonId::Secondary)],
+                    ),
+                ],
+            )
+        }
+
+        fn content_observation(
+            &mut self,
+            coordinator: &StrategicWindowing,
+        ) -> CrossFamilyContentObservation {
+            CrossFamilyContentObservation {
+                system: self.system_windows.selection(self.system).unwrap(),
+                fleet: self
+                    .fleet_windows
+                    .report(
+                        &self.world,
+                        &MovementState::default(),
+                        &self.fog,
+                        &TroopTransportState::default(),
+                        self.system,
+                    )
+                    .unwrap(),
+                defenses: self
+                    .defenses_windows
+                    .report(
+                        &self.world,
+                        &self.fog,
+                        &self.missions,
+                        &EconomyState::default(),
+                        self.system,
+                    )
+                    .unwrap(),
+                missions: self
+                    .missions_windows
+                    .report(&self.world, &self.fog, &self.missions, self.system)
+                    .unwrap(),
+                visible_defenses_rows: self
+                    .draw_defenses_frames(coordinator, vec![(vec![], vec![])]),
+            }
+        }
+    }
+
+    #[test]
+    fn detail_windows_use_system_subject_and_distinct_kind() {
+        let mut fixture = CrossFamilyDetailFixture::new();
+        let expected_subject = system_subject(&fixture.world, fixture.system).unwrap();
+        let specs = fixture.specs();
+        assert_eq!(
+            specs.map(|spec| spec.key.kind),
+            [
+                WindowKind::System,
+                WindowKind::Fleet,
+                WindowKind::Defenses,
+                WindowKind::Missions,
+            ]
+        );
+        assert!(specs
+            .iter()
+            .all(|spec| spec.key.subject == Some(expected_subject)));
+        assert!(specs
+            .iter()
+            .all(|spec| spec.owner == WindowOwner::StrategicRoot));
+
+        let mut coordinator = StrategicWindowing::new();
+        let ids = fixture.publish_all(&mut coordinator, None, true);
+        let snapshot = coordinator.begin_frame();
+        assert_eq!(snapshot.paint_order(), ids);
+        assert_eq!(
+            snapshot.pointer_route(&ids.into_iter().collect()).target,
+            RouteTarget::Window(FocusTarget {
+                window: ids[3],
+                control: None,
+            })
+        );
+    }
+
+    #[test]
+    fn detail_windows_cross_family_activation_changes_one_stack() {
+        let mut fixture = CrossFamilyDetailFixture::new();
+        let mut coordinator = StrategicWindowing::new();
+        let ids = fixture.publish_all(&mut coordinator, None, true);
+        let frozen = coordinator.begin_frame();
+        let event = InputEventId {
+            frame: 1,
+            ordinal: 0,
+        };
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(1, &frozen);
+        let overlap = BTreeSet::from([ids[1], ids[2]]);
+        let recipient = router.collect_pointer(
+            event,
+            &overlap,
+            PointerPhase::Press(PointerButtonId::Primary),
+        );
+        assert_eq!(recipient, InputRecipient::Window(ids[2]));
+        assert!(router.claim(event, recipient));
+        assert!(!router.claim(event, recipient));
+        assert!(!router.claim(event, InputRecipient::Window(ids[1])));
+        assert!(!router.claim_root(event));
+
+        let InputRecipient::Window(activated) = recipient else {
+            panic!("overlap event must route to exactly one detail window");
+        };
+        coordinator.enqueue(WindowCommand::Activate(activated));
+        let raised = coordinator.apply_pending();
+        assert_eq!(raised.len(), 1);
+        assert!(matches!(
+            raised[0].result.as_ref().unwrap().transition,
+            WindowTransition::Raised { id } if id == activated
+        ));
+        assert_eq!(frozen.paint_order(), ids);
+        assert_eq!(
+            coordinator.begin_frame().paint_order(),
+            [ids[0], ids[1], ids[3], ids[2]]
+        );
+    }
+
+    #[test]
+    fn fleet_window_switching_selected_fleet_preserves_window_identity() {
+        let mut fixture = CrossFamilyDetailFixture::new();
+        let first = fixture.add_fleet();
+        let second = fixture.add_fleet();
+        let mut coordinator = StrategicWindowing::new();
+        let ids = fixture.publish_all(&mut coordinator, Some(FleetWindowEntry::Fleet(first)), true);
+        assert!(fixture
+            .fleet_windows
+            .select(fixture.system, FleetWindowEntry::Fleet(second)));
+        assert_eq!(
+            fixture.fleet_windows.window_id(fixture.system),
+            Some(ids[1])
+        );
+        assert_eq!(
+            fixture.fleet_windows.selection(fixture.system),
+            Some((
+                Some(FleetWindowEntry::Fleet(second)),
+                rebellion_render::FleetWindowTab::CapitalShips,
+            ))
+        );
+        assert_eq!(
+            coordinator.begin_frame().key(ids[1]),
+            Some(WindowKey::contextual(
+                WindowKind::Fleet,
+                system_subject(&fixture.world, fixture.system).unwrap(),
+            ))
+        );
+    }
+
+    #[test]
+    fn detail_windows_reopen_preserves_tabs_rows_scroll_and_selection() {
+        let mut fixture = CrossFamilyDetailFixture::new();
+        let selected = fixture.add_fleet();
+        for index in 0..12 {
+            fixture.add_character(&format!("Agent {index:02}"), false);
+        }
+        let mission_decoy = fixture.add_mission_with_decoy();
+        let mut coordinator = StrategicWindowing::new();
+        let ids = fixture.publish_all(
+            &mut coordinator,
+            Some(FleetWindowEntry::Fleet(selected)),
+            true,
+        );
+        fixture.select_system_tab(&coordinator, SystemWindowTab::Mines);
+        assert_eq!(
+            fixture.system_windows.window_id(fixture.system),
+            Some(ids[0])
+        );
+        assert_eq!(fixture.system_windows.window_count(), 1);
+        assert!(fixture.missions_windows.show_member(
+            &fixture.missions,
+            fixture.system,
+            mission_decoy
+        ));
+        assert_eq!(
+            fixture.scroll_and_select_defenses(&coordinator),
+            (3..12)
+                .map(|index| format!("Agent {index:02}"))
+                .collect::<Vec<_>>()
+        );
+        let before = fixture.content_observation(&coordinator);
+        assert_eq!(before.system, (SystemWindowTab::Mines, None));
+        assert_eq!(
+            before.fleet.selected,
+            Some(FleetWindowEntry::Fleet(selected))
+        );
+        assert_eq!(before.defenses.rows.len(), 12);
+        assert_eq!(before.defenses.selected, Some(3));
+        assert_eq!(before.missions.selected, Some(0));
+        assert_eq!(
+            before.missions.tab,
+            rebellion_render::missions_window::MissionsTab::Decoys
+        );
+
+        coordinator.enqueue_system_minimize(ids[0], fixture.system, (40, 50));
+        coordinator.enqueue_fleet_minimize(ids[1], fixture.system, (40, 50));
+        coordinator.enqueue_defenses_minimize(ids[2], fixture.system, (40, 50));
+        coordinator.enqueue_missions_minimize(ids[3], fixture.system, (40, 50));
+        let minimized = coordinator.apply_pending();
+        assert_eq!(minimized.len(), 4);
+        assert_eq!(coordinator.begin_frame().presentation_history(), ids);
+
+        let reopened = fixture.publish_all(&mut coordinator, None, false);
+        assert_eq!(reopened, ids);
+        assert!(coordinator.begin_frame().presentation_history().is_empty());
+        assert_eq!(coordinator.begin_frame().paint_order(), ids);
+        assert_eq!(fixture.content_observation(&coordinator), before);
+    }
+
+    #[test]
+    fn detail_windows_stale_system_subject_rejects_action_without_retargeting() {
+        let mut fixture = CrossFamilyDetailFixture::new();
+        let stale_system = fixture.system;
+        let mut coordinator = StrategicWindowing::new();
+        let ids = fixture.publish_all(&mut coordinator, None, true);
+        let mut replacement = fixture.world.systems.remove(stale_system).unwrap();
+        replacement.dat_id = DatId::new(101);
+        replacement.name = "Replacement".into();
+        let replacement = fixture.world.systems.insert(replacement);
+        assert_ne!(replacement, stale_system);
+
+        assert!(fixture
+            .system_windows
+            .prepare_open(
+                &fixture.world,
+                stale_system,
+                (40, 50),
+                CockpitFaction::Alliance,
+                fleet_layout(),
+            )
+            .is_none());
+        assert!(fixture
+            .fleet_windows
+            .prepare_open(
+                &fixture.world,
+                stale_system,
+                (40, 50),
+                CockpitFaction::Alliance,
+                fleet_layout(),
+                None,
+            )
+            .is_none());
+        assert!(fixture
+            .defenses_windows
+            .prepare_open(
+                &fixture.world,
+                stale_system,
+                (40, 50),
+                CockpitFaction::Alliance,
+                fleet_layout(),
+            )
+            .is_none());
+        assert!(fixture
+            .missions_windows
+            .prepare_open(
+                &fixture.world,
+                &fixture.fog,
+                &fixture.missions,
+                stale_system,
+                (40, 50),
+                CockpitFaction::Alliance,
+                fleet_layout(),
+            )
+            .is_none());
+
+        let frame = coordinator.begin_frame();
+        let reports = [
+            fixture
+                .system_windows
+                .content_reports(&frame, &fixture.world),
+            fixture
+                .fleet_windows
+                .content_reports(&frame, &fixture.world),
+            fixture
+                .defenses_windows
+                .content_reports(&frame, &fixture.world),
+            fixture
+                .missions_windows
+                .content_reports(&frame, &fixture.world),
+        ]
+        .concat();
+        assert_eq!(reports.len(), 4);
+        assert!(reports
+            .iter()
+            .all(|report| report.status == ContentStatus::Absent));
+        for (state_id, expected_id) in [
+            fixture.system_windows.window_id(stale_system),
+            fixture.fleet_windows.window_id(stale_system),
+            fixture.defenses_windows.window_id(stale_system),
+            fixture.missions_windows.window_id(stale_system),
+        ]
+        .into_iter()
+        .zip(ids)
+        {
+            assert_eq!(state_id, Some(expected_id));
+        }
+        assert!(fixture.system_windows.window_id(replacement).is_none());
+        assert!(fixture.fleet_windows.window_id(replacement).is_none());
+        assert!(fixture.defenses_windows.window_id(replacement).is_none());
+        assert!(fixture.missions_windows.window_id(replacement).is_none());
+    }
+
+    #[test]
+    fn detail_windows_background_open_preserves_active_modal_focus() {
+        let mut coordinator = StrategicWindowing::new();
+        coordinator
+            .enqueue_fleet_finder_open(FleetFinderState::prepare_open(CockpitFaction::Alliance));
+        let modal = opened_id(&coordinator.apply_pending()[0]);
+        let focused = coordinator.begin_frame().focused();
+
+        let (world, system) = fleet_world();
+        let mut system_windows = SystemWindowState::default();
+        coordinator.enqueue_system_open(
+            system_windows
+                .prepare_open(
+                    &world,
+                    system,
+                    (40, 50),
+                    CockpitFaction::Alliance,
+                    fleet_layout(),
+                )
+                .unwrap(),
+        );
+        let mut opened = coordinator.apply_pending().remove(0);
+        let detail = opened.system_content_id.unwrap();
+        assert_eq!(
+            system_windows.commit_open(
+                opened.prepared_system.take().unwrap(),
+                &opened.result.as_ref().unwrap().transition,
+            ),
+            Some(detail)
+        );
+        assert!(coordinator.acknowledge_system_publication(detail));
+
+        let snapshot = coordinator.begin_frame();
+        assert_eq!(snapshot.active_modal(), Some(modal));
+        assert_eq!(snapshot.focused(), focused);
+        assert_eq!(snapshot.paint_order(), [detail, modal]);
+        assert!(!snapshot.allows_input(detail));
     }
 
     #[test]

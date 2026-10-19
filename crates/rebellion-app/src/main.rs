@@ -3184,6 +3184,242 @@ mod frame_input_tests {
     }
 
     #[test]
+    fn detail_windows_resolved_owner_controls_navigation_sector_close() {
+        use rebellion_render::windowing_policy::{contextual_spec, SUBJECT_SECTOR, SUBJECT_SYSTEM};
+        use rebellion_windowing::{SubjectId, WindowKind, WindowOwner, WindowTransition};
+
+        // SW-00O fixed this expectation from the recovered Sector opener and
+        // close chain (FUN_00429ce0, FUN_005ff910 and FUN_00606960): a
+        // navigation-origin Sector does not own detail lifetime.
+        let expected_detail_owner = WindowOwner::StrategicRoot;
+        let (world, system) = sector_fixture_world();
+        let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
+        let mut sectors = SectorWindowState::default();
+        let mut pending = Vec::<PendingSectorPublication>::new();
+        assert!(enqueue_sector_window(
+            &mut coordinator,
+            &sectors,
+            &world,
+            system,
+            CockpitFaction::Alliance,
+            &mut pending,
+            None,
+        ));
+        let mut sector_open = coordinator.apply_pending().remove(0);
+        let navigation_sector = sector_open.sector_content_id.unwrap();
+        assert!(commit_sector_window_publication(
+            &mut coordinator,
+            &mut sectors,
+            &mut pending,
+            sector_open.prepared_sector.take(),
+            Some(navigation_sector),
+            &sector_open.result,
+        )
+        .1
+        .is_empty());
+
+        let layout = CockpitLayout {
+            canvas: CockpitViewport {
+                x: 0.0,
+                y: 0.0,
+                width: 640.0,
+                height: 480.0,
+            },
+            galaxy: CockpitViewport {
+                x: 0.0,
+                y: 0.0,
+                width: 640.0,
+                height: 480.0,
+            },
+            scale: 1.0,
+        };
+        let fog = rebellion_core::fog::FogState::new(rebellion_core::dat::Faction::Alliance);
+        let missions = rebellion_core::missions::MissionState::new();
+        let mut system_windows = rebellion_render::SystemWindowState::default();
+        let mut fleet_windows = rebellion_render::FleetWindowState::default();
+        let mut defenses_windows = rebellion_render::DefensesWindowState::default();
+        let mut missions_windows = rebellion_render::MissionsWindowState::default();
+        coordinator.enqueue_system_open(
+            system_windows
+                .prepare_open(&world, system, (40, 50), CockpitFaction::Alliance, layout)
+                .unwrap(),
+        );
+        coordinator.enqueue_fleet_open(
+            fleet_windows
+                .prepare_open(
+                    &world,
+                    system,
+                    (40, 50),
+                    CockpitFaction::Alliance,
+                    layout,
+                    None,
+                )
+                .unwrap(),
+        );
+        coordinator.enqueue_defenses_open(
+            defenses_windows
+                .prepare_open(&world, system, (40, 50), CockpitFaction::Alliance, layout)
+                .unwrap(),
+        );
+        coordinator.enqueue_missions_open(
+            missions_windows
+                .prepare_open(
+                    &world,
+                    &fog,
+                    &missions,
+                    system,
+                    (40, 50),
+                    CockpitFaction::Alliance,
+                    layout,
+                )
+                .unwrap(),
+        );
+        let mut opened = coordinator.apply_pending().into_iter();
+        let mut system_open = opened.next().unwrap();
+        let system_id = system_open.system_content_id.unwrap();
+        assert_eq!(
+            system_windows.commit_open(
+                system_open.prepared_system.take().unwrap(),
+                &system_open.result.as_ref().unwrap().transition,
+            ),
+            Some(system_id)
+        );
+        let mut fleet_open = opened.next().unwrap();
+        let fleet_id = fleet_open.fleet_content_id.unwrap();
+        assert_eq!(
+            fleet_windows.commit_open(
+                fleet_open.prepared_fleet.take().unwrap(),
+                &fleet_open.result.as_ref().unwrap().transition,
+            ),
+            Some(fleet_id)
+        );
+        let mut defenses_open = opened.next().unwrap();
+        let defenses_id = defenses_open.defenses_content_id.unwrap();
+        assert_eq!(
+            defenses_windows.commit_open(
+                defenses_open.prepared_defenses.take().unwrap(),
+                &defenses_open.result.as_ref().unwrap().transition,
+            ),
+            Some(defenses_id)
+        );
+        let mut missions_open = opened.next().unwrap();
+        let missions_id = missions_open.missions_content_id.unwrap();
+        assert_eq!(
+            missions_windows.commit_open(
+                missions_open.prepared_missions.take().unwrap(),
+                &missions_open.result.as_ref().unwrap().transition,
+            ),
+            Some(missions_id)
+        );
+        assert!(opened.next().is_none());
+        assert!(coordinator.acknowledge_system_publication(system_id));
+        assert!(coordinator.acknowledge_fleet_publication(fleet_id));
+        assert!(coordinator.acknowledge_defenses_publication(defenses_id));
+        assert!(coordinator.acknowledge_missions_publication(missions_id));
+        let detail_ids = [system_id, fleet_id, defenses_id, missions_id];
+
+        coordinator.enqueue(WindowCommand::Open(contextual_spec(
+            WindowKind::Sector,
+            SubjectId::new(SUBJECT_SECTOR, 999),
+            WindowOwner::StrategicRoot,
+        )));
+        let unrelated_sector = match coordinator
+            .apply_pending()
+            .remove(0)
+            .result
+            .unwrap()
+            .transition
+        {
+            WindowTransition::Opened { id } => id,
+            transition => panic!("expected unrelated Sector open, got {transition:?}"),
+        };
+        assert!(coordinator.attach_content(unrelated_sector));
+
+        coordinator.enqueue(WindowCommand::Open(contextual_spec(
+            WindowKind::System,
+            SubjectId::new(SUBJECT_SYSTEM, 999),
+            WindowOwner::Window(detail_ids[3]),
+        )));
+        let detail_child = match coordinator
+            .apply_pending()
+            .remove(0)
+            .result
+            .unwrap()
+            .transition
+        {
+            WindowTransition::Opened { id } => id,
+            transition => panic!("expected detail child open, got {transition:?}"),
+        };
+        assert!(coordinator.attach_content(detail_child));
+
+        coordinator.enqueue_fleet_minimize(fleet_id, system, (40, 50));
+        let minimized = coordinator.apply_pending().remove(0);
+        assert_eq!(
+            minimized.minimized_fleet,
+            Some((fleet_id, system, (40, 50)))
+        );
+        assert_eq!(
+            system_windows.minimize_fleet_window(fleet_id, system, (40, 50)),
+            None
+        );
+        assert_eq!(
+            system_windows.rail_entries().collect::<Vec<_>>(),
+            [(system, "fleet")]
+        );
+
+        coordinator.enqueue(WindowCommand::CapturePointer(system_id));
+        assert!(coordinator.apply_pending()[0].result.is_ok());
+        let before = coordinator.begin_frame();
+        assert_eq!(before.capture_owner(), Some(system_id));
+        assert_eq!(before.presentation_history(), [fleet_id]);
+        assert!(before.key(unrelated_sector).is_some());
+        assert_eq!(
+            before.owner(detail_child),
+            Some(WindowOwner::Window(missions_id))
+        );
+
+        assert!(enqueue_sector_manager_action(
+            &mut coordinator,
+            rebellion_render::SectorWindowAction::Close(navigation_sector),
+        ));
+        let closed = coordinator.apply_pending().remove(0);
+        assert_eq!(closed.removed_content, [navigation_sector]);
+        assert!(matches!(
+            closed.result.as_ref().unwrap().transition,
+            WindowTransition::Closed { root, ref closed, .. }
+                if root == navigation_sector && closed == &[navigation_sector]
+        ));
+        sectors.remove_content(&closed.removed_content);
+        system_windows.remove_content(&closed.removed_content);
+        fleet_windows.remove_content(&closed.removed_content);
+        defenses_windows.remove_content(&closed.removed_content);
+        missions_windows.remove_content(&closed.removed_content);
+
+        let after = coordinator.begin_frame();
+        assert!(after.key(navigation_sector).is_none());
+        assert_eq!(sectors.window_count(), 0);
+        for &id in &detail_ids {
+            assert_eq!(after.owner(id), Some(expected_detail_owner));
+            assert!(coordinator.has_content(id));
+        }
+        assert_eq!(system_windows.window_id(system), Some(system_id));
+        assert_eq!(fleet_windows.window_id(system), Some(fleet_id));
+        assert_eq!(defenses_windows.window_id(system), Some(defenses_id));
+        assert_eq!(missions_windows.window_id(system), Some(missions_id));
+        assert!(after.key(detail_child).is_some());
+        assert!(coordinator.has_content(detail_child));
+        assert!(after.key(unrelated_sector).is_some());
+        assert!(coordinator.has_content(unrelated_sector));
+        assert_eq!(after.capture_owner(), Some(system_id));
+        assert!(!after.is_visible(fleet_id));
+        assert_eq!(after.presentation_history(), [fleet_id]);
+        assert_eq!(
+            system_windows.rail_entries().collect::<Vec<_>>(),
+            [(system, "fleet")]
+        );
+    }
+
+    #[test]
     fn sector_manager_actions_enqueue_exact_activate_capture_and_release() {
         use rebellion_windowing::{FocusTarget, WindowTransition};
 
