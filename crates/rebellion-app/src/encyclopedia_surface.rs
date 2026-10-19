@@ -1,5 +1,8 @@
 //! Application adapter between validated Encyclopedia data and render DTOs.
 
+use std::error::Error;
+use std::fmt::{Display, Formatter};
+
 use egui_macroquad::egui;
 use macroquad::prelude::{screen_height, screen_width};
 use rebellion_data::encyclopedia_presenter::{
@@ -9,12 +12,19 @@ use rebellion_data::encyclopedia_presenter::{
 };
 use rebellion_data::encyclopedia_session::EncyclopediaSession;
 use rebellion_data::encyclopedia_topics::EncyclopediaAudience;
+use rebellion_render::windowing_policy::singleton_spec;
 use rebellion_render::{
-    draw_encyclopedia_surface, BmpCache, EncyclopediaArtworkView, EncyclopediaSurface,
+    draw_encyclopedia_surface_focused, BmpCache, EncyclopediaArtworkView, EncyclopediaSurface,
     EncyclopediaSurfaceAction, EncyclopediaSurfaceAudience, EncyclopediaSurfaceAvailability,
     EncyclopediaSurfaceCategory, EncyclopediaSurfaceMode, EncyclopediaSurfaceNavigation,
     EncyclopediaSurfaceState, EncyclopediaSurfaceTopic, EncyclopediaSurfaceTopicItem,
-    EncyclopediaTextureSampling,
+    EncyclopediaTextureSampling, ENCYCLOPEDIA_INDEX_CONTROL, ENCYCLOPEDIA_INDEX_HEIGHT,
+    ENCYCLOPEDIA_INDEX_WIDTH, ENCYCLOPEDIA_TOPIC_CONTROL,
+};
+use rebellion_windowing::{
+    ContentReport, ContentStatus, ControlId, ExistingEffect, FocusTarget, RoutingSnapshot,
+    WindowCommand, WindowError, WindowEvent, WindowId, WindowKind, WindowManager, WindowOwner,
+    WindowTransition,
 };
 
 use crate::encyclopedia_hd::PreparedEncyclopediaHd;
@@ -163,10 +173,47 @@ fn adapt_encyclopedia_surface_inner<'a>(
 /// the selected topic, the controller rebinds from that origin against the new
 /// session instead of retaining a stale selection.
 pub(crate) struct EncyclopediaSurfaceController {
+    window_id: Option<WindowId>,
+    audience: Option<EncyclopediaSurfaceAudience>,
     origin: Option<EncyclopediaEntryIntent>,
     current: Option<EncyclopediaEntryIntent>,
+    return_route: Option<EncyclopediaReturnRoute>,
     session_generation: Option<u64>,
+    paintable: bool,
     surface_state: EncyclopediaSurfaceState,
+    manager_events: Vec<WindowEvent>,
+}
+
+/// Failure to validate Encyclopedia content or commit its shared identity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum EncyclopediaWindowOpenError {
+    Presenter(EncyclopediaPresenterError),
+    Window(WindowError),
+}
+
+impl Display for EncyclopediaWindowOpenError {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Presenter(error) => Display::fmt(error, formatter),
+            Self::Window(error) => {
+                write!(formatter, "Encyclopedia window commit failed: {error:?}")
+            }
+        }
+    }
+}
+
+impl Error for EncyclopediaWindowOpenError {}
+
+impl From<EncyclopediaPresenterError> for EncyclopediaWindowOpenError {
+    fn from(error: EncyclopediaPresenterError) -> Self {
+        Self::Presenter(error)
+    }
+}
+
+impl From<WindowError> for EncyclopediaWindowOpenError {
+    fn from(error: WindowError) -> Self {
+        Self::Window(error)
+    }
 }
 
 impl Default for EncyclopediaSurfaceController {
@@ -179,37 +226,193 @@ impl EncyclopediaSurfaceController {
     #[must_use]
     pub(crate) fn new() -> Self {
         Self {
+            window_id: None,
+            audience: None,
             origin: None,
             current: None,
+            return_route: None,
             session_generation: None,
+            paintable: true,
             surface_state: EncyclopediaSurfaceState::new(),
+            manager_events: Vec::new(),
         }
     }
 
     #[must_use]
     pub(crate) const fn is_open(&self) -> bool {
-        self.current.is_some()
+        self.window_id.is_some()
     }
 
-    /// Validate and open one production entry intent.
+    /// Validate and commit one production entry intent to the shared manager.
+    ///
+    /// A compatible duplicate is a true no-op: its original intent, return
+    /// route, renderer state, and manager identity all remain unchanged.
     pub(crate) fn open(
         &mut self,
         session: &EncyclopediaSession,
         intent: EncyclopediaEntryIntent,
-    ) -> Result<(), EncyclopediaPresenterError> {
-        EncyclopediaPresenter::present(session, intent)?;
+        windows: &mut WindowManager,
+    ) -> Result<WindowId, EncyclopediaWindowOpenError> {
+        let presentation = EncyclopediaPresenter::present(session, intent)?;
+        let return_route = presentation.return_route;
+        let initial_control = match presentation.mode {
+            EncyclopediaPresentationMode::Index => ENCYCLOPEDIA_INDEX_CONTROL,
+            EncyclopediaPresentationMode::Topic => ENCYCLOPEDIA_TOPIC_CONTROL,
+        };
+        let audience = match presentation.audience {
+            EncyclopediaAudience::Alliance => EncyclopediaSurfaceAudience::Alliance,
+            EncyclopediaAudience::Empire => EncyclopediaSurfaceAudience::Empire,
+        };
+        let commit = windows.apply(WindowCommand::Open(singleton_spec(
+            WindowKind::Encyclopedia,
+            WindowOwner::StrategicRoot,
+        )))?;
+        let mut events = commit.events;
+        let id = match commit.transition {
+            WindowTransition::Opened { id } => id,
+            WindowTransition::Existing {
+                id,
+                effect: ExistingEffect::NoOp,
+            } if self.window_id == Some(id) => {
+                self.manager_events.append(&mut events);
+                return Ok(id);
+            }
+            WindowTransition::Existing { id, .. } => id,
+            transition => {
+                unreachable!("an Encyclopedia singleton open cannot commit {transition:?}")
+            }
+        };
+        self.window_id = Some(id);
+        self.audience = Some(audience);
         self.origin = Some(intent);
         self.current = Some(intent);
+        self.return_route = Some(return_route);
         self.session_generation = Some(session.texture_generation());
+        self.paintable = true;
         self.surface_state = EncyclopediaSurfaceState::new();
-        Ok(())
+        let mut focus = windows
+            .apply(WindowCommand::Focus(FocusTarget {
+                window: id,
+                control: Some(initial_control),
+            }))
+            .expect("newly committed Encyclopedia identity accepts semantic focus")
+            .events;
+        events.append(&mut focus);
+        self.manager_events.append(&mut events);
+        Ok(id)
     }
 
-    pub(crate) fn close(&mut self) {
+    /// Takes the ordered manager receipts emitted while opening this content.
+    pub(crate) fn take_manager_events(&mut self) -> Vec<WindowEvent> {
+        std::mem::take(&mut self.manager_events)
+    }
+
+    /// Exact manager identity currently owning this content.
+    #[must_use]
+    pub(crate) const fn window_id(&self) -> Option<WindowId> {
+        self.window_id
+    }
+
+    /// Manager-owned Encyclopedia hit for event-local pointer routing.
+    #[must_use]
+    pub(crate) fn hit_window(
+        &self,
+        frame: &RoutingSnapshot,
+        width: f32,
+        height: f32,
+        point: (f32, f32),
+    ) -> Option<WindowId> {
+        let id = self.window_id?;
+        let audience = self.audience?;
+        let scale = (width / 640.0).min(height / 480.0).max(f32::EPSILON);
+        let origin = encyclopedia_surface_origin(width, height, scale, audience);
+        let rect = egui::Rect::from_min_size(
+            origin,
+            egui::vec2(
+                ENCYCLOPEDIA_INDEX_WIDTH * scale,
+                ENCYCLOPEDIA_INDEX_HEIGHT * scale,
+            ),
+        );
+        (frame
+            .key(id)
+            .is_some_and(|key| key.kind == WindowKind::Encyclopedia)
+            && frame.allows_input(id)
+            && rect.contains(egui::pos2(point.0, point.1)))
+        .then_some(id)
+    }
+
+    /// Exact manager identity that owns this frame's keyboard lease.
+    #[must_use]
+    pub(crate) fn keyboard_owner(&self, frame: &RoutingSnapshot) -> Option<WindowId> {
+        let id = self.window_id?;
+        matches!(
+            frame.keyboard_route().target,
+            rebellion_windowing::RouteTarget::Window(target) if target.window == id
+        )
+        .then_some(id)
+    }
+
+    /// Retains the modal identity while recording a failed paint attempt.
+    pub(crate) fn mark_unpaintable(&mut self) {
+        self.paintable = false;
+    }
+
+    /// Records that the exact committed content can be painted again.
+    pub(crate) fn mark_paintable(&mut self) {
+        self.paintable = true;
+    }
+
+    /// Explicit Encyclopedia content state for the immutable manager frame.
+    #[must_use]
+    pub(crate) fn content_reports(&self, frame: &RoutingSnapshot) -> Vec<ContentReport> {
+        frame
+            .paint_order()
+            .iter()
+            .copied()
+            .filter(|id| {
+                frame
+                    .key(*id)
+                    .is_some_and(|key| key.kind == WindowKind::Encyclopedia)
+            })
+            .map(|id| ContentReport {
+                window: id,
+                status: if self.window_id == Some(id) && self.paintable {
+                    ContentStatus::Ready
+                } else {
+                    ContentStatus::Unpaintable
+                },
+            })
+            .collect()
+    }
+
+    /// Returns the exact close target without releasing its current-frame lease.
+    #[must_use]
+    pub(crate) fn request_close(&self) -> Option<(WindowId, EncyclopediaReturnRoute)> {
+        Some((self.window_id?, self.return_route?))
+    }
+
+    /// Releases content only after an exact manager teardown receipt.
+    pub(crate) fn remove_content(&mut self, removed: &[WindowId]) {
+        if self.window_id.is_some_and(|id| removed.contains(&id)) {
+            self.clear();
+        }
+    }
+
+    /// Clears app-owned state during a whole-session reset.
+    pub(crate) fn reset(&mut self) {
+        self.clear();
+    }
+
+    fn clear(&mut self) {
+        self.window_id = None;
+        self.audience = None;
         self.origin = None;
         self.current = None;
+        self.return_route = None;
         self.session_generation = None;
+        self.paintable = true;
         self.surface_state = EncyclopediaSurfaceState::new();
+        self.manager_events.clear();
     }
 
     pub(crate) fn presentation<'a>(
@@ -240,6 +443,7 @@ impl EncyclopediaSurfaceController {
     ) -> Result<Option<EncyclopediaReturnRoute>, EncyclopediaPresenterError> {
         let presentation = self.presentation(session)?;
         let return_route = presentation.return_route;
+        let current_mode = presentation.mode;
         let next = match action {
             EncyclopediaSurfaceAction::SelectCategory(command) => {
                 Some(presentation.follow_up(EncyclopediaPresentationMode::Index, command, None))
@@ -267,11 +471,17 @@ impl EncyclopediaSurfaceController {
             EncyclopediaSurfaceAction::Close => None,
         };
         if let Some(next) = next {
-            EncyclopediaPresenter::present(session, next)?;
+            let next_presentation = EncyclopediaPresenter::present(session, next)?;
             self.current = Some(next);
+            if next_presentation.mode != current_mode {
+                self.surface_state
+                    .request_mode_focus(match next_presentation.mode {
+                        EncyclopediaPresentationMode::Index => EncyclopediaSurfaceMode::Index,
+                        EncyclopediaPresentationMode::Topic => EncyclopediaSurfaceMode::Topic,
+                    });
+            }
             Ok(None)
         } else {
-            self.close();
             Ok(Some(return_route))
         }
     }
@@ -284,6 +494,7 @@ impl EncyclopediaSurfaceController {
         cache: &mut BmpCache,
         session: &EncyclopediaSession,
         hd: &PreparedEncyclopediaHd,
+        focused_control: Option<ControlId>,
     ) -> Result<Option<EncyclopediaReturnRoute>, EncyclopediaPresenterError> {
         if !self.is_open() {
             return Ok(None);
@@ -295,12 +506,27 @@ impl EncyclopediaSurfaceController {
             .max(f32::EPSILON);
         let origin =
             encyclopedia_surface_origin(screen_width(), screen_height(), scale, surface.audience);
-        let action =
-            draw_encyclopedia_surface(ctx, cache, origin, scale, &mut self.surface_state, &surface);
+        let action = draw_encyclopedia_surface_focused(
+            ctx,
+            cache,
+            origin,
+            scale,
+            &mut self.surface_state,
+            &surface,
+            focused_control,
+        );
         match action {
             Some(action) => self.apply_action(session, action),
             None => Ok(None),
         }
+    }
+
+    /// Takes one renderer child-focus request scoped to this exact identity.
+    pub(crate) fn take_focus_request(&mut self) -> Option<FocusTarget> {
+        Some(FocusTarget {
+            window: self.window_id?,
+            control: Some(self.surface_state.take_focus_request()?),
+        })
     }
 }
 
@@ -1139,7 +1365,14 @@ mod tests {
         EncyclopediaResourceBytes, EncyclopediaSessionInput, EncyclopediaSessionStore,
     };
     use rebellion_data::encyclopedia_topics::EncyclopediaAudience;
-    use rebellion_render::{EncyclopediaSurfaceAudience, EncyclopediaSurfaceMode};
+    use rebellion_render::{
+        windowing_policy::contextual_spec, EncyclopediaSurfaceAudience, EncyclopediaSurfaceMode,
+        ENCYCLOPEDIA_TOPIC_CONTROL,
+    };
+    use rebellion_windowing::{
+        CaptureCancelReason, ContentStatus, FocusTarget, SubjectId, WindowCommand, WindowEvent,
+        WindowKind, WindowManager, WindowOwner,
+    };
 
     use super::{
         adapt_encyclopedia_surface, encyclopedia_surface_origin, EncyclopediaSurfaceController,
@@ -1298,13 +1531,15 @@ mod tests {
     fn production_controller_preserves_cockpit_route_through_open_and_close() {
         let session = session();
         let mut controller = EncyclopediaSurfaceController::new();
+        let mut windows = WindowManager::new();
 
-        controller
+        let id = controller
             .open(
                 &session,
                 EncyclopediaEntryIntent::Cockpit {
                     audience: EncyclopediaAudience::Empire,
                 },
+                &mut windows,
             )
             .unwrap();
 
@@ -1322,6 +1557,17 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(route, presentation.return_route);
+        assert!(controller.is_open());
+        let closed = windows.apply(WindowCommand::Close(id)).unwrap();
+        let removed = closed
+            .events
+            .iter()
+            .filter_map(|event| match event {
+                rebellion_windowing::WindowEvent::Closed { window, .. } => Some(*window),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        controller.remove_content(&removed);
         assert!(!controller.is_open());
     }
 
@@ -1330,6 +1576,7 @@ mod tests {
         let session = session();
         let caller = EncyclopediaContextCaller::Handler00486fb0Event100;
         let mut controller = EncyclopediaSurfaceController::new();
+        let mut windows = WindowManager::new();
         controller
             .open(
                 &session,
@@ -1338,6 +1585,7 @@ mod tests {
                     object_id: 0x5100_0010,
                     caller,
                 },
+                &mut windows,
             )
             .unwrap();
 
@@ -1365,12 +1613,14 @@ mod tests {
         store.replace(session_input()).unwrap();
         let first = store.current().unwrap();
         let mut controller = EncyclopediaSurfaceController::new();
+        let mut windows = WindowManager::new();
         controller
             .open(
                 &first,
                 EncyclopediaEntryIntent::Cockpit {
                     audience: EncyclopediaAudience::Alliance,
                 },
+                &mut windows,
             )
             .unwrap();
 
@@ -1387,5 +1637,158 @@ mod tests {
             controller.session_generation,
             Some(second.texture_generation())
         );
+    }
+
+    #[test]
+    fn encyclopedia_open_preserves_session_and_entry_intent_validation() {
+        let session = session();
+        let mut controller = EncyclopediaSurfaceController::new();
+        let mut windows = WindowManager::new();
+        let invalid = EncyclopediaEntryIntent::Object {
+            audience: EncyclopediaAudience::Alliance,
+            category_command: 0x6f,
+            object_id: 0xdead_beef,
+        };
+
+        assert!(controller.open(&session, invalid, &mut windows).is_err());
+        assert!(!controller.is_open());
+        assert!(windows.begin_frame().paint_order().is_empty());
+
+        let caller = EncyclopediaContextCaller::Handler00486fb0Event100;
+        let valid = EncyclopediaEntryIntent::Contextual {
+            audience: EncyclopediaAudience::Alliance,
+            object_id: 0x5100_0010,
+            caller,
+        };
+        let id = controller.open(&session, valid, &mut windows).unwrap();
+        let presentation = controller.presentation(&session).unwrap();
+
+        assert_eq!(controller.window_id(), Some(id));
+        assert_eq!(windows.begin_frame().active_modal(), Some(id));
+        assert_eq!(
+            windows.begin_frame().focused(),
+            Some(FocusTarget {
+                window: id,
+                control: Some(ENCYCLOPEDIA_TOPIC_CONTROL),
+            })
+        );
+        assert_eq!(
+            presentation.return_route,
+            EncyclopediaReturnRoute::Contextual {
+                audience: EncyclopediaAudience::Alliance,
+                requested_object_id: 0x5100_0010,
+                caller,
+            }
+        );
+    }
+
+    #[test]
+    fn encyclopedia_open_retains_exact_modal_capture_cancellation() {
+        let session = session();
+        let mut controller = EncyclopediaSurfaceController::new();
+        let mut windows = WindowManager::new();
+        let fleet = match windows
+            .apply(WindowCommand::Open(contextual_spec(
+                WindowKind::Fleet,
+                SubjectId::new(2, 100),
+                WindowOwner::StrategicRoot,
+            )))
+            .unwrap()
+            .transition
+        {
+            rebellion_windowing::WindowTransition::Opened { id } => id,
+            transition => panic!("expected Fleet open, got {transition:?}"),
+        };
+        windows.apply(WindowCommand::CapturePointer(fleet)).unwrap();
+
+        controller
+            .open(
+                &session,
+                EncyclopediaEntryIntent::Cockpit {
+                    audience: EncyclopediaAudience::Alliance,
+                },
+                &mut windows,
+            )
+            .unwrap();
+
+        assert!(controller.take_manager_events().iter().any(|event| {
+            matches!(
+                event,
+                WindowEvent::CaptureCancelled {
+                    window,
+                    reason: CaptureCancelReason::ModalOpened,
+                } if *window == fleet
+            )
+        }));
+    }
+
+    #[test]
+    fn encyclopedia_duplicate_open_preserves_immutable_return_route() {
+        let session = session();
+        let mut controller = EncyclopediaSurfaceController::new();
+        let mut windows = WindowManager::new();
+        let caller = EncyclopediaContextCaller::Handler004443a0Command66;
+        let original = EncyclopediaEntryIntent::Contextual {
+            audience: EncyclopediaAudience::Alliance,
+            object_id: 0x5100_0010,
+            caller,
+        };
+        let id = controller.open(&session, original, &mut windows).unwrap();
+        controller
+            .apply_action(
+                &session,
+                rebellion_render::EncyclopediaSurfaceAction::ShowIndex,
+            )
+            .unwrap();
+
+        let duplicate = controller
+            .open(
+                &session,
+                EncyclopediaEntryIntent::Cockpit {
+                    audience: EncyclopediaAudience::Empire,
+                },
+                &mut windows,
+            )
+            .unwrap();
+        let presentation = controller.presentation(&session).unwrap();
+
+        assert_eq!(duplicate, id);
+        assert_eq!(controller.window_id(), Some(id));
+        assert_eq!(presentation.audience, EncyclopediaAudience::Alliance);
+        assert_eq!(
+            presentation.return_route,
+            EncyclopediaReturnRoute::Contextual {
+                audience: EncyclopediaAudience::Alliance,
+                requested_object_id: 0x5100_0010,
+                caller,
+            }
+        );
+    }
+
+    #[test]
+    fn encyclopedia_unpaintable_content_retains_modal_blocker() {
+        let session = session();
+        let mut controller = EncyclopediaSurfaceController::new();
+        let mut windows = WindowManager::new();
+        let id = controller
+            .open(
+                &session,
+                EncyclopediaEntryIntent::Cockpit {
+                    audience: EncyclopediaAudience::Empire,
+                },
+                &mut windows,
+            )
+            .unwrap();
+        controller.mark_unpaintable();
+        let frame = windows.begin_frame();
+        let reports = controller.content_reports(&frame);
+
+        assert_eq!(reports.len(), 1);
+        assert_eq!(reports[0].window, id);
+        assert_eq!(reports[0].status, ContentStatus::Unpaintable);
+        let reconciliation = windows.reconcile(&frame, &reports);
+        assert_eq!(reconciliation.blocking_unpainted, [id]);
+        assert_eq!(windows.begin_frame().active_modal(), Some(id));
+        assert_eq!(controller.request_close().map(|close| close.0), Some(id));
     }
 }

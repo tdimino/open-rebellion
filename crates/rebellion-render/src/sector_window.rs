@@ -12,6 +12,10 @@ use rebellion_core::dat::Faction;
 use rebellion_core::fog::FogState;
 use rebellion_core::ids::{DatId, SectorKey, SystemKey};
 use rebellion_core::world::{ControlKind, GameWorld};
+use rebellion_windowing::{
+    ContentReport, ContentStatus, ExistingEffect, RoutingSnapshot, SubjectId, WindowId, WindowKind,
+    WindowOwner, WindowSpec, WindowTransition,
+};
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{CockpitFaction, CockpitLayout};
@@ -21,6 +25,10 @@ use crate::object_menu::MenuObject;
 use crate::panels::command_palette::InterfaceCommand;
 use crate::quadrant_icons::{self, quadrant_icon, Quadrant};
 use crate::theme::game_font;
+use crate::windowing_input::{
+    FrameInputRouter, InputEventId, InputRecipient, PointerButtonId, PointerPhase,
+};
+use crate::windowing_policy::{contextual_spec, sector_subject};
 
 /// `DAT_00658bd8`, a static 1023: the galaxy's width, whose half
 /// `FUN_00429ce0` compares a sector's x with (`FUN_00526560`, the record's
@@ -71,6 +79,11 @@ struct SelectedIcon {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct OpenSectorWindow {
+    /// Opaque session identity allocated by the shared window manager.
+    /// Fixture-only direct opens deliberately have no production identity.
+    id: Option<WindowId>,
+    /// Stable original Sector DAT identity paired with `id`.
+    subject: Option<SubjectId>,
     sector: SectorKey,
     column: WindowColumn,
     /// The icon a left or right press chose last (`+0x184`,
@@ -81,8 +94,62 @@ struct OpenSectorWindow {
     drag_from: Option<(i16, i16)>,
 }
 
-/// Mutable state for the modeless sector-window stack. The last entry is the
-/// focused window and therefore paints above earlier entries.
+/// Validated Sector content held aside until the shared manager accepts its
+/// stable `(Sector, sector DAT ID)` identity and, when needed, atomically
+/// replaces the exact window occupying the requested galaxy half.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PreparedSectorWindow {
+    spec: WindowSpec,
+    faction: CockpitFaction,
+    sector: SectorKey,
+    column: WindowColumn,
+    replacing: Option<WindowId>,
+}
+
+impl PreparedSectorWindow {
+    /// Complete manager declaration for this content candidate.
+    #[must_use]
+    pub const fn spec(self) -> WindowSpec {
+        self.spec
+    }
+
+    /// Exact same-half identity that must be replaced atomically, if any.
+    #[must_use]
+    pub const fn replacing(self) -> Option<WindowId> {
+        self.replacing
+    }
+
+    /// Stable runtime Sector key carried beside the DAT subject.
+    #[must_use]
+    pub const fn sector(self) -> SectorKey {
+        self.sector
+    }
+
+    /// Deterministic logical point for a same-frame detail intent. Preparing a
+    /// Sector may compute geometry, but never publishes content.
+    #[must_use]
+    pub fn quadrant_window_point(
+        self,
+        world: &GameWorld,
+        layout: CockpitLayout,
+        system: SystemKey,
+        quadrant: Quadrant,
+    ) -> Option<(i16, i16)> {
+        let value = world.systems.get(system)?;
+        (value.sector == self.sector).then_some(())?;
+        let sector = world.sectors.get(self.sector)?;
+        let (x, y) = sector_planet_position(sector.x, sector.y, value.x, value.y);
+        let window = window_screen_rect(self.faction, self.column, layout);
+        let planet = planet_rect(window, layout.scale, x, y);
+        Some(screen_to_logical(
+            layout,
+            quadrant_rect(planet, layout.scale, quadrant).center(),
+        ))
+    }
+}
+
+/// Mutable content for the modeless sector-window stack. Manager order, not
+/// vector position, determines production focus and paint order.
 #[derive(Debug)]
 pub struct SectorWindowState {
     faction: CockpitFaction,
@@ -103,6 +170,304 @@ impl SectorWindowState {
     #[must_use]
     pub fn any_open(&self) -> bool {
         !self.windows.is_empty()
+    }
+
+    /// Validates and prepares Sector content without mutating the live store.
+    /// Duplicate preparation retains the existing identity; a third Sector
+    /// names the exact same-half identity for one atomic manager replacement.
+    #[must_use]
+    pub fn prepare_open(
+        &self,
+        world: &GameWorld,
+        system: SystemKey,
+        faction: CockpitFaction,
+    ) -> Option<PreparedSectorWindow> {
+        let sector = world.systems.get(system)?.sector;
+        let subject = sector_subject(world, sector)?;
+        if !self.windows.is_empty() && self.faction != faction {
+            return None;
+        }
+        if let Some(existing) = self.windows.iter().find(|window| window.sector == sector) {
+            let replacing = match (existing.id, existing.subject) {
+                (Some(id), Some(existing_subject)) if existing_subject != subject => Some(id),
+                (Some(_), Some(_)) => None,
+                _ => return None,
+            };
+            return Some(PreparedSectorWindow {
+                spec: contextual_spec(WindowKind::Sector, subject, WindowOwner::StrategicRoot),
+                faction,
+                sector,
+                column: existing.column,
+                replacing,
+            });
+        }
+        let right_half = world
+            .sectors
+            .get(sector)
+            .is_some_and(|value| i32::from(value.x) >= GALAXY_WIDTH / 2);
+        let half = if right_half {
+            WindowColumn::Secondary
+        } else {
+            WindowColumn::Primary
+        };
+        let taken = |column| self.windows.iter().any(|window| window.column == column);
+        let column = match (taken(WindowColumn::Primary), taken(WindowColumn::Secondary)) {
+            (false, false) | (true, true) => half,
+            (true, false) => WindowColumn::Secondary,
+            (false, true) => WindowColumn::Primary,
+        };
+        let replacing = match self.windows.iter().find(|window| window.column == column) {
+            Some(window) => Some(window.id?),
+            None if self.windows.len() < 2 => None,
+            None => return None,
+        };
+        Some(PreparedSectorWindow {
+            spec: contextual_spec(WindowKind::Sector, subject, WindowOwner::StrategicRoot),
+            faction,
+            sector,
+            column,
+            replacing,
+        })
+    }
+
+    /// Publishes prepared content only for its exact manager receipt. Existing
+    /// `NoOp` leaves vector order, selection, and drag payload untouched.
+    pub fn commit_open(
+        &mut self,
+        prepared: PreparedSectorWindow,
+        transition: &WindowTransition,
+        snapshot: &RoutingSnapshot,
+    ) -> Option<WindowId> {
+        if prepared.spec.key.kind != WindowKind::Sector
+            || prepared.spec.owner != WindowOwner::StrategicRoot
+        {
+            return None;
+        }
+        let subject = prepared.spec.key.subject?;
+        let receipt_matches = |id| {
+            snapshot.key(id) == Some(prepared.spec.key)
+                && snapshot.owner(id) == Some(WindowOwner::StrategicRoot)
+        };
+        match *transition {
+            WindowTransition::Opened { id }
+                if prepared.replacing.is_none() && receipt_matches(id) =>
+            {
+                if self.windows.len() >= 2 {
+                    return None;
+                }
+                if self.windows.iter().any(|window| {
+                    window.id == Some(id)
+                        || window.subject == Some(subject)
+                        || window.sector == prepared.sector
+                        || window.column == prepared.column
+                }) {
+                    return None;
+                }
+                if self.windows.is_empty() {
+                    self.faction = prepared.faction;
+                } else if self.faction != prepared.faction {
+                    return None;
+                }
+                self.windows.push(OpenSectorWindow {
+                    id: Some(id),
+                    subject: Some(subject),
+                    sector: prepared.sector,
+                    column: prepared.column,
+                    selection: None,
+                    drag_from: None,
+                });
+                Some(id)
+            }
+            WindowTransition::Existing {
+                id,
+                effect: ExistingEffect::NoOp,
+            } if prepared.replacing.is_none()
+                && receipt_matches(id)
+                && self.faction == prepared.faction
+                && self.windows.iter().any(|window| {
+                    window.id == Some(id)
+                        && window.subject == Some(subject)
+                        && window.sector == prepared.sector
+                        && window.column == prepared.column
+                }) =>
+            {
+                Some(id)
+            }
+            WindowTransition::Replaced { old, new }
+                if prepared.replacing == Some(old)
+                    && receipt_matches(new)
+                    && self.faction == prepared.faction =>
+            {
+                let index = self.windows.iter().position(|window| {
+                    window.id == Some(old) && window.column == prepared.column
+                })?;
+                if self.windows.iter().enumerate().any(|(candidate, window)| {
+                    candidate != index
+                        && (window.id == Some(new)
+                            || window.subject == Some(subject)
+                            || window.sector == prepared.sector)
+                }) {
+                    return None;
+                }
+                self.windows[index] = OpenSectorWindow {
+                    id: Some(new),
+                    subject: Some(subject),
+                    sector: prepared.sector,
+                    column: prepared.column,
+                    selection: None,
+                    drag_from: None,
+                };
+                Some(new)
+            }
+            _ => None,
+        }
+    }
+
+    /// Exact manager identity attached to one runtime Sector key.
+    #[must_use]
+    pub fn window_id(&self, sector: SectorKey) -> Option<WindowId> {
+        self.windows
+            .iter()
+            .find(|window| window.sector == sector)
+            .and_then(|window| window.id)
+    }
+
+    /// Removes only content named by exact manager teardown receipts.
+    pub fn remove_content(&mut self, removed: &[WindowId]) {
+        self.windows
+            .retain(|window| window.id.is_none_or(|id| !removed.contains(&id)));
+    }
+
+    /// Reports every manager-owned Sector identity against exact live DAT
+    /// content. A stale runtime key or changed DAT subject is absent.
+    #[must_use]
+    pub fn content_reports(
+        &self,
+        snapshot: &RoutingSnapshot,
+        world: &GameWorld,
+    ) -> Vec<ContentReport> {
+        snapshot
+            .paint_order()
+            .iter()
+            .copied()
+            .filter(|&id| {
+                snapshot
+                    .key(id)
+                    .is_some_and(|key| key.kind == WindowKind::Sector)
+            })
+            .map(|id| {
+                let ready = self.windows.iter().any(|window| {
+                    window.id == Some(id)
+                        && sector_subject(world, window.sector) == window.subject
+                        && snapshot.key(id).and_then(|key| key.subject) == window.subject
+                });
+                ContentReport {
+                    window: id,
+                    status: if ready {
+                        ContentStatus::Ready
+                    } else {
+                        ContentStatus::Absent
+                    },
+                }
+            })
+            .collect()
+    }
+
+    /// Exact visible manager IDs in the frozen bottom-to-top paint order.
+    #[cfg(test)]
+    #[must_use]
+    fn window_ids_in_paint_order(&self, snapshot: &RoutingSnapshot) -> Vec<WindowId> {
+        snapshot
+            .paint_order()
+            .iter()
+            .copied()
+            .filter(|&id| {
+                snapshot
+                    .key(id)
+                    .is_some_and(|key| key.kind == WindowKind::Sector)
+                    && self.windows.iter().any(|window| window.id == Some(id))
+            })
+            .collect()
+    }
+
+    /// Exact visible Sector identities whose rectangle covers `point` and
+    /// whose egui layer is the top layer observed for this event.
+    #[must_use]
+    pub fn hit_window_ids(
+        &self,
+        snapshot: &RoutingSnapshot,
+        layout: CockpitLayout,
+        point: (f32, f32),
+        top_layer: Option<egui::LayerId>,
+    ) -> std::collections::BTreeSet<WindowId> {
+        let point = egui::pos2(point.0, point.1);
+        self.windows
+            .iter()
+            .filter(|window| top_layer.is_some_and(|layer| layer.id == area_id(**window)))
+            .filter_map(|window| {
+                window.id.filter(|id| {
+                    snapshot.is_visible(*id)
+                        && snapshot
+                            .key(*id)
+                            .is_some_and(|key| key.kind == WindowKind::Sector)
+                        && rect_contains(
+                            window_screen_rect(self.faction, window.column, layout),
+                            point,
+                        )
+                })
+            })
+            .collect()
+    }
+
+    /// Whether visible Sector content covers `point` in this frozen frame.
+    #[must_use]
+    pub fn contains_visible_screen_point(
+        &self,
+        snapshot: &RoutingSnapshot,
+        layout: CockpitLayout,
+        point: (f32, f32),
+    ) -> bool {
+        let point = egui::pos2(point.0, point.1);
+        self.windows.iter().any(|window| {
+            window.id.is_none_or(|id| snapshot.is_visible(id))
+                && rect_contains(
+                    window_screen_rect(self.faction, window.column, layout),
+                    point,
+                )
+        })
+    }
+
+    /// Manager identity whose icon drag currently owns pointer capture.
+    #[must_use]
+    pub fn drag_owner(&self) -> Option<WindowId> {
+        self.windows
+            .iter()
+            .find(|window| window.drag_from.is_some())
+            .and_then(|window| window.id)
+    }
+
+    /// Seeds one exact manager-owned drag for the app's production hold
+    /// cancellation seam test without exposing mutable capture state in
+    /// ordinary builds.
+    #[cfg(feature = "interface-test-fixtures")]
+    #[doc(hidden)]
+    pub fn seed_managed_drag_for_test(&mut self, window: WindowId) {
+        if let Some(open) = self.windows.iter_mut().find(|open| open.id == Some(window)) {
+            open.drag_from = Some((1, 1));
+        }
+    }
+
+    #[cfg(feature = "interface-test-fixtures")]
+    #[doc(hidden)]
+    pub fn switch_managed_side_for_test(&mut self, sector: SectorKey) {
+        self.switch_side(sector);
+    }
+
+    /// Clears only the exact renderer payload named by a manager cancellation.
+    pub fn cancel_pointer_capture(&mut self, window: WindowId) {
+        if let Some(open) = self.windows.iter_mut().find(|open| open.id == Some(window)) {
+            open.drag_from = None;
+        }
     }
 
     /// Open the selected system's parent sector (`FUN_00429ce0`;
@@ -142,6 +507,8 @@ impl SectorWindowState {
         // FUN_00600f90 destroys the window the new one replaces.
         self.windows.retain(|window| window.column != column);
         self.windows.push(OpenSectorWindow {
+            id: None,
+            subject: None,
             sector,
             column,
             selection: None,
@@ -150,8 +517,8 @@ impl SectorWindowState {
         true
     }
 
-    /// What a palette command asks of the sector windows. It opens the
-    /// sector window holding its system, then gives the action a double
+    /// What a palette command asks of an already committed Sector window. The
+    /// app publishes that Sector first, then gives the action a double
     /// click (`FUN_004593e0` case `0x203`) or a right click (cases `0x204`
     /// and `0x205`) on the system's icon would, at the icon's center. The
     /// System window needs no icon, as a double click on the planet opens
@@ -175,17 +542,23 @@ impl SectorWindowState {
         let (system, quadrant, menu) = match command {
             InterfaceCommand::StartGame(_) => return Err("the app starts a game"),
             InterfaceCommand::OpenSector(system) => {
-                return if self.open_for_system(world, system, faction) {
+                let open = world.systems.get(system).is_some_and(|system| {
+                    self.windows
+                        .iter()
+                        .any(|window| window.sector == system.sector)
+                });
+                return if open {
                     Ok(Vec::new())
                 } else {
-                    Err("no such system")
+                    Err("the sector publication is not committed")
                 };
             }
             InterfaceCommand::OpenQuadrantWindow { system, quadrant } => (system, quadrant, false),
             InterfaceCommand::OpenIconMenu { system, quadrant } => (system, quadrant, true),
         };
-        if !self.open_for_system(world, system, faction) {
-            return Err("no such system");
+        let sector = world.systems.get(system).ok_or("no such system")?.sector;
+        if !self.windows.iter().any(|window| window.sector == sector) {
+            return Err("the sector publication is not committed");
         }
         let point = self
             .quadrant_window_point(world, layout, system, quadrant)
@@ -202,7 +575,6 @@ impl SectorWindowState {
         if menu {
             let (art, _) = shown.ok_or("the icon is hidden")?;
             // As a press on it does (FUN_0045b1b0).
-            let sector = world.systems[system].sector;
             if let Some(window) = self
                 .windows
                 .iter_mut()
@@ -339,7 +711,7 @@ impl SectorWindowState {
         let window = self
             .windows
             .iter()
-            .find(|window| area_id(window.sector) == layer.id)?;
+            .find(|window| area_id(**window) == layer.id)?;
         let Some(sector) = world.sectors.get(window.sector) else {
             return Some(None);
         };
@@ -381,20 +753,41 @@ impl SectorWindowState {
     }
 
     fn switch_side(&mut self, sector: SectorKey) {
-        if let Some(window) = self
+        let Some(index) = self
             .windows
-            .iter_mut()
-            .find(|window| window.sector == sector)
+            .iter()
+            .position(|window| window.sector == sector)
+        else {
+            return;
+        };
+        let fixture = self.windows[index].id.is_none();
+        let target = self.windows[index].column.opposite();
+        if let Some(other) = self
+            .windows
+            .iter()
+            .position(|window| window.column == target && window.sector != sector)
         {
-            window.column = window.column.opposite();
+            self.windows[other].column = self.windows[index].column;
         }
-        self.focus(sector);
+        self.windows[index].column = target;
+        if fixture {
+            self.focus(sector);
+        }
     }
 }
 
 /// Actions that leave the sector-window manager.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SectorWindowAction {
+    /// A routed pointer action explicitly raises/focuses this low-band window.
+    /// Programmatic duplicate opens remain true manager `NoOp`s.
+    Activate(WindowId),
+    /// An icon press begins exact manager-owned pointer capture.
+    CapturePointer(WindowId),
+    /// The exact captured release ends the icon drag.
+    ReleasePointer(WindowId),
+    /// Close the exact manager identity; renderer content waits for teardown.
+    Close(WindowId),
     SelectSystem(SystemKey),
     OpenSystemWindow {
         system: SystemKey,
@@ -436,7 +829,16 @@ pub enum SectorWindowAction {
     },
 }
 
-#[derive(Default)]
+/// One ordered, position-bearing pointer event routed from the frozen frame
+/// snapshot to Sector content.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SectorWindowInputEvent {
+    pub id: InputEventId,
+    pub point: (f32, f32),
+    pub phase: PointerPhase,
+}
+
+#[derive(Default, Clone, Copy)]
 struct WindowDrawResult {
     focus: bool,
     close: bool,
@@ -458,6 +860,60 @@ struct WindowDrawResult {
     drag_end: Option<Option<(egui::Pos2, bool)>>,
 }
 
+#[derive(Clone, Copy)]
+struct ManagedSectorDraw {
+    window: OpenSectorWindow,
+    result: WindowDrawResult,
+    emitted_selected: bool,
+    emitted_opened: bool,
+    emitted_opened_icon: bool,
+    close_queued: bool,
+    pressed_target: Option<(SectorClickTarget, (f32, f32))>,
+    last_click_target: Option<SectorClickTarget>,
+    aggregate_system_release: Option<InputEventId>,
+    aggregate_icon_release: Option<InputEventId>,
+    aggregate: AggregateSectorReleases,
+    pressed_control: Option<(SectorControl, (f32, f32))>,
+}
+
+#[derive(Default, Clone, Copy)]
+struct AggregateSectorReleases {
+    selected: Option<InputEventId>,
+    close: Option<InputEventId>,
+    switch_side: Option<InputEventId>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SectorControl {
+    Close,
+    SwitchSide,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SectorClickTarget {
+    Planet(SystemKey),
+    Icon(SystemKey, Quadrant),
+}
+
+fn sector_click_target(
+    world: &GameWorld,
+    fog: &FogState,
+    missions: &rebellion_core::missions::MissionState,
+    movement: &rebellion_core::movement::MovementState,
+    faction: CockpitFaction,
+    layout: CockpitLayout,
+    window: OpenSectorWindow,
+    point: egui::Pos2,
+) -> Option<SectorClickTarget> {
+    shown_icon_at_screen_point(
+        world, fog, missions, movement, faction, layout, window, point,
+    )
+    .map(|icon| SectorClickTarget::Icon(icon.system, icon.quadrant))
+    .or_else(|| {
+        system_at_screen_point(world, faction, layout, window, point).map(SectorClickTarget::Planet)
+    })
+}
+
 /// Paint and operate all open sector windows using the recovered strategic
 /// canvas. Window mutations are applied after the pass so area ordering stays
 /// deterministic.
@@ -477,65 +933,762 @@ pub fn draw_sector_windows(
     missions: &rebellion_core::missions::MissionState,
     uprisings: &rebellion_core::uprising::UprisingState,
 ) -> Vec<SectorWindowAction> {
-    state.prepare_faction(faction);
-    let windows = state.windows.clone();
-    let mut actions = Vec::new();
-    let mut focused = None;
-    let mut closed = None;
-    let mut switched = None;
-    let mut chosen = Vec::new();
+    draw_sector_windows_with_snapshot(
+        ctx,
+        world,
+        movement,
+        fog,
+        state,
+        faction,
+        layout,
+        cache,
+        missions,
+        uprisings,
+        None,
+        &[],
+        None,
+    )
+}
 
-    let focused_sector = windows.last().map(|window| window.sector);
+/// Draw manager-owned Sector content in frozen bottom-to-top order and admit
+/// every mutation only through the exact routed pointer event.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Keep explicit state and routing inputs at this existing UI boundary."
+)]
+pub fn draw_managed_sector_windows(
+    ctx: &egui::Context,
+    world: &GameWorld,
+    movement: &rebellion_core::movement::MovementState,
+    fog: &FogState,
+    state: &mut SectorWindowState,
+    faction: CockpitFaction,
+    layout: CockpitLayout,
+    cache: &mut BmpCache,
+    missions: &rebellion_core::missions::MissionState,
+    uprisings: &rebellion_core::uprising::UprisingState,
+    snapshot: &RoutingSnapshot,
+    pointer_events: &[SectorWindowInputEvent],
+    router: &mut FrameInputRouter,
+) -> Vec<SectorWindowAction> {
+    draw_sector_windows_with_snapshot(
+        ctx,
+        world,
+        movement,
+        fog,
+        state,
+        faction,
+        layout,
+        cache,
+        missions,
+        uprisings,
+        Some(snapshot),
+        pointer_events,
+        Some(router),
+    )
+}
+
+fn claim_sector_pointer_event(
+    router: &mut FrameInputRouter,
+    events: &[SectorWindowInputEvent],
+    window: WindowId,
+    phase: PointerPhase,
+) -> Option<InputEventId> {
+    events.iter().rev().find_map(|event| {
+        (event.phase == phase
+            && router.pointer_recipient(event.id) == InputRecipient::Window(window)
+            && router.claim(event.id, InputRecipient::Window(window)))
+        .then_some(event.id)
+    })
+}
+
+fn claim_sector_input_event(
+    router: &mut FrameInputRouter,
+    event: SectorWindowInputEvent,
+    window: WindowId,
+) -> bool {
+    router.pointer_recipient(event.id) == InputRecipient::Window(window)
+        && router.claim(event.id, InputRecipient::Window(window))
+}
+
+fn ensure_sector_activation(
+    actions: &mut Vec<SectorWindowAction>,
+    last_activated: &mut Option<WindowId>,
+    window: WindowId,
+) {
+    if *last_activated != Some(window) {
+        actions.push(SectorWindowAction::Activate(window));
+        *last_activated = Some(window);
+    }
+}
+
+fn activate_and_switch_sector(
+    actions: &mut Vec<SectorWindowAction>,
+    last_activated: &mut Option<WindowId>,
+    state: &mut SectorWindowState,
+    window: WindowId,
+    sector: SectorKey,
+) {
+    ensure_sector_activation(actions, last_activated, window);
+    state.switch_side(sector);
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Keep the exact world, visibility, layout, identity, and event-local point explicit."
+)]
+fn shown_icon_at_screen_point(
+    world: &GameWorld,
+    fog: &FogState,
+    missions: &rebellion_core::missions::MissionState,
+    movement: &rebellion_core::movement::MovementState,
+    faction: CockpitFaction,
+    layout: CockpitLayout,
+    window: OpenSectorWindow,
+    point: egui::Pos2,
+) -> Option<SelectedIcon> {
+    let sector = world.sectors.get(window.sector)?;
+    let window_rect = window_screen_rect(faction, window.column, layout);
+    let player = cockpit_faction(faction);
+    for &system_key in sector.systems.iter().rev() {
+        let Some(system) = world.systems.get(system_key) else {
+            continue;
+        };
+        let (x, y) = sector_planet_position(sector.x, sector.y, system.x, system.y);
+        let planet = planet_rect(window_rect, layout.scale, x, y);
+        for quadrant in Quadrant::ALL.into_iter().rev() {
+            let Some((art, _)) =
+                quadrant_icon(world, fog, missions, movement, player, system_key, quadrant)
+            else {
+                continue;
+            };
+            if rect_contains(quadrant_rect(planet, layout.scale, quadrant), point) {
+                return Some(SelectedIcon {
+                    system: system_key,
+                    quadrant,
+                    art,
+                });
+            }
+        }
+    }
+    None
+}
+
+fn system_at_screen_point(
+    world: &GameWorld,
+    faction: CockpitFaction,
+    layout: CockpitLayout,
+    window: OpenSectorWindow,
+    point: egui::Pos2,
+) -> Option<SystemKey> {
+    let sector = world.sectors.get(window.sector)?;
+    let window_rect = window_screen_rect(faction, window.column, layout);
+    sector.systems.iter().copied().find(|system_key| {
+        world.systems.get(*system_key).is_some_and(|system| {
+            let (x, y) = sector_planet_position(sector.x, sector.y, system.x, system.y);
+            rect_contains(planet_rect(window_rect, layout.scale, x, y), point)
+        })
+    })
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Keep the frozen draw record, routed event, world visibility, and mutable publication stores explicit."
+)]
+fn route_managed_sector_event(
+    event: SectorWindowInputEvent,
+    managed: &mut ManagedSectorDraw,
+    world: &GameWorld,
+    fog: &FogState,
+    missions: &rebellion_core::missions::MissionState,
+    movement: &rebellion_core::movement::MovementState,
+    state: &mut SectorWindowState,
+    faction: CockpitFaction,
+    layout: CockpitLayout,
+    router: &mut FrameInputRouter,
+    actions: &mut Vec<SectorWindowAction>,
+    last_activated: &mut Option<WindowId>,
+    confirmed: bool,
+) {
+    let Some(id) = managed.window.id else {
+        return;
+    };
+    if managed.close_queued || router.pointer_recipient(event.id) != InputRecipient::Window(id) {
+        return;
+    }
+    let Some(content) = state
+        .windows
+        .iter()
+        .find(|open| open.id == Some(id))
+        .copied()
+    else {
+        return;
+    };
+    let window = managed.window;
+    let result = managed.result;
+    let window_rect = window_screen_rect(faction, window.column, layout);
+    let switch_rect = logical_rect(window_rect, layout.scale, 204.0, 2.0, 14.0, 14.0);
+    let close_rect = logical_rect(window_rect, layout.scale, 218.0, 2.0, 14.0, 14.0);
+    let point = egui::pos2(event.point.0, event.point.1);
+    let mut selection = content.selection;
+    let mut drag_from = content.drag_from;
+    let mut close = false;
+    let mut switch_side = false;
+
+    match event.phase {
+        PointerPhase::Press(PointerButtonId::Primary) => {
+            let control = if rect_contains(close_rect, point) {
+                Some(SectorControl::Close)
+            } else if rect_contains(switch_rect, point) {
+                Some(SectorControl::SwitchSide)
+            } else {
+                None
+            };
+            if let Some(control) = control {
+                if claim_sector_input_event(router, event, id) {
+                    managed.pressed_control = Some((control, event.point));
+                }
+                return;
+            }
+            let Some(target) = sector_click_target(
+                world, fog, missions, movement, faction, layout, window, point,
+            ) else {
+                return;
+            };
+            if claim_sector_input_event(router, event, id) {
+                managed.pressed_target = Some((target, event.point));
+                if let SectorClickTarget::Icon(_, _) = target {
+                    let icon = shown_icon_at_screen_point(
+                        world, fog, missions, movement, faction, layout, window, point,
+                    )
+                    .expect("shown icon target");
+                    ensure_sector_activation(actions, last_activated, id);
+                    selection = Some(icon);
+                    drag_from = Some(screen_to_logical(layout, point));
+                    actions.push(SectorWindowAction::CapturePointer(id));
+                }
+            }
+        }
+        PointerPhase::Press(PointerButtonId::Secondary) => {
+            let Some(icon) = shown_icon_at_screen_point(
+                world, fog, missions, movement, faction, layout, window, point,
+            ) else {
+                return;
+            };
+            if claim_sector_input_event(router, event, id) {
+                ensure_sector_activation(actions, last_activated, id);
+                selection = Some(icon);
+            }
+        }
+        PointerPhase::Release(PointerButtonId::Primary) => {
+            let control_click = managed
+                .pressed_control
+                .take()
+                .filter(|(_, from)| {
+                    (event.point.0 - from.0).abs() <= 4.0 * layout.scale
+                        && (event.point.1 - from.1).abs() <= 4.0 * layout.scale
+                })
+                .map(|(control, _)| control);
+            let target = sector_click_target(
+                world, fog, missions, movement, faction, layout, window, point,
+            );
+            let matched_click = managed
+                .pressed_target
+                .take()
+                .is_some_and(|(pressed, from)| {
+                    Some(pressed) == target
+                        && (event.point.0 - from.0).abs() <= 4.0 * layout.scale
+                        && (event.point.1 - from.1).abs() <= 4.0 * layout.scale
+                });
+            let double_click = matched_click && managed.last_click_target == target;
+            if matched_click {
+                managed.last_click_target = target;
+            } else {
+                managed.last_click_target = None;
+            }
+            let mut event_claimed = false;
+            if let Some(from) = drag_from {
+                if claim_sector_input_event(router, event, id) {
+                    event_claimed = true;
+                    ensure_sector_activation(actions, last_activated, id);
+                    actions.push(SectorWindowAction::ReleasePointer(id));
+                    let to = screen_to_logical(layout, point);
+                    if (to.0 - from.0).abs() > 4 || (to.1 - from.1).abs() > 4 {
+                        if let Some(selected) = selection {
+                            actions.push(SectorWindowAction::DropSelection {
+                                selection: MenuObject::SystemIcon {
+                                    system: selected.system,
+                                    quadrant: selected.quadrant,
+                                },
+                                point,
+                                confirmed,
+                            });
+                        }
+                    }
+                    drag_from = None;
+                }
+            }
+            if rect_contains(close_rect, point)
+                && (control_click == Some(SectorControl::Close)
+                    || (result.close
+                        && managed.aggregate.close.is_none_or(|last| last == event.id)))
+            {
+                if event_claimed || claim_sector_input_event(router, event, id) {
+                    close = true;
+                }
+            } else if rect_contains(switch_rect, point)
+                && (control_click == Some(SectorControl::SwitchSide)
+                    || (result.switch_side
+                        && managed
+                            .aggregate
+                            .switch_side
+                            .is_none_or(|last| last == event.id)))
+            {
+                if event_claimed || claim_sector_input_event(router, event, id) {
+                    switch_side = true;
+                }
+            } else {
+                let icon = shown_icon_at_screen_point(
+                    world, fog, missions, movement, faction, layout, window, point,
+                );
+                let system = system_at_screen_point(world, faction, layout, window, point);
+                let has_dependent =
+                    result.opened.is_some() || result.opened_icon.is_some() || double_click;
+                let mut handled = false;
+                if let Some(SectorClickTarget::Icon(opened_system, quadrant)) = target {
+                    let (aggregate_open, emitted) = if quadrant == Quadrant::System {
+                        (
+                            result
+                                .opened
+                                .is_some_and(|(system, _)| system == opened_system)
+                                && managed
+                                    .aggregate_system_release
+                                    .is_none_or(|last| last == event.id),
+                            managed.emitted_opened,
+                        )
+                    } else {
+                        (
+                            result.opened_icon.is_some_and(|(system, shown, _)| {
+                                system == opened_system && shown == quadrant
+                            }) && managed
+                                .aggregate_icon_release
+                                .is_none_or(|last| last == event.id),
+                            managed.emitted_opened_icon,
+                        )
+                    };
+                    if (double_click || (aggregate_open && !emitted))
+                        && icon.is_some_and(|candidate| {
+                            candidate.system == opened_system && candidate.quadrant == quadrant
+                        })
+                        && (event_claimed || claim_sector_input_event(router, event, id))
+                    {
+                        event_claimed = true;
+                        ensure_sector_activation(actions, last_activated, id);
+                        actions.push(quadrant_window_action(
+                            opened_system,
+                            quadrant,
+                            screen_to_logical(layout, point),
+                        ));
+                        managed.last_click_target = None;
+                        if quadrant == Quadrant::System {
+                            managed.emitted_opened = true;
+                        } else {
+                            managed.emitted_opened_icon = true;
+                        }
+                        handled = true;
+                    }
+                }
+                if let Some(SectorClickTarget::Planet(opened_system)) = target {
+                    let aggregate_open = result
+                        .opened
+                        .is_some_and(|(shown, _)| shown == opened_system)
+                        && managed
+                            .aggregate_system_release
+                            .is_none_or(|last| last == event.id);
+                    if (double_click || (aggregate_open && !managed.emitted_opened))
+                        && system == Some(opened_system)
+                        && (event_claimed || claim_sector_input_event(router, event, id))
+                    {
+                        event_claimed = true;
+                        ensure_sector_activation(actions, last_activated, id);
+                        actions.push(SectorWindowAction::OpenSystemWindow {
+                            system: opened_system,
+                            logical_position: screen_to_logical(layout, point),
+                        });
+                        managed.last_click_target = None;
+                        managed.emitted_opened = true;
+                        handled = true;
+                    }
+                }
+                if let Some(selected_system) = system {
+                    let aggregate_select = result.selected == Some(selected_system)
+                        && !managed.emitted_selected
+                        && managed
+                            .aggregate
+                            .selected
+                            .is_none_or(|last| last == event.id);
+                    if ((matched_click
+                        && target == Some(SectorClickTarget::Planet(selected_system)))
+                        || aggregate_select)
+                        && (event_claimed || claim_sector_input_event(router, event, id))
+                    {
+                        event_claimed = true;
+                        ensure_sector_activation(actions, last_activated, id);
+                        actions.push(SectorWindowAction::SelectSystem(selected_system));
+                        managed.emitted_selected = true;
+                        handled = true;
+                    }
+                }
+                if !handled
+                    && !has_dependent
+                    && result.focus
+                    && rect_contains(window_rect, point)
+                    && (event_claimed || claim_sector_input_event(router, event, id))
+                {
+                    ensure_sector_activation(actions, last_activated, id);
+                }
+            }
+        }
+        PointerPhase::Release(PointerButtonId::Secondary) => {
+            if rect_contains(window_rect, point) && claim_sector_input_event(router, event, id) {
+                ensure_sector_activation(actions, last_activated, id);
+                actions.push(SectorWindowAction::OpenObjectMenu {
+                    selection: selection.map(|icon| MenuObject::SystemIcon {
+                        system: icon.system,
+                        quadrant: icon.quadrant,
+                    }),
+                    point: screen_to_logical(layout, point),
+                });
+            }
+        }
+        PointerPhase::Motion(_)
+        | PointerPhase::Hover
+        | PointerPhase::Auxiliary
+        | PointerPhase::Press(_)
+        | PointerPhase::Release(_) => {}
+    }
+
+    if let Some(open) = state.windows.iter_mut().find(|open| open.id == Some(id)) {
+        open.selection = selection;
+        open.drag_from = drag_from;
+    }
+    if close {
+        actions.push(SectorWindowAction::Close(id));
+        managed.close_queued = true;
+    } else if switch_side {
+        activate_and_switch_sector(actions, last_activated, state, id, window.sector);
+    }
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Shared implementation for production snapshots and fixture-only direct content."
+)]
+fn draw_sector_windows_with_snapshot(
+    ctx: &egui::Context,
+    world: &GameWorld,
+    movement: &rebellion_core::movement::MovementState,
+    fog: &FogState,
+    state: &mut SectorWindowState,
+    faction: CockpitFaction,
+    layout: CockpitLayout,
+    cache: &mut BmpCache,
+    missions: &rebellion_core::missions::MissionState,
+    uprisings: &rebellion_core::uprising::UprisingState,
+    snapshot: Option<&RoutingSnapshot>,
+    pointer_events: &[SectorWindowInputEvent],
+    mut router: Option<&mut FrameInputRouter>,
+) -> Vec<SectorWindowAction> {
+    if state.windows.iter().all(|window| window.id.is_none()) {
+        state.prepare_faction(faction);
+    }
+    let mut windows = Vec::new();
+    let mut stale_manager_windows = Vec::new();
+    if let Some(snapshot) = snapshot {
+        for &id in snapshot.paint_order() {
+            let Some(key) = snapshot
+                .key(id)
+                .filter(|key| key.kind == WindowKind::Sector)
+            else {
+                continue;
+            };
+            match state
+                .windows
+                .iter()
+                .find(|window| window.id == Some(id))
+                .copied()
+            {
+                Some(window)
+                    if key.subject == window.subject
+                        && sector_subject(world, window.sector) == window.subject =>
+                {
+                    windows.push(window);
+                }
+                Some(_) | None => stale_manager_windows.push(id),
+            }
+        }
+    }
+    // Direct content exists only in renderer tests and explicit fixtures.
+    windows.extend(
+        state
+            .windows
+            .iter()
+            .filter(|window| window.id.is_none())
+            .copied(),
+    );
+    let focused_manager = snapshot.and_then(|frame| frame.focused().map(|focus| focus.window));
+    let focused_fixture_sector = windows
+        .last()
+        .filter(|window| window.id.is_none())
+        .map(|window| window.sector);
+    let mut actions = stale_manager_windows
+        .into_iter()
+        .map(SectorWindowAction::Close)
+        .collect::<Vec<_>>();
+
+    let mut managed_draws = Vec::new();
+    let mut fixture_draws = Vec::new();
     for window in windows {
+        let focused = match window.id {
+            Some(id) => focused_manager == Some(id),
+            None => focused_fixture_sector == Some(window.sector),
+        };
         let result = draw_sector_window(
-            ctx,
-            world,
-            movement,
-            fog,
-            window,
-            focused_sector == Some(window.sector),
-            faction,
-            layout,
-            cache,
-            missions,
-            uprisings,
+            ctx, world, movement, fog, window, focused, faction, layout, cache, missions, uprisings,
         );
-        if result.focus {
-            focused = Some(window.sector);
+        if window.id.is_some() {
+            managed_draws.push(ManagedSectorDraw {
+                window,
+                result,
+                emitted_selected: false,
+                emitted_opened: false,
+                emitted_opened_icon: false,
+                close_queued: false,
+                pressed_target: None,
+                last_click_target: None,
+                aggregate_system_release: None,
+                aggregate_icon_release: None,
+                aggregate: AggregateSectorReleases::default(),
+                pressed_control: None,
+            });
+        } else {
+            fixture_draws.push((window, result));
         }
-        if result.close {
-            closed = Some(window.sector);
+    }
+
+    if let Some(router) = router.as_deref_mut() {
+        for managed in &mut managed_draws {
+            if managed.result.selection_lapsed {
+                if let Some(open) = state
+                    .windows
+                    .iter_mut()
+                    .find(|open| open.id == managed.window.id)
+                {
+                    open.selection = None;
+                    if open.drag_from.take().is_some() {
+                        actions.push(SectorWindowAction::ReleasePointer(
+                            managed.window.id.expect("managed identity"),
+                        ));
+                    }
+                }
+            }
         }
-        if result.switch_side {
-            switched = Some(window.sector);
+        let confirmed = ctx.input(|input| input.modifiers.ctrl);
+        let mut last_activated = None;
+        for &event in pointer_events {
+            if event.phase != PointerPhase::Release(PointerButtonId::Primary) {
+                continue;
+            }
+            let InputRecipient::Window(id) = router.pointer_recipient(event.id) else {
+                continue;
+            };
+            let Some(managed) = managed_draws
+                .iter_mut()
+                .find(|managed| managed.window.id == Some(id))
+            else {
+                continue;
+            };
+            let target = sector_click_target(
+                world,
+                fog,
+                missions,
+                movement,
+                faction,
+                layout,
+                managed.window,
+                egui::pos2(event.point.0, event.point.1),
+            );
+            if target.is_some_and(|target| {
+                matches!(target, SectorClickTarget::Planet(system)
+                    if managed.result.selected == Some(system))
+            }) {
+                managed.aggregate.selected = Some(event.id);
+            }
+            let window_rect = window_screen_rect(faction, managed.window.column, layout);
+            let point = egui::pos2(event.point.0, event.point.1);
+            if managed.result.close
+                && rect_contains(
+                    logical_rect(window_rect, layout.scale, 218.0, 2.0, 14.0, 14.0),
+                    point,
+                )
+            {
+                managed.aggregate.close = Some(event.id);
+            }
+            if managed.result.switch_side
+                && rect_contains(
+                    logical_rect(window_rect, layout.scale, 204.0, 2.0, 14.0, 14.0),
+                    point,
+                )
+            {
+                managed.aggregate.switch_side = Some(event.id);
+            }
+            if target.is_some_and(|target| {
+                matches!(target,
+                    SectorClickTarget::Planet(system)
+                    | SectorClickTarget::Icon(system, Quadrant::System)
+                    if managed.result.opened.is_some_and(|(opened, _)| opened == system))
+            }) {
+                managed.aggregate_system_release = Some(event.id);
+            }
+            if target.is_some_and(|target| {
+                matches!(target, SectorClickTarget::Icon(system, quadrant)
+                    if managed.result.opened_icon.is_some_and(|(opened, shown, _)|
+                        opened == system && shown == quadrant))
+            }) {
+                managed.aggregate_icon_release = Some(event.id);
+            }
         }
-        if let Some(system) = result.selected {
+        for &event in pointer_events {
+            let InputRecipient::Window(window) = router.pointer_recipient(event.id) else {
+                continue;
+            };
+            let Some(managed) = managed_draws
+                .iter_mut()
+                .find(|managed| managed.window.id == Some(window))
+            else {
+                continue;
+            };
+            route_managed_sector_event(
+                event,
+                managed,
+                world,
+                fog,
+                missions,
+                movement,
+                state,
+                faction,
+                layout,
+                router,
+                &mut actions,
+                &mut last_activated,
+                confirmed,
+            );
+        }
+    }
+
+    for (window, result) in fixture_draws {
+        let pointer_mutation = result.focus
+            || result.close
+            || result.switch_side
+            || result.selected.is_some()
+            || result.opened.is_some()
+            || result.opened_icon.is_some()
+            || result.icon_pressed.is_some()
+            || result.object_menu.is_some()
+            || result.drag_from.is_some()
+            || result.drag_end.is_some();
+        let pointer_permitted = match (window.id, pointer_mutation, router.as_deref_mut()) {
+            (Some(id), true, Some(router)) => {
+                let phase = if result.drag_end.is_some() {
+                    PointerPhase::Release(PointerButtonId::Primary)
+                } else if result.object_menu.is_some() {
+                    PointerPhase::Release(PointerButtonId::Secondary)
+                } else if result.drag_from.is_some() {
+                    PointerPhase::Press(PointerButtonId::Primary)
+                } else if result.icon_pressed.is_some() {
+                    PointerPhase::Press(PointerButtonId::Secondary)
+                } else {
+                    PointerPhase::Release(PointerButtonId::Primary)
+                };
+                claim_sector_pointer_event(router, pointer_events, id, phase)
+                    .or_else(|| {
+                        (phase == PointerPhase::Release(PointerButtonId::Primary))
+                            .then(|| {
+                                claim_sector_pointer_event(
+                                    router,
+                                    pointer_events,
+                                    id,
+                                    PointerPhase::Press(PointerButtonId::Primary),
+                                )
+                            })
+                            .flatten()
+                    })
+                    .is_some()
+            }
+            (Some(_), true, None) => false,
+            _ => true,
+        };
+        if (result.close && pointer_permitted) || !world.sectors.contains_key(window.sector) {
+            if let Some(id) = window.id {
+                actions.push(SectorWindowAction::Close(id));
+            } else {
+                state.close(window.sector);
+            }
+            continue;
+        }
+        if let Some(system) = result.selected.filter(|_| pointer_permitted) {
             actions.push(SectorWindowAction::SelectSystem(system));
         }
-        if let Some((system, logical_position)) = result.opened {
+        if let Some((system, logical_position)) = result.opened.filter(|_| pointer_permitted) {
             actions.push(quadrant_window_action(
                 system,
                 Quadrant::System,
                 logical_position,
             ));
         }
-        if let Some((system, quadrant, logical_position)) = result.opened_icon {
+        if let Some((system, quadrant, logical_position)) =
+            result.opened_icon.filter(|_| pointer_permitted)
+        {
             actions.push(quadrant_window_action(system, quadrant, logical_position));
         }
-        let selection = result
-            .icon_pressed
-            .or(window.selection.filter(|_| !result.selection_lapsed));
+        let pressed = result.icon_pressed.filter(|_| pointer_permitted);
+        let selection = pressed.or(window.selection.filter(|_| !result.selection_lapsed));
         // A press on an icon sets the selection and the drag; a release
         // ends the drag.
-        if result.icon_pressed.is_some() || result.drag_end.is_some() || result.selection_lapsed {
-            chosen.push((window.sector, selection, result.drag_from));
+        if pressed.is_some()
+            || (result.drag_end.is_some() && pointer_permitted)
+            || result.selection_lapsed
+        {
+            if let Some(open) = state
+                .windows
+                .iter_mut()
+                .find(|open| open.sector == window.sector)
+            {
+                open.selection = selection;
+                open.drag_from = result.drag_from.filter(|_| pointer_permitted);
+            }
+        }
+        if result.drag_from.is_some() && pointer_permitted {
+            if let Some(id) = window.id {
+                actions.push(SectorWindowAction::CapturePointer(id));
+            }
+        }
+        if result.drag_end.is_some() && pointer_permitted {
+            if let Some(id) = window.id {
+                actions.push(SectorWindowAction::ReleasePointer(id));
+            }
+        }
+        if result.selection_lapsed && window.drag_from.is_some() {
+            if let Some(id) = window.id {
+                actions.push(SectorWindowAction::ReleasePointer(id));
+            }
         }
         if let (
             Some(Some((point, confirmed))),
             Some(SelectedIcon {
                 system, quadrant, ..
             }),
-        ) = (result.drag_end, selection)
+        ) = (result.drag_end.filter(|_| pointer_permitted), selection)
         {
             actions.push(SectorWindowAction::DropSelection {
                 selection: MenuObject::SystemIcon { system, quadrant },
@@ -543,7 +1696,7 @@ pub fn draw_sector_windows(
                 confirmed,
             });
         }
-        if let Some(point) = result.object_menu {
+        if let Some(point) = result.object_menu.filter(|_| pointer_permitted) {
             actions.push(SectorWindowAction::OpenObjectMenu {
                 selection: selection.map(|icon| MenuObject::SystemIcon {
                     system: icon.system,
@@ -552,25 +1705,15 @@ pub fn draw_sector_windows(
                 point,
             });
         }
-    }
-
-    for (sector, selection, drag_from) in chosen {
-        if let Some(window) = state
-            .windows
-            .iter_mut()
-            .find(|window| window.sector == sector)
-        {
-            window.selection = selection;
-            window.drag_from = drag_from;
+        if result.switch_side && pointer_permitted {
+            state.switch_side(window.sector);
+        } else if result.focus && pointer_permitted {
+            if let Some(id) = window.id {
+                actions.push(SectorWindowAction::Activate(id));
+            } else {
+                state.focus(window.sector);
+            }
         }
-    }
-
-    if let Some(sector) = closed {
-        state.close(sector);
-    } else if let Some(sector) = switched {
-        state.switch_side(sector);
-    } else if let Some(sector) = focused {
-        state.focus(sector);
     }
     actions
 }
@@ -608,7 +1751,7 @@ fn draw_sector_window(
         SECTOR_WINDOW_HEIGHT * layout.scale,
     );
 
-    let area_id = area_id(window.sector);
+    let area_id = area_id(window);
     if focused {
         ctx.move_to_top(egui::LayerId::new(egui::Order::Middle, area_id));
     }
@@ -653,12 +1796,12 @@ fn draw_sector_window(
             let close_rect = logical_rect(window_rect, layout.scale, 218.0, 2.0, 14.0, 14.0);
             let switch_response = ui.interact(
                 switch_rect,
-                ui.id().with((window.sector, "switch")),
+                ui.id().with((window.id, window.sector, "switch")),
                 egui::Sense::click(),
             );
             let close_response = ui.interact(
                 close_rect,
-                ui.id().with((window.sector, "close")),
+                ui.id().with((window.id, window.sector, "close")),
                 egui::Sense::click(),
             );
             let switch_pressed =
@@ -720,7 +1863,7 @@ fn draw_sector_window(
                 let planet_rect = planet_rect(window_rect, layout.scale, planet_x, planet_y);
                 let planet_response = ui.interact(
                     planet_rect,
-                    ui.id().with((window.sector, *system_key)),
+                    ui.id().with((window.id, window.sector, *system_key)),
                     egui::Sense::click(),
                 );
                 let planet_clicked = exact_clicked(&planet_response, planet_rect);
@@ -933,8 +2076,8 @@ fn window_logical_position(faction: CockpitFaction, column: WindowColumn) -> (f3
     }
 }
 
-fn area_id(sector: SectorKey) -> egui::Id {
-    egui::Id::new(("original-sector-window", sector))
+fn area_id(window: OpenSectorWindow) -> egui::Id {
+    egui::Id::new(("original-sector-window", window.id, window.sector))
 }
 
 /// A planet item's picture and hit rectangle: 37 by 37 at its position.
@@ -1356,7 +2499,6 @@ fn paint_meter(
 /// unexplored system shows none: `FUN_0045c240` hides them on the system's
 /// `+0x50` bit 3. hyp: that bit marks the system unexplored.
 #[expect(
-    clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
     clippy::cast_precision_loss,
     reason = "Support points are 0..=100 and resource counts are small."
@@ -1433,6 +2575,10 @@ mod tests {
     use crate::cockpit::CockpitViewport;
     use rebellion_core::dat::{ExplorationStatus, SectorGroup};
     use rebellion_core::world::{Sector, System};
+    use rebellion_windowing::{
+        CaptureCancelReason, ExistingEffect, FocusTarget, RouteTarget, WindowCommand, WindowId,
+        WindowManager, WindowTransition,
+    };
 
     #[test]
     fn system_names_take_their_sides_color_whoever_plays() {
@@ -1546,6 +2692,938 @@ mod tests {
         }
     }
 
+    fn managed_draw_for_test(window: OpenSectorWindow) -> ManagedSectorDraw {
+        ManagedSectorDraw {
+            window,
+            result: WindowDrawResult::default(),
+            emitted_selected: false,
+            emitted_opened: false,
+            emitted_opened_icon: false,
+            close_queued: false,
+            pressed_target: None,
+            last_click_target: None,
+            aggregate_system_release: None,
+            aggregate_icon_release: None,
+            aggregate: AggregateSectorReleases::default(),
+            pressed_control: None,
+        }
+    }
+
+    fn paint_managed_frame_for_test(
+        ctx: &egui::Context,
+        world: &GameWorld,
+        fog: &FogState,
+        state: &mut SectorWindowState,
+        cache: &mut BmpCache,
+        snapshot: &RoutingSnapshot,
+        router: &mut FrameInputRouter,
+        pointer_events: &[SectorWindowInputEvent],
+        egui_events: Vec<egui::Event>,
+    ) -> Vec<SectorWindowAction> {
+        let mut actions = Vec::new();
+        let _ = ctx.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(700.0, 520.0),
+                )),
+                events: egui_events,
+                ..Default::default()
+            },
+            |ctx| {
+                actions = draw_managed_sector_windows(
+                    ctx,
+                    world,
+                    &rebellion_core::movement::MovementState::default(),
+                    fog,
+                    state,
+                    CockpitFaction::Alliance,
+                    layout(1.0),
+                    cache,
+                    &rebellion_core::missions::MissionState::new(),
+                    &rebellion_core::uprising::UprisingState::default(),
+                    snapshot,
+                    pointer_events,
+                    router,
+                );
+            },
+        );
+        actions
+    }
+
+    #[test]
+    fn exact_clicked_rejects_secondary_click_even_with_an_interaction_position() {
+        let ctx = egui::Context::default();
+        let rect = egui::Rect::from_min_size(egui::pos2(100.0, 100.0), egui::vec2(20.0, 20.0));
+        let point = rect.center();
+        let mut observed = None;
+        for (frame, events) in [
+            vec![egui::Event::PointerMoved(point)],
+            vec![egui::Event::PointerMoved(point)],
+            vec![egui::Event::PointerButton {
+                pos: point,
+                button: egui::PointerButton::Secondary,
+                pressed: true,
+                modifiers: egui::Modifiers::default(),
+            }],
+            vec![egui::Event::PointerButton {
+                pos: point,
+                button: egui::PointerButton::Secondary,
+                pressed: false,
+                modifiers: egui::Modifiers::default(),
+            }],
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let _ = ctx.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(700.0, 520.0),
+                    )),
+                    time: Some(frame as f64 * 0.05),
+                    events,
+                    ..Default::default()
+                },
+                |ctx| {
+                    egui::Area::new(egui::Id::new("secondary_exact_click_witness"))
+                        .fixed_pos(rect.min)
+                        .show(ctx, |ui| {
+                            let response =
+                                ui.interact(rect, ui.id().with("control"), egui::Sense::click());
+                            if frame == 3 {
+                                observed = Some((
+                                    response.clicked(),
+                                    response.interact_pointer_pos(),
+                                    exact_clicked(&response, rect),
+                                ));
+                            }
+                        });
+                },
+            );
+        }
+        assert_eq!(observed, Some((false, Some(point), false)));
+    }
+
+    #[test]
+    fn managed_sector_selection_lapse_releases_only_its_exact_window() {
+        let (mut world, first, second) = fixture_world();
+        add_fleet(&mut world, first);
+        add_fleet(&mut world, second);
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let (first_id, _) = commit_sector_open(&mut manager, &mut state, &world, first);
+        let (second_id, _) = commit_sector_open(&mut manager, &mut state, &world, second);
+        let mut fog = FogState::new(Faction::Alliance);
+        fog.reveal(first);
+        fog.reveal(second);
+        let missions = rebellion_core::missions::MissionState::new();
+        let movement = rebellion_core::movement::MovementState::default();
+        for (id, system) in [(first_id, first), (second_id, second)] {
+            let art = quadrant_icon(
+                &world,
+                &fog,
+                &missions,
+                &movement,
+                Faction::Alliance,
+                system,
+                Quadrant::Fleets,
+            )
+            .expect("both fleet icons are initially visible")
+            .0;
+            let open = state
+                .windows
+                .iter_mut()
+                .find(|open| open.id == Some(id))
+                .unwrap();
+            open.selection = Some(SelectedIcon {
+                system,
+                quadrant: Quadrant::Fleets,
+                art,
+            });
+            open.drag_from = Some((12, 34));
+        }
+        world.systems[first].fleets.clear();
+        let snapshot = manager.begin_frame();
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(91, &snapshot);
+        let actions = paint_managed_frame_for_test(
+            &egui::Context::default(),
+            &world,
+            &fog,
+            &mut state,
+            &mut BmpCache::new(),
+            &snapshot,
+            &mut router,
+            &[],
+            vec![],
+        );
+        assert_eq!(actions, [SectorWindowAction::ReleasePointer(first_id)]);
+        let first_open = state
+            .windows
+            .iter()
+            .find(|open| open.id == Some(first_id))
+            .unwrap();
+        let second_open = state
+            .windows
+            .iter()
+            .find(|open| open.id == Some(second_id))
+            .unwrap();
+        assert_eq!((first_open.selection, first_open.drag_from), (None, None));
+        assert_eq!(second_open.selection.map(|icon| icon.system), Some(second));
+        assert_eq!(second_open.drag_from, Some((12, 34)));
+    }
+
+    #[test]
+    fn managed_sector_focus_raises_the_manager_owned_layer_over_an_overlap() {
+        let (world, first, _) = fixture_world();
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let (id, _) = commit_sector_open(&mut manager, &mut state, &world, first);
+        let snapshot = manager.begin_frame();
+        assert_eq!(snapshot.focused().map(|focus| focus.window), Some(id));
+        let open = state
+            .windows
+            .iter()
+            .find(|open| open.id == Some(id))
+            .copied()
+            .unwrap();
+        let rect = window_screen_rect(CockpitFaction::Alliance, open.column, layout(1.0));
+        let point = rect.center();
+        let sector_layer = egui::LayerId::new(egui::Order::Middle, area_id(open));
+        let sentinel = egui::Id::new("overlapping_sector_focus_sentinel");
+        let sentinel_layer = egui::LayerId::new(egui::Order::Middle, sentinel);
+        let ctx = egui::Context::default();
+        let fog = FogState::new(Faction::Alliance);
+        let mut cache = BmpCache::new();
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(92, &snapshot);
+        let _ = ctx.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(700.0, 520.0),
+                )),
+                ..Default::default()
+            },
+            |ctx| {
+                draw_managed_sector_windows(
+                    ctx,
+                    &world,
+                    &rebellion_core::movement::MovementState::default(),
+                    &fog,
+                    &mut state,
+                    CockpitFaction::Alliance,
+                    layout(1.0),
+                    &mut cache,
+                    &rebellion_core::missions::MissionState::new(),
+                    &rebellion_core::uprising::UprisingState::default(),
+                    &snapshot,
+                    &[],
+                    &mut router,
+                );
+                egui::Area::new(sentinel)
+                    .fixed_pos(rect.min)
+                    .order(egui::Order::Middle)
+                    .show(ctx, |ui| {
+                        ui.allocate_exact_size(rect.size(), egui::Sense::click());
+                    });
+            },
+        );
+        assert_eq!(ctx.layer_id_at(point), Some(sentinel_layer));
+        router.begin_frame(93, &snapshot);
+        let mut actions = Vec::new();
+        let _ = ctx.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(700.0, 520.0),
+                )),
+                ..Default::default()
+            },
+            |ctx| {
+                egui::Area::new(sentinel)
+                    .fixed_pos(rect.min)
+                    .order(egui::Order::Middle)
+                    .show(ctx, |ui| {
+                        ui.allocate_exact_size(rect.size(), egui::Sense::click());
+                    });
+                actions = draw_managed_sector_windows(
+                    ctx,
+                    &world,
+                    &rebellion_core::movement::MovementState::default(),
+                    &fog,
+                    &mut state,
+                    CockpitFaction::Alliance,
+                    layout(1.0),
+                    &mut cache,
+                    &rebellion_core::missions::MissionState::new(),
+                    &rebellion_core::uprising::UprisingState::default(),
+                    &snapshot,
+                    &[],
+                    &mut router,
+                );
+            },
+        );
+        assert!(actions.is_empty());
+        assert_eq!(ctx.layer_id_at(point), Some(sector_layer));
+    }
+
+    #[test]
+    fn managed_sector_cross_frame_close_requires_a_real_control_click() {
+        for (case, press_on_close) in [("valid", true), ("drag from blank", false)] {
+            let (world, first, _) = fixture_world();
+            let mut manager = WindowManager::new();
+            let mut state = SectorWindowState::default();
+            let (window, _) = commit_sector_open(&mut manager, &mut state, &world, first);
+            let snapshot = manager.begin_frame();
+            let rect =
+                window_screen_rect(CockpitFaction::Alliance, WindowColumn::Primary, layout(1.0));
+            let close = logical_rect(rect, 1.0, 218.0, 2.0, 14.0, 14.0).center();
+            let mut router = FrameInputRouter::default();
+            let hits = std::collections::BTreeSet::from([window]);
+            let ctx = egui::Context::default();
+            let mut cache = BmpCache::new();
+            let fog = FogState::new(Faction::Alliance);
+            for frame in [92, 93] {
+                router.begin_frame(frame, &snapshot);
+                assert!(paint_managed_frame_for_test(
+                    &ctx,
+                    &world,
+                    &fog,
+                    &mut state,
+                    &mut cache,
+                    &snapshot,
+                    &mut router,
+                    &[],
+                    vec![egui::Event::PointerMoved(close)],
+                )
+                .is_empty());
+            }
+            router.begin_frame(94, &snapshot);
+            let press = InputEventId {
+                frame: 94,
+                ordinal: 0,
+            };
+            assert_eq!(
+                router.collect_pointer(press, &hits, PointerPhase::Press(PointerButtonId::Primary)),
+                InputRecipient::Window(window)
+            );
+            let press_point = if press_on_close { close } else { rect.center() };
+            let press_events = vec![
+                egui::Event::PointerMoved(press_point),
+                egui::Event::PointerButton {
+                    pos: press_point,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::default(),
+                },
+            ];
+            let actions = paint_managed_frame_for_test(
+                &ctx,
+                &world,
+                &fog,
+                &mut state,
+                &mut cache,
+                &snapshot,
+                &mut router,
+                &[SectorWindowInputEvent {
+                    id: press,
+                    point: (press_point.x, press_point.y),
+                    phase: PointerPhase::Press(PointerButtonId::Primary),
+                }],
+                press_events,
+            );
+            assert!(
+                !actions.contains(&SectorWindowAction::Close(window)),
+                "{case}"
+            );
+
+            router.begin_frame(95, &snapshot);
+            let release = InputEventId {
+                frame: 95,
+                ordinal: 0,
+            };
+            assert_eq!(
+                router.collect_pointer(
+                    release,
+                    &hits,
+                    PointerPhase::Release(PointerButtonId::Primary)
+                ),
+                InputRecipient::Window(window)
+            );
+            let mut raw_releases = vec![SectorWindowInputEvent {
+                id: release,
+                point: (close.x, close.y),
+                phase: PointerPhase::Release(PointerButtonId::Primary),
+            }];
+            let mut egui_releases = vec![
+                egui::Event::PointerMoved(close),
+                egui::Event::PointerButton {
+                    pos: close,
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: egui::Modifiers::default(),
+                },
+            ];
+            if press_on_close {
+                let blank = rect.center();
+                let later_press = InputEventId {
+                    frame: 95,
+                    ordinal: 1,
+                };
+                let later = InputEventId {
+                    frame: 95,
+                    ordinal: 2,
+                };
+                assert_eq!(
+                    router.collect_pointer(
+                        later_press,
+                        &hits,
+                        PointerPhase::Press(PointerButtonId::Primary)
+                    ),
+                    InputRecipient::Window(window)
+                );
+                assert_eq!(
+                    router.collect_pointer(
+                        later,
+                        &hits,
+                        PointerPhase::Release(PointerButtonId::Primary)
+                    ),
+                    InputRecipient::Window(window)
+                );
+                raw_releases.push(SectorWindowInputEvent {
+                    id: later_press,
+                    point: (blank.x, blank.y),
+                    phase: PointerPhase::Press(PointerButtonId::Primary),
+                });
+                raw_releases.push(SectorWindowInputEvent {
+                    id: later,
+                    point: (blank.x, blank.y),
+                    phase: PointerPhase::Release(PointerButtonId::Primary),
+                });
+                egui_releases.extend([
+                    egui::Event::PointerMoved(blank),
+                    egui::Event::PointerButton {
+                        pos: blank,
+                        button: egui::PointerButton::Primary,
+                        pressed: true,
+                        modifiers: egui::Modifiers::default(),
+                    },
+                    egui::Event::PointerButton {
+                        pos: blank,
+                        button: egui::PointerButton::Primary,
+                        pressed: false,
+                        modifiers: egui::Modifiers::default(),
+                    },
+                ]);
+                let next_press = InputEventId {
+                    frame: 95,
+                    ordinal: 3,
+                };
+                assert_eq!(
+                    router.collect_pointer(
+                        next_press,
+                        &hits,
+                        PointerPhase::Press(PointerButtonId::Primary)
+                    ),
+                    InputRecipient::Window(window)
+                );
+                raw_releases.push(SectorWindowInputEvent {
+                    id: next_press,
+                    point: (close.x, close.y),
+                    phase: PointerPhase::Press(PointerButtonId::Primary),
+                });
+                egui_releases.extend([
+                    egui::Event::PointerMoved(close),
+                    egui::Event::PointerButton {
+                        pos: close,
+                        button: egui::PointerButton::Primary,
+                        pressed: true,
+                        modifiers: egui::Modifiers::default(),
+                    },
+                ]);
+            } else {
+                // The blank-origin drag is not a click. A later, still-down
+                // press supplies an interaction position on Close without a
+                // completed Close click in this same egui frame.
+                let next_press = InputEventId {
+                    frame: 95,
+                    ordinal: 1,
+                };
+                assert_eq!(
+                    router.collect_pointer(
+                        next_press,
+                        &hits,
+                        PointerPhase::Press(PointerButtonId::Primary)
+                    ),
+                    InputRecipient::Window(window)
+                );
+                raw_releases.push(SectorWindowInputEvent {
+                    id: next_press,
+                    point: (close.x, close.y),
+                    phase: PointerPhase::Press(PointerButtonId::Primary),
+                });
+                egui_releases.extend([
+                    egui::Event::PointerMoved(close),
+                    egui::Event::PointerButton {
+                        pos: close,
+                        button: egui::PointerButton::Primary,
+                        pressed: true,
+                        modifiers: egui::Modifiers::default(),
+                    },
+                ]);
+            }
+            let actions = paint_managed_frame_for_test(
+                &ctx,
+                &world,
+                &fog,
+                &mut state,
+                &mut cache,
+                &snapshot,
+                &mut router,
+                &raw_releases,
+                egui_releases,
+            );
+            assert_eq!(
+                actions
+                    .iter()
+                    .filter(|action| **action == SectorWindowAction::Close(window))
+                    .count(),
+                usize::from(press_on_close),
+                "{case}: {actions:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn managed_sector_cross_frame_switch_ignores_later_blank_release() {
+        let (world, first, _) = fixture_world();
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let (window, _) = commit_sector_open(&mut manager, &mut state, &world, first);
+        let snapshot = manager.begin_frame();
+        let rect = window_screen_rect(CockpitFaction::Alliance, WindowColumn::Primary, layout(1.0));
+        let switch = logical_rect(rect, 1.0, 204.0, 2.0, 14.0, 14.0).center();
+        let blank = rect.center();
+        let ctx = egui::Context::default();
+        let mut cache = BmpCache::new();
+        let fog = FogState::new(Faction::Alliance);
+        let mut router = FrameInputRouter::default();
+        let hits = std::collections::BTreeSet::from([window]);
+        for frame in [97, 98] {
+            router.begin_frame(frame, &snapshot);
+            assert!(paint_managed_frame_for_test(
+                &ctx,
+                &world,
+                &fog,
+                &mut state,
+                &mut cache,
+                &snapshot,
+                &mut router,
+                &[],
+                vec![egui::Event::PointerMoved(switch)],
+            )
+            .is_empty());
+        }
+        router.begin_frame(99, &snapshot);
+        let press = InputEventId {
+            frame: 99,
+            ordinal: 0,
+        };
+        assert_eq!(
+            router.collect_pointer(press, &hits, PointerPhase::Press(PointerButtonId::Primary)),
+            InputRecipient::Window(window)
+        );
+        paint_managed_frame_for_test(
+            &ctx,
+            &world,
+            &fog,
+            &mut state,
+            &mut cache,
+            &snapshot,
+            &mut router,
+            &[SectorWindowInputEvent {
+                id: press,
+                point: (switch.x, switch.y),
+                phase: PointerPhase::Press(PointerButtonId::Primary),
+            }],
+            vec![
+                egui::Event::PointerMoved(switch),
+                egui::Event::PointerButton {
+                    pos: switch,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::default(),
+                },
+            ],
+        );
+        router.begin_frame(100, &snapshot);
+        let release = InputEventId {
+            frame: 100,
+            ordinal: 0,
+        };
+        let later_press = InputEventId {
+            frame: 100,
+            ordinal: 1,
+        };
+        let later = InputEventId {
+            frame: 100,
+            ordinal: 2,
+        };
+        let next_press = InputEventId {
+            frame: 100,
+            ordinal: 3,
+        };
+        assert_eq!(
+            router.collect_pointer(
+                release,
+                &hits,
+                PointerPhase::Release(PointerButtonId::Primary)
+            ),
+            InputRecipient::Window(window)
+        );
+        assert_eq!(
+            router.collect_pointer(
+                later_press,
+                &hits,
+                PointerPhase::Press(PointerButtonId::Primary)
+            ),
+            InputRecipient::Window(window)
+        );
+        assert_eq!(
+            router.collect_pointer(
+                later,
+                &hits,
+                PointerPhase::Release(PointerButtonId::Primary)
+            ),
+            InputRecipient::Window(window)
+        );
+        assert_eq!(
+            router.collect_pointer(
+                next_press,
+                &hits,
+                PointerPhase::Press(PointerButtonId::Primary)
+            ),
+            InputRecipient::Window(window)
+        );
+        let actions = paint_managed_frame_for_test(
+            &ctx,
+            &world,
+            &fog,
+            &mut state,
+            &mut cache,
+            &snapshot,
+            &mut router,
+            &[
+                SectorWindowInputEvent {
+                    id: release,
+                    point: (switch.x, switch.y),
+                    phase: PointerPhase::Release(PointerButtonId::Primary),
+                },
+                SectorWindowInputEvent {
+                    id: later_press,
+                    point: (blank.x, blank.y),
+                    phase: PointerPhase::Press(PointerButtonId::Primary),
+                },
+                SectorWindowInputEvent {
+                    id: later,
+                    point: (blank.x, blank.y),
+                    phase: PointerPhase::Release(PointerButtonId::Primary),
+                },
+                SectorWindowInputEvent {
+                    id: next_press,
+                    point: (switch.x, switch.y),
+                    phase: PointerPhase::Press(PointerButtonId::Primary),
+                },
+            ],
+            vec![
+                egui::Event::PointerMoved(switch),
+                egui::Event::PointerButton {
+                    pos: switch,
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: egui::Modifiers::default(),
+                },
+                egui::Event::PointerMoved(blank),
+                egui::Event::PointerButton {
+                    pos: blank,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::default(),
+                },
+                egui::Event::PointerButton {
+                    pos: blank,
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: egui::Modifiers::default(),
+                },
+                egui::Event::PointerMoved(switch),
+                egui::Event::PointerButton {
+                    pos: switch,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::default(),
+                },
+            ],
+        );
+        assert_eq!(actions, [SectorWindowAction::Activate(window)]);
+        assert_eq!(state.windows[0].column, WindowColumn::Secondary);
+    }
+
+    #[test]
+    fn managed_sector_prescan_cannot_borrow_another_windows_routed_release() {
+        let (world, first, second) = fixture_world();
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let (first_id, _) = commit_sector_open(&mut manager, &mut state, &world, first);
+        let (second_id, _) = commit_sector_open(&mut manager, &mut state, &world, second);
+        let snapshot = manager.begin_frame();
+        let first_rect =
+            window_screen_rect(CockpitFaction::Alliance, WindowColumn::Primary, layout(1.0));
+        let close = logical_rect(first_rect, 1.0, 218.0, 2.0, 14.0, 14.0).center();
+        let second_rect = window_screen_rect(
+            CockpitFaction::Alliance,
+            WindowColumn::Secondary,
+            layout(1.0),
+        );
+        let foreign_start = second_rect.center();
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(96, &snapshot);
+        let hits = std::collections::BTreeSet::from([second_id]);
+        let press = InputEventId {
+            frame: 96,
+            ordinal: 0,
+        };
+        let release = InputEventId {
+            frame: 96,
+            ordinal: 1,
+        };
+        assert_eq!(
+            router.collect_pointer(press, &hits, PointerPhase::Press(PointerButtonId::Primary)),
+            InputRecipient::Window(second_id)
+        );
+        assert_eq!(
+            router.collect_pointer(
+                release,
+                &hits,
+                PointerPhase::Release(PointerButtonId::Primary)
+            ),
+            InputRecipient::Window(second_id)
+        );
+        let actions = paint_managed_frame_for_test(
+            &egui::Context::default(),
+            &world,
+            &FogState::new(Faction::Alliance),
+            &mut state,
+            &mut BmpCache::new(),
+            &snapshot,
+            &mut router,
+            &[
+                SectorWindowInputEvent {
+                    id: press,
+                    point: (foreign_start.x, foreign_start.y),
+                    phase: PointerPhase::Press(PointerButtonId::Primary),
+                },
+                SectorWindowInputEvent {
+                    id: release,
+                    point: (close.x, close.y),
+                    phase: PointerPhase::Release(PointerButtonId::Primary),
+                },
+            ],
+            vec![
+                egui::Event::PointerMoved(foreign_start),
+                egui::Event::PointerButton {
+                    pos: foreign_start,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::default(),
+                },
+                egui::Event::PointerMoved(close),
+                egui::Event::PointerButton {
+                    pos: close,
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: egui::Modifiers::default(),
+                },
+            ],
+        );
+        assert!(!actions.contains(&SectorWindowAction::Close(first_id)));
+        assert!(!actions.contains(&SectorWindowAction::Close(second_id)));
+    }
+
+    #[test]
+    fn managed_sector_prescan_keeps_the_exact_recipient_with_a_later_foreign_release() {
+        let (world, first, second) = fixture_world();
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let (first_id, _) = commit_sector_open(&mut manager, &mut state, &world, first);
+        let (second_id, _) = commit_sector_open(&mut manager, &mut state, &world, second);
+        let snapshot = manager.begin_frame();
+        let first_rect =
+            window_screen_rect(CockpitFaction::Alliance, WindowColumn::Primary, layout(1.0));
+        let close = logical_rect(first_rect, 1.0, 218.0, 2.0, 14.0, 14.0).center();
+        let second_rect = window_screen_rect(
+            CockpitFaction::Alliance,
+            WindowColumn::Secondary,
+            layout(1.0),
+        );
+        let foreign_start = second_rect.center();
+        let ctx = egui::Context::default();
+        let fog = FogState::new(Faction::Alliance);
+        let mut cache = BmpCache::new();
+        let mut router = FrameInputRouter::default();
+        for frame in [101, 102] {
+            router.begin_frame(frame, &snapshot);
+            paint_managed_frame_for_test(
+                &ctx,
+                &world,
+                &fog,
+                &mut state,
+                &mut cache,
+                &snapshot,
+                &mut router,
+                &[],
+                vec![egui::Event::PointerMoved(close)],
+            );
+        }
+        let first_hits = std::collections::BTreeSet::from([first_id]);
+        let second_hits = std::collections::BTreeSet::from([second_id]);
+        router.begin_frame(103, &snapshot);
+        let press = InputEventId {
+            frame: 103,
+            ordinal: 0,
+        };
+        assert_eq!(
+            router.collect_pointer(
+                press,
+                &first_hits,
+                PointerPhase::Press(PointerButtonId::Primary)
+            ),
+            InputRecipient::Window(first_id)
+        );
+        paint_managed_frame_for_test(
+            &ctx,
+            &world,
+            &fog,
+            &mut state,
+            &mut cache,
+            &snapshot,
+            &mut router,
+            &[SectorWindowInputEvent {
+                id: press,
+                point: (close.x, close.y),
+                phase: PointerPhase::Press(PointerButtonId::Primary),
+            }],
+            vec![
+                egui::Event::PointerMoved(close),
+                egui::Event::PointerButton {
+                    pos: close,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::default(),
+                },
+            ],
+        );
+        router.begin_frame(104, &snapshot);
+        let release = InputEventId {
+            frame: 104,
+            ordinal: 0,
+        };
+        let foreign_press = InputEventId {
+            frame: 104,
+            ordinal: 1,
+        };
+        let foreign_release = InputEventId {
+            frame: 104,
+            ordinal: 2,
+        };
+        assert_eq!(
+            router.collect_pointer(
+                release,
+                &first_hits,
+                PointerPhase::Release(PointerButtonId::Primary)
+            ),
+            InputRecipient::Window(first_id)
+        );
+        // A drag begun over B retains B as its router recipient when it ends
+        // over A's Close control. A's aggregate click belongs to A alone.
+        assert_eq!(
+            router.collect_pointer(
+                foreign_press,
+                &second_hits,
+                PointerPhase::Press(PointerButtonId::Primary)
+            ),
+            InputRecipient::Window(second_id)
+        );
+        assert_eq!(
+            router.collect_pointer(
+                foreign_release,
+                &second_hits,
+                PointerPhase::Release(PointerButtonId::Primary)
+            ),
+            InputRecipient::Window(second_id)
+        );
+        let actions = paint_managed_frame_for_test(
+            &ctx,
+            &world,
+            &fog,
+            &mut state,
+            &mut cache,
+            &snapshot,
+            &mut router,
+            &[
+                SectorWindowInputEvent {
+                    id: release,
+                    point: (close.x, close.y),
+                    phase: PointerPhase::Release(PointerButtonId::Primary),
+                },
+                SectorWindowInputEvent {
+                    id: foreign_press,
+                    point: (foreign_start.x, foreign_start.y),
+                    phase: PointerPhase::Press(PointerButtonId::Primary),
+                },
+                SectorWindowInputEvent {
+                    id: foreign_release,
+                    point: (close.x, close.y),
+                    phase: PointerPhase::Release(PointerButtonId::Primary),
+                },
+            ],
+            vec![
+                egui::Event::PointerMoved(close),
+                egui::Event::PointerButton {
+                    pos: close,
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: egui::Modifiers::default(),
+                },
+                egui::Event::PointerMoved(foreign_start),
+                egui::Event::PointerButton {
+                    pos: foreign_start,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::default(),
+                },
+                egui::Event::PointerMoved(close),
+                egui::Event::PointerButton {
+                    pos: close,
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: egui::Modifiers::default(),
+                },
+            ],
+        );
+        assert_eq!(
+            actions
+                .iter()
+                .filter(|action| **action == SectorWindowAction::Close(first_id))
+                .count(),
+            1
+        );
+        assert!(!actions.contains(&SectorWindowAction::Close(second_id)));
+    }
+
     #[test]
     fn original_planet_mapping_covers_all_special_ids() {
         // Source: SYSTEMSD.DAT picture_id values and STRATEGY.DLL bitmap resources 10212-10239.
@@ -1589,7 +3667,7 @@ mod tests {
     fn add_sector(world: &mut GameWorld, x: u16) -> SystemKey {
         let template = world.systems.values().next().unwrap().clone();
         let sector = world.sectors.insert(Sector {
-            dat_id: DatId::new(38),
+            dat_id: DatId::new(38 + u32::try_from(world.sectors.len()).unwrap()),
             name: "Added".into(),
             group: SectorGroup::Core,
             x,
@@ -1599,6 +3677,3447 @@ mod tests {
         let system = world.systems.insert(System { sector, ..template });
         world.sectors[sector].systems.push(system);
         system
+    }
+
+    fn commit_sector_open(
+        manager: &mut WindowManager,
+        state: &mut SectorWindowState,
+        world: &GameWorld,
+        system: SystemKey,
+    ) -> (WindowId, WindowTransition) {
+        let prepared = state
+            .prepare_open(world, system, CockpitFaction::Alliance)
+            .expect("valid Sector content prepares without publication");
+        let command = prepared.replacing().map_or_else(
+            || WindowCommand::Open(prepared.spec()),
+            |old| WindowCommand::Replace {
+                old,
+                new: prepared.spec(),
+            },
+        );
+        let commit = manager.apply(command).expect("manager accepts Sector open");
+        let publication = manager.begin_frame();
+        let id = state
+            .commit_open(prepared, &commit.transition, &publication)
+            .expect("renderer accepts the exact manager receipt");
+        (id, commit.transition)
+    }
+
+    #[test]
+    fn prepared_sector_rejects_faction_change_and_replaces_changed_dat_subject() {
+        let (mut world, first, _) = fixture_world();
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let (id, _) = commit_sector_open(&mut manager, &mut state, &world, first);
+        let before = state.windows.clone();
+
+        assert!(state
+            .prepare_open(&world, first, CockpitFaction::Empire)
+            .is_none());
+        assert_eq!(state.windows, before);
+
+        world.sectors[world.systems[first].sector].dat_id = DatId::new(999);
+        let changed = state
+            .prepare_open(&world, first, CockpitFaction::Alliance)
+            .expect("same runtime Sector with a changed DAT subject needs replacement");
+        assert_eq!(changed.replacing(), Some(id));
+        assert_ne!(changed.spec().key.subject, before[0].subject);
+        assert_eq!(state.windows, before);
+    }
+
+    #[test]
+    fn prepared_sector_obeys_half_and_rejects_a_full_store_with_no_occupant() {
+        let (mut world, left, right) = fixture_world();
+        let mut state = SectorWindowState::default();
+        assert_eq!(
+            state
+                .prepare_open(&world, right, CockpitFaction::Alliance)
+                .unwrap()
+                .column,
+            WindowColumn::Secondary
+        );
+
+        let mut manager = WindowManager::new();
+        let _ = commit_sector_open(&mut manager, &mut state, &world, left);
+        let _ = commit_sector_open(&mut manager, &mut state, &world, right);
+        state.windows[1].column = WindowColumn::Primary;
+        let before = state.windows.clone();
+        let third = add_sector(&mut world, 100);
+        assert!(state
+            .prepare_open(&world, third, CockpitFaction::Alliance)
+            .is_none());
+        assert_eq!(state.windows, before);
+    }
+
+    #[test]
+    fn opened_sector_receipt_rejects_a_candidate_marked_for_replacement() {
+        let (world, first, _) = fixture_world();
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let mut prepared = state
+            .prepare_open(&world, first, CockpitFaction::Alliance)
+            .unwrap();
+        let receipt = manager.apply(WindowCommand::Open(prepared.spec())).unwrap();
+        let id = match receipt.transition {
+            WindowTransition::Opened { id } => id,
+            other => panic!("expected Opened, got {other:?}"),
+        };
+        prepared.replacing = Some(id);
+
+        assert_eq!(
+            state.commit_open(prepared, &receipt.transition, &manager.begin_frame()),
+            None
+        );
+        assert!(state.windows.is_empty());
+    }
+
+    #[test]
+    fn opened_sector_receipt_rejects_wrong_manager_kind_even_with_matching_key() {
+        let (world, first, _) = fixture_world();
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let mut prepared = state
+            .prepare_open(&world, first, CockpitFaction::Alliance)
+            .unwrap();
+        let subject = prepared.spec().key.subject.unwrap();
+        prepared.spec.key.kind = WindowKind::System;
+        let receipt = manager
+            .apply(WindowCommand::Open(contextual_spec(
+                WindowKind::System,
+                subject,
+                WindowOwner::StrategicRoot,
+            )))
+            .unwrap();
+        assert!(matches!(
+            receipt.transition,
+            WindowTransition::Opened { .. }
+        ));
+        assert_eq!(
+            state.commit_open(prepared, &receipt.transition, &manager.begin_frame()),
+            None
+        );
+        assert!(state.windows.is_empty());
+    }
+
+    #[test]
+    fn opened_sector_receipt_rejects_independent_sector_and_half_collisions() {
+        let (mut world, first, _) = fixture_world();
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let _ = commit_sector_open(&mut manager, &mut state, &world, first);
+        let original = state.windows.clone();
+
+        // A fresh manager identity must not permit a second renderer row for
+        // the same runtime Sector, even if its DAT subject and half differ.
+        world.sectors[world.systems[first].sector].dat_id = DatId::new(0x5000_00ff);
+        let mut same_sector = state
+            .prepare_open(&world, first, CockpitFaction::Alliance)
+            .unwrap();
+        same_sector.replacing = None;
+        same_sector.column = WindowColumn::Secondary;
+        let receipt = manager
+            .apply(WindowCommand::Open(same_sector.spec()))
+            .unwrap();
+        let rejected_id = match receipt.transition {
+            WindowTransition::Opened { id } => id,
+            other => panic!("expected forged Opened receipt, got {other:?}"),
+        };
+        assert_eq!(
+            state.commit_open(same_sector, &receipt.transition, &manager.begin_frame()),
+            None
+        );
+        assert_eq!(state.windows, original);
+        manager.apply(WindowCommand::Close(rejected_id)).unwrap();
+
+        // Conversely, a distinct Sector cannot occupy an already used half
+        // just because the manager accepted its distinct DAT identity.
+        let other_system = add_sector(&mut world, 100);
+        let mut same_half = state
+            .prepare_open(&world, other_system, CockpitFaction::Alliance)
+            .unwrap();
+        let receipt = manager
+            .apply(WindowCommand::Open(same_half.spec()))
+            .unwrap();
+        let rejected_id = match receipt.transition {
+            WindowTransition::Opened { id } => id,
+            other => panic!("expected forged Opened receipt, got {other:?}"),
+        };
+        state.windows[0].subject = same_half.spec().key.subject;
+        let before = state.windows.clone();
+        assert_eq!(
+            state.commit_open(same_half, &receipt.transition, &manager.begin_frame()),
+            None
+        );
+        assert_eq!(state.windows, before);
+        state.windows = original.clone();
+        manager.apply(WindowCommand::Close(rejected_id)).unwrap();
+
+        same_half.column = WindowColumn::Primary;
+        let receipt = manager
+            .apply(WindowCommand::Open(same_half.spec()))
+            .unwrap();
+        assert!(matches!(
+            receipt.transition,
+            WindowTransition::Opened { .. }
+        ));
+        assert_eq!(
+            state.commit_open(same_half, &receipt.transition, &manager.begin_frame()),
+            None
+        );
+        assert_eq!(state.windows, original);
+    }
+
+    #[test]
+    fn existing_sector_receipt_requires_each_exact_committed_field() {
+        let (world, first, second) = fixture_world();
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let (id, _) = commit_sector_open(&mut manager, &mut state, &world, first);
+        let prepared = state
+            .prepare_open(&world, first, CockpitFaction::Alliance)
+            .unwrap();
+        let receipt = manager.apply(WindowCommand::Open(prepared.spec())).unwrap();
+        let snapshot = manager.begin_frame();
+        assert!(matches!(
+            receipt.transition,
+            WindowTransition::Existing {
+                id: existing,
+                effect: ExistingEffect::NoOp
+            } if existing == id
+        ));
+
+        let mut wrong_replacement = prepared;
+        wrong_replacement.replacing = Some(id);
+        let mut wrong_faction = prepared;
+        wrong_faction.faction = CockpitFaction::Empire;
+        let mut wrong_sector = prepared;
+        wrong_sector.sector = world.systems[second].sector;
+        let mut wrong_column = prepared;
+        wrong_column.column = WindowColumn::Secondary;
+        for candidate in [wrong_replacement, wrong_faction, wrong_sector, wrong_column] {
+            let before = state.windows.clone();
+            assert_eq!(
+                state.commit_open(candidate, &receipt.transition, &snapshot),
+                None
+            );
+            assert_eq!(state.windows, before);
+        }
+
+        let committed = state.windows[0];
+        for altered in [
+            OpenSectorWindow {
+                id: None,
+                ..committed
+            },
+            OpenSectorWindow {
+                subject: None,
+                ..committed
+            },
+            OpenSectorWindow {
+                sector: world.systems[second].sector,
+                ..committed
+            },
+            OpenSectorWindow {
+                column: WindowColumn::Secondary,
+                ..committed
+            },
+        ] {
+            state.windows[0] = altered;
+            let before = state.windows.clone();
+            assert_eq!(
+                state.commit_open(prepared, &receipt.transition, &snapshot),
+                None
+            );
+            assert_eq!(state.windows, before);
+        }
+    }
+
+    #[test]
+    fn replaced_sector_receipt_rejects_wrong_candidate_identity_and_faction() {
+        let (mut world, left, right) = fixture_world();
+        let far_left = add_sector(&mut world, 100);
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let (old, _) = commit_sector_open(&mut manager, &mut state, &world, left);
+        let (other, _) = commit_sector_open(&mut manager, &mut state, &world, right);
+        let prepared = state
+            .prepare_open(&world, far_left, CockpitFaction::Alliance)
+            .unwrap();
+        assert_eq!(prepared.replacing(), Some(old));
+        let receipt = manager
+            .apply(WindowCommand::Replace {
+                old,
+                new: prepared.spec(),
+            })
+            .unwrap();
+        let snapshot = manager.begin_frame();
+        let before = state.windows.clone();
+
+        let mut wrong_old = prepared;
+        wrong_old.replacing = Some(other);
+        let mut wrong_faction = prepared;
+        wrong_faction.faction = CockpitFaction::Empire;
+        let mut wrong_subject = prepared;
+        wrong_subject.spec.key.subject = Some(SubjectId::new(999, 1));
+        let mut wrong_owner = prepared;
+        wrong_owner.spec.owner = WindowOwner::Window(other);
+        for candidate in [wrong_old, wrong_faction, wrong_subject, wrong_owner] {
+            assert_eq!(
+                state.commit_open(candidate, &receipt.transition, &snapshot),
+                None,
+                "candidate {candidate:?} must not publish"
+            );
+            assert_eq!(state.windows, before);
+        }
+    }
+
+    #[test]
+    fn replaced_sector_receipt_rejects_missing_old_and_survivor_collisions() {
+        let (mut world, left, right) = fixture_world();
+        let far_left = add_sector(&mut world, 100);
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let (old, _) = commit_sector_open(&mut manager, &mut state, &world, left);
+        let (other, _) = commit_sector_open(&mut manager, &mut state, &world, right);
+        let prepared = state
+            .prepare_open(&world, far_left, CockpitFaction::Alliance)
+            .unwrap();
+        let receipt = manager
+            .apply(WindowCommand::Replace {
+                old,
+                new: prepared.spec(),
+            })
+            .unwrap();
+        let new = match receipt.transition {
+            WindowTransition::Replaced { new, .. } => new,
+            other => panic!("expected Replaced, got {other:?}"),
+        };
+        let snapshot = manager.begin_frame();
+        let original = state.windows.clone();
+        let old_index = state
+            .windows
+            .iter()
+            .position(|window| window.id == Some(old))
+            .unwrap();
+        let other_index = state
+            .windows
+            .iter()
+            .position(|window| window.id == Some(other))
+            .unwrap();
+
+        for altered in [
+            OpenSectorWindow {
+                id: None,
+                ..original[old_index]
+            },
+            OpenSectorWindow {
+                column: WindowColumn::Secondary,
+                ..original[old_index]
+            },
+        ] {
+            state.windows = original.clone();
+            state.windows[old_index] = altered;
+            let before = state.windows.clone();
+            assert_eq!(
+                state.commit_open(prepared, &receipt.transition, &snapshot),
+                None
+            );
+            assert_eq!(state.windows, before);
+        }
+        for altered in [
+            OpenSectorWindow {
+                id: Some(new),
+                ..original[other_index]
+            },
+            OpenSectorWindow {
+                subject: prepared.spec().key.subject,
+                ..original[other_index]
+            },
+            OpenSectorWindow {
+                sector: prepared.sector,
+                ..original[other_index]
+            },
+        ] {
+            state.windows = original.clone();
+            state.windows[other_index] = altered;
+            let before = state.windows.clone();
+            assert_eq!(
+                state.commit_open(prepared, &receipt.transition, &snapshot),
+                None
+            );
+            assert_eq!(state.windows, before);
+        }
+    }
+
+    #[test]
+    fn sector_removal_requires_the_exact_manager_identity() {
+        let (world, first, second) = fixture_world();
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let (first_id, _) = commit_sector_open(&mut manager, &mut state, &world, first);
+        let (second_id, _) = commit_sector_open(&mut manager, &mut state, &world, second);
+        let before = state.windows.clone();
+        state.remove_content(&[]);
+        assert_eq!(state.windows, before);
+        let unrelated = manager
+            .apply(WindowCommand::Open(contextual_spec(
+                WindowKind::System,
+                SubjectId::new(99, 1),
+                WindowOwner::StrategicRoot,
+            )))
+            .unwrap();
+        let unrelated_id = match unrelated.transition {
+            WindowTransition::Opened { id } => id,
+            other => panic!("expected unrelated Opened, got {other:?}"),
+        };
+        state.remove_content(&[unrelated_id]);
+        assert_eq!(state.windows, before);
+        state.remove_content(&[first_id]);
+        assert_eq!(state.windows.len(), 1);
+        assert_eq!(state.windows[0].id, Some(second_id));
+    }
+
+    #[test]
+    fn sector_window_duplicate_open_does_not_raise_or_reset_content() {
+        let (world, first, second) = fixture_world();
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let (first_id, _) = commit_sector_open(&mut manager, &mut state, &world, first);
+        let _ = commit_sector_open(&mut manager, &mut state, &world, second);
+        let first_sector = world.systems[first].sector;
+        let selected = SelectedIcon {
+            system: first,
+            quadrant: Quadrant::System,
+            art: 10771,
+        };
+        let content = state
+            .windows
+            .iter_mut()
+            .find(|window| window.sector == first_sector)
+            .unwrap();
+        content.selection = Some(selected);
+        content.drag_from = Some((17, 23));
+        let before = manager.begin_frame();
+        let before_order = before.paint_order().to_vec();
+        let before_focus = before.focused();
+
+        let duplicate = state
+            .prepare_open(&world, first, CockpitFaction::Alliance)
+            .unwrap();
+        assert_eq!(duplicate.replacing(), None);
+        let commit = manager
+            .apply(WindowCommand::Open(duplicate.spec()))
+            .unwrap();
+        assert_eq!(
+            commit.transition,
+            WindowTransition::Existing {
+                id: first_id,
+                effect: ExistingEffect::NoOp,
+            }
+        );
+        assert_eq!(
+            state.commit_open(duplicate, &commit.transition, &manager.begin_frame()),
+            Some(first_id)
+        );
+
+        let after = manager.begin_frame();
+        assert_eq!(after.paint_order(), before_order);
+        assert_eq!(after.focused(), before_focus);
+        let content = state
+            .windows
+            .iter()
+            .find(|window| window.sector == first_sector)
+            .unwrap();
+        assert_eq!(content.selection, Some(selected));
+        assert_eq!(content.drag_from, Some((17, 23)));
+    }
+
+    #[test]
+    fn sector_window_third_open_replaces_matching_half_atomically() {
+        let (mut world, left, right) = fixture_world();
+        let far_left = add_sector(&mut world, 100);
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let (left_id, _) = commit_sector_open(&mut manager, &mut state, &world, left);
+        let (right_id, _) = commit_sector_open(&mut manager, &mut state, &world, right);
+        let prepared = state
+            .prepare_open(&world, far_left, CockpitFaction::Alliance)
+            .unwrap();
+        assert_eq!(prepared.replacing(), Some(left_id));
+        assert_eq!(state.window_count(), 2);
+        assert_eq!(manager.begin_frame().paint_order().len(), 2);
+
+        let commit = manager
+            .apply(WindowCommand::Replace {
+                old: left_id,
+                new: prepared.spec(),
+            })
+            .unwrap();
+        let new_id = match commit.transition {
+            WindowTransition::Replaced { old, new } => {
+                assert_eq!(old, left_id);
+                new
+            }
+            ref other => panic!("expected atomic Sector replacement, got {other:?}"),
+        };
+        assert_eq!(manager.begin_frame().paint_order().len(), 2);
+        assert_eq!(state.window_count(), 2, "content is not pre-published");
+        assert_eq!(
+            state.commit_open(prepared, &commit.transition, &manager.begin_frame()),
+            Some(new_id)
+        );
+        state.remove_content(&[left_id]);
+
+        assert_eq!(state.window_count(), 2);
+        assert_eq!(state.window_id(world.systems[left].sector), None);
+        assert_eq!(state.window_id(world.systems[right].sector), Some(right_id));
+        assert_eq!(
+            state.window_id(world.systems[far_left].sector),
+            Some(new_id)
+        );
+    }
+
+    #[test]
+    fn side_switch_swaps_occupied_columns_and_preserves_fixed_capacity() {
+        let (mut world, left, right) = fixture_world();
+        let far_left = add_sector(&mut world, 100);
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let (left_id, _) = commit_sector_open(&mut manager, &mut state, &world, left);
+        let (right_id, _) = commit_sector_open(&mut manager, &mut state, &world, right);
+
+        state.switch_side(world.systems[left].sector);
+        assert_eq!(state.window_count(), 2);
+        assert_eq!(state.windows[0].column, WindowColumn::Secondary);
+        assert_eq!(state.windows[1].column, WindowColumn::Primary);
+
+        let prepared = state
+            .prepare_open(&world, far_left, CockpitFaction::Alliance)
+            .expect("a third Sector replaces the window now occupying its half");
+        assert_eq!(prepared.replacing(), Some(right_id));
+        let commit = manager
+            .apply(WindowCommand::Replace {
+                old: right_id,
+                new: prepared.spec(),
+            })
+            .unwrap();
+        let new_id = match commit.transition {
+            WindowTransition::Replaced { old, new } => {
+                assert_eq!(old, right_id);
+                new
+            }
+            other => panic!("expected replacement, got {other:?}"),
+        };
+        assert_eq!(
+            state.commit_open(prepared, &commit.transition, &manager.begin_frame()),
+            Some(new_id)
+        );
+        state.remove_content(&[right_id]);
+        assert_eq!(state.window_count(), 2);
+        assert_eq!(state.window_id(world.systems[left].sector), Some(left_id));
+    }
+
+    #[test]
+    fn sector_window_failed_replacement_keeps_previous_sector() {
+        let (mut world, left, right) = fixture_world();
+        let colliding = add_sector(&mut world, 100);
+        let right_subject = world.sectors[world.systems[right].sector].dat_id;
+        world.sectors[world.systems[colliding].sector].dat_id = right_subject;
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let (left_id, _) = commit_sector_open(&mut manager, &mut state, &world, left);
+        let (right_id, _) = commit_sector_open(&mut manager, &mut state, &world, right);
+        let before_content = state.windows.clone();
+        let before_order = manager.begin_frame().paint_order().to_vec();
+        let prepared = state
+            .prepare_open(&world, colliding, CockpitFaction::Alliance)
+            .unwrap();
+
+        assert_eq!(prepared.replacing(), Some(left_id));
+        assert!(manager
+            .apply(WindowCommand::Replace {
+                old: left_id,
+                new: prepared.spec(),
+            })
+            .is_err());
+        assert_eq!(state.windows, before_content);
+        assert_eq!(manager.begin_frame().paint_order(), before_order);
+        assert_eq!(state.window_id(world.systems[left].sector), Some(left_id));
+        assert_eq!(state.window_id(world.systems[right].sector), Some(right_id));
+    }
+
+    #[test]
+    fn sector_window_duplicate_noop_differs_from_click_activation() {
+        let (world, first, second) = fixture_world();
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let (first_id, _) = commit_sector_open(&mut manager, &mut state, &world, first);
+        let _ = commit_sector_open(&mut manager, &mut state, &world, second);
+        let before = manager.begin_frame();
+        let before_order = before.paint_order().to_vec();
+        let before_focus = before.focused();
+
+        let duplicate = state
+            .prepare_open(&world, first, CockpitFaction::Alliance)
+            .unwrap();
+        let duplicate_commit = manager
+            .apply(WindowCommand::Open(duplicate.spec()))
+            .unwrap();
+        assert!(matches!(
+            duplicate_commit.transition,
+            WindowTransition::Existing {
+                id,
+                effect: ExistingEffect::NoOp,
+            } if id == first_id
+        ));
+        assert_eq!(manager.begin_frame().paint_order(), before_order);
+        assert_eq!(manager.begin_frame().focused(), before_focus);
+
+        manager.apply(WindowCommand::Activate(first_id)).unwrap();
+        let activated = manager.begin_frame();
+        assert_eq!(activated.paint_order().last(), Some(&first_id));
+        assert_eq!(
+            activated.focused(),
+            Some(FocusTarget {
+                window: first_id,
+                control: None,
+            })
+        );
+    }
+
+    #[test]
+    fn sector_window_hit_blocks_only_covered_map_region_without_modal() {
+        let (world, first, _) = fixture_world();
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let (id, _) = commit_sector_open(&mut manager, &mut state, &world, first);
+        let snapshot = manager.begin_frame();
+        assert_eq!(snapshot.active_modal(), None);
+        let own_window = *state
+            .windows
+            .iter()
+            .find(|window| window.id == Some(id))
+            .unwrap();
+        let own_layer = egui::LayerId::new(egui::Order::Middle, area_id(own_window));
+        let inside = state.hit_window_ids(&snapshot, layout(1.0), (130.0, 90.0), Some(own_layer));
+        let outside = state.hit_window_ids(&snapshot, layout(1.0), (400.0, 450.0), None);
+
+        assert_eq!(inside, std::collections::BTreeSet::from([id]));
+        assert!(outside.is_empty());
+        assert!(matches!(
+            snapshot.pointer_route(&inside).target,
+            RouteTarget::Window(FocusTarget { window, .. }) if window == id
+        ));
+        assert_eq!(
+            snapshot.pointer_route(&outside).target,
+            RouteTarget::StrategicRoot
+        );
+    }
+
+    #[test]
+    fn managed_sector_hit_requires_visible_kind_rectangle_and_top_layer() {
+        let (world, first, _) = fixture_world();
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let (sector_id, _) = commit_sector_open(&mut manager, &mut state, &world, first);
+        let snapshot = manager.begin_frame();
+        let inside = (130.0, 90.0);
+        let outside = (400.0, 450.0);
+        let own_layer = egui::LayerId::new(egui::Order::Middle, area_id(state.windows[0]));
+        let wrong_layer = egui::LayerId::new(egui::Order::Middle, egui::Id::new("other"));
+        assert_eq!(
+            state.hit_window_ids(&snapshot, layout(1.0), inside, Some(own_layer)),
+            std::collections::BTreeSet::from([sector_id])
+        );
+        assert!(state
+            .hit_window_ids(&snapshot, layout(1.0), outside, Some(own_layer))
+            .is_empty());
+        assert!(state
+            .hit_window_ids(&snapshot, layout(1.0), inside, Some(wrong_layer))
+            .is_empty());
+
+        let unrelated = manager
+            .apply(WindowCommand::Open(contextual_spec(
+                WindowKind::System,
+                SubjectId::new(99, 1),
+                WindowOwner::StrategicRoot,
+            )))
+            .unwrap();
+        let system_id = match unrelated.transition {
+            WindowTransition::Opened { id } => id,
+            other => panic!("expected unrelated Opened, got {other:?}"),
+        };
+        state.windows[0].id = Some(system_id);
+        let wrong_kind_layer = egui::LayerId::new(egui::Order::Middle, area_id(state.windows[0]));
+        assert!(state
+            .hit_window_ids(
+                &manager.begin_frame(),
+                layout(1.0),
+                inside,
+                Some(wrong_kind_layer),
+            )
+            .is_empty());
+
+        state.windows[0].id = Some(sector_id);
+        manager.apply(WindowCommand::Close(sector_id)).unwrap();
+        assert!(state
+            .hit_window_ids(&manager.begin_frame(), layout(1.0), inside, Some(own_layer),)
+            .is_empty());
+    }
+
+    #[test]
+    fn sector_legacy_screen_coverage_obeys_visibility_and_rectangle() {
+        let (world, first, _) = fixture_world();
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let (id, _) = commit_sector_open(&mut manager, &mut state, &world, first);
+        let snapshot = manager.begin_frame();
+        assert!(state.contains_visible_screen_point(&snapshot, layout(1.0), (130.0, 90.0)));
+        assert!(!state.contains_visible_screen_point(&snapshot, layout(1.0), (400.0, 450.0)));
+
+        manager.apply(WindowCommand::Close(id)).unwrap();
+        let closed = manager.begin_frame();
+        assert!(!state.contains_visible_screen_point(&closed, layout(1.0), (130.0, 90.0)));
+        state.windows[0].id = None;
+        assert!(state.contains_visible_screen_point(&closed, layout(1.0), (130.0, 90.0)));
+    }
+
+    #[cfg(feature = "interface-test-fixtures")]
+    #[test]
+    fn sector_drag_fixture_seeds_only_the_exact_managed_identity() {
+        let (world, first, second) = fixture_world();
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let (first_id, _) = commit_sector_open(&mut manager, &mut state, &world, first);
+        let (second_id, _) = commit_sector_open(&mut manager, &mut state, &world, second);
+        state.seed_managed_drag_for_test(second_id);
+        assert_eq!(state.drag_owner(), Some(second_id));
+        assert_eq!(state.windows[0].drag_from, None);
+        state.cancel_pointer_capture(first_id);
+        assert_eq!(state.drag_owner(), Some(second_id));
+        state.cancel_pointer_capture(second_id);
+        assert_eq!(state.drag_owner(), None);
+    }
+
+    #[test]
+    fn managed_sector_system_lookup_requires_the_exact_planet_rectangle() {
+        let (world, first, _) = fixture_world();
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let _ = commit_sector_open(&mut manager, &mut state, &world, first);
+        let layout = layout(1.0);
+        let planet = state
+            .quadrant_screen_rect(&world, layout, first, Quadrant::System)
+            .unwrap()
+            .center();
+        assert_eq!(
+            system_at_screen_point(
+                &world,
+                CockpitFaction::Alliance,
+                layout,
+                state.windows[0],
+                planet,
+            ),
+            Some(first)
+        );
+        assert_eq!(
+            system_at_screen_point(
+                &world,
+                CockpitFaction::Alliance,
+                layout,
+                state.windows[0],
+                egui::pos2(400.0, 450.0),
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn sector_window_vector_order_does_not_choose_global_focus() {
+        let (world, first, second) = fixture_world();
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let _ = commit_sector_open(&mut manager, &mut state, &world, first);
+        let _ = commit_sector_open(&mut manager, &mut state, &world, second);
+        manager
+            .apply(WindowCommand::Activate(
+                state.window_id(world.systems[first].sector).unwrap(),
+            ))
+            .unwrap();
+        let snapshot = manager.begin_frame();
+        let expected_order = snapshot.paint_order().to_vec();
+        let expected_focus = snapshot.focused();
+
+        state.windows.reverse();
+
+        assert_eq!(state.window_ids_in_paint_order(&snapshot), expected_order);
+        assert_eq!(manager.begin_frame().focused(), expected_focus);
+    }
+
+    #[test]
+    fn sector_window_prepared_geometry_is_deterministic_without_publication() {
+        let (mut world, left, right) = fixture_world();
+        let far_left = add_sector(&mut world, 100);
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let _ = commit_sector_open(&mut manager, &mut state, &world, left);
+        let _ = commit_sector_open(&mut manager, &mut state, &world, right);
+        let prepared = state
+            .prepare_open(&world, far_left, CockpitFaction::Alliance)
+            .unwrap();
+        let expected = prepared
+            .quadrant_window_point(&world, layout(1.0), far_left, Quadrant::System)
+            .unwrap();
+
+        assert_eq!(state.window_id(world.systems[far_left].sector), None);
+        let commit = manager
+            .apply(WindowCommand::Replace {
+                old: prepared.replacing().unwrap(),
+                new: prepared.spec(),
+            })
+            .unwrap();
+        state
+            .commit_open(prepared, &commit.transition, &manager.begin_frame())
+            .unwrap();
+
+        assert_eq!(
+            state.quadrant_window_point(&world, layout(1.0), far_left, Quadrant::System),
+            Some(expected)
+        );
+    }
+
+    #[test]
+    fn sector_window_wrong_old_or_new_receipt_preserves_exact_prior_content() {
+        let (mut world, left, right) = fixture_world();
+        let far_left = add_sector(&mut world, 100);
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let (left_id, _) = commit_sector_open(&mut manager, &mut state, &world, left);
+        let (right_id, _) = commit_sector_open(&mut manager, &mut state, &world, right);
+        let prepared = state
+            .prepare_open(&world, far_left, CockpitFaction::Alliance)
+            .unwrap();
+        let before = state.windows.clone();
+        let unrelated = manager
+            .apply(WindowCommand::Open(contextual_spec(
+                WindowKind::System,
+                SubjectId::new(99, 1),
+                WindowOwner::StrategicRoot,
+            )))
+            .unwrap();
+        let unrelated_id = match unrelated.transition {
+            WindowTransition::Opened { id } => id,
+            ref other => panic!("expected unrelated open, got {other:?}"),
+        };
+        let unrelated_frame = manager.begin_frame();
+
+        assert_eq!(
+            state.commit_open(
+                prepared,
+                &WindowTransition::Replaced {
+                    old: left_id,
+                    new: unrelated_id,
+                },
+                &unrelated_frame,
+            ),
+            None
+        );
+        assert_eq!(state.windows, before);
+        manager.apply(WindowCommand::Close(unrelated_id)).unwrap();
+
+        let replaced = manager
+            .apply(WindowCommand::Replace {
+                old: left_id,
+                new: prepared.spec(),
+            })
+            .unwrap();
+        let new = match replaced.transition {
+            WindowTransition::Replaced { new, .. } => new,
+            ref other => panic!("expected Sector replacement, got {other:?}"),
+        };
+        let replaced_frame = manager.begin_frame();
+        assert_eq!(
+            state.commit_open(
+                prepared,
+                &WindowTransition::Replaced { old: right_id, new },
+                &replaced_frame,
+            ),
+            None
+        );
+        assert_eq!(state.windows, before);
+        let old_area = area_id(
+            before
+                .iter()
+                .find(|window| window.id == Some(left_id))
+                .copied()
+                .unwrap(),
+        );
+        assert_eq!(
+            state.commit_open(prepared, &replaced.transition, &replaced_frame),
+            Some(new)
+        );
+        let new_area = area_id(
+            state
+                .windows
+                .iter()
+                .find(|window| window.id == Some(new))
+                .copied()
+                .unwrap(),
+        );
+        assert_ne!(
+            old_area, new_area,
+            "retained egui identity follows WindowId"
+        );
+    }
+
+    #[test]
+    fn sector_window_content_report_rejects_changed_live_dat_subject() {
+        let (mut world, first, _) = fixture_world();
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let (id, _) = commit_sector_open(&mut manager, &mut state, &world, first);
+        let snapshot = manager.begin_frame();
+        assert_eq!(
+            state.content_reports(&snapshot, &world),
+            [ContentReport {
+                window: id,
+                status: ContentStatus::Ready,
+            }]
+        );
+
+        world.sectors[world.systems[first].sector].dat_id = DatId::new(999);
+        assert_eq!(
+            state.content_reports(&snapshot, &world),
+            [ContentReport {
+                window: id,
+                status: ContentStatus::Absent,
+            }]
+        );
+    }
+
+    #[test]
+    fn managed_sector_draw_closes_a_stale_dat_subject_without_painting_it() {
+        let (mut world, first, _) = fixture_world();
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let (window, _) = commit_sector_open(&mut manager, &mut state, &world, first);
+        let snapshot = manager.begin_frame();
+        let mut cache = BmpCache::new();
+        let fog = FogState::new(Faction::Alliance);
+        let missions = rebellion_core::missions::MissionState::new();
+        let movement = rebellion_core::movement::MovementState::default();
+        let uprisings = rebellion_core::uprising::UprisingState::default();
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(49, &snapshot);
+        let mut draw = |state: &mut SectorWindowState, world: &GameWorld| {
+            let ctx = egui::Context::default();
+            let mut actions = Vec::new();
+            let _ = ctx.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(700.0, 520.0),
+                    )),
+                    ..Default::default()
+                },
+                |ctx| {
+                    actions = draw_managed_sector_windows(
+                        ctx,
+                        world,
+                        &movement,
+                        &fog,
+                        state,
+                        CockpitFaction::Alliance,
+                        layout(1.0),
+                        &mut cache,
+                        &missions,
+                        &uprisings,
+                        &snapshot,
+                        &[],
+                        &mut router,
+                    );
+                },
+            );
+            actions
+        };
+        assert!(!draw(&mut state, &world).contains(&SectorWindowAction::Close(window)));
+        world.sectors[world.systems[first].sector].dat_id = DatId::new(999);
+        assert_eq!(
+            draw(&mut state, &world),
+            [SectorWindowAction::Close(window)]
+        );
+        assert_eq!(
+            state.window_count(),
+            1,
+            "teardown waits for manager receipt"
+        );
+    }
+
+    #[test]
+    fn sector_window_router_claim_and_capture_cancellation_are_exact() {
+        let (world, first, second) = fixture_world();
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let (first_id, _) = commit_sector_open(&mut manager, &mut state, &world, first);
+        let (second_id, _) = commit_sector_open(&mut manager, &mut state, &world, second);
+        let snapshot = manager.begin_frame();
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(11, &snapshot);
+        let press = InputEventId {
+            frame: 11,
+            ordinal: 0,
+        };
+        let press_phase = PointerPhase::Press(PointerButtonId::Primary);
+        assert_eq!(
+            router.collect_pointer(
+                press,
+                &std::collections::BTreeSet::from([first_id]),
+                press_phase,
+            ),
+            InputRecipient::Window(first_id)
+        );
+        assert_eq!(
+            claim_sector_pointer_event(
+                &mut router,
+                &[SectorWindowInputEvent {
+                    id: press,
+                    point: (0.0, 0.0),
+                    phase: press_phase,
+                }],
+                first_id,
+                PointerPhase::Press(PointerButtonId::Secondary),
+            ),
+            None
+        );
+        assert_eq!(
+            claim_sector_pointer_event(
+                &mut router,
+                &[SectorWindowInputEvent {
+                    id: press,
+                    point: (0.0, 0.0),
+                    phase: press_phase,
+                }],
+                second_id,
+                press_phase,
+            ),
+            None
+        );
+        assert_eq!(
+            claim_sector_pointer_event(
+                &mut router,
+                &[SectorWindowInputEvent {
+                    id: press,
+                    point: (0.0, 0.0),
+                    phase: press_phase,
+                }],
+                first_id,
+                press_phase,
+            ),
+            Some(press)
+        );
+
+        let second_press = InputEventId {
+            frame: 11,
+            ordinal: 1,
+        };
+        assert_eq!(
+            router.collect_pointer(
+                second_press,
+                &std::collections::BTreeSet::from([first_id]),
+                press_phase,
+            ),
+            InputRecipient::Window(first_id)
+        );
+        let second_event = SectorWindowInputEvent {
+            id: second_press,
+            point: (0.0, 0.0),
+            phase: press_phase,
+        };
+        assert!(!claim_sector_input_event(
+            &mut router,
+            second_event,
+            second_id
+        ));
+        assert!(claim_sector_input_event(
+            &mut router,
+            second_event,
+            first_id
+        ));
+        assert!(!claim_sector_input_event(
+            &mut router,
+            second_event,
+            first_id
+        ));
+
+        state
+            .windows
+            .iter_mut()
+            .find(|window| window.id == Some(first_id))
+            .unwrap()
+            .drag_from = Some((12, 34));
+        assert_eq!(state.drag_owner(), Some(first_id));
+        manager
+            .apply(WindowCommand::CapturePointer(first_id))
+            .unwrap();
+        let cancel = manager
+            .apply(WindowCommand::CancelCapture(
+                CaptureCancelReason::HoldStarted,
+            ))
+            .unwrap();
+        assert!(cancel.events.iter().any(|event| matches!(
+            event,
+            rebellion_windowing::WindowEvent::CaptureCancelled { window, .. }
+                if *window == first_id
+        )));
+        state.cancel_pointer_capture(first_id);
+        router.cancel_window(first_id);
+        assert_eq!(state.drag_owner(), None);
+
+        let after = manager.begin_frame();
+        router.begin_frame(12, &after);
+        let release = InputEventId {
+            frame: 12,
+            ordinal: 0,
+        };
+        assert_eq!(
+            router.collect_pointer(
+                release,
+                &std::collections::BTreeSet::new(),
+                PointerPhase::Release(PointerButtonId::Primary),
+            ),
+            InputRecipient::Blocked
+        );
+    }
+
+    #[test]
+    fn managed_sector_close_requires_exact_routed_release_and_emits_once() {
+        let (world, first, _) = fixture_world();
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let (window, _) = commit_sector_open(&mut manager, &mut state, &world, first);
+        let snapshot = manager.begin_frame();
+        let layout = layout(1.0);
+        let window_rect =
+            window_screen_rect(CockpitFaction::Alliance, WindowColumn::Primary, layout);
+        let close_point = logical_rect(window_rect, layout.scale, 218.0, 2.0, 14.0, 14.0).center();
+        let blank_point = window_rect.center();
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(45, &snapshot);
+        let mut managed = ManagedSectorDraw {
+            window: state.windows[0],
+            result: WindowDrawResult {
+                close: true,
+                ..Default::default()
+            },
+            emitted_selected: false,
+            emitted_opened: false,
+            emitted_opened_icon: false,
+            close_queued: false,
+            pressed_target: None,
+            last_click_target: None,
+            aggregate_system_release: None,
+            aggregate_icon_release: None,
+            aggregate: AggregateSectorReleases::default(),
+            pressed_control: None,
+        };
+        let fog = FogState::new(Faction::Alliance);
+        let missions = rebellion_core::missions::MissionState::new();
+        let movement = rebellion_core::movement::MovementState::default();
+        let mut actions = Vec::new();
+        let mut last_activated = None;
+
+        for (ordinal, hits, point) in [
+            (0, std::collections::BTreeSet::new(), close_point),
+            (2, std::collections::BTreeSet::from([window]), blank_point),
+            (4, std::collections::BTreeSet::from([window]), close_point),
+            (6, std::collections::BTreeSet::from([window]), close_point),
+        ] {
+            let press = InputEventId { frame: 45, ordinal };
+            let release = InputEventId {
+                frame: 45,
+                ordinal: ordinal + 1,
+            };
+            router.collect_pointer(press, &hits, PointerPhase::Press(PointerButtonId::Primary));
+            router.collect_pointer(
+                release,
+                &hits,
+                PointerPhase::Release(PointerButtonId::Primary),
+            );
+            let event = SectorWindowInputEvent {
+                id: release,
+                point: (point.x, point.y),
+                phase: PointerPhase::Release(PointerButtonId::Primary),
+            };
+            route_managed_sector_event(
+                event,
+                &mut managed,
+                &world,
+                &fog,
+                &missions,
+                &movement,
+                &mut state,
+                CockpitFaction::Alliance,
+                layout,
+                &mut router,
+                &mut actions,
+                &mut last_activated,
+                false,
+            );
+            if ordinal <= 2 {
+                assert!(
+                    actions.is_empty(),
+                    "wrong recipient or control point cannot close Sector"
+                );
+                assert!(!managed.close_queued);
+            } else {
+                assert_eq!(actions, [SectorWindowAction::Close(window)]);
+                assert!(managed.close_queued);
+            }
+            route_managed_sector_event(
+                event,
+                &mut managed,
+                &world,
+                &fog,
+                &missions,
+                &movement,
+                &mut state,
+                CockpitFaction::Alliance,
+                layout,
+                &mut router,
+                &mut actions,
+                &mut last_activated,
+                false,
+            );
+            if ordinal >= 4 {
+                assert_eq!(actions, [SectorWindowAction::Close(window)]);
+            }
+        }
+    }
+
+    #[test]
+    fn managed_sector_switch_requires_its_control_and_routed_release() {
+        let (world, first, _) = fixture_world();
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let (window, _) = commit_sector_open(&mut manager, &mut state, &world, first);
+        let layout = layout(1.0);
+        let window_rect =
+            window_screen_rect(CockpitFaction::Alliance, WindowColumn::Primary, layout);
+        let switch_point = logical_rect(window_rect, layout.scale, 204.0, 2.0, 14.0, 14.0).center();
+        let blank_point = window_rect.center();
+        let mut managed = ManagedSectorDraw {
+            window: state.windows[0],
+            result: WindowDrawResult {
+                switch_side: true,
+                ..Default::default()
+            },
+            emitted_selected: false,
+            emitted_opened: false,
+            emitted_opened_icon: false,
+            close_queued: false,
+            pressed_target: None,
+            last_click_target: None,
+            aggregate_system_release: None,
+            aggregate_icon_release: None,
+            aggregate: AggregateSectorReleases::default(),
+            pressed_control: None,
+        };
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(54, &manager.begin_frame());
+        let hits = std::collections::BTreeSet::from([window]);
+        let fog = FogState::new(Faction::Alliance);
+        let missions = rebellion_core::missions::MissionState::new();
+        let movement = rebellion_core::movement::MovementState::default();
+        let mut actions = Vec::new();
+        let mut last_activated = None;
+        for (ordinal, point, switch_enabled) in [
+            (0, blank_point, true),
+            (2, switch_point, false),
+            (4, switch_point, true),
+        ] {
+            managed.result.switch_side = switch_enabled;
+            router.collect_pointer(
+                InputEventId { frame: 54, ordinal },
+                &hits,
+                PointerPhase::Press(PointerButtonId::Primary),
+            );
+            let release = InputEventId {
+                frame: 54,
+                ordinal: ordinal + 1,
+            };
+            router.collect_pointer(
+                release,
+                &hits,
+                PointerPhase::Release(PointerButtonId::Primary),
+            );
+            route_managed_sector_event(
+                SectorWindowInputEvent {
+                    id: release,
+                    point: (point.x, point.y),
+                    phase: PointerPhase::Release(PointerButtonId::Primary),
+                },
+                &mut managed,
+                &world,
+                &fog,
+                &missions,
+                &movement,
+                &mut state,
+                CockpitFaction::Alliance,
+                layout,
+                &mut router,
+                &mut actions,
+                &mut last_activated,
+                false,
+            );
+            if ordinal < 4 {
+                assert!(actions.is_empty());
+                assert_eq!(state.windows[0].column, WindowColumn::Primary);
+            } else {
+                assert_eq!(actions, [SectorWindowAction::Activate(window)]);
+                assert_eq!(state.windows[0].column, WindowColumn::Secondary);
+            }
+        }
+    }
+
+    #[test]
+    fn managed_sector_plain_focus_and_menu_require_their_exact_release() {
+        let (world, first, _) = fixture_world();
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let (window, _) = commit_sector_open(&mut manager, &mut state, &world, first);
+        let layout = layout(1.0);
+        let inside =
+            window_screen_rect(CockpitFaction::Alliance, WindowColumn::Primary, layout).center();
+        let outside = egui::pos2(400.0, 450.0);
+        let mut managed = ManagedSectorDraw {
+            window: state.windows[0],
+            result: WindowDrawResult {
+                focus: true,
+                ..Default::default()
+            },
+            emitted_selected: false,
+            emitted_opened: false,
+            emitted_opened_icon: false,
+            close_queued: false,
+            pressed_target: None,
+            last_click_target: None,
+            aggregate_system_release: None,
+            aggregate_icon_release: None,
+            aggregate: AggregateSectorReleases::default(),
+            pressed_control: None,
+        };
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(55, &manager.begin_frame());
+        let hits = std::collections::BTreeSet::from([window]);
+        let fog = FogState::new(Faction::Alliance);
+        let missions = rebellion_core::missions::MissionState::new();
+        let movement = rebellion_core::movement::MovementState::default();
+        let mut actions = Vec::new();
+        let mut last_activated = None;
+        for (ordinal, button, point) in [
+            (0, PointerButtonId::Primary, inside),
+            (2, PointerButtonId::Secondary, outside),
+            (4, PointerButtonId::Secondary, inside),
+        ] {
+            router.collect_pointer(
+                InputEventId { frame: 55, ordinal },
+                &hits,
+                PointerPhase::Press(button),
+            );
+            let release = InputEventId {
+                frame: 55,
+                ordinal: ordinal + 1,
+            };
+            assert_eq!(
+                router.collect_pointer(
+                    release,
+                    &std::collections::BTreeSet::new(),
+                    PointerPhase::Release(button)
+                ),
+                InputRecipient::Window(window),
+            );
+            route_managed_sector_event(
+                SectorWindowInputEvent {
+                    id: release,
+                    point: (point.x, point.y),
+                    phase: PointerPhase::Release(button),
+                },
+                &mut managed,
+                &world,
+                &fog,
+                &missions,
+                &movement,
+                &mut state,
+                CockpitFaction::Alliance,
+                layout,
+                &mut router,
+                &mut actions,
+                &mut last_activated,
+                false,
+            );
+            match ordinal {
+                0 | 2 => assert_eq!(actions, [SectorWindowAction::Activate(window)]),
+                4 => assert_eq!(
+                    actions,
+                    [
+                        SectorWindowAction::Activate(window),
+                        SectorWindowAction::OpenObjectMenu {
+                            selection: None,
+                            point: screen_to_logical(layout, inside),
+                        },
+                    ]
+                ),
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    #[test]
+    fn managed_sector_primary_release_drops_only_after_real_drag_distance() {
+        let (world, first, _) = fixture_world();
+        let layout = layout(1.0);
+        let start = egui::pos2(130.0, 90.0);
+        let from = screen_to_logical(layout, start);
+        for (frame, dx, dy, drops) in [
+            (46, 4.0, 0.0, false),
+            (47, 10.0, 0.0, true),
+            (52, 0.0, 4.0, false),
+            (53, 0.0, 10.0, true),
+        ] {
+            let mut manager = WindowManager::new();
+            let mut state = SectorWindowState::default();
+            let (window, _) = commit_sector_open(&mut manager, &mut state, &world, first);
+            state.windows[0].selection = Some(SelectedIcon {
+                system: first,
+                quadrant: Quadrant::System,
+                art: 1,
+            });
+            state.windows[0].drag_from = Some(from);
+            let mut managed = ManagedSectorDraw {
+                window: state.windows[0],
+                result: WindowDrawResult::default(),
+                emitted_selected: false,
+                emitted_opened: false,
+                emitted_opened_icon: false,
+                close_queued: false,
+                pressed_target: None,
+                last_click_target: None,
+                aggregate_system_release: None,
+                aggregate_icon_release: None,
+                aggregate: AggregateSectorReleases::default(),
+                pressed_control: None,
+            };
+            let mut router = FrameInputRouter::default();
+            router.begin_frame(frame, &manager.begin_frame());
+            let hits = std::collections::BTreeSet::from([window]);
+            router.collect_pointer(
+                InputEventId { frame, ordinal: 0 },
+                &hits,
+                PointerPhase::Press(PointerButtonId::Primary),
+            );
+            let release = InputEventId { frame, ordinal: 1 };
+            router.collect_pointer(
+                release,
+                &hits,
+                PointerPhase::Release(PointerButtonId::Primary),
+            );
+            let point = egui::pos2(start.x + dx, start.y + dy);
+            let fog = FogState::new(Faction::Alliance);
+            let missions = rebellion_core::missions::MissionState::new();
+            let movement = rebellion_core::movement::MovementState::default();
+            let mut actions = Vec::new();
+            let mut last_activated = None;
+            route_managed_sector_event(
+                SectorWindowInputEvent {
+                    id: release,
+                    point: (point.x, point.y),
+                    phase: PointerPhase::Release(PointerButtonId::Primary),
+                },
+                &mut managed,
+                &world,
+                &fog,
+                &missions,
+                &movement,
+                &mut state,
+                CockpitFaction::Alliance,
+                layout,
+                &mut router,
+                &mut actions,
+                &mut last_activated,
+                true,
+            );
+            let mut expected = vec![
+                SectorWindowAction::Activate(window),
+                SectorWindowAction::ReleasePointer(window),
+            ];
+            if drops {
+                expected.push(SectorWindowAction::DropSelection {
+                    selection: MenuObject::SystemIcon {
+                        system: first,
+                        quadrant: Quadrant::System,
+                    },
+                    point,
+                    confirmed: true,
+                });
+            }
+            assert_eq!(actions, expected, "dx={dx} dy={dy}");
+            assert_eq!(state.drag_owner(), None);
+        }
+    }
+
+    #[test]
+    fn managed_sector_icon_open_requires_matching_routed_coordinate_and_emits_once() {
+        let (mut world, first, _) = fixture_world();
+        add_fleet(&mut world, first);
+        let neighbour = add_neighbour(
+            &mut world,
+            first,
+            264,
+            (380, 300),
+            ControlKind::Controlled(Faction::Alliance),
+        );
+        add_fleet(&mut world, neighbour);
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let (window, _) = commit_sector_open(&mut manager, &mut state, &world, first);
+        let layout = layout(1.0);
+        let icon = state
+            .quadrant_screen_rect(&world, layout, first, Quadrant::Fleets)
+            .unwrap()
+            .center();
+        let wrong_system = state
+            .quadrant_screen_rect(&world, layout, neighbour, Quadrant::Fleets)
+            .unwrap()
+            .center();
+        let wrong_quadrant = state
+            .quadrant_screen_rect(&world, layout, first, Quadrant::System)
+            .unwrap()
+            .center();
+        let blank =
+            window_screen_rect(CockpitFaction::Alliance, WindowColumn::Primary, layout).center();
+        let mut fog = FogState::new(Faction::Alliance);
+        fog.reveal(first);
+        fog.reveal(neighbour);
+        let missions = rebellion_core::missions::MissionState::new();
+        let movement = rebellion_core::movement::MovementState::default();
+        assert!(shown_icon_at_screen_point(
+            &world,
+            &fog,
+            &missions,
+            &movement,
+            CockpitFaction::Alliance,
+            layout,
+            state.windows[0],
+            blank,
+        )
+        .is_none());
+        let mut managed = ManagedSectorDraw {
+            window: state.windows[0],
+            result: WindowDrawResult {
+                focus: true,
+                opened_icon: Some((first, Quadrant::Fleets, (0, 0))),
+                ..Default::default()
+            },
+            emitted_selected: false,
+            emitted_opened: false,
+            emitted_opened_icon: false,
+            close_queued: false,
+            pressed_target: None,
+            last_click_target: None,
+            aggregate_system_release: None,
+            aggregate_icon_release: None,
+            aggregate: AggregateSectorReleases::default(),
+            pressed_control: None,
+        };
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(48, &manager.begin_frame());
+        let hits = std::collections::BTreeSet::from([window]);
+        let mut actions = Vec::new();
+        let mut last_activated = None;
+        for (ordinal, point) in [
+            (0, blank),
+            (2, wrong_system),
+            (4, wrong_quadrant),
+            (6, icon),
+            (8, icon),
+        ] {
+            router.collect_pointer(
+                InputEventId { frame: 48, ordinal },
+                &hits,
+                PointerPhase::Press(PointerButtonId::Primary),
+            );
+            let release = InputEventId {
+                frame: 48,
+                ordinal: ordinal + 1,
+            };
+            router.collect_pointer(
+                release,
+                &hits,
+                PointerPhase::Release(PointerButtonId::Primary),
+            );
+            route_managed_sector_event(
+                SectorWindowInputEvent {
+                    id: release,
+                    point: (point.x, point.y),
+                    phase: PointerPhase::Release(PointerButtonId::Primary),
+                },
+                &mut managed,
+                &world,
+                &fog,
+                &missions,
+                &movement,
+                &mut state,
+                CockpitFaction::Alliance,
+                layout,
+                &mut router,
+                &mut actions,
+                &mut last_activated,
+                false,
+            );
+            if ordinal <= 4 {
+                assert!(actions.is_empty());
+                assert!(!managed.emitted_opened_icon);
+            } else {
+                assert_eq!(
+                    actions,
+                    [
+                        SectorWindowAction::Activate(window),
+                        SectorWindowAction::OpenFleetWindow {
+                            system: first,
+                            logical_position: screen_to_logical(layout, icon),
+                        },
+                    ]
+                );
+                assert!(managed.emitted_opened_icon);
+            }
+        }
+    }
+
+    #[test]
+    fn managed_sector_system_open_and_selection_require_matching_planet_once() {
+        let (world, first, _) = fixture_world();
+        let layout = layout(1.0);
+        for (frame, open_system) in [(50, true), (51, false)] {
+            let mut manager = WindowManager::new();
+            let mut state = SectorWindowState::default();
+            let (window, _) = commit_sector_open(&mut manager, &mut state, &world, first);
+            let planet = state
+                .quadrant_screen_rect(&world, layout, first, Quadrant::System)
+                .unwrap()
+                .center();
+            let blank = window_screen_rect(CockpitFaction::Alliance, WindowColumn::Primary, layout)
+                .center();
+            assert_eq!(
+                system_at_screen_point(
+                    &world,
+                    CockpitFaction::Alliance,
+                    layout,
+                    state.windows[0],
+                    blank,
+                ),
+                None
+            );
+            let mut managed = ManagedSectorDraw {
+                window: state.windows[0],
+                result: if open_system {
+                    WindowDrawResult {
+                        opened: Some((first, (0, 0))),
+                        ..Default::default()
+                    }
+                } else {
+                    WindowDrawResult {
+                        selected: Some(first),
+                        ..Default::default()
+                    }
+                },
+                emitted_selected: false,
+                emitted_opened: false,
+                emitted_opened_icon: false,
+                close_queued: false,
+                pressed_target: None,
+                last_click_target: None,
+                aggregate_system_release: None,
+                aggregate_icon_release: None,
+                aggregate: AggregateSectorReleases::default(),
+                pressed_control: None,
+            };
+            let mut router = FrameInputRouter::default();
+            router.begin_frame(frame, &manager.begin_frame());
+            let hits = std::collections::BTreeSet::from([window]);
+            let fog = FogState::new(Faction::Alliance);
+            let missions = rebellion_core::missions::MissionState::new();
+            let movement = rebellion_core::movement::MovementState::default();
+            let mut actions = Vec::new();
+            let mut last_activated = None;
+            for (ordinal, point) in [(0, blank), (2, planet), (4, planet)] {
+                router.collect_pointer(
+                    InputEventId { frame, ordinal },
+                    &hits,
+                    PointerPhase::Press(PointerButtonId::Primary),
+                );
+                let release = InputEventId {
+                    frame,
+                    ordinal: ordinal + 1,
+                };
+                router.collect_pointer(
+                    release,
+                    &hits,
+                    PointerPhase::Release(PointerButtonId::Primary),
+                );
+                route_managed_sector_event(
+                    SectorWindowInputEvent {
+                        id: release,
+                        point: (point.x, point.y),
+                        phase: PointerPhase::Release(PointerButtonId::Primary),
+                    },
+                    &mut managed,
+                    &world,
+                    &fog,
+                    &missions,
+                    &movement,
+                    &mut state,
+                    CockpitFaction::Alliance,
+                    layout,
+                    &mut router,
+                    &mut actions,
+                    &mut last_activated,
+                    false,
+                );
+                if ordinal == 0 {
+                    assert!(actions.is_empty());
+                } else {
+                    let action = if open_system {
+                        SectorWindowAction::OpenSystemWindow {
+                            system: first,
+                            logical_position: screen_to_logical(layout, planet),
+                        }
+                    } else {
+                        SectorWindowAction::SelectSystem(first)
+                    };
+                    assert_eq!(actions, [SectorWindowAction::Activate(window), action]);
+                }
+            }
+            assert_eq!(managed.emitted_opened, open_system);
+            assert_eq!(managed.emitted_selected, !open_system);
+        }
+    }
+
+    #[test]
+    fn managed_sector_preserves_two_same_window_planet_gestures_in_raw_order() {
+        let (mut world, first, second) = fixture_world();
+        let sector = world.systems[first].sector;
+        world.systems[second].sector = sector;
+        world.systems[second].x = world.systems[first].x.saturating_add(90);
+        world.systems[second].y = world.systems[first].y;
+        world.sectors[sector].systems.push(second);
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let (window, _) = commit_sector_open(&mut manager, &mut state, &world, first);
+        let layout = layout(1.0);
+        let mut managed = ManagedSectorDraw {
+            window: state.windows[0],
+            result: WindowDrawResult {
+                selected: Some(second),
+                focus: true,
+                ..Default::default()
+            },
+            emitted_selected: false,
+            emitted_opened: false,
+            emitted_opened_icon: false,
+            close_queued: false,
+            pressed_target: None,
+            last_click_target: None,
+            aggregate_system_release: None,
+            aggregate_icon_release: None,
+            aggregate: AggregateSectorReleases::default(),
+            pressed_control: None,
+        };
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(59, &manager.begin_frame());
+        let hits = std::collections::BTreeSet::from([window]);
+        let fog = FogState::new(Faction::Alliance);
+        let missions = rebellion_core::missions::MissionState::new();
+        let movement = rebellion_core::movement::MovementState::default();
+        let mut actions = Vec::new();
+        let mut last_activated = None;
+        for (ordinal, system) in [(0, first), (2, first), (4, second)] {
+            let point = state
+                .planet_screen_rect(&world, layout, system)
+                .unwrap()
+                .center();
+            let press = InputEventId { frame: 59, ordinal };
+            let release = InputEventId {
+                frame: 59,
+                ordinal: ordinal + 1,
+            };
+            router.collect_pointer(press, &hits, PointerPhase::Press(PointerButtonId::Primary));
+            route_managed_sector_event(
+                SectorWindowInputEvent {
+                    id: press,
+                    point: (point.x, point.y),
+                    phase: PointerPhase::Press(PointerButtonId::Primary),
+                },
+                &mut managed,
+                &world,
+                &fog,
+                &missions,
+                &movement,
+                &mut state,
+                CockpitFaction::Alliance,
+                layout,
+                &mut router,
+                &mut actions,
+                &mut last_activated,
+                false,
+            );
+            router.collect_pointer(
+                release,
+                &hits,
+                PointerPhase::Release(PointerButtonId::Primary),
+            );
+            route_managed_sector_event(
+                SectorWindowInputEvent {
+                    id: release,
+                    point: (point.x, point.y),
+                    phase: PointerPhase::Release(PointerButtonId::Primary),
+                },
+                &mut managed,
+                &world,
+                &fog,
+                &missions,
+                &movement,
+                &mut state,
+                CockpitFaction::Alliance,
+                layout,
+                &mut router,
+                &mut actions,
+                &mut last_activated,
+                false,
+            );
+        }
+        assert_eq!(
+            actions,
+            [
+                SectorWindowAction::Activate(window),
+                SectorWindowAction::SelectSystem(first),
+                SectorWindowAction::OpenSystemWindow {
+                    system: first,
+                    logical_position: screen_to_logical(
+                        layout,
+                        state
+                            .planet_screen_rect(&world, layout, first)
+                            .unwrap()
+                            .center(),
+                    ),
+                },
+                SectorWindowAction::SelectSystem(first),
+                SectorWindowAction::SelectSystem(second),
+            ]
+        );
+    }
+
+    #[test]
+    fn managed_sector_draw_routes_two_same_window_raw_clicks_in_ordinal_order() {
+        let (mut world, first, second) = fixture_world();
+        let sector = world.systems[first].sector;
+        world.systems[second].sector = sector;
+        world.systems[second].x = world.systems[first].x.saturating_add(90);
+        world.systems[second].y = world.systems[first].y;
+        world.sectors[sector].systems.push(second);
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let (window, _) = commit_sector_open(&mut manager, &mut state, &world, first);
+        let snapshot = manager.begin_frame();
+        let layout = layout(1.0);
+        let first_point = state
+            .planet_screen_rect(&world, layout, first)
+            .unwrap()
+            .center();
+        let second_point = state
+            .planet_screen_rect(&world, layout, second)
+            .unwrap()
+            .center();
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(60, &snapshot);
+        let hits = std::collections::BTreeSet::from([window]);
+        let mut pointer_events = Vec::new();
+        let mut egui_events = Vec::new();
+        for (ordinal, point) in [(0, first_point), (2, second_point)] {
+            egui_events.push(egui::Event::PointerMoved(point));
+            for (offset, pressed) in [(0, true), (1, false)] {
+                let phase = if pressed {
+                    PointerPhase::Press(PointerButtonId::Primary)
+                } else {
+                    PointerPhase::Release(PointerButtonId::Primary)
+                };
+                let id = InputEventId {
+                    frame: 60,
+                    ordinal: ordinal + offset,
+                };
+                assert_eq!(
+                    router.collect_pointer(id, &hits, phase),
+                    InputRecipient::Window(window)
+                );
+                pointer_events.push(SectorWindowInputEvent {
+                    id,
+                    point: (point.x, point.y),
+                    phase,
+                });
+                egui_events.push(egui::Event::PointerButton {
+                    pos: point,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: egui::Modifiers::default(),
+                });
+            }
+        }
+        let ctx = egui::Context::default();
+        let mut cache = BmpCache::new();
+        let fog = FogState::new(Faction::Alliance);
+        let missions = rebellion_core::missions::MissionState::new();
+        let mut actions = Vec::new();
+        let _ = ctx.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(700.0, 520.0),
+                )),
+                events: egui_events,
+                ..Default::default()
+            },
+            |ctx| {
+                actions = draw_managed_sector_windows(
+                    ctx,
+                    &world,
+                    &rebellion_core::movement::MovementState::default(),
+                    &fog,
+                    &mut state,
+                    CockpitFaction::Alliance,
+                    layout,
+                    &mut cache,
+                    &missions,
+                    &rebellion_core::uprising::UprisingState::default(),
+                    &snapshot,
+                    &pointer_events,
+                    &mut router,
+                );
+            },
+        );
+        assert_eq!(
+            actions,
+            [
+                SectorWindowAction::Activate(window),
+                SectorWindowAction::SelectSystem(first),
+                SectorWindowAction::SelectSystem(second),
+            ]
+        );
+    }
+
+    #[test]
+    fn managed_sector_routes_two_different_icon_double_clicks_in_raw_order() {
+        let (mut world, first, _) = fixture_world();
+        add_fleet(&mut world, first);
+        let second = add_neighbour(
+            &mut world,
+            first,
+            264,
+            (380, 300),
+            ControlKind::Controlled(Faction::Alliance),
+        );
+        add_fleet(&mut world, second);
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let (window, _) = commit_sector_open(&mut manager, &mut state, &world, first);
+        let layout = layout(1.0);
+        let first_point = state
+            .quadrant_screen_rect(&world, layout, first, Quadrant::Fleets)
+            .unwrap()
+            .center();
+        let second_point = state
+            .quadrant_screen_rect(&world, layout, second, Quadrant::Fleets)
+            .unwrap()
+            .center();
+        let mut managed = ManagedSectorDraw {
+            window: state.windows[0],
+            result: WindowDrawResult {
+                opened_icon: Some((second, Quadrant::Fleets, (0, 0))),
+                ..Default::default()
+            },
+            emitted_selected: false,
+            emitted_opened: false,
+            emitted_opened_icon: false,
+            close_queued: false,
+            pressed_target: None,
+            last_click_target: None,
+            aggregate_system_release: None,
+            aggregate_icon_release: Some(InputEventId {
+                frame: 62,
+                ordinal: 7,
+            }),
+            aggregate: AggregateSectorReleases::default(),
+            pressed_control: None,
+        };
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(62, &manager.begin_frame());
+        let hits = std::collections::BTreeSet::from([window]);
+        let mut fog = FogState::new(Faction::Alliance);
+        fog.reveal(first);
+        fog.reveal(second);
+        let missions = rebellion_core::missions::MissionState::new();
+        let movement = rebellion_core::movement::MovementState::default();
+        let mut actions = Vec::new();
+        let mut last_activated = None;
+        for (ordinal, point) in [
+            (0, first_point),
+            (2, first_point),
+            (4, second_point),
+            (6, second_point),
+        ] {
+            for (offset, phase) in [
+                (0, PointerPhase::Press(PointerButtonId::Primary)),
+                (1, PointerPhase::Release(PointerButtonId::Primary)),
+            ] {
+                let id = InputEventId {
+                    frame: 62,
+                    ordinal: ordinal + offset,
+                };
+                assert_eq!(
+                    router.collect_pointer(id, &hits, phase),
+                    InputRecipient::Window(window)
+                );
+                route_managed_sector_event(
+                    SectorWindowInputEvent {
+                        id,
+                        point: (point.x, point.y),
+                        phase,
+                    },
+                    &mut managed,
+                    &world,
+                    &fog,
+                    &missions,
+                    &movement,
+                    &mut state,
+                    CockpitFaction::Alliance,
+                    layout,
+                    &mut router,
+                    &mut actions,
+                    &mut last_activated,
+                    false,
+                );
+            }
+        }
+        let opened: Vec<_> = actions
+            .into_iter()
+            .filter_map(|action| match action {
+                SectorWindowAction::OpenFleetWindow { system, .. } => Some(system),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(opened, [first, second]);
+    }
+
+    #[test]
+    fn managed_sector_system_quadrant_double_click_opens_system() {
+        let (mut world, system, _) = fixture_world();
+        add_mine(&mut world, system);
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let (window, _) = commit_sector_open(&mut manager, &mut state, &world, system);
+        let layout = layout(1.0);
+        let point = state
+            .quadrant_screen_rect(&world, layout, system, Quadrant::System)
+            .unwrap()
+            .center();
+        let mut fog = FogState::new(Faction::Alliance);
+        fog.reveal(system);
+        let missions = rebellion_core::missions::MissionState::new();
+        let movement = rebellion_core::movement::MovementState::default();
+        assert!(shown_icon_at_screen_point(
+            &world,
+            &fog,
+            &missions,
+            &movement,
+            CockpitFaction::Alliance,
+            layout,
+            state.windows[0],
+            point,
+        )
+        .is_some_and(|icon| icon.quadrant == Quadrant::System));
+        let mut managed = ManagedSectorDraw {
+            window: state.windows[0],
+            result: WindowDrawResult {
+                opened: Some((system, (0, 0))),
+                ..Default::default()
+            },
+            emitted_selected: false,
+            emitted_opened: false,
+            emitted_opened_icon: false,
+            close_queued: false,
+            pressed_target: None,
+            last_click_target: None,
+            aggregate_system_release: None,
+            aggregate_icon_release: None,
+            aggregate: AggregateSectorReleases::default(),
+            pressed_control: None,
+        };
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(63, &manager.begin_frame());
+        let hits = std::collections::BTreeSet::from([window]);
+        let press = InputEventId {
+            frame: 63,
+            ordinal: 0,
+        };
+        let release = InputEventId {
+            frame: 63,
+            ordinal: 1,
+        };
+        router.collect_pointer(press, &hits, PointerPhase::Press(PointerButtonId::Primary));
+        router.collect_pointer(
+            release,
+            &hits,
+            PointerPhase::Release(PointerButtonId::Primary),
+        );
+        let mut actions = Vec::new();
+        route_managed_sector_event(
+            SectorWindowInputEvent {
+                id: release,
+                point: (point.x, point.y),
+                phase: PointerPhase::Release(PointerButtonId::Primary),
+            },
+            &mut managed,
+            &world,
+            &fog,
+            &missions,
+            &movement,
+            &mut state,
+            CockpitFaction::Alliance,
+            layout,
+            &mut router,
+            &mut actions,
+            &mut None,
+            false,
+        );
+        assert!(actions.iter().any(|action| matches!(
+            action,
+            SectorWindowAction::OpenSystemWindow { system: opened, .. } if *opened == system
+        )));
+    }
+
+    #[test]
+    fn managed_sector_aggregate_open_belongs_only_to_its_marked_release() {
+        // The frame-level egui result is a single witness. An earlier raw
+        // release over the same target may not borrow the later one's open.
+        for case in ["system icon", "fleet icon", "planet"] {
+            let (mut world, system, _) = fixture_world();
+            add_mine(&mut world, system);
+            add_fleet(&mut world, system);
+            let mut manager = WindowManager::new();
+            let mut state = SectorWindowState::default();
+            let (window, _) = commit_sector_open(&mut manager, &mut state, &world, system);
+            let layout = layout(1.0);
+            let point = match case {
+                "system icon" => state
+                    .quadrant_screen_rect(&world, layout, system, Quadrant::System)
+                    .unwrap()
+                    .center(),
+                "fleet icon" => state
+                    .quadrant_screen_rect(&world, layout, system, Quadrant::Fleets)
+                    .unwrap()
+                    .center(),
+                _ => state
+                    .planet_screen_rect(&world, layout, system)
+                    .unwrap()
+                    .center(),
+            };
+            let mut managed = managed_draw_for_test(state.windows[0]);
+            if case == "fleet icon" {
+                managed.result.opened_icon = Some((system, Quadrant::Fleets, (0, 0)));
+                managed.aggregate_icon_release = Some(InputEventId {
+                    frame: 87,
+                    ordinal: 3,
+                });
+            } else {
+                managed.result.opened = Some((system, (0, 0)));
+                managed.aggregate_system_release = Some(InputEventId {
+                    frame: 87,
+                    ordinal: 3,
+                });
+            }
+            let mut fog = FogState::new(Faction::Alliance);
+            fog.reveal(system);
+            let missions = rebellion_core::missions::MissionState::new();
+            let movement = rebellion_core::movement::MovementState::default();
+            let mut router = FrameInputRouter::default();
+            router.begin_frame(87, &manager.begin_frame());
+            let hits = std::collections::BTreeSet::from([window]);
+            let mut actions = Vec::new();
+            let mut last_activated = None;
+            for (ordinal, expected_opens) in [(1, 0), (3, 1)] {
+                let press = InputEventId {
+                    frame: 87,
+                    ordinal: ordinal - 1,
+                };
+                let release = InputEventId { frame: 87, ordinal };
+                router.collect_pointer(press, &hits, PointerPhase::Press(PointerButtonId::Primary));
+                assert_eq!(
+                    router.collect_pointer(
+                        release,
+                        &hits,
+                        PointerPhase::Release(PointerButtonId::Primary),
+                    ),
+                    InputRecipient::Window(window),
+                    "{case}"
+                );
+                route_managed_sector_event(
+                    SectorWindowInputEvent {
+                        id: release,
+                        point: (point.x, point.y),
+                        phase: PointerPhase::Release(PointerButtonId::Primary),
+                    },
+                    &mut managed,
+                    &world,
+                    &fog,
+                    &missions,
+                    &movement,
+                    &mut state,
+                    CockpitFaction::Alliance,
+                    layout,
+                    &mut router,
+                    &mut actions,
+                    &mut last_activated,
+                    false,
+                );
+                let opens = actions
+                    .iter()
+                    .filter(|action| match case {
+                        "fleet icon" => matches!(
+                            action,
+                            SectorWindowAction::OpenFleetWindow { system: opened, .. }
+                                if *opened == system
+                        ),
+                        _ => matches!(
+                            action,
+                            SectorWindowAction::OpenSystemWindow { system: opened, .. }
+                                if *opened == system
+                        ),
+                    })
+                    .count();
+                assert_eq!(opens, expected_opens, "{case}, release {ordinal}");
+            }
+        }
+    }
+
+    #[test]
+    fn managed_sector_earlier_drag_release_cannot_borrow_later_planet_selection() {
+        let (mut world, system, _) = fixture_world();
+        add_fleet(&mut world, system);
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let (window, _) = commit_sector_open(&mut manager, &mut state, &world, system);
+        let layout = layout(1.0);
+        let icon = state
+            .quadrant_screen_rect(&world, layout, system, Quadrant::Fleets)
+            .unwrap()
+            .center();
+        let planet = state
+            .planet_screen_rect(&world, layout, system)
+            .unwrap()
+            .center();
+        let mut managed = ManagedSectorDraw {
+            window: state.windows[0],
+            result: WindowDrawResult {
+                selected: Some(system),
+                ..Default::default()
+            },
+            emitted_selected: false,
+            emitted_opened: false,
+            emitted_opened_icon: false,
+            close_queued: false,
+            pressed_target: None,
+            last_click_target: None,
+            aggregate_system_release: None,
+            aggregate_icon_release: None,
+            aggregate: AggregateSectorReleases::default(),
+            pressed_control: None,
+        };
+        managed.aggregate.selected = Some(InputEventId {
+            frame: 64,
+            ordinal: 3,
+        });
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(64, &manager.begin_frame());
+        let hits = std::collections::BTreeSet::from([window]);
+        let mut fog = FogState::new(Faction::Alliance);
+        fog.reveal(system);
+        let missions = rebellion_core::missions::MissionState::new();
+        let movement = rebellion_core::movement::MovementState::default();
+        let mut actions = Vec::new();
+        let mut last_activated = None;
+        for (ordinal, point, phase) in [
+            (0, icon, PointerPhase::Press(PointerButtonId::Primary)),
+            (1, planet, PointerPhase::Release(PointerButtonId::Primary)),
+            (2, planet, PointerPhase::Press(PointerButtonId::Primary)),
+            (3, planet, PointerPhase::Release(PointerButtonId::Primary)),
+        ] {
+            let id = InputEventId { frame: 64, ordinal };
+            router.collect_pointer(id, &hits, phase);
+            route_managed_sector_event(
+                SectorWindowInputEvent {
+                    id,
+                    point: (point.x, point.y),
+                    phase,
+                },
+                &mut managed,
+                &world,
+                &fog,
+                &missions,
+                &movement,
+                &mut state,
+                CockpitFaction::Alliance,
+                layout,
+                &mut router,
+                &mut actions,
+                &mut last_activated,
+                false,
+            );
+        }
+        let selections = actions
+            .iter()
+            .filter(|action| **action == SectorWindowAction::SelectSystem(system))
+            .count();
+        assert_eq!(selections, 1);
+    }
+
+    #[test]
+    fn managed_sector_control_requires_its_own_press_release() {
+        let (mut world, system, _) = fixture_world();
+        add_fleet(&mut world, system);
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let (window, _) = commit_sector_open(&mut manager, &mut state, &world, system);
+        let layout = layout(1.0);
+        let window_rect =
+            window_screen_rect(CockpitFaction::Alliance, WindowColumn::Primary, layout);
+        let close = logical_rect(window_rect, layout.scale, 218.0, 2.0, 14.0, 14.0).center();
+        let blank = window_rect.center();
+        let mut managed = ManagedSectorDraw {
+            window: state.windows[0],
+            result: WindowDrawResult {
+                close: true,
+                ..Default::default()
+            },
+            emitted_selected: false,
+            emitted_opened: false,
+            emitted_opened_icon: false,
+            close_queued: false,
+            pressed_target: None,
+            last_click_target: None,
+            aggregate_system_release: None,
+            aggregate_icon_release: None,
+            aggregate: AggregateSectorReleases::default(),
+            pressed_control: None,
+        };
+        managed.aggregate.close = Some(InputEventId {
+            frame: 65,
+            ordinal: 3,
+        });
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(65, &manager.begin_frame());
+        let hits = std::collections::BTreeSet::from([window]);
+        let fog = FogState::new(Faction::Alliance);
+        let missions = rebellion_core::missions::MissionState::new();
+        let movement = rebellion_core::movement::MovementState::default();
+        let mut actions = Vec::new();
+        let mut last_activated = None;
+        for (ordinal, point, phase) in [
+            (0, blank, PointerPhase::Press(PointerButtonId::Primary)),
+            (1, close, PointerPhase::Release(PointerButtonId::Primary)),
+            (2, close, PointerPhase::Press(PointerButtonId::Primary)),
+            (3, close, PointerPhase::Release(PointerButtonId::Primary)),
+        ] {
+            let id = InputEventId { frame: 65, ordinal };
+            router.collect_pointer(id, &hits, phase);
+            route_managed_sector_event(
+                SectorWindowInputEvent {
+                    id,
+                    point: (point.x, point.y),
+                    phase,
+                },
+                &mut managed,
+                &world,
+                &fog,
+                &missions,
+                &movement,
+                &mut state,
+                CockpitFaction::Alliance,
+                layout,
+                &mut router,
+                &mut actions,
+                &mut last_activated,
+                false,
+            );
+            if ordinal == 1 {
+                assert!(!managed.close_queued);
+                assert!(!actions
+                    .iter()
+                    .any(|action| *action == SectorWindowAction::Close(window)));
+            }
+        }
+        assert_eq!(
+            actions
+                .iter()
+                .filter(|action| **action == SectorWindowAction::Close(window))
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn managed_sector_scaled_close_rejects_one_axis_drift_but_accepts_exact_threshold() {
+        // A changed control matcher must not turn a 3px one-axis drag into a
+        // click when the documented 4 logical-pixel tolerance scales to 2px.
+        for (case, delta, should_close) in [
+            ("x outside", (3.0, 0.0), false),
+            ("y outside", (0.0, 3.0), false),
+            ("x boundary", (2.0, 0.0), true),
+            ("y boundary", (0.0, 2.0), true),
+        ] {
+            let (world, system, _) = fixture_world();
+            let mut manager = WindowManager::new();
+            let mut state = SectorWindowState::default();
+            let (window, _) = commit_sector_open(&mut manager, &mut state, &world, system);
+            let layout = layout(0.5);
+            let window_rect =
+                window_screen_rect(CockpitFaction::Alliance, WindowColumn::Primary, layout);
+            let close_rect = logical_rect(window_rect, layout.scale, 218.0, 2.0, 14.0, 14.0);
+            assert_eq!(close_rect.size(), egui::vec2(7.0, 7.0), "{case}");
+            // Derive the gesture independently of logical_rect, so a broken
+            // geometry helper cannot move the test's expected hitbox too.
+            let center = window_rect.min + egui::vec2(112.5, 4.5);
+            assert!(rect_contains(close_rect, center), "{case}");
+            let press_point = center - egui::vec2(delta.0 / 2.0, delta.1 / 2.0);
+            let release_point = center + egui::vec2(delta.0 / 2.0, delta.1 / 2.0);
+            assert!(rect_contains(close_rect, press_point), "{case}");
+            assert!(rect_contains(close_rect, release_point), "{case}");
+            let mut managed = managed_draw_for_test(state.windows[0]);
+            let mut router = FrameInputRouter::default();
+            router.begin_frame(85, &manager.begin_frame());
+            let hits = std::collections::BTreeSet::from([window]);
+            let fog = FogState::new(Faction::Alliance);
+            let missions = rebellion_core::missions::MissionState::new();
+            let movement = rebellion_core::movement::MovementState::default();
+            let mut actions = Vec::new();
+            let mut last_activated = None;
+            for (ordinal, point, phase) in [
+                (
+                    0,
+                    press_point,
+                    PointerPhase::Press(PointerButtonId::Primary),
+                ),
+                (
+                    1,
+                    release_point,
+                    PointerPhase::Release(PointerButtonId::Primary),
+                ),
+            ] {
+                let id = InputEventId { frame: 85, ordinal };
+                assert_eq!(
+                    router.collect_pointer(id, &hits, phase),
+                    InputRecipient::Window(window)
+                );
+                route_managed_sector_event(
+                    SectorWindowInputEvent {
+                        id,
+                        point: (point.x, point.y),
+                        phase,
+                    },
+                    &mut managed,
+                    &world,
+                    &fog,
+                    &missions,
+                    &movement,
+                    &mut state,
+                    CockpitFaction::Alliance,
+                    layout,
+                    &mut router,
+                    &mut actions,
+                    &mut last_activated,
+                    false,
+                );
+            }
+            assert_eq!(managed.close_queued, should_close, "{case}");
+            assert_eq!(
+                actions.contains(&SectorWindowAction::Close(window)),
+                should_close,
+                "{case}"
+            );
+        }
+    }
+
+    #[test]
+    fn managed_sector_scaled_planet_click_requires_both_axis_thresholds() {
+        // This catches accepting a release because only one axis stayed
+        // within tolerance, even though the pointer never left the planet.
+        for (case, delta, should_select) in [
+            ("x outside", (3.0, 0.0), false),
+            ("y outside", (0.0, 3.0), false),
+            ("x boundary", (2.0, 0.0), true),
+            ("y boundary", (0.0, 2.0), true),
+        ] {
+            let (world, system, _) = fixture_world();
+            let mut manager = WindowManager::new();
+            let mut state = SectorWindowState::default();
+            let (window, _) = commit_sector_open(&mut manager, &mut state, &world, system);
+            let layout = layout(0.5);
+            let planet = state.planet_screen_rect(&world, layout, system).unwrap();
+            let center = planet.center();
+            let press_point = center - egui::vec2(delta.0 / 2.0, delta.1 / 2.0);
+            let release_point = center + egui::vec2(delta.0 / 2.0, delta.1 / 2.0);
+            assert!(rect_contains(planet, press_point), "{case}");
+            assert!(rect_contains(planet, release_point), "{case}");
+            let mut managed = managed_draw_for_test(state.windows[0]);
+            let mut router = FrameInputRouter::default();
+            router.begin_frame(86, &manager.begin_frame());
+            let hits = std::collections::BTreeSet::from([window]);
+            let fog = FogState::new(Faction::Alliance);
+            let missions = rebellion_core::missions::MissionState::new();
+            let movement = rebellion_core::movement::MovementState::default();
+            let mut actions = Vec::new();
+            let mut last_activated = None;
+            for (ordinal, point, phase) in [
+                (
+                    0,
+                    press_point,
+                    PointerPhase::Press(PointerButtonId::Primary),
+                ),
+                (
+                    1,
+                    release_point,
+                    PointerPhase::Release(PointerButtonId::Primary),
+                ),
+            ] {
+                let id = InputEventId { frame: 86, ordinal };
+                assert_eq!(
+                    router.collect_pointer(id, &hits, phase),
+                    InputRecipient::Window(window)
+                );
+                route_managed_sector_event(
+                    SectorWindowInputEvent {
+                        id,
+                        point: (point.x, point.y),
+                        phase,
+                    },
+                    &mut managed,
+                    &world,
+                    &fog,
+                    &missions,
+                    &movement,
+                    &mut state,
+                    CockpitFaction::Alliance,
+                    layout,
+                    &mut router,
+                    &mut actions,
+                    &mut last_activated,
+                    false,
+                );
+            }
+            assert_eq!(
+                actions.contains(&SectorWindowAction::SelectSystem(system)),
+                should_select,
+                "{case}"
+            );
+            assert!(
+                !actions
+                    .iter()
+                    .any(|action| matches!(action, SectorWindowAction::OpenSystemWindow { .. })),
+                "{case}"
+            );
+        }
+    }
+
+    #[test]
+    fn managed_sector_short_drift_between_adjacent_controls_never_retargets() {
+        for (case, press_switch) in [("switch to close", true), ("close to switch", false)] {
+            let (world, system, _) = fixture_world();
+            let mut manager = WindowManager::new();
+            let mut state = SectorWindowState::default();
+            let (window, _) = commit_sector_open(&mut manager, &mut state, &world, system);
+            let layout = layout(0.5);
+            let window_rect =
+                window_screen_rect(CockpitFaction::Alliance, WindowColumn::Primary, layout);
+            let switch = logical_rect(window_rect, layout.scale, 204.0, 2.0, 14.0, 14.0);
+            let close = logical_rect(window_rect, layout.scale, 218.0, 2.0, 14.0, 14.0);
+            assert_eq!(switch.max.x, close.min.x);
+            let y = switch.center().y;
+            let switch_point = egui::pos2(switch.max.x - 0.25, y);
+            let close_point = egui::pos2(close.min.x + 0.25, y);
+            let (press_point, release_point) = if press_switch {
+                (switch_point, close_point)
+            } else {
+                (close_point, switch_point)
+            };
+            assert!((release_point.x - press_point.x).abs() < 2.0, "{case}");
+            let mut managed = managed_draw_for_test(state.windows[0]);
+            let original_column = managed.window.column;
+            let mut router = FrameInputRouter::default();
+            router.begin_frame(87, &manager.begin_frame());
+            let hits = std::collections::BTreeSet::from([window]);
+            let fog = FogState::new(Faction::Alliance);
+            let missions = rebellion_core::missions::MissionState::new();
+            let movement = rebellion_core::movement::MovementState::default();
+            let mut actions = Vec::new();
+            let mut last_activated = None;
+            for (ordinal, point, phase) in [
+                (
+                    0,
+                    press_point,
+                    PointerPhase::Press(PointerButtonId::Primary),
+                ),
+                (
+                    1,
+                    release_point,
+                    PointerPhase::Release(PointerButtonId::Primary),
+                ),
+            ] {
+                let id = InputEventId { frame: 87, ordinal };
+                assert_eq!(
+                    router.collect_pointer(id, &hits, phase),
+                    InputRecipient::Window(window)
+                );
+                route_managed_sector_event(
+                    SectorWindowInputEvent {
+                        id,
+                        point: (point.x, point.y),
+                        phase,
+                    },
+                    &mut managed,
+                    &world,
+                    &fog,
+                    &missions,
+                    &movement,
+                    &mut state,
+                    CockpitFaction::Alliance,
+                    layout,
+                    &mut router,
+                    &mut actions,
+                    &mut last_activated,
+                    false,
+                );
+            }
+            assert!(!managed.close_queued, "{case}");
+            assert!(
+                !actions.contains(&SectorWindowAction::Close(window)),
+                "{case}"
+            );
+            assert_eq!(
+                state
+                    .windows
+                    .iter()
+                    .find(|open| open.id == Some(window))
+                    .unwrap()
+                    .column,
+                original_column,
+                "{case}: {actions:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn managed_sector_short_drift_from_icon_to_bare_planet_keeps_target_identity() {
+        let (mut world, system, _) = fixture_world();
+        add_fleet(&mut world, system);
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let (window, _) = commit_sector_open(&mut manager, &mut state, &world, system);
+        let layout = layout(0.5);
+        let planet = state.planet_screen_rect(&world, layout, system).unwrap();
+        let press_point = planet.min + egui::vec2(19.25, 10.0) * layout.scale;
+        let release_point = planet.min + egui::vec2(18.5, 10.0) * layout.scale;
+        assert!((release_point.x - press_point.x).abs() < 2.0);
+        let mut fog = FogState::new(Faction::Alliance);
+        fog.reveal(system);
+        let missions = rebellion_core::missions::MissionState::new();
+        let movement = rebellion_core::movement::MovementState::default();
+        let open = state.windows[0];
+        assert_eq!(
+            sector_click_target(
+                &world,
+                &fog,
+                &missions,
+                &movement,
+                CockpitFaction::Alliance,
+                layout,
+                open,
+                press_point
+            ),
+            Some(SectorClickTarget::Icon(system, Quadrant::Fleets))
+        );
+        assert_eq!(
+            sector_click_target(
+                &world,
+                &fog,
+                &missions,
+                &movement,
+                CockpitFaction::Alliance,
+                layout,
+                open,
+                release_point
+            ),
+            Some(SectorClickTarget::Planet(system))
+        );
+        let mut managed = managed_draw_for_test(open);
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(88, &manager.begin_frame());
+        let hits = std::collections::BTreeSet::from([window]);
+        let mut actions = Vec::new();
+        let mut last_activated = None;
+        for (ordinal, point, phase) in [
+            (
+                0,
+                press_point,
+                PointerPhase::Press(PointerButtonId::Primary),
+            ),
+            (
+                1,
+                release_point,
+                PointerPhase::Release(PointerButtonId::Primary),
+            ),
+        ] {
+            let id = InputEventId { frame: 88, ordinal };
+            assert_eq!(
+                router.collect_pointer(id, &hits, phase),
+                InputRecipient::Window(window)
+            );
+            route_managed_sector_event(
+                SectorWindowInputEvent {
+                    id,
+                    point: (point.x, point.y),
+                    phase,
+                },
+                &mut managed,
+                &world,
+                &fog,
+                &missions,
+                &movement,
+                &mut state,
+                CockpitFaction::Alliance,
+                layout,
+                &mut router,
+                &mut actions,
+                &mut last_activated,
+                false,
+            );
+        }
+        assert!(actions.contains(&SectorWindowAction::CapturePointer(window)));
+        assert!(actions.contains(&SectorWindowAction::ReleasePointer(window)));
+        assert!(!actions.contains(&SectorWindowAction::SelectSystem(system)));
+        assert!(!actions
+            .iter()
+            .any(|action| matches!(action, SectorWindowAction::OpenSystemWindow { .. })));
+    }
+
+    #[test]
+    fn managed_sector_switch_does_not_borrow_later_control_click() {
+        let (world, system, _) = fixture_world();
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let (window, _) = commit_sector_open(&mut manager, &mut state, &world, system);
+        let layout = layout(1.0);
+        let window_rect =
+            window_screen_rect(CockpitFaction::Alliance, WindowColumn::Primary, layout);
+        let switch = logical_rect(window_rect, layout.scale, 204.0, 2.0, 14.0, 14.0).center();
+        let blank = window_rect.center();
+        let mut managed = ManagedSectorDraw {
+            window: state.windows[0],
+            result: WindowDrawResult {
+                switch_side: true,
+                ..Default::default()
+            },
+            emitted_selected: false,
+            emitted_opened: false,
+            emitted_opened_icon: false,
+            close_queued: false,
+            pressed_target: None,
+            last_click_target: None,
+            aggregate_system_release: None,
+            aggregate_icon_release: None,
+            aggregate: AggregateSectorReleases {
+                switch_side: Some(InputEventId {
+                    frame: 68,
+                    ordinal: 3,
+                }),
+                ..Default::default()
+            },
+            pressed_control: None,
+        };
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(68, &manager.begin_frame());
+        let hits = std::collections::BTreeSet::from([window]);
+        let fog = FogState::new(Faction::Alliance);
+        let missions = rebellion_core::missions::MissionState::new();
+        let movement = rebellion_core::movement::MovementState::default();
+        let mut actions = Vec::new();
+        let mut last_activated = None;
+        for (ordinal, point, phase) in [
+            (0, blank, PointerPhase::Press(PointerButtonId::Primary)),
+            (1, switch, PointerPhase::Release(PointerButtonId::Primary)),
+            (2, switch, PointerPhase::Press(PointerButtonId::Primary)),
+            (3, switch, PointerPhase::Release(PointerButtonId::Primary)),
+        ] {
+            let id = InputEventId { frame: 68, ordinal };
+            router.collect_pointer(id, &hits, phase);
+            route_managed_sector_event(
+                SectorWindowInputEvent {
+                    id,
+                    point: (point.x, point.y),
+                    phase,
+                },
+                &mut managed,
+                &world,
+                &fog,
+                &missions,
+                &movement,
+                &mut state,
+                CockpitFaction::Alliance,
+                layout,
+                &mut router,
+                &mut actions,
+                &mut last_activated,
+                false,
+            );
+            if ordinal == 1 {
+                assert_eq!(state.windows[0].column, WindowColumn::Primary);
+            }
+        }
+        assert_eq!(state.windows[0].column, WindowColumn::Secondary);
+    }
+
+    #[test]
+    fn managed_sector_draw_does_not_select_on_drag_release_before_later_click() {
+        let (mut world, system, _) = fixture_world();
+        add_fleet(&mut world, system);
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let (window, _) = commit_sector_open(&mut manager, &mut state, &world, system);
+        let snapshot = manager.begin_frame();
+        let layout = layout(1.0);
+        let icon = state
+            .quadrant_screen_rect(&world, layout, system, Quadrant::Fleets)
+            .unwrap()
+            .center();
+        let planet = state
+            .planet_screen_rect(&world, layout, system)
+            .unwrap()
+            .center();
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(66, &snapshot);
+        let hits = std::collections::BTreeSet::from([window]);
+        let mut raw_events = Vec::new();
+        let mut egui_events = Vec::new();
+        for (ordinal, point, phase, pressed) in [
+            (0, icon, PointerPhase::Press(PointerButtonId::Primary), true),
+            (
+                1,
+                planet,
+                PointerPhase::Release(PointerButtonId::Primary),
+                false,
+            ),
+            (
+                2,
+                planet,
+                PointerPhase::Press(PointerButtonId::Primary),
+                true,
+            ),
+            (
+                3,
+                planet,
+                PointerPhase::Release(PointerButtonId::Primary),
+                false,
+            ),
+        ] {
+            let id = InputEventId { frame: 66, ordinal };
+            assert_eq!(
+                router.collect_pointer(id, &hits, phase),
+                InputRecipient::Window(window)
+            );
+            raw_events.push(SectorWindowInputEvent {
+                id,
+                point: (point.x, point.y),
+                phase,
+            });
+            egui_events.push(egui::Event::PointerMoved(point));
+            egui_events.push(egui::Event::PointerButton {
+                pos: point,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::default(),
+            });
+        }
+        let mut fog = FogState::new(Faction::Alliance);
+        fog.reveal(system);
+        let missions = rebellion_core::missions::MissionState::new();
+        let ctx = egui::Context::default();
+        let mut cache = BmpCache::new();
+        let mut actions = Vec::new();
+        let _ = ctx.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(700.0, 520.0),
+                )),
+                events: egui_events,
+                ..Default::default()
+            },
+            |ctx| {
+                actions = draw_managed_sector_windows(
+                    ctx,
+                    &world,
+                    &rebellion_core::movement::MovementState::default(),
+                    &fog,
+                    &mut state,
+                    CockpitFaction::Alliance,
+                    layout,
+                    &mut cache,
+                    &missions,
+                    &rebellion_core::uprising::UprisingState::default(),
+                    &snapshot,
+                    &raw_events,
+                    &mut router,
+                );
+            },
+        );
+        let selections: Vec<_> = actions
+            .iter()
+            .enumerate()
+            .filter(|(_, action)| **action == SectorWindowAction::SelectSystem(system))
+            .map(|(index, _)| index)
+            .collect();
+        assert_eq!(selections.len(), 1);
+        assert!(actions
+            .iter()
+            .position(|action| matches!(action, SectorWindowAction::DropSelection { .. }))
+            .is_some_and(|drop| drop < selections[0]));
+    }
+
+    #[test]
+    fn managed_sector_draw_keeps_later_control_click_after_intervening_planet_click() {
+        let (world, system, _) = fixture_world();
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let (window, _) = commit_sector_open(&mut manager, &mut state, &world, system);
+        let snapshot = manager.begin_frame();
+        let layout = layout(1.0);
+        let window_rect =
+            window_screen_rect(CockpitFaction::Alliance, WindowColumn::Primary, layout);
+        let blank = window_rect.center();
+        let close = logical_rect(window_rect, layout.scale, 218.0, 2.0, 14.0, 14.0).center();
+        let planet = state
+            .planet_screen_rect(&world, layout, system)
+            .unwrap()
+            .center();
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(67, &snapshot);
+        let hits = std::collections::BTreeSet::from([window]);
+        let mut raw_events = Vec::new();
+        let mut egui_events = Vec::new();
+        for (ordinal, point, phase, pressed) in [
+            (
+                0,
+                blank,
+                PointerPhase::Press(PointerButtonId::Primary),
+                true,
+            ),
+            (
+                1,
+                close,
+                PointerPhase::Release(PointerButtonId::Primary),
+                false,
+            ),
+            (
+                2,
+                planet,
+                PointerPhase::Press(PointerButtonId::Primary),
+                true,
+            ),
+            (
+                3,
+                planet,
+                PointerPhase::Release(PointerButtonId::Primary),
+                false,
+            ),
+            (
+                4,
+                close,
+                PointerPhase::Press(PointerButtonId::Primary),
+                true,
+            ),
+            (
+                5,
+                close,
+                PointerPhase::Release(PointerButtonId::Primary),
+                false,
+            ),
+        ] {
+            let id = InputEventId { frame: 67, ordinal };
+            assert_eq!(
+                router.collect_pointer(id, &hits, phase),
+                InputRecipient::Window(window)
+            );
+            raw_events.push(SectorWindowInputEvent {
+                id,
+                point: (point.x, point.y),
+                phase,
+            });
+            egui_events.push(egui::Event::PointerMoved(point));
+            egui_events.push(egui::Event::PointerButton {
+                pos: point,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::default(),
+            });
+        }
+        let ctx = egui::Context::default();
+        let mut cache = BmpCache::new();
+        let fog = FogState::new(Faction::Alliance);
+        let missions = rebellion_core::missions::MissionState::new();
+        let mut actions = Vec::new();
+        let _ = ctx.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(700.0, 520.0),
+                )),
+                events: egui_events,
+                ..Default::default()
+            },
+            |ctx| {
+                actions = draw_managed_sector_windows(
+                    ctx,
+                    &world,
+                    &rebellion_core::movement::MovementState::default(),
+                    &fog,
+                    &mut state,
+                    CockpitFaction::Alliance,
+                    layout,
+                    &mut cache,
+                    &missions,
+                    &rebellion_core::uprising::UprisingState::default(),
+                    &snapshot,
+                    &raw_events,
+                    &mut router,
+                );
+            },
+        );
+        let select = actions
+            .iter()
+            .position(|action| *action == SectorWindowAction::SelectSystem(system));
+        let close = actions
+            .iter()
+            .position(|action| *action == SectorWindowAction::Close(window));
+        assert!(
+            matches!((select, close), (Some(select), Some(close)) if select < close),
+            "actions={actions:?}"
+        );
+    }
+
+    #[test]
+    fn managed_sector_uses_each_ordered_coordinate_for_selection_and_menu() {
+        let (mut world, system, _) = fixture_world();
+        add_mine(&mut world, system);
+        add_fleet(&mut world, system);
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let (window, _) = commit_sector_open(&mut manager, &mut state, &world, system);
+        let snapshot = manager.begin_frame();
+        let layout = layout(1.0);
+        let fleet = state
+            .quadrant_screen_rect(&world, layout, system, Quadrant::Fleets)
+            .unwrap()
+            .center();
+        let system_icon = state
+            .quadrant_screen_rect(&world, layout, system, Quadrant::System)
+            .unwrap()
+            .center();
+        let press = InputEventId {
+            frame: 21,
+            ordinal: 0,
+        };
+        let release = InputEventId {
+            frame: 21,
+            ordinal: 1,
+        };
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(21, &snapshot);
+        let hits = std::collections::BTreeSet::from([window]);
+        router.collect_pointer(
+            press,
+            &hits,
+            PointerPhase::Press(PointerButtonId::Secondary),
+        );
+        router.collect_pointer(
+            release,
+            &hits,
+            PointerPhase::Release(PointerButtonId::Secondary),
+        );
+        let pointer_events = [
+            SectorWindowInputEvent {
+                id: press,
+                point: (fleet.x, fleet.y),
+                phase: PointerPhase::Press(PointerButtonId::Secondary),
+            },
+            SectorWindowInputEvent {
+                id: release,
+                point: (system_icon.x, system_icon.y),
+                phase: PointerPhase::Release(PointerButtonId::Secondary),
+            },
+        ];
+        let ctx = egui::Context::default();
+        let mut cache = BmpCache::new();
+        let mut fog = FogState::new(Faction::Alliance);
+        fog.reveal(system);
+        let missions = rebellion_core::missions::MissionState::new();
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(700.0, 520.0),
+            )),
+            events: vec![
+                egui::Event::PointerMoved(fleet),
+                egui::Event::PointerButton {
+                    pos: fleet,
+                    button: egui::PointerButton::Secondary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::default(),
+                },
+                egui::Event::PointerMoved(system_icon),
+                egui::Event::PointerButton {
+                    pos: system_icon,
+                    button: egui::PointerButton::Secondary,
+                    pressed: false,
+                    modifiers: egui::Modifiers::default(),
+                },
+            ],
+            ..Default::default()
+        };
+        let mut actions = Vec::new();
+        let _ = ctx.run(input, |ctx| {
+            actions = draw_managed_sector_windows(
+                ctx,
+                &world,
+                &rebellion_core::movement::MovementState::default(),
+                &fog,
+                &mut state,
+                CockpitFaction::Alliance,
+                layout,
+                &mut cache,
+                &missions,
+                &rebellion_core::uprising::UprisingState::default(),
+                &snapshot,
+                &pointer_events,
+                &mut router,
+            );
+        });
+        assert_eq!(actions[0], SectorWindowAction::Activate(window));
+        assert_eq!(
+            actions[1],
+            SectorWindowAction::OpenObjectMenu {
+                selection: Some(MenuObject::SystemIcon {
+                    system,
+                    quadrant: Quadrant::Fleets,
+                }),
+                point: screen_to_logical(layout, system_icon),
+            }
+        );
+    }
+
+    #[test]
+    fn managed_sector_preserves_event_order_across_two_windows() {
+        let (world, first, second) = fixture_world();
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let (lower, _) = commit_sector_open(&mut manager, &mut state, &world, first);
+        let (upper, _) = commit_sector_open(&mut manager, &mut state, &world, second);
+        let snapshot = manager.begin_frame();
+        let layout = layout(1.0);
+        let lower_point =
+            window_screen_rect(CockpitFaction::Alliance, WindowColumn::Primary, layout).center();
+        let upper_point =
+            window_screen_rect(CockpitFaction::Alliance, WindowColumn::Secondary, layout).center();
+        let upper_press = InputEventId {
+            frame: 25,
+            ordinal: 0,
+        };
+        let upper_release = InputEventId {
+            frame: 25,
+            ordinal: 1,
+        };
+        let lower_press = InputEventId {
+            frame: 25,
+            ordinal: 2,
+        };
+        let lower_release = InputEventId {
+            frame: 25,
+            ordinal: 3,
+        };
+        let upper_press_again = InputEventId {
+            frame: 25,
+            ordinal: 4,
+        };
+        let upper_release_again = InputEventId {
+            frame: 25,
+            ordinal: 5,
+        };
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(25, &snapshot);
+        router.collect_pointer(
+            upper_press,
+            &std::collections::BTreeSet::from([upper]),
+            PointerPhase::Press(PointerButtonId::Secondary),
+        );
+        router.collect_pointer(
+            upper_release,
+            &std::collections::BTreeSet::from([upper]),
+            PointerPhase::Release(PointerButtonId::Secondary),
+        );
+        router.collect_pointer(
+            lower_press,
+            &std::collections::BTreeSet::from([lower]),
+            PointerPhase::Press(PointerButtonId::Secondary),
+        );
+        router.collect_pointer(
+            lower_release,
+            &std::collections::BTreeSet::from([lower]),
+            PointerPhase::Release(PointerButtonId::Secondary),
+        );
+        router.collect_pointer(
+            upper_press_again,
+            &std::collections::BTreeSet::from([upper]),
+            PointerPhase::Press(PointerButtonId::Secondary),
+        );
+        router.collect_pointer(
+            upper_release_again,
+            &std::collections::BTreeSet::from([upper]),
+            PointerPhase::Release(PointerButtonId::Secondary),
+        );
+        let pointer_events = [
+            SectorWindowInputEvent {
+                id: upper_press,
+                point: (upper_point.x, upper_point.y),
+                phase: PointerPhase::Press(PointerButtonId::Secondary),
+            },
+            SectorWindowInputEvent {
+                id: upper_release,
+                point: (upper_point.x, upper_point.y),
+                phase: PointerPhase::Release(PointerButtonId::Secondary),
+            },
+            SectorWindowInputEvent {
+                id: lower_press,
+                point: (lower_point.x, lower_point.y),
+                phase: PointerPhase::Press(PointerButtonId::Secondary),
+            },
+            SectorWindowInputEvent {
+                id: lower_release,
+                point: (lower_point.x, lower_point.y),
+                phase: PointerPhase::Release(PointerButtonId::Secondary),
+            },
+            SectorWindowInputEvent {
+                id: upper_press_again,
+                point: (upper_point.x, upper_point.y),
+                phase: PointerPhase::Press(PointerButtonId::Secondary),
+            },
+            SectorWindowInputEvent {
+                id: upper_release_again,
+                point: (upper_point.x, upper_point.y),
+                phase: PointerPhase::Release(PointerButtonId::Secondary),
+            },
+        ];
+        let ctx = egui::Context::default();
+        let mut cache = BmpCache::new();
+        let mut fog = FogState::new(Faction::Alliance);
+        fog.reveal(first);
+        fog.reveal(second);
+        let mut actions = Vec::new();
+        let _ = ctx.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(700.0, 520.0),
+                )),
+                ..Default::default()
+            },
+            |ctx| {
+                actions = draw_managed_sector_windows(
+                    ctx,
+                    &world,
+                    &rebellion_core::movement::MovementState::default(),
+                    &fog,
+                    &mut state,
+                    CockpitFaction::Alliance,
+                    layout,
+                    &mut cache,
+                    &rebellion_core::missions::MissionState::new(),
+                    &rebellion_core::uprising::UprisingState::default(),
+                    &snapshot,
+                    &pointer_events,
+                    &mut router,
+                );
+            },
+        );
+
+        assert_eq!(
+            actions,
+            [
+                SectorWindowAction::Activate(upper),
+                SectorWindowAction::OpenObjectMenu {
+                    selection: None,
+                    point: screen_to_logical(layout, upper_point),
+                },
+                SectorWindowAction::Activate(lower),
+                SectorWindowAction::OpenObjectMenu {
+                    selection: None,
+                    point: screen_to_logical(layout, lower_point),
+                },
+                SectorWindowAction::Activate(upper),
+                SectorWindowAction::OpenObjectMenu {
+                    selection: None,
+                    point: screen_to_logical(layout, upper_point),
+                },
+            ]
+        );
+        for action in actions {
+            if let SectorWindowAction::Activate(window) = action {
+                manager.apply(WindowCommand::Activate(window)).unwrap();
+            }
+        }
+        assert_eq!(
+            manager.begin_frame().focused().map(|focus| focus.window),
+            Some(upper)
+        );
+    }
+
+    #[test]
+    fn managed_same_frame_primary_press_and_release_closes_capture_causally() {
+        let (mut world, system, _) = fixture_world();
+        add_fleet(&mut world, system);
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let (window, _) = commit_sector_open(&mut manager, &mut state, &world, system);
+        let snapshot = manager.begin_frame();
+        let layout = layout(1.0);
+        let fleet = state
+            .quadrant_screen_rect(&world, layout, system, Quadrant::Fleets)
+            .unwrap()
+            .center();
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(22, &snapshot);
+        let hits = std::collections::BTreeSet::from([window]);
+        let press = InputEventId {
+            frame: 22,
+            ordinal: 0,
+        };
+        let release = InputEventId {
+            frame: 22,
+            ordinal: 1,
+        };
+        router.collect_pointer(press, &hits, PointerPhase::Press(PointerButtonId::Primary));
+        router.collect_pointer(
+            release,
+            &hits,
+            PointerPhase::Release(PointerButtonId::Primary),
+        );
+        let pointer_events = [
+            SectorWindowInputEvent {
+                id: press,
+                point: (fleet.x, fleet.y),
+                phase: PointerPhase::Press(PointerButtonId::Primary),
+            },
+            SectorWindowInputEvent {
+                id: release,
+                point: (fleet.x, fleet.y),
+                phase: PointerPhase::Release(PointerButtonId::Primary),
+            },
+        ];
+        let ctx = egui::Context::default();
+        let mut cache = BmpCache::new();
+        let mut fog = FogState::new(Faction::Alliance);
+        fog.reveal(system);
+        let missions = rebellion_core::missions::MissionState::new();
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(700.0, 520.0),
+            )),
+            events: vec![
+                egui::Event::PointerMoved(fleet),
+                egui::Event::PointerButton {
+                    pos: fleet,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::default(),
+                },
+                egui::Event::PointerButton {
+                    pos: fleet,
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: egui::Modifiers::default(),
+                },
+            ],
+            ..Default::default()
+        };
+        let mut actions = Vec::new();
+        let _ = ctx.run(input, |ctx| {
+            actions = draw_managed_sector_windows(
+                ctx,
+                &world,
+                &rebellion_core::movement::MovementState::default(),
+                &fog,
+                &mut state,
+                CockpitFaction::Alliance,
+                layout,
+                &mut cache,
+                &missions,
+                &rebellion_core::uprising::UprisingState::default(),
+                &snapshot,
+                &pointer_events,
+                &mut router,
+            );
+        });
+        assert_eq!(
+            actions,
+            [
+                SectorWindowAction::Activate(window),
+                SectorWindowAction::CapturePointer(window),
+                SectorWindowAction::ReleasePointer(window),
+            ]
+        );
+        assert_eq!(state.drag_owner(), None);
+    }
+
+    #[test]
+    fn managed_switch_side_activates_before_swapping_columns() {
+        let (world, system, _) = fixture_world();
+        let mut manager = WindowManager::new();
+        let mut state = SectorWindowState::default();
+        let (window, _) = commit_sector_open(&mut manager, &mut state, &world, system);
+        let mut actions = Vec::new();
+        let mut last_activated = None;
+        activate_and_switch_sector(
+            &mut actions,
+            &mut last_activated,
+            &mut state,
+            window,
+            world.systems[system].sector,
+        );
+        actions.push(SectorWindowAction::OpenSystemWindow {
+            system,
+            logical_position: (1, 2),
+        });
+        assert_eq!(actions[0], SectorWindowAction::Activate(window));
+        assert!(matches!(
+            actions[1],
+            SectorWindowAction::OpenSystemWindow { .. }
+        ));
+        assert_eq!(state.windows[0].column, WindowColumn::Secondary);
     }
 
     #[test]
@@ -2834,6 +8353,15 @@ mod tests {
         state: &mut SectorWindowState,
         command: InterfaceCommand,
     ) -> Result<Vec<SectorWindowAction>, &'static str> {
+        let system = match command {
+            InterfaceCommand::StartGame(_) => None,
+            InterfaceCommand::OpenSector(system)
+            | InterfaceCommand::OpenQuadrantWindow { system, .. }
+            | InterfaceCommand::OpenIconMenu { system, .. } => Some(system),
+        };
+        if let Some(system) = system {
+            state.open_for_system(world, system, cockpit(owner));
+        }
         let mut fog = FogState::new(owner);
         for system in world.systems.keys() {
             fog.reveal(system);

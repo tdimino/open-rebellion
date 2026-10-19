@@ -15,7 +15,7 @@ use rebellion_core::carriage;
 use rebellion_core::dat::{ExplorationStatus, Faction};
 use rebellion_core::fleet_join;
 use rebellion_core::fog::FogState;
-use rebellion_core::ids::{CharacterKey, DatId, FleetKey, SystemKey, TroopKey};
+use rebellion_core::ids::{CharacterKey, DatId, FighterKey, FleetKey, SystemKey, TroopKey};
 use rebellion_core::movement::MovementState;
 use rebellion_core::troop_transport::TroopTransportState;
 use rebellion_core::world::{ControlKind, Fleet, GameWorld};
@@ -304,40 +304,127 @@ struct ItemDrag {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ItemObject {
     /// A left-list fleet entry.
-    Fleet(FleetKey),
-    Regiment(TroopKey),
+    Fleet { fleet: FleetKey, system: SystemKey },
+    Regiment {
+        troop: TroopKey,
+        fleet: FleetKey,
+        system: SystemKey,
+        carrier: u32,
+    },
     /// A capital ship, by its index in the fleet's `capital_ships` and the
     /// fleet's roster then (`fleet_join::roster`).
     Ship {
         fleet: FleetKey,
         index: usize,
         roster: u64,
+        system: SystemKey,
     },
     /// A squadron, by its entry's index in the fleet's `fighters`.
     Fighter {
         fleet: FleetKey,
         index: usize,
+        class: FighterKey,
+        carrier: u32,
+        system: SystemKey,
     },
     /// A Personnel tab character (`FUN_004ed350`'s menu).
-    Character(CharacterKey),
+    Character {
+        character: CharacterKey,
+        fleet: FleetKey,
+        system: SystemKey,
+    },
 }
 
 impl ItemObject {
     const fn menu_object(self) -> MenuObject {
         match self {
-            Self::Fighter { fleet, index } => MenuObject::Fighter { fleet, index },
-            Self::Fleet(fleet) => MenuObject::Fleet(fleet),
-            Self::Regiment(troop) => MenuObject::Troop(troop),
-            Self::Character(character) => MenuObject::Character(character),
+            Self::Fighter { fleet, index, .. } => MenuObject::Fighter { fleet, index },
+            Self::Fleet { fleet, .. } => MenuObject::Fleet(fleet),
+            Self::Regiment { troop, .. } => MenuObject::Troop(troop),
+            Self::Character { character, .. } => MenuObject::Character(character),
             Self::Ship {
                 fleet,
                 index,
                 roster,
+                ..
             } => MenuObject::Ship {
                 fleet,
                 index,
                 roster,
             },
+        }
+    }
+
+    /// Whether this is still the exact source that was pressed. Indexed
+    /// contents carry enough identity to reject a replacement that later
+    /// occupies the same row before button-up.
+    fn is_current(
+        self,
+        world: &GameWorld,
+        transport: &TroopTransportState,
+        faction: CockpitFaction,
+    ) -> bool {
+        let expected_is_alliance = cockpit_faction(faction) == Faction::Alliance;
+        let fleet_at = |fleet: FleetKey, system: SystemKey| {
+            world.fleets.get(fleet).is_some_and(|value| {
+                value.location == system && value.is_alliance == expected_is_alliance
+            })
+        };
+        match self {
+            Self::Fleet { fleet, system } => fleet_at(fleet, system),
+            Self::Regiment {
+                troop,
+                fleet,
+                system,
+                carrier,
+            } => {
+                fleet_at(fleet, system)
+                    && world.troops.contains_key(troop)
+                    && transport.cargo(fleet).contains(&troop)
+                    && transport.carrier(troop) == carrier
+            }
+            Self::Ship {
+                fleet,
+                index,
+                roster,
+                system,
+            } => {
+                fleet_at(fleet, system)
+                    && fleet_join::roster(world, fleet) == Some(roster)
+                    && world
+                        .fleets
+                        .get(fleet)
+                        .and_then(|value| value.capital_ships.get(index))
+                        .is_some_and(|ship| ship.alive)
+            }
+            Self::Fighter {
+                fleet,
+                index,
+                class,
+                carrier,
+                system,
+            } => {
+                fleet_at(fleet, system)
+                    && world
+                        .fleets
+                        .get(fleet)
+                        .and_then(|value| value.fighters.get(index))
+                        .is_some_and(|entry| {
+                            entry.count > 0 && entry.class == class && entry.carrier == carrier
+                        })
+            }
+            Self::Character {
+                character,
+                fleet,
+                system,
+            } => {
+                fleet_at(fleet, system)
+                    && world.characters.contains_key(character)
+                    && world
+                        .fleets
+                        .get(fleet)
+                        .is_some_and(|value| value.characters.contains(&character))
+            }
         }
     }
 }
@@ -919,6 +1006,8 @@ impl FleetWindowState {
     fn end_drag(
         &mut self,
         ctx: &egui::Context,
+        world: &GameWorld,
+        transport: &TroopTransportState,
         scale: f32,
         router: Option<&mut FrameInputRouter>,
         pointer_events: &[(InputEventId, PointerPhase)],
@@ -965,15 +1054,18 @@ impl FleetWindowState {
         if moved.length_sq() <= DRAG_DISTANCE_SQUARED || rect_contains(drag.list, point) {
             return result;
         }
+        if !drag.object.is_current(world, transport, self.faction) {
+            return result;
+        }
         result.actions.push(match drag.object {
-            ItemObject::Fighter { fleet, index } => FleetWindowAction::DragSquadron {
+            ItemObject::Fighter { fleet, index, .. } => FleetWindowAction::DragSquadron {
                 fleet,
                 index,
                 point,
             },
-            ItemObject::Fleet(fleet) => FleetWindowAction::DragFleet { fleet, point },
-            ItemObject::Regiment(troop) => FleetWindowAction::DragRegiment { troop, point },
-            ItemObject::Character(character) => FleetWindowAction::DragCharacter {
+            ItemObject::Fleet { fleet, .. } => FleetWindowAction::DragFleet { fleet, point },
+            ItemObject::Regiment { troop, .. } => FleetWindowAction::DragRegiment { troop, point },
+            ItemObject::Character { character, .. } => FleetWindowAction::DragCharacter {
                 character,
                 confirmed: ctrl,
                 point,
@@ -982,6 +1074,7 @@ impl FleetWindowState {
                 fleet,
                 index,
                 roster,
+                ..
             } => FleetWindowAction::DragShip {
                 fleet,
                 index,
@@ -1522,6 +1615,7 @@ fn right_items(
                     fleet,
                     index,
                     roster,
+                    system: value.location,
                 }),
             })
             .collect(),
@@ -1532,15 +1626,27 @@ fn right_items(
             .enumerate()
             .filter(|(_, entry)| scope.carries(entry.carrier))
             .filter_map(|(index, entry)| {
-                Some((index, world.fighter_classes.get(entry.class)?, entry.count))
+                Some((
+                    index,
+                    world.fighter_classes.get(entry.class)?,
+                    entry.count,
+                    entry.class,
+                    entry.carrier,
+                ))
             })
-            .flat_map(|(index, class, count)| {
+            .flat_map(|(index, class, count, class_key, carrier)| {
                 (0..count).map(move |_| RightItem {
                     mini: fighter_mini_id(class.dat_id),
                     kind: MiniObject::Craft,
                     label: class.name.clone(),
                     flags: 0,
-                    object: Some(ItemObject::Fighter { fleet, index }),
+                    object: Some(ItemObject::Fighter {
+                        fleet,
+                        index,
+                        class: class_key,
+                        carrier,
+                        system: value.location,
+                    }),
                 })
             })
             .collect(),
@@ -1557,7 +1663,12 @@ fn right_items(
                 kind: MiniObject::Regiment(class),
                 label: label.to_owned(),
                 flags: 0,
-                object: Some(ItemObject::Regiment(key)),
+                object: Some(ItemObject::Regiment {
+                    troop: key,
+                    fleet,
+                    system: value.location,
+                    carrier: transport.carrier(key),
+                }),
             })
             .collect(),
         FleetWindowTab::Personnel if !scope.has_characters(value) => Vec::new(),
@@ -1570,7 +1681,11 @@ fn right_items(
                 kind: MiniObject::Character,
                 label: character.display_name().to_owned(),
                 flags: 0,
-                object: Some(ItemObject::Character(key)),
+                object: Some(ItemObject::Character {
+                    character: key,
+                    fleet,
+                    system: value.location,
+                }),
             })
             .collect(),
     }
@@ -1905,7 +2020,14 @@ fn draw_fleet_windows_with_snapshot(
         .last()
         .filter(|window| window.id.is_none())
         .map(|window| window.system);
-    let ended_drag = state.end_drag(ctx, layout.scale, router.as_deref_mut(), pointer_events);
+    let ended_drag = state.end_drag(
+        ctx,
+        world,
+        transport,
+        layout.scale,
+        router.as_deref_mut(),
+        pointer_events,
+    );
     let mut actions = ended_drag.actions;
     for window in &windows {
         let focused = front
@@ -2356,11 +2478,15 @@ fn draw_fleet_window(
                     }
                 }
                 let object = match *entry {
-                    FleetWindowEntry::Fleet(fleet) => ItemObject::Fleet(fleet),
+                    FleetWindowEntry::Fleet(fleet) => ItemObject::Fleet {
+                        fleet,
+                        system: window.system,
+                    },
                     FleetWindowEntry::Ship { fleet, index } => ItemObject::Ship {
                         fleet,
                         index,
                         roster: fleet_join::roster(world, fleet).unwrap_or_default(),
+                        system: window.system,
                     },
                 };
                 if let (true, Some(point)) = (
@@ -2570,8 +2696,8 @@ fn draw_fleet_window(
                     }
                     if let Some(mini) = item.mini {
                         let own = match item.object {
-                            Some(ItemObject::Character(key)) => {
-                                world.characters.get(key).is_some_and(|c| c.en_route)
+                            Some(ItemObject::Character { character, .. }) => {
+                                world.characters.get(character).is_some_and(|c| c.en_route)
                             }
                             _ => false,
                         };
@@ -2810,8 +2936,10 @@ pub(crate) mod tests {
     use rebellion_core::ids::{DatId, TroopKey};
     use rebellion_core::world::{CapitalShipClass, Fleet, Sector, ShipInstance, System, TroopUnit};
     use rebellion_windowing::{
-        ExistingEffect, WindowCommand, WindowId, WindowManager, WindowTransition,
+        CaptureCancelReason, ExistingEffect, WindowCommand, WindowEvent, WindowId, WindowManager,
+        WindowTransition,
     };
+    use std::collections::BTreeSet;
 
     fn layout() -> CockpitLayout {
         let viewport = CockpitViewport {
@@ -2920,6 +3048,115 @@ pub(crate) mod tests {
             .commit_open(prepared, &commit.transition)
             .expect("successful Fleet open should publish or preserve content");
         (id, commit.transition)
+    }
+
+    fn seed_managed_fleet_drag(
+        manager: &mut WindowManager,
+        state: &mut FleetWindowState,
+        fleet: FleetKey,
+    ) -> WindowId {
+        let owner = state
+            .windows
+            .iter()
+            .find_map(|window| window.id)
+            .expect("test Fleet content is manager-owned");
+        let system = state
+            .windows
+            .iter()
+            .find(|window| window.id == Some(owner))
+            .expect("manager-owned Fleet content retains its source system")
+            .system;
+        state.drag = Some(ItemDrag {
+            object: ItemObject::Fleet { fleet, system },
+            press: egui::pos2(40.0, 40.0),
+            list: egui::Rect::from_min_max(egui::pos2(4.0, 29.0), egui::pos2(95.0, 295.0)),
+        });
+        state.drag_owner = Some(owner);
+        manager
+            .apply(WindowCommand::CapturePointer(owner))
+            .expect("eligible Fleet drag acquires manager capture");
+        owner
+    }
+
+    fn release_seeded_drag(
+        world: &GameWorld,
+        transport: &TroopTransportState,
+        state: &mut FleetWindowState,
+        router: &mut FrameInputRouter,
+        snapshot: &RoutingSnapshot,
+        owner: WindowId,
+        release: egui::Pos2,
+    ) -> EndDragResult {
+        let ctx = egui::Context::default();
+        let press_id = InputEventId {
+            frame: 1,
+            ordinal: 0,
+        };
+        let press_phase = PointerPhase::Press(PointerButtonId::Primary);
+        router.begin_frame(1, snapshot);
+        assert_eq!(
+            router.collect_pointer(press_id, &BTreeSet::from([owner]), press_phase),
+            InputRecipient::Window(owner)
+        );
+        let press = egui::Event::PointerButton {
+            pos: egui::pos2(40.0, 40.0),
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: egui::Modifiers::default(),
+        };
+        let _ = ctx.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1400.0, 1000.0),
+                )),
+                events: vec![press],
+                ..Default::default()
+            },
+            |_| {},
+        );
+
+        let release_id = InputEventId {
+            frame: 2,
+            ordinal: 1,
+        };
+        let release_phase = PointerPhase::Release(PointerButtonId::Primary);
+        router.begin_frame(2, snapshot);
+        assert_eq!(
+            router.collect_pointer(release_id, &BTreeSet::new(), release_phase),
+            InputRecipient::Window(owner),
+            "the press owner must receive release outside every window"
+        );
+        let mut result = EndDragResult::default();
+        let _ = ctx.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1400.0, 1000.0),
+                )),
+                events: vec![
+                    egui::Event::PointerMoved(release),
+                    egui::Event::PointerButton {
+                        pos: release,
+                        button: egui::PointerButton::Primary,
+                        pressed: false,
+                        modifiers: egui::Modifiers::default(),
+                    },
+                ],
+                ..Default::default()
+            },
+            |ctx| {
+                result = state.end_drag(
+                    ctx,
+                    world,
+                    transport,
+                    1.0,
+                    Some(router),
+                    &[(release_id, release_phase)],
+                );
+            },
+        );
+        result
     }
 
     #[test]
@@ -3490,6 +3727,198 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn fleet_window_drag_release_outside_window_stays_with_capture_owner() {
+        let (mut world, system) = world(ControlKind::Controlled(Faction::Alliance));
+        let fleet = add_fleet(&mut world, system, true, 0);
+        let mut manager = WindowManager::new();
+        let mut state = FleetWindowState::default();
+        let prepared = state
+            .prepare_open(
+                &world,
+                system,
+                ORIGIN,
+                CockpitFaction::Alliance,
+                scaled(),
+                None,
+            )
+            .unwrap();
+        commit_prepared_fleet_window(&mut manager, &mut state, prepared);
+        let owner = seed_managed_fleet_drag(&mut manager, &mut state, fleet);
+        let snapshot = manager.begin_frame();
+        let mut router = FrameInputRouter::default();
+        let release = egui::pos2(500.0, 400.0);
+
+        let result = release_seeded_drag(
+            &world,
+            &TroopTransportState::default(),
+            &mut state,
+            &mut router,
+            &snapshot,
+            owner,
+            release,
+        );
+
+        assert_eq!(result.claimed_primary_release_by, Some(owner));
+        assert_eq!(
+            result.actions,
+            [
+                FleetWindowAction::ReleasePointer(owner),
+                FleetWindowAction::DragFleet {
+                    fleet,
+                    point: release,
+                },
+            ]
+        );
+        assert!(!state.is_dragging());
+        assert_eq!(state.drag_owner(), None);
+    }
+
+    #[test]
+    fn fleet_window_modal_open_clears_drag_payload_and_capture() {
+        let (mut world, system) = world(ControlKind::Controlled(Faction::Alliance));
+        let fleet = add_fleet(&mut world, system, true, 0);
+        let mut manager = WindowManager::new();
+        let mut state = FleetWindowState::default();
+        let prepared = state
+            .prepare_open(
+                &world,
+                system,
+                ORIGIN,
+                CockpitFaction::Alliance,
+                scaled(),
+                None,
+            )
+            .unwrap();
+        commit_prepared_fleet_window(&mut manager, &mut state, prepared);
+        let owner = seed_managed_fleet_drag(&mut manager, &mut state, fleet);
+        let mut router = FrameInputRouter::default();
+        let snapshot = manager.begin_frame();
+        router.begin_frame(1, &snapshot);
+        router.collect_pointer(
+            InputEventId {
+                frame: 1,
+                ordinal: 0,
+            },
+            &BTreeSet::from([owner]),
+            PointerPhase::Press(PointerButtonId::Primary),
+        );
+
+        let modal = manager
+            .apply(WindowCommand::Open(
+                crate::windowing_policy::singleton_spec(
+                    WindowKind::BuildSelection,
+                    WindowOwner::StrategicRoot,
+                ),
+            ))
+            .expect("strategic modal opens above the Fleet window");
+        for event in &modal.events {
+            if let WindowEvent::CaptureCancelled { window, .. } = event {
+                router.cancel_window(*window);
+                state.cancel_pointer_capture(*window);
+            }
+        }
+
+        assert!(modal.events.contains(&WindowEvent::CaptureCancelled {
+            window: owner,
+            reason: CaptureCancelReason::ModalOpened,
+        }));
+        assert_eq!(manager.capture_owner(), None);
+        assert!(!state.is_dragging());
+        assert_eq!(state.drag_owner(), None);
+    }
+
+    #[test]
+    fn fleet_window_cancelled_drag_release_cannot_drop_or_click_underlay() {
+        let (mut world, system) = world(ControlKind::Controlled(Faction::Alliance));
+        let fleet = add_fleet(&mut world, system, true, 0);
+        let mut manager = WindowManager::new();
+        let mut state = FleetWindowState::default();
+        let prepared = state
+            .prepare_open(
+                &world,
+                system,
+                ORIGIN,
+                CockpitFaction::Alliance,
+                scaled(),
+                None,
+            )
+            .unwrap();
+        commit_prepared_fleet_window(&mut manager, &mut state, prepared);
+        let owner = seed_managed_fleet_drag(&mut manager, &mut state, fleet);
+        let snapshot = manager.begin_frame();
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(1, &snapshot);
+        router.collect_pointer(
+            InputEventId {
+                frame: 1,
+                ordinal: 0,
+            },
+            &BTreeSet::from([owner]),
+            PointerPhase::Press(PointerButtonId::Primary),
+        );
+        router.cancel_window(owner);
+        state.cancel_pointer_capture(owner);
+
+        let release = InputEventId {
+            frame: 2,
+            ordinal: 0,
+        };
+        let phase = PointerPhase::Release(PointerButtonId::Primary);
+        router.begin_frame(2, &snapshot);
+        assert_eq!(
+            router.collect_pointer(release, &BTreeSet::new(), phase),
+            InputRecipient::Blocked
+        );
+        assert!(!router.claim_root(release));
+        assert!(!router.claim(release, InputRecipient::Window(owner)));
+        assert!(!state.is_dragging());
+        assert_eq!(state.drag_owner(), None);
+    }
+
+    #[test]
+    fn fleet_window_invalid_drop_dispatches_no_gameplay_command() {
+        for (source_is_alliance, remove_before_release) in [(true, true), (false, false)] {
+            let (mut world, system) = world(ControlKind::Controlled(Faction::Alliance));
+            let fleet = add_fleet(&mut world, system, source_is_alliance, 0);
+            let mut manager = WindowManager::new();
+            let mut state = FleetWindowState::default();
+            let prepared = state
+                .prepare_open(
+                    &world,
+                    system,
+                    ORIGIN,
+                    CockpitFaction::Alliance,
+                    scaled(),
+                    None,
+                )
+                .unwrap();
+            commit_prepared_fleet_window(&mut manager, &mut state, prepared);
+            let owner = seed_managed_fleet_drag(&mut manager, &mut state, fleet);
+            let snapshot = manager.begin_frame();
+            let mut router = FrameInputRouter::default();
+            if remove_before_release {
+                world.fleets.remove(fleet);
+            }
+
+            let result = release_seeded_drag(
+                &world,
+                &TroopTransportState::default(),
+                &mut state,
+                &mut router,
+                &snapshot,
+                owner,
+                egui::pos2(500.0, 400.0),
+            );
+
+            assert_eq!(
+                result.actions,
+                [FleetWindowAction::ReleasePointer(owner)],
+                "a stale or enemy drag source must release capture without a gameplay receipt"
+            );
+        }
+    }
+
+    #[test]
     fn rename_cancellation_requires_the_route_for_its_actual_input_cause() {
         assert!(!rename_outcome_permitted(
             Some(&RenameOutcome::Cancel(RenameCancelCause::FocusLost)),
@@ -3539,7 +3968,7 @@ pub(crate) mod tests {
         };
         let mut state = FleetWindowState {
             drag: Some(ItemDrag {
-                object: ItemObject::Fleet(fleet),
+                object: ItemObject::Fleet { fleet, system },
                 press: egui::pos2(1.0, 1.0),
                 list: egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(2.0, 2.0)),
             }),
@@ -3586,8 +4015,9 @@ pub(crate) mod tests {
             )
             .unwrap();
         let (second_id, _) = commit_prepared_fleet_window(&mut manager, &mut state, second);
+        let fleet = add_fleet(&mut world, system, true, 0);
         state.drag = Some(ItemDrag {
-            object: ItemObject::Fleet(add_fleet(&mut world, system, true, 0)),
+            object: ItemObject::Fleet { fleet, system },
             press: egui::pos2(1.0, 1.0),
             list: egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(2.0, 2.0)),
         });
@@ -3791,7 +4221,12 @@ pub(crate) mod tests {
                 kind: MiniObject::Regiment(DatId::new(0x1000_0001)),
                 label: "Alliance Fleet Regiment".into(),
                 flags: 0,
-                object: Some(ItemObject::Regiment(troop)),
+                object: Some(ItemObject::Regiment {
+                    troop,
+                    fleet,
+                    system,
+                    carrier: transport.carrier(troop),
+                }),
             }]
         );
         // A ship's own contents are not modelled, so its tabs stay dark.
@@ -4441,7 +4876,7 @@ pub(crate) mod tests {
     #[test]
     fn a_capital_ship_item_stands_for_its_index_among_every_ship_of_the_fleet() {
         // Our own list: a destroyed ship is not listed but keeps its index.
-        let (mut world, transport, _, fleet, _) = fleet_with_regiment();
+        let (mut world, transport, system, fleet, _) = fleet_with_regiment();
         let class = world.fleets[fleet].capital_ships[0].class;
         world.fleets[fleet]
             .capital_ships
@@ -4461,6 +4896,7 @@ pub(crate) mod tests {
                 fleet,
                 index: 1,
                 roster: fleet_join::roster(&world, fleet).unwrap(),
+                system,
             })]
         );
     }

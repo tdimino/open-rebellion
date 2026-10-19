@@ -58,6 +58,8 @@ const BATTLE_APERTURE: NativeRect = NativeRect::new(16.0, 28.0, 444.0, 439.0);
 /// draggable; the deterministic launcher keeps this centered position.
 const BATTLE_RESULTS_WINDOW_X: f32 = 85.0;
 const BATTLE_RESULTS_WINDOW_Y: f32 = 74.0;
+const BATTLE_WINDOW_WIDTH: f32 = 470.0;
+const BATTLE_WINDOW_HEIGHT: f32 = 331.0;
 const BATTLE_RESULTS_SCENE_X: f32 = 12.0;
 const BATTLE_RESULTS_SCENE_Y: f32 = 13.0;
 const BATTLE_RESULTS_RAIL_X: f32 = 412.0;
@@ -239,9 +241,19 @@ impl BattleAlertTab {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BattleAlertControl {
+    Tab(BattleAlertTab),
     Retreat,
     Simulate,
     TakeCommand,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BattleResultControl {
+    Close,
+    Tab(BattleResultTab),
+    Category(BattleResultCategory),
+    System,
+    Fleet,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -271,10 +283,51 @@ enum TacticalCameraFollow {
     FighterGroup(u8),
 }
 
+/// Manager-visible lifecycle phase for the current tactical battle session.
+///
+/// Alert and Results are distinct modal windows. Combat retains the battle
+/// subject without a modal, while Inactive ends that subject's lifetime.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum TacticalWindowPhase {
+    #[default]
+    Inactive,
+    Alert,
+    Combat,
+    Results,
+}
+
+/// One ordered pointer event admitted to the active tactical modal identity.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TacticalWindowEvent {
+    /// Clear the current modal gesture at this exact point in event order.
+    CancelGesture,
+    PrimaryPress((f32, f32)),
+    PrimaryRelease((f32, f32)),
+    /// Event-local wheel position and admitted vertical delta.
+    Wheel {
+        screen: (f32, f32),
+        delta_y: f32,
+    },
+}
+
+/// Routed pointer state admitted to the active Battle Alert or Results
+/// identity for one immutable frame lease.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct TacticalWindowInput {
+    /// Current backend pointer position in screen coordinates, used for hover.
+    pub pointer_screen: (f32, f32),
+    /// Admitted primary events in their original backend order.
+    pub events: Vec<TacticalWindowEvent>,
+    /// Whether the physical primary button remains down.
+    pub primary_down: bool,
+}
+
 /// Persistent state for the tactical combat view across frames.
 pub struct TacticalState {
     /// The current battle session (None when not in combat).
     pub session: Option<BattleSession>,
+    /// Monotonic renderer-local identity of the current battle session.
+    battle_session_generation: u64,
     /// Ship being dragged during placement (index in session.ships).
     pub dragging_ship: Option<usize>,
     /// Mouse offset from ship center during drag.
@@ -299,6 +352,7 @@ pub struct TacticalState {
     pub battle_result_tab: BattleResultTab,
     /// Active force family in the Alliance or Imperial result tab.
     pub battle_result_category: BattleResultCategory,
+    battle_result_pressed: Option<BattleResultControl>,
     /// The original strategic Battle Alert owns entry until the player takes
     /// command, simulates, or attempts to retreat.
     battle_alert_open: bool,
@@ -351,6 +405,7 @@ impl Default for TacticalState {
     fn default() -> Self {
         Self {
             session: None,
+            battle_session_generation: 0,
             dragging_ship: None,
             drag_offset: (0.0, 0.0),
             camera_x: 0.0,
@@ -365,6 +420,7 @@ impl Default for TacticalState {
             highlight_empire: true,
             battle_result_tab: BattleResultTab::Summary,
             battle_result_category: BattleResultCategory::CapitalShips,
+            battle_result_pressed: None,
             battle_alert_open: false,
             battle_alert_tab: BattleAlertTab::Summary,
             battle_alert_scroll: 0,
@@ -405,6 +461,59 @@ impl TacticalState {
         Self::default()
     }
 
+    fn start_windowing_battle_session(&mut self) -> u64 {
+        self.battle_session_generation = self
+            .battle_session_generation
+            .checked_add(1)
+            .expect("tactical battle-session identity exhausted");
+        self.battle_session_generation
+    }
+
+    /// Stable renderer-local identity for the active battle session.
+    #[must_use]
+    pub fn windowing_battle_session(&self) -> Option<u64> {
+        self.session
+            .as_ref()
+            .map(|_| self.battle_session_generation)
+    }
+
+    /// Whether `point` lies inside the active Alert/Results window after the
+    /// same source-canvas transform used for painting.
+    #[must_use]
+    pub fn windowing_contains_screen_point(
+        &self,
+        screen_width: f32,
+        screen_height: f32,
+        point: (f32, f32),
+    ) -> bool {
+        let origin = match self.windowing_phase() {
+            TacticalWindowPhase::Alert => (BATTLE_ALERT_WINDOW_X, BATTLE_ALERT_WINDOW_Y),
+            TacticalWindowPhase::Results => (BATTLE_RESULTS_WINDOW_X, BATTLE_RESULTS_WINDOW_Y),
+            TacticalWindowPhase::Inactive | TacticalWindowPhase::Combat => return false,
+        };
+        let logical =
+            TacticalCanvas::new(screen_width, screen_height).logical_pointer(point.0, point.1);
+        NativeRect::new(
+            origin.0,
+            origin.1,
+            BATTLE_WINDOW_WIDTH,
+            BATTLE_WINDOW_HEIGHT,
+        )
+        .contains(logical.0, logical.1)
+    }
+
+    /// Clears every renderer-owned pointer gesture without dispatching its
+    /// eventual physical release.
+    pub fn cancel_window_gestures(&mut self) {
+        self.dragging_ship = None;
+        self.battle_alert_pressed = None;
+        self.battle_alert_scroll_drag = crate::scroll_bar::ScrollDrag::default();
+        self.battle_result_pressed = None;
+        self.battle_options_pressed = None;
+        self.withdraw_confirmation_pressed = None;
+        self.death_star_laser_pressed = false;
+    }
+
     /// Begin a new battle — sets session and resets UI state.
     pub fn begin_battle(
         &mut self,
@@ -442,6 +551,7 @@ impl TacticalState {
         tick: u64,
         rng_seed: u32,
     ) {
+        self.start_windowing_battle_session();
         let session = BattleSession::new_with_forces(
             world,
             system,
@@ -479,6 +589,7 @@ impl TacticalState {
         self.highlight_empire = true;
         self.battle_result_tab = BattleResultTab::Summary;
         self.battle_result_category = BattleResultCategory::CapitalShips;
+        self.battle_result_pressed = None;
         self.battle_alert_open = true;
         macroquad::logging::info!("[battle_alert] opened");
         self.battle_alert_tab = BattleAlertTab::Summary;
@@ -1712,7 +1823,7 @@ impl TacticalState {
     /// End the current battle — clears session. Returns the session for
     /// result processing by the caller.
     pub fn end_battle(&mut self) -> Option<BattleSession> {
-        self.dragging_ship = None;
+        self.cancel_window_gestures();
         self.command_panel = TacticalCommandPanel::Display;
         self.session.take()
     }
@@ -1778,6 +1889,29 @@ impl TacticalState {
     #[must_use]
     pub const fn battle_alert_open(&self) -> bool {
         self.battle_alert_open
+    }
+
+    /// Applies a manager-approved departure from Battle Alert. Rendering an
+    /// Alert command only prepares the intent; the app calls this after the
+    /// exact Alert close receipt is committed.
+    pub fn commit_battle_alert_exit(&mut self) {
+        self.battle_alert_open = false;
+        self.cancel_window_gestures();
+    }
+
+    /// Current manager-visible phase derived from the authoritative session.
+    #[must_use]
+    pub fn windowing_phase(&self) -> TacticalWindowPhase {
+        let Some(session) = self.session.as_ref() else {
+            return TacticalWindowPhase::Inactive;
+        };
+        if self.battle_alert_open {
+            TacticalWindowPhase::Alert
+        } else if session.phase == BattlePhase::Results {
+            TacticalWindowPhase::Results
+        } else {
+            TacticalWindowPhase::Combat
+        }
     }
 
     /// The battle result window's track while the window shows
@@ -5399,9 +5533,8 @@ fn draw_battle_result_destinations(
     player_alliance: bool,
     mouse: (f32, f32),
     mouse_down: bool,
-    mouse_released: bool,
     text_color: Color,
-) -> TacticalAction {
+) {
     use resources::strategy as art;
     draw_strategy_bitmap(
         cache,
@@ -5485,18 +5618,6 @@ fn draw_battle_result_destinations(
             WHITE,
         );
     }
-
-    if mouse_released && system_rect.contains(mouse.0, mouse.1) {
-        macroquad::logging::info!("[tactical-results] destination=system");
-        return TacticalAction::OpenBattleSystem(session.system);
-    }
-    if mouse_released && fleet_rect.contains(mouse.0, mouse.1) {
-        if let Some(fleet) = winner_fleet(session) {
-            macroquad::logging::info!("[tactical-results] destination=fleet");
-            return TacticalAction::OpenBattleFleet(fleet);
-        }
-    }
-    TacticalAction::None
 }
 
 fn battle_alert_retreat_enabled(session: &BattleSession) -> bool {
@@ -5861,13 +5982,14 @@ fn draw_battle_alert_list(
     cache: &mut BmpCache,
     canvas: TacticalCanvas,
     rows: &[BattleAlertRow],
-    mouse: (f32, f32),
+    input: &TacticalWindowInput,
 ) {
     state.battle_alert_scroll = state
         .battle_alert_scroll
         .min(battle_alert_scroll_range(0, rows.len()).max_first());
     let origin_x = BATTLE_ALERT_WINDOW_X + BATTLE_ALERT_LIST_X;
     let origin_y = BATTLE_ALERT_WINDOW_Y + BATTLE_ALERT_LIST_Y;
+    let pointer = apply_battle_alert_scroll_input(state, canvas, rows.len(), input);
     let (clip_x, clip_y) = canvas.point(origin_x, origin_y);
     set_tactical_aperture_clip(Some(NativeRect::new(
         clip_x,
@@ -5942,26 +6064,7 @@ fn draw_battle_alert_list(
     // The scroll bar shows while the rows overflow the list (captures 056
     // and 057).
     let bar = battle_alert_scroll_bar();
-    let range = battle_alert_scroll_range(first, rows.len());
-    let pointer = ScrollPointer {
-        at: Some((
-            mouse.0 - BATTLE_ALERT_WINDOW_X,
-            mouse.1 - BATTLE_ALERT_WINDOW_Y,
-        )),
-        pressed: is_mouse_button_pressed(MouseButton::Left),
-        down: is_mouse_button_down(MouseButton::Left),
-        released: is_mouse_button_released(MouseButton::Left),
-    };
-    state.battle_alert_scroll = bar.update(
-        &mut state.battle_alert_scroll_drag,
-        range,
-        range.visible.floor() as usize,
-        pointer,
-    );
-    let range = ScrollRange {
-        first: state.battle_alert_scroll,
-        ..range
-    };
+    let range = battle_alert_scroll_range(state.battle_alert_scroll, rows.len());
     for blit in bar.blits(range, &state.battle_alert_scroll_drag, pointer) {
         draw_original_bitmap(
             cache,
@@ -5973,18 +6076,187 @@ fn draw_battle_alert_list(
             Some(Rect::new(0.0, 0.0, 13.0, blit.height)),
         );
     }
-    let in_list = mouse.0 >= origin_x
-        && mouse.0 < origin_x + BATTLE_ALERT_LIST_WIDTH
-        && mouse.1 >= origin_y
-        && mouse.1 < origin_y + BATTLE_ALERT_LIST_HEIGHT;
-    let wheel = mouse_wheel().1;
-    if in_list && wheel != 0.0 && range.overflows() {
-        state.battle_alert_scroll = if wheel > 0.0 {
-            state.battle_alert_scroll.saturating_sub(1)
-        } else {
-            (state.battle_alert_scroll + 1).min(range.max_first())
-        };
+}
+
+/// Replays every admitted list event in backend order at its event-local
+/// coordinate, then applies the final held-button position for thumb dragging.
+fn apply_battle_alert_scroll_input(
+    state: &mut TacticalState,
+    canvas: TacticalCanvas,
+    rows: usize,
+    input: &TacticalWindowInput,
+) -> ScrollPointer {
+    let bar = battle_alert_scroll_bar();
+    for event in &input.events {
+        match *event {
+            TacticalWindowEvent::CancelGesture => {
+                state.battle_alert_scroll_drag = crate::scroll_bar::ScrollDrag::default();
+            }
+            TacticalWindowEvent::PrimaryPress(screen)
+            | TacticalWindowEvent::PrimaryRelease(screen) => {
+                let point = canvas.logical_pointer(screen.0, screen.1);
+                let pressed = matches!(event, TacticalWindowEvent::PrimaryPress(_));
+                let pointer = ScrollPointer {
+                    at: Some((
+                        point.0 - BATTLE_ALERT_WINDOW_X,
+                        point.1 - BATTLE_ALERT_WINDOW_Y,
+                    )),
+                    pressed,
+                    down: pressed,
+                    released: !pressed,
+                };
+                let range = battle_alert_scroll_range(state.battle_alert_scroll, rows);
+                state.battle_alert_scroll = bar.update(
+                    &mut state.battle_alert_scroll_drag,
+                    range,
+                    range.visible.floor() as usize,
+                    pointer,
+                );
+            }
+            TacticalWindowEvent::Wheel { screen, delta_y } => {
+                let point = canvas.logical_pointer(screen.0, screen.1);
+                let in_list = point.0 >= BATTLE_ALERT_WINDOW_X + BATTLE_ALERT_LIST_X
+                    && point.0
+                        < BATTLE_ALERT_WINDOW_X + BATTLE_ALERT_LIST_X + BATTLE_ALERT_LIST_WIDTH
+                    && point.1 >= BATTLE_ALERT_WINDOW_Y + BATTLE_ALERT_LIST_Y
+                    && point.1
+                        < BATTLE_ALERT_WINDOW_Y + BATTLE_ALERT_LIST_Y + BATTLE_ALERT_LIST_HEIGHT;
+                let range = battle_alert_scroll_range(state.battle_alert_scroll, rows);
+                if in_list && delta_y != 0.0 && range.overflows() {
+                    state.battle_alert_scroll = if delta_y > 0.0 {
+                        state.battle_alert_scroll.saturating_sub(1)
+                    } else {
+                        (state.battle_alert_scroll + 1).min(range.max_first())
+                    };
+                }
+            }
+        }
     }
+
+    let point = canvas.logical_pointer(input.pointer_screen.0, input.pointer_screen.1);
+    let pointer = ScrollPointer {
+        at: Some((
+            point.0 - BATTLE_ALERT_WINDOW_X,
+            point.1 - BATTLE_ALERT_WINDOW_Y,
+        )),
+        pressed: false,
+        down: input.primary_down,
+        released: false,
+    };
+    let range = battle_alert_scroll_range(state.battle_alert_scroll, rows);
+    state.battle_alert_scroll = bar.update(
+        &mut state.battle_alert_scroll_drag,
+        range,
+        range.visible.floor() as usize,
+        pointer,
+    );
+    pointer
+}
+
+fn battle_alert_control_at(
+    skin: BattleAlertSkin,
+    retreat_enabled: bool,
+    point: (f32, f32),
+) -> Option<BattleAlertControl> {
+    let local = (
+        point.0 - BATTLE_ALERT_WINDOW_X,
+        point.1 - BATTLE_ALERT_WINDOW_Y,
+    );
+    for (index, tab) in BattleAlertTab::ALL.into_iter().enumerate() {
+        if skin.tab_rects[index].contains(local.0, local.1) {
+            return Some(BattleAlertControl::Tab(tab));
+        }
+    }
+    let buttons = [
+        (
+            BattleAlertControl::Retreat,
+            NativeRect::new(12.0, 296.0, 134.0, 27.0),
+        ),
+        (
+            BattleAlertControl::Simulate,
+            NativeRect::new(146.0, 296.0, 134.0, 27.0),
+        ),
+        (
+            BattleAlertControl::TakeCommand,
+            NativeRect::new(280.0, 296.0, 134.0, 27.0),
+        ),
+    ];
+    buttons.into_iter().find_map(|(control, rect)| {
+        (rect.contains(local.0, local.1)
+            && (control != BattleAlertControl::Retreat || retreat_enabled))
+            .then_some(control)
+    })
+}
+
+fn apply_battle_alert_input(
+    state: &mut TacticalState,
+    skin: BattleAlertSkin,
+    canvas: TacticalCanvas,
+    input: &TacticalWindowInput,
+) -> TacticalAction {
+    let retreat_enabled = state
+        .session
+        .as_ref()
+        .is_some_and(battle_alert_retreat_enabled);
+    for event in &input.events {
+        let screen = match *event {
+            TacticalWindowEvent::CancelGesture => {
+                state.battle_alert_pressed = None;
+                continue;
+            }
+            TacticalWindowEvent::PrimaryPress(screen)
+            | TacticalWindowEvent::PrimaryRelease(screen) => screen,
+            TacticalWindowEvent::Wheel { .. } => continue,
+        };
+        let point = canvas.logical_pointer(screen.0, screen.1);
+        if matches!(event, TacticalWindowEvent::PrimaryPress(_)) {
+            state.battle_alert_pressed = battle_alert_control_at(skin, retreat_enabled, point);
+            continue;
+        }
+        let hovered = battle_alert_control_at(skin, retreat_enabled, point);
+        let captured = state.battle_alert_pressed.take();
+        let Some(control) = captured.filter(|control| Some(*control) == hovered) else {
+            continue;
+        };
+        let action = match control {
+            BattleAlertControl::Tab(tab) => {
+                if state.battle_alert_tab != tab {
+                    state.battle_alert_scroll = 0;
+                }
+                state.battle_alert_tab = tab;
+                macroquad::logging::info!("[battle_alert] tab={}", tab.label());
+                TacticalAction::None
+            }
+            BattleAlertControl::Retreat => {
+                macroquad::logging::info!(
+                    "[battle_alert] command=retreat resource={} status=started",
+                    skin.buttons[0][0]
+                );
+                TacticalAction::RetreatBeforeBattle
+            }
+            BattleAlertControl::Simulate => {
+                macroquad::logging::info!(
+                    "[battle_alert] command=simulate resource={} status=routed",
+                    skin.buttons[1][0]
+                );
+                TacticalAction::AutoResolve
+            }
+            BattleAlertControl::TakeCommand => {
+                macroquad::logging::info!(
+                    "[battle_alert] command=take_command resource={} status=paused_tactical",
+                    skin.buttons[2][0]
+                );
+                TacticalAction::BeginCombat
+            }
+        };
+        if action != TacticalAction::None {
+            return action;
+        }
+    }
+    if !input.primary_down {
+        state.battle_alert_pressed = None;
+    }
+    TacticalAction::None
 }
 
 /// The list's bar, RCDATA `0x29fc` (`FUN_0044f860`), in window coordinates.
@@ -6011,6 +6283,7 @@ fn draw_original_battle_alert(
     cache: &mut BmpCache,
     world: &GameWorld,
     transport: &TroopTransportState,
+    input: &TacticalWindowInput,
 ) -> TacticalAction {
     let canvas = TacticalCanvas::new(screen_width(), screen_height());
     let session = state.session.as_ref().expect("active Battle Alert session");
@@ -6047,9 +6320,7 @@ fn draw_original_battle_alert(
     draw_battle_alert_text(state, canvas, text_color);
     if state.battle_alert_tab != BattleAlertTab::Summary {
         let rows = battle_alert_rows(session, world, transport, state.battle_alert_tab);
-        let (pointer_x, pointer_y) = mouse_position();
-        let pointer = canvas.logical_pointer(pointer_x, pointer_y);
-        draw_battle_alert_list(state, cache, canvas, &rows, pointer);
+        draw_battle_alert_list(state, cache, canvas, &rows, input);
     }
     let session = state.session.as_ref().expect("active Battle Alert session");
     draw_strategy_bitmap(
@@ -6060,15 +6331,12 @@ fn draw_original_battle_alert(
         BATTLE_ALERT_WINDOW_Y,
     );
 
-    let (screen_mouse_x, screen_mouse_y) = mouse_position();
-    let mouse = canvas.logical_pointer(screen_mouse_x, screen_mouse_y);
+    let mouse = canvas.logical_pointer(input.pointer_screen.0, input.pointer_screen.1);
     let local_mouse = (
         mouse.0 - BATTLE_ALERT_WINDOW_X,
         mouse.1 - BATTLE_ALERT_WINDOW_Y,
     );
-    let mouse_down = is_mouse_button_down(MouseButton::Left);
-    let mouse_pressed = is_mouse_button_pressed(MouseButton::Left);
-    let mouse_released = is_mouse_button_released(MouseButton::Left);
+    let mouse_down = input.primary_down;
 
     for (index, tab) in BattleAlertTab::ALL.into_iter().enumerate() {
         let rect = skin.tab_rects[index];
@@ -6089,13 +6357,6 @@ fn draw_original_battle_alert(
             BATTLE_ALERT_WINDOW_X + rect.x,
             BATTLE_ALERT_WINDOW_Y + rect.y,
         );
-        if mouse_released && rect.contains(local_mouse.0, local_mouse.1) {
-            if state.battle_alert_tab != tab {
-                state.battle_alert_scroll = 0;
-            }
-            state.battle_alert_tab = tab;
-            macroquad::logging::info!("[battle_alert] tab={}", tab.label());
-        }
     }
 
     let button_controls = [
@@ -6116,10 +6377,6 @@ fn draw_original_battle_alert(
             (*index != 0 || retreat_enabled) && rect.contains(local_mouse.0, local_mouse.1)
         })
         .map(|(index, _)| button_controls[index]);
-    if mouse_pressed {
-        state.battle_alert_pressed = hovered;
-    }
-
     for (index, rect) in button_rects.into_iter().enumerate() {
         let control = button_controls[index];
         crate::control_registry::register_logical(
@@ -6150,39 +6407,136 @@ fn draw_original_battle_alert(
         );
     }
 
-    if mouse_released {
-        let captured = state.battle_alert_pressed.take();
-        if let Some(control) = captured.filter(|control| Some(*control) == hovered) {
-            state.battle_alert_open = false;
-            return match control {
-                BattleAlertControl::Retreat => {
-                    if let Some(session) = state.session.as_mut() {
-                        session.queue_withdrawal_started_voice();
-                    }
-                    macroquad::logging::info!(
-                        "[battle_alert] command=retreat resource={} status=started",
-                        skin.buttons[0][0]
-                    );
-                    TacticalAction::RetreatBeforeBattle
-                }
-                BattleAlertControl::Simulate => {
-                    macroquad::logging::info!(
-                        "[battle_alert] command=simulate resource={} status=routed",
-                        skin.buttons[1][0]
-                    );
-                    TacticalAction::AutoResolve
-                }
-                BattleAlertControl::TakeCommand => {
-                    macroquad::logging::info!(
-                        "[battle_alert] command=take_command resource={} status=paused_tactical",
-                        skin.buttons[2][0]
-                    );
-                    TacticalAction::BeginCombat
-                }
-            };
+    apply_battle_alert_input(state, skin, canvas, input)
+}
+
+fn battle_result_control_at(
+    state: &TacticalState,
+    skin: BattleResultSkin,
+    point: (f32, f32),
+) -> Option<BattleResultControl> {
+    let local = (
+        point.0 - BATTLE_RESULTS_WINDOW_X,
+        point.1 - BATTLE_RESULTS_WINDOW_Y,
+    );
+    if skin.close_rect.contains(local.0, local.1) {
+        return Some(BattleResultControl::Close);
+    }
+    for (index, rect) in skin.tab_rects.into_iter().enumerate() {
+        if rect.contains(local.0, local.1) {
+            return Some(BattleResultControl::Tab(BattleResultTab::from_index(index)));
         }
-    } else if !mouse_down {
-        state.battle_alert_pressed = None;
+    }
+    if matches!(
+        state.battle_result_tab,
+        BattleResultTab::AllianceForces | BattleResultTab::ImperialForces
+    ) {
+        for (index, category) in BattleResultCategory::ALL.into_iter().enumerate() {
+            let rect = NativeRect::new(
+                BATTLE_RESULTS_WINDOW_X + 14.0 + index as f32 * 96.0,
+                BATTLE_RESULTS_WINDOW_Y + 58.0,
+                96.0,
+                25.0,
+            );
+            if rect.contains(point.0, point.1) {
+                return Some(BattleResultControl::Category(category));
+            }
+        }
+    }
+    if state.battle_result_tab == BattleResultTab::GoDirectlyTo {
+        let system = NativeRect::new(
+            BATTLE_RESULTS_WINDOW_X + 29.0,
+            BATTLE_RESULTS_WINDOW_Y + 182.0,
+            169.0,
+            96.0,
+        );
+        if system.contains(point.0, point.1) {
+            return Some(BattleResultControl::System);
+        }
+        let fleet = NativeRect::new(
+            BATTLE_RESULTS_WINDOW_X + 229.0,
+            BATTLE_RESULTS_WINDOW_Y + 182.0,
+            169.0,
+            96.0,
+        );
+        if fleet.contains(point.0, point.1)
+            && state.session.as_ref().and_then(winner_fleet).is_some()
+        {
+            return Some(BattleResultControl::Fleet);
+        }
+    }
+    None
+}
+
+fn apply_battle_result_input(
+    state: &mut TacticalState,
+    skin: BattleResultSkin,
+    canvas: TacticalCanvas,
+    input: &TacticalWindowInput,
+) -> TacticalAction {
+    for event in &input.events {
+        let screen = match *event {
+            TacticalWindowEvent::CancelGesture => {
+                state.battle_result_pressed = None;
+                continue;
+            }
+            TacticalWindowEvent::PrimaryPress(screen)
+            | TacticalWindowEvent::PrimaryRelease(screen) => screen,
+            TacticalWindowEvent::Wheel { .. } => continue,
+        };
+        let point = canvas.logical_pointer(screen.0, screen.1);
+        if matches!(event, TacticalWindowEvent::PrimaryPress(_)) {
+            state.battle_result_pressed = battle_result_control_at(state, skin, point);
+            continue;
+        }
+        let hovered = battle_result_control_at(state, skin, point);
+        let captured = state.battle_result_pressed.take();
+        let Some(control) = captured.filter(|control| Some(*control) == hovered) else {
+            continue;
+        };
+        let action = match control {
+            BattleResultControl::Close => TacticalAction::ReturnToGalaxy,
+            BattleResultControl::Tab(tab) => {
+                state.battle_result_tab = tab;
+                macroquad::logging::info!(
+                    "[tactical-results] tab={} category={}",
+                    state.battle_result_tab.label(),
+                    state.battle_result_category.label()
+                );
+                TacticalAction::None
+            }
+            BattleResultControl::Category(category) => {
+                state.battle_result_category = category;
+                macroquad::logging::info!(
+                    "[tactical-results] tab={} category={}",
+                    state.battle_result_tab.label(),
+                    category.label()
+                );
+                TacticalAction::None
+            }
+            BattleResultControl::System => {
+                let system = state
+                    .session
+                    .as_ref()
+                    .expect("active result session")
+                    .system;
+                macroquad::logging::info!("[tactical-results] destination=system");
+                TacticalAction::OpenBattleSystem(system)
+            }
+            BattleResultControl::Fleet => {
+                let Some(fleet) = state.session.as_ref().and_then(winner_fleet) else {
+                    return TacticalAction::None;
+                };
+                macroquad::logging::info!("[tactical-results] destination=fleet");
+                TacticalAction::OpenBattleFleet(fleet)
+            }
+        };
+        if action != TacticalAction::None {
+            return action;
+        }
+    }
+    if !input.primary_down {
+        state.battle_result_pressed = None;
     }
     TacticalAction::None
 }
@@ -6192,6 +6546,7 @@ fn draw_original_battle_results(
     cache: &mut BmpCache,
     world: &GameWorld,
     troop_transport: &TroopTransportState,
+    input: &TacticalWindowInput,
 ) -> TacticalAction {
     let canvas = TacticalCanvas::new(screen_width(), screen_height());
     let session = state.session.as_ref().expect("active result session");
@@ -6213,15 +6568,12 @@ fn draw_original_battle_results(
         BATTLE_RESULTS_WINDOW_Y,
     );
 
-    let (screen_mouse_x, screen_mouse_y) = mouse_position();
-    let mouse = canvas.logical_pointer(screen_mouse_x, screen_mouse_y);
-    let mouse_down = is_mouse_button_down(MouseButton::Left);
-    let mouse_released = is_mouse_button_released(MouseButton::Left);
+    let mouse = canvas.logical_pointer(input.pointer_screen.0, input.pointer_screen.1);
+    let mouse_down = input.primary_down;
 
-    let mut action = match state.battle_result_tab {
+    match state.battle_result_tab {
         BattleResultTab::Summary => {
             draw_battle_result_summary(cache, canvas, session, text_color);
-            TacticalAction::None
         }
         BattleResultTab::AllianceForces => {
             draw_battle_result_force_details(
@@ -6234,7 +6586,6 @@ fn draw_original_battle_results(
                 state.battle_result_category,
                 text_color,
             );
-            TacticalAction::None
         }
         BattleResultTab::ImperialForces => {
             draw_battle_result_force_details(
@@ -6247,19 +6598,19 @@ fn draw_original_battle_results(
                 state.battle_result_category,
                 text_color,
             );
-            TacticalAction::None
         }
-        BattleResultTab::GoDirectlyTo => draw_battle_result_destinations(
-            cache,
-            canvas,
-            session,
-            player_alliance,
-            mouse,
-            mouse_down,
-            mouse_released,
-            text_color,
-        ),
-    };
+        BattleResultTab::GoDirectlyTo => {
+            draw_battle_result_destinations(
+                cache,
+                canvas,
+                session,
+                player_alliance,
+                mouse,
+                mouse_down,
+                text_color,
+            );
+        }
+    }
 
     draw_strategy_bitmap(
         cache,
@@ -6288,15 +6639,6 @@ fn draw_original_battle_results(
         BATTLE_RESULTS_WINDOW_X + skin.close_rect.x,
         BATTLE_RESULTS_WINDOW_Y + skin.close_rect.y,
     );
-    if mouse_released
-        && skin.close_rect.contains(
-            mouse.0 - BATTLE_RESULTS_WINDOW_X,
-            mouse.1 - BATTLE_RESULTS_WINDOW_Y,
-        )
-    {
-        action = TacticalAction::ReturnToGalaxy;
-    }
-
     for (index, rect) in skin.tab_rects.into_iter().enumerate() {
         let local_mouse = (
             mouse.0 - BATTLE_RESULTS_WINDOW_X,
@@ -6319,46 +6661,8 @@ fn draw_original_battle_results(
             BATTLE_RESULTS_WINDOW_X + rect.x,
             BATTLE_RESULTS_WINDOW_Y + rect.y,
         );
-        if mouse_released && rect.contains(local_mouse.0, local_mouse.1) {
-            state.battle_result_tab = BattleResultTab::from_index(index);
-            macroquad::logging::info!(
-                "[tactical-results] tab={} category={}",
-                state.battle_result_tab.label(),
-                state.battle_result_category.label()
-            );
-        }
     }
-
-    if matches!(
-        state.battle_result_tab,
-        BattleResultTab::AllianceForces | BattleResultTab::ImperialForces
-    ) {
-        for (index, category) in BattleResultCategory::ALL.into_iter().enumerate() {
-            let rect = NativeRect::new(
-                BATTLE_RESULTS_WINDOW_X + 14.0 + index as f32 * 96.0,
-                BATTLE_RESULTS_WINDOW_Y + 58.0,
-                96.0,
-                25.0,
-            );
-            crate::control_registry::register_logical(
-                "Results",
-                category.label(),
-                rect.x,
-                rect.y,
-                rect.width,
-                rect.height,
-            );
-            if mouse_released && rect.contains(mouse.0, mouse.1) {
-                state.battle_result_category = category;
-                macroquad::logging::info!(
-                    "[tactical-results] tab={} category={}",
-                    state.battle_result_tab.label(),
-                    category.label()
-                );
-            }
-        }
-    }
-    action
+    apply_battle_result_input(state, skin, canvas, input)
 }
 
 /// Draw the tactical combat view (macroquad).
@@ -6381,13 +6685,14 @@ pub fn draw_tactical_view(
     bmp_cache: &mut BmpCache,
     world: &GameWorld,
     troop_transport: &TroopTransportState,
+    window_input: &TacticalWindowInput,
 ) -> TacticalAction {
     if state.session.is_none() {
         return TacticalAction::ReturnToGalaxy;
     }
 
     if state.battle_alert_open {
-        return draw_original_battle_alert(state, bmp_cache, world, troop_transport);
+        return draw_original_battle_alert(state, bmp_cache, world, troop_transport, window_input);
     }
 
     let mut action = TacticalAction::None;
@@ -6417,7 +6722,13 @@ pub fn draw_tactical_view(
         .as_ref()
         .is_some_and(|session| session.phase == BattlePhase::Results)
     {
-        return draw_original_battle_results(state, bmp_cache, world, troop_transport);
+        return draw_original_battle_results(
+            state,
+            bmp_cache,
+            world,
+            troop_transport,
+            window_input,
+        );
     }
 
     // 1. Paint the unscaled-source tactical shell first, then put the battle
@@ -7784,6 +8095,272 @@ fn handle_placement_input(
 mod tests {
     use super::*;
     use rebellion_core::tactical::test_support::{test_fighter, test_session, test_ship};
+
+    #[test]
+    fn tactical_windowing_phase_follows_the_actual_alert_session_and_results_state() {
+        let mut state = TacticalState::default();
+        assert_eq!(state.windowing_phase(), TacticalWindowPhase::Inactive);
+
+        state.session = Some(test_session(Vec::new(), Vec::new(), true));
+        state.battle_alert_open = true;
+        assert_eq!(state.windowing_phase(), TacticalWindowPhase::Alert);
+
+        state.battle_alert_open = false;
+        assert_eq!(state.windowing_phase(), TacticalWindowPhase::Combat);
+
+        state.session.as_mut().unwrap().phase = BattlePhase::Results;
+        assert_eq!(state.windowing_phase(), TacticalWindowPhase::Results);
+    }
+
+    #[test]
+    fn tactical_windowing_battle_session_generation_changes_for_every_start() {
+        let mut state = TacticalState::default();
+        assert_eq!(state.windowing_battle_session(), None);
+
+        let first = state.start_windowing_battle_session();
+        state.session = Some(test_session(Vec::new(), Vec::new(), true));
+        assert_eq!(state.windowing_battle_session(), Some(first));
+
+        state.end_battle();
+        let second = state.start_windowing_battle_session();
+        state.session = Some(test_session(Vec::new(), Vec::new(), true));
+        assert_ne!(second, first);
+        assert_eq!(state.windowing_battle_session(), Some(second));
+    }
+
+    #[test]
+    fn tactical_windowing_alert_requires_an_admitted_matching_press_and_release() {
+        let mut state = TacticalState {
+            session: Some(test_session(Vec::new(), Vec::new(), true)),
+            battle_alert_open: true,
+            ..TacticalState::default()
+        };
+        let skin = battle_alert_skin(player_is_alliance(state.session.as_ref().unwrap()));
+        let button = (BATTLE_ALERT_WINDOW_X + 300.0, BATTLE_ALERT_WINDOW_Y + 305.0);
+
+        let release_only = TacticalWindowInput {
+            pointer_screen: button,
+            events: vec![TacticalWindowEvent::PrimaryRelease(button)],
+            ..TacticalWindowInput::default()
+        };
+        assert_eq!(
+            apply_battle_alert_input(
+                &mut state,
+                skin,
+                TacticalCanvas::new(640.0, 480.0),
+                &release_only
+            ),
+            TacticalAction::None
+        );
+
+        let press = TacticalWindowInput {
+            pointer_screen: button,
+            events: vec![TacticalWindowEvent::PrimaryPress(button)],
+            primary_down: true,
+        };
+        assert_eq!(
+            apply_battle_alert_input(&mut state, skin, TacticalCanvas::new(640.0, 480.0), &press),
+            TacticalAction::None
+        );
+        let release = TacticalWindowInput {
+            pointer_screen: button,
+            events: vec![TacticalWindowEvent::PrimaryRelease(button)],
+            ..TacticalWindowInput::default()
+        };
+        assert_eq!(
+            apply_battle_alert_input(
+                &mut state,
+                skin,
+                TacticalCanvas::new(640.0, 480.0),
+                &release
+            ),
+            TacticalAction::BeginCombat
+        );
+        assert!(
+            state.battle_alert_open(),
+            "the renderer only prepares dismissal before manager approval"
+        );
+        state.commit_battle_alert_exit();
+        assert!(!state.battle_alert_open());
+    }
+
+    #[test]
+    fn tactical_windowing_results_cancellation_quarantines_the_orphan_release() {
+        let mut session = test_session(Vec::new(), Vec::new(), true);
+        session.phase = BattlePhase::Results;
+        let mut state = TacticalState {
+            session: Some(session),
+            battle_alert_open: false,
+            ..TacticalState::default()
+        };
+        let skin = battle_result_skin(player_is_alliance(state.session.as_ref().unwrap()));
+        let close = (
+            BATTLE_RESULTS_WINDOW_X + skin.close_rect.x + 2.0,
+            BATTLE_RESULTS_WINDOW_Y + skin.close_rect.y + 2.0,
+        );
+        let press = TacticalWindowInput {
+            pointer_screen: close,
+            events: vec![TacticalWindowEvent::PrimaryPress(close)],
+            primary_down: true,
+        };
+        assert_eq!(
+            apply_battle_result_input(&mut state, skin, TacticalCanvas::new(640.0, 480.0), &press),
+            TacticalAction::None
+        );
+
+        state.cancel_window_gestures();
+        let release = TacticalWindowInput {
+            pointer_screen: close,
+            events: vec![TacticalWindowEvent::PrimaryRelease(close)],
+            ..TacticalWindowInput::default()
+        };
+        assert_eq!(
+            apply_battle_result_input(
+                &mut state,
+                skin,
+                TacticalCanvas::new(640.0, 480.0),
+                &release
+            ),
+            TacticalAction::None
+        );
+    }
+
+    #[test]
+    fn tactical_windowing_results_preserves_release_before_press_order() {
+        let mut session = test_session(Vec::new(), Vec::new(), true);
+        session.phase = BattlePhase::Results;
+        let mut state = TacticalState {
+            session: Some(session),
+            battle_alert_open: false,
+            ..TacticalState::default()
+        };
+        let skin = battle_result_skin(player_is_alliance(state.session.as_ref().unwrap()));
+        let close = (
+            BATTLE_RESULTS_WINDOW_X + skin.close_rect.x + 2.0,
+            BATTLE_RESULTS_WINDOW_Y + skin.close_rect.y + 2.0,
+        );
+        let blank = (
+            BATTLE_RESULTS_WINDOW_X + 210.0,
+            BATTLE_RESULTS_WINDOW_Y + 300.0,
+        );
+
+        let earlier_blank_press = TacticalWindowInput {
+            pointer_screen: blank,
+            primary_down: true,
+            events: vec![TacticalWindowEvent::PrimaryPress(blank)],
+        };
+        assert_eq!(
+            apply_battle_result_input(
+                &mut state,
+                skin,
+                TacticalCanvas::new(640.0, 480.0),
+                &earlier_blank_press,
+            ),
+            TacticalAction::None
+        );
+
+        let release_then_press = TacticalWindowInput {
+            pointer_screen: close,
+            primary_down: true,
+            events: vec![
+                TacticalWindowEvent::PrimaryRelease(close),
+                TacticalWindowEvent::PrimaryPress(close),
+            ],
+        };
+        assert_eq!(
+            apply_battle_result_input(
+                &mut state,
+                skin,
+                TacticalCanvas::new(640.0, 480.0),
+                &release_then_press,
+            ),
+            TacticalAction::None
+        );
+        assert_eq!(
+            state.battle_result_pressed,
+            Some(BattleResultControl::Close)
+        );
+    }
+
+    #[test]
+    fn tactical_windowing_alert_scroll_uses_event_coordinate_not_final_pointer() {
+        let mut state = TacticalState {
+            battle_alert_scroll: 1,
+            ..TacticalState::default()
+        };
+        let inside_list = (
+            BATTLE_ALERT_WINDOW_X + BATTLE_ALERT_LIST_X + 20.0,
+            BATTLE_ALERT_WINDOW_Y + BATTLE_ALERT_LIST_Y + 20.0,
+        );
+        let input = TacticalWindowInput {
+            pointer_screen: (0.0, 0.0),
+            events: vec![TacticalWindowEvent::Wheel {
+                screen: inside_list,
+                delta_y: -1.0,
+            }],
+            ..TacticalWindowInput::default()
+        };
+
+        apply_battle_alert_scroll_input(&mut state, TacticalCanvas::new(640.0, 480.0), 20, &input);
+        assert_eq!(state.battle_alert_scroll, 2);
+    }
+
+    #[test]
+    fn tactical_windowing_alert_scroll_preserves_release_before_press_order() {
+        let mut state = TacticalState {
+            battle_alert_scroll: 1,
+            ..TacticalState::default()
+        };
+        let bar_x = BATTLE_ALERT_WINDOW_X + BATTLE_ALERT_LIST_X + BATTLE_ALERT_LIST_WIDTH - 6.0;
+        let down = (
+            bar_x,
+            BATTLE_ALERT_WINDOW_Y + BATTLE_ALERT_LIST_Y + BATTLE_ALERT_LIST_HEIGHT - 6.0,
+        );
+        let up = (bar_x, BATTLE_ALERT_WINDOW_Y + BATTLE_ALERT_LIST_Y + 6.0);
+        let canvas = TacticalCanvas::new(640.0, 480.0);
+
+        apply_battle_alert_scroll_input(
+            &mut state,
+            canvas,
+            20,
+            &TacticalWindowInput {
+                pointer_screen: down,
+                primary_down: true,
+                events: vec![TacticalWindowEvent::PrimaryPress(down)],
+            },
+        );
+        assert_eq!(state.battle_alert_scroll, 1);
+
+        apply_battle_alert_scroll_input(
+            &mut state,
+            canvas,
+            20,
+            &TacticalWindowInput {
+                pointer_screen: up,
+                primary_down: true,
+                events: vec![
+                    TacticalWindowEvent::PrimaryRelease(down),
+                    TacticalWindowEvent::PrimaryPress(up),
+                ],
+            },
+        );
+        assert_eq!(
+            state.battle_alert_scroll, 2,
+            "the prior Down capture releases before the new Up press"
+        );
+
+        apply_battle_alert_scroll_input(
+            &mut state,
+            canvas,
+            20,
+            &TacticalWindowInput {
+                pointer_screen: up,
+                events: vec![TacticalWindowEvent::PrimaryRelease(up)],
+                ..TacticalWindowInput::default()
+            },
+        );
+        assert_eq!(state.battle_alert_scroll, 1);
+    }
 
     // Source: FUN_005a8f70 waypoint; FUN_005cf980 recovery executor.
     #[test]
