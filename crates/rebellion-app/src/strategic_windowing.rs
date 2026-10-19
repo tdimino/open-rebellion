@@ -12,6 +12,7 @@ use rebellion_render::{
     fleet_window::PreparedFleetWindow,
     message_index::PreparedMessageIndex,
     missions_window::PreparedMissionsWindow,
+    sector_window::PreparedSectorWindow,
     status_window::PreparedStatusWindow,
     system_window::PreparedSystemWindow,
     tactical_view::TacticalWindowPhase,
@@ -69,6 +70,10 @@ pub struct AppliedWindowCommand {
     pub prepared_status: Option<PreparedStatusWindow>,
     /// Identity whose attachment is valid for `prepared_status`.
     pub status_content_id: Option<WindowId>,
+    /// Sector content prepared beside a duplicate open or atomic replacement.
+    pub prepared_sector: Option<PreparedSectorWindow>,
+    /// Identity whose attachment is valid for `prepared_sector` after commit.
+    pub sector_content_id: Option<WindowId>,
     /// Temporary rail-adapter payload committed only with System minimize.
     pub minimized_system: Option<(WindowId, SystemKey, (i16, i16))>,
     /// Exact temporary System rail projection retired after restore commit.
@@ -131,6 +136,7 @@ struct QueuedWindowCommand {
     prepared_fleet_finder: Option<PreparedFleetFinder>,
     prepared_message_index: Option<PreparedMessageIndex>,
     prepared_status: Option<PreparedStatusWindow>,
+    prepared_sector: Option<PreparedSectorWindow>,
     minimized_system: Option<(WindowId, SystemKey, (i16, i16))>,
     restored_system: Option<WindowId>,
     minimized_defenses: Option<(WindowId, SystemKey, (i16, i16))>,
@@ -392,6 +398,7 @@ pub struct StrategicWindowing {
     manager: rebellion_windowing::WindowManager,
     pending: Vec<QueuedWindowCommand>,
     pending_galaxy: Vec<QueuedWindowCommand>,
+    applying: Vec<QueuedWindowCommand>,
     scene: WindowScene,
     galaxy: BTreeSet<WindowId>,
     tactical: BTreeSet<WindowId>,
@@ -417,6 +424,7 @@ impl StrategicWindowing {
             manager: rebellion_windowing::WindowManager::new(),
             pending: Vec::new(),
             pending_galaxy: Vec::new(),
+            applying: Vec::new(),
             scene: WindowScene::Galaxy,
             galaxy: BTreeSet::new(),
             tactical: BTreeSet::new(),
@@ -473,6 +481,7 @@ impl StrategicWindowing {
             prepared_fleet_finder: None,
             prepared_message_index: None,
             prepared_status: None,
+            prepared_sector: None,
             minimized_system: None,
             restored_system: None,
             minimized_defenses: None,
@@ -497,6 +506,7 @@ impl StrategicWindowing {
             prepared_fleet_finder: None,
             prepared_message_index: None,
             prepared_status: None,
+            prepared_sector: None,
             minimized_system: None,
             restored_system: None,
             minimized_defenses: None,
@@ -523,6 +533,7 @@ impl StrategicWindowing {
             prepared_fleet_finder: None,
             prepared_message_index: None,
             prepared_status: None,
+            prepared_sector: None,
             minimized_system: None,
             restored_system: None,
             minimized_defenses: None,
@@ -547,6 +558,7 @@ impl StrategicWindowing {
             prepared_fleet_finder: None,
             prepared_message_index: None,
             prepared_status: None,
+            prepared_sector: None,
             minimized_system: None,
             restored_system: None,
             minimized_defenses: None,
@@ -556,6 +568,71 @@ impl StrategicWindowing {
             minimized_fleet: None,
             restored_fleet: None,
         });
+    }
+
+    /// Queues validated Sector content beside either an exact duplicate open
+    /// or one atomic same-half replacement. The renderer remains untouched
+    /// until the matching manager receipt is published.
+    pub fn enqueue_sector_open(&mut self, prepared: PreparedSectorWindow) {
+        let new = prepared.spec();
+        self.pending.push(QueuedWindowCommand {
+            command: prepared
+                .replacing()
+                .map_or(WindowCommand::Open(new), |old| WindowCommand::Replace {
+                    old,
+                    new,
+                }),
+            prepared_build_selection: None,
+            prepared_build_selection_confirm: None,
+            prepared_system: None,
+            prepared_defenses: None,
+            prepared_missions: None,
+            prepared_fleet: None,
+            prepared_fleet_finder: None,
+            prepared_message_index: None,
+            prepared_status: None,
+            prepared_sector: Some(prepared),
+            minimized_system: None,
+            restored_system: None,
+            minimized_defenses: None,
+            restored_defenses: None,
+            minimized_missions: None,
+            restored_missions: None,
+            minimized_fleet: None,
+            restored_fleet: None,
+        });
+    }
+
+    /// Revalidates one in-flight Sector intent before the manager can apply its
+    /// destructive Replace. A vanished candidate is dropped, not committed.
+    pub fn refresh_queued_sector_open(
+        &mut self,
+        previous: PreparedSectorWindow,
+        refreshed: Option<PreparedSectorWindow>,
+    ) -> bool {
+        for queue in [&mut self.applying, &mut self.pending] {
+            let Some(index) = queue
+                .iter()
+                .position(|queued| queued.prepared_sector == Some(previous))
+            else {
+                continue;
+            };
+            if let Some(refreshed) = refreshed {
+                let new = refreshed.spec();
+                let queued = &mut queue[index];
+                queued.command = refreshed
+                    .replacing()
+                    .map_or(WindowCommand::Open(new), |old| WindowCommand::Replace {
+                        old,
+                        new,
+                    });
+                queued.prepared_sector = Some(refreshed);
+            } else {
+                queue.remove(index);
+            }
+            return true;
+        }
+        false
     }
 
     /// Queues validated Defenses content beside its semantic detail open.
@@ -571,6 +648,7 @@ impl StrategicWindowing {
             prepared_fleet_finder: None,
             prepared_message_index: None,
             prepared_status: None,
+            prepared_sector: None,
             minimized_system: None,
             restored_system: None,
             minimized_defenses: None,
@@ -595,6 +673,7 @@ impl StrategicWindowing {
             prepared_fleet_finder: None,
             prepared_message_index: None,
             prepared_status: None,
+            prepared_sector: None,
             minimized_system: None,
             restored_system: None,
             minimized_defenses: None,
@@ -620,6 +699,7 @@ impl StrategicWindowing {
             prepared_fleet_finder: None,
             prepared_message_index: None,
             prepared_status: None,
+            prepared_sector: None,
             minimized_system: None,
             restored_system: None,
             minimized_defenses: None,
@@ -645,6 +725,7 @@ impl StrategicWindowing {
             prepared_fleet_finder: None,
             prepared_message_index: None,
             prepared_status: None,
+            prepared_sector: None,
             minimized_system: None,
             restored_system: None,
             minimized_defenses: None,
@@ -670,6 +751,7 @@ impl StrategicWindowing {
             prepared_fleet_finder: None,
             prepared_message_index: None,
             prepared_status: None,
+            prepared_sector: None,
             minimized_system: None,
             restored_system: None,
             minimized_defenses: None,
@@ -694,6 +776,7 @@ impl StrategicWindowing {
             prepared_fleet_finder: Some(prepared),
             prepared_message_index: None,
             prepared_status: None,
+            prepared_sector: None,
             minimized_system: None,
             restored_system: None,
             minimized_defenses: None,
@@ -718,6 +801,7 @@ impl StrategicWindowing {
             prepared_fleet_finder: None,
             prepared_message_index: Some(prepared),
             prepared_status: None,
+            prepared_sector: None,
             minimized_system: None,
             restored_system: None,
             minimized_defenses: None,
@@ -752,6 +836,7 @@ impl StrategicWindowing {
             prepared_fleet_finder: None,
             prepared_message_index: None,
             prepared_status: Some(prepared),
+            prepared_sector: None,
             minimized_system: None,
             restored_system: None,
             minimized_defenses: None,
@@ -782,6 +867,7 @@ impl StrategicWindowing {
             prepared_fleet_finder: None,
             prepared_message_index: None,
             prepared_status: None,
+            prepared_sector: None,
             minimized_system: Some((window, system, logical_position)),
             restored_system: None,
             minimized_defenses: None,
@@ -807,6 +893,7 @@ impl StrategicWindowing {
             prepared_fleet_finder: None,
             prepared_message_index: None,
             prepared_status: None,
+            prepared_sector: None,
             minimized_system: None,
             restored_system: Some(window),
             minimized_defenses: None,
@@ -837,6 +924,7 @@ impl StrategicWindowing {
             prepared_fleet_finder: None,
             prepared_message_index: None,
             prepared_status: None,
+            prepared_sector: None,
             minimized_system: None,
             restored_system: None,
             minimized_defenses: Some((window, system, logical_position)),
@@ -862,6 +950,7 @@ impl StrategicWindowing {
             prepared_fleet_finder: None,
             prepared_message_index: None,
             prepared_status: None,
+            prepared_sector: None,
             minimized_system: None,
             restored_system: None,
             minimized_defenses: None,
@@ -892,6 +981,7 @@ impl StrategicWindowing {
             prepared_fleet_finder: None,
             prepared_message_index: None,
             prepared_status: None,
+            prepared_sector: None,
             minimized_system: None,
             restored_system: None,
             minimized_defenses: None,
@@ -917,6 +1007,7 @@ impl StrategicWindowing {
             prepared_fleet_finder: None,
             prepared_message_index: None,
             prepared_status: None,
+            prepared_sector: None,
             minimized_system: None,
             restored_system: None,
             minimized_defenses: None,
@@ -966,6 +1057,7 @@ impl StrategicWindowing {
             prepared_fleet_finder: None,
             prepared_message_index: None,
             prepared_status: None,
+            prepared_sector: None,
             minimized_system: None,
             restored_system: None,
             minimized_defenses: None,
@@ -992,6 +1084,7 @@ impl StrategicWindowing {
             prepared_fleet_finder: None,
             prepared_message_index: None,
             prepared_status: None,
+            prepared_sector: None,
             minimized_system: None,
             restored_system: None,
             minimized_defenses: None,
@@ -1005,273 +1098,304 @@ impl StrategicWindowing {
 
     /// Applies queued commands in insertion order after input and painting finish.
     pub fn apply_pending(&mut self) -> Vec<AppliedWindowCommand> {
-        if self.scene == WindowScene::Suspended {
-            return Vec::new();
-        }
-        let mut pending = if self.scene == WindowScene::Galaxy {
-            std::mem::take(&mut self.pending_galaxy)
-        } else {
-            Vec::new()
-        };
-        pending.extend(std::mem::take(&mut self.pending));
-        pending
-            .into_iter()
-            .map(|queued| {
-                let QueuedWindowCommand {
-                    command,
-                    prepared_build_selection,
-                    prepared_build_selection_confirm,
-                    prepared_system,
-                    prepared_defenses,
-                    prepared_missions,
-                    prepared_fleet,
-                    prepared_fleet_finder,
-                    prepared_message_index,
-                    prepared_status,
-                    minimized_system,
-                    restored_system: queued_restored_system,
-                    minimized_defenses,
-                    restored_defenses: queued_restored_defenses,
-                    minimized_missions,
-                    restored_missions: queued_restored_missions,
-                    minimized_fleet,
-                    restored_fleet: queued_restored_fleet,
-                } = queued;
-                let result = self.manager.apply(command);
-                let mut removed_content = Vec::new();
-                let mut build_selection_content_id = None;
-                let mut confirmed_build_selection = None;
-                let mut system_content_id = None;
-                let mut defenses_content_id = None;
-                let mut missions_content_id = None;
-                let mut fleet_content_id = None;
-                let mut fleet_finder_content_id = None;
-                let mut message_index_content_id = None;
-                let mut status_content_id = None;
-                let mut committed_minimized_system = None;
-                let mut committed_minimized_defenses = None;
-                let mut committed_minimized_missions = None;
-                let mut committed_minimized_fleet = None;
-                let mut restored_system = None;
-                let mut restored_defenses = None;
-                let mut restored_missions = None;
-                let mut restored_fleet = None;
-                if let Ok(commit) = &result {
-                    self.record_transition(&commit.transition, &commit.events);
-                    removed_content = self.release_matching_content(&commit.events);
-                    if prepared_build_selection.is_some() {
-                        build_selection_content_id = match &commit.transition {
-                            WindowTransition::Opened { id } => Some(*id),
-                            WindowTransition::Existing { id, .. } => {
-                                self.attached_content.contains(id).then_some(*id)
-                            }
-                            _ => None,
-                        };
-                    }
-                    if let Some(prepared) = prepared_build_selection_confirm {
-                        let window = prepared.window_id();
-                        if matches!(
-                            &commit.transition,
-                            WindowTransition::Closed { root, closed, .. }
-                                if *root == window && closed.contains(&window)
-                        ) && removed_content.contains(&window)
-                        {
-                            confirmed_build_selection = Some(prepared);
-                        }
-                    }
-                    if matches!(commit.transition, WindowTransition::Minimized { .. }) {
-                        committed_minimized_system = minimized_system;
-                        committed_minimized_defenses = minimized_defenses;
-                        committed_minimized_missions = minimized_missions;
-                        committed_minimized_fleet = minimized_fleet;
-                    }
-                    if queued_restored_system.is_some_and(|window| {
-                        matches!(
-                            commit.transition,
-                            WindowTransition::Restored { id, .. } if id == window
-                        )
-                    }) {
-                        restored_system = queued_restored_system;
-                    }
-                    if queued_restored_defenses.is_some_and(|window| {
-                        matches!(
-                            commit.transition,
-                            WindowTransition::Restored { id, .. } if id == window
-                        )
-                    }) {
-                        restored_defenses = queued_restored_defenses;
-                    }
-                    if queued_restored_missions.is_some_and(|window| {
-                        matches!(
-                            commit.transition,
-                            WindowTransition::Restored { id, .. } if id == window
-                        )
-                    }) {
-                        restored_missions = queued_restored_missions;
-                    }
-                    if queued_restored_fleet.is_some_and(|window| {
-                        matches!(
-                            commit.transition,
-                            WindowTransition::Restored { id, .. } if id == window
-                        )
-                    }) {
-                        restored_fleet = queued_restored_fleet;
-                    }
-                    if prepared_system.is_some() {
-                        system_content_id = match &commit.transition {
-                            WindowTransition::Opened { id } => Some(*id),
-                            WindowTransition::Existing { id, .. } => {
-                                self.attached_content.contains(id).then_some(*id)
-                            }
-                            _ => None,
-                        };
-                        if system_content_id.is_some()
-                            && matches!(
-                                commit.transition,
-                                WindowTransition::Existing {
-                                    effect: ExistingEffect::RestoredAndRaised,
-                                    ..
-                                }
-                            )
-                        {
-                            restored_system = system_content_id;
-                        }
-                    }
-                    if prepared_defenses.is_some() {
-                        defenses_content_id = match &commit.transition {
-                            WindowTransition::Opened { id } => Some(*id),
-                            WindowTransition::Existing { id, .. } => {
-                                self.attached_content.contains(id).then_some(*id)
-                            }
-                            _ => None,
-                        };
-                        if defenses_content_id.is_some()
-                            && matches!(
-                                commit.transition,
-                                WindowTransition::Existing {
-                                    effect: ExistingEffect::RestoredAndRaised,
-                                    ..
-                                }
-                            )
-                        {
-                            restored_defenses = defenses_content_id;
-                        }
-                    }
-                    if prepared_missions.is_some() {
-                        missions_content_id = match &commit.transition {
-                            WindowTransition::Opened { id } => Some(*id),
-                            WindowTransition::Existing { id, .. } => {
-                                self.attached_content.contains(id).then_some(*id)
-                            }
-                            _ => None,
-                        };
-                        if missions_content_id.is_some()
-                            && matches!(
-                                commit.transition,
-                                WindowTransition::Existing {
-                                    effect: ExistingEffect::RestoredAndRaised,
-                                    ..
-                                }
-                            )
-                        {
-                            restored_missions = missions_content_id;
-                        }
-                    }
-                    if prepared_fleet.is_some() {
-                        fleet_content_id = match &commit.transition {
-                            WindowTransition::Opened { id } => Some(*id),
-                            WindowTransition::Existing { id, .. } => {
-                                self.attached_content.contains(id).then_some(*id)
-                            }
-                            _ => None,
-                        };
-                        if fleet_content_id.is_some()
-                            && matches!(
-                                commit.transition,
-                                WindowTransition::Existing {
-                                    effect: ExistingEffect::RestoredAndRaised,
-                                    ..
-                                }
-                            )
-                        {
-                            restored_fleet = fleet_content_id;
-                        }
-                    }
-                    if prepared_fleet_finder.is_some() {
-                        fleet_finder_content_id = match &commit.transition {
-                            WindowTransition::Opened { id } => Some(*id),
-                            WindowTransition::Existing { id, .. } => {
-                                self.attached_content.contains(id).then_some(*id)
-                            }
-                            _ => None,
-                        };
-                        if let WindowTransition::Opened { id } = commit.transition {
-                            let focus = FocusTarget {
-                                window: id,
-                                control: Some(FLEET_FINDER_NAME_CONTROL),
-                            };
-                            if let Ok(focus_commit) =
-                                self.manager.apply(WindowCommand::Focus(focus))
-                            {
-                                self.record_transition(
-                                    &focus_commit.transition,
-                                    &focus_commit.events,
-                                );
-                            }
-                        }
-                    }
-                    if prepared_message_index.is_some() {
-                        message_index_content_id = match &commit.transition {
-                            WindowTransition::Opened { id } => Some(*id),
-                            WindowTransition::Existing { id, .. } => {
-                                self.attached_content.contains(id).then_some(*id)
-                            }
-                            _ => None,
-                        };
-                    }
-                    if prepared_status.is_some() {
-                        status_content_id = match &commit.transition {
-                            WindowTransition::Opened { id } => Some(*id),
-                            WindowTransition::Replaced { new, .. } => Some(*new),
-                            WindowTransition::Existing { id, .. } => {
-                                self.attached_content.contains(id).then_some(*id)
-                            }
-                            _ => None,
-                        };
-                    }
-                }
-                AppliedWindowCommand {
-                    command,
-                    result,
-                    removed_content,
-                    prepared_build_selection,
-                    build_selection_content_id,
-                    confirmed_build_selection,
-                    prepared_system,
-                    system_content_id,
-                    prepared_defenses,
-                    defenses_content_id,
-                    prepared_missions,
-                    missions_content_id,
-                    prepared_fleet,
-                    fleet_content_id,
-                    prepared_fleet_finder,
-                    fleet_finder_content_id,
-                    prepared_message_index,
-                    message_index_content_id,
-                    prepared_status,
-                    status_content_id,
-                    minimized_system: committed_minimized_system,
-                    restored_system,
-                    minimized_defenses: committed_minimized_defenses,
-                    restored_defenses,
-                    minimized_missions: committed_minimized_missions,
-                    restored_missions,
-                    minimized_fleet: committed_minimized_fleet,
-                    restored_fleet,
-                }
-            })
+        let count = self.begin_apply_batch();
+        (0..count)
+            .filter_map(|_| self.apply_next_pending())
             .collect()
+    }
+
+    /// Freeze the exact command batch. Receipt-side enqueues remain pending
+    /// for the next frame even if an invalid command is removed here.
+    pub fn begin_apply_batch(&mut self) -> usize {
+        if self.scene == WindowScene::Suspended {
+            return 0;
+        }
+        if self.applying.is_empty() {
+            if self.scene == WindowScene::Galaxy {
+                self.applying = std::mem::take(&mut self.pending_galaxy);
+            }
+            self.applying.extend(std::mem::take(&mut self.pending));
+        }
+        self.applying.len()
+    }
+
+    /// Applies exactly one queued command, allowing the app to publish its
+    /// receipt and refresh the next Sector candidate before another mutation.
+    pub fn apply_next_pending(&mut self) -> Option<AppliedWindowCommand> {
+        if self.scene == WindowScene::Suspended {
+            return None;
+        }
+        if self.applying.is_empty() {
+            return None;
+        }
+        let queued = self.applying.remove(0);
+        Some(self.apply_queued(queued))
+    }
+
+    fn apply_queued(&mut self, queued: QueuedWindowCommand) -> AppliedWindowCommand {
+        let QueuedWindowCommand {
+            command,
+            prepared_build_selection,
+            prepared_build_selection_confirm,
+            prepared_system,
+            prepared_defenses,
+            prepared_missions,
+            prepared_fleet,
+            prepared_fleet_finder,
+            prepared_message_index,
+            prepared_status,
+            prepared_sector,
+            minimized_system,
+            restored_system: queued_restored_system,
+            minimized_defenses,
+            restored_defenses: queued_restored_defenses,
+            minimized_missions,
+            restored_missions: queued_restored_missions,
+            minimized_fleet,
+            restored_fleet: queued_restored_fleet,
+        } = queued;
+        let result = self.manager.apply(command);
+        let mut removed_content = Vec::new();
+        let mut build_selection_content_id = None;
+        let mut confirmed_build_selection = None;
+        let mut system_content_id = None;
+        let mut defenses_content_id = None;
+        let mut missions_content_id = None;
+        let mut fleet_content_id = None;
+        let mut fleet_finder_content_id = None;
+        let mut message_index_content_id = None;
+        let mut status_content_id = None;
+        let mut sector_content_id = None;
+        let mut committed_minimized_system = None;
+        let mut committed_minimized_defenses = None;
+        let mut committed_minimized_missions = None;
+        let mut committed_minimized_fleet = None;
+        let mut restored_system = None;
+        let mut restored_defenses = None;
+        let mut restored_missions = None;
+        let mut restored_fleet = None;
+        if let Ok(commit) = &result {
+            self.record_transition(&commit.transition, &commit.events);
+            removed_content = self.release_matching_content(&commit.events);
+            if prepared_build_selection.is_some() {
+                build_selection_content_id = match &commit.transition {
+                    WindowTransition::Opened { id } => Some(*id),
+                    WindowTransition::Existing { id, .. } => {
+                        self.attached_content.contains(id).then_some(*id)
+                    }
+                    _ => None,
+                };
+            }
+            if let Some(prepared) = prepared_build_selection_confirm {
+                let window = prepared.window_id();
+                if matches!(
+                    &commit.transition,
+                    WindowTransition::Closed { root, closed, .. }
+                        if *root == window && closed.contains(&window)
+                ) && removed_content.contains(&window)
+                {
+                    confirmed_build_selection = Some(prepared);
+                }
+            }
+            if matches!(commit.transition, WindowTransition::Minimized { .. }) {
+                committed_minimized_system = minimized_system;
+                committed_minimized_defenses = minimized_defenses;
+                committed_minimized_missions = minimized_missions;
+                committed_minimized_fleet = minimized_fleet;
+            }
+            if queued_restored_system.is_some_and(|window| {
+                matches!(
+                    commit.transition,
+                    WindowTransition::Restored { id, .. } if id == window
+                )
+            }) {
+                restored_system = queued_restored_system;
+            }
+            if queued_restored_defenses.is_some_and(|window| {
+                matches!(
+                    commit.transition,
+                    WindowTransition::Restored { id, .. } if id == window
+                )
+            }) {
+                restored_defenses = queued_restored_defenses;
+            }
+            if queued_restored_missions.is_some_and(|window| {
+                matches!(
+                    commit.transition,
+                    WindowTransition::Restored { id, .. } if id == window
+                )
+            }) {
+                restored_missions = queued_restored_missions;
+            }
+            if queued_restored_fleet.is_some_and(|window| {
+                matches!(
+                    commit.transition,
+                    WindowTransition::Restored { id, .. } if id == window
+                )
+            }) {
+                restored_fleet = queued_restored_fleet;
+            }
+            if prepared_system.is_some() {
+                system_content_id = match &commit.transition {
+                    WindowTransition::Opened { id } => Some(*id),
+                    WindowTransition::Existing { id, .. } => {
+                        self.attached_content.contains(id).then_some(*id)
+                    }
+                    _ => None,
+                };
+                if system_content_id.is_some()
+                    && matches!(
+                        commit.transition,
+                        WindowTransition::Existing {
+                            effect: ExistingEffect::RestoredAndRaised,
+                            ..
+                        }
+                    )
+                {
+                    restored_system = system_content_id;
+                }
+            }
+            if prepared_defenses.is_some() {
+                defenses_content_id = match &commit.transition {
+                    WindowTransition::Opened { id } => Some(*id),
+                    WindowTransition::Existing { id, .. } => {
+                        self.attached_content.contains(id).then_some(*id)
+                    }
+                    _ => None,
+                };
+                if defenses_content_id.is_some()
+                    && matches!(
+                        commit.transition,
+                        WindowTransition::Existing {
+                            effect: ExistingEffect::RestoredAndRaised,
+                            ..
+                        }
+                    )
+                {
+                    restored_defenses = defenses_content_id;
+                }
+            }
+            if prepared_missions.is_some() {
+                missions_content_id = match &commit.transition {
+                    WindowTransition::Opened { id } => Some(*id),
+                    WindowTransition::Existing { id, .. } => {
+                        self.attached_content.contains(id).then_some(*id)
+                    }
+                    _ => None,
+                };
+                if missions_content_id.is_some()
+                    && matches!(
+                        commit.transition,
+                        WindowTransition::Existing {
+                            effect: ExistingEffect::RestoredAndRaised,
+                            ..
+                        }
+                    )
+                {
+                    restored_missions = missions_content_id;
+                }
+            }
+            if prepared_fleet.is_some() {
+                fleet_content_id = match &commit.transition {
+                    WindowTransition::Opened { id } => Some(*id),
+                    WindowTransition::Existing { id, .. } => {
+                        self.attached_content.contains(id).then_some(*id)
+                    }
+                    _ => None,
+                };
+                if fleet_content_id.is_some()
+                    && matches!(
+                        commit.transition,
+                        WindowTransition::Existing {
+                            effect: ExistingEffect::RestoredAndRaised,
+                            ..
+                        }
+                    )
+                {
+                    restored_fleet = fleet_content_id;
+                }
+            }
+            if prepared_fleet_finder.is_some() {
+                fleet_finder_content_id = match &commit.transition {
+                    WindowTransition::Opened { id } => Some(*id),
+                    WindowTransition::Existing { id, .. } => {
+                        self.attached_content.contains(id).then_some(*id)
+                    }
+                    _ => None,
+                };
+                if let WindowTransition::Opened { id } = commit.transition {
+                    let focus = FocusTarget {
+                        window: id,
+                        control: Some(FLEET_FINDER_NAME_CONTROL),
+                    };
+                    if let Ok(focus_commit) = self.manager.apply(WindowCommand::Focus(focus)) {
+                        self.record_transition(&focus_commit.transition, &focus_commit.events);
+                    }
+                }
+            }
+            if prepared_message_index.is_some() {
+                message_index_content_id = match &commit.transition {
+                    WindowTransition::Opened { id } => Some(*id),
+                    WindowTransition::Existing { id, .. } => {
+                        self.attached_content.contains(id).then_some(*id)
+                    }
+                    _ => None,
+                };
+            }
+            if prepared_status.is_some() {
+                status_content_id = match &commit.transition {
+                    WindowTransition::Opened { id } => Some(*id),
+                    WindowTransition::Replaced { new, .. } => Some(*new),
+                    WindowTransition::Existing { id, .. } => {
+                        self.attached_content.contains(id).then_some(*id)
+                    }
+                    _ => None,
+                };
+            }
+            if prepared_sector.is_some() {
+                sector_content_id = match &commit.transition {
+                    WindowTransition::Opened { id }
+                    | WindowTransition::Replaced { new: id, .. } => Some(*id),
+                    WindowTransition::Existing {
+                        id,
+                        effect: ExistingEffect::NoOp,
+                    } => self.attached_content.contains(id).then_some(*id),
+                    _ => None,
+                };
+            }
+        }
+        AppliedWindowCommand {
+            command,
+            result,
+            removed_content,
+            prepared_build_selection,
+            build_selection_content_id,
+            confirmed_build_selection,
+            prepared_system,
+            system_content_id,
+            prepared_defenses,
+            defenses_content_id,
+            prepared_missions,
+            missions_content_id,
+            prepared_fleet,
+            fleet_content_id,
+            prepared_fleet_finder,
+            fleet_finder_content_id,
+            prepared_message_index,
+            message_index_content_id,
+            prepared_status,
+            status_content_id,
+            prepared_sector,
+            sector_content_id,
+            minimized_system: committed_minimized_system,
+            restored_system,
+            minimized_defenses: committed_minimized_defenses,
+            restored_defenses,
+            minimized_missions: committed_minimized_missions,
+            restored_missions,
+            minimized_fleet: committed_minimized_fleet,
+            restored_fleet,
+        }
     }
 
     /// Attaches successfully prepared feature content to a committed identity.
@@ -1359,6 +1483,15 @@ impl StrategicWindowing {
             && self.attached_content.insert(id)
     }
 
+    /// Acknowledges Sector publication only for the exact manager identity.
+    pub fn acknowledge_sector_publication(&mut self, id: WindowId) -> bool {
+        self.manager
+            .begin_frame()
+            .key(id)
+            .is_some_and(|key| key.kind == rebellion_windowing::WindowKind::Sector)
+            && self.attached_content.insert(id)
+    }
+
     /// Compensates a failed renderer publication or rail eviction by closing
     /// the exact manager identity and returning the content teardown target.
     pub fn rollback_fleet_publication(&mut self, id: WindowId) -> Vec<WindowId> {
@@ -1388,6 +1521,11 @@ impl StrategicWindowing {
 
     /// Compensates a failed Status publication with an exact close.
     pub fn rollback_status_publication(&mut self, id: WindowId) -> Vec<WindowId> {
+        self.rollback_publication(id)
+    }
+
+    /// Compensates a failed Sector publication with an exact close.
+    pub fn rollback_sector_publication(&mut self, id: WindowId) -> Vec<WindowId> {
         self.rollback_publication(id)
     }
 
@@ -1678,6 +1816,7 @@ impl StrategicWindowing {
     pub fn reset_session(&mut self) -> Vec<WindowEvent> {
         self.pending.clear();
         self.pending_galaxy.clear();
+        self.applying.clear();
         self.galaxy.clear();
         self.tactical.clear();
         self.attached_content.clear();
@@ -1760,7 +1899,7 @@ mod tests {
         status_rows::{StatusObject, StatusSources},
         status_window::StatusWindowState,
         CockpitFaction, CockpitLayout, CockpitViewport, DefensesWindowState, FleetWindowState,
-        MissionsWindowState, SystemWindowState,
+        MissionsWindowState, SectorWindowState, SystemWindowState,
     };
     use rebellion_windowing::{
         ControlId, FocusTarget, SubjectId, WindowKey, WindowKind, WindowOwner,
@@ -1811,6 +1950,106 @@ mod tests {
             control: ControlKind::Uncontrolled,
         });
         (world, system)
+    }
+
+    #[test]
+    fn sector_window_coordinator_commits_atomic_replace_and_duplicate_noop() {
+        fn add_sector(world: &mut GameWorld, template: SystemKey, dat: u32, x: u16) -> SystemKey {
+            let sector = world.sectors.insert(Sector {
+                dat_id: DatId::new(dat),
+                name: format!("Sector {dat}"),
+                group: SectorGroup::Core,
+                x,
+                y: 250,
+                systems: Vec::new(),
+            });
+            let system = world.systems.insert(System {
+                dat_id: DatId::new(dat + 100),
+                name: format!("System {dat}"),
+                sector,
+                x,
+                ..world.systems[template].clone()
+            });
+            world.sectors[sector].systems.push(system);
+            system
+        }
+
+        let (mut world, left) = fleet_world();
+        let right = add_sector(&mut world, left, 37, 800);
+        let far_left = add_sector(&mut world, left, 38, 100);
+        let mut state = SectorWindowState::default();
+        let mut coordinator = StrategicWindowing::new();
+
+        let publish =
+            |system, state: &mut SectorWindowState, coordinator: &mut StrategicWindowing| {
+                coordinator.enqueue_sector_open(
+                    state
+                        .prepare_open(&world, system, CockpitFaction::Alliance)
+                        .unwrap(),
+                );
+                let mut applied = coordinator.apply_pending().remove(0);
+                let prepared = applied.prepared_sector.take().unwrap();
+                let id = applied.sector_content_id.unwrap();
+                let commit = applied.result.as_ref().unwrap();
+                assert_eq!(
+                    state.commit_open(prepared, &commit.transition, &coordinator.begin_frame()),
+                    Some(id)
+                );
+                assert!(coordinator.acknowledge_sector_publication(id));
+                (id, applied)
+            };
+        let (left_id, _) = publish(left, &mut state, &mut coordinator);
+        let _ = publish(right, &mut state, &mut coordinator);
+
+        let prepared = state
+            .prepare_open(&world, far_left, CockpitFaction::Alliance)
+            .unwrap();
+        assert_eq!(prepared.replacing(), Some(left_id));
+        coordinator.enqueue_sector_open(prepared);
+        let mut replaced = coordinator.apply_pending().remove(0);
+        assert!(matches!(
+            replaced.command,
+            WindowCommand::Replace { old, .. } if old == left_id
+        ));
+        assert_eq!(replaced.removed_content, [left_id]);
+        assert_eq!(state.window_count(), 2, "publication is still staged");
+        let replacement = replaced.sector_content_id.unwrap();
+        assert_eq!(
+            state.commit_open(
+                replaced.prepared_sector.take().unwrap(),
+                &replaced.result.as_ref().unwrap().transition,
+                &coordinator.begin_frame(),
+            ),
+            Some(replacement)
+        );
+        state.remove_content(&replaced.removed_content);
+        assert!(coordinator.acknowledge_sector_publication(replacement));
+        assert_eq!(state.window_count(), 2);
+
+        coordinator.enqueue_sector_open(
+            state
+                .prepare_open(&world, far_left, CockpitFaction::Alliance)
+                .unwrap(),
+        );
+        let mut duplicate = coordinator.apply_pending().remove(0);
+        assert!(matches!(
+            duplicate.result.as_ref().unwrap().transition,
+            WindowTransition::Existing {
+                id,
+                effect: ExistingEffect::NoOp,
+            } if id == replacement
+        ));
+        assert!(duplicate.removed_content.is_empty());
+        assert_eq!(duplicate.sector_content_id, Some(replacement));
+        assert_eq!(
+            state.commit_open(
+                duplicate.prepared_sector.take().unwrap(),
+                &duplicate.result.as_ref().unwrap().transition,
+                &coordinator.begin_frame(),
+            ),
+            Some(replacement)
+        );
+        assert_eq!(state.window_count(), 2);
     }
 
     #[test]
@@ -2519,6 +2758,39 @@ mod tests {
     }
 
     #[test]
+    fn apply_batch_preserves_non_sector_order_and_defers_receipt_side_enqueue() {
+        let mut coordinator = StrategicWindowing::new();
+        for kind in [WindowKind::Encyclopedia, WindowKind::MessageIndex] {
+            coordinator.enqueue(WindowCommand::Open(singleton_spec(
+                kind,
+                WindowOwner::StrategicRoot,
+            )));
+        }
+        assert_eq!(coordinator.begin_apply_batch(), 2);
+        let first = coordinator.apply_next_pending().unwrap();
+        assert!(matches!(
+            first.command,
+            WindowCommand::Open(spec) if spec.key.kind == WindowKind::Encyclopedia
+        ));
+        coordinator.enqueue(WindowCommand::Open(singleton_spec(
+            WindowKind::Status,
+            WindowOwner::StrategicRoot,
+        )));
+        let second = coordinator.apply_next_pending().unwrap();
+        assert!(matches!(
+            second.command,
+            WindowCommand::Open(spec) if spec.key.kind == WindowKind::MessageIndex
+        ));
+        assert!(coordinator.apply_next_pending().is_none());
+        assert_eq!(coordinator.begin_apply_batch(), 1);
+        let next_frame = coordinator.apply_next_pending().unwrap();
+        assert!(matches!(
+            next_frame.command,
+            WindowCommand::Open(spec) if spec.key.kind == WindowKind::Status
+        ));
+    }
+
+    #[test]
     fn strategic_windowing_failed_open_preserves_previous_content() {
         let mut coordinator = StrategicWindowing::new();
         for subject in [1, 2] {
@@ -2569,6 +2841,7 @@ mod tests {
             WindowKind::Encyclopedia,
             WindowOwner::StrategicRoot,
         )));
+        assert_eq!(coordinator.begin_apply_batch(), 1);
         coordinator.reset_session();
         assert!(coordinator.apply_pending().is_empty());
         assert!(coordinator.begin_frame().paint_order().is_empty());
