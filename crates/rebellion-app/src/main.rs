@@ -98,6 +98,7 @@ use rebellion_render::fleet_finder::{
     draw_fleet_finder_focused, FleetFinderAction, FleetFinderState,
 };
 use rebellion_render::fleet_window::{draw_managed_fleet_windows, FleetWindowEntry};
+use rebellion_render::game_menu::{ManagedMenuState, OwnedMenuOutcome, PreparedMenuOpen};
 use rebellion_render::game_speed::{
     choose_game_speed, draw_day_readout, draw_game_speed_menu, draw_pause_alert,
     open_game_speed_menu_on_right_click, pause_alert_contains_screen_point, stepped_game_speed,
@@ -113,7 +114,8 @@ use rebellion_render::move_confirmation::{
     MoveConfirmationState, ScrapConfirmation, ScrapConfirmationAction, ScrapConfirmationState,
 };
 use rebellion_render::object_menu::{
-    draw_object_menu, CommandGates, MenuObject, ObjectMenuCommand, ObjectMenuState, OrderGates,
+    draw_owned_object_menu, object_menu_rects, CommandGates, MenuObject, ObjectMenuCommand,
+    ObjectMenuState, OrderGates,
 };
 use rebellion_render::panels::bombardment::{draw_bombardment, BombardmentPanelState};
 use rebellion_render::panels::death_star::draw_death_star;
@@ -1433,6 +1435,21 @@ impl StrategicPointerBatch {
             .collect()
     }
 
+    /// Whether this frame contains a press consumed by a modal/transient
+    /// boundary. With an active manager-owned Menu, this is its outside-close
+    /// intent and the router retains ownership of the eventual release.
+    fn has_blocked_press(&self, router: &FrameInputRouter) -> bool {
+        self.events.iter().any(|event| {
+            matches!(
+                event.phase,
+                PointerPhase::Press(PointerButtonId::Primary)
+                    | PointerPhase::Press(PointerButtonId::Secondary)
+                    | PointerPhase::Press(PointerButtonId::Middle)
+                    | PointerPhase::Press(PointerButtonId::Extra(_))
+            ) && router.pointer_recipient(event.id) == InputRecipient::Blocked
+        })
+    }
+
     fn sector_events(&self) -> Vec<SectorWindowInputEvent> {
         self.events
             .iter()
@@ -2022,6 +2039,19 @@ enum IndexedStatusMenuWitness {
         class: FighterKey,
         carrier: u32,
     },
+}
+
+fn remove_managed_menu_content(
+    managed: &mut ManagedMenuState,
+    payload: &mut Option<ObjectMenuState>,
+    witness: &mut Option<IndexedStatusMenuWitness>,
+    removed: &[rebellion_windowing::WindowId],
+) {
+    managed.remove_content(removed);
+    if managed.window_id().is_none() {
+        *payload = None;
+        *witness = None;
+    }
 }
 
 fn capture_indexed_status_menu_witness(
@@ -3065,7 +3095,16 @@ mod frame_input_tests {
         let missions = rebellion_core::missions::MissionState::new();
         let movement = rebellion_core::movement::MovementState::default();
         let mut sectors = SectorWindowState::default();
-        assert!(sectors.open_for_system(&world, system, CockpitFaction::Alliance));
+        let prepared = sectors
+            .prepare_open(&world, system, CockpitFaction::Alliance)
+            .expect("the Sector prepares under the active faction");
+        let mut manager = WindowManager::new();
+        let opened = manager
+            .apply(WindowCommand::Open(prepared.spec()))
+            .expect("the Sector owner is registered");
+        let owner = sectors
+            .commit_open(prepared, &opened.transition, &manager.begin_frame())
+            .expect("the Sector content publishes under its exact identity");
         let layout = rebellion_render::CockpitLayout {
             canvas: rebellion_render::CockpitViewport {
                 x: 0.0,
@@ -3104,12 +3143,13 @@ mod frame_input_tests {
         assert!(actions.iter().any(|action| matches!(
             action,
             rebellion_render::sector_window::SectorWindowAction::OpenObjectMenu {
+                owner: Some(action_owner),
                 selection: Some(rebellion_render::object_menu::MenuObject::SystemIcon {
                     system: selected,
                     quadrant: rebellion_render::quadrant_icons::Quadrant::System,
                 }),
                 ..
-            } if *selected == system
+            } if *selected == system && *action_owner == owner
         )));
         assert!(sectors
             .command_actions(
@@ -3985,6 +4025,115 @@ mod frame_input_tests {
             map.pointer_blocked,
             "a later Root-only batch preserves the earlier block"
         );
+    }
+
+    #[test]
+    fn menu_detail_invoker_has_registered_owner() {
+        // The detail renderer carries the exact owner in the menu action; the
+        // application does not rescan the whole frame's pointer releases.
+        // Break caught: a later release lending its owner to an earlier action.
+        use rebellion_render::game_menu::ManagedMenuState;
+        use rebellion_render::sector_window::SectorWindowAction;
+        use rebellion_render::windowing_policy::contextual_spec;
+        use rebellion_windowing::{SubjectId, WindowKind, WindowOwner, WindowTransition};
+
+        let mut manager = WindowManager::new();
+        let owner = match manager
+            .apply(WindowCommand::Open(contextual_spec(
+                WindowKind::Defenses,
+                SubjectId::new(2, 36),
+                WindowOwner::StrategicRoot,
+            )))
+            .unwrap()
+            .transition
+        {
+            WindowTransition::Opened { id } => id,
+            other => panic!("expected detail open, got {other:?}"),
+        };
+        let action = SectorWindowAction::OpenObjectMenu {
+            owner: Some(owner),
+            selection: None,
+            point: (100, 100),
+        };
+        let carried_owner = match action {
+            SectorWindowAction::OpenObjectMenu { owner, .. } => owner,
+            other => panic!("expected menu action, got {other:?}"),
+        };
+        assert_eq!(carried_owner, Some(owner));
+
+        let mut menu = ManagedMenuState::default();
+        let prepared = menu.prepare_open(carried_owner.unwrap());
+        let committed = manager.apply(prepared.command()).unwrap();
+        let id = menu
+            .commit_open(prepared, &committed.transition)
+            .expect("menu publishes after its accepted open");
+        assert_eq!(
+            manager.begin_frame().owner(id),
+            Some(WindowOwner::Window(owner))
+        );
+
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(41, &manager.begin_frame());
+        let outside = StrategicPointerBatch::collect_from_raw(
+            41,
+            &mut router,
+            &[StrategicRawPointerEvent {
+                ordinal: 0,
+                point: (500.0, 400.0),
+                phase: PointerPhase::Press(PointerButtonId::Primary),
+            }],
+            |_| BTreeSet::new(),
+        );
+        assert!(outside.has_blocked_press(&router));
+        assert!(!router.claim_root(outside.events[0].id));
+    }
+
+    #[test]
+    fn galaxy_return_owner_teardown_clears_managed_menu_payload() {
+        use rebellion_render::game_menu::ManagedMenuState;
+        use rebellion_render::windowing_policy::contextual_spec;
+        use rebellion_windowing::{SubjectId, WindowKind, WindowOwner, WindowTransition};
+
+        let mut manager = WindowManager::new();
+        let owner = match manager
+            .apply(WindowCommand::Open(contextual_spec(
+                WindowKind::System,
+                SubjectId::new(2, 44),
+                WindowOwner::StrategicRoot,
+            )))
+            .unwrap()
+            .transition
+        {
+            WindowTransition::Opened { id } => id,
+            other => panic!("expected owner open, got {other:?}"),
+        };
+        let mut managed = ManagedMenuState::default();
+        let prepared = managed.prepare_open(owner);
+        let opened = manager.apply(prepared.command()).unwrap();
+        let menu_id = managed.commit_open(prepared, &opened.transition).unwrap();
+        let mut payload = Some(super::ObjectMenuState::new(
+            None,
+            super::OrderGates::default(),
+            (0, 0),
+        ));
+        let mut witness = Some(super::IndexedStatusMenuWitness::Fighter {
+            fleet: super::FleetKey::default(),
+            index: 0,
+            class: super::FighterKey::default(),
+            carrier: 0,
+        });
+        let closed = manager.apply(WindowCommand::Close(owner)).unwrap();
+        let removed = match &closed.transition {
+            WindowTransition::Closed { closed, .. } => closed,
+            other => panic!("expected owner cascade, got {other:?}"),
+        };
+        assert!(removed.contains(&menu_id));
+
+        super::remove_managed_menu_content(&mut managed, &mut payload, &mut witness, removed);
+
+        assert_eq!(managed.window_id(), None);
+        assert!(payload.is_none());
+        assert!(witness.is_none());
     }
 
     #[test]
@@ -6361,6 +6510,12 @@ async fn main() {
     let mut missions_window_state = MissionsWindowState::default();
     // The object pop-up menu a right-click in a system window opens.
     let mut object_menu: Option<ObjectMenuState> = None;
+    let mut managed_menu = ManagedMenuState::default();
+    let mut pending_object_menu_publications = Vec::<(
+        PreparedMenuOpen,
+        ObjectMenuState,
+        Option<IndexedStatusMenuWitness>,
+    )>::new();
     let mut indexed_status_menu_witness: Option<IndexedStatusMenuWitness> = None;
     // A Mission order waiting for its target (the galaxy view's mode 2).
     let mut targeting: Option<Targeting> = None;
@@ -9060,6 +9215,7 @@ async fn main() {
                     today: clock.tick,
                 },
             ));
+            reports.extend(managed_menu.content_reports(&return_candidate));
             let reconciliation = strategic_windowing.reconcile(&return_candidate, &reports);
             sector_window_state.remove_content(&reconciliation.removed);
             system_window_state.remove_content(&reconciliation.removed);
@@ -9071,6 +9227,12 @@ async fn main() {
             encyclopedia_surface.remove_content(&reconciliation.removed);
             status_window_state.remove_content(&reconciliation.removed);
             build_selection_state.remove_content(&reconciliation.removed);
+            remove_managed_menu_content(
+                &mut managed_menu,
+                &mut object_menu,
+                &mut indexed_status_menu_witness,
+                &reconciliation.removed,
+            );
             let message_actions = message_index.remove_content(&reconciliation.removed);
             apply_message_index_actions(
                 message_actions,
@@ -9127,8 +9289,7 @@ async fn main() {
                 || personnel_finder_state.is_open()
                 || original_modal_fixture_open,
             focused_control: command_palette_open,
-            transient_menu: object_menu.is_some()
-                || game_speed_ui.menu_anchor.is_some()
+            transient_menu: game_speed_ui.menu_anchor.is_some()
                 || agent_menu_state.anchor.is_some()
                 || cockpit_state.gid_ui.menu_open,
             root_gesture: targeting.is_some(),
@@ -9256,6 +9417,15 @@ async fn main() {
             }
 
             GameMode::MainMenu => {
+                if managed_menu.window_id().is_some() {
+                    // Returning to the shell is a session boundary. Let the
+                    // manager tear down the owned Menu (and its registered
+                    // owner graph) before dropping the presentation payload.
+                    drop(strategic_windowing.reset_session());
+                    strategic_input_router.reset_session();
+                    retained_legacy_input_filter.reset();
+                    managed_menu = ManagedMenuState::default();
+                }
                 sector_window_state.clear();
                 pending_sector_publications.clear();
                 pending_committed_sector_actions.clear();
@@ -9263,7 +9433,9 @@ async fn main() {
                 fleet_window_state.clear();
                 defenses_window_state.clear();
                 missions_window_state.clear();
+                pending_object_menu_publications.clear();
                 object_menu = None;
+                indexed_status_menu_witness = None;
                 targeting = None;
 
                 #[cfg(target_arch = "wasm32")]
@@ -9678,6 +9850,8 @@ async fn main() {
                                 drop(strategic_windowing.reset_session());
                                 strategic_input_router.reset_session();
                                 retained_legacy_input_filter.reset();
+                                managed_menu = ManagedMenuState::default();
+                                pending_object_menu_publications.clear();
                                 // Sync cockpit chrome to player faction
                                 cockpit_state =
                                     CockpitState::new(if faction == MissionFaction::Alliance {
@@ -9693,6 +9867,7 @@ async fn main() {
                                 defenses_window_state.clear();
                                 missions_window_state.clear();
                                 object_menu = None;
+                                indexed_status_menu_witness = None;
                                 targeting = None;
 
                                 // Initialize game state for chosen faction
@@ -9830,7 +10005,6 @@ async fn main() {
                     || cockpit_state.gid_ui.menu_open
                     || original_modal_fixture_open
                     || game_speed_ui.menu_anchor.is_some()
-                    || object_menu.is_some()
                     || pause_alert_contains_screen_point(&clock, cockpit_layout, pointer)
                     || briefing_lock
                     || battle_window_underlay
@@ -9930,6 +10104,15 @@ async fn main() {
                                 }) {
                                     hits.insert(window.id);
                                 }
+                                if let Some(window) = managed_menu.hit_window(
+                                    strategic_frame_boundary.snapshot(),
+                                    &object_menu
+                                        .as_ref()
+                                        .map_or_else(Vec::new, |_| object_menu_rects(ctx)),
+                                    point,
+                                ) {
+                                    hits.insert(window);
+                                }
                                 hits
                             },
                         );
@@ -9948,6 +10131,14 @@ async fn main() {
                 } else {
                     StrategicPointerBatch::default()
                 };
+                if managed_menu.window_id().is_some()
+                    && strategic_pointer_events.has_blocked_press(&strategic_input_router)
+                {
+                    if let Some(window) = managed_menu.request_close() {
+                        strategic_windowing
+                            .enqueue(rebellion_windowing::WindowCommand::Close(window));
+                    }
+                }
                 let strategic_pointer_routes = strategic_pointer_events.router_events();
                 let sector_pointer_routes = strategic_pointer_events.sector_events();
                 latch_map_pointer_from_strategic_batch(
@@ -9978,6 +10169,10 @@ async fn main() {
                     let strategic_owner_input_enabled = strategic_owner_pointer_enabled;
                     let retained_window_input =
                         strategic_frame_boundary.retained_window_input_allowed();
+                    let managed_menu_input_enabled = strategic_frame_sequence_valid
+                        && managed_menu.window_id().is_some_and(|window| {
+                            strategic_frame_boundary.managed_window_input_allowed(window)
+                        });
                     // Register the cockpit background before panels so the
                     // opaque chrome never covers their content or artwork.
                     draw_cockpit_background(ctx, &cockpit_state, &mut bmp_cache);
@@ -10463,7 +10658,11 @@ async fn main() {
                                     cockpit_layout,
                                 );
                             }
-                            SectorWindowAction::OpenObjectMenu { selection, point } => {
+                            SectorWindowAction::OpenObjectMenu {
+                                owner,
+                                selection,
+                                point,
+                            } => {
                                 let gates = order_gates(
                                     selection,
                                     &world,
@@ -10474,10 +10673,16 @@ async fn main() {
                                     &research_state,
                                     player_faction,
                                 );
-                                indexed_status_menu_witness =
-                                    capture_indexed_status_menu_witness(&world, selection);
-                                object_menu = Some(ObjectMenuState::new(selection, gates, point));
-                                legacy_restriction_latch.note_start();
+                                if let Some(owner) = owner {
+                                    let prepared = managed_menu.prepare_open(owner);
+                                    strategic_windowing.enqueue(prepared.command());
+                                    pending_object_menu_publications.push((
+                                        prepared,
+                                        ObjectMenuState::new(selection, gates, point),
+                                        capture_indexed_status_menu_witness(&world, selection),
+                                    ));
+                                    legacy_restriction_latch.note_start();
+                                }
                             }
                             // FUN_00422ce0, window type 1: the selection moves
                             // against what +0x70 gives under the point, kind
@@ -10659,7 +10864,10 @@ async fn main() {
                                 }
                             }
                             SystemWindowAction::OpenObjectMenu {
-                                selection, point, ..
+                                owner,
+                                selection,
+                                point,
+                                ..
                             } => {
                                 let gates = order_gates(
                                     selection,
@@ -10671,10 +10879,16 @@ async fn main() {
                                     &research_state,
                                     player_faction,
                                 );
-                                indexed_status_menu_witness =
-                                    capture_indexed_status_menu_witness(&world, selection);
-                                object_menu = Some(ObjectMenuState::new(selection, gates, point));
-                                legacy_restriction_latch.note_start();
+                                if let Some(owner) = owner {
+                                    let prepared = managed_menu.prepare_open(owner);
+                                    strategic_windowing.enqueue(prepared.command());
+                                    pending_object_menu_publications.push((
+                                        prepared,
+                                        ObjectMenuState::new(selection, gates, point),
+                                        capture_indexed_status_menu_witness(&world, selection),
+                                    ));
+                                    legacy_restriction_latch.note_start();
+                                }
                             }
                         }
                     }
@@ -10756,7 +10970,11 @@ async fn main() {
                                     name,
                                 });
                             }
-                            FleetWindowAction::OpenObjectMenu { selection, point } => {
+                            FleetWindowAction::OpenObjectMenu {
+                                owner,
+                                selection,
+                                point,
+                            } => {
                                 let gates = order_gates(
                                     Some(selection),
                                     &world,
@@ -10767,11 +10985,19 @@ async fn main() {
                                     &research_state,
                                     player_faction,
                                 );
-                                indexed_status_menu_witness =
-                                    capture_indexed_status_menu_witness(&world, Some(selection));
-                                object_menu =
-                                    Some(ObjectMenuState::new(Some(selection), gates, point));
-                                legacy_restriction_latch.note_start();
+                                if let Some(owner) = owner {
+                                    let prepared = managed_menu.prepare_open(owner);
+                                    strategic_windowing.enqueue(prepared.command());
+                                    pending_object_menu_publications.push((
+                                        prepared,
+                                        ObjectMenuState::new(Some(selection), gates, point),
+                                        capture_indexed_status_menu_witness(
+                                            &world,
+                                            Some(selection),
+                                        ),
+                                    ));
+                                    legacy_restriction_latch.note_start();
+                                }
                             }
                             // FUN_00422ce0, window type 4: the fleet moves
                             // with 0x201 against what +0x70 gives under the
@@ -11031,7 +11257,10 @@ async fn main() {
                                 logical_position,
                             ),
                             DefensesWindowAction::OpenObjectMenu {
-                                selection, point, ..
+                                owner,
+                                selection,
+                                point,
+                                ..
                             } => {
                                 let gates = order_gates(
                                     selection,
@@ -11043,10 +11272,16 @@ async fn main() {
                                     &research_state,
                                     player_faction,
                                 );
-                                indexed_status_menu_witness =
-                                    capture_indexed_status_menu_witness(&world, selection);
-                                object_menu = Some(ObjectMenuState::new(selection, gates, point));
-                                legacy_restriction_latch.note_start();
+                                if let Some(owner) = owner {
+                                    let prepared = managed_menu.prepare_open(owner);
+                                    strategic_windowing.enqueue(prepared.command());
+                                    pending_object_menu_publications.push((
+                                        prepared,
+                                        ObjectMenuState::new(selection, gates, point),
+                                        capture_indexed_status_menu_witness(&world, selection),
+                                    ));
+                                    legacy_restriction_latch.note_start();
+                                }
                             }
                             // FUN_00422ce0: the drop issues 0x201 (0x202 with
                             // Ctrl) against the window under the point, and
@@ -11195,14 +11430,37 @@ async fn main() {
                     // The menu commits on the release that starts targeting;
                     // only a later release may end the order.
                     let targeting_held = targeting.is_some();
-                    match draw_object_menu(
-                        ctx,
-                        &mut object_menu,
-                        &mut bmp_cache,
-                        cockpit_layout,
-                        cockpit_state.faction,
-                        strategic_owner_input_enabled,
-                    ) {
+                    let object_menu_choice = object_menu
+                        .as_ref()
+                        .map(|menu| {
+                            draw_owned_object_menu(
+                                ctx,
+                                menu,
+                                &mut bmp_cache,
+                                cockpit_layout,
+                                cockpit_state.faction,
+                                managed_menu_input_enabled,
+                            )
+                        })
+                        .unwrap_or(OwnedMenuOutcome::Open);
+                    let object_menu_choice = match object_menu_choice {
+                        OwnedMenuOutcome::Open => None,
+                        OwnedMenuOutcome::Dismissed => {
+                            if let Some(window) = managed_menu.request_close() {
+                                strategic_windowing
+                                    .enqueue(rebellion_windowing::WindowCommand::Close(window));
+                            }
+                            None
+                        }
+                        OwnedMenuOutcome::Chosen(choice) => {
+                            if let Some(window) = managed_menu.request_close() {
+                                strategic_windowing
+                                    .enqueue(rebellion_windowing::WindowCommand::Close(window));
+                            }
+                            Some(choice)
+                        }
+                    };
+                    match object_menu_choice {
                         Some((ObjectMenuCommand::Encyclopedia, selection)) => {
                             if let Some(session) = encyclopedia_session_store.current() {
                                 let requested_object_id = selection
@@ -12355,8 +12613,7 @@ async fn main() {
                         || personnel_finder_state.is_open()
                         || original_modal_fixture_open,
                     focused_control: command_palette_now_open,
-                    transient_menu: object_menu.is_some()
-                        || game_speed_ui.menu_anchor.is_some()
+                    transient_menu: game_speed_ui.menu_anchor.is_some()
                         || agent_menu_state.anchor.is_some()
                         || cockpit_state.gid_ui.menu_open,
                     root_gesture: targeting.is_some(),
@@ -13463,6 +13720,8 @@ async fn main() {
                             drop(strategic_windowing.reset_session());
                             strategic_input_router.reset_session();
                             retained_legacy_input_filter.reset();
+                            managed_menu = ManagedMenuState::default();
+                            pending_object_menu_publications.clear();
                             let restored_fingerprint =
                                 rebellion_data::save::compute_state_fingerprint(
                                     &campaign.snapshot(),
@@ -13498,6 +13757,7 @@ async fn main() {
                             defenses_window_state.clear();
                             missions_window_state.clear();
                             object_menu = None;
+                            indexed_status_menu_witness = None;
                             targeting = None;
                             fleets_state = FleetsState::default();
                             build_selection_state = BuildSelectionState::default();
@@ -13948,6 +14208,8 @@ async fn main() {
             missions_window_state.content_reports(strategic_frame_boundary.snapshot(), &world),
         );
         strategic_content_reports
+            .extend(managed_menu.content_reports(strategic_frame_boundary.snapshot()));
+        strategic_content_reports
             .extend(fleet_finder_state.content_reports(strategic_frame_boundary.snapshot()));
         strategic_content_reports
             .extend(troop_finder_state.content_reports(strategic_frame_boundary.snapshot()));
@@ -14029,6 +14291,10 @@ async fn main() {
                 minimized_fleet,
                 restored_fleet,
             } = applied;
+            let pending_object_menu = pending_object_menu_publications
+                .iter()
+                .position(|(prepared, _, _)| prepared.command() == command)
+                .map(|index| pending_object_menu_publications.remove(index));
             if let Some((finder, destination)) = release_troop_finder_dependent(
                 &mut pending_troop_finder_open,
                 command,
@@ -14083,6 +14349,40 @@ async fn main() {
             let mut committed_system_open = false;
             let mut committed_defenses_open = false;
             let mut committed_fleet_open = false;
+            if let Some((prepared, content, witness)) = pending_object_menu {
+                if let Ok(commit) = &result {
+                    if let Some(id) = managed_menu.commit_open(prepared, &commit.transition) {
+                        let committed = strategic_windowing.has_content(id)
+                            || strategic_windowing.attach_content(id);
+                        if committed {
+                            object_menu = Some(content);
+                            indexed_status_menu_witness = witness;
+                        } else {
+                            macroquad::logging::error!(
+                                "[windowing] Menu content attachment failed identity={id:?}"
+                            );
+                            removed_content
+                                .extend(strategic_windowing.rollback_detail_publication(id));
+                        }
+                    } else {
+                        macroquad::logging::error!(
+                            "[windowing] Menu content commit did not match transition={:?}",
+                            commit.transition
+                        );
+                        let created = match commit.transition {
+                            rebellion_windowing::WindowTransition::Opened { id }
+                            | rebellion_windowing::WindowTransition::Replaced { new: id, .. } => {
+                                Some(id)
+                            }
+                            _ => None,
+                        };
+                        if let Some(id) = created {
+                            removed_content
+                                .extend(strategic_windowing.rollback_detail_publication(id));
+                        }
+                    }
+                }
+            }
             if let (Some(prepared), Some(id), Ok(commit)) = (
                 prepared_build_selection,
                 build_selection_content_id,
@@ -14547,6 +14847,12 @@ async fn main() {
             encyclopedia_surface.remove_content(&removed_content);
             status_window_state.remove_content(&removed_content);
             build_selection_state.remove_content(&removed_content);
+            remove_managed_menu_content(
+                &mut managed_menu,
+                &mut object_menu,
+                &mut indexed_status_menu_witness,
+                &removed_content,
+            );
             let message_close_actions = message_index.remove_content(&removed_content);
             apply_message_index_actions(
                 message_close_actions,
@@ -14597,6 +14903,12 @@ async fn main() {
         encyclopedia_surface.remove_content(&reconciliation.removed);
         status_window_state.remove_content(&reconciliation.removed);
         build_selection_state.remove_content(&reconciliation.removed);
+        remove_managed_menu_content(
+            &mut managed_menu,
+            &mut object_menu,
+            &mut indexed_status_menu_witness,
+            &reconciliation.removed,
+        );
         let message_close_actions = message_index.remove_content(&reconciliation.removed);
         apply_message_index_actions(
             message_close_actions,

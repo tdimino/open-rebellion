@@ -1208,6 +1208,8 @@ pub enum FleetWindowAction {
     /// A right click on a list entry or item opens its object's pop-up menu
     /// (manual p. 120), at a 640 by 480 canvas point.
     OpenObjectMenu {
+        /// Exact registered invoker when this is manager-owned content.
+        owner: Option<WindowId>,
         selection: MenuObject,
         point: (i16, i16),
     },
@@ -2103,6 +2105,7 @@ fn draw_fleet_windows_with_snapshot(
         if pointer_permitted {
             if let Some((selection, point)) = result.object_menu {
                 actions.push(FleetWindowAction::OpenObjectMenu {
+                    owner: window.id,
                     selection,
                     point: canvas_point(layout, point),
                 });
@@ -4922,7 +4925,9 @@ pub(crate) mod tests {
         actions
             .iter()
             .filter_map(|action| match *action {
-                FleetWindowAction::OpenObjectMenu { selection, point } => Some((selection, point)),
+                FleetWindowAction::OpenObjectMenu {
+                    selection, point, ..
+                } => Some((selection, point)),
                 _ => None,
             })
             .collect()

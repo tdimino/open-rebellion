@@ -888,6 +888,8 @@ pub enum DefensesWindowAction {
     /// A right release on the list opens the object pop-up menu
     /// (`FUN_004ac5c0`) for the selection, at a 640 by 480 canvas point.
     OpenObjectMenu {
+        /// Exact registered invoker when this is manager-owned content.
+        owner: Option<WindowId>,
         system: SystemKey,
         selection: Option<MenuObject>,
         point: (i16, i16),
@@ -1445,6 +1447,7 @@ fn draw_defenses_windows_with_snapshot(
         if pointer_permitted {
             if let Some((selection, point)) = result.object_menu {
                 actions.push(DefensesWindowAction::OpenObjectMenu {
+                    owner: window.id,
                     system,
                     selection,
                     point,

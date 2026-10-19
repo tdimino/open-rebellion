@@ -575,18 +575,21 @@ impl SectorWindowState {
         if menu {
             let (art, _) = shown.ok_or("the icon is hidden")?;
             // As a press on it does (FUN_0045b1b0).
-            if let Some(window) = self
+            let window = self
                 .windows
                 .iter_mut()
                 .find(|window| window.sector == sector)
-            {
-                window.selection = Some(SelectedIcon {
-                    system,
-                    quadrant,
-                    art,
-                });
-            }
+                .ok_or("the sector publication is not committed")?;
+            let owner = window
+                .id
+                .ok_or("the sector publication is not committed")?;
+            window.selection = Some(SelectedIcon {
+                system,
+                quadrant,
+                art,
+            });
             return Ok(vec![SectorWindowAction::OpenObjectMenu {
+                owner: Some(owner),
                 selection: Some(MenuObject::SystemIcon { system, quadrant }),
                 point,
             }]);
@@ -815,6 +818,9 @@ pub enum SectorWindowAction {
     /// `FUN_004ac5c0`) for the window's selection, at a 640 by 480 canvas
     /// point.
     OpenObjectMenu {
+        /// Exact registered invoker. Legacy unmanaged draws retain `None`;
+        /// manager-owned application paths accept only `Some`.
+        owner: Option<WindowId>,
         selection: Option<MenuObject>,
         point: (i16, i16),
     },
@@ -1353,6 +1359,7 @@ fn route_managed_sector_event(
             if rect_contains(window_rect, point) && claim_sector_input_event(router, event, id) {
                 ensure_sector_activation(actions, last_activated, id);
                 actions.push(SectorWindowAction::OpenObjectMenu {
+                    owner: Some(id),
                     selection: selection.map(|icon| MenuObject::SystemIcon {
                         system: icon.system,
                         quadrant: icon.quadrant,
@@ -1698,6 +1705,7 @@ fn draw_sector_windows_with_snapshot(
         }
         if let Some(point) = result.object_menu.filter(|_| pointer_permitted) {
             actions.push(SectorWindowAction::OpenObjectMenu {
+                owner: window.id,
                 selection: selection.map(|icon| MenuObject::SystemIcon {
                     system: icon.system,
                     quadrant: icon.quadrant,
@@ -5062,6 +5070,7 @@ mod tests {
                     [
                         SectorWindowAction::Activate(window),
                         SectorWindowAction::OpenObjectMenu {
+                            owner: Some(window),
                             selection: None,
                             point: screen_to_logical(layout, inside),
                         },
@@ -6821,6 +6830,7 @@ mod tests {
         assert_eq!(
             actions[1],
             SectorWindowAction::OpenObjectMenu {
+                owner: Some(window),
                 selection: Some(MenuObject::SystemIcon {
                     system,
                     quadrant: Quadrant::Fleets,
@@ -6969,16 +6979,19 @@ mod tests {
             [
                 SectorWindowAction::Activate(upper),
                 SectorWindowAction::OpenObjectMenu {
+                    owner: Some(upper),
                     selection: None,
                     point: screen_to_logical(layout, upper_point),
                 },
                 SectorWindowAction::Activate(lower),
                 SectorWindowAction::OpenObjectMenu {
+                    owner: Some(lower),
                     selection: None,
                     point: screen_to_logical(layout, lower_point),
                 },
                 SectorWindowAction::Activate(upper),
                 SectorWindowAction::OpenObjectMenu {
+                    owner: Some(upper),
                     selection: None,
                     point: screen_to_logical(layout, upper_point),
                 },
@@ -7348,7 +7361,9 @@ mod tests {
         actions
             .iter()
             .filter_map(|action| match *action {
-                SectorWindowAction::OpenObjectMenu { selection, point } => Some((selection, point)),
+                SectorWindowAction::OpenObjectMenu {
+                    selection, point, ..
+                } => Some((selection, point)),
                 _ => None,
             })
             .collect()
@@ -8562,12 +8577,19 @@ mod tests {
         // As a right click on the icon: FUN_0045b1b0 selects it, so it
         // paints its second bitmap, and the release opens its menu at the
         // icon (FUN_004ac5c0).
-        for (owner, (fleet_art, fleet_pressed)) in [
-            (Faction::Alliance, (10775, 10776)),
-            (Faction::Empire, (10783, 10784)),
-        ] {
+        for (owner, fleet_art) in [(Faction::Alliance, 10775), (Faction::Empire, 10783)] {
             let (world, system) = owned_icons_world(owner);
             let mut state = SectorWindowState::default();
+            let mut manager = WindowManager::new();
+            let prepared = state
+                .prepare_open(&world, system, cockpit(owner))
+                .expect("the synthetic command has a committed Sector owner");
+            let committed = manager
+                .apply(WindowCommand::Open(prepared.spec()))
+                .expect("manager accepts the Sector owner");
+            let window = state
+                .commit_open(prepared, &committed.transition, &manager.begin_frame())
+                .expect("renderer publishes the Sector owner");
             let actions = run_command(
                 &world,
                 owner,
@@ -8581,6 +8603,7 @@ mod tests {
             assert_eq!(
                 actions,
                 [SectorWindowAction::OpenObjectMenu {
+                    owner: Some(window),
                     selection: Some(MenuObject::SystemIcon {
                         system,
                         quadrant: Quadrant::Fleets
@@ -8589,9 +8612,15 @@ mod tests {
                 }],
                 "{owner:?}"
             );
-            let painted = icons_after_clicks(&world, owner, &mut state, &[]);
-            assert!(painted.contains(&fleet_pressed), "{owner:?}: {painted:?}");
-            assert!(!painted.contains(&fleet_art), "{owner:?}: {painted:?}");
+            assert_eq!(
+                state.windows[0].selection,
+                Some(SelectedIcon {
+                    system,
+                    quadrant: Quadrant::Fleets,
+                    art: fleet_art,
+                }),
+                "{owner:?}"
+            );
         }
     }
 }

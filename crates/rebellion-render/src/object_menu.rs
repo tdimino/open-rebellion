@@ -20,7 +20,10 @@ use rebellion_core::officer_rank::CommandKind;
 
 use crate::bmp_cache::BmpCache;
 use crate::cockpit::{CockpitFaction, CockpitLayout, CockpitViewport};
-use crate::game_menu::{draw_game_menu, GameMenuEntry, GameMenuPlacement, GameMenuResponse};
+use crate::game_menu::{
+    draw_game_menu, game_menu_rects, GameMenuEntry, GameMenuPlacement, GameMenuResponse,
+    OwnedMenuOutcome,
+};
 use crate::quadrant_icons::Quadrant;
 use crate::status_rows::StatusObject;
 
@@ -643,6 +646,12 @@ pub fn object_menu_rect(ctx: &egui::Context) -> Option<egui::Rect> {
     ctx.memory(|memory| memory.area_rect(egui::Id::new(MENU_ID)))
 }
 
+/// Root and currently visible child rectangles of the open object menu.
+#[must_use]
+pub fn object_menu_rects(ctx: &egui::Context) -> Vec<egui::Rect> {
+    game_menu_rects(ctx, egui::Id::new(MENU_ID))
+}
+
 /// The galaxy view in canvas coordinates: the menu's owner window
 /// (`FUN_004ac5c0` maps the point into it and `FUN_00442380` opens there).
 fn galaxy_owner(layout: CockpitLayout) -> CockpitViewport {
@@ -666,6 +675,30 @@ pub fn draw_object_menu(
     input_enabled: bool,
 ) -> Option<(ObjectMenuCommand, Option<MenuObject>)> {
     let open = menu.as_ref()?;
+    match draw_owned_object_menu(ctx, open, cache, layout, faction, input_enabled) {
+        OwnedMenuOutcome::Open => None,
+        OwnedMenuOutcome::Dismissed => {
+            *menu = None;
+            None
+        }
+        OwnedMenuOutcome::Chosen(chosen) => {
+            *menu = None;
+            Some(chosen)
+        }
+    }
+}
+
+/// Draw manager-owned object-menu content without deleting it. Dismissal and
+/// selection become intents; the application retains this payload until the
+/// exact manager close/replacement receipt arrives.
+pub fn draw_owned_object_menu(
+    ctx: &egui::Context,
+    open: &ObjectMenuState,
+    cache: &mut BmpCache,
+    layout: CockpitLayout,
+    faction: CockpitFaction,
+    input_enabled: bool,
+) -> OwnedMenuOutcome<(ObjectMenuCommand, Option<MenuObject>)> {
     let children: Vec<Vec<GameMenuEntry<'static>>> = open
         .submenus
         .iter()
@@ -695,20 +728,15 @@ pub fn draw_object_menu(
         &entries,
         input_enabled,
     ) {
-        GameMenuResponse::Open => None,
-        GameMenuResponse::Dismissed => {
-            *menu = None;
-            None
-        }
+        GameMenuResponse::Open => OwnedMenuOutcome::Open,
+        GameMenuResponse::Dismissed => OwnedMenuOutcome::Dismissed,
         GameMenuResponse::Chosen(index) => {
             let chosen = (open.rows[index].item.command, open.selection);
-            *menu = None;
-            Some(chosen)
+            OwnedMenuOutcome::Chosen(chosen)
         }
         GameMenuResponse::ChosenChild { row, child } => {
             let chosen = (open.submenus[row][child].item.command, open.selection);
-            *menu = None;
-            Some(chosen)
+            OwnedMenuOutcome::Chosen(chosen)
         }
     }
 }
@@ -1463,6 +1491,222 @@ mod tests {
         let (chosen, _) = click_row(&mut menu, 2);
         assert_eq!(chosen, Some((ObjectMenuCommand::Mission, agent)));
         assert_eq!(menu, None);
+    }
+
+    #[test]
+    fn owned_object_menu_dismissal_retains_content_until_teardown_receipt() {
+        // Managed Menu content remains published through the frame whose
+        // outside press queues Close. Only the later manager receipt removes it.
+        // Break caught: the paint callback independently deleting live content.
+        let layout = galaxy_layout();
+        let ctx = egui::Context::default();
+        let mut cache = BmpCache::new();
+        let menu = ObjectMenuState::new(None, MISSION_GATE, (100, 100));
+        let mut outcome = OwnedMenuOutcome::Open;
+        for frame in 0..3 {
+            let pointer = if frame == 2 {
+                let rect = object_menu_rect(&ctx).expect("the menu is laid out");
+                rect.max + egui::vec2(20.0, 20.0)
+            } else {
+                egui::Pos2::ZERO
+            };
+            let events = if frame == 2 {
+                vec![
+                    egui::Event::PointerMoved(pointer),
+                    egui::Event::PointerButton {
+                        pos: pointer,
+                        button: egui::PointerButton::Primary,
+                        pressed: true,
+                        modifiers: egui::Modifiers::default(),
+                    },
+                ]
+            } else {
+                Vec::new()
+            };
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1280.0, 960.0),
+                )),
+                events,
+                ..Default::default()
+            };
+            let _ = ctx.run(input, |ctx| {
+                outcome = draw_owned_object_menu(
+                    ctx,
+                    &menu,
+                    &mut cache,
+                    layout,
+                    CockpitFaction::Alliance,
+                    true,
+                );
+            });
+        }
+        assert_eq!(outcome, OwnedMenuOutcome::Dismissed);
+        assert_eq!(menu.row_count(), 2, "owned draw cannot consume content");
+    }
+
+    #[test]
+    fn owned_command_submenu_routes_to_menu_and_chooses_rank() {
+        use crate::game_menu::ManagedMenuState;
+        use crate::windowing_input::{
+            FrameInputRouter, InputEventId, InputRecipient, PointerButtonId, PointerPhase,
+        };
+        use rebellion_windowing::{
+            SubjectId, WindowCommand, WindowKind, WindowManager, WindowOwner,
+        };
+        use std::collections::BTreeSet;
+
+        let layout = galaxy_layout();
+        let ctx = egui::Context::default();
+        let mut cache = BmpCache::new();
+        let selection = Some(MenuObject::Character(CharacterKey::default()));
+        let menu = ObjectMenuState::new(
+            selection,
+            OrderGates {
+                command: CommandGates {
+                    allowed: [true; 4],
+                    held: CommandKind::None,
+                },
+                ..MISSION_GATE
+            },
+            (100, 100),
+        );
+        let command_row = menu
+            .row_of(ObjectMenuCommand::Command)
+            .expect("the character menu has Command");
+
+        let mut root = egui::Rect::NOTHING;
+        for (time, hover_command) in [(0.0, false), (0.1, true), (0.7, true)] {
+            let pointer = if hover_command {
+                let height = (root.height() - 2.0 * layout.scale) / menu.row_count() as f32;
+                egui::pos2(
+                    root.center().x,
+                    root.min.y + 2.0 * layout.scale + height * (command_row as f32 + 0.5),
+                )
+            } else {
+                egui::Pos2::ZERO
+            };
+            let _ = ctx.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(1280.0, 960.0),
+                    )),
+                    time: Some(time),
+                    events: if hover_command {
+                        vec![egui::Event::PointerMoved(pointer)]
+                    } else {
+                        Vec::new()
+                    },
+                    ..Default::default()
+                },
+                |ctx| {
+                    assert_eq!(
+                        draw_owned_object_menu(
+                            ctx,
+                            &menu,
+                            &mut cache,
+                            layout,
+                            CockpitFaction::Alliance,
+                            true,
+                        ),
+                        OwnedMenuOutcome::Open
+                    );
+                },
+            );
+            root = object_menu_rect(&ctx).expect("the root menu is laid out");
+        }
+
+        let rects = object_menu_rects(&ctx);
+        assert_eq!(rects.len(), 2, "root and visible Command submenu");
+        let child = *rects
+            .iter()
+            .find(|rect| **rect != root)
+            .expect("visible submenu rectangle");
+        let rank = child.center_top() + egui::vec2(0.0, child.height() / 8.0);
+
+        let mut manager = WindowManager::new();
+        let owner = match manager
+            .apply(WindowCommand::Open(
+                crate::windowing_policy::contextual_spec(
+                    WindowKind::System,
+                    SubjectId::new(2, 1),
+                    WindowOwner::StrategicRoot,
+                ),
+            ))
+            .unwrap()
+            .transition
+        {
+            rebellion_windowing::WindowTransition::Opened { id } => id,
+            other => panic!("expected detail open, got {other:?}"),
+        };
+        let mut managed = ManagedMenuState::default();
+        let prepared = managed.prepare_open(owner);
+        let opened = manager.apply(prepared.command()).unwrap();
+        let menu_id = managed.commit_open(prepared, &opened.transition).unwrap();
+        let frame = manager.begin_frame();
+        let hits = managed
+            .hit_window(&frame, &rects, (rank.x, rank.y))
+            .into_iter()
+            .collect::<BTreeSet<_>>();
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(1, &frame);
+        for (ordinal, phase) in [
+            PointerPhase::Press(PointerButtonId::Primary),
+            PointerPhase::Release(PointerButtonId::Primary),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            assert_eq!(
+                router.collect_pointer(
+                    InputEventId {
+                        frame: 1,
+                        ordinal: ordinal as u32,
+                    },
+                    &hits,
+                    phase,
+                ),
+                InputRecipient::Window(menu_id)
+            );
+        }
+
+        let mut outcome = OwnedMenuOutcome::Open;
+        for (time, pressed) in [(0.8, None), (0.9, Some(true)), (1.0, Some(false))] {
+            let _ = ctx.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(1280.0, 960.0),
+                    )),
+                    time: Some(time),
+                    events: std::iter::once(egui::Event::PointerMoved(rank))
+                        .chain(pressed.map(|pressed| egui::Event::PointerButton {
+                            pos: rank,
+                            button: egui::PointerButton::Primary,
+                            pressed,
+                            modifiers: egui::Modifiers::default(),
+                        }))
+                        .collect(),
+                    ..Default::default()
+                },
+                |ctx| {
+                    outcome = draw_owned_object_menu(
+                        ctx,
+                        &menu,
+                        &mut cache,
+                        layout,
+                        CockpitFaction::Alliance,
+                        true,
+                    );
+                },
+            );
+        }
+        assert_eq!(
+            outcome,
+            OwnedMenuOutcome::Chosen((ObjectMenuCommand::Rank(CommandKind::None), selection))
+        );
     }
 
     #[test]

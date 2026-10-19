@@ -358,6 +358,15 @@ impl StrategicFrameBoundary {
             && !self.legacy.strategic_modal
     }
 
+    /// Permit for one manager-owned surface in this frozen frame.
+    ///
+    /// Unlike a legacy/root permit, a transient Menu remains interactive while
+    /// its dismissal boundary deliberately makes `pointer_allows_root` false.
+    #[must_use]
+    pub fn managed_window_input_allowed(&self, window: WindowId) -> bool {
+        !self.migrated_input_held() && self.snapshot.allows_input(window)
+    }
+
     /// Permit for a named legacy pointer owner itself. Unlike the strategic
     /// underlay permit, this ignores legacy blockers so an active owner can close.
     #[must_use]
@@ -4338,6 +4347,38 @@ mod tests {
         assert!(!frame.legacy_pointer_allowed());
         assert!(!frame.legacy_keyboard_allowed());
         assert!(!frame.root_shortcuts_allowed());
+    }
+
+    #[test]
+    fn managed_menu_keeps_its_own_input_lease_while_root_is_blocked() {
+        let mut coordinator = StrategicWindowing::new();
+        coordinator.enqueue(WindowCommand::Open(contextual_spec(
+            WindowKind::System,
+            SubjectId::new(rebellion_render::windowing_policy::SUBJECT_SYSTEM, 36),
+            WindowOwner::StrategicRoot,
+        )));
+        let owner = opened_id(&coordinator.apply_pending()[0]);
+        coordinator.enqueue(WindowCommand::Open(singleton_spec(
+            WindowKind::Menu,
+            WindowOwner::Window(owner),
+        )));
+        let menu = opened_id(&coordinator.apply_pending()[0]);
+
+        let frame = coordinator.begin_production_frame(
+            ApplicationInputLocks::default(),
+            LegacyInputBlockers::default(),
+        );
+        assert!(!frame.legacy_owned_pointer_allowed());
+        assert!(frame.managed_window_input_allowed(menu));
+
+        let held = coordinator.begin_production_frame(
+            ApplicationInputLocks::default(),
+            LegacyInputBlockers {
+                strategic_modal: true,
+                ..LegacyInputBlockers::default()
+            },
+        );
+        assert!(!held.managed_window_input_allowed(menu));
     }
 
     #[test]
