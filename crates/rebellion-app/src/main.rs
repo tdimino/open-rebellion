@@ -8184,6 +8184,8 @@ async fn main() {
     #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
     let mut identity_history_watch = interface_test_fixture::IdentityHistoryWatch::default();
     #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+    let mut modal_boundary_watch = interface_test_fixture::ModalBoundaryWatch::default();
+    #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
     let mut fleet_finder_watch = interface_test_fixture::FleetFinderWatch::default();
     #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
     let interface_fixture_active =
@@ -14161,11 +14163,22 @@ async fn main() {
                             }
                         };
                         #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
-                        queue_windowing_pointer_receipt(
-                            &mut pending_windowing_route_receipts,
-                            &strategic_pointer_events,
-                            destination,
-                        );
+                        if let Some(event) = strategic_root_keys
+                            .presses()
+                            .find(|event| cockpit_accelerator(event.key) == Some(btn))
+                        {
+                            queue_windowing_key_receipt(
+                                &mut pending_windowing_route_receipts,
+                                event.id,
+                                destination,
+                            );
+                        } else {
+                            queue_windowing_pointer_receipt(
+                                &mut pending_windowing_route_receipts,
+                                &strategic_pointer_events,
+                                destination,
+                            );
+                        }
                         if btn == CockpitButton::Encyclopedia {
                             if encyclopedia_session_store.current().is_some() {
                                 let intent = EncyclopediaEntryIntent::Cockpit {
@@ -14372,6 +14385,15 @@ async fn main() {
                                 );
                                 strategic_dispatch_restricted = true;
                                 strategic_input_router.set_application_hold(true);
+                                #[cfg(all(
+                                    target_arch = "wasm32",
+                                    feature = "interface-test-fixtures"
+                                ))]
+                                queue_windowing_key_receipt(
+                                    &mut pending_windowing_route_receipts,
+                                    event.id,
+                                    "message_index",
+                                );
                                 macroquad::logging::info!(
                                     "[interface] command=0x75 destination=message_index category=0x{:x} status=queued_shared",
                                     category
@@ -15720,6 +15742,16 @@ async fn main() {
                         transport: &troop_transport_state,
                         missions: &mission_state,
                         economy: &economy_state,
+                    },
+                );
+                modal_boundary_watch.observe(
+                    request,
+                    &world,
+                    &interface_test_fixture::ModalBoundaryWindows {
+                        snapshot: strategic_frame_boundary.snapshot(),
+                        layout: cockpit_state.layout(),
+                        faction: cockpit_state.faction,
+                        map: &map_state,
                     },
                 );
             }

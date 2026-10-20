@@ -127,12 +127,11 @@ pub(super) fn prepare(
 
     if let Some(template_key) = world.fleets.keys().next() {
         let template = world.fleets[template_key].clone();
-        for (index, system) in systems.iter().copied().enumerate() {
-            let fleet_key = if index == 0 {
-                template_key
-            } else {
-                world.fleets.insert(template.clone())
-            };
+        for system in systems.iter().copied() {
+            // A template may retain a movement order whose destination wins
+            // over its stored location. Fresh keys are order-free, so every
+            // selected system receives one legitimate orbiting fixture fleet.
+            let fleet_key = world.fleets.insert(template.clone());
             let fleet = &mut world.fleets[fleet_key];
             fleet.location = system;
             fleet.is_alliance = player_is_alliance;
@@ -373,6 +372,7 @@ fn system_state(world: &GameWorld, windows: &IdentityHistoryWindows<'_>, key: Sy
                 "id": windows.fleets.window_id(key).map(WindowId::get),
                 "rect": windows.fleets.screen_rect(layout, key).map(rect_array),
                 "selection": fleet_report.as_ref().map(|report| json!({
+                    "entries": report.entries,
                     "selected": report.selected.map(|entry| format!("{entry:?}")),
                     "tab": format!("{:?}", report.tab).to_lowercase(),
                     "items": report.items,

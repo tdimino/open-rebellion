@@ -5,9 +5,13 @@
 
 #[path = "interface_test_fixture_identity_history.rs"]
 mod identity_history;
+#[path = "interface_test_fixture_modal_boundaries.rs"]
+mod modal_boundaries;
 
 #[cfg(target_arch = "wasm32")]
 pub use identity_history::{IdentityHistoryWatch, IdentityHistoryWindows};
+#[cfg(target_arch = "wasm32")]
+pub use modal_boundaries::{ModalBoundaryWatch, ModalBoundaryWindows};
 
 use rebellion_core::blockade::{BlockadeState, BlockadeSystem};
 use rebellion_core::dat::{ExplorationStatus, Faction};
@@ -255,6 +259,7 @@ impl Scenario {
     fn reports_object_menu(self) -> bool {
         self == Self::MissionTargeting
             || self == Self::BuildSelection
+            || self == Self::WindowingContract
             || self.moves_a_fleet()
             || self.uses_the_fleet_window()
     }
@@ -466,7 +471,10 @@ pub fn apply(
     // The Build Selection gate: a shipyard, a training facility and a
     // construction yard of the player's at the primary system, whose
     // Manufacturing window opens on its overview.
-    if request.scenario == Scenario::BuildSelection {
+    if matches!(
+        request.scenario,
+        Scenario::BuildSelection | Scenario::WindowingContract
+    ) {
         for class in [0x2800_0001, 0x2900_0002, 0x2a00_0003] {
             let yard = world.manufacturing_facilities.insert(
                 rebellion_core::world::ManufacturingFacilityInstance {
@@ -547,6 +555,7 @@ pub fn apply(
     }
 
     identity_history::prepare(request, world, movement, missions);
+    modal_boundaries::prepare(request, world);
 
     let _ = manufacturing;
 }
@@ -1121,6 +1130,7 @@ struct FixtureObjectMenu<'a> {
     status_window_row: Option<usize>,
     build_row: Option<usize>,
     stop_row: Option<usize>,
+    scrap_row: Option<usize>,
     target_dat_id: u32,
     target_name: &'a str,
     target_screen_x: f32,
@@ -1145,6 +1155,10 @@ fn object_menu_report<'a>(
     let planet = match sectors.planet_screen_rect(world, layout, key) {
         Some(rect) => rect.center(),
         None if request.scenario == Scenario::BuildSelection => egui_macroquad::egui::Pos2::ZERO,
+        None if request.scenario == Scenario::WindowingContract => {
+            let (x, y) = screen_point(target, request.faction);
+            egui_macroquad::egui::pos2(x, y)
+        }
         None => return None,
     };
     let (target_screen_x, target_screen_y) = (planet.x, planet.y);
@@ -1165,6 +1179,7 @@ fn object_menu_report<'a>(
         status_window_row: menu.row_of(ObjectMenuCommand::Status),
         build_row: menu.row_of(ObjectMenuCommand::Build),
         stop_row: menu.row_of(ObjectMenuCommand::Stop),
+        scrap_row: menu.row_of(ObjectMenuCommand::Scrap),
         target_dat_id: target.dat_id.raw(),
         target_name: &target.name,
         target_screen_x,
@@ -1262,7 +1277,10 @@ pub fn emit_production(
     systems: &SystemWindowState,
     build_selection: &rebellion_render::build_selection::BuildSelectionState,
 ) {
-    if request.scenario != Scenario::BuildSelection {
+    if !matches!(
+        request.scenario,
+        Scenario::BuildSelection | Scenario::WindowingContract
+    ) {
         return;
     }
     let Some(report) = production_report(request, world, manufacturing, systems, build_selection)
@@ -4018,7 +4036,8 @@ mod tests {
                 Scenario::RegimentUnloadRefused,
                 Scenario::FleetJoin,
                 Scenario::ProductionDestination,
-                Scenario::BuildSelection
+                Scenario::BuildSelection,
+                Scenario::WindowingContract
             ]
         );
     }
