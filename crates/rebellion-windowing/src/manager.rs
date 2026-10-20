@@ -400,23 +400,22 @@ impl WindowManager {
         let focus_before = self.focused;
         let membership_changed = self.active_windows != *active;
         let mut events = Vec::new();
-        self.active_windows = active.clone();
-
-        // An inactive modal does not constrain opens in another scene. When
-        // that modal becomes active again, restore its subtree above active
-        // modeless peers before publishing the next routing snapshot.
-        let active_modals: Vec<_> = self
-            .visible_order
+        let mut proposed_order = self.visible_order.clone();
+        let active_modals: Vec<_> = proposed_order
             .iter()
             .copied()
             .filter(|id| {
-                self.active_windows.contains(id)
+                active.contains(id)
                     && self.registry[id].spec.policy.input == InputPolicy::StrategicModal
             })
             .collect();
         for modal in active_modals {
-            self.raise_visible(modal);
+            proposed_order = self.raised_order_in(modal, proposed_order, active)?;
         }
+        self.validate_modal_order(&proposed_order, active)
+            .map_err(|_| WindowError::InvalidPlacement)?;
+        self.active_windows = active.clone();
+        self.visible_order = proposed_order;
         if self
             .capture_owner
             .is_some_and(|owner| !self.is_focus_eligible(owner))
@@ -457,102 +456,124 @@ impl WindowManager {
         frame: &RoutingSnapshot,
         reports: &[ContentReport],
     ) -> ReconcileReport {
-        if !frame.belongs_to(self.manager_id) {
-            let invalid_reports = frame
-                .member_ids()
-                .chain(reports.iter().map(|report| report.window))
-                .collect::<BTreeSet<_>>()
-                .into_iter()
-                .collect();
-            return ReconcileReport {
-                invalid_reports,
-                ..ReconcileReport::default()
-            };
+        let (statuses, mut invalid) = self.classify_content_reports(frame, reports);
+        let roots = self.reconciliation_roots(frame, &statuses, &mut invalid);
+        let focused_before = self.focused;
+        let mut removed = Vec::new();
+        let mut events = Vec::new();
+        let mut teardown = Vec::new();
+        for root in roots {
+            let commit = self
+                .close_with_reason(root, CloseReason::ContentRemoved)
+                .expect("preflight roots are registered, distinct lifecycle subtrees");
+            for event in commit.events {
+                match event {
+                    WindowEvent::CaptureCancelled { .. } => events.push(event),
+                    WindowEvent::Closed { window, .. } => {
+                        removed.push(window);
+                        teardown.push(event);
+                    }
+                    WindowEvent::FocusChanged { .. } => {}
+                }
+            }
         }
-        let members: BTreeSet<_> = frame.member_ids().collect();
-        let mut statuses = BTreeMap::<WindowId, ContentStatus>::new();
+        events.extend(teardown);
+        if focused_before != self.focused {
+            events.push(WindowEvent::FocusChanged {
+                previous: focused_before,
+                current: self.focused,
+            });
+        }
+        let blocking_unpainted = frame
+            .member_ids()
+            .filter(|id| {
+                frame.belongs_to(self.manager_id)
+                    && frame.is_visible(*id)
+                    && self
+                        .registry
+                        .get(id)
+                        .is_some_and(|record| record.spec.policy.input != InputPolicy::Modeless)
+                    && (invalid.contains(id)
+                        || !matches!(
+                            statuses.get(id),
+                            Some(ContentStatus::Ready | ContentStatus::Suspended)
+                        ))
+            })
+            .collect();
+        ReconcileReport {
+            removed,
+            blocking_unpainted,
+            invalid_reports: invalid.into_iter().collect(),
+            events,
+        }
+    }
+
+    fn classify_content_reports(
+        &self,
+        frame: &RoutingSnapshot,
+        reports: &[ContentReport],
+    ) -> (BTreeMap<WindowId, ContentStatus>, BTreeSet<WindowId>) {
+        let belongs_here = frame.belongs_to(self.manager_id);
+        let mut statuses = BTreeMap::new();
         let mut invalid = BTreeSet::new();
         for report in reports {
-            if !members.contains(&report.window) {
-                invalid.insert(report.window);
-                continue;
-            }
-            if statuses.insert(report.window, report.status).is_some() {
-                invalid.insert(report.window);
-            }
-        }
-        for id in &members {
-            if !statuses.contains_key(id) {
-                invalid.insert(*id);
-            }
-        }
-
-        // An implicit modeless teardown must never cascade through a modal
-        // descendant, including one opened after this snapshot or suspended in
-        // another scene. Diagnose the absent owner and retain the whole tree
-        // until an explicit modal close establishes teardown intent.
-        for (&id, &status) in &statuses {
-            if status != ContentStatus::Absent
-                || frame.input_policy(id) == Some(InputPolicy::StrategicModal)
+            if belongs_here
+                && frame.spec(report.window).is_some_and(|spec| {
+                    self.registry
+                        .get(&report.window)
+                        .is_some_and(|record| record.spec == spec)
+                })
             {
-                continue;
+                if statuses.insert(report.window, report.status).is_some() {
+                    invalid.insert(report.window);
+                }
+            } else {
+                invalid.insert(report.window);
             }
-            if self.registry.iter().any(|(candidate, record)| {
-                record.spec.policy.input == InputPolicy::StrategicModal
-                    && self.is_descendant_of(*candidate, id)
-            }) {
+        }
+        for id in frame.member_ids() {
+            if !belongs_here || (self.registry.contains_key(&id) && !statuses.contains_key(&id)) {
                 invalid.insert(id);
             }
         }
+        (statuses, invalid)
+    }
 
-        let mut result = ReconcileReport {
-            invalid_reports: invalid.iter().copied().collect(),
-            ..ReconcileReport::default()
-        };
-        let mut blocked = BTreeSet::new();
-        for id in frame
+    fn reconciliation_roots(
+        &self,
+        frame: &RoutingSnapshot,
+        statuses: &BTreeMap<WindowId, ContentStatus>,
+        invalid: &mut BTreeSet<WindowId>,
+    ) -> Vec<WindowId> {
+        let absent: BTreeSet<_> = statuses
+            .iter()
+            .filter(|(id, status)| {
+                **status == ContentStatus::Absent
+                    && !invalid.contains(id)
+                    && self.registry[id].spec.policy.input == InputPolicy::Modeless
+            })
+            .map(|(id, _)| *id)
+            .collect();
+        for id in &absent {
+            if self
+                .close_order(*id)
+                .iter()
+                .any(|member| !absent.contains(member))
+            {
+                invalid.insert(*id);
+            }
+        }
+        let safe: BTreeSet<_> = absent.difference(invalid).copied().collect();
+        frame
             .paint_order()
             .iter()
             .rev()
             .chain(frame.presentation_history().iter().rev())
             .copied()
-        {
-            let status = statuses.get(&id).copied();
-            let is_modal = frame.input_policy(id) == Some(InputPolicy::StrategicModal);
-            if invalid.contains(&id) {
-                if is_modal {
-                    blocked.insert(id);
-                }
-                continue;
-            }
-            match status {
-                Some(ContentStatus::Ready | ContentStatus::Suspended) => {}
-                Some(ContentStatus::Unpaintable) => {
-                    if is_modal {
-                        blocked.insert(id);
-                    }
-                }
-                Some(ContentStatus::Absent) if is_modal => {
-                    blocked.insert(id);
-                }
-                Some(ContentStatus::Absent) => {
-                    if !self.registry.contains_key(&id) {
-                        continue;
-                    }
-                    if let Ok(commit) = self.close_with_reason(id, CloseReason::ContentRemoved) {
-                        if let WindowTransition::Closed { closed, .. } = &commit.transition {
-                            result.removed.extend(closed.iter().copied());
-                        }
-                        result.events.extend(commit.events);
-                    }
-                }
-                None => {}
-            }
-        }
-        result.removed.sort_unstable();
-        result.removed.dedup();
-        result.blocking_unpainted = blocked.into_iter().collect();
-        result
+            .filter(|id| {
+                safe.contains(id) && !safe.iter().any(|owner| self.is_descendant_of(*id, *owner))
+            })
+            .collect()
     }
 
     /// Discards the current UI session while retaining allocator progression.
@@ -785,42 +806,7 @@ impl WindowManager {
             }
         }
 
-        if let (Some(lowest_modal), Some(active_modal)) = (
-            self.visible_order.iter().position(|id| {
-                self.active_windows.contains(id)
-                    && self.registry[id].spec.policy.input == InputPolicy::StrategicModal
-            }),
-            self.visible_order.iter().rposition(|id| {
-                self.active_windows.contains(id)
-                    && self.registry[id].spec.policy.input == InputPolicy::StrategicModal
-            }),
-        ) {
-            for id in &self.visible_order {
-                if !self.active_windows.contains(id) {
-                    continue;
-                }
-                let record = self.registry[id];
-                if record.spec.policy.input == InputPolicy::StrategicModal {
-                    continue;
-                }
-                let boundary = match record.spec.owner {
-                    WindowOwner::StrategicRoot => lowest_modal,
-                    WindowOwner::Window(owner) => {
-                        if positions[&owner] >= active_modal {
-                            continue;
-                        }
-                        active_modal
-                    }
-                };
-                // `boundary` itself is a modal, while `id` is known non-modal.
-                if self.visible_order[boundary..].contains(id) {
-                    return Err(InvariantViolation {
-                        kind: InvariantKind::BandOrder,
-                        windows: vec![self.visible_order[boundary], *id],
-                    });
-                }
-            }
-        }
+        self.validate_modal_order(&self.visible_order, &self.active_windows)?;
 
         if let Some(focused) = self.focused {
             if !self.is_focus_eligible(focused.window) {
@@ -839,6 +825,46 @@ impl WindowManager {
             }
         }
 
+        Ok(())
+    }
+
+    fn validate_modal_order(
+        &self,
+        order: &[WindowId],
+        active: &BTreeSet<WindowId>,
+    ) -> Result<(), InvariantViolation> {
+        if let (Some(lowest_modal), Some(active_modal)) = (
+            order.iter().position(|id| {
+                active.contains(id)
+                    && self.registry[id].spec.policy.input == InputPolicy::StrategicModal
+            }),
+            order.iter().rposition(|id| {
+                active.contains(id)
+                    && self.registry[id].spec.policy.input == InputPolicy::StrategicModal
+            }),
+        ) {
+            for id in order.iter().filter(|id| active.contains(id)) {
+                let record = self.registry[id];
+                if record.spec.policy.input == InputPolicy::StrategicModal {
+                    continue;
+                }
+                let boundary = match record.spec.owner {
+                    WindowOwner::StrategicRoot => lowest_modal,
+                    WindowOwner::Window(_) => {
+                        if self.is_descendant_of(*id, order[active_modal]) {
+                            continue;
+                        }
+                        active_modal
+                    }
+                };
+                if order[boundary..].contains(id) {
+                    return Err(InvariantViolation {
+                        kind: InvariantKind::BandOrder,
+                        windows: vec![order[boundary], *id],
+                    });
+                }
+            }
+        }
         Ok(())
     }
 
@@ -882,7 +908,15 @@ impl WindowManager {
                         };
                         return Ok(commit);
                     }
-                    self.raise_visible(id);
+                    if self.active_windows.contains(&id)
+                        && !self.is_focus_eligible(id)
+                        && self.active_windows.iter().any(|candidate| {
+                            *candidate != id && self.is_descendant_of(*candidate, id)
+                        })
+                    {
+                        return Err(WindowError::InvalidPlacement);
+                    }
+                    self.raise_visible(id)?;
                     if self.is_focus_eligible(id) {
                         self.set_focus(Some(crate::FocusTarget {
                             window: id,
@@ -1098,7 +1132,7 @@ impl WindowManager {
         };
         self.validate_focus_target(target)?;
         let previous = self.focused;
-        self.raise_visible(id);
+        self.raise_visible(id)?;
         self.set_focus(Some(target));
         Ok(WindowCommit {
             transition: WindowTransition::Raised { id },
@@ -1452,10 +1486,12 @@ impl WindowManager {
             }
         }
         let focused_before = self.focused;
-        self.presentation_history.retain(|entry| *entry != id);
         let insertion = self.proposed_insertion_index(spec);
-        self.visible_order.insert(insertion, id);
-        self.raise_visible(id);
+        let mut proposed_order = self.visible_order.clone();
+        proposed_order.insert(insertion, id);
+        let proposed_order = self.raised_order_in(id, proposed_order, &self.active_windows)?;
+        self.presentation_history.retain(|entry| *entry != id);
+        self.visible_order = proposed_order;
         if self.is_focus_eligible(id) {
             self.set_focus(Some(crate::FocusTarget {
                 window: id,
@@ -1508,8 +1544,12 @@ impl WindowManager {
     }
 
     fn active_modal(&self) -> Option<WindowId> {
-        self.visible_order.iter().rev().copied().find(|id| {
-            self.active_windows.contains(id)
+        self.active_modal_in(&self.visible_order, &self.active_windows)
+    }
+
+    fn active_modal_in(&self, order: &[WindowId], active: &BTreeSet<WindowId>) -> Option<WindowId> {
+        order.iter().rev().copied().find(|id| {
+            active.contains(id)
                 && self.registry[id].spec.policy.input == InputPolicy::StrategicModal
         })
     }
@@ -1666,27 +1706,64 @@ impl WindowManager {
         self.constrain_to_modal_boundary(spec, self.band_insertion_index(spec))
     }
 
-    fn raise_visible(&mut self, id: WindowId) {
-        let subtree: Vec<_> = self
-            .visible_order
+    fn raise_visible(&mut self, id: WindowId) -> Result<(), WindowError> {
+        self.visible_order =
+            self.raised_order_in(id, self.visible_order.clone(), &self.active_windows)?;
+        Ok(())
+    }
+
+    fn raised_order_in(
+        &self,
+        id: WindowId,
+        mut order: Vec<WindowId>,
+        active: &BTreeSet<WindowId>,
+    ) -> Result<Vec<WindowId>, WindowError> {
+        let subtree: Vec<_> = order
             .iter()
             .copied()
             .filter(|candidate| *candidate == id || self.is_descendant_of(*candidate, id))
             .collect();
         let subtree_ids: BTreeSet<_> = subtree.iter().copied().collect();
-        self.visible_order
-            .retain(|candidate| !subtree_ids.contains(candidate));
+        order.retain(|candidate| !subtree_ids.contains(candidate));
 
         for member in subtree {
             let spec = self.registry[&member].spec;
-            let band_top = self
-                .visible_order
+            let band_top = order
                 .iter()
                 .position(|candidate| self.registry[candidate].spec.policy.band > spec.policy.band)
-                .unwrap_or(self.visible_order.len());
-            let insertion = self.constrain_to_modal_boundary(spec, band_top);
-            self.visible_order.insert(insertion, member);
+                .unwrap_or(order.len());
+            let insertion = if active.contains(&member) {
+                self.constrain_to_modal_boundary_in(spec, band_top, &order, active)
+            } else {
+                band_top
+            };
+            order.insert(insertion, member);
         }
+
+        let positions: BTreeMap<_, _> = order
+            .iter()
+            .enumerate()
+            .map(|(position, id)| (*id, position))
+            .collect();
+        if order.windows(2).any(|pair| {
+            self.registry[&pair[0]].spec.policy.band > self.registry[&pair[1]].spec.policy.band
+        }) {
+            return Err(WindowError::InvalidPlacement);
+        }
+        for (position, member) in order.iter().enumerate() {
+            let spec = self.registry[member].spec;
+            if let WindowOwner::Window(owner) = spec.owner {
+                if positions
+                    .get(&owner)
+                    .is_none_or(|owner_position| *owner_position >= position)
+                {
+                    return Err(WindowError::InvalidPlacement);
+                }
+            }
+        }
+        self.validate_modal_order(&order, active)
+            .map_err(|_| WindowError::InvalidPlacement)?;
+        Ok(order)
     }
 
     fn is_descendant_of(&self, candidate: WindowId, ancestor: WindowId) -> bool {
@@ -1707,34 +1784,41 @@ impl WindowManager {
     }
 
     fn constrain_to_modal_boundary(&self, spec: WindowSpec, insertion: usize) -> usize {
+        self.constrain_to_modal_boundary_in(
+            spec,
+            insertion,
+            &self.visible_order,
+            &self.active_windows,
+        )
+    }
+
+    fn constrain_to_modal_boundary_in(
+        &self,
+        spec: WindowSpec,
+        insertion: usize,
+        order: &[WindowId],
+        active: &BTreeSet<WindowId>,
+    ) -> usize {
         if spec.policy.input == InputPolicy::StrategicModal {
             return insertion;
         }
 
-        let Some(lowest_modal) = self.visible_order.iter().position(|candidate| {
-            self.active_windows.contains(candidate)
+        let Some(lowest_modal) = order.iter().position(|candidate| {
+            active.contains(candidate)
                 && self.registry[candidate].spec.policy.input == InputPolicy::StrategicModal
         }) else {
             return insertion;
         };
         let active_modal = self
-            .visible_order
-            .iter()
-            .rposition(|candidate| {
-                self.active_windows.contains(candidate)
-                    && self.registry[candidate].spec.policy.input == InputPolicy::StrategicModal
-            })
+            .active_modal_in(order, active)
+            .and_then(|modal| order.iter().position(|id| *id == modal))
             .unwrap_or(lowest_modal);
 
         let boundary = match spec.owner {
             WindowOwner::StrategicRoot => lowest_modal,
             WindowOwner::Window(owner) => {
-                let owner_position = self
-                    .visible_order
-                    .iter()
-                    .position(|candidate| *candidate == owner)
-                    .unwrap_or(lowest_modal);
-                if owner_position >= active_modal {
+                if owner == order[active_modal] || self.is_descendant_of(owner, order[active_modal])
+                {
                     return insertion;
                 }
                 active_modal
@@ -2263,6 +2347,268 @@ mod tests {
                 kind: InvariantKind::BandOrder,
                 windows: vec![active_id, child_id],
             })
+        );
+    }
+
+    fn composed_private_fixture() -> (WindowManager, WindowId, WindowId) {
+        let mut manager = WindowManager::new();
+        let root = match manager
+            .apply(WindowCommand::Open(modeless_spec(WindowKind::System, 1)))
+            .unwrap()
+            .transition
+        {
+            WindowTransition::Opened { id } => id,
+            other => panic!("expected root: {other:?}"),
+        };
+        let mut spec = modeless_spec(WindowKind::Fleet, 2);
+        spec.owner = WindowOwner::Window(root);
+        let child = match manager.apply(WindowCommand::Open(spec)).unwrap().transition {
+            WindowTransition::Opened { id } => id,
+            other => panic!("expected child: {other:?}"),
+        };
+        assert_eq!(manager.validate(), Ok(()));
+        (manager, root, child)
+    }
+
+    #[test]
+    fn validate_rejects_corrupted_composed_registry_and_scene_authorities() {
+        // Port: each named invariant must diagnose corruption independently of public preflight.
+        for case in 0..10 {
+            let (mut manager, root, child) = composed_private_fixture();
+            let unknown = WindowId(NonZeroU64::MAX);
+            let (kind, windows) = match case {
+                0 => {
+                    manager.active_windows.remove(&root);
+                    manager.active_windows.remove(&child);
+                    manager.registry.remove(&root);
+                    (InvariantKind::RegistryKeyMismatch, vec![root])
+                }
+                1 => {
+                    manager.key_index.remove(&manager.registry[&root].spec.key);
+                    (InvariantKind::RegistryKeyMismatch, vec![root])
+                }
+                2 => {
+                    manager.key_index.insert(
+                        WindowKey::contextual(WindowKind::Status, SubjectId::new(2, 99)),
+                        child,
+                    );
+                    (InvariantKind::RegistryKeyMismatch, vec![child])
+                }
+                3 => {
+                    manager.active_windows.remove(&child);
+                    manager.registry.get_mut(&child).unwrap().spec.owner =
+                        WindowOwner::Window(unknown);
+                    (InvariantKind::OwnerMissing, vec![child, unknown])
+                }
+                4 => {
+                    manager.visible_order.swap(0, 1);
+                    (InvariantKind::ChildBelowOwner, vec![child, root])
+                }
+                5 => {
+                    manager.active_windows.remove(&root);
+                    manager.active_windows.remove(&child);
+                    manager.focused = Some(crate::FocusTarget {
+                        window: root,
+                        control: None,
+                    });
+                    (InvariantKind::IneligibleFocus, vec![root])
+                }
+                6 => {
+                    manager.active_windows.remove(&root);
+                    manager.active_windows.remove(&child);
+                    manager.focused = None;
+                    manager.capture_owner = Some(root);
+                    (InvariantKind::IneligibleCapture, vec![root])
+                }
+                7 => {
+                    let record = manager.registry.get_mut(&root).unwrap();
+                    manager.key_index.remove(&record.spec.key);
+                    record.spec.key = WindowKey::singleton(WindowKind::System);
+                    manager.key_index.insert(record.spec.key, root);
+                    (InvariantKind::Cardinality, vec![root])
+                }
+                8 => {
+                    manager
+                        .registry
+                        .get_mut(&root)
+                        .unwrap()
+                        .spec
+                        .policy
+                        .cardinality = Cardinality::Singleton;
+                    (InvariantKind::Cardinality, vec![root])
+                }
+                _ => {
+                    manager.visible_order.push(unknown);
+                    (InvariantKind::MissingVisibleOrder, vec![unknown])
+                }
+            };
+            assert_eq!(
+                manager.validate(),
+                Err(InvariantViolation { kind, windows }),
+                "corruption {case}"
+            );
+        }
+    }
+
+    #[test]
+    fn private_rejections_preserve_snapshot_lineage_and_complete_lifecycle_state() {
+        // Port: lineage is an authority not exposed by the public Debug state fingerprint.
+        let (mut manager, root, child) = composed_private_fixture();
+        manager.apply(WindowCommand::CapturePointer(child)).unwrap();
+        let origin = manager.manager_id;
+        let before = format!("{manager:?}");
+        let next_id = manager.next_id;
+        let mut spec = modeless_spec(WindowKind::System, 99);
+        spec.owner = WindowOwner::Window(child);
+        assert_eq!(
+            manager.apply(WindowCommand::Replace {
+                old: root,
+                new: spec
+            }),
+            Err(WindowError::InvalidReplacement(root))
+        );
+        assert_eq!(format!("{manager:?}"), before);
+        assert_eq!(manager.next_id, next_id);
+        assert_eq!(origin, manager.manager_id);
+        assert_eq!(
+            manager.set_active_windows(&BTreeSet::from([child, WindowId(NonZeroU64::MAX)])),
+            Err(WindowError::UnknownWindow(WindowId(NonZeroU64::MAX)))
+        );
+        assert_eq!(format!("{manager:?}"), before);
+        assert_eq!(manager.next_id, next_id);
+        assert_eq!(origin, manager.manager_id);
+        assert_eq!(manager.validate(), Ok(()));
+    }
+
+    #[test]
+    fn scene_focus_repair_distinguishes_changed_from_unchanged_membership() {
+        // Port: a scene transition may restore its eligible prior target, while
+        // reapplying the same membership must leave intentional root focus alone.
+        let (mut manager, owner, child) = composed_private_fixture();
+        let owner_focus = crate::FocusTarget {
+            window: owner,
+            control: None,
+        };
+        manager.apply(WindowCommand::Focus(owner_focus)).unwrap();
+        manager.apply(WindowCommand::FocusRoot).unwrap();
+        assert_eq!(manager.focused, None);
+        assert_eq!(manager.previous_eligible, Some(owner_focus));
+
+        assert!(manager
+            .set_active_windows(&BTreeSet::from([owner, child]))
+            .unwrap()
+            .is_empty());
+        assert_eq!(manager.focused, None);
+
+        assert_eq!(
+            manager
+                .set_active_windows(&BTreeSet::from([owner]))
+                .unwrap(),
+            vec![WindowEvent::FocusChanged {
+                previous: None,
+                current: Some(owner_focus),
+            }]
+        );
+        assert_eq!(manager.focused, Some(owner_focus));
+        assert_eq!(manager.validate(), Ok(()));
+    }
+
+    #[test]
+    fn invalidating_a_control_updates_only_its_matching_saved_menu_target() {
+        // Port: control teardown must not degrade a different saved invoker,
+        // and the matching saved target must fall back to its owning window.
+        let mut manager = WindowManager::new();
+        let owner = match manager
+            .apply(WindowCommand::Open(modeless_spec(WindowKind::System, 1)))
+            .unwrap()
+            .transition
+        {
+            WindowTransition::Opened { id } => id,
+            other => panic!("expected owner: {other:?}"),
+        };
+        let saved = crate::FocusTarget {
+            window: owner,
+            control: Some(crate::ControlId(7)),
+        };
+        manager.apply(WindowCommand::Focus(saved)).unwrap();
+
+        let mut menu_spec = modeless_spec(WindowKind::Menu, 2);
+        menu_spec.key = WindowKey::singleton(WindowKind::Menu);
+        menu_spec.owner = WindowOwner::Window(owner);
+        menu_spec.policy.cardinality = Cardinality::Singleton;
+        menu_spec.policy.band = StackBand::Transient;
+        menu_spec.policy.placement = OpenPlacement::AboveOwner;
+        menu_spec.policy.input = InputPolicy::DismissOnOutsidePress;
+        menu_spec.policy.presentation = PresentationPolicy::None;
+        menu_spec.policy.restoration = FocusRestoration::SavedMenuTarget;
+        let menu = match manager
+            .apply(WindowCommand::Open(menu_spec))
+            .unwrap()
+            .transition
+        {
+            WindowTransition::Opened { id } => id,
+            other => panic!("expected menu: {other:?}"),
+        };
+        assert_eq!(manager.saved_menu_focus[&menu], Some(saved));
+
+        let other = crate::FocusTarget {
+            window: owner,
+            control: Some(crate::ControlId(8)),
+        };
+        manager
+            .apply(WindowCommand::InvalidateControl(other))
+            .unwrap();
+        assert_eq!(manager.saved_menu_focus[&menu], Some(saved));
+
+        manager
+            .apply(WindowCommand::InvalidateControl(saved))
+            .unwrap();
+        assert_eq!(
+            manager.saved_menu_focus[&menu],
+            Some(crate::FocusTarget {
+                window: owner,
+                control: None,
+            })
+        );
+        assert_eq!(manager.validate(), Ok(()));
+    }
+
+    #[test]
+    fn proposed_raise_rejects_an_unrelated_preexisting_band_inversion() {
+        // Private-state setup proves the atomic reorder preflight checks every
+        // retained adjacent pair, including pairs outside the raised subtree.
+        let mut manager = WindowManager::new();
+        let mut low_spec = modeless_spec(WindowKind::Sector, 1);
+        low_spec.policy.band = StackBand::Low;
+        low_spec.policy.placement = OpenPlacement::BottomOfBand;
+        let low = match manager
+            .apply(WindowCommand::Open(low_spec))
+            .unwrap()
+            .transition
+        {
+            WindowTransition::Opened { id } => id,
+            other => panic!("expected low window: {other:?}"),
+        };
+        let first = match manager
+            .apply(WindowCommand::Open(modeless_spec(WindowKind::System, 2)))
+            .unwrap()
+            .transition
+        {
+            WindowTransition::Opened { id } => id,
+            other => panic!("expected first normal window: {other:?}"),
+        };
+        let raised = match manager
+            .apply(WindowCommand::Open(modeless_spec(WindowKind::Fleet, 3)))
+            .unwrap()
+            .transition
+        {
+            WindowTransition::Opened { id } => id,
+            other => panic!("expected raised window: {other:?}"),
+        };
+        let corrupt_order = vec![first, low, raised];
+        assert_eq!(
+            manager.raised_order_in(raised, corrupt_order, &manager.active_windows),
+            Err(WindowError::InvalidPlacement)
         );
     }
 
