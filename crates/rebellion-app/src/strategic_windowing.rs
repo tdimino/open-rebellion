@@ -2028,6 +2028,8 @@ mod tests {
     use rebellion_core::delivery::DeliveryState;
     use rebellion_core::economy::EconomyState;
     use rebellion_core::fog::FogState;
+    #[cfg(feature = "interface-test-fixtures")]
+    use rebellion_core::ids::FleetKey;
     use rebellion_core::ids::{DatId, SystemKey};
     use rebellion_core::manufacturing::{BuildableKind, ManufacturingState, ProductionArea};
     use rebellion_core::missions::{
@@ -2112,6 +2114,293 @@ mod tests {
             control: ControlKind::Uncontrolled,
         });
         (world, system)
+    }
+
+    #[cfg(feature = "interface-test-fixtures")]
+    #[derive(Debug, Clone, Copy)]
+    enum CommandModalCase {
+        BuildSelection,
+        MissionDialog,
+        MoveConfirmation,
+        ScrapConfirmation,
+    }
+
+    #[cfg(feature = "interface-test-fixtures")]
+    impl CommandModalCase {
+        const ALL: [Self; 4] = [
+            Self::BuildSelection,
+            Self::MissionDialog,
+            Self::MoveConfirmation,
+            Self::ScrapConfirmation,
+        ];
+
+        const fn kind(self) -> WindowKind {
+            match self {
+                Self::BuildSelection => WindowKind::BuildSelection,
+                Self::MissionDialog => WindowKind::MissionDialog,
+                Self::MoveConfirmation => WindowKind::MoveConfirmation,
+                Self::ScrapConfirmation => WindowKind::ScrapConfirmation,
+            }
+        }
+
+        fn enqueue(self, coordinator: &mut StrategicWindowing, system: SystemKey, fleet: FleetKey) {
+            match self {
+                Self::BuildSelection => {
+                    use rebellion_render::build_selection::BuildSelectionState;
+
+                    coordinator.enqueue_build_selection_open(
+                        BuildSelectionState::default()
+                            .prepare_open(
+                                system,
+                                ProductionArea::TrainingFacility,
+                                true,
+                                vec![BuildableKind::Troop(DatId::new(0x1000_0001))],
+                            )
+                            .unwrap(),
+                    );
+                }
+                Self::MissionDialog => {
+                    use rebellion_render::mission_dialog::MissionDialogState;
+
+                    coordinator
+                        .enqueue_mission_dialog_open(
+                            MissionDialogState::default()
+                                .prepare_open(
+                                    MissionFaction::Alliance,
+                                    system,
+                                    vec![MissionMember::Character(Default::default())],
+                                    vec![MissionKind::Diplomacy],
+                                )
+                                .unwrap(),
+                        )
+                        .unwrap();
+                }
+                Self::MoveConfirmation => {
+                    use rebellion_render::move_confirmation::{
+                        MoveConfirmation, MoveConfirmationState,
+                    };
+
+                    coordinator
+                        .enqueue_move_confirmation_open(
+                            MoveConfirmationState::default()
+                                .prepare_open(MoveConfirmation {
+                                    faction: MissionFaction::Alliance,
+                                    fleets: vec![fleet],
+                                    members: Vec::new(),
+                                    destination: system,
+                                    join: None,
+                                    blockaded: false,
+                                    lines: vec![("Red Fleet".into(), 1)],
+                                })
+                                .unwrap(),
+                        )
+                        .unwrap();
+                }
+                Self::ScrapConfirmation => {
+                    use rebellion_core::scrap::{ScrapOrder, ScrapTarget};
+                    use rebellion_render::move_confirmation::{
+                        ScrapConfirmation, ScrapConfirmationState,
+                    };
+
+                    coordinator
+                        .enqueue_scrap_confirmation_open(
+                            ScrapConfirmationState::default()
+                                .prepare_open(ScrapConfirmation {
+                                    faction: MissionFaction::Alliance,
+                                    order: ScrapOrder::Troop(Default::default()),
+                                    targets: vec![ScrapTarget::Troop(Default::default())],
+                                    names: vec!["Army Regiment".into()],
+                                })
+                                .unwrap(),
+                        )
+                        .unwrap();
+                }
+            }
+        }
+    }
+
+    #[cfg(feature = "interface-test-fixtures")]
+    struct CommandModalInterruptionFixture {
+        coordinator: StrategicWindowing,
+        fleets: FleetWindowState,
+        router: FrameInputRouter,
+        owner: WindowId,
+        applied: AppliedWindowCommand,
+    }
+
+    #[cfg(feature = "interface-test-fixtures")]
+    fn command_modal_interruption_fixture(
+        case: CommandModalCase,
+    ) -> CommandModalInterruptionFixture {
+        let (mut world, system) = fleet_world();
+        world.systems[system].control = ControlKind::Controlled(Faction::Alliance);
+        let fleet = world.insert_fleet(Fleet {
+            location: system,
+            is_alliance: true,
+            ..Fleet::default()
+        });
+        world.systems[system].fleets.push(fleet);
+
+        let mut coordinator = StrategicWindowing::new();
+        let mut fleets = FleetWindowState::default();
+        coordinator.enqueue_fleet_open(
+            fleets
+                .prepare_open(
+                    &world,
+                    system,
+                    (40, 50),
+                    CockpitFaction::Alliance,
+                    fleet_layout(),
+                    Some(FleetWindowEntry::Fleet(fleet)),
+                )
+                .unwrap(),
+        );
+        let mut opened = coordinator.apply_pending().remove(0);
+        let owner = opened.fleet_content_id.unwrap();
+        assert_eq!(
+            fleets.commit_open(
+                opened.prepared_fleet.take().unwrap(),
+                &opened.result.as_ref().unwrap().transition,
+            ),
+            Some(owner)
+        );
+        assert!(coordinator.acknowledge_fleet_publication(owner));
+        coordinator.enqueue(WindowCommand::CapturePointer(owner));
+        assert!(coordinator.apply_pending()[0].result.is_ok());
+        assert!(!fleets.seed_managed_drag_for_test(owner, FleetKey::default()));
+        assert!(!fleets.is_dragging());
+        assert!(fleets.seed_managed_drag_for_test(owner, fleet));
+        assert_eq!(fleets.drag_owner(), Some(owner));
+
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(1, &coordinator.begin_frame());
+        let press = InputEventId {
+            frame: 1,
+            ordinal: 0,
+        };
+        assert_eq!(
+            router.collect_pointer(
+                press,
+                &BTreeSet::from([owner]),
+                PointerPhase::Press(PointerButtonId::Primary),
+            ),
+            InputRecipient::Window(owner)
+        );
+        assert!(router.claim(press, InputRecipient::Window(owner)));
+
+        case.enqueue(&mut coordinator, system, fleet);
+        let applied = coordinator.apply_pending().remove(0);
+        assert!(applied.result.is_ok());
+        assert_eq!(
+            coordinator
+                .begin_frame()
+                .active_modal()
+                .and_then(|id| coordinator.begin_frame().key(id))
+                .map(|key| key.kind),
+            Some(case.kind())
+        );
+
+        CommandModalInterruptionFixture {
+            coordinator,
+            fleets,
+            router,
+            owner,
+            applied,
+        }
+    }
+
+    #[cfg(feature = "interface-test-fixtures")]
+    #[test]
+    fn command_modal_open_cancels_fleet_capture_and_drag_payload() {
+        use rebellion_windowing::{CaptureCancelReason, WindowEvent};
+
+        for case in CommandModalCase::ALL {
+            let mut fixture = command_modal_interruption_fixture(case);
+            let commit = fixture.applied.result.as_ref().unwrap();
+            let cancellation = commit
+                .events
+                .iter()
+                .position(|event| {
+                    *event
+                        == WindowEvent::CaptureCancelled {
+                            window: fixture.owner,
+                            reason: CaptureCancelReason::ModalOpened,
+                        }
+                })
+                .expect("command modal emits the exact Fleet capture cancellation");
+            let teardown_or_focus = commit
+                .events
+                .iter()
+                .position(|event| {
+                    matches!(
+                        event,
+                        WindowEvent::Closed { .. } | WindowEvent::FocusChanged { .. }
+                    )
+                })
+                .expect("command modal realizes focus after capture cancellation");
+            assert!(
+                cancellation < teardown_or_focus,
+                "capture clears before close/focus receipts for {case:?}"
+            );
+
+            let mut sectors = SectorWindowState::default();
+            let mut defenses = DefensesWindowState::default();
+            crate::apply_capture_cancellation_events(
+                &commit.events,
+                &mut fixture.router,
+                &mut sectors,
+                &mut fixture.fleets,
+                &mut defenses,
+            );
+
+            assert_eq!(fixture.coordinator.begin_frame().capture_owner(), None);
+            assert!(!fixture.fleets.is_dragging());
+            assert_eq!(fixture.fleets.drag_owner(), None);
+        }
+    }
+
+    #[cfg(feature = "interface-test-fixtures")]
+    #[test]
+    fn command_modal_interruption_quarantines_later_release() {
+        for case in CommandModalCase::ALL {
+            let mut fixture = command_modal_interruption_fixture(case);
+            let commit = fixture.applied.result.as_ref().unwrap();
+            let mut sectors = SectorWindowState::default();
+            let mut defenses = DefensesWindowState::default();
+            crate::apply_capture_cancellation_events(
+                &commit.events,
+                &mut fixture.router,
+                &mut sectors,
+                &mut fixture.fleets,
+                &mut defenses,
+            );
+
+            fixture
+                .router
+                .begin_frame(2, &fixture.coordinator.begin_frame());
+            let release = InputEventId {
+                frame: 2,
+                ordinal: 0,
+            };
+            assert_eq!(
+                fixture.router.collect_pointer(
+                    release,
+                    &BTreeSet::new(),
+                    PointerPhase::Release(PointerButtonId::Primary),
+                ),
+                InputRecipient::Blocked,
+                "the orphan release is quarantined for {case:?}"
+            );
+            assert!(!fixture.router.claim_root(release));
+            assert!(!fixture
+                .router
+                .claim(release, InputRecipient::Window(fixture.owner)));
+            assert!(fixture.applied.confirmed_build_selection.is_none());
+            assert!(fixture.applied.confirmed_mission_dialog.is_none());
+            assert!(fixture.applied.confirmed_move_confirmation.is_none());
+            assert!(fixture.applied.confirmed_scrap_confirmation.is_none());
+            assert!(fixture.coordinator.apply_pending().is_empty());
+        }
     }
 
     #[test]

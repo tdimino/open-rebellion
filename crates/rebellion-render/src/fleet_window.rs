@@ -1016,6 +1016,27 @@ impl FleetWindowState {
         self.drag_owner
     }
 
+    /// Seeds the renderer side of an exact manager-owned Fleet drag for
+    /// composed app-boundary tests without exposing mutable capture internals
+    /// in ordinary builds.
+    #[cfg(feature = "interface-test-fixtures")]
+    #[doc(hidden)]
+    pub fn seed_managed_drag_for_test(&mut self, window: WindowId, fleet: FleetKey) -> bool {
+        let Some(system) = self.windows.iter().find_map(|content| {
+            (content.id == Some(window) && content.selected == Some(FleetWindowEntry::Fleet(fleet)))
+                .then_some(content.system)
+        }) else {
+            return false;
+        };
+        self.drag = Some(ItemDrag {
+            object: ItemObject::Fleet { fleet, system },
+            press: egui::pos2(40.0, 40.0),
+            list: egui::Rect::from_min_max(egui::pos2(4.0, 29.0), egui::pos2(95.0, 295.0)),
+        });
+        self.drag_owner = Some(window);
+        true
+    }
+
     /// Applies a manager capture-cancellation receipt to renderer payload.
     pub fn cancel_pointer_capture(&mut self, window: WindowId) {
         if self.drag_owner == Some(window) {
