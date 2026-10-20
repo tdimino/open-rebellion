@@ -1574,9 +1574,7 @@ impl WindowManager {
 
         let is_transient = spec.policy.band == StackBand::Transient;
         let is_above_owner = spec.policy.placement == OpenPlacement::AboveOwner;
-        if is_transient != is_above_owner
-            || (is_above_owner && spec.owner == WindowOwner::StrategicRoot)
-        {
+        if is_transient != is_above_owner {
             return Err(WindowError::InvalidPlacement);
         }
         if is_transient {

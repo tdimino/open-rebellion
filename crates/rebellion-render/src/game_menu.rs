@@ -71,11 +71,19 @@ impl ManagedMenuState {
     /// Prepares a first open or atomic replacement under the exact invoker.
     #[must_use]
     pub fn prepare_open(&self, owner: WindowId) -> PreparedMenuOpen {
+        self.prepare_open_for(WindowOwner::Window(owner))
+    }
+
+    /// Prepares the command-center GID menu under its strategic-root
+    /// invoker. An unrelated active modal still rejects this placement.
+    #[must_use]
+    pub fn prepare_root_open(&self) -> PreparedMenuOpen {
+        self.prepare_open_for(WindowOwner::StrategicRoot)
+    }
+
+    fn prepare_open_for(&self, owner: WindowOwner) -> PreparedMenuOpen {
         PreparedMenuOpen {
-            spec: crate::windowing_policy::singleton_spec(
-                WindowKind::Menu,
-                WindowOwner::Window(owner),
-            ),
+            spec: crate::windowing_policy::singleton_spec(WindowKind::Menu, owner),
             replacing: self.window,
         }
     }

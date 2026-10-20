@@ -1278,6 +1278,30 @@ impl StrategicRootKeyBatch {
     fn contains(&self, key: KeyCode) -> bool {
         self.presses().any(|event| event.key == key)
     }
+
+    /// Consumes Escape only when the frozen keyboard route names the active
+    /// managed GID Menu. The caller queues its explicit manager close.
+    fn handle_managed_gid_escape(
+        &self,
+        router: &mut FrameInputRouter,
+        menu: rebellion_windowing::WindowId,
+    ) -> bool {
+        let mut requested = false;
+        for event in self.presses() {
+            if event.key != KeyCode::Escape
+                || router.keyboard_recipient(event.id) != InputRecipient::Window(menu)
+            {
+                continue;
+            }
+            router.report_key(
+                event.id,
+                InputRecipient::Window(menu),
+                InputDisposition::Handled,
+            );
+            requested = true;
+        }
+        requested
+    }
 }
 
 #[expect(
@@ -2162,16 +2186,31 @@ enum IndexedStatusMenuWitness {
     },
 }
 
+fn commit_managed_gid_menu(
+    managed: &mut ManagedMenuState,
+    gid: &mut rebellion_render::cockpit::GidUiState,
+    prepared: PreparedMenuOpen,
+    transition: &rebellion_windowing::WindowTransition,
+) -> Option<rebellion_windowing::WindowId> {
+    let id = managed.commit_open(prepared, transition)?;
+    gid.menu_open = true;
+    gid.category = None;
+    Some(id)
+}
+
 fn remove_managed_menu_content(
     managed: &mut ManagedMenuState,
     payload: &mut Option<ObjectMenuState>,
     witness: &mut Option<IndexedStatusMenuWitness>,
+    gid: &mut rebellion_render::cockpit::GidUiState,
     removed: &[rebellion_windowing::WindowId],
 ) {
     managed.remove_content(removed);
     if managed.window_id().is_none() {
         *payload = None;
         *witness = None;
+        gid.menu_open = false;
+        gid.category = None;
     }
 }
 
@@ -2812,7 +2851,8 @@ mod frame_input_tests {
         take_approved_tactical_window_action, take_tactical_destination_for_galaxy,
         with_retained_input, CommittedTacticalWindowAction, PendingSectorPublication,
         PreparedTacticalWindowAction, RetainedLegacyInputFilter, SectorDependentIntent,
-        StrategicPointerBatch, StrategicRawPointerEvent, TacticalResultDestination,
+        StrategicPointerBatch, StrategicRawKeyEvent, StrategicRawPointerEvent,
+        StrategicRootKeyBatch, TacticalResultDestination,
     };
     use egui_macroquad::egui;
     use rebellion_render::build_selection::BuildSelectionState;
@@ -4624,11 +4664,89 @@ mod frame_input_tests {
         };
         assert!(removed.contains(&menu_id));
 
-        super::remove_managed_menu_content(&mut managed, &mut payload, &mut witness, removed);
+        let mut gid = rebellion_render::cockpit::GidUiState::default();
+        super::remove_managed_menu_content(
+            &mut managed,
+            &mut payload,
+            &mut witness,
+            &mut gid,
+            removed,
+        );
 
         assert_eq!(managed.window_id(), None);
         assert!(payload.is_none());
         assert!(witness.is_none());
+    }
+
+    #[test]
+    fn gid_managed_lifecycle_publishes_and_tears_down_from_receipts() {
+        // Break caught: toggling the renderer flag before an accepted manager
+        // open, or leaving it live after the matching close receipt.
+        use rebellion_render::cockpit::GidUiState;
+        use rebellion_render::game_menu::ManagedMenuState;
+        use rebellion_windowing::{WindowCommand, WindowTransition};
+
+        let mut manager = WindowManager::new();
+        let mut managed = ManagedMenuState::default();
+        let mut gid = GidUiState::default();
+        let prepared = managed.prepare_root_open();
+        assert!(!gid.menu_open);
+        let opened = manager.apply(prepared.command()).unwrap();
+        let menu_id =
+            super::commit_managed_gid_menu(&mut managed, &mut gid, prepared, &opened.transition)
+                .expect("accepted root open publishes the GID payload");
+        assert!(gid.menu_open);
+
+        gid.category = Some(rebellion_render::cockpit::GidCategory::Loyalty);
+        let closed = manager.apply(WindowCommand::Close(menu_id)).unwrap();
+        let removed = match &closed.transition {
+            WindowTransition::Closed { closed, .. } => closed,
+            other => panic!("expected close, got {other:?}"),
+        };
+        let mut object_menu = None;
+        let mut witness = None;
+        super::remove_managed_menu_content(
+            &mut managed,
+            &mut object_menu,
+            &mut witness,
+            &mut gid,
+            removed,
+        );
+
+        assert_eq!(managed.window_id(), None);
+        assert!(!gid.menu_open);
+        assert_eq!(gid.category, None);
+    }
+
+    #[test]
+    fn gid_escape_routes_to_managed_menu_identity_not_root() {
+        // Break caught: reading Escape directly from egui bypasses the frozen
+        // Menu owner, while reporting it as root input can close an underlay.
+        use rebellion_render::game_menu::ManagedMenuState;
+
+        let mut manager = WindowManager::new();
+        let mut managed = ManagedMenuState::default();
+        let prepared = managed.prepare_root_open();
+        let opened = manager.apply(prepared.command()).unwrap();
+        let menu_id = managed.commit_open(prepared, &opened.transition).unwrap();
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(7, &manager.begin_frame());
+        let keys = StrategicRootKeyBatch::collect_from_raw(
+            7,
+            &mut router,
+            &[StrategicRawKeyEvent {
+                key: macroquad::prelude::KeyCode::Escape,
+                alt: false,
+                repeat: false,
+            }],
+        );
+
+        assert!(keys.handle_managed_gid_escape(&mut router, menu_id));
+        assert!(!router.root_may_handle(keys.events[0].id));
+        assert_eq!(
+            router.keyboard_recipient(keys.events[0].id),
+            InputRecipient::Window(menu_id)
+        );
     }
 
     #[test]
@@ -7780,6 +7898,7 @@ async fn main() {
         ObjectMenuState,
         Option<IndexedStatusMenuWitness>,
     )>::new();
+    let mut pending_gid_menu_publications = Vec::<PreparedMenuOpen>::new();
     let mut indexed_status_menu_witness: Option<IndexedStatusMenuWitness> = None;
     // A Mission order waiting for its target (the galaxy view's mode 2).
     let mut targeting: Option<Targeting> = None;
@@ -10501,6 +10620,7 @@ async fn main() {
                 &mut managed_menu,
                 &mut object_menu,
                 &mut indexed_status_menu_witness,
+                &mut cockpit_state.gid_ui,
                 &reconciliation.removed,
             );
             let message_actions = message_index.remove_content(&reconciliation.removed);
@@ -10559,8 +10679,7 @@ async fn main() {
                 || original_modal_fixture_open,
             focused_control: command_palette_open,
             transient_menu: game_speed_ui.menu_anchor.is_some()
-                || agent_menu_state.anchor.is_some()
-                || cockpit_state.gid_ui.menu_open,
+                || agent_menu_state.anchor.is_some(),
             root_gesture: targeting.is_some(),
         };
         let strategic_frame_boundary =
@@ -10717,8 +10836,10 @@ async fn main() {
                 defenses_window_state.clear();
                 missions_window_state.clear();
                 pending_object_menu_publications.clear();
+                pending_gid_menu_publications.clear();
                 object_menu = None;
                 indexed_status_menu_witness = None;
+                cockpit_state.gid_ui = rebellion_render::cockpit::GidUiState::default();
                 targeting = None;
 
                 #[cfg(target_arch = "wasm32")]
@@ -11137,6 +11258,7 @@ async fn main() {
                                 retained_legacy_input_filter.reset();
                                 managed_menu = ManagedMenuState::default();
                                 pending_object_menu_publications.clear();
+                                pending_gid_menu_publications.clear();
                                 // Sync cockpit chrome to player faction
                                 cockpit_state =
                                     CockpitState::new(if faction == MissionFaction::Alliance {
@@ -11298,7 +11420,6 @@ async fn main() {
                         pointer,
                     )
                     || fleet_finder_state.contains_screen_point(cockpit_layout, pointer)
-                    || cockpit_state.gid_ui.menu_open
                     || original_modal_fixture_open
                     || game_speed_ui.menu_anchor.is_some()
                     || pause_alert_contains_screen_point(&clock, cockpit_layout, pointer)
@@ -11427,11 +11548,16 @@ async fn main() {
                                 }) {
                                     hits.insert(window.id);
                                 }
+                                let mut menu_rects = object_menu
+                                    .as_ref()
+                                    .map_or_else(Vec::new, |_| object_menu_rects(ctx));
+                                menu_rects.extend(rebellion_render::cockpit::gid_menu_rects(
+                                    ctx,
+                                    &cockpit_state.gid_ui,
+                                ));
                                 if let Some(window) = managed_menu.hit_window(
                                     strategic_frame_boundary.snapshot(),
-                                    &object_menu
-                                        .as_ref()
-                                        .map_or_else(Vec::new, |_| object_menu_rects(ctx)),
+                                    &menu_rects,
                                     point,
                                 ) {
                                     hits.insert(window);
@@ -11513,8 +11639,12 @@ async fn main() {
                         &mut cockpit_state,
                         &mut bmp_cache,
                         strategic_input_enabled,
-                        strategic_owner_input_enabled,
+                        managed_menu_input_enabled,
                     ) {
+                        if let Some(window) = managed_menu.request_close() {
+                            strategic_windowing
+                                .enqueue(rebellion_windowing::WindowCommand::Close(window));
+                        }
                         #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
                         if let Some(event) = strategic_pointer_events.latest_primary_release() {
                             pending_windowing_route_receipts.push((event, "pointer", "gid"));
@@ -14044,6 +14174,19 @@ async fn main() {
                     egui_claims_keyboard = ctx.wants_keyboard_input();
                 });
 
+                if cockpit_state.gid_ui.menu_open
+                    && managed_menu.window_id().is_some_and(|window| {
+                        strategic_root_keys
+                            .handle_managed_gid_escape(&mut strategic_input_router, window)
+                    })
+                {
+                    if let Some(window) = managed_menu.request_close() {
+                        strategic_windowing
+                            .enqueue(rebellion_windowing::WindowCommand::Close(window));
+                        legacy_keyboard_handled = true;
+                    }
+                }
+
                 strategic_root_keys.report_legacy_children(
                     &mut strategic_input_router,
                     egui_claims_keyboard || legacy_keyboard_handled,
@@ -14074,8 +14217,7 @@ async fn main() {
                         || original_modal_fixture_open,
                     focused_control: command_palette_now_open,
                     transient_menu: game_speed_ui.menu_anchor.is_some()
-                        || agent_menu_state.anchor.is_some()
-                        || cockpit_state.gid_ui.menu_open,
+                        || agent_menu_state.anchor.is_some(),
                     root_gesture: targeting.is_some(),
                 });
                 let mut strategic_dispatch_restricted = legacy_restriction_latch.started();
@@ -14127,12 +14269,11 @@ async fn main() {
                             CockpitButton::GameOptions => (0x133, "game_options"),
                             CockpitButton::Encyclopedia => (0x131, "encyclopedia"),
                             CockpitButton::GalacticInformationDisplay => {
-                                cockpit_state.gid_ui.menu_open = !cockpit_state.gid_ui.menu_open;
-                                cockpit_state.gid_ui.category = None;
-                                if cockpit_state.gid_ui.menu_open {
-                                    strategic_dispatch_restricted = true;
-                                    strategic_input_router.set_application_hold(true);
-                                }
+                                let prepared = managed_menu.prepare_root_open();
+                                strategic_windowing.enqueue(prepared.command());
+                                pending_gid_menu_publications.push(prepared);
+                                strategic_dispatch_restricted = true;
+                                strategic_input_router.set_application_hold(true);
                                 #[cfg(all(
                                     target_arch = "wasm32",
                                     feature = "interface-test-fixtures"
@@ -14145,14 +14286,9 @@ async fn main() {
                                     ));
                                 }
                                 macroquad::logging::info!(
-                                    "[interface] command=0x{:x} destination=gid_menu status={}",
+                                    "[interface] command=0x{:x} destination=gid_menu status=queued",
                                     rebellion_render::strategic_gid_control(cockpit_state.faction)
-                                        .command_id,
-                                    if cockpit_state.gid_ui.menu_open {
-                                        "opened_original"
-                                    } else {
-                                        "closed"
-                                    }
+                                        .command_id
                                 );
                                 (
                                     rebellion_render::strategic_gid_control(cockpit_state.faction)
@@ -15275,6 +15411,7 @@ async fn main() {
                             retained_legacy_input_filter.reset();
                             managed_menu = ManagedMenuState::default();
                             pending_object_menu_publications.clear();
+                            pending_gid_menu_publications.clear();
                             let restored_fingerprint =
                                 rebellion_data::save::compute_state_fingerprint(
                                     &campaign.snapshot(),
@@ -15311,6 +15448,7 @@ async fn main() {
                             missions_window_state.clear();
                             object_menu = None;
                             indexed_status_menu_witness = None;
+                            cockpit_state.gid_ui = rebellion_render::cockpit::GidUiState::default();
                             targeting = None;
                             fleets_state = FleetsState::default();
                             build_selection_state = BuildSelectionState::default();
@@ -15879,6 +16017,10 @@ async fn main() {
                 .iter()
                 .position(|(prepared, _, _)| prepared.command() == command)
                 .map(|index| pending_object_menu_publications.remove(index));
+            let pending_gid_menu = pending_gid_menu_publications
+                .iter()
+                .position(|prepared| prepared.command() == command)
+                .map(|index| pending_gid_menu_publications.remove(index));
             if let Some((finder, destination)) = release_troop_finder_dependent(
                 &mut pending_troop_finder_open,
                 command,
@@ -15981,6 +16123,8 @@ async fn main() {
                         if committed {
                             object_menu = Some(content);
                             indexed_status_menu_witness = witness;
+                            cockpit_state.gid_ui.menu_open = false;
+                            cockpit_state.gid_ui.category = None;
                         } else {
                             macroquad::logging::error!(
                                 "[windowing] Menu content attachment failed identity={id:?}"
@@ -16005,6 +16149,38 @@ async fn main() {
                                 .extend(strategic_windowing.rollback_detail_publication(id));
                         }
                     }
+                }
+            }
+            if let (Some(prepared), Ok(commit)) = (pending_gid_menu, &result) {
+                let created = match commit.transition {
+                    rebellion_windowing::WindowTransition::Opened { id }
+                    | rebellion_windowing::WindowTransition::Replaced { new: id, .. } => Some(id),
+                    _ => None,
+                };
+                if let Some(id) = created {
+                    let attached = strategic_windowing.has_content(id)
+                        || strategic_windowing.attach_content(id);
+                    let committed = attached
+                        && commit_managed_gid_menu(
+                            &mut managed_menu,
+                            &mut cockpit_state.gid_ui,
+                            prepared,
+                            &commit.transition,
+                        ) == Some(id);
+                    if committed {
+                        object_menu = None;
+                        indexed_status_menu_witness = None;
+                    } else {
+                        macroquad::logging::error!(
+                            "[windowing] GID Menu content commit failed identity={id:?}"
+                        );
+                        removed_content.extend(strategic_windowing.rollback_detail_publication(id));
+                    }
+                } else {
+                    macroquad::logging::error!(
+                        "[windowing] GID Menu open did not create content transition={:?}",
+                        commit.transition
+                    );
                 }
             }
             if let (Some(prepared), Some(id), Ok(commit)) = (
@@ -16541,6 +16717,7 @@ async fn main() {
                 &mut managed_menu,
                 &mut object_menu,
                 &mut indexed_status_menu_witness,
+                &mut cockpit_state.gid_ui,
                 &removed_content,
             );
             let message_close_actions = message_index.remove_content(&removed_content);
@@ -16601,6 +16778,7 @@ async fn main() {
             &mut managed_menu,
             &mut object_menu,
             &mut indexed_status_menu_witness,
+            &mut cockpit_state.gid_ui,
             &reconciliation.removed,
         );
         let message_close_actions = message_index.remove_content(&reconciliation.removed);
