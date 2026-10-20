@@ -4739,7 +4739,12 @@ mod tests {
             battle_frame.key(alert.id),
             Some(WindowKey::contextual(alert.kind, alert.subject))
         );
-        assert_eq!(battle_frame.key(galaxy_modal), None);
+        assert_eq!(
+            battle_frame.key(galaxy_modal),
+            Some(WindowKey::singleton(WindowKind::Encyclopedia))
+        );
+        assert!(!battle_frame.is_visible(galaxy_modal));
+        assert!(!battle_frame.allows_input(galaxy_modal));
         assert!(coordinator.has_content(galaxy_modal));
     }
 
