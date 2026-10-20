@@ -484,6 +484,8 @@ impl WindowManager {
                 current: self.focused,
             });
         }
+        removed.sort_unstable();
+        removed.dedup();
         let blocking_unpainted = frame
             .member_ids()
             .filter(|id| {

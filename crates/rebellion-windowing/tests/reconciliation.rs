@@ -207,7 +207,7 @@ fn explicitly_absent_modeless_content_closes_with_events() {
         report(survivor, ContentStatus::Ready),
     ];
     let result = manager.reconcile(&frame, &reports);
-    assert_eq!(result.removed, vec![child, hidden, root]);
+    assert_eq!(result.removed, vec![root, hidden, child]);
     assert!(result.invalid_reports.is_empty());
     assert!(result.blocking_unpainted.is_empty());
     assert_eq!(
@@ -463,7 +463,8 @@ fn same_key_replacement_survives_a_late_report_for_the_old_identity() {
 #[test]
 fn multiple_absent_roots_deliver_cancellation_teardown_then_only_final_focus() {
     // port: reconciliation receipts have one final focus target and no duplicate teardown.
-    // Break caught: concatenating per-close focus receipts or cancelling after earlier teardown.
+    // Break caught: coupling the stable removed summary to lifecycle event order, concatenating
+    // per-close focus receipts, or cancelling after earlier teardown.
     let mut manager = WindowManager::new();
     let a_spec = detail(WindowKind::System, 1);
     let a = open(&mut manager, a_spec);
@@ -483,7 +484,7 @@ fn multiple_absent_roots_deliver_cancellation_teardown_then_only_final_focus() {
             report(survivor, ContentStatus::Ready),
         ],
     );
-    assert_eq!(result.removed, vec![b, a]);
+    assert_eq!(result.removed, vec![a, b]);
     assert!(result.invalid_reports.is_empty());
     assert_eq!(
         result.events,
