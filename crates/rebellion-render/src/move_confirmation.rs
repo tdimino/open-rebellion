@@ -9,7 +9,11 @@
 use egui_macroquad::egui;
 use rebellion_core::ids::{FleetKey, SystemKey};
 use rebellion_core::missions::{MissionFaction, MissionMember};
-use rebellion_core::scrap::ScrapTarget;
+use rebellion_core::scrap::{ScrapOrder, ScrapTarget};
+use rebellion_windowing::{
+    ContentReport, ContentStatus, RoutingSnapshot, SubjectId, WindowId, WindowKind, WindowOwner,
+    WindowSpec, WindowTransition,
+};
 
 use crate::bmp_cache::BmpCache;
 use crate::cockpit::CockpitLayout;
@@ -87,6 +91,15 @@ impl MoveConfirmation {
             PICTURE[side(self.faction)]
         }
     }
+
+    fn confirm_action(&self) -> MoveConfirmationAction {
+        MoveConfirmationAction::Confirm {
+            fleets: self.fleets.clone(),
+            members: self.members.clone(),
+            destination: self.destination,
+            join: self.join,
+        }
+    }
 }
 
 /// What the player answered.
@@ -108,11 +121,98 @@ pub enum MoveConfirmationAction {
 #[derive(Debug, Clone, Default)]
 pub struct MoveConfirmationState {
     window: Option<MoveConfirmation>,
+    window_id: Option<WindowId>,
+}
+
+/// Validated Move content kept inert until the manager accepts its fresh
+/// command-context identity.
+#[derive(Debug, Clone)]
+pub struct PreparedMoveConfirmation {
+    confirmation: MoveConfirmation,
+    replacing: Option<WindowId>,
+}
+
+impl PreparedMoveConfirmation {
+    #[must_use]
+    pub fn spec(&self, subject: SubjectId) -> WindowSpec {
+        crate::windowing_policy::contextual_spec(
+            WindowKind::MoveConfirmation,
+            subject,
+            WindowOwner::StrategicRoot,
+        )
+    }
+
+    #[must_use]
+    pub const fn replacing(&self) -> Option<WindowId> {
+        self.replacing
+    }
+}
+
+/// Exact Move candidate paired with one manager close. It remains inert until
+/// the matching teardown receipt releases it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PreparedMoveConfirmationConfirm {
+    window: WindowId,
+    action: MoveConfirmationAction,
+}
+
+impl PreparedMoveConfirmationConfirm {
+    #[must_use]
+    pub const fn window_id(&self) -> WindowId {
+        self.window
+    }
 }
 
 impl MoveConfirmationState {
     pub fn open(&mut self, confirmation: MoveConfirmation) {
         self.window = Some(confirmation);
+        self.window_id = None;
+    }
+
+    /// Prepares one valid logical Move context without disturbing any
+    /// published confirmation. Exactly one mover family must be present and
+    /// every mover must retain its transit line.
+    #[must_use]
+    pub fn prepare_open(&self, confirmation: MoveConfirmation) -> Option<PreparedMoveConfirmation> {
+        let movers = confirmation.fleets.len() + confirmation.members.len();
+        if movers == 0
+            || (!confirmation.fleets.is_empty() && !confirmation.members.is_empty())
+            || confirmation.lines.len() != movers
+        {
+            return None;
+        }
+        Some(PreparedMoveConfirmation {
+            confirmation,
+            replacing: self.window_id,
+        })
+    }
+
+    /// Publishes prepared content only for the exact manager open or
+    /// replacement receipt. A duplicate receipt preserves current content.
+    pub fn commit_open(
+        &mut self,
+        prepared: PreparedMoveConfirmation,
+        transition: &WindowTransition,
+    ) -> Option<WindowId> {
+        match *transition {
+            WindowTransition::Opened { id }
+                if self.window.is_none()
+                    && self.window_id.is_none()
+                    && prepared.replacing.is_none() =>
+            {
+                self.window = Some(prepared.confirmation);
+                self.window_id = Some(id);
+                Some(id)
+            }
+            WindowTransition::Replaced { old, new }
+                if self.window_id == Some(old) && prepared.replacing == Some(old) =>
+            {
+                self.window = Some(prepared.confirmation);
+                self.window_id = Some(new);
+                Some(new)
+            }
+            _ => None,
+        }
     }
 
     #[must_use]
@@ -126,6 +226,103 @@ impl MoveConfirmationState {
         self.window.as_ref()
     }
 
+    /// Exact manager identity owning the published Move content.
+    #[must_use]
+    pub const fn window_id(&self) -> Option<WindowId> {
+        self.window_id
+    }
+
+    /// Manager-owned hit for event-local pointer routing.
+    #[must_use]
+    pub fn hit_window(
+        &self,
+        frame: &RoutingSnapshot,
+        layout: CockpitLayout,
+        point: (f32, f32),
+    ) -> Option<WindowId> {
+        let id = self.window_id?;
+        (frame
+            .key(id)
+            .is_some_and(|key| key.kind == WindowKind::MoveConfirmation)
+            && frame.allows_input(id)
+            && rect_contains(window_rect(layout), egui::pos2(point.0, point.1)))
+        .then_some(id)
+    }
+
+    /// Exact manager identity holding this frame's keyboard lease.
+    #[must_use]
+    pub fn keyboard_owner(&self, frame: &RoutingSnapshot) -> Option<WindowId> {
+        let id = self.window_id?;
+        matches!(
+            frame.keyboard_route().target,
+            rebellion_windowing::RouteTarget::Window(target) if target.window == id
+        )
+        .then_some(id)
+    }
+
+    /// Explicit content state for fail-closed manager reconciliation.
+    #[must_use]
+    pub fn content_reports(&self, frame: &RoutingSnapshot) -> Vec<ContentReport> {
+        frame
+            .paint_order()
+            .iter()
+            .copied()
+            .filter(|id| {
+                frame
+                    .key(*id)
+                    .is_some_and(|key| key.kind == WindowKind::MoveConfirmation)
+            })
+            .map(|id| ContentReport {
+                window: id,
+                status: if self.window_id == Some(id) {
+                    ContentStatus::Ready
+                } else {
+                    ContentStatus::Unpaintable
+                },
+            })
+            .collect()
+    }
+
+    #[must_use]
+    pub const fn request_close(&self) -> Option<WindowId> {
+        self.window_id
+    }
+
+    /// Releases manager-owned content only from its exact teardown receipt.
+    pub fn remove_content(&mut self, removed: &[WindowId]) {
+        if self.window_id.is_some_and(|id| removed.contains(&id)) {
+            self.window = None;
+            self.window_id = None;
+        }
+    }
+
+    /// Snapshots the exact current Move order without performing gameplay.
+    #[must_use]
+    pub fn prepare_confirm(&self) -> Option<PreparedMoveConfirmationConfirm> {
+        Some(PreparedMoveConfirmationConfirm {
+            window: self.window_id?,
+            action: self.window.as_ref()?.confirm_action(),
+        })
+    }
+
+    /// Consumes one Move confirmation only after the exact manager close and
+    /// while its published payload still matches the prepared candidate.
+    pub fn commit_confirm(
+        &mut self,
+        prepared: PreparedMoveConfirmationConfirm,
+        removed: &[WindowId],
+    ) -> Option<MoveConfirmationAction> {
+        if !removed.contains(&prepared.window)
+            || self.window_id != Some(prepared.window)
+            || self.window.as_ref()?.confirm_action() != prepared.action
+        {
+            return None;
+        }
+        self.window = None;
+        self.window_id = None;
+        Some(prepared.action)
+    }
+
     /// Whether `point` falls on the open window, so the galaxy map under it
     /// takes no input.
     #[must_use]
@@ -135,14 +332,12 @@ impl MoveConfirmationState {
 
     /// Either control closes the window (`+0x30`) after acting.
     fn answer(&mut self, confirm: bool) -> Option<MoveConfirmationAction> {
+        if self.window_id.is_some() {
+            return None;
+        }
         let window = self.window.take()?;
         Some(if confirm {
-            MoveConfirmationAction::Confirm {
-                fleets: window.fleets,
-                members: window.members,
-                destination: window.destination,
-                join: window.join,
-            }
+            window.confirm_action()
         } else {
             MoveConfirmationAction::Cancel
         })
@@ -168,6 +363,7 @@ pub fn draw_move_confirmation(
     layout: CockpitLayout,
     cache: &mut BmpCache,
 ) -> Option<MoveConfirmationAction> {
+    let managed = state.window_id().is_some();
     let window = state.window.as_ref()?;
     let answer = draw_window(
         ctx,
@@ -178,7 +374,12 @@ pub fn draw_move_confirmation(
         layout,
         cache,
     );
-    answer.and_then(|confirm| state.answer(confirm))
+    match answer {
+        Some(true) if managed => state.window.as_ref().map(MoveConfirmation::confirm_action),
+        Some(false) if managed => Some(MoveConfirmationAction::Cancel),
+        Some(confirm) => state.answer(confirm),
+        None => None,
+    }
 }
 
 /// The confirmation window every confirmed order shares (`FUN_0044f060`,
@@ -274,6 +475,9 @@ const SCRAP_PICTURE: [u32; 2] = [1032, 1033];
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScrapConfirmation {
     pub faction: MissionFaction,
+    /// Original semantic order, retained so confirmation can rederive the
+    /// current target set before gameplay mutates anything.
+    pub order: ScrapOrder,
     /// The order's objects.
     pub targets: Vec<ScrapTarget>,
     /// Each object's name, in order.
@@ -304,7 +508,11 @@ impl ScrapConfirmation {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ScrapConfirmationAction {
     /// The checkmark or Enter: scrap every object.
-    Confirm(Vec<ScrapTarget>),
+    Confirm {
+        faction: MissionFaction,
+        order: ScrapOrder,
+        targets: Vec<ScrapTarget>,
+    },
     /// The X or Escape: the order is destroyed.
     Cancel,
 }
@@ -313,11 +521,101 @@ pub enum ScrapConfirmationAction {
 #[derive(Debug, Clone, Default)]
 pub struct ScrapConfirmationState {
     window: Option<ScrapConfirmation>,
+    window_id: Option<WindowId>,
+}
+
+/// Validated Scrap content held inert until its explicit port-modal identity
+/// commits in the shared manager.
+#[derive(Debug, Clone)]
+pub struct PreparedScrapConfirmation {
+    confirmation: ScrapConfirmation,
+    replacing: Option<WindowId>,
+}
+
+impl PreparedScrapConfirmation {
+    #[must_use]
+    pub fn spec(&self, subject: SubjectId) -> WindowSpec {
+        crate::windowing_policy::contextual_spec(
+            WindowKind::ScrapConfirmation,
+            subject,
+            WindowOwner::StrategicRoot,
+        )
+    }
+
+    #[must_use]
+    pub const fn replacing(&self) -> Option<WindowId> {
+        self.replacing
+    }
+}
+
+/// Exact Scrap candidate paired with one manager close.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PreparedScrapConfirmationConfirm {
+    window: WindowId,
+    action: ScrapConfirmationAction,
+}
+
+impl PreparedScrapConfirmationConfirm {
+    #[must_use]
+    pub const fn window_id(&self) -> WindowId {
+        self.window
+    }
+}
+
+impl ScrapConfirmation {
+    fn confirm_action(&self) -> ScrapConfirmationAction {
+        ScrapConfirmationAction::Confirm {
+            faction: self.faction,
+            order: self.order,
+            targets: self.targets.clone(),
+        }
+    }
 }
 
 impl ScrapConfirmationState {
     pub fn open(&mut self, confirmation: ScrapConfirmation) {
         self.window = Some(confirmation);
+        self.window_id = None;
+    }
+
+    #[must_use]
+    pub fn prepare_open(
+        &self,
+        confirmation: ScrapConfirmation,
+    ) -> Option<PreparedScrapConfirmation> {
+        if confirmation.targets.is_empty() || confirmation.names.is_empty() {
+            return None;
+        }
+        Some(PreparedScrapConfirmation {
+            confirmation,
+            replacing: self.window_id,
+        })
+    }
+
+    pub fn commit_open(
+        &mut self,
+        prepared: PreparedScrapConfirmation,
+        transition: &WindowTransition,
+    ) -> Option<WindowId> {
+        match *transition {
+            WindowTransition::Opened { id }
+                if self.window.is_none()
+                    && self.window_id.is_none()
+                    && prepared.replacing.is_none() =>
+            {
+                self.window = Some(prepared.confirmation);
+                self.window_id = Some(id);
+                Some(id)
+            }
+            WindowTransition::Replaced { old, new }
+                if self.window_id == Some(old) && prepared.replacing == Some(old) =>
+            {
+                self.window = Some(prepared.confirmation);
+                self.window_id = Some(new);
+                Some(new)
+            }
+            _ => None,
+        }
     }
 
     #[must_use]
@@ -328,6 +626,95 @@ impl ScrapConfirmationState {
     #[must_use]
     pub fn confirmation(&self) -> Option<&ScrapConfirmation> {
         self.window.as_ref()
+    }
+
+    #[must_use]
+    pub const fn window_id(&self) -> Option<WindowId> {
+        self.window_id
+    }
+
+    #[must_use]
+    pub fn hit_window(
+        &self,
+        frame: &RoutingSnapshot,
+        layout: CockpitLayout,
+        point: (f32, f32),
+    ) -> Option<WindowId> {
+        let id = self.window_id?;
+        (frame
+            .key(id)
+            .is_some_and(|key| key.kind == WindowKind::ScrapConfirmation)
+            && frame.allows_input(id)
+            && rect_contains(window_rect(layout), egui::pos2(point.0, point.1)))
+        .then_some(id)
+    }
+
+    #[must_use]
+    pub fn keyboard_owner(&self, frame: &RoutingSnapshot) -> Option<WindowId> {
+        let id = self.window_id?;
+        matches!(
+            frame.keyboard_route().target,
+            rebellion_windowing::RouteTarget::Window(target) if target.window == id
+        )
+        .then_some(id)
+    }
+
+    #[must_use]
+    pub fn content_reports(&self, frame: &RoutingSnapshot) -> Vec<ContentReport> {
+        frame
+            .paint_order()
+            .iter()
+            .copied()
+            .filter(|id| {
+                frame
+                    .key(*id)
+                    .is_some_and(|key| key.kind == WindowKind::ScrapConfirmation)
+            })
+            .map(|id| ContentReport {
+                window: id,
+                status: if self.window_id == Some(id) {
+                    ContentStatus::Ready
+                } else {
+                    ContentStatus::Unpaintable
+                },
+            })
+            .collect()
+    }
+
+    #[must_use]
+    pub const fn request_close(&self) -> Option<WindowId> {
+        self.window_id
+    }
+
+    pub fn remove_content(&mut self, removed: &[WindowId]) {
+        if self.window_id.is_some_and(|id| removed.contains(&id)) {
+            self.window = None;
+            self.window_id = None;
+        }
+    }
+
+    #[must_use]
+    pub fn prepare_confirm(&self) -> Option<PreparedScrapConfirmationConfirm> {
+        Some(PreparedScrapConfirmationConfirm {
+            window: self.window_id?,
+            action: self.window.as_ref()?.confirm_action(),
+        })
+    }
+
+    pub fn commit_confirm(
+        &mut self,
+        prepared: PreparedScrapConfirmationConfirm,
+        removed: &[WindowId],
+    ) -> Option<ScrapConfirmationAction> {
+        if !removed.contains(&prepared.window)
+            || self.window_id != Some(prepared.window)
+            || self.window.as_ref()?.confirm_action() != prepared.action
+        {
+            return None;
+        }
+        self.window = None;
+        self.window_id = None;
+        Some(prepared.action)
     }
 
     /// Whether `point` falls on the open window.
@@ -344,6 +731,7 @@ pub fn draw_scrap_confirmation(
     layout: CockpitLayout,
     cache: &mut BmpCache,
 ) -> Option<ScrapConfirmationAction> {
+    let managed = state.window_id().is_some();
     let window = state.window.as_ref()?;
     let confirm = draw_window(
         ctx,
@@ -354,9 +742,16 @@ pub fn draw_scrap_confirmation(
         layout,
         cache,
     )?;
+    if managed {
+        return Some(if confirm {
+            state.window.as_ref()?.confirm_action()
+        } else {
+            ScrapConfirmationAction::Cancel
+        });
+    }
     let window = state.window.take()?;
     Some(if confirm {
-        ScrapConfirmationAction::Confirm(window.targets)
+        window.confirm_action()
     } else {
         ScrapConfirmationAction::Cancel
     })
@@ -366,6 +761,11 @@ pub fn draw_scrap_confirmation(
 mod tests {
     use super::*;
     use crate::cockpit::CockpitViewport;
+    use rebellion_core::scrap::ScrapOrder;
+    use rebellion_windowing::{
+        CaptureCancelReason, InputPolicy, SubjectId, WindowCommand, WindowKind, WindowManager,
+        WindowOwner, WindowTransition,
+    };
 
     fn confirmation(faction: MissionFaction) -> MoveConfirmation {
         MoveConfirmation {
@@ -628,10 +1028,503 @@ mod tests {
         let mut state = ScrapConfirmationState::default();
         state.open(ScrapConfirmation {
             faction,
+            order: ScrapOrder::Troop(rebellion_core::ids::TroopKey::default()),
             targets: vec![ScrapTarget::Troop(rebellion_core::ids::TroopKey::default())],
             names: vec!["Army Regiment".into(), "Mine".into()],
         });
         state
+    }
+
+    fn managed_move_open(
+        state: &mut MoveConfirmationState,
+        confirmation: MoveConfirmation,
+    ) -> (WindowManager, rebellion_windowing::WindowId) {
+        let prepared = state
+            .prepare_open(confirmation)
+            .expect("valid Move confirmation context");
+        let mut manager = WindowManager::new();
+        let committed = manager
+            .apply(WindowCommand::Open(prepared.spec(SubjectId::new(
+                crate::windowing_policy::SUBJECT_COMMAND_CONTEXT,
+                1,
+            ))))
+            .expect("manager accepts Move confirmation");
+        let WindowTransition::Opened { id } = committed.transition else {
+            panic!("expected new Move confirmation identity");
+        };
+        assert_eq!(state.commit_open(prepared, &committed.transition), Some(id));
+        (manager, id)
+    }
+
+    fn scrap_confirmation(faction: MissionFaction) -> ScrapConfirmation {
+        ScrapConfirmation {
+            faction,
+            order: ScrapOrder::Troop(Default::default()),
+            targets: vec![ScrapTarget::Troop(Default::default())],
+            names: vec!["Army Regiment".into()],
+        }
+    }
+
+    fn managed_scrap_open(
+        state: &mut ScrapConfirmationState,
+        confirmation: ScrapConfirmation,
+    ) -> (WindowManager, WindowId) {
+        let prepared = state
+            .prepare_open(confirmation)
+            .expect("valid Scrap confirmation context");
+        let mut manager = WindowManager::new();
+        let committed = manager
+            .apply(WindowCommand::Open(prepared.spec(SubjectId::new(
+                crate::windowing_policy::SUBJECT_COMMAND_CONTEXT,
+                1,
+            ))))
+            .expect("manager accepts Scrap confirmation");
+        let WindowTransition::Opened { id } = committed.transition else {
+            panic!("expected new Scrap confirmation identity");
+        };
+        assert_eq!(state.commit_open(prepared, &committed.transition), Some(id));
+        (manager, id)
+    }
+
+    #[test]
+    fn move_confirmation_managed_adapter_enforces_exact_content_and_routes() {
+        let mut invalid_both = confirmation(MissionFaction::Alliance);
+        invalid_both.members = vec![MissionMember::Character(Default::default())];
+        invalid_both.lines.push(("Leia".into(), 2));
+        assert!(MoveConfirmationState::default()
+            .prepare_open(invalid_both)
+            .is_none());
+
+        let valid_member = MoveConfirmation {
+            fleets: Vec::new(),
+            members: vec![MissionMember::Character(Default::default())],
+            lines: vec![("Leia".into(), 2)],
+            ..confirmation(MissionFaction::Alliance)
+        };
+        assert!(MoveConfirmationState::default()
+            .prepare_open(valid_member)
+            .is_some());
+
+        let mut legacy = open(MissionFaction::Alliance);
+        let inert = legacy
+            .prepare_open(confirmation(MissionFaction::Empire))
+            .unwrap();
+        let mut unrelated = WindowManager::new();
+        let unrelated = unrelated
+            .apply(WindowCommand::Open(
+                crate::windowing_policy::singleton_spec(
+                    WindowKind::Encyclopedia,
+                    WindowOwner::StrategicRoot,
+                ),
+            ))
+            .unwrap();
+        let WindowTransition::Opened { id: unrelated_id } = unrelated.transition else {
+            panic!("expected unrelated identity");
+        };
+        assert_eq!(legacy.commit_open(inert, &unrelated.transition), None);
+        assert_eq!(
+            legacy.confirmation().map(|value| value.faction),
+            Some(MissionFaction::Alliance)
+        );
+
+        let mut state = MoveConfirmationState::default();
+        let (mut manager, id) =
+            managed_move_open(&mut state, confirmation(MissionFaction::Alliance));
+        let frame = manager.begin_frame();
+        let rect = window_rect(layout());
+        assert_eq!(
+            state.hit_window(&frame, layout(), (rect.center().x, rect.center().y)),
+            Some(id)
+        );
+        assert_eq!(
+            state.hit_window(&frame, layout(), (rect.min.x - 1.0, rect.min.y)),
+            None
+        );
+        assert_eq!(state.keyboard_owner(&frame), Some(id));
+        assert_eq!(
+            state.content_reports(&frame),
+            [ContentReport {
+                window: id,
+                status: ContentStatus::Ready,
+            }]
+        );
+        assert_eq!(state.request_close(), Some(id));
+
+        let blocker = manager
+            .apply(WindowCommand::Open(
+                crate::windowing_policy::singleton_spec(
+                    WindowKind::Encyclopedia,
+                    WindowOwner::StrategicRoot,
+                ),
+            ))
+            .unwrap();
+        let WindowTransition::Opened { id: blocker } = blocker.transition else {
+            panic!("expected blocker identity");
+        };
+        let blocked = manager.begin_frame();
+        assert_eq!(
+            state.hit_window(&blocked, layout(), (rect.center().x, rect.center().y)),
+            None
+        );
+        assert_eq!(state.keyboard_owner(&blocked), None);
+
+        let replacement = state
+            .prepare_open(confirmation(MissionFaction::Empire))
+            .unwrap();
+        assert_eq!(replacement.replacing(), Some(id));
+        assert_eq!(
+            state.commit_open(
+                replacement.clone(),
+                &WindowTransition::Opened { id: blocker }
+            ),
+            None
+        );
+        assert_eq!(
+            state.commit_open(
+                replacement.clone(),
+                &WindowTransition::Replaced {
+                    old: blocker,
+                    new: unrelated_id,
+                }
+            ),
+            None
+        );
+        state.window_id = Some(blocker);
+        assert_eq!(
+            state.commit_open(
+                replacement.clone(),
+                &WindowTransition::Replaced {
+                    old: id,
+                    new: unrelated_id,
+                }
+            ),
+            None
+        );
+        state.window_id = Some(id);
+
+        let prepared = state.prepare_confirm().unwrap();
+        assert_eq!(state.commit_confirm(prepared.clone(), &[blocker]), None);
+        let original = state.window.clone();
+        state.window.as_mut().unwrap().join = Some(FleetKey::default());
+        assert_eq!(state.commit_confirm(prepared.clone(), &[id]), None);
+        state.window = original;
+        assert!(matches!(
+            state.commit_confirm(prepared.clone(), &[id]),
+            Some(MoveConfirmationAction::Confirm { .. })
+        ));
+        assert_eq!(state.commit_confirm(prepared, &[id]), None);
+
+        let mut removable = MoveConfirmationState::default();
+        let (_, removable_id) =
+            managed_move_open(&mut removable, confirmation(MissionFaction::Alliance));
+        removable.remove_content(&[blocker]);
+        assert_eq!(removable.window_id(), Some(removable_id));
+        removable.remove_content(&[removable_id]);
+        assert!(!removable.is_open());
+    }
+
+    #[test]
+    fn managed_move_draw_reports_without_consuming_content() {
+        let mut confirmed = MoveConfirmationState::default();
+        let (_, id) = managed_move_open(&mut confirmed, confirmation(MissionFaction::Alliance));
+        assert!(matches!(
+            click(&mut confirmed, (355.0 + 25.0, 244.0 + 17.0)),
+            Some(MoveConfirmationAction::Confirm { .. })
+        ));
+        assert_eq!(confirmed.window_id(), Some(id));
+        assert!(confirmed.is_open());
+
+        let mut cancelled = MoveConfirmationState::default();
+        let (_, id) = managed_move_open(&mut cancelled, confirmation(MissionFaction::Alliance));
+        assert_eq!(
+            click(&mut cancelled, (355.0 + 25.0, 281.0 + 17.0)),
+            Some(MoveConfirmationAction::Cancel)
+        );
+        assert_eq!(cancelled.window_id(), Some(id));
+        assert!(cancelled.is_open());
+    }
+
+    #[test]
+    fn scrap_confirmation_managed_adapter_enforces_exact_content_and_routes() {
+        let mut no_targets = scrap_confirmation(MissionFaction::Alliance);
+        no_targets.targets.clear();
+        assert!(ScrapConfirmationState::default()
+            .prepare_open(no_targets)
+            .is_none());
+        let mut no_names = scrap_confirmation(MissionFaction::Alliance);
+        no_names.names.clear();
+        assert!(ScrapConfirmationState::default()
+            .prepare_open(no_names)
+            .is_none());
+
+        let mut legacy = scrap(MissionFaction::Alliance);
+        let inert = legacy
+            .prepare_open(scrap_confirmation(MissionFaction::Empire))
+            .unwrap();
+        let mut unrelated = WindowManager::new();
+        let unrelated = unrelated
+            .apply(WindowCommand::Open(
+                crate::windowing_policy::singleton_spec(
+                    WindowKind::Encyclopedia,
+                    WindowOwner::StrategicRoot,
+                ),
+            ))
+            .unwrap();
+        let WindowTransition::Opened { id: unrelated_id } = unrelated.transition else {
+            panic!("expected unrelated identity");
+        };
+        assert_eq!(legacy.commit_open(inert, &unrelated.transition), None);
+        assert_eq!(
+            legacy.confirmation().map(|value| value.faction),
+            Some(MissionFaction::Alliance)
+        );
+
+        let mut state = ScrapConfirmationState::default();
+        let (mut manager, id) =
+            managed_scrap_open(&mut state, scrap_confirmation(MissionFaction::Alliance));
+        assert_eq!(state.window_id(), Some(id));
+        let frame = manager.begin_frame();
+        let rect = window_rect(layout());
+        assert_eq!(
+            state.hit_window(&frame, layout(), (rect.center().x, rect.center().y)),
+            Some(id)
+        );
+        assert_eq!(
+            state.hit_window(&frame, layout(), (rect.min.x - 1.0, rect.min.y)),
+            None
+        );
+        assert_eq!(state.keyboard_owner(&frame), Some(id));
+        assert_eq!(
+            state.content_reports(&frame),
+            [ContentReport {
+                window: id,
+                status: ContentStatus::Ready,
+            }]
+        );
+        assert_eq!(state.request_close(), Some(id));
+
+        let blocker = manager
+            .apply(WindowCommand::Open(
+                crate::windowing_policy::singleton_spec(
+                    WindowKind::Encyclopedia,
+                    WindowOwner::StrategicRoot,
+                ),
+            ))
+            .unwrap();
+        let WindowTransition::Opened { id: blocker } = blocker.transition else {
+            panic!("expected blocker identity");
+        };
+        let blocked = manager.begin_frame();
+        assert_eq!(
+            state.hit_window(&blocked, layout(), (rect.center().x, rect.center().y)),
+            None
+        );
+        assert_eq!(state.keyboard_owner(&blocked), None);
+
+        let replacement = state
+            .prepare_open(scrap_confirmation(MissionFaction::Empire))
+            .unwrap();
+        assert_eq!(replacement.replacing(), Some(id));
+        assert_eq!(
+            state.commit_open(
+                replacement.clone(),
+                &WindowTransition::Opened { id: blocker }
+            ),
+            None
+        );
+        assert_eq!(
+            state.commit_open(
+                replacement.clone(),
+                &WindowTransition::Replaced {
+                    old: blocker,
+                    new: unrelated_id,
+                }
+            ),
+            None
+        );
+        state.window_id = Some(blocker);
+        assert_eq!(
+            state.commit_open(
+                replacement.clone(),
+                &WindowTransition::Replaced {
+                    old: id,
+                    new: unrelated_id,
+                }
+            ),
+            None
+        );
+        state.window_id = Some(id);
+        let previous_id = id;
+        assert_eq!(
+            state.commit_open(
+                replacement,
+                &WindowTransition::Replaced {
+                    old: id,
+                    new: blocker,
+                }
+            ),
+            Some(blocker)
+        );
+        assert_eq!(state.window_id(), Some(blocker));
+        assert_eq!(
+            state.confirmation().map(|value| value.faction),
+            Some(MissionFaction::Empire)
+        );
+        let id = blocker;
+
+        let prepared = state.prepare_confirm().unwrap();
+        assert_eq!(state.commit_confirm(prepared.clone(), &[previous_id]), None);
+        let original = state.window.clone();
+        state.window.as_mut().unwrap().faction = MissionFaction::Alliance;
+        assert_eq!(state.commit_confirm(prepared.clone(), &[id]), None);
+        state.window = original;
+        assert!(matches!(
+            state.commit_confirm(prepared.clone(), &[id]),
+            Some(ScrapConfirmationAction::Confirm { .. })
+        ));
+        assert_eq!(state.commit_confirm(prepared, &[id]), None);
+
+        let mut removable = ScrapConfirmationState::default();
+        let (_, removable_id) =
+            managed_scrap_open(&mut removable, scrap_confirmation(MissionFaction::Alliance));
+        removable.remove_content(&[blocker]);
+        assert_eq!(removable.window_id(), Some(removable_id));
+        removable.remove_content(&[removable_id]);
+        assert!(!removable.is_open());
+    }
+
+    #[test]
+    fn move_confirmation_windowing_failed_context_preserves_old() {
+        let mut state = MoveConfirmationState::default();
+        let original = confirmation(MissionFaction::Alliance);
+        let (mut manager, id) = managed_move_open(&mut state, original.clone());
+
+        let invalid = MoveConfirmation {
+            fleets: Vec::new(),
+            members: Vec::new(),
+            lines: Vec::new(),
+            ..confirmation(MissionFaction::Empire)
+        };
+        assert!(state.prepare_open(invalid).is_none());
+        assert_eq!(state.confirmation(), Some(&original));
+        assert_eq!(state.window_id(), Some(id));
+
+        let replacement = state
+            .prepare_open(confirmation(MissionFaction::Empire))
+            .unwrap();
+        assert_eq!(replacement.replacing(), Some(id));
+        let unrelated = manager
+            .apply(WindowCommand::Open(
+                crate::windowing_policy::singleton_spec(
+                    WindowKind::Encyclopedia,
+                    WindowOwner::StrategicRoot,
+                ),
+            ))
+            .unwrap();
+        let WindowTransition::Opened { id: unrelated } = unrelated.transition else {
+            panic!("expected unrelated identity");
+        };
+        manager.apply(WindowCommand::Close(unrelated)).unwrap();
+        assert!(manager
+            .apply(WindowCommand::Replace {
+                old: unrelated,
+                new: replacement.spec(SubjectId::new(
+                    crate::windowing_policy::SUBJECT_COMMAND_CONTEXT,
+                    2,
+                )),
+            })
+            .is_err());
+        assert_eq!(state.confirmation(), Some(&original));
+        assert_eq!(state.window_id(), Some(id));
+
+        let committed = manager
+            .apply(WindowCommand::Replace {
+                old: id,
+                new: replacement.spec(SubjectId::new(
+                    crate::windowing_policy::SUBJECT_COMMAND_CONTEXT,
+                    3,
+                )),
+            })
+            .expect("fresh Move context replaces atomically");
+        let WindowTransition::Replaced { new, .. } = committed.transition else {
+            panic!("expected Move replacement");
+        };
+        assert_eq!(
+            state.commit_open(replacement, &committed.transition),
+            Some(new)
+        );
+        assert_eq!(state.window_id(), Some(new));
+        assert_eq!(
+            state.confirmation().map(|value| value.faction),
+            Some(MissionFaction::Empire)
+        );
+    }
+
+    #[test]
+    fn move_confirmation_windowing_confirm_is_once() {
+        let mut state = MoveConfirmationState::default();
+        let (mut manager, id) =
+            managed_move_open(&mut state, confirmation(MissionFaction::Alliance));
+        let prepared = state.prepare_confirm().unwrap();
+
+        assert_eq!(state.commit_confirm(prepared.clone(), &[]), None);
+        assert!(state.is_open());
+
+        let committed = manager
+            .apply(WindowCommand::Close(id))
+            .expect("exact Move close commits");
+        let WindowTransition::Closed { closed, .. } = committed.transition else {
+            panic!("expected Move close receipt");
+        };
+        assert!(matches!(
+            state.commit_confirm(prepared.clone(), &closed),
+            Some(MoveConfirmationAction::Confirm { .. })
+        ));
+        assert_eq!(state.commit_confirm(prepared, &closed), None);
+        assert!(!state.is_open());
+    }
+
+    #[test]
+    fn scrap_confirmation_uses_explicit_port_modal_policy() {
+        let mut manager = WindowManager::new();
+        let owner = match manager
+            .apply(WindowCommand::Open(
+                crate::windowing_policy::contextual_spec(
+                    WindowKind::Fleet,
+                    SubjectId::new(1, 1),
+                    WindowOwner::StrategicRoot,
+                ),
+            ))
+            .unwrap()
+            .transition
+        {
+            WindowTransition::Opened { id } => id,
+            transition => panic!("expected Fleet owner, got {transition:?}"),
+        };
+        manager.apply(WindowCommand::CapturePointer(owner)).unwrap();
+
+        let state = ScrapConfirmationState::default();
+        let prepared = state
+            .prepare_open(ScrapConfirmation {
+                faction: MissionFaction::Alliance,
+                order: ScrapOrder::Troop(Default::default()),
+                targets: vec![ScrapTarget::Troop(Default::default())],
+                names: vec!["Army Regiment".into()],
+            })
+            .unwrap();
+        let spec = prepared.spec(SubjectId::new(
+            crate::windowing_policy::SUBJECT_COMMAND_CONTEXT,
+            2,
+        ));
+        assert_eq!(spec.key.kind, WindowKind::ScrapConfirmation);
+        assert_eq!(spec.policy.input, InputPolicy::StrategicModal);
+        let opened = manager.apply(WindowCommand::Open(spec)).unwrap();
+        assert!(opened
+            .events
+            .contains(&rebellion_windowing::WindowEvent::CaptureCancelled {
+                window: owner,
+                reason: CaptureCancelReason::ModalOpened,
+            }));
     }
 
     #[test]
@@ -709,9 +1602,11 @@ mod tests {
         );
         assert_eq!(
             action,
-            Some(ScrapConfirmationAction::Confirm(vec![ScrapTarget::Troop(
-                rebellion_core::ids::TroopKey::default()
-            )]))
+            Some(ScrapConfirmationAction::Confirm {
+                faction: MissionFaction::Empire,
+                order: ScrapOrder::Troop(rebellion_core::ids::TroopKey::default()),
+                targets: vec![ScrapTarget::Troop(rebellion_core::ids::TroopKey::default())],
+            })
         );
         assert!(!state.is_open());
 

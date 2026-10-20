@@ -112,7 +112,9 @@ use rebellion_render::mission_dialog::{
 use rebellion_render::missions_window::{draw_managed_missions_windows, PreparedMissionsWindow};
 use rebellion_render::move_confirmation::{
     draw_move_confirmation, draw_scrap_confirmation, MoveConfirmation, MoveConfirmationAction,
-    MoveConfirmationState, ScrapConfirmation, ScrapConfirmationAction, ScrapConfirmationState,
+    MoveConfirmationState, PreparedMoveConfirmation, PreparedMoveConfirmationConfirm,
+    PreparedScrapConfirmation, PreparedScrapConfirmationConfirm, ScrapConfirmation,
+    ScrapConfirmationAction, ScrapConfirmationState,
 };
 use rebellion_render::object_menu::{
     draw_owned_object_menu, object_menu_rects, CommandGates, MenuObject, ObjectMenuCommand,
@@ -2091,6 +2093,8 @@ enum ManagedStrategicSurface {
     Status(rebellion_windowing::WindowId),
     BuildSelection(rebellion_windowing::WindowId),
     MissionDialog(rebellion_windowing::WindowId),
+    MoveConfirmation(rebellion_windowing::WindowId),
+    ScrapConfirmation(rebellion_windowing::WindowId),
 }
 
 fn managed_strategic_surface_plan(
@@ -2103,6 +2107,8 @@ fn managed_strategic_surface_plan(
     build_selection: Option<rebellion_windowing::WindowId>,
     personnel_finder: Option<rebellion_windowing::WindowId>,
     mission_dialog: Option<rebellion_windowing::WindowId>,
+    move_confirmation: Option<rebellion_windowing::WindowId>,
+    scrap_confirmation: Option<rebellion_windowing::WindowId>,
 ) -> Vec<(ManagedStrategicSurface, bool)> {
     frame
         .paint_order()
@@ -2124,6 +2130,10 @@ fn managed_strategic_surface_plan(
                 ManagedStrategicSurface::BuildSelection(*id)
             } else if Some(*id) == mission_dialog {
                 ManagedStrategicSurface::MissionDialog(*id)
+            } else if Some(*id) == move_confirmation {
+                ManagedStrategicSurface::MoveConfirmation(*id)
+            } else if Some(*id) == scrap_confirmation {
+                ManagedStrategicSurface::ScrapConfirmation(*id)
             } else {
                 return None;
             };
@@ -2415,7 +2425,39 @@ fn legacy_mission_dialog_contains_point(
     state.window_id().is_none() && state.contains_screen_point(layout, point)
 }
 
+fn legacy_move_confirmation_modal(state: &MoveConfirmationState) -> bool {
+    state.is_open() && state.window_id().is_none()
+}
+
+fn legacy_move_confirmation_contains_point(
+    state: &MoveConfirmationState,
+    layout: rebellion_render::CockpitLayout,
+    point: (f32, f32),
+) -> bool {
+    state.window_id().is_none() && state.contains_screen_point(layout, point)
+}
+
+fn legacy_scrap_confirmation_modal(state: &ScrapConfirmationState) -> bool {
+    state.is_open() && state.window_id().is_none()
+}
+
+fn legacy_scrap_confirmation_contains_point(
+    state: &ScrapConfirmationState,
+    layout: rebellion_render::CockpitLayout,
+    point: (f32, f32),
+) -> bool {
+    state.window_id().is_none() && state.contains_screen_point(layout, point)
+}
+
 const fn managed_mission_dialog_escape_requested(
+    close_queued: bool,
+    has_keyboard_owner: bool,
+    escape_pressed: bool,
+) -> bool {
+    !close_queued && has_keyboard_owner && escape_pressed
+}
+
+const fn managed_confirmation_escape_requested(
     close_queued: bool,
     has_keyboard_owner: bool,
     escape_pressed: bool,
@@ -2454,6 +2496,203 @@ fn commit_mission_dialog_publication(
             Vec::new()
         }
     }
+}
+
+fn commit_move_confirmation_publication(
+    coordinator: &mut StrategicWindowing,
+    state: &mut MoveConfirmationState,
+    prepared: PreparedMoveConfirmation,
+    id: rebellion_windowing::WindowId,
+    transition: &rebellion_windowing::WindowTransition,
+) -> Vec<rebellion_windowing::WindowId> {
+    let created = matches!(
+        transition,
+        rebellion_windowing::WindowTransition::Opened { .. }
+            | rebellion_windowing::WindowTransition::Replaced { .. }
+    );
+    if state.commit_open(prepared, transition) == Some(id) {
+        let committed = coordinator.has_content(id)
+            || coordinator.acknowledge_move_confirmation_publication(id);
+        if committed {
+            Vec::new()
+        } else {
+            state.remove_content(&[id]);
+            coordinator.rollback_move_confirmation_publication(id)
+        }
+    } else {
+        macroquad::logging::error!(
+            "[windowing] Move confirmation content commit did not match identity={id:?}"
+        );
+        if created {
+            coordinator.rollback_move_confirmation_publication(id)
+        } else {
+            Vec::new()
+        }
+    }
+}
+
+fn commit_scrap_confirmation_publication(
+    coordinator: &mut StrategicWindowing,
+    state: &mut ScrapConfirmationState,
+    prepared: PreparedScrapConfirmation,
+    id: rebellion_windowing::WindowId,
+    transition: &rebellion_windowing::WindowTransition,
+) -> Vec<rebellion_windowing::WindowId> {
+    let created = matches!(
+        transition,
+        rebellion_windowing::WindowTransition::Opened { .. }
+            | rebellion_windowing::WindowTransition::Replaced { .. }
+    );
+    if state.commit_open(prepared, transition) == Some(id) {
+        let committed = coordinator.has_content(id)
+            || coordinator.acknowledge_scrap_confirmation_publication(id);
+        if committed {
+            Vec::new()
+        } else {
+            state.remove_content(&[id]);
+            coordinator.rollback_scrap_confirmation_publication(id)
+        }
+    } else {
+        macroquad::logging::error!(
+            "[windowing] Scrap confirmation content commit did not match identity={id:?}"
+        );
+        if created {
+            coordinator.rollback_scrap_confirmation_publication(id)
+        } else {
+            Vec::new()
+        }
+    }
+}
+
+struct MoveConfirmationGameplayContext<'a> {
+    world: &'a GameWorld,
+    movement: &'a MovementState,
+    missions: &'a MissionState,
+    faction: MissionFaction,
+    messages: &'a mut MessageLog,
+    advisor: &'a mut AdvisorState,
+    tick: u64,
+    actions: &'a mut Vec<PanelAction>,
+}
+
+/// Releases one Move order only after the exact manager teardown receipt,
+/// then reruns the ordinary live-world validators before queuing gameplay.
+fn commit_move_confirmation_gameplay(
+    prepared: Option<PreparedMoveConfirmationConfirm>,
+    removed_content: &[rebellion_windowing::WindowId],
+    state: &mut MoveConfirmationState,
+    context: MoveConfirmationGameplayContext<'_>,
+) -> bool {
+    let Some(MoveConfirmationAction::Confirm {
+        fleets,
+        members,
+        destination,
+        join,
+    }) = prepared.and_then(|prepared| state.commit_confirm(prepared, removed_content))
+    else {
+        return false;
+    };
+    let MoveConfirmationGameplayContext {
+        world,
+        movement,
+        missions,
+        faction,
+        messages,
+        advisor,
+        tick,
+        actions,
+    } = context;
+    let is_alliance = faction == MissionFaction::Alliance;
+    if !fleets.is_empty() {
+        let checked = match join {
+            Some(target) => fleets.iter().try_for_each(|fleet| {
+                rebellion_core::fleet_join::validate_join(
+                    world,
+                    movement,
+                    &FleetMover::Fleet(*fleet),
+                    target,
+                    is_alliance,
+                )
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+            }),
+            None => validate_fleets_dispatch(movement, world, &fleets, destination, is_alliance)
+                .map_err(|error| error.to_string()),
+        };
+        if let Err(error) = checked {
+            messages.push(GameMessage::new(
+                tick,
+                format!("Fleet move rejected: {error}"),
+                MessageCategory::Event,
+            ));
+            return false;
+        }
+        actions.extend(fleets.into_iter().map(|fleet| match join {
+            Some(target) => PanelAction::JoinFleet {
+                mover: FleetMover::Fleet(fleet),
+                target,
+            },
+            None => PanelAction::DispatchFleet {
+                fleet,
+                destination,
+                troops: Vec::new(),
+            },
+        }));
+        return true;
+    }
+
+    let move_destination = join.map_or(
+        rebellion_core::missions::MoveDestination::System(destination),
+        rebellion_core::missions::MoveDestination::Fleet,
+    );
+    if let Some(refusal) =
+        missions.move_refusal(world, movement, faction, &members, move_destination)
+    {
+        advisor.refuse(refusal.status());
+        return false;
+    }
+    actions.push(PanelAction::MoveMembers {
+        members,
+        destination: move_destination,
+    });
+    true
+}
+
+/// Releases one Scrap order only after its exact manager teardown receipt and
+/// rederives the complete live target set before mutating any object.
+fn commit_scrap_confirmation_gameplay(
+    prepared: Option<PreparedScrapConfirmationConfirm>,
+    removed_content: &[rebellion_windowing::WindowId],
+    state: &mut ScrapConfirmationState,
+    current_faction: MissionFaction,
+    world: &mut GameWorld,
+    stockpiles: &mut StockpileState,
+    transport: &mut TroopTransportState,
+) -> Option<(usize, i64)> {
+    let ScrapConfirmationAction::Confirm {
+        faction,
+        order,
+        targets,
+    } = prepared.and_then(|prepared| state.commit_confirm(prepared, removed_content))?
+    else {
+        return None;
+    };
+    if faction != current_faction {
+        return None;
+    }
+    let side = if faction == MissionFaction::Alliance {
+        Faction::Alliance
+    } else {
+        Faction::Empire
+    };
+    let current_targets = rebellion_core::scrap::order_targets(world, order, side);
+    if current_targets.is_empty() || current_targets != targets {
+        return None;
+    }
+    let count = targets.len();
+    let refund =
+        rebellion_core::scrap::scrap_all(world, stockpiles, transport, targets.iter().copied());
+    Some((count, refund))
 }
 
 struct MissionDispatchContext<'a> {
@@ -5182,6 +5421,8 @@ mod panel_toggle_tests {
                 None,
                 None,
                 None,
+                None,
+                None,
             ),
             [
                 (ManagedStrategicSurface::Encyclopedia(encyclopedia), false),
@@ -5317,6 +5558,8 @@ mod panel_toggle_tests {
                 None,
                 None,
                 None,
+                None,
+                None,
             ),
             [
                 (ManagedStrategicSurface::FleetFinder(finder), false),
@@ -5337,6 +5580,8 @@ mod panel_toggle_tests {
                 &coordinator.begin_frame(),
                 None,
                 Some(finder),
+                None,
+                None,
                 None,
                 None,
                 None,
@@ -5367,6 +5612,8 @@ mod panel_toggle_tests {
                 &frame,
                 Some(encyclopedia),
                 Some(finder),
+                None,
+                None,
                 None,
                 None,
                 None,
@@ -5412,6 +5659,8 @@ mod panel_toggle_tests {
                 None,
                 None,
                 Some(id),
+                None,
+                None,
                 None,
                 None,
                 None,
@@ -5734,6 +5983,8 @@ mod panel_toggle_tests {
                 None,
                 None,
                 Some(id),
+                None,
+                None,
                 None,
             ),
             [(ManagedStrategicSurface::PersonnelFinder(id), true)]
@@ -6140,6 +6391,8 @@ mod panel_toggle_tests {
                 None,
                 None,
                 Some(id),
+                None,
+                None,
                 None,
                 None,
             ),
@@ -6550,6 +6803,8 @@ mod panel_toggle_tests {
                 None,
                 None,
                 Some(id),
+                None,
+                None,
             ),
             [(ManagedStrategicSurface::MissionDialog(id), true)]
         );
@@ -10299,8 +10554,8 @@ async fn main() {
         };
         let legacy_blockers = LegacyInputBlockers {
             strategic_modal: legacy_mission_dialog_modal(&mission_dialog_state)
-                || move_confirmation_state.is_open()
-                || scrap_confirmation_state.is_open()
+                || legacy_move_confirmation_modal(&move_confirmation_state)
+                || legacy_scrap_confirmation_modal(&scrap_confirmation_state)
                 || original_modal_fixture_open,
             focused_control: command_palette_open,
             transient_menu: game_speed_ui.menu_anchor.is_some()
@@ -10336,6 +10591,10 @@ async fn main() {
             build_selection_state.keyboard_owner(strategic_frame_boundary.snapshot());
         let mission_dialog_keyboard_owner =
             mission_dialog_state.keyboard_owner(strategic_frame_boundary.snapshot());
+        let move_confirmation_keyboard_owner =
+            move_confirmation_state.keyboard_owner(strategic_frame_boundary.snapshot());
+        let scrap_confirmation_keyboard_owner =
+            scrap_confirmation_state.keyboard_owner(strategic_frame_boundary.snapshot());
         let mut legacy_restriction_latch = LegacyInputRestrictionLatch::new(legacy_blockers);
         let strategic_frame_sequence_valid =
             if let Some(next_frame) = strategic_frame_number.checked_add(1) {
@@ -10805,6 +11064,7 @@ async fn main() {
                                     build_selection_state = BuildSelectionState::default();
                                     mission_dialog_state = MissionDialogState::default();
                                     move_confirmation_state = MoveConfirmationState::default();
+                                    scrap_confirmation_state = ScrapConfirmationState::default();
                                     status_window_state = StatusWindowState::default();
                                     fleet_finder_state = FleetFinderState::default();
                                     troop_finder_state = TroopFinderState::default();
@@ -11027,8 +11287,16 @@ async fn main() {
                         cockpit_layout,
                         pointer,
                     )
-                    || move_confirmation_state.contains_screen_point(cockpit_layout, pointer)
-                    || scrap_confirmation_state.contains_screen_point(cockpit_layout, pointer)
+                    || legacy_move_confirmation_contains_point(
+                        &move_confirmation_state,
+                        cockpit_layout,
+                        pointer,
+                    )
+                    || legacy_scrap_confirmation_contains_point(
+                        &scrap_confirmation_state,
+                        cockpit_layout,
+                        pointer,
+                    )
                     || fleet_finder_state.contains_screen_point(cockpit_layout, pointer)
                     || cockpit_state.gid_ui.menu_open
                     || original_modal_fixture_open
@@ -11101,6 +11369,20 @@ async fn main() {
                                     top_layer,
                                 ));
                                 if let Some(window) = mission_dialog_state.hit_window(
+                                    strategic_frame_boundary.snapshot(),
+                                    cockpit_layout,
+                                    point,
+                                ) {
+                                    hits.insert(window);
+                                }
+                                if let Some(window) = move_confirmation_state.hit_window(
+                                    strategic_frame_boundary.snapshot(),
+                                    cockpit_layout,
+                                    point,
+                                ) {
+                                    hits.insert(window);
+                                }
+                                if let Some(window) = scrap_confirmation_state.hit_window(
                                     strategic_frame_boundary.snapshot(),
                                     cockpit_layout,
                                     point,
@@ -11786,6 +12068,7 @@ async fn main() {
                                         target,
                                         &mut msg_log,
                                         &mut move_confirmation_state,
+                                        &mut strategic_windowing,
                                         &mut panel_actions,
                                     ) {
                                         legacy_restriction_latch.note_start();
@@ -12053,6 +12336,7 @@ async fn main() {
                                         target,
                                         &mut msg_log,
                                         &mut move_confirmation_state,
+                                        &mut strategic_windowing,
                                         &mut panel_actions,
                                     ) {
                                         legacy_restriction_latch.note_start();
@@ -12131,7 +12415,7 @@ async fn main() {
                                 ) else {
                                     continue;
                                 };
-                                issue_member_move(
+                                if issue_member_move(
                                     &FleetMoveContext {
                                         world: &world,
                                         movement: &movement_state,
@@ -12145,8 +12429,11 @@ async fn main() {
                                     target,
                                     &mut advisor_state,
                                     &mut move_confirmation_state,
+                                    &mut strategic_windowing,
                                     &mut panel_actions,
-                                );
+                                ) {
+                                    legacy_restriction_latch.note_start();
+                                }
                             }
                             FleetWindowAction::DragRegiment { troop, point } => {
                                 let windows = ReleaseWindows {
@@ -12320,7 +12607,7 @@ async fn main() {
                                 ) else {
                                     continue;
                                 };
-                                issue_member_move(
+                                if issue_member_move(
                                     &FleetMoveContext {
                                         world: &world,
                                         movement: &movement_state,
@@ -12334,8 +12621,11 @@ async fn main() {
                                     target,
                                     &mut advisor_state,
                                     &mut move_confirmation_state,
+                                    &mut strategic_windowing,
                                     &mut panel_actions,
-                                );
+                                ) {
+                                    legacy_restriction_latch.note_start();
+                                }
                             }
                             DefensesWindowAction::DragSquadron {
                                 system,
@@ -12668,18 +12958,34 @@ async fn main() {
                                 } else {
                                     Faction::Empire
                                 };
-                                scrap_confirmation_state.open(ScrapConfirmation {
+                                let confirmation = ScrapConfirmation {
                                     faction: player_faction,
+                                    order,
                                     targets: rebellion_core::scrap::order_targets(
                                         &world, order, side,
                                     ),
                                     names: rebellion_core::scrap::order_names(&world, order, side),
-                                });
-                                legacy_restriction_latch.note_start();
-                                macroquad::logging::info!(
-                                    "[interface] command=0x200 destination=scrap_confirmation status=opened order={:?}",
-                                    order
-                                );
+                                };
+                                if let Some(prepared) =
+                                    scrap_confirmation_state.prepare_open(confirmation)
+                                {
+                                    match strategic_windowing
+                                        .enqueue_scrap_confirmation_open(prepared)
+                                    {
+                                        Ok(()) => {
+                                            legacy_restriction_latch.note_start();
+                                            macroquad::logging::info!(
+                                                "[interface] command=0x200 destination=scrap_confirmation status=queued order={:?}",
+                                                order
+                                            );
+                                        }
+                                        Err(error) => {
+                                            macroquad::logging::warn!(
+                                                "[windowing] Scrap context allocation rejected error={error:?}"
+                                            );
+                                        }
+                                    }
+                                }
                             }
                         }
                         Some((
@@ -12928,17 +13234,25 @@ async fn main() {
 
                     // FUN_0044f5e0: the checkmark resubmits with force 1,
                     // which validates again and departs without asking.
+                    let legacy_move_action = move_confirmation_state
+                        .window_id()
+                        .is_none()
+                        .then(|| {
+                            draw_move_confirmation(
+                                ctx,
+                                &mut move_confirmation_state,
+                                cockpit_layout,
+                                &mut bmp_cache,
+                            )
+                        })
+                        .flatten();
                     if let Some(MoveConfirmationAction::Confirm {
                         fleets,
                         members,
                         destination,
                         join,
-                    }) = draw_move_confirmation(
-                        ctx,
-                        &mut move_confirmation_state,
-                        cockpit_layout,
-                        &mut bmp_cache,
-                    ) {
+                    }) = legacy_move_action
+                    {
                         if !members.is_empty() {
                             panel_actions.push(PanelAction::MoveMembers {
                                 members,
@@ -12964,12 +13278,21 @@ async fn main() {
                     // FUN_0044f5e0: the checkmark submits the Scrap order,
                     // which scraps each object at once (FUN_004f84e0 →
                     // FUN_00534c00, reason 0x14).
-                    if let Some(ScrapConfirmationAction::Confirm(targets)) = draw_scrap_confirmation(
-                        ctx,
-                        &mut scrap_confirmation_state,
-                        cockpit_layout,
-                        &mut bmp_cache,
-                    ) {
+                    let legacy_scrap_action = scrap_confirmation_state
+                        .window_id()
+                        .is_none()
+                        .then(|| {
+                            draw_scrap_confirmation(
+                                ctx,
+                                &mut scrap_confirmation_state,
+                                cockpit_layout,
+                                &mut bmp_cache,
+                            )
+                        })
+                        .flatten();
+                    if let Some(ScrapConfirmationAction::Confirm { targets, .. }) =
+                        legacy_scrap_action
+                    {
                         let refund = rebellion_core::scrap::scrap_all(
                             &mut world,
                             &mut stockpile_state,
@@ -13081,6 +13404,7 @@ async fn main() {
                                         target,
                                         &mut msg_log,
                                         &mut move_confirmation_state,
+                                        &mut strategic_windowing,
                                         &mut panel_actions,
                                     ) {
                                         legacy_restriction_latch.note_start();
@@ -13089,22 +13413,27 @@ async fn main() {
                                 Some(TargetingEnd::Target {
                                     order: TargetOrder::MemberMove { members, confirmed },
                                     target,
-                                }) => issue_member_move(
-                                    &FleetMoveContext {
-                                        world: &world,
-                                        movement: &movement_state,
-                                        blockaded: blockade_state.blockaded_systems(),
-                                        faction: player_faction,
-                                        tick: clock.tick,
-                                    },
-                                    &mission_state,
-                                    members,
-                                    confirmed,
-                                    target,
-                                    &mut advisor_state,
-                                    &mut move_confirmation_state,
-                                    &mut panel_actions,
-                                ),
+                                }) => {
+                                    if issue_member_move(
+                                        &FleetMoveContext {
+                                            world: &world,
+                                            movement: &movement_state,
+                                            blockaded: blockade_state.blockaded_systems(),
+                                            faction: player_faction,
+                                            tick: clock.tick,
+                                        },
+                                        &mission_state,
+                                        members,
+                                        confirmed,
+                                        target,
+                                        &mut advisor_state,
+                                        &mut move_confirmation_state,
+                                        &mut strategic_windowing,
+                                        &mut panel_actions,
+                                    ) {
+                                        legacy_restriction_latch.note_start();
+                                    }
+                                }
                                 Some(TargetingEnd::Target {
                                     order:
                                         TargetOrder::ShipMove {
@@ -13231,6 +13560,8 @@ async fn main() {
                     let mut message_index_close_queued = false;
                     let mut status_close_queued = false;
                     let mut mission_dialog_close_queued = false;
+                    let mut move_confirmation_close_queued = false;
+                    let mut scrap_confirmation_close_queued = false;
                     let managed_surfaces = managed_strategic_surface_plan(
                         strategic_frame_boundary.snapshot(),
                         encyclopedia_surface.window_id(),
@@ -13241,6 +13572,8 @@ async fn main() {
                         build_selection_state.window_id(),
                         personnel_finder_state.window_id(),
                         mission_dialog_state.window_id(),
+                        move_confirmation_state.window_id(),
+                        scrap_confirmation_state.window_id(),
                     );
                     for (surface, allows_input) in managed_surfaces {
                         match surface {
@@ -13565,6 +13898,70 @@ async fn main() {
                                     None => {}
                                 }
                             }
+                            ManagedStrategicSurface::MoveConfirmation(_) => {
+                                let action = with_retained_input(ctx, allows_input, || {
+                                    draw_move_confirmation(
+                                        ctx,
+                                        &mut move_confirmation_state,
+                                        cockpit_layout,
+                                        &mut bmp_cache,
+                                    )
+                                });
+                                match action {
+                                    Some(MoveConfirmationAction::Confirm { .. }) => {
+                                        if let Some(prepared) =
+                                            move_confirmation_state.prepare_confirm()
+                                        {
+                                            strategic_windowing
+                                                .enqueue_move_confirmation_confirm(prepared);
+                                            move_confirmation_close_queued = true;
+                                        }
+                                    }
+                                    Some(MoveConfirmationAction::Cancel) => {
+                                        if let Some(window) =
+                                            move_confirmation_state.request_close()
+                                        {
+                                            strategic_windowing.enqueue(
+                                                rebellion_windowing::WindowCommand::Close(window),
+                                            );
+                                            move_confirmation_close_queued = true;
+                                        }
+                                    }
+                                    None => {}
+                                }
+                            }
+                            ManagedStrategicSurface::ScrapConfirmation(_) => {
+                                let action = with_retained_input(ctx, allows_input, || {
+                                    draw_scrap_confirmation(
+                                        ctx,
+                                        &mut scrap_confirmation_state,
+                                        cockpit_layout,
+                                        &mut bmp_cache,
+                                    )
+                                });
+                                match action {
+                                    Some(ScrapConfirmationAction::Confirm { .. }) => {
+                                        if let Some(prepared) =
+                                            scrap_confirmation_state.prepare_confirm()
+                                        {
+                                            strategic_windowing
+                                                .enqueue_scrap_confirmation_confirm(prepared);
+                                            scrap_confirmation_close_queued = true;
+                                        }
+                                    }
+                                    Some(ScrapConfirmationAction::Cancel) => {
+                                        if let Some(window) =
+                                            scrap_confirmation_state.request_close()
+                                        {
+                                            strategic_windowing.enqueue(
+                                                rebellion_windowing::WindowCommand::Close(window),
+                                            );
+                                            scrap_confirmation_close_queued = true;
+                                        }
+                                    }
+                                    None => {}
+                                }
+                            }
                         }
                     }
                     if !encyclopedia_close_queued
@@ -13609,6 +14006,28 @@ async fn main() {
                             legacy_keyboard_handled = true;
                         }
                     }
+                    if managed_confirmation_escape_requested(
+                        move_confirmation_close_queued,
+                        move_confirmation_keyboard_owner.is_some(),
+                        strategic_root_keys.contains(KeyCode::Escape),
+                    ) {
+                        if let Some(window) = move_confirmation_state.request_close() {
+                            strategic_windowing
+                                .enqueue(rebellion_windowing::WindowCommand::Close(window));
+                            legacy_keyboard_handled = true;
+                        }
+                    }
+                    if managed_confirmation_escape_requested(
+                        scrap_confirmation_close_queued,
+                        scrap_confirmation_keyboard_owner.is_some(),
+                        strategic_root_keys.contains(KeyCode::Escape),
+                    ) {
+                        if let Some(window) = scrap_confirmation_state.request_close() {
+                            strategic_windowing
+                                .enqueue(rebellion_windowing::WindowCommand::Close(window));
+                            legacy_keyboard_handled = true;
+                        }
+                    }
                     if let Some((system, target)) = message_choice {
                         map_state.selected_system = Some(system);
                         enqueue_sector_window(
@@ -13633,7 +14052,10 @@ async fn main() {
                     troop_finder_keyboard_owner,
                     encyclopedia_keyboard_owner,
                     message_index_keyboard_owner,
-                    status_keyboard_owner.or(mission_dialog_keyboard_owner),
+                    status_keyboard_owner
+                        .or(mission_dialog_keyboard_owner)
+                        .or(move_confirmation_keyboard_owner)
+                        .or(scrap_confirmation_keyboard_owner),
                     build_selection_keyboard_owner,
                     personnel_finder_keyboard_focus,
                 );
@@ -13647,8 +14069,8 @@ async fn main() {
                 let command_palette_now_open = false;
                 legacy_restriction_latch.observe(LegacyInputBlockers {
                     strategic_modal: legacy_mission_dialog_modal(&mission_dialog_state)
-                        || move_confirmation_state.is_open()
-                        || scrap_confirmation_state.is_open()
+                        || legacy_move_confirmation_modal(&move_confirmation_state)
+                        || legacy_scrap_confirmation_modal(&scrap_confirmation_state)
                         || original_modal_fixture_open,
                     focused_control: command_palette_now_open,
                     transient_menu: game_speed_ui.menu_anchor.is_some()
@@ -15379,6 +15801,10 @@ async fn main() {
             .extend(build_selection_state.content_reports(strategic_frame_boundary.snapshot()));
         strategic_content_reports
             .extend(mission_dialog_state.content_reports(strategic_frame_boundary.snapshot()));
+        strategic_content_reports
+            .extend(move_confirmation_state.content_reports(strategic_frame_boundary.snapshot()));
+        strategic_content_reports
+            .extend(scrap_confirmation_state.content_reports(strategic_frame_boundary.snapshot()));
         strategic_content_reports.extend(status_window_state.content_reports(
             strategic_frame_boundary.snapshot(),
             StatusSources {
@@ -15401,11 +15827,6 @@ async fn main() {
         // Detail content is published only after the matching manager commit;
         // close and eviction receipts remove only their exact identities.
         let publication_layout = cockpit_state.layout();
-        let publication_fog = sector_publication_fog_for_faction(
-            player_faction,
-            &fog_alliance_state,
-            &fog_empire_state,
-        );
         let pending_command_count = strategic_windowing.begin_apply_batch();
         for _ in 0..pending_command_count {
             refresh_pending_sector_publication(
@@ -15427,6 +15848,12 @@ async fn main() {
                 prepared_mission_dialog,
                 mission_dialog_content_id,
                 confirmed_mission_dialog,
+                prepared_move_confirmation,
+                move_confirmation_content_id,
+                confirmed_move_confirmation,
+                prepared_scrap_confirmation,
+                scrap_confirmation_content_id,
+                confirmed_scrap_confirmation,
                 prepared_system,
                 system_content_id,
                 prepared_defenses,
@@ -15617,6 +16044,32 @@ async fn main() {
                     &commit.transition,
                 ));
             }
+            if let (Some(prepared), Some(id), Ok(commit)) = (
+                prepared_move_confirmation,
+                move_confirmation_content_id,
+                &result,
+            ) {
+                removed_content.extend(commit_move_confirmation_publication(
+                    &mut strategic_windowing,
+                    &mut move_confirmation_state,
+                    prepared,
+                    id,
+                    &commit.transition,
+                ));
+            }
+            if let (Some(prepared), Some(id), Ok(commit)) = (
+                prepared_scrap_confirmation,
+                scrap_confirmation_content_id,
+                &result,
+            ) {
+                removed_content.extend(commit_scrap_confirmation_publication(
+                    &mut strategic_windowing,
+                    &mut scrap_confirmation_state,
+                    prepared,
+                    id,
+                    &commit.transition,
+                ));
+            }
             if let (Some(prepared), Some(id), Ok(commit)) =
                 (prepared_system, system_content_id, &result)
             {
@@ -15648,6 +16101,11 @@ async fn main() {
                 &result,
             );
             removed_content.extend(sector_rollback);
+            let publication_fog = sector_publication_fog_for_faction(
+                player_faction,
+                &fog_alliance_state,
+                &fog_empire_state,
+            );
             pump_pending_sector_publication(
                 &mut strategic_windowing,
                 &sector_window_state,
@@ -15958,6 +16416,78 @@ async fn main() {
                     tick: clock.tick,
                 },
             );
+            let mut confirmed_move_actions = Vec::new();
+            commit_move_confirmation_gameplay(
+                confirmed_move_confirmation,
+                &removed_content,
+                &mut move_confirmation_state,
+                MoveConfirmationGameplayContext {
+                    world: &world,
+                    movement: &movement_state,
+                    missions: &mission_state,
+                    faction: player_faction,
+                    messages: &mut msg_log,
+                    advisor: &mut advisor_state,
+                    tick: clock.tick,
+                    actions: &mut confirmed_move_actions,
+                },
+            );
+            for action in confirmed_move_actions {
+                let active_fog_state = if player_faction == MissionFaction::Alliance {
+                    &mut fog_alliance_state
+                } else {
+                    &mut fog_empire_state
+                };
+                apply_panel_action(
+                    action,
+                    &mut world,
+                    &mut map_state,
+                    &mut mfg_state,
+                    &mut mission_state,
+                    &mut movement_state,
+                    &mut troop_transport_state,
+                    active_fog_state,
+                    &mut ai_state,
+                    &mut death_star_state,
+                    &mut msg_log,
+                    &mut advisor_state,
+                    &mut player_faction,
+                    &mut clock,
+                    &mut dual_ai_mode,
+                    &mut secondary_ai_state,
+                    &mut victory_state,
+                    campaign_config,
+                    &mut blockade_state,
+                    &uprising_state,
+                    &event_state,
+                    &mut mod_runtime,
+                    #[cfg(not(target_arch = "wasm32"))]
+                    encyclopedia_base_input.as_ref(),
+                    #[cfg(not(target_arch = "wasm32"))]
+                    &mut encyclopedia_session_store,
+                    #[cfg(not(target_arch = "wasm32"))]
+                    &mut audio_engine,
+                    #[cfg(not(target_arch = "wasm32"))]
+                    &audio_vol,
+                    #[cfg(not(target_arch = "wasm32"))]
+                    &sounds_dir,
+                );
+            }
+            if let Some((count, refund)) = commit_scrap_confirmation_gameplay(
+                confirmed_scrap_confirmation,
+                &removed_content,
+                &mut scrap_confirmation_state,
+                player_faction,
+                &mut world,
+                &mut stockpile_state,
+                &mut troop_transport_state,
+            ) {
+                macroquad::logging::info!(
+                    "[interface] command=0x200 status=scrapped objects={} refund={}",
+                    count,
+                    refund
+                );
+            }
             if let Some(BuildSelectionAction::Confirm {
                 system,
                 area,
@@ -16005,6 +16535,8 @@ async fn main() {
             status_window_state.remove_content(&removed_content);
             build_selection_state.remove_content(&removed_content);
             mission_dialog_state.remove_content(&removed_content);
+            move_confirmation_state.remove_content(&removed_content);
+            scrap_confirmation_state.remove_content(&removed_content);
             remove_managed_menu_content(
                 &mut managed_menu,
                 &mut object_menu,
@@ -16063,6 +16595,8 @@ async fn main() {
         status_window_state.remove_content(&reconciliation.removed);
         build_selection_state.remove_content(&reconciliation.removed);
         mission_dialog_state.remove_content(&reconciliation.removed);
+        move_confirmation_state.remove_content(&reconciliation.removed);
+        scrap_confirmation_state.remove_content(&reconciliation.removed);
         remove_managed_menu_content(
             &mut managed_menu,
             &mut object_menu,
@@ -16151,6 +16685,7 @@ fn issue_fleet_move(
     target: ReleaseTarget,
     msg_log: &mut MessageLog,
     move_confirmation_state: &mut MoveConfirmationState,
+    strategic_windowing: &mut StrategicWindowing,
     panel_actions: &mut Vec<PanelAction>,
 ) -> bool {
     let world = context.world;
@@ -16221,7 +16756,7 @@ fn issue_fleet_move(
             Some((fleet_label(world, *fleet)?, days))
         })
         .collect();
-    move_confirmation_state.open(MoveConfirmation {
+    let confirmation = MoveConfirmation {
         faction: context.faction,
         fleets: fleets.to_vec(),
         members: Vec::new(),
@@ -16229,8 +16764,14 @@ fn issue_fleet_move(
         join,
         blockaded: false,
         lines,
-    });
-    true
+    };
+    move_confirmation_state
+        .prepare_open(confirmation)
+        .is_some_and(|prepared| {
+            strategic_windowing
+                .enqueue_move_confirmation_open(prepared)
+                .is_ok()
+        })
 }
 
 /// Issue a character's or special force's Move or Confirmed Move with its
@@ -16253,8 +16794,9 @@ fn issue_member_move(
     target: ReleaseTarget,
     advisor_state: &mut AdvisorState,
     move_confirmation_state: &mut MoveConfirmationState,
+    strategic_windowing: &mut StrategicWindowing,
     panel_actions: &mut Vec<PanelAction>,
-) {
+) -> bool {
     use rebellion_core::missions::MoveDestination;
     let world = context.world;
     let (destination, join) = match target {
@@ -16270,7 +16812,7 @@ fn issue_member_move(
             refusal.status()
         );
         advisor_state.refuse(refusal.status());
-        return;
+        return false;
     }
     // FUN_00487cc0: a 0x201 asks only when the first member's container is
     // a blockaded system of the member's side; a character aboard a fleet
@@ -16304,7 +16846,7 @@ fn issue_member_move(
             members,
             destination: order,
         });
-        return;
+        return false;
     }
     let lines = MissionState::move_days(world, context.faction, &members, order)
         .into_iter()
@@ -16324,7 +16866,7 @@ fn issue_member_move(
             Some((name, days))
         })
         .collect();
-    move_confirmation_state.open(MoveConfirmation {
+    let confirmation = MoveConfirmation {
         faction: context.faction,
         fleets: Vec::new(),
         members,
@@ -16332,7 +16874,14 @@ fn issue_member_move(
         join,
         blockaded,
         lines,
-    });
+    };
+    move_confirmation_state
+        .prepare_open(confirmation)
+        .is_some_and(|prepared| {
+            strategic_windowing
+                .enqueue_move_confirmation_open(prepared)
+                .is_ok()
+        })
 }
 
 const fn encyclopedia_audience(faction: MissionFaction) -> EncyclopediaAudience {
@@ -20361,6 +20910,7 @@ mod fleet_move_tests {
     use rebellion_core::world::{
         CapitalShipClass, ControlKind, Fleet, Sector, ShipInstance, System,
     };
+    use rebellion_render::{CockpitLayout, CockpitViewport};
 
     fn system(sector: rebellion_core::ids::SectorKey, x: u16) -> System {
         System {
@@ -20444,6 +20994,7 @@ mod fleet_move_tests {
     ) -> Issued {
         let movement = MovementState::new();
         let blockaded = HashSet::new();
+        let mut coordinator = StrategicWindowing::new();
         let mut issued = Issued {
             actions: Vec::new(),
             confirmation: MoveConfirmationState::default(),
@@ -20462,9 +21013,487 @@ mod fleet_move_tests {
             target,
             &mut issued.log,
             &mut issued.confirmation,
+            &mut coordinator,
             &mut issued.actions,
         );
+        if let Some(mut opened) = coordinator.apply_pending().pop() {
+            let id = opened.move_confirmation_content_id.unwrap();
+            assert!(commit_move_confirmation_publication(
+                &mut coordinator,
+                &mut issued.confirmation,
+                opened.prepared_move_confirmation.take().unwrap(),
+                id,
+                &opened.result.as_ref().unwrap().transition,
+            )
+            .is_empty());
+        }
         issued
+    }
+
+    fn close_scrap_confirmation(
+        world: &GameWorld,
+        order: rebellion_core::scrap::ScrapOrder,
+        faction: MissionFaction,
+    ) -> (
+        ScrapConfirmationState,
+        crate::strategic_windowing::AppliedWindowCommand,
+    ) {
+        let side = Faction::from(faction);
+        let mut coordinator = StrategicWindowing::new();
+        let mut state = ScrapConfirmationState::default();
+        coordinator
+            .enqueue_scrap_confirmation_open(
+                state
+                    .prepare_open(ScrapConfirmation {
+                        faction,
+                        order,
+                        targets: rebellion_core::scrap::order_targets(world, order, side),
+                        names: rebellion_core::scrap::order_names(world, order, side),
+                    })
+                    .unwrap(),
+            )
+            .unwrap();
+        let mut opened = coordinator.apply_pending().remove(0);
+        let id = opened.scrap_confirmation_content_id.unwrap();
+        assert!(commit_scrap_confirmation_publication(
+            &mut coordinator,
+            &mut state,
+            opened.prepared_scrap_confirmation.take().unwrap(),
+            id,
+            &opened.result.as_ref().unwrap().transition,
+        )
+        .is_empty());
+        coordinator.enqueue_scrap_confirmation_confirm(state.prepare_confirm().unwrap());
+        let closed = coordinator.apply_pending().remove(0);
+        (state, closed)
+    }
+
+    #[test]
+    fn confirmation_bridges_distinguish_legacy_and_managed_modes() {
+        let layout = CockpitLayout {
+            canvas: CockpitViewport {
+                x: 0.0,
+                y: 0.0,
+                width: 640.0,
+                height: 480.0,
+            },
+            galaxy: CockpitViewport {
+                x: 65.0,
+                y: 60.0,
+                width: 485.0,
+                height: 350.0,
+            },
+            scale: 1.0,
+        };
+        let point = (
+            layout.galaxy.x + layout.galaxy.width / 2.0,
+            layout.galaxy.y + layout.galaxy.height / 2.0,
+        );
+        let outside = (layout.galaxy.x - 1.0, layout.galaxy.y);
+
+        let move_content = MoveConfirmation {
+            faction: MissionFaction::Alliance,
+            fleets: vec![Default::default()],
+            members: Vec::new(),
+            destination: SystemKey::default(),
+            join: None,
+            blockaded: false,
+            lines: vec![("Red Fleet".into(), 2)],
+        };
+        let mut legacy_move = MoveConfirmationState::default();
+        legacy_move.open(move_content.clone());
+        assert!(legacy_move_confirmation_modal(&legacy_move));
+        assert!(legacy_move_confirmation_contains_point(
+            &legacy_move,
+            layout,
+            point
+        ));
+        assert!(!legacy_move_confirmation_contains_point(
+            &legacy_move,
+            layout,
+            outside
+        ));
+
+        let mut coordinator = StrategicWindowing::new();
+        let mut managed_move = MoveConfirmationState::default();
+        coordinator
+            .enqueue_move_confirmation_open(managed_move.prepare_open(move_content).unwrap())
+            .unwrap();
+        let mut opened = coordinator.apply_pending().remove(0);
+        let move_id = opened.move_confirmation_content_id.unwrap();
+        assert!(commit_move_confirmation_publication(
+            &mut coordinator,
+            &mut managed_move,
+            opened.prepared_move_confirmation.take().unwrap(),
+            move_id,
+            &opened.result.as_ref().unwrap().transition,
+        )
+        .is_empty());
+        assert!(!legacy_move_confirmation_modal(&managed_move));
+        assert!(!legacy_move_confirmation_contains_point(
+            &managed_move,
+            layout,
+            point
+        ));
+
+        let scrap_content = ScrapConfirmation {
+            faction: MissionFaction::Alliance,
+            order: rebellion_core::scrap::ScrapOrder::Troop(Default::default()),
+            targets: vec![rebellion_core::scrap::ScrapTarget::Troop(Default::default())],
+            names: vec!["Army Regiment".into()],
+        };
+        let mut legacy_scrap = ScrapConfirmationState::default();
+        legacy_scrap.open(scrap_content.clone());
+        assert!(legacy_scrap_confirmation_modal(&legacy_scrap));
+        assert!(legacy_scrap_confirmation_contains_point(
+            &legacy_scrap,
+            layout,
+            point
+        ));
+        assert!(!legacy_scrap_confirmation_contains_point(
+            &legacy_scrap,
+            layout,
+            outside
+        ));
+
+        let mut managed_scrap = ScrapConfirmationState::default();
+        coordinator
+            .enqueue_scrap_confirmation_open(managed_scrap.prepare_open(scrap_content).unwrap())
+            .unwrap();
+        let mut opened = coordinator.apply_pending().remove(0);
+        let scrap_id = opened.scrap_confirmation_content_id.unwrap();
+        assert!(commit_scrap_confirmation_publication(
+            &mut coordinator,
+            &mut managed_scrap,
+            opened.prepared_scrap_confirmation.take().unwrap(),
+            scrap_id,
+            &opened.result.as_ref().unwrap().transition,
+        )
+        .is_empty());
+        assert!(!legacy_scrap_confirmation_modal(&managed_scrap));
+        assert!(!legacy_scrap_confirmation_contains_point(
+            &managed_scrap,
+            layout,
+            point
+        ));
+
+        assert_eq!(
+            managed_strategic_surface_plan(
+                &coordinator.begin_frame(),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(move_id),
+                Some(scrap_id),
+            ),
+            [
+                (ManagedStrategicSurface::MoveConfirmation(move_id), false),
+                (ManagedStrategicSurface::ScrapConfirmation(scrap_id), true),
+            ]
+        );
+
+        assert!(managed_confirmation_escape_requested(false, true, true));
+        for (close_queued, keyboard_owner, escape_pressed) in [
+            (true, true, true),
+            (false, false, true),
+            (false, true, false),
+            (true, false, false),
+        ] {
+            assert!(!managed_confirmation_escape_requested(
+                close_queued,
+                keyboard_owner,
+                escape_pressed
+            ));
+        }
+    }
+
+    #[test]
+    fn live_move_confirmation_releases_exact_fleet_action() {
+        let (world, fleets, destination) = world_with_two_fleets();
+        let fleet = fleets[0];
+        let mut coordinator = StrategicWindowing::new();
+        let mut state = MoveConfirmationState::default();
+        coordinator
+            .enqueue_move_confirmation_open(
+                state
+                    .prepare_open(MoveConfirmation {
+                        faction: MissionFaction::Alliance,
+                        fleets: vec![fleet],
+                        members: Vec::new(),
+                        destination,
+                        join: None,
+                        blockaded: false,
+                        lines: vec![("Red Fleet".into(), 2)],
+                    })
+                    .unwrap(),
+            )
+            .unwrap();
+        let mut opened = coordinator.apply_pending().remove(0);
+        let id = opened.move_confirmation_content_id.unwrap();
+        assert!(commit_move_confirmation_publication(
+            &mut coordinator,
+            &mut state,
+            opened.prepared_move_confirmation.take().unwrap(),
+            id,
+            &opened.result.as_ref().unwrap().transition,
+        )
+        .is_empty());
+        coordinator.enqueue_move_confirmation_confirm(state.prepare_confirm().unwrap());
+        let closed = coordinator.apply_pending().remove(0);
+        let movement = MovementState::new();
+        let missions = MissionState::new();
+        let mut messages = MessageLog::new(8);
+        let mut advisor = AdvisorState::new(AdvisorFaction::Alliance);
+        let mut actions = Vec::new();
+        assert!(commit_move_confirmation_gameplay(
+            closed.confirmed_move_confirmation,
+            &closed.removed_content,
+            &mut state,
+            MoveConfirmationGameplayContext {
+                world: &world,
+                movement: &movement,
+                missions: &missions,
+                faction: MissionFaction::Alliance,
+                messages: &mut messages,
+                advisor: &mut advisor,
+                tick: 0,
+                actions: &mut actions,
+            },
+        ));
+        assert!(matches!(
+            actions.as_slice(),
+            [PanelAction::DispatchFleet {
+                fleet: dispatched,
+                destination: target,
+                troops,
+            }] if *dispatched == fleet && *target == destination && troops.is_empty()
+        ));
+    }
+
+    #[test]
+    fn scrap_confirmation_requires_faction_and_exact_live_target_set() {
+        let (mut world, fleets, _) = world_with_two_fleets();
+        let fleet = fleets[0];
+        let order = rebellion_core::scrap::ScrapOrder::Fleet(fleet);
+        let (mut state, closed) = close_scrap_confirmation(&world, order, MissionFaction::Alliance);
+        let mut stockpiles = StockpileState::default();
+        let mut transport = TroopTransportState::default();
+        assert_eq!(
+            commit_scrap_confirmation_gameplay(
+                closed.confirmed_scrap_confirmation,
+                &closed.removed_content,
+                &mut state,
+                MissionFaction::Alliance,
+                &mut world,
+                &mut stockpiles,
+                &mut transport,
+            )
+            .map(|(count, _)| count),
+            Some(1)
+        );
+
+        let (mut world, fleets, _) = world_with_two_fleets();
+        let fleet = fleets[0];
+        let order = rebellion_core::scrap::ScrapOrder::Fleet(fleet);
+        let (mut state, closed) = close_scrap_confirmation(&world, order, MissionFaction::Alliance);
+        assert_eq!(
+            commit_scrap_confirmation_gameplay(
+                closed.confirmed_scrap_confirmation,
+                &closed.removed_content,
+                &mut state,
+                MissionFaction::Empire,
+                &mut world,
+                &mut StockpileState::default(),
+                &mut TroopTransportState::default(),
+            ),
+            None
+        );
+        assert!(world.fleets.contains_key(fleet));
+
+        let (mut world, fleets, _) = world_with_two_fleets();
+        let fleet = fleets[0];
+        let order = rebellion_core::scrap::ScrapOrder::Fleet(fleet);
+        let (mut state, closed) = close_scrap_confirmation(&world, order, MissionFaction::Alliance);
+        let extra = world.fleets[fleet].capital_ships[0].clone();
+        world.fleets[fleet].capital_ships.push(extra);
+        assert_eq!(
+            commit_scrap_confirmation_gameplay(
+                closed.confirmed_scrap_confirmation,
+                &closed.removed_content,
+                &mut state,
+                MissionFaction::Alliance,
+                &mut world,
+                &mut StockpileState::default(),
+                &mut TroopTransportState::default(),
+            ),
+            None
+        );
+        assert_eq!(world.fleets[fleet].capital_ships.len(), 2);
+    }
+
+    #[test]
+    fn member_move_confirmation_queues_valid_live_context() {
+        let (mut world, _, destination) = world_with_two_fleets();
+        let origin = world
+            .systems
+            .keys()
+            .find(|system| *system != destination)
+            .unwrap();
+        world.systems[destination].control = ControlKind::Controlled(Faction::Alliance);
+        let character = world.characters.insert(rebellion_core::world::Character {
+            name: "Leia".into(),
+            is_alliance: true,
+            recruited: true,
+            current_system: Some(origin),
+            ..Default::default()
+        });
+        let movement = MovementState::new();
+        let missions = MissionState::new();
+        let mut advisor = AdvisorState::new(AdvisorFaction::Alliance);
+        let mut state = MoveConfirmationState::default();
+        let mut coordinator = StrategicWindowing::new();
+        let mut actions = Vec::new();
+        assert!(issue_member_move(
+            &FleetMoveContext {
+                world: &world,
+                movement: &movement,
+                blockaded: &HashSet::new(),
+                faction: MissionFaction::Alliance,
+                tick: 0,
+            },
+            &missions,
+            vec![MissionMember::Character(character)],
+            true,
+            ReleaseTarget::System(destination),
+            &mut advisor,
+            &mut state,
+            &mut coordinator,
+            &mut actions,
+        ));
+        assert!(actions.is_empty());
+        let mut applied = coordinator.apply_pending();
+        assert_eq!(applied.len(), 1);
+        assert!(applied[0].move_confirmation_content_id.is_some());
+        assert!(applied[0].prepared_move_confirmation.take().is_some());
+    }
+
+    #[test]
+    fn move_confirmation_revalidates_context_before_gameplay_effect() {
+        let (mut world, fleets, destination) = world_with_two_fleets();
+        let fleet = fleets[0];
+        let mut coordinator = StrategicWindowing::new();
+        let mut state = MoveConfirmationState::default();
+        coordinator
+            .enqueue_move_confirmation_open(
+                state
+                    .prepare_open(MoveConfirmation {
+                        faction: MissionFaction::Alliance,
+                        fleets: vec![fleet],
+                        members: Vec::new(),
+                        destination,
+                        join: None,
+                        blockaded: false,
+                        lines: vec![("Red Fleet".into(), 2)],
+                    })
+                    .unwrap(),
+            )
+            .unwrap();
+        let mut opened = coordinator.apply_pending().remove(0);
+        let id = opened.move_confirmation_content_id.unwrap();
+        assert!(commit_move_confirmation_publication(
+            &mut coordinator,
+            &mut state,
+            opened.prepared_move_confirmation.take().unwrap(),
+            id,
+            &opened.result.as_ref().unwrap().transition,
+        )
+        .is_empty());
+
+        coordinator.enqueue_move_confirmation_confirm(state.prepare_confirm().unwrap());
+        let closed = coordinator.apply_pending().remove(0);
+        assert!(world.fleets.remove(fleet).is_some());
+
+        let movement = MovementState::new();
+        let missions = MissionState::new();
+        let mut messages = MessageLog::new(8);
+        let mut advisor = AdvisorState::new(AdvisorFaction::Alliance);
+        let mut actions = Vec::new();
+        assert!(!commit_move_confirmation_gameplay(
+            closed.confirmed_move_confirmation,
+            &closed.removed_content,
+            &mut state,
+            MoveConfirmationGameplayContext {
+                world: &world,
+                movement: &movement,
+                missions: &missions,
+                faction: MissionFaction::Alliance,
+                messages: &mut messages,
+                advisor: &mut advisor,
+                tick: 0,
+                actions: &mut actions,
+            },
+        ));
+        assert!(actions.is_empty());
+        assert!(!state.is_open());
+    }
+
+    #[test]
+    fn scrap_confirmation_revalidates_context_before_gameplay_effect() {
+        use rebellion_core::scrap::ScrapOrder;
+
+        let (mut world, fleets, _) = world_with_two_fleets();
+        let fleet = fleets[0];
+        let order = ScrapOrder::Fleet(fleet);
+        let targets = rebellion_core::scrap::order_targets(&world, order, Faction::Alliance);
+        let names = rebellion_core::scrap::order_names(&world, order, Faction::Alliance);
+        let mut coordinator = StrategicWindowing::new();
+        let mut state = ScrapConfirmationState::default();
+        coordinator
+            .enqueue_scrap_confirmation_open(
+                state
+                    .prepare_open(ScrapConfirmation {
+                        faction: MissionFaction::Alliance,
+                        order,
+                        targets,
+                        names,
+                    })
+                    .unwrap(),
+            )
+            .unwrap();
+        let mut opened = coordinator.apply_pending().remove(0);
+        let id = opened.scrap_confirmation_content_id.unwrap();
+        assert!(commit_scrap_confirmation_publication(
+            &mut coordinator,
+            &mut state,
+            opened.prepared_scrap_confirmation.take().unwrap(),
+            id,
+            &opened.result.as_ref().unwrap().transition,
+        )
+        .is_empty());
+
+        coordinator.enqueue_scrap_confirmation_confirm(state.prepare_confirm().unwrap());
+        let closed = coordinator.apply_pending().remove(0);
+        assert!(world.fleets.remove(fleet).is_some());
+        let mut stockpiles = StockpileState::default();
+        let mut transport = TroopTransportState::default();
+        assert_eq!(
+            commit_scrap_confirmation_gameplay(
+                closed.confirmed_scrap_confirmation,
+                &closed.removed_content,
+                &mut state,
+                MissionFaction::Alliance,
+                &mut world,
+                &mut stockpiles,
+                &mut transport,
+            ),
+            None
+        );
+        assert!(!state.is_open());
     }
 
     fn dispatched(actions: &[PanelAction]) -> Vec<FleetKey> {

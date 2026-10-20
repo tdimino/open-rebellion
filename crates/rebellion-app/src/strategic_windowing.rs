@@ -12,6 +12,10 @@ use rebellion_render::{
     message_index::PreparedMessageIndex,
     mission_dialog::{PreparedMissionDialog, PreparedMissionDialogConfirm},
     missions_window::PreparedMissionsWindow,
+    move_confirmation::{
+        PreparedMoveConfirmation, PreparedMoveConfirmationConfirm, PreparedScrapConfirmation,
+        PreparedScrapConfirmationConfirm,
+    },
     personnel_finder::{PreparedPersonnelFinder, PERSONNEL_FINDER_NAME_CONTROL},
     sector_window::PreparedSectorWindow,
     status_window::PreparedStatusWindow,
@@ -49,6 +53,18 @@ pub struct AppliedWindowCommand {
     pub mission_dialog_content_id: Option<WindowId>,
     /// Gameplay-free Mission order released only by its exact accepted close.
     pub confirmed_mission_dialog: Option<PreparedMissionDialogConfirm>,
+    /// Move content prepared beside its fresh contextual open or replacement.
+    pub prepared_move_confirmation: Option<PreparedMoveConfirmation>,
+    /// Identity whose attachment is valid for `prepared_move_confirmation`.
+    pub move_confirmation_content_id: Option<WindowId>,
+    /// Gameplay-free Move order released only by its exact accepted close.
+    pub confirmed_move_confirmation: Option<PreparedMoveConfirmationConfirm>,
+    /// Scrap content prepared beside its fresh port-modal identity.
+    pub prepared_scrap_confirmation: Option<PreparedScrapConfirmation>,
+    /// Identity whose attachment is valid for `prepared_scrap_confirmation`.
+    pub scrap_confirmation_content_id: Option<WindowId>,
+    /// Gameplay-free Scrap order released only by its exact accepted close.
+    pub confirmed_scrap_confirmation: Option<PreparedScrapConfirmationConfirm>,
     /// System content prepared alongside this semantic open.
     pub prepared_system: Option<PreparedSystemWindow>,
     /// Identity whose attachment is valid for `prepared_system` after commit.
@@ -130,6 +146,10 @@ struct QueuedWindowCommand {
     prepared_build_selection_confirm: Option<PreparedBuildSelectionConfirm>,
     prepared_mission_dialog: Option<PreparedMissionDialog>,
     prepared_mission_dialog_confirm: Option<PreparedMissionDialogConfirm>,
+    prepared_move_confirmation: Option<PreparedMoveConfirmation>,
+    prepared_move_confirmation_confirm: Option<PreparedMoveConfirmationConfirm>,
+    prepared_scrap_confirmation: Option<PreparedScrapConfirmation>,
+    prepared_scrap_confirmation_confirm: Option<PreparedScrapConfirmationConfirm>,
     prepared_system: Option<PreparedSystemWindow>,
     prepared_defenses: Option<PreparedDefensesWindow>,
     prepared_missions: Option<PreparedMissionsWindow>,
@@ -478,6 +498,10 @@ impl StrategicWindowing {
             prepared_build_selection_confirm: None,
             prepared_mission_dialog: None,
             prepared_mission_dialog_confirm: None,
+            prepared_move_confirmation: None,
+            prepared_move_confirmation_confirm: None,
+            prepared_scrap_confirmation: None,
+            prepared_scrap_confirmation_confirm: None,
             prepared_system: None,
             prepared_defenses: None,
             prepared_missions: None,
@@ -499,6 +523,10 @@ impl StrategicWindowing {
             prepared_build_selection_confirm: None,
             prepared_mission_dialog: None,
             prepared_mission_dialog_confirm: None,
+            prepared_move_confirmation: None,
+            prepared_move_confirmation_confirm: None,
+            prepared_scrap_confirmation: None,
+            prepared_scrap_confirmation_confirm: None,
             prepared_system: None,
             prepared_defenses: None,
             prepared_missions: None,
@@ -522,6 +550,10 @@ impl StrategicWindowing {
             prepared_build_selection_confirm: Some(prepared),
             prepared_mission_dialog: None,
             prepared_mission_dialog_confirm: None,
+            prepared_move_confirmation: None,
+            prepared_move_confirmation_confirm: None,
+            prepared_scrap_confirmation: None,
+            prepared_scrap_confirmation_confirm: None,
             prepared_system: None,
             prepared_defenses: None,
             prepared_missions: None,
@@ -554,6 +586,10 @@ impl StrategicWindowing {
             prepared_build_selection_confirm: None,
             prepared_mission_dialog: Some(prepared),
             prepared_mission_dialog_confirm: None,
+            prepared_move_confirmation: None,
+            prepared_move_confirmation_confirm: None,
+            prepared_scrap_confirmation: None,
+            prepared_scrap_confirmation_confirm: None,
             prepared_system: None,
             prepared_defenses: None,
             prepared_missions: None,
@@ -577,6 +613,137 @@ impl StrategicWindowing {
             prepared_build_selection_confirm: None,
             prepared_mission_dialog: None,
             prepared_mission_dialog_confirm: Some(prepared),
+            prepared_move_confirmation: None,
+            prepared_move_confirmation_confirm: None,
+            prepared_scrap_confirmation: None,
+            prepared_scrap_confirmation_confirm: None,
+            prepared_system: None,
+            prepared_defenses: None,
+            prepared_missions: None,
+            prepared_fleet: None,
+            prepared_fleet_finder: None,
+            prepared_troop_finder: None,
+            prepared_personnel_finder: None,
+            prepared_message_index: None,
+            prepared_status: None,
+            prepared_sector: None,
+        });
+    }
+
+    /// Allocates a fresh command-context subject and queues inert Move
+    /// content beside an atomic open or exact replacement.
+    pub fn enqueue_move_confirmation_open(
+        &mut self,
+        prepared: PreparedMoveConfirmation,
+    ) -> Result<(), WindowError> {
+        let subject = self.next_context_subject()?;
+        let new = prepared.spec(subject);
+        self.pending.push(QueuedWindowCommand {
+            command: prepared
+                .replacing()
+                .map_or(WindowCommand::Open(new), |old| WindowCommand::Replace {
+                    old,
+                    new,
+                }),
+            prepared_build_selection: None,
+            prepared_build_selection_confirm: None,
+            prepared_mission_dialog: None,
+            prepared_mission_dialog_confirm: None,
+            prepared_move_confirmation: Some(prepared),
+            prepared_move_confirmation_confirm: None,
+            prepared_scrap_confirmation: None,
+            prepared_scrap_confirmation_confirm: None,
+            prepared_system: None,
+            prepared_defenses: None,
+            prepared_missions: None,
+            prepared_fleet: None,
+            prepared_fleet_finder: None,
+            prepared_troop_finder: None,
+            prepared_personnel_finder: None,
+            prepared_message_index: None,
+            prepared_status: None,
+            prepared_sector: None,
+        });
+        Ok(())
+    }
+
+    /// Queues the exact close paired with one inert Move order.
+    pub fn enqueue_move_confirmation_confirm(&mut self, prepared: PreparedMoveConfirmationConfirm) {
+        self.pending.push(QueuedWindowCommand {
+            command: WindowCommand::Close(prepared.window_id()),
+            prepared_build_selection: None,
+            prepared_build_selection_confirm: None,
+            prepared_mission_dialog: None,
+            prepared_mission_dialog_confirm: None,
+            prepared_move_confirmation: None,
+            prepared_move_confirmation_confirm: Some(prepared),
+            prepared_scrap_confirmation: None,
+            prepared_scrap_confirmation_confirm: None,
+            prepared_system: None,
+            prepared_defenses: None,
+            prepared_missions: None,
+            prepared_fleet: None,
+            prepared_fleet_finder: None,
+            prepared_troop_finder: None,
+            prepared_personnel_finder: None,
+            prepared_message_index: None,
+            prepared_status: None,
+            prepared_sector: None,
+        });
+    }
+
+    /// Allocates a fresh command-context subject and queues inert Scrap
+    /// content beside its explicitly port-labeled strategic modal identity.
+    pub fn enqueue_scrap_confirmation_open(
+        &mut self,
+        prepared: PreparedScrapConfirmation,
+    ) -> Result<(), WindowError> {
+        let subject = self.next_context_subject()?;
+        let new = prepared.spec(subject);
+        self.pending.push(QueuedWindowCommand {
+            command: prepared
+                .replacing()
+                .map_or(WindowCommand::Open(new), |old| WindowCommand::Replace {
+                    old,
+                    new,
+                }),
+            prepared_build_selection: None,
+            prepared_build_selection_confirm: None,
+            prepared_mission_dialog: None,
+            prepared_mission_dialog_confirm: None,
+            prepared_move_confirmation: None,
+            prepared_move_confirmation_confirm: None,
+            prepared_scrap_confirmation: Some(prepared),
+            prepared_scrap_confirmation_confirm: None,
+            prepared_system: None,
+            prepared_defenses: None,
+            prepared_missions: None,
+            prepared_fleet: None,
+            prepared_fleet_finder: None,
+            prepared_troop_finder: None,
+            prepared_personnel_finder: None,
+            prepared_message_index: None,
+            prepared_status: None,
+            prepared_sector: None,
+        });
+        Ok(())
+    }
+
+    /// Queues the exact close paired with one inert Scrap order.
+    pub fn enqueue_scrap_confirmation_confirm(
+        &mut self,
+        prepared: PreparedScrapConfirmationConfirm,
+    ) {
+        self.pending.push(QueuedWindowCommand {
+            command: WindowCommand::Close(prepared.window_id()),
+            prepared_build_selection: None,
+            prepared_build_selection_confirm: None,
+            prepared_mission_dialog: None,
+            prepared_mission_dialog_confirm: None,
+            prepared_move_confirmation: None,
+            prepared_move_confirmation_confirm: None,
+            prepared_scrap_confirmation: None,
+            prepared_scrap_confirmation_confirm: Some(prepared),
             prepared_system: None,
             prepared_defenses: None,
             prepared_missions: None,
@@ -598,6 +765,10 @@ impl StrategicWindowing {
             prepared_build_selection_confirm: None,
             prepared_mission_dialog: None,
             prepared_mission_dialog_confirm: None,
+            prepared_move_confirmation: None,
+            prepared_move_confirmation_confirm: None,
+            prepared_scrap_confirmation: None,
+            prepared_scrap_confirmation_confirm: None,
             prepared_system: Some(prepared),
             prepared_defenses: None,
             prepared_missions: None,
@@ -627,6 +798,10 @@ impl StrategicWindowing {
             prepared_build_selection_confirm: None,
             prepared_mission_dialog: None,
             prepared_mission_dialog_confirm: None,
+            prepared_move_confirmation: None,
+            prepared_move_confirmation_confirm: None,
+            prepared_scrap_confirmation: None,
+            prepared_scrap_confirmation_confirm: None,
             prepared_system: None,
             prepared_defenses: None,
             prepared_missions: None,
@@ -680,6 +855,10 @@ impl StrategicWindowing {
             prepared_build_selection_confirm: None,
             prepared_mission_dialog: None,
             prepared_mission_dialog_confirm: None,
+            prepared_move_confirmation: None,
+            prepared_move_confirmation_confirm: None,
+            prepared_scrap_confirmation: None,
+            prepared_scrap_confirmation_confirm: None,
             prepared_system: None,
             prepared_defenses: Some(prepared),
             prepared_missions: None,
@@ -701,6 +880,10 @@ impl StrategicWindowing {
             prepared_build_selection_confirm: None,
             prepared_mission_dialog: None,
             prepared_mission_dialog_confirm: None,
+            prepared_move_confirmation: None,
+            prepared_move_confirmation_confirm: None,
+            prepared_scrap_confirmation: None,
+            prepared_scrap_confirmation_confirm: None,
             prepared_system: None,
             prepared_defenses: None,
             prepared_missions: Some(prepared),
@@ -723,6 +906,10 @@ impl StrategicWindowing {
             prepared_build_selection_confirm: None,
             prepared_mission_dialog: None,
             prepared_mission_dialog_confirm: None,
+            prepared_move_confirmation: None,
+            prepared_move_confirmation_confirm: None,
+            prepared_scrap_confirmation: None,
+            prepared_scrap_confirmation_confirm: None,
             prepared_system: Some(prepared),
             prepared_defenses: None,
             prepared_missions: None,
@@ -745,6 +932,10 @@ impl StrategicWindowing {
             prepared_build_selection_confirm: None,
             prepared_mission_dialog: None,
             prepared_mission_dialog_confirm: None,
+            prepared_move_confirmation: None,
+            prepared_move_confirmation_confirm: None,
+            prepared_scrap_confirmation: None,
+            prepared_scrap_confirmation_confirm: None,
             prepared_system: None,
             prepared_defenses: None,
             prepared_missions: None,
@@ -767,6 +958,10 @@ impl StrategicWindowing {
             prepared_build_selection_confirm: None,
             prepared_mission_dialog: None,
             prepared_mission_dialog_confirm: None,
+            prepared_move_confirmation: None,
+            prepared_move_confirmation_confirm: None,
+            prepared_scrap_confirmation: None,
+            prepared_scrap_confirmation_confirm: None,
             prepared_system: None,
             prepared_defenses: None,
             prepared_missions: None,
@@ -788,6 +983,10 @@ impl StrategicWindowing {
             prepared_build_selection_confirm: None,
             prepared_mission_dialog: None,
             prepared_mission_dialog_confirm: None,
+            prepared_move_confirmation: None,
+            prepared_move_confirmation_confirm: None,
+            prepared_scrap_confirmation: None,
+            prepared_scrap_confirmation_confirm: None,
             prepared_system: None,
             prepared_defenses: None,
             prepared_missions: None,
@@ -809,6 +1008,10 @@ impl StrategicWindowing {
             prepared_build_selection_confirm: None,
             prepared_mission_dialog: None,
             prepared_mission_dialog_confirm: None,
+            prepared_move_confirmation: None,
+            prepared_move_confirmation_confirm: None,
+            prepared_scrap_confirmation: None,
+            prepared_scrap_confirmation_confirm: None,
             prepared_system: None,
             prepared_defenses: None,
             prepared_missions: None,
@@ -830,6 +1033,10 @@ impl StrategicWindowing {
             prepared_build_selection_confirm: None,
             prepared_mission_dialog: None,
             prepared_mission_dialog_confirm: None,
+            prepared_move_confirmation: None,
+            prepared_move_confirmation_confirm: None,
+            prepared_scrap_confirmation: None,
+            prepared_scrap_confirmation_confirm: None,
             prepared_system: None,
             prepared_defenses: None,
             prepared_missions: None,
@@ -851,6 +1058,10 @@ impl StrategicWindowing {
             prepared_build_selection_confirm: None,
             prepared_mission_dialog: None,
             prepared_mission_dialog_confirm: None,
+            prepared_move_confirmation: None,
+            prepared_move_confirmation_confirm: None,
+            prepared_scrap_confirmation: None,
+            prepared_scrap_confirmation_confirm: None,
             prepared_system: None,
             prepared_defenses: None,
             prepared_missions: None,
@@ -882,6 +1093,10 @@ impl StrategicWindowing {
             prepared_build_selection_confirm: None,
             prepared_mission_dialog: None,
             prepared_mission_dialog_confirm: None,
+            prepared_move_confirmation: None,
+            prepared_move_confirmation_confirm: None,
+            prepared_scrap_confirmation: None,
+            prepared_scrap_confirmation_confirm: None,
             prepared_system: None,
             prepared_defenses: None,
             prepared_missions: None,
@@ -978,6 +1193,10 @@ impl StrategicWindowing {
             prepared_build_selection_confirm,
             prepared_mission_dialog,
             prepared_mission_dialog_confirm,
+            prepared_move_confirmation,
+            prepared_move_confirmation_confirm,
+            prepared_scrap_confirmation,
+            prepared_scrap_confirmation_confirm,
             prepared_system,
             prepared_defenses,
             prepared_missions,
@@ -995,6 +1214,10 @@ impl StrategicWindowing {
         let mut confirmed_build_selection = None;
         let mut mission_dialog_content_id = None;
         let mut confirmed_mission_dialog = None;
+        let mut move_confirmation_content_id = None;
+        let mut confirmed_move_confirmation = None;
+        let mut scrap_confirmation_content_id = None;
+        let mut confirmed_scrap_confirmation = None;
         let mut system_content_id = None;
         let mut defenses_content_id = None;
         let mut missions_content_id = None;
@@ -1047,6 +1270,42 @@ impl StrategicWindowing {
                 ) && removed_content.contains(&window)
                 {
                     confirmed_mission_dialog = prepared_mission_dialog_confirm;
+                }
+            }
+            if prepared_move_confirmation.is_some() {
+                move_confirmation_content_id = match &commit.transition {
+                    WindowTransition::Opened { id }
+                    | WindowTransition::Replaced { new: id, .. } => Some(*id),
+                    _ => None,
+                };
+            }
+            if let Some(prepared) = prepared_move_confirmation_confirm.as_ref() {
+                let window = prepared.window_id();
+                if matches!(
+                    &commit.transition,
+                    WindowTransition::Closed { root, closed, .. }
+                        if *root == window && closed.contains(&window)
+                ) && removed_content.contains(&window)
+                {
+                    confirmed_move_confirmation = prepared_move_confirmation_confirm;
+                }
+            }
+            if prepared_scrap_confirmation.is_some() {
+                scrap_confirmation_content_id = match &commit.transition {
+                    WindowTransition::Opened { id }
+                    | WindowTransition::Replaced { new: id, .. } => Some(*id),
+                    _ => None,
+                };
+            }
+            if let Some(prepared) = prepared_scrap_confirmation_confirm.as_ref() {
+                let window = prepared.window_id();
+                if matches!(
+                    &commit.transition,
+                    WindowTransition::Closed { root, closed, .. }
+                        if *root == window && closed.contains(&window)
+                ) && removed_content.contains(&window)
+                {
+                    confirmed_scrap_confirmation = prepared_scrap_confirmation_confirm;
                 }
             }
             if prepared_system.is_some() {
@@ -1182,6 +1441,12 @@ impl StrategicWindowing {
             prepared_mission_dialog,
             mission_dialog_content_id,
             confirmed_mission_dialog,
+            prepared_move_confirmation,
+            move_confirmation_content_id,
+            confirmed_move_confirmation,
+            prepared_scrap_confirmation,
+            scrap_confirmation_content_id,
+            confirmed_scrap_confirmation,
             prepared_system,
             system_content_id,
             prepared_defenses,
@@ -1242,6 +1507,24 @@ impl StrategicWindowing {
             .begin_frame()
             .key(id)
             .is_some_and(|key| key.kind == rebellion_windowing::WindowKind::MissionDialog)
+            && self.attached_content.insert(id)
+    }
+
+    /// Acknowledges Move publication only for its exact contextual identity.
+    pub fn acknowledge_move_confirmation_publication(&mut self, id: WindowId) -> bool {
+        self.manager
+            .begin_frame()
+            .key(id)
+            .is_some_and(|key| key.kind == rebellion_windowing::WindowKind::MoveConfirmation)
+            && self.attached_content.insert(id)
+    }
+
+    /// Acknowledges Scrap publication only for its exact contextual identity.
+    pub fn acknowledge_scrap_confirmation_publication(&mut self, id: WindowId) -> bool {
+        self.manager
+            .begin_frame()
+            .key(id)
+            .is_some_and(|key| key.kind == rebellion_windowing::WindowKind::ScrapConfirmation)
             && self.attached_content.insert(id)
     }
 
@@ -1339,6 +1622,16 @@ impl StrategicWindowing {
 
     /// Compensates a failed Mission publication with an exact close.
     pub fn rollback_mission_dialog_publication(&mut self, id: WindowId) -> Vec<WindowId> {
+        self.rollback_publication(id)
+    }
+
+    /// Compensates a failed Move publication with an exact close.
+    pub fn rollback_move_confirmation_publication(&mut self, id: WindowId) -> Vec<WindowId> {
+        self.rollback_publication(id)
+    }
+
+    /// Compensates a failed Scrap publication with an exact close.
+    pub fn rollback_scrap_confirmation_publication(&mut self, id: WindowId) -> Vec<WindowId> {
         self.rollback_publication(id)
     }
 
@@ -2073,6 +2366,223 @@ mod tests {
             window: owner,
             reason: CaptureCancelReason::ModalOpened,
         }));
+    }
+
+    #[test]
+    fn move_confirmation_windowing_modal_cancels_capture() {
+        use rebellion_render::move_confirmation::{MoveConfirmation, MoveConfirmationState};
+        use rebellion_windowing::CaptureCancelReason;
+
+        let mut coordinator = StrategicWindowing::new();
+        coordinator.enqueue(WindowCommand::Open(contextual_spec(
+            WindowKind::Fleet,
+            SubjectId::new(1, 1),
+            WindowOwner::StrategicRoot,
+        )));
+        let owner = opened_id(&coordinator.apply_pending()[0]);
+        coordinator.enqueue(WindowCommand::CapturePointer(owner));
+        assert!(coordinator.apply_pending()[0].result.is_ok());
+
+        let state = MoveConfirmationState::default();
+        coordinator
+            .enqueue_move_confirmation_open(
+                state
+                    .prepare_open(MoveConfirmation {
+                        faction: MissionFaction::Alliance,
+                        fleets: vec![Default::default()],
+                        members: Vec::new(),
+                        destination: SystemKey::default(),
+                        join: None,
+                        blockaded: false,
+                        lines: vec![("Red Fleet".into(), 2)],
+                    })
+                    .unwrap(),
+            )
+            .unwrap();
+        let applied = coordinator.apply_pending();
+        let commit = applied[0].result.as_ref().unwrap();
+        assert!(commit.events.contains(&WindowEvent::CaptureCancelled {
+            window: owner,
+            reason: CaptureCancelReason::ModalOpened,
+        }));
+        assert!(applied[0].move_confirmation_content_id.is_some());
+    }
+
+    #[test]
+    fn scrap_confirmation_receipt_dispatches_once() {
+        use rebellion_core::scrap::{ScrapOrder, ScrapTarget};
+        use rebellion_render::move_confirmation::{
+            ScrapConfirmation, ScrapConfirmationAction, ScrapConfirmationState,
+        };
+
+        let mut coordinator = StrategicWindowing::new();
+        let mut state = ScrapConfirmationState::default();
+        coordinator
+            .enqueue_scrap_confirmation_open(
+                state
+                    .prepare_open(ScrapConfirmation {
+                        faction: MissionFaction::Alliance,
+                        order: ScrapOrder::Troop(Default::default()),
+                        targets: vec![ScrapTarget::Troop(Default::default())],
+                        names: vec!["Army Regiment".into()],
+                    })
+                    .unwrap(),
+            )
+            .unwrap();
+        let mut opened = coordinator.apply_pending().remove(0);
+        let id = opened.scrap_confirmation_content_id.unwrap();
+        assert_eq!(
+            state.commit_open(
+                opened.prepared_scrap_confirmation.take().unwrap(),
+                &opened.result.as_ref().unwrap().transition,
+            ),
+            Some(id)
+        );
+        assert!(coordinator.acknowledge_scrap_confirmation_publication(id));
+
+        let prepared = state.prepare_confirm().unwrap();
+        coordinator.enqueue_scrap_confirmation_confirm(prepared.clone());
+        coordinator.enqueue_scrap_confirmation_confirm(prepared.clone());
+        let mut applied = coordinator.apply_pending();
+        let first = applied.remove(0);
+        let second = applied.remove(0);
+        assert_eq!(first.confirmed_scrap_confirmation, Some(prepared.clone()));
+        assert!(second.result.is_err());
+        assert_eq!(second.confirmed_scrap_confirmation, None);
+        assert!(matches!(
+            state.commit_confirm(prepared.clone(), &first.removed_content),
+            Some(ScrapConfirmationAction::Confirm { .. })
+        ));
+        assert_eq!(state.commit_confirm(prepared, &first.removed_content), None);
+    }
+
+    #[test]
+    fn confirmation_close_requires_attached_content_receipt() {
+        use rebellion_core::scrap::{ScrapOrder, ScrapTarget};
+        use rebellion_render::move_confirmation::{
+            MoveConfirmation, MoveConfirmationState, ScrapConfirmation, ScrapConfirmationState,
+        };
+
+        let mut move_coordinator = StrategicWindowing::new();
+        let mut move_state = MoveConfirmationState::default();
+        move_coordinator
+            .enqueue_move_confirmation_open(
+                move_state
+                    .prepare_open(MoveConfirmation {
+                        faction: MissionFaction::Alliance,
+                        fleets: vec![Default::default()],
+                        members: Vec::new(),
+                        destination: SystemKey::default(),
+                        join: None,
+                        blockaded: false,
+                        lines: vec![("Red Fleet".into(), 2)],
+                    })
+                    .unwrap(),
+            )
+            .unwrap();
+        let mut opened = move_coordinator.apply_pending().remove(0);
+        let id = opened.move_confirmation_content_id.unwrap();
+        assert_eq!(
+            move_state.commit_open(
+                opened.prepared_move_confirmation.take().unwrap(),
+                &opened.result.as_ref().unwrap().transition,
+            ),
+            Some(id)
+        );
+        move_coordinator.enqueue_move_confirmation_confirm(move_state.prepare_confirm().unwrap());
+        let closed = move_coordinator.apply_pending().remove(0);
+        assert!(closed.result.is_ok());
+        assert!(closed.removed_content.is_empty());
+        assert_eq!(closed.confirmed_move_confirmation, None);
+
+        let mut scrap_coordinator = StrategicWindowing::new();
+        let mut scrap_state = ScrapConfirmationState::default();
+        scrap_coordinator
+            .enqueue_scrap_confirmation_open(
+                scrap_state
+                    .prepare_open(ScrapConfirmation {
+                        faction: MissionFaction::Alliance,
+                        order: ScrapOrder::Troop(Default::default()),
+                        targets: vec![ScrapTarget::Troop(Default::default())],
+                        names: vec!["Army Regiment".into()],
+                    })
+                    .unwrap(),
+            )
+            .unwrap();
+        let mut opened = scrap_coordinator.apply_pending().remove(0);
+        let id = opened.scrap_confirmation_content_id.unwrap();
+        assert_eq!(
+            scrap_state.commit_open(
+                opened.prepared_scrap_confirmation.take().unwrap(),
+                &opened.result.as_ref().unwrap().transition,
+            ),
+            Some(id)
+        );
+        scrap_coordinator
+            .enqueue_scrap_confirmation_confirm(scrap_state.prepare_confirm().unwrap());
+        let closed = scrap_coordinator.apply_pending().remove(0);
+        assert!(closed.result.is_ok());
+        assert!(closed.removed_content.is_empty());
+        assert_eq!(closed.confirmed_scrap_confirmation, None);
+    }
+
+    #[test]
+    fn confirmation_publication_rollbacks_close_exact_identity() {
+        use rebellion_core::scrap::{ScrapOrder, ScrapTarget};
+        use rebellion_render::move_confirmation::{
+            MoveConfirmation, MoveConfirmationState, ScrapConfirmation, ScrapConfirmationState,
+        };
+
+        let mut move_coordinator = StrategicWindowing::new();
+        move_coordinator
+            .enqueue_move_confirmation_open(
+                MoveConfirmationState::default()
+                    .prepare_open(MoveConfirmation {
+                        faction: MissionFaction::Alliance,
+                        fleets: vec![Default::default()],
+                        members: Vec::new(),
+                        destination: SystemKey::default(),
+                        join: None,
+                        blockaded: false,
+                        lines: vec![("Red Fleet".into(), 2)],
+                    })
+                    .unwrap(),
+            )
+            .unwrap();
+        let id = move_coordinator
+            .apply_pending()
+            .remove(0)
+            .move_confirmation_content_id
+            .unwrap();
+        assert_eq!(
+            move_coordinator.rollback_move_confirmation_publication(id),
+            [id]
+        );
+        assert!(move_coordinator.begin_frame().key(id).is_none());
+
+        let mut scrap_coordinator = StrategicWindowing::new();
+        scrap_coordinator
+            .enqueue_scrap_confirmation_open(
+                ScrapConfirmationState::default()
+                    .prepare_open(ScrapConfirmation {
+                        faction: MissionFaction::Alliance,
+                        order: ScrapOrder::Troop(Default::default()),
+                        targets: vec![ScrapTarget::Troop(Default::default())],
+                        names: vec!["Army Regiment".into()],
+                    })
+                    .unwrap(),
+            )
+            .unwrap();
+        let id = scrap_coordinator
+            .apply_pending()
+            .remove(0)
+            .scrap_confirmation_content_id
+            .unwrap();
+        assert_eq!(
+            scrap_coordinator.rollback_scrap_confirmation_publication(id),
+            [id]
+        );
+        assert!(scrap_coordinator.begin_frame().key(id).is_none());
     }
 
     #[test]
