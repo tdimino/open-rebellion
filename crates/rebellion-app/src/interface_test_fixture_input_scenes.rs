@@ -164,6 +164,7 @@ impl InputScenesFixture {
         true
     }
 
+    #[cfg(feature = "interface-test-fixtures")]
     pub fn apply_scene_command(
         &mut self,
         command: InputScenesCommand,
