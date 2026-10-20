@@ -120,7 +120,8 @@ use rebellion_render::object_menu::{
 use rebellion_render::panels::bombardment::{draw_bombardment, BombardmentPanelState};
 use rebellion_render::panels::death_star::draw_death_star;
 use rebellion_render::personnel_finder::{
-    draw_personnel_finder, PersonnelFinderAction, PersonnelFinderState,
+    draw_personnel_finder_focused, ManagedPersonnelFinderAction, PersonnelFinderAction,
+    PersonnelFinderState, PERSONNEL_FINDER_LIST_CONTROL, PERSONNEL_FINDER_NAME_CONTROL,
 };
 use rebellion_render::quadrant_icons::Quadrant;
 use rebellion_render::sector_window::{draw_managed_sector_windows, SectorWindowInputEvent};
@@ -1240,6 +1241,7 @@ impl StrategicRootKeyBatch {
         message_index: Option<rebellion_windowing::WindowId>,
         status: Option<rebellion_windowing::WindowId>,
         build_selection: Option<rebellion_windowing::WindowId>,
+        personnel_finder: Option<rebellion_windowing::FocusTarget>,
     ) {
         for event in &self.events {
             let recipient = router.keyboard_recipient(event.id);
@@ -1254,6 +1256,7 @@ impl StrategicRootKeyBatch {
                 message_index,
                 status,
                 build_selection,
+                personnel_finder,
             );
             if let Some(disposition) = disposition {
                 router.report_key(event.id, recipient, disposition);
@@ -1289,6 +1292,7 @@ fn legacy_child_key_disposition(
     message_index: Option<rebellion_windowing::WindowId>,
     status: Option<rebellion_windowing::WindowId>,
     build_selection: Option<rebellion_windowing::WindowId>,
+    personnel_finder: Option<rebellion_windowing::FocusTarget>,
 ) -> Option<InputDisposition> {
     match recipient {
         InputRecipient::Root => Some(if handles_keyboard {
@@ -1309,6 +1313,20 @@ fn legacy_child_key_disposition(
             } else {
                 InputDisposition::Unhandled
             })
+        }
+        InputRecipient::Window(window)
+            if personnel_finder.is_some_and(|focus| focus.window == window) =>
+        {
+            Some(
+                if personnel_finder_owns_key(
+                    event,
+                    personnel_finder.and_then(|focus| focus.control),
+                ) {
+                    InputDisposition::Handled
+                } else {
+                    InputDisposition::Unhandled
+                },
+            )
         }
         InputRecipient::Window(window) if encyclopedia == Some(window) => {
             Some(if handles_keyboard || event.key == KeyCode::Escape {
@@ -1383,6 +1401,29 @@ const fn rename_edit_owns_key(event: StrategicKeyEvent) -> bool {
                 | KeyCode::F6
                 | KeyCode::F7
         )
+}
+
+/// Whether the frozen Personnel Finder child consumes a normalized key.
+/// The name edit owns ordinary text/edit keys while native accelerators and
+/// function keys bubble to the modal boundary. The list owns only its
+/// navigation, activation, and close keys.
+fn personnel_finder_owns_key(
+    event: StrategicKeyEvent,
+    focused_control: Option<rebellion_windowing::ControlId>,
+) -> bool {
+    match focused_control {
+        Some(PERSONNEL_FINDER_NAME_CONTROL) => rename_edit_owns_key(event),
+        Some(PERSONNEL_FINDER_LIST_CONTROL) => matches!(
+            event.key,
+            KeyCode::Up
+                | KeyCode::Down
+                | KeyCode::Left
+                | KeyCode::Right
+                | KeyCode::Enter
+                | KeyCode::Escape
+        ),
+        _ => event.key == KeyCode::Escape,
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -1771,6 +1812,11 @@ const fn strategic_root_key(key: KeyCode) -> bool {
     matches!(
         key,
         KeyCode::Escape
+            | KeyCode::Enter
+            | KeyCode::Up
+            | KeyCode::Down
+            | KeyCode::Left
+            | KeyCode::Right
             | KeyCode::F1
             | KeyCode::F2
             | KeyCode::F3
@@ -2039,6 +2085,7 @@ enum ManagedStrategicSurface {
     Encyclopedia(rebellion_windowing::WindowId),
     FleetFinder(rebellion_windowing::WindowId),
     TroopFinder(rebellion_windowing::WindowId),
+    PersonnelFinder(rebellion_windowing::WindowId),
     MessageIndex(rebellion_windowing::WindowId),
     Status(rebellion_windowing::WindowId),
     BuildSelection(rebellion_windowing::WindowId),
@@ -2052,6 +2099,7 @@ fn managed_strategic_surface_plan(
     message_index: Option<rebellion_windowing::WindowId>,
     status: Option<rebellion_windowing::WindowId>,
     build_selection: Option<rebellion_windowing::WindowId>,
+    personnel_finder: Option<rebellion_windowing::WindowId>,
 ) -> Vec<(ManagedStrategicSurface, bool)> {
     frame
         .paint_order()
@@ -2063,6 +2111,8 @@ fn managed_strategic_surface_plan(
                 ManagedStrategicSurface::FleetFinder(*id)
             } else if Some(*id) == troop_finder {
                 ManagedStrategicSurface::TroopFinder(*id)
+            } else if Some(*id) == personnel_finder {
+                ManagedStrategicSurface::PersonnelFinder(*id)
             } else if Some(*id) == message_index {
                 ManagedStrategicSurface::MessageIndex(*id)
             } else if Some(*id) == status {
@@ -4756,9 +4806,11 @@ mod frame_input_tests {
 mod panel_toggle_tests {
     use super::{
         collect_strategic_pointer_batch, commit_build_selection_gameplay,
+        commit_personnel_finder_publication, enqueue_personnel_finder_action,
         enqueue_troop_finder_action, legacy_child_key_disposition, managed_strategic_surface_plan,
-        panel_letters_open_panels, release_troop_finder_dependent, toggle_exclusive_panel,
-        BuildSelectionAction, ManagedStrategicSurface, PendingTroopFinderOpen,
+        panel_letters_open_panels, release_personnel_finder_dependent,
+        release_troop_finder_dependent, toggle_exclusive_panel, BuildSelectionAction,
+        ManagedStrategicSurface, PendingPersonnelFinderOpen, PendingTroopFinderOpen,
         StrategicPointerBatch, StrategicRawInputCollector, StrategicRawKeyCollector,
         StrategicRawKeyEvent, StrategicRawPointerEvent, StrategicRootKeyBatch,
     };
@@ -4766,6 +4818,10 @@ mod panel_toggle_tests {
     use macroquad::prelude::KeyCode;
     use rebellion_render::build_selection::BuildSelectionState;
     use rebellion_render::message_index::MessageIndexState;
+    use rebellion_render::personnel_finder::{
+        ManagedPersonnelFinderAction, PersonnelFinderAction, PersonnelFinderState,
+        PERSONNEL_FINDER_LIST_CONTROL, PERSONNEL_FINDER_NAME_CONTROL,
+    };
     use rebellion_render::status_rows::{StatusObject, StatusSources};
     use rebellion_render::status_window::StatusWindowState;
     use rebellion_render::troop_finder::{
@@ -4775,6 +4831,7 @@ mod panel_toggle_tests {
         FrameInputRouter, InputDisposition, InputRecipient, PointerButtonId, PointerPhase,
     };
     use rebellion_render::{CockpitLayout, CockpitViewport};
+    use rebellion_windowing::FocusTarget;
 
     #[test]
     fn production_root_shortcut_claims_one_normalized_event_once() {
@@ -4788,7 +4845,18 @@ mod panel_toggle_tests {
             repeat: false,
         }];
         let batch = StrategicRootKeyBatch::collect_from_raw(1, &mut router, &events);
-        batch.report_legacy_children(&mut router, false, None, None, None, None, None, None, None);
+        batch.report_legacy_children(
+            &mut router,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
 
         assert!(router.claim_root(batch.events[0].id));
         assert!(!router.claim_root(batch.events[0].id));
@@ -4813,7 +4881,18 @@ mod panel_toggle_tests {
             },
         ];
         let batch = StrategicRootKeyBatch::collect_from_raw(9, &mut router, &events);
-        batch.report_legacy_children(&mut router, false, None, None, None, None, None, None, None);
+        batch.report_legacy_children(
+            &mut router,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
 
         assert_eq!(batch.events.len(), 2);
         assert!(batch.events[0].alt);
@@ -4836,7 +4915,18 @@ mod panel_toggle_tests {
             repeat: false,
         }];
         let batch = StrategicRootKeyBatch::collect_from_raw(2, &mut router, &events);
-        batch.report_legacy_children(&mut router, true, None, None, None, None, None, None, None);
+        batch.report_legacy_children(
+            &mut router,
+            true,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
 
         assert!(!router.claim_root(batch.events[0].id));
     }
@@ -4924,6 +5014,7 @@ mod panel_toggle_tests {
                 None,
                 Some(status_id),
                 None,
+                None,
             ),
             [
                 (ManagedStrategicSurface::Encyclopedia(encyclopedia), false),
@@ -5002,6 +5093,7 @@ mod panel_toggle_tests {
             None,
             Some(status_id),
             None,
+            None,
         );
         assert_eq!(
             legacy_child_key_disposition(
@@ -5014,6 +5106,7 @@ mod panel_toggle_tests {
                 None,
                 None,
                 Some(status_id),
+                None,
                 None,
             ),
             Some(InputDisposition::Unhandled)
@@ -5055,6 +5148,7 @@ mod panel_toggle_tests {
                 None,
                 None,
                 None,
+                None,
             ),
             [
                 (ManagedStrategicSurface::FleetFinder(finder), false),
@@ -5075,6 +5169,7 @@ mod panel_toggle_tests {
                 &coordinator.begin_frame(),
                 None,
                 Some(finder),
+                None,
                 None,
                 None,
                 None,
@@ -5103,6 +5198,7 @@ mod panel_toggle_tests {
                 &frame,
                 Some(encyclopedia),
                 Some(finder),
+                None,
                 None,
                 None,
                 None,
@@ -5141,7 +5237,7 @@ mod panel_toggle_tests {
         let frame = coordinator.begin_frame();
 
         assert_eq!(
-            managed_strategic_surface_plan(&frame, None, None, Some(id), None, None, None),
+            managed_strategic_surface_plan(&frame, None, None, Some(id), None, None, None, None,),
             [(ManagedStrategicSurface::TroopFinder(id), true)]
         );
         assert_eq!(state.keyboard_owner(&frame), Some(id));
@@ -5223,6 +5319,7 @@ mod panel_toggle_tests {
             None,
             None,
             None,
+            None,
         );
         assert_eq!(
             key_router.keyboard_recipient(keys.events[0].id),
@@ -5240,6 +5337,7 @@ mod panel_toggle_tests {
                 None,
                 None,
                 None,
+                None,
             ),
             Some(InputDisposition::Unhandled)
         );
@@ -5251,6 +5349,7 @@ mod panel_toggle_tests {
                 None,
                 None,
                 Some(id),
+                None,
                 None,
                 None,
                 None,
@@ -5427,6 +5526,393 @@ mod panel_toggle_tests {
     }
 
     #[test]
+    fn managed_personnel_finder_owns_snapshot_order_pointer_and_keyboard_boundary() {
+        let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
+        let mut state = PersonnelFinderState::default();
+        coordinator.enqueue_personnel_finder_open(PersonnelFinderState::prepare_open(
+            rebellion_render::CockpitFaction::Alliance,
+        ));
+        let mut applied = coordinator.apply_pending().remove(0);
+        let id = applied.personnel_finder_content_id.unwrap();
+        assert_eq!(
+            state.commit_open(
+                applied.prepared_personnel_finder.take().unwrap(),
+                &applied.result.as_ref().unwrap().transition,
+            ),
+            Some(id)
+        );
+        assert!(coordinator.acknowledge_personnel_finder_publication(id));
+        let frame = coordinator.begin_frame();
+
+        assert_eq!(
+            managed_strategic_surface_plan(&frame, None, None, None, None, None, None, Some(id),),
+            [(ManagedStrategicSurface::PersonnelFinder(id), true)]
+        );
+        assert_eq!(state.keyboard_owner(&frame), Some(id));
+        assert_eq!(
+            frame
+                .pointer_route(&std::collections::BTreeSet::new())
+                .target,
+            rebellion_windowing::RouteTarget::BlockedBy(id)
+        );
+
+        let layout = CockpitLayout {
+            canvas: CockpitViewport {
+                x: 0.0,
+                y: 0.0,
+                width: 640.0,
+                height: 480.0,
+            },
+            galaxy: CockpitViewport {
+                x: 65.0,
+                y: 60.0,
+                width: 485.0,
+                height: 350.0,
+            },
+            scale: 1.0,
+        };
+        let inside = state.screen_rect(layout).unwrap().center();
+        let mut pointer_router = FrameInputRouter::default();
+        pointer_router.begin_frame(22, &frame);
+        let pointer = collect_strategic_pointer_batch(
+            22,
+            &mut pointer_router,
+            &[
+                StrategicRawPointerEvent {
+                    ordinal: 0,
+                    point: (66.0, 61.0),
+                    phase: PointerPhase::Auxiliary,
+                },
+                StrategicRawPointerEvent {
+                    ordinal: 1,
+                    point: (inside.x, inside.y),
+                    phase: PointerPhase::Press(PointerButtonId::Primary),
+                },
+            ],
+            &frame,
+            layout,
+            &MessageIndexState::default(),
+            &StatusWindowState::default(),
+            &BuildSelectionState::default(),
+            |point| {
+                state
+                    .hit_window(&frame, layout, point)
+                    .into_iter()
+                    .collect()
+            },
+        );
+        assert_eq!(
+            pointer_router.pointer_recipient(pointer.events[0].id),
+            InputRecipient::Blocked
+        );
+        assert_eq!(
+            pointer_router.pointer_recipient(pointer.events[1].id),
+            InputRecipient::Window(id)
+        );
+
+        let mut key_router = FrameInputRouter::default();
+        key_router.begin_frame(23, &frame);
+        let keys = StrategicRootKeyBatch::collect_from_raw(
+            23,
+            &mut key_router,
+            &[
+                key(KeyCode::F5, false),
+                key(KeyCode::R, false),
+                key(KeyCode::Down, false),
+                key(KeyCode::Enter, false),
+                key(KeyCode::Escape, false),
+            ],
+        );
+        let name_focus = FocusTarget {
+            window: id,
+            control: Some(PERSONNEL_FINDER_NAME_CONTROL),
+        };
+        let list_focus = FocusTarget {
+            window: id,
+            control: Some(PERSONNEL_FINDER_LIST_CONTROL),
+        };
+        keys.report_legacy_children(
+            &mut key_router,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(name_focus),
+        );
+        assert_eq!(
+            legacy_child_key_disposition(
+                keys.events[0],
+                InputRecipient::Window(id),
+                false,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(name_focus),
+            ),
+            Some(InputDisposition::Unhandled)
+        );
+        assert_eq!(
+            legacy_child_key_disposition(
+                keys.events[1],
+                InputRecipient::Window(id),
+                false,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(name_focus),
+            ),
+            Some(InputDisposition::Handled)
+        );
+        assert_eq!(
+            legacy_child_key_disposition(
+                keys.events[2],
+                InputRecipient::Window(id),
+                false,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(name_focus),
+            ),
+            Some(InputDisposition::Handled)
+        );
+        assert_eq!(
+            legacy_child_key_disposition(
+                keys.events[3],
+                InputRecipient::Window(id),
+                false,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(name_focus),
+            ),
+            Some(InputDisposition::Handled)
+        );
+        assert_eq!(
+            legacy_child_key_disposition(
+                keys.events[4],
+                InputRecipient::Window(id),
+                false,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(name_focus),
+            ),
+            Some(InputDisposition::Handled)
+        );
+        assert_eq!(
+            legacy_child_key_disposition(
+                keys.events[1],
+                InputRecipient::Window(id),
+                false,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(list_focus),
+            ),
+            Some(InputDisposition::Unhandled)
+        );
+        assert_eq!(
+            legacy_child_key_disposition(
+                keys.events[2],
+                InputRecipient::Window(id),
+                false,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(list_focus),
+            ),
+            Some(InputDisposition::Handled)
+        );
+        assert_eq!(
+            legacy_child_key_disposition(
+                keys.events[3],
+                InputRecipient::Window(id),
+                false,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(list_focus),
+            ),
+            Some(InputDisposition::Handled)
+        );
+        assert!(!key_router.claim_root(keys.events[0].id));
+        assert!(!key_router.claim_root(keys.events[1].id));
+        assert!(!key_router.claim_root(keys.events[2].id));
+        assert!(!key_router.claim_root(keys.events[3].id));
+        assert!(!key_router.claim_root(keys.events[4].id));
+    }
+
+    #[test]
+    fn personnel_finder_publication_requires_exact_content_and_ack_receipts() {
+        let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
+        let mut state = PersonnelFinderState::default();
+        coordinator.enqueue_personnel_finder_open(PersonnelFinderState::prepare_open(
+            rebellion_render::CockpitFaction::Alliance,
+        ));
+        let mut applied = coordinator.apply_pending().remove(0);
+        let id = applied.personnel_finder_content_id.unwrap();
+
+        assert!(commit_personnel_finder_publication(
+            &mut coordinator,
+            &mut state,
+            applied.prepared_personnel_finder.take().unwrap(),
+            id,
+            applied.result.as_ref().unwrap(),
+        )
+        .is_empty());
+        assert_eq!(state.window_id(), Some(id));
+        assert!(coordinator.has_content(id));
+        assert!(coordinator.begin_frame().is_visible(id));
+    }
+
+    #[test]
+    fn personnel_finder_close_quarantines_orphan_release() {
+        let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
+        coordinator.enqueue_personnel_finder_open(PersonnelFinderState::prepare_open(
+            rebellion_render::CockpitFaction::Alliance,
+        ));
+        let id = coordinator.apply_pending()[0]
+            .personnel_finder_content_id
+            .unwrap();
+        let open_frame = coordinator.begin_frame();
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(32, &open_frame);
+        let press = rebellion_render::windowing_input::InputEventId {
+            frame: 32,
+            ordinal: 0,
+        };
+        assert_eq!(
+            router.collect_pointer(
+                press,
+                &std::collections::BTreeSet::from([id]),
+                PointerPhase::Press(PointerButtonId::Primary),
+            ),
+            InputRecipient::Window(id)
+        );
+
+        coordinator.enqueue(rebellion_windowing::WindowCommand::Close(id));
+        assert!(coordinator.apply_pending()[0].result.is_ok());
+        router.begin_frame(33, &coordinator.begin_frame());
+        let release = rebellion_render::windowing_input::InputEventId {
+            frame: 33,
+            ordinal: 0,
+        };
+        assert_eq!(
+            router.collect_pointer(
+                release,
+                &std::collections::BTreeSet::new(),
+                PointerPhase::Release(PointerButtonId::Primary),
+            ),
+            InputRecipient::Blocked
+        );
+        let fresh_press = rebellion_render::windowing_input::InputEventId {
+            frame: 33,
+            ordinal: 1,
+        };
+        assert_eq!(
+            router.collect_pointer(
+                fresh_press,
+                &std::collections::BTreeSet::new(),
+                PointerPhase::Press(PointerButtonId::Primary),
+            ),
+            InputRecipient::Root
+        );
+    }
+
+    #[test]
+    fn personnel_finder_destination_requires_exact_close_receipt() {
+        use rebellion_core::ids::SystemKey;
+        use rebellion_windowing::{WindowCommand, WindowError};
+
+        let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
+        coordinator.enqueue_personnel_finder_open(PersonnelFinderState::prepare_open(
+            rebellion_render::CockpitFaction::Alliance,
+        ));
+        let id = coordinator.apply_pending()[0]
+            .personnel_finder_content_id
+            .unwrap();
+        assert!(coordinator.acknowledge_personnel_finder_publication(id));
+        let destination = PersonnelFinderAction::OpenSystem {
+            system: SystemKey::default(),
+        };
+        let mut pending = None;
+        enqueue_personnel_finder_action(
+            &mut coordinator,
+            &mut pending,
+            ManagedPersonnelFinderAction::Open {
+                finder: id,
+                destination,
+            },
+        );
+        let applied = coordinator.apply_pending().remove(0);
+        let mut removed = applied.removed_content;
+        assert_eq!(
+            release_personnel_finder_dependent(
+                &mut pending,
+                applied.command,
+                &applied.result,
+                &mut removed,
+            ),
+            Some((id, destination))
+        );
+        assert!(pending.is_none());
+        assert!(removed.is_empty(), "the close receipt is consumed once");
+
+        let mut rejected = Some(PendingPersonnelFinderOpen {
+            finder: id,
+            destination,
+        });
+        let mut stale_removed = vec![id];
+        assert_eq!(
+            release_personnel_finder_dependent(
+                &mut rejected,
+                WindowCommand::Close(id),
+                &Err(WindowError::UnknownWindow(id)),
+                &mut stale_removed,
+            ),
+            None
+        );
+        assert!(rejected.is_none(), "a rejected close fails closed");
+        assert_eq!(stale_removed, [id], "a rejected receipt is not consumed");
+    }
+
+    #[test]
     fn managed_build_selection_owns_production_routes_and_paint_seam() {
         use rebellion_core::ids::{DatId, SystemKey};
         use rebellion_core::manufacturing::{BuildableKind, ProductionArea};
@@ -5456,7 +5942,7 @@ mod panel_toggle_tests {
 
         let frame = coordinator.begin_frame();
         assert_eq!(
-            managed_strategic_surface_plan(&frame, None, None, None, None, None, Some(id)),
+            managed_strategic_surface_plan(&frame, None, None, None, None, None, Some(id), None,),
             [(ManagedStrategicSurface::BuildSelection(id), true)]
         );
         assert_eq!(state.keyboard_owner(&frame), Some(id));
@@ -5532,6 +6018,7 @@ mod panel_toggle_tests {
             None,
             None,
             Some(id),
+            None,
         );
         assert_eq!(
             legacy_child_key_disposition(
@@ -5545,6 +6032,7 @@ mod panel_toggle_tests {
                 None,
                 None,
                 Some(id),
+                None,
             ),
             Some(InputDisposition::Unhandled)
         );
@@ -5560,6 +6048,7 @@ mod panel_toggle_tests {
                 None,
                 None,
                 Some(id),
+                None,
             ),
             Some(InputDisposition::Handled)
         );
@@ -5815,6 +6304,7 @@ mod panel_toggle_tests {
             None,
             None,
             None,
+            None,
         );
 
         assert!(router.claim_root(batch.events[0].id));
@@ -5844,6 +6334,7 @@ mod panel_toggle_tests {
             &mut router,
             false,
             Some((fleet, true)),
+            None,
             None,
             None,
             None,
@@ -5899,6 +6390,7 @@ mod panel_toggle_tests {
             None,
             None,
             None,
+            None,
         );
 
         assert!(!router.claim_root(batch.events[0].id));
@@ -5931,6 +6423,7 @@ mod panel_toggle_tests {
             None,
             None,
             Some(encyclopedia),
+            None,
             None,
             None,
             None,
@@ -6438,6 +6931,7 @@ async fn main() {
     let mut troop_finder_state = TroopFinderState::default();
     let mut pending_troop_finder_open: Option<PendingTroopFinderOpen> = None;
     let mut personnel_finder_state = PersonnelFinderState::default();
+    let mut pending_personnel_finder_open: Option<PendingPersonnelFinderOpen> = None;
     // The open Message Index (window 0x0d) and the speed its Advice
     // category saved (FUN_00487ff0 +0x58).
     let mut message_index = MessageIndexState::new();
@@ -9247,6 +9741,7 @@ async fn main() {
             reports.extend(missions_window_state.content_reports(&return_candidate, &world));
             reports.extend(fleet_finder_state.content_reports(&return_candidate));
             reports.extend(troop_finder_state.content_reports(&return_candidate));
+            reports.extend(personnel_finder_state.content_reports(&return_candidate));
             reports.extend(encyclopedia_surface.content_reports(&return_candidate));
             reports.extend(message_index.content_reports(&return_candidate));
             reports.extend(build_selection_state.content_reports(&return_candidate));
@@ -9270,6 +9765,7 @@ async fn main() {
             missions_window_state.remove_content(&reconciliation.removed);
             fleet_finder_state.remove_content(&reconciliation.removed);
             troop_finder_state.remove_content(&reconciliation.removed);
+            personnel_finder_state.remove_content(&reconciliation.removed);
             encyclopedia_surface.remove_content(&reconciliation.removed);
             status_window_state.remove_content(&reconciliation.removed);
             build_selection_state.remove_content(&reconciliation.removed);
@@ -9332,7 +9828,6 @@ async fn main() {
             strategic_modal: mission_dialog_state.is_open()
                 || move_confirmation_state.is_open()
                 || scrap_confirmation_state.is_open()
-                || personnel_finder_state.is_open()
                 || original_modal_fixture_open,
             focused_control: command_palette_open,
             transient_menu: game_speed_ui.menu_anchor.is_some()
@@ -9350,6 +9845,14 @@ async fn main() {
             fleet_finder_state.keyboard_owner(strategic_frame_boundary.snapshot());
         let troop_finder_keyboard_owner =
             troop_finder_state.keyboard_owner(strategic_frame_boundary.snapshot());
+        let personnel_finder_keyboard_focus = personnel_finder_state
+            .keyboard_owner(strategic_frame_boundary.snapshot())
+            .and_then(|window| {
+                strategic_frame_boundary
+                    .snapshot()
+                    .focused()
+                    .filter(|focus| focus.window == window)
+            });
         let encyclopedia_keyboard_owner =
             encyclopedia_surface.keyboard_owner(strategic_frame_boundary.snapshot());
         let message_index_keyboard_owner =
@@ -9831,6 +10334,7 @@ async fn main() {
                                     fleet_finder_state = FleetFinderState::default();
                                     troop_finder_state = TroopFinderState::default();
                                     personnel_finder_state = PersonnelFinderState::default();
+                                    pending_personnel_finder_open = None;
                                     message_index.reset();
                                     advice_saved_speed = None;
                                     bombardment_panel_state = BombardmentPanelState::default();
@@ -10047,7 +10551,6 @@ async fn main() {
                     || move_confirmation_state.contains_screen_point(cockpit_layout, pointer)
                     || scrap_confirmation_state.contains_screen_point(cockpit_layout, pointer)
                     || fleet_finder_state.contains_screen_point(cockpit_layout, pointer)
-                    || personnel_finder_state.contains_screen_point(cockpit_layout, pointer)
                     || cockpit_state.gid_ui.menu_open
                     || original_modal_fixture_open
                     || game_speed_ui.menu_anchor.is_some()
@@ -10066,6 +10569,7 @@ async fn main() {
                 let mut pending_cockpit_button = None;
                 let mut pending_fleet_finder_action = None;
                 let mut pending_troop_finder_action = None;
+                let mut pending_personnel_finder_action = None;
                 let mut message_choice = None;
                 #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
                 let mut pending_windowing_route_receipts = Vec::<WindowingRouteReceipt>::new();
@@ -10125,6 +10629,13 @@ async fn main() {
                                     hits.insert(window);
                                 }
                                 if let Some(window) = troop_finder_state.hit_window(
+                                    strategic_frame_boundary.snapshot(),
+                                    cockpit_layout,
+                                    point,
+                                ) {
+                                    hits.insert(window);
+                                }
+                                if let Some(window) = personnel_finder_state.hit_window(
                                     strategic_frame_boundary.snapshot(),
                                     cockpit_layout,
                                     point,
@@ -11917,80 +12428,9 @@ async fn main() {
                         );
                     }
 
-                    // FUN_00464c20 (Personnel Finder): its choice goes through
-                    // FUN_00429440, which opens the target's sector window
-                    // and then the window for its kind. Troop Finder now uses
-                    // the manager-owned receipt gate below.
-                    let personnel_choice = draw_personnel_finder(
-                        ctx,
-                        &world,
-                        fog_state,
-                        &mut personnel_finder_state,
-                        cockpit_layout,
-                        &mut bmp_cache,
-                    )
-                    .and_then(|action| match action {
-                        // FUN_00429440 family 0x30 (character_target).
-                        PersonnelFinderAction::OpenCharacter { character, system } => {
-                            use rebellion_render::personnel_finder::{
-                                character_target, CharacterTarget,
-                            };
-                            match world.characters.get(character).map(character_target) {
-                                Some(CharacterTarget::Fleet(fleet)) => {
-                                    rebellion_core::movement::listed_location(
-                                        &movement_state,
-                                        &world,
-                                        fleet,
-                                    )
-                                    .map(|system| (system, FinderTarget::Fleet(fleet)))
-                                }
-                                Some(CharacterTarget::Missions) => system.map(|system| {
-                                    (
-                                        system,
-                                        FinderTarget::Missions(
-                                            rebellion_core::missions::MissionMember::Character(
-                                                character,
-                                            ),
-                                        ),
-                                    )
-                                }),
-                                Some(CharacterTarget::Defenses) | None => {
-                                    system.map(|system| (system, FinderTarget::Defenses))
-                                }
-                            }
-                        }
-                        PersonnelFinderAction::OpenSystem { system } => {
-                            Some((system, FinderTarget::Sector))
-                        }
-                        PersonnelFinderAction::OpenFleet { system, fleet } => {
-                            Some((system, FinderTarget::Fleet(fleet)))
-                        }
-                    });
-                    if let Some((system, target)) = personnel_choice {
-                        map_state.selected_system = Some(system);
-                        enqueue_sector_window(
-                            &mut strategic_windowing,
-                            &sector_window_state,
-                            &world,
-                            system,
-                            cockpit_state.faction,
-                            &mut pending_sector_publications,
-                            match target {
-                                FinderTarget::Sector => None,
-                                FinderTarget::Defenses => {
-                                    Some(SectorDependentIntent::Defenses { system })
-                                }
-                                FinderTarget::Missions(member) => {
-                                    Some(SectorDependentIntent::Missions { system, member })
-                                }
-                                FinderTarget::Fleet(fleet) => Some(SectorDependentIntent::Fleet {
-                                    system,
-                                    selected: Some(FleetWindowEntry::Fleet(fleet)),
-                                    rename: false,
-                                }),
-                            },
-                        );
-                    }
+                    // Personnel Finder destinations now wait for the exact
+                    // manager-owned close receipt before opening the Sector
+                    // and its dependent detail.
 
                     // FUN_0044f5e0: the checkmark resubmits with force 1,
                     // which validates again and departs without asking.
@@ -12288,6 +12728,7 @@ async fn main() {
                         message_index.window_id(),
                         status_window_state.window_id(),
                         build_selection_state.window_id(),
+                        personnel_finder_state.window_id(),
                     );
                     for (surface, allows_input) in managed_surfaces {
                         match surface {
@@ -12381,6 +12822,28 @@ async fn main() {
                                     });
                                 if allows_input {
                                     if let Some(focus) = troop_finder_state.take_focus_request() {
+                                        strategic_windowing.enqueue(
+                                            rebellion_windowing::WindowCommand::Focus(focus),
+                                        );
+                                    }
+                                }
+                            }
+                            ManagedStrategicSurface::PersonnelFinder(_) => {
+                                pending_personnel_finder_action =
+                                    with_retained_input(ctx, allows_input, || {
+                                        draw_personnel_finder_focused(
+                                            ctx,
+                                            &world,
+                                            fog_state,
+                                            &mut personnel_finder_state,
+                                            strategic_frame_boundary.snapshot().focused(),
+                                            cockpit_layout,
+                                            &mut bmp_cache,
+                                        )
+                                    });
+                                if allows_input {
+                                    if let Some(focus) = personnel_finder_state.take_focus_request()
+                                    {
                                         strategic_windowing.enqueue(
                                             rebellion_windowing::WindowCommand::Focus(focus),
                                         );
@@ -12601,6 +13064,7 @@ async fn main() {
                     message_index_keyboard_owner,
                     status_keyboard_owner,
                     build_selection_keyboard_owner,
+                    personnel_finder_keyboard_focus,
                 );
 
                 // Child surfaces have now handled their input. Keep every
@@ -12614,7 +13078,6 @@ async fn main() {
                     strategic_modal: mission_dialog_state.is_open()
                         || move_confirmation_state.is_open()
                         || scrap_confirmation_state.is_open()
-                        || personnel_finder_state.is_open()
                         || original_modal_fixture_open,
                     focused_control: command_palette_now_open,
                     transient_menu: game_speed_ui.menu_anchor.is_some()
@@ -12647,11 +13110,13 @@ async fn main() {
                                 (0x12e, "fleet_finder")
                             }
                             CockpitButton::PersonnelFinder => {
-                                personnel_finder_state.open(cockpit_state.faction);
+                                strategic_windowing.enqueue_personnel_finder_open(
+                                    PersonnelFinderState::prepare_open(cockpit_state.faction),
+                                );
                                 strategic_dispatch_restricted = true;
                                 strategic_input_router.set_application_hold(true);
                                 macroquad::logging::info!(
-                                    "[interface] command=0x12f destination=personnel_finder status=opened_original"
+                                    "[interface] command=0x12f destination=personnel_finder status=queued"
                                 );
                                 (0x12f, "personnel_finder")
                             }
@@ -12822,6 +13287,16 @@ async fn main() {
                     enqueue_troop_finder_action(
                         &mut strategic_windowing,
                         &mut pending_troop_finder_open,
+                        action,
+                    );
+                }
+
+                if let Some(action) = pending_personnel_finder_action {
+                    strategic_dispatch_restricted = true;
+                    strategic_input_router.set_application_hold(true);
+                    enqueue_personnel_finder_action(
+                        &mut strategic_windowing,
+                        &mut pending_personnel_finder_open,
                         action,
                     );
                 }
@@ -13854,6 +14329,7 @@ async fn main() {
                             troop_finder_state = TroopFinderState::default();
                             pending_troop_finder_open = None;
                             personnel_finder_state = PersonnelFinderState::default();
+                            pending_personnel_finder_open = None;
                             message_index.reset();
                             advice_saved_speed = None;
                             bombardment_panel_state = BombardmentPanelState::default();
@@ -14323,6 +14799,8 @@ async fn main() {
         strategic_content_reports
             .extend(troop_finder_state.content_reports(strategic_frame_boundary.snapshot()));
         strategic_content_reports
+            .extend(personnel_finder_state.content_reports(strategic_frame_boundary.snapshot()));
+        strategic_content_reports
             .extend(encyclopedia_surface.content_reports(strategic_frame_boundary.snapshot()));
         strategic_content_reports
             .extend(message_index.content_reports(strategic_frame_boundary.snapshot()));
@@ -14385,6 +14863,8 @@ async fn main() {
                 fleet_finder_content_id,
                 prepared_troop_finder,
                 troop_finder_content_id,
+                prepared_personnel_finder,
+                personnel_finder_content_id,
                 prepared_message_index,
                 message_index_content_id,
                 prepared_status,
@@ -14426,6 +14906,28 @@ async fn main() {
                     &mut pending_sector_publications,
                     Some(dependent),
                 );
+            }
+            if let Some((finder, destination)) = release_personnel_finder_dependent(
+                &mut pending_personnel_finder_open,
+                command,
+                &result,
+                &mut removed_content,
+            ) {
+                personnel_finder_state.remove_content(&[finder]);
+                if let Some((system, dependent)) =
+                    personnel_finder_sector_destination(&world, &movement_state, destination)
+                {
+                    map_state.selected_system = Some(system);
+                    enqueue_sector_window(
+                        &mut strategic_windowing,
+                        &sector_window_state,
+                        &world,
+                        system,
+                        cockpit_state.faction,
+                        &mut pending_sector_publications,
+                        dependent,
+                    );
+                }
             }
             let activated_system = matches!(
                 command,
@@ -14764,6 +15266,19 @@ async fn main() {
                     commit,
                 ));
             }
+            if let (Some(prepared), Some(id), Ok(commit)) = (
+                prepared_personnel_finder,
+                personnel_finder_content_id,
+                &result,
+            ) {
+                removed_content.extend(commit_personnel_finder_publication(
+                    &mut strategic_windowing,
+                    &mut personnel_finder_state,
+                    prepared,
+                    id,
+                    commit,
+                ));
+            }
             if let (Some(prepared), Some(id), Ok(commit)) =
                 (prepared_message_index, message_index_content_id, &result)
             {
@@ -14885,6 +15400,7 @@ async fn main() {
             missions_window_state.remove_content(&removed_content);
             fleet_finder_state.remove_content(&removed_content);
             troop_finder_state.remove_content(&removed_content);
+            personnel_finder_state.remove_content(&removed_content);
             encyclopedia_surface.remove_content(&removed_content);
             status_window_state.remove_content(&removed_content);
             build_selection_state.remove_content(&removed_content);
@@ -14941,6 +15457,7 @@ async fn main() {
         missions_window_state.remove_content(&reconciliation.removed);
         fleet_finder_state.remove_content(&reconciliation.removed);
         troop_finder_state.remove_content(&reconciliation.removed);
+        personnel_finder_state.remove_content(&reconciliation.removed);
         encyclopedia_surface.remove_content(&reconciliation.removed);
         status_window_state.remove_content(&reconciliation.removed);
         build_selection_state.remove_content(&reconciliation.removed);
@@ -15690,12 +16207,8 @@ fn scrap_order(selection: Option<MenuObject>) -> Option<rebellion_core::scrap::S
 enum FinderTarget {
     /// A system alone: its sector window.
     Sector,
-    /// The System Defenses window (kind 10).
-    Defenses,
     /// The Fleet window (kind 4) with the fleet selected.
     Fleet(rebellion_core::ids::FleetKey),
-    /// The Missions window (kind 11) showing the member's mission.
-    Missions(rebellion_core::missions::MissionMember),
 }
 
 /// Troop Finder destination held until the manager accepts the exact close
@@ -15783,6 +16296,141 @@ fn release_troop_finder_dependent(
         .position(|removed| *removed == prepared.finder)?;
     removed_content.remove(receipt);
     Some((prepared.finder, prepared.destination))
+}
+
+/// Personnel Finder destination held until the manager accepts the exact close
+/// and the content-removal receipt is consumed once.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PendingPersonnelFinderOpen {
+    finder: rebellion_windowing::WindowId,
+    destination: PersonnelFinderAction,
+}
+
+fn commit_personnel_finder_publication(
+    coordinator: &mut StrategicWindowing,
+    state: &mut PersonnelFinderState,
+    prepared: rebellion_render::personnel_finder::PreparedPersonnelFinder,
+    id: rebellion_windowing::WindowId,
+    commit: &rebellion_windowing::WindowCommit,
+) -> Vec<rebellion_windowing::WindowId> {
+    if state.commit_open(prepared, &commit.transition) != Some(id) {
+        macroquad::logging::error!(
+            "[windowing] Personnel Finder content commit did not match identity={id:?}"
+        );
+        return if matches!(
+            commit.transition,
+            rebellion_windowing::WindowTransition::Opened { .. }
+        ) {
+            coordinator.rollback_personnel_finder_publication(id)
+        } else {
+            Vec::new()
+        };
+    }
+    if coordinator.has_content(id) || coordinator.acknowledge_personnel_finder_publication(id) {
+        return Vec::new();
+    }
+    state.remove_content(&[id]);
+    coordinator.rollback_personnel_finder_publication(id)
+}
+
+fn enqueue_personnel_finder_action(
+    coordinator: &mut StrategicWindowing,
+    pending: &mut Option<PendingPersonnelFinderOpen>,
+    action: ManagedPersonnelFinderAction,
+) {
+    let finder = match action {
+        ManagedPersonnelFinderAction::Close(finder) => {
+            *pending = None;
+            finder
+        }
+        ManagedPersonnelFinderAction::Open {
+            finder,
+            destination,
+        } => {
+            *pending = Some(PendingPersonnelFinderOpen {
+                finder,
+                destination,
+            });
+            finder
+        }
+    };
+    coordinator.enqueue(rebellion_windowing::WindowCommand::Close(finder));
+}
+
+fn release_personnel_finder_dependent(
+    pending: &mut Option<PendingPersonnelFinderOpen>,
+    command: rebellion_windowing::WindowCommand,
+    result: &Result<rebellion_windowing::WindowCommit, rebellion_windowing::WindowError>,
+    removed_content: &mut Vec<rebellion_windowing::WindowId>,
+) -> Option<(rebellion_windowing::WindowId, PersonnelFinderAction)> {
+    let prepared = pending.as_ref().copied()?;
+    if command != rebellion_windowing::WindowCommand::Close(prepared.finder) {
+        return None;
+    }
+    pending.take();
+    let Ok(commit) = result else {
+        return None;
+    };
+    if !matches!(
+        &commit.transition,
+        rebellion_windowing::WindowTransition::Closed { root, closed, .. }
+            if *root == prepared.finder && closed.contains(&prepared.finder)
+    ) {
+        return None;
+    }
+    let receipt = removed_content
+        .iter()
+        .position(|removed| *removed == prepared.finder)?;
+    removed_content.remove(receipt);
+    Some((prepared.finder, prepared.destination))
+}
+
+fn personnel_finder_sector_destination(
+    world: &GameWorld,
+    movement: &MovementState,
+    destination: PersonnelFinderAction,
+) -> Option<(SystemKey, Option<SectorDependentIntent>)> {
+    match destination {
+        PersonnelFinderAction::OpenCharacter { character, system } => {
+            use rebellion_render::personnel_finder::{character_target, CharacterTarget};
+            match world.characters.get(character).map(character_target) {
+                Some(CharacterTarget::Fleet(fleet)) => rebellion_core::movement::listed_location(
+                    movement, world, fleet,
+                )
+                .map(|system| {
+                    (
+                        system,
+                        Some(SectorDependentIntent::Fleet {
+                            system,
+                            selected: Some(FleetWindowEntry::Fleet(fleet)),
+                            rename: false,
+                        }),
+                    )
+                }),
+                Some(CharacterTarget::Missions) => system.map(|system| {
+                    (
+                        system,
+                        Some(SectorDependentIntent::Missions {
+                            system,
+                            member: rebellion_core::missions::MissionMember::Character(character),
+                        }),
+                    )
+                }),
+                Some(CharacterTarget::Defenses) | None => {
+                    system.map(|system| (system, Some(SectorDependentIntent::Defenses { system })))
+                }
+            }
+        }
+        PersonnelFinderAction::OpenSystem { system } => Some((system, None)),
+        PersonnelFinderAction::OpenFleet { system, fleet } => Some((
+            system,
+            Some(SectorDependentIntent::Fleet {
+                system,
+                selected: Some(FleetWindowEntry::Fleet(fleet)),
+                rename: false,
+            }),
+        )),
+    }
 }
 
 fn message_choice_sector_dependent(

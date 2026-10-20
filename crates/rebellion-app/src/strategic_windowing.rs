@@ -11,6 +11,7 @@ use rebellion_render::{
     fleet_window::PreparedFleetWindow,
     message_index::PreparedMessageIndex,
     missions_window::PreparedMissionsWindow,
+    personnel_finder::{PreparedPersonnelFinder, PERSONNEL_FINDER_NAME_CONTROL},
     sector_window::PreparedSectorWindow,
     status_window::PreparedStatusWindow,
     system_window::PreparedSystemWindow,
@@ -66,6 +67,10 @@ pub struct AppliedWindowCommand {
     pub prepared_troop_finder: Option<PreparedTroopFinder>,
     /// Identity whose attachment is valid for `prepared_troop_finder`.
     pub troop_finder_content_id: Option<WindowId>,
+    /// Personnel Finder content prepared beside its singleton open.
+    pub prepared_personnel_finder: Option<PreparedPersonnelFinder>,
+    /// Identity whose attachment is valid for `prepared_personnel_finder`.
+    pub personnel_finder_content_id: Option<WindowId>,
     /// Message Index content prepared beside its singleton open.
     pub prepared_message_index: Option<PreparedMessageIndex>,
     /// Identity whose attachment is valid for `prepared_message_index`.
@@ -122,6 +127,7 @@ struct QueuedWindowCommand {
     prepared_fleet: Option<PreparedFleetWindow>,
     prepared_fleet_finder: Option<PreparedFleetFinder>,
     prepared_troop_finder: Option<PreparedTroopFinder>,
+    prepared_personnel_finder: Option<PreparedPersonnelFinder>,
     prepared_message_index: Option<PreparedMessageIndex>,
     prepared_status: Option<PreparedStatusWindow>,
     prepared_sector: Option<PreparedSectorWindow>,
@@ -467,6 +473,7 @@ impl StrategicWindowing {
             prepared_fleet: None,
             prepared_fleet_finder: None,
             prepared_troop_finder: None,
+            prepared_personnel_finder: None,
             prepared_message_index: None,
             prepared_status: None,
             prepared_sector: None,
@@ -485,6 +492,7 @@ impl StrategicWindowing {
             prepared_fleet: None,
             prepared_fleet_finder: None,
             prepared_troop_finder: None,
+            prepared_personnel_finder: None,
             prepared_message_index: None,
             prepared_status: None,
             prepared_sector: None,
@@ -505,6 +513,7 @@ impl StrategicWindowing {
             prepared_fleet: None,
             prepared_fleet_finder: None,
             prepared_troop_finder: None,
+            prepared_personnel_finder: None,
             prepared_message_index: None,
             prepared_status: None,
             prepared_sector: None,
@@ -523,6 +532,7 @@ impl StrategicWindowing {
             prepared_fleet: None,
             prepared_fleet_finder: None,
             prepared_troop_finder: None,
+            prepared_personnel_finder: None,
             prepared_message_index: None,
             prepared_status: None,
             prepared_sector: None,
@@ -549,6 +559,7 @@ impl StrategicWindowing {
             prepared_fleet: None,
             prepared_fleet_finder: None,
             prepared_troop_finder: None,
+            prepared_personnel_finder: None,
             prepared_message_index: None,
             prepared_status: None,
             prepared_sector: Some(prepared),
@@ -599,6 +610,7 @@ impl StrategicWindowing {
             prepared_fleet: None,
             prepared_fleet_finder: None,
             prepared_troop_finder: None,
+            prepared_personnel_finder: None,
             prepared_message_index: None,
             prepared_status: None,
             prepared_sector: None,
@@ -617,6 +629,7 @@ impl StrategicWindowing {
             prepared_fleet: None,
             prepared_fleet_finder: None,
             prepared_troop_finder: None,
+            prepared_personnel_finder: None,
             prepared_message_index: None,
             prepared_status: None,
             prepared_sector: None,
@@ -636,6 +649,7 @@ impl StrategicWindowing {
             prepared_fleet: None,
             prepared_fleet_finder: None,
             prepared_troop_finder: None,
+            prepared_personnel_finder: None,
             prepared_message_index: None,
             prepared_status: None,
             prepared_sector: None,
@@ -655,6 +669,7 @@ impl StrategicWindowing {
             prepared_fleet: Some(prepared),
             prepared_fleet_finder: None,
             prepared_troop_finder: None,
+            prepared_personnel_finder: None,
             prepared_message_index: None,
             prepared_status: None,
             prepared_sector: None,
@@ -674,6 +689,7 @@ impl StrategicWindowing {
             prepared_fleet: Some(prepared),
             prepared_fleet_finder: None,
             prepared_troop_finder: None,
+            prepared_personnel_finder: None,
             prepared_message_index: None,
             prepared_status: None,
             prepared_sector: None,
@@ -692,6 +708,7 @@ impl StrategicWindowing {
             prepared_fleet: None,
             prepared_fleet_finder: Some(prepared),
             prepared_troop_finder: None,
+            prepared_personnel_finder: None,
             prepared_message_index: None,
             prepared_status: None,
             prepared_sector: None,
@@ -710,6 +727,26 @@ impl StrategicWindowing {
             prepared_fleet: None,
             prepared_fleet_finder: None,
             prepared_troop_finder: Some(prepared),
+            prepared_personnel_finder: None,
+            prepared_message_index: None,
+            prepared_status: None,
+            prepared_sector: None,
+        });
+    }
+
+    /// Queues inert Personnel Finder content beside its semantic singleton open.
+    pub fn enqueue_personnel_finder_open(&mut self, prepared: PreparedPersonnelFinder) {
+        self.pending.push(QueuedWindowCommand {
+            command: WindowCommand::Open(prepared.spec()),
+            prepared_build_selection: None,
+            prepared_build_selection_confirm: None,
+            prepared_system: None,
+            prepared_defenses: None,
+            prepared_missions: None,
+            prepared_fleet: None,
+            prepared_fleet_finder: None,
+            prepared_troop_finder: None,
+            prepared_personnel_finder: Some(prepared),
             prepared_message_index: None,
             prepared_status: None,
             prepared_sector: None,
@@ -728,6 +765,7 @@ impl StrategicWindowing {
             prepared_fleet: None,
             prepared_fleet_finder: None,
             prepared_troop_finder: None,
+            prepared_personnel_finder: None,
             prepared_message_index: Some(prepared),
             prepared_status: None,
             prepared_sector: None,
@@ -756,6 +794,7 @@ impl StrategicWindowing {
             prepared_fleet: None,
             prepared_fleet_finder: None,
             prepared_troop_finder: None,
+            prepared_personnel_finder: None,
             prepared_message_index: None,
             prepared_status: Some(prepared),
             prepared_sector: None,
@@ -849,6 +888,7 @@ impl StrategicWindowing {
             prepared_fleet,
             prepared_fleet_finder,
             prepared_troop_finder,
+            prepared_personnel_finder,
             prepared_message_index,
             prepared_status,
             prepared_sector,
@@ -863,6 +903,7 @@ impl StrategicWindowing {
         let mut fleet_content_id = None;
         let mut fleet_finder_content_id = None;
         let mut troop_finder_content_id = None;
+        let mut personnel_finder_content_id = None;
         let mut message_index_content_id = None;
         let mut status_content_id = None;
         let mut sector_content_id = None;
@@ -962,6 +1003,25 @@ impl StrategicWindowing {
                     }
                 }
             }
+            if prepared_personnel_finder.is_some() {
+                personnel_finder_content_id = match &commit.transition {
+                    WindowTransition::Opened { id } => Some(*id),
+                    WindowTransition::Existing {
+                        id,
+                        effect: ExistingEffect::NoOp,
+                    } => self.attached_content.contains(id).then_some(*id),
+                    _ => None,
+                };
+                if let WindowTransition::Opened { id } = commit.transition {
+                    let focus = FocusTarget {
+                        window: id,
+                        control: Some(PERSONNEL_FINDER_NAME_CONTROL),
+                    };
+                    if let Ok(focus_commit) = self.manager.apply(WindowCommand::Focus(focus)) {
+                        self.record_transition(&focus_commit.transition, &focus_commit.events);
+                    }
+                }
+            }
             if prepared_message_index.is_some() {
                 message_index_content_id = match &commit.transition {
                     WindowTransition::Opened { id } => Some(*id),
@@ -1012,6 +1072,8 @@ impl StrategicWindowing {
             fleet_finder_content_id,
             prepared_troop_finder,
             troop_finder_content_id,
+            prepared_personnel_finder,
+            personnel_finder_content_id,
             prepared_message_index,
             message_index_content_id,
             prepared_status,
@@ -1097,6 +1159,15 @@ impl StrategicWindowing {
             && self.attached_content.insert(id)
     }
 
+    /// Acknowledges Personnel Finder publication only for its exact singleton.
+    pub fn acknowledge_personnel_finder_publication(&mut self, id: WindowId) -> bool {
+        self.manager
+            .begin_frame()
+            .key(id)
+            .is_some_and(|key| key.kind == rebellion_windowing::WindowKind::PersonnelFinder)
+            && self.attached_content.insert(id)
+    }
+
     /// Acknowledges Message Index publication only for its exact singleton.
     pub fn acknowledge_message_index_publication(&mut self, id: WindowId) -> bool {
         self.manager
@@ -1148,6 +1219,11 @@ impl StrategicWindowing {
 
     /// Compensates a failed Troop Finder publication with an exact close.
     pub fn rollback_troop_finder_publication(&mut self, id: WindowId) -> Vec<WindowId> {
+        self.rollback_publication(id)
+    }
+
+    /// Compensates a failed Personnel Finder publication with an exact close.
+    pub fn rollback_personnel_finder_publication(&mut self, id: WindowId) -> Vec<WindowId> {
         self.rollback_publication(id)
     }
 
@@ -1547,6 +1623,9 @@ mod tests {
     use rebellion_render::{
         fleet_finder::{FleetFinderState, FLEET_FINDER_NAME_CONTROL},
         message_index::{MessageIndexAction, MessageIndexState},
+        personnel_finder::{
+            PersonnelFinderState, PersonnelTab, PersonnelView, PERSONNEL_FINDER_NAME_CONTROL,
+        },
         status_rows::{StatusObject, StatusSources},
         status_window::StatusWindowState,
         troop_finder::{TroopFinderState, TroopTab, TROOP_FINDER_NAME_CONTROL},
@@ -3067,6 +3146,79 @@ mod tests {
         );
         assert!(!coordinator.begin_frame().is_visible(troop_finder));
         assert!(!coordinator.has_content(troop_finder));
+    }
+
+    #[test]
+    fn personnel_finder_duplicate_open_preserves_id_selection_and_focus() {
+        let mut coordinator = StrategicWindowing::new();
+        let mut finder = PersonnelFinderState::default();
+        coordinator.enqueue_personnel_finder_open(PersonnelFinderState::prepare_open(
+            CockpitFaction::Alliance,
+        ));
+
+        let mut opened = coordinator.apply_pending().remove(0);
+        let id = opened.personnel_finder_content_id.unwrap();
+        assert_eq!(
+            finder.commit_open(
+                opened.prepared_personnel_finder.take().unwrap(),
+                &opened.result.as_ref().unwrap().transition,
+            ),
+            Some(id)
+        );
+        assert!(coordinator.acknowledge_personnel_finder_publication(id));
+        let name_focus = FocusTarget {
+            window: id,
+            control: Some(PERSONNEL_FINDER_NAME_CONTROL),
+        };
+        assert_eq!(coordinator.begin_frame().focused(), Some(name_focus));
+
+        finder.set_tab(PersonnelTab::Imperial);
+        finder.set_view(PersonnelView::Characters);
+        coordinator.enqueue_personnel_finder_open(PersonnelFinderState::prepare_open(
+            CockpitFaction::Empire,
+        ));
+        let mut duplicate = coordinator.apply_pending().remove(0);
+        assert!(matches!(
+            duplicate.result.as_ref().unwrap().transition,
+            WindowTransition::Existing {
+                id: existing,
+                effect: ExistingEffect::NoOp,
+            } if existing == id
+        ));
+        assert_eq!(duplicate.personnel_finder_content_id, Some(id));
+        assert_eq!(
+            finder.commit_open(
+                duplicate.prepared_personnel_finder.take().unwrap(),
+                &duplicate.result.as_ref().unwrap().transition,
+            ),
+            Some(id)
+        );
+        assert_eq!(finder.window_id(), Some(id));
+        assert_eq!(coordinator.begin_frame().focused(), Some(name_focus));
+    }
+
+    #[test]
+    fn personnel_finder_wrong_publication_is_rejected_and_rolled_back() {
+        let mut coordinator = StrategicWindowing::new();
+        coordinator
+            .enqueue_fleet_finder_open(FleetFinderState::prepare_open(CockpitFaction::Alliance));
+        let fleet_finder = opened_id(&coordinator.apply_pending()[0]);
+        assert!(!coordinator.acknowledge_personnel_finder_publication(fleet_finder));
+
+        coordinator.enqueue_personnel_finder_open(PersonnelFinderState::prepare_open(
+            CockpitFaction::Alliance,
+        ));
+        let applied = coordinator.apply_pending().remove(0);
+        let personnel_finder = applied.personnel_finder_content_id.unwrap();
+        assert_ne!(personnel_finder, fleet_finder);
+        assert!(!coordinator.has_content(personnel_finder));
+
+        assert_eq!(
+            coordinator.rollback_personnel_finder_publication(personnel_finder),
+            [personnel_finder]
+        );
+        assert!(!coordinator.begin_frame().is_visible(personnel_finder));
+        assert!(!coordinator.has_content(personnel_finder));
     }
 
     #[test]
