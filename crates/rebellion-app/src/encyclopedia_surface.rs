@@ -320,6 +320,34 @@ impl EncyclopediaSurfaceController {
             .then(rebellion_render::encyclopedia::encyclopedia_surface_layer_id)
     }
 
+    /// Live screen rectangle shared by painting and pointer hit-testing.
+    #[must_use]
+    pub(crate) fn screen_rect(
+        &self,
+        frame: &RoutingSnapshot,
+        width: f32,
+        height: f32,
+    ) -> Option<egui::Rect> {
+        let id = self.window_id?;
+        let audience = self.audience?;
+        if !frame
+            .key(id)
+            .is_some_and(|key| key.kind == WindowKind::Encyclopedia)
+            || !frame.allows_input(id)
+        {
+            return None;
+        }
+        let scale = (width / 640.0).min(height / 480.0).max(f32::EPSILON);
+        let origin = encyclopedia_surface_origin(width, height, scale, audience);
+        Some(egui::Rect::from_min_size(
+            origin,
+            egui::vec2(
+                ENCYCLOPEDIA_INDEX_WIDTH * scale,
+                ENCYCLOPEDIA_INDEX_HEIGHT * scale,
+            ),
+        ))
+    }
+
     /// Manager-owned Encyclopedia hit for event-local pointer routing.
     #[must_use]
     pub(crate) fn hit_window(
@@ -330,22 +358,9 @@ impl EncyclopediaSurfaceController {
         point: (f32, f32),
     ) -> Option<WindowId> {
         let id = self.window_id?;
-        let audience = self.audience?;
-        let scale = (width / 640.0).min(height / 480.0).max(f32::EPSILON);
-        let origin = encyclopedia_surface_origin(width, height, scale, audience);
-        let rect = egui::Rect::from_min_size(
-            origin,
-            egui::vec2(
-                ENCYCLOPEDIA_INDEX_WIDTH * scale,
-                ENCYCLOPEDIA_INDEX_HEIGHT * scale,
-            ),
-        );
-        (frame
-            .key(id)
-            .is_some_and(|key| key.kind == WindowKind::Encyclopedia)
-            && frame.allows_input(id)
-            && rect.contains(egui::pos2(point.0, point.1)))
-        .then_some(id)
+        self.screen_rect(frame, width, height)?
+            .contains(egui::pos2(point.0, point.1))
+            .then_some(id)
     }
 
     /// Exact manager identity that owns this frame's keyboard lease.

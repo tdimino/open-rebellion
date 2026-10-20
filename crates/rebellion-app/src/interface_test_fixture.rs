@@ -5,11 +5,17 @@
 
 #[path = "interface_test_fixture_identity_history.rs"]
 mod identity_history;
+#[path = "interface_test_fixture_input_scenes.rs"]
+mod input_scenes;
 #[path = "interface_test_fixture_modal_boundaries.rs"]
 mod modal_boundaries;
 
 #[cfg(target_arch = "wasm32")]
 pub use identity_history::{IdentityHistoryWatch, IdentityHistoryWindows};
+#[cfg(target_arch = "wasm32")]
+pub(crate) use input_scenes::InputScenesCommand;
+#[cfg(target_arch = "wasm32")]
+pub use input_scenes::{InputScenesFixture, InputScenesWindows};
 #[cfg(target_arch = "wasm32")]
 pub use modal_boundaries::{ModalBoundaryWatch, ModalBoundaryWindows};
 
@@ -2428,10 +2434,49 @@ fn fnv1a64(bytes: &[u8]) -> u64 {
 
 #[cfg(test)]
 mod tests {
+    use super::input_scenes::{InputScenesCommand, InputScenesFixture};
     use super::*;
     use rebellion_render::object_menu::{MenuObject, OrderGates};
     use rebellion_render::windowing_policy::{contextual_spec, system_subject};
     use rebellion_windowing::{WindowCommand, WindowManager, WindowOwner, WindowTransition};
+
+    #[test]
+    fn input_scenes_commands_fail_closed_and_keep_failure_states_distinct() {
+        assert_eq!(InputScenesCommand::decode(0), None);
+        assert_eq!(
+            InputScenesCommand::decode(1),
+            Some(InputScenesCommand::ModalUnpaintable)
+        );
+        assert_eq!(
+            InputScenesCommand::decode(3),
+            Some(InputScenesCommand::ModelessUnpaintable)
+        );
+        assert_eq!(
+            InputScenesCommand::decode(4),
+            Some(InputScenesCommand::ModelessAbsent)
+        );
+        assert_eq!(
+            InputScenesCommand::decode(13),
+            Some(InputScenesCommand::CancelCaptureForFocusLoss)
+        );
+        assert_eq!(
+            InputScenesCommand::decode(14),
+            Some(InputScenesCommand::ReplaceActiveMenu)
+        );
+        assert_eq!(InputScenesCommand::decode(15), None);
+
+        let mut fixture = InputScenesFixture::default();
+        fixture.apply_failure_for_test(InputScenesCommand::ModelessUnpaintable);
+        assert_eq!(
+            fixture.forced_status_for_test(),
+            Some(rebellion_windowing::ContentStatus::Unpaintable)
+        );
+        fixture.apply_failure_for_test(InputScenesCommand::ModelessAbsent);
+        assert_eq!(
+            fixture.forced_status_for_test(),
+            Some(rebellion_windowing::ContentStatus::Absent)
+        );
+    }
 
     #[test]
     fn scenario_table_is_stable_and_complete() {

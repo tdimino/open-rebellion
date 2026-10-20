@@ -8186,6 +8186,8 @@ async fn main() {
     #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
     let mut modal_boundary_watch = interface_test_fixture::ModalBoundaryWatch::default();
     #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+    let mut input_scenes_fixture = interface_test_fixture::InputScenesFixture::default();
+    #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
     let mut fleet_finder_watch = interface_test_fixture::FleetFinderWatch::default();
     #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
     let interface_fixture_active =
@@ -10460,6 +10462,136 @@ async fn main() {
             }
         }
 
+        #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+        if let Some(request) = interface_fixture_request {
+            if let Some(command) = input_scenes_fixture.take_command(request) {
+                let fixture_snapshot = strategic_windowing.begin_frame();
+                if command == interface_test_fixture::InputScenesCommand::EnterTacticalAlert {
+                    input_scenes_fixture.note_dormant_galaxy_modal(fixture_snapshot.active_modal());
+                }
+                if input_scenes_fixture.apply_failure(command, &fixture_snapshot) {
+                    // Failure commands affect only the content reports below.
+                } else if let Err(error) = input_scenes_fixture.apply_scene_command(
+                    command,
+                    request,
+                    &mut world,
+                    &mut tactical_state,
+                    &mut msg_log,
+                    &mut game_mode,
+                ) {
+                    macroquad::logging::error!(
+                        "[windowing-fixture-command] status=failed error={error}"
+                    );
+                } else {
+                    match command {
+                        interface_test_fixture::InputScenesCommand::QueueStaleAction => {
+                            let target = fixture_snapshot
+                                .active_modal()
+                                .or_else(|| fixture_snapshot.focused().map(|focus| focus.window));
+                            input_scenes_fixture.queue_stale_target(target);
+                        }
+                        interface_test_fixture::InputScenesCommand::CloseCaptureOwner
+                        | interface_test_fixture::InputScenesCommand::MinimizeCaptureOwner => {
+                            let target = fixture_snapshot
+                                .capture_owner()
+                                .or_else(|| fixture_snapshot.focused().map(|focus| focus.window));
+                            if let Some(target) = target {
+                                strategic_windowing.enqueue(match command {
+                                    interface_test_fixture::InputScenesCommand::CloseCaptureOwner => {
+                                        rebellion_windowing::WindowCommand::Close(target)
+                                    }
+                                    _ => rebellion_windowing::WindowCommand::Minimize(target),
+                                });
+                            }
+                        }
+                        interface_test_fixture::InputScenesCommand::CancelCaptureForFocusLoss => {
+                            strategic_windowing.enqueue(
+                                rebellion_windowing::WindowCommand::CancelCapture(
+                                    rebellion_windowing::CaptureCancelReason::FocusLost,
+                                ),
+                            );
+                        }
+                        interface_test_fixture::InputScenesCommand::ReplaceActiveMenu => {
+                            let owner = managed_menu.window_id().and_then(|menu| {
+                                match fixture_snapshot.owner(menu) {
+                                    Some(rebellion_windowing::WindowOwner::Window(owner)) => {
+                                        Some(owner)
+                                    }
+                                    _ => None,
+                                }
+                            });
+                            if let (Some(owner), Some(content)) = (owner, object_menu.clone()) {
+                                let prepared = managed_menu.prepare_open(owner);
+                                strategic_windowing.enqueue(prepared.command());
+                                pending_object_menu_publications.push((
+                                    prepared,
+                                    content,
+                                    indexed_status_menu_witness,
+                                ));
+                            }
+                        }
+                        interface_test_fixture::InputScenesCommand::ResetSession => {
+                            let mut stale_action_frozen = false;
+                            if let Some(target) = input_scenes_fixture.queued_target() {
+                                strategic_windowing
+                                    .enqueue(rebellion_windowing::WindowCommand::Close(target));
+                                stale_action_frozen = strategic_windowing.begin_apply_batch() > 0;
+                            }
+                            let events = strategic_windowing.reset_session();
+                            let stale_action_discarded = stale_action_frozen
+                                && strategic_windowing.begin_apply_batch() == 0
+                                && strategic_windowing.apply_next_pending().is_none();
+                            apply_capture_cancellation_events(
+                                &events,
+                                &mut strategic_input_router,
+                                &mut sector_window_state,
+                                &mut fleet_window_state,
+                                &mut defenses_window_state,
+                            );
+                            strategic_input_router.reset_session();
+                            routed_egui_input_filter.reset();
+                            managed_menu = ManagedMenuState::default();
+                            pending_object_menu_publications.clear();
+                            pending_gid_menu_publications.clear();
+                            pending_speed_menu_publications.clear();
+                            pending_agent_menu_publications.clear();
+                            object_menu = None;
+                            indexed_status_menu_witness = None;
+                            game_speed_ui.menu_anchor = None;
+                            agent_menu_state.anchor = None;
+                            sector_window_state.clear();
+                            pending_sector_publications.clear();
+                            pending_committed_sector_actions.clear();
+                            system_window_state.clear();
+                            fleet_window_state.clear();
+                            defenses_window_state.clear();
+                            missions_window_state.clear();
+                            fleet_finder_state = FleetFinderState::default();
+                            troop_finder_state = TroopFinderState::default();
+                            pending_troop_finder_open = None;
+                            personnel_finder_state = PersonnelFinderState::default();
+                            pending_personnel_finder_open = None;
+                            message_index.reset();
+                            encyclopedia_surface.reset();
+                            build_selection_state = BuildSelectionState::default();
+                            mission_dialog_state = MissionDialogState::default();
+                            move_confirmation_state = MoveConfirmationState::default();
+                            scrap_confirmation_state = ScrapConfirmationState::default();
+                            status_window_state = StatusWindowState::default();
+                            tactical_state = TacticalState::new();
+                            reset_pending_tactical_handoff(
+                                &mut pending_tactical_window_action,
+                                &mut pending_tactical_destination,
+                            );
+                            game_mode = GameMode::Galaxy;
+                            input_scenes_fixture.note_reset(stale_action_discarded);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+
         // Freeze the production route only after simulation and scripted
         // commands have had their chance to introduce a modal this frame.
         let desired_window_scene = match game_mode {
@@ -10770,6 +10902,8 @@ async fn main() {
             primary_down: is_mouse_button_down(MouseButton::Left),
             ..TacticalWindowInput::default()
         };
+        #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+        let mut input_scenes_menu_rects = Vec::new();
         let render_mode = if battle_window_underlay {
             GameMode::Galaxy
         } else {
@@ -13271,6 +13405,21 @@ async fn main() {
                         );
                     }
 
+                    #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+                    {
+                        let mut rects = object_menu
+                            .as_ref()
+                            .map_or_else(Vec::new, |_| object_menu_rects(ctx));
+                        rects.extend(rebellion_render::cockpit::gid_menu_rects(
+                            ctx,
+                            &cockpit_state.gid_ui,
+                        ));
+                        input_scenes_menu_rects = rects
+                            .iter()
+                            .map(|rect| [rect.min.x, rect.min.y, rect.width(), rect.height()])
+                            .collect();
+                    }
+
                     // Personnel Finder destinations now wait for the exact
                     // manager-owned close receipt before opening the Sector
                     // and its dependent detail.
@@ -15033,6 +15182,11 @@ async fn main() {
                 TacticalAction::TogglePause => {
                     if let Some(ref mut session) = tactical_state.session {
                         session.paused = !session.paused;
+                        #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+                        if interface_fixture_request.is_some() {
+                            input_scenes_fixture
+                                .note_tactical_input("toggle_pause", session.paused);
+                        }
                     }
                 }
                 TacticalAction::SetSpeed(speed) => {
@@ -16655,6 +16809,9 @@ async fn main() {
             }
         }
 
+        #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+        input_scenes_fixture.override_content_reports(&mut strategic_content_reports);
+
         // Reports reconcile after command commit against the immutable frame
         // that actually routed and painted this content.
         let reconciliation = strategic_windowing.reconcile(
@@ -16706,6 +16863,49 @@ async fn main() {
                 "[windowing] reconcile invalid={:?} blocking={:?}",
                 reconciliation.invalid_reports,
                 reconciliation.blocking_unpainted
+            );
+        }
+        #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+        if let Some(request) = interface_fixture_request {
+            input_scenes_fixture.note_reconciliation(&reconciliation);
+            let input_scenes_snapshot = strategic_windowing.begin_frame();
+            let encyclopedia_rect = encyclopedia_surface
+                .screen_rect(&input_scenes_snapshot, screen_width(), screen_height())
+                .map(|rect| [rect.min.x, rect.min.y, rect.width(), rect.height()]);
+            let encyclopedia_content_status = encyclopedia_surface.window_id().and_then(|id| {
+                strategic_content_reports
+                    .iter()
+                    .find(|report| report.window == id)
+                    .map(|report| report.status)
+            });
+            input_scenes_fixture.observe(
+                request,
+                &interface_test_fixture::InputScenesWindows {
+                    snapshot: &input_scenes_snapshot,
+                    reconciliation: &reconciliation,
+                    fleets: &fleet_window_state,
+                    scene: match desired_window_scene {
+                        WindowScene::Galaxy => "galaxy",
+                        WindowScene::Tactical => "tactical",
+                        WindowScene::Suspended => "suspended",
+                    },
+                    tactical_phase: match tactical_window_phase {
+                        TacticalWindowPhase::Inactive => "inactive",
+                        TacticalWindowPhase::Alert => "alert",
+                        TacticalWindowPhase::Combat => "combat",
+                        TacticalWindowPhase::Results => "results",
+                    },
+                    dormant_galaxy_registered: input_scenes_fixture
+                        .dormant_galaxy_modal()
+                        .is_some_and(|id| strategic_windowing.has_content(id)),
+                    menu_rects: &input_scenes_menu_rects,
+                    encyclopedia_rect,
+                    encyclopedia_content_status,
+                    tactical_paused: tactical_state
+                        .session
+                        .as_ref()
+                        .map(|session| session.paused),
+                },
             );
         }
         if let Some(intent) = pending_encyclopedia_open {

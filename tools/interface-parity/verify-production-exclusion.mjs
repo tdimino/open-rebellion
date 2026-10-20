@@ -10,8 +10,12 @@ const productionWasm = path.join(root, "web/open-rebellion.wasm");
 const productionHtml = path.join(root, "web/index.html");
 const forbidden = [
   "open_rebellion_interface_fixture",
+  "open_rebellion_windowing_fixture_command",
   "fixture-code",
   "__openRebellionInterfaceReady",
+  "__openRebellionWindowingFixtureCommand",
+  "[windowing-input-scenes-action]",
+  "[windowing-fixture-command]",
   "gid/alliance/popular-support",
   "tactical_test_fixture",
   "enable_resource_2560_proof",
@@ -39,8 +43,13 @@ for (const file of [productionWasm, productionHtml]) {
 const testWasm = path.join(root, ".artifacts/interface-parity/site/open-rebellion-test.wasm");
 if (fs.existsSync(testWasm)) {
   const bytes = fs.readFileSync(testWasm);
-  if (!bytes.includes(Buffer.from("open_rebellion_interface_fixture"))) {
-    throw new Error("test WASM does not expose the fixture bridge");
+  for (const needle of [
+    "open_rebellion_interface_fixture",
+    "open_rebellion_windowing_fixture_command",
+  ]) {
+    if (!bytes.includes(Buffer.from(needle))) {
+      throw new Error(`test WASM does not expose fixture bridge ${needle}`);
+    }
   }
 }
 
