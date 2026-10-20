@@ -10957,6 +10957,12 @@ async fn main() {
                             }
                             FleetWindowAction::Activate(window) => strategic_windowing
                                 .enqueue(rebellion_windowing::WindowCommand::Activate(window)),
+                            FleetWindowAction::FocusControl(target) => strategic_windowing
+                                .enqueue(rebellion_windowing::WindowCommand::Focus(target)),
+                            FleetWindowAction::InvalidateControl(target) => strategic_windowing
+                                .enqueue(rebellion_windowing::WindowCommand::InvalidateControl(
+                                    target,
+                                )),
                             FleetWindowAction::CapturePointer(window) => strategic_windowing
                                 .enqueue(rebellion_windowing::WindowCommand::CapturePointer(
                                     window,

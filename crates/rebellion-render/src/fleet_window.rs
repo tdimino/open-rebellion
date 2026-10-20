@@ -20,8 +20,8 @@ use rebellion_core::movement::MovementState;
 use rebellion_core::troop_transport::TroopTransportState;
 use rebellion_core::world::{ControlKind, Fleet, GameWorld};
 use rebellion_windowing::{
-    ContentReport, ContentStatus, RoutingSnapshot, SubjectId, WindowId, WindowKind, WindowOwner,
-    WindowSpec, WindowTransition,
+    ContentReport, ContentStatus, ControlId, FocusTarget, RoutingSnapshot, SubjectId, WindowId,
+    WindowKind, WindowOwner, WindowSpec, WindowTransition,
 };
 
 use crate::bmp_cache::{BmpCache, DllSource};
@@ -41,6 +41,12 @@ use crate::windowing_policy::{contextual_spec, system_subject};
 
 pub const FLEET_WINDOW_WIDTH: f32 = 235.0;
 pub const FLEET_WINDOW_HEIGHT: f32 = 304.0;
+
+/// Stable child identity of the Fleet detail's in-place Rename field.
+///
+/// The value follows the original Rename command (`0x203`), but is local to
+/// the owning [`WindowId`]; it never allocates a top-level manager record.
+pub const FLEET_RENAME_CONTROL: ControlId = ControlId(0x203);
 
 const BACKGROUND: u32 = 10770;
 const CLOSE_NORMAL: u32 = 10108;
@@ -434,6 +440,7 @@ impl ItemObject {
 pub struct FleetWindowState {
     faction: CockpitFaction,
     windows: Vec<OpenFleetWindow>,
+    pending_control_invalidations: Vec<FocusTarget>,
     drag: Option<ItemDrag>,
     drag_owner: Option<WindowId>,
     /// Fixture-only compatibility for browser scenarios that intentionally
@@ -446,6 +453,7 @@ impl Default for FleetWindowState {
         Self {
             faction: CockpitFaction::Alliance,
             windows: Vec::new(),
+            pending_control_invalidations: Vec::new(),
             drag: None,
             drag_owner: None,
             fixture_focus_serial: 0,
@@ -460,6 +468,24 @@ struct EndDragResult {
 }
 
 impl FleetWindowState {
+    fn clear_replaced_renames(&mut self, replacement: Option<WindowId>) {
+        for content in &mut self.windows {
+            if content.rename.take().is_none() || content.id == replacement {
+                continue;
+            }
+            let Some(window) = content.id else {
+                continue;
+            };
+            let target = FocusTarget {
+                window,
+                control: Some(FLEET_RENAME_CONTROL),
+            };
+            if !self.pending_control_invalidations.contains(&target) {
+                self.pending_control_invalidations.push(target);
+            }
+        }
+    }
+
     /// Allocates a temporary cross-family serial after the shared manager has
     /// already accepted a Fleet activation. This does not order Fleet content;
     /// the routing snapshot remains its sole order authority.
@@ -530,9 +556,7 @@ impl FleetWindowState {
                     expanded.push(fleet);
                 }
                 if prepared.rename.is_some() {
-                    for content in &mut self.windows {
-                        content.rename = None;
-                    }
+                    self.clear_replaced_renames(Some(id));
                 }
                 self.windows.push(OpenFleetWindow {
                     id: Some(id),
@@ -566,9 +590,7 @@ impl FleetWindowState {
                     window.selected_item = None;
                 }
                 if prepared.rename.is_some() {
-                    for content in &mut self.windows {
-                        content.rename = None;
-                    }
+                    self.clear_replaced_renames(Some(id));
                     self.windows
                         .iter_mut()
                         .find(|window| window.id == Some(id))?
@@ -658,7 +680,12 @@ impl FleetWindowState {
         self.windows
             .iter()
             .find(|window| window.id == Some(target.window))
-            .map(|window| (target.window, window.rename.is_some()))
+            .map(|window| {
+                (
+                    target.window,
+                    target.control == Some(FLEET_RENAME_CONTROL) && window.rename.is_some(),
+                )
+            })
     }
 
     /// Whether exact manager-owned Fleet content remains attached.
@@ -671,6 +698,8 @@ impl FleetWindowState {
     pub fn remove_content(&mut self, removed: &[WindowId]) {
         self.windows
             .retain(|window| window.id.is_none_or(|id| !removed.contains(&id)));
+        self.pending_control_invalidations
+            .retain(|target| !removed.contains(&target.window));
         if self
             .drag_owner
             .is_some_and(|owner| removed.contains(&owner))
@@ -751,9 +780,8 @@ impl FleetWindowState {
         if !self.select(system, entry) {
             return false;
         }
-        for window in &mut self.windows {
-            window.rename = None;
-        }
+        let replacement = self.window_id(system);
+        self.clear_replaced_renames(replacement);
         if let Some(window) = self.window_mut(system) {
             window.rename = Some(RenameEdit {
                 entry,
@@ -969,6 +997,7 @@ impl FleetWindowState {
 
     pub fn clear(&mut self) {
         self.windows.clear();
+        self.pending_control_invalidations.clear();
         self.drag = None;
         self.drag_owner = None;
     }
@@ -1152,6 +1181,12 @@ pub enum FleetWindowAction {
     SelectSystem(SystemKey),
     /// A manager-owned Fleet window took pointer activation.
     Activate(WindowId),
+    /// A live Rename field requests semantic child focus within its Fleet
+    /// detail identity.
+    FocusControl(FocusTarget),
+    /// A committed, cancelled, or removed Rename field no longer exists, so
+    /// manager focus must fall back to its eligible Fleet owner.
+    InvalidateControl(FocusTarget),
     /// A routed primary press began a drag owned by this exact window.
     CapturePointer(WindowId),
     /// The matching routed primary release completed that capture.
@@ -1899,6 +1934,12 @@ fn rename_outcome_permitted(
     }
 }
 
+#[derive(Clone, Copy, Default)]
+struct RenameInputLease {
+    handles_input: bool,
+    requests_manager_focus: bool,
+}
+
 /// Draw every open Fleet window.
 #[expect(
     clippy::too_many_arguments,
@@ -2030,15 +2071,52 @@ fn draw_fleet_windows_with_snapshot(
         router.as_deref_mut(),
         pointer_events,
     );
-    let mut actions = ended_drag.actions;
+    let mut actions: Vec<_> = std::mem::take(&mut state.pending_control_invalidations)
+        .into_iter()
+        .map(FleetWindowAction::InvalidateControl)
+        .collect();
+    actions.extend(ended_drag.actions);
     for window in &windows {
+        let rename_target = window.id.map(|window| FocusTarget {
+            window,
+            control: Some(FLEET_RENAME_CONTROL),
+        });
+        let rename_lease = match (window.id, router.as_deref()) {
+            (Some(_), Some(router)) => match router.escape_route() {
+                EscapeRoute::Control(target) => RenameInputLease {
+                    handles_input: Some(target) == rename_target,
+                    requests_manager_focus: false,
+                },
+                EscapeRoute::Window(route_window) => RenameInputLease {
+                    handles_input: false,
+                    requests_manager_focus: Some(route_window) == window.id
+                        && window.rename.as_ref().is_some_and(|edit| edit.fresh),
+                },
+                EscapeRoute::Root | EscapeRoute::Blocked => RenameInputLease::default(),
+            },
+            (Some(_), None) => RenameInputLease::default(),
+            (None, _) => RenameInputLease {
+                handles_input: true,
+                requests_manager_focus: false,
+            },
+        };
         let focused = front
             && match window.id {
                 Some(id) => focused_id == Some(id),
                 None => focused_fixture_system == Some(window.system),
             };
         let result = draw_fleet_window(
-            ctx, world, movement, fog, transport, window, focused, faction, layout, cache,
+            ctx,
+            world,
+            movement,
+            fog,
+            transport,
+            window,
+            rename_lease,
+            focused,
+            faction,
+            layout,
+            cache,
         );
         let system = window.system;
         let pointer_mutation = result.focus
@@ -2084,15 +2162,11 @@ fn draw_fleet_windows_with_snapshot(
             (Some(_), true, None) => false,
             _ => true,
         };
-        let keyboard_permitted = match (window.id, router.as_deref()) {
-            (Some(id), Some(router)) => match router.escape_route() {
-                EscapeRoute::Control(target) => target.window == id,
-                EscapeRoute::Window(window) => window == id,
-                EscapeRoute::Root | EscapeRoute::Blocked => false,
-            },
-            (Some(_), None) => false,
-            (None, _) => true,
-        };
+        if rename_lease.requests_manager_focus {
+            if let Some(target) = rename_target {
+                actions.push(FleetWindowAction::FocusControl(target));
+            }
+        }
         if pointer_permitted {
             if let Some(drag) = result.drag {
                 state.drag = Some(drag);
@@ -2161,7 +2235,7 @@ fn draw_fleet_windows_with_snapshot(
             if rename_outcome_permitted(
                 result.rename.as_ref(),
                 pointer_permitted,
-                keyboard_permitted,
+                rename_lease.handles_input,
             ) {
                 match result.rename {
                     Some(RenameOutcome::Typed(text)) => {
@@ -2176,9 +2250,18 @@ fn draw_fleet_windows_with_snapshot(
                                 entry: edit.entry,
                                 name,
                             });
+                            if let Some(target) = rename_target {
+                                actions.push(FleetWindowAction::InvalidateControl(target));
+                            }
                         }
                     }
-                    Some(RenameOutcome::Cancel(_)) => open.rename = None,
+                    Some(RenameOutcome::Cancel(_)) => {
+                        if open.rename.take().is_some() {
+                            if let Some(target) = rename_target {
+                                actions.push(FleetWindowAction::InvalidateControl(target));
+                            }
+                        }
+                    }
                     None => {}
                 }
             }
@@ -2208,6 +2291,7 @@ fn draw_fleet_window(
     fog: &FogState,
     transport: &TroopTransportState,
     window: &OpenFleetWindow,
+    rename_lease: RenameInputLease,
     focused: bool,
     faction: CockpitFaction,
     layout: CockpitLayout,
@@ -2516,8 +2600,17 @@ fn draw_fleet_window(
                 }
             }
             if let Some(edit) = &window.rename {
-                result.rename =
-                    draw_rename_edit(ui, window, edit, &entries, local, list, scale, &font);
+                result.rename = draw_rename_edit(
+                    ui,
+                    window,
+                    edit,
+                    rename_lease,
+                    &entries,
+                    local,
+                    list,
+                    scale,
+                    &font,
+                );
             }
 
             if let Some(side) = selected_side {
@@ -2808,6 +2901,7 @@ fn draw_rename_edit(
     ui: &mut egui::Ui,
     window: &OpenFleetWindow,
     edit: &RenameEdit,
+    lease: RenameInputLease,
     entries: &[FleetWindowEntry],
     local: egui::Rect,
     list: egui::Rect,
@@ -2820,19 +2914,40 @@ fn draw_rename_edit(
     };
     let top = LEFT_LIST.1 + LEFT_ITEM_HEIGHT * row as f32;
     let rect = logical_rect(local, scale, LEFT_LIST.0 + 4.0, top + 3.0, 85.0, 15.0).intersect(list);
-    let id = ui.id().with((window.system, "rename"));
+    let id = window.id.map_or_else(
+        || ui.id().with((window.system, "rename")),
+        |window| {
+            egui::Id::new((
+                "original-fleet-window-control",
+                window.get(),
+                FLEET_RENAME_CONTROL.0,
+            ))
+        },
+    );
     let mut text = edit.text.clone();
     ui.painter().rect_filled(rect, 0.0, egui::Color32::BLACK);
+    if window.id.is_some() && edit.fresh && (lease.handles_input || lease.requests_manager_focus) {
+        ui.ctx().memory_mut(|memory| memory.request_focus(id));
+        let mut state = egui::TextEdit::load_state(ui.ctx(), id).unwrap_or_default();
+        state
+            .cursor
+            .set_char_range(Some(egui::text::CCursorRange::two(
+                egui::text::CCursor::new(0),
+                egui::text::CCursor::new(text.chars().count()),
+            )));
+        state.store(ui.ctx(), id);
+    }
     let response = ui.put(
         rect,
         egui::TextEdit::singleline(&mut text)
             .id(id)
+            .interactive(lease.handles_input)
             .frame(false)
             .font(font.clone())
             .text_color(egui::Color32::WHITE)
             .desired_width(rect.width()),
     );
-    if edit.fresh {
+    if window.id.is_none() && edit.fresh && lease.handles_input {
         response.request_focus();
         let mut state = egui::TextEdit::load_state(ui.ctx(), id).unwrap_or_default();
         state
@@ -2843,6 +2958,12 @@ fn draw_rename_edit(
             )));
         state.store(ui.ctx(), id);
         return Some(RenameOutcome::Typed(text));
+    }
+    if edit.fresh && lease.requests_manager_focus {
+        return None;
+    }
+    if !lease.handles_input {
+        return None;
     }
     let enter = ui.input(|input| input.key_pressed(egui::Key::Enter));
     let escape = ui.input(|input| input.key_pressed(egui::Key::Escape));
@@ -2862,7 +2983,7 @@ fn draw_rename_edit(
     if response.lost_focus() {
         return Some(RenameOutcome::Cancel(RenameCancelCause::FocusLost));
     }
-    response.changed().then_some(RenameOutcome::Typed(text))
+    (edit.fresh || response.changed()).then_some(RenameOutcome::Typed(text))
 }
 
 /// Blit a bitmap at its native size at a logical offset in `parent`
@@ -3242,9 +3363,11 @@ pub(crate) mod tests {
         );
         assert!(state.window_is_visible(&manager.begin_frame(), system));
         assert!(state.window_mut(system).unwrap().rename.is_some());
+        // Publication restores the existing Fleet owner first. The renderer
+        // requests child focus only after the Rename widget is realized.
         assert_eq!(
             state.keyboard_owner(&manager.begin_frame()),
-            Some((id, true))
+            Some((id, false))
         );
     }
 
@@ -5530,6 +5653,658 @@ pub(crate) mod tests {
             repeat: false,
             modifiers: egui::Modifiers::default(),
         }
+    }
+
+    fn apply_rename_focus_actions(manager: &mut WindowManager, actions: &[FleetWindowAction]) {
+        for action in actions {
+            let command = match action {
+                FleetWindowAction::FocusControl(target) => WindowCommand::Focus(*target),
+                FleetWindowAction::InvalidateControl(target) => {
+                    WindowCommand::InvalidateControl(*target)
+                }
+                _ => continue,
+            };
+            manager
+                .apply(command)
+                .expect("a live Fleet rename target should satisfy manager focus policy");
+        }
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "The focused-child fixture keeps the real renderer boundary explicit."
+    )]
+    fn managed_rename_frame(
+        ctx: &egui::Context,
+        cache: &mut BmpCache,
+        world: &GameWorld,
+        manager: &WindowManager,
+        state: &mut FleetWindowState,
+        frame: u64,
+        events: Vec<egui::Event>,
+        application_hold: bool,
+    ) -> (Vec<FleetWindowAction>, FrameInputRouter, Vec<InputEventId>) {
+        let snapshot = manager.begin_frame();
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(frame, &snapshot);
+        router.set_application_hold(application_hold);
+        let keyboard_events: Vec<_> = events
+            .iter()
+            .enumerate()
+            .filter(|(_, event)| matches!(event, egui::Event::Key { pressed: true, .. }))
+            .map(|(ordinal, _)| {
+                let id = InputEventId {
+                    frame,
+                    ordinal: ordinal as u32,
+                };
+                router.collect_keyboard(id);
+                id
+            })
+            .collect();
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1400.0, 1000.0),
+            )),
+            time: Some(frame as f64 * 0.05),
+            events,
+            ..Default::default()
+        };
+        let mut actions = Vec::new();
+        let visible_fog = world.systems.keys().fold(
+            FogState::new(Faction::Alliance),
+            |mut visible_fog, system| {
+                visible_fog.reveal(system);
+                visible_fog
+            },
+        );
+        let _ = ctx.run(input, |ctx| {
+            if application_hold {
+                egui::Area::new(egui::Id::new("eligible-modal-rename-test-area")).show(ctx, |ui| {
+                    let mut modal_text = String::new();
+                    ui.add(
+                        egui::TextEdit::singleline(&mut modal_text)
+                            .id(egui::Id::new("eligible-modal-rename-test-control")),
+                    )
+                    .request_focus();
+                });
+            }
+            actions = draw_managed_fleet_windows(
+                ctx,
+                world,
+                &MovementState::default(),
+                &visible_fog,
+                &TroopTransportState::default(),
+                state,
+                CockpitFaction::Alliance,
+                scaled(),
+                cache,
+                &snapshot,
+                &[],
+                &mut router,
+                true,
+            );
+        });
+        (actions, router, keyboard_events)
+    }
+
+    fn managed_rename_fixture() -> (
+        GameWorld,
+        SystemKey,
+        FleetKey,
+        WindowManager,
+        FleetWindowState,
+        WindowId,
+    ) {
+        let (mut world, system) = world(ControlKind::Controlled(Faction::Alliance));
+        let fleet = add_fleet(&mut world, system, true, 0);
+        let mut manager = WindowManager::new();
+        let mut state = FleetWindowState::default();
+        let prepared = state
+            .prepare_open(
+                &world,
+                system,
+                ORIGIN,
+                CockpitFaction::Alliance,
+                scaled(),
+                Some(FleetWindowEntry::Fleet(fleet)),
+            )
+            .unwrap();
+        let (window, _) = commit_prepared_fleet_window(&mut manager, &mut state, prepared);
+        assert!(state.begin_rename(&world, system, FleetWindowEntry::Fleet(fleet)));
+        (world, system, fleet, manager, state, window)
+    }
+
+    #[test]
+    fn detail_rename_uses_child_focus_without_allocating_window() {
+        let (world, _, _, mut manager, mut state, window) = managed_rename_fixture();
+        let before = manager.begin_frame().paint_order().to_vec();
+        let ctx = egui::Context::default();
+        let mut cache = BmpCache::new();
+
+        let (actions, _, _) = managed_rename_frame(
+            &ctx,
+            &mut cache,
+            &world,
+            &manager,
+            &mut state,
+            1,
+            vec![],
+            false,
+        );
+        let target = rebellion_windowing::FocusTarget {
+            window,
+            control: Some(FLEET_RENAME_CONTROL),
+        };
+        assert!(actions.contains(&FleetWindowAction::FocusControl(target)));
+        apply_rename_focus_actions(&mut manager, &actions);
+
+        let focused = manager.begin_frame();
+        assert_eq!(focused.paint_order(), before);
+        assert_eq!(focused.focused(), Some(target));
+        assert_eq!(state.window_count(), 1);
+        assert_eq!(state.keyboard_owner(&focused), Some((window, true)));
+
+        let before_text = state.windows[0].rename.as_ref().unwrap().text.clone();
+        let (steady, _, _) = managed_rename_frame(
+            &ctx,
+            &mut cache,
+            &world,
+            &manager,
+            &mut state,
+            2,
+            vec![],
+            false,
+        );
+        assert!(!steady
+            .iter()
+            .any(|action| matches!(action, FleetWindowAction::FocusControl(_))));
+
+        manager
+            .apply(WindowCommand::InvalidateControl(target))
+            .unwrap();
+        let (owner_routed, _, _) = managed_rename_frame(
+            &ctx,
+            &mut cache,
+            &world,
+            &manager,
+            &mut state,
+            3,
+            vec![egui::Event::Text("Owner must not edit".into())],
+            false,
+        );
+        assert_eq!(state.windows[0].rename.as_ref().unwrap().text, before_text);
+        assert!(renames(&owner_routed).is_empty());
+    }
+
+    #[test]
+    fn detail_rename_escape_cancels_edit_without_closing_detail() {
+        let (world, _, _, mut manager, mut state, window) = managed_rename_fixture();
+        let ctx = egui::Context::default();
+        let mut cache = BmpCache::new();
+        let (focus, _, _) = managed_rename_frame(
+            &ctx,
+            &mut cache,
+            &world,
+            &manager,
+            &mut state,
+            1,
+            vec![],
+            false,
+        );
+        apply_rename_focus_actions(&mut manager, &focus);
+
+        let (actions, _, _) = managed_rename_frame(
+            &ctx,
+            &mut cache,
+            &world,
+            &manager,
+            &mut state,
+            2,
+            vec![key(egui::Key::Escape)],
+            false,
+        );
+        assert!(!actions
+            .iter()
+            .any(|action| matches!(action, FleetWindowAction::Close(_))));
+        assert!(!actions
+            .iter()
+            .any(|action| matches!(action, FleetWindowAction::Rename { .. })));
+        assert!(actions.contains(&FleetWindowAction::InvalidateControl(
+            rebellion_windowing::FocusTarget {
+                window,
+                control: Some(FLEET_RENAME_CONTROL),
+            }
+        )));
+        apply_rename_focus_actions(&mut manager, &actions);
+
+        assert!(!state.renaming());
+        assert_eq!(
+            manager.begin_frame().focused(),
+            Some(rebellion_windowing::FocusTarget {
+                window,
+                control: None,
+            })
+        );
+        assert_eq!(state.window_count(), 1);
+    }
+
+    #[test]
+    fn detail_rename_enter_commits_once_without_root_shortcut() {
+        use crate::windowing_input::{InputDisposition, InputRecipient};
+
+        let (world, _, fleet, mut manager, mut state, window) = managed_rename_fixture();
+        let ctx = egui::Context::default();
+        let mut cache = BmpCache::new();
+        let (focus, _, _) = managed_rename_frame(
+            &ctx,
+            &mut cache,
+            &world,
+            &manager,
+            &mut state,
+            1,
+            vec![],
+            false,
+        );
+        apply_rename_focus_actions(&mut manager, &focus);
+        let _ = managed_rename_frame(
+            &ctx,
+            &mut cache,
+            &world,
+            &manager,
+            &mut state,
+            2,
+            vec![egui::Event::Text("R".into())],
+            false,
+        );
+        let _ = managed_rename_frame(
+            &ctx,
+            &mut cache,
+            &world,
+            &manager,
+            &mut state,
+            3,
+            vec![egui::Event::Text("o".into())],
+            false,
+        );
+        assert_eq!(state.windows[0].rename.as_ref().unwrap().text, "Ro");
+
+        let (actions, mut router, keys) = managed_rename_frame(
+            &ctx,
+            &mut cache,
+            &world,
+            &manager,
+            &mut state,
+            4,
+            vec![key(egui::Key::Enter)],
+            false,
+        );
+        assert_eq!(
+            renames(&actions),
+            [(FleetWindowEntry::Fleet(fleet), "Ro".to_owned())]
+        );
+        let enter = keys[0];
+        router.report_key(
+            enter,
+            InputRecipient::Window(window),
+            InputDisposition::Handled,
+        );
+        assert!(!router.root_may_handle(enter));
+        apply_rename_focus_actions(&mut manager, &actions);
+
+        let (later, _, _) = managed_rename_frame(
+            &ctx,
+            &mut cache,
+            &world,
+            &manager,
+            &mut state,
+            5,
+            vec![],
+            false,
+        );
+        assert!(renames(&later).is_empty());
+        assert_eq!(state.window_count(), 1);
+    }
+
+    #[test]
+    fn detail_text_edit_blocked_by_modal_does_not_mutate_text() {
+        let (world, _, _, mut manager, mut state, _) = managed_rename_fixture();
+        let ctx = egui::Context::default();
+        let mut cache = BmpCache::new();
+        let (focus, _, _) = managed_rename_frame(
+            &ctx,
+            &mut cache,
+            &world,
+            &manager,
+            &mut state,
+            1,
+            vec![],
+            false,
+        );
+        apply_rename_focus_actions(&mut manager, &focus);
+        let _ = managed_rename_frame(
+            &ctx,
+            &mut cache,
+            &world,
+            &manager,
+            &mut state,
+            2,
+            vec![egui::Event::Text("Rogue".into())],
+            false,
+        );
+        let before = state.windows[0].rename.as_ref().unwrap().text.clone();
+        state.windows[0].rename.as_mut().unwrap().fresh = true;
+        manager
+            .apply(WindowCommand::Open(
+                crate::windowing_policy::singleton_spec(
+                    WindowKind::Encyclopedia,
+                    WindowOwner::StrategicRoot,
+                ),
+            ))
+            .unwrap();
+        let modal_widget = egui::Id::new("eligible-modal-rename-test-control");
+
+        let (actions, _, _) = managed_rename_frame(
+            &ctx,
+            &mut cache,
+            &world,
+            &manager,
+            &mut state,
+            3,
+            vec![egui::Event::Text("Blocked".into())],
+            true,
+        );
+        assert_eq!(state.windows[0].rename.as_ref().unwrap().text, before);
+        assert!(renames(&actions).is_empty());
+        assert!(!actions
+            .iter()
+            .any(|action| matches!(action, FleetWindowAction::FocusControl(_))));
+        assert!(ctx.memory(|memory| memory.has_focus(modal_widget)));
+    }
+
+    #[test]
+    fn detail_rename_retries_focus_after_modal_rejects_bootstrap() {
+        let (world, _, _, mut manager, mut state, window) = managed_rename_fixture();
+        let ctx = egui::Context::default();
+        let mut cache = BmpCache::new();
+        let target = rebellion_windowing::FocusTarget {
+            window,
+            control: Some(FLEET_RENAME_CONTROL),
+        };
+
+        let (bootstrap, _, _) = managed_rename_frame(
+            &ctx,
+            &mut cache,
+            &world,
+            &manager,
+            &mut state,
+            1,
+            vec![],
+            false,
+        );
+        assert!(bootstrap.contains(&FleetWindowAction::FocusControl(target)));
+        assert!(state.windows[0].rename.as_ref().unwrap().fresh);
+
+        let modal = match manager
+            .apply(WindowCommand::Open(
+                crate::windowing_policy::singleton_spec(
+                    WindowKind::Encyclopedia,
+                    WindowOwner::StrategicRoot,
+                ),
+            ))
+            .unwrap()
+            .transition
+        {
+            WindowTransition::Opened { id } => id,
+            transition => panic!("expected modal open, got {transition:?}"),
+        };
+        assert!(manager.apply(WindowCommand::Focus(target)).is_err());
+        assert!(state.windows[0].rename.as_ref().unwrap().fresh);
+
+        manager.apply(WindowCommand::Close(modal)).unwrap();
+        let (retry, _, _) = managed_rename_frame(
+            &ctx,
+            &mut cache,
+            &world,
+            &manager,
+            &mut state,
+            2,
+            vec![],
+            false,
+        );
+        assert!(retry.contains(&FleetWindowAction::FocusControl(target)));
+        apply_rename_focus_actions(&mut manager, &retry);
+        assert_eq!(manager.begin_frame().focused(), Some(target));
+    }
+
+    #[test]
+    fn detail_rename_replacement_invalidates_previous_child_before_restore() {
+        let (mut world, first_system) = world(ControlKind::Controlled(Faction::Alliance));
+        let first_fleet = add_fleet(&mut world, first_system, true, 0);
+        let second_system = add_system(&mut world, first_system, 101);
+        let second_fleet = add_fleet(&mut world, second_system, true, 0);
+        let mut manager = WindowManager::new();
+        let mut state = FleetWindowState::default();
+
+        let first = state
+            .prepare_open(
+                &world,
+                first_system,
+                ORIGIN,
+                CockpitFaction::Alliance,
+                scaled(),
+                Some(FleetWindowEntry::Fleet(first_fleet)),
+            )
+            .unwrap();
+        let (first_window, _) = commit_prepared_fleet_window(&mut manager, &mut state, first);
+        let second = state
+            .prepare_open(
+                &world,
+                second_system,
+                (250, 0),
+                CockpitFaction::Alliance,
+                scaled(),
+                Some(FleetWindowEntry::Fleet(second_fleet)),
+            )
+            .unwrap();
+        let (second_window, _) = commit_prepared_fleet_window(&mut manager, &mut state, second);
+        assert!(state.begin_rename(&world, first_system, FleetWindowEntry::Fleet(first_fleet)));
+        let first_target = rebellion_windowing::FocusTarget {
+            window: first_window,
+            control: Some(FLEET_RENAME_CONTROL),
+        };
+        manager.apply(WindowCommand::Focus(first_target)).unwrap();
+
+        let replacement = state
+            .prepare_open(
+                &world,
+                second_system,
+                (250, 0),
+                CockpitFaction::Alliance,
+                scaled(),
+                Some(FleetWindowEntry::Fleet(second_fleet)),
+            )
+            .and_then(|prepared| {
+                prepared.with_rename(&world, FleetWindowEntry::Fleet(second_fleet))
+            })
+            .unwrap();
+        let reopened = manager
+            .apply(WindowCommand::Open(replacement.spec()))
+            .unwrap();
+        assert_eq!(
+            state.commit_open(replacement, &reopened.transition),
+            Some(second_window)
+        );
+
+        let ctx = egui::Context::default();
+        let mut cache = BmpCache::new();
+        let (actions, _, _) = managed_rename_frame(
+            &ctx,
+            &mut cache,
+            &world,
+            &manager,
+            &mut state,
+            1,
+            vec![],
+            false,
+        );
+        assert!(actions.contains(&FleetWindowAction::InvalidateControl(first_target)));
+        let second_target = rebellion_windowing::FocusTarget {
+            window: second_window,
+            control: Some(FLEET_RENAME_CONTROL),
+        };
+        let invalidation_index = actions
+            .iter()
+            .position(|action| *action == FleetWindowAction::InvalidateControl(first_target))
+            .unwrap();
+        let focus_index = actions
+            .iter()
+            .position(|action| *action == FleetWindowAction::FocusControl(second_target))
+            .unwrap();
+        assert!(invalidation_index < focus_index);
+        apply_rename_focus_actions(&mut manager, &actions);
+        manager.apply(WindowCommand::Close(second_window)).unwrap();
+        assert_eq!(
+            manager.begin_frame().focused(),
+            Some(rebellion_windowing::FocusTarget {
+                window: first_window,
+                control: None,
+            })
+        );
+    }
+
+    #[test]
+    fn detail_rename_direct_replacement_invalidates_previous_child_before_restore() {
+        let (mut world, first_system) = world(ControlKind::Controlled(Faction::Alliance));
+        let first_fleet = add_fleet(&mut world, first_system, true, 0);
+        let second_system = add_system(&mut world, first_system, 101);
+        let second_fleet = add_fleet(&mut world, second_system, true, 0);
+        let mut manager = WindowManager::new();
+        let mut state = FleetWindowState::default();
+
+        let first = state
+            .prepare_open(
+                &world,
+                first_system,
+                ORIGIN,
+                CockpitFaction::Alliance,
+                scaled(),
+                Some(FleetWindowEntry::Fleet(first_fleet)),
+            )
+            .unwrap();
+        let (first_window, _) = commit_prepared_fleet_window(&mut manager, &mut state, first);
+        let second = state
+            .prepare_open(
+                &world,
+                second_system,
+                (250, 0),
+                CockpitFaction::Alliance,
+                scaled(),
+                Some(FleetWindowEntry::Fleet(second_fleet)),
+            )
+            .unwrap();
+        let (second_window, _) = commit_prepared_fleet_window(&mut manager, &mut state, second);
+
+        assert!(state.begin_rename(&world, first_system, FleetWindowEntry::Fleet(first_fleet)));
+        let first_target = rebellion_windowing::FocusTarget {
+            window: first_window,
+            control: Some(FLEET_RENAME_CONTROL),
+        };
+        manager.apply(WindowCommand::Focus(first_target)).unwrap();
+        manager
+            .apply(WindowCommand::Activate(second_window))
+            .unwrap();
+
+        assert!(state.begin_rename(&world, second_system, FleetWindowEntry::Fleet(second_fleet)));
+        let ctx = egui::Context::default();
+        let mut cache = BmpCache::new();
+        let (actions, _, _) = managed_rename_frame(
+            &ctx,
+            &mut cache,
+            &world,
+            &manager,
+            &mut state,
+            1,
+            vec![],
+            false,
+        );
+        assert!(actions.contains(&FleetWindowAction::InvalidateControl(first_target)));
+        let second_target = rebellion_windowing::FocusTarget {
+            window: second_window,
+            control: Some(FLEET_RENAME_CONTROL),
+        };
+        let invalidation_index = actions
+            .iter()
+            .position(|action| *action == FleetWindowAction::InvalidateControl(first_target))
+            .unwrap();
+        let focus_index = actions
+            .iter()
+            .position(|action| *action == FleetWindowAction::FocusControl(second_target))
+            .unwrap();
+        assert!(invalidation_index < focus_index);
+        apply_rename_focus_actions(&mut manager, &actions);
+        manager.apply(WindowCommand::Close(second_window)).unwrap();
+        assert_eq!(
+            manager.begin_frame().focused(),
+            Some(rebellion_windowing::FocusTarget {
+                window: first_window,
+                control: None,
+            })
+        );
+    }
+
+    #[test]
+    fn detail_rename_missing_widget_restoration_falls_back_to_owner() {
+        let (mut world, system, fleet, mut manager, mut state, window) = managed_rename_fixture();
+        let ctx = egui::Context::default();
+        let mut cache = BmpCache::new();
+        let (focus, _, _) = managed_rename_frame(
+            &ctx,
+            &mut cache,
+            &world,
+            &manager,
+            &mut state,
+            1,
+            vec![],
+            false,
+        );
+        apply_rename_focus_actions(&mut manager, &focus);
+        world.systems[system]
+            .fleets
+            .retain(|candidate| *candidate != fleet);
+        world.fleets.remove(fleet);
+
+        let (actions, _, _) = managed_rename_frame(
+            &ctx,
+            &mut cache,
+            &world,
+            &manager,
+            &mut state,
+            2,
+            vec![],
+            false,
+        );
+        let target = rebellion_windowing::FocusTarget {
+            window,
+            control: Some(FLEET_RENAME_CONTROL),
+        };
+        assert!(actions.contains(&FleetWindowAction::InvalidateControl(target)));
+        assert_eq!(
+            state.keyboard_owner(&manager.begin_frame()),
+            Some((window, false)),
+            "a vanished control cannot retain keyboard ownership before its invalidation receipt applies"
+        );
+        apply_rename_focus_actions(&mut manager, &actions);
+
+        assert!(!state.renaming());
+        assert_eq!(
+            manager.begin_frame().focused(),
+            Some(rebellion_windowing::FocusTarget {
+                window,
+                control: None,
+            })
+        );
+        assert_eq!(state.window_count(), 1);
     }
 
     fn renames(actions: &[FleetWindowAction]) -> Vec<(FleetWindowEntry, String)> {
