@@ -3,6 +3,12 @@
 //! This module is compiled for the dedicated WASM acceptance artifact and
 //! native unit tests. Production builds contain no fixture bridge.
 
+#[path = "interface_test_fixture_identity_history.rs"]
+mod identity_history;
+
+#[cfg(target_arch = "wasm32")]
+pub use identity_history::{IdentityHistoryWatch, IdentityHistoryWindows};
+
 use rebellion_core::blockade::{BlockadeState, BlockadeSystem};
 use rebellion_core::dat::{ExplorationStatus, Faction};
 use rebellion_core::economy::EconomyState;
@@ -539,6 +545,8 @@ pub fn apply(
         );
         sectors.open_for_system(world, secondary, request.faction);
     }
+
+    identity_history::prepare(request, world, movement, missions);
 
     let _ = manufacturing;
 }

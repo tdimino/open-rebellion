@@ -639,6 +639,7 @@ impl DefensesWindowState {
             origin: window.logical_position,
             side: shown_side(world, system),
             page: window.page,
+            first_row: window.first_row,
             counts: DefensesPage::ALL
                 .map(|page| page_rows(world, fog, missions, player, system, page).len()),
             rows: rows.into_iter().map(|row| row.label).collect(),
@@ -850,6 +851,8 @@ pub struct DefensesWindowReport {
     pub origin: (i16, i16),
     pub side: u8,
     pub page: DefensesPage,
+    /// First visible grid row retained by the native scroll bar.
+    pub first_row: usize,
     /// Each page's row count, in [`DefensesPage::ALL`] order.
     pub counts: [usize; 5],
     pub rows: Vec<String>,
@@ -1642,6 +1645,7 @@ fn draw_defenses_window(
             let first_row = bar.update(&mut scroll, range, VISIBLE_ROWS, pointer);
             result.scroll = Some((first_row, scroll));
             if first_row != window.first_row || scroll != window.scroll {
+                result.focus = true;
                 if pointer.pressed {
                     result.note_pointer_phase(PointerPhase::Press(PointerButtonId::Primary));
                 }
@@ -1652,10 +1656,7 @@ fn draw_defenses_window(
                     result.note_pointer_phase(PointerPhase::Release(PointerButtonId::Primary));
                 }
             }
-            let range = ScrollRange {
-                first: first_row,
-                ..range
-            };
+            let range = scroll_range_after_input(range, first_row);
             let bar_left = LIST.0 + LIST.2 - bar.width();
             let on_bar = range.overflows()
                 && pointer.at.is_some_and(|(x, y)| {
@@ -1865,6 +1866,14 @@ fn draw_defenses_window(
         result.note_pointer_phase(PointerPhase::Release(PointerButtonId::Primary));
     }
     result
+}
+
+/// Keep the painted thumb in the same committed row as the list contents.
+fn scroll_range_after_input(range: ScrollRange, first_row: usize) -> ScrollRange {
+    ScrollRange {
+        first: first_row,
+        ..range
+    }
 }
 
 #[cfg(test)]
@@ -3111,6 +3120,17 @@ mod tests {
             ],
         );
         assert_eq!(state.windows[0].first_row, 1);
+    }
+
+    #[test]
+    fn scroll_thumb_paints_the_row_committed_by_this_input_frame() {
+        let before = ScrollRange {
+            first: 1,
+            visible: 3.0,
+            total: 8,
+        };
+
+        assert_eq!(scroll_range_after_input(before, 4).first, 4);
     }
 
     #[test]

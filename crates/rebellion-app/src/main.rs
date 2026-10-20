@@ -1430,6 +1430,17 @@ impl StrategicPointerBatch {
         })
     }
 
+    #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+    fn latest_action_event(&self) -> Option<InputEventId> {
+        self.events.iter().rev().find_map(|event| {
+            matches!(
+                event.phase,
+                PointerPhase::Press(_) | PointerPhase::Release(_) | PointerPhase::Auxiliary
+            )
+            .then_some(event.id)
+        })
+    }
+
     fn router_events(&self) -> Vec<(InputEventId, PointerPhase)> {
         self.events
             .iter()
@@ -1823,6 +1834,38 @@ fn emit_windowing_route_receipt(
         application,
         underlay_action_count,
     );
+}
+
+#[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+type WindowingRouteReceipt = (InputEventId, &'static str, &'static str);
+
+#[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+fn queue_windowing_pointer_receipt(
+    receipts: &mut Vec<WindowingRouteReceipt>,
+    events: &StrategicPointerBatch,
+    application: &'static str,
+) {
+    let Some(event) = events.latest_action_event() else {
+        return;
+    };
+    if !receipts.iter().any(|(queued, kind, queued_application)| {
+        *queued == event && *kind == "pointer" && *queued_application == application
+    }) {
+        receipts.push((event, "pointer", application));
+    }
+}
+
+#[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+fn queue_windowing_key_receipt(
+    receipts: &mut Vec<WindowingRouteReceipt>,
+    event: InputEventId,
+    application: &'static str,
+) {
+    if !receipts.iter().any(|(queued, kind, queued_application)| {
+        *queued == event && *kind == "key" && *queued_application == application
+    }) {
+        receipts.push((event, "key", application));
+    }
 }
 
 /// Temporarily remove input from the retained strategic egui pass while a
@@ -6805,6 +6848,8 @@ async fn main() {
     #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
     let mut quadrant_watch = interface_test_fixture::QuadrantWatch::default();
     #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+    let mut identity_history_watch = interface_test_fixture::IdentityHistoryWatch::default();
+    #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
     let mut fleet_finder_watch = interface_test_fixture::FleetFinderWatch::default();
     #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
     let interface_fixture_active =
@@ -10023,9 +10068,7 @@ async fn main() {
                 let mut pending_troop_finder_action = None;
                 let mut message_choice = None;
                 #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
-                let windowing_map_selection_before = map_state.selected_system;
-                #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
-                let mut pending_windowing_route_receipts = Vec::new();
+                let mut pending_windowing_route_receipts = Vec::<WindowingRouteReceipt>::new();
                 let strategic_pointer_events = if strategic_frame_sequence_valid {
                     // Hit testing follows the layers egui itself routes this
                     // frame's pointer through, so a retained window painted
@@ -10135,6 +10178,12 @@ async fn main() {
                 if managed_menu.window_id().is_some()
                     && strategic_pointer_events.has_blocked_press(&strategic_input_router)
                 {
+                    #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+                    queue_windowing_pointer_receipt(
+                        &mut pending_windowing_route_receipts,
+                        &strategic_pointer_events,
+                        "managed_menu",
+                    );
                     if let Some(window) = managed_menu.request_close() {
                         strategic_windowing
                             .enqueue(rebellion_windowing::WindowCommand::Close(window));
@@ -10584,6 +10633,12 @@ async fn main() {
                     .into_iter()
                     .chain(commanded_sector_actions)
                     {
+                        #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+                        queue_windowing_pointer_receipt(
+                            &mut pending_windowing_route_receipts,
+                            &strategic_pointer_events,
+                            "sector_window",
+                        );
                         if enqueue_sector_manager_action(&mut strategic_windowing, action) {
                             continue;
                         }
@@ -10796,6 +10851,16 @@ async fn main() {
                             galaxy_front == GalaxyFront::System,
                         )
                     }) {
+                        #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+                        queue_windowing_pointer_receipt(
+                            &mut pending_windowing_route_receipts,
+                            &strategic_pointer_events,
+                            if matches!(&action, SystemWindowAction::RestoreReferenceWindow(_)) {
+                                "reference_rail"
+                            } else {
+                                "system_window"
+                            },
+                        );
                         match action {
                             SystemWindowAction::FocusSector(system) => {
                                 enqueue_sector_window(
@@ -10868,6 +10933,12 @@ async fn main() {
                         &mut strategic_input_router,
                         galaxy_front == GalaxyFront::Fleet,
                     ) {
+                        #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+                        queue_windowing_pointer_receipt(
+                            &mut pending_windowing_route_receipts,
+                            &strategic_pointer_events,
+                            "fleet_window",
+                        );
                         match action {
                             FleetWindowAction::OpenSector(system) => {
                                 enqueue_sector_window(
@@ -11155,6 +11226,12 @@ async fn main() {
                             galaxy_front == GalaxyFront::Defenses,
                         )
                     }) {
+                        #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+                        queue_windowing_pointer_receipt(
+                            &mut pending_windowing_route_receipts,
+                            &strategic_pointer_events,
+                            "defenses_window",
+                        );
                         match action {
                             DefensesWindowAction::OpenSector(system) => {
                                 enqueue_sector_window(
@@ -11315,6 +11392,12 @@ async fn main() {
                             galaxy_front == GalaxyFront::Missions,
                         )
                     }) {
+                        #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+                        queue_windowing_pointer_receipt(
+                            &mut pending_windowing_route_receipts,
+                            &strategic_pointer_events,
+                            "missions_window",
+                        );
                         match action {
                             MissionsWindowAction::OpenSector(system) => {
                                 enqueue_sector_window(
@@ -12614,6 +12697,12 @@ async fn main() {
                                 )
                             }
                         };
+                        #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+                        queue_windowing_pointer_receipt(
+                            &mut pending_windowing_route_receipts,
+                            &strategic_pointer_events,
+                            destination,
+                        );
                         if btn == CockpitButton::Encyclopedia {
                             if encyclopedia_session_store.current().is_some() {
                                 let intent = EncyclopediaEntryIntent::Cockpit {
@@ -12665,6 +12754,23 @@ async fn main() {
                 if let Some(action) = pending_fleet_finder_action {
                     strategic_dispatch_restricted = true;
                     strategic_input_router.set_application_hold(true);
+                    #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+                    if let Some(event) = strategic_root_keys
+                        .presses()
+                        .find(|event| event.key == KeyCode::Escape)
+                    {
+                        queue_windowing_key_receipt(
+                            &mut pending_windowing_route_receipts,
+                            event.id,
+                            "fleet_finder",
+                        );
+                    } else {
+                        queue_windowing_pointer_receipt(
+                            &mut pending_windowing_route_receipts,
+                            &strategic_pointer_events,
+                            "fleet_finder",
+                        );
+                    }
                     match action {
                         FleetFinderAction::Close(window) => {
                             strategic_windowing
@@ -12913,7 +13019,27 @@ async fn main() {
                 ));
                 map_state.display_scale = cockpit_layout.scale;
                 map_state.pointer_blocked |= egui_claims_pointer || strategic_dispatch_restricted;
+                #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+                let windowing_map_selection_before = map_state.selected_system;
+                #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+                let windowing_map_activation_before = map_state.activated_system;
                 update_galaxy_map_input(&world, &mut map_state, cockpit_state.faction);
+                #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+                if map_state.activated_system != windowing_map_activation_before
+                    && map_state.activated_system.is_some()
+                {
+                    queue_windowing_pointer_receipt(
+                        &mut pending_windowing_route_receipts,
+                        &strategic_pointer_events,
+                        "sector_opener",
+                    );
+                } else if map_state.selected_system != windowing_map_selection_before {
+                    queue_windowing_pointer_receipt(
+                        &mut pending_windowing_route_receipts,
+                        &strategic_pointer_events,
+                        "galaxy_map",
+                    );
+                }
                 if let Some(system) = map_state.activated_system {
                     enqueue_sector_window(
                         &mut strategic_windowing,
@@ -12929,12 +13055,46 @@ async fn main() {
                 {
                     let underlay_action_count = usize::from(
                         map_state.selected_system != windowing_map_selection_before
-                            || map_state.activated_system.is_some(),
+                            || map_state.activated_system != windowing_map_activation_before,
                     );
-                    if underlay_action_count > 0 {
+                    let intended_root_map_action =
+                        pending_windowing_route_receipts
+                            .iter()
+                            .any(|(_, _, application)| {
+                                matches!(*application, "sector_opener" | "galaxy_map")
+                            });
+                    if underlay_action_count > 0 && !intended_root_map_action {
                         macroquad::logging::info!(
                             "[windowing-underlay] surface=galaxy-map action=selection"
                         );
+                    }
+                    if interface_fixture_request.is_some_and(|request| {
+                        request.scenario == interface_test_fixture::Scenario::WindowingContract
+                    }) {
+                        for event in &strategic_pointer_events.events {
+                            if matches!(
+                                event.phase,
+                                PointerPhase::Press(PointerButtonId::Primary)
+                                    | PointerPhase::Press(PointerButtonId::Secondary)
+                                    | PointerPhase::Release(PointerButtonId::Primary)
+                                    | PointerPhase::Release(PointerButtonId::Secondary)
+                                    | PointerPhase::Auxiliary
+                            ) && !pending_windowing_route_receipts
+                                .iter()
+                                .any(|(queued, _, _)| *queued == event.id)
+                            {
+                                pending_windowing_route_receipts
+                                    .push((event.id, "pointer", "none"));
+                            }
+                        }
+                        for event in strategic_root_keys.presses() {
+                            if !pending_windowing_route_receipts
+                                .iter()
+                                .any(|(queued, _, _)| *queued == event.id)
+                            {
+                                pending_windowing_route_receipts.push((event.id, "key", "none"));
+                            }
+                        }
                     }
                     for (event, kind, application) in pending_windowing_route_receipts.drain(..) {
                         emit_windowing_route_receipt(
@@ -12942,7 +13102,11 @@ async fn main() {
                             event,
                             kind,
                             application,
-                            underlay_action_count,
+                            if intended_root_map_action {
+                                0
+                            } else {
+                                underlay_action_count
+                            },
                         );
                     }
                 }
@@ -14052,6 +14216,29 @@ async fn main() {
                         } else {
                             &fog_empire_state
                         },
+                        missions: &mission_state,
+                        economy: &economy_state,
+                    },
+                );
+                identity_history_watch.observe(
+                    request,
+                    &world,
+                    &interface_test_fixture::IdentityHistoryWindows {
+                        snapshot: strategic_frame_boundary.snapshot(),
+                        layout: cockpit_state.layout(),
+                        faction: cockpit_state.faction,
+                        sectors: &sector_window_state,
+                        systems: &system_window_state,
+                        fleets: &fleet_window_state,
+                        defenses: &defenses_window_state,
+                        missions_windows: &missions_window_state,
+                        movement: &movement_state,
+                        fog: if player_faction == MissionFaction::Alliance {
+                            &fog_alliance_state
+                        } else {
+                            &fog_empire_state
+                        },
+                        transport: &troop_transport_state,
                         missions: &mission_state,
                         economy: &economy_state,
                     },
