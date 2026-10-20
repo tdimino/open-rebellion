@@ -8,6 +8,10 @@
 //! (`GameMode::TacticalCombat`); its Simulate and every unwatched battle run
 //! the same session headless (`BattleSession::simulate_to_end`).
 //!
+//! Raw keyboard and pointer readers in this module belong to the mutually
+//! exclusive Tactical Combat scene. The Alert/Results boundary is routed by
+//! the shared window manager; battle HUD controls are not strategic readers.
+//!
 //! # Phases
 //!
 //! 1. **Placement**: Player positions capital ships in their deployment zone.

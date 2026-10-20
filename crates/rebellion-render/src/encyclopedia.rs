@@ -670,6 +670,15 @@ impl EncyclopediaSurfaceState {
     }
 }
 
+/// Persistent egui layer used by the manager-owned authentic Encyclopedia.
+#[must_use]
+pub fn encyclopedia_surface_layer_id() -> egui::LayerId {
+    egui::LayerId::new(
+        encyclopedia_surface_order(),
+        egui::Id::new("authentic-encyclopedia-surface"),
+    )
+}
+
 /// Paint one source-backed authentic index or topic frame.
 ///
 /// The function consumes only the renderer-owned DTO and emits logical
@@ -752,7 +761,6 @@ pub fn draw_encyclopedia_surface_focused(
 
     let surface_id = egui::Id::new("authentic-encyclopedia-surface");
     let surface_order = encyclopedia_surface_order();
-    ctx.move_to_top(egui::LayerId::new(surface_order, surface_id));
     egui::Area::new(surface_id)
         .fixed_pos(origin)
         .order(surface_order)

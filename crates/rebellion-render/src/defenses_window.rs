@@ -262,8 +262,6 @@ struct RowDrag {
 #[derive(Debug)]
 pub struct DefensesWindowState {
     faction: CockpitFaction,
-    /// When one of these windows last took focus (`window_focus`).
-    focus_serial: u64,
     windows: Vec<OpenDefensesWindow>,
     drag: Option<RowDrag>,
     drag_owner: Option<WindowId>,
@@ -273,7 +271,6 @@ impl Default for DefensesWindowState {
     fn default() -> Self {
         Self {
             faction: CockpitFaction::Alliance,
-            focus_serial: 0,
             windows: Vec::new(),
             drag: None,
             drag_owner: None,
@@ -288,18 +285,19 @@ struct EndDragResult {
 }
 
 impl DefensesWindowState {
-    /// Allocates a temporary cross-family serial after the shared manager has
-    /// already accepted a Defenses activation. The frozen routing snapshot,
-    /// not this bridge, remains the Defenses family's order authority.
-    #[must_use]
-    pub fn next_legacy_bridge_serial() -> u64 {
-        crate::window_focus::next_serial()
-    }
-
     /// Whether any window of this kind is open.
     #[must_use]
     pub fn any_open(&self) -> bool {
         !self.windows.is_empty()
+    }
+
+    /// Egui layer attached to one manager-issued Defenses identity.
+    #[must_use]
+    pub fn managed_layer_id(&self, id: WindowId) -> Option<egui::LayerId> {
+        self.windows
+            .iter()
+            .find(|window| window.id == Some(id))
+            .map(|window| egui::LayerId::new(egui::Order::Foreground, area_id(window)))
     }
 
     /// Validates and prepares Defenses content without mutating the live
@@ -397,7 +395,6 @@ impl DefensesWindowState {
         if self.focus(system) {
             return true;
         }
-        self.focus_serial = crate::window_focus::next_serial();
         self.windows.push(OpenDefensesWindow {
             id: None,
             subject: None,
@@ -809,13 +806,6 @@ impl DefensesWindowState {
         }
     }
 
-    /// When one of this kind's windows last took focus; the newest kind
-    /// is in front (`window_focus`).
-    #[must_use]
-    pub fn focus_serial(&self) -> u64 {
-        self.focus_serial
-    }
-
     fn focus(&mut self, system: SystemKey) -> bool {
         let Some(index) = self
             .windows
@@ -825,7 +815,6 @@ impl DefensesWindowState {
             return false;
         };
         let window = self.windows.remove(index);
-        self.focus_serial = crate::window_focus::next_serial();
         self.windows.push(window);
         true
     }
@@ -1199,7 +1188,6 @@ pub fn draw_defenses_windows(
     faction: CockpitFaction,
     layout: CockpitLayout,
     cache: &mut BmpCache,
-    front: bool,
 ) -> Vec<DefensesWindowAction> {
     draw_defenses_windows_with_snapshot(
         ctx,
@@ -1214,7 +1202,6 @@ pub fn draw_defenses_windows(
         None,
         &[],
         None,
-        front,
     )
 }
 
@@ -1237,7 +1224,6 @@ pub fn draw_managed_defenses_windows(
     snapshot: &RoutingSnapshot,
     pointer_events: &[(InputEventId, PointerPhase)],
     router: &mut FrameInputRouter,
-    front: bool,
 ) -> Vec<DefensesWindowAction> {
     draw_defenses_windows_with_snapshot(
         ctx,
@@ -1252,7 +1238,6 @@ pub fn draw_managed_defenses_windows(
         Some(snapshot),
         pointer_events,
         Some(router),
-        front,
     )
 }
 
@@ -1287,7 +1272,6 @@ fn draw_defenses_windows_with_snapshot(
     snapshot: Option<&RoutingSnapshot>,
     pointer_events: &[(InputEventId, PointerPhase)],
     mut router: Option<&mut FrameInputRouter>,
-    front: bool,
 ) -> Vec<DefensesWindowAction> {
     if state.windows.iter().all(|window| window.id.is_none()) {
         state.prepare_faction(faction);
@@ -1346,11 +1330,10 @@ fn draw_defenses_windows_with_snapshot(
         .collect::<Vec<_>>();
     actions.extend(ended_drag.actions);
     for window in &windows {
-        let focused = front
-            && match window.id {
-                Some(id) => focused_manager == Some(id),
-                None => focused_fixture_system == Some(window.system),
-            };
+        let focused = match window.id {
+            Some(id) => focused_manager == Some(id),
+            None => focused_fixture_system == Some(window.system),
+        };
         let result = draw_defenses_window(
             ctx, world, fog, missions, economy, window, focused, faction, layout, cache,
         );
@@ -1489,9 +1472,6 @@ fn draw_defenses_window(
     let scale = layout.scale;
     let screen_rect = window_screen_rect(window, layout);
     let id = area_id(window);
-    if focused {
-        ctx.move_to_top(egui::LayerId::new(egui::Order::Foreground, id));
-    }
     let area = egui::Area::new(id)
         .fixed_pos(screen_rect.min)
         .order(egui::Order::Foreground)
@@ -2620,7 +2600,6 @@ mod tests {
                     CockpitFaction::Alliance,
                     scaled(),
                     &mut cache,
-                    true,
                 ));
             });
             result.painted = PAINTED.with(|painted| painted.take());
@@ -2721,7 +2700,6 @@ mod tests {
                     &snapshot,
                     &routed,
                     &mut router,
-                    true,
                 ));
             });
             result.painted = PAINTED.with(|painted| painted.take());

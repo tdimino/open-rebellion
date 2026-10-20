@@ -372,6 +372,14 @@ impl FleetFinderState {
         self.window.as_ref().and_then(|window| window.id)
     }
 
+    /// Egui layer attached to the exact manager-issued Fleet Finder.
+    #[must_use]
+    pub fn managed_layer_id(&self, id: WindowId) -> Option<egui::LayerId> {
+        (self.window_id() == Some(id)).then(|| {
+            egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("original-fleet-finder"))
+        })
+    }
+
     /// Manager-owned Finder hit for event-local pointer routing.
     #[must_use]
     pub fn hit_window(
@@ -621,7 +629,7 @@ fn at(frame: egui::Rect, scale: f32, (x, y, w, h): (f32, f32, f32, f32)) -> egui
 )]
 const VISIBLE_ROWS: usize = (LIST.3 / ROW_HEIGHT) as usize;
 
-/// Draw a legacy-opened Finder, if any, and report an action.
+/// Draw a fixture-opened Finder, if any, and report an action.
 pub fn draw_fleet_finder(
     ctx: &egui::Context,
     world: &GameWorld,
@@ -683,11 +691,8 @@ pub fn draw_fleet_finder_focused(
     let mut focus_request = None;
 
     // FUN_0042a0c0 opens the Finder above the galaxy view's modeless child
-    // windows. Those windows share Foreground and raise the focused one each
-    // frame, so the Finder uses the popup layer, like the mission dialog and
-    // game menu.
+    // windows, on the popup layer used by command modals and menus.
     let id = egui::Id::new("original-fleet-finder");
-    ctx.move_to_top(egui::LayerId::new(egui::Order::Tooltip, id));
     egui::Area::new(id)
         .fixed_pos(rect.min)
         .order(egui::Order::Tooltip)

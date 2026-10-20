@@ -313,6 +313,13 @@ impl EncyclopediaSurfaceController {
         self.window_id
     }
 
+    /// Egui layer attached to the exact manager-issued Encyclopedia.
+    #[must_use]
+    pub(crate) fn managed_layer_id(&self, id: WindowId) -> Option<egui::LayerId> {
+        (self.window_id == Some(id))
+            .then(rebellion_render::encyclopedia::encyclopedia_surface_layer_id)
+    }
+
     /// Manager-owned Encyclopedia hit for event-local pointer routing.
     #[must_use]
     pub(crate) fn hit_window(

@@ -50,7 +50,6 @@ pub mod theme;
 pub mod tooltip;
 pub mod troop_finder;
 pub mod video_player;
-mod window_focus;
 pub mod windowing;
 pub mod windowing_input;
 pub mod windowing_policy;
@@ -140,9 +139,8 @@ pub use missions_window::{
 };
 pub use panels::game_setup::{draw_game_setup, Difficulty, GameSetupAction, GameSetupState};
 pub use panels::{
-    draw_fleets, draw_missions, draw_mod_manager, draw_save_load, FleetsState,
-    ModInfo, ModManagerAction, ModManagerState, PanelAction, SaveLoadPanelState,
-    SaveSlotInfo,
+    draw_fleets, draw_missions, draw_mod_manager, draw_save_load, FleetsState, ModInfo,
+    ModManagerAction, ModManagerState, PanelAction, SaveLoadPanelState, SaveSlotInfo,
 };
 pub use rebellion_core::tactical::resource_ids::{
     capital_ship_tactical_resource, death_star_tactical_resource, fighter_tactical_resource,
@@ -412,6 +410,9 @@ pub fn update_galaxy_map_input(
 ) -> CameraView {
     state.activated_system = None;
 
+    // Final raw backend adapter for the strategic map. The app derives
+    // `pointer_blocked` from the frozen router plus named root locks before
+    // calling, so this press sample cannot bypass window admission.
     let sw = screen_width();
     let sh = screen_height();
     let viewport = state.viewport.unwrap_or((0.0, 0.0, sw, sh));

@@ -652,6 +652,12 @@ pub fn object_menu_rects(ctx: &egui::Context) -> Vec<egui::Rect> {
     game_menu_rects(ctx, egui::Id::new(MENU_ID))
 }
 
+/// Root and visible-submenu layers of the managed object menu.
+#[must_use]
+pub fn object_menu_layer_ids(ctx: &egui::Context) -> Vec<egui::LayerId> {
+    crate::game_menu::game_menu_layer_ids(ctx, egui::Id::new(MENU_ID))
+}
+
 /// The galaxy view in canvas coordinates: the menu's owner window
 /// (`FUN_004ac5c0` maps the point into it and `FUN_00442380` opens there).
 fn galaxy_owner(layout: CockpitLayout) -> CockpitViewport {
@@ -915,7 +921,13 @@ mod tests {
         let character = Some(MenuObject::Character(CharacterKey::default()));
         assert_eq!(
             enabled(&object_menu_rows(character, gates)),
-            ["Move", "Confirmed Move", "Command", "Encyclopedia", "Status"]
+            [
+                "Move",
+                "Confirmed Move",
+                "Command",
+                "Encyclopedia",
+                "Status"
+            ]
         );
         assert_eq!(
             enabled(&object_menu_rows(

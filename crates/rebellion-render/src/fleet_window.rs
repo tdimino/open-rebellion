@@ -443,9 +443,6 @@ pub struct FleetWindowState {
     pending_control_invalidations: Vec<FocusTarget>,
     drag: Option<ItemDrag>,
     drag_owner: Option<WindowId>,
-    /// Fixture-only compatibility for browser scenarios that intentionally
-    /// bypass production lifecycle wiring.
-    fixture_focus_serial: u64,
 }
 
 impl Default for FleetWindowState {
@@ -456,7 +453,6 @@ impl Default for FleetWindowState {
             pending_control_invalidations: Vec::new(),
             drag: None,
             drag_owner: None,
-            fixture_focus_serial: 0,
         }
     }
 }
@@ -486,18 +482,19 @@ impl FleetWindowState {
         }
     }
 
-    /// Allocates a temporary cross-family serial after the shared manager has
-    /// already accepted a Fleet activation. This does not order Fleet content;
-    /// the routing snapshot remains its sole order authority.
-    #[must_use]
-    pub fn next_legacy_bridge_serial() -> u64 {
-        crate::window_focus::next_serial()
-    }
-
     /// Whether any window of this kind is open.
     #[must_use]
     pub fn any_open(&self) -> bool {
         !self.windows.is_empty()
+    }
+
+    /// Egui layer attached to one manager-issued Fleet identity.
+    #[must_use]
+    pub fn managed_layer_id(&self, id: WindowId) -> Option<egui::LayerId> {
+        self.windows
+            .iter()
+            .find(|window| window.id == Some(id))
+            .map(|window| egui::LayerId::new(egui::Order::Foreground, area_id(window)))
     }
 
     /// Validates and prepares a Fleet content candidate without changing live
@@ -621,7 +618,6 @@ impl FleetWindowState {
         if self.focus_fixture(system) {
             return true;
         }
-        self.fixture_focus_serial = crate::window_focus::next_serial();
         self.windows.push(OpenFleetWindow {
             id: None,
             subject: None,
@@ -1142,14 +1138,6 @@ impl FleetWindowState {
         }
     }
 
-    /// Fixture-only legacy focus projection. Production ordering is taken
-    /// exclusively from the shared routing snapshot.
-    #[must_use]
-    #[doc(hidden)]
-    pub fn fixture_focus_serial(&self) -> u64 {
-        self.fixture_focus_serial
-    }
-
     fn focus_fixture(&mut self, system: SystemKey) -> bool {
         let Some(index) = self
             .windows
@@ -1159,7 +1147,6 @@ impl FleetWindowState {
             return false;
         };
         let window = self.windows.remove(index);
-        self.fixture_focus_serial = crate::window_focus::next_serial();
         self.windows.push(window);
         true
     }
@@ -1976,7 +1963,6 @@ pub fn draw_fleet_windows(
     faction: CockpitFaction,
     layout: CockpitLayout,
     cache: &mut BmpCache,
-    front: bool,
 ) -> Vec<FleetWindowAction> {
     draw_fleet_windows_with_snapshot(
         ctx,
@@ -1991,7 +1977,6 @@ pub fn draw_fleet_windows(
         None,
         &[],
         None,
-        front,
     )
 }
 
@@ -2013,7 +1998,6 @@ pub fn draw_managed_fleet_windows(
     snapshot: &RoutingSnapshot,
     pointer_events: &[(InputEventId, PointerPhase)],
     router: &mut FrameInputRouter,
-    front: bool,
 ) -> Vec<FleetWindowAction> {
     draw_fleet_windows_with_snapshot(
         ctx,
@@ -2028,7 +2012,6 @@ pub fn draw_managed_fleet_windows(
         Some(snapshot),
         pointer_events,
         Some(router),
-        front,
     )
 }
 
@@ -2049,7 +2032,6 @@ fn draw_fleet_windows_with_snapshot(
     snapshot: Option<&RoutingSnapshot>,
     pointer_events: &[(InputEventId, PointerPhase)],
     mut router: Option<&mut FrameInputRouter>,
-    front: bool,
 ) -> Vec<FleetWindowAction> {
     if state.windows.iter().all(|window| window.id.is_none()) {
         state.prepare_faction(faction);
@@ -2079,7 +2061,7 @@ fn draw_fleet_windows_with_snapshot(
             .filter(|window| window.id.is_none())
             .cloned(),
     );
-    let focused_id = windows.last().and_then(|window| window.id);
+    let focused_manager = snapshot.and_then(|frame| frame.focused().map(|focus| focus.window));
     let focused_fixture_system = windows
         .last()
         .filter(|window| window.id.is_none())
@@ -2121,11 +2103,10 @@ fn draw_fleet_windows_with_snapshot(
                 requests_manager_focus: false,
             },
         };
-        let focused = front
-            && match window.id {
-                Some(id) => focused_id == Some(id),
-                None => focused_fixture_system == Some(window.system),
-            };
+        let focused = match window.id {
+            Some(id) => focused_manager == Some(id),
+            None => focused_fixture_system == Some(window.system),
+        };
         let result = draw_fleet_window(
             ctx,
             world,
@@ -2344,9 +2325,6 @@ fn draw_fleet_window(
     let scale = layout.scale;
     let screen_rect = window_screen_rect(window, layout);
     let id = area_id(window);
-    if focused {
-        ctx.move_to_top(egui::LayerId::new(egui::Order::Foreground, id));
-    }
     let area = egui::Area::new(id)
         .fixed_pos(screen_rect.min)
         .order(egui::Order::Foreground)
@@ -3859,7 +3837,6 @@ pub(crate) mod tests {
                     &snapshot,
                     &pointer_events,
                     &mut router,
-                    true,
                 ));
             });
         }
@@ -4711,7 +4688,6 @@ pub(crate) mod tests {
                     faction,
                     scaled(),
                     &mut cache,
-                    true,
                 ));
             });
             result.painted = PAINTED.with(|painted| painted.take());
@@ -5763,7 +5739,6 @@ pub(crate) mod tests {
                 &snapshot,
                 &[],
                 &mut router,
-                true,
             );
         });
         (actions, router, keyboard_events)

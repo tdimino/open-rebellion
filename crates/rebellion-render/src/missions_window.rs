@@ -211,8 +211,6 @@ impl PreparedMissionsWindow {
 #[derive(Debug)]
 pub struct MissionsWindowState {
     faction: CockpitFaction,
-    /// When one of these windows last took focus (`window_focus`).
-    focus_serial: u64,
     windows: Vec<OpenMissionsWindow>,
 }
 
@@ -220,25 +218,25 @@ impl Default for MissionsWindowState {
     fn default() -> Self {
         Self {
             faction: CockpitFaction::Alliance,
-            focus_serial: 0,
             windows: Vec::new(),
         }
     }
 }
 
 impl MissionsWindowState {
-    /// Allocates a temporary cross-family serial after the shared manager has
-    /// already accepted a Missions activation. The frozen routing snapshot,
-    /// not this bridge, remains the Missions family's order authority.
-    #[must_use]
-    pub fn next_legacy_bridge_serial() -> u64 {
-        crate::window_focus::next_serial()
-    }
-
     /// Whether any window of this kind is open.
     #[must_use]
     pub fn any_open(&self) -> bool {
         !self.windows.is_empty()
+    }
+
+    /// Egui layer attached to one manager-issued Missions identity.
+    #[must_use]
+    pub fn managed_layer_id(&self, id: WindowId) -> Option<egui::LayerId> {
+        self.windows
+            .iter()
+            .find(|window| window.id == Some(id))
+            .map(|window| egui::LayerId::new(egui::Order::Foreground, area_id(window)))
     }
 
     /// Validates and prepares Missions content without mutating the live
@@ -400,7 +398,6 @@ impl MissionsWindowState {
         let selected = mission_rows(world, fog, missions, player, system)
             .first()
             .map(|row| row.mission);
-        self.focus_serial = crate::window_focus::next_serial();
         self.windows.push(OpenMissionsWindow {
             id: None,
             subject: None,
@@ -731,13 +728,6 @@ impl MissionsWindowState {
         true
     }
 
-    /// When one of this kind's windows last took focus; the newest kind
-    /// is in front (`window_focus`).
-    #[must_use]
-    pub fn focus_serial(&self) -> u64 {
-        self.focus_serial
-    }
-
     fn focus(&mut self, system: SystemKey) -> bool {
         let Some(index) = self
             .windows
@@ -747,7 +737,6 @@ impl MissionsWindowState {
             return false;
         };
         let window = self.windows.remove(index);
-        self.focus_serial = crate::window_focus::next_serial();
         self.windows.push(window);
         true
     }
@@ -1235,7 +1224,6 @@ pub fn draw_missions_windows(
     faction: CockpitFaction,
     layout: CockpitLayout,
     cache: &mut BmpCache,
-    front: bool,
 ) -> Vec<MissionsWindowAction> {
     draw_missions_windows_with_snapshot(
         ctx,
@@ -1249,7 +1237,6 @@ pub fn draw_missions_windows(
         None,
         &[],
         None,
-        front,
     )
 }
 
@@ -1271,7 +1258,6 @@ pub fn draw_managed_missions_windows(
     snapshot: &RoutingSnapshot,
     pointer_events: &[(InputEventId, PointerPhase)],
     router: &mut FrameInputRouter,
-    front: bool,
 ) -> Vec<MissionsWindowAction> {
     draw_missions_windows_with_snapshot(
         ctx,
@@ -1285,7 +1271,6 @@ pub fn draw_managed_missions_windows(
         Some(snapshot),
         pointer_events,
         Some(router),
-        front,
     )
 }
 
@@ -1319,7 +1304,6 @@ fn draw_missions_windows_with_snapshot(
     snapshot: Option<&RoutingSnapshot>,
     pointer_events: &[(InputEventId, PointerPhase)],
     mut router: Option<&mut FrameInputRouter>,
-    front: bool,
 ) -> Vec<MissionsWindowAction> {
     if state.windows.iter().all(|window| window.id.is_none()) {
         state.prepare_faction(faction);
@@ -1385,11 +1369,10 @@ fn draw_missions_windows_with_snapshot(
         .map(MissionsWindowAction::Close)
         .collect::<Vec<_>>();
     for window in &windows {
-        let focused = front
-            && match window.id {
-                Some(id) => focused_manager == Some(id),
-                None => focused_fixture_system == Some(window.system),
-            };
+        let focused = match window.id {
+            Some(id) => focused_manager == Some(id),
+            None => focused_fixture_system == Some(window.system),
+        };
         let result = draw_missions_window(
             ctx, world, fog, missions, window, focused, faction, layout, cache,
         );
@@ -1487,9 +1470,6 @@ fn draw_missions_window(
     let scale = layout.scale;
     let screen_rect = window_screen_rect(window, layout);
     let id = area_id(window);
-    if focused {
-        ctx.move_to_top(egui::LayerId::new(egui::Order::Foreground, id));
-    }
     let area = egui::Area::new(id)
         .fixed_pos(screen_rect.min)
         .order(egui::Order::Foreground)
@@ -2512,7 +2492,6 @@ mod tests {
         ));
         let state_with = |id, subject, system| MissionsWindowState {
             faction: CockpitFaction::Alliance,
-            focus_serial: 0,
             windows: vec![OpenMissionsWindow {
                 id: Some(id),
                 subject,
@@ -2804,7 +2783,6 @@ mod tests {
                 CockpitFaction::Alliance,
                 scaled(),
                 &mut cache,
-                true,
             )
             .is_empty());
         });
@@ -3099,7 +3077,6 @@ mod tests {
                     &snapshot,
                     &routed,
                     &mut router,
-                    true,
                 ));
             });
             drop(output);
@@ -3254,7 +3231,6 @@ mod tests {
                     CockpitFaction::Alliance,
                     scaled(),
                     &mut cache,
-                    true,
                 ));
             });
             result.painted = PAINTED.with(|painted| painted.take());
@@ -3338,7 +3314,6 @@ mod tests {
                     &snapshot,
                     &routed,
                     &mut router,
-                    true,
                 ));
             });
             result.painted = PAINTED.with(|painted| painted.take());
@@ -3490,7 +3465,6 @@ mod tests {
                     Some(&snapshot),
                     &[],
                     None,
-                    true,
                 ));
             });
         }
@@ -3553,7 +3527,6 @@ mod tests {
                     &snapshot,
                     &[],
                     &mut router,
-                    false,
                 )
                 .is_empty());
             });

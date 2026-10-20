@@ -172,6 +172,16 @@ impl SectorWindowState {
         !self.windows.is_empty()
     }
 
+    /// Egui layer attached to one manager-issued Sector identity.
+    #[must_use]
+    pub fn managed_layer_id(&self, id: WindowId) -> Option<egui::LayerId> {
+        self.windows
+            .iter()
+            .find(|window| window.id == Some(id))
+            .copied()
+            .map(|window| egui::LayerId::new(egui::Order::Middle, area_id(window)))
+    }
+
     /// Validates and prepares Sector content without mutating the live store.
     /// Duplicate preparation retains the existing identity; a third Sector
     /// names the exact same-half identity for one atomic manager replacement.
@@ -580,9 +590,7 @@ impl SectorWindowState {
                 .iter_mut()
                 .find(|window| window.sector == sector)
                 .ok_or("the sector publication is not committed")?;
-            let owner = window
-                .id
-                .ok_or("the sector publication is not committed")?;
+            let owner = window.id.ok_or("the sector publication is not committed")?;
             window.selection = Some(SelectedIcon {
                 system,
                 quadrant,
@@ -1443,11 +1451,6 @@ fn draw_sector_windows_with_snapshot(
             .filter(|window| window.id.is_none())
             .copied(),
     );
-    let focused_manager = snapshot.and_then(|frame| frame.focused().map(|focus| focus.window));
-    let focused_fixture_sector = windows
-        .last()
-        .filter(|window| window.id.is_none())
-        .map(|window| window.sector);
     let mut actions = stale_manager_windows
         .into_iter()
         .map(SectorWindowAction::Close)
@@ -1456,12 +1459,8 @@ fn draw_sector_windows_with_snapshot(
     let mut managed_draws = Vec::new();
     let mut fixture_draws = Vec::new();
     for window in windows {
-        let focused = match window.id {
-            Some(id) => focused_manager == Some(id),
-            None => focused_fixture_sector == Some(window.sector),
-        };
         let result = draw_sector_window(
-            ctx, world, movement, fog, window, focused, faction, layout, cache, missions, uprisings,
+            ctx, world, movement, fog, window, faction, layout, cache, missions, uprisings,
         );
         if window.id.is_some() {
             managed_draws.push(ManagedSectorDraw {
@@ -1737,7 +1736,6 @@ fn draw_sector_window(
     movement: &rebellion_core::movement::MovementState,
     fog: &FogState,
     window: OpenSectorWindow,
-    focused: bool,
     faction: CockpitFaction,
     layout: CockpitLayout,
     cache: &mut BmpCache,
@@ -1760,9 +1758,6 @@ fn draw_sector_window(
     );
 
     let area_id = area_id(window);
-    if focused {
-        ctx.move_to_top(egui::LayerId::new(egui::Order::Middle, area_id));
-    }
     let area = egui::Area::new(area_id)
         .fixed_pos(screen_position)
         .order(egui::Order::Middle)
@@ -2972,6 +2967,9 @@ mod tests {
                     &[],
                     &mut router,
                 );
+                crate::windowing::realize_managed_focus(ctx, &snapshot, |window| {
+                    state.managed_layer_id(window).map(|layer| vec![layer])
+                });
             },
         );
         assert!(actions.is_empty());
@@ -4374,7 +4372,7 @@ mod tests {
     }
 
     #[test]
-    fn sector_legacy_screen_coverage_obeys_visibility_and_rectangle() {
+    fn sector_fixture_screen_coverage_obeys_visibility_and_rectangle() {
         let (world, first, _) = fixture_world();
         let mut manager = WindowManager::new();
         let mut state = SectorWindowState::default();

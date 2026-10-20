@@ -23,7 +23,8 @@ use crate::cockpit::{
     STRATEGIC_LOGICAL_HEIGHT, STRATEGIC_LOGICAL_WIDTH,
 };
 use crate::game_menu::{
-    draw_game_menu, faction_text_color, GameMenuEntry, GameMenuPlacement, GameMenuResponse,
+    draw_game_menu, faction_text_color, game_menu_rects, GameMenuEntry, GameMenuPlacement,
+    GameMenuResponse, OwnedMenuOutcome,
 };
 use crate::theme::game_font_size;
 
@@ -475,9 +476,27 @@ pub fn draw_resource_counters(
     }
 }
 
-/// Open the menu on a right-button release inside the day readout.
-///
-/// Returns true when the menu opened this frame.
+/// Canvas anchor for a routed secondary release inside the day readout.
+#[must_use]
+pub fn game_speed_menu_anchor(
+    layout: CockpitLayout,
+    faction: CockpitFaction,
+    point: (f32, f32),
+) -> Option<(f32, f32)> {
+    (layout.scale > 0.0).then_some(())?;
+    let pointer = egui::pos2(point.0, point.1);
+    let hit = logical_rect_to_screen(layout, day_readout_rect(faction));
+    ((hit.x_range().min..hit.x_range().max).contains(&pointer.x)
+        && (hit.y_range().min..hit.y_range().max).contains(&pointer.y))
+    .then_some((
+        (pointer.x - layout.canvas.x) / layout.scale,
+        (pointer.y - layout.canvas.y) / layout.scale,
+    ))
+}
+
+/// Fixture-only direct-egui adapter. Production opens through the normalized
+/// strategic pointer batch and manager-owned Menu singleton.
+#[cfg(test)]
 pub fn open_game_speed_menu_on_right_click(
     ctx: &egui::Context,
     ui_state: &mut GameSpeedUiState,
@@ -498,18 +517,10 @@ pub fn open_game_speed_menu_on_right_click(
     let Some(pointer) = pointer.filter(|_| released) else {
         return false;
     };
-    // The rectangle's right and bottom edges are exclusive, as Win32's
-    // `PtInRect` treats them; egui's `Rect::contains` includes them.
-    let hit = logical_rect_to_screen(layout, day_readout_rect(faction));
-    if !(hit.x_range().min..hit.x_range().max).contains(&pointer.x)
-        || !(hit.y_range().min..hit.y_range().max).contains(&pointer.y)
-    {
+    let Some(anchor) = game_speed_menu_anchor(layout, faction, (pointer.x, pointer.y)) else {
         return false;
-    }
-    ui_state.menu_anchor = Some((
-        (pointer.x - layout.canvas.x) / layout.scale,
-        (pointer.y - layout.canvas.y) / layout.scale,
-    ));
+    };
+    ui_state.menu_anchor = Some(anchor);
     true
 }
 
@@ -519,18 +530,30 @@ pub fn game_speed_menu_rect(ctx: &egui::Context) -> Option<egui::Rect> {
     ctx.memory(|memory| memory.area_rect(egui::Id::new(SPEED_MENU_ID)))
 }
 
-/// Draw the open speed menu and return the chosen speed.
-///
-/// A choice, an outside press, or Escape closes the menu.
-pub fn draw_game_speed_menu(
+/// Root and currently visible child rectangles of the speed menu.
+#[must_use]
+pub fn game_speed_menu_rects(ctx: &egui::Context) -> Vec<egui::Rect> {
+    game_menu_rects(ctx, egui::Id::new(SPEED_MENU_ID))
+}
+
+/// Root and visible-submenu layers of the managed speed menu.
+#[must_use]
+pub fn game_speed_menu_layer_ids(ctx: &egui::Context) -> Vec<egui::LayerId> {
+    crate::game_menu::game_menu_layer_ids(ctx, egui::Id::new(SPEED_MENU_ID))
+}
+
+/// Draw manager-owned speed-menu content without deleting its payload.
+pub fn draw_owned_game_speed_menu(
     ctx: &egui::Context,
-    ui_state: &mut GameSpeedUiState,
+    ui_state: &GameSpeedUiState,
     cache: &mut BmpCache,
     layout: CockpitLayout,
     faction: CockpitFaction,
     input_enabled: bool,
-) -> Option<GameSpeed> {
-    let anchor = ui_state.menu_anchor?;
+) -> OwnedMenuOutcome<GameSpeed> {
+    let Some(anchor) = ui_state.menu_anchor else {
+        return OwnedMenuOutcome::Open;
+    };
     let items = game_speed_menu_items(faction);
     let entries = items.map(|item| GameMenuEntry {
         label: item.label,
@@ -550,15 +573,33 @@ pub fn draw_game_speed_menu(
         &entries,
         input_enabled,
     ) {
-        GameMenuResponse::Open => None,
-        // No row of this menu has a submenu; a choice in one closes it.
+        GameMenuResponse::Open => OwnedMenuOutcome::Open,
         GameMenuResponse::Dismissed | GameMenuResponse::ChosenChild { .. } => {
+            OwnedMenuOutcome::Dismissed
+        }
+        GameMenuResponse::Chosen(index) => OwnedMenuOutcome::Chosen(items[index].speed),
+    }
+}
+
+/// Fixture-only wrapper retaining direct content lifecycle.
+#[cfg(test)]
+pub fn draw_game_speed_menu(
+    ctx: &egui::Context,
+    ui_state: &mut GameSpeedUiState,
+    cache: &mut BmpCache,
+    layout: CockpitLayout,
+    faction: CockpitFaction,
+    input_enabled: bool,
+) -> Option<GameSpeed> {
+    match draw_owned_game_speed_menu(ctx, ui_state, cache, layout, faction, input_enabled) {
+        OwnedMenuOutcome::Open => None,
+        OwnedMenuOutcome::Dismissed => {
             ui_state.menu_anchor = None;
             None
         }
-        GameMenuResponse::Chosen(index) => {
+        OwnedMenuOutcome::Chosen(speed) => {
             ui_state.menu_anchor = None;
-            Some(items[index].speed)
+            Some(speed)
         }
     }
 }

@@ -232,6 +232,17 @@ impl MoveConfirmationState {
         self.window_id
     }
 
+    /// Egui layer attached to the exact manager-issued Move confirmation.
+    #[must_use]
+    pub fn managed_layer_id(&self, id: WindowId) -> Option<egui::LayerId> {
+        (self.window_id == Some(id)).then(|| {
+            egui::LayerId::new(
+                egui::Order::Tooltip,
+                egui::Id::new("original-move-confirmation"),
+            )
+        })
+    }
+
     /// Manager-owned hit for event-local pointer routing.
     #[must_use]
     pub fn hit_window(
@@ -631,6 +642,17 @@ impl ScrapConfirmationState {
     #[must_use]
     pub const fn window_id(&self) -> Option<WindowId> {
         self.window_id
+    }
+
+    /// Egui layer attached to the exact manager-issued Scrap confirmation.
+    #[must_use]
+    pub fn managed_layer_id(&self, id: WindowId) -> Option<egui::LayerId> {
+        (self.window_id == Some(id)).then(|| {
+            egui::LayerId::new(
+                egui::Order::Tooltip,
+                egui::Id::new("original-scrap-confirmation"),
+            )
+        })
     }
 
     #[must_use]

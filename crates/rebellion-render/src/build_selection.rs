@@ -275,6 +275,17 @@ impl BuildSelectionState {
         self.dialog.as_ref().and_then(|dialog| dialog.window_id)
     }
 
+    /// Egui layer attached to the exact manager-issued Build Selection.
+    #[must_use]
+    pub fn managed_layer_id(&self, id: WindowId) -> Option<egui::LayerId> {
+        (self.window_id() == Some(id)).then(|| {
+            egui::LayerId::new(
+                egui::Order::Tooltip,
+                egui::Id::new("original-build-selection"),
+            )
+        })
+    }
+
     /// Manager-owned window hit for event-local pointer routing.
     #[must_use]
     pub fn hit_window(
@@ -580,7 +591,6 @@ pub fn draw_build_selection(
     });
 
     let area_id = egui::Id::new("original-build-selection");
-    ctx.move_to_top(egui::LayerId::new(egui::Order::Tooltip, area_id));
     egui::Area::new(area_id)
         .fixed_pos(window.min)
         .order(egui::Order::Tooltip)
@@ -1183,7 +1193,7 @@ mod tests {
     }
 
     #[test]
-    fn managed_build_selection_reasserts_its_layer_after_lower_surfaces_raise() {
+    fn managed_build_selection_is_raised_only_by_the_shared_focus_adapter() {
         let (world, system) = galaxy(true);
         let kind = BuildableKind::Troop(DatId::new(0x1000_0001));
         let mut state = BuildSelectionState::default();
@@ -1226,6 +1236,9 @@ mod tests {
                     layout,
                     &mut cache,
                 );
+                crate::windowing::realize_managed_focus(ctx, &frame, |window| {
+                    state.managed_layer_id(window).map(|layer| vec![layer])
+                });
             });
         }
 

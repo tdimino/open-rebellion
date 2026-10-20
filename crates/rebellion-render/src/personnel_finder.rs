@@ -604,6 +604,17 @@ impl PersonnelFinderState {
         self.window.as_ref().and_then(|window| window.id)
     }
 
+    /// Egui layer attached to the exact manager-issued Personnel Finder.
+    #[must_use]
+    pub fn managed_layer_id(&self, id: WindowId) -> Option<egui::LayerId> {
+        (self.window_id() == Some(id)).then(|| {
+            egui::LayerId::new(
+                egui::Order::Tooltip,
+                egui::Id::new("original-personnel-finder"),
+            )
+        })
+    }
+
     /// Exact focused manager identity that receives this frame's keys.
     #[must_use]
     pub fn keyboard_owner(&self, frame: &RoutingSnapshot) -> Option<WindowId> {
@@ -747,7 +758,7 @@ enum PersonnelFinderDrawOutcome {
     Open(PersonnelFinderAction),
 }
 
-/// Draw a legacy-opened Personnel Finder, if any, and report an action.
+/// Draw a fixture-opened Personnel Finder, if any, and report an action.
 pub fn draw_personnel_finder(
     ctx: &egui::Context,
     world: &GameWorld,
@@ -863,7 +874,6 @@ fn draw_personnel_finder_outcome(
         // its pass so the widget can consume this frame's first text event.
         ctx.memory_mut(|memory| memory.request_focus(name_id));
     }
-    ctx.move_to_top(egui::LayerId::new(egui::Order::Tooltip, id));
     egui::Area::new(id)
         .fixed_pos(rect.min)
         .order(egui::Order::Tooltip)
@@ -1913,7 +1923,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_personnel_finder_never_emits_manager_focus_requests() {
+    fn fixture_personnel_finder_never_emits_manager_focus_requests() {
         let world = GameWorld::default();
         let fog = FogState::new(Faction::Alliance);
         let mut state = PersonnelFinderState::default();

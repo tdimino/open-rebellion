@@ -854,6 +854,23 @@ impl MessageIndexState {
         self.window_id
     }
 
+    /// Egui layers attached to the exact manager-issued Message Index, in
+    /// their internal bottom-to-top order.
+    #[must_use]
+    pub fn managed_layer_ids(&self, id: WindowId) -> Option<Vec<egui::LayerId>> {
+        (self.window_id == Some(id)).then(|| {
+            [
+                "original-message-index-shell",
+                "message-index-list",
+                "message-index-single-text",
+                "original-message-index-buttons",
+            ]
+            .into_iter()
+            .map(|id| egui::LayerId::new(egui::Order::Tooltip, egui::Id::new(id)))
+            .collect()
+        })
+    }
+
     #[must_use]
     pub const fn is_open(&self) -> bool {
         self.window_id.is_some()
@@ -1235,17 +1252,6 @@ pub fn draw_message_index(
     player_is_alliance: bool,
 ) -> Vec<MessageIndexAction> {
     let mut actions = Vec::new();
-
-    // The window stays above the sector windows, which raise themselves
-    // each frame, as the Finders do; its own layers keep their order.
-    for id in [
-        "original-message-index-shell",
-        "message-index-list",
-        "message-index-single-text",
-        "original-message-index-buttons",
-    ] {
-        ctx.move_to_top(egui::LayerId::new(egui::Order::Tooltip, egui::Id::new(id)));
-    }
 
     // Paint the shell and handle category clicks.
     if let Some(command) = draw_message_index_shell(

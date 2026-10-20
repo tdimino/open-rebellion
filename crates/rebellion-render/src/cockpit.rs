@@ -1549,6 +1549,25 @@ pub fn gid_menu_rects(ctx: &egui::Context, state: &GidUiState) -> Vec<egui::Rect
     rects
 }
 
+/// Root and visible-submenu layers of the managed GID menu.
+#[must_use]
+pub fn gid_menu_layer_ids(state: &GidUiState) -> Vec<egui::LayerId> {
+    if !state.menu_open {
+        return Vec::new();
+    }
+    let mut layers = vec![egui::LayerId::new(
+        egui::Order::Foreground,
+        gid_root_menu_id(),
+    )];
+    if state.category.is_some() {
+        layers.push(egui::LayerId::new(
+            egui::Order::Foreground,
+            gid_submenu_id(),
+        ));
+    }
+    layers
+}
+
 #[expect(
     clippy::too_many_lines,
     clippy::cast_precision_loss,

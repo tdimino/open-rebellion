@@ -412,6 +412,14 @@ impl TroopFinderState {
         self.window.as_ref().and_then(|window| window.id)
     }
 
+    /// Egui layer attached to the exact manager-issued Troop Finder.
+    #[must_use]
+    pub fn managed_layer_id(&self, id: WindowId) -> Option<egui::LayerId> {
+        (self.window_id() == Some(id)).then(|| {
+            egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("original-troop-finder"))
+        })
+    }
+
     /// Exact focused manager identity that receives this frame's keys.
     #[must_use]
     pub fn keyboard_owner(&self, frame: &RoutingSnapshot) -> Option<WindowId> {
@@ -604,7 +612,7 @@ enum TroopFinderDrawOutcome {
     Open(TroopFinderAction),
 }
 
-/// Draw a legacy-opened Troop Finder, if any, and report an action.
+/// Draw a fixture-opened Troop Finder, if any, and report an action.
 pub fn draw_troop_finder(
     ctx: &egui::Context,
     world: &GameWorld,
@@ -682,7 +690,6 @@ fn draw_troop_finder_outcome(
     let mut focus_request = None;
 
     let id = egui::Id::new("original-troop-finder");
-    ctx.move_to_top(egui::LayerId::new(egui::Order::Tooltip, id));
     egui::Area::new(id)
         .fixed_pos(rect.min)
         .order(egui::Order::Tooltip)
@@ -1613,7 +1620,7 @@ mod tests {
     }
 
     #[test]
-    fn troop_finder_legacy_open_focuses_name_without_manager_focus() {
+    fn troop_finder_fixture_open_focuses_name_without_manager_focus() {
         let mut state = TroopFinderState::default();
         assert!(state.open(CockpitFaction::Alliance));
         let galaxy = galaxy();

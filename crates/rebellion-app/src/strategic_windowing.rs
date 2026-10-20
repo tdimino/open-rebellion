@@ -182,83 +182,46 @@ pub struct ApplicationInputLocks {
     pub fixture_setup: bool,
     /// In-progress scene transition.
     pub scene_transition: bool,
+    /// A test-only original surface that deliberately remains outside the
+    /// production manager.
+    pub fixture_modal: bool,
+    /// Developer command palette keyboard focus.
+    pub command_palette: bool,
+    /// A root-owned targeting gesture whose release must remain quarantined.
+    pub targeting: bool,
 }
 
 impl ApplicationInputLocks {
-    /// Whether any application surface blocks strategic dispatch.
+    /// Whether a non-window application surface blocks collection into the
+    /// shared router. Targeting is excluded because its exact routed release
+    /// is the named owner that ends the gesture.
     #[must_use]
-    pub const fn blocks_strategic_input(self) -> bool {
-        self.briefing || self.fixture_setup || self.scene_transition
+    pub const fn blocks_router_input(self) -> bool {
+        self.briefing
+            || self.fixture_setup
+            || self.scene_transition
+            || self.fixture_modal
+            || self.command_palette
     }
-}
 
-/// Temporary, explicitly named owners that still live outside the shared
-/// manager during family-by-family migration. They may only make a route more
-/// restrictive; they never allocate or mirror a [`WindowId`].
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct LegacyInputBlockers {
-    /// A legacy top-level with an application-modal input boundary.
-    pub strategic_modal: bool,
-    /// A legacy edit/list control that owns keyboard input for this frame.
-    pub focused_control: bool,
-    /// A legacy transient menu that owns dismissal and item input.
-    pub transient_menu: bool,
-    /// A legacy root gesture, such as target selection, holding the pointer.
-    pub root_gesture: bool,
-}
-
-impl LegacyInputBlockers {
-    const fn blocks_migrated_input(self) -> bool {
-        self.strategic_modal || self.focused_control || self.transient_menu || self.root_gesture
+    const fn blocks_managed_input(self) -> bool {
+        self.blocks_router_input() || self.targeting
     }
 
     const fn blocks_root_keyboard(self) -> bool {
-        self.strategic_modal || self.focused_control || self.transient_menu
+        self.briefing
+            || self.fixture_setup
+            || self.scene_transition
+            || self.fixture_modal
+            || self.command_palette
     }
 
     const fn blocks_root_pointer(self) -> bool {
-        self.strategic_modal || self.transient_menu || self.root_gesture
-    }
-
-    /// Whether dispatch introduced a restrictive legacy owner that was not
-    /// present in this frozen frame-start state. Releases are deliberately not
-    /// reported: they cannot make the current lease permissive.
-    #[must_use]
-    pub const fn new_restriction_started(self, current: Self) -> bool {
-        (!self.strategic_modal && current.strategic_modal)
-            || (!self.focused_control && current.focused_control)
-            || (!self.transient_menu && current.transient_menu)
-            || (!self.root_gesture && current.root_gesture)
-    }
-}
-
-/// Sticky record of legacy ownership that starts during one production frame.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LegacyInputRestrictionLatch {
-    frozen: LegacyInputBlockers,
-    started: bool,
-}
-
-impl LegacyInputRestrictionLatch {
-    #[must_use]
-    pub const fn new(frozen: LegacyInputBlockers) -> Self {
-        Self {
-            frozen,
-            started: false,
-        }
-    }
-
-    pub fn observe(&mut self, current: LegacyInputBlockers) {
-        self.started |= self.frozen.new_restriction_started(current);
-    }
-
-    pub fn note_start(&mut self) {
-        self.started = true;
-    }
-
-    #[must_use]
-    pub const fn started(self) -> bool {
-        self.started
+        self.briefing
+            || self.fixture_setup
+            || self.scene_transition
+            || self.fixture_modal
+            || self.targeting
     }
 }
 
@@ -310,14 +273,13 @@ impl FocusStateCounter {
 
 /// Immutable production routing lease for one frame.
 ///
-/// The manager snapshot and legacy restriction state are copied together before
+/// The manager snapshot and named application locks are copied together before
 /// dispatch. Later closes or hold releases cannot make this lease permissive;
 /// callers must construct the next frame boundary to observe them.
 #[derive(Debug, Clone)]
 pub struct StrategicFrameBoundary {
     snapshot: RoutingSnapshot,
     locks: ApplicationInputLocks,
-    legacy: LegacyInputBlockers,
 }
 
 impl StrategicFrameBoundary {
@@ -326,90 +288,59 @@ impl StrategicFrameBoundary {
         &self.snapshot
     }
 
-    /// Whether the normalized migrated router must fail closed behind a legacy
-    /// owner. This does not register that owner in the shared manager.
+    /// Whether the normalized router must fail closed behind an application
+    /// surface that is not a strategic window.
     #[must_use]
-    pub const fn migrated_input_held(&self) -> bool {
-        self.locks.blocks_strategic_input() || self.legacy.blocks_migrated_input()
+    pub const fn application_input_held(&self) -> bool {
+        self.locks.blocks_router_input()
     }
 
-    /// Whether a manager-owned modal excludes every retained legacy surface.
-    /// The app uses this as a temporary bridge around the single legacy egui
-    /// pass; migrated content is painted after that bridge is released.
+    /// Whether a manager-owned modal excludes every retained detail surface.
     #[must_use]
-    pub fn migrated_modal_active(&self) -> bool {
+    pub fn modal_active(&self) -> bool {
         self.snapshot.active_modal().is_some()
     }
 
-    /// Whether an active legacy surface may read input at all. Legacy blockers
-    /// do not disable their own controls; manager routes and application holds do.
+    /// Whether the strategic root may admit pointer input this frame.
     #[must_use]
-    pub fn legacy_surface_input_allowed(&self) -> bool {
-        !self.locks.blocks_strategic_input()
-            && self.snapshot.pointer_allows_root()
-            && matches!(
-                self.snapshot.keyboard_route().target,
-                RouteTarget::StrategicRoot
-            )
+    pub fn root_pointer_allowed(&self) -> bool {
+        !self.locks.blocks_root_pointer() && self.snapshot.pointer_allows_root()
     }
 
-    /// Permit for the retained legacy detail windows (Sector, System,
-    /// Defenses, Missions) to read input. Application locks and legacy
-    /// strategic modals hold them as they hold migrated content: outside
+    /// Whether a named root gesture may consume its routed release. This is
+    /// stricter than raw polling and deliberately ignores only the gesture's
+    /// own targeting lock.
+    #[must_use]
+    pub fn root_gesture_pointer_allowed(&self) -> bool {
+        !self.locks.blocks_router_input() && self.snapshot.pointer_allows_root()
+    }
+
+    /// Permit for retained detail windows (Sector, System, Defenses,
+    /// Missions) to read input. Application locks and manager-owned strategic
+    /// modals hold them: outside
     /// clicks under Encyclopedia, Status, Build Selection, Create Mission and
     /// Move Confirmation reach no underlying control in either faction
     /// (`ghidra/notes/strategic-windowing-toolkit.md`, "Strategic
     /// modality"). Transient menus and root gestures keep their own rules.
     #[must_use]
     pub fn retained_window_input_allowed(&self) -> bool {
-        !self.migrated_modal_active()
-            && !self.locks.blocks_strategic_input()
-            && !self.legacy.strategic_modal
+        !self.modal_active() && !self.locks.blocks_managed_input()
     }
 
     /// Permit for one manager-owned surface in this frozen frame.
     ///
-    /// Unlike a legacy/root permit, a transient Menu remains interactive while
+    /// Unlike the root permit, a transient Menu remains interactive while
     /// its dismissal boundary deliberately makes `pointer_allows_root` false.
     #[must_use]
     pub fn managed_window_input_allowed(&self, window: WindowId) -> bool {
-        !self.migrated_input_held() && self.snapshot.allows_input(window)
-    }
-
-    /// Permit for a named legacy pointer owner itself. Unlike the strategic
-    /// underlay permit, this ignores legacy blockers so an active owner can close.
-    #[must_use]
-    pub fn legacy_owned_pointer_allowed(&self) -> bool {
-        !self.locks.blocks_strategic_input() && self.snapshot.pointer_allows_root()
-    }
-
-    /// Permit for legacy pointer polling at the strategic underlay/root.
-    #[must_use]
-    pub fn legacy_pointer_allowed(&self) -> bool {
-        self.legacy_owned_pointer_allowed() && !self.legacy.blocks_root_pointer()
-    }
-
-    /// Permit for legacy keyboard polling at the strategic root.
-    #[must_use]
-    #[allow(
-        dead_code,
-        reason = "family migrations consume the root-keyboard permit independently"
-    )]
-    pub fn legacy_keyboard_allowed(&self) -> bool {
-        !self.locks.blocks_strategic_input()
-            && !self.legacy.blocks_root_keyboard()
-            && matches!(
-                self.snapshot.keyboard_route().target,
-                RouteTarget::StrategicRoot
-            )
+        !self.locks.blocks_managed_input() && self.snapshot.allows_input(window)
     }
 
     /// Root shortcuts use the frozen keyboard lease. A migrated modeless owner
     /// may still bubble an unhandled event, so the router decides event-locally.
     #[must_use]
     pub fn root_shortcuts_allowed(&self) -> bool {
-        !self.locks.blocks_strategic_input()
-            && !self.legacy.blocks_root_keyboard()
+        !self.locks.blocks_root_keyboard()
             && self.snapshot.keyboard_route().bubble == BubblePolicy::ToRoot
     }
 }
@@ -471,18 +402,13 @@ impl StrategicWindowing {
         self.manager.begin_frame()
     }
 
-    /// Freezes the manager, application locks, and named legacy restrictions
-    /// before production input dispatch starts.
+    /// Freezes the manager and named application locks before production input
+    /// dispatch starts.
     #[must_use]
-    pub fn begin_production_frame(
-        &self,
-        locks: ApplicationInputLocks,
-        legacy: LegacyInputBlockers,
-    ) -> StrategicFrameBoundary {
+    pub fn begin_production_frame(&self, locks: ApplicationInputLocks) -> StrategicFrameBoundary {
         StrategicFrameBoundary {
             snapshot: self.begin_frame(),
             locks,
-            legacy,
         }
     }
 
@@ -3225,7 +3151,6 @@ mod tests {
                         &snapshot,
                         &routed,
                         &mut router,
-                        true,
                     );
                 });
                 visible_rows = output
@@ -3317,7 +3242,6 @@ mod tests {
                         &snapshot,
                         &routed,
                         &mut router,
-                        true,
                     );
                 });
             }
@@ -4402,10 +4326,7 @@ mod tests {
         coordinator
             .enqueue_fleet_finder_open(FleetFinderState::prepare_open(CockpitFaction::Alliance));
         let id = opened_id(&coordinator.apply_pending()[0]);
-        let closing_frame = coordinator.begin_production_frame(
-            ApplicationInputLocks::default(),
-            LegacyInputBlockers::default(),
-        );
+        let closing_frame = coordinator.begin_production_frame(ApplicationInputLocks::default());
         let event = InputEventId {
             frame: 7,
             ordinal: 0,
@@ -4431,22 +4352,16 @@ mod tests {
     }
 
     #[test]
-    fn finder_modal_blocks_unmigrated_legacy_input_paths() {
+    fn finder_modal_blocks_root_and_retained_detail_input() {
         let mut coordinator = StrategicWindowing::new();
         coordinator
             .enqueue_fleet_finder_open(FleetFinderState::prepare_open(CockpitFaction::Alliance));
         let id = opened_id(&coordinator.apply_pending()[0]);
-        let frame = coordinator.begin_production_frame(
-            ApplicationInputLocks::default(),
-            LegacyInputBlockers::default(),
-        );
+        let frame = coordinator.begin_production_frame(ApplicationInputLocks::default());
 
         assert_eq!(frame.snapshot().active_modal(), Some(id));
         assert!(!frame.retained_window_input_allowed());
-        assert!(!frame.legacy_surface_input_allowed());
-        assert!(!frame.legacy_owned_pointer_allowed());
-        assert!(!frame.legacy_pointer_allowed());
-        assert!(!frame.legacy_keyboard_allowed());
+        assert!(!frame.root_pointer_allowed());
         assert!(!frame.root_shortcuts_allowed());
     }
 
@@ -4993,10 +4908,8 @@ mod tests {
 
         assert_eq!(reconciliation.removed, [stale]);
         assert!(return_candidate.paint_order().contains(&stale));
-        let first_galaxy_frame = coordinator.begin_production_frame(
-            ApplicationInputLocks::default(),
-            LegacyInputBlockers::default(),
-        );
+        let first_galaxy_frame =
+            coordinator.begin_production_frame(ApplicationInputLocks::default());
         assert_eq!(first_galaxy_frame.snapshot().paint_order(), [valid]);
         assert_eq!(first_galaxy_frame.snapshot().active_modal(), None);
         assert!(coordinator.has_content(valid));
@@ -5032,7 +4945,7 @@ mod tests {
     }
 
     #[test]
-    fn windowing_legacy_bridge_blocks_raw_paths_under_migrated_modal() {
+    fn windowing_no_legacy_underlay_action_under_modal() {
         let mut coordinator = StrategicWindowing::new();
         coordinator.enqueue(WindowCommand::Open(singleton_spec(
             WindowKind::Encyclopedia,
@@ -5040,18 +4953,28 @@ mod tests {
         )));
         let modal = opened_id(&coordinator.apply_pending()[0]);
 
-        let frame = coordinator.begin_production_frame(
-            ApplicationInputLocks::default(),
-            LegacyInputBlockers::default(),
+        let frame = coordinator.begin_production_frame(ApplicationInputLocks::default());
+        let event = InputEventId {
+            frame: 11,
+            ordinal: 0,
+        };
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(event.frame, frame.snapshot());
+        router.collect_pointer(
+            event,
+            &BTreeSet::new(),
+            PointerPhase::Press(PointerButtonId::Primary),
         );
+        let mut underlay_actions = 0;
+        if router.claim_root(event) {
+            underlay_actions += 1;
+        }
 
         assert_eq!(frame.snapshot().active_modal(), Some(modal));
-        assert!(frame.migrated_modal_active());
-        assert!(!frame.legacy_surface_input_allowed());
-        assert!(!frame.legacy_owned_pointer_allowed());
-        assert!(!frame.legacy_pointer_allowed());
-        assert!(!frame.legacy_keyboard_allowed());
+        assert!(!frame.retained_window_input_allowed());
         assert!(!frame.root_shortcuts_allowed());
+        assert_eq!(router.pointer_recipient(event), InputRecipient::Blocked);
+        assert_eq!(underlay_actions, 0);
     }
 
     #[test]
@@ -5062,61 +4985,42 @@ mod tests {
             WindowOwner::StrategicRoot,
         )));
         let modal = opened_id(&coordinator.apply_pending()[0]);
-        let closing_frame = coordinator.begin_production_frame(
-            ApplicationInputLocks::default(),
-            LegacyInputBlockers::default(),
-        );
+        let closing_frame = coordinator.begin_production_frame(ApplicationInputLocks::default());
 
         coordinator.enqueue(WindowCommand::Close(modal));
         assert!(coordinator.apply_pending()[0].result.is_ok());
 
         assert_eq!(closing_frame.snapshot().active_modal(), Some(modal));
-        assert!(!closing_frame.legacy_pointer_allowed());
+        assert!(!closing_frame.root_pointer_allowed());
         assert!(!closing_frame.root_shortcuts_allowed());
-        let next_frame = coordinator.begin_production_frame(
-            ApplicationInputLocks::default(),
-            LegacyInputBlockers::default(),
-        );
-        assert!(next_frame.legacy_pointer_allowed());
-        assert!(next_frame.legacy_keyboard_allowed());
+        let next_frame = coordinator.begin_production_frame(ApplicationInputLocks::default());
+        assert!(next_frame.root_pointer_allowed());
         assert!(next_frame.root_shortcuts_allowed());
     }
 
     #[test]
-    fn windowing_no_family_production_frame_preserves_legacy_root() {
+    fn windowing_no_family_production_frame_preserves_root() {
         let coordinator = StrategicWindowing::new();
-        let frame = coordinator.begin_production_frame(
-            ApplicationInputLocks::default(),
-            LegacyInputBlockers::default(),
-        );
+        let frame = coordinator.begin_production_frame(ApplicationInputLocks::default());
 
         assert!(frame.snapshot().paint_order().is_empty());
-        assert!(!frame.migrated_modal_active());
-        assert!(frame.legacy_surface_input_allowed());
-        assert!(frame.legacy_owned_pointer_allowed());
-        assert!(frame.legacy_pointer_allowed());
-        assert!(frame.legacy_keyboard_allowed());
+        assert!(!frame.modal_active());
+        assert!(frame.root_pointer_allowed());
         assert!(frame.root_shortcuts_allowed());
-        assert!(!frame.migrated_input_held());
+        assert!(!frame.application_input_held());
     }
 
     #[test]
-    fn windowing_legacy_blocker_restricts_without_shadow_identity() {
+    fn windowing_application_lock_restricts_without_shadow_identity() {
         let coordinator = StrategicWindowing::new();
-        let frame = coordinator.begin_production_frame(
-            ApplicationInputLocks::default(),
-            LegacyInputBlockers {
-                transient_menu: true,
-                ..LegacyInputBlockers::default()
-            },
-        );
+        let frame = coordinator.begin_production_frame(ApplicationInputLocks {
+            fixture_modal: true,
+            ..ApplicationInputLocks::default()
+        });
 
         assert!(frame.snapshot().paint_order().is_empty());
-        assert!(frame.migrated_input_held());
-        assert!(frame.legacy_surface_input_allowed());
-        assert!(frame.legacy_owned_pointer_allowed());
-        assert!(!frame.legacy_pointer_allowed());
-        assert!(!frame.legacy_keyboard_allowed());
+        assert!(frame.application_input_held());
+        assert!(!frame.root_pointer_allowed());
         assert!(!frame.root_shortcuts_allowed());
     }
 
@@ -5135,30 +5039,23 @@ mod tests {
         )));
         let menu = opened_id(&coordinator.apply_pending()[0]);
 
-        let frame = coordinator.begin_production_frame(
-            ApplicationInputLocks::default(),
-            LegacyInputBlockers::default(),
-        );
-        assert!(!frame.legacy_owned_pointer_allowed());
+        let frame = coordinator.begin_production_frame(ApplicationInputLocks::default());
+        assert!(!frame.root_pointer_allowed());
         assert!(frame.managed_window_input_allowed(menu));
 
-        let held = coordinator.begin_production_frame(
-            ApplicationInputLocks::default(),
-            LegacyInputBlockers {
-                strategic_modal: true,
-                ..LegacyInputBlockers::default()
-            },
-        );
+        let held = coordinator.begin_production_frame(ApplicationInputLocks {
+            fixture_modal: true,
+            ..ApplicationInputLocks::default()
+        });
         assert!(!held.managed_window_input_allowed(menu));
     }
 
     #[test]
-    fn retained_windows_hold_input_under_application_locks_and_legacy_modals() {
+    fn retained_windows_hold_input_under_named_application_locks() {
         let coordinator = StrategicWindowing::new();
-        let frame = |locks, legacy| coordinator.begin_production_frame(locks, legacy);
-        let none = LegacyInputBlockers::default();
+        let frame = |locks| coordinator.begin_production_frame(locks);
 
-        assert!(frame(ApplicationInputLocks::default(), none).retained_window_input_allowed());
+        assert!(frame(ApplicationInputLocks::default()).retained_window_input_allowed());
         for locks in [
             ApplicationInputLocks {
                 briefing: true,
@@ -5168,26 +5065,16 @@ mod tests {
                 scene_transition: true,
                 ..ApplicationInputLocks::default()
             },
-        ] {
-            assert!(!frame(locks, none).retained_window_input_allowed());
-        }
-        let modal = LegacyInputBlockers {
-            strategic_modal: true,
-            ..none
-        };
-        assert!(!frame(ApplicationInputLocks::default(), modal).retained_window_input_allowed());
-        for keeps_own_rules in [
-            LegacyInputBlockers {
-                transient_menu: true,
-                ..none
+            ApplicationInputLocks {
+                fixture_modal: true,
+                ..ApplicationInputLocks::default()
             },
-            LegacyInputBlockers {
-                root_gesture: true,
-                ..none
+            ApplicationInputLocks {
+                targeting: true,
+                ..ApplicationInputLocks::default()
             },
         ] {
-            assert!(frame(ApplicationInputLocks::default(), keeps_own_rules)
-                .retained_window_input_allowed());
+            assert!(!frame(locks).retained_window_input_allowed());
         }
     }
 
@@ -5199,10 +5086,7 @@ mod tests {
             WindowOwner::StrategicRoot,
         )));
         opened_id(&coordinator.apply_pending()[0]);
-        let frame = coordinator.begin_production_frame(
-            ApplicationInputLocks::default(),
-            LegacyInputBlockers::default(),
-        );
+        let frame = coordinator.begin_production_frame(ApplicationInputLocks::default());
 
         assert!(!frame.retained_window_input_allowed());
     }
@@ -5234,23 +5118,5 @@ mod tests {
             "a host inactive from the start loses nothing; each later \
              active-to-inactive change cancels once"
         );
-    }
-
-    #[test]
-    fn windowing_legacy_restriction_latch_remembers_ephemeral_owner() {
-        let frozen = LegacyInputBlockers::default();
-        let mut observed_latch = LegacyInputRestrictionLatch::new(frozen);
-        observed_latch.observe(LegacyInputBlockers {
-            strategic_modal: true,
-            ..LegacyInputBlockers::default()
-        });
-        observed_latch.observe(frozen);
-
-        let mut explicit_latch = LegacyInputRestrictionLatch::new(frozen);
-        explicit_latch.note_start();
-        explicit_latch.observe(frozen);
-
-        assert!(observed_latch.started());
-        assert!(explicit_latch.started());
     }
 }

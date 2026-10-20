@@ -201,7 +201,7 @@ struct OpenStatusWindow {
     subject: Option<SubjectId>,
     object: StatusObject,
     /// Stable facts captured when an index-backed object was prepared. Direct
-    /// fixture opens have no witness and retain their legacy behavior.
+    /// fixture opens have no witness and retain their direct behavior.
     witness: Option<StatusWitness>,
     /// The list's scroll offset, in window pixels.
     scroll: f32,
@@ -357,6 +357,17 @@ impl StatusWindowState {
     #[must_use]
     pub fn window_id(&self) -> Option<WindowId> {
         self.window.as_ref().and_then(|window| window.id)
+    }
+
+    /// Egui layer attached to the exact manager-issued Status window.
+    #[must_use]
+    pub fn managed_layer_id(&self, id: WindowId) -> Option<egui::LayerId> {
+        (self.window_id() == Some(id)).then(|| {
+            egui::LayerId::new(
+                egui::Order::Tooltip,
+                egui::Id::new("original-status-window"),
+            )
+        })
     }
 
     /// Manager-owned Status hit for event-local pointer routing.
@@ -551,7 +562,7 @@ pub fn draw_status_window(
     cache: &mut BmpCache,
 ) -> Option<StatusWindowAction> {
     let object = state.window.as_ref()?.object;
-    // Direct renderer fixtures retain the legacy disappearance behavior.
+    // Direct renderer fixtures retain the immediate disappearance behavior.
     // Production uses `draw_managed_status_window`, where stale committed
     // content stays modal and exposes an explicit recovery close.
     if status_view(sources, object).is_none() {
@@ -617,12 +628,9 @@ fn draw_status_window_surface(
     let rect = window_rect(layout);
     let mut action = None;
 
-    // Above the modeless windows, as the move confirmation is.
+    // Above the modeless windows, as the move confirmation is. Manager order
+    // is realized by the application adapter, never by this feature module.
     let area_id = egui::Id::new("original-status-window");
-    // Lower managed surfaces also reassert their persistent egui layers each
-    // frame. Reassert Status after they paint so the manager's immutable
-    // paint order is the actual visual and input order too.
-    ctx.move_to_top(egui::LayerId::new(egui::Order::Tooltip, area_id));
     egui::Area::new(area_id)
         .fixed_pos(rect.min)
         .order(egui::Order::Tooltip)
@@ -1902,7 +1910,7 @@ mod tests {
     }
 
     #[test]
-    fn managed_status_reasserts_its_layer_after_lower_surfaces_raise() {
+    fn managed_status_is_raised_only_by_the_shared_focus_adapter() {
         let (world, key, ..) = world_with_luke();
         let empty = Empty::new();
         let mut manager = WindowManager::new();
@@ -1947,6 +1955,9 @@ mod tests {
                     &mut cache,
                     &frame,
                 );
+                crate::windowing::realize_managed_focus(ctx, &frame, |window| {
+                    state.managed_layer_id(window).map(|layer| vec![layer])
+                });
             });
         }
 

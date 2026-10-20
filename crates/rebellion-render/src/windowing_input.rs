@@ -1,4 +1,4 @@
-//! Frame-local input admission for strategic windows and remaining legacy UI.
+//! Frame-local input admission for strategic windows and root UI.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -362,28 +362,6 @@ impl FrameInputRouter {
         self.events
             .get(&event)
             .map_or(InputRecipient::Blocked, |state| state.recipient)
-    }
-}
-
-/// Temporary common boundary for raw paths not yet migrated into the host.
-#[derive(Debug, Clone, Copy)]
-pub struct LegacyInputBridge {
-    blocked: bool,
-}
-
-impl LegacyInputBridge {
-    /// Freezes modal and application-hold blocking for one frame.
-    #[must_use]
-    pub fn new(snapshot: &RoutingSnapshot, application_hold: bool) -> Self {
-        Self {
-            blocked: application_hold || !snapshot.pointer_allows_root(),
-        }
-    }
-
-    /// Whether legacy cockpit/map raw input may run in this frame.
-    #[must_use]
-    pub const fn allows_root(self) -> bool {
-        !self.blocked
     }
 }
 
@@ -751,15 +729,5 @@ mod tests {
             InputRecipient::Blocked
         );
         assert!(!router.claim(blocked, InputRecipient::Blocked));
-    }
-
-    #[test]
-    fn windowing_legacy_bridge_blocks_raw_paths_under_migrated_modal() {
-        let mut manager = WindowManager::new();
-        open(&mut manager, 1, InputPolicy::StrategicModal);
-        assert!(!LegacyInputBridge::new(&manager.begin_frame(), false).allows_root());
-        let empty = WindowManager::new();
-        assert!(LegacyInputBridge::new(&empty.begin_frame(), false).allows_root());
-        assert!(!LegacyInputBridge::new(&empty.begin_frame(), true).allows_root());
     }
 }

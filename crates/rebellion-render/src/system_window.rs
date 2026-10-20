@@ -294,8 +294,6 @@ impl PreparedSystemWindow {
 #[derive(Debug)]
 pub struct SystemWindowState {
     faction: CockpitFaction,
-    /// When one of these windows last took focus (`window_focus`).
-    focus_serial: u64,
     windows: Vec<OpenSystemWindow>,
 }
 
@@ -303,25 +301,26 @@ impl Default for SystemWindowState {
     fn default() -> Self {
         Self {
             faction: CockpitFaction::Alliance,
-            focus_serial: 0,
             windows: Vec::new(),
         }
     }
 }
 
 impl SystemWindowState {
-    /// Allocates a temporary cross-family serial after the shared manager has
-    /// already accepted a System activation. This does not order System
-    /// content; the routing snapshot remains its sole order authority.
-    #[must_use]
-    pub fn next_legacy_bridge_serial() -> u64 {
-        crate::window_focus::next_serial()
-    }
-
     /// Whether any window of this kind is open.
     #[must_use]
     pub fn any_open(&self) -> bool {
         !self.windows.is_empty()
+    }
+
+    /// Egui layer attached to one manager-issued System identity.
+    #[must_use]
+    pub fn managed_layer_id(&self, id: WindowId) -> Option<egui::LayerId> {
+        self.windows
+            .iter()
+            .find(|window| window.id == Some(id))
+            .copied()
+            .map(|window| egui::LayerId::new(egui::Order::Foreground, window_area_id(window)))
     }
 
     /// Validates and prepares System content without mutating the live store.
@@ -414,7 +413,6 @@ impl SystemWindowState {
             return true;
         }
         let logical_position = clamp_to_galaxy(logical_position, layout);
-        self.focus_serial = crate::window_focus::next_serial();
         self.windows.push(OpenSystemWindow {
             id: None,
             subject: None,
@@ -658,13 +656,6 @@ impl SystemWindowState {
         }
     }
 
-    /// When one of this kind's windows last took focus; the newest kind
-    /// is in front (`window_focus`).
-    #[must_use]
-    pub fn focus_serial(&self) -> u64 {
-        self.focus_serial
-    }
-
     fn focus(&mut self, system: SystemKey) -> bool {
         let Some(index) = self
             .windows
@@ -674,7 +665,6 @@ impl SystemWindowState {
             return false;
         };
         let window = self.windows.remove(index);
-        self.focus_serial = crate::window_focus::next_serial();
         self.windows.push(window);
         true
     }
@@ -800,7 +790,6 @@ pub fn draw_system_windows(
     faction: CockpitFaction,
     layout: CockpitLayout,
     cache: &mut BmpCache,
-    front: bool,
 ) -> Vec<SystemWindowAction> {
     draw_system_windows_with_snapshot(
         ctx,
@@ -817,7 +806,6 @@ pub fn draw_system_windows(
         None,
         &[],
         None,
-        front,
     )
 }
 
@@ -842,7 +830,6 @@ pub fn draw_managed_system_windows(
     snapshot: &RoutingSnapshot,
     pointer_events: &[SystemWindowInputEvent],
     router: &mut FrameInputRouter,
-    front: bool,
 ) -> Vec<SystemWindowAction> {
     draw_system_windows_with_snapshot(
         ctx,
@@ -859,7 +846,6 @@ pub fn draw_managed_system_windows(
         Some(snapshot),
         pointer_events,
         Some(router),
-        front,
     )
 }
 
@@ -896,7 +882,6 @@ fn draw_system_windows_with_snapshot(
     snapshot: Option<&RoutingSnapshot>,
     pointer_events: &[SystemWindowInputEvent],
     mut router: Option<&mut FrameInputRouter>,
-    front: bool,
 ) -> Vec<SystemWindowAction> {
     if state.windows.iter().all(|window| window.id.is_none()) {
         state.prepare_faction(faction);
@@ -955,11 +940,10 @@ fn draw_system_windows_with_snapshot(
         .map(|window| window.system);
     for window in windows {
         let system = window.system;
-        let focused = front
-            && match window.id {
-                Some(id) => focused_manager == Some(id),
-                None => focused_fixture_system == Some(system),
-            };
+        let focused = match window.id {
+            Some(id) => focused_manager == Some(id),
+            None => focused_fixture_system == Some(system),
+        };
         let result = draw_system_window(ctx, sources, window, focused, faction, layout, cache);
         let pointer_mutation = result.focus
             || result.close
@@ -1195,9 +1179,6 @@ fn draw_system_window(
     let scale = layout.scale;
     let screen_rect = window_screen_rect(window, layout);
     let id = window_area_id(window);
-    if focused {
-        ctx.move_to_top(egui::LayerId::new(egui::Order::Foreground, id));
-    }
     let area = egui::Area::new(id)
         .fixed_pos(screen_rect.min)
         .order(egui::Order::Foreground)
@@ -2303,7 +2284,6 @@ mod tests {
                         phase,
                     }],
                     &mut router,
-                    true,
                 );
             });
             actions.extend(frame_actions);
@@ -2718,7 +2698,6 @@ mod tests {
                     CockpitFaction::Alliance,
                     layout,
                     &mut cache,
-                    true,
                 ));
             });
             run.painted = PAINTED.with(|painted| painted.take());

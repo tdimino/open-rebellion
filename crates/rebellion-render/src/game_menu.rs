@@ -325,7 +325,10 @@ pub enum GameMenuResponse {
     Chosen(usize),
     /// An enabled entry of the submenu under entry `row`; the whole menu
     /// closes (`FUN_004424c0` posts `0x409` to the view).
-    ChosenChild { row: usize, child: usize },
+    ChosenChild {
+        row: usize,
+        child: usize,
+    },
     /// A press outside the menu or Escape closed it.
     Dismissed,
 }
@@ -402,23 +405,34 @@ struct MenuMemory {
 /// The rectangles come from the previous completed egui pass, matching the
 /// rest of strategic hit testing. A hidden or stale submenu area is excluded
 /// unless the live menu memory still names its parent row.
-#[must_use]
-pub fn game_menu_rects(ctx: &egui::Context, id: egui::Id) -> Vec<egui::Rect> {
-    let mut rects = Vec::with_capacity(2);
-    if let Some(root) = ctx.memory(|memory| memory.area_rect(id)) {
-        rects.push(root);
-    }
+fn game_menu_ids(ctx: &egui::Context, id: egui::Id) -> Vec<egui::Id> {
+    let mut ids = vec![id];
     let pass = ctx.cumulative_pass_nr();
     let shown = ctx
         .data(|data| data.get_temp::<MenuMemory>(id.with("memory")))
         .filter(|memory| memory.last_pass + 1 >= pass)
         .and_then(|memory| memory.shown);
     if let Some(row) = shown {
-        if let Some(child) = ctx.memory(|memory| memory.area_rect(id.with(("submenu", row)))) {
-            rects.push(child);
-        }
+        ids.push(id.with(("submenu", row)));
     }
-    rects
+    ids
+}
+
+#[must_use]
+pub fn game_menu_rects(ctx: &egui::Context, id: egui::Id) -> Vec<egui::Rect> {
+    game_menu_ids(ctx, id)
+        .into_iter()
+        .filter_map(|id| ctx.memory(|memory| memory.area_rect(id)))
+        .collect()
+}
+
+/// Root plus the currently visible submenu layer, in internal paint order.
+#[must_use]
+pub fn game_menu_layer_ids(ctx: &egui::Context, id: egui::Id) -> Vec<egui::LayerId> {
+    game_menu_ids(ctx, id)
+        .into_iter()
+        .map(|id| egui::LayerId::new(egui::Order::Tooltip, id))
+        .collect()
 }
 
 /// Text and icon sizes of `entries` and their layout.
@@ -528,11 +542,8 @@ fn paint_menu(
     let menu_size = egui::vec2(geometry.width * scale, geometry.height * scale);
     let (arrow_highlighted, arrow_normal) = submenu_arrows(faction);
 
-    // FUN_00442860 opens a pop-up over every child window. The modeless
-    // windows share Foreground and a focused one raises itself each frame
-    // (`system_window.rs`), so the menu takes the order above them, which
-    // it shares with the mission dialog, and raises itself there.
-    ctx.move_to_top(egui::LayerId::new(egui::Order::Tooltip, id));
+    // FUN_00442860 opens a pop-up over every child window on Tooltip order.
+    // Cross-surface ordering remains the manager adapter's responsibility.
     let shown = egui::Area::new(id)
         .order(egui::Order::Tooltip)
         .fade_in(false)
@@ -571,7 +582,8 @@ fn paint_menu(
                 } else {
                     entry.icon
                 };
-                if let Some(texture) = icon.and_then(|icon| cache.get(ctx, DllSource::Strategy, icon))
+                if let Some(texture) =
+                    icon.and_then(|icon| cache.get(ctx, DllSource::Strategy, icon))
                 {
                     let size = texture.size_vec2() * scale;
                     ui.painter().image(
@@ -799,6 +811,18 @@ mod tests {
         let mut cache = BmpCache::new();
         let dialog = egui::Id::new("dialog_above_windows");
         let entries = [labelled("Mission", true)];
+        let mut manager = rebellion_windowing::WindowManager::new();
+        let menu_window = opened_id(
+            &manager
+                .apply(rebellion_windowing::WindowCommand::Open(
+                    crate::windowing_policy::singleton_spec(
+                        rebellion_windowing::WindowKind::Menu,
+                        rebellion_windowing::WindowOwner::StrategicRoot,
+                    ),
+                ))
+                .expect("menu opens"),
+        );
+        let frame = manager.begin_frame();
         for _ in 0..3 {
             let _ = ctx.run(egui::RawInput::default(), |ctx| {
                 let _ = draw_game_menu(
@@ -817,6 +841,10 @@ mod tests {
                     .show(ctx, |ui| {
                         ui.allocate_response(egui::vec2(400.0, 400.0), egui::Sense::click());
                     });
+                crate::windowing::realize_managed_focus(ctx, &frame, |window| {
+                    (window == menu_window)
+                        .then(|| game_menu_layer_ids(ctx, egui::Id::new(MENU_ID)))
+                });
             });
         }
         let menu = ctx

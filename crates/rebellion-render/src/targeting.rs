@@ -616,7 +616,6 @@ mod tests {
                         faction,
                         layout,
                         &mut cache,
-                        true,
                     );
                     let _ = draw_fleet_windows(
                         ctx,
@@ -628,7 +627,6 @@ mod tests {
                         faction,
                         layout,
                         &mut cache,
-                        true,
                     );
                     let _ = draw_defenses_windows(
                         ctx,
@@ -640,7 +638,6 @@ mod tests {
                         faction,
                         layout,
                         &mut cache,
-                        true,
                     );
                     let _ = draw_missions_windows(
                         ctx,
@@ -651,7 +648,6 @@ mod tests {
                         faction,
                         layout,
                         &mut cache,
-                        true,
                     );
                     capture_pointer(ctx);
                 });

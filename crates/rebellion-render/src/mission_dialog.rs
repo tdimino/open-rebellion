@@ -288,6 +288,17 @@ impl MissionDialogState {
         self.dialog.as_ref().and_then(|dialog| dialog.window_id)
     }
 
+    /// Egui layer attached to the exact manager-issued Mission Dialog.
+    #[must_use]
+    pub fn managed_layer_id(&self, id: WindowId) -> Option<egui::LayerId> {
+        (self.window_id() == Some(id)).then(|| {
+            egui::LayerId::new(
+                egui::Order::Tooltip,
+                egui::Id::new("original-mission-dialog"),
+            )
+        })
+    }
+
     /// Manager-owned Mission hit for event-local pointer routing.
     #[must_use]
     pub fn hit_window(
