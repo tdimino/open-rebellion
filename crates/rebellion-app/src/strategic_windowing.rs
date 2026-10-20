@@ -10,6 +10,7 @@ use rebellion_render::{
     fleet_finder::{PreparedFleetFinder, FLEET_FINDER_NAME_CONTROL},
     fleet_window::PreparedFleetWindow,
     message_index::PreparedMessageIndex,
+    mission_dialog::{PreparedMissionDialog, PreparedMissionDialogConfirm},
     missions_window::PreparedMissionsWindow,
     personnel_finder::{PreparedPersonnelFinder, PERSONNEL_FINDER_NAME_CONTROL},
     sector_window::PreparedSectorWindow,
@@ -42,6 +43,12 @@ pub struct AppliedWindowCommand {
     pub build_selection_content_id: Option<WindowId>,
     /// Gameplay-free confirmation released only by its exact accepted close.
     pub confirmed_build_selection: Option<PreparedBuildSelectionConfirm>,
+    /// Mission content prepared beside its fresh contextual open or replacement.
+    pub prepared_mission_dialog: Option<PreparedMissionDialog>,
+    /// Identity whose attachment is valid for `prepared_mission_dialog`.
+    pub mission_dialog_content_id: Option<WindowId>,
+    /// Gameplay-free Mission order released only by its exact accepted close.
+    pub confirmed_mission_dialog: Option<PreparedMissionDialogConfirm>,
     /// System content prepared alongside this semantic open.
     pub prepared_system: Option<PreparedSystemWindow>,
     /// Identity whose attachment is valid for `prepared_system` after commit.
@@ -121,6 +128,8 @@ struct QueuedWindowCommand {
     command: WindowCommand,
     prepared_build_selection: Option<PreparedBuildSelection>,
     prepared_build_selection_confirm: Option<PreparedBuildSelectionConfirm>,
+    prepared_mission_dialog: Option<PreparedMissionDialog>,
+    prepared_mission_dialog_confirm: Option<PreparedMissionDialogConfirm>,
     prepared_system: Option<PreparedSystemWindow>,
     prepared_defenses: Option<PreparedDefensesWindow>,
     prepared_missions: Option<PreparedMissionsWindow>,
@@ -467,6 +476,8 @@ impl StrategicWindowing {
             command,
             prepared_build_selection: None,
             prepared_build_selection_confirm: None,
+            prepared_mission_dialog: None,
+            prepared_mission_dialog_confirm: None,
             prepared_system: None,
             prepared_defenses: None,
             prepared_missions: None,
@@ -486,6 +497,8 @@ impl StrategicWindowing {
             command: WindowCommand::Open(prepared.spec()),
             prepared_build_selection: Some(prepared),
             prepared_build_selection_confirm: None,
+            prepared_mission_dialog: None,
+            prepared_mission_dialog_confirm: None,
             prepared_system: None,
             prepared_defenses: None,
             prepared_missions: None,
@@ -507,6 +520,63 @@ impl StrategicWindowing {
             command: WindowCommand::Close(prepared.window_id()),
             prepared_build_selection: None,
             prepared_build_selection_confirm: Some(prepared),
+            prepared_mission_dialog: None,
+            prepared_mission_dialog_confirm: None,
+            prepared_system: None,
+            prepared_defenses: None,
+            prepared_missions: None,
+            prepared_fleet: None,
+            prepared_fleet_finder: None,
+            prepared_troop_finder: None,
+            prepared_personnel_finder: None,
+            prepared_message_index: None,
+            prepared_status: None,
+            prepared_sector: None,
+        });
+    }
+
+    /// Allocates a fresh command-context subject and queues inert Mission
+    /// content beside an atomic open or exact replacement.
+    pub fn enqueue_mission_dialog_open(
+        &mut self,
+        prepared: PreparedMissionDialog,
+    ) -> Result<(), WindowError> {
+        let subject = self.next_context_subject()?;
+        let new = prepared.spec(subject);
+        self.pending.push(QueuedWindowCommand {
+            command: prepared
+                .replacing()
+                .map_or(WindowCommand::Open(new), |old| WindowCommand::Replace {
+                    old,
+                    new,
+                }),
+            prepared_build_selection: None,
+            prepared_build_selection_confirm: None,
+            prepared_mission_dialog: Some(prepared),
+            prepared_mission_dialog_confirm: None,
+            prepared_system: None,
+            prepared_defenses: None,
+            prepared_missions: None,
+            prepared_fleet: None,
+            prepared_fleet_finder: None,
+            prepared_troop_finder: None,
+            prepared_personnel_finder: None,
+            prepared_message_index: None,
+            prepared_status: None,
+            prepared_sector: None,
+        });
+        Ok(())
+    }
+
+    /// Queues the exact close paired with an inert Mission order. The order
+    /// is returned only when that close tears down its attached identity.
+    pub fn enqueue_mission_dialog_confirm(&mut self, prepared: PreparedMissionDialogConfirm) {
+        self.pending.push(QueuedWindowCommand {
+            command: WindowCommand::Close(prepared.window_id()),
+            prepared_build_selection: None,
+            prepared_build_selection_confirm: None,
+            prepared_mission_dialog: None,
+            prepared_mission_dialog_confirm: Some(prepared),
             prepared_system: None,
             prepared_defenses: None,
             prepared_missions: None,
@@ -526,6 +596,8 @@ impl StrategicWindowing {
             command: WindowCommand::Open(prepared.spec()),
             prepared_build_selection: None,
             prepared_build_selection_confirm: None,
+            prepared_mission_dialog: None,
+            prepared_mission_dialog_confirm: None,
             prepared_system: Some(prepared),
             prepared_defenses: None,
             prepared_missions: None,
@@ -553,6 +625,8 @@ impl StrategicWindowing {
                 }),
             prepared_build_selection: None,
             prepared_build_selection_confirm: None,
+            prepared_mission_dialog: None,
+            prepared_mission_dialog_confirm: None,
             prepared_system: None,
             prepared_defenses: None,
             prepared_missions: None,
@@ -604,6 +678,8 @@ impl StrategicWindowing {
             command: WindowCommand::Open(prepared.spec()),
             prepared_build_selection: None,
             prepared_build_selection_confirm: None,
+            prepared_mission_dialog: None,
+            prepared_mission_dialog_confirm: None,
             prepared_system: None,
             prepared_defenses: Some(prepared),
             prepared_missions: None,
@@ -623,6 +699,8 @@ impl StrategicWindowing {
             command: WindowCommand::Open(prepared.spec()),
             prepared_build_selection: None,
             prepared_build_selection_confirm: None,
+            prepared_mission_dialog: None,
+            prepared_mission_dialog_confirm: None,
             prepared_system: None,
             prepared_defenses: None,
             prepared_missions: Some(prepared),
@@ -643,6 +721,8 @@ impl StrategicWindowing {
             command: WindowCommand::Open(prepared.spec()),
             prepared_build_selection: None,
             prepared_build_selection_confirm: None,
+            prepared_mission_dialog: None,
+            prepared_mission_dialog_confirm: None,
             prepared_system: Some(prepared),
             prepared_defenses: None,
             prepared_missions: None,
@@ -663,6 +743,8 @@ impl StrategicWindowing {
             command: WindowCommand::Open(prepared.spec()),
             prepared_build_selection: None,
             prepared_build_selection_confirm: None,
+            prepared_mission_dialog: None,
+            prepared_mission_dialog_confirm: None,
             prepared_system: None,
             prepared_defenses: None,
             prepared_missions: None,
@@ -683,6 +765,8 @@ impl StrategicWindowing {
             command: WindowCommand::Open(prepared.spec()),
             prepared_build_selection: None,
             prepared_build_selection_confirm: None,
+            prepared_mission_dialog: None,
+            prepared_mission_dialog_confirm: None,
             prepared_system: None,
             prepared_defenses: None,
             prepared_missions: None,
@@ -702,6 +786,8 @@ impl StrategicWindowing {
             command: WindowCommand::Open(prepared.spec()),
             prepared_build_selection: None,
             prepared_build_selection_confirm: None,
+            prepared_mission_dialog: None,
+            prepared_mission_dialog_confirm: None,
             prepared_system: None,
             prepared_defenses: None,
             prepared_missions: None,
@@ -721,6 +807,8 @@ impl StrategicWindowing {
             command: WindowCommand::Open(prepared.spec()),
             prepared_build_selection: None,
             prepared_build_selection_confirm: None,
+            prepared_mission_dialog: None,
+            prepared_mission_dialog_confirm: None,
             prepared_system: None,
             prepared_defenses: None,
             prepared_missions: None,
@@ -740,6 +828,8 @@ impl StrategicWindowing {
             command: WindowCommand::Open(prepared.spec()),
             prepared_build_selection: None,
             prepared_build_selection_confirm: None,
+            prepared_mission_dialog: None,
+            prepared_mission_dialog_confirm: None,
             prepared_system: None,
             prepared_defenses: None,
             prepared_missions: None,
@@ -759,6 +849,8 @@ impl StrategicWindowing {
             command: WindowCommand::Open(prepared.spec()),
             prepared_build_selection: None,
             prepared_build_selection_confirm: None,
+            prepared_mission_dialog: None,
+            prepared_mission_dialog_confirm: None,
             prepared_system: None,
             prepared_defenses: None,
             prepared_missions: None,
@@ -788,6 +880,8 @@ impl StrategicWindowing {
             }),
             prepared_build_selection: None,
             prepared_build_selection_confirm: None,
+            prepared_mission_dialog: None,
+            prepared_mission_dialog_confirm: None,
             prepared_system: None,
             prepared_defenses: None,
             prepared_missions: None,
@@ -882,6 +976,8 @@ impl StrategicWindowing {
             command,
             prepared_build_selection,
             prepared_build_selection_confirm,
+            prepared_mission_dialog,
+            prepared_mission_dialog_confirm,
             prepared_system,
             prepared_defenses,
             prepared_missions,
@@ -897,6 +993,8 @@ impl StrategicWindowing {
         let mut removed_content = Vec::new();
         let mut build_selection_content_id = None;
         let mut confirmed_build_selection = None;
+        let mut mission_dialog_content_id = None;
+        let mut confirmed_mission_dialog = None;
         let mut system_content_id = None;
         let mut defenses_content_id = None;
         let mut missions_content_id = None;
@@ -928,6 +1026,27 @@ impl StrategicWindowing {
                 ) && removed_content.contains(&window)
                 {
                     confirmed_build_selection = Some(prepared);
+                }
+            }
+            if prepared_mission_dialog.is_some() {
+                mission_dialog_content_id = match &commit.transition {
+                    WindowTransition::Opened { id }
+                    | WindowTransition::Replaced { new: id, .. } => Some(*id),
+                    WindowTransition::Existing { id, .. } => {
+                        self.attached_content.contains(id).then_some(*id)
+                    }
+                    _ => None,
+                };
+            }
+            if let Some(prepared) = prepared_mission_dialog_confirm.as_ref() {
+                let window = prepared.window_id();
+                if matches!(
+                    &commit.transition,
+                    WindowTransition::Closed { root, closed, .. }
+                        if *root == window && closed.contains(&window)
+                ) && removed_content.contains(&window)
+                {
+                    confirmed_mission_dialog = prepared_mission_dialog_confirm;
                 }
             }
             if prepared_system.is_some() {
@@ -1060,6 +1179,9 @@ impl StrategicWindowing {
             prepared_build_selection,
             build_selection_content_id,
             confirmed_build_selection,
+            prepared_mission_dialog,
+            mission_dialog_content_id,
+            confirmed_mission_dialog,
             prepared_system,
             system_content_id,
             prepared_defenses,
@@ -1111,6 +1233,15 @@ impl StrategicWindowing {
             .begin_frame()
             .key(id)
             .is_some_and(|key| key.kind == rebellion_windowing::WindowKind::BuildSelection)
+            && self.attached_content.insert(id)
+    }
+
+    /// Acknowledges Mission publication only for its exact contextual identity.
+    pub fn acknowledge_mission_dialog_publication(&mut self, id: WindowId) -> bool {
+        self.manager
+            .begin_frame()
+            .key(id)
+            .is_some_and(|key| key.kind == rebellion_windowing::WindowKind::MissionDialog)
             && self.attached_content.insert(id)
     }
 
@@ -1203,6 +1334,11 @@ impl StrategicWindowing {
 
     /// Compensates a failed Build Selection publication with an exact close.
     pub fn rollback_build_selection_publication(&mut self, id: WindowId) -> Vec<WindowId> {
+        self.rollback_publication(id)
+    }
+
+    /// Compensates a failed Mission publication with an exact close.
+    pub fn rollback_mission_dialog_publication(&mut self, id: WindowId) -> Vec<WindowId> {
         self.rollback_publication(id)
     }
 
@@ -1901,6 +2037,94 @@ mod tests {
             state.commit_confirm(prepared, &first.removed_content, &world),
             None
         );
+    }
+
+    #[test]
+    fn mission_dialog_windowing_modal_cancels_capture() {
+        use rebellion_render::mission_dialog::MissionDialogState;
+        use rebellion_windowing::CaptureCancelReason;
+
+        let mut coordinator = StrategicWindowing::new();
+        coordinator.enqueue(WindowCommand::Open(contextual_spec(
+            WindowKind::Fleet,
+            SubjectId::new(1, 1),
+            WindowOwner::StrategicRoot,
+        )));
+        let owner = opened_id(&coordinator.apply_pending()[0]);
+        coordinator.enqueue(WindowCommand::CapturePointer(owner));
+        assert!(coordinator.apply_pending()[0].result.is_ok());
+
+        let state = MissionDialogState::default();
+        coordinator
+            .enqueue_mission_dialog_open(
+                state
+                    .prepare_open(
+                        MissionFaction::Alliance,
+                        SystemKey::default(),
+                        vec![MissionMember::Character(Default::default())],
+                        vec![MissionKind::Diplomacy],
+                    )
+                    .unwrap(),
+            )
+            .unwrap();
+        let applied = coordinator.apply_pending();
+        let commit = applied[0].result.as_ref().unwrap();
+        assert!(commit.events.contains(&WindowEvent::CaptureCancelled {
+            window: owner,
+            reason: CaptureCancelReason::ModalOpened,
+        }));
+    }
+
+    #[test]
+    fn mission_dialog_confirm_consumes_key_and_dispatches_once() {
+        use rebellion_render::mission_dialog::{MissionDialogAction, MissionDialogState};
+
+        let mut coordinator = StrategicWindowing::new();
+        let mut state = MissionDialogState::default();
+        let member = MissionMember::Character(Default::default());
+        coordinator
+            .enqueue_mission_dialog_open(
+                state
+                    .prepare_open(
+                        MissionFaction::Alliance,
+                        SystemKey::default(),
+                        vec![member],
+                        vec![MissionKind::Diplomacy],
+                    )
+                    .unwrap(),
+            )
+            .unwrap();
+        let mut opened = coordinator.apply_pending().remove(0);
+        let id = opened.mission_dialog_content_id.unwrap();
+        assert_eq!(
+            state.commit_open(
+                opened.prepared_mission_dialog.take().unwrap(),
+                &opened.result.as_ref().unwrap().transition,
+            ),
+            Some(id)
+        );
+        assert!(coordinator.acknowledge_mission_dialog_publication(id));
+
+        let prepared = state.prepare_confirm().unwrap();
+        coordinator.enqueue_mission_dialog_confirm(prepared.clone());
+        coordinator.enqueue_mission_dialog_confirm(prepared.clone());
+        let mut applied = coordinator.apply_pending();
+        let first = applied.remove(0);
+        let second = applied.remove(0);
+        assert_eq!(first.confirmed_mission_dialog, Some(prepared.clone()));
+        assert!(second.result.is_err());
+        assert_eq!(second.confirmed_mission_dialog, None);
+        assert_eq!(
+            state.commit_confirm(prepared.clone(), &first.removed_content),
+            Some(MissionDialogAction::Begin {
+                kind: MissionKind::Diplomacy,
+                faction: MissionFaction::Alliance,
+                team: vec![member],
+                decoys: Vec::new(),
+                target: SystemKey::default(),
+            })
+        );
+        assert_eq!(state.commit_confirm(prepared, &first.removed_content), None);
     }
 
     fn fleet_layout() -> CockpitLayout {

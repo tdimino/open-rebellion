@@ -106,7 +106,8 @@ use rebellion_render::game_speed::{
 };
 use rebellion_render::message_index::{MessageIndexAction, MessageIndexState};
 use rebellion_render::mission_dialog::{
-    draw_mission_dialog, MissionDialogAction, MissionDialogState,
+    draw_mission_dialog, MissionDialogAction, MissionDialogState, PreparedMissionDialog,
+    PreparedMissionDialogConfirm,
 };
 use rebellion_render::missions_window::{draw_managed_missions_windows, PreparedMissionsWindow};
 use rebellion_render::move_confirmation::{
@@ -2089,6 +2090,7 @@ enum ManagedStrategicSurface {
     MessageIndex(rebellion_windowing::WindowId),
     Status(rebellion_windowing::WindowId),
     BuildSelection(rebellion_windowing::WindowId),
+    MissionDialog(rebellion_windowing::WindowId),
 }
 
 fn managed_strategic_surface_plan(
@@ -2100,6 +2102,7 @@ fn managed_strategic_surface_plan(
     status: Option<rebellion_windowing::WindowId>,
     build_selection: Option<rebellion_windowing::WindowId>,
     personnel_finder: Option<rebellion_windowing::WindowId>,
+    mission_dialog: Option<rebellion_windowing::WindowId>,
 ) -> Vec<(ManagedStrategicSurface, bool)> {
     frame
         .paint_order()
@@ -2119,6 +2122,8 @@ fn managed_strategic_surface_plan(
                 ManagedStrategicSurface::Status(*id)
             } else if Some(*id) == build_selection {
                 ManagedStrategicSurface::BuildSelection(*id)
+            } else if Some(*id) == mission_dialog {
+                ManagedStrategicSurface::MissionDialog(*id)
             } else {
                 return None;
             };
@@ -2396,6 +2401,163 @@ fn commit_build_selection_gameplay(
     };
     manufacturing.build_units(system, items);
     Some(action)
+}
+
+fn legacy_mission_dialog_modal(state: &MissionDialogState) -> bool {
+    state.is_open() && state.window_id().is_none()
+}
+
+fn legacy_mission_dialog_contains_point(
+    state: &MissionDialogState,
+    layout: rebellion_render::CockpitLayout,
+    point: (f32, f32),
+) -> bool {
+    state.window_id().is_none() && state.contains_screen_point(layout, point)
+}
+
+const fn managed_mission_dialog_escape_requested(
+    close_queued: bool,
+    has_keyboard_owner: bool,
+    escape_pressed: bool,
+) -> bool {
+    !close_queued && has_keyboard_owner && escape_pressed
+}
+
+fn commit_mission_dialog_publication(
+    coordinator: &mut StrategicWindowing,
+    state: &mut MissionDialogState,
+    prepared: PreparedMissionDialog,
+    id: rebellion_windowing::WindowId,
+    transition: &rebellion_windowing::WindowTransition,
+) -> Vec<rebellion_windowing::WindowId> {
+    let created = matches!(
+        transition,
+        rebellion_windowing::WindowTransition::Opened { .. }
+            | rebellion_windowing::WindowTransition::Replaced { .. }
+    );
+    if state.commit_open(prepared, transition) == Some(id) {
+        let committed =
+            coordinator.has_content(id) || coordinator.acknowledge_mission_dialog_publication(id);
+        if committed {
+            Vec::new()
+        } else {
+            state.remove_content(&[id]);
+            coordinator.rollback_mission_dialog_publication(id)
+        }
+    } else {
+        macroquad::logging::error!(
+            "[windowing] Mission content commit did not match identity={id:?}"
+        );
+        if created {
+            coordinator.rollback_mission_dialog_publication(id)
+        } else {
+            Vec::new()
+        }
+    }
+}
+
+struct MissionDispatchContext<'a> {
+    world: &'a mut GameWorld,
+    missions: &'a mut MissionState,
+    uprising: &'a UprisingState,
+    messages: &'a mut MessageLog,
+    advisor: &'a mut AdvisorState,
+    tick: u64,
+}
+
+/// Releases one Mission order into the ordinary gameplay validator only after
+/// its exact manager teardown receipt consumes the prepared context. Applying
+/// the order here keeps receipt validation and gameplay dispatch in the same
+/// frame, before another simulation or campaign session can begin.
+fn commit_mission_dialog_gameplay(
+    prepared: Option<PreparedMissionDialogConfirm>,
+    removed_content: &[rebellion_windowing::WindowId],
+    state: &mut MissionDialogState,
+    context: MissionDispatchContext<'_>,
+) -> bool {
+    let Some(MissionDialogAction::Begin {
+        kind,
+        faction,
+        team,
+        decoys,
+        target,
+    }) = prepared.and_then(|prepared| state.commit_confirm(prepared, removed_content))
+    else {
+        return false;
+    };
+    apply_mission_dispatch(kind, faction, team, decoys, target, None, context);
+    true
+}
+
+fn apply_mission_dispatch(
+    kind: MissionKind,
+    faction: MissionFaction,
+    team: Vec<MissionMember>,
+    decoys: Vec<MissionMember>,
+    target: SystemKey,
+    target_character: Option<CharacterKey>,
+    context: MissionDispatchContext<'_>,
+) {
+    let MissionDispatchContext {
+        world,
+        missions,
+        uprising,
+        messages,
+        advisor,
+        tick,
+    } = context;
+    // The first agent names the order in its messages.
+    let char_name = team
+        .iter()
+        .find_map(|member| member.character())
+        .and_then(|key| world.characters.get(key))
+        .map_or_else(|| "Your team".into(), |c| c.display_name().to_owned());
+    let request = rebellion_core::missions::MissionRequest {
+        kind,
+        faction,
+        team,
+        decoys,
+        target_system: target,
+        target_character,
+        target_object: None,
+        tick,
+    };
+    if let Err(refusal) = missions.dispatch_validated(request, world, uprising) {
+        // FUN_00487c90 shows no text: the side's advisor reacts
+        // (`mission-dialog.md`, "Refusal").
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Ok(mut last) = dev_actions::LAST_DISPATCH_REFUSAL.lock() {
+            let (a, b) = refusal.status();
+            *last = Some(format!("{refusal:?} (0x{a:x}/0x{b:x})"));
+        }
+        advisor.refuse(refusal.status());
+        return;
+    }
+    let sys_name = world
+        .systems
+        .get(target)
+        .map_or_else(|| "unknown".into(), |s| s.name.clone());
+    let kind_name = match kind {
+        MissionKind::Diplomacy => "Diplomacy",
+        MissionKind::Recruitment => "Recruitment",
+        MissionKind::Sabotage => "Sabotage",
+        MissionKind::Assassination => "Assassination",
+        MissionKind::Espionage => "Espionage",
+        MissionKind::Rescue => "Rescue",
+        MissionKind::Abduction => "Abduction",
+        MissionKind::InciteUprising => "Incite Uprising",
+        MissionKind::SubdueUprising => "Subdue Uprising",
+        MissionKind::DeathStarSabotage => "Death Star Sabotage",
+        MissionKind::Research(_) => rebellion_render::mission_dialog::kind_name(kind),
+        MissionKind::Autoscrap => "Autoscrap",
+        MissionKind::Move => "Move",
+    };
+    messages.push(GameMessage::at_system(
+        tick,
+        format!("{char_name} dispatched on {kind_name} mission to {sys_name}"),
+        MessageCategory::Mission,
+        target,
+    ));
 }
 
 #[cfg(test)]
@@ -4806,13 +4968,17 @@ mod frame_input_tests {
 mod panel_toggle_tests {
     use super::{
         collect_strategic_pointer_batch, commit_build_selection_gameplay,
+        commit_mission_dialog_gameplay, commit_mission_dialog_publication,
         commit_personnel_finder_publication, enqueue_personnel_finder_action,
-        enqueue_troop_finder_action, legacy_child_key_disposition, managed_strategic_surface_plan,
+        enqueue_troop_finder_action, legacy_child_key_disposition,
+        legacy_mission_dialog_contains_point, legacy_mission_dialog_modal,
+        managed_mission_dialog_escape_requested, managed_strategic_surface_plan,
         panel_letters_open_panels, release_personnel_finder_dependent,
-        release_troop_finder_dependent, toggle_exclusive_panel, BuildSelectionAction,
-        ManagedStrategicSurface, PendingPersonnelFinderOpen, PendingTroopFinderOpen,
-        StrategicPointerBatch, StrategicRawInputCollector, StrategicRawKeyCollector,
-        StrategicRawKeyEvent, StrategicRawPointerEvent, StrategicRootKeyBatch,
+        release_troop_finder_dependent, toggle_exclusive_panel, AdvisorFaction, AdvisorState,
+        BuildSelectionAction, ManagedStrategicSurface, MessageLog, MissionDispatchContext,
+        PendingPersonnelFinderOpen, PendingTroopFinderOpen, StrategicPointerBatch,
+        StrategicRawInputCollector, StrategicRawKeyCollector, StrategicRawKeyEvent,
+        StrategicRawPointerEvent, StrategicRootKeyBatch,
     };
     use macroquad::miniquad::{EventHandler, KeyMods, MouseButton};
     use macroquad::prelude::KeyCode;
@@ -5015,6 +5181,7 @@ mod panel_toggle_tests {
                 Some(status_id),
                 None,
                 None,
+                None,
             ),
             [
                 (ManagedStrategicSurface::Encyclopedia(encyclopedia), false),
@@ -5149,6 +5316,7 @@ mod panel_toggle_tests {
                 None,
                 None,
                 None,
+                None,
             ),
             [
                 (ManagedStrategicSurface::FleetFinder(finder), false),
@@ -5169,6 +5337,7 @@ mod panel_toggle_tests {
                 &coordinator.begin_frame(),
                 None,
                 Some(finder),
+                None,
                 None,
                 None,
                 None,
@@ -5198,6 +5367,7 @@ mod panel_toggle_tests {
                 &frame,
                 Some(encyclopedia),
                 Some(finder),
+                None,
                 None,
                 None,
                 None,
@@ -5237,7 +5407,17 @@ mod panel_toggle_tests {
         let frame = coordinator.begin_frame();
 
         assert_eq!(
-            managed_strategic_surface_plan(&frame, None, None, Some(id), None, None, None, None,),
+            managed_strategic_surface_plan(
+                &frame,
+                None,
+                None,
+                Some(id),
+                None,
+                None,
+                None,
+                None,
+                None,
+            ),
             [(ManagedStrategicSurface::TroopFinder(id), true)]
         );
         assert_eq!(state.keyboard_owner(&frame), Some(id));
@@ -5545,7 +5725,17 @@ mod panel_toggle_tests {
         let frame = coordinator.begin_frame();
 
         assert_eq!(
-            managed_strategic_surface_plan(&frame, None, None, None, None, None, None, Some(id),),
+            managed_strategic_surface_plan(
+                &frame,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(id),
+                None,
+            ),
             [(ManagedStrategicSurface::PersonnelFinder(id), true)]
         );
         assert_eq!(state.keyboard_owner(&frame), Some(id));
@@ -5942,7 +6132,17 @@ mod panel_toggle_tests {
 
         let frame = coordinator.begin_frame();
         assert_eq!(
-            managed_strategic_surface_plan(&frame, None, None, None, None, None, Some(id), None,),
+            managed_strategic_surface_plan(
+                &frame,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(id),
+                None,
+                None,
+            ),
             [(ManagedStrategicSurface::BuildSelection(id), true)]
         );
         assert_eq!(state.keyboard_owner(&frame), Some(id));
@@ -6268,6 +6468,277 @@ mod panel_toggle_tests {
             None
         );
         assert_eq!(manufacturing.queued_at(system), 1);
+    }
+
+    #[test]
+    fn mission_dialog_confirm_consumes_key_and_dispatches_once() {
+        use rebellion_core::dat::{ExplorationStatus, Faction};
+        use rebellion_core::ids::{DatId, SectorKey};
+        use rebellion_core::missions::{MissionFaction, MissionKind, MissionMember, MissionState};
+        use rebellion_core::uprising::UprisingState;
+        use rebellion_core::world::{Character, ControlKind, GameWorld, System};
+        use rebellion_render::mission_dialog::MissionDialogState;
+
+        let mut world = GameWorld::default();
+        let system = world.systems.insert(System {
+            dat_id: DatId::new(0x9000_0010),
+            name: "Chandrila".into(),
+            sector: SectorKey::default(),
+            x: 0,
+            y: 0,
+            exploration_status: ExplorationStatus::Explored,
+            popularity_alliance: 0.5,
+            popularity_empire: 0.5,
+            is_populated: true,
+            total_energy: 0,
+            raw_materials: 0,
+            espionage_rating: 0.0,
+            fleets: vec![],
+            ground_units: vec![],
+            special_forces: vec![],
+            fighters: vec![],
+            defense_facilities: vec![],
+            manufacturing_facilities: vec![],
+            production_facilities: vec![],
+            is_headquarters: false,
+            is_destroyed: false,
+            control: ControlKind::Controlled(Faction::Alliance),
+        });
+        let character = world.characters.insert(Character {
+            dat_id: DatId::new(0x1000_0010),
+            name: "Leia".into(),
+            is_alliance: true,
+            recruited: true,
+            current_system: Some(system),
+            ..Character::default()
+        });
+        let member = MissionMember::Character(character);
+        let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
+        let mut state = MissionDialogState::default();
+        coordinator
+            .enqueue_mission_dialog_open(
+                state
+                    .prepare_open(
+                        MissionFaction::Alliance,
+                        system,
+                        vec![member],
+                        vec![MissionKind::Diplomacy],
+                    )
+                    .unwrap(),
+            )
+            .unwrap();
+        let mut opened = coordinator.apply_pending().remove(0);
+        let id = opened.mission_dialog_content_id.unwrap();
+        assert!(commit_mission_dialog_publication(
+            &mut coordinator,
+            &mut state,
+            opened.prepared_mission_dialog.take().unwrap(),
+            id,
+            &opened.result.as_ref().unwrap().transition,
+        )
+        .is_empty());
+
+        let frame = coordinator.begin_frame();
+        assert_eq!(
+            managed_strategic_surface_plan(
+                &frame,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(id),
+            ),
+            [(ManagedStrategicSurface::MissionDialog(id), true)]
+        );
+
+        let prepared = state.prepare_confirm().unwrap();
+        coordinator.enqueue_mission_dialog_confirm(prepared.clone());
+        coordinator.enqueue_mission_dialog_confirm(prepared.clone());
+        let mut applied = coordinator.apply_pending();
+        let accepted = applied.remove(0);
+        let rejected = applied.remove(0);
+        let mut missions = MissionState::new();
+        let uprising = UprisingState::default();
+        let mut messages = MessageLog::default();
+        let mut advisor = AdvisorState::new(AdvisorFaction::Alliance);
+        assert!(commit_mission_dialog_gameplay(
+            accepted.confirmed_mission_dialog,
+            &accepted.removed_content,
+            &mut state,
+            MissionDispatchContext {
+                world: &mut world,
+                missions: &mut missions,
+                uprising: &uprising,
+                messages: &mut messages,
+                advisor: &mut advisor,
+                tick: 7,
+            },
+        ));
+        assert_eq!(missions.len(), 1, "the exact receipt dispatches this frame");
+        assert!(!commit_mission_dialog_gameplay(
+            rejected.confirmed_mission_dialog,
+            &rejected.removed_content,
+            &mut state,
+            MissionDispatchContext {
+                world: &mut world,
+                missions: &mut missions,
+                uprising: &uprising,
+                messages: &mut messages,
+                advisor: &mut advisor,
+                tick: 7,
+            },
+        ));
+        assert_eq!(missions.len(), 1);
+        assert!(world.characters[character].on_mission);
+
+        coordinator
+            .enqueue_mission_dialog_open(
+                state
+                    .prepare_open(
+                        MissionFaction::Alliance,
+                        system,
+                        vec![member],
+                        vec![MissionKind::Diplomacy],
+                    )
+                    .unwrap(),
+            )
+            .unwrap();
+        let mut reopened = coordinator.apply_pending().remove(0);
+        let reopened_id = reopened.mission_dialog_content_id.unwrap();
+        assert!(commit_mission_dialog_publication(
+            &mut coordinator,
+            &mut state,
+            reopened.prepared_mission_dialog.take().unwrap(),
+            reopened_id,
+            &reopened.result.as_ref().unwrap().transition,
+        )
+        .is_empty());
+        coordinator.enqueue_mission_dialog_confirm(state.prepare_confirm().unwrap());
+        let stale_source = coordinator.apply_pending().remove(0);
+        assert!(commit_mission_dialog_gameplay(
+            stale_source.confirmed_mission_dialog,
+            &stale_source.removed_content,
+            &mut state,
+            MissionDispatchContext {
+                world: &mut world,
+                missions: &mut missions,
+                uprising: &uprising,
+                messages: &mut messages,
+                advisor: &mut advisor,
+                tick: 8,
+            },
+        ));
+        assert_eq!(
+            missions.len(),
+            1,
+            "a stale live source is refused before a second gameplay effect"
+        );
+    }
+
+    #[test]
+    fn mission_dialog_legacy_bridge_and_escape_require_their_exact_mode() {
+        use rebellion_core::ids::SystemKey;
+        use rebellion_core::missions::{MissionFaction, MissionKind, MissionMember};
+        use rebellion_render::mission_dialog::MissionDialogState;
+        use rebellion_render::{CockpitFaction, CockpitState};
+
+        let member = MissionMember::Character(Default::default());
+        let layout = CockpitState::new(CockpitFaction::Alliance).layout_for(640.0, 480.0);
+        let center = (
+            layout.galaxy.x + layout.galaxy.width / 2.0,
+            layout.galaxy.y + layout.galaxy.height / 2.0,
+        );
+        let mut legacy = MissionDialogState::default();
+        assert!(!legacy_mission_dialog_modal(&legacy));
+        assert!(legacy.open(
+            MissionFaction::Alliance,
+            SystemKey::default(),
+            vec![member],
+            vec![MissionKind::Diplomacy],
+        ));
+        assert!(legacy_mission_dialog_modal(&legacy));
+        assert!(legacy_mission_dialog_contains_point(
+            &legacy, layout, center
+        ));
+        assert!(!legacy_mission_dialog_contains_point(
+            &legacy,
+            layout,
+            (0.0, 0.0),
+        ));
+
+        let mut managed = MissionDialogState::default();
+        let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
+        coordinator
+            .enqueue_mission_dialog_open(
+                managed
+                    .prepare_open(
+                        MissionFaction::Alliance,
+                        SystemKey::default(),
+                        vec![member],
+                        vec![MissionKind::Diplomacy],
+                    )
+                    .unwrap(),
+            )
+            .unwrap();
+        let mut opened = coordinator.apply_pending().remove(0);
+        let id = opened.mission_dialog_content_id.unwrap();
+        assert!(commit_mission_dialog_publication(
+            &mut coordinator,
+            &mut managed,
+            opened.prepared_mission_dialog.take().unwrap(),
+            id,
+            &opened.result.as_ref().unwrap().transition,
+        )
+        .is_empty());
+        assert!(!legacy_mission_dialog_modal(&managed));
+        assert!(!legacy_mission_dialog_contains_point(
+            &managed, layout, center
+        ));
+
+        assert!(managed_mission_dialog_escape_requested(false, true, true));
+        assert!(!managed_mission_dialog_escape_requested(true, true, true));
+        assert!(!managed_mission_dialog_escape_requested(false, false, true));
+        assert!(!managed_mission_dialog_escape_requested(false, true, false));
+    }
+
+    #[test]
+    fn mission_dialog_publication_mismatch_rolls_back_exact_manager_identity() {
+        use rebellion_core::ids::SystemKey;
+        use rebellion_core::missions::{MissionFaction, MissionKind, MissionMember};
+        use rebellion_render::mission_dialog::MissionDialogState;
+
+        let mut state = MissionDialogState::default();
+        let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
+        coordinator
+            .enqueue_mission_dialog_open(
+                state
+                    .prepare_open(
+                        MissionFaction::Alliance,
+                        SystemKey::default(),
+                        vec![MissionMember::Character(Default::default())],
+                        vec![MissionKind::Diplomacy],
+                    )
+                    .unwrap(),
+            )
+            .unwrap();
+        let mut opened = coordinator.apply_pending().remove(0);
+        let id = opened.mission_dialog_content_id.unwrap();
+
+        assert_eq!(
+            commit_mission_dialog_publication(
+                &mut coordinator,
+                &mut state,
+                opened.prepared_mission_dialog.take().unwrap(),
+                id,
+                &rebellion_windowing::WindowTransition::Replaced { old: id, new: id },
+            ),
+            [id]
+        );
+        assert!(!state.is_open());
+        assert!(coordinator.begin_frame().key(id).is_none());
     }
 
     fn key(key: KeyCode, alt: bool) -> StrategicRawKeyEvent {
@@ -8967,7 +9438,7 @@ async fn main() {
 
         // ── Developer commands ───────────────────────────────────────────────
 
-        let mut panel_actions: Vec<PanelAction> = Vec::new();
+        let mut panel_actions = Vec::new();
         // A command script runs one line a frame from the main menu or the
         // galaxy, once the last line's commands have run.
         #[cfg(not(target_arch = "wasm32"))]
@@ -9745,6 +10216,7 @@ async fn main() {
             reports.extend(encyclopedia_surface.content_reports(&return_candidate));
             reports.extend(message_index.content_reports(&return_candidate));
             reports.extend(build_selection_state.content_reports(&return_candidate));
+            reports.extend(mission_dialog_state.content_reports(&return_candidate));
             reports.extend(status_window_state.content_reports(
                 &return_candidate,
                 StatusSources {
@@ -9769,6 +10241,7 @@ async fn main() {
             encyclopedia_surface.remove_content(&reconciliation.removed);
             status_window_state.remove_content(&reconciliation.removed);
             build_selection_state.remove_content(&reconciliation.removed);
+            mission_dialog_state.remove_content(&reconciliation.removed);
             remove_managed_menu_content(
                 &mut managed_menu,
                 &mut object_menu,
@@ -9825,7 +10298,7 @@ async fn main() {
                 || tactical_action_handoff,
         };
         let legacy_blockers = LegacyInputBlockers {
-            strategic_modal: mission_dialog_state.is_open()
+            strategic_modal: legacy_mission_dialog_modal(&mission_dialog_state)
                 || move_confirmation_state.is_open()
                 || scrap_confirmation_state.is_open()
                 || original_modal_fixture_open,
@@ -9861,6 +10334,8 @@ async fn main() {
             status_window_state.keyboard_owner(strategic_frame_boundary.snapshot());
         let build_selection_keyboard_owner =
             build_selection_state.keyboard_owner(strategic_frame_boundary.snapshot());
+        let mission_dialog_keyboard_owner =
+            mission_dialog_state.keyboard_owner(strategic_frame_boundary.snapshot());
         let mut legacy_restriction_latch = LegacyInputRestrictionLatch::new(legacy_blockers);
         let strategic_frame_sequence_valid =
             if let Some(next_frame) = strategic_frame_number.checked_add(1) {
@@ -10547,7 +11022,11 @@ async fn main() {
                     )
                     || fleet_window_state.is_dragging()
                     || defenses_window_state.is_dragging()
-                    || mission_dialog_state.contains_screen_point(cockpit_layout, pointer)
+                    || legacy_mission_dialog_contains_point(
+                        &mission_dialog_state,
+                        cockpit_layout,
+                        pointer,
+                    )
                     || move_confirmation_state.contains_screen_point(cockpit_layout, pointer)
                     || scrap_confirmation_state.contains_screen_point(cockpit_layout, pointer)
                     || fleet_finder_state.contains_screen_point(cockpit_layout, pointer)
@@ -10621,6 +11100,13 @@ async fn main() {
                                     point,
                                     top_layer,
                                 ));
+                                if let Some(window) = mission_dialog_state.hit_window(
+                                    strategic_frame_boundary.snapshot(),
+                                    cockpit_layout,
+                                    point,
+                                ) {
+                                    hits.insert(window);
+                                }
                                 if let Some(window) = fleet_finder_state.hit_window(
                                     strategic_frame_boundary.snapshot(),
                                     cockpit_layout,
@@ -12369,13 +12855,20 @@ async fn main() {
                         );
                     }
 
-                    match draw_mission_dialog(
-                        ctx,
-                        &world,
-                        &mut mission_dialog_state,
-                        cockpit_layout,
-                        &mut bmp_cache,
-                    ) {
+                    let legacy_mission_action = mission_dialog_state
+                        .window_id()
+                        .is_none()
+                        .then(|| {
+                            draw_mission_dialog(
+                                ctx,
+                                &world,
+                                &mut mission_dialog_state,
+                                cockpit_layout,
+                                &mut bmp_cache,
+                            )
+                        })
+                        .flatten();
+                    match legacy_mission_action {
                         Some(MissionDialogAction::Begin {
                             kind,
                             faction,
@@ -12414,6 +12907,7 @@ async fn main() {
                                 );
                             }
                         }
+                        Some(MissionDialogAction::Close) => mission_dialog_state.close(),
                         None => {}
                     }
 
@@ -12552,7 +13046,23 @@ async fn main() {
                                         system,
                                         kinds
                                     );
-                                    mission_dialog_state.open(player_faction, system, team, kinds);
+                                    if let Some(prepared) = mission_dialog_state.prepare_open(
+                                        player_faction,
+                                        system,
+                                        team,
+                                        kinds,
+                                    ) {
+                                        match strategic_windowing
+                                            .enqueue_mission_dialog_open(prepared)
+                                        {
+                                            Ok(()) => legacy_restriction_latch.note_start(),
+                                            Err(error) => {
+                                                macroquad::logging::warn!(
+                                                    "[windowing] Mission context allocation rejected error={error:?}"
+                                                );
+                                            }
+                                        }
+                                    }
                                 }
                                 Some(TargetingEnd::Target {
                                     order: TargetOrder::FleetMove { fleets, confirmed },
@@ -12720,6 +13230,7 @@ async fn main() {
                     let mut encyclopedia_close_queued = false;
                     let mut message_index_close_queued = false;
                     let mut status_close_queued = false;
+                    let mut mission_dialog_close_queued = false;
                     let managed_surfaces = managed_strategic_surface_plan(
                         strategic_frame_boundary.snapshot(),
                         encyclopedia_surface.window_id(),
@@ -12729,6 +13240,7 @@ async fn main() {
                         status_window_state.window_id(),
                         build_selection_state.window_id(),
                         personnel_finder_state.window_id(),
+                        mission_dialog_state.window_id(),
                     );
                     for (surface, allows_input) in managed_surfaces {
                         match surface {
@@ -13005,6 +13517,54 @@ async fn main() {
                                     None => {}
                                 }
                             }
+                            ManagedStrategicSurface::MissionDialog(_) => {
+                                let action = with_retained_input(ctx, allows_input, || {
+                                    draw_mission_dialog(
+                                        ctx,
+                                        &world,
+                                        &mut mission_dialog_state,
+                                        cockpit_layout,
+                                        &mut bmp_cache,
+                                    )
+                                });
+                                match action {
+                                    Some(MissionDialogAction::Begin { .. }) => {
+                                        if let Some(prepared) =
+                                            mission_dialog_state.prepare_confirm()
+                                        {
+                                            strategic_windowing
+                                                .enqueue_mission_dialog_confirm(prepared);
+                                        }
+                                    }
+                                    Some(MissionDialogAction::Close) => {
+                                        if let Some(window) = mission_dialog_state.request_close() {
+                                            strategic_windowing.enqueue(
+                                                rebellion_windowing::WindowCommand::Close(window),
+                                            );
+                                            mission_dialog_close_queued = true;
+                                        }
+                                    }
+                                    Some(MissionDialogAction::Encyclopedia) => {
+                                        if encyclopedia_session_store.current().is_some() {
+                                            let intent = EncyclopediaEntryIntent::Contextual {
+                                                audience: encyclopedia_audience(player_faction),
+                                                object_id: 0,
+                                                caller: EncyclopediaContextCaller::MissionDialog0046c3c0Command67,
+                                            };
+                                            pending_encyclopedia_open.get_or_insert(intent);
+                                            legacy_restriction_latch.note_start();
+                                            macroquad::logging::info!(
+                                                "[encyclopedia] production_route status=queued origin=contextual caller=FUN_0046c3c0_command_0x67 requested=unresolved"
+                                            );
+                                        } else {
+                                            macroquad::logging::warn!(
+                                                "[encyclopedia] production_route unavailable origin=mission_dialog reason=no_session"
+                                            );
+                                        }
+                                    }
+                                    None => {}
+                                }
+                            }
                         }
                     }
                     if !encyclopedia_close_queued
@@ -13038,6 +13598,17 @@ async fn main() {
                             legacy_keyboard_handled = true;
                         }
                     }
+                    if managed_mission_dialog_escape_requested(
+                        mission_dialog_close_queued,
+                        mission_dialog_keyboard_owner.is_some(),
+                        strategic_root_keys.contains(KeyCode::Escape),
+                    ) {
+                        if let Some(window) = mission_dialog_state.request_close() {
+                            strategic_windowing
+                                .enqueue(rebellion_windowing::WindowCommand::Close(window));
+                            legacy_keyboard_handled = true;
+                        }
+                    }
                     if let Some((system, target)) = message_choice {
                         map_state.selected_system = Some(system);
                         enqueue_sector_window(
@@ -13062,7 +13633,7 @@ async fn main() {
                     troop_finder_keyboard_owner,
                     encyclopedia_keyboard_owner,
                     message_index_keyboard_owner,
-                    status_keyboard_owner,
+                    status_keyboard_owner.or(mission_dialog_keyboard_owner),
                     build_selection_keyboard_owner,
                     personnel_finder_keyboard_focus,
                 );
@@ -13075,7 +13646,7 @@ async fn main() {
                 #[cfg(not(any(debug_assertions, not(target_arch = "wasm32"))))]
                 let command_palette_now_open = false;
                 legacy_restriction_latch.observe(LegacyInputBlockers {
-                    strategic_modal: mission_dialog_state.is_open()
+                    strategic_modal: legacy_mission_dialog_modal(&mission_dialog_state)
                         || move_confirmation_state.is_open()
                         || scrap_confirmation_state.is_open()
                         || original_modal_fixture_open,
@@ -14806,6 +15377,8 @@ async fn main() {
             .extend(message_index.content_reports(strategic_frame_boundary.snapshot()));
         strategic_content_reports
             .extend(build_selection_state.content_reports(strategic_frame_boundary.snapshot()));
+        strategic_content_reports
+            .extend(mission_dialog_state.content_reports(strategic_frame_boundary.snapshot()));
         strategic_content_reports.extend(status_window_state.content_reports(
             strategic_frame_boundary.snapshot(),
             StatusSources {
@@ -14851,6 +15424,9 @@ async fn main() {
                 prepared_build_selection,
                 build_selection_content_id,
                 confirmed_build_selection,
+                prepared_mission_dialog,
+                mission_dialog_content_id,
+                confirmed_mission_dialog,
                 prepared_system,
                 system_content_id,
                 prepared_defenses,
@@ -15029,6 +15605,17 @@ async fn main() {
                             .extend(strategic_windowing.rollback_build_selection_publication(id));
                     }
                 }
+            }
+            if let (Some(prepared), Some(id), Ok(commit)) =
+                (prepared_mission_dialog, mission_dialog_content_id, &result)
+            {
+                removed_content.extend(commit_mission_dialog_publication(
+                    &mut strategic_windowing,
+                    &mut mission_dialog_state,
+                    prepared,
+                    id,
+                    &commit.transition,
+                ));
             }
             if let (Some(prepared), Some(id), Ok(commit)) =
                 (prepared_system, system_content_id, &result)
@@ -15358,6 +15945,19 @@ async fn main() {
                     }
                 }
             }
+            commit_mission_dialog_gameplay(
+                confirmed_mission_dialog,
+                &removed_content,
+                &mut mission_dialog_state,
+                MissionDispatchContext {
+                    world: &mut world,
+                    missions: &mut mission_state,
+                    uprising: &uprising_state,
+                    messages: &mut msg_log,
+                    advisor: &mut advisor_state,
+                    tick: clock.tick,
+                },
+            );
             if let Some(BuildSelectionAction::Confirm {
                 system,
                 area,
@@ -15404,6 +16004,7 @@ async fn main() {
             encyclopedia_surface.remove_content(&removed_content);
             status_window_state.remove_content(&removed_content);
             build_selection_state.remove_content(&removed_content);
+            mission_dialog_state.remove_content(&removed_content);
             remove_managed_menu_content(
                 &mut managed_menu,
                 &mut object_menu,
@@ -15461,6 +16062,7 @@ async fn main() {
         encyclopedia_surface.remove_content(&reconciliation.removed);
         status_window_state.remove_content(&reconciliation.removed);
         build_selection_state.remove_content(&reconciliation.removed);
+        mission_dialog_state.remove_content(&reconciliation.removed);
         remove_managed_menu_content(
             &mut managed_menu,
             &mut object_menu,
@@ -16907,58 +17509,22 @@ fn apply_panel_action(
             target_character,
             tick,
         } => {
-            // The first agent names the order in its messages.
-            let char_name = team
-                .iter()
-                .find_map(|member| member.character())
-                .and_then(|key| world.characters.get(key))
-                .map_or_else(|| "Your team".into(), |c| c.display_name().to_owned());
-            let request = rebellion_core::missions::MissionRequest {
+            apply_mission_dispatch(
                 kind,
                 faction,
                 team,
                 decoys,
-                target_system: target,
-                target_character,
-                target_object: None,
-                tick,
-            };
-            if let Err(refusal) = mission_state.dispatch_validated(request, world, uprising_state) {
-                // FUN_00487c90 shows no text: the side's advisor reacts
-                // (`mission-dialog.md`, "Refusal").
-                #[cfg(not(target_arch = "wasm32"))]
-                if let Ok(mut last) = dev_actions::LAST_DISPATCH_REFUSAL.lock() {
-                    let (a, b) = refusal.status();
-                    *last = Some(format!("{refusal:?} (0x{a:x}/0x{b:x})"));
-                }
-                advisor_state.refuse(refusal.status());
-                return;
-            }
-            let sys_name = world
-                .systems
-                .get(target)
-                .map_or_else(|| "unknown".into(), |s| s.name.clone());
-            let kind_name = match kind {
-                MissionKind::Diplomacy => "Diplomacy",
-                MissionKind::Recruitment => "Recruitment",
-                MissionKind::Sabotage => "Sabotage",
-                MissionKind::Assassination => "Assassination",
-                MissionKind::Espionage => "Espionage",
-                MissionKind::Rescue => "Rescue",
-                MissionKind::Abduction => "Abduction",
-                MissionKind::InciteUprising => "Incite Uprising",
-                MissionKind::SubdueUprising => "Subdue Uprising",
-                MissionKind::DeathStarSabotage => "Death Star Sabotage",
-                MissionKind::Research(_) => rebellion_render::mission_dialog::kind_name(kind),
-                MissionKind::Autoscrap => "Autoscrap",
-                MissionKind::Move => "Move",
-            };
-            msg_log.push(GameMessage::at_system(
-                clock.tick,
-                format!("{char_name} dispatched on {kind_name} mission to {sys_name}"),
-                MessageCategory::Mission,
                 target,
-            ));
+                target_character,
+                MissionDispatchContext {
+                    world,
+                    missions: mission_state,
+                    uprising: uprising_state,
+                    messages: msg_log,
+                    advisor: advisor_state,
+                    tick,
+                },
+            );
         }
         PanelAction::CancelMission(id) => {
             mission_state.release(id, world);
