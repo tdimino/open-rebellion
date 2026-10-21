@@ -30,7 +30,8 @@ function createStateMonitor(page) {
     const line = message.text();
     const marker = line.indexOf(STATE_MARKER);
     if (marker >= 0) {
-      states.push(JSON.parse(line.slice(marker + STATE_MARKER.length)));
+      const state = JSON.parse(line.slice(marker + STATE_MARKER.length));
+      if (state.status === "identity-history-state") states.push(state);
     }
     if (line.startsWith("[windowing-route] ")) routes.push(line);
     if (line.includes("[windowing-underlay]")) underlay += 1;

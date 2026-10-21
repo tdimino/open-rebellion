@@ -6,7 +6,58 @@ import {
   assertExactHistoryVictim,
   assertIdentityAndRecipientDeltas,
   routedReceipt,
+  windowingContractCases,
 } from "./windowing-contract-identity-history.mjs";
+
+async function stateMonitorSetup(documents) {
+  const listeners = new Map();
+  const page = {
+    on(event, listener) {
+      listeners.set(event, listener);
+    },
+    async evaluate() {},
+  };
+  const emitState = (document) => listeners.get("console")({
+    text: () => `[windowing-contract-state] ${JSON.stringify(document)}`,
+    type: () => "log",
+  });
+  const journeyA = windowingContractCases.find(({ id }) => id === "journey-a");
+  const setup = await journeyA.setup({
+    page,
+    async openFixture() {
+      for (const document of documents) emitState(document);
+      return { fixture: "ready" };
+    },
+  });
+  return { setup, emitState };
+}
+
+test("identity_history_state_monitor_ignores_other_state_families_without_hiding_malformed_identity_documents", async () => {
+  const validIdentity = {
+    status: "identity-history-state",
+    sequence: 1,
+    available: true,
+    required_systems: 1,
+    systems: [{ name: "Corellia" }],
+  };
+  const { setup } = await stateMonitorSetup([
+    validIdentity,
+    { status: "modal-boundaries-state", sequence: 2 },
+  ]);
+  assert.deepEqual(setup.monitor.states, [validIdentity]);
+  assert.deepEqual(setup.monitor.latest(), validIdentity);
+
+  const malformedIdentity = {
+    status: "identity-history-state",
+    sequence: 3,
+    available: true,
+  };
+  const { setup: malformedSetup, emitState } = await stateMonitorSetup([validIdentity]);
+  emitState(malformedIdentity);
+  emitState({ status: "input-scenes-state", sequence: 4 });
+  assert.deepEqual(malformedSetup.monitor.states, [validIdentity, malformedIdentity]);
+  assert.deepEqual(malformedSetup.monitor.latest(), malformedIdentity);
+});
 
 test("windowing_journey_ab_checks_identity_and_recipient_deltas", () => {
   const before = {
