@@ -249,6 +249,66 @@ function parseRoute(line) {
   };
 }
 
+export async function waitForRouteReceipt({
+  routes,
+  after,
+  expected,
+  description,
+  advanceFrame,
+  attempts = 480,
+}) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const route = routes.slice(after)
+      .map(parseRoute)
+      .find((candidate) => candidate.kind === "pointer"
+        && candidate.recipient === expected.recipient
+        && candidate.application === expected.application);
+    if (route) return route;
+    await advanceFrame();
+  }
+  throw new Error(
+    `${description}; last=${JSON.stringify(routes.slice(after).map(parseRoute).at(-1) ?? null)}`,
+  );
+}
+
+export async function pressWithRouteReceipts({
+  page,
+  routes,
+  point,
+  label,
+  expectedDown,
+  expectedRelease,
+  button = "left",
+  advanceFrame,
+}) {
+  const nextFrame = advanceFrame ?? (() => frames(page, 1));
+  await page.mouse.move(point.x, point.y);
+  await nextFrame();
+  const downStart = routes.length;
+  await page.mouse.down({ button });
+  const down = await waitForRouteReceipt({
+    routes,
+    after: downStart,
+    expected: expectedDown,
+    description: `${label} down emitted no expected fresh route receipt`,
+    advanceFrame: nextFrame,
+  });
+  const releaseStart = routes.length;
+  await page.mouse.up({ button });
+  const release = await waitForRouteReceipt({
+    routes,
+    after: releaseStart,
+    expected: expectedRelease,
+    description: `${label} release emitted no expected fresh route receipt`,
+    advanceFrame: nextFrame,
+  });
+  assert.notEqual(release.physical, down.physical, `${label} reused its down route receipt`);
+  await nextFrame();
+  await nextFrame();
+  await nextFrame();
+  return { down, release };
+}
+
 function createMonitor(page) {
   const states = [];
   const routes = [];
@@ -815,7 +875,14 @@ async function runJourneyD(context, setup, caseId = "journey-d") {
     y: ownerRect[1] + 9 * replacementMenu.state.scale,
   };
   const dismissStart = setup.monitor.states.length;
-  await click(setup.page, closePoint);
+  await pressWithRouteReceipts({
+    page: setup.page,
+    routes: setup.monitor.routes,
+    point: closePoint,
+    label: "replacement child dismissal",
+    expectedDown: { recipient: "blocked", application: "managed_menu" },
+    expectedRelease: { recipient: "blocked", application: "none" },
+  });
   const childDismissed = await setup.monitor.wait(
     "identity-history-state",
     (state) => !state.snapshot.registered.includes(replacementId)
@@ -824,7 +891,14 @@ async function runJourneyD(context, setup, caseId = "journey-d") {
     dismissStart,
   );
   const ownerCloseStart = setup.monitor.states.length;
-  await click(setup.page, closePoint);
+  await pressWithRouteReceipts({
+    page: setup.page,
+    routes: setup.monitor.routes,
+    point: closePoint,
+    label: "replacement owner close",
+    expectedDown: { recipient: `window:${ownerId}`, application: "none" },
+    expectedRelease: { recipient: `window:${ownerId}`, application: "fleet_window" },
+  });
   const ownerClosed = await setup.monitor.wait(
     "identity-history-state",
     (state) => !state.snapshot.registered.includes(ownerId),

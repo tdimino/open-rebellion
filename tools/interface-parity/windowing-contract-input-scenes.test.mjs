@@ -174,3 +174,68 @@ test("windowing_journey_de_checks_fail_closed_scene_and_reset", async () => {
     },
   }), /unpaintable|modal|block/i);
 });
+
+test("pointer release waits for a fresh down route receipt", async () => {
+  const module = await import("./windowing-contract-input-scenes.mjs");
+  const routes = [];
+  const calls = [];
+  const downWait = deferred();
+  const allowDownReceipt = deferred();
+  const releaseWait = deferred();
+  const allowReleaseReceipt = deferred();
+  let frame = 0;
+  let completed = false;
+  const page = {
+    mouse: {
+      async move(x, y) { calls.push(["move", x, y]); },
+      async down(options) { calls.push(["down", options]); },
+      async up(options) { calls.push(["up", options]); },
+    },
+  };
+  const advanceFrame = async () => {
+    frame += 1;
+    if (frame === 2) {
+      downWait.resolve();
+      await allowDownReceipt.promise;
+    } else if (frame === 3) {
+      releaseWait.resolve();
+      await allowReleaseReceipt.promise;
+    }
+  };
+
+  const pressing = module.pressWithRouteReceipts({
+    page,
+    routes,
+    point: { x: 1090, y: 95 },
+    label: "owner close",
+    expectedDown: { recipient: "window:3", application: "none" },
+    expectedRelease: { recipient: "window:3", application: "fleet_window" },
+    advanceFrame,
+  }).then((receipts) => {
+    completed = true;
+    return receipts;
+  });
+
+  await downWait.promise;
+  assert.deepEqual(calls.map(([kind]) => kind), ["move", "down"]);
+  assert.equal(completed, false, "requestAnimationFrame released the press without a route receipt");
+  routes.push("[windowing-route] physical=309:0 kind=pointer router=window:3 application=none underlay=0");
+  allowDownReceipt.resolve();
+
+  await releaseWait.promise;
+  assert.deepEqual(calls.map(([kind]) => kind), ["move", "down", "up"]);
+  assert.equal(completed, false, "the press completed without a distinct release receipt");
+  routes.push("[windowing-route] physical=311:0 kind=pointer router=window:3 application=fleet_window underlay=0");
+  allowReleaseReceipt.resolve();
+
+  const receipts = await pressing;
+  assert.equal(completed, true);
+  assert.equal(receipts.down.physical, "309:0");
+  assert.equal(receipts.release.physical, "311:0");
+});
+
+function deferred() {
+  let resolve;
+  const promise = new Promise((finish) => { resolve = finish; });
+  return { promise, resolve };
+}
