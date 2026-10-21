@@ -2902,14 +2902,14 @@ mod frame_input_tests {
     use super::{
         approve_tactical_window_action, collect_strategic_pointer_batch,
         commit_pending_tactical_window_action, commit_sector_window_publication,
-        enqueue_managed_quadrants_fixture_sector, enqueue_sector_manager_action,
-        enqueue_sector_window, pump_pending_sector_publication,
-        queue_routed_sector_release_receipt, refresh_pending_sector_publication,
-        reset_pending_tactical_handoff, restore_egui_input, route_tactical_window_input,
-        tactical_result_destination, take_approved_tactical_window_action,
-        take_tactical_destination_for_galaxy, with_strategic_input, CommittedTacticalWindowAction,
-        PendingSectorPublication, PreparedTacticalWindowAction, RoutedEguiInputFilter,
-        SectorDependentIntent, StrategicPointerBatch, StrategicPointerEvent, StrategicRawKeyEvent,
+        enqueue_managed_fixture_sector, enqueue_sector_manager_action, enqueue_sector_window,
+        pump_pending_sector_publication, queue_routed_sector_release_receipt,
+        refresh_pending_sector_publication, reset_pending_tactical_handoff, restore_egui_input,
+        route_tactical_window_input, tactical_result_destination,
+        take_approved_tactical_window_action, take_tactical_destination_for_galaxy,
+        with_strategic_input, CommittedTacticalWindowAction, PendingSectorPublication,
+        PreparedTacticalWindowAction, RoutedEguiInputFilter, SectorDependentIntent,
+        StrategicPointerBatch, StrategicPointerEvent, StrategicRawKeyEvent,
         StrategicRawPointerEvent, StrategicRootKeyBatch, TacticalResultDestination,
     };
     use egui_macroquad::egui;
@@ -3103,7 +3103,7 @@ mod frame_input_tests {
         assert_eq!(sectors.window_count(), 1);
         assert_eq!(sectors.window_id(world.systems[system].sector), None);
 
-        assert!(enqueue_managed_quadrants_fixture_sector(
+        assert!(enqueue_managed_fixture_sector(
             crate::interface_test_fixture::Scenario::Quadrants,
             CockpitFaction::Alliance,
             &mut coordinator,
@@ -3125,6 +3125,73 @@ mod frame_input_tests {
         );
         assert!(removed.is_empty());
         assert!(sectors.window_id(world.systems[system].sector).is_some());
+    }
+
+    #[test]
+    fn fleet_fixture_republishes_legacy_sector_with_manager_identity() {
+        let (mut world, primary) = sector_fixture_world();
+        let elsewhere = add_sector_fixture(&mut world, 0x5000_0010, 100);
+        let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
+        let mut sectors = SectorWindowState::default();
+        let mut pending = Vec::<PendingSectorPublication>::new();
+        sectors.open_for_system(&world, elsewhere, CockpitFaction::Alliance);
+        sectors.open_for_system(&world, primary, CockpitFaction::Alliance);
+        assert_eq!(sectors.window_count(), 2);
+        assert_eq!(sectors.window_id(world.systems[elsewhere].sector), None);
+        assert_eq!(sectors.window_id(world.systems[primary].sector), None);
+
+        assert!(enqueue_managed_fixture_sector(
+            crate::interface_test_fixture::Scenario::FleetLoad,
+            CockpitFaction::Alliance,
+            &mut coordinator,
+            &mut sectors,
+            &world,
+            &mut pending,
+        ));
+        assert_eq!(sectors.window_count(), 0);
+        assert_eq!(
+            pending
+                .iter()
+                .map(|candidate| candidate.system)
+                .collect::<Vec<_>>(),
+            vec![elsewhere, primary],
+        );
+
+        for expected_remaining in [1, 0] {
+            let mut applied = coordinator.apply_pending().remove(0);
+            let (_, removed) = commit_sector_window_publication(
+                &mut coordinator,
+                &mut sectors,
+                &mut pending,
+                applied.prepared_sector.take(),
+                applied.sector_content_id,
+                &applied.result,
+            );
+            assert!(removed.is_empty());
+            assert_eq!(pending.len(), expected_remaining);
+            pump_pending_sector_publication(&mut coordinator, &sectors, &world, &mut pending);
+        }
+        assert!(sectors.window_id(world.systems[elsewhere].sector).is_some());
+        assert!(sectors.window_id(world.systems[primary].sector).is_some());
+        let layout = CockpitLayout {
+            canvas: CockpitViewport {
+                x: 0.0,
+                y: 0.0,
+                width: 640.0,
+                height: 480.0,
+            },
+            galaxy: CockpitViewport {
+                x: 55.0,
+                y: 40.0,
+                width: 485.0,
+                height: 350.0,
+            },
+            scale: 1.0,
+        };
+        let primary_icon = sectors
+            .fleet_icon_screen_rect(&world, layout, primary)
+            .expect("primary fleet icon remains observable");
+        assert!(primary_icon.min.x >= 300.0, "primary Sector stays right");
     }
 
     #[test]
@@ -8427,7 +8494,7 @@ async fn main() {
     let mut strategic_windowing = strategic_windowing::StrategicWindowing::new();
     #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
     if let Some(request) = interface_fixture_request {
-        enqueue_managed_quadrants_fixture_sector(
+        enqueue_managed_fixture_sector(
             request.scenario,
             request.faction,
             &mut strategic_windowing,
@@ -19614,11 +19681,12 @@ fn draw_fullscreen_texture(texture: &Texture2D) {
     );
 }
 
-/// The Quadrants fixture predates manager-owned Sector publication. Migrate
-/// its deterministic legacy opening before the first frame so pointer routing
-/// and release actions use the same identity-bearing path as production.
+/// Browser fixtures that seed Sector content directly predate manager-owned
+/// publication. Migrate their deterministic legacy opening before the first
+/// frame so pointer routing and release actions use the same identity-bearing
+/// path as production.
 #[cfg(any(test, all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
-fn enqueue_managed_quadrants_fixture_sector(
+fn enqueue_managed_fixture_sector(
     scenario: interface_test_fixture::Scenario,
     faction: CockpitFaction,
     strategic_windowing: &mut strategic_windowing::StrategicWindowing,
@@ -19626,22 +19694,37 @@ fn enqueue_managed_quadrants_fixture_sector(
     world: &GameWorld,
     pending: &mut Vec<PendingSectorPublication>,
 ) -> bool {
-    if scenario != interface_test_fixture::Scenario::Quadrants {
+    if scenario != interface_test_fixture::Scenario::Quadrants && !scenario.uses_the_fleet_window()
+    {
         return false;
     }
-    let Some(system) = world.systems.keys().next() else {
+    let Some(primary) = world.systems.keys().next() else {
         return false;
     };
+    let mut systems = Vec::with_capacity(2);
+    if scenario.uses_the_fleet_window() {
+        let Some(elsewhere) = world
+            .systems
+            .keys()
+            .find(|&system| world.systems[system].sector != world.systems[primary].sector)
+        else {
+            return false;
+        };
+        systems.push(elsewhere);
+    }
+    systems.push(primary);
     state.clear();
-    enqueue_sector_window(
-        strategic_windowing,
-        state,
-        world,
-        system,
-        faction,
-        pending,
-        None,
-    )
+    systems.into_iter().all(|system| {
+        enqueue_sector_window(
+            strategic_windowing,
+            state,
+            world,
+            system,
+            faction,
+            pending,
+            None,
+        )
+    })
 }
 
 fn enqueue_sector_window(

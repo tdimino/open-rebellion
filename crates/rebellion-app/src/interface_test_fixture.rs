@@ -258,7 +258,7 @@ impl Scenario {
     }
 
     /// The scenarios whose gate works the primary system's Fleet window.
-    fn uses_the_fleet_window(self) -> bool {
+    pub(crate) fn uses_the_fleet_window(self) -> bool {
         matches!(
             self,
             Self::FleetLoad
