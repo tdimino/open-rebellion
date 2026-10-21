@@ -1399,15 +1399,17 @@ fn child_key_disposition(
                 InputDisposition::Unhandled
             },
         ),
-        InputRecipient::Window(window) => fleet
-            .filter(|(fleet_window, _)| *fleet_window == window)
-            .map(|(_, renaming)| {
-                if renaming && rename_edit_owns_key(event) {
-                    InputDisposition::Handled
-                } else {
-                    InputDisposition::Unhandled
-                }
-            }),
+        InputRecipient::Window(window) => Some(
+            fleet
+                .filter(|(fleet_window, _)| *fleet_window == window)
+                .map_or(InputDisposition::Unhandled, |(_, renaming)| {
+                    if renaming && rename_edit_owns_key(event) {
+                        InputDisposition::Handled
+                    } else {
+                        InputDisposition::Unhandled
+                    }
+                }),
+        ),
         InputRecipient::Blocked => None,
     }
 }
@@ -2900,7 +2902,7 @@ mod frame_input_tests {
     #[cfg(feature = "interface-test-fixtures")]
     use super::{apply_capture_cancellation_events, enqueue_application_hold_capture_cancellation};
     use super::{
-        approve_tactical_window_action, collect_strategic_pointer_batch,
+        approve_tactical_window_action, child_key_disposition, collect_strategic_pointer_batch,
         commit_pending_tactical_window_action, commit_sector_window_publication,
         enqueue_managed_fixture_sector, enqueue_sector_manager_action, enqueue_sector_window,
         pump_pending_sector_publication, queue_routed_sector_release_receipt,
@@ -2924,7 +2926,8 @@ mod frame_input_tests {
     use rebellion_render::status_window::StatusWindowState;
     use rebellion_render::tactical_view::TacticalWindowEvent;
     use rebellion_render::windowing_input::{
-        FrameInputRouter, InputEventId, InputRecipient, PointerButtonId, PointerPhase,
+        FrameInputRouter, InputDisposition, InputEventId, InputRecipient, PointerButtonId,
+        PointerPhase,
     };
     use rebellion_render::{CockpitFaction, CockpitLayout, CockpitViewport};
     use rebellion_windowing::{WindowCommand, WindowManager};
@@ -3023,6 +3026,81 @@ mod frame_input_tests {
         });
         world.sectors[sector].systems.push(system);
         (world, system)
+    }
+
+    #[test]
+    fn modeless_sector_shortcut_is_unhandled_and_bubbles_to_root() {
+        let (world, system) = sector_fixture_world();
+        let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
+        let mut sectors = SectorWindowState::default();
+        let mut pending = Vec::<PendingSectorPublication>::new();
+        assert!(enqueue_sector_window(
+            &mut coordinator,
+            &sectors,
+            &world,
+            system,
+            CockpitFaction::Alliance,
+            &mut pending,
+            None,
+        ));
+        let mut opened = coordinator.apply_pending().remove(0);
+        let sector = opened.sector_content_id.unwrap();
+        assert!(commit_sector_window_publication(
+            &mut coordinator,
+            &mut sectors,
+            &mut pending,
+            opened.prepared_sector.take(),
+            Some(sector),
+            &opened.result,
+        )
+        .1
+        .is_empty());
+
+        let frame = coordinator.begin_frame();
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(1, &frame);
+        let keys = StrategicRootKeyBatch::collect_from_raw(
+            1,
+            &mut router,
+            &[StrategicRawKeyEvent {
+                key: macroquad::prelude::KeyCode::F3,
+                alt: false,
+                repeat: false,
+            }],
+        );
+        assert_eq!(
+            router.keyboard_recipient(keys.events[0].id),
+            InputRecipient::Window(sector)
+        );
+        assert_eq!(
+            child_key_disposition(
+                keys.events[0],
+                InputRecipient::Window(sector),
+                false,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            ),
+            Some(InputDisposition::Unhandled)
+        );
+        keys.report_child_keys(
+            &mut router,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        assert!(router.claim_root(keys.events[0].id));
     }
 
     fn add_sector_fixture(

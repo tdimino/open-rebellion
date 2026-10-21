@@ -10,10 +10,13 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { PNG } from "pngjs";
 import { launchBrowser } from "./browser-launch.mjs";
+import { sectorDoubleClick } from "./sector-double-click.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../..");
-const site = path.join(root, ".artifacts/interface-parity/site");
+const site = process.env.OPEN_REBELLION_INTERFACE_SITE
+  ? path.resolve(process.env.OPEN_REBELLION_INTERFACE_SITE)
+  : path.join(root, ".artifacts/interface-parity/site");
 const browserManifest = JSON.parse(fs.readFileSync(path.join(here, "browser.json"), "utf8"));
 const noBuild = process.argv.includes("--no-build");
 // `--only=alliance/chrome` runs the named cases alone.
@@ -246,18 +249,6 @@ async function click(page, point) {
   await frames(page);
 }
 
-// Two clicks inside egui's double-click time.
-async function doubleClick(page, point) {
-  await page.mouse.move(point.x, point.y);
-  await frames(page);
-  for (let index = 0; index < 2; index += 1) {
-    await page.mouse.down();
-    await frames(page);
-    await page.mouse.up();
-    await frames(page);
-  }
-}
-
 async function key(page, name) {
   await page.keyboard.down(name);
   await frames(page);
@@ -441,25 +432,38 @@ const cases = [
     // modeless sector window.
     async run(page) {
       const opened = await openFinder(page);
-      const origin = { x: opened.controls.origin[0], y: opened.controls.origin[1] };
-      const firstEmptyRowY = origin.y + 138 + opened.rows.length * 20 + 2;
+      // Use the shorter side tab so the fixture always has actual empty list
+      // space, even when the Alliance's All tab fills all eight visible rows.
+      const shorterTab = [
+        { tab: "alliance", index: 1, count: opened.rows.filter((row) => row.is_alliance).length },
+        { tab: "imperial", index: 2, count: opened.rows.filter((row) => !row.is_alliance).length },
+      ].sort((left, right) => left.count - right.count)[0];
+      await click(page, point(opened.controls.tabs[shorterTab.index]));
+      const filtered = await until(
+        page,
+        `the ${shorterTab.tab} tab is shown`,
+        (o, tab) => o.tab === tab,
+        shorterTab.tab,
+      );
+      const origin = { x: filtered.controls.origin[0], y: filtered.controls.origin[1] };
+      const firstEmptyRowY = origin.y + 138 + filtered.rows.length * 20 + 2;
       const listBottom = origin.y + 303;
-      const target = opened.sector_planets.find((planet) => {
+      const target = filtered.sector_planets.find((planet) => {
         const [x, y] = planet.center;
-        return planet.system_dat_id !== opened.selected_system_dat_id
+        return planet.system_dat_id !== filtered.selected_system_dat_id
           && x >= origin.x + 36 && x < origin.x + 386
           && y >= firstEmptyRowY && y < listBottom;
       });
-      assert.ok(target, `no covered sector planet lies under empty Finder space: ${JSON.stringify(opened)}`);
+      assert.ok(target, `no covered sector planet lies under empty Finder space: ${JSON.stringify(filtered)}`);
 
-      await doubleClick(page, point(target.center));
+      await sectorDoubleClick(page, point(target.center), () => frames(page));
       await key(page, "Escape");
       const closed = await until(page, "Escape closes the Finder", (o) => !o.open);
-      assert.equal(closed.selected_system_dat_id, opened.selected_system_dat_id,
+      assert.equal(closed.selected_system_dat_id, filtered.selected_system_dat_id,
         "an empty Finder double click changed the covered sector selection");
-      assert.deepEqual(closed.sector_open, opened.sector_open,
+      assert.deepEqual(closed.sector_open, filtered.sector_open,
         "an empty Finder double click changed the covered sector windows");
-      return { opened, target, closed };
+      return { opened, filtered, target, closed };
     },
   },
   {
@@ -504,7 +508,12 @@ const cases = [
     // name chooses the row it best begins (FUN_00462a50 0x408) and Enter
     // opens it (0x407).
     async run(page) {
-      await key(page, "F3");
+      // F3 is handled by the game canvas; focus it explicitly rather than
+      // relying on a coordinate click or the browser's page-level focus.
+      await page.locator("#glcanvas").focus();
+      assert.equal(await page.evaluate(() => document.activeElement?.id), "glcanvas");
+      await page.keyboard.press("F3");
+      await frames(page, 3);
       const opened = await until(page, "F3 opens the Fleet Finder", (o) => o.open);
       const text = "fleet 2";
       await page.keyboard.type(text, { delay: 40 });
@@ -514,7 +523,8 @@ const cases = [
       assert.equal(typed.chosen, expected);
       assert.equal(typed.left_panel_open, false, "typed letters reach the name box, not the galaxy view's keys");
       const row = typed.rows[typed.chosen];
-      await key(page, "Enter");
+      await page.keyboard.press("Enter");
+      await frames(page, 3);
       const done = await until(page, "Enter opens the chosen fleet", (o) => !o.open);
       assertOpened(done, row);
       return { opened, typed, done };
@@ -548,7 +558,7 @@ const cases = [
     async run(page) {
       const opened = await openFinder(page);
       const index = opened.rows.findIndex((row) => row.is_alliance === opened.player_is_alliance);
-      await doubleClick(page, point(opened.controls.rows[index]));
+      await sectorDoubleClick(page, point(opened.controls.rows[index]), () => frames(page));
       const done = await until(page, "the double click opens the fleet", (o) => !o.open);
       assertOpened(done, opened.rows[index]);
       return { opened, done };

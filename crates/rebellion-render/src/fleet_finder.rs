@@ -865,7 +865,28 @@ pub fn draw_fleet_finder_focused(
                     ui.id().with(("finder-row", offset)),
                     egui::Sense::click(),
                 );
-                if response.clicked() {
+                let same_row_double_click_batch = response.double_clicked()
+                    && ui.input(|input| {
+                        input
+                            .events
+                            .iter()
+                            .filter(|event| {
+                                matches!(
+                                    event,
+                                    egui::Event::PointerButton {
+                                        pos,
+                                        button: egui::PointerButton::Primary,
+                                        pressed: false,
+                                        ..
+                                    } if row_rect.contains(*pos)
+                                )
+                            })
+                            .count()
+                            >= 2
+                    });
+                if same_row_double_click_batch {
+                    open = Some(row.object);
+                } else if response.clicked() {
                     if window.id.is_some() {
                         focus_request = Some(FLEET_FINDER_LIST_CONTROL);
                     }
@@ -950,9 +971,14 @@ pub fn draw_fleet_finder_focused(
             };
             tab = Some(FinderTab::ALL[next]);
         }
-        if managed_enter {
-            open = open.or(open_window.chosen);
-        }
+    }
+    if managed_enter
+        && matches!(
+            focused_control,
+            Some(FLEET_FINDER_NAME_CONTROL) | Some(FLEET_FINDER_LIST_CONTROL)
+        )
+    {
+        open = open.or(open_window.chosen);
     }
     if let Some(control) = focus_request {
         open_window.pending_focus = Some(control);
@@ -1725,6 +1751,33 @@ mod tests {
     }
 
     #[test]
+    fn a_same_frame_double_click_batch_opens_the_row() {
+        let galaxy = galaxy();
+        let mut state = opened(CockpitFaction::Empire);
+        let at = egui::Pos2::ZERO;
+
+        let action = drive(
+            &galaxy,
+            &mut state,
+            list_row(0),
+            vec![vec![
+                press(at, true),
+                press(at, false),
+                press(at, true),
+                press(at, false),
+            ]],
+        );
+
+        assert_eq!(
+            action,
+            Some(FleetFinderAction::Open(FleetWindowEntry::Fleet(
+                galaxy.seen
+            )))
+        );
+        assert!(!state.is_open());
+    }
+
+    #[test]
     fn a_click_elsewhere_then_on_a_row_only_chooses_the_row() {
         // FUN_00462770's 0x309 is the list's own double click: both clicks
         // on the row.
@@ -1952,6 +2005,48 @@ mod tests {
                 vec![vec![key(egui::Key::Escape)]],
             ),
             Some(FleetFinderAction::Close(id))
+        );
+    }
+
+    #[test]
+    fn managed_name_control_enter_opens_the_chosen_row_without_blurring() {
+        let galaxy = galaxy();
+        let mut manager = WindowManager::new();
+        let mut state = FleetFinderState::default();
+        let prepared = FleetFinderState::prepare_open(CockpitFaction::Alliance);
+        let opened = manager.apply(WindowCommand::Open(prepared.spec())).unwrap();
+        let id = match opened.transition {
+            WindowTransition::Opened { id } => id,
+            ref other => panic!("expected Fleet Finder open, got {other:?}"),
+        };
+        assert_eq!(state.commit_open(prepared, &opened.transition), Some(id));
+        let name_focus = FocusTarget {
+            window: id,
+            control: Some(FLEET_FINDER_NAME_CONTROL),
+        };
+        let ctx = egui::Context::default();
+        assert_eq!(
+            drive_focused_in_context(
+                &ctx,
+                &galaxy,
+                &mut state,
+                name_focus,
+                (0.0, 0.0),
+                vec![vec![], vec![], vec![egui::Event::Text("Fleet 2".into())]],
+            ),
+            None
+        );
+        let chosen = state.window.as_ref().unwrap().chosen.unwrap();
+        assert_eq!(
+            drive_focused_in_context(
+                &ctx,
+                &galaxy,
+                &mut state,
+                name_focus,
+                (0.0, 0.0),
+                vec![vec![key(egui::Key::Enter)]],
+            ),
+            Some(FleetFinderAction::Open(chosen))
         );
     }
 
