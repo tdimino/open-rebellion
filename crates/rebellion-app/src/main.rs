@@ -3195,6 +3195,51 @@ mod frame_input_tests {
     }
 
     #[test]
+    fn fleet_finder_fixture_republishes_legacy_sectors_with_manager_identity() {
+        let (mut world, primary) = sector_fixture_world();
+        let elsewhere = add_sector_fixture(&mut world, 0x5000_0010, 100);
+        let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
+        let mut sectors = SectorWindowState::default();
+        let mut pending = Vec::<PendingSectorPublication>::new();
+        sectors.open_for_system(&world, elsewhere, CockpitFaction::Alliance);
+        sectors.open_for_system(&world, primary, CockpitFaction::Alliance);
+
+        assert!(enqueue_managed_fixture_sector(
+            crate::interface_test_fixture::Scenario::FleetFinder,
+            CockpitFaction::Alliance,
+            &mut coordinator,
+            &mut sectors,
+            &world,
+            &mut pending,
+        ));
+        assert_eq!(sectors.window_count(), 0);
+        assert_eq!(
+            pending
+                .iter()
+                .map(|candidate| candidate.system)
+                .collect::<Vec<_>>(),
+            vec![elsewhere, primary],
+        );
+
+        for expected_remaining in [1, 0] {
+            let mut applied = coordinator.apply_pending().remove(0);
+            let (_, removed) = commit_sector_window_publication(
+                &mut coordinator,
+                &mut sectors,
+                &mut pending,
+                applied.prepared_sector.take(),
+                applied.sector_content_id,
+                &applied.result,
+            );
+            assert!(removed.is_empty());
+            assert_eq!(pending.len(), expected_remaining);
+            pump_pending_sector_publication(&mut coordinator, &sectors, &world, &mut pending);
+        }
+        assert!(sectors.window_id(world.systems[elsewhere].sector).is_some());
+        assert!(sectors.window_id(world.systems[primary].sector).is_some());
+    }
+
+    #[test]
     fn routed_sector_release_acknowledgment_is_quadrants_fixture_only() {
         let (world, system) = sector_fixture_world();
         let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
@@ -19694,7 +19739,9 @@ fn enqueue_managed_fixture_sector(
     world: &GameWorld,
     pending: &mut Vec<PendingSectorPublication>,
 ) -> bool {
-    if scenario != interface_test_fixture::Scenario::Quadrants && !scenario.uses_the_fleet_window()
+    if scenario != interface_test_fixture::Scenario::Quadrants
+        && scenario != interface_test_fixture::Scenario::FleetFinder
+        && !scenario.uses_the_fleet_window()
     {
         return false;
     }
@@ -19702,7 +19749,8 @@ fn enqueue_managed_fixture_sector(
         return false;
     };
     let mut systems = Vec::with_capacity(2);
-    if scenario.uses_the_fleet_window() {
+    if scenario.uses_the_fleet_window() || scenario == interface_test_fixture::Scenario::FleetFinder
+    {
         let Some(elsewhere) = world
             .systems
             .keys()
