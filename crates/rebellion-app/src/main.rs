@@ -1952,16 +1952,20 @@ fn queue_windowing_pointer_receipt(
     }
 }
 
-/// A manager-routed Sector release is acknowledged only after the managed
-/// draw has received that frozen event. Selection begins on press, but the
-/// fixture contract records the completed click on its distinct release.
+/// The Quadrants fixture acknowledges a manager-routed Sector release only
+/// after the managed draw has received that frozen event. Selection begins on
+/// press, but that fixture records the completed click on its distinct release.
 #[cfg(any(test, all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
 fn queue_routed_sector_release_receipt(
+    scenario: interface_test_fixture::Scenario,
     receipts: &mut Vec<(InputEventId, &'static str, &'static str)>,
     events: &StrategicPointerBatch,
     router: &FrameInputRouter,
     snapshot: &rebellion_windowing::RoutingSnapshot,
 ) {
+    if scenario != interface_test_fixture::Scenario::Quadrants {
+        return;
+    }
     for event in &events.events {
         if event.phase != PointerPhase::Release(PointerButtonId::Primary) {
             continue;
@@ -3117,7 +3121,7 @@ mod frame_input_tests {
     }
 
     #[test]
-    fn routed_sector_release_is_acknowledged_after_the_managed_draw() {
+    fn routed_sector_release_acknowledgment_is_quadrants_fixture_only() {
         let (world, system) = sector_fixture_world();
         let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
         let mut sectors = SectorWindowState::default();
@@ -3171,9 +3175,26 @@ mod frame_input_tests {
         };
         let mut receipts = Vec::new();
 
-        queue_routed_sector_release_receipt(&mut receipts, &events, &router, &snapshot);
+        queue_routed_sector_release_receipt(
+            crate::interface_test_fixture::Scenario::Quadrants,
+            &mut receipts,
+            &events,
+            &router,
+            &snapshot,
+        );
 
         assert_eq!(receipts, [(release, "pointer", "sector_window")]);
+
+        receipts.clear();
+        queue_routed_sector_release_receipt(
+            crate::interface_test_fixture::Scenario::WindowingContract,
+            &mut receipts,
+            &events,
+            &router,
+            &snapshot,
+        );
+
+        assert!(receipts.is_empty());
     }
 
     #[test]
@@ -12317,12 +12338,15 @@ async fn main() {
                         )
                     });
                     #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
-                    queue_routed_sector_release_receipt(
-                        &mut pending_windowing_route_receipts,
-                        &strategic_pointer_events,
-                        &strategic_input_router,
-                        strategic_frame_boundary.snapshot(),
-                    );
+                    if let Some(request) = interface_fixture_request {
+                        queue_routed_sector_release_receipt(
+                            request.scenario,
+                            &mut pending_windowing_route_receipts,
+                            &strategic_pointer_events,
+                            &strategic_input_router,
+                            strategic_frame_boundary.snapshot(),
+                        );
+                    }
                     for action in sector_actions.into_iter().chain(commanded_sector_actions) {
                         #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
                         queue_windowing_pointer_receipt(
