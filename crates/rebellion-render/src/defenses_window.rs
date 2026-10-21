@@ -335,6 +335,33 @@ impl DefensesWindowState {
         let subject = prepared.spec.key.subject?;
         match *transition {
             WindowTransition::Opened { id } => {
+                // Dedicated interface fixtures predate manager publication and
+                // may seed one exact Defenses content record before the app
+                // queues its semantic open. Attach only that unmanaged record
+                // after the manager accepts the identity; preserve every
+                // content field and reject any ambiguous or conflicting state.
+                #[cfg(feature = "interface-test-fixtures")]
+                if let Some(index) = self.windows.iter().position(|window| {
+                    window.id.is_none()
+                        && window.subject.is_none()
+                        && window.system == prepared.system
+                }) {
+                    if self.faction != prepared.faction
+                        || self.windows.iter().enumerate().any(|(candidate, window)| {
+                            candidate != index
+                                && (window.id == Some(id)
+                                    || window.subject == Some(subject)
+                                    || window.system == prepared.system)
+                        })
+                    {
+                        return None;
+                    }
+                    let window = &mut self.windows[index];
+                    window.id = Some(id);
+                    window.subject = Some(subject);
+                    window.release_target_visible = false;
+                    return Some(id);
+                }
                 if self.windows.iter().any(|window| {
                     window.id == Some(id)
                         || window.subject == Some(subject)
@@ -2274,6 +2301,98 @@ mod tests {
         assert_eq!(content.page, DefensesPage::Batteries);
         assert_eq!(content.selected, Some(selected));
         assert_eq!(content.first_row, 1);
+    }
+
+    #[cfg(feature = "interface-test-fixtures")]
+    #[test]
+    fn defenses_fixture_legacy_open_adopts_manager_identity_without_resetting_content() {
+        let (world, system, _) = stocked();
+        let mut manager = WindowManager::new();
+        let mut state = DefensesWindowState::default();
+        assert!(state.open(&world, system, ORIGIN, CockpitFaction::Alliance, scaled(),));
+        let selected = DefensesItem::Defense(world.systems[system].defense_facilities[0]);
+        let content = state.window_mut(system).unwrap();
+        content.page = DefensesPage::Batteries;
+        content.selected = Some(selected);
+        content.first_row = 1;
+
+        let prepared = state
+            .prepare_open(
+                &world,
+                system,
+                (400, 300),
+                CockpitFaction::Alliance,
+                scaled(),
+            )
+            .unwrap();
+        let commit = manager.apply(WindowCommand::Open(prepared.spec())).unwrap();
+        let id = match commit.transition {
+            WindowTransition::Opened { id } => id,
+            ref transition => panic!("expected Defenses open, got {transition:?}"),
+        };
+
+        assert_eq!(
+            state.commit_open(prepared, &commit.transition),
+            Some(id),
+            "the accepted manager identity must attach to the exact fixture content"
+        );
+        assert_eq!(state.window_id(system), Some(id));
+        assert_eq!(state.window_count(), 1);
+        let content = state.window_mut(system).unwrap();
+        assert_eq!(content.logical_position, ORIGIN);
+        assert_eq!(content.page, DefensesPage::Batteries);
+        assert_eq!(content.selected, Some(selected));
+        assert_eq!(content.first_row, 1);
+    }
+
+    #[cfg(feature = "interface-test-fixtures")]
+    #[test]
+    fn defenses_fixture_legacy_open_rejects_wrong_faction_and_ambiguous_content() {
+        let (world, system, _) = stocked();
+
+        let mut wrong_faction_manager = WindowManager::new();
+        let mut wrong_faction_state = DefensesWindowState::default();
+        assert!(wrong_faction_state.open(
+            &world,
+            system,
+            ORIGIN,
+            CockpitFaction::Alliance,
+            scaled(),
+        ));
+        let wrong_faction = wrong_faction_state
+            .prepare_open(&world, system, ORIGIN, CockpitFaction::Empire, scaled())
+            .unwrap();
+        let wrong_faction_commit = wrong_faction_manager
+            .apply(WindowCommand::Open(wrong_faction.spec()))
+            .unwrap();
+        assert_eq!(
+            wrong_faction_state.commit_open(wrong_faction, &wrong_faction_commit.transition),
+            None
+        );
+        assert_eq!(wrong_faction_state.window_id(system), None);
+        assert_eq!(wrong_faction_state.window_count(), 1);
+
+        let mut ambiguous_manager = WindowManager::new();
+        let mut ambiguous_state = DefensesWindowState::default();
+        assert!(ambiguous_state.open(&world, system, ORIGIN, CockpitFaction::Alliance, scaled(),));
+        ambiguous_state
+            .windows
+            .push(ambiguous_state.windows[0].clone());
+        let ambiguous = ambiguous_state
+            .prepare_open(&world, system, ORIGIN, CockpitFaction::Alliance, scaled())
+            .unwrap();
+        let ambiguous_commit = ambiguous_manager
+            .apply(WindowCommand::Open(ambiguous.spec()))
+            .unwrap();
+        assert_eq!(
+            ambiguous_state.commit_open(ambiguous, &ambiguous_commit.transition),
+            None
+        );
+        assert!(ambiguous_state
+            .windows
+            .iter()
+            .all(|window| window.id.is_none() && window.subject.is_none()));
+        assert_eq!(ambiguous_state.window_count(), 2);
     }
 
     #[test]

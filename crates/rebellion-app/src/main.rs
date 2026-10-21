@@ -8356,6 +8356,23 @@ async fn main() {
             &world,
             &mut pending_sector_publications,
         );
+        if let Some(open) =
+            interface_test_fixture::defenses_window_open(request, &world, &cockpit_state)
+        {
+            if defenses_window_state.is_open(open.system)
+                && defenses_window_state.window_id(open.system).is_none()
+            {
+                enqueue_defenses_window(
+                    &mut strategic_windowing,
+                    &defenses_window_state,
+                    &world,
+                    open.system,
+                    open.logical_position,
+                    request.faction,
+                    cockpit_state.layout_for(640.0, 480.0),
+                );
+            }
+        }
     }
     let mut strategic_input_router = rebellion_render::windowing_input::FrameInputRouter::default();
     let mut routed_egui_input_filter = RoutedEguiInputFilter::default();

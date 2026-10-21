@@ -529,16 +529,7 @@ pub fn apply(
         );
     }
     if request.scenario.uses_the_fleet_window() {
-        place_loading_fleet(
-            request,
-            world,
-            cockpit,
-            movement,
-            sectors,
-            defenses,
-            troop_transport,
-            primary,
-        );
+        place_loading_fleet(request, world, movement, sectors, troop_transport, primary);
     }
     if request.scenario == Scenario::Quadrants {
         place_quadrant_contents(request, world, movement, missions, sectors, primary);
@@ -549,23 +540,17 @@ pub fn apply(
         sectors.open_for_system(world, primary, request.faction);
     }
     if request.scenario == Scenario::MissionTargeting {
-        // The primary system's Defenses window at the galaxy view's right
-        // edge holds the agent first on its personnel page; the second
-        // system's planet in its sector window, in the first column on the
-        // left, is the target (FUN_0045c830).
-        let layout = cockpit.layout_for(640.0, 480.0);
-        let galaxy = layout.galaxy;
+        sectors.open_for_system(world, secondary, request.faction);
+    }
+    if let Some(open) = defenses_window_open(request, world, cockpit) {
         defenses.open(
             world,
-            primary,
-            (
-                (galaxy.x + galaxy.width - DEFENSES_WINDOW_WIDTH) as i16 - 5,
-                galaxy.y as i16 + 5,
-            ),
+            open.system,
+            open.logical_position,
             request.faction,
-            layout,
+            cockpit.layout_for(640.0, 480.0),
         );
-        sectors.open_for_system(world, secondary, request.faction);
+        defenses.show_page(open.system, open.page);
     }
 
     identity_history::prepare(request, world, movement, missions);
@@ -696,6 +681,42 @@ fn defenses_window_subject(
     }
 }
 
+/// Exact Defenses content pre-seeded by a deterministic browser fixture.
+/// The app republishes this same record through the strategic manager before
+/// accepting pointer actions, while fixture setup retains authority over its
+/// subject, placement, and initial page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct FixtureDefensesOpen {
+    pub system: SystemKey,
+    pub logical_position: (i16, i16),
+    pub page: DefensesPage,
+}
+
+pub(crate) fn defenses_window_open(
+    request: FixtureRequest,
+    world: &GameWorld,
+    cockpit: &CockpitState,
+) -> Option<FixtureDefensesOpen> {
+    let primary = world.systems.keys().next()?;
+    let layout = cockpit.layout_for(640.0, 480.0);
+    let galaxy = layout.galaxy;
+    if request.scenario.uses_the_fleet_window() {
+        return Some(FixtureDefensesOpen {
+            system: defenses_window_subject(request, world, primary)?,
+            logical_position: (galaxy.x as i16 + 5, galaxy.y as i16 + 5),
+            page: DefensesPage::Regiments,
+        });
+    }
+    (request.scenario == Scenario::MissionTargeting).then_some(FixtureDefensesOpen {
+        system: primary,
+        logical_position: (
+            (galaxy.x + galaxy.width - DEFENSES_WINDOW_WIDTH) as i16 - 5,
+            galaxy.y as i16 + 5,
+        ),
+        page: DefensesPage::Personnel,
+    })
+}
+
 /// The joining scenario's second fleet: the world's second, or a copy of
 /// the first when the world has one.
 fn joining_fleet(
@@ -735,10 +756,8 @@ fn loading_regiment(world: &GameWorld, primary: SystemKey) -> Option<TroopKey> {
 fn place_loading_fleet(
     request: FixtureRequest,
     world: &mut GameWorld,
-    cockpit: &CockpitState,
     movement: &mut MovementState,
     sectors: &mut SectorWindowState,
-    defenses: &mut DefensesWindowState,
     troop_transport: &mut TroopTransportState,
     primary: SystemKey,
 ) {
@@ -881,17 +900,6 @@ fn place_loading_fleet(
         let _ = troop_transport.load(world, fleet, &aboard);
     }
 
-    let layout = cockpit.layout_for(640.0, 480.0);
-    let galaxy = layout.galaxy;
-    let subject = defenses_window_subject(request, world, primary).unwrap_or(primary);
-    defenses.open(
-        world,
-        subject,
-        (galaxy.x as i16 + 5, galaxy.y as i16 + 5),
-        request.faction,
-        layout,
-    );
-    defenses.show_page(subject, DefensesPage::Regiments);
     sectors.open_for_system(world, elsewhere, request.faction);
     sectors.open_for_system(world, primary, request.faction);
 }
