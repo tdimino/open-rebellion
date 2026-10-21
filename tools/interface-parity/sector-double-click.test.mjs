@@ -57,6 +57,9 @@ test("sector double click reaches one input batch with native click details", as
     ["mousedown"],
     ["mouseup"],
     ["frame"],
+    ["frame"],
+    ["frame"],
+    ["frame"],
   ]);
   assert.deepEqual(
     dispatched.map(({ type, button, buttons, detail, clientX, clientY, bubbles, cancelable }) => ({

@@ -24,5 +24,11 @@ export async function sectorDoubleClick(page, point, advanceFrame) {
     emit("mousedown", 1, 2);
     emit("mouseup", 0, 2);
   }, point);
+  // The first frame delivers the four-event batch. Match the accepted Sector
+  // runner's three additional settle frames so a queued manager open publishes,
+  // paints, and becomes the next stable surface before the following action.
+  await advanceFrame();
+  await advanceFrame();
+  await advanceFrame();
   await advanceFrame();
 }
