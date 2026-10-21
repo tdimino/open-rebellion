@@ -1952,6 +1952,37 @@ fn queue_windowing_pointer_receipt(
     }
 }
 
+/// A manager-routed Sector release is acknowledged only after the managed
+/// draw has received that frozen event. Selection begins on press, but the
+/// fixture contract records the completed click on its distinct release.
+#[cfg(any(test, all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
+fn queue_routed_sector_release_receipt(
+    receipts: &mut Vec<(InputEventId, &'static str, &'static str)>,
+    events: &StrategicPointerBatch,
+    router: &FrameInputRouter,
+    snapshot: &rebellion_windowing::RoutingSnapshot,
+) {
+    for event in &events.events {
+        if event.phase != PointerPhase::Release(PointerButtonId::Primary) {
+            continue;
+        }
+        let InputRecipient::Window(window) = router.pointer_recipient(event.id) else {
+            continue;
+        };
+        if !snapshot
+            .key(window)
+            .is_some_and(|key| key.kind == rebellion_windowing::WindowKind::Sector)
+        {
+            continue;
+        }
+        if !receipts.iter().any(|(queued, kind, application)| {
+            *queued == event.id && *kind == "pointer" && *application == "sector_window"
+        }) {
+            receipts.push((event.id, "pointer", "sector_window"));
+        }
+    }
+}
+
 #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
 fn queue_windowing_key_receipt(
     receipts: &mut Vec<WindowingRouteReceipt>,
@@ -2860,14 +2891,15 @@ mod frame_input_tests {
     use super::{
         approve_tactical_window_action, collect_strategic_pointer_batch,
         commit_pending_tactical_window_action, commit_sector_window_publication,
-        enqueue_sector_manager_action, enqueue_sector_window, pump_pending_sector_publication,
-        refresh_pending_sector_publication, reset_pending_tactical_handoff, restore_egui_input,
-        route_tactical_window_input, tactical_result_destination,
-        take_approved_tactical_window_action, take_tactical_destination_for_galaxy,
-        with_strategic_input, CommittedTacticalWindowAction, PendingSectorPublication,
-        PreparedTacticalWindowAction, RoutedEguiInputFilter, SectorDependentIntent,
-        StrategicPointerBatch, StrategicRawKeyEvent, StrategicRawPointerEvent,
-        StrategicRootKeyBatch, TacticalResultDestination,
+        enqueue_managed_quadrants_fixture_sector, enqueue_sector_manager_action,
+        enqueue_sector_window, pump_pending_sector_publication,
+        queue_routed_sector_release_receipt, refresh_pending_sector_publication,
+        reset_pending_tactical_handoff, restore_egui_input, route_tactical_window_input,
+        tactical_result_destination, take_approved_tactical_window_action,
+        take_tactical_destination_for_galaxy, with_strategic_input, CommittedTacticalWindowAction,
+        PendingSectorPublication, PreparedTacticalWindowAction, RoutedEguiInputFilter,
+        SectorDependentIntent, StrategicPointerBatch, StrategicPointerEvent, StrategicRawKeyEvent,
+        StrategicRawPointerEvent, StrategicRootKeyBatch, TacticalResultDestination,
     };
     use egui_macroquad::egui;
     use rebellion_render::build_selection::BuildSelectionState;
@@ -3048,6 +3080,100 @@ mod frame_input_tests {
         ));
         assert_eq!(sectors.window_count(), 1);
         assert!(pending.is_empty());
+    }
+
+    #[test]
+    fn quadrants_fixture_republishes_legacy_sector_with_manager_identity() {
+        let (world, system) = sector_fixture_world();
+        let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
+        let mut sectors = SectorWindowState::default();
+        let mut pending = Vec::<PendingSectorPublication>::new();
+        sectors.open_for_system(&world, system, CockpitFaction::Alliance);
+        assert_eq!(sectors.window_count(), 1);
+        assert_eq!(sectors.window_id(world.systems[system].sector), None);
+
+        assert!(enqueue_managed_quadrants_fixture_sector(
+            crate::interface_test_fixture::Scenario::Quadrants,
+            CockpitFaction::Alliance,
+            &mut coordinator,
+            &mut sectors,
+            &world,
+            &mut pending,
+        ));
+        assert_eq!(sectors.window_count(), 0);
+        assert_eq!(pending.len(), 1);
+
+        let mut applied = coordinator.apply_pending().remove(0);
+        let (_, removed) = commit_sector_window_publication(
+            &mut coordinator,
+            &mut sectors,
+            &mut pending,
+            applied.prepared_sector.take(),
+            applied.sector_content_id,
+            &applied.result,
+        );
+        assert!(removed.is_empty());
+        assert!(sectors.window_id(world.systems[system].sector).is_some());
+    }
+
+    #[test]
+    fn routed_sector_release_is_acknowledged_after_the_managed_draw() {
+        let (world, system) = sector_fixture_world();
+        let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
+        let mut sectors = SectorWindowState::default();
+        let mut pending = Vec::<PendingSectorPublication>::new();
+        assert!(enqueue_sector_window(
+            &mut coordinator,
+            &sectors,
+            &world,
+            system,
+            CockpitFaction::Alliance,
+            &mut pending,
+            None,
+        ));
+        let mut applied = coordinator.apply_pending().remove(0);
+        commit_sector_window_publication(
+            &mut coordinator,
+            &mut sectors,
+            &mut pending,
+            applied.prepared_sector.take(),
+            applied.sector_content_id,
+            &applied.result,
+        );
+        let snapshot = coordinator.begin_frame();
+        let window = sectors.window_id(world.systems[system].sector).unwrap();
+        let release = InputEventId {
+            frame: 401,
+            ordinal: 0,
+        };
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(400, &snapshot);
+        router.collect_pointer(
+            InputEventId {
+                frame: 400,
+                ordinal: 0,
+            },
+            &BTreeSet::from([window]),
+            PointerPhase::Press(PointerButtonId::Primary),
+        );
+        router.begin_frame(release.frame, &snapshot);
+        router.collect_pointer(
+            release,
+            &BTreeSet::from([window]),
+            PointerPhase::Release(PointerButtonId::Primary),
+        );
+        let events = StrategicPointerBatch {
+            events: vec![StrategicPointerEvent {
+                id: release,
+                point: (64.0, 65.0),
+                phase: PointerPhase::Release(PointerButtonId::Primary),
+            }],
+        };
+        let mut receipts = Vec::new();
+
+        queue_routed_sector_release_receipt(&mut receipts, &events, &router, &snapshot);
+
+        assert_eq!(receipts, [(release, "pointer", "sector_window")]);
     }
 
     #[test]
@@ -8199,6 +8325,17 @@ async fn main() {
     // Must happen inside the macroquad async context, after first frame init.
     let mut theme_applied = false;
     let mut strategic_windowing = strategic_windowing::StrategicWindowing::new();
+    #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+    if let Some(request) = interface_fixture_request {
+        enqueue_managed_quadrants_fixture_sector(
+            request.scenario,
+            request.faction,
+            &mut strategic_windowing,
+            &mut sector_window_state,
+            &world,
+            &mut pending_sector_publications,
+        );
+    }
     let mut strategic_input_router = rebellion_render::windowing_input::FrameInputRouter::default();
     let mut routed_egui_input_filter = RoutedEguiInputFilter::default();
     let mut strategic_frame_number = 0_u64;
@@ -12162,7 +12299,7 @@ async fn main() {
                         commanded
                     };
 
-                    for action in with_strategic_input(ctx, retained_window_input, || {
+                    let sector_actions = with_strategic_input(ctx, retained_window_input, || {
                         draw_managed_sector_windows(
                             ctx,
                             &world,
@@ -12178,10 +12315,15 @@ async fn main() {
                             &sector_pointer_routes,
                             &mut strategic_input_router,
                         )
-                    })
-                    .into_iter()
-                    .chain(commanded_sector_actions)
-                    {
+                    });
+                    #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+                    queue_routed_sector_release_receipt(
+                        &mut pending_windowing_route_receipts,
+                        &strategic_pointer_events,
+                        &strategic_input_router,
+                        strategic_frame_boundary.snapshot(),
+                    );
+                    for action in sector_actions.into_iter().chain(commanded_sector_actions) {
                         #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
                         queue_windowing_pointer_receipt(
                             &mut pending_windowing_route_receipts,
@@ -14713,22 +14855,38 @@ async fn main() {
                         );
                     }
                     if interface_fixture_request.is_some_and(|request| {
-                        request.scenario == interface_test_fixture::Scenario::WindowingContract
+                        request.scenario.emits_unhandled_windowing_route_receipts()
                     }) {
                         for event in &strategic_pointer_events.events {
-                            if matches!(
+                            let application = if matches!(
                                 event.phase,
                                 PointerPhase::Press(PointerButtonId::Primary)
                                     | PointerPhase::Press(PointerButtonId::Secondary)
                                     | PointerPhase::Release(PointerButtonId::Primary)
                                     | PointerPhase::Release(PointerButtonId::Secondary)
                                     | PointerPhase::Auxiliary
-                            ) && !pending_windowing_route_receipts
-                                .iter()
-                                .any(|(queued, _, _)| *queued == event.id)
-                            {
-                                pending_windowing_route_receipts
-                                    .push((event.id, "pointer", "none"));
+                            ) {
+                                Some("none")
+                            } else if matches!(
+                                event.phase,
+                                PointerPhase::Motion(_) | PointerPhase::Hover
+                            ) && interface_fixture_request.is_some_and(|request| {
+                                request.scenario.emits_windowing_pointer_ready_receipts()
+                            }) {
+                                Some("pointer_ready")
+                            } else {
+                                None
+                            };
+                            if let Some(application) = application.filter(|_| {
+                                !pending_windowing_route_receipts
+                                    .iter()
+                                    .any(|(queued, _, _)| *queued == event.id)
+                            }) {
+                                pending_windowing_route_receipts.push((
+                                    event.id,
+                                    "pointer",
+                                    application,
+                                ));
                             }
                         }
                         for event in strategic_root_keys.presses() {
@@ -19322,6 +19480,36 @@ fn draw_fullscreen_texture(texture: &Texture2D) {
             ..Default::default()
         },
     );
+}
+
+/// The Quadrants fixture predates manager-owned Sector publication. Migrate
+/// its deterministic legacy opening before the first frame so pointer routing
+/// and release actions use the same identity-bearing path as production.
+#[cfg(any(test, all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
+fn enqueue_managed_quadrants_fixture_sector(
+    scenario: interface_test_fixture::Scenario,
+    faction: CockpitFaction,
+    strategic_windowing: &mut strategic_windowing::StrategicWindowing,
+    state: &mut SectorWindowState,
+    world: &GameWorld,
+    pending: &mut Vec<PendingSectorPublication>,
+) -> bool {
+    if scenario != interface_test_fixture::Scenario::Quadrants {
+        return false;
+    }
+    let Some(system) = world.systems.keys().next() else {
+        return false;
+    };
+    state.clear();
+    enqueue_sector_window(
+        strategic_windowing,
+        state,
+        world,
+        system,
+        faction,
+        pending,
+        None,
+    )
 }
 
 fn enqueue_sector_window(

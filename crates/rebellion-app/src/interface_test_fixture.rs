@@ -245,6 +245,14 @@ impl Scenario {
             || self.canonical_encyclopedia_fixture_start().is_some()
     }
 
+    pub(crate) fn emits_unhandled_windowing_route_receipts(self) -> bool {
+        matches!(self, Self::Quadrants | Self::WindowingContract)
+    }
+
+    pub(crate) fn emits_windowing_pointer_ready_receipts(self) -> bool {
+        self == Self::Quadrants
+    }
+
     fn moves_a_fleet(self) -> bool {
         matches!(self, Self::FleetMove | Self::FleetMoveBlockade)
     }
@@ -2484,6 +2492,23 @@ mod tests {
             assert_eq!(Scenario::decode(value).unwrap() as u8, value);
         }
         assert!(Scenario::decode(SCENARIO_COUNT).is_none());
+    }
+
+    #[test]
+    fn only_contract_and_quadrants_emit_unhandled_windowing_route_receipts() {
+        for value in 0..SCENARIO_COUNT {
+            let scenario = Scenario::decode(value).expect("known fixture scenario");
+            assert_eq!(
+                scenario.emits_unhandled_windowing_route_receipts(),
+                matches!(scenario, Scenario::Quadrants | Scenario::WindowingContract),
+                "unexpected raw receipt policy for {scenario:?}",
+            );
+            assert_eq!(
+                scenario.emits_windowing_pointer_ready_receipts(),
+                scenario == Scenario::Quadrants,
+                "unexpected pointer-ready receipt policy for {scenario:?}",
+            );
+        }
     }
 
     #[test]

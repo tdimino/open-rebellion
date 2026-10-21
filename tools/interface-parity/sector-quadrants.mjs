@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { chromium } from "playwright-core";
 import { PNG } from "pngjs";
 import { launchBrowser } from "./browser-launch.mjs";
@@ -19,6 +19,7 @@ const noBuild = process.argv.includes("--no-build");
 // `--only=alliance/icons` runs the named cases alone.
 const only = process.argv.filter((arg) => arg.startsWith("--only=")).map((arg) => arg.slice(7));
 const expectedRequests = ["/", "/data/runtime.orpk", "/gl.js", "/open-rebellion-test.wasm"];
+const ROUTE_MARKER = "[windowing-route] ";
 // Fixture codes are the Scenario index plus one (interface_test_fixture.rs).
 const QUADRANTS = 50;
 const factions = [
@@ -224,31 +225,190 @@ function compareIcon(screenshot, rect, icon, label, directory, keyed = true) {
   return { label, pixels_checked: checked, different_pixels: different };
 }
 
-async function click(page, point) {
-  await page.mouse.move(point.x, point.y);
-  await frames(page);
-  await page.mouse.down();
-  await frames(page);
-  await page.mouse.up();
-  await frames(page);
-}
-
 async function frames(page, count = 1) {
   for (let index = 0; index < count; index += 1) {
     await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   }
 }
 
-// Two clicks inside egui's double-click time.
-async function doubleClick(page, point) {
-  await page.mouse.move(point.x, point.y);
-  await frames(page);
-  for (let index = 0; index < 2; index += 1) {
-    await page.mouse.down();
-    await frames(page);
-    await page.mouse.up();
-    await frames(page);
+function parseRoute(line) {
+  const match = line.match(
+    /^\[windowing-route\] physical=(\d+:\d+) kind=(pointer|key) router=(root|blocked|window:\d+) application=([a-z0-9_:-]+) underlay=(\d+)$/,
+  );
+  assert.ok(match, `malformed route receipt ${line}`);
+  return {
+    physical: match[1],
+    kind: match[2],
+    recipient: match[3],
+    application: match[4],
+    underlay: Number(match[5]),
+    line,
+  };
+}
+
+async function waitForRouteReceipt({
+  routes,
+  after,
+  expected,
+  description,
+  advanceFrame,
+  attempts = 480,
+}) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const route = routes.slice(after)
+      .map(parseRoute)
+      .find((candidate) => candidate.kind === "pointer"
+        && (expected.recipient === undefined || candidate.recipient === expected.recipient)
+        && candidate.application === expected.application);
+    if (route) return route;
+    await advanceFrame();
   }
+  throw new Error(
+    `${description}; last=${JSON.stringify(routes.slice(after).map(parseRoute).at(-1) ?? null)}`,
+  );
+}
+
+async function waitForFreshPointerReceipts({
+  routes,
+  after,
+  count,
+  description,
+  advanceFrame,
+  attempts = 480,
+}) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const receipts = routes.slice(after).map(parseRoute)
+      .filter((candidate) => candidate.kind === "pointer");
+    if (receipts.length >= count) {
+      return receipts.slice(0, count).sort((left, right) => {
+        const [leftFrame, leftOrdinal] = left.physical.split(":").map(Number);
+        const [rightFrame, rightOrdinal] = right.physical.split(":").map(Number);
+        return leftFrame - rightFrame || leftOrdinal - rightOrdinal;
+      });
+    }
+    await advanceFrame();
+  }
+  throw new Error(
+    `${description}; last=${JSON.stringify(routes.slice(after).map(parseRoute).at(-1) ?? null)}`,
+  );
+}
+
+export async function pressWithRouteReceipts({
+  page,
+  routes,
+  point,
+  label,
+  expectedMove,
+  expectedDown,
+  expectedRelease,
+  button = "left",
+  advanceFrame,
+  settleFrames = 3,
+}) {
+  const nextFrame = advanceFrame ?? (() => frames(page, 1));
+  const moveStart = routes.length;
+  await page.mouse.move(point.x, point.y);
+  if (expectedMove) {
+    await waitForRouteReceipt({
+      routes,
+      after: moveStart,
+      expected: expectedMove,
+      description: `${label} move emitted no expected fresh route receipt`,
+      advanceFrame: nextFrame,
+    });
+  } else {
+    await nextFrame();
+  }
+  const downStart = routes.length;
+  await page.mouse.down({ button });
+  const down = await waitForRouteReceipt({
+    routes,
+    after: downStart,
+    expected: expectedDown,
+    description: `${label} down emitted no expected fresh route receipt`,
+    advanceFrame: nextFrame,
+  });
+  const releaseStart = routes.length;
+  await page.mouse.up({ button });
+  const release = await waitForRouteReceipt({
+    routes,
+    after: releaseStart,
+    expected: expectedRelease,
+    description: `${label} release emitted no expected fresh route receipt`,
+    advanceFrame: nextFrame,
+  });
+  assert.notEqual(release.physical, down.physical, `${label} reused its down route receipt`);
+  for (let frame = 0; frame < settleFrames; frame += 1) {
+    await nextFrame();
+  }
+  return { down, release };
+}
+
+export async function click(page, routes, point, application, { advanceFrame } = {}) {
+  return pressWithRouteReceipts({
+    page,
+    routes,
+    point,
+    label: `${application} click`,
+    expectedMove: { application: "pointer_ready" },
+    expectedDown: { application: application === "sector_window" ? application : "none" },
+    expectedRelease: { application },
+    advanceFrame,
+  });
+}
+
+// Two clicks inside egui's double-click time.
+export async function doubleClick(page, routes, point, application, { advanceFrame } = {}) {
+  const nextFrame = advanceFrame ?? (() => frames(page, 1));
+  const moveStart = routes.length;
+  await page.mouse.move(point.x, point.y);
+  await waitForRouteReceipt({
+    routes,
+    after: moveStart,
+    expected: { application: "pointer_ready" },
+    description: `${application} double-click move emitted no fresh readiness receipt`,
+    advanceFrame: nextFrame,
+  });
+  const pressStart = routes.length;
+  await page.evaluate(({ x, y }) => {
+    const canvas = document.getElementById("glcanvas");
+    if (!(canvas instanceof HTMLCanvasElement)) throw new Error("missing game canvas");
+    const emit = (type, buttons, detail) => canvas.dispatchEvent(new MouseEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+      clientX: x,
+      clientY: y,
+      screenX: x,
+      screenY: y,
+      button: 0,
+      buttons,
+      detail,
+    }));
+    emit("mousedown", 1, 1);
+    emit("mouseup", 0, 1);
+    emit("mousedown", 1, 2);
+    emit("mouseup", 0, 2);
+  }, point);
+  const receipts = await waitForFreshPointerReceipts({
+    routes,
+    after: pressStart,
+    count: 4,
+    description: `${application} double-click emitted fewer than four fresh route receipts`,
+    advanceFrame: nextFrame,
+  });
+  assert.deepEqual(receipts.map(({ application: routed }) => routed),
+    ["none", application, "none", application],
+    `${application} double-click receipt applications did not identify both releases`);
+  assert.equal(new Set(receipts.map(({ physical }) => physical)).size, 4,
+    `${application} double-click reused a physical route receipt`);
+  for (let frame = 0; frame < 3; frame += 1) {
+    await nextFrame();
+  }
+  return [
+    { down: receipts[0], release: receipts[1] },
+    { down: receipts[2], release: receipts[3] },
+  ];
 }
 
 function observations(page) {
@@ -356,10 +516,10 @@ function assertExact(checks) {
   }
 }
 
-async function openDefenses(page, setup, system) {
+async function openDefenses(page, routes, setup, system) {
   const [left, top] = quadrant(setup, system, "defenses");
   const at = { x: Math.round(left) + 4, y: Math.round(top) + 9 };
-  await doubleClick(page, at);
+  await doubleClick(page, routes, at, "sector_window");
   const dat = system === "primary" ? setup.primary_dat_id : setup.second_dat_id;
   const opened = await until(page, `the ${system} defenses icon opens the Defenses window`,
     (o, value) => o.defenses_windows.some((window) => window.system_dat_id === value), dat);
@@ -437,14 +597,14 @@ const cases = [
     // FUN_004593e0 WM_PAINT draws a selected overlay's second bitmap, the
     // next id in FUN_0045ca80's pair; a press selects the overlay under it
     // (FUN_0045b1b0) and deselects the rest (FUN_0045afc0).
-    async run(page, faction, setup, directory, source) {
+    async run(page, faction, setup, directory, source, routes) {
       const shown = Object.entries(expectedSides(faction).primary)
         .filter(([, side]) => side !== null);
       assert.ok(shown.length >= 2, "the primary system shows two icons");
       const compares = [];
       for (const [pressed] of shown) {
         const [left, top] = quadrant(setup, "primary", pressed);
-        await click(page, { x: Math.round(left) + 4, y: Math.round(top) + 9 });
+        await click(page, routes, { x: Math.round(left) + 4, y: Math.round(top) + 9 }, "sector_window");
         const screenshot = await stableScreen(page, directory, `selected-${pressed}`);
         for (const [name, side] of shown) {
           const id = art[name][side] + (name === pressed ? 1 : 0);
@@ -464,10 +624,10 @@ const cases = [
     // FUN_004593e0 case 0x203 finds the shown overlay under the point;
     // FUN_0045aac0 maps kind 4 to the System window (type 9). The point lies
     // on the top-left icon, left of the planet's picture.
-    async run(page, faction, setup) {
+    async run(page, faction, setup, directory, source, routes) {
       const [left, top] = quadrant(setup, "primary", "system");
       const at = { x: Math.round(left) + 4, y: Math.round(top) + 9 };
-      await doubleClick(page, at);
+      await doubleClick(page, routes, at, "sector_window");
       const opened = await until(page, "the system icon opens the System window",
         (o, dat) => o.system_windows.some(([system]) => system === dat), setup.primary_dat_id);
       assert.equal(opened.system_windows.length, 1, JSON.stringify(opened));
@@ -482,8 +642,8 @@ const cases = [
     // (FUN_004a90d0's tail), the row frame keyed over the selected mini
     // (FUN_004a9ab0), and minimize to the rail and back (0x466,
     // FUN_004aa4a0).
-    async run(page, faction, setup, directory, source) {
-      const { at, dat, window } = await openDefenses(page, setup, "primary");
+    async run(page, faction, setup, directory, source, routes) {
+      const { at, dat, window } = await openDefenses(page, routes, setup, "primary");
       assert.equal(window.side, faction.side, JSON.stringify(window));
       assert.equal(window.page, "personnel");
       assert.deepEqual(window.counts, [0, 1, 0, 0, 1]);
@@ -500,7 +660,7 @@ const cases = [
       assertExact(opening);
 
       const regimentsTab = window.tabs.find(([name]) => name === "regiments")[1];
-      await click(page, { x: regimentsTab[0] + 18, y: regimentsTab[1] + 16 });
+      await click(page, routes, { x: regimentsTab[0] + 18, y: regimentsTab[1] + 16 }, "defenses_window");
       const regiments = defensesWindow(await until(page, "the regiment tab opens its page",
         (o, value) => o.defenses_windows.some((w) => w.system_dat_id === value && w.page === "regiments"), dat), dat);
       assert.equal(regiments.rows.length, 1, JSON.stringify(regiments));
@@ -514,7 +674,7 @@ const cases = [
       assertExact(regimentChecks);
 
       const cell = regiments.cells[0];
-      await click(page, { x: cell[0] + 30, y: cell[1] + 12 });
+      await click(page, routes, { x: cell[0] + 30, y: cell[1] + 12 }, "defenses_window");
       const selected = defensesWindow(await until(page, "a click selects the row",
         (o, value) => o.defenses_windows.some((w) => w.system_dat_id === value && w.selected === 0), dat), dat);
       screenshot = await stableScreen(page, directory, "selected");
@@ -524,21 +684,31 @@ const cases = [
       ];
       assertExact(selectedChecks);
 
-      await click(page, { x: origin[0] + 210, y: origin[1] + 9 });
+      await click(page, routes, { x: origin[0] + 210, y: origin[1] + 9 }, "defenses_window");
       const railed = await until(page, "minimize sends the window to the rail",
-        (o, value) => !o.defenses_windows.some((w) => w.system_dat_id === value)
+        (o, value) => o.defenses_windows.some((w) => w.system_dat_id === value)
           && o.rail.some(([system, kind]) => system === value && kind === "defenses"), dat);
+      const retained = defensesWindow(railed, dat);
+      assert.deepEqual(
+        [retained.page, retained.selected, retained.garrison],
+        [selected.page, selected.selected, selected.garrison],
+        "minimize retains Defenses content while the rail controls visibility",
+      );
       const slot = railed.rail.find(([system, kind]) => system === dat && kind === "defenses")[2];
       screenshot = await stableScreen(page, directory, "railed");
       const icon = faction.side === 1 ? 11533 : 11534;
       const railChecks = [{ id: icon, ...compareIcon(screenshot, slot, resource(source, icon), "rail-icon", directory) }];
       assertExact(railChecks);
 
-      await click(page, { x: slot[0] + slot[2] / 2, y: slot[1] + slot[3] / 2 });
+      await click(page, routes, { x: slot[0] + slot[2] / 2, y: slot[1] + slot[3] / 2 }, "reference_rail");
       const restored = defensesWindow(await until(page, "the rail slot restores the window",
         (o, value) => o.defenses_windows.some((w) => w.system_dat_id === value)
           && !o.rail.some(([system, kind]) => system === value && kind === "defenses"), dat), dat);
       assert.deepEqual(restored.origin, window.origin);
+      assert.deepEqual(
+        [restored.page, restored.selected, restored.garrison],
+        [retained.page, retained.selected, retained.garrison],
+      );
       return { at, window, opening, regiments, regimentChecks, selectedChecks, railChecks, restored };
     },
   },
@@ -547,8 +717,8 @@ const cases = [
     // +0x148 is the system's side: the other side's system lists only its
     // objects, of which the fixture leaves none, so every tab shows that
     // side's empty art and the player's regiment there is not listed.
-    async run(page, faction, setup, directory, source) {
-      const { at, window } = await openDefenses(page, setup, "second");
+    async run(page, faction, setup, directory, source, routes) {
+      const { at, window } = await openDefenses(page, routes, setup, "second");
       assert.equal(window.side, faction.other, JSON.stringify(window));
       assert.deepEqual(window.counts, [0, 0, 0, 0, 0]);
       assert.equal(window.garrison, null);
@@ -565,10 +735,10 @@ const cases = [
     // (FUN_0049f540, FUN_00609500), its agent listed; another row's click
     // reselects (FUN_004a0c60), the Decoys tab refills (id 0x16), and
     // minimize goes to the rail and back (0x466, FUN_004a21c0).
-    async run(page, faction, setup, directory, source) {
+    async run(page, faction, setup, directory, source, routes) {
       const [left, top] = quadrant(setup, "primary", "missions");
       const at = { x: Math.round(left) + 24, y: Math.round(top) + 9 };
-      await doubleClick(page, at);
+      await doubleClick(page, routes, at, "sector_window");
       const dat = setup.primary_dat_id;
       const opened = await until(page, "the missions icon opens the Missions window",
         (o, value) => o.missions_windows.some((window) => window.system_dat_id === value), dat);
@@ -599,7 +769,7 @@ const cases = [
       assertExact(opening);
 
       const second = window.row_rects[1];
-      await click(page, { x: second[0] + 40, y: second[1] + 20 });
+      await click(page, routes, { x: second[0] + 40, y: second[1] + 20 }, "missions_window");
       const reselected = missionsWindow(await until(page, "a click selects the other mission",
         (o, value) => o.missions_windows.some((w) => w.system_dat_id === value && w.selected === 1), dat), dat);
       assert.deepEqual([reselected.tab, reselected.tab_side], ["agents", faction.other]);
@@ -615,7 +785,7 @@ const cases = [
       assertExact(reselectedChecks);
 
       const decoysTab = reselected.tabs.find(([name]) => name === "decoys")[1];
-      await click(page, { x: decoysTab[0] + 30, y: decoysTab[1] + 8 });
+      await click(page, routes, { x: decoysTab[0] + 30, y: decoysTab[1] + 8 }, "missions_window");
       const decoys = missionsWindow(await until(page, "the Decoys tab refills the member list",
         (o, value) => o.missions_windows.some((w) => w.system_dat_id === value && w.tab === "decoys"), dat), dat);
       assert.deepEqual(decoys.members, []);
@@ -623,22 +793,31 @@ const cases = [
       const decoyChecks = compareMissionTabs(screenshot, source, decoys, directory, "decoys");
       assertExact(decoyChecks);
 
-      await click(page, { x: origin[0] + 210, y: origin[1] + 9 });
+      await click(page, routes, { x: origin[0] + 210, y: origin[1] + 9 }, "missions_window");
       const railed = await until(page, "minimize sends the window to the rail",
-        (o, value) => !o.missions_windows.some((w) => w.system_dat_id === value)
+        (o, value) => o.missions_windows.some((w) => w.system_dat_id === value)
           && o.rail.some(([system, kind]) => system === value && kind === "missions"), dat);
+      const retained = missionsWindow(railed, dat);
+      assert.deepEqual(
+        [retained.selected, retained.tab, retained.tab_side, retained.members],
+        [decoys.selected, decoys.tab, decoys.tab_side, decoys.members],
+        "minimize retains Missions content while the rail controls visibility",
+      );
       const slot = railed.rail.find(([system, kind]) => system === dat && kind === "missions")[2];
       screenshot = await stableScreen(page, directory, "railed");
       const icon = MISSIONS_RAIL[faction.other];
       const railChecks = [{ id: icon, ...compareIcon(screenshot, slot, resource(source, icon), "rail-icon", directory) }];
       assertExact(railChecks);
 
-      await click(page, { x: slot[0] + slot[2] / 2, y: slot[1] + slot[3] / 2 });
+      await click(page, routes, { x: slot[0] + slot[2] / 2, y: slot[1] + slot[3] / 2 }, "reference_rail");
       const restored = missionsWindow(await until(page, "the rail slot restores the window",
         (o, value) => o.missions_windows.some((w) => w.system_dat_id === value)
           && !o.rail.some(([system, kind]) => system === value && kind === "missions"), dat), dat);
       assert.deepEqual(restored.origin, window.origin);
-      assert.equal(restored.selected, 0);
+      assert.deepEqual(
+        [restored.selected, restored.tab, restored.tab_side, restored.members],
+        [retained.selected, retained.tab, retained.tab_side, retained.members],
+      );
       return { at, window, opening, reselected, reselectedChecks, decoyChecks, railChecks, restored };
     },
   },
@@ -650,6 +829,7 @@ async function inspect(server, source, faction, testCase, executable) {
   const requests = [];
   const errors = [];
   const consoleLines = [];
+  const routes = [];
   const launchAttempts = [];
   let browser;
   let context;
@@ -683,9 +863,11 @@ async function inspect(server, source, faction, testCase, executable) {
     });
     page.on("pageerror", (error) => errors.push(`pageerror:${error.stack || error.message}`));
     page.on("console", (message) => {
-      consoleLines.push({ type: message.type(), text: message.text() });
-      if (message.type() === "error" || /\[bmp_cache\] asset unavailable/i.test(message.text())) {
-        errors.push(`console:${message.type()}:${message.text()}`);
+      const line = message.text();
+      consoleLines.push({ type: message.type(), text: line });
+      if (line.startsWith(ROUTE_MARKER)) routes.push(line);
+      if (message.type() === "error" || /\[bmp_cache\] asset unavailable/i.test(line)) {
+        errors.push(`console:${message.type()}:${line}`);
       }
     });
 
@@ -709,7 +891,7 @@ async function inspect(server, source, faction, testCase, executable) {
     await page.evaluate(() => document.fonts.ready);
     const { bytes: _ready, ...before } = await shot(page, directory, "ready");
 
-    const checks = await testCase.run(page, faction, setup, directory, source);
+    const checks = await testCase.run(page, faction, setup, directory, source, routes);
     await page.mouse.move(2, 2);
     await frames(page);
     const { bytes: _final, ...after } = await shot(page, directory, "final");
@@ -746,6 +928,8 @@ async function inspect(server, source, faction, testCase, executable) {
       cleanup: "pending",
     };
     if (page) await shot(page, directory, "failure").catch(() => {});
+    fs.writeFileSync(path.join(directory, "failure-routes.log"), `${routes.join("\n")}\n`);
+    fs.writeFileSync(path.join(directory, "failure.json"), `${JSON.stringify(result, null, 2)}\n`);
   } finally {
     if (page) await page.close().catch((error) => errors.push(`page-close:${error}`));
     if (context) await context.close().catch((error) => errors.push(`context-close:${error}`));
@@ -793,10 +977,13 @@ async function main() {
   let results;
   try {
     results = [];
+    casesLoop:
     for (const faction of factions) {
       for (const testCase of cases) {
         if (only.length && !only.includes(`${faction.name}/${testCase.name}`)) continue;
-        results.push(await inspect(server, source, faction, testCase, executable));
+        const result = await inspect(server, source, faction, testCase, executable);
+        results.push(result);
+        if (result.status !== "pass") break casesLoop;
       }
     }
   } finally {
@@ -827,4 +1014,6 @@ async function main() {
   process.stdout.write(`${JSON.stringify({ run_dir: runDir, status: summary.status, cases: results.map((r) => `${r.faction}/${r.case}`), wasm_sha256: summary.wasm_sha256 }, null, 2)}\n`);
 }
 
-await main();
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  await main();
+}
