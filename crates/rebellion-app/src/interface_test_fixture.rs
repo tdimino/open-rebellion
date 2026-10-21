@@ -246,11 +246,14 @@ impl Scenario {
     }
 
     pub(crate) fn emits_unhandled_windowing_route_receipts(self) -> bool {
-        matches!(self, Self::Quadrants | Self::WindowingContract) || self.uses_the_fleet_window()
+        matches!(
+            self,
+            Self::Quadrants | Self::WindowingContract | Self::FleetFinder
+        ) || self.uses_the_fleet_window()
     }
 
     pub(crate) fn emits_windowing_pointer_ready_receipts(self) -> bool {
-        self == Self::Quadrants || self.uses_the_fleet_window()
+        matches!(self, Self::Quadrants | Self::FleetFinder) || self.uses_the_fleet_window()
     }
 
     fn moves_a_fleet(self) -> bool {
@@ -2568,13 +2571,16 @@ mod tests {
             let scenario = Scenario::decode(value).expect("known fixture scenario");
             assert_eq!(
                 scenario.emits_unhandled_windowing_route_receipts(),
-                matches!(scenario, Scenario::Quadrants | Scenario::WindowingContract)
-                    || scenario.uses_the_fleet_window(),
+                matches!(
+                    scenario,
+                    Scenario::Quadrants | Scenario::WindowingContract | Scenario::FleetFinder
+                ) || scenario.uses_the_fleet_window(),
                 "unexpected raw receipt policy for {scenario:?}",
             );
             assert_eq!(
                 scenario.emits_windowing_pointer_ready_receipts(),
-                scenario == Scenario::Quadrants || scenario.uses_the_fleet_window(),
+                matches!(scenario, Scenario::Quadrants | Scenario::FleetFinder)
+                    || scenario.uses_the_fleet_window(),
                 "unexpected pointer-ready receipt policy for {scenario:?}",
             );
         }

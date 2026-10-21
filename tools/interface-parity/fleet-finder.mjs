@@ -11,6 +11,7 @@ import { chromium } from "playwright-core";
 import { PNG } from "pngjs";
 import { launchBrowser } from "./browser-launch.mjs";
 import { sectorDoubleClick } from "./sector-double-click.mjs";
+import { clickWithRouteBarrier } from "./fleet-window.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../..");
@@ -22,6 +23,9 @@ const noBuild = process.argv.includes("--no-build");
 // `--only=alliance/chrome` runs the named cases alone.
 const only = process.argv.filter((arg) => arg.startsWith("--only=")).map((arg) => arg.slice(7));
 const expectedRequests = ["/", "/data/runtime.orpk", "/gl.js", "/open-rebellion-test.wasm"];
+const ROUTE_MARKER = "[windowing-route] ";
+const pageRoutes = new WeakMap();
+const pageRouteCursors = new WeakMap();
 // Fixture codes are the Scenario index plus one (interface_test_fixture.rs).
 const FLEET_FINDER = 53;
 // FUN_0042a0c0: the Fleet Finder, 470 by 330 (FUN_00461750).
@@ -239,14 +243,19 @@ async function frames(page, count = 1) {
   }
 }
 
-async function click(page, point) {
-  // egui resolves a click across frames: hover, press, then release.
-  await page.mouse.move(point.x, point.y);
-  await frames(page);
-  await page.mouse.down();
-  await frames(page);
-  await page.mouse.up();
-  await frames(page);
+async function click(page, point, label = "Fleet Finder click") {
+  const routes = pageRoutes.get(page);
+  const cursor = pageRouteCursors.get(page);
+  assert.ok(routes, `${label} has no route receipt stream`);
+  assert.ok(cursor, `${label} has no route receipt cursor`);
+  return clickWithRouteBarrier({
+    page,
+    routes,
+    cursor,
+    point,
+    label,
+    advanceFrame: () => frames(page, 1),
+  });
 }
 
 async function key(page, name) {
@@ -605,6 +614,8 @@ async function inspect(server, source, faction, testCase, executable) {
   const requests = [];
   const errors = [];
   const consoleLines = [];
+  const routes = [];
+  const routeCursor = { physical: null };
   const launchAttempts = [];
   let browser;
   let context;
@@ -627,6 +638,8 @@ async function inspect(server, source, faction, testCase, executable) {
       serviceWorkers: "block",
     });
     page = await context.newPage();
+    pageRoutes.set(page, routes);
+    pageRouteCursors.set(page, routeCursor);
     const serverOrigin = `http://127.0.0.1:${server.address().port}`;
     page.on("response", (response) => {
       if (new URL(response.url()).origin === serverOrigin) {
@@ -638,7 +651,9 @@ async function inspect(server, source, faction, testCase, executable) {
     });
     page.on("pageerror", (error) => errors.push(`pageerror:${error.stack || error.message}`));
     page.on("console", (message) => {
-      consoleLines.push({ type: message.type(), text: message.text() });
+      const line = message.text();
+      consoleLines.push({ type: message.type(), text: line });
+      if (line.startsWith(ROUTE_MARKER)) routes.push(line);
       if (message.type() === "error" || /\[bmp_cache\] asset unavailable/i.test(message.text())) {
         errors.push(`console:${message.type()}:${message.text()}`);
       }
@@ -673,6 +688,7 @@ async function inspect(server, source, faction, testCase, executable) {
       ready,
       checks,
       observations: await observations(page),
+      route_receipts: routes,
       screenshots: [before, after],
       requests,
       errors,
@@ -687,6 +703,7 @@ async function inspect(server, source, faction, testCase, executable) {
       case: testCase.name,
       error: String(error.stack || error),
       observations: page ? await observations(page).catch(() => []) : [],
+      route_receipts: routes,
       requests,
       errors,
       console: consoleLines,
