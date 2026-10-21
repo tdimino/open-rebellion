@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { PNG } from "pngjs";
 import { launchBrowser } from "./browser-launch.mjs";
+import { sectorDoubleClick } from "./sector-double-click.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../..");
@@ -218,10 +219,7 @@ async function chooseStatus(page, at) {
 const point = ([x, y]) => ({ x: Math.round(x), y: Math.round(y) });
 
 async function doubleClick(page, at) {
-  await page.mouse.move(at.x, at.y);
-  await frames(page);
-  await page.mouse.dblclick(at.x, at.y);
-  await frames(page);
+  await sectorDoubleClick(page, at, () => frames(page));
 }
 
 async function fleetLoadSetup(page) {

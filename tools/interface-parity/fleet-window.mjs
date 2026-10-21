@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { PNG } from "pngjs";
 import { launchBrowser } from "./browser-launch.mjs";
+import { sectorDoubleClick } from "./sector-double-click.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../..");
@@ -271,16 +272,8 @@ function escapeRegExp(text) {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-// Two clicks inside egui's double-click time.
 async function doubleClick(page, point) {
-  await page.mouse.move(point.x, point.y);
-  await frames(page);
-  for (let index = 0; index < 2; index += 1) {
-    await page.mouse.down();
-    await frames(page);
-    await page.mouse.up();
-    await frames(page);
-  }
+  await sectorDoubleClick(page, point, () => frames(page));
 }
 
 function observations(page) {

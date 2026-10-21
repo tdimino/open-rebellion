@@ -1671,7 +1671,11 @@ fn draw_sector_windows_with_snapshot(
                 .find(|open| open.sector == window.sector)
             {
                 open.selection = selection;
-                open.drag_from = result.drag_from.filter(|_| pointer_permitted);
+                open.drag_from = if result.drag_end.is_some() {
+                    None
+                } else {
+                    result.drag_from.filter(|_| pointer_permitted)
+                };
             }
         }
         if result.drag_from.is_some() && pointer_permitted {
@@ -2040,7 +2044,7 @@ fn draw_sector_window(
             // FUN_004593e0 case 0x202: the window holds the capture, so the
             // release ends the drag wherever it lands; it drops only past
             // four pixels from the press in x or y.
-            if let (true, Some(from)) = (primary_released, window.drag_from) {
+            if let (true, Some(from)) = (primary_released, window.drag_from.or(result.drag_from)) {
                 result.drag_end = Some(pointer.and_then(|point| {
                     let to = screen_to_logical(layout, point);
                     ((to.0 - from.0).abs() > 4 || (to.1 - from.1).abs() > 4)
@@ -7695,6 +7699,68 @@ mod tests {
             opened(&actions)[..],
             [SectorWindowAction::OpenFleetWindow { .. }]
         ));
+    }
+
+    #[test]
+    fn fixture_sector_atomic_double_click_releases_its_icon_drag_in_the_same_draw() {
+        let (mut world, system, _) = fixture_world();
+        add_fleet(&mut world, system);
+        let mut state = SectorWindowState::default();
+        state.open_for_system(&world, system, CockpitFaction::Alliance);
+        let layout = layout(1.0);
+        let point = state
+            .fleet_icon_screen_rect(&world, layout, system)
+            .unwrap()
+            .center();
+        let mut fog = FogState::new(Faction::Alliance);
+        fog.reveal(system);
+        let ctx = egui::Context::default();
+        let mut cache = BmpCache::new();
+        let button = |pressed| egui::Event::PointerButton {
+            pos: point,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::default(),
+        };
+        let mut actions = Vec::new();
+        for (frame, events) in [
+            vec![egui::Event::PointerMoved(point)],
+            vec![button(true), button(false), button(true), button(false)],
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let _ = ctx.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(700.0, 520.0),
+                    )),
+                    time: Some(frame as f64 * 0.05),
+                    events,
+                    ..Default::default()
+                },
+                |ctx| {
+                    actions = draw_sector_windows(
+                        ctx,
+                        &world,
+                        &rebellion_core::movement::MovementState::default(),
+                        &fog,
+                        &mut state,
+                        CockpitFaction::Alliance,
+                        layout,
+                        &mut cache,
+                        &rebellion_core::missions::MissionState::new(),
+                        &rebellion_core::uprising::UprisingState::default(),
+                    );
+                },
+            );
+        }
+        assert!(actions.iter().any(|action| matches!(
+            action,
+            SectorWindowAction::OpenFleetWindow { system: opened, .. } if *opened == system
+        )));
+        assert_eq!(state.windows[0].drag_from, None);
     }
 
     #[test]
